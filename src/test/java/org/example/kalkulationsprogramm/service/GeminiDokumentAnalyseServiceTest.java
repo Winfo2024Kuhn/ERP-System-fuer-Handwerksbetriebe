@@ -1514,6 +1514,82 @@ class GeminiDokumentAnalyseServiceTest {
                     org.mockito.ArgumentMatchers.isNull());
         }
 
+        private static final String SONSTIG_ANTWORT =
+                "{\"dokumentTyp\":\"SONSTIG\",\"istGeschaeftsdokument\":false,\"dokumentNummer\":null}";
+
+        private Path musterDatei() {
+            return tempUploadRoot.resolve("attachments").resolve(DATEINAME);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Neuer Anhang, KI sagt Sonstiges (Widerrufsbelehrung) -> genau ein Aufruf, keine Pruefung")
+        void neuerAnhangSonstigesKostetEinenAufruf() throws Exception {
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            HttpResponse<String> sonstig = antwort(SONSTIG_ANTWORT, "STOP");
+            when(httpClientMock.<String>send(any(HttpRequest.class), any())).thenReturn(sonstig);
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analyzeAndReturnData(musterDatei(), DATEINAME);
+
+            verify(httpClientMock, org.mockito.Mockito.times(1)).send(any(HttpRequest.class), any());
+            assertThat(result.getDetectedTyp()).isEqualTo(LieferantDokumentTyp.SONSTIG);
+            assertThat(result.getManuellePruefungErforderlich()).isFalse();
+            assertThat(result.getDatenquelle()).isNull();
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Sonstiges mit Belegnummer -> KI ist unsicher, alter Weg mit Pruefung")
+        void sonstigesMitBelegnummerBleibtZurPruefung() throws Exception {
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            HttpResponse<String> unsicher = antwort(
+                    "{\"dokumentTyp\":\"SONSTIG\",\"dokumentNummer\":\"RE-2026-0701\"}", "STOP");
+            when(httpClientMock.<String>send(any(HttpRequest.class), any())).thenReturn(unsicher);
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analyzeAndReturnData(musterDatei(), DATEINAME);
+
+            assertThat(result.getManuellePruefungErforderlich()).isTrue();
+            assertThat(result.getDatenquelle()).isEqualTo("AI_PARSE_FAILED");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Neu analysieren: Rechnung behaelt ihre Daten, wenn die KI Sonstiges sagt")
+        void reanalyseEinerRechnungVerliertNichtsDurchSonstiges() throws Exception {
+            LieferantDokument dokument = musterDokument(620L);
+            dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
+            LieferantGeschaeftsdokument vorhanden = vorhandeneDaten(dokument);
+            vorhanden.setId(620L);
+            vorhanden.setDokumentNummer("RE-2026-0620");
+            vorhanden.setManuellePruefungErforderlich(true);
+            vorhanden.setAiRawJson("{\"dokumentNummer\":\"RE-2026-0620\",\"kommission\":\"Halle Muster\"}");
+            stelleKiAntwortBereit(dokument, SONSTIG_ANTWORT);
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            assertThat(result).isSameAs(vorhanden);
+            assertThat(vorhanden.getDokumentNummer()).isEqualTo("RE-2026-0620");
+            assertThat(vorhanden.getManuellePruefungErforderlich()).isTrue();
+            assertThat(vorhanden.getAiRawJson()).contains("Halle Muster");
+            assertThat(vorhanden.getDetectedTyp()).isNotEqualTo(LieferantDokumentTyp.SONSTIG);
+            assertThat(dokument.getTyp()).isEqualTo(LieferantDokumentTyp.RECHNUNG);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Neu analysieren: ein Sonstiges-Dokument verliert die Pruefmarke")
+        void reanalyseEinesSonstigenEntferntDiePruefmarke() throws Exception {
+            LieferantDokument dokument = musterDokument(621L);
+            dokument.setTyp(LieferantDokumentTyp.SONSTIG);
+            LieferantGeschaeftsdokument vorhanden = vorhandeneDaten(dokument);
+            vorhanden.setId(621L);
+            vorhanden.setManuellePruefungErforderlich(true);
+            vorhanden.setDatenquelle("AI_PARSE_FAILED");
+            stelleKiAntwortBereit(dokument, SONSTIG_ANTWORT);
+
+            LieferantGeschaeftsdokument result = serviceMitEchtemMapper.analysiereDokument(dokument);
+
+            verify(httpClientMock, org.mockito.Mockito.times(1)).send(any(HttpRequest.class), any());
+            assertThat(result.getManuellePruefungErforderlich()).isFalse();
+            assertThat(dokument.getTyp()).isEqualTo(LieferantDokumentTyp.SONSTIG);
+        }
+
         private LieferantGeschaeftsdokument vorhandeneDaten(LieferantDokument dokument) {
             LieferantGeschaeftsdokument vorhanden = new LieferantGeschaeftsdokument();
             vorhanden.setDokument(dokument);
@@ -2091,6 +2167,53 @@ class GeminiDokumentAnalyseServiceTest {
             ReflectionTestUtils.setField(service, "geminiProModel", "gemini-pro");
 
             assertThat(hatEigenesProModel()).isTrue();
+        }
+    }
+
+    /**
+     * Widerrufsbelehrung, AGB & Co.: die KI erkennt sie als „Sonstiges“. Das ist kein
+     * Lesefehler – kein zweiter KI-Aufruf und keine manuelle Prüfung.
+     */
+    @Nested
+    class SonstigesIstKeinLesefehler {
+
+        private boolean istKeinGeschaeftsdokument(String json) throws Exception {
+            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod("istKeinGeschaeftsdokument",
+                    com.fasterxml.jackson.databind.JsonNode.class);
+            method.setAccessible(true);
+            return (boolean) method.invoke(null, new ObjectMapper().readTree(json));
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "{\"dokumentTyp\": \"SONSTIG\", \"istGeschaeftsdokument\": false}",
+                "{\"dokumentTyp\": \"sonstig\"}",
+                "{\"istGeschaeftsdokument\": false}" })
+        void erkenntSonstiges(String json) throws Exception {
+            assertThat(istKeinGeschaeftsdokument(json)).isTrue();
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(strings = {
+                "{\"dokumentTyp\": \"RECHNUNG\", \"istGeschaeftsdokument\": true}",
+                "{\"dokumentTyp\": null}",
+                "{}" })
+        void geschaeftsdokumentIstNichtSonstiges(String json) throws Exception {
+            assertThat(istKeinGeschaeftsdokument(json)).isFalse();
+        }
+
+        @Test
+        void sonstigesErgebnisBrauchtKeinePruefung() throws Exception {
+            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod("sonstigesErgebnis", String.class);
+            method.setAccessible(true);
+            String json = "{\"dokumentTyp\": \"SONSTIG\"}";
+
+            LieferantGeschaeftsdokument gd = (LieferantGeschaeftsdokument) method.invoke(null, json);
+
+            assertThat(gd.getDetectedTyp()).isEqualTo(LieferantDokumentTyp.SONSTIG);
+            assertThat(gd.getManuellePruefungErforderlich()).isFalse();
+            assertThat(gd.getAiRawJson()).isEqualTo(json);
+            assertThat(gd.getDatenquelle()).isNull();
         }
     }
 }

@@ -223,13 +223,15 @@ await fetch('/api/admin/lieferanten/{lieferantId}/reprocess-attachments',{method
 ```
 
 ### Doppelte Lieferanten-Dokumente (läuft automatisch, kein Endpoint)
-Beim Start löscht `LieferantDokumentDuplikatBackfillRunner` Dokumente, die dieselbe
-gespeicherte Datei beim selben Lieferanten doppelt zeigen; je Gruppe bleibt eins.
+Beim Start löscht `LieferantDokumentDuplikatBackfillRunner` Dokumente, die beim selben
+Lieferanten dieselbe gespeicherte Datei zeigen oder deren Mail-Anhang Byte für Byte
+gleich ist (z. B. die Widerrufsbelehrung in jeder Mail); je Gruppe bleibt eins.
+Neue Mails schicken einen schon bekannten Anhang gar nicht erst an die KI.
 Gruppen, in denen mehrere Exemplare von Hand gepflegt sind (Projekt-Zuordnung, Beleg,
 Reklamation, bezahlt, freigegeben, Lagerbestellung), bleiben stehen und erscheinen im
 Log unter `[Duplikate] Gruppe … übersprungen` – dann bei jedem Start erneut, bis sie von
 Hand bereinigt sind. Erledigt ist der Lauf, wenn in den System-Einstellungen
-`lieferant.duplikate.version` = `1` steht.
+`lieferant.duplikate.version` = `2` steht.
 
 ---
 

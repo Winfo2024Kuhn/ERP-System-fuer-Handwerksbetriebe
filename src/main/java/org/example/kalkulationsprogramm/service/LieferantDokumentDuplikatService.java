@@ -1,14 +1,18 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre;
@@ -25,13 +29,18 @@ import org.springframework.transaction.support.TransactionTemplate;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Räumt Lieferanten-Dokumente auf, die dieselbe gespeicherte Datei mehrfach zeigen.
+ * Räumt Lieferanten-Dokumente auf, die dieselbe gespeicherte Datei mehrfach zeigen
+ * ({@link #bereinigeDateiDuplikate()}) oder deren Mail-Anhänge denselben Inhalt haben
+ * ({@link #bereinigeInhaltsDuplikate()}).
  *
- * <p>Solche Duplikate entstanden, wenn Mail-Anhänge erneut verarbeitet wurden: Für den
+ * <p>Datei-Duplikate entstanden, wenn Mail-Anhänge erneut verarbeitet wurden: Für den
  * schon verarbeiteten Anhang wurde ein weiteres Dokument angelegt und der Anhang darauf
- * umgehängt, das alte blieb liegen. Je Gruppe (gleicher Lieferant, gleiche Datei) bleibt
- * genau ein Dokument; Verknüpfungen, von Hand gelöste Paare (Sperren) und der
- * Mail-Anhang gehen auf dieses über.</p>
+ * umgehängt, das alte blieb liegen. Inhalts-Duplikate entstehen, wenn ein Lieferant
+ * dieselbe PDF (z. B. die Widerrufsbelehrung) jeder Mail anhängt. Je Gruppe (gleicher
+ * Lieferant, gleiche Datei bzw. gleicher Inhalt) bleibt genau ein Dokument;
+ * Verknüpfungen, von Hand gelöste Paare (Sperren) und die Mail-Anhänge gehen auf dieses
+ * über. Rechnungen und Gutschriften werden nur bei derselben Datei zusammengeführt,
+ * nie wegen gleichen Inhalts (GoBD).</p>
  *
  * <p>Von Hand Gepflegtes geht nicht verloren: Hat in einer Gruppe mehr als ein Dokument
  * eine Projekt-Zuordnung, einen Beleg, eine Reklamation oder ist bezahlt, freigegeben
@@ -51,18 +60,26 @@ public class LieferantDokumentDuplikatService {
     private final EmailAttachmentRepository attachmentRepository;
     private final LieferantReklamationRepository reklamationRepository;
     private final LieferantDokumentVerknuepfungSperreRepository sperreRepository;
+    private final EmailAttachmentProcessingService anhangService;
     private final TransactionTemplate transaktion;
 
     public LieferantDokumentDuplikatService(LieferantDokumentRepository dokumentRepository,
             EmailAttachmentRepository attachmentRepository, LieferantReklamationRepository reklamationRepository,
             LieferantDokumentVerknuepfungSperreRepository sperreRepository,
-            PlatformTransactionManager transactionManager) {
+            EmailAttachmentProcessingService anhangService, PlatformTransactionManager transactionManager) {
         this.dokumentRepository = dokumentRepository;
         this.attachmentRepository = attachmentRepository;
         this.reklamationRepository = reklamationRepository;
         this.sperreRepository = sperreRepository;
+        this.anhangService = anhangService;
         this.transaktion = new TransactionTemplate(transactionManager);
         this.transaktion.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    /** Ergebnisse zweier Läufe zusammenzählen. */
+    public static Ergebnis summe(Ergebnis a, Ergebnis b) {
+        return new Ergebnis(a.gruppen() + b.gruppen(), a.geloescht() + b.geloescht(),
+                a.uebersprungen() + b.uebersprungen());
     }
 
     public Ergebnis bereinigeDateiDuplikate() {
@@ -72,13 +89,90 @@ public class LieferantDokumentDuplikatService {
             String schluessel = zeile[1] + "|" + zeile[2];
             gruppen.computeIfAbsent(schluessel, k -> new ArrayList<>()).add(id);
         }
+        return bereinigeGruppen(new ArrayList<>(gruppen.values()), "Datei");
+    }
 
+    /**
+     * Führt Dokumente zusammen, deren Mail-Anhänge beim selben Lieferanten Byte für Byte
+     * gleich sind, aber als eigene Dateien gespeichert wurden – z. B. die
+     * Widerrufsbelehrung, die jeder Mail anhängt.
+     */
+    public Ergebnis bereinigeInhaltsDuplikate() {
+        Map<String, List<Long>> gleicheGroesse = new LinkedHashMap<>();
+        for (Object[] zeile : attachmentRepository.findDokumentAnhaengeMitGleicherGroesse()) {
+            Long anhangId = ((Number) zeile[0]).longValue();
+            gleicheGroesse.computeIfAbsent(zeile[1] + "|" + zeile[2], k -> new ArrayList<>()).add(anhangId);
+        }
+        List<List<Long>> gruppen = new ArrayList<>();
+        for (List<Long> anhangIds : gleicheGroesse.values()) {
+            // Lesend in einer Transaktion: der Pfad eines Anhangs hängt an Mail und Lieferant
+            List<List<Long>> dokumentGruppen = transaktion.execute(status -> dokumenteMitGleichemInhalt(anhangIds));
+            if (dokumentGruppen != null) {
+                gruppen.addAll(dokumentGruppen);
+            }
+        }
+        return bereinigeGruppen(vereinige(gruppen), "Inhalt");
+    }
+
+    /**
+     * Vereinigt Gruppen, die sich ein Dokument teilen – z. B. eine E-Rechnung aus zwei
+     * Mails: PDF und XML ergeben je eine Gruppe mit denselben zwei Dokumenten.
+     */
+    static List<List<Long>> vereinige(List<List<Long>> gruppen) {
+        List<Set<Long>> vereinigt = new ArrayList<>();
+        for (List<Long> gruppe : gruppen) {
+            Set<Long> neu = new TreeSet<>(gruppe);
+            for (Iterator<Set<Long>> it = vereinigt.iterator(); it.hasNext();) {
+                Set<Long> vorhanden = it.next();
+                if (!Collections.disjoint(vorhanden, neu)) {
+                    neu.addAll(vorhanden);
+                    it.remove();
+                }
+            }
+            vereinigt.add(neu);
+        }
+        return vereinigt.stream().map(g -> (List<Long>) new ArrayList<>(g)).toList();
+    }
+
+    /** Teilt gleich große Anhänge in Gruppen gleichen Inhalts; je Gruppe die IDs ihrer Dokumente. */
+    private List<List<Long>> dokumenteMitGleichemInhalt(List<Long> anhangIds) {
+        List<List<EmailAttachment>> inhalte = new ArrayList<>();
+        for (EmailAttachment anhang : attachmentRepository.findAllById(anhangIds)) {
+            List<EmailAttachment> passend = inhalte.stream()
+                    .filter(gruppe -> anhangService.gleicherInhalt(gruppe.get(0), anhang))
+                    .findFirst().orElse(null);
+            if (passend != null) {
+                passend.add(anhang);
+            } else {
+                inhalte.add(new ArrayList<>(List.of(anhang)));
+            }
+        }
+        List<List<Long>> dokumentGruppen = new ArrayList<>();
+        for (List<EmailAttachment> gruppe : inhalte) {
+            List<LieferantDokument> dokumente = gruppe.stream()
+                    .map(EmailAttachment::getLieferantDokument)
+                    .distinct().toList();
+            if (dokumente.size() < 2) {
+                continue;
+            }
+            // Rechnungen und Gutschriften: GoBD – die fängt beim Import schon der
+            // Nummern-Check ab; hier nie automatisch löschen.
+            if (dokumente.stream().anyMatch(d -> d.getTyp() == LieferantDokumentTyp.RECHNUNG
+                    || d.getTyp() == LieferantDokumentTyp.GUTSCHRIFT)) {
+                continue;
+            }
+            dokumentGruppen.add(dokumente.stream().map(LieferantDokument::getId).sorted().toList());
+        }
+        return dokumentGruppen;
+    }
+
+    private Ergebnis bereinigeGruppen(List<List<Long>> gruppen, String art) {
         int geloescht = 0;
         int uebersprungen = 0;
-        for (List<Long> ids : gruppen.values()) {
+        for (List<Long> ids : gruppen) {
             try {
                 Integer anzahl = transaktion.execute(status -> bereinigeGruppe(ids));
-                if (anzahl == null || anzahl == 0) {
+                if (anzahl == null || anzahl == UEBERSPRUNGEN) {
                     uebersprungen++;
                 } else {
                     geloescht += anzahl;
@@ -90,12 +184,18 @@ public class LieferantDokumentDuplikatService {
                 uebersprungen++;
             }
         }
-        log.info("[Duplikate] fertig: {} Gruppen, {} Duplikate gelöscht, {} Gruppen übersprungen",
-                gruppen.size(), geloescht, uebersprungen);
+        log.info("[Duplikate] {} fertig: {} Gruppen, {} Duplikate gelöscht, {} Gruppen übersprungen",
+                art, gruppen.size(), geloescht, uebersprungen);
         return new Ergebnis(gruppen.size(), geloescht, uebersprungen);
     }
 
-    /** @return Anzahl gelöschter Dokumente, 0 wenn die Gruppe unangetastet bleibt */
+    /** Rückgabe von {@link #bereinigeGruppe}: Gruppe bewusst stehen gelassen. */
+    private static final int UEBERSPRUNGEN = -1;
+
+    /**
+     * @return Anzahl gelöschter Dokumente; 0, wenn nichts (mehr) zu tun ist;
+     *         {@link #UEBERSPRUNGEN}, wenn die Gruppe bewusst stehen bleibt
+     */
     private int bereinigeGruppe(List<Long> ids) {
         List<LieferantDokument> dokumente = dokumentRepository.findAllById(ids).stream()
                 .sorted(Comparator.comparing(LieferantDokument::getId))
@@ -103,11 +203,18 @@ public class LieferantDokumentDuplikatService {
         if (dokumente.size() < 2) {
             return 0;
         }
+        long lieferanten = dokumente.stream()
+                .map(d -> d.getLieferant() != null ? d.getLieferant().getId() : null)
+                .distinct().count();
+        if (lieferanten > 1) {
+            log.warn("[Duplikate] Gruppe {} übersprungen: Dokumente verschiedener Lieferanten", ids);
+            return UEBERSPRUNGEN;
+        }
         List<LieferantDokument> vonHandGepflegt = dokumente.stream().filter(this::istVonHandGepflegt).toList();
         if (vonHandGepflegt.size() > 1) {
             log.warn("[Duplikate] Gruppe {} übersprungen: mehrere Exemplare sind von Hand gepflegt – bitte von Hand prüfen",
                     ids);
-            return 0;
+            return UEBERSPRUNGEN;
         }
 
         LieferantDokument behalten = vonHandGepflegt.isEmpty() ? waehleBehalten(dokumente) : vonHandGepflegt.get(0);

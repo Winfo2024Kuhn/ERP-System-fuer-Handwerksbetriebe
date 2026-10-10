@@ -11,9 +11,10 @@ import org.springframework.core.annotation.Order;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Löscht rückwirkend einmal die Lieferanten-Dokumente, die dieselbe gespeicherte Datei
- * doppelt zeigen (siehe {@link LieferantDokumentDuplikatService}). Neue Duplikate
- * verhindert der Mail-Import selbst.
+ * Löscht rückwirkend die doppelten Lieferanten-Dokumente (siehe
+ * {@link LieferantDokumentDuplikatService}): erst die, die dieselbe gespeicherte Datei
+ * zeigen, dann die mit inhaltsgleichem Mail-Anhang (z. B. die Widerrufsbelehrung jeder
+ * Mail). Neue Duplikate verhindert der Mail-Import selbst.
  *
  * <p>Läuft je {@link #BEREINIGUNG_VERSION}, bis nichts mehr übrig ist: Die erledigte
  * Version steht in den System-Einstellungen und wird erst gespeichert, wenn keine Gruppe
@@ -31,8 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 @ConditionalOnProperty(name = "lieferant.duplikate.backfill-on-start", havingValue = "true", matchIfMissing = true)
 public class LieferantDokumentDuplikatBackfillRunner {
 
-    /** Erhöhen, wenn die Bereinigung noch einmal über alle Dokumente laufen soll. */
-    public static final int BEREINIGUNG_VERSION = 1;
+    /** Erhöhen, wenn die Bereinigung noch einmal laufen soll. 1 = gleiche Datei, 2 = zusätzlich gleicher Inhalt. */
+    public static final int BEREINIGUNG_VERSION = 2;
     static final String EINSTELLUNG = "lieferant.duplikate.version";
 
     private final LieferantDokumentDuplikatService duplikatService;
@@ -62,7 +63,8 @@ public class LieferantDokumentDuplikatBackfillRunner {
             }
             log.info("[DuplikatBackfill] Lösche doppelte Lieferanten-Dokumente (Version {} -> {})...",
                     erledigt, BEREINIGUNG_VERSION);
-            LieferantDokumentDuplikatService.Ergebnis ergebnis = duplikatService.bereinigeDateiDuplikate();
+            LieferantDokumentDuplikatService.Ergebnis ergebnis = LieferantDokumentDuplikatService.summe(
+                    duplikatService.bereinigeDateiDuplikate(), duplikatService.bereinigeInhaltsDuplikate());
             if (ergebnis.uebersprungen() > 0) {
                 log.warn("[DuplikatBackfill] {} Duplikate gelöscht, {} Gruppen übersprungen (siehe [Duplikate] im Log)"
                         + " – neuer Versuch beim nächsten Start.", ergebnis.geloescht(), ergebnis.uebersprungen());

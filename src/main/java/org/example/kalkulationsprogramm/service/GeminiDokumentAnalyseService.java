@@ -1721,7 +1721,7 @@ public class GeminiDokumentAnalyseService {
             else if (lower.endsWith(".xml"))
                 mimeType = "application/xml";
 
-            return analysierePerKi(dateiPfad, mimeType, null);
+            return analysierePerKi(dateiPfad, mimeType, null, true);
 
         } catch (Exception e) {
             log.error("Fehler bei analyzeAndReturnData: {}", e.getMessage());
@@ -1736,10 +1736,22 @@ public class GeminiDokumentAnalyseService {
      * aber mit manuellePruefungErforderlich=true markiert.
      */
     private LieferantGeschaeftsdokument analysierePerKi(LieferantDokument dokument, Path dateiPfad) {
-        return analysierePerKi(dateiPfad, getMimeType(dokument), dokument != null ? dokument.getId() : null);
+        // Ein Dokument mit Fachtyp (z. B. von Hand als Rechnung/Zeugnis eingestuft) darf
+        // durch ein „Sonstiges“ der KI nicht seine Daten verlieren – dort bleibt der
+        // alte Weg: Nachversuch, sonst Fehlschlag, und der Bestand bleibt stehen.
+        LieferantDokumentTyp typ = dokument != null ? dokument.getTyp() : null;
+        boolean sonstigesDarfAbkuerzen = typ == null || typ == LieferantDokumentTyp.SONSTIG;
+        return analysierePerKi(dateiPfad, getMimeType(dokument), dokument != null ? dokument.getId() : null,
+                sonstigesDarfAbkuerzen);
     }
 
-    private LieferantGeschaeftsdokument analysierePerKi(Path dateiPfad, String mimeType, Long docIdForLog) {
+    /**
+     * @param sonstigesDarfAbkuerzen erkennt die KI klar „Sonstiges“, gilt das als Ergebnis
+     *                               (ein Aufruf, keine Prüfung) – nur für neue Dokumente und
+     *                               solche, die selbst noch „Sonstiges“ sind
+     */
+    private LieferantGeschaeftsdokument analysierePerKi(Path dateiPfad, String mimeType, Long docIdForLog,
+            boolean sonstigesDarfAbkuerzen) {
         try {
             byte[] bytes = Files.readAllBytes(dateiPfad);
             // mimeType ist bereits übergeben
@@ -1780,6 +1792,13 @@ public class GeminiDokumentAnalyseService {
             }
 
             LieferantGeschaeftsdokument result = mapJsonToData(jsonResponse);
+
+            // „Sonstiges“ (Widerrufsbelehrung, AGB …) ist erkannt, nicht kaputt
+            if (result == null && sonstigesDarfAbkuerzen && istKlaresSonstiges(jsonResponse)) {
+                log.info("[KI-Analyse] Dokument {} ist kein Geschäftsdokument - als Sonstiges ohne Prüfung",
+                        docIdForLog);
+                return sonstigesErgebnis(jsonResponse);
+            }
 
             // Wenn Parsing fehlgeschlagen, prüfe ob JSON abgeschnitten und retry
             if (result == null) {
@@ -2646,23 +2665,61 @@ public class GeminiDokumentAnalyseService {
         }
     }
 
+    /** Die KI sagt ausdrücklich: kein Geschäftsdokument bzw. Typ SONSTIG. */
+    private static boolean istKeinGeschaeftsdokument(JsonNode json) {
+        if (json == null) {
+            return false;
+        }
+        if (json.has("istGeschaeftsdokument") && !json.get("istGeschaeftsdokument").asBoolean()) {
+            return true;
+        }
+        return json.has("dokumentTyp") && !json.get("dokumentTyp").isNull()
+                && "SONSTIG".equals(json.get("dokumentTyp").asText().toUpperCase());
+    }
+
+    /**
+     * „Sonstiges“ ohne jedes Belegmerkmal. Nennt die KI trotzdem eine Belegnummer oder
+     * einen Betrag, ist sie sich nicht sicher – dann lieber der alte Weg mit Prüfung, damit
+     * keine echte Rechnung still als „Sonstiges“ verschwindet. Unlesbar heißt nein.
+     */
+    private boolean istKlaresSonstiges(String jsonString) {
+        try {
+            JsonNode json = objectMapper.readTree(jsonString);
+            return istKeinGeschaeftsdokument(json)
+                    && !hatWert(json, "dokumentNummer")
+                    && !hatWert(json, "betragNetto")
+                    && !hatWert(json, "betragBrutto");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean hatWert(JsonNode json, String feld) {
+        JsonNode wert = json.get(feld);
+        return wert != null && !wert.isNull() && !wert.asText().isBlank();
+    }
+
+    /**
+     * Ergebnis für ein Dokument, das die KI als „Sonstiges“ erkannt hat. Das ist kein
+     * Lesefehler: kein zweiter KI-Aufruf und keine manuelle Prüfung.
+     */
+    private static LieferantGeschaeftsdokument sonstigesErgebnis(String jsonString) {
+        LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+        gd.setDetectedTyp(LieferantDokumentTyp.SONSTIG);
+        gd.setManuellePruefungErforderlich(false);
+        gd.setAiRawJson(jsonString);
+        gd.setAnalysiertAm(java.time.LocalDateTime.now());
+        return gd;
+    }
+
     private LieferantGeschaeftsdokument mapJsonToData(String jsonString) {
         try {
             JsonNode json = objectMapper.readTree(jsonString);
 
-            // Prüfe zuerst ob es ein Geschäftsdokument ist
-            if (json.has("istGeschaeftsdokument") && !json.get("istGeschaeftsdokument").asBoolean()) {
-                log.info("KI klassifiziert Dokument als KEIN Geschäftsdokument");
+            // Kein Geschäftsdokument (Widerrufsbelehrung, AGB, Datenblatt …)
+            if (istKeinGeschaeftsdokument(json)) {
+                log.info("KI klassifiziert Dokument als SONSTIG (kein Geschäftsdokument)");
                 return null;
-            }
-
-            // Prüfe Dokumenttyp - wenn SONSTIG, dann kein Geschäftsdokument
-            if (json.has("dokumentTyp") && !json.get("dokumentTyp").isNull()) {
-                String typString = json.get("dokumentTyp").asText().toUpperCase();
-                if ("SONSTIG".equals(typString)) {
-                    log.info("KI klassifiziert Dokument als SONSTIG (kein Geschäftsdokument)");
-                    return null;
-                }
             }
 
             // Neues Geschaeftsdokument erstellen

@@ -22,6 +22,7 @@ import org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentVerknuepfungSperre;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
+import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
@@ -41,6 +42,7 @@ class LieferantDokumentDuplikatServiceTest {
     @Mock private EmailAttachmentRepository attachmentRepository;
     @Mock private LieferantReklamationRepository reklamationRepository;
     @Mock private LieferantDokumentVerknuepfungSperreRepository sperreRepository;
+    @Mock private EmailAttachmentProcessingService anhangService;
     @Mock private PlatformTransactionManager transactionManager;
 
     private LieferantDokumentDuplikatService service;
@@ -50,11 +52,12 @@ class LieferantDokumentDuplikatServiceTest {
     @BeforeEach
     void setUp() {
         service = new LieferantDokumentDuplikatService(dokumentRepository, attachmentRepository,
-                reklamationRepository, sperreRepository, transactionManager);
-        when(dokumentRepository.findDateiDuplikate()).thenReturn(duplikatZeilen);
+                reklamationRepository, sperreRepository, anhangService, transactionManager);
+        lenient().when(dokumentRepository.findDateiDuplikate()).thenReturn(duplikatZeilen);
         lenient().when(dokumentRepository.findAllById(any())).thenAnswer(inv -> {
             Collection<Long> ids = inv.getArgument(0);
-            return ids.stream().map(dokumente::get).toList();
+            // wie das echte Repository: unbekannte IDs fehlen einfach
+            return ids.stream().map(dokumente::get).filter(java.util.Objects::nonNull).toList();
         });
         lenient().when(attachmentRepository.findByLieferantDokumentId(anyLong())).thenReturn(List.of());
     }
@@ -251,5 +254,128 @@ class LieferantDokumentDuplikatServiceTest {
         verify(dokumentRepository).delete(kopie);
         verify(sperreRepository, never()).save(any(LieferantDokumentVerknuepfungSperre.class));
         assertThat(behalten.getVerknuepfteDokumente()).containsExactly(rechnung);
+    }
+
+    // ── Inhaltsgleiche Anhänge (z. B. die Widerrufsbelehrung in jeder Mail) ──
+
+    private EmailAttachment anhang(long id, LieferantDokument dokument) {
+        EmailAttachment a = new EmailAttachment();
+        a.setId(id);
+        a.setLieferantDokument(dokument);
+        return a;
+    }
+
+    private LieferantDokument nurDokument(long id, LieferantDokumentTyp typ) {
+        LieferantDokument d = new LieferantDokument();
+        d.setId(id);
+        d.setTyp(typ);
+        dokumente.put(id, d);
+        return d;
+    }
+
+    @Test
+    void inhaltsgleicheAnhaengeWerdenZuEinemDokumentZusammengefuehrt() {
+        LieferantDokument erste = nurDokument(100, LieferantDokumentTyp.SONSTIG);
+        LieferantDokument zweite = nurDokument(101, LieferantDokumentTyp.SONSTIG);
+        LieferantDokument andere = nurDokument(102, LieferantDokumentTyp.SONSTIG);
+        EmailAttachment a1 = anhang(501, erste);
+        EmailAttachment a2 = anhang(502, zweite);
+        EmailAttachment a3 = anhang(503, andere);
+        when(attachmentRepository.findDokumentAnhaengeMitGleicherGroesse()).thenReturn(List.of(
+                new Object[] { 501L, 4L, 20480L }, new Object[] { 502L, 4L, 20480L },
+                new Object[] { 503L, 4L, 20480L }));
+        when(attachmentRepository.findAllById(List.of(501L, 502L, 503L))).thenReturn(List.of(a1, a2, a3));
+        when(anhangService.gleicherInhalt(a1, a2)).thenReturn(true);
+        when(anhangService.gleicherInhalt(a1, a3)).thenReturn(false);
+
+        LieferantDokumentDuplikatService.Ergebnis ergebnis = service.bereinigeInhaltsDuplikate();
+
+        // Nur 100 und 101 sind gleich; 102 hat nur zufällig dieselbe Größe
+        assertThat(ergebnis).isEqualTo(new LieferantDokumentDuplikatService.Ergebnis(1, 1, 0));
+        verify(dokumentRepository).delete(zweite);
+        verify(dokumentRepository, never()).delete(erste);
+        verify(dokumentRepository, never()).delete(andere);
+    }
+
+    @Test
+    void anhaengeDesselbenDokumentsSindKeinDuplikat() {
+        LieferantDokument dokument = nurDokument(110, LieferantDokumentTyp.RECHNUNG);
+        EmailAttachment a1 = anhang(511, dokument);
+        EmailAttachment a2 = anhang(512, dokument);
+        when(attachmentRepository.findDokumentAnhaengeMitGleicherGroesse()).thenReturn(List.of(
+                new Object[] { 511L, 4L, 999L }, new Object[] { 512L, 4L, 999L }));
+        when(attachmentRepository.findAllById(List.of(511L, 512L))).thenReturn(List.of(a1, a2));
+        when(anhangService.gleicherInhalt(a1, a2)).thenReturn(true);
+
+        LieferantDokumentDuplikatService.Ergebnis ergebnis = service.bereinigeInhaltsDuplikate();
+
+        assertThat(ergebnis.gruppen()).isZero();
+        verify(dokumentRepository, never()).delete(any(LieferantDokument.class));
+    }
+
+    @Test
+    void inhaltsgleicheRechnungenWerdenNieAutomatischGeloescht() {
+        LieferantDokument r1 = nurDokument(120, LieferantDokumentTyp.RECHNUNG);
+        LieferantDokument r2 = nurDokument(121, LieferantDokumentTyp.SONSTIG);
+        EmailAttachment a1 = anhang(521, r1);
+        EmailAttachment a2 = anhang(522, r2);
+        when(attachmentRepository.findDokumentAnhaengeMitGleicherGroesse()).thenReturn(List.of(
+                new Object[] { 521L, 4L, 777L }, new Object[] { 522L, 4L, 777L }));
+        when(attachmentRepository.findAllById(List.of(521L, 522L))).thenReturn(List.of(a1, a2));
+        when(anhangService.gleicherInhalt(a1, a2)).thenReturn(true);
+
+        LieferantDokumentDuplikatService.Ergebnis ergebnis = service.bereinigeInhaltsDuplikate();
+
+        assertThat(ergebnis.gruppen()).isZero();
+        verify(dokumentRepository, never()).delete(any(LieferantDokument.class));
+    }
+
+    @Test
+    void gruppeMitDokumentenVerschiedenerLieferantenBleibtStehen() {
+        LieferantDokument x = nurDokument(130, LieferantDokumentTyp.SONSTIG);
+        LieferantDokument y = nurDokument(131, LieferantDokumentTyp.SONSTIG);
+        Lieferanten lieferantX = new Lieferanten();
+        lieferantX.setId(4L);
+        Lieferanten lieferantY = new Lieferanten();
+        lieferantY.setId(5L);
+        x.setLieferant(lieferantX);
+        y.setLieferant(lieferantY);
+        EmailAttachment a1 = anhang(531, x);
+        EmailAttachment a2 = anhang(532, y);
+        when(attachmentRepository.findDokumentAnhaengeMitGleicherGroesse()).thenReturn(List.of(
+                new Object[] { 531L, 4L, 555L }, new Object[] { 532L, 4L, 555L }));
+        when(attachmentRepository.findAllById(List.of(531L, 532L))).thenReturn(List.of(a1, a2));
+        when(anhangService.gleicherInhalt(a1, a2)).thenReturn(true);
+
+        LieferantDokumentDuplikatService.Ergebnis ergebnis = service.bereinigeInhaltsDuplikate();
+
+        assertThat(ergebnis).isEqualTo(new LieferantDokumentDuplikatService.Ergebnis(1, 0, 1));
+        verify(dokumentRepository, never()).delete(any(LieferantDokument.class));
+    }
+
+    @Test
+    void ueberlappendeGruppenWerdenVereinigt() {
+        // E-Rechnung aus zwei Mails: PDF-Gruppe {10, 11}, XML-Gruppe {11, 10}; dazu {12, 13} und {13, 14}
+        assertThat(LieferantDokumentDuplikatService.vereinige(List.of(
+                List.of(10L, 11L), List.of(11L, 10L), List.of(12L, 13L), List.of(13L, 14L), List.of(20L, 21L))))
+                .containsExactlyInAnyOrder(List.of(10L, 11L), List.of(12L, 13L, 14L), List.of(20L, 21L));
+    }
+
+    @Test
+    void schonErledigteGruppeZaehltNichtAlsUebersprungen() {
+        // 141 ist inzwischen gelöscht (z. B. von der Datei-Bereinigung) – nichts mehr zu tun
+        nurDokument(140, LieferantDokumentTyp.SONSTIG);
+        EmailAttachment a1 = anhang(541, dokumente.get(140L));
+        LieferantDokument weg = new LieferantDokument();
+        weg.setId(141L);
+        EmailAttachment a2 = anhang(542, weg);
+        when(attachmentRepository.findDokumentAnhaengeMitGleicherGroesse()).thenReturn(List.of(
+                new Object[] { 541L, 4L, 333L }, new Object[] { 542L, 4L, 333L }));
+        when(attachmentRepository.findAllById(List.of(541L, 542L))).thenReturn(List.of(a1, a2));
+        when(anhangService.gleicherInhalt(a1, a2)).thenReturn(true);
+
+        LieferantDokumentDuplikatService.Ergebnis ergebnis = service.bereinigeInhaltsDuplikate();
+
+        assertThat(ergebnis).isEqualTo(new LieferantDokumentDuplikatService.Ergebnis(1, 0, 0));
     }
 }

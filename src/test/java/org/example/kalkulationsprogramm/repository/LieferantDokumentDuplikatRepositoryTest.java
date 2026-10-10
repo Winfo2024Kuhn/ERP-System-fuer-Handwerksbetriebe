@@ -116,7 +116,7 @@ class LieferantDokumentDuplikatRepositoryTest {
         anhang = attachmentRepository.saveAndFlush(anhang);
 
         LieferantDokumentDuplikatService service = new LieferantDokumentDuplikatService(dokumentRepository,
-                attachmentRepository, reklamationRepository, sperreRepository, transactionManager);
+                attachmentRepository, reklamationRepository, sperreRepository, null, transactionManager);
         LieferantDokumentDuplikatService.Ergebnis ergebnis = service.bereinigeDateiDuplikate();
 
         // Behalten wird das Werkstoffzeugnis (von Hand umgestellter Typ), nicht die SONSTIG-Kopie
@@ -130,5 +130,64 @@ class LieferantDokumentDuplikatRepositoryTest {
         assertThat(sperreRepository.findByBeteiligtemDokument(alt.getId()))
                 .extracting(LieferantDokumentVerknuepfungSperre::getVerknuepftId).containsExactly(ab.getId());
         assertThat(dokumentRepository.findDateiDuplikate()).isEmpty();
+    }
+
+    private EmailAttachment anhang(Lieferanten lieferant, String messageId, long groesse, boolean verarbeitet,
+            LieferantDokument dokument) {
+        Email email = new Email();
+        email.setMessageId(messageId);
+        email.setDirection(EmailDirection.IN);
+        email.assignToLieferant(lieferant);
+        email = emailRepository.saveAndFlush(email);
+        EmailAttachment a = new EmailAttachment();
+        a.setEmail(email);
+        a.setOriginalFilename("Widerrufsbelehrung.pdf");
+        a.setStoredFilename("uuid_" + messageId + ".pdf");
+        a.setSizeBytes(groesse);
+        a.setAiProcessed(verarbeitet);
+        a.setLieferantDokument(dokument);
+        return attachmentRepository.saveAndFlush(a);
+    }
+
+    @Test
+    void findetVerarbeiteteAnhaengeGleicherGroesseNurBeimSelbenLieferanten() {
+        Lieferanten muster = lieferant("Muster Stahl GmbH");
+        Lieferanten andere = lieferant("Muster Metall GmbH");
+        EmailAttachment neu = anhang(muster, "neu@example.com", 20480, false, null);
+        EmailAttachment passend = anhang(muster, "alt@example.com", 20480, true, null);
+        anhang(muster, "unverarbeitet@example.com", 20480, false, null);
+        anhang(muster, "groesser@example.com", 20481, true, null);
+        anhang(andere, "fremd@example.com", 20480, true, null);
+
+        assertThat(attachmentRepository.findVerarbeiteteMitGleicherGroesse(muster.getId(), 20480L, neu.getId()))
+                .extracting(EmailAttachment::getId).containsExactly(passend.getId());
+    }
+
+    @Test
+    void findetGleichGrosseDokumentAnhaengeVerschiedenerDokumente() {
+        Lieferanten muster = lieferant("Muster Stahl GmbH");
+        Lieferanten andere = lieferant("Muster Metall GmbH");
+        LieferantDokument d1 = dokument(muster, "uuid_w1.pdf", LieferantDokumentTyp.SONSTIG);
+        LieferantDokument d2 = dokument(muster, "uuid_w2.pdf", LieferantDokumentTyp.SONSTIG);
+        LieferantDokument fremd = dokument(andere, "uuid_w3.pdf", LieferantDokumentTyp.SONSTIG);
+        EmailAttachment a1 = anhang(muster, "w1@example.com", 20480, true, d1);
+        EmailAttachment a2 = anhang(muster, "w2@example.com", 20480, true, d2);
+        // Zweiter Anhang desselben Dokuments ist dabei (die Gruppierung nach Dokumenten folgt später)
+        EmailAttachment a1zweit = anhang(muster, "w1-zweit@example.com", 20480, true, d1);
+        // nicht dabei: anderer Lieferant, andere Größe, ohne Dokument
+        anhang(andere, "w3@example.com", 20480, true, fremd);
+        anhang(muster, "w4@example.com", 999, true, d2);
+        anhang(muster, "w5@example.com", 20480, true, null);
+        // nicht dabei: Mail von „muster“, hängt aber am Dokument von „andere“ (Mail umgehängt)
+        anhang(muster, "umgehaengt@example.com", 20480, true, fremd);
+
+        List<Object[]> zeilen = attachmentRepository.findDokumentAnhaengeMitGleicherGroesse();
+
+        assertThat(zeilen).extracting(z -> ((Number) z[0]).longValue())
+                .containsExactlyInAnyOrder(a1.getId(), a2.getId(), a1zweit.getId());
+        assertThat(zeilen).allSatisfy(z -> {
+            assertThat(((Number) z[1]).longValue()).isEqualTo(muster.getId());
+            assertThat(((Number) z[2]).longValue()).isEqualTo(20480L);
+        });
     }
 }

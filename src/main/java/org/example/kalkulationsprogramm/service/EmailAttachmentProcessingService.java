@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -401,6 +402,22 @@ public class EmailAttachmentProcessingService {
             return false;
         }
 
+        // 0b. Kam genau dieser Inhalt beim Lieferanten schon einmal (z. B. die
+        // Widerrufsbelehrung, die jeder Mail anhängt)? Dann nicht noch einmal an die KI
+        // schicken, sondern an das vorhandene Dokument hängen – spart KI-Kosten.
+        EmailAttachment gleicherInhalt = findeInhaltsgleichenAnhang(effektiveAnzeige, lieferantId);
+        if (gleicherInhalt != null) {
+            LieferantDokument dokumentDesGleichen = dokumentDesLieferanten(gleicherInhalt, lieferantId);
+            log.info("Anhang {} hat denselben Inhalt wie Anhang {} (Dokument {}) - keine KI-Analyse",
+                    effektiveAnzeige.getId(), gleicherInhalt.getId(),
+                    dokumentDesGleichen != null ? dokumentDesGleichen.getId() : "keins");
+            markProcessed(effektiveAnzeige, dokumentDesGleichen);
+            if (!metaAttachment.getId().equals(effektiveAnzeige.getId())) {
+                markProcessed(metaAttachment, dokumentDesGleichen);
+            }
+            return false;
+        }
+
         // 1. Analyse durchführen (InMemory, noch keine DB-Erstellung)
         // Das verhindert, dass leere Dokumente im Frontend auftauchen während die
         // Analyse läuft. Metadaten kommen aus der Metadaten-Datei (XML bei einem Paar).
@@ -506,14 +523,75 @@ public class EmailAttachmentProcessingService {
     }
 
     /**
+     * Ein schon verarbeiteter Anhang desselben Lieferanten mit Byte für Byte gleichem
+     * Inhalt, bevorzugt einer mit Dokument – sonst {@code null}. Vorfilter ist die
+     * Dateigröße, damit nur sehr wenige Dateien wirklich gelesen werden.
+     */
+    private EmailAttachment findeInhaltsgleichenAnhang(EmailAttachment anhang, Long lieferantId) {
+        Path pfad = resolveAttachmentPath(anhang);
+        if (pfad == null || !Files.exists(pfad)) {
+            return null;
+        }
+        try {
+            Long groesse = anhang.getSizeBytes() != null ? anhang.getSizeBytes() : Files.size(pfad);
+            EmailAttachment ohneDokument = null;
+            for (EmailAttachment kandidat : emailAttachmentRepository.findVerarbeiteteMitGleicherGroesse(
+                    lieferantId, groesse, anhang.getId())) {
+                if (!gleicherInhalt(pfad, resolveAttachmentPath(kandidat))) {
+                    continue;
+                }
+                if (dokumentDesLieferanten(kandidat, lieferantId) != null) {
+                    return kandidat;
+                }
+                // Nur ein Anhang ganz ohne Dokument (gelöscht, Nummern-Duplikat) heißt
+                // „schon erledigt“. Hängt er an einem Dokument eines anderen Lieferanten
+                // (Mail umgehängt), braucht dieser Lieferant sein eigenes.
+                if (ohneDokument == null && kandidat.getLieferantDokument() == null) {
+                    ohneDokument = kandidat;
+                }
+            }
+            return ohneDokument;
+        } catch (IOException e) {
+            // Im Zweifel normal analysieren – kostet nur den KI-Aufruf, der sonst ohnehin käme
+            // Nur die ID: die Meldung enthält den Dateipfad samt Original-Dateinamen (DSGVO)
+            log.warn("Inhaltsvergleich für Anhang {} nicht möglich: {}", anhang.getId(),
+                    e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /** Beide Dateien vorhanden und Byte für Byte gleich. */
+    public boolean gleicherInhalt(EmailAttachment a, EmailAttachment b) {
+        try {
+            return gleicherInhalt(resolveAttachmentPath(a), resolveAttachmentPath(b));
+        } catch (IOException e) {
+            log.warn("Inhaltsvergleich der Anhänge {} und {} nicht möglich: {}", a.getId(), b.getId(),
+                    e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    private static boolean gleicherInhalt(Path a, Path b) throws IOException {
+        return a != null && b != null && Files.exists(a) && Files.exists(b) && Files.mismatch(a, b) == -1L;
+    }
+
+    private static LieferantDokument dokumentDesLieferanten(EmailAttachment anhang, Long lieferantId) {
+        LieferantDokument dokument = anhang.getLieferantDokument();
+        if (dokument != null && dokument.getLieferant() != null
+                && lieferantId.equals(dokument.getLieferant().getId())) {
+            return dokument;
+        }
+        return null;
+    }
+
+    /**
      * Das Dokument dieses Lieferanten, das der Anhang schon hat, sonst eins des Lieferanten
      * mit derselben gespeicherten Datei. Ein Dokument eines anderen Lieferanten (Mail
      * wurde umgehängt) zählt nicht.
      */
     private LieferantDokument findeVorhandenesDokument(EmailAttachment anhang, Long lieferantId) {
-        LieferantDokument verknuepft = anhang.getLieferantDokument();
-        if (verknuepft != null && verknuepft.getLieferant() != null
-                && lieferantId.equals(verknuepft.getLieferant().getId())) {
+        LieferantDokument verknuepft = dokumentDesLieferanten(anhang, lieferantId);
+        if (verknuepft != null) {
             return verknuepft;
         }
         if (anhang.getStoredFilename() == null) {
@@ -574,31 +652,30 @@ public class EmailAttachmentProcessingService {
             return null;
         }
 
-        // Versuche verschiedene Pfade
+        // Versuche verschiedene Pfade – jeder muss im Anhang-Ordner bleiben (Path Traversal)
         Path basePath = Path.of(attachmentDir).toAbsolutePath().normalize();
+        String datei = attachment.getStoredFilename();
+        Email email = attachment.getEmail();
 
         // 1. Direkt im Attachment-Verzeichnis (Flat Structure - User Request)
-        Path directPath = basePath.resolve(attachment.getStoredFilename());
-        if (Files.exists(directPath)) {
+        Path directPath = imOrdner(basePath, basePath.resolve(datei));
+        if (directPath != null && Files.exists(directPath)) {
             return directPath;
         }
 
         // 2. Im Email-ID Unterverzeichnis (Legacy/Falllback)
-        if (attachment.getEmail() != null) {
-            Path emailSubDirPath = basePath
-                    .resolve(String.valueOf(attachment.getEmail().getId()))
-                    .resolve(attachment.getStoredFilename());
-            if (Files.exists(emailSubDirPath)) {
-                return emailSubDirPath;
-            }
+        Path emailSubDirPath = email != null
+                ? imOrdner(basePath, basePath.resolve(String.valueOf(email.getId())).resolve(datei))
+                : null;
+        if (emailSubDirPath != null && Files.exists(emailSubDirPath)) {
+            return emailSubDirPath;
         }
 
         // 3. Im Lieferant-Unterverzeichnis (Alt-Daten Struktur)
-        if (attachment.getEmail() != null && attachment.getEmail().getLieferant() != null) {
-            Path lieferantPath = basePath
-                    .resolve(String.valueOf(attachment.getEmail().getLieferant().getId()))
-                    .resolve(attachment.getStoredFilename());
-            if (Files.exists(lieferantPath)) {
+        if (email != null && email.getLieferant() != null) {
+            Path lieferantPath = imOrdner(basePath,
+                    basePath.resolve(String.valueOf(email.getLieferant().getId())).resolve(datei));
+            if (lieferantPath != null && Files.exists(lieferantPath)) {
                 return lieferantPath;
             }
         }
@@ -606,12 +683,12 @@ public class EmailAttachmentProcessingService {
         // Fallback: Wenn wir hier sind, wurde die Datei nicht gefunden.
         // Wir geben den Pfad zurück, wo sie SEIN SOLLTE (Email-ID Subdir),
         // damit die Fehlermeldung sinnvoll ist.
-        if (attachment.getEmail() != null) {
-            return basePath
-                    .resolve(String.valueOf(attachment.getEmail().getId()))
-                    .resolve(attachment.getStoredFilename());
-        }
+        return email != null ? emailSubDirPath : directPath;
+    }
 
-        return directPath;
+    /** Normalisierter Pfad, solange er im Ordner bleibt – sonst {@code null}. */
+    private static Path imOrdner(Path ordner, Path pfad) {
+        Path normalisiert = pfad.normalize();
+        return normalisiert.startsWith(ordner) ? normalisiert : null;
     }
 }

@@ -24,20 +24,25 @@ class LieferantDokumentDuplikatBackfillRunnerTest {
     @Mock private LieferantDokumentDuplikatService duplikatService;
     @Mock private SystemSettingsService einstellungen;
 
+    private static final LieferantDokumentDuplikatService.Ergebnis NICHTS =
+            new LieferantDokumentDuplikatService.Ergebnis(0, 0, 0);
+
     private LieferantDokumentDuplikatBackfillRunner runner() {
         return new LieferantDokumentDuplikatBackfillRunner(duplikatService, einstellungen);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "0", "kaputt", " " })
+    @ValueSource(strings = { "0", "1", "kaputt", " " })
     void laeuftBeiAelterOderUnlesbarerVersionUndMerktSichDieNeue(String gespeichert) {
         when(einstellungen.get(LieferantDokumentDuplikatBackfillRunner.EINSTELLUNG, "0")).thenReturn(gespeichert);
         when(duplikatService.bereinigeDateiDuplikate())
                 .thenReturn(new LieferantDokumentDuplikatService.Ergebnis(50, 52, 0));
+        when(duplikatService.bereinigeInhaltsDuplikate()).thenReturn(NICHTS);
 
         assertThat(runner().bereinigeFallsNoetig()).isTrue();
 
         verify(duplikatService).bereinigeDateiDuplikate();
+        verify(duplikatService).bereinigeInhaltsDuplikate();
         verify(einstellungen).save(eq(LieferantDokumentDuplikatBackfillRunner.EINSTELLUNG), eq(VERSION), anyString());
     }
 
@@ -66,6 +71,19 @@ class LieferantDokumentDuplikatBackfillRunnerTest {
         when(einstellungen.get(LieferantDokumentDuplikatBackfillRunner.EINSTELLUNG, "0")).thenReturn("0");
         when(duplikatService.bereinigeDateiDuplikate())
                 .thenReturn(new LieferantDokumentDuplikatService.Ergebnis(3, 2, 1));
+        when(duplikatService.bereinigeInhaltsDuplikate()).thenReturn(NICHTS);
+
+        assertThat(runner().bereinigeFallsNoetig()).isTrue();
+
+        verify(einstellungen, never()).save(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void uebersprungeneInhaltsGruppenLassenDieVersionAuchOffen() {
+        when(einstellungen.get(LieferantDokumentDuplikatBackfillRunner.EINSTELLUNG, "0")).thenReturn("1");
+        when(duplikatService.bereinigeDateiDuplikate()).thenReturn(NICHTS);
+        when(duplikatService.bereinigeInhaltsDuplikate())
+                .thenReturn(new LieferantDokumentDuplikatService.Ergebnis(4, 3, 1));
 
         assertThat(runner().bereinigeFallsNoetig()).isTrue();
 
@@ -77,6 +95,7 @@ class LieferantDokumentDuplikatBackfillRunnerTest {
         when(einstellungen.get(LieferantDokumentDuplikatBackfillRunner.EINSTELLUNG, "0")).thenReturn("0");
         when(duplikatService.bereinigeDateiDuplikate())
                 .thenReturn(new LieferantDokumentDuplikatService.Ergebnis(1, 1, 0));
+        when(duplikatService.bereinigeInhaltsDuplikate()).thenReturn(NICHTS);
 
         runner().nachDemStart();
 

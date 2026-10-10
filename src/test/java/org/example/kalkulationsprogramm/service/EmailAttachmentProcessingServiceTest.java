@@ -816,6 +816,115 @@ class EmailAttachmentProcessingServiceTest {
             verify(lieferantDokumentRepository).save(any(LieferantDokument.class));
         }
 
+        private EmailAttachment frueherVerarbeitet(String datei, byte[] inhalt, LieferantDokument dokument)
+                throws IOException {
+            EmailAttachment alt = new EmailAttachment();
+            alt.setId(2L);
+            alt.setOriginalFilename("Widerrufsbelehrung.pdf");
+            alt.setStoredFilename(datei);
+            alt.setAiProcessed(true);
+            alt.setLieferantDokument(dokument);
+            Files.write(tempDir.resolve(datei), inhalt);
+            return alt;
+        }
+
+        @Test
+        void gleicherInhaltWieEinFruehererAnhangGehtNichtAnDieKi() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            EmailAttachment pdfAtt = vorbereiten(email);
+            LieferantDokument vorhanden = new LieferantDokument();
+            vorhanden.setId(860L);
+            vorhanden.setLieferant(lieferant);
+            EmailAttachment alt = frueherVerarbeitet("uuid_alt_widerruf.pdf", new byte[]{0x25, 0x50, 0x44, 0x46},
+                    vorhanden);
+            when(emailAttachmentRepository.findVerarbeiteteMitGleicherGroesse(10L, 4L, 1L)).thenReturn(List.of(alt));
+
+            assertThat(service.processLieferantAttachments(email)).isZero();
+
+            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            assertThat(pdfAtt.getAiProcessed()).isTrue();
+            assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
+        }
+
+        @Test
+        void gleicheGroesseAberAndererInhaltWirdNormalAnalysiert() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            vorbereiten(email);
+            LieferantDokument vorhanden = new LieferantDokument();
+            vorhanden.setId(861L);
+            vorhanden.setLieferant(lieferant);
+            EmailAttachment alt = frueherVerarbeitet("uuid_alt_anders.pdf", new byte[]{0x25, 0x50, 0x44, 0x47},
+                    vorhanden);
+            when(emailAttachmentRepository.findVerarbeiteteMitGleicherGroesse(10L, 4L, 1L)).thenReturn(List.of(alt));
+            LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
+            daten.setDokumentNummer("LS-2026-002");
+            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
+            when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
+            when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            assertThat(service.processLieferantAttachments(email)).isEqualTo(1);
+        }
+
+        @Test
+        void gleicherInhaltOhneDokumentGiltAlsErledigt() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            EmailAttachment pdfAtt = vorbereiten(email);
+            EmailAttachment alt = frueherVerarbeitet("uuid_alt_geloescht.pdf", new byte[]{0x25, 0x50, 0x44, 0x46},
+                    null);
+            when(emailAttachmentRepository.findVerarbeiteteMitGleicherGroesse(10L, 4L, 1L)).thenReturn(List.of(alt));
+
+            assertThat(service.processLieferantAttachments(email)).isZero();
+
+            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            assertThat(pdfAtt.getAiProcessed()).isTrue();
+            assertThat(pdfAtt.getLieferantDokument()).isNull();
+        }
+
+        @Test
+        void gleicherInhaltBeiEinemDokumentDesAnderenLieferantenWirdNormalAnalysiert() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            vorbereiten(email);
+            LieferantDokument fremd = new LieferantDokument();
+            fremd.setId(870L);
+            fremd.setLieferant(erstelleLieferant(11L));
+            EmailAttachment alt = frueherVerarbeitet("uuid_alt_fremd.pdf", new byte[]{0x25, 0x50, 0x44, 0x46}, fremd);
+            when(emailAttachmentRepository.findVerarbeiteteMitGleicherGroesse(10L, 4L, 1L)).thenReturn(List.of(alt));
+            LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
+            daten.setDokumentNummer("RE-2026-0870");
+            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
+            when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
+            when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            assertThat(service.processLieferantAttachments(email)).isEqualTo(1);
+        }
+
+        @Test
+        void anhangMitPfadAusDemOrdnerHerausWirdNichtGelesen() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            EmailAttachment boese = erstellePdfAttachment("rechnung.pdf");
+            boese.setStoredFilename("../aussen.pdf");
+            boese.setEmail(email);
+            email.getAttachments().add(boese);
+            // Die Datei existiert außerhalb des Anhang-Ordners – sie darf trotzdem nicht gelesen werden
+            Path aussen = tempDir.getParent().resolve("aussen.pdf");
+            Files.write(aussen, new byte[]{0x25, 0x50, 0x44, 0x46});
+            when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
+            try {
+                assertThat(service.processLieferantAttachments(email)).isZero();
+
+                verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+                verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            } finally {
+                Files.deleteIfExists(aussen);
+            }
+        }
+
         @Test
         void gleicheDateiBeimLieferantenWirdWiederVerknuepftStattNeuAngelegt() throws IOException {
             Lieferanten lieferant = erstelleLieferant(10L);
