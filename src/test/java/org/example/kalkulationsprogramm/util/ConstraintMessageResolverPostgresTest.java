@@ -102,4 +102,27 @@ class ConstraintMessageResolverPostgresTest {
         assertThat(einfuegen.userMessage()).isNotEqualTo(loeschen.userMessage());
         assertThat(einfuegen.fieldErrors()).extracting(FieldErrorDetail::field).containsExactly("kunden_id");
     }
+
+    @Test
+    @DisplayName("Zu langer Text: Hoechstlaenge aus dem PostgreSQL-Text statt allgemeiner Meldung")
+    void zuLangerText() {
+        ConstraintErrorDetail text = resolver.resolve(new DataIntegrityViolationException("Fehler beim Speichern",
+                new SQLException("ERROR: value too long for type character varying(255)", "22001")));
+        ConstraintErrorDetail fest = resolver.resolve(new DataIntegrityViolationException("Fehler beim Speichern",
+                new SQLException("ERROR: value too long for type character(64)", "22001")));
+
+        assertThat(text.status()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(text.userMessage()).isEqualTo("Ein eingegebener Text ist zu lang. Maximal erlaubt: 255 Zeichen.");
+        assertThat(fest.userMessage()).isEqualTo("Ein eingegebener Text ist zu lang. Maximal erlaubt: 64 Zeichen.");
+    }
+
+    @Test
+    @DisplayName("Zu langer Text mit uebersetzter Servermeldung: am SQLState erkannt")
+    void zuLangerTextUebersetzt() {
+        ConstraintErrorDetail ergebnis = resolver.resolve(new DataIntegrityViolationException("Fehler beim Speichern",
+                new SQLException("FEHLER: Wert zu lang für Typ character varying(255)", "22001")));
+
+        assertThat(ergebnis.status()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(ergebnis.userMessage()).isEqualTo("Ein eingegebener Text ist zu lang.");
+    }
 }

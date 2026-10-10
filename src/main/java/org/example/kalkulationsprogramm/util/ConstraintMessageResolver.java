@@ -38,6 +38,8 @@ public class ConstraintMessageResolver {
     private static final Pattern PG_DUPLICATE_VALUE = Pattern.compile("Key \\([^)]*+\\)=\\((.+?)\\) already exists", Pattern.CASE_INSENSITIVE);
     private static final Pattern PG_NOT_NULL = Pattern.compile("null value in column \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
     private static final Pattern PG_FOREIGN_KEY = Pattern.compile("violates foreign key constraint \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
+    // PostgreSQL nennt bei zu langen Texten nur den Typ, nicht die Spalte
+    private static final Pattern PG_ZU_LANG = Pattern.compile("value too long for type character(?: varying)?\\((\\d++)\\)", Pattern.CASE_INSENSITIVE);
 
     private static final int MAX_VALUE_PREVIEW = 120;
 
@@ -94,6 +96,15 @@ public class ConstraintMessageResolver {
         Matcher tooLongMatcher = DATA_TOO_LONG.matcher(message);
         if (tooLongMatcher.find()) {
             return handleDataTooLong(tooLongMatcher.group(1), message);
+        }
+        // 22001 = Wert zu lang - erkannt am SQLState, damit es auch mit uebersetzten
+        // Servermeldungen greift; die Hoechstlaenge nur, wenn der (englische) Text sie nennt
+        Matcher pgZuLang = PG_ZU_LANG.matcher(message);
+        boolean zuLang = pgZuLang.find();
+        if (zuLang || root instanceof SQLException sql && "22001".equals(sql.getSQLState())) {
+            String userMessage = "Ein eingegebener Text ist zu lang."
+                    + (zuLang ? " Maximal erlaubt: " + pgZuLang.group(1) + " Zeichen." : "");
+            return new ConstraintErrorDetail(HttpStatus.BAD_REQUEST, userMessage, message, null, Collections.emptyList());
         }
         if (message.toLowerCase(Locale.ROOT).contains("foreign key constraint fails")) {
             return handleForeignKey(message, extractFirst(CONSTRAINT_NAME, message),
