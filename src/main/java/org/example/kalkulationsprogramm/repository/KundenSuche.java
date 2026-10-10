@@ -1,0 +1,84 @@
+package org.example.kalkulationsprogramm.repository;
+
+import java.util.Locale;
+
+import org.example.kalkulationsprogramm.domain.Kunde;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.util.StringUtils;
+
+import jakarta.persistence.criteria.ListJoin;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
+
+/**
+ * Suche der Kundenliste ({@code GET /api/kunden}): Freitext, einzelne Felder, E-Mail und
+ * Typ (Kunde mit Projekt / Anfrager ohne Projekt).
+ *
+ * <p>Bewusst ohne {@code DISTINCT}: Die Liste sortiert ohne Groß-/Kleinschreibung
+ * ({@code ORDER BY lower(name)}), und PostgreSQL verlangt bei {@code SELECT DISTINCT}, dass
+ * jeder Sortierausdruck auch ausgewählt wird (Fehler 42P10 - Filter "Typ" und "E-Mail" der
+ * Kundenliste lieferten dort einen Fehler statt Treffer). Die E-Mail-Suche läuft als
+ * {@code EXISTS}-Unterabfrage, der Typ über {@code EXISTS}/{@code NOT EXISTS} auf die Projekte;
+ * doppelte Zeilen entstehen so erst gar nicht. Gleiches Vorgehen wie {@link LieferantenSuche}.</p>
+ */
+public final class KundenSuche {
+
+    /** Sortierung der Liste: nach Name, ohne Groß-/Kleinschreibung. */
+    public static final Sort SORTIERUNG = Sort.by(Sort.Order.asc("name").ignoreCase());
+
+    private KundenSuche() {
+    }
+
+    /**
+     * @param freitext sucht in Name, Kundennummer, Ort, Straße, Ansprechpartner und Telefonnummern
+     * @param email    sucht in den hinterlegten E-Mail-Adressen
+     * @param typ      {@code KUNDE} (hat Projekte) oder {@code ANFRAGER} (noch keins), sonst alle
+     */
+    public static Specification<Kunde> spezifikation(String freitext, String name, String kundennummer, String ort,
+            String email, String typ) {
+        Specification<Kunde> spec = Specification.where(null);
+        if (StringUtils.hasText(freitext)) {
+            final String muster = muster(freitext);
+            spec = spec.and((root, cq, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("name")), muster),
+                    cb.like(cb.lower(root.get("kundennummer")), muster),
+                    cb.like(cb.lower(root.get("ort")), muster),
+                    cb.like(cb.lower(root.get("strasse")), muster),
+                    cb.like(cb.lower(root.get("ansprechspartner")), muster),
+                    cb.like(cb.lower(cb.coalesce(root.get("telefon"), "")), muster),
+                    cb.like(cb.lower(cb.coalesce(root.get("mobiltelefon"), "")), muster)));
+        }
+        spec = spec.and(feld("name", name));
+        spec = spec.and(feld("kundennummer", kundennummer));
+        spec = spec.and(feld("ort", ort));
+        if (StringUtils.hasText(email)) {
+            final String muster = muster(email);
+            spec = spec.and((root, cq, cb) -> {
+                Subquery<String> treffer = cq.subquery(String.class);
+                Root<Kunde> kunde = treffer.correlate(root);
+                ListJoin<Kunde, String> adresse = kunde.joinList("kundenEmails");
+                treffer.select(adresse).where(cb.like(cb.lower(adresse), muster));
+                return cb.exists(treffer);
+            });
+        }
+        if ("KUNDE".equalsIgnoreCase(typ)) {
+            spec = spec.and((root, cq, cb) -> cb.isNotEmpty(root.get("projekts")));
+        } else if ("ANFRAGER".equalsIgnoreCase(typ)) {
+            spec = spec.and((root, cq, cb) -> cb.isEmpty(root.get("projekts")));
+        }
+        return spec;
+    }
+
+    private static Specification<Kunde> feld(String feld, String wert) {
+        if (!StringUtils.hasText(wert)) {
+            return null;
+        }
+        final String muster = muster(wert);
+        return (root, cq, cb) -> cb.like(cb.lower(root.get(feld)), muster);
+    }
+
+    private static String muster(String wert) {
+        return ("%" + wert.trim() + "%").toLowerCase(Locale.GERMAN);
+    }
+}

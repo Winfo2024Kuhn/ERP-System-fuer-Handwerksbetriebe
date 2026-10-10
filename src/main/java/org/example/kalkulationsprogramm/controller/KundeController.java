@@ -16,6 +16,7 @@ import org.example.kalkulationsprogramm.event.EmailAddressChangedEvent;
 import org.example.kalkulationsprogramm.mapper.KundeMapper;
 import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.repository.KundenSuche;
 import org.example.kalkulationsprogramm.service.KundeDuplikatService;
 import org.example.kalkulationsprogramm.service.KundenDetailService;
 import org.example.kalkulationsprogramm.service.KundennummerService;
@@ -24,8 +25,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -41,9 +40,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
-
-import jakarta.persistence.criteria.JoinType;
-import jakarta.persistence.criteria.ListJoin;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -77,50 +73,9 @@ public class KundeController {
         int pageIndex = Math.max(page, 0);
         int pageSize = Math.min(Math.max(size, 1), 50);
 
-        Specification<Kunde> specs = Specification.where(null);
-        if (StringUtils.hasText(query)) {
-            final String likeValue = wrapLike(query);
-            specs = specs.and((root, cq, cb) -> {
-                String term = likeValue.toLowerCase(Locale.GERMAN);
-                return cb.or(
-                        cb.like(cb.lower(root.get("name")), term),
-                        cb.like(cb.lower(root.get("kundennummer")), term),
-                        cb.like(cb.lower(root.get("ort")), term),
-                        cb.like(cb.lower(root.get("strasse")), term),
-                        cb.like(cb.lower(root.get("ansprechspartner")), term),
-                        cb.like(cb.lower(cb.coalesce(root.get("telefon"), "")), term),
-                        cb.like(cb.lower(cb.coalesce(root.get("mobiltelefon"), "")), term)
-                );
-            });
-        }
-        specs = specs.and(buildSpec("name", name));
-        specs = specs.and(buildSpec("kundennummer", kundennummer));
-        specs = specs.and(buildSpec("ort", ort));
-        if (StringUtils.hasText(email)) {
-            final String likeValue = wrapLike(email);
-            specs = specs.and((root, cq, cb) -> {
-                cq.distinct(true);
-                ListJoin<Kunde, String> join = root.joinList("kundenEmails", JoinType.LEFT);
-                return cb.like(cb.lower(join), likeValue.toLowerCase(Locale.GERMAN));
-            });
-        }
-        if (StringUtils.hasText(typ)) {
-            if ("KUNDE".equalsIgnoreCase(typ)) {
-                specs = specs.and((root, cq, cb) -> {
-                    cq.distinct(true);
-                    return cb.isNotEmpty(root.get("projekts"));
-                });
-            } else if ("ANFRAGER".equalsIgnoreCase(typ)) {
-                specs = specs.and((root, cq, cb) -> {
-                    cq.distinct(true);
-                    return cb.isEmpty(root.get("projekts"));
-                });
-            }
-        }
-
         Page<Kunde> result = kundeRepository.findAll(
-                specs,
-                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Order.asc("name").ignoreCase()))
+                KundenSuche.spezifikation(query, name, kundennummer, ort, email, typ),
+                PageRequest.of(pageIndex, pageSize, KundenSuche.SORTIERUNG)
         );
 
         KundeSearchResponseDto response = new KundeSearchResponseDto();
@@ -256,18 +211,6 @@ public class KundeController {
     public KundeDetailDto getKundeDetail(@PathVariable Long id) {
         return kundenDetailService.loadDetails(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Kunde wurde nicht gefunden."));
-    }
-
-    private Specification<Kunde> buildSpec(String field, String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        final String likeValue = wrapLike(value);
-        return (root, cq, cb) -> cb.like(cb.lower(root.get(field)), likeValue.toLowerCase(Locale.GERMAN));
-    }
-
-    private String wrapLike(String value) {
-        return "%" + value.trim() + "%";
     }
 
     private String generateNextKundennummer() {
