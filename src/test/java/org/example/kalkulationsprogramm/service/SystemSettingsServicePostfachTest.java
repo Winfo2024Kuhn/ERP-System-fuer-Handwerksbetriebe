@@ -56,7 +56,7 @@ class SystemSettingsServicePostfachTest {
             setting.setValue(alt.get(key));
             return Optional.of(setting);
         });
-        service = new SystemSettingsService(repository, mock(org.springframework.core.env.Environment.class),
+        service = new SystemSettingsService(repository,
                 postfachZugangService);
     }
 
@@ -132,8 +132,7 @@ class SystemSettingsServicePostfachTest {
 
         @Test
         void ohneZugangsServiceAuchDieAltenEinstellungen() {
-            SystemSettingsService ohne = new SystemSettingsService(repository,
-                    mock(org.springframework.core.env.Environment.class));
+            SystemSettingsService ohne = new SystemSettingsService(repository);
 
             assertThat(ohne.getSmtpHost()).isEqualTo("alt-smtp.example.com");
             assertThat(ohne.nutztDokumentMailKonto()).isFalse();
@@ -200,7 +199,7 @@ class SystemSettingsServicePostfachTest {
                 setting.setValue(werte.get(key));
                 return Optional.of(setting);
             });
-            return new SystemSettingsService(repo, mock(org.springframework.core.env.Environment.class));
+            return new SystemSettingsService(repo);
         }
 
         @Test

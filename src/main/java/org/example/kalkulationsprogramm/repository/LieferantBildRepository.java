@@ -11,7 +11,7 @@ import java.util.List;
 @Repository
 public interface LieferantBildRepository extends JpaRepository<LieferantBild, Long> {
     // Als @Query statt abgeleitet: nur so laesst sich festlegen, wohin leere Werte sortieren
-    // (wie MySQL: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
+    // (wie bisher: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
     @Query("SELECT b FROM LieferantBild b WHERE b.lieferant.id = :lieferantId ORDER BY b.erstelltAm DESC NULLS LAST")
     List<LieferantBild> findByLieferantIdOrderByErstelltAmDesc(@Param("lieferantId") Long lieferantId);
 

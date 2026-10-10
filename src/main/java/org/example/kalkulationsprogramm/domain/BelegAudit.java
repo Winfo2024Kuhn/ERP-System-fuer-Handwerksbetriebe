@@ -234,7 +234,7 @@ public class BelegAudit {
         BelegAudit a = new BelegAudit();
         a.setAktion(aktion);
         a.setGeaendertVon(bearbeiter);
-        // Auf Mikrosekunden kuerzen: MySQL DATETIME(6) kann nicht mehr. Bliebe
+        // Auf Mikrosekunden kuerzen: TIMESTAMP(6) in der Datenbank kann nicht mehr. Bliebe
         // die Nanosekunde stehen, wiche die Form im Speicher von der in der
         // Datenbank ab und der Verifier meldete faelschlich eine Manipulation.
         a.setGeaendertAm(LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));

@@ -23,8 +23,10 @@ Führe die folgenden Schritte für jedes neue Feature aus. Überspringe keinen S
 - Bei neuen UI-Patterns: **Zuerst** `.github/DEVELOPMENT.md` aktualisieren
 
 ## 3. Datenbankmigrationen (falls nötig)
-- Neue Datei: `src/main/resources/db/migration/V{N}__{beschreibung}.sql`
-- Versionsnummer aufsteigend (aktuell ab V207+)
+- Datenbank ist nur PostgreSQL 16
+- Neue Datei: `src/main/resources/db/postgresql/migration/V{N}__{beschreibung}.sql` (eine Datei je Migration, idempotent; Anleitung in `db/postgresql/migration/README.md`). Nichts mehr in `db/migration/` ablegen
+- Versionsnummer aufsteigend (höchste vorhandene + 1)
+- Java-Enums als `VARCHAR(n)` ohne `CHECK` mit Werteliste
 - Bestehende Migrationen NIEMALS editieren
 
 ## 4. Backend-Implementierung

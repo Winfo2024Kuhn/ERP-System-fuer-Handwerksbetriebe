@@ -42,12 +42,11 @@ echo ============================================
 echo   Anwendung gestartet!
 echo.
 echo   Frontend:  http://localhost:8080
-echo   MySQL:     localhost:3307
+echo   Datenbank: PostgreSQL auf localhost:5432
 echo   Qdrant:    http://localhost:6333
 echo.
-echo   Anmelden mit:
-echo     Benutzer: Marvin
-echo     Passwort: 123456
+echo   Erster Start: Wer sich zuerst im Browser
+echo   registriert, wird Admin.
 echo.
 echo   Stoppen mit: stop-docker.bat
 echo   Logs:        docker compose logs -f app

@@ -8,18 +8,13 @@
     },
     "sqltools.connections": [
         {
-            "mysqlOptions": {
-                "authProtocol": "default",
-                "enableSsl": "Disabled"
-            },
-            "ssh": "Disabled",
             "previewLimit": 50,
-            "server": "100.109.109.64",
-            "port": 3307,
-            "driver": "MySQL",
-            "name": "kalkulationsprogramm_db@100.109.109.64",
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "kalkulationsprogramm_db (lokal)",
             "database": "kalkulationsprogramm_db",
-            "username": "Marvin"
+            "username": "erp_user"
         }
     ]
 }

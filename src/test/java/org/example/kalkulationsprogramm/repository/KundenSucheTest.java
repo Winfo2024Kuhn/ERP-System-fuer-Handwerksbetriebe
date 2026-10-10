@@ -20,7 +20,7 @@ import org.springframework.data.domain.PageRequest;
 import jakarta.persistence.EntityManager;
 
 /**
- * Kundenliste mit Filtern (H2). Gegen MySQL und PostgreSQL prueft das
+ * Kundenliste mit Filtern (H2). Gegen echtes PostgreSQL prueft das
  * {@link DatenbankKompatibilitaetSucheTest}; hier fallen Rueckfaelle schon im
  * normalen Testlauf auf - etwa ein wieder eingebautes DISTINCT oder doppelte Zeilen.
  */

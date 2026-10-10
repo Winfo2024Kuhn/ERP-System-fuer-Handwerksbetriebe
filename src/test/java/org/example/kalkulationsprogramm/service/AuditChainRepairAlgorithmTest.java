@@ -22,20 +22,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Deterministischer, CI-unabhängiger Test der Rebuild-Algorithmik gegen eine frische
- * In-Memory-H2 (MySQL-Modus). Im Gegensatz zu {@code AuditChainRepairIntegrationTest}
- * (läuft gegen die lokale MySQL-Kopie und kann bei leerer DB zum No-Op werden) legt
- * dieser Test seine eigenen Dummy-Einträge an — er prüft die Logik immer, ohne
- * Abhängigkeit von vorhandenen Realdaten oder lokaler Infrastruktur.
+ * In-Memory-H2. Der Test legt seine eigenen Dummy-Einträge an — er prüft die Logik
+ * immer, ohne Abhängigkeit von vorhandenen Realdaten oder lokaler Infrastruktur.
  *
- * <p>Die DB-spezifische Mikrosekunden-Trunkierung (MySQL {@code DATETIME(6)}) ist NICHT
- * Gegenstand dieses Tests — die wird im MySQL-Integrationstest geprüft. Hier geht es um
- * die reine Verkettungs-/Guard-Logik des Rebuilds.</p>
+ * <p>Die Mikrosekunden-Trunkierung der Datenbank ({@code TIMESTAMP(6)}) ist NICHT
+ * Gegenstand dieses Tests. Hier geht es um die reine Verkettungs-/Guard-Logik des
+ * Rebuilds.</p>
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({AuditChainRepairService.class, AuditChainVerifier.class})
 @TestPropertySource(properties = {
-        "spring.datasource.url=jdbc:h2:mem:audit-rebuild;MODE=MySQL;DB_CLOSE_DELAY=-1;"
+        "spring.datasource.url=jdbc:h2:mem:audit-rebuild;DB_CLOSE_DELAY=-1;"
                 + "DATABASE_TO_UPPER=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE",
         "spring.datasource.driverClassName=org.h2.Driver",
         "spring.datasource.username=sa",

@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.domain;
 
 /**
  * Beschaeftigungsart eines Mitarbeiters. Steuert, welche SV-Saetze in der
- * Lohnberechnung greifen. Werte exakt wie in der MySQL-ENUM-Spalte
+ * Lohnberechnung greifen. Werte exakt wie in der Spalte
  * mitarbeiter.beschaeftigungsart (siehe V297__mitarbeiter_sv_felder.sql).
  */
 public enum Beschaeftigungsart {

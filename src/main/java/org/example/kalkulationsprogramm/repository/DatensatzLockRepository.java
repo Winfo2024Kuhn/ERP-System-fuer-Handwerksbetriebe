@@ -17,8 +17,8 @@ public interface DatensatzLockRepository extends JpaRepository<DatensatzLock, Lo
 
     /**
      * Liest das Lock mit Zeilensperre - und damit den neuesten Stand, auch wenn
-     * ein anderer User es gerade erst angelegt hat (MySQL liest ohne Sperre den
-     * Stand vom Beginn der Transaktion).
+     * ein anderer User es gerade erst angelegt hat (ohne Sperre koennte je nach Isolationsstufe
+     * ein aelterer Stand gelesen werden).
      */
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT l FROM DatensatzLock l WHERE l.entitaetTyp = :typ AND l.entitaetId = :entitaetId")

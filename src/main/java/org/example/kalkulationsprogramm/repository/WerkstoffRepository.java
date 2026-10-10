@@ -16,7 +16,7 @@ public interface WerkstoffRepository extends JpaRepository<Werkstoff, Long>, Wer
 	/**
 	 * Wie {@link #findByNameIgnoreCase}, aber mit Zeilensperre - liest damit den
 	 * neuesten Stand, auch wenn ein paralleler Import den Werkstoff gerade erst
-	 * angelegt hat (MySQL liest ohne Sperre den Stand vom Transaktionsbeginn).
+	 * angelegt hat (ohne Sperre koennte je nach Isolationsstufe ein aelterer Stand gelesen werden).
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT w FROM Werkstoff w WHERE LOWER(w.name) = LOWER(:name)")

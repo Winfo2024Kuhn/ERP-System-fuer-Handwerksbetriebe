@@ -13,7 +13,7 @@ import java.util.Optional;
 @Repository
 public interface ArtikelDokumentRepository extends JpaRepository<ArtikelDokument, Long> {
     // Als @Query statt abgeleitet: nur so laesst sich festlegen, wohin leere Werte sortieren
-    // (wie MySQL: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
+    // (wie bisher: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
     @Query("SELECT d FROM ArtikelDokument d WHERE d.artikel.id = :artikelId ORDER BY d.sortierung ASC NULLS FIRST, d.id ASC")
     List<ArtikelDokument> findByArtikelIdOrderBySortierungAscIdAsc(@Param("artikelId") Long artikelId);
 

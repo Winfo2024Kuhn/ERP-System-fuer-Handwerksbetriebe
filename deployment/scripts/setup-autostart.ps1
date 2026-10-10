@@ -33,7 +33,7 @@ $action = New-ScheduledTaskAction `
     -WorkingDirectory "C:\Kalkulationsprogramm"
 
 $trigger = New-ScheduledTaskTrigger -AtStartup
-$trigger.Delay = "PT2M"  # 2 Minuten warten bis Netzwerk + MariaDB oben sind
+$trigger.Delay = "PT2M"  # 2 Minuten warten bis Netzwerk + Datenbank oben sind
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `

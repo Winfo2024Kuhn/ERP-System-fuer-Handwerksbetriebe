@@ -26,18 +26,18 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
-/** Run only against an EMPTY disposable database: -Dzeitkonto.mysql.url=jdbc:mysql://.../testdb. */
+/** Run only against an EMPTY disposable PostgreSQL database (schema is rebuilt): -Dzeitkonto.pg.url=jdbc:postgresql://.../testdb, credentials -Dkompat.db.user/-Dkompat.db.pass. */
 @DataJpaTest(showSql = false, properties = {"spring.jpa.hibernate.ddl-auto=create-drop", "spring.flyway.enabled=false",
-        "spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect", "spring.jpa.show-sql=false"})
+        "spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect", "spring.jpa.show-sql=false"})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(MonatsSaldoService.class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named = "zeitkonto.mysql.url", matches = "jdbc:mysql:.*")
-class MonatsabschlussMysqlTest {
+@EnabledIfSystemProperty(named = "zeitkonto.pg.url", matches = "jdbc:postgresql:.*")
+class MonatsabschlussPostgresTest {
     @DynamicPropertySource static void database(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", () -> System.getProperty("zeitkonto.mysql.url"));
-        r.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
-        r.add("spring.datasource.username", () -> "root"); r.add("spring.datasource.password", () -> "");
+        r.add("spring.datasource.url", () -> System.getProperty("zeitkonto.pg.url"));
+        r.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+        r.add("spring.datasource.username", () -> System.getProperty("kompat.db.user", "kompat")); r.add("spring.datasource.password", () -> System.getProperty("kompat.db.pass", "kompat"));
     }
     @Autowired MonatsSaldoService service;
     @Autowired MonatsSaldoRepository salden;
@@ -146,12 +146,15 @@ class MonatsabschlussMysqlTest {
     }
     @Test void echteSqlErfasstFehlendeCachezeilenHistorieUndIgnoriertFallbackUndKontolose() {
         var from = month.minusMonths(2);
-        jdbc.update("UPDATE mitarbeiter SET eintrittsdatum=?, fuehrt_zeitkonto=FALSE, aktiv=FALSE WHERE id=?", from.atDay(1), person.getId());
+        jdbc.update("UPDATE mitarbeiter SET eintrittsdatum=?, fuehrt_zeitkonto=TRUE, aktiv=FALSE WHERE id=?", from.atDay(1), person.getId());
         version(person.getId(), from.atDay(1), month.minusMonths(1).atEndOfMonth());
         var fallback = employee(null, "MENSCH"); version(fallback, LocalDate.of(1000,1,1), null);
         employee(from.atDay(1), "MENSCH");
         var system = employee(from.atDay(1), "SYSTEM"); version(system, from.atDay(1), null);
         var current = employee(YearMonth.now().atDay(1), "MENSCH"); version(current, YearMonth.now().atDay(1), null);
+        // Ohne Arbeitszeitkonto (z. B. Geschaeftsfuehrung, #108): nie abzuschliessen
+        var ohneKonto = employee(from.atDay(1), "MENSCH"); version(ohneKonto, from.atDay(1), null);
+        jdbc.update("UPDATE mitarbeiter SET fuehrt_zeitkonto=FALSE WHERE id=?", ohneKonto);
         var result = salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1), null);
         assertThat(result).hasSize(2); assertThat(result).allSatisfy(r -> assertThat(r.getAnzahl()).isEqualTo(1));
         assertThat(result.getFirst().getMonat()).isEqualTo(from.getMonthValue());
@@ -163,7 +166,7 @@ class MonatsabschlussMysqlTest {
     long employee(LocalDate entry, String art) {
         return tx.execute(status -> {
             var m = new Mitarbeiter(); m.setVorname("Max"); m.setNachname("Mustermann");
-            m.setArt(MitarbeiterArt.valueOf(art)); m.setEintrittsdatum(entry); m.setFuehrtZeitkonto(false);
+            m.setArt(MitarbeiterArt.valueOf(art)); m.setEintrittsdatum(entry); m.setFuehrtZeitkonto(true);
             em.persist(m); em.flush(); return m.getId();
         });
     }

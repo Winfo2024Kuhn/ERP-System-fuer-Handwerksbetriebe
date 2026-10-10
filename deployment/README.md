@@ -2,28 +2,30 @@
 
 Dieses Verzeichnis enthält alle Scripts und Dokumentation für das Deployment des Kalkulationsprogramms.
 
-## Lokale Installation (für Handwerker – empfohlen)
+## Docker beim Kunden (Windows-PC oder Linux-Server) mit automatischen Updates – empfohlen
 
-Für eine einfache Einzel-PC-Installation **ohne** MariaDB, Server oder IT-Kenntnisse:
-
-→ **[local-install/README.md](./local-install/README.md)**
-
-Doppelklick auf `local-install/Einrichtung-ERP-Handwerk.bat` – erstellt Desktop-Symbol + Autostart.
-
----
-
-## Docker beim Kunden (Windows-PC oder Linux-Server) mit automatischen Updates
-
-Ein Doppelklick (Windows) bzw. ein Befehl (Linux) richtet alles ein. Das ERP
-startet nach jedem Neustart von selbst, holt sich neue Versionen nachts um 3 Uhr,
-sichert vorher die Datenbank und rollt bei Problemen automatisch zurück – mit
-Handy-Nachricht.
+Ein Doppelklick (Windows) bzw. ein Befehl (Linux) richtet alles ein: Datenbank
+(PostgreSQL), ERP und Updater. Das ERP startet nach jedem Neustart von selbst, holt
+sich neue Versionen nachts um 3 Uhr, sichert vorher die Datenbank und rollt bei
+Problemen automatisch zurück – mit Handy-Nachricht.
 
 → **[docker-server/README.md](./docker-server/README.md)**
 
 ---
 
-## Server-Deployment (Produktions-Server mit MariaDB)
+## Windows-Skripte (Sicherung, Start als JAR)
+
+Ältere Skripte aus der Zeit vor `docker-server/`. Weiter sinnvoll ist vor allem
+`backup-database.ps1`: Es sichert die Datenbank des docker-server (Container `erp-postgres`)
+per `pg_dump` direkt im Container.
+
+**Achtung beim Start als JAR:** Die Datenbank des docker-server ist bewusst nicht von außen
+erreichbar (kein freigegebener Port, nur das interne Docker-Netz). Ein JAR auf dem Rechner
+kommt an sie nicht heran – für diesen Weg braucht es ein eigenes PostgreSQL, z. B. einen
+Container mit `-p 127.0.0.1:5432:5432` (siehe `docs/INSTALLATION.md`, Variante 3). Sicherung
+und Update dann auf diesen Container zeigen lassen: `update-production.ps1 -DbContainer <name>
+-DbUser erp_user` bzw. `backup-database.ps1 -DockerPostgresContainer <name> -DockerPostgresUser
+erp_user`. Ohne gelungene Sicherung bricht das Update ab (bewusst ohne: `-SkipBackup`).
 
 ### Scripts (`scripts/`)
 
@@ -81,7 +83,7 @@ cd C:\Kalkulationsprogramm\scripts
 
 - Windows Server oder Windows 10/11
 - Java 23+
-- MariaDB/MySQL Client Tools (`mariadb-dump` oder `mysqldump`)
+- Docker Desktop mit PostgreSQL: für die Sicherung der Container `erp-postgres` (aus `docker-server/`), für den Start als JAR ein eigenes PostgreSQL mit Port auf 127.0.0.1 (siehe oben)
 - Externe Festplatte E:\ für Backups
 - Administrator-Rechte für Installation
 

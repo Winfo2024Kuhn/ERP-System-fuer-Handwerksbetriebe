@@ -17,7 +17,7 @@ import jakarta.persistence.EntityManager;
 /**
  * Die Entities tragen dieselbe Loeschregel wie die echten Datenbanken (V410):
  * Wird das Ziel geloescht, wird die Spalte leer statt das Loeschen zu blockieren.
- * So verhaelt sich auch das H2-Testschema (ddl-auto) wie MySQL und PostgreSQL.
+ * So verhaelt sich auch das H2-Testschema (ddl-auto) wie PostgreSQL.
  */
 @DataJpaTest
 class FremdschluesselLoeschregelTest {

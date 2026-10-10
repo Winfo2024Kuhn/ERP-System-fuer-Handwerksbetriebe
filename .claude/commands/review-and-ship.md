@@ -257,7 +257,7 @@ gh pr checks <nr> --watch
 Warte, bis **kein** Check mehr `pending` ist.
 
 > **Auf jedem PR läuft `.github/workflows/pr-ci.yml`** (Backend-Tests,
-> Datenbank-Kompatibilität gegen echtes MySQL und PostgreSQL, Lint, Unit-, Build- und
+> Datenbank-Kompatibilität gegen echtes PostgreSQL, Lint, Unit-, Build- und
 > E2E-Tests beider Frontends), etwa 30–40 Minuten. Der Sammel-Check „PR Quality Gate“
 > ist auf `main` Pflicht: ohne ihn lässt GitHub keinen Merge zu. Scheitert ein Check
 > nur zufällig (lokal grün, Code nicht betroffen), den Lauf wiederholen:

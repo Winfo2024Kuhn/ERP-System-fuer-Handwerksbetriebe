@@ -24,16 +24,16 @@ import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/** Explicit opt-in; own EMPTY disposable MySQL DB, never a production schema. */
-@DataJpaTest(showSql=false,properties={"spring.jpa.hibernate.ddl-auto=create-drop","spring.flyway.enabled=false","spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect","spring.jpa.show-sql=false"})
+/** Explicit opt-in: -Ddatev.pg.url=jdbc:postgresql://.../testdb (credentials -Dkompat.db.user/-Dkompat.db.pass); own EMPTY disposable PostgreSQL DB, never a production schema. */
+@DataJpaTest(showSql=false,properties={"spring.jpa.hibernate.ddl-auto=create-drop","spring.flyway.enabled=false","spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect","spring.jpa.show-sql=false"})
 @AutoConfigureTestDatabase(replace=AutoConfigureTestDatabase.Replace.NONE)
 @Import({DatevExportService.class,DatevExportRepository.class,LodasDateiWriter.class,DatevKonfigurationService.class})
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named="datev.mysql.url",matches="jdbc:mysql:.*")
-class DatevExportMysqlTest {
+@EnabledIfSystemProperty(named="datev.pg.url",matches="jdbc:postgresql:.*")
+class DatevExportPostgresTest {
  @DynamicPropertySource static void database(DynamicPropertyRegistry r) {
-  r.add("spring.datasource.url",()->System.getProperty("datev.mysql.url"));r.add("spring.datasource.driver-class-name",()->"com.mysql.cj.jdbc.Driver");
-  r.add("spring.datasource.username",()->"root");r.add("spring.datasource.password",()->"");
+  r.add("spring.datasource.url",()->System.getProperty("datev.pg.url"));r.add("spring.datasource.driver-class-name",()->"org.postgresql.Driver");
+  r.add("spring.datasource.username",()->System.getProperty("kompat.db.user","kompat"));r.add("spring.datasource.password",()->System.getProperty("kompat.db.pass","kompat"));
  }
  @Autowired DatevExportService service;
  @Autowired DatevKonfigurationService configurations;

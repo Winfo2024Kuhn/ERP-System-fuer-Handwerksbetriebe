@@ -2,7 +2,6 @@ package org.example.kalkulationsprogramm.repository;
 
 import java.time.LocalDateTime;
 
-import org.example.kalkulationsprogramm.config.DatenbankArt;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,10 +11,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 class SeenSenderDomainRepositoryErweiterungImpl implements SeenSenderDomainRepositoryErweiterung {
 
-    static final String UPSERT_MYSQL = "INSERT INTO seen_sender_domain (domain, first_seen, email_count) "
-            + "VALUES (:domain, :firstSeen, 1) "
-            + "ON DUPLICATE KEY UPDATE email_count = email_count + 1";
-    static final String UPSERT_POSTGRES = "INSERT INTO seen_sender_domain (domain, first_seen, email_count) "
+    private static final String UPSERT = "INSERT INTO seen_sender_domain (domain, first_seen, email_count) "
             + "VALUES (:domain, :firstSeen, 1) "
             + "ON CONFLICT (domain) DO UPDATE SET email_count = seen_sender_domain.email_count + 1";
 
@@ -32,7 +28,7 @@ class SeenSenderDomainRepositoryErweiterungImpl implements SeenSenderDomainRepos
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void upsertSeen(String domain, LocalDateTime firstSeen) {
-        entityManager.createNativeQuery(DatenbankArt.istPostgres(entityManager) ? UPSERT_POSTGRES : UPSERT_MYSQL)
+        entityManager.createNativeQuery(UPSERT)
                 .setParameter("domain", domain)
                 .setParameter("firstSeen", firstSeen)
                 .executeUpdate();

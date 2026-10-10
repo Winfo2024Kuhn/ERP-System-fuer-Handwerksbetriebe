@@ -39,7 +39,8 @@ Nginx überschreibt immer `X-ERP-Public-Mobile: 1`. Es entfernt Desktop-Sitzungs
 - Docker Compose **ab 2.24.4**. Das Overlay nutzt `!override`, damit alte öffentliche Portbindungen ersetzt werden und nicht zusätzlich erhalten bleiben. [Docker-Referenz](https://docs.docker.com/reference/compose-file/merge/#replace-value)
 - Die neue, geprüfte ERP-Version als Docker-Image und ein gesichertes Datenbank-Backup. Die Startskripte bauen die Java-Anwendung nicht automatisch.
 - Der bisherige Compose-Projektname und die bisherigen Daten-Volumes bleiben erhalten. Bei einem bestehenden Standardcontainer erkennt das Skript den Projektnamen aus dessen Label. Bei einer neuen Installation muss `-ErpProjectName` ausdrücklich angegeben werden.
-- Keine zusätzliche Router-Portweiterleitung auf 8080, 3307, 6333 oder 6334. Windows-Firewall und Docker-Portbindungen gemeinsam prüfen.
+- Keine zusätzliche Router-Portweiterleitung auf 8080, 5432, 6333 oder 6334. Windows-Firewall und Docker-Portbindungen gemeinsam prüfen.
+- Die Datenbank ist PostgreSQL (Dienst `postgres` der `docker-compose.yml` im Repository-Stamm). Eine ältere Installation mit dem früheren MySQL-Container `kalkulationsprogramm-mysql` muss ihre Daten zuerst nach PostgreSQL übertragen. Sonst startet das ERP mit einer leeren Datenbank, und das Startskript gibt den öffentlichen Zugang nicht frei, weil die Ersteinrichtung fehlt.
 
 ## Einmalig vorbereiten
 

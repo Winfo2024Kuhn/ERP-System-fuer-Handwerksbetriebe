@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.repository;
 
 import java.time.LocalDateTime;
 
-/** Datenbankabhaengiger Teil von {@link SeenSenderDomainRepository} (MySQL/PostgreSQL). */
+/** Teil von {@link SeenSenderDomainRepository} mit eigenem (PostgreSQL-)SQL. */
 public interface SeenSenderDomainRepositoryErweiterung {
 
     /**

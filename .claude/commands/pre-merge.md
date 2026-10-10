@@ -33,7 +33,7 @@ Alle Punkte müssen erfüllt sein, bevor ein PR gemergt wird.
 - [ ] Alle Tests grün (inkl. neue Tests für geänderte Funktionalität)
 - [ ] Neue Endpoints haben Security-Tests (SQL Injection, XSS, ungültige IDs)
 - [ ] Keine Entities direkt in REST-Responses (DTOs!)
-- [ ] Flyway-Migrationen: Versionsnummer korrekt, bestehende nicht geändert, PostgreSQL-Zwilling unter `db/postgresql/migration/` vorhanden (PostgreSQL = Hauptdatenbank)
+- [ ] Flyway-Migrationen: nur unter `db/postgresql/migration/` (eine Datei je Migration), Versionsnummer korrekt, bestehende nicht geändert, idempotent, Enums als `VARCHAR` ohne `CHECK`-Werteliste
 - [ ] Keine String-Konkatenation in JPQL/SQL
 
 ---
@@ -75,8 +75,8 @@ npm run test
 
 ## D. Vollständiger System-Check
 
-- [ ] Backend startet: `./mvnw spring-boot:run` ohne Exceptions
-- [ ] Flyway-Migrationen laufen durch (kein Fehler beim Start) – auf PostgreSQL (Profil `postgres`), bei Migrationen zusätzlich `DatenbankKompatibilitaetTest` gegen PostgreSQL
+- [ ] Backend startet: `./mvnw spring-boot:run` ohne Exceptions (lokales PostgreSQL läuft, z. B. Container `erp-dev-pg`)
+- [ ] Flyway-Migrationen laufen durch (kein Fehler beim Start), bei Migrationen oder neuen Abfragen zusätzlich `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat -Dkompat.db.user=kompat -Dkompat.db.pass=kompat` gegen einen Wegwerf-Container `postgres:16`
 - [ ] API antwortet auf `http://localhost:8082/api`
 - [ ] Frontend kommuniziert korrekt mit Backend
 

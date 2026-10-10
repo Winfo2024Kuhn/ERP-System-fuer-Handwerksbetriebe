@@ -645,8 +645,8 @@ public class AnfrageService {
      * <p>Bewusst zwei Transaktionen: erst die Anfrage, dann der Kunde. Hängt der
      * Kunde noch an anderen Daten (Lieferantenrechnung, Kalender ...), scheitert
      * nur dessen Löschen - die Anfrage bleibt gelöscht. In EINER Transaktion ginge
-     * das nicht: Nach dem Datenbankfehler wäre sie verloren (MySQL: nur noch
-     * Rollback möglich, PostgreSQL: Transaktion abgebrochen).
+     * das nicht: Nach dem Datenbankfehler wäre sie verloren (PostgreSQL bricht
+     * die Transaktion ab).
      */
     public LoeschResult loescheMitPruefung(Long id, boolean cascadeKunde) {
         AnfrageGeloescht geloescht = transaktion.execute(status -> loescheAnfrage(id));

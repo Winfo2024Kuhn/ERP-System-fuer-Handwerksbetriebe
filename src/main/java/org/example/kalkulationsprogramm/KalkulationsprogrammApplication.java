@@ -33,28 +33,6 @@ public class KalkulationsprogrammApplication
         app.setDefaultProperties(Map.of(
                 "spring.jmx.enabled", "false",
                 "spring.application.admin.enabled", "false"));
-        try {
-            app.run(args);
-        } catch (Throwable t) {
-            // Bei jpackage-.exe (winConsole=true) schliesst sich das Konsolenfenster
-            // sofort mit dem JVM-Exit. Wir geben den Logfile-Pfad aus und halten das
-            // Fenster 60 Sekunden offen, damit der Anwender den Stacktrace lesen kann.
-            String log = System.getProperty("user.home")
-                    + java.io.File.separator + "ERP-Handwerk"
-                    + java.io.File.separator + "erp-handwerk.log";
-            System.err.println();
-            System.err.println("============================================");
-            System.err.println("  SERVER-START FEHLGESCHLAGEN");
-            System.err.println("============================================");
-            System.err.println("  Logdatei: " + log);
-            System.err.println("  Fenster schliesst sich in 60 Sekunden.");
-            System.err.println("============================================");
-            try {
-                Thread.sleep(60_000L);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
-            throw t;
-        }
+        app.run(args);
     }
 }

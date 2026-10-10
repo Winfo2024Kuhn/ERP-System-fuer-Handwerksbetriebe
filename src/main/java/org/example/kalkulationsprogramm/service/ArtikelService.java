@@ -126,8 +126,8 @@ public class ArtikelService implements ArtikelServiceContract {
     }
 
     /**
-     * Die Sortierspalte waehlt der Nutzer; leere Werte sortieren dabei auf MySQL und
-     * PostgreSQL gleich ({@link PortableSortierung}).
+     * Die Sortierspalte waehlt der Nutzer; leere Werte stehen dabei wie gewohnt
+     * ({@link PortableSortierung}).
      */
     @Transactional(readOnly = true)
     public Page<Artikel> suche(Specification<Artikel> specification, Pageable pageable) {

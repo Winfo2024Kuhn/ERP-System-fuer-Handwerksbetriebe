@@ -2,7 +2,8 @@
 # Automatisches Datenbank- und Uploads-Backup Script
 # Kalkulationsprogramm
 # =========================================================
-# Datenbank: taeglicher Dump (.sql.gz), 30 Tage aufbewahrt, an
+# Datenbank: taeglicher Dump (.sql.gz, pg_dump im PostgreSQL-Container),
+# 30 Tage aufbewahrt, an
 # DREI Orten:
 #   1. Lokal (immer verfuegbar)
 #   2. Externe Festplatte (falls angeschlossen, siehe unten)
@@ -42,79 +43,12 @@ param(
     [string]$LogDir = "C:\Kalkulationsprogramm\logs\backups",
     [int]$RetentionDays = 30,
     [string]$UploadsDir = "C:\Kalkulationsprogramm\uploads",
-    [string]$DbPropertiesFile = "C:\Kalkulationsprogramm\config\application-local.properties",
-    # Docker-Einrichtung (deployment/docker-server). Laeuft dort PostgreSQL,
-    # wird die Datenbank im Container gesichert statt per mysqldump.
-    [string]$DockerErpDir = "C:\ERP-Handwerk",
-    [string]$DockerPostgresContainer = "erp-postgres"
-)
-
-# Seit dem Umzug nach Docker (10.10.2026) liegt die Datenbank als PostgreSQL im
-# Container. Die alte MySQL-Datenbank bleibt dann unangetastet.
-$envDatei = Join-Path $DockerErpDir ".env"
-$UsePostgresDocker = (Test-Path $envDatei) -and
-    [bool](Select-String -Path $envDatei -Pattern '^COMPOSE_PROFILES=postgres\s*$' -Quiet)
-
-# Konfiguration
-# Die DB-Zugangsdaten stehen NICHT in diesem Script (das Repo ist oeffentlich),
-# sondern werden aus der application-local.properties der Anwendung gelesen.
-# update-production.ps1 kopiert diese Datei bei jedem Update aus dem (per
-# .gitignore ausgeschlossenen) src/main/resources des Repos nach config\.
-function Read-DbConfig {
-    param([string]$PropertiesFile)
-
-    if (-not (Test-Path $PropertiesFile)) {
-        return $null
-    }
-    $props = @{}
-    foreach ($line in Get-Content $PropertiesFile) {
-        if ($line -match '^\s*([^#!\s][^=]*?)\s*=\s*(.*)$') {
-            $props[$matches[1]] = $matches[2].Trim()
-        }
-    }
-    $url = $props['spring.datasource.url']
-    if (-not $url -or $url -notmatch '^jdbc:(?:mysql|mariadb)://([^:/?]+)(?::(\d+))?/([^?;]+)') {
-        return $null
-    }
-    return @{
-        Host     = $matches[1]
-        Port     = $(if ($matches[2]) { $matches[2] } else { "3306" })
-        Name     = $matches[3]
-        User     = $props['spring.datasource.username']
-        Password = $props['spring.datasource.password']
-    }
-}
-
-if (-not $UsePostgresDocker) {
-    $dbConfig = Read-DbConfig $DbPropertiesFile
-    if (-not $dbConfig -or -not $dbConfig.User) {
-        Write-Host "FEHLER: DB-Zugangsdaten nicht lesbar aus $DbPropertiesFile (spring.datasource.url/username/password)"
-        if (Test-Path $LogDir) {
-            Add-Content -Path (Join-Path $LogDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').log") -Value "[ERROR] DB-Zugangsdaten nicht lesbar aus $DbPropertiesFile"
-        }
-        exit 1
-    }
-    $DB_HOST = $dbConfig.Host
-    $DB_PORT = $dbConfig.Port
-    $DB_NAME = $dbConfig.Name
-    $DB_USER = $dbConfig.User
-    $DB_PASSWORD = $dbConfig.Password
-}
-
-# Alternative Pfade für Dump-Tools falls nicht gefunden
-$MYSQLDUMP_ALTERNATIVES = @(
-    "C:\Program Files\MariaDB 11.4\bin\mariadb-dump.exe",
-    "C:\Program Files\MariaDB 11.3\bin\mariadb-dump.exe",
-    "C:\Program Files\MariaDB 11.2\bin\mariadb-dump.exe",
-    "C:\Program Files\MariaDB 10.11\bin\mariadb-dump.exe",
-    "C:\Program Files\MySQL\MySQL Server 8.4\bin\mysqldump.exe",
-    "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
-    "C:\Program Files\MySQL\MySQL Server 8.3\bin\mysqldump.exe",
-    "C:\Program Files\MySQL\MySQL Server 9.0\bin\mysqldump.exe",
-    "C:\Program Files (x86)\MySQL\MySQL Server 8.4\bin\mysqldump.exe",
-    "C:\Program Files (x86)\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
-    "mariadb-dump.exe", # Falls im PATH
-    "mysqldump.exe"  # Falls im PATH
+    # Die Datenbank (PostgreSQL) wird per pg_dump direkt im Container gesichert -
+    # ohne Passwort, ohne zusaetzliche Programme auf dem Rechner. Standard: der
+    # Container der Docker-Einrichtung (deployment/docker-server). Bei einem eigenen
+    # Container (docs/INSTALLATION.md, Variante 3) z. B. -DockerPostgresUser erp_user.
+    [string]$DockerPostgresContainer = "erp-postgres",
+    [string]$DockerPostgresUser = "postgres"
 )
 
 # Zeitstempel für Backup-Datei
@@ -153,22 +87,6 @@ function Ensure-Directory {
         }
     }
     return $true
-}
-
-function Find-MySQLDump {
-    foreach ($path in $MYSQLDUMP_ALTERNATIVES) {
-        if ($path -eq "mysqldump.exe" -or $path -eq "mariadb-dump.exe") {
-            $cmdName = [System.IO.Path]::GetFileNameWithoutExtension($path)
-            $cmd = Get-Command $cmdName -ErrorAction SilentlyContinue
-            if ($cmd) {
-                return $cmd.Source
-            }
-        }
-        elseif (Test-Path $path) {
-            return $path
-        }
-    }
-    return $null
 }
 
 function Resolve-ExternalBackupRoot {
@@ -341,96 +259,48 @@ if (-not (Ensure-Directory $LocalStagingDir)) {
     exit 1
 }
 
-if ($UsePostgresDocker) {
-    # Schritt 2+3 (Docker): pg_dump im Datenbank-Container. Lokale Verbindung im
-    # Container, kein Passwort noetig; die Ausgabe wird byte-genau in die Datei
-    # kopiert (PowerShell-Umleitung wuerde sie nach UTF-16 umkodieren).
-    Write-Log "Datenbank: PostgreSQL im Container $DockerPostgresContainer ($DockerErpDir)"
-    Write-Log "Ziel: $localBackupFilePath"
-    $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
-    $dockerExe = if ($dockerCmd) { $dockerCmd.Source } else { Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe" }
-    if (-not (Test-Path $dockerExe)) {
-        Write-Log "FEHLER: docker.exe nicht gefunden ($dockerExe)." "ERROR"
-        exit 1
-    }
-    try {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $dockerExe
-        $psi.Arguments = "exec $DockerPostgresContainer pg_dump -U postgres -d kalkulationsprogramm_db --no-owner --no-privileges --lock-wait-timeout=120s"
-        $psi.UseShellExecute = $false
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $proc = [System.Diagnostics.Process]::Start($psi)
-        $stderrTask = $proc.StandardError.ReadToEndAsync()
-        $ziel = [System.IO.File]::Create($localBackupFilePath)
-        try { $proc.StandardOutput.BaseStream.CopyTo($ziel) } finally { $ziel.Close() }
-        $proc.WaitForExit()
-        if ($proc.ExitCode -ne 0) {
-            Write-Log "pg_dump ist mit Fehlercode $($proc.ExitCode) beendet: $($stderrTask.Result.Trim())" "ERROR"
-            Write-Log "Laeuft Docker Desktop? Darf das Konto dieser Aufgabe Docker benutzen?" "ERROR"
-            exit 1
-        }
-        # Abschlusszeile fehlt = Sicherung abgeschnitten, taugt nicht
-        if (-not (Get-Content $localBackupFilePath -Tail 5 | Select-String -SimpleMatch "PostgreSQL database dump complete" -Quiet)) {
-            Write-Log "Sicherung ist unvollstaendig (Abschlusszeile fehlt)." "ERROR"
-            exit 1
-        }
-        $backupSize = (Get-Item $localBackupFilePath).Length / 1MB
-        Write-Log "Backup erstellt: $([math]::Round($backupSize, 2)) MB"
-    }
-    catch {
-        Write-Log "Fehler beim Erstellen des Backups: $_" "ERROR"
-        exit 1
-    }
-}
-else {
-# Schritt 2: Dump-Tool finden
-Write-Log "Suche Dump-Tool (mariadb-dump/mysqldump)..."
-$MYSQLDUMP_PATH = Find-MySQLDump
-if (-not $MYSQLDUMP_PATH) {
-    Write-Log "FEHLER: Kein Dump-Tool gefunden (mariadb-dump oder mysqldump)." "ERROR"
-    Write-Log "Bitte installieren Sie MariaDB/MySQL Client-Tools oder passen Sie den Pfad an." "ERROR"
+# Schritt 2+3: pg_dump im Datenbank-Container. Lokale Verbindung im Container,
+# kein Passwort noetig; die Ausgabe wird byte-genau in die Datei kopiert
+# (PowerShell-Umleitung wuerde sie nach UTF-16 umkodieren).
+Write-Log "Datenbank: PostgreSQL im Container $DockerPostgresContainer (Benutzer $DockerPostgresUser)"
+Write-Log "Ziel: $localBackupFilePath"
+$dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+$dockerExe = if ($dockerCmd) { $dockerCmd.Source } else { Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe" }
+if (-not (Test-Path $dockerExe)) {
+    Write-Log "FEHLER: docker.exe nicht gefunden ($dockerExe)." "ERROR"
     exit 1
 }
-Write-Log "Dump-Tool gefunden: $MYSQLDUMP_PATH"
-
-# Schritt 3: Datenbank-Backup lokal erstellen
-Write-Log "Erstelle Datenbank-Backup..."
-Write-Log "Ziel: $localBackupFilePath"
-
 try {
-    $arguments = @(
-        "--host=$DB_HOST",
-        "--port=$DB_PORT",
-        "--user=$DB_USER",
-        "--password=$DB_PASSWORD",
-        "--single-transaction",
-        "--routines",
-        "--triggers",
-        "--events",
-        "--result-file=$localBackupFilePath",
-        $DB_NAME
-    )
-
-    $process = Start-Process -FilePath $MYSQLDUMP_PATH -ArgumentList $arguments -NoNewWindow -Wait -PassThru
-
-    if ($process.ExitCode -ne 0) {
-        Write-Log "Dump-Tool ist mit Fehlercode $($process.ExitCode) beendet!" "ERROR"
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $dockerExe
+    $psi.Arguments = "exec $DockerPostgresContainer pg_dump -U $DockerPostgresUser -d kalkulationsprogramm_db --no-owner --no-privileges --lock-wait-timeout=120s"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+    $ziel = [System.IO.File]::Create($localBackupFilePath)
+    try { $proc.StandardOutput.BaseStream.CopyTo($ziel) } finally { $ziel.Close() }
+    $proc.WaitForExit()
+    if ($proc.ExitCode -ne 0) {
+        Write-Log "pg_dump ist mit Fehlercode $($proc.ExitCode) beendet: $($stderrTask.Result.Trim())" "ERROR"
+        Write-Log "Laeuft Docker Desktop? Darf das Konto dieser Aufgabe Docker benutzen?" "ERROR"
+        Remove-Item $localBackupFilePath -Force -ErrorAction SilentlyContinue
         exit 1
     }
-
-    if (-not (Test-Path $localBackupFilePath)) {
-        Write-Log "Backup-Datei wurde nicht erstellt!" "ERROR"
+    # Abschlusszeile fehlt = Sicherung abgeschnitten, taugt nicht
+    if (-not (Get-Content $localBackupFilePath -Tail 5 | Select-String -SimpleMatch "PostgreSQL database dump complete" -Quiet)) {
+        Write-Log "Sicherung ist unvollstaendig (Abschlusszeile fehlt)." "ERROR"
+        Remove-Item $localBackupFilePath -Force -ErrorAction SilentlyContinue
         exit 1
     }
-
     $backupSize = (Get-Item $localBackupFilePath).Length / 1MB
     Write-Log "Backup erstellt: $([math]::Round($backupSize, 2)) MB"
 }
 catch {
     Write-Log "Fehler beim Erstellen des Backups: $_" "ERROR"
+    Remove-Item $localBackupFilePath -Force -ErrorAction SilentlyContinue
     exit 1
-}
 }
 
 # Schritt 4: Backup komprimieren

@@ -32,7 +32,7 @@ import lombok.extern.slf4j.Slf4j;
  * Lernt supervised aus User-Feedback (mark-spam / mark-not-spam)
  * und kann mit CSV-Daten (z.B. Kaggle SMS Spam Collection) vortrainiert werden.
  *
- * Token-Frequenzen werden in MySQL persistiert und beim Start in einen
+ * Token-Frequenzen werden in der Datenbank persistiert und beim Start in einen
  * In-Memory-Cache geladen für schnelle Prediction.
  */
 @Slf4j

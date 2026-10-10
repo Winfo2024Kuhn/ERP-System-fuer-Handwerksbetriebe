@@ -57,11 +57,12 @@ Für jede geänderte `*.java`-Datei prüfen:
 - [ ] Keine N+1-Queries in Schleifen ohne `JOIN FETCH`
 - [ ] Pagination für potentiell große Result-Sets (`Pageable`)
 
-### 1.4 Flyway-Migrationen (`src/main/resources/db/migration/`)
+### 1.4 Flyway-Migrationen (`src/main/resources/db/postgresql/migration/` – PostgreSQL ist die einzige Datenbank; in `db/migration/` darf nichts Neues liegen)
 - [ ] Bestehende Migrationen wurden **nicht** verändert (absolutes Verbot)
 - [ ] Neue Versionsnummer ist höher als alle bestehenden
 - [ ] Migration ist **idempotent** (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, etc.)
-- [ ] Beachten: V224..V243 sind durch den EN-1090-Branch reserviert → neue Migrationen auf main starten ab V244
+- [ ] **Geänderter Wert in `FlywayMigrationenTest.CHECKSUMMEN` für eine Migration, die schon auf main liegt → 🔴 KRITISCH** (hebelt den Schutz gegen geänderte Migrationen aus). Erlaubt sind nur neue Einträge für neue Migrationen.
+- [ ] Ältere Branches mit Migrationen unter `db/migration/` (z. B. EN-1090): diese MySQL-Skripte **nicht** übernehmen, sondern als neue PostgreSQL-Migrationen mit Nummer > höchste vorhandene neu schreiben (`FlywayMigrationenTest` blockt sonst)
 
 ### 1.5 Architektur-Patterns
 - [ ] Audit-Trail: Bei buchhalterisch relevanten Änderungen (Rechnung, Auftrag, Zeitbuchung) wird ein vollständiger Snapshot persistiert (GoBD)

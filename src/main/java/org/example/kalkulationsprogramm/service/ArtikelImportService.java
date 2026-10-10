@@ -345,7 +345,7 @@ public class ArtikelImportService {
         // ganzen Import trotzdem scheitern lassen (Transaktion nur noch Rollback,
         // auf PostgreSQL sofort abgebrochen).
         if (normalized.length() > 255) {
-            // MySQL wuerde beim Anlegen still kuerzen - dann faende ihn niemand wieder
+            // Die Datenbank wuerde das Anlegen mit einem unverstaendlichen Fehler ablehnen
             throw new IllegalArgumentException("Werkstoffname ist zu lang (max. 255 Zeichen): "
                     + normalized.substring(0, 40) + "...");
         }

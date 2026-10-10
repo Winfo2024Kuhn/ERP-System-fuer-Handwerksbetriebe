@@ -26,8 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Flyway ist im Testprofil deaktiviert (siehe
  * src/test/resources/application.properties), das Schema entsteht hier ueber
- * ddl-auto=create-drop direkt aus den Entity-Annotationen -- die
- * V367-Migration selbst prueft {@link org.example.kalkulationsprogramm.db.V367SchemaTest}.
+ * ddl-auto=create-drop direkt aus den Entity-Annotationen -- das echte Schema
+ * (PostgreSQL-Basis + Migrationen) prueft der DatenbankKompatibilitaetTest.
  */
 @DataJpaTest
 class LangzeitkrankmeldungRepositoryTest {

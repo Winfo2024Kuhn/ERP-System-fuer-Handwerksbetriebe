@@ -3,7 +3,7 @@ package org.example.kalkulationsprogramm.repository;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Datenbankabhaengiger Teil von {@link MonatsSaldoRepository} (MySQL/PostgreSQL). */
+/** Teil von {@link MonatsSaldoRepository} mit eigenem (PostgreSQL-)SQL. */
 public interface MonatsSaldoRepositoryErweiterung {
 
     /**

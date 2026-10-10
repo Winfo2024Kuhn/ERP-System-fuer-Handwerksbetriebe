@@ -61,7 +61,7 @@ import jakarta.persistence.EntityManager;
 class UnifiedEmailSichtbarkeitJpaTest {
 
     @Autowired private UnifiedEmailController controller;
-    /** Spy: „Nicht zugeordnet“ ist eine MySQL-Abfrage (DATE_SUB …), die H2 nicht kann – hier leer. */
+    /** Spy: „Nicht zugeordnet“ ist eine native PostgreSQL-Abfrage, die H2 nicht kann – hier leer. */
     @org.springframework.boot.test.mock.mockito.SpyBean private EmailRepository emailRepository;
     @Autowired private EmailAbsenderRepository postfachRepository;
     @Autowired private FrontendUserProfileRepository benutzerRepository;

@@ -10,15 +10,20 @@ Dieses Dokument beschreibt die Installation und Konfiguration des Kalkulationspr
 
 - **Windows Server** oder Windows 10/11
 - **Java 17 oder höher** ([Download](https://www.oracle.com/java/technologies/downloads/))
-- **MySQL Client Tools** (für `mysqldump.exe`)
-  - MySQL Server installieren oder nur Client Tools
-  - [MySQL Download](https://dev.mysql.com/downloads/mysql/)
+- **Docker Desktop** mit PostgreSQL. Die Sicherung läuft per `pg_dump` direkt im Container
+  `erp-postgres` – zusätzliche Datenbank-Programme braucht der Rechner nicht.
+  **Achtung:** Die Datenbank des docker-server ist von außen nicht erreichbar. Das JAR
+  braucht deshalb ein eigenes PostgreSQL, z. B. einen Container mit
+  `-p 127.0.0.1:5432:5432` (siehe `docs/INSTALLATION.md`, Variante 3). Sicherung und
+  Update dann auf diesen Container zeigen lassen (`update-production.ps1 -DbContainer <name>
+  -DbUser erp_user`, `backup-database.ps1 -DockerPostgresContainer <name>
+  -DockerPostgresUser erp_user`); ohne gelungene Sicherung bricht das Update ab. Für einen
+  neuen Server ist `deployment/docker-server` der empfohlene Weg.
 - **PowerShell 5.1** oder höher (bereits in Windows enthalten)
 
 ### Hardware-Anforderungen
 
 - **Externe Festplatte E:\** für Backups (empfohlen: mindestens 50 GB frei)
-- **Netzwerkverbindung** zum MySQL-Server (192.168.x.x:3307)
 
 ## Installation
 
@@ -63,16 +68,15 @@ Das Installations-Script führt automatisch folgende Schritte aus:
 - Erstellt Windows Scheduled Tasks
 - Konfiguriert Autostart und Backups
 
-### Schritt 4: MySQL Client verifizieren
+### Schritt 4: Datenbank-Container prüfen
 
-Prüfen Sie, ob `mysqldump` verfügbar ist:
+Prüfen Sie, ob die Datenbank läuft:
 
 ```powershell
-# Testen
-& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe" --version
+docker ps --filter name=erp-postgres
 ```
 
-Falls nicht gefunden, installieren Sie MySQL Server oder die Client Tools.
+Fehlt der Container, zuerst `deployment/docker-server` einrichten (siehe dortige README).
 
 ### Schritt 5: Externe Festplatte prüfen
 
@@ -195,32 +199,18 @@ cd C:\Kalkulationsprogramm\scripts
 
 ## Backup-Wiederherstellung
 
-### Backup-Datei dekomprimieren
+Die Sicherungen (`kalkulationsprogramm_db_<datum>.sql.gz`) sind PostgreSQL-Sicherungen.
+Am sichersten spielt sie der Updater aus `deployment/docker-server` ein. Er sichert vorher
+den aktuellen Stand nach `sicherungen\vor-import-…` und startet das ERP danach neu:
 
 ```powershell
-# GZip-Datei dekomprimieren
-$backupFile = "E:\Kalkulationsprogramm\Backups\kalkulationsprogramm_20251128_020000.sql.gz"
-$outputFile = "C:\Temp\restore.sql"
-
-# PowerShell-Dekomprimierung
-$sourceStream = [System.IO.File]::OpenRead($backupFile)
-$gzipStream = New-Object System.IO.Compression.GZipStream($sourceStream, [System.IO.Compression.CompressionMode]::Decompress)
-$outputStream = [System.IO.File]::Create($outputFile)
-$gzipStream.CopyTo($outputStream)
-$outputStream.Close()
-$gzipStream.Close()
-$sourceStream.Close()
+# Sicherung in den ERP-Ordner legen (Beispiel: C:\ERP-Handwerk), dann dort:
+Copy-Item "E:\Kalkulationsprogramm-Backup\db\kalkulationsprogramm_db_20261128_020000.sql.gz" "C:\ERP-Handwerk\"
+cd C:\ERP-Handwerk
+docker compose exec updater bash /erp/nachtupdate.sh --importieren kalkulationsprogramm_db_20261128_020000.sql.gz
 ```
 
-### Datenbank wiederherstellen
-
-```powershell
-# MySQL Restore
-$mysqlPath = "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe"
-$sqlFile = "C:\Temp\restore.sql"
-
-& $mysqlPath --host=192.168.x.x --port=3307 --user=Marvin --password=YOUR_DB_PASSWORD kalkulationsprogramm_db < $sqlFile
-```
+Die `.sql.gz`-Datei muss dafür nicht entpackt werden.
 
 **WARNUNG:** Dies überschreibt die aktuelle Datenbank!
 
@@ -233,14 +223,12 @@ $sqlFile = "C:\Temp\restore.sql"
 **Lösungen:**
 1. Prüfen Sie die Logs in `E:\Kalkulationsprogramm\Logs\`
 2. Prüfen Sie, ob externe Festplatte E:\ verfügbar ist
-3. Prüfen Sie MySQL-Verbindung:
+3. Prüfen Sie, ob Docker Desktop läuft und der Datenbank-Container da ist:
    ```powershell
-   Test-NetConnection -ComputerName 192.168.x.x -Port 3307
+   docker ps --filter name=erp-postgres
    ```
-4. Prüfen Sie mysqldump-Pfad:
-   ```powershell
-   Test-Path "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe"
-   ```
+4. Prüfen Sie, ob das Konto der geplanten Aufgabe Docker benutzen darf (Fehlermeldung
+   von `pg_dump` im Backup-Log).
 
 ### Problem: Server startet nicht automatisch
 

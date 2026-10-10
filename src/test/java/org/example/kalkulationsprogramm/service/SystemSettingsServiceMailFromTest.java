@@ -32,7 +32,7 @@ class SystemSettingsServiceMailFromTest {
     @BeforeEach
     void setUp() {
         repository = mock(SystemSettingRepository.class);
-        service = new SystemSettingsService(repository, mock(org.springframework.core.env.Environment.class));
+        service = new SystemSettingsService(repository);
     }
 
     @Test

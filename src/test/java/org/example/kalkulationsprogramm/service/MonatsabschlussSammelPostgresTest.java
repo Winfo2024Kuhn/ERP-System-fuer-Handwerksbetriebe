@@ -5,8 +5,6 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -26,18 +24,18 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
-/** Run only against an EMPTY disposable database: -Dzeitkonto.mysql.url=jdbc:mysql://.../testdb. */
+/** Run only against an EMPTY disposable PostgreSQL database (schema is rebuilt): -Dzeitkonto.pg.url=jdbc:postgresql://.../testdb, credentials -Dkompat.db.user/-Dkompat.db.pass. */
 @DataJpaTest(showSql = false, properties = {"spring.jpa.hibernate.ddl-auto=create-drop", "spring.flyway.enabled=false",
-        "spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect", "spring.jpa.show-sql=false"})
+        "spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect", "spring.jpa.show-sql=false"})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({MonatsSaldoService.class, MonatsabschlussSammelService.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named = "zeitkonto.mysql.url", matches = "jdbc:mysql:.*")
-class MonatsabschlussSammelMysqlTest {
+@EnabledIfSystemProperty(named = "zeitkonto.pg.url", matches = "jdbc:postgresql:.*")
+class MonatsabschlussSammelPostgresTest {
     @DynamicPropertySource static void database(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", () -> System.getProperty("zeitkonto.mysql.url"));
-        r.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
-        r.add("spring.datasource.username", () -> "root"); r.add("spring.datasource.password", () -> "");
+        r.add("spring.datasource.url", () -> System.getProperty("zeitkonto.pg.url"));
+        r.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+        r.add("spring.datasource.username", () -> System.getProperty("kompat.db.user", "kompat")); r.add("spring.datasource.password", () -> System.getProperty("kompat.db.pass", "kompat"));
     }
     @Autowired MonatsSaldoService service;
     @Autowired MonatsSaldoRepository salden;

@@ -122,7 +122,7 @@ Handwerksbetriebe kämpfen mit dezentralen Papierprozessen, fehlender Projektkos
 | Layer | Technologie |
 |-------|-------------|
 | Backend | Spring Boot 3.2.5, Java 23, JPA/Hibernate, Flyway |
-| Datenbank | MySQL 8 |
+| Datenbank | PostgreSQL 16 |
 | PC-Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
 | Mobile | React PWA (Zeiterfassung, Offline-fähig) |
 | KI | Google Gemini API, Ollama (optional) |

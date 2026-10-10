@@ -71,7 +71,7 @@ import jakarta.persistence.EntityManager;
 
 /**
  * Laufen die Suchen der Oberflaeche mit allen Filtern und allen Sortierungen auf
- * MySQL und PostgreSQL - und finden sie dasselbe?
+ * PostgreSQL - und finden sie, was der Nutzer erwartet?
  *
  * <p>Die Suchen bauen ihre Abfrage zur Laufzeit (Specification + Sortierung aus
  * dem Request), {@link DatenbankKompatibilitaetTest} sieht sie deshalb nicht.
@@ -82,7 +82,7 @@ import jakarta.persistence.EntityManager;
  * <li>jeder Filter einzeln und alle zusammen (PostgreSQL: {@code DISTINCT} plus
  * {@code ORDER BY lower(...)} -> Fehler 42P10),</li>
  * <li>Gross-/Kleinschreibung samt Umlauten ("WÜRZBURG" findet "Würzburg"),</li>
- * <li>leere Werte sortieren wie bisher auf MySQL: aufsteigend zuerst, absteigend
+ * <li>leere Werte sortieren wie bisher: aufsteigend zuerst, absteigend
  * zuletzt (PostgreSQL von sich aus genau umgekehrt).</li>
  * </ul>
  * Alles in zurueckgerollten Transaktionen - die Wegwerf-Datenbank bleibt sauber.
@@ -94,7 +94,7 @@ import jakarta.persistence.EntityManager;
 @Import({ FlywayStartSetupConfig.class, KundeMapper.class, ArtikelService.class, KategorieService.class,
         ArtikelPositionsPreisService.class, LieferantArtikelpreisMapper.class, LieferantArtikelpreisService.class })
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:(mysql|postgresql):.*")
+@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:postgresql:.*")
 class DatenbankKompatibilitaetSucheTest {
 
     @DynamicPropertySource
@@ -196,7 +196,7 @@ class DatenbankKompatibilitaetSucheTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("Artikelsuche: jede Sortierspalte in beide Richtungen, leere Werte wie auf MySQL")
+    @DisplayName("Artikelsuche: jede Sortierspalte in beide Richtungen, leere Werte wie bisher")
     void artikelsucheAlleSortierungen() {
         List<String> fehler = new ArrayList<>();
         for (String spalte : sortierschluessel(ArtikelController.class, "SORT_FIELDS").keySet()) {
@@ -338,28 +338,26 @@ class DatenbankKompatibilitaetSucheTest {
             wuerth.setLieferantenname("Würth " + kennung);
             em.persist(wuerth);
             em.flush();
-            // Mit Leerzeichen am Ende: MySQL (PAD SPACE) fand das, PostgreSQL nicht
+            // Mit Leerzeichen am Ende: frueher (MySQL, PAD SPACE) wurde das gefunden
             return lieferanten.findByLieferantennameIgnoreCase("WÜRTH " + kennung.toUpperCase(Locale.ROOT) + " ")
                     .map(Lieferanten::getId).filter(wuerth.getId()::equals).isPresent() ? null : "nicht gefunden";
         });
-        if (KompatibilitaetsDatenbank.istPostgres()) {
-            // MySQL laesst die zweite Schreibweise gar nicht zu (Unique-Index ohne Gross-/Kleinschreibung)
-            pruefen(fehler, "zwei Schreibweisen", () -> {
-                Lieferanten klein = new Lieferanten();
-                klein.setLieferantenname("würth " + kennung);
-                em.persist(klein);
-                Lieferanten gross = new Lieferanten();
-                gross.setLieferantenname("WÜRTH " + kennung.toUpperCase(Locale.ROOT));
-                em.persist(gross);
-                em.flush();
-                Long exakt = lieferanten.findByLieferantennameIgnoreCase("WÜRTH " + kennung.toUpperCase(Locale.ROOT))
-                        .map(Lieferanten::getId).orElse(null);
-                Long aeltester = lieferanten.findByLieferantennameIgnoreCase("Würth " + kennung)
-                        .map(Lieferanten::getId).orElse(null);
-                return gross.getId().equals(exakt) && klein.getId().equals(aeltester) ? null
-                        : "exakt " + exakt + ", sonst " + aeltester;
-            });
-        }
+        // PostgreSQL laesst zwei Schreibweisen desselben Namens zu
+        pruefen(fehler, "zwei Schreibweisen", () -> {
+            Lieferanten klein = new Lieferanten();
+            klein.setLieferantenname("würth " + kennung);
+            em.persist(klein);
+            Lieferanten gross = new Lieferanten();
+            gross.setLieferantenname("WÜRTH " + kennung.toUpperCase(Locale.ROOT));
+            em.persist(gross);
+            em.flush();
+            Long exakt = lieferanten.findByLieferantennameIgnoreCase("WÜRTH " + kennung.toUpperCase(Locale.ROOT))
+                    .map(Lieferanten::getId).orElse(null);
+            Long aeltester = lieferanten.findByLieferantennameIgnoreCase("Würth " + kennung)
+                    .map(Lieferanten::getId).orElse(null);
+            return gross.getId().equals(exakt) && klein.getId().equals(aeltester) ? null
+                    : "exakt " + exakt + ", sonst " + aeltester;
+        });
         assertThat(fehler).isEmpty();
     }
 
@@ -458,7 +456,7 @@ class DatenbankKompatibilitaetSucheTest {
 
     /**
      * Erwartete Reihenfolge zweier Treffer: {@code mitWert} hat in der Sortierspalte einen
-     * Wert, der andere keinen (ausser bei {@code beideMitWert}). Leer gilt wie auf MySQL
+     * Wert, der andere keinen (ausser bei {@code beideMitWert}). Leer gilt wie bisher
      * als kleinster Wert.
      */
     private static List<String> erwartet(boolean beideMitWert, String richtung, String mitWert, String ohneWert) {

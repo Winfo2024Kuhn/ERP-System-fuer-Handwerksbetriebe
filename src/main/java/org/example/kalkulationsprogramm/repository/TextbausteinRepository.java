@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface TextbausteinRepository extends JpaRepository<Textbaustein, Long> {
     // Als @Query statt abgeleitet: nur so laesst sich festlegen, wohin leere Werte sortieren
-    // (wie MySQL: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
+    // (wie bisher: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
     @Query("SELECT t FROM Textbaustein t WHERE t.typ = :typ ORDER BY t.sortOrder ASC NULLS FIRST, t.name ASC")
     List<Textbaustein> findByTypOrderBySortOrderAscNameAsc(@Param("typ") TextbausteinTyp typ);
 
