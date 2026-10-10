@@ -1,0 +1,85 @@
+name: PR-Branches aktuell halten
+
+# Das Ruleset fuer main verlangt, dass ein PR vor dem Merge auf dem aktuellen
+# Stand von main ist. Nach jedem Merge waeren alle anderen offenen PRs veraltet
+# und blieben trotz Auto-Merge haengen, bis jemand "Update branch" klickt.
+# Dieser Workflow macht das nach jedem Push auf main selbst - aber nur fuer PRs
+# mit eingeschaltetem Auto-Merge (die sollen ja ohne Zutun durchlaufen).
+#
+# Wichtig: Eine Aenderung durch das eingebaute GITHUB_TOKEN loest KEINE
+# Workflows aus - nach dem Update liefe der Pflicht-Check "PR Quality Gate"
+# also nie und der PR hinge fuer immer. Ausgenommen davon ist workflow_dispatch:
+# Deshalb startet dieser Workflow die Tests (pr-ci.yml) fuer jeden
+# aktualisierten Branch ausdruecklich neu. Die Check-Runs haengen am neuen
+# Head-Commit und zaehlen damit fuer den PR.
+#
+# PRs aus Forks werden uebersprungen (deren Branch gehoert nicht diesem Repo).
+# Gibt es beim Update einen Konflikt, bleibt der PR stehen und braucht Hand.
+# Merge-Queue waere die eingebaute Loesung, gibt es aber nur fuer Repos von
+# Organisationen.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: pr-aktualisieren
+  cancel-in-progress: true
+
+jobs:
+  aktualisieren:
+    name: Veraltete PRs mit Auto-Merge aktualisieren
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write        # main in den PR-Branch holen (update-branch)
+      pull-requests: write   # update-branch-API
+      actions: write         # pr-ci.yml per workflow_dispatch starten
+    steps:
+      - name: Aktualisieren und Tests neu starten
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Nur offene PRs gegen main mit Auto-Merge, nicht aus Forks.
+          prs="$(gh pr list --state open --base main --limit 100 \
+            --json number,headRefName,headRefOid,isCrossRepository,autoMergeRequest \
+            --jq '.[] | select(.autoMergeRequest != null and (.isCrossRepository | not)) | "\(.number) \(.headRefOid) \(.headRefName)"')"
+          if [ -z "$prs" ]; then
+            echo "Keine offenen PRs mit Auto-Merge."
+            exit 0
+          fi
+          # Eigener Kanal (3): gh in der Schleife darf die Liste nicht von stdin wegessen.
+          while read -r nummer kopf branch <&3; do
+            [ -n "$nummer" ] || continue
+            behind="$(gh api "repos/$GH_REPO/compare/main...$kopf" --jq .behind_by)"
+            if [ "$behind" -eq 0 ]; then
+              echo "PR #$nummer ist aktuell."
+              continue
+            fi
+            echo "PR #$nummer liegt $behind Commit(s) hinter main - aktualisiere $branch."
+            if ! gh api -X PUT "repos/$GH_REPO/pulls/$nummer/update-branch" \
+                -f expected_head_sha="$kopf" --silent; then
+              echo "::warning::PR #$nummer liess sich nicht aktualisieren (Konflikt?) - bitte von Hand."
+              continue
+            fi
+            # update-branch arbeitet im Hintergrund: warten, bis der neue Kopf da ist.
+            neu="$kopf"
+            for versuch in $(seq 1 30); do
+              neu="$(gh pr view "$nummer" --json headRefOid --jq .headRefOid)"
+              [ "$neu" != "$kopf" ] && break
+              sleep 4
+            done
+            if [ "$neu" = "$kopf" ]; then
+              echo "::warning::PR #$nummer: neuer Stand nach 2 Minuten nicht sichtbar - Tests nicht gestartet."
+              continue
+            fi
+            gh workflow run pr-ci.yml --ref "$branch"
+            echo "PR #$nummer aktualisiert ($neu), Tests gestartet."
+          done 3<<< "$prs"
