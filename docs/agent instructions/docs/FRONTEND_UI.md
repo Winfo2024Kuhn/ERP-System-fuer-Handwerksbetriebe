@@ -91,6 +91,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - `<EmailHistory>` -> `src/components/EmailHistory.tsx`
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
+- `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)
 
 ### Verbindliche Eingaben und Meldungen (Nutzervorgabe 09.09.2026)
 
@@ -119,6 +120,16 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - `ring-*`, `outline` und `shadow-*` liegen außerhalb der Box – ein Vorfahre mit `overflow-*` (Scroll-Listen mit `max-h-*`, Dialog-Inhalte, Tabellen-Wrapper) schneidet sie ab.
 - Deshalb: Overflow-Container, deren Kinder einen Ring/Schatten bekommen, innen Luft geben und außen ausgleichen (`-m-1 p-1` bei `ring-2`), oder `ring-inset` am Element. Nicht `overflow` entfernen, nicht den Fokus-Ring weglassen.
 - Im Playwright-Screenshot erstes und letztes Element gewählt/fokussiert prüfen. Details: `.agents/rules/frontend.md`.
+
+### Info-Buttons an komplexen Stellen (Nutzervorgabe 10.10.2026)
+
+Der Nutzer möchte bei komplexeren Dingen **immer** einen Info-Button, der erklärt, was im Hintergrund passiert und welche Auswirkungen etwas hat. Gilt für jede Frontend-Arbeit – neue Seiten, Dialoge, Einstellungen, auch bei kleineren Änderungen an solchen Stellen.
+
+- **Wann:** Einstellungen mit Folgen für andere Bereiche (Export, Lohn, Glocke, Rechte, Versand), Aktionen, die etwas im Hintergrund auslösen oder nicht rückgängig zu machen sind, unvermeidbare Fachbegriffe (Lohnart, Personalnummer, Soll/Ist). **Nicht** bei selbsterklärenden Feldern (Name, Telefon) – zu viele (i) machen die Seite unruhig.
+- **Wo:** direkt neben dem Feld bzw. der Überschrift, auf die sich die Info bezieht – nie gesammelt am Seitenende oder auf einer separaten Hilfeseite.
+- **Inhalt:** zwei kurze Teile in Handwerker-Sprache: „Was passiert im Hintergrund?“ und „Was bewirkt das?“ – inklusive dessen, was sich *nicht* ändert (z. B. „bereits abgeschlossene Monate bleiben unverändert“). Wenige Sätze, keine internen Begriffe (Endpoint, Cache, Tabelle). Der Text muss zum tatsächlichen Backend-Verhalten passen – im Zweifel im Backend-Code nachsehen.
+- **Baustein:** immer `<InfoButton>` aus `src/components/ui/info-button.tsx` (Klick öffnet ein Popover, Tastatur + Touch, Escape schließt) – nicht pro Seite neu bauen und kein reiner Hover-Tooltip. In `react-zeiterfassung/` gibt es noch kein Gegenstück; das vor dem Bau zur Freigabe stellen.
+- Im Playwright-Durchlauf den geöffneten Info-Button mit prüfen: nichts abgeschnitten, nichts überdeckt, auch am Bildschirmrand.
 
 ### Page Header Pattern (Zwingend für alle Seiten)
 ```tsx

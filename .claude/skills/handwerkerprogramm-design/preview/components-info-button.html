@@ -1,0 +1,52 @@
+<!-- @dsCard group="Components" viewport="760x420" name="Info-Button" subtitle="(i) next to the field · click opens Hintergrund + Auswirkung" -->
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8" /><title>Info-Button</title>
+<link rel="stylesheet" href="../colors_and_type.css" />
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  html,body{margin:0;padding:0;background:transparent}
+  body{font-family:var(--font-sans);color:var(--fg);padding:16px;box-sizing:border-box;font-size:14px}
+  .header{margin-bottom:12px}.name{font-weight:700;font-size:14px}.sub{font-size:12px;color:var(--fg-muted)}
+  .grid{display:grid;grid-template-columns:1fr 1.25fr;gap:16px;align-items:start}
+  .cell{border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--surface)}
+  .cell h4{margin:0 0 10px;font-size:12px;font-weight:700;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.04em}
+  .label{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--slate-700);margin-bottom:6px}
+  .ib{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:9999px;border:0;background:transparent;color:var(--slate-400);cursor:pointer;padding:0}
+  .ib:hover,.ib.open{color:var(--rose-600);background:var(--rose-50)}
+  .ib.focus{box-shadow:0 0 0 2px var(--rose-500)}
+  .ib [data-lucide]{width:16px;height:16px}
+  .input{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;color:var(--slate-700);background:var(--surface)}
+  .pop{margin-top:8px;max-width:24rem;border:1px solid var(--slate-200);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-xl);padding:12px 14px}
+  .pop .t{font-weight:700;font-size:13px;margin-bottom:8px;color:var(--slate-900)}
+  .pop .k{font-size:11px;font-weight:700;color:var(--slate-500);text-transform:uppercase;letter-spacing:.04em;margin:8px 0 2px}
+  .pop p{margin:0;font-size:13px;line-height:1.45;color:var(--slate-700)}
+  .rules{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:11px;color:var(--fg-muted)}
+  .rules b{color:var(--fg)}
+</style></head><body>
+<div class="header"><div class="name">Info-Button</div><div class="sub">Explain consequences right where the decision is made</div></div>
+<div class="grid">
+  <div class="cell">
+    <h4>Closed · hover · focus</h4>
+    <div class="label">Zeiterfassung eingeführt am <button class="ib" aria-label="Mehr zu: Start der Zeiterfassung" aria-expanded="false"><i data-lucide="info"></i></button></div>
+    <div class="input">01.03.2025</div>
+    <div class="label" style="margin-top:14px">Stunden ans Steuerbüro <button class="ib open" aria-label="Mehr zu: Stunden ans Steuerbüro" aria-expanded="false"><i data-lucide="info"></i></button> <button class="ib focus" aria-label="Fokus-Beispiel" aria-expanded="false"><i data-lucide="info"></i></button></div>
+    <div class="input">Soll-Stunden (laut Arbeitszeitkonto)</div>
+  </div>
+  <div class="cell">
+    <h4>Open popover</h4>
+    <div class="label">Zeiterfassung eingeführt am <button class="ib open" aria-label="Mehr zu: Start der Zeiterfassung" aria-expanded="true"><i data-lucide="info"></i></button></div>
+    <div class="pop" role="dialog" aria-label="Start der Zeiterfassung">
+      <div class="t">Start der Zeiterfassung</div>
+      <div class="k">Was passiert im Hintergrund?</div>
+      <p>Die Glocke sucht für jeden Mitarbeiter alle Monate, die noch nicht abgeschlossen sind. Mit diesem Datum beginnt die Suche frühestens in diesem Monat.</p>
+      <div class="k">Was bewirkt das?</div>
+      <p>Monate davor müssen nicht mehr abgeschlossen werden. Gebuchte Zeiten und abgeschlossene Monate bleiben unverändert.</p>
+    </div>
+  </div>
+</div>
+<div class="rules">
+  <div><b>Do:</b> one (i) per complex setting, next to its label or heading · click to open · Escape / outside click closes · say what does <i>not</i> change.</div>
+  <div><b>Don't:</b> hover-only tooltips · a help block at the page bottom · (i) on Name/Telefon · internal words like Endpoint or Cache.</div>
+</div>
+<script>lucide.createIcons();</script>
+</body></html>

@@ -61,9 +61,11 @@ Für jede geänderte `*.java`-Datei prüfen:
 - [ ] Keine N+1-Queries in Schleifen ohne `JOIN FETCH`
 - [ ] Pagination für potentiell große Result-Sets (`Pageable`)
 
-### 1.4 Flyway-Migrationen (`src/main/resources/db/migration/`)
+### 1.4 Flyway-Migrationen (`src/main/resources/db/migration/` + `db/postgresql/migration/`)
 - [ ] Bestehende Migrationen wurden **nicht** verändert (absolutes Verbot)
 - [ ] Neue Versionsnummer ist höher als alle bestehenden
+- [ ] **PostgreSQL-Zwilling vorhanden** (gleiche Nummer unter `db/postgresql/migration/`). PostgreSQL ist die einzige produktive Datenbank (eigener Server + Kunden) – die PostgreSQL-Variante zuerst und am gründlichsten prüfen; MySQL wird nicht mehr gebraucht, der MySQL-Zwilling ist nur Pflicht, bis die MySQL-Teile entfernt sind
+- [ ] Natives SQL läuft auf PostgreSQL (kein `DATE_FORMAT`/`IFNULL`/`ON DUPLICATE KEY` ohne PostgreSQL-Variante, kein untypisiertes `NULL` als Parameter)
 - [ ] Migration ist **idempotent** (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, etc.)
 - [ ] Beachten: V224..V243 sind durch den EN-1090-Branch reserviert → neue Migrationen auf main starten ab V244
 

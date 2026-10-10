@@ -29,5 +29,6 @@ Rules to internalize before producing anything:
 10. **Never render an empty box while loading.** Skeleton (`motion-safe:animate-pulse`) → fade in → `ImageOff` tile on failure.
 11. **Gate animation behind `motion-safe:`** and give icon-only buttons an `aria-label` (+ `aria-expanded` when toggling).
 12. **Don't retune the document editor's PDF metrics by eye** — 10pt / 1.3 / 2pt mirrors the PDF service so line breaks match the print output.
+13. **Explain complex spots with an info button (user rule, 10.10.2026).** Wherever a setting or action has consequences elsewhere, triggers something in the background, can't be undone, or needs a technical term (Lohnart, Soll/Ist), put an `Info` (i) button right next to that field or heading. A click opens a small popover with two short parts in craftsman language: „Was passiert im Hintergrund?“ and „Was bewirkt das?“ (including what does *not* change). Use the shared `<InfoButton>` from `react-pc-frontend/src/components/ui/info-button.tsx`; never hover-only, never collected at the page bottom, none on self-explanatory fields. Specimen: `preview/components-info-button.html`.
 
 If the user invokes this skill without any other guidance, ask them what they want to build or design, ask some focused questions, and act as an expert designer who outputs HTML artifacts _or_ production code, depending on the need.

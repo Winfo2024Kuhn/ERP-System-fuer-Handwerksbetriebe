@@ -21,6 +21,10 @@ dem Nutzer **einen konkreten Vorschlag** machen statt offener Fragen:
 - Was genau gebaut wird, in Handwerker-Sprache (welcher Knopf, wo, was passiert).
 - Was es schon gibt und wiederverwendet/verallgemeinert wird.
 - Höchstens 2–3 echte Entscheidungsfragen, nur wenn die Antwort den Bau ändert.
+- **Info-Punkte planen:** Welche Stellen sind erklärungsbedürftig (etwas passiert im
+  Hintergrund, eine Einstellung wirkt auf andere Bereiche, Folgen sind nicht
+  rückgängig zu machen, Fachbegriff)? Diese Stellen im Vorschlag nennen – sie bekommen
+  einen Info-Button (siehe Abschnitt „Info-Buttons“).
 - **Auslagerung/Refactoring** (Komponente, Hook, Service verallgemeinern) gleich
   mit zur Freigabe stellen – CLAUDE.md verlangt die Zustimmung des Nutzers vorher.
 
@@ -54,16 +58,43 @@ nicht. Hinein gehört:
 3. **Bestehende Basis** mit Pfaden und ungefähren Zeilen (Komponenten, Hilfsdateien, Tests).
 4. **Der API-Vertrag aus Schritt 2** wörtlich.
 5. **Umsetzungsschritte** und wo neue Knöpfe hinkommen.
-6. **Tests:** Vitest + Testing Library, bestehende grün halten, E2E unter
+6. **Info-Buttons mit fertigen Texten:** Für jede erklärungsbedürftige Stelle aus dem
+   Brainstorming den Ort (neben welchem Feld/welcher Überschrift) und den Inhalt
+   vorgeben – „Was passiert im Hintergrund?“ und „Was bewirkt das?“. Du kennst das
+   Backend-Verhalten, der Frontend-Agent nicht; deshalb schreibst **du** die Texte.
+   Baustein: `react-pc-frontend/src/components/ui/info-button.tsx` (Regeln unten).
+7. **Tests:** Vitest + Testing Library, bestehende grün halten, E2E unter
    `react-pc-frontend/e2e/` mit `page.route`-Mocks; `npm run lint`, `npm run test -- --run`,
    `npm run build`; wenn möglich Skill `playwright-design-pruefung`.
-7. **Grenzen:** nur Dateien unter `react-pc-frontend/` (bzw. `react-zeiterfassung/`),
+8. **Grenzen:** nur Dateien unter `react-pc-frontend/` (bzw. `react-zeiterfassung/`),
    `src/main/java` nicht anfassen, **nicht committen**.
-8. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
-   Lint/Build-Status, offene Punkte.
+9. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
+   Lint/Build-Status, alle Info-Button-Stellen, offene Punkte.
 
 Ändert sich der Vertrag später, dem laufenden Agenten per `SendMessage` Bescheid geben –
 nicht einen zweiten starten.
+
+### Info-Buttons (Wunsch des Nutzers, gilt für jedes Feature)
+
+Der Nutzer möchte bei komplexeren Dingen immer einen Info-Button, der genauer erklärt,
+**was im Hintergrund passiert** und **welche Auswirkungen** etwas hat. Handwerker sollen
+eine Einstellung verstehen, bevor sie sie ändern – ohne Handbuch.
+
+- **Wann:** Einstellungen mit Folgen für andere Bereiche (z. B. Export, Lohn, Glocke,
+  Rechte), Aktionen, die etwas im Hintergrund auslösen oder nicht rückgängig zu machen
+  sind, und unvermeidbare Fachbegriffe (Lohnart, Personalnummer, Soll/Ist). Nicht bei
+  selbsterklärenden Feldern wie „Name“ oder „Telefon“ – zu viele (i) machen die Seite
+  unruhig.
+- **Wo:** direkt neben dem Feld bzw. der Überschrift, auf die sich die Info bezieht –
+  nie gesammelt am Seitenende oder in einer separaten Hilfeseite.
+- **Inhalt:** zwei kurze Teile in Handwerker-Sprache – „Was passiert im Hintergrund?“
+  und „Was bewirkt das?“ (inkl. was sich *nicht* ändert, z. B. „bereits abgeschlossene
+  Monate bleiben unverändert“). Wenige Sätze, keine internen Begriffe (Endpoint, Cache,
+  Tabelle). Texte müssen zum tatsächlichen Backend-Verhalten passen.
+- **Baustein:** immer den gemeinsamen `InfoButton` aus
+  `react-pc-frontend/src/components/ui/info-button.tsx` nutzen (Klick öffnet ein
+  Popover, Tastatur + Touch, Escape schließt) – nicht pro Seite neu bauen. Fehlt in
+  `react-zeiterfassung/` ein Gegenstück, das mit zur Freigabe stellen.
 
 ## 4. Backend selbst bauen (währenddessen)
 
@@ -88,6 +119,8 @@ Wenn der Frontend-Bericht da ist:
 
 - Gegenprobe Vertrag: Endpoints und Feldnamen im Frontend greppen und mit dem Backend
   vergleichen (häufigster Fehler: ein umbenanntes Feld).
+- Gegenprobe Info-Buttons: Sind alle geplanten Stellen da, und stimmen die Texte noch
+  mit dem gebauten Backend überein (Backend-Details ändern sich beim Bauen oft)?
 - Frontend selbst einmal `lint`, `test -- --run`, `build` laufen lassen.
 - Rote Tests, die nichts mit der Änderung zu tun haben: mehrfach einzeln laufen lassen,
   als unzuverlässig benennen statt still zu ignorieren.

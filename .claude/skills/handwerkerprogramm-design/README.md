@@ -51,7 +51,7 @@ Both frontends share a single visual vocabulary: **rose-600 brand + slate neutra
 │   ├── type-scale / -roles
 │   ├── spacing-scale / -radii / -shadows
 │   ├── components-buttons / -inputs / -select / -badges / -cards
-│   │                 / -chips / -loading / -page-header
+│   │                 / -chips / -loading / -page-header / -info-button
 │   └── brand-logo / -icons
 └── ui_kits/
     ├── desktop-erp/             ← high-fi recreation of the PC frontend
@@ -166,6 +166,15 @@ Newer code holds a consistent bar; match it:
 - Custom selects use `role="listbox"` / `role="option"` with `aria-selected`.
 - Focus is always visible — a 2px rose-500 ring, never a focus-visible-only trick.
 - Gate animation behind `motion-safe:`.
+
+### Info buttons — explain what happens (user rule, 10.10.2026)
+The user wants complex spots explained in place, so a craftsman understands a setting *before* changing it — no manual needed.
+- **When:** settings with consequences elsewhere (export, wages, notification bell, permissions, sending), actions that run something in the background or can't be undone, unavoidable technical terms (Lohnart, Personalnummer, Soll/Ist). **Not** on self-explanatory fields (Name, Telefon) — too many (i) make a page restless.
+- **Where:** directly next to the field label or section heading it explains. Never collected at the page bottom or on a separate help page.
+- **Look:** Lucide `Info`, `w-4 h-4`, `slate-400`; hover/open `rose-600`; real `<button>` with `aria-label="Mehr zu: …"`, `aria-expanded`, visible focus ring. Click opens a popover: white surface, `border-slate-200`, `rounded-lg`, `shadow-2xl` (like the other floating pickers, see shadow scale), max 24rem (narrower cut text on a 14" screen), small arrow-free card that repositions at screen edges. Closes on Escape, outside click or second click; focus returns to the button. Works with keyboard and touch — never hover-only.
+- **Content:** two short parts with small bold labels — „Was passiert im Hintergrund?“ and „Was bewirkt das?“. A few sentences in craftsman language, include what does *not* change („bereits abgeschlossene Monate bleiben unverändert“), no internal terms (Endpoint, Cache, Tabelle). The text must match real backend behaviour.
+- **Component:** shared `<InfoButton>` + `<InfoAbschnitt>` from `react-pc-frontend/src/components/ui/info-button.tsx`. The mobile PWA has no counterpart yet — ask before building one.
+- Specimen card: `preview/components-info-button.html`.
 
 ### Document ↔ PDF WYSIWYG metrics
 The document editor is not styled to taste — it is calibrated so on-screen line breaks match the printed PDF exactly. `.doc-pdf-metrics` sets `10pt / 1.3 line-height / 2pt paragraph gap`, mirroring `RechnungPdfService`. Two content widths exist: `--doc-pdf-w-spalte` (`257pt + 24px`, the position-table label column) and `--doc-pdf-w-voll` (`515pt + 24px`, full page width). The `+24px` compensates the editor's own 12px horizontal padding. **Never retune these by eye** — a template with a different table width shifts the break and the values must be recomputed from the PDF service.

@@ -23,8 +23,9 @@ Führe die folgenden Schritte für jedes neue Feature aus. Überspringe keinen S
 - Bei neuen UI-Patterns: **Zuerst** `.github/DEVELOPMENT.md` aktualisieren
 
 ## 3. Datenbankmigrationen (falls nötig)
-- Neue Datei: `src/main/resources/db/migration/V{N}__{beschreibung}.sql`
-- Versionsnummer aufsteigend (aktuell ab V207+)
+- PostgreSQL ist die einzige produktive Datenbank (eigener Server + Kunden); MySQL wird nicht mehr gebraucht, steckt aber noch im Code
+- Solange die MySQL-Teile nicht entfernt sind, **zwei** Dateien mit derselben Nummer (der Build prüft das): `src/main/resources/db/postgresql/migration/V{N}__{beschreibung}.sql` (PostgreSQL) und `src/main/resources/db/migration/V{N}__{beschreibung}.sql` (MySQL) – Übersetzungstabelle in `db/postgresql/migration/README.md`
+- Versionsnummer aufsteigend (höchste vorhandene Nummer in beiden Ordnern + 1)
 - Bestehende Migrationen NIEMALS editieren
 
 ## 4. Backend-Implementierung

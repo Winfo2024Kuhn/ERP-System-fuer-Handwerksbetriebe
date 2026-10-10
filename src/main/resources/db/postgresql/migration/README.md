@@ -1,10 +1,11 @@
-# PostgreSQL-Migrationen (Kunden-Installationen)
+# PostgreSQL-Migrationen (Hauptdatenbank)
 
-Kunden laufen auf PostgreSQL, der eigene Server auf MySQL. Beide bekommen
-dieselben Nachtupdates (ein Image) - also braucht **jede neue Migration zwei
-Dateien mit derselben Nummer**:
+PostgreSQL ist die einzige produktive Datenbank: der eigene Server und die
+Kunden laufen darauf. MySQL wird nicht mehr gebraucht, steckt aber noch im
+Code (Standard ohne Profil). Bis die MySQL-Teile entfernt sind, braucht
+**jede neue Migration zwei Dateien mit derselben Nummer**:
 
-| MySQL (eigener Server)                         | PostgreSQL (Kunden)                                       |
+| MySQL (wird nicht mehr gebraucht)              | PostgreSQL (eigener Server + Kunden)                      |
 | ---------------------------------------------- | --------------------------------------------------------- |
 | `db/migration/V407__lieferant_notiz.sql`       | `db/postgresql/migration/V407__lieferant_notiz.sql`       |
 
