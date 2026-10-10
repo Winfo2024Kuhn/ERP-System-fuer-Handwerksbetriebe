@@ -15,4 +15,12 @@ public interface EmailAbsenderRepository extends JpaRepository<EmailAbsender, Lo
     Optional<EmailAbsender> findFirstByAktivTrueOrderBySortierungAscIdAsc();
 
     Optional<EmailAbsender> findByEmailAdresseIgnoreCase(String emailAdresse);
+
+    Optional<EmailAbsender> findFirstByHauptpostfachTrueOrderByIdAsc();
+
+    Optional<EmailAbsender> findFirstByFuerGeschaeftsdokumenteTrueAndAktivTrueOrderByIdAsc();
+
+    List<EmailAbsender> findByHauptpostfachTrue();
+
+    List<EmailAbsender> findByFuerGeschaeftsdokumenteTrue();
 }

@@ -4,6 +4,10 @@ export interface EmailDraftContent {
     subject: string;
     body: string;
     fromAddress: string | null;
+    /** Gewähltes Absender-Postfach einer neuen Mail; `null` bei Antwort/Weiterleitung. Ältere Entwürfe: fehlt. */
+    postfachId?: number | null;
+    /** Sammel-Mail einzeln verschicken. Ältere Entwürfe: fehlt. */
+    einzelversand?: boolean;
     replyEmailId: number | null;
     projektId: number | null;
     anfrageId: number | null;

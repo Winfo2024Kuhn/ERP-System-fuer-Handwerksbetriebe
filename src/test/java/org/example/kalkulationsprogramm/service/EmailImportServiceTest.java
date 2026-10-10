@@ -41,6 +41,10 @@ class EmailImportServiceTest {
     @Mock private EmailBlacklistRepository emailBlacklistRepository;
     @Mock private BounceErkennungService bounceErkennungService;
     @Mock private SystemSettingsService systemSettingsService;
+    @Mock private org.example.kalkulationsprogramm.repository.EmailAbsenderRepository emailAbsenderRepository;
+    @Mock private org.example.kalkulationsprogramm.repository.EmailPostfachZuordnungRepository emailPostfachZuordnungRepository;
+    @Mock private org.example.kalkulationsprogramm.service.mail.PostfachZugangService postfachZugangService;
+    @Mock private PostfachService postfachService;
 
     @InjectMocks
     private EmailImportService service;

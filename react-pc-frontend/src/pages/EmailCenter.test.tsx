@@ -54,7 +54,7 @@ function mockFetchResponses(overrides: Record<string, unknown> = {}) {
         '/api/emails/spam': [],
         '/api/emails/newsletter': [],
         '/api/emails/tax-advisors': [],
-        '/api/emails/from-addresses': ['info@musterbetrieb.example'],
+        '/api/emails/absender-postfaecher': [{ id: 1, emailAdresse: 'info@musterbetrieb.example', anzeigename: null, eigenes: false, hauptpostfach: true }],
         ...overrides
     };
 
@@ -108,6 +108,43 @@ describe('EmailCenter', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
+    });
+
+    describe('Postfächer', () => {
+        it('zeigt an jeder Mail ein Schild mit dem Postfach', async () => {
+            global.fetch = mockFetchResponses({
+                '/api/emails/inbox': [{
+                    ...mockEmails[0],
+                    postfaecher: [
+                        { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' },
+                        { id: 7, emailAdresse: 'max@musterbetrieb.example', anzeigename: null },
+                    ],
+                }],
+            }) as unknown as typeof fetch;
+            renderEmailCenter();
+            const schild = await screen.findByTestId('postfach-schild');
+            expect(within(schild).getByText('info@')).toBeInTheDocument();
+            expect(within(schild).getByText('max@').parentElement).toHaveAttribute('title', 'max@musterbetrieb.example');
+        });
+
+        it('leitet mit festem Absender und weitergeleitetVonEmailId weiter', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const original = {
+                ...mockEmails[0], htmlBody: '<p>Hallo, hier ist das Angebot.</p>',
+                antwortPostfach: { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' },
+            };
+            global.fetch = mockFetchResponses({
+                '/api/emails/inbox': [original],
+                '/api/emails/1': original,
+                '/api/emails/1/thread': { rootEmailId: 1, focusedEmailId: 1, emails: [original] },
+            }) as unknown as typeof fetch;
+            renderEmailCenter();
+            await user.click(await screen.findByText('Angebot für Treppe'));
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await user.click(await screen.findByRole('menuitem', { name: /Weiterleiten/ }));
+            expect(await screen.findByTestId('absender-fest')).toHaveTextContent('Musterbetrieb <info@musterbetrieb.example>');
+            expect(screen.getByText(/Weiterleitungen gehen über das Postfach raus/)).toBeInTheDocument();
+        });
     });
 
     describe('Rendering', () => {
@@ -529,7 +566,7 @@ describe('EmailCenter', () => {
                 '/api/emails/inbox': [nachfrage, anfrage],
                 '/api/emails/16': anfrage, '/api/emails/17': nachfrage,
                 '/api/emails/16/thread': threadOf(16), '/api/emails/17/thread': threadOf(17),
-                '/api/emails/from-addresses': ['handwerk@example.com'],
+                '/api/emails/absender-postfaecher': [{ id: 1, emailAdresse: 'handwerk@example.com', anzeigename: null, eigenes: false, hauptpostfach: true }],
             });
             vi.stubGlobal('fetch', mock);
             return mock;
@@ -729,9 +766,9 @@ describe('EmailCenter', () => {
             });
         });
 
-        it('zeigt Toast-Fehler wenn /api/emails/from-addresses fehlschlaegt', async () => {
+        it('zeigt Toast-Fehler wenn /api/emails/absender-postfaecher fehlschlaegt', async () => {
             vi.stubGlobal('fetch', vi.fn((url: string) => {
-                if (url.includes('/api/emails/from-addresses')) {
+                if (url.includes('/api/emails/absender-postfaecher')) {
                     return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve([]) } as Response);
                 }
                 if (url.includes('/api/emails/stats')) {
@@ -772,7 +809,7 @@ describe('EmailCenter', () => {
                     focusedEmailId: 45,
                     emails: [selfSentEmail]
                 },
-                '/api/emails/from-addresses': ['info@musterbetrieb.example']
+                '/api/emails/absender-postfaecher': [{ id: 1, emailAdresse: 'info@musterbetrieb.example', anzeigename: null, eigenes: false, hauptpostfach: true }]
             }));
 
             renderEmailCenter('sent');

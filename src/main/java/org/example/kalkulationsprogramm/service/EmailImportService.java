@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -17,11 +18,16 @@ import java.util.UUID;
 
 import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAbsender;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
+import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
 import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
+import org.example.kalkulationsprogramm.repository.EmailPostfachZuordnungRepository;
+import org.example.kalkulationsprogramm.service.mail.PostfachZugang;
+import org.example.kalkulationsprogramm.service.mail.PostfachZugangService;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -88,6 +94,10 @@ public class EmailImportService {
     private final EmailBlacklistRepository emailBlacklistRepository;
     private final BounceErkennungService bounceErkennungService;
     private final org.example.kalkulationsprogramm.repository.SeenSenderDomainRepository seenSenderDomainRepository;
+    private final PostfachZugangService postfachZugangService;
+    private final PostfachService postfachService;
+    private final EmailAbsenderRepository emailAbsenderRepository;
+    private final EmailPostfachZuordnungRepository emailPostfachZuordnungRepository;
 
     // Self-Injection für transactional proxy: importMessage muss durch den
     // Spring-Proxy laufen, damit @Transactional pro Mail eine eigene
@@ -108,6 +118,17 @@ public class EmailImportService {
     private static final List<String> OUTGOING_FOLDERS = List.of(
             "INBOX.Sent",
             "INBOX.Sent Items");
+
+    // Weitere Postfächer (max@, rechnungen@ …): nur Posteingang und Gesendet. Die
+    // Archiv-Unterordner oben gibt es nur im Hauptpostfach. Nicht vorhandene Ordner
+    // werden übersprungen – die Namen decken T-Online, Hetzner und Co. ab.
+    private static final List<String> WEITERE_INCOMING_FOLDERS = List.of("INBOX");
+    private static final List<String> WEITERE_OUTGOING_FOLDERS = List.of(
+            "INBOX.Sent",
+            "INBOX.Sent Items",
+            "Sent",
+            "INBOX.Gesendet",
+            "Gesendet");
 
     /**
      * Schaltet abgelaufene Abwesenheitspläne (endAt < heute) automatisch aus.
@@ -135,11 +156,6 @@ public class EmailImportService {
         if (!emailFeaturesEnabled) {
             return;
         }
-        if (!systemSettingsService.isImapConfigured()) {
-            log.debug("[EmailImport] IMAP nicht konfiguriert (siehe System-Einstellungen → E-Mail)");
-            return;
-        }
-
         try {
             int imported = doImport();
             if (imported > 0) {
@@ -158,15 +174,66 @@ public class EmailImportService {
      * minutenlangen Transaktion laufen und Connections blockieren.
      */
     public int doImport() {
-        String user = systemSettingsService.getImapUsername();
-        String pass = systemSettingsService.getImapPassword();
-        String host = systemSettingsService.getImapHost();
-        int port = systemSettingsService.getImapPort();
-        if (user == null || user.isBlank() || pass == null || pass.isBlank()) {
-            log.debug("[EmailImport] IMAP-Zugangsdaten fehlen");
+        List<PostfachZugang> zugaenge = abrufZugaenge();
+        if (zugaenge.isEmpty()) {
+            log.debug("[EmailImport] Kein Postfach mit Zugang eingerichtet (Einstellungen → E-Mail → Postfächer)");
             return 0;
         }
+        int totalImported = 0;
+        // Nacheinander und jedes Postfach für sich: ein falsches Passwort bei max@
+        // darf den Abruf von info@ nicht aufhalten.
+        for (PostfachZugang zugang : zugaenge) {
+            try {
+                totalImported += importierePostfach(zugang);
+                postfachService.merkeAbruf(zugang.postfachId(), null);
+            } catch (MessagingException e) {
+                log.error("[EmailImport] IMAP-Fehler bei Postfach {}: {}", zugang.postfachId(), e.getMessage());
+                postfachService.merkeAbruf(zugang.postfachId(), abrufFehlerText(e));
+            } catch (RuntimeException e) {
+                log.error("[EmailImport] Abruf von Postfach {} fehlgeschlagen: {}", zugang.postfachId(), e.getMessage());
+                postfachService.merkeAbruf(zugang.postfachId(), abrufFehlerText(e));
+            }
+        }
+        return totalImported;
+    }
 
+    /**
+     * Abrufbare Postfächer. Ist noch keins eingerichtet (z. B. Schlüssel für
+     * Mailzugänge fehlt), gilt wie bisher das Konto aus den System-Einstellungen.
+     */
+    List<PostfachZugang> abrufZugaenge() {
+        List<PostfachZugang> postfaecher = postfachZugangService.abrufbarePostfaecher();
+        if (!postfaecher.isEmpty()) {
+            return postfaecher;
+        }
+        if (!systemSettingsService.isImapConfigured()) {
+            return List.of();
+        }
+        SystemSettingsService.ImapZugang alt = systemSettingsService.getStandardImapZugang();
+        return List.of(new PostfachZugang(null, alt.username(), null, alt.username(), alt.password(),
+                null, PostfachZugang.STANDARD_SMTP_PORT, alt.host(), alt.port(), true));
+    }
+
+    /** Verständlicher Text für den Abruf-Status in den Einstellungen – ohne Adressen oder Inhalte. */
+    static String abrufFehlerText(Exception e) {
+        Throwable t = e;
+        while (t != null) {
+            if (t instanceof jakarta.mail.AuthenticationFailedException) {
+                return "Anmeldung fehlgeschlagen – bitte Passwort und Anmeldename prüfen.";
+            }
+            if (t instanceof java.net.UnknownHostException) {
+                return "Server nicht gefunden – bitte den Namen des Posteingangs-Servers prüfen.";
+            }
+            if (t instanceof java.net.SocketTimeoutException || t instanceof java.net.ConnectException) {
+                return "Server nicht erreichbar – bitte Server und Port prüfen.";
+            }
+            t = t.getCause();
+        }
+        return "Abruf fehlgeschlagen – bitte die Verbindung testen.";
+    }
+
+    /** Ruft ein Postfach ab: Eingang und Gesendet. */
+    private int importierePostfach(PostfachZugang zugang) throws MessagingException {
         Properties props = new Properties();
         props.put("mail.store.protocol", "imaps");
         props.put("mail.mime.address.strict", "false");
@@ -175,33 +242,29 @@ public class EmailImportService {
         props.put("mail.imaps.timeout", "30000");
 
         Session session = Session.getInstance(props);
-        int totalImported = 0;
+        int imported = 0;
 
         try (Store store = session.getStore("imaps")) {
-            store.connect(host, port, user, pass);
-            log.info("[EmailImport] IMAP-Verbindung hergestellt");
+            store.connect(zugang.imapHost(), zugang.imapPort(), zugang.benutzername(), zugang.passwort());
+            log.debug("[EmailImport] IMAP-Verbindung zu Postfach {} hergestellt", zugang.postfachId());
 
-            // Eingehende E-Mails
-            for (String folderName : INCOMING_FOLDERS) {
-                totalImported += importFromFolder(store, folderName, EmailDirection.IN);
+            List<String> eingang = zugang.hauptpostfach() ? INCOMING_FOLDERS : WEITERE_INCOMING_FOLDERS;
+            List<String> gesendet = zugang.hauptpostfach() ? OUTGOING_FOLDERS : WEITERE_OUTGOING_FOLDERS;
+            for (String folderName : eingang) {
+                imported += importFromFolder(store, folderName, EmailDirection.IN, zugang.postfachId());
             }
-
-            // Ausgehende E-Mails
-            for (String folderName : OUTGOING_FOLDERS) {
-                totalImported += importFromFolder(store, folderName, EmailDirection.OUT);
+            for (String folderName : gesendet) {
+                imported += importFromFolder(store, folderName, EmailDirection.OUT, zugang.postfachId());
             }
-
-        } catch (MessagingException e) {
-            log.error("[EmailImport] IMAP-Fehler: {}", e.getMessage());
         }
-
-        return totalImported;
+        return imported;
     }
+
 
     /**
      * Importiert E-Mails aus einem einzelnen IMAP-Ordner.
      */
-    private int importFromFolder(Store store, String folderName, EmailDirection direction) {
+    private int importFromFolder(Store store, String folderName, EmailDirection direction, Long postfachId) {
         try {
             Folder genericFolder = store.getFolder(folderName);
             if (!(genericFolder instanceof IMAPFolder folder) || !folder.exists()) {
@@ -223,7 +286,7 @@ public class EmailImportService {
                     try {
                         // Über self-Proxy aufrufen, damit @Transactional auf
                         // importMessage greift (eigene Tx pro Mail).
-                        if (self.importMessage(msg, folder, direction)) {
+                        if (self.importMessage(msg, folder, direction, postfachId)) {
                             imported++;
                             // Erst NACH dem Commit der Import-Transaktion,
                             // sonst sperren sich beide gegenseitig.
@@ -328,6 +391,17 @@ public class EmailImportService {
     @Transactional
     public boolean importMessage(Message msg, IMAPFolder folder, EmailDirection direction)
             throws MessagingException, IOException {
+        return importMessage(msg, folder, direction, null);
+    }
+
+    /**
+     * Wie {@link #importMessage(Message, IMAPFolder, EmailDirection)}, legt die Mail aber
+     * zusätzlich in das Postfach {@code postfachId}. Ist sie schon bekannt (z. B. an info@
+     * und max@ zugleich), wird nur die Zuordnung ergänzt.
+     */
+    @Transactional
+    public boolean importMessage(Message msg, IMAPFolder folder, EmailDirection direction, Long postfachId)
+            throws MessagingException, IOException {
 
         // Message-ID extrahieren
         String[] ids = msg.getHeader("Message-ID");
@@ -341,8 +415,9 @@ public class EmailImportService {
             fallbackId = true;
         }
 
-        // Bereits importiert?
+        // Bereits importiert? Dann höchstens dieses Postfach ergänzen.
         if (emailRepository.existsByMessageId(messageId)) {
+            ergaenzePostfach(messageId, postfachId, folder, msg);
             return false;
         }
 
@@ -531,6 +606,11 @@ public class EmailImportService {
         // Status
         email.setProcessingStatus(EmailProcessingStatus.DONE);
         email.setProcessedAt(LocalDateTime.now());
+
+        if (postfachId != null) {
+            email.ordnePostfachZu(emailAbsenderRepository.getReferenceById(postfachId),
+                    folder.getFullName(), folder.getUID(msg));
+        }
 
         // Speichern (ohne Attachments erstmal)
         emailRepository.save(email);
@@ -1200,11 +1280,34 @@ public class EmailImportService {
         emailRepository.save(email);
     }
 
-    /** Eigene Adressen: Absender gesendeter Mails sowie die Postfach-Logins. */
+    /**
+     * Bekannte Mail in einem weiteren Postfach gefunden (gleichzeitig an info@ und max@,
+     * oder die eigene Gesendet-Kopie): nur die Zuordnung ergänzen, Inhalt bleibt unangetastet.
+     */
+    private void ergaenzePostfach(String messageId, Long postfachId, IMAPFolder folder, Message msg)
+            throws MessagingException {
+        if (postfachId == null) {
+            return;
+        }
+        Optional<Email> vorhanden = emailRepository.findByMessageId(messageId);
+        if (vorhanden.isEmpty()) {
+            return;
+        }
+        Email email = vorhanden.get();
+        if (email.ordnePostfachZu(emailAbsenderRepository.getReferenceById(postfachId),
+                folder.getFullName(), folder.getUID(msg))) {
+            emailRepository.save(email);
+        }
+    }
+
+    /** Eigene Adressen: Absender gesendeter Mails, alle Postfächer sowie die Postfach-Logins. */
     Set<String> eigeneAdressen() {
         Set<String> eigene = new HashSet<>(emailRepository.findDistinctFromAddressesByDirection(EmailDirection.OUT));
         eigene.addAll(EmailThreadTeilnehmer.adressen(
                 systemSettingsService.getImapUsername(), systemSettingsService.getSmtpUsername()));
+        for (EmailAbsender postfach : emailAbsenderRepository.findAll()) {
+            eigene.addAll(EmailThreadTeilnehmer.adressen(postfach.getEmailAdresse(), postfach.effektiverBenutzername()));
+        }
         eigene.remove(null);
         return eigene;
     }
@@ -1299,12 +1402,36 @@ public class EmailImportService {
             return;
         }
 
-        String user = systemSettingsService.getImapUsername();
-        String pass = systemSettingsService.getImapPassword();
-        String host = systemSettingsService.getImapHost();
-        int port = systemSettingsService.getImapPort();
+        List<org.example.kalkulationsprogramm.domain.EmailPostfachZuordnung> zuordnungen =
+                email.getId() == null ? List.of() : emailPostfachZuordnungRepository.findByEmailId(email.getId());
+        if (zuordnungen.isEmpty()) {
+            // Mail aus der Zeit vor den Postfächern: wie bisher im Hauptpostfach löschen.
+            loescheAufServer(email, systemSettingsService.getStandardImapZugang(),
+                    email.getImapFolder(), email.getImapUid(), true);
+            return;
+        }
+        // Liegt die Mail in mehreren Postfächern, verschwindet sie aus allen.
+        for (var zuordnung : zuordnungen) {
+            PostfachZugang zugang = postfachZugangService.zugangVon(zuordnung.getPostfach());
+            if (!zugang.hatAbrufZugang()) {
+                log.debug("[EmailDeletion] Postfach {} ohne Zugang – Server-Löschung übersprungen",
+                        zugang.postfachId());
+                continue;
+            }
+            String ordner = zuordnung.getImapOrdner() != null ? zuordnung.getImapOrdner() : email.getImapFolder();
+            Long uid = zuordnung.getImapUid() != null ? zuordnung.getImapUid() : email.getImapUid();
+            loescheAufServer(email, zugang.imapZugang(), ordner, uid, zugang.hauptpostfach());
+        }
+    }
+
+    private void loescheAufServer(Email email, SystemSettingsService.ImapZugang zugang, String imapOrdner,
+            Long imapUid, boolean hauptpostfach) {
+        String user = zugang.username();
+        String pass = zugang.password();
+        String host = zugang.host();
+        int port = zugang.port();
         if (user == null || user.isBlank() || pass == null || pass.isBlank() || host == null || host.isBlank()) {
-            log.debug("[EmailDeletion] IMAP-Zugangsdaten fehlen (System-Einstellungen), überspringe Server-Löschung");
+            log.debug("[EmailDeletion] IMAP-Zugangsdaten fehlen, überspringe Server-Löschung");
             return;
         }
 
@@ -1326,13 +1453,13 @@ public class EmailImportService {
             boolean deleted = false;
 
             // 1. VERSUCH: Direktzugriff über Folder + UID (Viel schneller & genauer)
-            if (email.getImapFolder() != null && email.getImapUid() != null) {
+            if (imapOrdner != null && imapUid != null) {
                 try {
-                    Folder folder = store.getFolder(email.getImapFolder());
+                    Folder folder = store.getFolder(imapOrdner);
                     if (folder.exists()) {
                         folder.open(Folder.READ_WRITE);
                         if (folder instanceof IMAPFolder imapFolder) {
-                            Message msg = imapFolder.getMessageByUID(email.getImapUid());
+                            Message msg = imapFolder.getMessageByUID(imapUid);
                             if (msg != null) {
                                 // Sicherheitscheck: Message-ID vergleichen
                                 String[] ids = msg.getHeader("Message-ID");
@@ -1346,7 +1473,7 @@ public class EmailImportService {
                                     msg.setFlag(Flags.Flag.DELETED, true);
                                     deleted = true;
                                     log.info("[EmailDeletion] E-Mail {} via UID {} in Ordner {} gelöscht",
-                                            email.getMessageId(), email.getImapUid(), email.getImapFolder());
+                                            email.getMessageId(), imapUid, imapOrdner);
                                 } else {
                                     log.debug(
                                             "[EmailDeletion] UID-Treffer aber Message-ID Mismatch. Erwarte: {}, gefunden: {}",
@@ -1370,8 +1497,8 @@ public class EmailImportService {
             log.debug("[EmailDeletion] Fallback: Suche nach Message-ID {} in allen Ordnern", email.getMessageId());
 
             // Alle Ordner durchsuchen
-            List<String> foldersToCheck = new ArrayList<>(INCOMING_FOLDERS);
-            foldersToCheck.addAll(OUTGOING_FOLDERS);
+            List<String> foldersToCheck = new ArrayList<>(hauptpostfach ? INCOMING_FOLDERS : WEITERE_INCOMING_FOLDERS);
+            foldersToCheck.addAll(hauptpostfach ? OUTGOING_FOLDERS : WEITERE_OUTGOING_FOLDERS);
 
             for (String folderName : foldersToCheck) {
                 try {

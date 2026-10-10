@@ -1,12 +1,10 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
-import org.example.kalkulationsprogramm.dto.EmailAbsenderDto;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.dto.KostenstelleDto;
 import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.domain.KostenstellenTyp;
-import org.example.kalkulationsprogramm.service.EmailAbsenderService;
 import org.example.kalkulationsprogramm.service.FirmeninformationService;
 import org.example.kalkulationsprogramm.service.KostenstelleService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
@@ -30,7 +28,6 @@ public class FirmaController {
     private final FirmeninformationService firmeninformationService;
     private final KostenstelleService kostenstelleService;
     private final SteuerberaterKontaktService steuerberaterKontaktService;
-    private final EmailAbsenderService emailAbsenderService;
 
     // ==================== FIRMENINFORMATION ====================
 
@@ -165,41 +162,6 @@ public class FirmaController {
     @DeleteMapping("/steuerberater/{id}")
     public ResponseEntity<Void> loescheSteuerberater(@PathVariable Long id) {
         steuerberaterKontaktService.loeschen(id);
-        return ResponseEntity.noContent().build();
-    }
-
-    // ==================== E-MAIL-ABSENDER ====================
-
-    @GetMapping("/email-absender")
-    public ResponseEntity<List<EmailAbsenderDto>> getEmailAbsender() {
-        return ResponseEntity.ok(emailAbsenderService.findAll());
-    }
-
-    @PostMapping("/email-absender")
-    public ResponseEntity<?> erstelleEmailAbsender(@RequestBody EmailAbsenderDto dto) {
-        try {
-            dto.setId(null);
-            return ResponseEntity.ok(emailAbsenderService.save(dto));
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
-        }
-    }
-
-    @PutMapping("/email-absender/{id}")
-    public ResponseEntity<?> aktualisiereEmailAbsender(
-            @PathVariable Long id,
-            @RequestBody EmailAbsenderDto dto) {
-        try {
-            dto.setId(id);
-            return ResponseEntity.ok(emailAbsenderService.save(dto));
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
-        }
-    }
-
-    @DeleteMapping("/email-absender/{id}")
-    public ResponseEntity<Void> loescheEmailAbsender(@PathVariable Long id) {
-        emailAbsenderService.delete(id);
         return ResponseEntity.noContent().build();
     }
 }

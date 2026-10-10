@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.dto.Email;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.example.kalkulationsprogramm.dto.Postfach.PostfachRefDto;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import lombok.Data;
@@ -92,6 +94,17 @@ public class UnifiedEmailDto {
 
     /** Klartext-Grund der Ablehnung, z.B. "unknown user". */
     private String zustellFehler;
+
+    /** Postfächer, in denen die Mail liegt (Schild an der Mail). Nie {@code null}. */
+    private List<PostfachRefDto> postfaecher = List.of();
+
+    /**
+     * Postfach, aus dem eine Antwort oder Weiterleitung fest rausgeht.
+     * {@code null} nur, wenn es gar kein Postfach gibt. In Listen nicht berechnet und dann
+     * gar nicht ausgeliefert – das Frontend lädt bei Antwort/Weiterleitung die Detailansicht.
+     */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private PostfachRefDto antwortPostfach;
 
     @Data
     public static class AttachmentDto {

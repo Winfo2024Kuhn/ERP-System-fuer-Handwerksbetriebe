@@ -61,7 +61,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.nio.charset.StandardCharsets;
 
 @WebMvcTest({UnifiedEmailController.class, EmailDraftController.class})
-@org.springframework.context.annotation.Import(org.example.kalkulationsprogramm.service.EmailDraftService.class)
+@org.springframework.context.annotation.Import({org.example.kalkulationsprogramm.service.EmailDraftService.class,
+        org.example.kalkulationsprogramm.service.AusgangsmailService.class})
 @AutoConfigureMockMvc(addFilters = false)
 @org.springframework.test.context.TestPropertySource(properties = {
         "file.mail-attachment-dir=target/test-attachments"
@@ -100,6 +101,8 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
     @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
+    @MockBean private org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
 
     @org.junit.jupiter.api.BeforeEach
     void threadKennzahlenWieEinzelmail() {
@@ -107,6 +110,11 @@ class UnifiedEmailControllerTest {
         given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.of(
                 java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
         given(lieferantDokumentZugriffService.istAnhangSichtbar(any(), any())).willReturn(true);
+        // Ohne Postfächer: Versand wie bisher über das Standard-Konto mit fester Absender-Adresse.
+        given(postfachVersandService.versandUeber(any())).willReturn(
+                new org.example.kalkulationsprogramm.service.PostfachVersandService.Versand(
+                        new org.example.email.EmailService("mail.example.com", 465, "user", "pass"),
+                        "absender@example.com", null));
         given(emailThreadService.kennzahlenFuer(any())).willAnswer(invocation -> {
             Email email = invocation.getArgument(0);
             return new EmailThreadService.ThreadKennzahlen(email.getId(), 1, email.getSentAt());
@@ -211,7 +219,6 @@ class UnifiedEmailControllerTest {
         given(systemSettingsService.getSmtpUsername()).willReturn("user");
         given(systemSettingsService.getSmtpPassword()).willReturn("pass");
         given(emailAbsenderService.findActiveEmailAddresses()).willReturn(List.of("absender@example.com"));
-        given(emailAbsenderService.findAnzeigenameFuerAdresse(any())).willReturn(Optional.of("Firma"));
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -1001,30 +1008,564 @@ class UnifiedEmailControllerTest {
     }
 
     @Nested
-    @DisplayName("From-Addresses Endpoint Tests")
-    class FromAddressesTests {
-        @Test
-        @DisplayName("GET /api/emails/from-addresses liefert aktive Absender ohne PathVariable-Fehler")
-        void getFromAddresses_liefertAktiveAbsender() throws Exception {
-            given(emailAbsenderService.getPrioritizedFromAddresses(isNull()))
-                    .willReturn(List.of("info@example.com", "buchhaltung@example.com"));
+    @DisplayName("Postfächer: Absender-Auswahl, fester Absender, Einzelversand")
+    class PostfachVersand {
 
-            mockMvc.perform(get("/api/emails/from-addresses"))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0]").value("info@example.com"))
-                    .andExpect(jsonPath("$[1]").value("buchhaltung@example.com"));
+        private org.example.kalkulationsprogramm.domain.EmailAbsender postfach(long id, String adresse) {
+            org.example.kalkulationsprogramm.domain.EmailAbsender p = new org.example.kalkulationsprogramm.domain.EmailAbsender();
+            p.setId(id);
+            p.setEmailAdresse(adresse);
+            return p;
+        }
+
+        private MockMultipartFile dto(String json) {
+            return new MockMultipartFile("dto", "", "application/json", json.getBytes(StandardCharsets.UTF_8));
         }
 
         @Test
-        @DisplayName("GET /api/emails/from-addresses delegiert frontendUserId an Service")
-        void getFromAddresses_delegiertFrontendUserId() throws Exception {
-            given(emailAbsenderService.getPrioritizedFromAddresses(42L))
-                    .willReturn(List.of("user@example.com", "info@example.com"));
+        @DisplayName("absender-postfaecher: eigenes Postfach kommt aus der Anmeldung")
+        void absenderPostfaecherNutztAnmeldung() throws Exception {
+            org.example.kalkulationsprogramm.domain.FrontendUserProfile max = new org.example.kalkulationsprogramm.domain.FrontendUserProfile();
+            max.setId(7L);
+            given(frontendUserProfileService.findByUsername("max")).willReturn(Optional.of(max));
+            given(postfachVersandService.eigenesPostfach(7L)).willReturn(Optional.of(postfach(3L, "max@example.com")));
+            given(postfachService.absenderAuswahl(3L)).willReturn(List.of(
+                    new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(3L, "max@example.com", "Max Mustermann", true, false),
+                    new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(1L, "info@example.com", null, false, true)));
 
-            mockMvc.perform(get("/api/emails/from-addresses?frontendUserId=42"))
+            mockMvc.perform(get("/api/emails/absender-postfaecher")
+                            .principal(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("max", null)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0]").value("user@example.com"))
-                    .andExpect(jsonPath("$[1]").value("info@example.com"));
+                    .andExpect(jsonPath("$[0].id").value(3))
+                    .andExpect(jsonPath("$[0].eigenes").value(true))
+                    .andExpect(jsonPath("$[1].hauptpostfach").value(true));
+        }
+
+        @Test
+        @DisplayName("absender-postfaecher: ohne Anmeldung kein eigenes Postfach")
+        void absenderPostfaecherOhneAnmeldung() throws Exception {
+            given(postfachService.absenderAuswahl(isNull())).willReturn(List.of());
+
+            mockMvc.perform(get("/api/emails/absender-postfaecher"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$").isEmpty());
+            verify(postfachService).absenderAuswahl(isNull());
+        }
+
+        @Test
+        @DisplayName("send: gewähltes Postfach geht an den Versand, Absender kommt aus dem Postfach")
+        void sendNutztGewaehltesPostfach() throws Exception {
+            var info = postfach(1L, "info@example.com");
+            given(postfachVersandService.postfachFuerNeueMail(eq(1L), isNull(), eq(false))).willReturn(info);
+            given(postfachVersandService.versandUeber(info)).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachVersandService.Versand(
+                            new org.example.email.EmailService("h", 465, "u", "p"), "info@example.com", info));
+            org.mockito.Mockito.doReturn("<m1@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"postfachId\":1,\"sender\":\"falsch@example.org\",\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"Hallo\"}")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.fromAddress").value("info@example.com"))
+                    .andExpect(jsonPath("$.postfaecher[0].emailAdresse").value("info@example.com"));
+            verify(unifiedEmailController).sendeSmtpMail(any(), eq("kunde@example.com"), isNull(),
+                    eq("info@example.com"), eq("Angebot"), any(), any());
+        }
+
+        @Test
+        @DisplayName("send: unbekanntes Postfach -> 400 mit Meldung")
+        void sendUnbekanntesPostfach() throws Exception {
+            given(postfachVersandService.postfachFuerNeueMail(eq(99L), any(), eq(false)))
+                    .willThrow(new IllegalArgumentException("Dieses Postfach gibt es nicht (mehr) oder es ist ausgeschaltet. Bitte ein anderes wählen."));
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"postfachId\":99,\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Postfach")));
+        }
+
+        @Test
+        @DisplayName("send: ohne jedes Postfach -> 400 mit Hinweis auf die Einstellungen")
+        void sendOhnePostfach() throws Exception {
+            given(postfachVersandService.versandUeber(any())).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachVersandService.Versand(
+                            new org.example.email.EmailService("h", 465, "u", "p"), "", null));
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Postfächer")));
+        }
+
+        @Test
+        @DisplayName("Weiterleiten: Absender fest wie die Original-Mail, postfachId wird ignoriert")
+        void weiterleitenNutztEingangsPostfach() throws Exception {
+            var rechnungen = postfach(2L, "rechnungen@example.com");
+            Email original = createTestEmail(5L, "Rechnung 4711", "lieferant@example.com");
+            given(emailRepository.findById(5L)).willReturn(Optional.of(original));
+            given(postfachVersandService.antwortPostfach(original)).willReturn(rechnungen);
+            given(postfachVersandService.versandUeber(rechnungen)).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachVersandService.Versand(
+                            new org.example.email.EmailService("h", 465, "u", "p"), "rechnungen@example.com", rechnungen));
+            org.mockito.Mockito.doReturn("<fw@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weitergeleitetVonEmailId\":5,\"postfachId\":1,\"recipients\":[\"buero@example.com\"],\"subject\":\"WG: Rechnung 4711\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.fromAddress").value("rechnungen@example.com"));
+            verify(postfachVersandService, never()).postfachFuerNeueMail(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+        }
+
+        @Test
+        @DisplayName("Weiterleiten einer unbekannten Mail -> 404")
+        void weiterleitenUnbekannteMail() throws Exception {
+            given(emailRepository.findById(Long.MAX_VALUE)).willReturn(Optional.empty());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weitergeleitetVonEmailId\":" + Long.MAX_VALUE + ",\"recipients\":[\"buero@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("Einzelversand: jeder Empfänger eine eigene Mail, Teilfehler werden gemeldet")
+        void einzelversandMitTeilfehler() throws Exception {
+            given(postfachVersandService.pruefeEinzelversand(anyList(), any()))
+                    .willReturn(List.of("a@example.com", "b@example.com", "kaputt@example.org"));
+            given(postfachVersandService.versendeEinzeln(anyList(), any())).willAnswer(inv -> {
+                List<String> empfaenger = inv.getArgument(0);
+                org.example.kalkulationsprogramm.service.PostfachVersandService.Einzelsendung<Optional<Email>> sendung = inv.getArgument(1);
+                List<Optional<Email>> ok = new java.util.ArrayList<>();
+                for (String adresse : empfaenger.subList(0, 2)) {
+                    ok.add(sendung.sendeAn(adresse));
+                }
+                return new org.example.kalkulationsprogramm.service.PostfachVersandService.EinzelversandErgebnis<>(ok,
+                        List.of(new org.example.kalkulationsprogramm.service.PostfachVersandService.Fehlschlag(
+                                "kaputt@example.org", "Empfänger vom Mail-Server abgelehnt")));
+            });
+            org.mockito.Mockito.doReturn("<e1@example.com>", "<e2@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"einzelversand\":true,\"recipients\":[\"a@example.com\",\"b@example.com\",\"kaputt@example.org\"],\"subject\":\"Betriebsurlaub\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.verschickt").value(2))
+                    .andExpect(jsonPath("$.fehlgeschlagen[0].adresse").value("kaputt@example.org"))
+                    .andExpect(jsonPath("$.emails.length()").value(2))
+                    .andExpect(jsonPath("$.emails[0].recipient").value("a@example.com"))
+                    .andExpect(jsonPath("$.nichtGespeichert").isEmpty());
+            // Jede Mail geht an genau einen Empfänger, ohne CC.
+            verify(unifiedEmailController).sendeSmtpMail(any(), eq("a@example.com"), isNull(), any(), any(), any(), any());
+            verify(unifiedEmailController).sendeSmtpMail(any(), eq("b@example.com"), isNull(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Einzelversand: verschickt, aber Speichern scheitert -> nicht als fehlgeschlagen melden")
+        void einzelversandSpeicherfehlerIstKeinVersandfehler() throws Exception {
+            given(postfachVersandService.pruefeEinzelversand(anyList(), any())).willReturn(List.of("a@example.com"));
+            given(postfachVersandService.versendeEinzeln(anyList(), any())).willAnswer(inv -> {
+                org.example.kalkulationsprogramm.service.PostfachVersandService.Einzelsendung<Optional<Email>> sendung = inv.getArgument(1);
+                return new org.example.kalkulationsprogramm.service.PostfachVersandService.EinzelversandErgebnis<>(
+                        List.of(sendung.sendeAn("a@example.com")), List.of());
+            });
+            org.mockito.Mockito.doReturn("<e@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+            given(emailRepository.saveAndFlush(any())).willThrow(new org.springframework.dao.DataIntegrityViolationException("doppelt"));
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"einzelversand\":true,\"recipients\":[\"a@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.verschickt").value(1))
+                    .andExpect(jsonPath("$.fehlgeschlagen").isEmpty())
+                    .andExpect(jsonPath("$.nichtGespeichert[0]").value("a@example.com"))
+                    .andExpect(jsonPath("$.emails").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Einzelversand: alles schiefgegangen -> 502 mit Liste")
+        void einzelversandAllesFehlgeschlagen() throws Exception {
+            given(postfachVersandService.pruefeEinzelversand(anyList(), any())).willReturn(List.of("a@example.com"));
+            given(postfachVersandService.versendeEinzeln(anyList(), any())).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachVersandService.EinzelversandErgebnis<>(List.of(),
+                            List.of(new org.example.kalkulationsprogramm.service.PostfachVersandService.Fehlschlag(
+                                    "a@example.com", "Anmeldung am Postfach fehlgeschlagen"))));
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"einzelversand\":true,\"recipients\":[\"a@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadGateway())
+                    .andExpect(jsonPath("$.fehlgeschlagen[0].grund").value("Anmeldung am Postfach fehlgeschlagen"));
+        }
+
+        @Test
+        @DisplayName("Einzelversand mit CC -> 400")
+        void einzelversandMitCc() throws Exception {
+            given(postfachVersandService.pruefeEinzelversand(anyList(), any()))
+                    .willThrow(new IllegalArgumentException("Beim einzelnen Verschicken bitte keine Kopie-Empfänger eintragen."));
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"einzelversand\":true,\"recipients\":[\"a@example.com\"],\"cc\":[\"c@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Beim einzelnen Verschicken bitte keine Kopie-Empfänger eintragen."));
+            verify(unifiedEmailController, never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Antwort: Absender fest aus dem Eingangs-Postfach, Postfach landet an der gespeicherten Mail")
+        void antwortNutztEingangsPostfach() throws Exception {
+            var info = postfach(1L, "info@example.com");
+            Email original = createTestEmail(8L, "Anfrage Treppe", "kunde@example.com");
+            given(emailRepository.findById(8L)).willReturn(Optional.of(original));
+            given(postfachVersandService.antwortPostfach(original)).willReturn(info);
+            given(postfachVersandService.versandUeber(info)).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachVersandService.Versand(
+                            new org.example.email.EmailService("h", 465, "u", "p"), "info@example.com", info));
+            given(emailThreadService.antwortBezugFuer(original)).willReturn(null);
+            org.mockito.Mockito.doReturn("<r@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/8/reply").file(dto(
+                            "{\"postfachId\":2,\"recipients\":[\"kunde@example.com\"],\"subject\":\"AW: Anfrage Treppe\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.fromAddress").value("info@example.com"))
+                    .andExpect(jsonPath("$.postfaecher[0].id").value(1));
+        }
+    }
+
+    @Nested
+    @DisplayName("Versand: Zuordnung, Anhänge und Grenzen")
+    class VersandZweige {
+
+        private MockMultipartFile dto(String json) {
+            return new MockMultipartFile("dto", "", "application/json", json.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private MockMultipartFile anhang(String name, int groesse) {
+            return new MockMultipartFile("attachments", name, "application/pdf", new byte[groesse]);
+        }
+
+        private void smtpOk() throws Exception {
+            org.mockito.Mockito.doReturn("<v@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+            org.mockito.Mockito.doReturn("<r@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any(), any());
+        }
+
+        private Email gespeicherteMail() {
+            org.mockito.ArgumentCaptor<Email> captor = org.mockito.ArgumentCaptor.forClass(Email.class);
+            verify(emailRepository).saveAndFlush(captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        void sendMitProjektUndHochgeladenemAnhang() throws Exception {
+            smtpOk();
+            org.example.kalkulationsprogramm.domain.Projekt projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+            projekt.setId(3L);
+            given(projektRepository.findById(3L)).willReturn(Optional.of(projekt));
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"projektId\":3,\"recipients\":[\"kunde@example.com\"],\"cc\":[\"chef@example.com\"],\"subject\":\"Plan\",\"body\":\"b\"}"))
+                            .file(anhang("../../plan.pdf", 10)))
+                    .andExpect(status().isOk());
+
+            Email mail = gespeicherteMail();
+            org.junit.jupiter.api.Assertions.assertSame(projekt, mail.getProjekt());
+            org.junit.jupiter.api.Assertions.assertEquals("chef@example.com", mail.getCc());
+            org.junit.jupiter.api.Assertions.assertEquals(1, mail.getAttachments().size());
+            org.junit.jupiter.api.Assertions.assertFalse(mail.getAttachments().get(0).getStoredFilename().contains(".."));
+        }
+
+        @Test
+        void sendMitAnfrageUndAnfrageDokument() throws Exception {
+            smtpOk();
+            org.example.kalkulationsprogramm.domain.Anfrage anfrage = new org.example.kalkulationsprogramm.domain.Anfrage();
+            given(anfrageRepository.findById(4L)).willReturn(Optional.of(anfrage));
+            org.example.kalkulationsprogramm.domain.AnfrageDokument dok = new org.example.kalkulationsprogramm.domain.AnfrageDokument();
+            dok.setId(9L);
+            dok.setOriginalDateiname("angebot.pdf");
+            dok.setGespeicherterDateiname("angebot_9.pdf");
+            dok.setDateityp("application/pdf");
+            given(anfrageDokumentRepository.findById(9L)).willReturn(Optional.of(dok));
+            given(dateiSpeicherService.ladeDokumentAlsResource("angebot_9.pdf"))
+                    .willReturn(new org.springframework.core.io.ByteArrayResource(new byte[] { 1, 2 }));
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"anfrageId\":4,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}"))
+                            .file(new MockMultipartFile("dokumentId", "", "text/plain", "9".getBytes(StandardCharsets.UTF_8))))
+                    .andExpect(status().isOk());
+
+            org.junit.jupiter.api.Assertions.assertSame(anfrage, gespeicherteMail().getAnfrage());
+            verify(anfrageDokumentRepository).save(dok);
+            org.junit.jupiter.api.Assertions.assertNotNull(dok.getEmailVersandDatum());
+        }
+
+        @Test
+        void sendMitLieferantUndUnbekanntemDokument() throws Exception {
+            smtpOk();
+            org.example.kalkulationsprogramm.domain.Lieferanten lieferant = new org.example.kalkulationsprogramm.domain.Lieferanten();
+            given(lieferantenRepository.findById(6L)).willReturn(Optional.of(lieferant));
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"lieferantId\":6,\"recipients\":[\"lieferant@example.com\"],\"subject\":\"Bestellung\",\"body\":\"b\"}"))
+                            .file(new MockMultipartFile("dokumentId", "", "text/plain", "abc".getBytes(StandardCharsets.UTF_8))))
+                    .andExpect(status().isOk());
+
+            org.junit.jupiter.api.Assertions.assertSame(lieferant, gespeicherteMail().getLieferant());
+        }
+
+        @Test
+        void sendAnfrageDokumentOhneDateiWirdUebersprungen() throws Exception {
+            smtpOk();
+            given(anfrageDokumentRepository.findById(9L)).willReturn(Optional.empty());
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"anfrageId\":4,\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .file(new MockMultipartFile("dokumentId", "", "text/plain", "9".getBytes(StandardCharsets.UTF_8))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void sendZuGrosserAnhang400() throws Exception {
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .file(anhang("riesig.pdf", (int) UnifiedEmailController.MAX_SINGLE_ATTACHMENT_BYTES + 1)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("15 MB")));
+        }
+
+        @Test
+        void sendAnhaengeInSummeZuGross400() throws Exception {
+            int dreizehnMb = 13 * 1024 * 1024;
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .file(anhang("a.pdf", dreizehnMb)).file(anhang("b.pdf", dreizehnMb)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("25 MB")));
+        }
+
+        @Test
+        void sendOhneEmpfaenger400() throws Exception {
+            mockMvc.perform(multipart("/api/emails/send").file(dto("{\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void sendMitUnbekanntemAngemeldetemBenutzerNimmtMitgeschickteId() throws Exception {
+            smtpOk();
+            given(frontendUserProfileService.findByUsername("unbekannt")).willReturn(Optional.empty());
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"frontendUserId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .principal(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("unbekannt", null)))
+                    .andExpect(status().isOk());
+
+            verify(postfachVersandService).postfachFuerNeueMail(isNull(), eq(7L), eq(false));
+        }
+
+        @Test
+        void sendGeschaeftsdokumentGibtKennzeichenWeiter() throws Exception {
+            smtpOk();
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"geschaeftsdokument\":true,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Rechnung\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+
+            verify(postfachVersandService).postfachFuerNeueMail(isNull(), isNull(), eq(true));
+        }
+
+        @Test
+        void antwortAufUnbekannteMail404() throws Exception {
+            given(emailRepository.findById(Long.MAX_VALUE)).willReturn(Optional.empty());
+
+            mockMvc.perform(multipart("/api/emails/" + Long.MAX_VALUE + "/reply")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void antwortOhnePostfach400() throws Exception {
+            Email original = createTestEmail(8L, "Anfrage", "kunde@example.com");
+            given(emailRepository.findById(8L)).willReturn(Optional.of(original));
+            given(postfachVersandService.versandUeber(any())).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachVersandService.Versand(
+                            new org.example.email.EmailService("h", 465, "u", "p"), null, null));
+
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Postfächer")));
+        }
+
+        @Test
+        void antwortErbtZuordnungDerOriginalMailUndSpeichertAnhang() throws Exception {
+            smtpOk();
+            Email original = createTestEmail(8L, "Anfrage", "kunde@example.com");
+            org.example.kalkulationsprogramm.domain.Lieferanten lieferant = new org.example.kalkulationsprogramm.domain.Lieferanten();
+            original.assignToLieferant(lieferant);
+            given(emailRepository.findById(8L)).willReturn(Optional.of(original));
+
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"AW: Anfrage\",\"body\":\"b\"}"))
+                            .file(anhang("skizze.pdf", 5)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.fromAddress").value("absender@example.com"));
+        }
+
+        @Test
+        void antwortMitProjektAusDtoUndAnfrageDerOriginalMail() throws Exception {
+            smtpOk();
+            org.example.kalkulationsprogramm.domain.Projekt projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+            given(projektRepository.findById(3L)).willReturn(Optional.of(projekt));
+            Email original = createTestEmail(8L, "Anfrage", "kunde@example.com");
+            original.assignToAnfrage(new org.example.kalkulationsprogramm.domain.Anfrage());
+            given(emailRepository.findById(8L)).willReturn(Optional.of(original));
+
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"projektId\":3,\"recipients\":[\"kunde@example.com\"],\"subject\":\"AW\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"AW\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void antwortZuGrosserAnhang400() throws Exception {
+            Email original = createTestEmail(8L, "Anfrage", "kunde@example.com");
+            given(emailRepository.findById(8L)).willReturn(Optional.of(original));
+
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .file(anhang("riesig.pdf", (int) UnifiedEmailController.MAX_SINGLE_ATTACHMENT_BYTES + 1)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void leereAnhaengeWerdenUebersprungen() throws Exception {
+            smtpOk();
+            Email original = createTestEmail(8L, "Anfrage", "kunde@example.com");
+            original.assignToProjekt(new org.example.kalkulationsprogramm.domain.Projekt());
+            given(emailRepository.findById(8L)).willReturn(Optional.of(original));
+            MockMultipartFile leer = new MockMultipartFile("attachments", "leer.pdf", "application/pdf", new byte[0]);
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"cc\":[],\"subject\":\"s\"}"))
+                            .file(leer))
+                    .andExpect(status().isOk());
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"AW\"}"))
+                            .file(leer))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void zuGrossesDokument400() throws Exception {
+            org.example.kalkulationsprogramm.domain.ProjektDokument dok = new org.example.kalkulationsprogramm.domain.ProjektDokument();
+            dok.setId(5L);
+            dok.setOriginalDateiname("plan.pdf");
+            dok.setGespeicherterDateiname("plan_5.pdf");
+            given(projektDokumentRepository.findById(5L)).willReturn(Optional.of(dok));
+            org.springframework.core.io.Resource riesig = org.mockito.Mockito.mock(org.springframework.core.io.Resource.class);
+            given(riesig.exists()).willReturn(true);
+            given(riesig.contentLength()).willReturn(UnifiedEmailController.MAX_SINGLE_ATTACHMENT_BYTES + 1);
+            given(dateiSpeicherService.ladeDokumentAlsResource("plan_5.pdf")).willReturn(riesig);
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .file(new MockMultipartFile("dokumentId", "", "text/plain", "5".getBytes(StandardCharsets.UTF_8))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("15 MB")));
+        }
+
+        @Test
+        void fehlendeDokumentDateiUndRechnungsdokument() throws Exception {
+            smtpOk();
+            org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument rechnung =
+                    new org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument();
+            rechnung.setId(6L);
+            rechnung.setOriginalDateiname("rechnung.pdf");
+            rechnung.setGespeicherterDateiname("rechnung_6.pdf");
+            rechnung.setDateityp(" ");
+            given(projektDokumentRepository.findById(6L)).willReturn(Optional.of(rechnung));
+            org.springframework.core.io.Resource weg = org.mockito.Mockito.mock(org.springframework.core.io.Resource.class);
+            given(weg.exists()).willReturn(false);
+            given(dateiSpeicherService.ladeDokumentAlsResource("rechnung_6.pdf")).willReturn(weg);
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"Rechnung\",\"body\":\"b\"}"))
+                            .file(new MockMultipartFile("dokumentId", "", "text/plain", "6".getBytes(StandardCharsets.UTF_8))))
+                    .andExpect(status().isOk());
+
+            // Rechnung erkannt -> Postfach für Geschäftsdokumente.
+            verify(postfachVersandService).postfachFuerNeueMail(isNull(), isNull(), eq(true));
+        }
+
+        @Test
+        void projektDokumentOhneGespeicherteDateiWirdIgnoriert() throws Exception {
+            smtpOk();
+            org.example.kalkulationsprogramm.domain.ProjektDokument dok = new org.example.kalkulationsprogramm.domain.ProjektDokument();
+            dok.setId(7L);
+            given(projektDokumentRepository.findById(7L)).willReturn(Optional.of(dok));
+
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .file(new MockMultipartFile("dokumentId", "", "text/plain", " ".getBytes(StandardCharsets.UTF_8))))
+                    .andExpect(status().isOk());
+            mockMvc.perform(multipart("/api/emails/send")
+                            .file(dto("{\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"b\"}"))
+                            .file(new MockMultipartFile("dokumentId", "", "text/plain", "7".getBytes(StandardCharsets.UTF_8))))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void antwortMitAnfrageOderLieferantAusDemRequest() throws Exception {
+            smtpOk();
+            Email original = createTestEmail(8L, "Anfrage", "kunde@example.com");
+            given(emailRepository.findById(8L)).willReturn(Optional.of(original));
+            given(anfrageRepository.findById(4L)).willReturn(Optional.of(new org.example.kalkulationsprogramm.domain.Anfrage()));
+            given(lieferantenRepository.findById(6L)).willReturn(Optional.of(new org.example.kalkulationsprogramm.domain.Lieferanten()));
+
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"anfrageId\":4,\"recipients\":[\"kunde@example.com\"],\"subject\":\"AW\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+            mockMvc.perform(multipart("/api/emails/8/reply")
+                            .file(dto("{\"lieferantId\":6,\"recipients\":[\"kunde@example.com\"],\"subject\":\"AW\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void listeZeigtPostfachSchild() throws Exception {
+            Email mail = createTestEmail(1L, "Anfrage", "kunde@example.com");
+            org.example.kalkulationsprogramm.domain.EmailAbsender info = new org.example.kalkulationsprogramm.domain.EmailAbsender();
+            info.setId(1L);
+            info.setEmailAdresse("info@example.com");
+            mail.ordnePostfachZu(info, "INBOX", 1L);
+            given(emailRepository.searchGlobal("Anfrage")).willReturn(List.of(mail));
+            given(postfachVersandService.antwortPostfach(any())).willReturn(info);
+
+            // Liste: Schild ja, Antwort-Postfach nein (sonst eine Abfrage pro Zeile).
+            mockMvc.perform(get("/api/emails/search").param("q", "Anfrage"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].postfaecher[0].emailAdresse").value("info@example.com"))
+                    .andExpect(jsonPath("$[0].antwortPostfach").doesNotExist());
+            verify(postfachVersandService, never()).antwortPostfach(any());
+
+            // Detail: mit festem Antwort-Postfach.
+            given(emailRepository.findById(1L)).willReturn(Optional.of(mail));
+            mockMvc.perform(get("/api/emails/1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.antwortPostfach.id").value(1));
+        }
+
+        @Test
+        void listeOhneZuordnungslisteLeer() throws Exception {
+            Email mail = createTestEmail(1L, "Anfrage", "kunde@example.com");
+            mail.setPostfachZuordnungen(null);
+            given(emailRepository.searchGlobal("Anfrage")).willReturn(List.of(mail));
+
+            mockMvc.perform(get("/api/emails/search").param("q", "Anfrage"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].postfaecher").isEmpty())
+                    .andExpect(jsonPath("$[0].antwortPostfach").doesNotExist());
         }
     }
 
@@ -1356,8 +1897,6 @@ class UnifiedEmailControllerTest {
             given(emailAbsenderService.findActiveEmailAddresses()).willReturn(List.of("absender@example.com"));
             org.example.kalkulationsprogramm.domain.EmailAbsender absender = new org.example.kalkulationsprogramm.domain.EmailAbsender();
             absender.setEmailAdresse("absender@example.com");
-            given(emailAbsenderService.findFirstActive()).willReturn(Optional.of(absender));
-            given(emailAbsenderService.findAnzeigenameFuerAdresse(any())).willReturn(Optional.of("Firma"));
 
             org.mockito.Mockito.doReturn("msg-id-777").when(unifiedEmailController).sendeSmtpMail(
                     any(), any(), any(), any(), any(), any(), any());
@@ -1424,8 +1963,6 @@ class UnifiedEmailControllerTest {
             given(emailAbsenderService.findActiveEmailAddresses()).willReturn(List.of("absender@example.com"));
             org.example.kalkulationsprogramm.domain.EmailAbsender absender = new org.example.kalkulationsprogramm.domain.EmailAbsender();
             absender.setEmailAdresse("absender@example.com");
-            given(emailAbsenderService.findFirstActive()).willReturn(Optional.of(absender));
-            given(emailAbsenderService.findAnzeigenameFuerAdresse(any())).willReturn(Optional.of("Firma"));
 
             org.mockito.Mockito.doReturn("msg-id-888").when(unifiedEmailController).sendeSmtpMail(
                     any(), any(), any(), any(), any(), any(), any());

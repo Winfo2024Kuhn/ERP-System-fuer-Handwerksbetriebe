@@ -17,6 +17,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { formatPostfach, type PostfachDto } from '../features/email/postfach';
 
 interface FrontendUser {
     id: number;
@@ -39,13 +40,6 @@ interface Mitarbeiter {
     id: number;
     vorname: string;
     nachname: string;
-}
-
-interface EmailAbsenderOption {
-    id: number;
-    emailAdresse: string;
-    anzeigename: string | null;
-    aktiv: boolean;
 }
 
 // ==================== User List Component ====================
@@ -137,7 +131,7 @@ export default function BenutzerEditor() {
     const [users, setUsers] = useState<FrontendUser[]>([]);
     const [signatures, setSignatures] = useState<EmailSignature[]>([]);
     const [mitarbeiterList, setMitarbeiterList] = useState<Mitarbeiter[]>([]);
-    const [absenderListe, setAbsenderListe] = useState<EmailAbsenderOption[]>([]);
+    const [postfaecher, setPostfaecher] = useState<PostfachDto[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -162,11 +156,11 @@ export default function BenutzerEditor() {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [usersRes, signaturesRes, mitarbeiterRes, absenderRes] = await Promise.all([
+            const [usersRes, signaturesRes, mitarbeiterRes, postfaecherRes] = await Promise.all([
                 fetch('/api/frontend-users'),
                 fetch('/api/email/signatures'),
                 fetch('/api/mitarbeiter'),
-                fetch('/api/firma/email-absender'),
+                fetch('/api/postfaecher'),
             ]);
             if (usersRes.ok) {
                 const data = await usersRes.json();
@@ -180,16 +174,19 @@ export default function BenutzerEditor() {
                 const data = await mitarbeiterRes.json();
                 setMitarbeiterList(Array.isArray(data) ? data : []);
             }
-            if (absenderRes.ok) {
-                const data = await absenderRes.json();
-                setAbsenderListe(Array.isArray(data) ? data : []);
+            if (postfaecherRes.ok) {
+                const data = await postfaecherRes.json();
+                setPostfaecher(Array.isArray(data) ? data : []);
+            } else {
+                toast.error('Postfächer konnten nicht geladen werden.');
             }
         } catch (err) {
             console.error('Fehler beim Laden:', err);
+            toast.error('Benutzer konnten nicht geladen werden.');
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [toast]);
 
     useEffect(() => {
         loadData();
@@ -478,27 +475,29 @@ export default function BenutzerEditor() {
                             </p>
                         </div>
 
-                        {/* E-Mail-Absender Zuordnung */}
+                        {/* Eigenes Postfach */}
                         <div className="space-y-2">
-                            <Label htmlFor="absender">Absender-E-Mail</Label>
+                            <Label htmlFor="eigenes-postfach">Eigenes Postfach</Label>
                             <Select
+                                id="eigenes-postfach"
                                 value={formData.emailAbsenderId?.toString() || ''}
                                 onChange={(value) => setFormData(prev => ({
                                     ...prev,
                                     emailAbsenderId: value ? Number(value) : null
                                 }))}
                                 options={[
-                                    { value: '', label: 'Keine Zuordnung (Default)' },
-                                    ...absenderListe.map((a) => ({
-                                        value: a.id.toString(),
-                                        label: a.aktiv ? a.emailAdresse : `${a.emailAdresse} (deaktiviert)`,
+                                    { value: '', label: 'Kein eigenes Postfach (Hauptpostfach)' },
+                                    ...postfaecher.map((p) => ({
+                                        value: p.id.toString(),
+                                        label: p.aktiv ? formatPostfach(p) : `${formatPostfach(p)} (ausgeschaltet)`,
                                     }))
                                 ]}
-                                placeholder="E-Mail-Adresse wählen"
+                                placeholder="Postfach wählen"
+                                aria-label="Eigenes Postfach"
                             />
                             <p className="text-xs text-slate-500">
-                                Wird automatisch als Absender verwendet, wenn dieser Benutzer eine E-Mail verschickt.
-                                Verwaltung der Adressen unter <strong>Firma → E-Mail-Absender</strong>.
+                                Bei neuen E-Mails dieses Benutzers steht dieses Postfach bei „Senden von“ vorne.
+                                Postfächer richten Sie unter <strong>Einstellungen → E-Mail</strong> ein.
                             </p>
                         </div>
 

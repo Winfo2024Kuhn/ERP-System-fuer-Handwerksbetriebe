@@ -54,3 +54,25 @@ describe('EmailDetailHeader – Zuordnung', () => {
         expect(screen.queryByText('KEINE')).not.toBeInTheDocument();
     });
 });
+
+describe('EmailDetailHeader – Postfach-Schild', () => {
+    it('zeigt alle Postfächer der Mail mit lokalem Teil und voller Adresse im Tooltip', () => {
+        renderKopf({
+            ...basis,
+            postfaecher: [
+                { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' },
+                { id: 7, emailAdresse: 'max@musterbetrieb.example', anzeigename: null },
+            ],
+        });
+        const schild = screen.getByTestId('postfach-schild');
+        expect(within(schild).getByText('info@')).toBeInTheDocument();
+        expect(within(schild).getByText('max@')).toBeInTheDocument();
+        expect(within(schild).getByText('info@').parentElement).toHaveAttribute('title', 'Musterbetrieb <info@musterbetrieb.example>');
+        expect(within(schild).getByText('Postfach max@musterbetrieb.example')).toHaveClass('sr-only');
+    });
+
+    it('zeigt kein Schild ohne Postfach', () => {
+        renderKopf({ ...basis, postfaecher: [] });
+        expect(screen.queryByTestId('postfach-schild')).not.toBeInTheDocument();
+    });
+});

@@ -28,7 +28,7 @@ async function openThread(page: Page, htmlBody = replyHtml) {
         };
         else if (pathname === '/api/emails/901') body = initial;
         else if (pathname === '/api/emails/stats') body = { inboxCount: 1, sentCount: 1, trashCount: 0, spamCount: 0, unassignedCount: 1 };
-        else if (pathname === '/api/emails/from-addresses') body = ['handwerk@example.com'];
+        else if (pathname === '/api/emails/absender-postfaecher') body = [{ id: 1, emailAdresse: 'handwerk@example.com', anzeigename: null, eigenes: false, hauptpostfach: true }];
         return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
     });
     await page.goto('/emails/inbox');

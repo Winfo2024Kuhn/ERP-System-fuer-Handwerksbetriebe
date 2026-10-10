@@ -223,6 +223,18 @@ describe('EmailRecipientInput', () => {
         });
     });
 
+    it('schließt auch die Liste ohne Treffer bei Escape', async () => {
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+        render(<EmailRecipientInput value="xyznonexistent" onChange={vi.fn()} />);
+        const input = screen.getByPlaceholderText('E-Mail eingeben...');
+        await act(async () => { input.focus(); });
+        await act(async () => { vi.advanceTimersByTime(300); });
+        await waitFor(() => expect(screen.getByText('Keine Kontakte gefunden')).toBeInTheDocument());
+
+        await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+        expect(screen.queryByText('Keine Kontakte gefunden')).not.toBeInTheDocument();
+    });
+
     it('schließt Dropdown bei Escape-Taste', async () => {
         const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 

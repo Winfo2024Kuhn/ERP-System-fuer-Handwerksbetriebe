@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
@@ -15,6 +16,10 @@ public interface FrontendUserProfileRepository extends JpaRepository<FrontendUse
     Optional<FrontendUserProfile> findByUsernameIgnoreCase(String username);
 
     Optional<FrontendUserProfile> findByMitarbeiterIdAndActiveTrue(Long mitarbeiterId);
+
+    List<FrontendUserProfile> findByEmailAbsenderId(Long emailAbsenderId);
+
+    List<FrontendUserProfile> findByEmailAbsenderIsNotNull();
 
     boolean existsByUsernameIgnoreCase(String username);
 

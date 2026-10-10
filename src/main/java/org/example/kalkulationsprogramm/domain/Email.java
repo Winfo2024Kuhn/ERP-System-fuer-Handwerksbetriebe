@@ -20,6 +20,8 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+
+import org.hibernate.annotations.BatchSize;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -294,6 +296,21 @@ public class Email {
     private List<EmailAttachment> attachments = new ArrayList<>();
 
     // ═══════════════════════════════════════════════════════════════
+    // POSTFÄCHER (n:m über EmailPostfachZuordnung)
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Postfächer, in denen diese Mail liegt. Eine Mail an info@ und max@ wird nur
+     * einmal gespeichert, steht aber in beiden. Ausgehende Mails haben genau das
+     * Postfach, aus dem sie verschickt wurden.
+     *
+     * <p>{@code @BatchSize}: Listen laden die Zuordnungen gebündelt statt pro Mail.</p>
+     */
+    @OneToMany(mappedBy = "email", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 100)
+    private List<EmailPostfachZuordnung> postfachZuordnungen = new ArrayList<>();
+
+    // ═══════════════════════════════════════════════════════════════
     // ANTWORT / WEITERLEITUNG VERKNÜPFUNG
     // ═══════════════════════════════════════════════════════════════
 
@@ -321,6 +338,36 @@ public class Email {
         if (fromAddress != null && fromAddress.contains("@")) {
             this.senderDomain = fromAddress.substring(fromAddress.lastIndexOf("@") + 1).toLowerCase();
         }
+    }
+
+    /**
+     * Legt die Mail zusätzlich in ein Postfach. Liegt sie dort schon, passiert nichts.
+     *
+     * @return {@code true}, wenn die Zuordnung neu ist
+     */
+    public boolean ordnePostfachZu(EmailAbsender postfach, String imapOrdner, Long imapUid) {
+        if (postfach == null) {
+            return false;
+        }
+        boolean vorhanden = postfachZuordnungen.stream()
+                .anyMatch(z -> z.getPostfach() != null && istGleichesPostfach(z.getPostfach(), postfach));
+        if (vorhanden) {
+            return false;
+        }
+        EmailPostfachZuordnung zuordnung = new EmailPostfachZuordnung();
+        zuordnung.setEmail(this);
+        zuordnung.setPostfach(postfach);
+        zuordnung.setImapOrdner(imapOrdner);
+        zuordnung.setImapUid(imapUid);
+        postfachZuordnungen.add(zuordnung);
+        return true;
+    }
+
+    private static boolean istGleichesPostfach(EmailAbsender a, EmailAbsender b) {
+        if (a == b) {
+            return true;
+        }
+        return a.getId() != null && a.getId().equals(b.getId());
     }
 
     /**

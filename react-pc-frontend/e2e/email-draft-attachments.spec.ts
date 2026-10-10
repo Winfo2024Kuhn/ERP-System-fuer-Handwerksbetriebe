@@ -47,7 +47,7 @@ async function setup(page: Page, initial?: Draft) {
             if (dto.draftId === state.draft?.id) state.draft = undefined;
             return json(route, { id: 100 });
         }
-        if (path.endsWith('/from-addresses')) return json(route, ['betrieb@example.com']);
+        if (path.endsWith('/absender-postfaecher')) return json(route, [{ id: 1, emailAdresse: 'betrieb@example.com', anzeigename: null, eigenes: false, hauptpostfach: true }]);
         if (path.endsWith('/stats')) return json(route, { inboxCount: 0 });
         return json(route, []);
     });

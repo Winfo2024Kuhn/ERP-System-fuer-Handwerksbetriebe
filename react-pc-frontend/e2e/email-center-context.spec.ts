@@ -15,7 +15,7 @@ async function prepare(page: Page, empty = false) {
         const message = messages.find(mail => path.includes(`/${mail.id}`));
         let body: unknown = [];
         if (path.endsWith('/stats')) body = { inboxCount: 2, starredCount: 2, unassignedCount: 2 };
-        else if (path.endsWith('/from-addresses')) body = ['betrieb@example.com'];
+        else if (path.endsWith('/absender-postfaecher')) body = [{ id: 1, emailAdresse: 'betrieb@example.com', anzeigename: null, eigenes: false, hauptpostfach: true }];
         else if (path.endsWith('/thread')) body = { rootEmailId: message?.id, focusedEmailId: message?.id, emails: [message] };
         else if (path.endsWith('/search')) body = messages;
         else if (/\/emails\/(starred|unassigned|newsletter)$/.test(path)) body = empty ? [] : messages;

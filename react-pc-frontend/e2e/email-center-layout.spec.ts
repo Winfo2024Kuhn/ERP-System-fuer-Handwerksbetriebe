@@ -114,8 +114,8 @@ async function stubEmailApi(page: Page) {
         if (url.includes('/api/emails/stats')) {
             return json(route, MOCK_STATS);
         }
-        if (url.includes('/api/emails/from-addresses')) {
-            return json(route, ['info@musterbetrieb.example']);
+        if (url.includes('/api/emails/absender-postfaecher')) {
+            return json(route, [{ id: 1, emailAdresse: 'info@musterbetrieb.example', anzeigename: null, eigenes: false, hauptpostfach: true }]);
         }
         if (url.includes('/api/emails/101/thread')) {
             return json(route, {

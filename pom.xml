@@ -28,6 +28,8 @@
     </scm>
     <properties>
         <java.version>23</java.version>
+        <!-- Leerer Standard, damit Surefire auch ohne JaCoCo-Agent (z. B. -Djacoco.skip) startet -->
+        <argLine></argLine>
         <maven.compiler.source>23</maven.compiler.source>
         <maven.compiler.target>23</maven.compiler.target>
         <flyway.url>${env.FLYWAY_URL}</flyway.url>
@@ -183,6 +185,14 @@
             <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Echter IMAP-/SMTP-Server im Speicher fuer Integrationstests der Postfaecher
+             (Abruf, Versand, Gesendet-Kopie) - ohne Internet und ohne echte Postfaecher -->
+        <dependency>
+            <groupId>com.icegreen</groupId>
+            <artifactId>greenmail-junit5</artifactId>
+            <version>2.0.1</version>
+            <scope>test</scope>
+        </dependency>
         <!-- QR Code Generation -->
         <dependency>
             <groupId>com.google.zxing</groupId>
@@ -221,8 +231,30 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.1.2</version>
                 <configuration>
-                    <argLine>-Dnet.bytebuddy.experimental=true -Djdk.attach.allowAttachSelf=true -XX:+EnableDynamicAgentLoading</argLine>
+                    <argLine>@{argLine} -Dnet.bytebuddy.experimental=true -Djdk.attach.allowAttachSelf=true -XX:+EnableDynamicAgentLoading</argLine>
                 </configuration>
+            </plugin>
+            <!-- Coverage-Report (target/site/jacoco) bei mvn test/verify; bewusst ohne
+                 projektweite Schwelle - die 80 % Branch-Coverage gelten pro neuer Klasse -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

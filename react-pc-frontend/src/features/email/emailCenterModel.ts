@@ -1,4 +1,5 @@
 import { extractDisplayName, extractEmailAddress, formatRecipient, parseRecipientList } from '../../lib/emailAddress';
+import type { PostfachKurz } from './postfach';
 
 /** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
 export interface EmailAttachment {
@@ -59,6 +60,10 @@ export interface EmailItem {
     /** Backend-berechnete jüngste Aktivität im gesamten Thread (für Sortierung). */
     threadLastActivityAt?: string;
     isStarred?: boolean;
+    /** Postfächer, in denen die Mail liegt (Backend liefert nie null, ggf. []). */
+    postfaecher?: PostfachKurz[];
+    /** Postfach, über das Antworten und Weiterleitungen fest rausgehen. */
+    antwortPostfach?: PostfachKurz | null;
 }
 
 // Folder Types
@@ -82,7 +87,7 @@ export const getRecipientName = (email: EmailItem) => extractDisplayName(email.r
 
 /**
  * Anzeigename einer Mail in der Liste. `isOwnAddress` erkennt die eigenen Absender
- * (aus /api/emails/from-addresses); ohne sie gilt keine Adresse als eigene.
+ * (Adressen aus /api/emails/absender-postfaecher); ohne sie gilt keine Adresse als eigene.
  */
 export const getDisplayName = (email: EmailItem, isOwnAddress: (address: string) => boolean = () => false) => {
     if (email.kundeName) return email.kundeName;

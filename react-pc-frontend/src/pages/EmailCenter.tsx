@@ -2,6 +2,8 @@ import { EmailNavigationGuard } from '../features/email/EmailNavigationGuard';
 import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
 import { EmailZuordnungLink } from '../features/email/EmailZuordnungLink';
+import { PostfachSchild } from '../features/email/PostfachSchild';
+import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
 import { ermittleEmailZuordnung } from '../features/email/emailZuordnung';
 import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
 import { AssignModal } from '../features/email/EmailAssignmentDialog';
@@ -135,28 +137,15 @@ export default function EmailCenter() {
     // State
     const [emails, setEmails] = useState<EmailItem[]>([]);
 
-    // Eigene Firmenadressen laden (verhindert Antworten an mich selbst)
-    const [ownAddresses, setOwnAddresses] = useState<string[]>([]);
+    // Eigene Postfach-Adressen laden (verhindert Antworten an mich selbst)
+    const absenderPostfaecher = useAbsenderPostfaecher();
+    const ownAddresses = useMemo(
+        () => absenderPostfaecher.postfaecher.map(postfach => postfach.emailAdresse),
+        [absenderPostfaecher.postfaecher],
+    );
     useEffect(() => {
-        let isMounted = true;
-        fetch('/api/emails/from-addresses')
-            .then(res => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.json();
-            })
-            .then(data => {
-                if (!isMounted) return;
-                if (Array.isArray(data)) setOwnAddresses(data);
-            })
-            .catch(err => {
-                if (!isMounted) return;
-                console.error('Fehler beim Laden der eigenen Absenderadressen:', err);
-                toast.error('Eigene Absenderadressen konnten nicht geladen werden.');
-            });
-        return () => {
-            isMounted = false;
-        };
-    }, [toast]);
+        if (absenderPostfaecher.fehler) toast.error('Eigene Absenderadressen konnten nicht geladen werden.');
+    }, [absenderPostfaecher.fehler, toast]);
 
     const isOwnEmail = useCallback((addr?: string) => {
         if (!addr) return false;
@@ -1598,7 +1587,7 @@ export default function EmailCenter() {
                 <EmailComposeForm
                     // Neu mounten, wenn ein anderer Entwurf/eine andere Antwort geöffnet wird –
                     // sonst bleiben Empfänger, Betreff und Zuordnung des vorherigen stehen.
-                    key={`${composerVersion}-${activeDraftId ?? replyToEmailId ?? 'neu'}-${replyMode}`}
+                    key={`${composerVersion}-${activeDraftId ?? replyToEmailId ?? forwardEmail?.id ?? 'neu'}-${replyMode}`}
                     onBeforeLeave={registerBeforeLeave}
                     onClose={handleComposeClose}
                     onSuccess={handleComposeSuccess}
@@ -1609,6 +1598,12 @@ export default function EmailCenter() {
                     replyQuote={replyQuote}
                     draftId={activeDraftId}
                     replyEmailId={replyToEmailId}
+                    weitergeleitetVonEmailId={forwardEmail?.id}
+                    // Antwort-Postfach nur übergeben, wenn es zur beantworteten Mail gehört;
+                    // sonst holt das Formular es selbst (z. B. Antwort auf eine ältere Mail im Verlauf).
+                    antwortPostfach={forwardEmail
+                        ? forwardEmail.antwortPostfach
+                        : replyToEmail && replyToEmail.id === replyToEmailId ? replyToEmail.antwortPostfach : undefined}
                     projektId={activeDraft?.projektId ?? (replyToEmail ?? forwardEmail)?.projektId}
                     anfrageId={activeDraft?.anfrageId ?? (replyToEmail ?? forwardEmail)?.anfrageId}
                     // Im E-Mail-Center ist der Vorgang nicht durch die Seite vorgegeben –
@@ -2177,6 +2172,7 @@ export default function EmailCenter() {
                                                 {email.spamScore}% Spam
                                             </div>
                                         )}
+                                        <PostfachSchild postfaecher={email.postfaecher} />
                                         <EmailZuordnungLink zuordnung={ermittleEmailZuordnung(email)} variante="liste" />
                                         {draftsByEmailId.has(email.id) && (
                                             <button

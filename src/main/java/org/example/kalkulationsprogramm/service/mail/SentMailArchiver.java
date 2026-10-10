@@ -86,6 +86,16 @@ public class SentMailArchiver implements EmailService.SentCopyHandler
         return nachricht -> archiviereKopie(nachricht, systemSettingsService.getDokumentImapZugang());
     }
 
+    /**
+     * Handler fuer Mails, die ueber ein bestimmtes Postfach versendet wurden: Die
+     * Kopie landet im "Gesendet"-Ordner genau dieses Postfachs. Ein Zugang ohne
+     * Posteingangs-Server ergibt keine Kopie.
+     */
+    public EmailService.SentCopyHandler fuer(SystemSettingsService.ImapZugang zugang)
+    {
+        return nachricht -> archiviereKopie(nachricht, zugang);
+    }
+
     void archiviereKopie(MimeMessage versendeteNachricht,
             SystemSettingsService.ImapZugang zugang)
     {

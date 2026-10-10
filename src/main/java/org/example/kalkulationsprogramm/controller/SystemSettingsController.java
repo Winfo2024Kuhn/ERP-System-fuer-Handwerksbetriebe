@@ -2,7 +2,6 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService.TestResult;
@@ -27,20 +26,16 @@ public class SystemSettingsController {
 
     private final SystemSettingsService settingsService;
     private final org.example.kalkulationsprogramm.service.DateiOrdnerService dateiOrdnerService;
+    private final org.example.kalkulationsprogramm.service.PostfachUmzugService postfachUmzugService;
 
-    // Pragmatischer E-Mail-Regex – bewusst keine RFC-5322-Voll-Compliance, sondern
-    // genau das was Anwender erwarten: nicht-leerer Local-Part, "@",
-    // nicht-leerer Domain-Part mit mindestens einem Punkt, alles ohne Whitespace.
-    // Ungültiges wie "@", "a@", " @ " wird abgewiesen.
-    private static final Pattern EMAIL_PATTERN =
-            Pattern.compile("^[^@\\s]+@[^@\\s.]+(?:\\.[^@\\s.]+)+$");
+    private static final String PASSWORT_NEU_EINGEBEN =
+            "Bitte das Passwort erneut eingeben, wenn Sie Server oder Anmeldename ändern.";
 
-    /**
-     * Obergrenze für einzelne Eingabefelder der Mail-Konten. Ein Hostname oder
-     * eine E-Mail-Adresse ist nie annähernd so lang; der Wert dient nur dazu,
-     * absurd große Eingaben abzuweisen, bevor sie in der Datenbank landen.
-     */
-    private static final int MAX_FELD_LAENGE = 500;
+    /** Gleicher Wert ohne Rücksicht auf Leerzeichen und Groß-/Kleinschreibung. */
+    private static boolean gleich(String a, String b) {
+        return (a == null ? "" : a.trim()).equalsIgnoreCase(b == null ? "" : b.trim());
+    }
+
 
     // ==================== Alle Einstellungen lesen ====================
 
@@ -71,12 +66,16 @@ public class SystemSettingsController {
             return ResponseEntity.badRequest().body(Map.of("message", "Bitte einen gültigen SMTP-Benutzernamen eintragen."));
         }
 
-        String effectivePassword = req.password();
-        if (effectivePassword == null || effectivePassword.isBlank()) {
-            effectivePassword = settingsService.getSmtpPassword();
-        }
+        // Leeres Passwort = unverändert. Bewusst aus den Einstellungen gelesen, nicht über den
+        // Getter: der liefert das entschlüsselte Hauptpostfach-Passwort, das sonst im Klartext
+        // in den Einstellungen landen würde.
+        boolean neuesPasswort = hasValue(req.password());
+        String effectivePassword = neuesPasswort ? req.password() : settingsService.gespeichertesStandardKonto().password();
 
         settingsService.saveSmtpSettings(req.host(), req.port(), req.username(), effectivePassword);
+        // Die Ersteinrichtung pflegt das Hauptpostfach mit – sonst liefe der Mailverkehr über den alten Stand.
+        postfachUmzugService.gleicheHauptpostfachAb(
+                org.example.kalkulationsprogramm.service.PostfachUmzugService.Abgleich.VERSAND, neuesPasswort);
         return ResponseEntity.ok(Map.of("message", "SMTP-Einstellungen gespeichert."));
     }
 
@@ -85,7 +84,14 @@ public class SystemSettingsController {
         String host = req.host() != null ? req.host() : settingsService.getSmtpHost();
         int port = req.port() > 0 ? req.port() : settingsService.getSmtpPort();
         String username = req.username() != null ? req.username() : settingsService.getSmtpUsername();
-        String password = req.password() != null ? req.password() : settingsService.getSmtpPassword();
+        String password = req.password();
+        if (!hasValue(password)) {
+            // Das gespeicherte Passwort nur an den gespeicherten Server und Anmeldenamen.
+            if (!gleich(host, settingsService.getSmtpHost()) || !gleich(username, settingsService.getSmtpUsername())) {
+                return ResponseEntity.ok(TestResult.failure(PASSWORT_NEU_EINGEBEN));
+            }
+            password = settingsService.getSmtpPassword();
+        }
 
         TestResult result = settingsService.testSmtp(host, port, username, password, req.testRecipient());
         return ResponseEntity.ok(result);
@@ -112,13 +118,15 @@ public class SystemSettingsController {
             return ResponseEntity.badRequest().body(Map.of("message", "Bitte einen gültigen IMAP-Benutzernamen eintragen."));
         }
 
-        String effectivePassword = req.password();
-        if (effectivePassword == null || effectivePassword.isBlank()) {
-            effectivePassword = settingsService.getImapPassword();
-        }
+        boolean neuesPasswort = hasValue(req.password());
+        String effectivePassword = neuesPasswort ? req.password()
+                : settingsService.gespeicherterStandardImapZugang().password();
 
         int port = req.port() > 0 ? req.port() : 993;
         settingsService.saveImapSettings(req.host(), port, req.username(), effectivePassword);
+        // Die Ersteinrichtung pflegt das Hauptpostfach mit – sonst liefe der Mailverkehr über den alten Stand.
+        postfachUmzugService.gleicheHauptpostfachAb(
+                org.example.kalkulationsprogramm.service.PostfachUmzugService.Abgleich.ABRUF, neuesPasswort);
         return ResponseEntity.ok(Map.of("message", "IMAP-Einstellungen gespeichert."));
     }
 
@@ -127,8 +135,13 @@ public class SystemSettingsController {
         String host = hasValue(req.host()) ? req.host() : settingsService.getImapHost();
         int port = req.port() > 0 ? req.port() : settingsService.getImapPort();
         String username = hasValue(req.username()) ? req.username() : settingsService.getImapUsername();
-        String password = (req.password() != null && !req.password().isBlank())
-                ? req.password() : settingsService.getImapPassword();
+        String password = req.password();
+        if (!hasValue(password)) {
+            if (!gleich(host, settingsService.getImapHost()) || !gleich(username, settingsService.getImapUsername())) {
+                return ResponseEntity.ok(TestResult.failure(PASSWORT_NEU_EINGEBEN));
+            }
+            password = settingsService.getImapPassword();
+        }
 
         TestResult result = settingsService.testImap(host, port, username, password);
         return ResponseEntity.ok(result);
@@ -147,6 +160,9 @@ public class SystemSettingsController {
         }
 
         settingsService.saveEmailAccount(req.email(), req.password());
+        // Die Ersteinrichtung pflegt das Hauptpostfach mit – sonst liefe der Mailverkehr über den alten Stand.
+        postfachUmzugService.gleicheHauptpostfachAb(
+                org.example.kalkulationsprogramm.service.PostfachUmzugService.Abgleich.ZUGANG, hasValue(req.password()));
         return ResponseEntity.ok(Map.of("message", "E-Mail-Konto gespeichert."));
     }
 
@@ -170,142 +186,6 @@ public class SystemSettingsController {
         String apiKey = req.apiKey() != null ? req.apiKey() : settingsService.getGeminiApiKey();
         TestResult result = settingsService.testGeminiApiKey(apiKey);
         return ResponseEntity.ok(result);
-    }
-
-    // ==================== Standard-Absender für Auto-Mails ====================
-
-    @GetMapping("/mail-from")
-    public ResponseEntity<MailFromResponse> getMailFrom() {
-        return ResponseEntity.ok(new MailFromResponse(
-                settingsService.getMailFromAddress(),
-                settingsService.getSmtpUsername(),
-                settingsService.getMailAbsenderName()));
-    }
-
-    @PutMapping("/mail-from")
-    public ResponseEntity<Map<String, String>> saveMailFrom(@RequestBody MailFromRequest req) {
-        String address = req.address() == null ? "" : req.address().trim();
-        if (!address.isBlank() && !EMAIL_PATTERN.matcher(address).matches()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Bitte eine gültige E-Mail-Adresse eintragen."));
-        }
-        if (req.name() != null && req.name().length() > MAX_FELD_LAENGE) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Der Anzeigename ist zu lang."));
-        }
-        settingsService.saveMailFromAddress(address);
-        settingsService.saveMailAbsenderName(req.name());
-        // Wortlaut bewusst ohne "automatische Mails": Rechnungen, Mahnungen,
-        // Angebote und Auftragsbestaetigungen laufen ueber das Dokument-Postfach
-        // (siehe SystemSettingsService#getDokumentMailKonto). Diese Adresse gilt
-        // fuer den Schriftverkehr im E-Mail-Center und die Anfrage-Bestaetigung.
-        return ResponseEntity.ok(Map.of("message", address.isBlank()
-                ? "Absender zurückgesetzt – es wird wieder die Adresse des Postfachs verwendet."
-                : "Absender gespeichert."));
-    }
-
-    // ============ Mail-Konto für Ausgangsgeschäftsdokumente ============
-
-    @GetMapping("/dokument-mail")
-    public ResponseEntity<DokumentMailResponse> getDokumentMail() {
-        return ResponseEntity.ok(new DokumentMailResponse(
-                settingsService.isDokumentMailKontoAktiv(),
-                settingsService.getDokumentSmtpHost(),
-                settingsService.getDokumentSmtpPort(),
-                settingsService.getDokumentSmtpUsername(),
-                hasValue(settingsService.getDokumentSmtpPassword()),
-                settingsService.getDokumentMailFromAddress(),
-                settingsService.getDokumentMailAbsenderName(),
-                settingsService.getDokumentImapHost()));
-    }
-
-    @PutMapping("/dokument-mail")
-    public ResponseEntity<Map<String, String>> saveDokumentMail(@RequestBody DokumentMailRequest req) {
-        String host = req.host() == null ? "" : req.host().trim();
-        String username = req.username() == null ? "" : req.username().trim();
-        String fromAddress = req.fromAddress() == null ? "" : req.fromAddress().trim();
-
-        // Laengenbegrenzung vor jeder weiteren Pruefung: Die Werte landen in
-        // einer TEXT-Spalte und der Host anschliessend in einem SMTP-Connect.
-        // Ueberlange Eingaben werden abgewiesen statt gespeichert.
-        if (host.length() > MAX_FELD_LAENGE || username.length() > MAX_FELD_LAENGE
-                || fromAddress.length() > MAX_FELD_LAENGE
-                || (req.password() != null && req.password().length() > MAX_FELD_LAENGE)) {
-            return ResponseEntity.badRequest().body(Map.of("message",
-                    "Eine der Eingaben ist zu lang. Bitte prüfen Sie Server, Adresse und Passwort."));
-        }
-
-        // Leeres Passwort heisst "unveraendert lassen" – sonst muesste der
-        // Anwender es bei jeder anderen Aenderung neu eintippen.
-        String effectivePassword = req.password();
-        if (effectivePassword == null || effectivePassword.isBlank()) {
-            effectivePassword = settingsService.getDokumentSmtpPassword();
-        }
-
-        // Nur beim Einschalten streng pruefen. Ausgeschaltet darf ruhig ein
-        // halb ausgefuellter Entwurf gespeichert werden.
-        if (req.aktiv()) {
-            if (!hasValue(host)) {
-                return ResponseEntity.badRequest().body(Map.of("message",
-                        "Bitte den Mail-Server des Postfachs eintragen."));
-            }
-            if (!hasValue(username) || !EMAIL_PATTERN.matcher(username).matches()) {
-                return ResponseEntity.badRequest().body(Map.of("message",
-                        "Bitte die vollständige E-Mail-Adresse des Postfachs als Benutzernamen eintragen."));
-            }
-            if (!hasValue(effectivePassword)) {
-                return ResponseEntity.badRequest().body(Map.of("message",
-                        "Bitte das Passwort des Postfachs eintragen."));
-            }
-            if (!fromAddress.isBlank() && !EMAIL_PATTERN.matcher(fromAddress).matches()) {
-                return ResponseEntity.badRequest().body(Map.of("message",
-                        "Bitte eine gültige Absender-Adresse eintragen."));
-            }
-            // Absender und Postfach muessen zur selben Domain gehoeren. Sonst
-            // verschickt das Postfach Mails im Namen einer fremden Domain –
-            // SPF und DKIM schlagen beim Empfaenger fehl und die Mail landet
-            // zuverlaessiger im Spam als vorher. Das ist genau der Fehler, den
-            // die Umstellung beseitigen soll, deshalb hart abweisen.
-            if (!fromAddress.isBlank() && !gleicheDomain(fromAddress, username)) {
-                return ResponseEntity.badRequest().body(Map.of("message",
-                        "Absender-Adresse und Postfach müssen zur selben Domain gehören. "
-                                + "Sonst stuft der Empfänger die Mail als Fälschung ein. "
-                                + "Erwartet wird eine Adresse auf @" + domainVon(username) + "."));
-            }
-        }
-
-        settingsService.saveDokumentMailSettings(req.aktiv(), host,
-                req.port() > 0 ? req.port() : 465, username, effectivePassword, fromAddress,
-                req.fromName(), req.imapHost());
-        return ResponseEntity.ok(Map.of("message", req.aktiv()
-                ? "Rechnungen und Mahnungen gehen ab jetzt über das eigene Postfach raus."
-                : "Eigenes Postfach ausgeschaltet – der Versand läuft wieder über das Standard-Konto."));
-    }
-
-    @PostMapping("/dokument-mail/test")
-    public ResponseEntity<TestResult> testDokumentMail(@RequestBody DokumentMailTestRequest req) {
-        String host = hasValue(req.host()) ? req.host() : settingsService.getDokumentSmtpHost();
-        int port = req.port() > 0 ? req.port() : settingsService.getDokumentSmtpPort();
-        String username = hasValue(req.username()) ? req.username() : settingsService.getDokumentSmtpUsername();
-        String password = (req.password() != null && !req.password().isBlank())
-                ? req.password() : settingsService.getDokumentSmtpPassword();
-
-        return ResponseEntity.ok(
-                settingsService.testSmtp(host, port, username, password, req.testRecipient()));
-    }
-
-    /** Domain-Teil einer E-Mail-Adresse, kleingeschrieben; leer wenn kein "@" enthalten ist. */
-    private static String domainVon(String address) {
-        if (address == null) {
-            return "";
-        }
-        int at = address.lastIndexOf('@');
-        return at < 0 ? "" : address.substring(at + 1).trim().toLowerCase(Locale.ROOT);
-    }
-
-    private static boolean gleicheDomain(String a, String b) {
-        String domainA = domainVon(a);
-        return !domainA.isBlank() && domainA.equals(domainVon(b));
     }
 
     // ==================== Funnel-Spam-Filter ====================
@@ -381,14 +261,6 @@ public class SystemSettingsController {
     record GeminiTestRequest(String apiKey) {}
     record FunnelSpamFilterResponse(boolean aktiv) {}
     record FunnelSpamFilterRequest(boolean aktiv) {}
-    record MailFromResponse(String address, String smtpUsername, String name) {}
-    record MailFromRequest(String address, String name) {}
-    record DokumentMailResponse(boolean aktiv, String host, int port, String username,
-            boolean passwordSet, String fromAddress, String fromName, String imapHost) {}
-    record DokumentMailRequest(boolean aktiv, String host, int port, String username,
-            String password, String fromAddress, String fromName, String imapHost) {}
-    record DokumentMailTestRequest(String host, int port, String username, String password,
-            String testRecipient) {}
     record DateiOrdnerResponse(String pfad, String networkUrl, boolean konfiguriert) {}
     record DateiOrdnerRequest(String pfad, String networkUrl) {}
     record DateiOrdnerTestRequest(String pfad) {}

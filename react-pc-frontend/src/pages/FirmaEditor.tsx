@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Building2, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, ShieldCheck, AtSign, HeartPulse, CalendarClock, BellRing, Mail, MailWarning, Info, type LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Building2, Users, Plus, Edit2, Trash2, Save, X, RefreshCw, FileText, Download, Calendar, ShieldCheck, HeartPulse, CalendarClock, BellRing, Mail, MailWarning, Info, type LucideIcon } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -139,15 +140,7 @@ interface BwaUploadDto {
     steuerberaterName: string;
 }
 
-interface EmailAbsender {
-    id: number;
-    emailAdresse: string;
-    anzeigename: string;
-    aktiv: boolean;
-    sortierung: number;
-}
-
-type ActiveTab = 'firma' | 'steuerberater' | 'absender' | 'steuerpruefung' | 'lohn-stammdaten' | 'unfallversicherung';
+type ActiveTab = 'firma' | 'steuerberater' | 'steuerpruefung' | 'lohn-stammdaten' | 'unfallversicherung';
 type SteuerberaterSubTab = 'kontakte' | 'lohnabrechnungen' | 'bwa';
 
 // --- Mahnverfahren-Zeitstrahl (lokale Bausteine, nur in dieser Seite verwendet) ---
@@ -215,11 +208,6 @@ export default function FirmaEditor() {
     // BWA State
     const [bwaListe, setBwaListe] = useState<BwaUploadDto[]>([]);
 
-    // E-Mail-Absender State
-    const [absenderListe, setAbsenderListe] = useState<EmailAbsender[]>([]);
-    const [showAbsenderModal, setShowAbsenderModal] = useState(false);
-    const [editingAbsender, setEditingAbsender] = useState<Partial<EmailAbsender> | null>(null);
-
     // Gewerke (fuer Firma-Auswahl)
     const [gewerke, setGewerke] = useState<GewerkOption[]>([]);
 
@@ -262,20 +250,6 @@ export default function FirmaEditor() {
         } catch (e) {
             console.error('Fehler beim Laden der Steuerberater', e);
             showError('Steuerberater konnten nicht geladen werden.');
-        }
-    }, [showError]);
-
-    // Load E-Mail-Absender
-    const loadAbsender = useCallback(async () => {
-        try {
-            const res = await fetch('/api/firma/email-absender');
-            if (!res.ok) throw new Error('Absender konnten nicht geladen werden.');
-            if (res.ok) {
-                setAbsenderListe(await res.json());
-            }
-        } catch (e) {
-            console.error('Fehler beim Laden der Absender', e);
-            showError('Absender konnten nicht geladen werden.');
         }
     }, [showError]);
 
@@ -348,9 +322,9 @@ export default function FirmaEditor() {
 
     useEffect(() => {
         setLoading(true);
-        Promise.all([loadFirma(), loadSteuerberater(), loadAbsender(), loadMeta(), loadGewerke()])
+        Promise.all([loadFirma(), loadSteuerberater(), loadMeta(), loadGewerke()])
             .finally(() => setLoading(false));
-    }, [loadFirma, loadSteuerberater, loadAbsender, loadMeta, loadGewerke]);
+    }, [loadFirma, loadSteuerberater, loadMeta, loadGewerke]);
 
     // Logo-Upload-State: Cache-Buster, damit das <img> nach Upload/Löschen neu lädt
     const [logoVersion, setLogoVersion] = useState(0);
@@ -506,66 +480,6 @@ export default function FirmaEditor() {
         }
     };
 
-    // Save E-Mail-Absender
-    const saveAbsender = async () => {
-        if (!editingAbsender || !editingAbsender.emailAdresse?.trim()) return;
-        setSaving(true);
-        try {
-            const method = editingAbsender.id ? 'PUT' : 'POST';
-            const url = editingAbsender.id
-                ? `/api/firma/email-absender/${editingAbsender.id}`
-                : '/api/firma/email-absender';
-
-            const payload = {
-                ...editingAbsender,
-                emailAdresse: editingAbsender.emailAdresse.trim(),
-                anzeigename: editingAbsender.anzeigename?.trim() || null,
-                aktiv: editingAbsender.aktiv ?? true,
-                sortierung: editingAbsender.sortierung ?? absenderListe.length,
-            };
-
-            const res = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            if (res.ok) {
-                await loadAbsender();
-                setShowAbsenderModal(false);
-                setEditingAbsender(null);
-            } else {
-                const text = await res.text();
-                try {
-                    const json = JSON.parse(text);
-                    toast.error(json.message || 'Fehler beim Speichern');
-                } catch {
-                    toast.error('Fehler beim Speichern: ' + text);
-                }
-            }
-        } catch (e) {
-            console.error('Fehler beim Speichern des Absenders', e);
-            toast.error('Netzwerkfehler beim Speichern');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    // Delete E-Mail-Absender
-    const deleteAbsender = async (id: number) => {
-        if (!await confirmDialog({ title: 'Absender löschen', message: 'Diese E-Mail-Adresse wirklich aus der Liste entfernen? Benutzer ohne andere Zuweisung müssen anschließend neu zugewiesen werden.', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try {
-            const res = await fetch(`/api/firma/email-absender/${id}`, { method: 'DELETE' });
-            if (!res.ok) {
-                toast.error('Absender konnte nicht gelöscht werden.');
-                return;
-            }
-            await loadAbsender();
-        } catch (e) {
-            console.error('Fehler beim Löschen', e);
-            toast.error('Netzwerkfehler beim Löschen');
-        }
-    };
-
     return (
         <PageLayout
             ribbonCategory="Vorlagen & Stammdaten"
@@ -627,18 +541,6 @@ export default function FirmaEditor() {
                         >
                             <Users className="w-4 h-4 inline-block mr-2" />
                             Steuerberater ({steuerberater.length})
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('absender')}
-                            className={cn(
-                                "px-4 py-2 text-sm font-medium rounded-t-lg transition",
-                                activeTab === 'absender'
-                                    ? "bg-rose-50 text-rose-700 border-b-2 border-rose-600"
-                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                            )}
-                        >
-                            <AtSign className="w-4 h-4 inline-block mr-2" />
-                            E-Mail-Absender ({absenderListe.length})
                         </button>
                         <button
                             onClick={() => setActiveTab('steuerpruefung')}
@@ -789,6 +691,16 @@ export default function FirmaEditor() {
                                             value={firma.email || ''}
                                             onChange={e => setFirma({ ...firma, email: e.target.value })}
                                         />
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Ihre Postfächer und Absender richten Sie unter{' '}
+                                            <Link
+                                                to="/einstellungen#email"
+                                                className="font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded"
+                                            >
+                                                Einstellungen → E-Mail
+                                            </Link>{' '}
+                                            ein.
+                                        </p>
                                     </div>
                                     <div>
                                         <Label>Website</Label>
@@ -1255,75 +1167,6 @@ export default function FirmaEditor() {
                         </div>
                     )}
 
-                    {activeTab === 'absender' && (
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center">
-                                <p className="text-slate-500 text-sm">
-                                    Hier hinterlegen Sie alle E-Mail-Adressen, von denen das System aus E-Mails verschickt.
-                                    Jeder Benutzer bekommt unter „Benutzer" eine dieser Adressen zugewiesen –
-                                    die wird dann automatisch beim Versand als Absender verwendet.
-                                </p>
-                                <Button
-                                    onClick={() => {
-                                        setEditingAbsender({ aktiv: true, sortierung: absenderListe.length });
-                                        setShowAbsenderModal(true);
-                                    }}
-                                    className="bg-rose-600 text-white hover:bg-rose-700"
-                                >
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Neue Absender-Adresse
-                                </Button>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {absenderListe.map(a => (
-                                    <Card key={a.id} className="p-4">
-                                        <div className="flex justify-between items-start gap-2">
-                                            <div className="min-w-0">
-                                                <h4 className="font-semibold text-slate-900 truncate">{a.emailAdresse}</h4>
-                                                {a.anzeigename && (
-                                                    <p className="text-sm text-slate-500 truncate">{a.anzeigename}</p>
-                                                )}
-                                                <div className="flex gap-2 mt-2">
-                                                    {a.aktiv ? (
-                                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Aktiv</span>
-                                                    ) : (
-                                                        <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded">Deaktiviert</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-1 shrink-0">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        setEditingAbsender(a);
-                                                        setShowAbsenderModal(true);
-                                                    }}
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => deleteAbsender(a.id)}
-                                                    className="text-red-600 hover:text-red-700"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </Card>
-                                ))}
-                                {absenderListe.length === 0 && (
-                                    <div className="col-span-full text-center py-8 text-slate-400">
-                                        Noch keine Absender-Adresse angelegt
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
                     {activeTab === 'steuerpruefung' && (
                         <SteuerpruefungExport />
                     )}
@@ -1405,62 +1248,6 @@ export default function FirmaEditor() {
                     )}
                 </>
             )}
-
-            {/* E-Mail-Absender Modal */}
-            <Dialog open={showAbsenderModal} onOpenChange={setShowAbsenderModal}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>
-                            {editingAbsender?.id ? 'Absender bearbeiten' : 'Neue Absender-Adresse'}
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <Label>E-Mail-Adresse *</Label>
-                            <Input
-                                type="email"
-                                value={editingAbsender?.emailAdresse || ''}
-                                onChange={e => setEditingAbsender({ ...editingAbsender, emailAdresse: e.target.value })}
-                                placeholder="info@meinefirma.de"
-                            />
-                        </div>
-                        <div>
-                            <Label>Anzeigename (optional)</Label>
-                            <Input
-                                value={editingAbsender?.anzeigename || ''}
-                                onChange={e => setEditingAbsender({ ...editingAbsender, anzeigename: e.target.value })}
-                                placeholder="z. B. Buchhaltung"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">
-                                Reine Beschriftung in der Verwaltung – wird nicht im E-Mail-Header verwendet.
-                            </p>
-                        </div>
-                        <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={editingAbsender?.aktiv ?? true}
-                                onChange={e => setEditingAbsender({ ...editingAbsender, aktiv: e.target.checked })}
-                                className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                            />
-                            Aktiv (steht für Versand zur Verfügung)
-                        </label>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowAbsenderModal(false)}>
-                            <X className="w-4 h-4 mr-2" />
-                            Abbrechen
-                        </Button>
-                        <Button
-                            onClick={saveAbsender}
-                            disabled={saving || !editingAbsender?.emailAdresse?.trim()}
-                            className="bg-rose-600 text-white hover:bg-rose-700"
-                        >
-                            {saving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                            Speichern
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
 
             {/* Steuerberater Modal */}
             <Dialog open={showSteuerberaterModal} onOpenChange={setShowSteuerberaterModal}>

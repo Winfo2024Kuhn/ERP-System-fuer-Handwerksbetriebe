@@ -49,7 +49,7 @@ async function vorbereiten(page: Page, start: string) {
         const pfad = new URL(route.request().url()).pathname;
         let body: unknown = [];
         if (pfad.endsWith('/emails/stats')) body = { inboxCount: EMAILS.length };
-        else if (pfad.endsWith('/from-addresses')) body = ['info@musterbetrieb.example'];
+        else if (pfad.endsWith('/absender-postfaecher')) body = [{ id: 1, emailAdresse: 'info@musterbetrieb.example', anzeigename: null, eigenes: false, hauptpostfach: true }];
         else if (/\/emails\/inbox$/.test(pfad)) body = EMAILS;
         else {
             const treffer = pfad.match(/\/emails\/(\d+)(\/thread)?$/);

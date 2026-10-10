@@ -76,7 +76,6 @@ public class UnifiedEmailController {
 
     private final EmailRepository emailRepository;
     private final org.example.kalkulationsprogramm.service.EmailDraftService emailDraftService;
-    private final SentMailArchiver sentMailArchiver;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
     private final LieferantenRepository lieferantenRepository;
@@ -93,9 +92,10 @@ public class UnifiedEmailController {
     private final ContactService contactService;
     private final SpamBayesService spamBayesService;
     private final EmailThreadService emailThreadService;
-    private final org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
-    private final org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
     private final org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
+    private final org.example.kalkulationsprogramm.service.PostfachService postfachService;
+    private final org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
+    private final org.example.kalkulationsprogramm.service.AusgangsmailService ausgangsmailService;
     private final SteuerberaterKontaktService steuerberaterKontaktService;
     private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
@@ -138,10 +138,34 @@ public class UnifiedEmailController {
                 antwortBezug);
     }
 
-    @GetMapping("/from-addresses")
-    public ResponseEntity<List<String>> getFromAddresses(
-            @RequestParam(value = "frontendUserId", required = false) Long frontendUserId) {
-        return ResponseEntity.ok(emailAbsenderService.getPrioritizedFromAddresses(frontendUserId));
+    /**
+     * Auswahl „Senden von“ für eine neue Mail. Das eigene Postfach steht oben und ist
+     * vorbelegt; der Benutzer kommt aus der Anmeldung, nicht aus dem Request.
+     */
+    @GetMapping("/absender-postfaecher")
+    public ResponseEntity<List<org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto>> getAbsenderPostfaecher(
+            org.springframework.security.core.Authentication authentication) {
+        Long eigenesPostfachId = angemeldeterBenutzer(authentication, null)
+                .flatMap(postfachVersandService::eigenesPostfach)
+                .map(org.example.kalkulationsprogramm.domain.EmailAbsender::getId)
+                .orElse(null);
+        return ResponseEntity.ok(postfachService.absenderAuswahl(eigenesPostfachId));
+    }
+
+    /**
+     * Angemeldeter Benutzer. Ohne Anmeldung (z. B. Hintergrundaufrufe) zählt die
+     * vom Frontend mitgeschickte Benutzer-Id – wie bisher beim Absender.
+     */
+    private java.util.Optional<Long> angemeldeterBenutzer(org.springframework.security.core.Authentication authentication,
+            Long ersatzFrontendUserId) {
+        if (authentication != null && authentication.getName() != null) {
+            java.util.Optional<Long> angemeldet = frontendUserProfileService.findByUsername(authentication.getName())
+                    .map(org.example.kalkulationsprogramm.domain.FrontendUserProfile::getId);
+            if (angemeldet.isPresent()) {
+                return angemeldet;
+            }
+        }
+        return java.util.Optional.ofNullable(ersatzFrontendUserId);
     }
 
     @GetMapping("/{emailId}/attachments/{attachmentId}")
@@ -1474,7 +1498,8 @@ public class UnifiedEmailController {
     public ResponseEntity<?> sendEmail(
             @RequestPart("dto") ProjektEmailDto dto,
             @RequestPart(value = "attachments", required = false) MultipartFile[] attachments,
-            @RequestPart(value = "dokumentId", required = false) String dokumentIdStr) {
+            @RequestPart(value = "dokumentId", required = false) String dokumentIdStr,
+            org.springframework.security.core.Authentication authentication) {
 
         emailDraftService.validateForSending(dto.getDraftId(), null);
         try {
@@ -1614,69 +1639,90 @@ public class UnifiedEmailController {
                     : null;
 
             // Haengt an dieser Mail ein Ausgangsgeschaeftsdokument (Rechnung,
-            // Angebot, Auftragsbestaetigung)? Nur dann greift das eigene
-            // Postfach. Zeichnungen, Aufmasse und freier Schriftverkehr bleiben
-            // auf dem Standard-Konto — sonst kippt der gesamte Mailverkehr auf
-            // die neue Domain, was ausdruecklich nicht gewollt ist.
-            // Das Kennzeichen setzt der Dokument-Editor. Der Anhang kommt dort
-            // als gewoehnliche Datei hoch (ohne dokumentId), das Backend koennte
-            // die Dokumentart also gar nicht selbst erkennen. Die zusaetzliche
-            // Pruefung auf ein verknuepftes Dokument deckt Aufrufer ab, die
-            // stattdessen eine dokumentId mitschicken.
+            // Angebot, Auftragsbestaetigung)? Dann geht sie ueber das Postfach fuer
+            // Rechnungen und Mahnungen raus. Das Kennzeichen setzt der
+            // Dokument-Editor (der Anhang kommt dort als gewoehnliche Datei hoch);
+            // die Pruefung auf ein verknuepftes Dokument deckt Aufrufer mit
+            // dokumentId ab.
             boolean istGeschaeftsdokument = dto.isGeschaeftsdokument()
                     || projektDokument instanceof org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument
                     || anfrageDokument instanceof org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
-            boolean ueberDokumentKonto =
-                    istGeschaeftsdokument && systemSettingsService.nutztDokumentMailKonto();
 
-            // Zugangsdaten zur Laufzeit aus dem System-Setup (DB) lesen, damit
-            // Aenderungen ohne Backend-Neustart wirksam werden.
-            var konto = ueberDokumentKonto
-                    ? systemSettingsService.getDokumentMailKonto()
-                    : systemSettingsService.getStandardMailKonto();
-            org.example.email.EmailService emailService = new org.example.email.EmailService(
-                    konto.host(), konto.port(), konto.username(), konto.password())
-                    .mitAbsenderName(konto.fromName())
-                    // Kopie in das Postfach, das die Mail auch verschickt hat.
-                    .mitSentKopie(ueberDokumentKonto
-                            ? sentMailArchiver.fuerDokumentKonto()
-                            : sentMailArchiver);
-
-            String sender;
-            if (ueberDokumentKonto) {
-                // Absender kommt zwingend aus dem Dokument-Konto: Eine Adresse
-                // aus der Absender-Liste wuerde nicht zum versendenden Postfach
-                // passen, SPF und DKIM schluegen beim Empfaenger fehl. Die
-                // Pruefung gegen die Absender-Liste entfaellt deshalb hier.
-                sender = konto.fromAddress();
+            // Absender-Postfach: Weiterleitung fest wie die Original-Mail, sonst
+            // Geschaeftsdokument-Postfach, gewaehltes, eigenes oder Hauptpostfach.
+            org.example.kalkulationsprogramm.domain.EmailAbsender postfach;
+            if (dto.getWeitergeleitetVonEmailId() != null) {
+                Email weitergeleitet = emailRepository.findById(dto.getWeitergeleitetVonEmailId()).orElse(null);
+                if (weitergeleitet == null) {
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(Map.of(
+                            "message", "Die weitergeleitete E-Mail gibt es nicht mehr."));
+                }
+                postfach = postfachVersandService.antwortPostfach(weitergeleitet);
             } else {
                 try {
-                    sender = resolveSenderAddress(dto.getSender(), dto.getFrontendUserId());
+                    postfach = postfachVersandService.postfachFuerNeueMail(dto.getPostfachId(),
+                            angemeldeterBenutzer(authentication, dto.getFrontendUserId()).orElse(null),
+                            istGeschaeftsdokument);
                 } catch (IllegalArgumentException ex) {
-                    log.warn("Sender-Aufloesung fehlgeschlagen: {}", ex.getMessage());
                     return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
                 }
             }
-            if (sender == null || sender.isBlank()) {
+            org.example.kalkulationsprogramm.service.PostfachVersandService.Versand versand =
+                    postfachVersandService.versandUeber(postfach);
+            if (versand.absenderAdresse() == null || versand.absenderAdresse().isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "message",
-                        "Kein Absender konfiguriert. Bitte unter Firma -> E-Mail-Absender mindestens eine Adresse anlegen."));
+                        "Kein Postfach eingerichtet. Bitte unter Einstellungen → E-Mail → Postfächer ein Postfach anlegen."));
             }
 
-            if (!ueberDokumentKonto) {
-                // Der zur gewaehlten Adresse gepflegte Anzeigename (Firma ->
-                // E-Mail-Absender) schlaegt den allgemeinen Namen aus den
-                // System-Einstellungen — er ist der genauere Wert.
-                emailService.mitAbsenderName(emailAbsenderService
-                        .findAnzeigenameFuerAdresse(sender)
-                        .orElse(konto.fromName()));
+            var anhaenge = new org.example.kalkulationsprogramm.service.AusgangsmailService.Anhaenge(
+                    attachedStoredFilename, attachedOriginalFilename, attachedMimeType, attachments);
+            final org.example.kalkulationsprogramm.domain.EmailAbsender versandPostfach = postfach;
+
+            if (dto.isEinzelversand()) {
+                List<String> empfaenger;
+                try {
+                    empfaenger = postfachVersandService.pruefeEinzelversand(dto.getRecipients(), dto.getCc());
+                } catch (IllegalArgumentException ex) {
+                    return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+                }
+                // Verschickt ist verschickt: Scheitert danach nur das Speichern, darf die Adresse
+                // nicht als "nicht verschickt" erscheinen – sonst schickt der Benutzer doppelt.
+                List<String> nichtGespeichert = new ArrayList<>();
+                var ergebnis = postfachVersandService.versendeEinzeln(empfaenger, adresse -> {
+                    String einzelId = sendeSmtpMail(versand.dienst(), adresse, null, versand.absenderAdresse(),
+                            dto.getSubject(), htmlBody, attachmentsForEmail);
+                    try {
+                        return java.util.Optional.of(ausgangsmailService.speichere(ausgangsmail(dto, einzelId,
+                                versand.absenderAdresse(), versandPostfach, adresse, null, htmlBody, null, anhaenge)));
+                    } catch (RuntimeException e) {
+                        log.warn("[Einzelversand] Mail verschickt, aber nicht gespeichert: {}", e.getClass().getSimpleName());
+                        nichtGespeichert.add(adresse);
+                        return java.util.Optional.<Email>empty();
+                    }
+                });
+                List<org.example.kalkulationsprogramm.dto.Email.EinzelversandAntwortDto.Fehlschlag> fehlgeschlagen =
+                        ergebnis.fehlgeschlagen().stream()
+                                .map(f -> new org.example.kalkulationsprogramm.dto.Email.EinzelversandAntwortDto.Fehlschlag(
+                                        f.adresse(), f.grund()))
+                                .toList();
+                if (ergebnis.verschickt().isEmpty()) {
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_GATEWAY).body(Map.of(
+                            "message", "Keine der Mails konnte verschickt werden.",
+                            "fehlgeschlagen", fehlgeschlagen));
+                }
+                emailDraftService.deleteAfterSuccessfulSend(dto.getDraftId());
+                ausgangsmailService.vermerkeVersand(projektDokument, anfrageDokument);
+                return ResponseEntity.ok(new org.example.kalkulationsprogramm.dto.Email.EinzelversandAntwortDto(
+                        ergebnis.verschickt().size(), fehlgeschlagen, nichtGespeichert,
+                        ergebnis.verschickt().stream().flatMap(java.util.Optional::stream).map(this::toDto).toList()));
             }
 
             String messageId = sendeSmtpMail(
-                    emailService,
+                    versand.dienst(),
                     recipient,
-                    cc, // Pass CC here
-                    sender,
+                    cc,
+                    versand.absenderAdresse(),
                     dto.getSubject(),
                     htmlBody,
                     attachmentsForEmail);
@@ -1684,115 +1730,25 @@ public class UnifiedEmailController {
             // A lost browser response must never leave an already-sent draft behind.
             emailDraftService.deleteAfterSuccessfulSend(dto.getDraftId());
 
-            // Email-Entität speichern
-            Email email = new Email();
-            email.setMessageId(messageId);
-            email.setFromAddress(sender);
-            email.setRecipient(recipient);
-            email.setCc(cc);
-            email.setSubject(dto.getSubject());
-            email.setBody(org.example.kalkulationsprogramm.util.EmailHtmlSanitizer.htmlToPlainText(htmlBody));
-            email.setHtmlBody(htmlBody);
-            email.setRawBody(htmlBody);
-            email.setSentAt(LocalDateTime.now());
-            email.setDirection(EmailDirection.OUT);
-            email.setRead(true);
-
-            // Zuordnung (optional)
-            if (dto.getProjektId() != null) {
-                projektRepository.findById(dto.getProjektId()).ifPresent(email::assignToProjekt);
-            } else if (dto.getAnfrageId() != null) {
-                anfrageRepository.findById(dto.getAnfrageId()).ifPresent(email::assignToAnfrage);
-            } else if (dto.getLieferantId() != null) {
-                lieferantenRepository.findById(dto.getLieferantId()).ifPresent(email::assignToLieferant);
-            }
-
-            // Empfänger ist ein Lieferant? Dann zusätzlich dort einhängen.
-            emailLieferantVerknuepfungService.verknuepfeAusEmpfaenger(email, recipient, cc);
-
-            // WICHTIG: saveAndFlush statt save, damit messageId sofort committed ist
-            // und der IMAP-Import die E-Mail als Duplikat erkennt
-            emailRepository.saveAndFlush(email);
-
-            // Versanddatum auf dem angehängten Dokument setzen
-            if (projektDokument != null) {
-                projektDokument.setEmailVersandDatum(java.time.LocalDate.now());
-                projektDokumentRepository.save(projektDokument);
-                log.info("Versanddatum für ProjektDokument {} gesetzt", projektDokument.getId());
-            }
-            if (anfrageDokument != null) {
-                anfrageDokument.setEmailVersandDatum(java.time.LocalDate.now());
-                anfrageDokumentRepository.save(anfrageDokument);
-                log.info("Versanddatum für AnfrageDokument {} gesetzt", anfrageDokument.getId());
-            }
-
-            // Attachments speichern
-            java.nio.file.Path baseDir = Path.of(mailAttachmentDir);
-            java.nio.file.Files.createDirectories(baseDir);
-
-            // 1. Dokument als Attachment speichern (Projekt ODER Anfrage)
-            if (attachedStoredFilename != null && attachedOriginalFilename != null) {
-                try {
-                    org.springframework.core.io.Resource resource = dateiSpeicherService
-                            .ladeDokumentAlsResource(attachedStoredFilename);
-                    if (resource != null && resource.exists()) {
-                        String rawAttachedName = attachedOriginalFilename != null ? attachedOriginalFilename : "dokument.pdf";
-                        String safeAttachedName = java.nio.file.Path.of(rawAttachedName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
-                        String storedName = java.util.UUID.randomUUID() + "_" + safeAttachedName;
-                        java.nio.file.Path dst = baseDir.resolve(storedName).normalize();
-                        if (!dst.startsWith(baseDir.normalize())) {
-                            throw new IllegalArgumentException("Ungültiger Dateiname");
-                        }
-                        try (var in = resource.getInputStream()) {
-                            java.nio.file.Files.copy(in, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        }
-
-                        EmailAttachment att = new EmailAttachment();
-                        att.setEmail(email);
-                        att.setOriginalFilename(attachedOriginalFilename);
-                        att.setStoredFilename(storedName);
-                        att.setSizeBytes(java.nio.file.Files.size(dst));
-                        att.setMimeType(attachedMimeType);
-                        email.addAttachment(att);
-                        log.info("Dokument '{}' als EmailAttachment gespeichert ({})", attachedOriginalFilename, attachedMimeType);
-                    }
-                } catch (Exception e) {
-                    log.warn("Konnte Dokument nicht als EmailAttachment speichern: {}", e.getMessage());
-                }
-            }
-
-            // 2. Hochgeladene Dateien als Attachments speichern
-            if (attachments != null) {
-                for (MultipartFile file : attachments) {
-                    if (!file.isEmpty()) {
-                        String rawOrigName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment";
-                        String safeOrigName = java.nio.file.Path.of(rawOrigName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
-                        String storedName = java.util.UUID.randomUUID() + "_" + safeOrigName;
-                        java.nio.file.Path dst = baseDir.resolve(storedName).normalize();
-                        if (!dst.startsWith(baseDir.normalize())) {
-                            throw new IllegalArgumentException("Ungültiger Dateiname");
-                        }
-                        try (var in = file.getInputStream()) {
-                            java.nio.file.Files.copy(in, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        }
-
-                        EmailAttachment att = new EmailAttachment();
-                        att.setEmail(email);
-                        att.setOriginalFilename(file.getOriginalFilename());
-                        att.setStoredFilename(storedName);
-                        att.setSizeBytes(file.getSize());
-                        att.setMimeType(file.getContentType());
-                        email.addAttachment(att);
-                    }
-                }
-            }
-            emailRepository.save(email);
+            Email email = ausgangsmailService.speichere(ausgangsmail(dto, messageId, versand.absenderAdresse(),
+                    versand.postfach(), recipient, cc, htmlBody, null, anhaenge));
+            ausgangsmailService.vermerkeVersand(projektDokument, anfrageDokument);
 
             return ResponseEntity.ok(toDto(email));
         } catch (Exception e) {
             log.error("Fehler beim Senden der Email", e);
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    /** Daten für das Speichern einer verschickten Mail. */
+    private static org.example.kalkulationsprogramm.service.AusgangsmailService.Ausgangsmail ausgangsmail(
+            ProjektEmailDto dto, String messageId, String absender,
+            org.example.kalkulationsprogramm.domain.EmailAbsender postfach, String empfaenger, String cc,
+            String htmlBody, Email antwortAuf, org.example.kalkulationsprogramm.service.AusgangsmailService.Anhaenge anhaenge) {
+        return new org.example.kalkulationsprogramm.service.AusgangsmailService.Ausgangsmail(messageId, absender,
+                postfach, empfaenger, cc, dto.getSubject(), htmlBody, dto.getProjektId(), dto.getAnfrageId(),
+                dto.getLieferantId(), antwortAuf, anhaenge);
     }
 
     @PostMapping(value = "/{emailId}/reply", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -1809,14 +1765,10 @@ public class UnifiedEmailController {
         emailDraftService.validateForSending(dto.getDraftId(), emailId);
 
         try {
-            // E-Mail senden via SMTP – Zugangsdaten zur Laufzeit aus System-Setup (DB) lesen,
-            // damit Änderungen ohne Backend-Neustart wirksam werden.
-            org.example.email.EmailService emailService = new org.example.email.EmailService(
-                    systemSettingsService.getSmtpHost(),
-                    systemSettingsService.getSmtpPort(),
-                    systemSettingsService.getSmtpUsername(),
-                    systemSettingsService.getSmtpPassword())
-                    .mitSentKopie(sentMailArchiver);
+            // Antworten gehen fest aus dem Postfach raus, in dem die Mail ankam
+            // (bzw. aus dem die eigene Mail verschickt wurde) – keine Auswahl.
+            org.example.kalkulationsprogramm.service.PostfachVersandService.Versand versand =
+                    postfachVersandService.versandUeber(postfachVersandService.antwortPostfach(parentEmail));
 
             // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)
             long totalReplyAttachmentsSize = 0L;
@@ -1859,27 +1811,15 @@ public class UnifiedEmailController {
                 return ResponseEntity.badRequest().body(Map.of("message", "Bitte mindestens einen Empfänger angeben."));
             }
             String cc = EmailThreadService.verbindeAdressen(dto.getCc());
-            String sender;
-            try {
-                sender = resolveSenderAddress(dto.getSender(), dto.getFrontendUserId());
-            } catch (IllegalArgumentException ex) {
-                log.warn("Sender-Aufloesung fehlgeschlagen: {}", ex.getMessage());
-                return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
-            }
-            if (sender == null) {
+            String sender = versand.absenderAdresse();
+            if (sender == null || sender.isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "message",
-                        "Kein Absender konfiguriert. Bitte unter Firma -> E-Mail-Absender mindestens eine Adresse anlegen."));
+                        "Kein Postfach eingerichtet. Bitte unter Einstellungen → E-Mail → Postfächer ein Postfach anlegen."));
             }
 
-            // Antworten laufen ueber das Standard-Postfach; Anzeigename wie beim
-            // freien Versand aus der Absender-Liste, sonst aus den Einstellungen.
-            emailService.mitAbsenderName(emailAbsenderService
-                    .findAnzeigenameFuerAdresse(sender)
-                    .orElse(systemSettingsService.getMailAbsenderName()));
-
             String messageId = sendeSmtpMail(
-                    emailService,
+                    versand.dienst(),
                     recipient,
                     cc,
                     sender,
@@ -1891,80 +1831,13 @@ public class UnifiedEmailController {
             // A lost browser response must never leave an already-sent draft behind.
             emailDraftService.deleteAfterSuccessfulSend(dto.getDraftId());
 
-            // Email-Entität speichern
-            Email email = new Email();
-            email.setMessageId(messageId);
-            email.setFromAddress(sender);
-            email.setRecipient(recipient);
-            email.setCc(cc);
-            email.setSubject(dto.getSubject());
-            email.setBody(org.example.kalkulationsprogramm.util.EmailHtmlSanitizer.htmlToPlainText(htmlBody));
-            email.setHtmlBody(htmlBody);
-            email.setRawBody(htmlBody);
-            email.setSentAt(LocalDateTime.now());
-            email.setDirection(EmailDirection.OUT);
-            email.setRead(true);
-            email.setParentEmail(parentEmail); // Verknüpfung zur Original-Email
-
-            // Zuordnung: Priorität DTO > Parent
-            if (dto.getProjektId() != null) {
-                projektRepository.findById(dto.getProjektId()).ifPresent(email::assignToProjekt);
-            } else if (dto.getAnfrageId() != null) {
-                anfrageRepository.findById(dto.getAnfrageId()).ifPresent(email::assignToAnfrage);
-            } else if (dto.getLieferantId() != null) {
-                lieferantenRepository.findById(dto.getLieferantId()).ifPresent(email::assignToLieferant);
-            } else {
-                // Fallback: Parent
-                if (parentEmail.getProjekt() != null) {
-                    email.assignToProjekt(parentEmail.getProjekt());
-                } else if (parentEmail.getAnfrage() != null) {
-                    email.assignToAnfrage(parentEmail.getAnfrage());
-                } else if (parentEmail.getLieferant() != null) {
-                    email.assignToLieferant(parentEmail.getLieferant());
-                }
-            }
-
-            // Der Lieferant kommt bewusst NICHT vom Parent, sondern aus dem Empfänger:
-            // Antworten wir in einem Thread dem Kunden, gehört die Mail nicht auf die
-            // Karte des Lieferanten, den wir vorher im selben Thread angeschrieben haben.
-            // Empfänger ist ein Lieferant? Dann zusätzlich dort einhängen.
-            emailLieferantVerknuepfungService.verknuepfeAusEmpfaenger(email, recipient, cc);
-
-            emailRepository.save(email);
+            Email email = ausgangsmailService.speichere(ausgangsmail(dto, messageId, sender, versand.postfach(),
+                    recipient, cc, htmlBody, parentEmail,
+                    new org.example.kalkulationsprogramm.service.AusgangsmailService.Anhaenge(null, null, null, attachments)));
 
             // Implizites Ham-Training: Wer antwortet, bestätigt, dass die Email kein Spam ist
             trainImplicitHam(parentEmail);
             emailRepository.save(parentEmail);
-
-            // Attachments speichern
-            if (attachments != null) {
-                java.nio.file.Path baseDir = Path.of(mailAttachmentDir);
-                java.nio.file.Files.createDirectories(baseDir);
-
-                for (MultipartFile file : attachments) {
-                    if (!file.isEmpty()) {
-                        String rawOrigName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "attachment";
-                        String safeOrigName = java.nio.file.Path.of(rawOrigName).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
-                        String storedName = java.util.UUID.randomUUID() + "_" + safeOrigName;
-                        java.nio.file.Path dst = baseDir.resolve(storedName).normalize();
-                        if (!dst.startsWith(baseDir.normalize())) {
-                            throw new IllegalArgumentException("Ungültiger Dateiname");
-                        }
-                        try (var in = file.getInputStream()) {
-                            java.nio.file.Files.copy(in, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                        }
-
-                        EmailAttachment att = new EmailAttachment();
-                        att.setEmail(email);
-                        att.setOriginalFilename(file.getOriginalFilename());
-                        att.setStoredFilename(storedName);
-                        att.setSizeBytes(file.getSize());
-                        att.setMimeType(file.getContentType());
-                        email.addAttachment(att);
-                    }
-                }
-                emailRepository.save(email);
-            }
 
             return ResponseEntity.ok(toDto(email));
         } catch (Exception e) {
@@ -2006,7 +1879,8 @@ public class UnifiedEmailController {
         dto.setSpamScore(email.getSpamScore());
 
         applyZuordnungsInfo(email, dto);
-        // Hinweis: applyKundeLookup() bewusst NICHT in der Liste aufrufen, um N+1 zu vermeiden.
+        // Hinweis: applyKundeLookup() und das Antwort-Postfach bewusst NICHT in der Liste, um N+1 zu vermeiden.
+        applyPostfachSchilder(email, dto);
 
         // Compute folder
         dto.setFolder(computeFolder(email));
@@ -2037,6 +1911,31 @@ public class UnifiedEmailController {
         return dto;
     }
 
+    /**
+     * Postfach-Schilder an der Mail. Kommt aus den gebündelt geladenen Zuordnungen –
+     * keine zusätzliche Abfrage pro Listenzeile.
+     */
+    private void applyPostfachSchilder(Email email, UnifiedEmailDto dto) {
+        if (email.getPostfachZuordnungen() != null) {
+            dto.setPostfaecher(email.getPostfachZuordnungen().stream()
+                    .map(org.example.kalkulationsprogramm.domain.EmailPostfachZuordnung::getPostfach)
+                    .filter(java.util.Objects::nonNull)
+                    .map(org.example.kalkulationsprogramm.dto.Postfach.PostfachRefDto::von)
+                    .toList());
+        }
+    }
+
+    /**
+     * Schilder plus das feste Absender-Postfach für Antworten/Weiterleitungen. Nur in der
+     * Detailansicht: die Ermittlung kann Abfragen kosten (Rückfall auf Hauptpostfach/Absender),
+     * in Listen wäre das eine Abfrage pro Zeile.
+     */
+    private void applyPostfachInfo(Email email, UnifiedEmailDto dto) {
+        applyPostfachSchilder(email, dto);
+        dto.setAntwortPostfach(org.example.kalkulationsprogramm.dto.Postfach.PostfachRefDto.von(
+                postfachVersandService.antwortPostfach(email)));
+    }
+
     /** Full DTO with htmlBody + CID-rewriting – for detail/thread views only. */
     private UnifiedEmailDto toDto(Email email) {
         UnifiedEmailDto dto = new UnifiedEmailDto();
@@ -2058,6 +1957,7 @@ public class UnifiedEmailController {
         dto.setSpamScore(email.getSpamScore());
 
         applyZuordnungsInfo(email, dto);
+        applyPostfachInfo(email, dto);
         applyKundeLookup(email, dto);
 
         // Compute folder
@@ -2150,54 +2050,6 @@ public class UnifiedEmailController {
         }
         if (email.isPotentialInquiry()) return "inquiries";
         return "inbox";
-    }
-
-    /**
-     * Loest die Absender-Adresse fuer einen ausgehenden E-Mail-Versand auf.
-     * Reihenfolge:
-     *   1. Explizit vom Frontend uebergebener Sender. Liegt er nicht in der
-     *      Liste der aktiv konfigurierten Absender, wird {@link IllegalArgumentException}
-     *      geworfen - kein stilles Umfallen auf einen anderen Absender (sonst
-     *      koennte ein deaktivierter/geloeschter Sender unbemerkt durch einen
-     *      anderen ersetzt werden).
-     *   2. Adresse, die dem eingeloggten Benutzer (frontendUserId) zugewiesen
-     *      ist - das ist der Standard-Pfad nach diesem Refactoring.
-     *   3. Erster aktiver konfigurierter Absender als Fallback (z.B. fuer
-     *      Cron-Jobs ohne Benutzerkontext).
-     * Liefert {@code null}, wenn ueberhaupt kein Absender konfiguriert ist;
-     * der Aufrufer antwortet dann mit 400.
-     */
-    private String resolveSenderAddress(String requestedSender, Long frontendUserId) {
-        java.util.List<String> aktive = emailAbsenderService.findActiveEmailAddresses();
-        java.util.Set<String> aktiveLower = aktive.stream()
-                .map(s -> s.toLowerCase(java.util.Locale.ROOT))
-                .collect(java.util.stream.Collectors.toSet());
-
-        if (requestedSender != null && !requestedSender.isBlank()) {
-            String trimmed = requestedSender.trim();
-            if (!aktiveLower.contains(trimmed.toLowerCase(java.util.Locale.ROOT))) {
-                throw new IllegalArgumentException(
-                        "Absender '" + trimmed + "' ist nicht (mehr) in der Liste der konfigurierten Absender. "
-                                + "Bitte unter Firma -> E-Mail-Absender pflegen oder eine andere Adresse waehlen.");
-            }
-            return trimmed;
-        }
-
-        if (frontendUserId != null) {
-            String fromUser = frontendUserProfileService.findById(frontendUserId)
-                    .map(p -> p.getEmailAbsender())
-                    .map(a -> a.getEmailAdresse())
-                    .filter(s -> s != null && !s.isBlank())
-                    .orElse(null);
-            if (fromUser != null) {
-                return fromUser;
-            }
-        }
-
-        return emailAbsenderService.findFirstActive()
-                .map(a -> a.getEmailAdresse())
-                .filter(s -> s != null && !s.isBlank())
-                .orElse(null);
     }
 
     /**

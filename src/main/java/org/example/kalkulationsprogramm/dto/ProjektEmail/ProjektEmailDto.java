@@ -63,4 +63,16 @@ public class ProjektEmailDto {
      * verlässliche Hinweis auf die Dokumentart.</p>
      */
     private boolean geschaeftsdokument;
+
+    /** Absender-Postfach einer neuen Mail ("Senden von"). Bei Antworten und Weiterleitungen ignoriert. */
+    private Long postfachId;
+
+    /**
+     * Weiterleitung dieser Mail: Der Absender ist dann fest das Postfach, in dem sie
+     * ankam – {@link #postfachId} wird ignoriert.
+     */
+    private Long weitergeleitetVonEmailId;
+
+    /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail und sieht nur sich selbst. */
+    private boolean einzelversand;
 }

@@ -182,6 +182,11 @@ export function EmailRecipientInput({
     const totalSelectableItems = linkedEmails.length + displayItems.length;
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        // Escape schließt auch die Liste „keine Treffer“ – sie verdeckt sonst die Felder darunter.
+        if (e.key === 'Escape' && isOpen) {
+            setIsOpen(false);
+            return;
+        }
         if (!isOpen || totalSelectableItems === 0) return;
 
         if (e.key === 'ArrowDown') {
@@ -198,8 +203,6 @@ export function EmailRecipientInput({
                 const item = displayItems[highlightIdx - linkedEmails.length];
                 handleSelect(item.type === 'contact' ? item.data.email : item.email);
             }
-        } else if (e.key === 'Escape') {
-            setIsOpen(false);
         }
     };
 

@@ -13,7 +13,7 @@ async function prepare(page: Page) {
         const path = new URL(route.request().url()).pathname;
         let body: unknown = [];
         if (path.endsWith('/stats')) body = { inboxCount: 1, newsletterCount: 1 };
-        else if (path.endsWith('/from-addresses')) body = ['betrieb@example.com'];
+        else if (path.endsWith('/absender-postfaecher')) body = [{ id: 1, emailAdresse: 'betrieb@example.com', anzeigename: null, eigenes: false, hauptpostfach: true }];
         else if (path.endsWith('/thread')) body = { rootEmailId: 701, focusedEmailId: 701, emails: [email] };
         else if (/\/emails\/(inbox|newsletter)$/.test(path)) body = [email];
         else if (path.endsWith('/701')) body = email;

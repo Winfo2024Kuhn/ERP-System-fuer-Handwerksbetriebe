@@ -53,7 +53,7 @@ async function oeffneVerlauf(page: Page): Promise<Mitschrift> {
             ],
         };
         else if (pathname === '/api/emails/stats') body = { inboxCount: 2, sentCount: 0, trashCount: 0, spamCount: 0, unassignedCount: 0 };
-        else if (pathname === '/api/emails/from-addresses') body = ['handwerk@example.com'];
+        else if (pathname === '/api/emails/absender-postfaecher') body = [{ id: 1, emailAdresse: 'handwerk@example.com', anzeigename: null, eigenes: false, hauptpostfach: true }];
         else if (request.method() !== 'GET') body = {};
         return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
     });

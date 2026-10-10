@@ -26,6 +26,13 @@ let gesendeteRequests: Array<{ url: string; body: unknown }>;
 /** Antwort auf /api/email/dokument-absender; pro Test umstellbar. */
 let dokumentAbsenderAntwort: { aktiv: boolean; address: string | null } = { aktiv: false, address: null };
 
+/** Antwort auf /api/emails/absender-postfaecher (Dummy-Postfächer). */
+const STANDARD_POSTFAECHER = [
+    { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb', eigenes: false, hauptpostfach: true },
+    { id: 7, emailAdresse: 'max@musterbetrieb.example', anzeigename: 'Max Mustermann', eigenes: true, hauptpostfach: false },
+];
+const absenderPostfaecherAntwort: unknown = STANDARD_POSTFAECHER;
+
 function mockFetch() {
     return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString();
@@ -54,8 +61,8 @@ function mockFetch() {
         if (url === `/api/projekte/${PROJEKT_ID}`) {
             return jsonResponse({ id: PROJEKT_ID, bauvorhaben: 'Musterbau', kundenEmails: [BEKANNTE_ADRESSE] });
         }
-        if (url.startsWith('/api/email/from-addresses')) {
-            return jsonResponse(['firma@example.com']);
+        if (url.startsWith('/api/emails/absender-postfaecher')) {
+            return jsonResponse(absenderPostfaecherAntwort);
         }
         if (url.startsWith('/api/email/dokument-absender')) {
             return jsonResponse(dokumentAbsenderAntwort);
@@ -398,8 +405,9 @@ describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
             />
         );
 
-        const vonFeld = await screen.findByDisplayValue('rechnungen@musterfirma-beispiel.de');
-        expect(vonFeld).toHaveAttribute('readonly');
+        const vonFeld = await screen.findByText('rechnungen@musterfirma-beispiel.de');
+        expect(vonFeld).toHaveAttribute('data-testid', 'absender-fest');
+        expect(screen.queryByRole('combobox', { name: 'Senden von' })).not.toBeInTheDocument();
         expect(screen.getByText(/lässt sich hier deshalb nicht ändern/i)).toBeInTheDocument();
     });
 
@@ -414,11 +422,11 @@ describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
             return fallback(input, init);
         });
         render(<EmailComposeForm onClose={() => {}} draftId={42} />);
-        expect(await screen.findByDisplayValue('rechnungen@example.com')).toHaveAttribute('readonly');
+        expect(await screen.findByText('rechnungen@example.com')).toHaveAttribute('data-testid', 'absender-fest');
         expect(screen.getByText(/lässt sich hier deshalb nicht ändern/i)).toHaveClass('col-span-2');
     });
 
-    it('laesst die freie Auswahl, solange kein eigenes Postfach eingerichtet ist', async () => {
+    it('nimmt das Hauptpostfach, solange kein Postfach für Rechnungen eingerichtet ist', async () => {
         dokumentAbsenderAntwort = { aktiv: false, address: null };
 
         render(
@@ -431,7 +439,9 @@ describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
         );
 
         await waitFor(() => expect(screen.getByDisplayValue('Rechnung RE-2026/07/0001')).toBeInTheDocument());
-        expect(screen.queryByDisplayValue('rechnungen@musterfirma-beispiel.de')).not.toBeInTheDocument();
+        // Die Auswahl würde das Backend ignorieren (Geschäftsdokument → Rechnungs- bzw. Hauptpostfach).
+        expect(await screen.findByText('Musterbetrieb <info@musterbetrieb.example>')).toHaveAttribute('data-testid', 'absender-fest');
+        expect(screen.getByText(/über das Hauptpostfach raus/i)).toBeInTheDocument();
         expect(screen.queryByText(/lässt sich hier deshalb nicht ändern/i)).not.toBeInTheDocument();
     });
 
@@ -448,7 +458,7 @@ describe('EmailComposeForm – Absender bei Geschaeftsdokumenten', () => {
             />
         );
 
-        await screen.findByDisplayValue('rechnungen@musterfirma-beispiel.de');
+        await screen.findByText('rechnungen@musterfirma-beispiel.de');
         await sendeAb();
 
         await waitFor(() =>

@@ -9,7 +9,6 @@ import { PdfCanvasViewer } from './ui/PdfCanvasViewer';
 import { AiButton } from './ui/ai-button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Select } from './ui/select-custom';
 import type { ProjektDetail, ProjektDokument } from '../types';
 import { extractEmailAddress, isSingleEmailAddress, parseRecipientList } from '../lib/emailAddress';
 import { komprimiereBildFuerEmail, komprimiereBilderFuerEmail } from '../lib/bildKomprimierung';
@@ -21,6 +20,15 @@ import { useToast } from './ui/toast';
 import { useEmailDraft } from '../features/email/useEmailDraft';
 import { loadEmailDraft } from '../features/email/emailDraftPersistence';
 import { toSafeResourceUrl } from '../lib/htmlSanitizer';
+import { AbsenderPostfachAuswahl } from '../features/email/AbsenderPostfachAuswahl';
+import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
+import { waehleStandardAbsender, type PostfachKurz } from '../features/email/postfach';
+import {
+    EINZELVERSAND_MAX_EMPFAENGER, EINZELVERSAND_ZU_VIELE, einzelneEmpfaenger, formatEinzelversandErgebnis,
+    parseEinzelversandErgebnis, brauchtAufmerksamkeit, type EinzelversandErgebnis,
+} from '../features/email/einzelversand';
+import { EinzelversandErgebnisAnzeige, EinzelversandSchalter } from '../features/email/EinzelversandSchalter';
+import { parseErrorMessage } from './settings/settingsApi';
 
 // Interface für hochgeladene externe Dateien
 interface UploadedFile {
@@ -73,6 +81,9 @@ const isImageAttachment = (file: File): boolean =>
 const isPdfAttachment = (file: File): boolean =>
     file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 
+/** Fehler mit einer Meldung, die so beim Anwender ankommen darf (aus dem Backend oder eigener Text). */
+class VersandFehler extends Error {}
+
 export interface EmailComposeFormProps {
     onClose: () => void;
     /** Registers a save guard for parent navigation; false keeps the editor open. */
@@ -100,6 +111,16 @@ export interface EmailComposeFormProps {
     replyQuote?: string;
     /** ID der Email, auf die geantwortet wird – nutzt /{replyEmailId}/reply statt /send */
     replyEmailId?: number;
+    /**
+     * Weiterleitung: ID der Original-Mail. Das Backend schickt dann fest über
+     * deren Antwort-Postfach – eine Absender-Auswahl gibt es nicht.
+     */
+    weitergeleitetVonEmailId?: number;
+    /**
+     * Fester Absender bei Antwort/Weiterleitung (`antwortPostfach` der Original-Mail),
+     * sofern der Aufrufer ihn schon kennt. Fehlt er, holt das Formular ihn selbst.
+     */
+    antwortPostfach?: PostfachKurz | null;
     /** Pre-attached files (e.g. generated PDF from DocumentEditor) */
     initialAttachments?: File[];
     /**
@@ -205,6 +226,8 @@ export function EmailComposeForm({
     initialBody = '',
     replyQuote,
     replyEmailId: initialReplyEmailId,
+    weitergeleitetVonEmailId,
+    antwortPostfach: bekanntesAntwortPostfach,
     initialAttachments,
     geschaeftsdokument: initialGeschaeftsdokument = false,
     onSuccess,
@@ -239,8 +262,19 @@ export function EmailComposeForm({
     const [fetchedProjekt, setFetchedProjekt] = useState<ProjektDetail | null>(null);
     /** Bauvorhaben des verknüpften Vorgangs, sobald es vom Backend da ist. */
     const [fetchedVorgangName, setFetchedVorgangName] = useState('');
-    const [fromAddresses, setFromAddresses] = useState<string[]>([]);
-    const [fromAddress, setFromAddress] = useState('');
+    /** Postfächer für „Senden von“ (eigenes zuerst). */
+    const absenderPostfaecher = useAbsenderPostfaecher();
+    /** Gewähltes Absender-Postfach einer neuen Mail. */
+    const [postfachId, setPostfachId] = useState<number | null>(null);
+    /**
+     * Fester Absender bei Antwort/Weiterleitung. `undefined` = wird noch ermittelt,
+     * Text = Rückfall, wenn die Original-Mail nicht geladen werden konnte.
+     */
+    const [festesPostfach, setFestesPostfach] = useState<PostfachKurz | string | null | undefined>(bekanntesAntwortPostfach);
+    /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail. */
+    const [einzelversand, setEinzelversand] = useState(false);
+    /** Ergebnis des letzten Einzelversands mit Teil- oder Totalfehler. */
+    const [einzelversandErgebnis, setEinzelversandErgebnis] = useState<EinzelversandErgebnis | null>(null);
     /**
      * Absender-Adresse des eigenen Postfachs für Geschäftsdokumente, sofern
      * eingerichtet. Leer = es gibt keins, dann bleibt die freie Auswahl.
@@ -431,10 +465,18 @@ export function EmailComposeForm({
             : `${initialAttachments!.length} Dateien automatisch angehängt`
         : '';
     const firstPdfAttachment = uploadedFiles.find(file => file.file.type === 'application/pdf');
-    const fromAddressOptions = useMemo(
-        () => fromAddresses.map(address => ({ value: address, label: address })),
-        [fromAddresses]
-    );
+    /** Antwort oder Weiterleitung: Absender steht fest (Postfach der Original-Mail). */
+    const absenderFest = !!replyEmailId || !!weitergeleitetVonEmailId;
+    const originalEmailId = replyEmailId ?? weitergeleitetVonEmailId;
+    const absenderModus: 'auswahl' | 'fest' = absenderFest || geschaeftsdokument ? 'fest' : 'auswahl';
+    const gewaehltesPostfach = absenderPostfaecher.postfaecher.find(p => p.id === postfachId) ?? null;
+    const hauptpostfach = absenderPostfaecher.postfaecher.find(p => p.hauptpostfach) ?? null;
+
+    // Einzelversand gibt es nicht bei Antworten – die gehen an genau den Verlauf.
+    const einzelversandMoeglich = !replyEmailId;
+    const einzelversandAktiv = einzelversandMoeglich && einzelversand;
+    const anEmpfaenger = useMemo(() => einzelneEmpfaenger(recipient), [recipient]);
+    const zuVieleEmpfaenger = einzelversandAktiv && anEmpfaenger.length > EINZELVERSAND_MAX_EMPFAENGER;
     // Solange der Empfänger nur automatisch vorgeschlagen wurde, darf ein Wechsel der
     // Zuordnung ihn mitziehen. Sobald der User selbst tippt, bleibt seine Eingabe stehen.
     const empfaengerAutomatisch = useRef<boolean>(!initialRecipient && !replyEmailId);
@@ -453,15 +495,18 @@ export function EmailComposeForm({
     const draftSnapshot = useMemo(() => ({
         content: {
             recipient: recipient.trim(), cc: ccRecipients.filter(c => c.trim()).join(', '),
-            subject: subject.trim(), body, fromAddress: fromAddress || null,
+            subject: subject.trim(), body,
+            fromAddress: absenderModus === 'auswahl' ? gewaehltesPostfach?.emailAdresse ?? null : null,
+            postfachId: absenderModus === 'auswahl' ? postfachId : null,
+            einzelversand: einzelversandAktiv,
             replyEmailId: replyEmailId || null,
             projektId: !isAnfrageContext && entityId ? entityId : null,
             anfrageId: isAnfrageContext && entityId ? entityId : null,
             geschaeftsdokument,
         },
         files: uploadedFiles.map(entry => entry.file),
-    }), [recipient, ccRecipients, subject, body, fromAddress, replyEmailId, isAnfrageContext,
-        entityId, geschaeftsdokument, uploadedFiles]);
+    }), [recipient, ccRecipients, subject, body, absenderModus, gewaehltesPostfach, postfachId, einzelversandAktiv,
+        replyEmailId, isAnfrageContext, entityId, geschaeftsdokument, uploadedFiles]);
     const draft = useEmailDraft(draftSnapshot, initialDraftId,
         !draftLoading && !draftLoadError && !komprimiereAnhaenge, reportDraftError);
     const markDirty = draft.markDirty;
@@ -477,10 +522,13 @@ export function EmailComposeForm({
             setSubject(content.subject ?? initialSubject);
             const html = DOMPurify.sanitize(content.body ?? initialBody);
             setBody(html);
-            const cc = parseRecipientList(content.cc).map(recipient => recipient.raw);
+            const gespeicherterEinzelversand = !!content.einzelversand;
+            // Einzelversand und CC schließen sich aus (Backend lehnt sonst mit 400 ab).
+            const cc = gespeicherterEinzelversand ? [] : parseRecipientList(content.cc).map(recipient => recipient.raw);
             setCcRecipients(cc);
             setShowCc(cc.length > 0);
-            setFromAddress(previous => content.fromAddress ?? previous);
+            setEinzelversand(gespeicherterEinzelversand);
+            if (content.postfachId != null) setPostfachId(content.postfachId);
             setReplyEmailId(content.replyEmailId ?? initialReplyEmailId);
             setGeschaeftsdokument(content.geschaeftsdokument ?? initialGeschaeftsdokument);
             if (content.projektId) setZuordnung({ typ: 'PROJEKT', id: content.projektId, titel: '' });
@@ -560,35 +608,10 @@ export function EmailComposeForm({
         return '';
     }, []);
 
-    const loadFromAddresses = useCallback(async () => {
-        try {
-            const currentUser = getCurrentFrontendUser();
-            const params = new URLSearchParams();
-            if (currentUser?.id) {
-                params.set('frontendUserId', String(currentUser.id));
-            }
-            const url = params.toString()
-                ? `/api/email/from-addresses?${params.toString()}`
-                : '/api/email/from-addresses';
-
-            const res = await fetch(url);
-            if (!res.ok) return;
-            const data = await res.json();
-            const addresses = Array.isArray(data)
-                ? data.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-                : [];
-            setFromAddresses(addresses);
-            if (addresses.length > 0) {
-                // Adressen sind bereits sortiert: User-Adresse steht an erster Stelle.
-                setFromAddress(prev => prev || addresses[0]);
-            }
-        } catch (err) {
-            console.error('Absender-Adressen konnten nicht geladen werden:', err);
-        }
-
-        // Beim Versand eines Geschäftsdokuments entscheidet nicht die Auswahl,
-        // sondern das dafür eingerichtete Postfach. Wir holen die Adresse, um
-        // sie anzuzeigen und die Auswahl zu sperren.
+    // Beim Versand eines Geschäftsdokuments entscheidet nicht die Auswahl,
+    // sondern das dafür eingerichtete Postfach. Wir holen die Adresse, um
+    // sie fest anzuzeigen.
+    const loadDokumentAbsender = useCallback(async () => {
         if (!geschaeftsdokument) return;
         try {
             const res = await fetch('/api/email/dokument-absender');
@@ -598,11 +621,37 @@ export function EmailComposeForm({
                 setDokumentAbsender(data.address.trim());
             }
         } catch (err) {
-            // Kein harter Fehler: Ohne die Auskunft bleibt die freie Auswahl
-            // stehen, der Versand läuft serverseitig trotzdem korrekt.
+            // Kein harter Fehler: Dann steht das Hauptpostfach da, der Versand
+            // läuft serverseitig trotzdem über das richtige Postfach.
             console.error('Absender für Geschäftsdokumente konnte nicht geladen werden:', err);
         }
     }, [geschaeftsdokument]);
+
+    // Vorbelegung „Senden von“: eigenes Postfach, sonst Hauptpostfach, sonst das erste.
+    // Ein gespeicherter Entwurf behält sein Postfach, solange es noch wählbar ist.
+    useEffect(() => {
+        if (absenderPostfaecher.laedt) return;
+        if (postfachId != null && absenderPostfaecher.postfaecher.some(p => p.id === postfachId)) return;
+        const standard = waehleStandardAbsender(absenderPostfaecher.postfaecher)?.id ?? null;
+        if (standard !== postfachId) setPostfachId(standard);
+    }, [absenderPostfaecher.laedt, absenderPostfaecher.postfaecher, postfachId]);
+
+    // Antwort/Weiterleitung: Postfach der Original-Mail holen, falls der Aufrufer es nicht mitgibt
+    // (z. B. beim Wiederöffnen eines Antwort-Entwurfs).
+    useEffect(() => {
+        if (!originalEmailId || bekanntesAntwortPostfach !== undefined) return;
+        let aktiv = true;
+        setFestesPostfach(undefined);
+        fetch(`/api/emails/${originalEmailId}`)
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+            .then((original: { antwortPostfach?: PostfachKurz | null }) => {
+                if (aktiv) setFestesPostfach(original?.antwortPostfach ?? null);
+            })
+            .catch(() => {
+                if (aktiv) setFestesPostfach('Postfach, in dem die Mail ankam');
+            });
+        return () => { aktiv = false; };
+    }, [originalEmailId, bekanntesAntwortPostfach]);
 
     const loadEntityDokumente = useCallback(async () => {
         if (!entityId) {
@@ -706,7 +755,7 @@ export function EmailComposeForm({
     }, []);
 
     // A restored business-document draft may select a different sender account after loading.
-    useEffect(() => { void loadFromAddresses(); }, [loadFromAddresses]);
+    useEffect(() => { void loadDokumentAbsender(); }, [loadDokumentAbsender]);
 
     // Dateien des verknüpften Vorgangs laden – auch nach Wechsel der Zuordnung
     useEffect(() => {
@@ -916,6 +965,10 @@ export function EmailComposeForm({
             setError(`Anhänge dürfen zusammen höchstens ${formatFileSize(MAX_ATTACHMENT_BYTES)} groß sein.`);
             return;
         }
+        if (zuVieleEmpfaenger) {
+            setError(EINZELVERSAND_ZU_VIELE);
+            return;
+        }
         // Ohne Projekt/Anfrage landet die E-Mail nirgendwo – einmal nachfragen.
         // Nur dort, wo der Vorgang im Formular überhaupt wählbar ist, und nicht beim
         // Antworten: eine Antwort erbt die Zuordnung der Ursprungsmail.
@@ -931,6 +984,7 @@ export function EmailComposeForm({
 
         setSending(true);
         setError(null);
+        setEinzelversandErgebnis(null);
 
         try {
             await draft.pause();
@@ -941,10 +995,9 @@ export function EmailComposeForm({
 
             const dtoPayload = {
                 draftId: draft.getDraftId(),
-                // Leerer sender = Backend loest aus frontendUserId auf (zugewiesene Adresse).
-                sender: fromAddress || null,
-                recipients: [finalRecipient],
-                cc: ccRecipients.filter(c => c.trim().length > 0),
+                // Einzelversand: jeder Empfänger einzeln, damit das Backend je eine Mail baut.
+                recipients: einzelversandAktiv ? anEmpfaenger : [finalRecipient],
+                cc: einzelversandAktiv ? [] : ccRecipients.filter(c => c.trim().length > 0),
                 subject: subject.trim(),
                 body: prepareHtmlForSending(editorRef.current?.innerHTML || body),
                 direction: 'OUT',
@@ -956,6 +1009,10 @@ export function EmailComposeForm({
                 // Entscheidet serverseitig, ob das Postfach für
                 // Geschäftsdokumente statt des Standard-Postfachs greift.
                 geschaeftsdokument,
+                // Absender-Postfach nur bei neuen Mails; Antwort/Weiterleitung legt das Backend fest.
+                postfachId: absenderModus === 'auswahl' ? postfachId : null,
+                weitergeleitetVonEmailId: weitergeleitetVonEmailId ?? null,
+                einzelversand: einzelversandAktiv,
             };
 
             formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
@@ -975,11 +1032,36 @@ export function EmailComposeForm({
             });
 
             if (!res.ok) {
-                throw new Error('E-Mail senden fehlgeschlagen');
+                if (einzelversandAktiv && res.status === 502) {
+                    // Keine einzige Mail ging raus: Ergebnis mit Gründen zeigen, Formular bleibt offen.
+                    const daten = await res.json().catch(() => null) as { message?: string } | null;
+                    const ergebnis = parseEinzelversandErgebnis(daten);
+                    setEinzelversandErgebnis(ergebnis);
+                    throw new VersandFehler(daten?.message || 'Keine der E-Mails konnte verschickt werden.');
+                }
+                throw new VersandFehler(await parseErrorMessage(res, 'E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.'));
             }
 
             // The backend already deleted the draft immediately after successful SMTP delivery.
             await draft.complete();
+
+            if (einzelversandAktiv) {
+                const ergebnis = parseEinzelversandErgebnis(await res.json().catch(() => null));
+                if (brauchtAufmerksamkeit(ergebnis)) {
+                    // Teilfehler oder nicht abgelegt: Ergebnis stehen lassen, bis der Anwender es gelesen hat.
+                    setEinzelversandErgebnis(ergebnis);
+                    if (ergebnis.fehlgeschlagen.length > 0) {
+                        toast.error(formatEinzelversandErgebnis(ergebnis));
+                    } else {
+                        toast.warning(formatEinzelversandErgebnis(ergebnis));
+                    }
+                    return;
+                }
+                toast.success(`${formatEinzelversandErgebnis(ergebnis)} – jeder Empfänger hat eine eigene E-Mail bekommen.`);
+                if (onSuccess) onSuccess();
+                onClose();
+                return;
+            }
 
             // Check if the recipient email is new (not in known emails).
             // Beim Antworten steht im Feld `"Name" <adresse>` – verglichen und
@@ -1002,8 +1084,11 @@ export function EmailComposeForm({
             }
         } catch (err) {
             console.error('E-Mail senden fehlgeschlagen:', err);
-            setError('E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.');
-            toast.error('E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.');
+            const meldung = err instanceof VersandFehler && err.message
+                ? err.message
+                : 'E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.';
+            setError(meldung);
+            toast.error(meldung);
             draft.resume();
         } finally {
             setSending(false);
@@ -1056,6 +1141,22 @@ export function EmailComposeForm({
         </div>
     );
 
+    // Einzelversand mit Teilfehler: Die Mails sind raus, der Anwender soll aber sehen, wer nichts bekam.
+    if (einzelversandErgebnis && einzelversandErgebnis.verschickt > 0) return (
+        <div className="flex h-full min-h-48 flex-col items-center justify-center gap-4 bg-slate-50 p-6">
+            <div className="w-full max-w-xl space-y-4">
+                <h2 className="text-lg font-semibold text-slate-900">Sammel-Mail verschickt – nicht an alle</h2>
+                <EinzelversandErgebnisAnzeige ergebnis={einzelversandErgebnis} />
+                <p className="text-sm text-slate-500">
+                    Prüfen Sie die Adressen oben und schreiben Sie diesen Empfängern bei Bedarf noch einmal.
+                </p>
+                <div className="flex justify-end">
+                    <Button onClick={() => { if (onSuccess) onSuccess(); onClose(); }}>Fertig</Button>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="flex min-w-0 flex-col h-full bg-slate-50">
             {/* Header */}
@@ -1092,6 +1193,7 @@ export function EmailComposeForm({
                         {error}
                     </div>
                 )}
+                {einzelversandErgebnis && <EinzelversandErgebnisAnzeige ergebnis={einzelversandErgebnis} className="mx-auto w-full max-w-5xl" />}
 
                 <div className={inline ? "mx-auto w-full max-w-5xl space-y-3" : "mx-auto w-full max-w-5xl space-y-5"}>
                     {hasInitialAttachments && (
@@ -1133,7 +1235,7 @@ export function EmailComposeForm({
                             <div className={inline ? "grid grid-cols-[68px_minmax(0,1fr)] items-center gap-2" : "space-y-2"}>
                                 <div className={inline ? "flex flex-col items-start gap-0.5" : "flex items-center justify-between gap-3"}>
                                     <Label>{inline ? 'An *' : 'Empfänger *'}</Label>
-                                    {!showCc && (
+                                    {!showCc && !einzelversandAktiv && (
                                         <Button
                                             type="button"
                                             variant="ghost"
@@ -1156,30 +1258,54 @@ export function EmailComposeForm({
                                 />
                             </div>
 
+                            {einzelversandMoeglich && (
+                                <EinzelversandSchalter
+                                    id="email-einzelversand"
+                                    aktiv={einzelversand}
+                                    onChange={(an) => {
+                                        markDirty();
+                                        setEinzelversand(an);
+                                        setEinzelversandErgebnis(null);
+                                        // Beim Einzelversand gibt es keine Kopie-Empfänger.
+                                        if (an) { setShowCc(false); setCcRecipients([]); }
+                                    }}
+                                    anzahlEmpfaenger={anEmpfaenger.length}
+                                    className={inline ? 'pl-[76px]' : undefined}
+                                />
+                            )}
+
                             <div className={inline ? "grid grid-cols-[68px_minmax(0,1fr)] items-center gap-2" : "space-y-2"}>
-                                <Label htmlFor={dokumentAbsender ? 'fromAddressFest' : undefined}>Von</Label>
-                                {dokumentAbsender ? (
-                                    <>
-                                        <Input
-                                            id="fromAddressFest"
-                                            value={dokumentAbsender}
-                                            readOnly
-                                            aria-describedby="fromAddressFestHinweis"
-                                            className="bg-slate-50 text-slate-700"
-                                        />
-                                        <p id="fromAddressFestHinweis" className={`text-xs text-slate-500 ${inline ? 'col-span-2' : ''}`}>
-                                            Rechnungen, Angebote und Auftragsbestätigungen gehen fest über
-                                            dieses Postfach raus, damit sie beim Kunden nicht im Spam landen.
-                                            Der Absender lässt sich hier deshalb nicht ändern.
-                                        </p>
-                                    </>
+                                <Label htmlFor="email-absender">Von</Label>
+                                {absenderFest ? (
+                                    <AbsenderPostfachAuswahl
+                                        id="email-absender"
+                                        modus="fest"
+                                        inline={inline}
+                                        postfach={festesPostfach}
+                                        hinweis={weitergeleitetVonEmailId
+                                            ? 'Weiterleitungen gehen über das Postfach raus, in dem die Mail ankam.'
+                                            : 'Antworten gehen über das Postfach raus, in dem die Mail ankam.'}
+                                    />
+                                ) : geschaeftsdokument ? (
+                                    <AbsenderPostfachAuswahl
+                                        id="email-absender"
+                                        modus="fest"
+                                        inline={inline}
+                                        postfach={dokumentAbsender || (absenderPostfaecher.laedt ? undefined : hauptpostfach)}
+                                        hinweis={dokumentAbsender
+                                            ? 'Rechnungen, Angebote und Auftragsbestätigungen gehen fest über dieses Postfach raus, damit sie beim Kunden nicht im Spam landen. Der Absender lässt sich hier deshalb nicht ändern.'
+                                            : 'Rechnungen, Angebote und Auftragsbestätigungen gehen über das Hauptpostfach raus, solange kein Postfach für Rechnungen & Mahnungen eingerichtet ist.'}
+                                    />
                                 ) : (
-                                    <Select
-                                        options={fromAddressOptions}
-                                        value={fromAddress}
-                                        onChange={(val) => { markDirty(); setFromAddress(val); }}
-                                        placeholder="Absender wählen"
-                                        disabled={fromAddressOptions.length === 0}
+                                    <AbsenderPostfachAuswahl
+                                        id="email-absender"
+                                        modus="auswahl"
+                                        inline={inline}
+                                        postfaecher={absenderPostfaecher.postfaecher}
+                                        value={postfachId}
+                                        onChange={(id) => { markDirty(); setPostfachId(id); }}
+                                        laedt={absenderPostfaecher.laedt}
+                                        ladeFehler={absenderPostfaecher.fehler}
                                     />
                                 )}
                             </div>
@@ -1259,7 +1385,7 @@ export function EmailComposeForm({
                             )}
 
                             {/* CC Section */}
-                            {showCc && (
+                            {showCc && !einzelversandAktiv && (
                                 <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
                                     <div className="flex items-center justify-between gap-3">
                                         <Label>CC</Label>
@@ -1572,7 +1698,8 @@ export function EmailComposeForm({
                     </Button>
                     <Button
                         onClick={handleSend}
-                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || !recipient.trim() || !subject.trim() || attachmentLimitExceeded}
+                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || !recipient.trim() || !subject.trim() || attachmentLimitExceeded || zuVieleEmpfaenger}
+                        title={zuVieleEmpfaenger ? EINZELVERSAND_ZU_VIELE : undefined}
                         className="bg-rose-600 hover:bg-rose-700 text-white"
                     >
                         {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}

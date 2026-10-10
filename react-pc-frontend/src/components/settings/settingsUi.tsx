@@ -48,6 +48,8 @@ interface PasswordFieldProps {
     /** Backend meldet, dass schon ein Passwort hinterlegt ist. */
     isSet?: boolean;
     placeholder?: string;
+    /** Platzhalter, solange schon ein Passwort gespeichert ist. */
+    isSetPlaceholder?: string;
     className?: string;
 }
 
@@ -66,6 +68,7 @@ export function PasswordField({
     onChange,
     isSet = false,
     placeholder,
+    isSetPlaceholder = '(leer lassen = unverändert)',
     className,
 }: PasswordFieldProps) {
     const [visible, setVisible] = useState(false);
@@ -77,19 +80,22 @@ export function PasswordField({
                     <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
                 )}
             </Label>
-            <div className="relative">
+            {/* Auge NEBEN statt über dem Eingabefeld (gemeinsamer Rahmen): so verdeckt der
+                Knopf nie Text und überlappt das Feld nicht – auch nicht in Dialogen. */}
+            <div className="flex items-center rounded border border-slate-200 bg-white focus-within:ring-2 focus-within:ring-rose-500">
                 <Input
                     id={id}
                     type={visible ? 'text' : 'password'}
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
-                    placeholder={isSet ? '(leer lassen = unverändert)' : placeholder}
+                    placeholder={isSet ? isSetPlaceholder : placeholder}
                     autoComplete="new-password"
+                    className="min-w-0 flex-1 border-0 bg-transparent focus:ring-0"
                 />
                 <button
                     type="button"
                     aria-label={visible ? 'Passwort verbergen' : 'Passwort anzeigen'}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="mr-1 shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                     onClick={() => setVisible((prev) => !prev)}
                 >
                     {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

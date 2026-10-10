@@ -44,6 +44,8 @@ class EmailThreadBackfillIntegrationTest {
     @MockBean private SystemSettingsService systemSettingsService;
     @MockBean private OutOfOfficeResponder outOfOfficeResponder;
     @MockBean private BounceErkennungService bounceErkennungService;
+    @MockBean private org.example.kalkulationsprogramm.service.mail.PostfachZugangService postfachZugangService;
+    @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
 
     private final LocalDateTime start = LocalDateTime.of(2026, 9, 1, 8, 0);
     private int naechsteId;

@@ -30,6 +30,8 @@ class SystemSettingsControllerDateiOrdnerTest {
     private SystemSettingsService settingsService;
     @MockBean
     private DateiOrdnerService dateiOrdnerService;
+    @MockBean
+    private org.example.kalkulationsprogramm.service.PostfachUmzugService postfachUmzugService;
 
     @Test
     void getDateiOrdner_liefertPfadUndFlag() throws Exception {

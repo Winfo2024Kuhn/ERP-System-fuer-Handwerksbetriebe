@@ -63,6 +63,14 @@ public class EmailDraft {
     @Column(nullable = false)
     private boolean geschaeftsdokument;
 
+    /** Gewähltes Absender-Postfach einer neuen Mail; {@code null} = Vorbelegung. */
+    @Column(name = "postfach_id")
+    private Long postfachId;
+
+    /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail. */
+    @Column(nullable = false)
+    private boolean einzelversand;
+
     @OneToMany(mappedBy = "draft", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id ASC")
     private List<EmailDraftAttachment> attachments = new ArrayList<>();

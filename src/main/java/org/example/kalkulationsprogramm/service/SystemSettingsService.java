@@ -8,10 +8,14 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 
 import org.example.kalkulationsprogramm.domain.SystemSetting;
 import org.example.kalkulationsprogramm.repository.SystemSettingRepository;
+import org.example.kalkulationsprogramm.service.mail.PostfachZugang;
+import org.example.kalkulationsprogramm.service.mail.PostfachZugangService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +30,6 @@ import jakarta.mail.Store;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -34,12 +37,84 @@ import lombok.extern.slf4j.Slf4j;
  * DB-Werte überschreiben die Defaults aus application.properties.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SystemSettingsService {
 
     private final SystemSettingRepository repository;
     private final org.springframework.core.env.Environment environment;
+
+    /**
+     * Postfächer schlagen die alten Konto-Einstellungen: Ist ein Hauptpostfach bzw.
+     * ein Postfach für Rechnungen mit vollständigem Zugang eingerichtet, liefern die
+     * Konto-Getter dessen Werte. Sonst gelten die Einstellungen wie bisher – damit
+     * läuft der Mailverkehr auch ohne Umzug (z. B. fehlender Schlüssel) weiter.
+     *
+     * <p>Optional ({@code ObjectProvider}): Teil-Kontexte ohne Postfächer (Tests mit
+     * nur einzelnen Services) arbeiten dann einfach mit den Einstellungen.</p>
+     */
+    private final ObjectProvider<PostfachZugangService> postfachZugangService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SystemSettingsService(SystemSettingRepository repository,
+            org.springframework.core.env.Environment environment,
+            ObjectProvider<PostfachZugangService> postfachZugangService) {
+        this.repository = repository;
+        this.environment = environment;
+        this.postfachZugangService = postfachZugangService;
+    }
+
+    /** Mit festem Zugangs-Service (Tests). */
+    public SystemSettingsService(SystemSettingRepository repository,
+            org.springframework.core.env.Environment environment,
+            PostfachZugangService postfachZugangService) {
+        this(repository, environment, festerProvider(postfachZugangService));
+    }
+
+    /** Ohne Postfächer – nur die gespeicherten Einstellungen (Tests). */
+    public SystemSettingsService(SystemSettingRepository repository,
+            org.springframework.core.env.Environment environment) {
+        this(repository, environment, (PostfachZugangService) null);
+    }
+
+    private static ObjectProvider<PostfachZugangService> festerProvider(PostfachZugangService service) {
+        return new ObjectProvider<>() {
+            @Override
+            public PostfachZugangService getObject() {
+                return service;
+            }
+
+            @Override
+            public PostfachZugangService getObject(Object... args) {
+                return service;
+            }
+
+            @Override
+            public PostfachZugangService getIfAvailable() {
+                return service;
+            }
+
+            @Override
+            public PostfachZugangService getIfUnique() {
+                return service;
+            }
+        };
+    }
+
+    private Optional<PostfachZugangService> postfaecher() {
+        return Optional.ofNullable(postfachZugangService.getIfAvailable());
+    }
+
+    private Optional<PostfachZugang> versandPostfach() {
+        return postfaecher().flatMap(PostfachZugangService::hauptpostfachVersand);
+    }
+
+    private Optional<PostfachZugang> abrufPostfach() {
+        return postfaecher().flatMap(PostfachZugangService::hauptpostfachAbruf);
+    }
+
+    private Optional<PostfachZugang> dokumentPostfach() {
+        return postfaecher().flatMap(PostfachZugangService::geschaeftsdokumentVersand);
+    }
 
     // Defaults aus application.properties
     @Value("${smtp.host:}")
@@ -77,10 +152,15 @@ public class SystemSettingsService {
     }
 
     public String getSmtpHost() {
-        return sanitizeValue(get("smtp.host", defaultSmtpHost));
+        return versandPostfach().map(PostfachZugang::smtpHost)
+                .orElseGet(() -> sanitizeValue(get("smtp.host", defaultSmtpHost)));
     }
 
     public int getSmtpPort() {
+        Optional<PostfachZugang> postfach = versandPostfach();
+        if (postfach.isPresent()) {
+            return postfach.get().smtpPort();
+        }
         String val = get("smtp.port", String.valueOf(defaultSmtpPort));
         try {
             return Integer.parseInt(val);
@@ -90,11 +170,13 @@ public class SystemSettingsService {
     }
 
     public String getSmtpUsername() {
-        return sanitizeValue(get("smtp.username", defaultSmtpUsername));
+        return versandPostfach().map(PostfachZugang::benutzername)
+                .orElseGet(() -> sanitizeValue(get("smtp.username", defaultSmtpUsername)));
     }
 
     public String getSmtpPassword() {
-        return sanitizeValue(get("smtp.password", defaultSmtpPassword));
+        return versandPostfach().map(PostfachZugang::passwort)
+                .orElseGet(() -> sanitizeValue(get("smtp.password", defaultSmtpPassword)));
     }
 
     /**
@@ -109,6 +191,10 @@ public class SystemSettingsService {
      * passt zum bisherigen Verhalten ohne Konfiguration.</p>
      */
     public String getMailFromAddress() {
+        Optional<PostfachZugang> postfach = versandPostfach();
+        if (postfach.isPresent()) {
+            return postfach.get().emailAdresse();
+        }
         String val = sanitizeValue(get("mail.from-address", ""));
         // Defense-in-Depth: ein direkt in die DB geschriebener Müll-Wert
         // (kein "@") darf nicht ungeprüft als From-Adresse rausgehen — das
@@ -194,7 +280,18 @@ public class SystemSettingsService {
 
     /** Anzeigename für Mails über das Standard-Postfach. Leer = nur die Adresse. */
     public String getMailAbsenderName() {
-        return sanitizeValue(get("mail.absender-name", ""));
+        return versandPostfach().map(PostfachZugang::anzeigename)
+                .filter(name -> !name.isBlank())
+                .orElseGet(() -> sanitizeValue(get("mail.absender-name", "")));
+    }
+
+    /** Postfach ohne eigenen Anzeigenamen erbt den allgemeinen aus den Einstellungen. */
+    private MailKonto mitAnzeigenameRueckfall(MailKonto konto) {
+        if (konto.fromName() != null && !konto.fromName().isBlank()) {
+            return konto;
+        }
+        return new MailKonto(konto.host(), konto.port(), konto.username(), konto.password(),
+                konto.fromAddress(), sanitizeValue(get("mail.absender-name", "")));
     }
 
     /**
@@ -228,11 +325,54 @@ public class SystemSettingsService {
      * Postfach, nur die andere Richtung.</p>
      */
     public ImapZugang getDokumentImapZugang() {
+        Optional<PostfachZugang> postfach = dokumentPostfach();
+        if (postfach.isPresent()) {
+            // Ohne Posteingangs-Server keine Kopie (der Archiver überspringt einen leeren
+            // Zugang) – eine Kopie im Hauptpostfach wäre als Versandnachweis wertlos.
+            return postfach.get().imapZugang();
+        }
         if (!nutztDokumentMailKonto()) {
             return getStandardImapZugang();
         }
         return new ImapZugang(getDokumentImapHost(), getDokumentImapPort(),
                 getDokumentSmtpUsername(), getDokumentSmtpPassword());
+    }
+
+    /**
+     * Standard-Konto genau so, wie es in den Einstellungen steht – ohne Vorrang des
+     * Hauptpostfachs. Für den Umzug in die Postfächer und den Abgleich nach der
+     * Ersteinrichtung.
+     */
+    public MailKonto gespeichertesStandardKonto() {
+        String benutzer = sanitizeValue(get("smtp.username", defaultSmtpUsername));
+        String absender = sanitizeValue(get("mail.from-address", ""));
+        if (absender.isBlank() || !absender.contains("@")) {
+            absender = benutzer;
+        }
+        return new MailKonto(sanitizeValue(get("smtp.host", defaultSmtpHost)),
+                parsePort(get("smtp.port", String.valueOf(defaultSmtpPort)), defaultSmtpPort),
+                benutzer, sanitizeValue(get("smtp.password", defaultSmtpPassword)),
+                absender, sanitizeValue(get("mail.absender-name", "")));
+    }
+
+    /** Posteingang genau so, wie er in den Einstellungen steht (siehe {@link #gespeichertesStandardKonto()}). */
+    public ImapZugang gespeicherterStandardImapZugang() {
+        String host = sanitizeValue(get("imap.host", defaultImapHost));
+        String benutzer = sanitizeValue(get("imap.username", defaultImapUsername));
+        String passwort = sanitizeValue(get("imap.password", defaultImapPassword));
+        return new ImapZugang(host,
+                parsePort(get("imap.port", String.valueOf(defaultImapPort)), 993),
+                benutzer.isBlank() ? sanitizeValue(get("smtp.username", defaultSmtpUsername)) : benutzer,
+                passwort.isBlank() ? sanitizeValue(get("smtp.password", defaultSmtpPassword)) : passwort);
+    }
+
+    private static int parsePort(String wert, int standard) {
+        try {
+            int port = Integer.parseInt(wert);
+            return port > 0 ? port : standard;
+        } catch (NumberFormatException e) {
+            return standard;
+        }
     }
 
     /** Posteingang des Standard-Postfachs (manueller Schriftverkehr, Import). */
@@ -249,11 +389,16 @@ public class SystemSettingsService {
      * Absender und versendendes Postfach nicht zusammen.</p>
      */
     public boolean nutztDokumentMailKonto() {
-        return isDokumentMailKontoAktiv() && isDokumentMailKontoConfigured();
+        return dokumentPostfach().isPresent()
+                || (isDokumentMailKontoAktiv() && isDokumentMailKontoConfigured());
     }
 
     /** Zugangsdaten des Standard-Postfachs (manueller Schriftverkehr, IMAP-Abruf). */
     public MailKonto getStandardMailKonto() {
+        Optional<PostfachZugang> postfach = versandPostfach();
+        if (postfach.isPresent()) {
+            return mitAnzeigenameRueckfall(postfach.get().mailKonto());
+        }
         return new MailKonto(getSmtpHost(), getSmtpPort(), getSmtpUsername(),
                 getSmtpPassword(), getMailFromAddress(), getMailAbsenderName());
     }
@@ -268,6 +413,10 @@ public class SystemSettingsService {
      * bisherige Postfach geht.</p>
      */
     public MailKonto getDokumentMailKonto() {
+        Optional<PostfachZugang> postfach = dokumentPostfach();
+        if (postfach.isPresent()) {
+            return mitAnzeigenameRueckfall(postfach.get().mailKonto());
+        }
         if (!isDokumentMailKontoAktiv()) {
             return getStandardMailKonto();
         }
@@ -323,11 +472,19 @@ public class SystemSettingsService {
     }
 
     public String getImapHost() {
+        Optional<PostfachZugang> postfach = abrufPostfach();
+        if (postfach.isPresent()) {
+            return postfach.get().imapHost();
+        }
         String val = sanitizeValue(get("imap.host", defaultImapHost));
         return val.isBlank() ? "secureimap.t-online.de" : val;
     }
 
     public int getImapPort() {
+        Optional<PostfachZugang> postfach = abrufPostfach();
+        if (postfach.isPresent()) {
+            return postfach.get().imapPort();
+        }
         String val = get("imap.port", String.valueOf(defaultImapPort));
         try {
             int port = Integer.parseInt(val);
@@ -338,6 +495,10 @@ public class SystemSettingsService {
     }
 
     public String getImapUsername() {
+        Optional<PostfachZugang> postfach = abrufPostfach();
+        if (postfach.isPresent()) {
+            return postfach.get().benutzername();
+        }
         // Bei T-Online & Co. ist der IMAP-Benutzer identisch mit der SMTP-E-Mail.
         // Falls kein eigener IMAP-Wert hinterlegt ist, nehmen wir den SMTP-Benutzer.
         String val = sanitizeValue(get("imap.username", defaultImapUsername));
@@ -345,6 +506,10 @@ public class SystemSettingsService {
     }
 
     public String getImapPassword() {
+        Optional<PostfachZugang> postfach = abrufPostfach();
+        if (postfach.isPresent()) {
+            return postfach.get().passwort();
+        }
         // Analog zum Benutzer: Fallback auf das SMTP-Passwort.
         String val = sanitizeValue(get("imap.password", defaultImapPassword));
         return val.isBlank() ? getSmtpPassword() : val;
@@ -457,18 +622,18 @@ public class SystemSettingsService {
         settings.put("smtp.host", getSmtpHost());
         settings.put("smtp.port", String.valueOf(getSmtpPort()));
         settings.put("smtp.username", getSmtpUsername());
-        settings.put("smtp.password", maskValue(getSmtpPassword()));
+        settings.put("smtp.password", nurGesetzt(getSmtpPassword()));
         settings.put("imap.host", getImapHost());
         settings.put("imap.port", String.valueOf(getImapPort()));
         settings.put("imap.username", getImapUsername());
-        settings.put("imap.password", maskValue(getImapPassword()));
+        settings.put("imap.password", nurGesetzt(getImapPassword()));
         settings.put("ai.gemini.api-key", maskValue(getGeminiApiKey()));
         settings.put("mail.from-address", getMailFromAddress());
         settings.put("smtp.dokumente.aktiv", String.valueOf(isDokumentMailKontoAktiv()));
         settings.put("smtp.dokumente.host", getDokumentSmtpHost());
         settings.put("smtp.dokumente.port", String.valueOf(getDokumentSmtpPort()));
         settings.put("smtp.dokumente.username", getDokumentSmtpUsername());
-        settings.put("smtp.dokumente.password", maskValue(getDokumentSmtpPassword()));
+        settings.put("smtp.dokumente.password", nurGesetzt(getDokumentSmtpPassword()));
         settings.put("mail.dokumente.from-address", getDokumentMailFromAddress());
         settings.put("datei.ordner-pfad", getDateiOrdnerPfad());
         settings.put("datei.ordner-network-url", getDateiOrdnerNetworkUrl());
@@ -660,6 +825,14 @@ public class SystemSettingsService {
     }
 
     // ==================== Hilfsmethoden ====================
+
+    /**
+     * Passwörter verraten nicht einmal Anfang und Ende – nur, ob eins gesetzt ist.
+     * Sie kommen inzwischen entschlüsselt aus den Postfächern.
+     */
+    private static String nurGesetzt(String value) {
+        return value == null || value.isBlank() ? "" : "gesetzt";
+    }
 
     private String maskValue(String value) {
         if (value == null || value.isBlank() || "OVERRIDE_IN_LOCAL".equals(value)) {

@@ -11,6 +11,7 @@ import { cn } from '../../lib/utils';
 import { getSenderName, type EmailItem, type FolderType } from './emailCenterModel';
 import { ermittleEmailZuordnung } from './emailZuordnung';
 import { EmailZuordnungLink } from './EmailZuordnungLink';
+import { PostfachSchild } from './PostfachSchild';
 
 type Action = () => void | Promise<void>;
 type MoveTarget = 'inbox' | 'trash' | 'spam' | 'newsletter';
@@ -111,7 +112,10 @@ export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForwar
             </div>
         </div>
         <div className="mt-2 flex min-w-0 items-baseline justify-between gap-3 text-xs">
-            <span className="min-w-0 break-words font-medium text-slate-700" title={email.fromAddress}>{getSenderName(email)}</span>
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="min-w-0 break-words font-medium text-slate-700" title={email.fromAddress}>{getSenderName(email)}</span>
+                <PostfachSchild postfaecher={email.postfaecher} className="self-center" />
+            </span>
             <time className="shrink-0 text-slate-400" dateTime={email.sentAt}>{date}</time>
         </div>
         <EmailRecipientDropdown recipients={email.recipient} cc={email.cc} className="mt-1 max-w-full" />

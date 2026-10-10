@@ -72,6 +72,27 @@ class SentMailArchiverTest
     }
 
     @Test
+    void kopieProPostfachOhnePosteingangVersuchtNichts() throws Exception
+    {
+        when(systemSettingsService.get(anyString(), anyString())).thenReturn("true");
+
+        archiver.fuer(new SystemSettingsService.ImapZugang(null, 993, "max@example.com", "pw"))
+                .archiviereKopie(dummyNachricht());
+
+        verify(systemSettingsService, never()).getImapHost();
+    }
+
+    @Test
+    void kopieProPostfachVerschlucktVerbindungsfehler() throws Exception
+    {
+        when(systemSettingsService.get(anyString(), anyString())).thenReturn("true");
+
+        // Port 1 auf localhost: Verbindung wird abgewiesen, der Versand darf daran nicht scheitern.
+        archiver.fuer(new SystemSettingsService.ImapZugang("127.0.0.1", 1, "max@example.com", "pw"))
+                .archiviereKopie(dummyNachricht());
+    }
+
+    @Test
     void ignoriertNullOhneFehler()
     {
         archiver.archiviereKopie(null);

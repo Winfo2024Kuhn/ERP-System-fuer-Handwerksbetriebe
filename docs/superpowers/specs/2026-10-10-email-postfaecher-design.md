@@ -1,6 +1,6 @@
 # E-Mail-Postfächer: eigene Postfächer pro Benutzer, Hauptpostfach, Sichtbarkeit
 
-Stand: 10.10.2026 · Status: freigegeben (Brainstorming), Etappe 1 in Arbeit
+Stand: 10.10.2026 · Status: freigegeben (Brainstorming), Etappe 1 umgesetzt (siehe „Umsetzungsnotizen Etappe 1“)
 
 ## Ziel
 
@@ -358,6 +358,66 @@ Abschlussbericht je Datei ausgewiesen.
 - JaCoCo-Plugin wird im `pom.xml` ergänzt (Report bei `mvn verify`), ohne
   projektweite Schwelle – die 80 % gelten für die betroffenen Klassen.
 
+## Umsetzungsnotizen Etappe 1 (Abweichungen vom Entwurf)
+
+- `email_postfach_zuordnung` hat eine eigene `id` (AUTO_INCREMENT) plus Unique-Key
+  (`email_id`, `postfach_id`) statt eines zusammengesetzten Primärschlüssels – einfacher in JPA.
+- Einzelversand: Jede Mail geht über eine eigene SMTP-Anmeldung desselben Postfachs
+  (vorhandener `EmailService`), nacheinander. Eine gemeinsame Verbindung hätte einen Umbau
+  des Mail-Kerns bedeutet; bei höchstens 50 Empfängern unkritisch. Schlägt die Anmeldung
+  fehl, wird abgebrochen und alle restlichen Empfänger als fehlgeschlagen gemeldet.
+- Die Konto-Getter des `SystemSettingsService` (`getSmtpHost`, `getImapUsername`,
+  `getStandardMailKonto`, `getDokumentMailKonto` …) lesen zuerst das Hauptpostfach bzw. das
+  Rechnungs-Postfach und fallen sonst auf die Einstellungen zurück. Dadurch laufen
+  Mahnlauf, Anfrage-Bestätigung, Auto-AB, Abwesenheitsnotiz usw. ohne Einzelumbau über die
+  Postfächer.
+- Bleiben bestehen (Ersteinrichtung `FirstLoginSetupPage`/`SystemSetupConfigurator` und
+  Bestellungs-Editor nutzen sie): `/api/settings/smtp`, `/smtp/test`, `/imap`, `/imap/test`,
+  `/email-account`, `/api/email/from-addresses`. Speichern in der Ersteinrichtung gleicht
+  genau den gespeicherten Teil (Versand / Abruf / Anmeldung) ins Hauptpostfach ab.
+- Entfernt: `/api/settings/mail-from`, `/api/settings/dokument-mail*`,
+  `/api/firma/email-absender*`, `/api/emails/from-addresses`.
+- `GET /api/emails/absender-postfaecher` ermittelt das eigene Postfach aus der Anmeldung,
+  nicht aus einem Request-Parameter.
+- Weiterleitung einer unbekannten Mail (`weitergeleitetVonEmailId`) → 404.
+- Gibt es noch kein Hauptpostfach, wird das erste aktive gespeicherte Postfach automatisch
+  Hauptpostfach.
+
+- Nach Review (2 Runden):
+  - Das gespeicherte Passwort wird nur an den gespeicherten Server und Anmeldenamen geschickt
+    (Verbindungstest und Speichern). Wer Server oder Anmeldenamen ändert, gibt es neu ein (400).
+    Die Ersteinrichtung verwirft das Hauptpostfach-Passwort, wenn sie ohne neues Passwort den
+    Server ändert.
+  - `GET /api/settings` zeigt Passwörter nur noch als „gesetzt“.
+  - Der Nachtrag beim Start legt Ausgangsmails ohne Postfach zuerst in das Postfach ihrer
+    Absender-Adresse, erst den Rest ins Hauptpostfach.
+  - `antwortPostfach` steht nur in Detail-, Verlauf- und Send-Antworten (in Listen fehlt das Feld,
+    sonst eine Abfrage pro Zeile). Ausgeschaltetes Postfach → Antwort übers Hauptpostfach.
+  - Neuer `AusgangsmailService` (freigegeben): speichert jede gesendete Mail in eigener
+    Transaktion. Einzelversand: verschickt, aber nicht gespeichert → `nichtGespeichert` in der
+    Antwort; das Frontend warnt „bitte NICHT erneut senden“.
+
+## Etappe 2 – offene Punkte aus Etappe 1 (Review)
+
+- **Sicherheit vor Sichtbarkeit:** Dedupe ergänzt die Postfach-Zuordnung nur über die
+  Message-ID. Ein Externer könnte eine fremde Message-ID an max@ schicken und so die
+  Original-Mail „in max@“ legen. Bevor Sichtbarkeit an der Zuordnung hängt: zusätzlich Absender,
+  Datum, Betreff vergleichen oder nur für eigene Gesendet-Ordner ergänzen.
+- Sichtbarkeitsprüfung für `postfachId`, `weitergeleitetVonEmailId` und `/absender-postfaecher`.
+- `weitergeleitetVonEmailId` im Entwurf speichern (Weiterleitungs-Entwurf behält festen Absender).
+- `angemeldeterBenutzer` nicht auf die vom Client geschickte `frontendUserId` zurückfallen lassen.
+- Bean-Validation (`@Valid`, `@Size`, `@Email`) für Postfach-Requests; eigene Exception statt
+  `IllegalArgumentException` im `PostfachController`.
+- DB-Absicherung „genau ein Hauptpostfach“.
+- Konto-Getter im `SystemSettingsService`: Zugang einmal holen statt je Getter (Abfrage +
+  Entschlüsselung); Test-Konstruktoren dort durch gemockten `ObjectProvider` ersetzen.
+- `sendEmail` hält eine äußere Transaktion, der `AusgangsmailService` eine zweite (zwei
+  Verbindungen je Versand). Bei Bedarf äußere Transaktion auf das Laden der Dokumente beschränken.
+- Waisen-Dateien, wenn das Speichern nach dem Kopieren eines Anhangs scheitert
+  (Muster: `ProjektEmailArchivService.registriereRollbackBereinigung`).
+- `ordneAusgangsmailsNachAbsenderZu` erkennt nur nackte Absender-Adressen, nicht `Name <adresse>`.
+- JaCoCo auf 0.8.13 (offizielle Java-23-Unterstützung).
+
 ## Freigaben laut CLAUDE.md (Auslagerung)
 
 1. Versandlogik aus `UnifiedEmailController` (`/send`, `/reply`) in
@@ -365,6 +425,7 @@ Abschlussbericht je Datei ausgewiesen.
    weiter und Einzelversand/Postfach-Wahl wären nicht sauber testbar.
 2. Frontend: eigene Komponenten `PostfachSettings` (Liste + Dialog) und
    `AbsenderPostfachAuswahl` statt Ausbau der 950-/1 700-Zeilen-Dateien.
+3. (Review Runde 1, freigegeben) Speichern gesendeter Mails in `AusgangsmailService`.
 
 ## Nicht Teil dieses Vorhabens
 
