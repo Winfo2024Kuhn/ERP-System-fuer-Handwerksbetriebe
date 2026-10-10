@@ -95,22 +95,25 @@ jobs:
           -c "ALTER DATABASE kompat OWNER TO kompat"
           -c "ALTER SCHEMA public OWNER TO kompat"
 
+      # Alle DatenbankKompatibilitaet*Test-Klassen (Abfragen + Fehler aus dem Betrieb)
       - name: Alle Abfragen gegen ${{ matrix.db }}
         run: >-
-          ./mvnw -B test -Dtest=DatenbankKompatibilitaetTest
+          ./mvnw -B test "-Dtest=DatenbankKompatibilitaet*Test"
           "-Dkompat.db.url=${{ matrix.url }}" -Dkompat.db.user=${{ matrix.user }} -Dkompat.db.pass=kompat
 
-      # Der Test ist an -Dkompat.db.url gebunden. Kommt die Property nicht an,
+      # Die Tests sind an -Dkompat.db.url gebunden. Kommt die Property nicht an,
       # waeren alle Tests "uebersprungen" - und der Job trotzdem gruen.
-      - name: Pruefen, dass der Test wirklich lief
+      - name: Pruefen, dass die Tests wirklich liefen
         shell: bash
         run: |
-          bericht=target/surefire-reports/TEST-org.example.kalkulationsprogramm.repository.DatenbankKompatibilitaetTest.xml
-          kopf="$(grep -o '<testsuite [^>]*' "$bericht" || true)"
-          if [[ -z "$kopf" || "$kopf" != *' skipped="0"'* || "$kopf" == *' tests="0"'* ]]; then
-            echo "::error::DatenbankKompatibilitaetTest lief nicht (oder wurde uebersprungen): $kopf"
-            exit 1
-          fi
+          for klasse in DatenbankKompatibilitaetTest DatenbankKompatibilitaetBetriebTest; do
+            bericht="target/surefire-reports/TEST-org.example.kalkulationsprogramm.repository.$klasse.xml"
+            kopf="$(grep -o '<testsuite [^>]*' "$bericht" || true)"
+            if [[ -z "$kopf" || "$kopf" != *' skipped="0"'* || "$kopf" == *' tests="0"'* ]]; then
+              echo "::error::$klasse lief nicht (oder wurde uebersprungen): $kopf"
+              exit 1
+            fi
+          done
 
   pc_lint:
     name: PC Frontend Lint

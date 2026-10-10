@@ -38,6 +38,7 @@ import org.example.kalkulationsprogramm.dto.Projekt.ProjektEmailDto;
 import org.example.kalkulationsprogramm.mapper.LieferantMapper;
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.LieferantenSuche;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
@@ -48,7 +49,6 @@ import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
@@ -69,8 +69,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.persistence.criteria.JoinType;
-import jakarta.persistence.criteria.ListJoin;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -131,37 +129,9 @@ public class LieferantenController {
         int pageIndex = Math.max(page, 0);
         int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
 
-        Specification<Lieferanten> specs = Specification.where(null);
-        if (StringUtils.hasText(query)) {
-            final String likeValue = wrapLike(query).toLowerCase(Locale.ROOT);
-            specs = specs.and((root, cq, cb) -> {
-                cq.distinct(true);
-                return cb.or(
-                        cb.like(cb.lower(root.get("lieferantenname")), likeValue),
-                        cb.like(cb.lower(cb.coalesce(root.get("aliasName"), "")), likeValue),
-                        cb.like(cb.lower(root.get("lieferantenTyp")), likeValue),
-                        cb.like(cb.lower(root.get("vertreter")), likeValue),
-                        cb.like(cb.lower(root.get("ort")), likeValue),
-                        cb.like(cb.lower(root.get("strasse")), likeValue),
-                        cb.like(cb.lower(cb.coalesce(root.get("telefon"), "")), likeValue),
-                        cb.like(cb.lower(cb.coalesce(root.get("mobiltelefon"), "")), likeValue));
-            });
-        }
-        specs = specs.and(buildSpec("lieferantenname", name));
-        specs = specs.and(buildSpec("lieferantenTyp", typ));
-        specs = specs.and(buildSpec("ort", ort));
-        if (StringUtils.hasText(email)) {
-            final String likeValue = wrapLike(email).toLowerCase(Locale.ROOT);
-            specs = specs.and((root, cq, cb) -> {
-                cq.distinct(true);
-                ListJoin<Lieferanten, String> join = root.joinList("kundenEmails", JoinType.LEFT);
-                return cb.like(cb.lower(join), likeValue);
-            });
-        }
-
         Page<Lieferanten> result = lieferantenRepository.findAll(
-                specs,
-                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Order.asc("lieferantenname").ignoreCase())));
+                LieferantenSuche.spezifikation(query, name, typ, ort, email),
+                PageRequest.of(pageIndex, pageSize, LieferantenSuche.SORTIERUNG));
 
         LieferantSearchResponseDto response = new LieferantSearchResponseDto();
         response.setLieferanten(result.stream().map(lieferantMapper::toListItem).toList());
@@ -547,18 +517,6 @@ public class LieferantenController {
         }
 
         return ResponseEntity.ok(Map.of("message", "E-Mail-Adresse gespeichert", "added", true));
-    }
-
-    private Specification<Lieferanten> buildSpec(String field, String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        final String likeValue = wrapLike(value).toLowerCase(Locale.ROOT);
-        return (root, cq, cb) -> cb.like(cb.lower(root.get(field)), likeValue);
-    }
-
-    private String wrapLike(String value) {
-        return "%" + value.trim() + "%";
     }
 
     private String trimToNull(String value) {
