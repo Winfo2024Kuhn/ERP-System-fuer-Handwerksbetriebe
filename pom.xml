@@ -117,6 +117,13 @@
             <version>1.18.42</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Liefert /actuator/health. Das Nachtupdate auf den Kundenservern
+             (deployment/docker-server/nachtupdate.sh) entscheidet daran, ob die
+             neue Version sauber hochgefahren ist oder zurueckgerollt wird. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>

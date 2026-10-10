@@ -1,0 +1,7 @@
+# Laufzeitdaten des Nachtupdates - enthalten Kunden- und Mitarbeiterdaten
+# (komplette Datenbank-Sicherungen) bzw. Zugangsdaten. Nie committen.
+# Diese Datei wird beim Kopieren nach /opt/erp mitgenommen.
+.env
+sicherungen/
+logs/
+.status/

@@ -1,0 +1,71 @@
+# =============================================================================
+# ERP Handwerk - Betrieb auf dem Firmenserver (Docker)
+# =============================================================================
+# Anders als die docker-compose.yml im Projektordner wird hier NICHTS gebaut:
+# Die App kommt als fertiges Image aus der GitHub Container Registry.
+#
+# Die App laeuft immer unter dem lokalen Namen "erp-app:aktiv". Welches Image
+# dahintersteckt, entscheidet allein nachtupdate.sh (neues Image -> aktiv,
+# vorheriges -> erp-app:vorher fuer den Rollback). Deshalb pull_policy: never -
+# Compose selbst holt nie ein Image und kann so kein Update am Skript vorbei
+# einspielen.
+#
+# Zugangsdaten stehen in .env (Vorlage: .env.example, nie committen).
+# =============================================================================
+
+name: erp-handwerk
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: erp-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD fehlt in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kalkulationsprogramm_db}
+      MYSQL_USER: ${MYSQL_USER:-erp_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD fehlt in .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    # Kein Port nach aussen: nur die App spricht mit der Datenbank.
+    # Fuer Wartung: docker compose exec mysql mysql -uroot -p
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  app:
+    image: erp-app:aktiv
+    pull_policy: never
+    container_name: erp-app
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      APP_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-kalkulationsprogramm_db}?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
+      APP_DB_USER: ${MYSQL_USER:-erp_user}
+      APP_DB_PASS: ${MYSQL_PASSWORD}
+      APP_ADMIN_USER: ${APP_ADMIN_USER:-}
+      APP_ADMIN_PASS: ${APP_ADMIN_PASS:-}
+      ZEITERFASSUNG_URL: ${ZEITERFASSUNG_URL:-http://localhost:8080}
+      FREIGABE_PUBLIC_BASE_URL: ${FREIGABE_PUBLIC_BASE_URL:-}
+      # Ortszeit wie auf dem bisherigen Windows-Server (JDBC bleibt wie dort auf UTC)
+      TZ: Europe/Berlin
+    volumes:
+      - app_uploads:/app/uploads
+      - app_logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  app_uploads:
+  app_logs:

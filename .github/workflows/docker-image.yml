@@ -1,0 +1,123 @@
+name: Docker-Image fuer Kundenserver
+
+# Baut nach jedem gruenen Push auf main das Docker-Image, prueft, dass es auf
+# dem Datenbankstand der Kunden hochfaehrt (neue Flyway-Migrationen laufen
+# durch, /actuator/health = 200) und legt es erst dann in die GitHub Container
+# Registry. Die Kundenserver holen es sich nachts selbst ab
+# (deployment/docker-server/nachtupdate.sh) - GitHub greift nie auf sie zu.
+#
+# Tags:
+#   :stable          -> das, was die Kundenserver nachts installieren
+#   :sha-<commit>    -> fester Stand, z.B. um gezielt eine Version einzuspielen
+
+on:
+  workflow_run:
+    workflows: ["PR Quality Checks"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: docker-image-main
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Bauen, Starttest, Veroeffentlichen
+    # Nur wenn alle Tests auf main gruen waren - oder manuell, aber NUR von main.
+    # Sonst koennte ein ungetesteter Feature-Branch als :stable bei allen
+    # Kunden landen.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 45
+    env:
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Checkout (genau der getestete Commit)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+          persist-credentials: false
+
+      - name: Image-Namen festlegen
+        id: name
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "kurz=${COMMIT:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Docker Buildx einrichten
+        uses: docker/setup-buildx-action@v3
+
+      - name: Image bauen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: erp-starttest:latest
+          build-args: GIT_COMMIT=${{ env.COMMIT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Bei der Container Registry anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Der wichtigste Schritt: Faehrt die neue Version auf dem Datenbankstand
+      # hoch, den die Kunden gerade haben (= aktuelles :stable), inklusive der
+      # neuen Migrationen? Kaputte Migrationen oder Startfehler fallen hier auf -
+      # und nicht erst nachts bei jedem Kunden. Details: starttest.sh
+      - name: Starttest (Upgrade vom aktuellen Kundenstand)
+        shell: bash
+        run: |
+          set -euo pipefail
+          basis="${{ steps.name.outputs.image }}:stable"
+          if ausgabe="$(docker pull -q "$basis" 2>&1)"; then
+            echo "Ausgangsstand: $basis"
+          elif grep -qiE "manifest unknown|not found" <<<"$ausgabe"; then
+            echo "Noch kein :stable veroeffentlicht - pruefe nur den Start."
+            basis="erp-starttest:latest"
+          else
+            # Netz/Registry-Problem: lieber abbrechen als still ohne Migrationstest
+            echo "::error::Kundenstand $basis nicht ladbar: $ausgabe"
+            exit 1
+          fi
+          if ! deployment/docker-server/starttest.sh erp-starttest:latest "$basis"; then
+            echo "::error::Image faehrt nicht sauber hoch - wird NICHT veroeffentlicht."
+            exit 1
+          fi
+
+      - name: Image veroeffentlichen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="${{ steps.name.outputs.image }}"
+          docker tag erp-starttest:latest "$image:sha-${{ steps.name.outputs.kurz }}"
+          docker push "$image:sha-${{ steps.name.outputs.kurz }}"
+          # :stable nur, wenn dieser Commit noch der Stand von main ist. Ein
+          # "Re-run" eines alten Testlaufs wuerde sonst eine aeltere Version
+          # auf bereits migrierte Kundendatenbanken ausrollen.
+          main_jetzt="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)"
+          if [ "$main_jetzt" != "$COMMIT" ]; then
+            echo "::warning::$COMMIT ist nicht mehr der Stand von main ($main_jetzt) - nur :sha-${{ steps.name.outputs.kurz }} veroeffentlicht, :stable unveraendert."
+            exit 0
+          fi
+          docker tag erp-starttest:latest "$image:stable"
+          docker push "$image:stable"
+          echo "Veroeffentlicht: $image:stable (= sha-${{ steps.name.outputs.kurz }})" >> "$GITHUB_STEP_SUMMARY"

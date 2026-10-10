@@ -153,6 +153,23 @@ public class SecurityConfig {
     }
 
     /**
+     * Pfade der {@link #staticResourcesFilterChain(HttpSecurity)}: ohne Login erreichbar.
+     *
+     * <p>Vom Actuator ist bewusst nur {@code /actuator/health} offen (exakter Pfad,
+     * kein Wildcard). Das nächtliche Update-Skript auf den Kundenservern fragt ihn
+     * ohne Login ab; Details liefert er nicht ({@code show-details=never}).
+     * Festgeschrieben in {@code OeffentlichePfadeTest}.
+     */
+    static final String[] OEFFENTLICHE_PFADE = {
+            "/", "/index.html", "/favicon.ico", "/app-icon.png", "/assets/**",
+            "/static/**", "/manifest.json", "/sw.js",
+            "/dokument-editor", "/dokument-editor/**",
+            "/login", "/login/**", "/onboarding", "/onboarding/**",
+            "/error", "/error/**",
+            "/actuator/health"
+    };
+
+    /**
      * Statische Ressourcen + Health: erlaubt ohne Auth.
      * Wichtig: /error muss hier stehen, sonst gibt Spring Boot
      * nach einem internen Fehler (z.B. 404) wieder 401 zurück.
@@ -161,11 +178,7 @@ public class SecurityConfig {
     @Order(2)
     public SecurityFilterChain staticResourcesFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher("/", "/index.html", "/favicon.ico", "/app-icon.png", "/assets/**",
-                        "/static/**", "/manifest.json", "/sw.js",
-                    "/dokument-editor", "/dokument-editor/**",
-                    "/login", "/login/**", "/onboarding", "/onboarding/**",
-                    "/error", "/error/**")
+                .securityMatcher(OEFFENTLICHE_PFADE)
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();

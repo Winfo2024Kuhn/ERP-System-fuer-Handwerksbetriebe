@@ -12,6 +12,15 @@ Doppelklick auf `local-install/Einrichtung-ERP-Handwerk.bat` – erstellt Deskto
 
 ---
 
+## Firmenserver mit Docker + automatischen Updates (Linux)
+
+Server holt sich neue Versionen nachts um 3 Uhr selbst ab, sichert vorher die
+Datenbank und rollt bei Problemen automatisch zurück – mit Handy-Nachricht.
+
+→ **[docker-server/README.md](./docker-server/README.md)**
+
+---
+
 ## Server-Deployment (Produktions-Server mit MariaDB)
 
 ### Scripts (`scripts/`)
