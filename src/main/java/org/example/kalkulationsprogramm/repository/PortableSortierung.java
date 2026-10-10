@@ -1,0 +1,101 @@
+package org.example.kalkulationsprogramm.repository;
+
+import java.util.List;
+
+import org.hibernate.query.NullPrecedence;
+import org.hibernate.query.criteria.JpaOrder;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.From;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Order;
+import jakarta.persistence.criteria.Root;
+
+/**
+ * Sortierung fuer Listen mit frei waehlbarer Sortierspalte, die auf MySQL und
+ * PostgreSQL gleich ausfaellt.
+ *
+ * <p>Leere Werte ({@code NULL}) gelten - wie seit jeher auf MySQL - als kleinster
+ * Wert: aufsteigend stehen sie oben, absteigend unten. PostgreSQL sortiert sie von
+ * sich aus als groessten Wert ein; "neueste zuerst" zeigte dort sonst zuerst alle
+ * Eintraege ohne Datum. Auf MySQL aendert sich nichts (Hibernate laesst die
+ * Angabe dort weg, sie entspricht dem Standard).
+ *
+ * <p>Spring Data reicht {@link Sort.NullHandling} an Criteria-Abfragen nicht weiter,
+ * deshalb haengt {@link #mit(Specification, Sort)} die Sortierung selbst an die
+ * Abfrage; die Seitenangabe geht ohne Sortierung an das Repository
+ * ({@link #ohneSortierung(Pageable)}):
+ * <pre>
+ * repository.findAll(PortableSortierung.mit(filter, seite.getSort()), PortableSortierung.ohneSortierung(seite));
+ * </pre>
+ * Verweise ({@code "artikel.werkstoff.name"}) werden per LEFT JOIN aufgeloest wie bei
+ * Spring Data, {@code ignoreCase()} sortiert nach {@code lower(...)}.
+ */
+public final class PortableSortierung {
+
+    private PortableSortierung() {
+    }
+
+    /** Der Filter plus die Sortierung - die Zaehlabfrage der Seite bleibt unsortiert. */
+    public static <T> Specification<T> mit(Specification<T> filter, Sort sortierung) {
+        if (sortierung == null || sortierung.isUnsorted()) {
+            return filter;
+        }
+        return (root, query, cb) -> {
+            var bedingung = filter == null ? null : filter.toPredicate(root, query, cb);
+            Class<?> ergebnis = query.getResultType();
+            if (ergebnis != Long.class && ergebnis != long.class) {
+                query.orderBy(sortierung.stream().map(o -> reihenfolge(o, root, cb)).toList());
+            }
+            return bedingung;
+        };
+    }
+
+    /** Die Seite ohne Sortierung - die steckt schon in {@link #mit(Specification, Sort)}. */
+    public static Pageable ohneSortierung(Pageable seite) {
+        return seite.isPaged() ? PageRequest.of(seite.getPageNumber(), seite.getPageSize()) : Pageable.unpaged();
+    }
+
+    static Order reihenfolge(Sort.Order order, Root<?> root, CriteriaBuilder cb) {
+        Expression<?> ausdruck = pfad(root, order.getProperty());
+        if (order.isIgnoreCase() && String.class.equals(ausdruck.getJavaType())) {
+            @SuppressWarnings("unchecked")
+            Expression<String> text = (Expression<String>) ausdruck;
+            ausdruck = cb.lower(text);
+        }
+        JpaOrder reihenfolge = (JpaOrder) (order.isAscending() ? cb.asc(ausdruck) : cb.desc(ausdruck));
+        return reihenfolge.nullPrecedence(leerwerte(order));
+    }
+
+    /** Ausdrueckliche Angabe am Sort.Order geht vor, sonst wie MySQL: leer ist der kleinste Wert. */
+    static NullPrecedence leerwerte(Sort.Order order) {
+        return switch (order.getNullHandling()) {
+            case NULLS_FIRST -> NullPrecedence.FIRST;
+            case NULLS_LAST -> NullPrecedence.LAST;
+            case NATIVE -> order.isAscending() ? NullPrecedence.FIRST : NullPrecedence.LAST;
+        };
+    }
+
+    private static Expression<?> pfad(Root<?> root, String eigenschaft) {
+        String[] teile = eigenschaft.split("\\.");
+        From<?, ?> von = root;
+        for (int i = 0; i < teile.length - 1; i++) {
+            von = verbinden(von, teile[i]);
+        }
+        return von.get(teile[teile.length - 1]);
+    }
+
+    /** Vorhandenen LEFT JOIN wiederverwenden (z. B. aus dem Filter), sonst neu anlegen. */
+    private static From<?, ?> verbinden(From<?, ?> von, String attribut) {
+        List<? extends Join<?, ?>> vorhanden = von.getJoins().stream()
+                .filter(j -> j.getAttribute().getName().equals(attribut) && j.getJoinType() == JoinType.LEFT)
+                .toList();
+        return vorhanden.isEmpty() ? von.join(attribut, JoinType.LEFT) : vorhanden.get(0);
+    }
+}

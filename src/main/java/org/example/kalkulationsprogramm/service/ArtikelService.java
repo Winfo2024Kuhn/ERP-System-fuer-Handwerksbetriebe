@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.PortableSortierung;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -124,12 +125,14 @@ public class ArtikelService implements ArtikelServiceContract {
         return artikelRepository.findById(id);
     }
 
+    /**
+     * Die Sortierspalte waehlt der Nutzer; leere Werte sortieren dabei auf MySQL und
+     * PostgreSQL gleich ({@link PortableSortierung}).
+     */
     @Transactional(readOnly = true)
     public Page<Artikel> suche(Specification<Artikel> specification, Pageable pageable) {
-        if (specification == null) {
-            return artikelRepository.findAll(pageable);
-        }
-        return artikelRepository.findAll(specification, pageable);
+        return artikelRepository.findAll(PortableSortierung.mit(Specification.where(specification), pageable.getSort()),
+                PortableSortierung.ohneSortierung(pageable));
     }
 
     @Transactional(readOnly = true)

@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisDto;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
+import org.example.kalkulationsprogramm.repository.PortableSortierung;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -35,13 +36,19 @@ public class LieferantArtikelpreisService {
     private final ArtikelRepository artikelRepository;
     private final LieferantArtikelpreisMapper mapper;
 
+    /**
+     * Preisliste eines Lieferanten. Die Sortierung (auch nach Artikelname oder Werkstoff)
+     * waehlt der Aufrufer; leere Werte sortieren auf MySQL und PostgreSQL gleich
+     * ({@link PortableSortierung}).
+     */
     @Transactional(readOnly = true)
     public Page<LieferantArtikelpreisDto> suche(Long lieferantId, String query, Pageable pageable) {
         Specification<LieferantenArtikelPreise> spec = Specification.where(byLieferant(lieferantId));
         if (StringUtils.hasText(query)) {
             spec = spec.and(buildSuchkriterium(query));
         }
-        return artikelPreiseRepository.findAll(spec, pageable)
+        return artikelPreiseRepository.findAll(PortableSortierung.mit(spec, pageable.getSort()),
+                        PortableSortierung.ohneSortierung(pageable))
                 .map(mapper::toDto);
     }
 
@@ -127,16 +134,15 @@ public class LieferantArtikelpreisService {
         return wert == null ? null : wert.stripTrailingZeros();
     }
 
+    // Ohne DISTINCT: Lieferant, Artikel und Werkstoff gibt es je Preiszeile hoechstens
+    // einmal, doppelte Zeilen entstehen nicht. Mit DISTINCT scheiterte die Sortierung nach
+    // Artikelname/Werkstoff (Spalten anderer Tabellen) auf PostgreSQL (42P10) und MySQL 8.
     private Specification<LieferantenArtikelPreise> byLieferant(Long lieferantId) {
-        return (root, query, cb) -> {
-            query.distinct(true);
-            return cb.equal(root.join("lieferant").get("id"), lieferantId);
-        };
+        return (root, query, cb) -> cb.equal(root.get("lieferant").get("id"), lieferantId);
     }
 
     private Specification<LieferantenArtikelPreise> buildSuchkriterium(String search) {
         return (root, cq, cb) -> {
-            cq.distinct(true);
             String like = "%" + search.trim().toLowerCase(Locale.GERMAN) + "%";
             Join<LieferantenArtikelPreise, Artikel> artikelJoin = root.join("artikel", JoinType.LEFT);
             Join<Artikel, ?> werkstoffJoin = artikelJoin.join("werkstoff", JoinType.LEFT);
