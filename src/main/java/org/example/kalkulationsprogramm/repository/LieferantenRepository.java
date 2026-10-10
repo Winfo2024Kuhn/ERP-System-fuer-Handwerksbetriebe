@@ -11,9 +11,27 @@ import java.util.List;
 import java.util.Optional;
 
 public interface LieferantenRepository extends JpaRepository<Lieferanten, Long>, JpaSpecificationExecutor<Lieferanten> {
-    Optional<Lieferanten> findByLieferantenname(String lieferantenname);
 
-    Optional<Lieferanten> findByLieferantennameIgnoreCase(String lieferantenname);
+    List<Lieferanten> findAllByLieferantennameIgnoreCaseOrderByIdAsc(String lieferantenname);
+
+    /**
+     * Lieferant zu einem Namen, ohne Gross-/Kleinschreibung - "würth" findet "Würth".
+     *
+     * <p>MySQL vergleicht ueber die Kollation ohnehin so, und sein Unique-Index laesst
+     * keine zweite Schreibweise zu. PostgreSQL unterscheidet beides; dort koennen
+     * "Würth" und "WÜRTH" nebeneinander stehen. Dann gewinnt die exakte Schreibweise,
+     * sonst der aelteste Eintrag - statt eines Fehlers wegen mehrerer Treffer.
+     */
+    default Optional<Lieferanten> findByLieferantennameIgnoreCase(String lieferantenname) {
+        if (lieferantenname == null) {
+            return Optional.empty();
+        }
+        List<Lieferanten> treffer = findAllByLieferantennameIgnoreCaseOrderByIdAsc(lieferantenname.trim());
+        return treffer.stream()
+                .filter(l -> lieferantenname.trim().equals(l.getLieferantenname()))
+                .findFirst()
+                .or(() -> treffer.stream().findFirst());
+    }
 
     // lower(): wie MySQL (Collation) auch auf PostgreSQL ohne Gross-/Kleinschreibung
     @Query("select l from Lieferanten l join l.kundenEmails e where lower(e) = lower(:email)")

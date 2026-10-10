@@ -68,7 +68,7 @@ class ArtikelImportServiceTest {
         mapping.put("produktname", "produktname");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.empty());
 
         artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
@@ -87,7 +87,7 @@ class ArtikelImportServiceTest {
         Artikel artikel = new Artikel();
         artikel.setArtikelpreis(new ArrayList<>());
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.of(artikel));
 
         artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
@@ -108,7 +108,7 @@ class ArtikelImportServiceTest {
         Artikel artikel = new Artikel();
         artikel.setArtikelpreis(new ArrayList<>());
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.of(artikel));
 
         artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, true);
@@ -129,7 +129,7 @@ class ArtikelImportServiceTest {
         mapping.put("preis", "preis");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("456", 1L)).thenReturn(Optional.empty());
 
         artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
@@ -149,7 +149,7 @@ class ArtikelImportServiceTest {
         mapping.put("preis", "preis");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("789", 1L)).thenReturn(Optional.empty());
 
         artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
@@ -174,7 +174,7 @@ class ArtikelImportServiceTest {
         mapping.put("preiseinheit", "preiseinheit");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("321", 1L)).thenReturn(Optional.empty());
 
         artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
@@ -206,7 +206,7 @@ class ArtikelImportServiceTest {
         mapping.put("preis", "preis");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("321", 1L)).thenReturn(Optional.empty());
 
         artikelImportService.importiereCsv(
@@ -248,7 +248,7 @@ class ArtikelImportServiceTest {
         alt.setPreis(new BigDecimal("1.8300"));
         bestand.getArtikelpreis().add(alt);
 
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("321", 1L))
                 .thenReturn(Optional.of(bestand));
 
@@ -275,8 +275,8 @@ class ArtikelImportServiceTest {
 
         Lieferanten lieferantA = lieferantMitId(1L);
         Lieferanten lieferantB = lieferantMitId(2L);
-        when(lieferantenRepository.findByLieferantenname("LieferantA")).thenReturn(Optional.of(lieferantA));
-        when(lieferantenRepository.findByLieferantenname("LieferantB")).thenReturn(Optional.of(lieferantB));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("LieferantA")).thenReturn(Optional.of(lieferantA));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("LieferantB")).thenReturn(Optional.of(lieferantB));
         // Beide Lieferanten fuehren dieselbe externe Artikelnummer 999, aber als eigene Artikel.
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("999", 1L)).thenReturn(Optional.empty());
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("999", 2L)).thenReturn(Optional.empty());
@@ -320,7 +320,7 @@ class ArtikelImportServiceTest {
         mapping.put("preis", "preis");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.empty());
 
         // Regressionsschutz: Der Artikel existiert bereits, aber nur bei einem ANDEREN
@@ -348,7 +348,7 @@ class ArtikelImportServiceTest {
         mapping.put("externeArtikelnummer", "externeArtikelnummer");
         mapping.put("preis", "preis");
 
-        when(lieferantenRepository.findByLieferantenname("NeuerLieferant")).thenReturn(Optional.empty());
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("NeuerLieferant")).thenReturn(Optional.empty());
 
         ImportAnalysisResult result = artikelImportService.analyzeImport(file, "NeuerLieferant", mapping);
 
@@ -369,7 +369,7 @@ class ArtikelImportServiceTest {
         mapping.put("werkstoff", "werkstoff");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.empty());
 
         Werkstoff werkstoff = new Werkstoff();
@@ -395,7 +395,7 @@ class ArtikelImportServiceTest {
         mapping.put("werkstoff", "werkstoff");
 
         Lieferanten lieferant = lieferantMitId(1L);
-        when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
+        when(lieferantenRepository.findByLieferantennameIgnoreCase("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.empty());
         when(werkstoffRepository.findByNameIgnoreCase("Edelstahl")).thenReturn(Optional.empty());
         Werkstoff angelegt = new Werkstoff();

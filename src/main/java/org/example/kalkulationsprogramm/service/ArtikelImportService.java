@@ -95,7 +95,8 @@ public class ArtikelImportService {
                     headerIndex.put(norm, i);
                 }
 
-                Long lieferantIdFuerAbgleich = lieferantenRepository.findByLieferantenname(lieferantenName)
+                // Ohne Gross-/Kleinschreibung: auf PostgreSQL fand "würth" sonst "Würth" nicht
+                Long lieferantIdFuerAbgleich = lieferantenRepository.findByLieferantennameIgnoreCase(lieferantenName)
                         .map(Lieferanten::getId)
                         .orElse(null);
 
@@ -150,8 +151,10 @@ public class ArtikelImportService {
                     headerIndex.put(norm, i);
                 }
 
-                String finalLieferantenName = lieferantenName;
-                Lieferanten lieferant = lieferantenRepository.findByLieferantenname(lieferantenName)
+                String finalLieferantenName = lieferantenName != null ? lieferantenName.trim() : null;
+                // Ohne Gross-/Kleinschreibung wie MySQL: auf PostgreSQL legte "würth" sonst
+                // neben "Würth" einen zweiten Lieferanten an, die Preise landeten dort
+                Lieferanten lieferant = lieferantenRepository.findByLieferantennameIgnoreCase(lieferantenName)
                         .orElseGet(() -> {
                             Lieferanten neu = new Lieferanten();
                             neu.setLieferantenname(finalLieferantenName);

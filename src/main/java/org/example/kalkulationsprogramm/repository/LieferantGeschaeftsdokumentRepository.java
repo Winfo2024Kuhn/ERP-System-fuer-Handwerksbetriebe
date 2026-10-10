@@ -17,11 +17,13 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
 
         /**
          * Findet Geschäftsdaten mit passender Referenznummer beim angegebenen
-         * Lieferanten.
+         * Lieferanten. Wie alle Nummern-Vergleiche hier ohne Groß-/Kleinschreibung:
+         * MySQL vergleicht über die Kollation so, PostgreSQL nur mit {@code lower()}
+         * ("RE-123" und "re-123" sind derselbe Beleg).
          */
         @Query("SELECT gd FROM LieferantGeschaeftsdokument gd " +
                         "WHERE gd.dokument.lieferant.id = :lieferantId " +
-                        "AND gd.dokumentNummer = :referenzNummer")
+                        "AND lower(gd.dokumentNummer) = lower(:referenzNummer)")
         List<LieferantGeschaeftsdokument> findByLieferantIdAndDokumentNummer(
                         @Param("lieferantId") Long lieferantId,
                         @Param("referenzNummer") String referenzNummer);
@@ -33,7 +35,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
         @Query("SELECT CASE WHEN COUNT(gd) > 0 THEN true ELSE false END " +
                         "FROM LieferantGeschaeftsdokument gd " +
                         "WHERE gd.dokument.lieferant.id = :lieferantId " +
-                        "AND gd.dokumentNummer = :dokumentNummer " +
+                        "AND lower(gd.dokumentNummer) = lower(:dokumentNummer) " +
                         "AND gd.betragBrutto = :betragBrutto")
         boolean existsByLieferantIdAndDokumentNummerAndBetragBrutto(
                         @Param("lieferantId") Long lieferantId,
@@ -218,7 +220,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
         @Query("SELECT CASE WHEN COUNT(gd) > 0 THEN true ELSE false END " +
                         "FROM LieferantGeschaeftsdokument gd " +
                         "WHERE gd.dokument.lieferant.id = :lieferantId " +
-                        "AND gd.dokumentNummer = :dokumentNummer")
+                        "AND lower(gd.dokumentNummer) = lower(:dokumentNummer)")
         boolean existsByLieferantIdAndDokumentNummer(
                         @Param("lieferantId") Long lieferantId,
                         @Param("dokumentNummer") String dokumentNummer);
