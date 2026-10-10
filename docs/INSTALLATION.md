@@ -371,7 +371,7 @@ Einfacher geht es mit `tailscale serve --bg 8080`: Tailscale holt das Zertifikat
 }
 ```
 
-Vorhandene Regeln (z. B. `ssh`) übernehmen und die Änderung vor dem Speichern mit *Preview rules* prüfen. Geräte, die bereits eine Markierung tragen (etwa ein Website-Server mit `tag:…`), fallen nicht unter `autogroup:member` und brauchen eine eigene Regel. Die Regel trennt die Handys von den übrigen Geräten; das ERP selbst sehen sie weiterhin wie ein Büro-PC. Desktop und Handy-App verlangen Anmeldung bzw. Code. Die Schnittstelle für die Internetseite (`/api/internal/…`) hat dagegen noch keinen eigenen Schlüssel; sie ist nur durch das Netz geschützt.
+Vorhandene Regeln (z. B. `ssh`) übernehmen und die Änderung vor dem Speichern mit *Preview rules* prüfen. Geräte, die bereits eine Markierung tragen (etwa ein Website-Server mit `tag:…`), fallen nicht unter `autogroup:member` und brauchen eine eigene Regel. Die Regel trennt die Handys von den übrigen Geräten; das ERP selbst sehen sie weiterhin wie ein Büro-PC. Desktop und Handy-App verlangen Anmeldung bzw. Code. Die Schnittstelle für die Internetseite (`/api/internal/…`) verlangt zusätzlich den gemeinsamen Website-Schlüssel (`WEBSITE_INTERNAL_API_KEY`); das Netz allein reicht nicht.
 
 ---
 
@@ -541,3 +541,12 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 <!-- AUTO-GENERATED: env-table END -->
 
 **Präzisierung zur generierten Admin-Tabelle:** `APP_ADMIN_USER` und `APP_ADMIN_PASS` sind im aktuellen Backend optionale Angaben für die erste Admin-Anlage. Ohne sie erfolgt die Erstregistrierung im Browser. Bestehende Login-Benutzer werden durch diese Variablen nicht geändert; siehe [Authentifizierung konfigurieren](#authentifizierung-konfigurieren).
+
+### Anbindung der Firmen-Website
+
+| Variable | Pflicht | Beschreibung | Beispielwert |
+|----------|---------|--------------|--------------|
+| `WEBSITE_INTERNAL_API_KEY` | Nur mit Website | Gemeinsamer Schlüssel für `/api/internal/**` (Anfrage-Formular, Freigabe-Seite, Analytics). Ohne Wert weist das ERP diese Aufrufe mit 401 ab. Derselbe Wert steht auf der Website als `ERP_INTERNAL_API_KEY`. | `openssl rand -base64 32` |
+| `WEBSITE_BEITRAEGE_API_TOKEN` | Nur mit Beiträge-Modul | Bearer-Token für die Beiträge-Schnittstelle der Website | `<geheim>` |
+
+Reihenfolge der Umstellung ohne Ausfall (erst Website, dann ERP): siehe [Mobile Token-Sicherheit](MOBILE_TOKEN_SECURITY.md#website-schnittstelle-apiinternal).

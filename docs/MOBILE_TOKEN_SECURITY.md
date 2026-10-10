@@ -63,7 +63,7 @@ Verwende möglichst einzelne IPv4-Adressen mit `/32` beziehungsweise IPv6-Adress
 
 Nur wenn der direkte Verbindungspartner vertrauenswürdig ist, wird `X-Forwarded-For` ausgewertet, über alle Kopfzeilen hinweg. Die Kette wird von rechts nach links gelesen, solange der jeweils aktuelle Hop vertrauenswürdig ist; die erste nicht vertrauenswürdige Adresse ist die Client-IP. **`CF-Connecting-IP`, `X-Real-IP` und `True-Client-IP` werden nicht als Absender übernommen**, sondern nur gegen die Kette abgeglichen; ein `Forwarded`-Header macht die Anfrage zu extern. Leere Glieder in der Kette (`10.0.0.1,,`) machen sie ungültig. Fail-closed gilt: Trägt eine Anfrage einen Weiterleitungs-Header (`X-Forwarded-For`, `Forwarded`, `CF-Connecting-IP`, `X-Real-IP`, `True-Client-IP`), ohne dass sich aus einer freigegebenen `X-Forwarded-For`-Kette ein Absender ergibt, behandelt `ZeiterfassungSecurityFilter` sie als extern – etwa bei einem nicht freigegebenen Proxy, einer unbrauchbaren Kette, einem `Forwarded`-Header, abweichenden Einzeladressen oder einem Tunnel, der nur `CF-Connecting-IP` setzt. Anfragen mit dem von Tailscale gesetzten `Tailscale-Funnel-Request` gelten immer als extern. Ein solcher Header kann Rechte nur einschränken. Die Netzgrenze läuft vor Spring Security, damit sie auch die Anmeldung (`POST /api/auth/login`) erfasst.
 
-Tailscale-Adressen (`100.64.0.0/10` und IPv6 `fd7a:115c:a1e0::/48` innerhalb von `fc00::/7`) zählen wie das Firmen-LAN als lokal. Über `tailscale serve` erreichen Büro-PCs, Handys mit Tailscale-App und ein per Tailscale angebundener Website-Server (Anfrage-Funnel, Angebots-Freigabe unter `/api/internal/**`) das ERP deshalb wie bisher.
+Tailscale-Adressen (`100.64.0.0/10` und IPv6 `fd7a:115c:a1e0::/48` innerhalb von `fc00::/7`) zählen wie das Firmen-LAN als lokal. Über `tailscale serve` erreichen Büro-PCs, Handys mit Tailscale-App und ein per Tailscale angebundener Website-Server (Anfrage-Funnel, Angebots-Freigabe unter `/api/internal/**`) das ERP deshalb wie bisher. Diese Schnittstelle verlangt zusätzlich den gemeinsamen Website-Schlüssel, siehe [Website-Schnittstelle](#website-schnittstelle-apiinternal).
 
 **Von außen gilt überall dieselbe Regel wie am Gateway:** Erreichbar sind nur `GET`/`HEAD` auf `/zeiterfassung/**` und die Aufrufe aus `MobileApiPolicy`; alles andere erhält `403`, mehrdeutige Pfade (`..`, `;`, `%2e`, `%2f`, `%5c`, `%00`) `400`, ein Aufruf von `/` führt zu `/zeiterfassung/`. Desktop-Sitzungen zählen von außen nicht, es gilt nur der Mitarbeiter-Code. Anfragen von außen dürfen höchstens 25 MiB groß sein (`413`) und müssen ihre Länge angeben (`411` bei `Transfer-Encoding` ohne `Content-Length`), weil der Server Multipart-Daten sonst schon vor der Code-Prüfung annimmt. Das gilt unabhängig davon, ob die Anfrage direkt, über Tailscale Funnel, einen Tunnel oder das Docker-Gateway kommt.
 
@@ -93,6 +93,33 @@ Die Freigabeprüfung erfolgt in einer Testumgebung mit Dummy-Mitarbeitern über 
 
 `401` bedeutet fehlende oder ungültige Anmeldung. `429` verlangt Warten gemäß `Retry-After`; bei vielen betroffenen Nutzern zusätzlich Proxy-IP-Ermittlung und Speicherkapazität prüfen. `403` kann eine nicht erlaubte Methode, fremde Identitätsangaben, CSRF oder die Netzgrenze (Aufruf von außen außerhalb der mobilen Routen) bedeuten. Die Sperre durch Server-Neustarts zu löschen ist keine dauerhafte Behebung.
 
+## Website-Schnittstelle `/api/internal/**`
+
+Die Firmen-Website ruft das ERP serverseitig unter `/api/internal/**` auf: Anfrage-Formular (`POST /api/internal/anfrage`), Freigabe-Seite samt PDF und Annahme (`/api/internal/freigabe/{uuid}/...`) und den täglichen Analytics-Snapshot (`POST /api/internal/analytics-snapshot`). Diese Kette hat keine Anmeldung per Sitzung oder Mitarbeiter-Token. Ohne eigenen Schutz könnte jedes Gerät im Firmen-LAN oder Tailscale-Netz (auch Mitarbeiter-Handys) Anfragen anlegen, Angebote per UUID annehmen und Snapshots einspielen. Von außen ist der Pfad durch `ZeiterfassungSecurityFilter` gesperrt.
+
+**Gemeinsamer Schlüssel:** Die Website sendet in jedem Aufruf den Header `X-ERP-Website-Key`. `WebsiteInternalApiKeyFilter` vergleicht ihn konstantzeitig (SHA-256-Digests, `MessageDigest.isEqual`) mit `website.internal-api.key`.
+
+| Konfiguration (ERP) | Wert |
+| --- | --- |
+| Property | `website.internal-api.key` (Umgebungsvariable `WEBSITE_INTERNAL_API_KEY`) |
+| Erzeugen | `openssl rand -base64 32` |
+| Ablage | `application-local.properties` bzw. Umgebung, nie im Repository |
+| Gegenstück auf der Website | `ERP_INTERNAL_API_KEY` in der `.env` |
+
+- **Fail-closed:** Ist kein Schlüssel konfiguriert, steht beim Start eine Warnung im Log und `/api/internal/**` antwortet auf jede Anfrage mit 401. Einen Übergangsmodus ohne Schlüssel gibt es bewusst nicht.
+- Fehlender oder falscher Schlüssel: 401 mit `{"success":false,"message":"Nicht autorisiert."}`; der Schlüssel wird nie geloggt.
+- **Cloudflare Access (nur Sonderfall):** Mit `cloudflare.access.enabled=true` zählt ausschließlich ein gültiger `Cf-Access-Jwt-Assertion`; der Schlüssel allein genügt dann nicht (kein Mischbetrieb). Über einen Cloudflare-Tunnel ist `/api/internal/**` derzeit nicht erreichbar: Die Netzgrenze erkennt die öffentliche Absender-IP und sperrt den Pfad vor der JWT-Prüfung. Die Website wird über Tailscale mit Schlüssel angebunden.
+- Die Gegenrichtung ERP → Website (`website.beitraege.api-token`, Bearer-Token) ist davon unabhängig.
+
+**Umstellung ohne Ausfall** (Reihenfolge ist wichtig):
+
+1. Schlüssel erzeugen und sicher notieren.
+2. **Zuerst die Website:** die Website-Version mit `X-ERP-Website-Key`-Unterstützung deployen, `ERP_INTERNAL_API_KEY` in die `.env` eintragen, `systemctl restart site`. Das noch ungeschützte ERP ignoriert den zusätzlichen Header, es ändert sich nichts.
+3. **Dann das ERP:** `WEBSITE_INTERNAL_API_KEY` mit demselben Wert setzen, **bevor** die neue ERP-Version zum ersten Mal startet (Update und Schlüssel im selben Schritt). Wer die neue Version ohne Schlüssel startet, sperrt die Website sofort aus (fail-closed).
+4. Prüfen: `curl -i -X POST <ERP>/api/internal/analytics-snapshot` ohne Header ergibt 401; Anfrage-Formular, Freigabe-Seite und `npm run snapshot` auf dem Website-Server funktionieren.
+
+Würde das ERP vor der Website umgestellt, bekäme die Website bis zu deren Umstellung 401 (Anfrage-Formular und Freigabe-Seite ausgefallen). Rollback: den Schlüssel auf beiden Seiten durch denselben alten Wert ersetzen; ein leerer Schlüssel im ERP sperrt die Schnittstelle.
+
 ## Quellen im Repository
 
 - [Entwurf und vereinbarter Umfang](superpowers/specs/2026-10-09-mobile-token-security-design.md)
@@ -101,6 +128,7 @@ Die Freigabeprüfung erfolgt in einer Testumgebung mit Dummy-Mitarbeitern über 
 - [Wartezeiten und Speicherkapazität](../src/main/java/org/example/kalkulationsprogramm/config/TokenAttemptLimiter.java)
 - [Client-IP-Ermittlung](../src/main/java/org/example/kalkulationsprogramm/config/ClientIpResolver.java)
 - [Spring-Security-Filterketten](../src/main/java/org/example/kalkulationsprogramm/config/SecurityConfig.java) und [zusätzliche Netzgrenze](../src/main/java/org/example/kalkulationsprogramm/config/ZeiterfassungSecurityFilter.java)
+- [Schlüsselprüfung für `/api/internal/**`](../src/main/java/org/example/kalkulationsprogramm/config/WebsiteInternalApiKeyFilter.java)
 
 ## Öffentlicher Gateway-Vertrag
 

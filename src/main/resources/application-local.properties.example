@@ -54,6 +54,14 @@ spring.datasource.password=DEIN_DB_PASSWORT
 # die oeffentliche Adresse, die auch auf Belegexporte gedruckt wird.
 #website.beitraege.base-url=https://deine-firmen-website.de
 
+# ========== Website -> ERP (Anfrage-Formular, Freigabe-Seite, Analytics) ==========
+# Gemeinsames Passwort, mit dem sich die Website beim ERP ausweist (Header
+# X-ERP-Website-Key). Ohne Passwort weist das ERP diese Aufrufe mit 401 ab - sonst
+# koennte jedes Geraet im Firmen- oder Tailscale-Netz Anfragen anlegen und Angebote
+# annehmen. Erzeugen mit "openssl rand -base64 32". Derselbe Wert steht auf dem
+# Website-Server in deren .env unter ERP_INTERNAL_API_KEY.
+#website.internal-api.key=DEIN_GEMEINSAMES_PASSWORT
+
 # ========== Digitale Annahme von Angeboten (Freigabe-Links) ==========
 # Oeffentliche Adresse, unter der Kunden Angebote und Auftragsbestaetigungen
 # digital annehmen (Freigabe-Seite, z.B. auf der Firmen-Website). Ohne Eintrag

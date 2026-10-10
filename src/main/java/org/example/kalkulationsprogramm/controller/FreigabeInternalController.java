@@ -26,9 +26,10 @@ import java.util.Optional;
 
 /**
  * Server-zu-Server-Schnittstelle, die das Astro-Frontend (auf bauschlosserei-kuhn.de)
- * über den Cloudflare-Tunnel anspricht. Liegt unter /api/internal/** und wird vom
- * {@link org.example.kalkulationsprogramm.config.CloudflareAccessJwtFilter} abgesichert –
- * Spring-Auth ist hier bewusst aus.
+ * über Tailscale (oder optional Cloudflare) anspricht. Liegt unter /api/internal/** und wird
+ * vom {@link org.example.kalkulationsprogramm.config.WebsiteInternalApiKeyFilter} (Header
+ * {@code X-ERP-Website-Key}) bzw. dem Cloudflare-Access-JWT abgesichert – Spring-Auth ist
+ * hier bewusst aus.
  */
 @RestController
 @RequestMapping("/api/internal/freigabe")

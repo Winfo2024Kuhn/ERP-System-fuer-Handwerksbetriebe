@@ -39,6 +39,9 @@ public class CloudflareAccessJwtFilter extends OncePerRequestFilter {
 
     private static final String HEADER = "Cf-Access-Jwt-Assertion";
 
+    /** Request-Attribut: gesetzt, sobald ein gültiger Cloudflare-Access-JWT geprüft wurde. */
+    public static final String VERIFIED_ATTRIBUTE = CloudflareAccessJwtFilter.class.getName() + ".VERIFIED";
+
     @Value("${cloudflare.access.enabled:false}")
     private boolean enabled;
 
@@ -67,6 +70,7 @@ public class CloudflareAccessJwtFilter extends OncePerRequestFilter {
 
         try {
             getProcessor().process(token, null);
+            request.setAttribute(VERIFIED_ATTRIBUTE, Boolean.TRUE);
             chain.doFilter(request, response);
         } catch (Exception e) {
             log.warn("CF-Access-JWT ungültig für {}: {}", request.getRequestURI(), e.getMessage());

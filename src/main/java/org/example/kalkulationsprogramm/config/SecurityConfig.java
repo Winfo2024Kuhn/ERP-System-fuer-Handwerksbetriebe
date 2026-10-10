@@ -46,10 +46,13 @@ public class SecurityConfig {
     }
 
     /**
-     * Public S2S-Eingang für den Anfrage-Funnel der Marketing-Webseite.
-     * Erreichbar nur über Cloudflare-Tunnel + Access Service Token; der
-     * {@link CloudflareAccessJwtFilter} prüft den signierten CF-Access-JWT als
-     * zweite Schicht (Defense-in-Depth). Spring-Auth ist bewusst ausgeschaltet.
+     * S2S-Eingang für Anfrage-Funnel, Freigabe-Seite und Analytics-Snapshot der Firmen-Website.
+     * Jeder Request braucht den gemeinsamen Schlüssel im Header {@code X-ERP-Website-Key}
+     * ({@link WebsiteInternalApiKeyFilter}, fail-closed ohne konfigurierten Schlüssel). Ist
+     * {@code cloudflare.access.enabled=true}, ist stattdessen ein gültiger Cloudflare-Access-JWT
+     * ({@link CloudflareAccessJwtFilter}) Pflicht und ersetzt den Schlüssel. Spring-Auth (Session/Formular) ist bewusst
+     * ausgeschaltet. Von außen ist der Pfad zusätzlich durch {@link ZeiterfassungSecurityFilter}
+     * gesperrt; der Schlüssel schützt vor Geräten im Firmen- und Tailscale-Netz.
      *
      * <p><b>CSRF-Threat-Model (CodeQL java/spring-disabled-csrf-protection):</b>
      * CSRF wird hier bewusst und sicher deaktiviert:
@@ -57,12 +60,11 @@ public class SecurityConfig {
      *   <li>Die Chain ist <i>stateless</i> — kein Session-Cookie, kein
      *       HTTP-Basic, keine vom Browser automatisch mitgesendete
      *       Authentifizierung. CSRF setzt aber genau das voraus.</li>
-     *   <li>Authentifizierung erfolgt ausschliesslich ueber den
-     *       {@code Cf-Access-Jwt-Assertion}-Header, den die Cloudflare-Edge
-     *       NUR fuer Requests mit gueltigem Access Service Token setzt.
-     *       Browser koennen diesen Header weder selbststaendig setzen noch
-     *       das zugehoerige {@code CF-Access-Client-Secret} ausliefern
-     *       (Service-Token-Geheimnis liegt im Backend der Marketing-Seite).</li>
+     *   <li>Authentifizierung erfolgt ausschliesslich ueber explizit gesetzte Header:
+     *       den {@code X-ERP-Website-Key} oder den {@code Cf-Access-Jwt-Assertion}, den
+     *       die Cloudflare-Edge NUR fuer Requests mit gueltigem Access Service Token
+     *       setzt. Browser senden beides nie automatisch mit; die Geheimnisse liegen
+     *       im Backend der Marketing-Seite.</li>
      *   <li>Es ist KEIN CORS konfiguriert — cross-origin POSTs aus dem
      *       Browser scheitern bereits am fehlenden CORS-Header.</li>
      * </ul>
@@ -71,12 +73,14 @@ public class SecurityConfig {
      */
     @Bean
     @Order(0)
-    public SecurityFilterChain funnelFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain funnelFilterChain(HttpSecurity http,
+            @Value("${website.internal-api.key:}") String websiteKey) throws Exception {
         http
                 .securityMatcher("/api/internal/**")
-                // CSRF ignored: stateless JWT-authed S2S endpoint, see Javadoc above for full threat model.
+                // CSRF ignored: stateless key/JWT-authed S2S endpoint, see Javadoc above for full threat model.
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/internal/**"))
                 .addFilterBefore(cloudflareAccessJwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(new WebsiteInternalApiKeyFilter(websiteKey, objectMapper), CloudflareAccessJwtFilter.class)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
         return http.build();
