@@ -107,7 +107,7 @@ public class MobileObjectAccessService {
 
         EnumSet<Speicher> speicher = EnumSet.noneOf(Speicher.class);
         projektDokumente.findByGespeicherterDateiname(dateiname).ifPresent(dokument -> {
-            // MySQL kann den Vergleich ohne Beachtung der Großschreibung ausführen.
+            // Exakter Vergleich, unabhängig von der Sortierregel (Kollation) der Datenbank.
             if (!dateiname.equals(dokument.getGespeicherterDateiname()) || !canReadProjektDokument(dokument)) {
                 throw nichtGefunden();
             }

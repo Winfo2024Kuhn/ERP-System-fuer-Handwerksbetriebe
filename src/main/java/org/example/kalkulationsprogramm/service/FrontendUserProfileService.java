@@ -169,7 +169,7 @@ public class FrontendUserProfileService {
         validatePassword(rawPassword);
         ensureUsernameAvailable(normalizedUsername, null);
 
-        // Einrichtungsphase (Release-.exe): Der erste Nutzer, der sich
+        // Einrichtungsphase (Neuinstallation): Der erste Nutzer, der sich
         // registriert, wird automatisch Admin — es gibt keinen vorab
         // angelegten Bootstrap-Admin mehr.
         boolean ersterNutzer = repository.countByUsernameIsNotNull() == 0;

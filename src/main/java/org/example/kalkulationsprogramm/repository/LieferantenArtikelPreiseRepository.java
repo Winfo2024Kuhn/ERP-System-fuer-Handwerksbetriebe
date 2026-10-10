@@ -42,7 +42,7 @@ public interface LieferantenArtikelPreiseRepository
      * <p><b>Setzt ASCII-Artikelnummern voraus.</b> Der Abgleich stellt das
      * {@code UPPER()} der Datenbank gegen ein {@code toUpperCase()} in Java, und
      * die beiden sind sich nur bei ASCII einig: Java macht aus "ß" die zwei
-     * Zeichen "SS", MySQL laesst es stehen. Eine Artikelnummer mit Umlaut oder
+     * Zeichen "SS", die Datenbank laesst es stehen. Eine Artikelnummer mit Umlaut oder
      * Eszett wuerde deshalb nicht gefunden. In den bisher gesehenen
      * Lieferantenkatalogen kommen nur Ziffern, Buchstaben, Punkt und Bindestrich
      * vor; taucht je etwas anderes auf, muss der Abgleich auf beiden Seiten

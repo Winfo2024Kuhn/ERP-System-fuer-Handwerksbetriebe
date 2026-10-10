@@ -19,8 +19,8 @@ import org.springframework.data.jpa.domain.Specification;
 import jakarta.persistence.EntityManager;
 
 /**
- * Sortierung mit festgelegter Lage leerer Werte (H2). Dass MySQL und PostgreSQL
- * gleich sortieren, prueft {@link DatenbankKompatibilitaetSucheTest}.
+ * Sortierung mit festgelegter Lage leerer Werte (H2). Dass PostgreSQL wie gewohnt
+ * sortiert, prueft {@link DatenbankKompatibilitaetSucheTest}.
  */
 @DataJpaTest
 class PortableSortierungTest {
@@ -31,7 +31,7 @@ class PortableSortierungTest {
     EntityManager em;
 
     @Test
-    @DisplayName("Leere Werte wie auf MySQL: aufsteigend zuerst, absteigend zuletzt; Angabe am Sort.Order geht vor")
+    @DisplayName("Leere Werte wie bisher: aufsteigend zuerst, absteigend zuletzt; Angabe am Sort.Order geht vor")
     void leerwerte() {
         assertThat(PortableSortierung.leerwerte(Sort.Order.asc("a"))).isEqualTo(NullPrecedence.FIRST);
         assertThat(PortableSortierung.leerwerte(Sort.Order.desc("a"))).isEqualTo(NullPrecedence.LAST);

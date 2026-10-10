@@ -41,7 +41,6 @@ import lombok.extern.slf4j.Slf4j;
 public class SystemSettingsService {
 
     private final SystemSettingRepository repository;
-    private final org.springframework.core.env.Environment environment;
 
     /**
      * Postfächer schlagen die alten Konto-Einstellungen: Ist ein Hauptpostfach bzw.
@@ -56,24 +55,20 @@ public class SystemSettingsService {
 
     @org.springframework.beans.factory.annotation.Autowired
     public SystemSettingsService(SystemSettingRepository repository,
-            org.springframework.core.env.Environment environment,
             ObjectProvider<PostfachZugangService> postfachZugangService) {
         this.repository = repository;
-        this.environment = environment;
         this.postfachZugangService = postfachZugangService;
     }
 
     /** Mit festem Zugangs-Service (Tests). */
     public SystemSettingsService(SystemSettingRepository repository,
-            org.springframework.core.env.Environment environment,
             PostfachZugangService postfachZugangService) {
-        this(repository, environment, festerProvider(postfachZugangService));
+        this(repository, festerProvider(postfachZugangService));
     }
 
     /** Ohne Postfächer – nur die gespeicherten Einstellungen (Tests). */
-    public SystemSettingsService(SystemSettingRepository repository,
-            org.springframework.core.env.Environment environment) {
-        this(repository, environment, (PostfachZugangService) null);
+    public SystemSettingsService(SystemSettingRepository repository) {
+        this(repository, (PostfachZugangService) null);
     }
 
     private static ObjectProvider<PostfachZugangService> festerProvider(PostfachZugangService service) {
@@ -568,7 +563,7 @@ public class SystemSettingsService {
     }
 
     public boolean isInitialConfigurationRequired() {
-        return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured() || !isDateiOrdnerConfigured();
+        return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured();
     }
 
     public boolean isSmtpConfigured() {
@@ -600,17 +595,12 @@ public class SystemSettingsService {
     }
 
     /**
-     * Pflicht-Check für die Ersteinrichtung. Auf dem Produktiv-Server
-     * (Profil ≠ h2) zählt die Property-Konfiguration aus
-     * application-local.properties als bewusste Entscheidung; nur im
-     * Standalone-Modus (h2, Release-.exe) muss der Ordner einmal im
-     * Assistenten bestätigt werden (DB-Wert).
+     * Der Datei-Ordner ist auf dem Server keine Pflicht der Ersteinrichtung: Ohne
+     * eigenen Eintrag gilt der Pfad aus application-local.properties bzw. dem
+     * Docker-Volume. (Pflicht war er nur in der frueheren Windows-.exe.)
      */
     public boolean isDateiOrdnerConfigured() {
-        if (hasConfiguredValue(get("datei.ordner-pfad", ""))) {
-            return true;
-        }
-        return !environment.acceptsProfiles(org.springframework.core.env.Profiles.of("h2"));
+        return true;
     }
 
     /**

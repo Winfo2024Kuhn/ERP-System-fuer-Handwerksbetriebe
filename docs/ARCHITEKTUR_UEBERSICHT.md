@@ -11,7 +11,7 @@ Dieses Dokument beschreibt die technische Architektur des Handwerkerprogramms �
 | Schicht | Technologie | Version |
 |---|---|---|
 | **Backend** | Java, Spring Boot, JPA/Hibernate, Flyway | Java 23, Spring Boot 3.2.5 |
-| **Datenbank** | MySQL | MySQL 8 |
+| **Datenbank** | PostgreSQL (einzige Datenbank; H2 nur in den automatischen Tests) | PostgreSQL 16 |
 | **Desktop-Frontend** | React, TypeScript, Vite, Tailwind CSS | React 18, TypeScript 5 |
 | **Mobile App** | React PWA (Offline-fähig via IndexedDB) | React 18 |
 | **PDF-Generierung** | OpenPDF (iText), Apache PDFBox, Mustang (ZUGFeRD) | – |
@@ -19,7 +19,7 @@ Dieses Dokument beschreibt die technische Architektur des Handwerkerprogramms �
 | **E-Mail** | Jakarta Mail (IMAP/SMTP) | – |
 | **Vektorsuche** | Qdrant Vector Database | – |
 | **Build** | Maven (Backend), Vite (Frontend) | – |
-| **Deployment** | jpackage (Windows EXE), Docker (optional) | – |
+| **Deployment** | Docker (Image aus GitHub, `deployment/docker-server`) | – |
 
 ---
 
@@ -208,7 +208,8 @@ Beide Frontends kommunizieren über **REST-API** mit dem Spring Boot Backend auf
 
 ### 6.1 Konfiguration
 
-- **Pfad:** `classpath:db/migration`
+- **Pfad:** `classpath:db/postgresql/migration` (eine Datei je Migration, Anleitung: `src/main/resources/db/postgresql/migration/README.md`)
+- **Neuinstallation:** Eine leere Datenbank bekommt zuerst `db/postgresql/basis/V1__basis_schema.sql` (`FlywayStartSetupConfig`), danach laufen die Migrationen
 - **Aktiviert:** `spring.flyway.enabled=true`
 - **Baseline:** Flyway verwaltet alle Datenbank-Schemata
 
@@ -245,7 +246,7 @@ Versionsnummern sind aufsteigend und fortlaufend.
 | Bereich | Konfiguration |
 |---|---|
 | **Server** | Port 8082 |
-| **Datenbank** | MySQL localhost:3307, UTF-8MB4, German Collation |
+| **Datenbank** | PostgreSQL `localhost:5432/kalkulationsprogramm_db` (`APP_DB_URL`), UTF-8 |
 | **Connection Pool** | HikariCP, READ_COMMITTED Isolation |
 | **Datei-Upload** | Max. 15 GB, verschiedene Verzeichnisse für Uploads, Bilder, Anhänge |
 | **KI** | Gemini API-Key, Modell `gemini-flash-latest`, RAG aktiviert |
@@ -265,9 +266,9 @@ Versionsnummern sind aufsteigend und fortlaufend.
 
 | Methode | Beschreibung |
 |---|---|
-| **jpackage** | Windows-Installer (EXE) mit eingebettetem JRE |
-| **Docker** | Optional via `docker-compose.yml` (Qdrant) |
-| **JAR** | Standalone Spring Boot JAR |
+| **Docker beim Kunden** | `deployment/docker-server`: PostgreSQL, App-Image und nächtliche Updates mit Rollback |
+| **Docker lokal** | `docker-compose.yml` im Projektordner (PostgreSQL, App, Qdrant) |
+| **JAR** | Standalone Spring Boot JAR, Datenbank PostgreSQL |
 
 ### 8.2 Build-Befehle
 
@@ -278,8 +279,6 @@ Versionsnummern sind aufsteigend und fortlaufend.
 # Frontend bauen
 cd react-pc-frontend && npm run build
 
-# Windows-Installer
-./mvnw jpackage:jpackage
 
 # Tests ausführen
 ./mvnw test

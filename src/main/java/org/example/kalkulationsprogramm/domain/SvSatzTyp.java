@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.domain;
 
 /**
  * Bundeseinheitliche Sozialversicherungs-Satzarten. Werte exakt wie in der
- * MySQL-ENUM-Spalte sv_satz.satz_typ (siehe V295__sv_satz.sql).
+ * Spalte sv_satz.satz_typ (siehe V295__sv_satz.sql).
  */
 public enum SvSatzTyp {
     KV_GESAMT,

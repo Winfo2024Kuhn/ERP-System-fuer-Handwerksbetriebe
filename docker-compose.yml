@@ -1,27 +1,25 @@
 services:
 
-  # ========== MySQL Datenbank ==========
-  # MySQL 8.0, weil der Produktivserver darauf laeuft. Eine andere Engine
-  # lokal (frueher MariaDB) hiess: Migrationen wurden gegen etwas anderes
-  # getestet als sie spaeter ausfuehren, und Dumps mussten bei jedem Import
-  # umgeschrieben werden (utf8mb4_0900_ai_ci kennt MariaDB nicht).
-  mysql:
-    image: mysql:8.0
-    container_name: kalkulationsprogramm-mysql
+  # ========== PostgreSQL Datenbank ==========
+  # PostgreSQL 16 wie auf allen Servern (deployment/docker-server). Eine leere
+  # Datenbank richtet die App beim ersten Start selbst ein (Basis-Schema +
+  # Migrationen). Port nur auf diesem Rechner (127.0.0.1), z. B. fuer ein
+  # Datenbank-Werkzeug.
+  postgres:
+    image: postgres:16
+    container_name: kalkulationsprogramm-postgres
     ports:
-      - "3307:3306"
+      - "127.0.0.1:5432:5432"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-CHANGE_ME_ROOT_PW}
-      MYSQL_DATABASE: kalkulationsprogramm_db
-      MYSQL_USER: ${MYSQL_USER:-erp_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME_DB_PW}
+      POSTGRES_DB: kalkulationsprogramm_db
+      POSTGRES_USER: ${DB_USER:-erp_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGE_ME_DB_PW}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8
+      TZ: Europe/Berlin
     volumes:
-      - mysql_data:/var/lib/mysql
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_0900_ai_ci
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-CHANGE_ME_ROOT_PW}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -38,11 +36,11 @@ services:
       - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      APP_DB_URL: ${APP_DB_URL:-jdbc:mysql://mysql:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC}
-      APP_DB_USER: ${APP_DB_USER:-erp_user}
-      APP_DB_PASS: ${APP_DB_PASS:-CHANGE_ME_DB_PW}
-      MYSQL_USER: ${MYSQL_USER:-erp_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME_DB_PW}
+      # Standard: der Dienst "postgres" oben. Fuer ein PostgreSQL woanders nur
+      # APP_DB_URL setzen (DB_USER/DB_PASSWORD gelten dann dafuer).
+      APP_DB_URL: ${APP_DB_URL:-jdbc:postgresql://postgres:5432/kalkulationsprogramm_db}
+      APP_DB_USER: ${DB_USER:-erp_user}
+      APP_DB_PASS: ${DB_PASSWORD:-CHANGE_ME_DB_PW}
       APP_ADMIN_USER: ${APP_ADMIN_USER:-}
       APP_ADMIN_PASS: ${APP_ADMIN_PASS:-}
       WEBSITE_BEITRAEGE_API_TOKEN: ${WEBSITE_BEITRAEGE_API_TOKEN:-}
@@ -51,7 +49,7 @@ services:
       - app_uploads:/app/uploads
       - app_logs:/app/logs
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
@@ -69,7 +67,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  mysql_data:
+  postgres_data:
   app_uploads:
   app_logs:
   qdrant_data:

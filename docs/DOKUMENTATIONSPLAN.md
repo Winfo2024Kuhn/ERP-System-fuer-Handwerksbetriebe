@@ -203,7 +203,7 @@ docs/
 > Technische Architektur und Designentscheidungen
 
 **Inhalte:**
-- [x] **Tech-Stack**: Spring Boot, JPA/Hibernate, MySQL, React (Vite), Tailwind CSS
+- [x] **Tech-Stack**: Spring Boot, JPA/Hibernate, PostgreSQL, React (Vite), Tailwind CSS
 - [x] **Modul-Struktur**: Controller → Service → Repository → Domain
 - [x] **Frontend-Architektur**: `react-pc-frontend/` (Haupt-UI), `react-textbausteine/` (Text-Editor), `react-zeiterfassung/` (Zeiterfassung)
 - [x] **Design-Patterns**:

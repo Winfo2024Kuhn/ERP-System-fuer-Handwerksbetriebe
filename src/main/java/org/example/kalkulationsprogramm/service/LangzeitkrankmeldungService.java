@@ -71,8 +71,8 @@ public class LangzeitkrankmeldungService {
     /**
      * Steht fuer "kein Enddatum bekannt" in der Ueberlappungspruefung
      * ({@link #pruefeKeineUeberlappung}). Bewusst NICHT {@code LocalDate.MAX}
-     * (Jahr 999999999) - das sprengt den MySQL-DATE-Bereich (hoechstens
-     * 9999-12-31). Je nach Servermodus wirft das einen Fehler oder liefert,
+     * (Jahr 999999999) - das sprengte den DATE-Bereich der frueheren MySQL-Datenbank (hoechstens
+     * 9999-12-31). Je nach Servermodus warf das einen Fehler oder lieferte,
      * schlimmer, still KEINE Treffer, wodurch die Ueberlappungspruefung
      * nichts mehr prueft und zwei sich ueberschneidende Krankmeldungen
      * fuer denselben Mitarbeiter durchkaemen (Befund 1, Abschnitt-4-Review,

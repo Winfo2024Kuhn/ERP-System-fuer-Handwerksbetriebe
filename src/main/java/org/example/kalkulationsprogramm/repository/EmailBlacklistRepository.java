@@ -11,8 +11,8 @@ import java.util.Optional;
 @Repository
 public interface EmailBlacklistRepository extends JpaRepository<EmailBlacklistEntry, Long> {
 
-    // LOWER: Adressen ohne Ruecksicht auf Gross-/Kleinschreibung - MySQL tut das
-    // ueber die Collation von selbst, PostgreSQL nicht
+    // LOWER: Adressen ohne Ruecksicht auf Gross-/Kleinschreibung - PostgreSQL
+    // vergleicht Text sonst genau
     @Query("SELECT COUNT(b) > 0 FROM EmailBlacklistEntry b WHERE LOWER(b.emailAddress) = LOWER(:emailAddress)")
     boolean existsByEmailAddress(@Param("emailAddress") String emailAddress);
 

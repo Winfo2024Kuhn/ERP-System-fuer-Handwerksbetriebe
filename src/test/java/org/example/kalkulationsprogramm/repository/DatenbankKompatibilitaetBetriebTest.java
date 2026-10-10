@@ -28,7 +28,7 @@ import jakarta.persistence.EntityManager;
 
 /**
  * Fehler aus dem ersten Betrieb auf PostgreSQL, die {@link DatenbankKompatibilitaetTest} nicht
- * sah - gegen echtes MySQL UND PostgreSQL, genau wie dort (gleiche Einrichtung, gleiche
+ * sah - gegen echtes PostgreSQL, genau wie dort (gleiche Einrichtung, gleiche
  * System-Properties {@code kompat.db.*}, in der CI im Job "Datenbank-Kompatibilitaet").
  *
  * <ul>
@@ -45,22 +45,12 @@ import jakarta.persistence.EntityManager;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(FlywayStartSetupConfig.class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:(mysql|postgresql):.*")
+@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:postgresql:.*")
 class DatenbankKompatibilitaetBetriebTest {
 
     @DynamicPropertySource
     static void datenbank(DynamicPropertyRegistry r) {
-        // Wie DatenbankKompatibilitaetTest - beide teilen sich die Datenbank des CI-Jobs
-        String url = System.getProperty("kompat.db.url");
-        boolean postgres = url.startsWith("jdbc:postgresql:");
-        r.add("spring.datasource.url", () -> url);
-        r.add("spring.datasource.driver-class-name", () -> postgres ? "org.postgresql.Driver" : "com.mysql.cj.jdbc.Driver");
-        r.add("spring.jpa.database-platform", () -> postgres
-                ? "org.hibernate.dialect.PostgreSQLDialect" : "org.hibernate.dialect.MySQLDialect");
-        r.add("spring.flyway.locations", () -> postgres ? "classpath:db/postgresql/migration" : "classpath:db/migration");
-        r.add("spring.datasource.username", () -> System.getProperty("kompat.db.user", "root"));
-        r.add("spring.datasource.password", () -> System.getProperty("kompat.db.pass", ""));
-        r.add("spring.datasource.hikari.connection-init-sql", () -> "SELECT 1");
+        KompatibilitaetsDatenbank.eintragen(r);
     }
 
     @Autowired

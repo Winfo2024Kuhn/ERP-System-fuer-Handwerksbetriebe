@@ -35,34 +35,14 @@ jobs:
       - name: Run backend tests
         run: ./mvnw test
 
-  # Kunden laufen auf PostgreSQL, der eigene Server auf MySQL: jede @Query
-  # muss auf beiden laufen (DatenbankKompatibilitaetTest). Wegwerf-Datenbanken
-  # nur fuer diesen Job - die Passwoerter sind keine Geheimnisse.
+  # Die Unit-Tests laufen auf H2 - jede @Query und das echte Schema (Basis +
+  # Migrationen) prueft dieser Job gegen PostgreSQL (DatenbankKompatibilitaet*Test).
+  # Wegwerf-Datenbank nur fuer diesen Job - das Passwort ist kein Geheimnis.
   db_kompatibilitaet:
-    name: Datenbank-Kompatibilitaet (${{ matrix.db }})
+    name: Datenbank-Kompatibilitaet (PostgreSQL)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - db: mysql
-            url: jdbc:mysql://127.0.0.1:3306/kompat?allowPublicKeyRetrieval=true&useSSL=false
-            user: root
-          - db: postgresql
-            url: jdbc:postgresql://127.0.0.1:5432/kompat
-            user: kompat
     services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: kompat
-          MYSQL_DATABASE: kompat
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -pkompat"
-          --health-interval 5s --health-timeout 5s --health-retries 30
       postgres:
         image: postgres:16
         env:
@@ -88,28 +68,41 @@ jobs:
       # Wie beim Kunden: Die App arbeitet mit einer Rolle OHNE Superuser-Rechte
       # (deployment/docker-server/postgres-init/01-app-rolle.sh)
       - name: PostgreSQL-Rolle ohne Superuser-Rechte anlegen
-        if: matrix.db == 'postgresql'
         run: >-
           docker exec ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U postgres -d kompat
           -c "CREATE ROLE kompat LOGIN PASSWORD 'kompat'"
           -c "ALTER DATABASE kompat OWNER TO kompat"
           -c "ALTER SCHEMA public OWNER TO kompat"
+          -c "CREATE DATABASE kompat_leer OWNER kompat"
 
       # Alle DatenbankKompatibilitaet*Test-Klassen (Abfragen + Fehler aus dem Betrieb)
-      - name: Alle Abfragen gegen ${{ matrix.db }}
+      - name: Alle Abfragen gegen PostgreSQL
         run: >-
           ./mvnw -B test "-Dtest=DatenbankKompatibilitaet*Test"
-          "-Dkompat.db.url=${{ matrix.url }}" -Dkompat.db.user=${{ matrix.user }} -Dkompat.db.pass=kompat
+          "-Dkompat.db.url=jdbc:postgresql://127.0.0.1:5432/kompat" -Dkompat.db.user=kompat -Dkompat.db.pass=kompat
 
-      # Die Tests sind an -Dkompat.db.url gebunden. Kommt die Property nicht an,
-      # waeren alle Tests "uebersprungen" - und der Job trotzdem gruen. Geprueft wird
-      # jede DatenbankKompatibilitaet*Test-Klasse im Quellcode, auch kuenftige.
+      # Gleichzeitiges Abschliessen/Exportieren (Zeilensperren) - eigene leere
+      # Datenbank, weil diese Tests ihr Schema selbst neu anlegen
+      - name: Monatsabschluss und DATEV-Export unter Last
+        run: >-
+          docker exec ${{ job.services.postgres.id }} psql -v ON_ERROR_STOP=1 -U postgres -d kompat_leer
+          -c "ALTER SCHEMA public OWNER TO kompat"
+          && ./mvnw -B test "-Dtest=MonatsabschlussPostgresTest,MonatsabschlussSammelPostgresTest,DatevExportPostgresTest"
+          "-Dzeitkonto.pg.url=jdbc:postgresql://127.0.0.1:5432/kompat_leer"
+          "-Ddatev.pg.url=jdbc:postgresql://127.0.0.1:5432/kompat_leer"
+          -Dkompat.db.user=kompat -Dkompat.db.pass=kompat
+
+      # Die Tests sind an System-Properties gebunden. Kommt eine nicht an, waeren
+      # alle Tests "uebersprungen" - und der Job trotzdem gruen. Geprueft wird jede
+      # DatenbankKompatibilitaet*Test- und service/*PostgresTest-Klasse, auch kuenftige.
       - name: Pruefen, dass die Tests wirklich liefen
         shell: bash
         run: |
-          for quelle in src/test/java/org/example/kalkulationsprogramm/repository/DatenbankKompatibilitaet*Test.java; do
+          for quelle in src/test/java/org/example/kalkulationsprogramm/repository/DatenbankKompatibilitaet*Test.java \
+                        src/test/java/org/example/kalkulationsprogramm/service/*PostgresTest.java; do
             klasse="$(basename "$quelle" .java)"
-            bericht="target/surefire-reports/TEST-org.example.kalkulationsprogramm.repository.$klasse.xml"
+            paket="$(basename "$(dirname "$quelle")")"
+            bericht="target/surefire-reports/TEST-org.example.kalkulationsprogramm.$paket.$klasse.xml"
             kopf="$(grep -o '<testsuite [^>]*' "$bericht" || true)"
             if [[ -z "$kopf" || "$kopf" != *' skipped="0"'* || "$kopf" == *' tests="0"'* ]]; then
               echo "::error::$klasse lief nicht (oder wurde uebersprungen): $kopf"

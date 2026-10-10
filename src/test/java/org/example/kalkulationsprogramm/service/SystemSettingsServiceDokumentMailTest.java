@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.env.Environment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -44,9 +43,6 @@ class SystemSettingsServiceDokumentMailTest {
     @Mock
     private SystemSettingRepository repository;
 
-    @Mock
-    private Environment environment;
-
     private SystemSettingsService service;
 
     /** Stellt die DB-Werte dar; wird pro Test befuellt. */
@@ -63,7 +59,7 @@ class SystemSettingsServiceDokumentMailTest {
                     : Optional.of(new SystemSetting(key, value, null));
         });
 
-        service = new SystemSettingsService(repository, environment);
+        service = new SystemSettingsService(repository);
         // Property-Defaults, die sonst Spring injizieren wuerde.
         ReflectionTestUtils.setField(service, "defaultSmtpHost", STANDARD_HOST);
         ReflectionTestUtils.setField(service, "defaultSmtpPort", 465);

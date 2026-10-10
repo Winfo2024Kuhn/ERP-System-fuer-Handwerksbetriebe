@@ -7,7 +7,7 @@ package org.example.kalkulationsprogramm.domain;
  * beim Preis-Eintragen am Artikel die passenden Lieferanten vorgeschlagen werden.
  *
  * Loest den alten freien {@code lieferantenTyp}-String ab. Werte exakt = Spaltenwerte
- * der nativen MySQL-ENUM-Spalte (siehe V330-Migration).
+ * der Spalte (siehe V330-Migration).
  */
 public enum LieferantRolle {
     STAHLHANDEL("Stahlhandel"),

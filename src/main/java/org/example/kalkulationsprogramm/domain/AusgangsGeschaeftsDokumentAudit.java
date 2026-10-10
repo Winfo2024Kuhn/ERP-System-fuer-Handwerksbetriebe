@@ -190,7 +190,7 @@ public class AusgangsGeschaeftsDokumentAudit {
         audit.setInhaltHash(sha256(d.getHtmlInhalt()));
 
         audit.setGeaendertVon(bearbeiter);
-        // Auf Mikrosekunden trunkieren: MySQL DATETIME(6) kann nicht mehr speichern.
+        // Auf Mikrosekunden trunkieren: TIMESTAMP(6) in der Datenbank kann nicht mehr speichern.
         // Behielte der Eintrag Nanosekunden, wiche die In-Memory-Form von der
         // gespeicherten Form ab und die Hash-Kette bräche beim Verifizieren.
         audit.setGeaendertAm(LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));

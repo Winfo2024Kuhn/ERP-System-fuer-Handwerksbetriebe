@@ -6,11 +6,8 @@
 #   Linux:    sudo ./einrichten.sh
 # Danach genuegt jederzeit:   docker compose up -d
 #
-#   postgres   Datenbank fuer Kunden-Installationen (Standard)
-#   mysql      Datenbank fuer Altinstallationen (Einrichtung mit --mysql)
-#              Welche laeuft, steht in .env: COMPOSE_PROFILES=postgres bzw. mysql.
-#              Eine leere Datenbank richtet die App beim ersten Start selbst ein
-#              (Basis-Schema + Stammdaten).
+#   postgres   Die Datenbank (PostgreSQL 16). Eine leere Datenbank richtet die
+#              App beim ersten Start selbst ein (Basis-Schema + Stammdaten).
 #   app        Das ERP. Kommt als fertiges Image aus der GitHub Container Registry.
 #   updater    Spielt jede Nacht um 3 Uhr neue Versionen ein - mit Sicherung,
 #              Health-Check und automatischem Rollback (nachtupdate.sh).
@@ -41,7 +38,6 @@ services:
 
   postgres:
     image: postgres:16
-    profiles: [postgres]
     container_name: erp-postgres
     environment:
       POSTGRES_DB: kalkulationsprogramm_db
@@ -79,34 +75,6 @@ services:
       start_period: 30s
     restart: always
 
-  mysql:
-    image: mysql:8.0
-    profiles: [mysql]
-    container_name: erp-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD fehlt in .env - zuerst einrichten}
-      MYSQL_DATABASE: kalkulationsprogramm_db
-      MYSQL_USER: ${DB_USER:-erp_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD fehlt in .env - zuerst einrichten}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_0900_ai_ci
-    # Kein Port nach aussen und nur im Netz "intern": nur die App spricht mit
-    # der Datenbank. Fuer Wartung: docker compose exec mysql mysql -uroot -p
-    networks: [intern]
-    cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
-    security_opt: [no-new-privileges:true]
-    healthcheck:
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    restart: always
-
   app:
     image: ${ERP_IMAGE:-ghcr.io/winfo2024kuhn/erp-system-fuer-handwerksbetriebe:stable}
     # Nur holen, wenn noch gar nicht vorhanden (Ersteinrichtung). Danach
@@ -123,10 +91,12 @@ services:
       - path: ./app.env
         required: false
     environment:
-      # "docker,postgres" bzw. "docker,mysql": das Profil "postgres" stellt
-      # Treiber und Migrationslinie um (application-postgres.properties).
-      # Die Datenbank-Adresse kommt aus dem Profil (Dienst postgres bzw. mysql).
-      SPRING_PROFILES_ACTIVE: docker,${COMPOSE_PROFILES:?COMPOSE_PROFILES fehlt in .env - zuerst einrichten}
+      # "docker" verbindet die App mit dem Dienst "postgres" oben
+      # (application-docker.properties). "postgres" brauchen nur noch App-
+      # Versionen von vor Oktober 2026 (z. B. bei einem Rollback auf eine
+      # alte Version) - neuere ignorieren es. Kann weg, sobald keine so alte
+      # Version mehr zurueckkommen kann.
+      SPRING_PROFILES_ACTIVE: docker,postgres
       APP_DB_USER: ${DB_USER:-erp_user}
       APP_DB_PASS: ${DB_PASSWORD}
       APP_ADMIN_USER: ${APP_ADMIN_USER:-}
@@ -157,14 +127,10 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, SETUID, SETGID]
     security_opt: [no-new-privileges:true]
-    # Nur eine der beiden Datenbanken laeuft (Profil) - die andere ist optional
+    # Erst starten, wenn die Datenbank bereit ist
     depends_on:
       postgres:
         condition: service_healthy
-        required: false
-      mysql:
-        condition: service_healthy
-        required: false
     restart: always
 
   updater:
@@ -223,6 +189,5 @@ networks:
 
 volumes:
   postgres_data:
-  mysql_data:
   app_uploads:
   app_logs:

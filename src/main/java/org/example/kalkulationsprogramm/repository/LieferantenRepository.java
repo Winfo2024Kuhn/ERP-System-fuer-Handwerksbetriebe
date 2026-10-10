@@ -33,7 +33,7 @@ public interface LieferantenRepository extends JpaRepository<Lieferanten, Long>,
                 .or(() -> treffer.stream().findFirst());
     }
 
-    // lower(): wie MySQL (Collation) auch auf PostgreSQL ohne Gross-/Kleinschreibung
+    // lower(): ohne Gross-/Kleinschreibung (PostgreSQL vergleicht Text sonst genau)
     @Query("select l from Lieferanten l join l.kundenEmails e where lower(e) = lower(:email)")
     Optional<Lieferanten> findByEmail(@Param("email") String email);
 

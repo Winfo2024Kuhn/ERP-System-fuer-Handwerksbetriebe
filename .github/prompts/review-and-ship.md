@@ -84,7 +84,7 @@ Für jede geänderte TSX/TS-Datei prüfen:
 ### 2c. Flyway-Migrationen
 Falls neue SQL-Dateien im Diff:
 ```bash
-git diff main...HEAD --name-only -- "src/main/resources/db/migration/"
+git diff main...HEAD --name-only -- "src/main/resources/db/postgresql/migration/"
 ```
 - Versionsnummer höher als alle bestehenden?
 - Bestehende Migrationsdateien verändert? (ABSOLUTES VERBOT)

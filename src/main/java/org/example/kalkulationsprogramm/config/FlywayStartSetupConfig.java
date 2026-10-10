@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.config;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Locale;
 
 import javax.sql.DataSource;
 
@@ -15,29 +16,27 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Startsetup für Neuinstallationen: Eine LEERE Datenbank bekommt zuerst das
- * Basis-Schema ({@code db/basis/V1__basis_schema.sql}), danach laufen die
- * normalen Flyway-Migrationen.
+ * Basis-Schema ({@code db/postgresql/basis/V1__basis_schema.sql}), danach
+ * laufen die normalen Flyway-Migrationen.
  *
- * <p>Warum: Die Migrationen beginnen erst bei V208, das Grundschema davor hat
- * früher Hibernate angelegt. Ohne Basis bricht der erste Start auf einer leeren
- * MySQL an V208 ab ("Table 'email' doesn't exist").
- *
- * <p>Das Basis-Schema bringt die Flyway-Historie aller darin enthaltenen
- * Migrationen mit (Flyway-genaue Checksummen). Flyway behandelt eine so
- * angelegte Datenbank deshalb genau wie eine gewachsene; neue Migrationen
- * laufen normal - auch mit kleinerer Nummer (out-of-order).
+ * <p>Warum: Die Migrationen beginnen erst nach V406, das Grundschema davor
+ * steckt komplett in der Basis. Ohne Basis bricht der erste Start auf einer
+ * leeren Datenbank an der ersten Migration ab.
  *
  * <p>Bestehende Datenbanken (mindestens eine Tabelle) sind nicht betroffen.
- * Erzeugt wird die Basis mit {@code scripts/basis-schema/erzeugen.sh} (MySQL)
- * bzw. {@code scripts/basis-schema/postgres_erzeugen.sh} (PostgreSQL).
+ * Erzeugt wird die Basis mit {@code scripts/basis-schema/postgres_erzeugen.sh}.
+ *
+ * <p>PostgreSQL ist die einzige unterstuetzte Datenbank. Zeigt die Verbindung
+ * auf etwas anderes, bricht der Start ab, bevor Flyway irgendetwas anlegt.
+ * (Ohne passenden JDBC-Treiber - z. B. bei einer alten MySQL-Adresse - scheitert
+ * der Start meist schon vorher an der Verbindung.)
  */
 @Configuration
 public class FlywayStartSetupConfig {
 
     private static final Logger log = LoggerFactory.getLogger(FlywayStartSetupConfig.class);
 
-    static final String BASIS_ORT_MYSQL = "classpath:db/basis";
-    static final String BASIS_ORT_POSTGRES = "classpath:db/postgresql/basis";
+    static final String BASIS_ORT = "classpath:db/postgresql/basis";
     /** Eigene Historientabelle, damit sich Basis und Migrationen nicht in die Quere kommen. */
     static final String BASIS_HISTORIE = "flyway_basis_history";
 
@@ -45,12 +44,12 @@ public class FlywayStartSetupConfig {
     public FlywayMigrationStrategy flywayMigrationStrategy() {
         return flyway -> {
             DataSource dataSource = flyway.getConfiguration().getDataSource();
+            pruefePostgres(dataSource);
             if (istLeer(dataSource)) {
-                String basisOrt = basisOrt(dataSource);
-                log.info("Leere Datenbank erkannt - spiele das Basis-Schema fuer die Neuinstallation ein ({}).", basisOrt);
+                log.info("Leere Datenbank erkannt - spiele das Basis-Schema fuer die Neuinstallation ein ({}).", BASIS_ORT);
                 Flyway.configure()
                         .configuration(flyway.getConfiguration())
-                        .locations(basisOrt)
+                        .locations(BASIS_ORT)
                         .table(BASIS_HISTORIE)
                         .baselineOnMigrate(false)
                         // Stammdaten (Textvorlagen) enthalten ${...}-Platzhalter der App
@@ -63,15 +62,26 @@ public class FlywayStartSetupConfig {
         };
     }
 
-    /** PostgreSQL (Kunden) und MySQL (eigener Server) haben je eine eigene Basis. */
-    static String basisOrt(DataSource dataSource) {
-        return DatenbankArt.istPostgres(dataSource) ? BASIS_ORT_POSTGRES : BASIS_ORT_MYSQL;
+    /**
+     * Bricht den Start ab, wenn die Datenbank kein PostgreSQL ist. Lieber eine
+     * klare Meldung als ein halb migriertes Schema.
+     */
+    static void pruefePostgres(DataSource dataSource) {
+        String produkt;
+        try (Connection verbindung = dataSource.getConnection()) {
+            produkt = verbindung.getMetaData().getDatabaseProductName();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Datenbankart konnte nicht ermittelt werden", e);
+        }
+        if (produkt == null || !produkt.toLowerCase(Locale.ROOT).contains("postgres")) {
+            throw new IllegalStateException("Das ERP laeuft nur noch mit PostgreSQL, die Verbindung zeigt aber auf \""
+                    + produkt + "\". Bitte spring.datasource.url bzw. APP_DB_URL auf die PostgreSQL-Datenbank stellen.");
+        }
     }
 
     /**
      * True, wenn das aktuelle Schema noch keine einzige Tabelle hat. Ueber die
-     * JDBC-Metadaten statt SQL - das funktioniert gleich auf MySQL (Katalog =
-     * Datenbank) und PostgreSQL (Schema "public").
+     * JDBC-Metadaten (Schema "public") statt SQL.
      */
     static boolean istLeer(DataSource dataSource) {
         try (Connection verbindung = dataSource.getConnection();

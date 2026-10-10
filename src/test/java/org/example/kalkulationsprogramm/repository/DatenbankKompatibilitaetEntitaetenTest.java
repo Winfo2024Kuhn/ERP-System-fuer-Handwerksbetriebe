@@ -39,7 +39,6 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.example.kalkulationsprogramm.config.DatenbankArt;
 import org.example.kalkulationsprogramm.config.FlywayStartSetupConfig;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.util.ConstraintMessageResolver;
@@ -80,7 +79,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import jakarta.persistence.EntityManager;
 
 /**
- * Laesst sich JEDE Entitaet auf MySQL und PostgreSQL speichern, wenn alle
+ * Laesst sich JEDE Entitaet auf PostgreSQL speichern, wenn alle
  * freiwilligen Felder leer sind - und kommt sie unveraendert zurueck?
  *
  * <p>{@link DatenbankKompatibilitaetTest} prueft die Abfragen, dieser Test das
@@ -117,7 +116,7 @@ import jakarta.persistence.EntityManager;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(FlywayStartSetupConfig.class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:(mysql|postgresql):.*")
+@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:postgresql:.*")
 class DatenbankKompatibilitaetEntitaetenTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(DatenbankKompatibilitaetEntitaetenTest.class);
@@ -238,7 +237,7 @@ class DatenbankKompatibilitaetEntitaetenTest {
                 }), DataIntegrityViolationException.class);
 
         assertThat(fehler).as("zu langer Name muss als DataIntegrityViolationException ankommen").isNotNull();
-        // MySQL: "Der Wert fuer 'Name' ist zu lang. ...", PostgreSQL: "Ein eingegebener Text ist zu lang. ..."
+        // PostgreSQL: "Ein eingegebener Text ist zu lang. ..."
         assertThat(meldungen.resolve(fehler).userMessage()).contains("zu lang");
     }
 
@@ -288,7 +287,7 @@ class DatenbankKompatibilitaetEntitaetenTest {
             return x.compareTo(y) == 0;
         }
         // Zeitstempel: Java liefert mehr Stellen (now()) als die Spalte haelt - PostgreSQL
-        // speichert Mikrosekunden, manche MySQL-Spalten (DATETIME) nur ganze Sekunden.
+        // speichert Mikrosekunden.
         // Gerundet wird dabei; Zeitzonen-Fehler waeren ganze Stunden.
         if (a instanceof LocalDateTime x && b instanceof LocalDateTime y) {
             return fastGleich(Duration.between(x, y));
@@ -488,8 +487,7 @@ class DatenbankKompatibilitaetEntitaetenTest {
     // ------------------------------------------------------------------
 
     private void ladeSchema() {
-        boolean postgres = DatenbankArt.istPostgres(em);
-        String schema = postgres ? "current_schema()" : "DATABASE()";
+        String schema = "current_schema()";
         pflichtspalten = new HashSet<>();
         fremdschluessel = new HashMap<>();
         textlaengen = new HashMap<>();
@@ -511,14 +509,11 @@ class DatenbankKompatibilitaetEntitaetenTest {
                 festeLaengen.add(spalte);
             }
         }
-        String verweise = postgres
-                ? "SELECT k.table_name, k.column_name, z.table_name FROM information_schema.key_column_usage k "
+        String verweise = "SELECT k.table_name, k.column_name, z.table_name FROM information_schema.key_column_usage k "
                         + "JOIN information_schema.referential_constraints r ON r.constraint_schema = k.constraint_schema "
                         + "AND r.constraint_name = k.constraint_name "
                         + "JOIN information_schema.constraint_column_usage z ON z.constraint_schema = r.unique_constraint_schema "
-                        + "AND z.constraint_name = r.unique_constraint_name WHERE k.table_schema = current_schema()"
-                : "SELECT table_name, column_name, referenced_table_name FROM information_schema.key_column_usage "
-                        + "WHERE referenced_table_name IS NOT NULL AND table_schema = DATABASE()";
+                        + "AND z.constraint_name = r.unique_constraint_name WHERE k.table_schema = current_schema()";
         @SuppressWarnings("unchecked")
         List<Object[]> fks = em.createNativeQuery(verweise).getResultList();
         fks.forEach(z -> fremdschluessel.put(schluessel(z[0].toString(), z[1].toString()),
@@ -583,20 +578,19 @@ class DatenbankKompatibilitaetEntitaetenTest {
     }
 
     /**
-     * Verletzt nur eine Regel, die die Beispieldaten nicht kennen: Verweis (23503, MySQL 1451/1452),
-     * Dublette (23505, MySQL 1062) oder CHECK. NICHT dazu gehoert NOT NULL (23502, MySQL 1048): alle
+     * Verletzt nur eine Regel, die die Beispieldaten nicht kennen: Verweis (23503),
+     * Dublette (23505) oder CHECK (23514). NICHT dazu gehoert NOT NULL (23502): alle
      * NOT-NULL-Spalten werden befuellt - fehlt trotzdem ein Wert, weicht das Schema einer Datenbank
      * vom Mapping ab, und genau das soll der Test finden.
      */
     private static boolean nurBeispieldaten(SQLException sql) {
         String zustand = sql.getSQLState() == null ? "" : sql.getSQLState();
-        return istCheckVerletzung(sql) || zustand.equals("23503") || zustand.equals("23505")
-                || zustand.equals("23000") && List.of(1062, 1451, 1452).contains(sql.getErrorCode());
+        return istCheckVerletzung(sql) || zustand.equals("23503") || zustand.equals("23505");
     }
 
-    /** PostgreSQL meldet 23514, MySQL Fehler 3819 mit SQLState HY000. */
+    /** CHECK-Verletzung: SQLState 23514. */
     private static boolean istCheckVerletzung(SQLException sql) {
-        return sql != null && ("23514".equals(sql.getSQLState()) || sql.getErrorCode() == 3819);
+        return sql != null && "23514".equals(sql.getSQLState());
     }
 
     private static String ursache(Throwable fehler) {
