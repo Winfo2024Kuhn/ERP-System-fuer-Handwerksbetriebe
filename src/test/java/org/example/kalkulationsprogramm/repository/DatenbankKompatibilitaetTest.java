@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import org.example.kalkulationsprogramm.config.DatenbankArt;
 import org.example.kalkulationsprogramm.config.FlywayStartSetupConfig;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -58,7 +57,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EntityManager;
 
 /**
- * Laeuft der Datenbankzugriff auf MySQL (eigener Server) UND PostgreSQL (Kunden)?
+ * Laeuft der Datenbankzugriff auf echtem PostgreSQL?
  *
  * <p>Fuehrt jede {@code @Query}-Methode aller Repositories gegen eine echte
  * Datenbank aus - einmal mit Beispielwerten, einmal mit {@code null} fuer alle
@@ -76,7 +75,7 @@ import jakarta.persistence.EntityManager;
  * ./mvnw test -Dtest=DatenbankKompatibilitaetTest -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat \
  *     -Dkompat.db.user=kompat -Dkompat.db.pass=kompat
  * </pre>
- * In der CI laeuft er gegen beide Datenbanken (pr-ci.yml, Job "Datenbank-Kompatibilitaet").
+ * In der CI laeuft er gegen PostgreSQL (pr-ci.yml, Job "Datenbank-Kompatibilitaet").
  */
 @DataJpaTest(showSql = false, properties = { "spring.jpa.hibernate.ddl-auto=validate",
         "spring.flyway.enabled=true", "spring.flyway.baseline-on-migrate=true", "spring.flyway.out-of-order=true",
@@ -84,26 +83,14 @@ import jakarta.persistence.EntityManager;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(FlywayStartSetupConfig.class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:(mysql|postgresql):.*")
+@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:postgresql:.*")
 class DatenbankKompatibilitaetTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(DatenbankKompatibilitaetTest.class);
 
     @DynamicPropertySource
     static void datenbank(DynamicPropertyRegistry r) {
-        String url = System.getProperty("kompat.db.url");
-        boolean postgres = url.startsWith("jdbc:postgresql:");
-        r.add("spring.datasource.url", () -> url);
-        // Test-application.properties stellt fest auf H2 - hier die echte Datenbank
-        r.add("spring.datasource.driver-class-name", () -> postgres ? "org.postgresql.Driver" : "com.mysql.cj.jdbc.Driver");
-        r.add("spring.jpa.database-platform", () -> postgres
-                ? "org.hibernate.dialect.PostgreSQLDialect" : "org.hibernate.dialect.MySQLDialect");
-        // Je Datenbank die eigene Migrationslinie (wie application-postgres.properties)
-        r.add("spring.flyway.locations", () -> postgres ? "classpath:db/postgresql/migration" : "classpath:db/migration");
-        r.add("spring.datasource.username", () -> System.getProperty("kompat.db.user", "root"));
-        r.add("spring.datasource.password", () -> System.getProperty("kompat.db.pass", ""));
-        // "SET NAMES utf8mb4" aus application.properties ist MySQL-Syntax
-        r.add("spring.datasource.hikari.connection-init-sql", () -> "SELECT 1");
+        KompatibilitaetsDatenbank.eintragen(r);
     }
 
     @Autowired
@@ -364,7 +351,7 @@ class DatenbankKompatibilitaetTest {
             // ... dann kommt Erika zuvor ...
             inAndererTransaktion(() -> assertThat(datensatzLocks.legeAnFallsFrei(SperrbarerTyp.AUSGANG, entitaetId, 2L,
                     "Erika Mustermann", LocalDateTime.of(2026, 3, 15, 12, 0))).isTrue());
-            // ... Max' Anlegen tut nichts, und er sieht Erikas Lock (MySQL: trotz Lesestand vom Transaktionsbeginn)
+            // ... Max' Anlegen tut nichts, und er sieht Erikas Lock
             assertThat(datensatzLocks.legeAnFallsFrei(SperrbarerTyp.AUSGANG, entitaetId, 1L, "Max Mustermann",
                     LocalDateTime.of(2026, 3, 15, 12, 0))).isFalse();
             assertThat(datensatzLocks.findGesperrt(SperrbarerTyp.AUSGANG, entitaetId))
@@ -469,7 +456,7 @@ class DatenbankKompatibilitaetTest {
                 JOIN information_schema.referential_constraints r
                   ON r.constraint_schema = k.constraint_schema AND r.constraint_name = k.constraint_name
                 WHERE k.table_name = :tabelle AND k.column_name = :spalte AND k.table_schema = """
-                + (DatenbankArt.istPostgres(em) ? "current_schema()" : "DATABASE()");
+                + "current_schema()";
         List<String> gefunden = new ArrayList<>();
         for (String eintrag : erwartet) {
             String[] spalte = eintrag.substring(0, eintrag.indexOf(' ')).split("\\.");

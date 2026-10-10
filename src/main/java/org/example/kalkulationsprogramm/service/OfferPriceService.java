@@ -92,7 +92,7 @@ public class OfferPriceService {
                                     neuerStand.setPreisAenderungsdatum(mailDate);
                                     artikel.getArtikelpreis().add(neuerStand);
                                     // Kein try/catch: Ein Datenbankfehler laesst sich in dieser Transaktion
-                                    // nicht "ueberspringen" (MySQL: nur noch Rollback, PostgreSQL: abgebrochen).
+                                    // nicht "ueberspringen" (PostgreSQL bricht die Transaktion ab).
                                     // Seit dem Preisverlauf (V338) gibt es hier ohnehin keine Eindeutigkeit mehr.
                                     artikelRepository.save(artikel);
                                     savedFlag.set(true);

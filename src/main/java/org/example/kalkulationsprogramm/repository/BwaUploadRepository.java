@@ -14,7 +14,7 @@ import java.util.Optional;
 public interface BwaUploadRepository extends JpaRepository<BwaUpload, Long> {
 
     // Als @Query statt abgeleitet: nur so laesst sich festlegen, wohin leere Werte sortieren
-    // (wie MySQL: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
+    // (wie bisher: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
     @Query("SELECT b FROM BwaUpload b WHERE b.jahr = :jahr ORDER BY b.monat DESC NULLS LAST")
     List<BwaUpload> findByJahrOrderByMonatDesc(@Param("jahr") Integer jahr);
 

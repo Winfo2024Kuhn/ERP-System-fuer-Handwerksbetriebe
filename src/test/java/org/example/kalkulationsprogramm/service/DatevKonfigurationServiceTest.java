@@ -119,16 +119,4 @@ class DatevKonfigurationServiceTest {
    session.getTransaction().rollback();
   }
  }
- @Test void migrationIstIdempotentUndSichertMitarbeiterFremdschluessel() throws Exception {
-  try(var connection=java.sql.DriverManager.getConnection("jdbc:h2:mem:datev_migration_"+UUID.randomUUID()+";MODE=MySQL"); var stmt=connection.createStatement()) {
-   stmt.execute("create table mitarbeiter (id bigint primary key)");
-   var sql=java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/db/migration/V373__datev_konfiguration.sql"));
-   for(int run=0;run<2;run++) for(String command:sql.split(";")) if(!command.isBlank()) stmt.execute(command);
-   try(var rs=stmt.executeQuery("select version, berater_nr from datev_konfiguration where id=1")) {
-    assertTrue(rs.next());assertEquals(0L,rs.getLong(1));assertEquals("",rs.getString(2));assertFalse(rs.next());
-   }
-   assertThrows(java.sql.SQLException.class,()->stmt.execute("insert into datev_personalnummer values (99, '12', '12')"));
-  }
- }
-
 }

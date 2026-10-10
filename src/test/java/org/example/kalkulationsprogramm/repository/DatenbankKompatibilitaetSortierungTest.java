@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import org.example.kalkulationsprogramm.config.DatenbankArt;
 import org.example.kalkulationsprogramm.config.FlywayStartSetupConfig;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.metamodel.mapping.AttributeMapping;
@@ -50,19 +49,17 @@ import jakarta.persistence.EntityManager;
  * Sortieren Abfragen nach einer Spalte, die leer sein darf, ohne festzulegen, wohin
  * die leeren Werte gehoeren?
  *
- * <p>MySQL sortiert {@code NULL} als kleinsten Wert (aufsteigend oben, absteigend
- * unten), PostgreSQL als groessten - genau umgekehrt. "Neueste zuerst" zeigte auf
- * PostgreSQL deshalb zuerst alle Eintraege ohne Datum, und wer "den ersten Treffer"
- * nimmt, bekommt dort einen anderen. Jede {@code @Query} (JPQL) und jede abgeleitete
+ * <p>PostgreSQL sortiert {@code NULL} als groessten Wert - genau umgekehrt wie die
+ * Nutzer es von frueher (MySQL) kennen: leer aufsteigend oben, absteigend unten.
+ * "Neueste zuerst" zeigte sonst zuerst alle Eintraege ohne Datum, und wer "den ersten
+ * Treffer" nimmt, bekommt einen anderen. Jede {@code @Query} (JPQL) und jede abgeleitete
  * Abfrage ({@code ...OrderBy...}) wird hier gegen das echte Schema geprueft: Sortiert
  * sie nach einer Spalte ohne {@code NOT NULL}, muss sie {@code NULLS FIRST} bzw.
- * {@code NULLS LAST} angeben - wie bisher auf MySQL also {@code ASC NULLS FIRST} und
- * {@code DESC NULLS LAST}. Hibernate laesst die Angabe auf MySQL weg (dort ist es der
- * Standard), auf PostgreSQL schreibt es sie dazu.
+ * {@code NULLS LAST} angeben - wie gewohnt also {@code ASC NULLS FIRST} und
+ * {@code DESC NULLS LAST}.
  *
  * <p>Ausnahmen stehen mit Begruendung in {@link #NIE_LEER} und {@link #OHNE_LEERE_WERTE}. Native Abfragen prueft
- * der Test nicht - dort die Angabe von Hand ergaenzen (PostgreSQL kennt
- * {@code NULLS LAST}, MySQL nicht: Repository-Fragment wie bei den anderen Varianten).
+ * der Test nicht - dort die Angabe von Hand ergaenzen.
  */
 @DataJpaTest(showSql = false, properties = { "spring.jpa.hibernate.ddl-auto=validate",
         "spring.flyway.enabled=true", "spring.flyway.baseline-on-migrate=true", "spring.flyway.out-of-order=true",
@@ -70,7 +67,7 @@ import jakarta.persistence.EntityManager;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(FlywayStartSetupConfig.class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
-@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:(mysql|postgresql):.*")
+@EnabledIfSystemProperty(named = "kompat.db.url", matches = "jdbc:postgresql:.*")
 class DatenbankKompatibilitaetSortierungTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(DatenbankKompatibilitaetSortierungTest.class);
@@ -229,7 +226,7 @@ class DatenbankKompatibilitaetSortierungTest {
     }
 
     private Set<String> pflichtspalten() {
-        String schema = DatenbankArt.istPostgres(em) ? "current_schema()" : "DATABASE()";
+        String schema = "current_schema()";
         Set<String> spalten = new HashSet<>();
         @SuppressWarnings("unchecked")
         java.util.List<Object[]> zeilen = em.createNativeQuery("SELECT table_name, column_name FROM information_schema.columns "

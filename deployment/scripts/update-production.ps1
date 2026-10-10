@@ -9,7 +9,12 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipFrontendBuild,
     [switch]$SkipBackup,
-    [switch]$Force
+    [switch]$Force,
+    # PostgreSQL-Container der Datenbank, die DIESES JAR nutzt, und ein Benutzer mit
+    # Leserechten darin (z. B. erp_user bei einem eigenen Container, siehe
+    # docs/INSTALLATION.md, Variante 3)
+    [string]$DbContainer = "erp-postgres",
+    [string]$DbUser = "postgres"
 )
 
 # Pruefe auf Admin-Rechte und starte neu als Admin falls noetig
@@ -24,6 +29,7 @@ if (-not $isAdmin) {
     if ($SkipFrontendBuild) { $arguments += " -SkipFrontendBuild" }
     if ($SkipBackup) { $arguments += " -SkipBackup" }
     if ($Force) { $arguments += " -Force" }
+    $arguments += " -DbContainer `"$DbContainer`" -DbUser `"$DbUser`""
     
     Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments
     exit
@@ -143,93 +149,65 @@ if (-not $SkipBackup) {
         New-Item -ItemType Directory -Path $dbBackupDir -Force | Out-Null
     }
     
-    # Finde mysqldump / mariadb-dump
-    $dumpTool = $null
-    $dumpSearchPaths = @(
-        "C:\Program Files\MariaDB 11.4\bin\mariadb-dump.exe",
-        "C:\Program Files\MariaDB 11.3\bin\mariadb-dump.exe",
-        "C:\Program Files\MariaDB 10.11\bin\mariadb-dump.exe",
-        "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe",
-        "C:\Program Files\MySQL\MySQL Server 8.3\bin\mysqldump.exe",
-        "C:\Program Files\MySQL\MySQL Server 9.0\bin\mysqldump.exe"
-    )
-    
-    foreach ($p in $dumpSearchPaths) {
-        if (Test-Path $p) { $dumpTool = $p; break }
-    }
-    
-    # Fallback: im PATH suchen
-    if (-not $dumpTool) {
-        $cmd = Get-Command mysqldump -ErrorAction SilentlyContinue
-        if (-not $cmd) { $cmd = Get-Command mariadb-dump -ErrorAction SilentlyContinue }
-        if ($cmd) { $dumpTool = $cmd.Source }
-    }
-    
-    if ($dumpTool) {
-        # DB-Credentials aus bestehender application.properties oder application-local.properties lesen
-        $dbUser = $null
-        $dbPass = $null
-        $dbHost = "localhost"
-        $dbPort = "3307"
-        $dbName = "kalkulationsprogramm_db"
-        
-        $configDir = Join-Path $PRODUCTION_PATH "config"
-        $propsFiles = @(
-            (Join-Path $configDir "application-local.properties"),
-            (Join-Path $configDir "application.properties")
-        )
-        
-        foreach ($propsFile in $propsFiles) {
-            if ((Test-Path $propsFile) -and (-not $dbUser -or $dbUser -eq "OVERRIDE_IN_LOCAL")) {
-                $content = Get-Content $propsFile -ErrorAction SilentlyContinue
-                foreach ($line in $content) {
-                    if ($line -match '^spring\.datasource\.username=(.+)$') {
-                        $val = $matches[1].Trim()
-                        if ($val -ne 'OVERRIDE_IN_LOCAL' -and $val -notmatch '\$\{') { $dbUser = $val }
-                    }
-                    if ($line -match '^spring\.datasource\.password=(.+)$') {
-                        $val = $matches[1].Trim()
-                        if ($val -ne 'OVERRIDE_IN_LOCAL' -and $val -notmatch '\$\{') { $dbPass = $val }
-                    }
-                    if ($line -match '^spring\.datasource\.url=.*//([^:/]+):(\d+)/([^?]+)') {
-                        $dbHost = $matches[1]; $dbPort = $matches[2]; $dbName = $matches[3]
-                    }
-                }
-            }
+    # Die Datenbank (PostgreSQL) laeuft in einem Docker-Container (-DbContainer).
+    # pg_dump laeuft im Container: kein Passwort, keine zusaetzlichen Programme
+    # auf diesem Rechner. Ohne Sicherung kein Update (ausser mit -SkipBackup).
+    $dbContainer = $DbContainer
+    $dbName = "kalkulationsprogramm_db"
+    $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+
+    if ($dockerCmd) {
+        $dbTimestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+        $dbBackupFile = Join-Path $dbBackupDir "${dbName}_${dbTimestamp}.sql"
+        Write-Info "Sichere Datenbank '$dbName' (Container $dbContainer) nach: $dbBackupFile"
+
+        # Ausgabe byte-genau in die Datei kopieren (eine PowerShell-Umleitung
+        # wuerde sie nach UTF-16 umkodieren)
+        $dumpOk = $false
+        $dumpFehler = ""
+        try {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $dockerCmd.Source
+            $psi.Arguments = "exec $dbContainer pg_dump -U $DbUser -d $dbName --no-owner --no-privileges --lock-wait-timeout=120s"
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            $stderrTask = $proc.StandardError.ReadToEndAsync()
+            $ziel = [System.IO.File]::Create($dbBackupFile)
+            try { $proc.StandardOutput.BaseStream.CopyTo($ziel) } finally { $ziel.Close() }
+            $proc.WaitForExit()
+            $dumpFehler = $stderrTask.Result.Trim()
+            # Abschlusszeile fehlt = Sicherung abgeschnitten
+            $dumpOk = ($proc.ExitCode -eq 0) -and
+                [bool](Get-Content $dbBackupFile -Tail 5 | Select-String -SimpleMatch "PostgreSQL database dump complete" -Quiet)
+        } catch {
+            $dumpFehler = "$_"
         }
-        
-        if ($dbUser -and $dbPass) {
-            $dbTimestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-            $dbBackupFile = Join-Path $dbBackupDir "${dbName}_${dbTimestamp}.sql"
-            
-            Write-Info "Verwende Dump-Tool: $dumpTool"
-            Write-Info "Sichere Datenbank '$dbName' nach: $dbBackupFile"
-            
-            $env:MYSQL_PWD = $dbPass
-            & $dumpTool --host=$dbHost --port=$dbPort --user=$dbUser --single-transaction --routines --triggers --databases $dbName --result-file=$dbBackupFile 2>&1
-            Remove-Item Env:\MYSQL_PWD -ErrorAction SilentlyContinue
-            
-            if ($LASTEXITCODE -eq 0 -and (Test-Path $dbBackupFile)) {
-                $dbBackupSize = [math]::Round((Get-Item $dbBackupFile).Length / 1MB, 2)
-                Write-Success "Datenbank-Backup erstellt: $dbBackupFile ($dbBackupSize MB)"
-                
-                # Alte DB-Backups aufraeumen (behalte die letzten 10)
-                $oldDbBackups = Get-ChildItem $dbBackupDir -Filter "*.sql" |
-                                Sort-Object LastWriteTime -Descending |
-                                Select-Object -Skip 10
-                if ($oldDbBackups) {
-                    $oldDbBackups | Remove-Item -Force
-                    Write-Info "$($oldDbBackups.Count) alte DB-Backups entfernt"
-                }
-            } else {
-                Write-Warning-Custom "Datenbank-Backup fehlgeschlagen (Exit: $LASTEXITCODE) - Update wird trotzdem fortgesetzt"
+
+        if ($dumpOk) {
+            $dbBackupSize = [math]::Round((Get-Item $dbBackupFile).Length / 1MB, 2)
+            Write-Success "Datenbank-Backup erstellt: $dbBackupFile ($dbBackupSize MB)"
+
+            # Alte DB-Backups aufraeumen (behalte die letzten 10)
+            $oldDbBackups = Get-ChildItem $dbBackupDir -Filter "*.sql" |
+                            Sort-Object LastWriteTime -Descending |
+                            Select-Object -Skip 10
+            if ($oldDbBackups) {
+                $oldDbBackups | Remove-Item -Force
+                Write-Info "$($oldDbBackups.Count) alte DB-Backups entfernt"
             }
         } else {
-            Write-Warning-Custom "DB-Credentials nicht gefunden - Datenbank-Backup uebersprungen"
+            # Halbe Sicherung nicht liegen lassen - sie zaehlte sonst zu den letzten 10
+            if (Test-Path $dbBackupFile) { Remove-Item $dbBackupFile -Force }
+            Write-Error-Custom "Datenbank-Backup fehlgeschlagen ($dumpFehler)"
+            Write-Info "Update abgebrochen - es wurde nichts veraendert. Container/Benutzer pruefen (-DbContainer, -DbUser) oder bewusst ohne Sicherung: -SkipBackup"
+            exit 1
         }
     } else {
-        Write-Warning-Custom "mysqldump/mariadb-dump nicht gefunden - Datenbank-Backup uebersprungen"
-        Write-Info "Installiere MySQL/MariaDB Client-Tools fuer automatische Backups"
+        Write-Error-Custom "docker nicht gefunden - ohne Datenbank-Backup kein Update"
+        Write-Info "Update abgebrochen. Bewusst ohne Sicherung: -SkipBackup"
+        exit 1
     }
 } else {
     Write-Warning-Custom "Datenbank-Backup wird uebersprungen (-SkipBackup)"

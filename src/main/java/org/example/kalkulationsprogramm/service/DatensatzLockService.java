@@ -60,8 +60,8 @@ public class DatensatzLockService {
 
         // Anlegen, falls noch frei. Hat ein anderer User es zwischen findBy und
         // jetzt angelegt, passiert einfach nichts - kein Dubletten-Fehler, der die
-        // Transaktion unbrauchbar machen wuerde (PostgreSQL: abgebrochen, MySQL:
-        // nur noch Rollback). Danach den tatsaechlichen Stand gesperrt lesen.
+        // Transaktion unbrauchbar machen wuerde (PostgreSQL bricht sie
+        // ab). Danach den tatsaechlichen Stand gesperrt lesen.
         // Entschieden wird allein nach dem gelesenen Datensatz - unabhaengig davon,
         // wie der Treiber "eingefuegt / ignoriert" zaehlt.
         repository.legeAnFallsFrei(entitaetTyp, entitaetId, userId, safeDisplayName(userDisplayName), now);

@@ -613,7 +613,7 @@ public class ZeiterfassungApiService {
             // saveAndFlush statt save: Der UPDATE (ende_zeit setzen) muss die DB
             // erreichen, BEVOR der INSERT der Pause-Buchung ausgeführt wird.
             // Ohne Flush würde Hibernate den UPDATE batchen und NACH dem INSERT
-            // senden – MySQL sähe dann kurz zwei offene Buchungen und würde den
+            // senden – die Datenbank sähe dann kurz zwei offene Buchungen und würde den
             // Unique-Index uk_zeitbuchung_aktiv_pro_mitarbeiter verletzen.
             zeitbuchungRepository.saveAndFlush(buchung);
             // MonatsSaldo-Cache invalidieren (analog stopZeiterfassung Zeile ~378)

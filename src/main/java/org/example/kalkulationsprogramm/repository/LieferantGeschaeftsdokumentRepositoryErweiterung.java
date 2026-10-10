@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.repository;
 
-/** Datenbankabhaengiger Teil von {@link LieferantGeschaeftsdokumentRepository} (MySQL/PostgreSQL). */
+/** Teil von {@link LieferantGeschaeftsdokumentRepository} mit eigenem (PostgreSQL-)SQL. */
 public interface LieferantGeschaeftsdokumentRepositoryErweiterung {
 
     /**

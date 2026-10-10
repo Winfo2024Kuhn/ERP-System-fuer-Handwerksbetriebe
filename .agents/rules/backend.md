@@ -14,8 +14,9 @@
 ## Coding-Regeln
 - **Injection:** Constructor Injection (`@RequiredArgsConstructor` oder explizit). Keine `@Autowired` Field Injection.
 - **SQL:** Ausschließlich parametrisierte Queries (`@Query` mit `:param`), kein String-Concat.
-- **Flyway:** Neue Skripte unter `src/main/resources/db/migration/V{N}__{beschreibung}.sql`. Bestehende Migrationen NIEMALS ändern! Immer idempotent halten.
-- **Java-Enums in MySQL = native `ENUM`-Spalte:** In Flyway-Migrationen immer `ENUM('WERT_A','WERT_B',...)` definieren (UPPERCASE), niemals `VARCHAR`, da Hibernate 6.x standardmäßig native ENUMs erwartet (`ddl-auto=validate`).
+- **Datenbank:** Nur PostgreSQL 16 (H2 nur im Speicher in den Unit-Tests). Kein MySQL/MariaDB mehr.
+- **Flyway:** Eine neue Migration ist eine Datei unter `src/main/resources/db/postgresql/migration/V{N}__{beschreibung}.sql` (N = höchste vorhandene + 1). Bestehende Migrationen NIEMALS ändern! Immer idempotent halten. In `db/migration/` nichts mehr ablegen (`FlywayMigrationenTest` bricht sonst den Build).
+- **Java-Enums = `VARCHAR(n)`-Spalte ohne `CHECK` mit Werteliste:** `@Enumerated(EnumType.STRING)` liegt in PostgreSQL als `VARCHAR` (`ddl-auto=validate` prüft den Typ); neue Enum-Werte sollen keine Migration brauchen. Werte exakt wie die Java-Konstanten (UPPERCASE).
 - **DTOs:** Entities niemals direkt als Controller-Rückgabe exponieren.
 
 ## Architektur-Patterns

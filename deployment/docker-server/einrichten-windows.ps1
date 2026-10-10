@@ -2,8 +2,7 @@
 # ERP Handwerk - Einrichtung auf einem Windows-PC (Docker Desktop)
 # =============================================================================
 # Start per Doppelklick auf Einrichten.cmd. Kann gefahrlos wiederholt werden.
-# Datenbank: PostgreSQL (Standard fuer Kunden). Der eigene Server mit MySQL:
-#   Einrichten.cmd -Datenbank mysql
+# Datenbank: PostgreSQL (laeuft als eigener Container mit).
 #
 #   1. prueft Docker Desktop (bietet die Installation an, falls es fehlt)
 #   2. Docker Desktop startet ab jetzt automatisch bei der Anmeldung
@@ -21,11 +20,6 @@
 # Hinweis: Diese Datei bewusst nur mit ASCII-Zeichen (Windows PowerShell 5.1
 # liest Dateien ohne BOM sonst mit falscher Kodierung).
 # =============================================================================
-
-param(
-    [ValidateSet('postgres', 'mysql')]
-    [string]$Datenbank = 'postgres'
-)
 
 $ErrorActionPreference = 'Stop'
 $Ordner = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -118,14 +112,15 @@ if (-not (Test-Path $EnvDatei)) {
     # Zeilenweise ersetzen statt -replace: ein $ im Firmennamen waere sonst ein Rueckverweis
     $inhalt = ($inhalt -split "`n" | ForEach-Object {
             if ($_ -like 'KUNDE_NAME=*') { "KUNDE_NAME=$($kunde.Trim())" }
-            elseif ($_ -like 'COMPOSE_PROFILES=*') { "COMPOSE_PROFILES=$Datenbank" }
             else { $_ } }) -join "`n"
     [IO.File]::WriteAllText($EnvDatei, $inhalt, (New-Object Text.UTF8Encoding($false)))
-    Ok ".env mit zufaelligen Passwoertern angelegt, Datenbank: $Datenbank (gut aufbewahren, nicht weitergeben)"
+    Ok '.env mit zufaelligen Passwoertern angelegt (gut aufbewahren, nicht weitergeben)'
 } else {
-    $vorhanden = (Select-String -Path $EnvDatei -Pattern '^COMPOSE_PROFILES=(\w+)' | Select-Object -First 1)
-    if ($vorhanden -and $PSBoundParameters.ContainsKey('Datenbank') -and $vorhanden.Matches[0].Groups[1].Value -ne $Datenbank) {
-        Hinweis "Diese Installation laeuft schon mit $($vorhanden.Matches[0].Groups[1].Value) - die Datenbank wird nicht gewechselt."
+    # Aeltere .env-Dateien enthalten noch COMPOSE_PROFILES. "postgres" ist
+    # harmlos; eine Installation, die noch auf MySQL laeuft, nicht anfassen.
+    if (Select-String -Path $EnvDatei -Pattern '^COMPOSE_PROFILES=.*mysql' -Quiet) {
+        Hinweis 'Diese Installation laeuft noch auf MySQL (COMPOSE_PROFILES in .env). Das ERP kennt nur noch PostgreSQL - siehe README, Abschnitt Aeltere Einrichtungen.'
+        exit 1
     }
     Ok '.env ist schon da - bleibt unveraendert'
 }

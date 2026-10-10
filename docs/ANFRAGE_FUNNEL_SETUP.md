@@ -286,5 +286,4 @@ Auf der ERP-Seite ist **keine Aktion** nötig (das Application-AUD bleibt gleich
 | [`KundennummerService`](../src/main/java/org/example/kalkulationsprogramm/service/KundennummerService.java) | Atomare Kundennummer-Vergabe |
 | [`CloudflareAccessJwtFilter`](../src/main/java/org/example/kalkulationsprogramm/config/CloudflareAccessJwtFilter.java) | Defense-in-Depth JWT-Verifikation |
 | [`SecurityConfig`](../src/main/java/org/example/kalkulationsprogramm/config/SecurityConfig.java) | Filter-Chain für `/api/internal/**` |
-| [`V221__system_mitarbeiter_webseite.sql`](../src/main/resources/db/migration/V221__system_mitarbeiter_webseite.sql) | Seed System-Mitarbeiter |
-| [`V222__kunden_zaehler.sql`](../src/main/resources/db/migration/V222__kunden_zaehler.sql) | Counter-Tabelle für Kundennummern |
+| [`V1__basis_schema.sql`](../src/main/resources/db/postgresql/basis/V1__basis_schema.sql) | Seed System-Mitarbeiter und Counter-Tabelle für Kundennummern (früher V221/V222, heute im Basis-Schema) |

@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Spring_Boot-3.2.5-6DB33F?logo=spring-boot" alt="Spring Boot" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/MariaDB-11-003545?logo=mariadb&logoColor=white" alt="MariaDB" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/KI--Assistent-Gemini-4285F4?logo=google&logoColor=white" alt="KI" />
   <img src="https://img.shields.io/badge/Lizenz-AGPL_v3-blue" alt="Lizenz AGPL v3" />
 </p>
@@ -319,7 +319,7 @@ graph TB
     end
 
     subgraph Daten["Datenspeicher"]
-        MariaDB["🐬 MariaDB"]
+        PostgreSQL["🐘 PostgreSQL"]
         FS["📁 Dateisystem (uploads/)"]
         Cache["📦 RAG-Cache (.json)"]
     end
@@ -329,7 +329,7 @@ graph TB
     KI --> API
     API --> Services
     Services --> Domain
-    Domain --> MariaDB
+    Domain --> PostgreSQL
     Services --> FS
     Services --> AI
     Services --> IMAP
@@ -346,7 +346,7 @@ graph TB
 | Schicht | Technologie |
 |---------|-------------|
 | **Backend** | Java 23, Spring Boot 3.2.5, JPA/Hibernate, Flyway |
-| **Datenbank** | MariaDB 11 |
+| **Datenbank** | PostgreSQL 16 |
 | **Desktop-Frontend** | React 18 + TypeScript + Vite + Tailwind CSS |
 | **Mobile App** | React PWA (Offline-fähig via IndexedDB) |
 | **KI-Assistent** | Google Gemini API (Chat, Vision, Embedding), Google Search Grounding |
@@ -354,21 +354,21 @@ graph TB
 | **PDF-Generierung** | OpenPDF, Apache PDFBox, Mustang (ZUGFeRD) |
 | **E-Mail** | Jakarta Mail (IMAP/SMTP) |
 | **Build** | Maven (Backend), Vite (Frontend) |
-| **Deployment** | jpackage (Windows EXE), Docker (optional) |
+| **Deployment** | Docker (ein Image mit Backend + beiden Oberflächen, nächtliche Updates mit Rollback) |
 
 ---
 
 ## 🚀 Schnellstart
 
-### 💿 Für Endanwender: 1-Klick-Installation (Windows)
+### 💿 Für Betriebe: Einrichten mit Docker (Windows-PC oder Linux-Server)
 
-**Keine Vorkenntnisse nötig. Kein Java, kein Docker, keine Datenbank.**
+**Ein Doppelklick bzw. ein Befehl. Datenbank, ERP und automatische Updates kommen mit.**
 
-1. **[⬇️ ERP-Handwerk-<Version>.exe herunterladen](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/releases)**
-2. Doppelklick → Installieren
-3. Startmenü → **„ERP Handwerk"** → Fertig ✅
+1. Den Ordner [`deployment/docker-server`](deployment/docker-server) auf den Rechner kopieren
+2. Windows: **`Einrichten.cmd` doppelklicken** – Linux: `sudo ./einrichten.sh`
+3. Im Browser öffnet sich das ERP. Wer sich zuerst registriert, wird Admin ✅
 
-> Der Installer enthält alles: eigene Java-Laufzeitumgebung, eingebettete Datenbank und die komplette Anwendung.
+> Danach läuft das ERP von selbst: Es startet nach jedem Neustart, holt sich nachts neue Versionen, sichert vorher die Datenbank (PostgreSQL) und rollt bei Problemen automatisch zurück. Details: [docker-server/README.md](deployment/docker-server/README.md)
 
 ### 🐳 Für Entwickler: Docker
 
@@ -380,7 +380,7 @@ docker compose up -d --build
 
 ### 🔧 Weitere Optionen
 
-Detaillierte Anleitungen für alle Installationsvarianten (Docker, manuelle Installation, Installer selbst bauen):
+Detaillierte Anleitungen (Docker beim Kunden, Entwicklung mit lokalem PostgreSQL, Zugriff von unterwegs):
 
 📖 **[Vollständige Installationsanleitung →](docs/INSTALLATION.md)**
 

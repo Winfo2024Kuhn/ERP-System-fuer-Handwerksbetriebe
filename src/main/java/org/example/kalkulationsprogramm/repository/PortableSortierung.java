@@ -18,14 +18,13 @@ import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Root;
 
 /**
- * Sortierung fuer Listen mit frei waehlbarer Sortierspalte, die auf MySQL und
- * PostgreSQL gleich ausfaellt.
+ * Sortierung fuer Listen mit frei waehlbarer Sortierspalte, bei der leere Werte
+ * stehen wie gewohnt.
  *
  * <p>Leere Werte ({@code NULL}) gelten - wie seit jeher auf MySQL - als kleinster
  * Wert: aufsteigend stehen sie oben, absteigend unten. PostgreSQL sortiert sie von
  * sich aus als groessten Wert ein; "neueste zuerst" zeigte dort sonst zuerst alle
- * Eintraege ohne Datum. Auf MySQL aendert sich nichts (Hibernate laesst die
- * Angabe dort weg, sie entspricht dem Standard).
+ * Eintraege ohne Datum.
  *
  * <p>Spring Data reicht {@link Sort.NullHandling} an Criteria-Abfragen nicht weiter,
  * deshalb haengt {@link #mit(Specification, Sort)} die Sortierung selbst an die
@@ -73,7 +72,7 @@ public final class PortableSortierung {
         return reihenfolge.nullPrecedence(leerwerte(order));
     }
 
-    /** Ausdrueckliche Angabe am Sort.Order geht vor, sonst wie MySQL: leer ist der kleinste Wert. */
+    /** Ausdrueckliche Angabe am Sort.Order geht vor, sonst wie bisher: leer ist der kleinste Wert. */
     static NullPrecedence leerwerte(Sort.Order order) {
         return switch (order.getNullHandling()) {
             case NULLS_FIRST -> NullPrecedence.FIRST;

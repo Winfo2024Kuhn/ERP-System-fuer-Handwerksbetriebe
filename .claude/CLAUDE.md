@@ -75,6 +75,7 @@ Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht
 **Hinweis:** Der Hook ersetzt nicht das tatsächliche Verständnis. Lies das Doc wirklich (nicht nur die ersten 5 Zeilen, um das Flag zu setzen) – die Regeln darin (rose-/slate-Farben, Pflicht-Komponenten, Constructor Injection, Flyway-Versionierung, Named-Params, DSGVO-Dummy-Daten) werden im Reviewer-Subagent gegengeprüft und blocken den Commit, wenn sie verletzt sind.
 
 ## 🚀 Build & Run (Quickstart)
+- Datenbank (einzige: PostgreSQL 16) zuerst starten: `docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 -e POSTGRES_DB=kalkulationsprogramm_db -e POSTGRES_USER=erp_user -e POSTGRES_PASSWORD=erp_dev postgres:16` (später `docker start erp-dev-pg`). Zugangsdaten in `application-local.properties`; eine leere DB bekommt Basis-Schema + Migrationen automatisch.
 - Backend: `./mvnw spring-boot:run` (Port 8080)
 - Frontend PC: `cd react-pc-frontend && npm run dev`
 - Frontend Mobile: `cd react-zeiterfassung && npm run dev`

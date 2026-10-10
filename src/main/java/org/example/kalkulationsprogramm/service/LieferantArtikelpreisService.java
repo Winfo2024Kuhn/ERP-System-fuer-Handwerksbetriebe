@@ -38,7 +38,7 @@ public class LieferantArtikelpreisService {
 
     /**
      * Preisliste eines Lieferanten. Die Sortierung (auch nach Artikelname oder Werkstoff)
-     * waehlt der Aufrufer; leere Werte sortieren auf MySQL und PostgreSQL gleich
+     * waehlt der Aufrufer; leere Werte stehen dabei wie gewohnt
      * ({@link PortableSortierung}).
      */
     @Transactional(readOnly = true)

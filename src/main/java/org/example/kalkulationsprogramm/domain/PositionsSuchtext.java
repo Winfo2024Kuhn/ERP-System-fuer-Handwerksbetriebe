@@ -95,7 +95,7 @@ public final class PositionsSuchtext {
      * LIKE-Muster „enthält“ – {@code !}, {@code %} und {@code _} werden mit {@code !}
      * maskiert; passend zu {@code ESCAPE '!'} in
      * {@link org.example.kalkulationsprogramm.repository.LieferantDokumentPositionRepository#suche}.
-     * Bewusst kein Backslash: MySQL deutet ihn in String-Literalen selbst als Escape.
+     * Bewusst kein Backslash: Er ist in LIKE schon das Standard-Escape und in String-Literalen fehleranfaellig.
      */
     public static String enthaeltMuster(String wort) {
         String maskiert = wort.replace("!", "!!").replace("%", "!%").replace("_", "!_");
