@@ -3,6 +3,9 @@ package org.example.kalkulationsprogramm.config;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.example.kalkulationsprogramm.service.TailscaleFunnelFreigabe;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -19,7 +22,9 @@ import java.util.stream.Stream;
  *
  * <p>Von außen – direkt, über Tailscale Funnel, einen Tunnel oder das Gateway – ist nur die
  * Handy-App erreichbar, nach denselben Regeln wie am öffentlichen Gateway. Desktop-Sitzungen
- * zählen dort nicht. So bleibt das ERP auch ohne vorgeschaltetes Gateway geschützt.</p>
+ * zählen dort nicht. So bleibt das ERP auch ohne vorgeschaltetes Gateway geschützt.
+ * Tailscale Funnel zusätzlich nur, wenn er in den Einstellungen freigegeben ist
+ * ({@link TailscaleFunnelFreigabe}).</p>
  *
  * <p>Läuft <strong>vor</strong> Spring Security (Order -100): Sonst beantwortet der Login-Filter
  * {@code POST /api/auth/login} selbst, und die Netzgrenze käme für die Anmeldung nie zum Zug.</p>
@@ -45,6 +50,10 @@ public class ZeiterfassungSecurityFilter implements Filter {
     @Value("${zeiterfassung.security.trusted-proxies:}")
     private String trustedProxies = "";
 
+    /** Schalter in den Einstellungen, erst bei Bedarf geholt. Fehlt er (Tests), bleibt der Funnel zu. */
+    @Autowired
+    private ObjectProvider<TailscaleFunnelFreigabe> funnelFreigabe;
+
     private volatile ClientIpResolver resolver;
     private volatile String resolverFuer;
 
@@ -66,6 +75,20 @@ public class ZeiterfassungSecurityFilter implements Filter {
         if (isLocalIp(absender.adresse()) && !absender.unbekannt() && httpRequest.getHeader(FUNNEL_HEADER) == null) {
             chain.doFilter(request, response);
             return;
+        }
+
+        // Funnel nur, wenn in den Einstellungen freigegeben. Sonst nutzen die Mitarbeiter die
+        // Tailscale-App, und eine Funnel-Anfrage heißt: Am Server läuft ein Funnel, den keiner wollte.
+        if (httpRequest.getHeader(FUNNEL_HEADER) != null) {
+            TailscaleFunnelFreigabe schalter = funnelFreigabe == null ? null : funnelFreigabe.getIfAvailable();
+            boolean freigegeben = schalter != null && schalter.istFreigegeben();
+            if (schalter != null) {
+                schalter.anfrageGesehen(!freigegeben);
+            }
+            if (!freigegeben) {
+                funnelGesperrt(httpRequest, httpResponse);
+                return;
+            }
         }
 
         // Unsere Routenprüfung arbeitet auf der rohen Adresse. Mehrdeutige Schreibweisen
@@ -111,6 +134,26 @@ public class ZeiterfassungSecurityFilter implements Filter {
         String klein = uri.toLowerCase(Locale.ROOT);
         return klein.contains("%2f") || klein.contains("%5c") || klein.contains("%2e") || klein.contains("%00")
                 || klein.contains(";") || klein.contains("..");
+    }
+
+    static final String FUNNEL_GESPERRT =
+            "Die Zeiterfassung ist nicht über das Internet freigegeben. Bitte die Tailscale-App einschalten.";
+
+    /** Wer die Adresse im Browser öffnet, sieht einen Satz statt JSON. */
+    private static void funnelGesperrt(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String accept = request.getHeader("Accept");
+        if (accept == null || !accept.contains("text/html")) {
+            verweigern(response, HttpServletResponse.SC_FORBIDDEN, FUNNEL_GESPERRT);
+            return;
+        }
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setHeader("Cache-Control", "no-store");
+        response.setContentType("text/html");
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("<!doctype html><html lang=\"de\"><meta charset=\"utf-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<title>Zeiterfassung</title><p style=\"font-family:sans-serif;margin:2rem\">"
+                + FUNNEL_GESPERRT + "</p></html>");
     }
 
     private static void verweigern(HttpServletResponse response, int status, String meldung) throws IOException {

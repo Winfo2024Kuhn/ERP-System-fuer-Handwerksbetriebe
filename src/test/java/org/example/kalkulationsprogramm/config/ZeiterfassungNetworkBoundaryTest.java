@@ -1,11 +1,17 @@
 package org.example.kalkulationsprogramm.config;
 
+import org.example.kalkulationsprogramm.service.SystemSettingsService;
+import org.example.kalkulationsprogramm.service.TailscaleFunnelFreigabe;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.util.ReflectionTestUtils;
 import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ZeiterfassungNetworkBoundaryTest {
     @Test void alleMobilenBereicheErreichenAuchVonAussenDieAuthentifizierung() throws Exception {
@@ -148,8 +154,72 @@ class ZeiterfassungNetworkBoundaryTest {
         request.addHeader("X-Forwarded-For", "100.101.102.103");
         request.addHeader("Tailscale-Funnel-Request", "?1");
         var response = new MockHttpServletResponse();
-        enabledFilter().doFilter(request, response, (req, res) -> { throw new AssertionError("Funnel als lokal behandelt"); });
+        // Freigegeben, damit hier die Routenliste greift und nicht schon der Schalter.
+        filterMit(freigabe(true)).doFilter(request, response, (req, res) -> { throw new AssertionError("Funnel als lokal behandelt"); });
         assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(response.getContentAsString()).doesNotContain("Tailscale-App");
+    }
+    @Test void funnelOhneFreigabeErreichtAuchDieHandyAppNicht() throws Exception {
+        var freigabe = freigabe(false);
+        for (String[] aufruf : new String[][]{{"GET", "/zeiterfassung/"}, {"GET", "/api/zeiterfassung/projekte"},
+                {"POST", "/api/zeiterfassung/start"}, {"GET", "/"}, {"GET", "/api/frontend-users"}}) {
+            var response = new MockHttpServletResponse();
+            filterMit(freigabe).doFilter(ueberFunnel(aufruf[0], aufruf[1]), response,
+                    (req, res) -> { throw new AssertionError("Funnel ohne Freigabe durchgelassen: " + aufruf[1]); });
+            assertThat(response.getStatus()).as(aufruf[1]).isEqualTo(403);
+            assertThat(response.getContentAsString()).as(aufruf[1]).contains("Tailscale-App");
+        }
+        // Die Einstellungen zeigen so, dass am Server ein Funnel läuft, den keiner freigegeben hat.
+        assertThat(freigabe.letzteAnfrage()).isNotNull();
+        assertThat(freigabe.letzteAbgewiesen()).isTrue();
+    }
+    @Test void ohneSchalterBleibtDerFunnelZu() throws Exception {
+        var response = new MockHttpServletResponse();
+        enabledFilter().doFilter(ueberFunnel("GET", "/api/zeiterfassung/projekte"), response,
+                (req, res) -> { throw new AssertionError("Funnel ohne Schalter durchgelassen"); });
+        assertThat(response.getStatus()).isEqualTo(403);
+    }
+    @Test void freigegebenerFunnelErreichtNurDieHandyApp() throws Exception {
+        var freigabe = freigabe(true);
+        for (String[] aufruf : new String[][]{{"GET", "/zeiterfassung/"}, {"GET", "/api/zeiterfassung/projekte"},
+                {"POST", "/api/zeiterfassung/start"}}) {
+            var request = ueberFunnel(aufruf[0], aufruf[1]);
+            var passed = new AtomicBoolean();
+            filterMit(freigabe).doFilter(request, new MockHttpServletResponse(), (req, res) -> passed.set(true));
+            assertThat(passed).as(aufruf[1]).isTrue();
+            assertThat(PublicMobileIngressFilter.isPublic(request)).as(aufruf[1]).isTrue();
+        }
+        assertThat(freigabe.letzteAbgewiesen()).isFalse();
+        for (String[] aufruf : new String[][]{{"POST", "/api/auth/login"}, {"GET", "/api/frontend-users"}, {"GET", "/api/settings"}}) {
+            var response = new MockHttpServletResponse();
+            filterMit(freigabe).doFilter(ueberFunnel(aufruf[0], aufruf[1]), response,
+                    (req, res) -> { throw new AssertionError("Desktop über Funnel erreichbar: " + aufruf[1]); });
+            assertThat(response.getStatus()).as(aufruf[1]).isEqualTo(403);
+        }
+    }
+    @Test void browserSiehtBeiGesperrtemFunnelEinenSatzStattJson() throws Exception {
+        var request = ueberFunnel("GET", "/zeiterfassung/");
+        request.addHeader("Accept", "text/html,application/xhtml+xml");
+        var response = new MockHttpServletResponse();
+        filterMit(freigabe(false)).doFilter(request, response, (req, res) -> { throw new AssertionError("durchgelassen"); });
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(response.getContentType()).startsWith("text/html");
+        assertThat(response.getContentAsString()).contains("Tailscale-App").doesNotContain("{\"error\"");
+    }
+    @Test void tailnetUndTunnelBleibenVomFunnelSchalterUnberuehrt() throws Exception {
+        var freigabe = freigabe(false);
+        var tailnet = new MockHttpServletRequest("GET", "/api/frontend-users");
+        tailnet.setRemoteAddr("127.0.0.1");
+        tailnet.addHeader("X-Forwarded-For", "100.101.102.103");
+        var passed = new AtomicBoolean();
+        filterMit(freigabe).doFilter(tailnet, new MockHttpServletResponse(), (req, res) -> passed.set(true));
+        assertThat(passed).as("Handy mit Tailscale-App").isTrue();
+
+        var tunnel = new AtomicBoolean();
+        filterMit(freigabe).doFilter(ausDemInternet("GET", "/api/zeiterfassung/projekte"), new MockHttpServletResponse(),
+                (req, res) -> tunnel.set(true));
+        assertThat(tunnel).as("Gateway/Tunnel ohne Funnel-Kennzeichen").isTrue();
+        assertThat(freigabe.letzteAnfrage()).isNull();
     }
     @Test void uploadsVonAussenSindWieAmGatewayBegrenzt() throws Exception {
         String bildPfad = "/api/projekte/1/notizen/2/bilder";
@@ -187,12 +257,30 @@ class ZeiterfassungNetworkBoundaryTest {
         request.addHeader("X-Forwarded-For", "203.0.113.8");
         return request;
     }
-    /** So kommt eine Anfrage über Tailscale Funnel an: localhost, echter Absender in X-Forwarded-For. */
+    /** Anfrage von außen über einen Tunnel oder Proxy auf localhost, echter Absender in X-Forwarded-For. */
     private static MockHttpServletRequest ausDemInternet(String method, String path) {
         var request = new MockHttpServletRequest(method, path);
         request.setRemoteAddr("127.0.0.1");
         request.addHeader("X-Forwarded-For", "203.0.113.8");
         return request;
+    }
+    /** So kommt eine Anfrage über Tailscale Funnel an: wie oben, dazu das Kennzeichen von tailscaled. */
+    private static MockHttpServletRequest ueberFunnel(String method, String path) {
+        var request = ausDemInternet(method, path);
+        request.addHeader("Tailscale-Funnel-Request", "?1");
+        return request;
+    }
+    private static TailscaleFunnelFreigabe freigabe(boolean freigegeben) {
+        var settings = mock(SystemSettingsService.class);
+        when(settings.get(anyString(), anyString())).thenReturn(String.valueOf(freigegeben));
+        return new TailscaleFunnelFreigabe(settings);
+    }
+    private static ZeiterfassungSecurityFilter filterMit(TailscaleFunnelFreigabe freigabe) {
+        var beans = new StaticListableBeanFactory();
+        beans.addBean("tailscaleFunnelFreigabe", freigabe);
+        var filter = enabledFilter();
+        ReflectionTestUtils.setField(filter, "funnelFreigabe", beans.getBeanProvider(TailscaleFunnelFreigabe.class));
+        return filter;
     }
     private static ZeiterfassungSecurityFilter enabledFilter() {
         var filter = new ZeiterfassungSecurityFilter();

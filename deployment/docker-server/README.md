@@ -158,6 +158,14 @@ nur die Zeiterfassung" und für die Code-Sperre pro Gerät. **Nie mit `APP_ADRES
 kombinieren:** Unter Docker Desktop kommen dann alle Anfragen aus dem LAN über dieselbe
 Gateway-Adresse, und jeder könnte sich als beliebiger Absender ausgeben.
 
+**Handys ohne Tailscale-App (Funnel):** Standardmäßig brauchen die Handys der Mitarbeiter die
+Tailscale-App. Soll die Zeiterfassung ohne App aus dem Internet erreichbar sein, am Rechner
+`tailscale funnel --bg <APP_PORT>` ausführen und im ERP unter *Einstellungen → Zeiterfassung →
+Zugang von unterwegs* „Über Tailscale Funnel freigeben“ wählen. Ohne diese Freigabe weist das
+ERP jede Funnel-Anfrage ab. Von außen ist dann nur die Zeiterfassung erreichbar. Zurück:
+`tailscale serve --bg <APP_PORT>` (Funnel aus, Tailscale-Netz bleibt) und im ERP umstellen.
+Details: [INSTALLATION.md, Variante 1b](../../docs/INSTALLATION.md#variante-1b-tailscale-funnel--handys-ohne-tailscale-app).
+
 ## Sicherheit: so ist das ERP abgeschottet
 
 Findet jemand eine Lücke im ERP, soll er weder an den Rechner noch an das Firmennetz kommen.

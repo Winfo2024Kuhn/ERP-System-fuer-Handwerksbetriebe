@@ -381,7 +381,9 @@ Für Betriebe, in denen nicht jeder Mitarbeiter eine VPN-App auf dem Handy haben
 
 **Was von außen erreichbar ist:** Nur die Handy-App und ihre Schnittstelle, mit dem persönlichen Code des Mitarbeiters. Falsche Codes lösen steigende Wartezeiten aus. Die Desktop-Anmeldung, die Verwaltung und interne Schnittstellen bleiben gesperrt, auch für Büro-Sitzungen. Geräte im eigenen Tailscale-Netz erreichen über dieselbe Adresse weiterhin das ganze ERP.
 
-**Voraussetzung:** Das ERP läuft direkt auf dem Rechner mit Tailscale (JAR bzw. Windows-Dienst). Läuft es in Docker, sieht es statt `localhost` das Docker-Netz als Absender; dafür das [Docker-Gateway](../deployment/mobile-public/README.md) verwenden.
+**Voraussetzung:** Tailscale läuft auf dem ERP-Rechner. Das ERP läuft dort direkt (JAR bzw. Windows-Dienst) oder im [Docker-Paket](../deployment/docker-server/README.md) mit `LOKALER_PROXY=ja`; sonst sieht es in Docker statt `localhost` das Docker-Netz als Absender.
+
+**Freigabe im ERP:** Zusätzlich muss der Funnel im ERP freigegeben sein: *Einstellungen → Zeiterfassung → Zugang von unterwegs → „Über Tailscale Funnel freigeben“*. Ohne diese Freigabe weist das ERP jede Funnel-Anfrage ab, auch wenn am Rechner ein Funnel läuft. Die Karte zeigt auch, wann zuletzt eine Anfrage über Funnel kam.
 
 **Einrichten (einmalig, auf dem ERP-Rechner):**
 
@@ -408,7 +410,7 @@ Für Betriebe, in denen nicht jeder Mitarbeiter eine VPN-App auf dem Handy haben
 - `https://erp-rechner.tail-xxxx.ts.net/login` zeigt „Zugriff verweigert“.
 - Anmelden per QR-Code, Stempeln und Projektfotos funktionieren – auf iPhone und Android, jeweils über Mobilfunk.
 
-**Abschalten:** `tailscale funnel --https=443 off`
+**Abschalten:** `tailscale serve --bg 8080` – der Funnel ist aus, im eigenen Tailscale-Netz bleibt das ERP erreichbar. Danach im ERP wieder „Mit der Tailscale-App“ wählen. (`tailscale funnel --https=443 off` entfernt dagegen den ganzen Eintrag, also auch den Zugang im Tailscale-Netz.)
 
 **Nicht verwenden:**
 
