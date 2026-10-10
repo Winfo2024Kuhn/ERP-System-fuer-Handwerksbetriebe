@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, FileText, MapPin, User, Loader2, Image, ChevronRight, Navigation, Phone, X, Camera, FolderOpen, Plus, Smartphone, RefreshCw, MessageCircle } from 'lucide-react'
 import { ImageViewer } from '../components/ui/image-viewer'
 import { useToast } from '../components/ui/toast'
+import { fotoFehlerText, ladeFotosEinzelnHoch, sendeFoto, fotoErgebnisMeldung, fortschrittText } from '../lib/fotoUpload'
 
 interface Anfrage {
     id: number
@@ -37,6 +38,8 @@ interface Bild {
 interface PendingPhoto {
     file: File
     url: string
+    /** Grund, warum dieses Foto nicht hochgeladen werden konnte */
+    fehler?: string
 }
 
 interface AnfragenPageProps {
@@ -103,6 +106,9 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
     const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
     const pendingPhotosRef = useRef<PendingPhoto[]>([])
     pendingPhotosRef.current = pendingPhotos
+    const [uploadFortschritt, setUploadFortschritt] = useState<{ nummer: number; gesamt: number } | null>(null)
+    // Id des gerade offenen Eintrags (null nach dem Verlassen): Ein laufender Upload darf dann nichts mehr umschalten.
+    const aktivIdRef = useRef<number | null>(null)
 
     async function loadAnfragen(searchQuery?: string) {
         setLoading(true)
@@ -180,6 +186,11 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
     useEffect(() => () => {
         pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
     }, [])
+
+    useEffect(() => {
+        aktivIdRef.current = selectedAnfrage?.id ?? null
+        return () => { aktivIdRef.current = null }
+    }, [selectedAnfrage?.id])
 
     // Reset pendingPhotos beim Wechsel der Anfrage
     useEffect(() => {
@@ -355,32 +366,39 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
     }
 
     const uploadPendingPhotos = async () => {
-        if (pendingPhotos.length === 0 || !selectedAnfrage) return
+        if (uploading || pendingPhotos.length === 0 || !selectedAnfrage) return
 
-        setUploading(true)
-        const formData = new FormData()
-        pendingPhotos.forEach(p => formData.append('datei', p.file))
-
+        const anfrageId = selectedAnfrage.id
         const headers: Record<string, string> = {}
         if (mitarbeiter?.id) {
             headers['X-Mitarbeiter-Id'] = String(mitarbeiter.id)
         }
 
+        // Jedes Foto geht einzeln raus: Mehrere Fotos in einer Anfrage sprengen von außen schnell die 25-MB-Grenze.
+        // Verlässt der Nutzer die Seite, läuft der Upload zu Ende, damit keine Fotos verloren gehen.
+        setUploading(true)
+        setPendingPhotos(prev => prev.map(p => ({ ...p, fehler: undefined })))
         try {
-            const res = await fetch(`/api/anfragen/${selectedAnfrage.id}/dokumente?gruppe=BILDER`, {
-                method: 'POST',
-                headers,
-                body: formData
+            const ergebnis = await ladeFotosEinzelnHoch(pendingPhotos, {
+                senden: p => sendeFoto(`/api/anfragen/${anfrageId}/dokumente?gruppe=BILDER`, p.file, { headers }),
+                beiStart: (nummer, gesamt) => setUploadFortschritt({ nummer, gesamt }),
+                // Gesendete Fotos sofort aus der Auswahl nehmen, damit sie nie doppelt hochgeladen werden.
+                beiErfolg: p => {
+                    URL.revokeObjectURL(p.url)
+                    setPendingPhotos(prev => prev.filter(x => x.url !== p.url))
+                },
+                beiFehler: (p, fehler) => setPendingPhotos(prev => prev.map(x => x.url === p.url ? { ...x, fehler: fotoFehlerText(fehler.grund) } : x)),
             })
-            if (res.ok) {
-                clearPendingPhotos()
-                setShowUploadModal(false)
-                await loadAnfrageDetail(selectedAnfrage)
-            }
-        } catch (err) {
-            console.error('Upload fehlgeschlagen:', err)
+            const nochDa = aktivIdRef.current === anfrageId
+            if (nochDa && ergebnis.erfolgreich.length > 0) await loadAnfrageDetail(selectedAnfrage)
+            const meldung = fotoErgebnisMeldung(ergebnis, nochDa)
+            if (meldung) toast.error(meldung)
+            // Hat der Nutzer den Eintrag verlassen, gibt es nichts mehr, wozu das Fenster gehören könnte.
+            if (!nochDa || !meldung) setShowUploadModal(false)
+        } finally {
+            setUploadFortschritt(null)
+            setUploading(false)
         }
-        setUploading(false)
     }
 
     const hasPhoneNumber = selectedAnfrage?.kundenTelefon || selectedAnfrage?.kundenMobil
@@ -482,6 +500,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                         />
                                         <button
                                             onClick={() => setShowUploadModal(true)}
+                                            aria-label="Fotos hinzufügen"
                                             disabled={uploading}
                                             className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
                                         >
@@ -683,7 +702,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             {/* Upload Choice Modal */}
             {
                 showUploadModal && (
-                    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+                    <div role="dialog" aria-modal="true" aria-label="Fotos hochladen" className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
                         <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 animate-slide-up">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-bold text-slate-900">
@@ -693,7 +712,9 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                 </h3>
                                 <button
                                     onClick={closeUploadModal}
-                                    className="p-2 hover:bg-slate-100 rounded-full"
+                                    disabled={uploading}
+                                    aria-label="Schließen"
+                                    className="p-2 hover:bg-slate-100 rounded-full disabled:opacity-50"
                                 >
                                     <X className="w-5 h-5 text-slate-500" />
                                 </button>
@@ -702,16 +723,22 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                             {pendingPhotos.length > 0 && (
                                 <div className="grid grid-cols-3 gap-2 mb-4 max-h-56 overflow-auto">
                                     {pendingPhotos.map((p, idx) => (
-                                        <div key={idx} className="relative aspect-square">
+                                        <div key={p.url} className="relative aspect-square">
                                             <img
                                                 src={p.url}
                                                 alt={`Bild ${idx + 1}`}
-                                                className="w-full h-full object-cover rounded-lg"
+                                                className={`w-full h-full object-cover rounded-lg ${p.fehler ? 'border-2 border-rose-500' : ''}`}
                                             />
+                                            {p.fehler && (
+                                                <p className="absolute inset-x-0 bottom-0 rounded-b-lg bg-rose-600 px-1 py-0.5 text-center text-xs font-medium leading-tight text-white">
+                                                    {p.fehler}
+                                                </p>
+                                            )}
                                             <button
                                                 onClick={() => removePendingPhoto(idx)}
+                                                disabled={uploading}
                                                 aria-label="Bild entfernen"
-                                                className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow"
+                                                className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow disabled:opacity-50"
                                             >
                                                 <X className="w-3 h-3" />
                                             </button>
@@ -752,6 +779,21 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                 </button>
                             </div>
 
+                            {uploadFortschritt && (
+                                <div role="status" aria-live="polite" className="mt-4">
+                                    <p className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                                        <Loader2 className="w-4 h-4 animate-spin text-rose-600" aria-hidden="true" />
+                                        {fortschrittText(uploadFortschritt.nummer, uploadFortschritt.gesamt)}
+                                    </p>
+                                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                        <div
+                                            className="h-full rounded-full bg-rose-600 transition-all"
+                                            style={{ width: `${((uploadFortschritt.nummer - 1) / uploadFortschritt.gesamt) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                             {pendingPhotos.length > 0 && (
                                 <button
                                     onClick={uploadPendingPhotos}
@@ -760,6 +802,8 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                 >
                                     {uploading ? (
                                         <Loader2 className="w-5 h-5 animate-spin" />
+                                    ) : pendingPhotos.some(p => p.fehler) ? (
+                                        <>Erneut versuchen ({pendingPhotos.length})</>
                                     ) : (
                                         <>Hochladen ({pendingPhotos.length})</>
                                     )}

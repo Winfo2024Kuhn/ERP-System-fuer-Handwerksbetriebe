@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, MessageCircle, Plus, Loader2, Send, X, User, Edit2, Trash2, Camera, Image, Lock } from 'lucide-react'
 import { ImageViewer } from '../components/ui/image-viewer'
+import { fotoErgebnisMeldung, fotoFehlerText, fortschrittText, ladeFotosEinzelnHoch, sendeFoto } from '../lib/fotoUpload'
 
 interface NotizBild {
     id: number
@@ -18,6 +19,8 @@ interface NotizBild {
 interface PendingPhoto {
     file: File
     url: string
+    /** Grund, warum dieses Foto nicht hochgeladen werden konnte */
+    fehler?: string
 }
 
 interface Notiz {
@@ -56,6 +59,8 @@ export default function ProjektNotizenPage() {
     const [pendingForNotizId, setPendingForNotizId] = useState<number | null>(null)
     const pendingPhotosRef = useRef<PendingPhoto[]>([])
     pendingPhotosRef.current = pendingPhotos
+    const [uploadFortschritt, setUploadFortschritt] = useState<{ nummer: number; gesamt: number } | null>(null)
+    const mountedRef = useRef(true)
 
     const loadNotizen = async () => {
         setLoading(true)
@@ -86,8 +91,12 @@ export default function ProjektNotizenPage() {
     }, [projektId])
 
     // Cleanup pendingPhotos beim Unmount (revoke object URLs)
-    useEffect(() => () => {
-        pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
+    useEffect(() => {
+        mountedRef.current = true
+        return () => {
+            mountedRef.current = false
+            pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
+        }
     }, [])
 
     const handleSave = async () => {
@@ -144,30 +153,6 @@ export default function ProjektNotizenPage() {
         }
     }
 
-    const handleImageUpload = async (notizId: number, file: File) => {
-        setUploadingBildNotizId(notizId)
-        try {
-            const token = localStorage.getItem('zeiterfassung_token')
-            const formData = new FormData()
-            formData.append('datei', file)
-
-            const res = await fetch(`/api/projekte/${projektId}/notizen/${notizId}/bilder?token=${token}`, {
-                method: 'POST',
-                body: formData
-            })
-            if (res.ok) {
-                loadNotizen()
-            } else {
-                toast.error('Fehler beim Hochladen des Bildes')
-            }
-        } catch (err) {
-            console.error('Fehler beim Hochladen:', err)
-            toast.error('Fehler beim Hochladen')
-        }
-        setUploadingBildNotizId(null)
-        setSelectedNotizForImage(null)
-    }
-
     const handleDeleteImage = async (notizId: number, bildId: number) => {
         if (!await confirm({ title: 'Bild löschen', message: 'Bild wirklich löschen?', confirmLabel: 'Löschen', variant: 'danger' })) return
         try {
@@ -184,14 +169,6 @@ export default function ProjektNotizenPage() {
             console.error(err)
             toast.error('Fehler beim Löschen')
         }
-    }
-
-    const clearPendingPhotos = () => {
-        setPendingPhotos(prev => {
-            prev.forEach(p => URL.revokeObjectURL(p.url))
-            return []
-        })
-        setPendingForNotizId(null)
     }
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,14 +201,29 @@ export default function ProjektNotizenPage() {
     }
 
     const uploadPendingPhotos = async (notizId: number) => {
-        if (pendingPhotos.length === 0 || pendingForNotizId !== notizId) return
+        if (uploadingBildNotizId !== null || pendingPhotos.length === 0 || pendingForNotizId !== notizId) return
+        const token = encodeURIComponent(localStorage.getItem('zeiterfassung_token') ?? '')
+        // Jedes Foto geht einzeln raus: Mehrere Fotos in einer Anfrage sprengen von außen schnell die 25-MB-Grenze.
+        // Verlässt der Nutzer die Seite, läuft der Upload zu Ende, damit keine Fotos verloren gehen.
         setUploadingBildNotizId(notizId)
+        setPendingPhotos(prev => prev.map(p => ({ ...p, fehler: undefined })))
         try {
-            for (const p of pendingPhotos) {
-                await handleImageUpload(notizId, p.file)
-            }
-            clearPendingPhotos()
+            const ergebnis = await ladeFotosEinzelnHoch(pendingPhotos, {
+                senden: p => sendeFoto(`/api/projekte/${projektId}/notizen/${notizId}/bilder?token=${token}`, p.file),
+                beiStart: (nummer, gesamt) => setUploadFortschritt({ nummer, gesamt }),
+                // Gesendete Fotos sofort aus der Auswahl nehmen, damit sie nie doppelt hochgeladen werden.
+                beiErfolg: p => {
+                    URL.revokeObjectURL(p.url)
+                    setPendingPhotos(prev => prev.filter(x => x.url !== p.url))
+                },
+                beiFehler: (p, fehler) => setPendingPhotos(prev => prev.map(x => x.url === p.url ? { ...x, fehler: fotoFehlerText(fehler.grund) } : x)),
+            })
+            if (mountedRef.current && ergebnis.erfolgreich.length > 0) loadNotizen()
+            const meldung = fotoErgebnisMeldung(ergebnis, mountedRef.current)
+            if (meldung) toast.error(meldung)
+            else setPendingForNotizId(prev => (prev === notizId ? null : prev))
         } finally {
+            setUploadFortschritt(null)
             setUploadingBildNotizId(null)
         }
     }
@@ -400,12 +392,17 @@ export default function ProjektNotizenPage() {
                                         {notiz.canEdit && pendingForNotizId === notiz.id && pendingPhotos.length > 0 && (
                                             <div className="mt-3 grid grid-cols-3 gap-2">
                                                 {pendingPhotos.map((p, idx) => (
-                                                    <div key={idx} className="relative aspect-square">
+                                                    <div key={p.url} className="relative aspect-square">
                                                         <img
                                                             src={p.url}
                                                             alt={`Neues Bild ${idx + 1}`}
-                                                            className="w-full h-full object-cover rounded-lg ring-2 ring-rose-400"
+                                                            className={`w-full h-full object-cover rounded-lg ring-2 ${p.fehler ? 'ring-rose-600' : 'ring-rose-400'}`}
                                                         />
+                                                        {p.fehler && (
+                                                            <p className="absolute inset-x-0 bottom-0 rounded-b-lg bg-rose-600 px-1 py-0.5 text-center text-xs font-medium leading-tight text-white">
+                                                                {p.fehler}
+                                                            </p>
+                                                        )}
                                                         <button
                                                             onClick={() => removePendingPhoto(idx)}
                                                             disabled={uploadingBildNotizId === notiz.id}
@@ -423,22 +420,24 @@ export default function ProjektNotizenPage() {
                                         {notiz.canEdit && (
                                             <div className="mt-3 flex flex-wrap items-center gap-2">
                                                 {uploadingBildNotizId === notiz.id ? (
-                                                    <div className="flex items-center gap-2 text-rose-600 text-sm">
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                        Wird hochgeladen...
+                                                    <div role="status" aria-live="polite" className="flex items-center gap-2 text-rose-600 text-sm">
+                                                        <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                                                        {uploadFortschritt ? fortschrittText(uploadFortschritt.nummer, uploadFortschritt.gesamt) : 'Wird hochgeladen...'}
                                                     </div>
                                                 ) : (
                                                     <>
                                                         <button
                                                             onClick={() => openCamera(notiz.id)}
-                                                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                                                            disabled={uploadingBildNotizId !== null}
+                                                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors disabled:opacity-50"
                                                         >
                                                             <Camera className="w-3.5 h-3.5" />
                                                             {pendingForNotizId === notiz.id && pendingPhotos.length > 0 ? 'Weiteres Foto' : 'Kamera'}
                                                         </button>
                                                         <button
                                                             onClick={() => openGallery(notiz.id)}
-                                                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                                                            disabled={uploadingBildNotizId !== null}
+                                                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors disabled:opacity-50"
                                                         >
                                                             <Image className="w-3.5 h-3.5" />
                                                             Galerie
@@ -448,7 +447,7 @@ export default function ProjektNotizenPage() {
                                                                 onClick={() => uploadPendingPhotos(notiz.id)}
                                                                 className="ml-auto flex items-center gap-1 text-xs bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg transition-colors"
                                                             >
-                                                                Hochladen ({pendingPhotos.length})
+                                                                {pendingPhotos.some(p => p.fehler) ? 'Erneut versuchen' : 'Hochladen'} ({pendingPhotos.length})
                                                             </button>
                                                         )}
                                                     </>
