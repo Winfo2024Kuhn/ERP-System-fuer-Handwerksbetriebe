@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
@@ -30,8 +31,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>Der Aufrufer wird nie aus Client-Angaben wie einer Mitarbeiter-ID abgeleitet:
  * <ol>
- *   <li>Mobile-PWA: gültiges Mitarbeiter-Login-Token ({@code ?token=}) — die
- *       Zeiterfassungs-Chain erlaubt auch Aufrufe ohne PC-Session.</li>
+ *   <li>Mobile-PWA: gültiges Mitarbeiter-Login-Token ({@code ?token=} oder vom
+ *       Mobile-Filter geprüfter {@code X-Auth-Token} als {@code MobilePrincipal}).</li>
  *   <li>PC: Spring-Security-Principal der Session. {@code ROLE_ADMIN} sieht alle
  *       Typen; alle anderen die Typen ihres verknüpften Mitarbeiters.</li>
  * </ol>
@@ -53,6 +54,11 @@ public class LieferantDokumentZugriffService {
         Mitarbeiter perToken = belegService.findByToken(token);
         if (perToken != null) {
             return Optional.of(typenVon(perToken));
+        }
+        if (auth != null && auth.getPrincipal() instanceof MobilePrincipal) {
+            // Token im Header, vom Mobile-Filter geprüft: nie Admin-Rechte, nur die des Mitarbeiters.
+            Mitarbeiter perMobile = belegService.findCaller(null, auth);
+            return Optional.of(perMobile == null ? keine() : typenVon(perMobile));
         }
         if (auth == null || !(auth.getPrincipal() instanceof FrontendUserPrincipal principal)) {
             return Optional.empty();

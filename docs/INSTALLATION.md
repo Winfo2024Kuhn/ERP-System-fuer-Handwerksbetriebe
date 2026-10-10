@@ -32,14 +32,7 @@ Der Installer erstellt automatisch:
 
 Startmenü → **„ERP Handwerk"** → Anwendung startet und der Browser öffnet sich automatisch.
 
-**Standard-Zugangsdaten:**
-
-| Feld | Wert |
-|------|------|
-| Benutzer | `Marvin` |
-| Passwort | `123456` |
-
-> ⚠️ **Ändere die Zugangsdaten nach dem ersten Login!**
+Bei einer neuen Datenbank ohne vorkonfigurierten Admin legst du im Browser den ersten Benutzer an; dieser wird Administrator. Schließe die Ersteinrichtung im geschützten Netz ab, bevor die Anwendung über eine öffentliche Domain erreichbar wird. Es gibt keine fest eingebauten Standard-Zugangsdaten für diese Einrichtung.
 
 ### Wo werden meine Daten gespeichert?
 
@@ -216,7 +209,7 @@ Ja! Andere Geräte im gleichen Netzwerk erreichen die Anwendung über:
 ```
 http://[SERVER-IP]:8080
 ```
-Unter Windows findest du die IP mit `ipconfig`. Stelle sicher, dass Port 8080 in der Windows-Firewall freigegeben ist.
+Unter Windows findest du die IP mit `ipconfig`. Gib Port 8080 in der Firewall nur für die vorgesehenen Geräte im Firmennetz frei, nicht für das öffentliche Internet.
 
 ---
 
@@ -247,7 +240,9 @@ Das fertige JAR liegt unter `target/kalkulationsprogramm-*.jar`.
 
 ### Authentifizierung konfigurieren
 
-Die API ist **standardmäßig per HTTP Basic Auth geschützt**. Admin-Zugangsdaten werden über Umgebungsvariablen gesetzt:
+Die Desktop-API verwendet **Sitzungen nach Anmeldung mit Benutzername und Passwort sowie CSRF-Schutz**. HTTP Basic ist deaktiviert. Die mobile API prüft Mitarbeiter-Tokens und erlaubt nur ausdrücklich freigegebene Methoden und Routen. Details zu Wartezeiten, Proxy-Vertrauen und Grenzen: [Mobile Token-Sicherheit](MOBILE_TOKEN_SECURITY.md).
+
+Für eine neue Datenbank kann der erste Admin über Umgebungsvariablen angelegt werden:
 
 ```powershell
 # Windows (PowerShell)
@@ -261,7 +256,7 @@ export APP_ADMIN_USER="meinBenutzername"
 export APP_ADMIN_PASS="sicheresPasswort123!"
 ```
 
-> ⚠️ **Wichtig:** Ändere unbedingt die Standard-Zugangsdaten (`admin` / `changeme`) vor dem produktiven Einsatz!
+Die Variablen werden nur zur ersten Anlage verwendet, solange noch kein Login-Benutzer existiert; sie ändern kein bestehendes Passwort. Ohne konfigurierte Werte erfolgt die erste Registrierung im Browser. Schließe sie vor einer öffentlichen Freigabe ab und verwende eigene, starke Zugangsdaten.
 
 ---
 
@@ -313,7 +308,7 @@ java -jar target/kalkulationsprogramm-*.jar --spring.profiles.active=local
 | Anderer PC im LAN | `http://192.168.x.x:8080` (IP des Servers) |
 | Zeiterfassung (Handy) | `http://192.168.x.x:8080/zeiterfassung` |
 
-> 💡 **Tipp:** Unter Windows die IP mit `ipconfig` herausfinden. Stelle sicher, dass Port 8080 in der Windows-Firewall freigegeben ist.
+> 💡 **Tipp:** Unter Windows die IP mit `ipconfig` herausfinden. Gib Port 8080 in der Firewall nur für die vorgesehenen Geräte im Firmennetz frei, nicht für das öffentliche Internet.
 
 ---
 
@@ -321,7 +316,7 @@ java -jar target/kalkulationsprogramm-*.jar --spring.profiles.active=local
 
 Für den Zugriff **von unterwegs oder von Baustellen** – z. B. auf einem VPS bei Hetzner, Netcup oder DigitalOcean.
 
-> ⚠️ **Sicherheitshinweis:** Einen Server ohne Absicherung ins Internet zu stellen ist gefährlich! Wähle mindestens **eine** der folgenden Absicherungen:
+VPN, Reverse Proxy und Tunnel sind unterschiedliche Zugangswege. Für einen öffentlichen Zugriff ohne VPN sind HTTPS, eingeschränkte Backend-Erreichbarkeit, passende Proxy-Vertrauensregeln sowie geprüfte Endpunkt- und Objektberechtigungen gemeinsam erforderlich. Die folgenden Varianten ersetzen diese Prüfung nicht; siehe [Domain-Betrieb ohne VPN](MOBILE_TOKEN_SECURITY.md#vor-einer-öffentlichen-domain-ohne-vpn).
 
 #### Variante 1: VPN mit Tailscale (empfohlen für Einsteiger)
 
@@ -342,7 +337,7 @@ java -jar kalkulationsprogramm-*.jar
 2. Mit dem gleichen Konto anmelden
 3. Zugriff über die Tailscale-IP: `http://100.x.x.x:8080`
 
-**Vorteile:** Einfachste Einrichtung, kein Port öffnen, automatische Verschlüsselung, kostenlos für kleine Teams (bis 100 Geräte).
+**Netzwerkgrenze prüfen:** Der Zugriff soll ausschließlich über das eingerichtete private Netzwerk möglich sein. Ein VPN verhindert für sich allein keine zusätzlich offenen öffentlichen Ports; Firewall und Serverbindung entsprechend prüfen.
 
 **Optional – HTTPS innerhalb von Tailscale aktivieren:**
 ```bash
@@ -362,58 +357,19 @@ Dann erreichbar über: `https://mein-server.tail-xxxx.ts.net:8443`
 
 #### Variante 2: HTTPS mit Reverse Proxy (für öffentlichen Zugriff)
 
-Wenn der Server **öffentlich erreichbar** sein soll (z. B. für Kunden-Zeiterfassung), nutze einen Reverse Proxy mit automatischem SSL-Zertifikat.
+Für eine Domain ohne VPN kann ein Reverse Proxy die HTTPS-Verbindung annehmen und geprüfte Anfragen an das Backend weiterleiten. DNS und Zertifikate müssen zur Domain passen; das Backend darf nur über die vorgesehenen Proxys erreichbar sein.
 
-**Mit Caddy (empfohlen – automatisches HTTPS):**
+Vor der Freigabe werden die benötigten mobilen Seiten, Ressourcen und API-Methoden ausdrücklich festgelegt. Eine pauschale Weiterleitung des gesamten ERP auf `localhost:8080` ist keine vollständige Absicherung. Die Token-Prüfung ersetzt weder diese Proxy-Regeln noch die Prüfung, welche konkreten Projekte, Dokumente und Mitarbeiterdaten ein angemeldeter Nutzer abrufen darf.
 
-```bash
-# Caddy installieren (Ubuntu/Debian)
-sudo apt install -y caddy
-```
-
-Erstelle `/etc/caddy/Caddyfile`:
-```
-erp.meinefirma.de {
-    reverse_proxy localhost:8080
-}
-```
-
-```bash
-sudo systemctl restart caddy
-```
-
-Caddy holt sich automatisch ein Let's-Encrypt-Zertifikat. Die Anwendung ist dann unter `https://erp.meinefirma.de` erreichbar.
-
-> 📋 **Voraussetzung:** Eine Domain (z. B. `erp.meinefirma.de`) muss per DNS-A-Record auf die Server-IP zeigen.
-
-**Zusätzliche Absicherung für öffentliche Server:**
-- Starkes Admin-Passwort setzen (mind. 16 Zeichen)
-- SSH nur mit Key-Login (Passwort-Login deaktivieren)
-- Firewall: nur Port 80, 443 und SSH offen (`ufw allow 80,443,22/tcp`)
-- Fail2Ban installieren gegen Brute-Force-Angriffe
-- Regelmäßige Datenbank-Backups (siehe `deployment/scripts/backup-database.ps1`)
+Die [Betriebsanleitung zur mobilen Token-Sicherheit](MOBILE_TOKEN_SECURITY.md) beschreibt die konkreten Einstellungen für `zeiterfassung.security.trusted-proxies`, das Verhalten von `X-Forwarded-For`, die zusätzliche externe Netzliste und die notwendigen Funktionsprüfungen. Für Windows mit Docker steht das [vorbereitete Startpaket](../deployment/mobile-public/README.md) bereit: temporäre HTTPS-Testadresse oder feste Domain, begrenzte mobile Routen, private Backend-Ports und Vorprüfungen vor dem Öffnen.
 
 ---
 
-#### Variante 3: Cloudflare Tunnel (kein Port öffnen, kein VPN nötig)
+#### Variante 3: Cloudflare Tunnel (kein VPN auf dem Endgerät nötig)
 
-[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) macht den lokalen Server über eine Cloudflare-Domain erreichbar, **ohne Ports zu öffnen**.
+Ein [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) kann einen Zugangsweg über eine Domain bereitstellen. Auch dafür sind die öffentliche Routenfreigabe, HTTPS, Objektberechtigungen und die Abschottung des Backends zu prüfen. Die Einrichtung eines Tunnels allein schützt keine zusätzlich erreichbaren Backend-Ports und gewährt keine fachlichen Berechtigungen.
 
-```bash
-# cloudflared installieren
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare.gpg
-sudo apt install cloudflared
-
-# Tunnel erstellen und konfigurieren
-cloudflared tunnel login
-cloudflared tunnel create handwerkerprogramm
-cloudflared tunnel route dns handwerkerprogramm erp.meinefirma.de
-
-# Tunnel starten
-cloudflared tunnel --url http://localhost:8080 run handwerkerprogramm
-```
-
-**Vorteile:** Kein Port öffnen, automatisches HTTPS, DDoS-Schutz inklusive, kostenloser Tarif verfügbar.
+Die Anwendung wertet derzeit **nicht `CF-Connecting-IP`** aus. Sie übernimmt `X-Forwarded-For` nur von ausdrücklich konfigurierten vertrauenswürdigen Proxys. Ein Tunnel, der sich wie `cloudflared` auf `localhost:8080` verbindet, gilt deshalb **nicht** als lokal: Trägt eine Anfrage Weiterleitungs-Header (`CF-Connecting-IP`, `X-Forwarded-For`, `Forwarded`, `X-Real-IP`) und kommt sie nicht von einem freigegebenen Proxy, behandelt die Netzgrenze sie als extern und lässt nur die mobilen Pfade durch – Desktop-Oberfläche und Anmeldung bleiben gesperrt. Alle Tunnel-Nutzer teilen sich dabei eine IP-Sperre; für getrennte Sperren das Docker-Gateway aus `deployment/mobile-public/` verwenden. **Nach dem Update:** Wer bisher den ganzen ERP-Rechner per Tunnel freigegeben hat, erreicht darüber nur noch die mobile Zeiterfassung. Details: [Vertrauenswürdige Proxys konfigurieren](MOBILE_TOKEN_SECURITY.md#vertrauenswürdige-proxys-konfigurieren).
 
 ---
 
@@ -422,10 +378,9 @@ cloudflared tunnel --url http://localhost:8080 run handwerkerprogramm
 | Kriterium | LAN (lokal) | Tailscale VPN | HTTPS + Reverse Proxy | Cloudflare Tunnel |
 |-----------|:-----------:|:-------------:|:---------------------:|:-----------------:|
 | Einrichtung | ⭐ Einfach | ⭐ Einfach | ⭐⭐ Mittel | ⭐⭐ Mittel |
-| Kosten | Keine | Kostenlos | Domain nötig (~1 €/M.) | Domain nötig |
 | Zugriff von unterwegs | ❌ | ✅ | ✅ | ✅ |
-| Öffentlich erreichbar | ❌ | ❌ | ✅ | ✅ |
-| HTTPS | Nicht nötig | Optional | ✅ Automatisch | ✅ Automatisch |
+| Öffentlich erreichbar | Nein, bei passender Firewall | Nein, bei passender Firewall | Nur freigegebene Routen (Proxy-Regeln) | Nur mobile Pfade (Netzgrenze) |
+| HTTPS | Für den Betriebsweg prüfen | Für den Betriebsweg prüfen | Einrichten und prüfen | Gesamten Verbindungsweg prüfen |
 | Port öffnen | Nur LAN | Kein Port | Port 80 + 443 | Kein Port |
 
 ---
@@ -519,3 +474,5 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 |----------|---------|--------------|--------------|
 | `ZEITERFASSUNG_URL` | Nein | Basis-URL der mobilen Zeiterfassung (für Deep-Links) | `http://localhost:8080` |
 <!-- AUTO-GENERATED: env-table END -->
+
+**Präzisierung zur generierten Admin-Tabelle:** `APP_ADMIN_USER` und `APP_ADMIN_PASS` sind im aktuellen Backend optionale Angaben für die erste Admin-Anlage. Ohne sie erfolgt die Erstregistrierung im Browser. Bestehende Login-Benutzer werden durch diese Variablen nicht geändert; siehe [Authentifizierung konfigurieren](#authentifizierung-konfigurieren).

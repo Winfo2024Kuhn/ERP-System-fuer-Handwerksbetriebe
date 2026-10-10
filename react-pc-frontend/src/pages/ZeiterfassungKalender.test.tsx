@@ -31,9 +31,8 @@ function setup() {
             { id: 2, vorname: 'Anna', nachname: 'Inaktiv', aktiv: false },
             { id: 3, vorname: 'Chef', nachname: 'Boss', aktiv: true, istGeschaeftsfuehrer: true }
         ];
-        const mitarbeiterDetail = /^\/api\/mitarbeiter\/(\d+)$/.exec(input);
-        if (mitarbeiterDetail && Number(mitarbeiterDetail[1]) in saldoAntworten) body = { id: Number(mitarbeiterDetail[1]), loginToken: `token-${mitarbeiterDetail[1]}` };
-        const saldoAbruf = /^\/api\/zeiterfassung\/saldo\/token-(\d+)\?/.exec(input);
+        // Saldo kommt über die Mitarbeiter-ID – das Büro braucht keinen fremden Anmelde-Code.
+        const saldoAbruf = /^\/api\/zeitverwaltung\/mitarbeiter\/(\d+)\/saldo\?/.exec(input);
         if (saldoAbruf) body = saldoAntworten[Number(saldoAbruf[1])];
         if (input.startsWith('/api/zeitverwaltung/kalender')) body = { tage, sollStundenMonat: 160, istStundenMonat: 168, differenz: 8 };
         if (input === base) {
@@ -325,7 +324,7 @@ describe('Gesamtstundenkonto beim Mitarbeiterwechsel', () => {
     it('stürzt nicht ab, wenn nach der Geschäftsführung ein Mitarbeiter mit Zeitkonto gewählt wird', async () => {
         saldoAntworten = { 1: vollerSaldo, 3: { urlaub: { genommen: 0, geplant: 0 }, monat: {} } };
         mount(`/zeitbuchungen?jahr=${year}&monat=8&mitarbeiterId=3`);
-        await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/zeiterfassung/saldo/token-3')));
+        await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/zeitverwaltung/mitarbeiter/3/saldo')));
 
         await waehleMitarbeiter(/Max Mustermann/);
 
@@ -336,7 +335,7 @@ describe('Gesamtstundenkonto beim Mitarbeiterwechsel', () => {
     it('blendet das Gesamtstundenkonto aus, wenn der Saldo ohne Gesamtwerte zurückkommt', async () => {
         saldoAntworten = { 1: { error: 'Mitarbeiter nicht gefunden' } };
         mount();
-        await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/zeiterfassung/saldo/token-1')));
+        await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/zeitverwaltung/mitarbeiter/1/saldo')));
         await screen.findByText(/ZEITERFASSUNG KALENDER/);
         expect(screen.queryByText(`Gesamtstundenkonto ${year}`)).not.toBeInTheDocument();
     });
@@ -346,13 +345,13 @@ describe('Gesamtstundenkonto beim Mitarbeiterwechsel', () => {
         const standardFetch = mockFetch.getMockImplementation()!;
         saldoAntworten = { 1: vollerSaldo, 3: { urlaub: { genommen: 0, geplant: 0 } } };
         mockFetch.mockImplementation(async (input: string, init?: RequestInit) => {
-            if (input.startsWith('/api/zeiterfassung/saldo/token-3')) {
+            if (input.startsWith('/api/zeitverwaltung/mitarbeiter/3/saldo')) {
                 await new Promise<void>(resolve => { spaeteAntwortFreigeben = resolve; });
             }
             return standardFetch(input, init);
         });
         mount(`/zeitbuchungen?jahr=${year}&monat=8&mitarbeiterId=3`);
-        await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/zeiterfassung/saldo/token-3')));
+        await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/api/zeitverwaltung/mitarbeiter/3/saldo')));
 
         await waehleMitarbeiter(/Max Mustermann/);
         expect(await screen.findByText(`Gesamtstundenkonto ${year}`)).toBeVisible();

@@ -3,8 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import { createMobileFetch } from './auth/mobileTransport'
 import { ToastProvider } from './components/ui/toast'
 import { ConfirmProvider } from './components/ui/confirm-dialog'
+
+window.fetch = createMobileFetch(window.fetch.bind(window), () => localStorage.getItem('zeiterfassung_token'), window.location.origin)
 
 // ─── PWA Service Worker Auto-Update ───
 // Registriert den SW und lädt die Seite automatisch neu wenn ein Update verfügbar ist

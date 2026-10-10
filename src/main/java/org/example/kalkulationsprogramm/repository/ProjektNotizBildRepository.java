@@ -9,6 +9,9 @@ import java.util.List;
 @Repository
 public interface ProjektNotizBildRepository extends JpaRepository<ProjektNotizBild, Long> {
 
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = { "notiz", "notiz.projekt", "notiz.mitarbeiter" })
+    List<ProjektNotizBild> findByGespeicherterDateiname(String gespeicherterDateiname);
+
     /**
      * Findet alle Bilder zu einer Notiz.
      */

@@ -109,11 +109,21 @@ public class LieferantReklamationController {
             return ResponseEntity.notFound().build();
         }
 
+        // Nur Fotos: Eine SVG- oder HTML-Datei würde später im Browser des Büros ausgeführt.
+        if (!org.example.kalkulationsprogramm.service.MobileObjectAccessService.istErlaubtesMobilBild(datei)) {
+            return ResponseEntity.badRequest().build();
+        }
+
         var mitarbeiter = mitarbeiterByToken(token);
 
         try {
-            String originalFilename = StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()));
-            String storedFilename = UUID.randomUUID() + "_" + originalFilename;
+            String originalFilename = Path.of(Objects.requireNonNullElse(datei.getOriginalFilename(), "foto"))
+                    .getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
+            // Die Endung kommt aus dem geprüften Bildtyp, nicht aus dem Namen des Absenders.
+            String endung = org.example.kalkulationsprogramm.service.MobileObjectAccessService
+                    .endungFuerBild(datei.getContentType());
+            String storedFilename = UUID.randomUUID() + "_" + originalFilename
+                    + (originalFilename.toLowerCase(java.util.Locale.ROOT).endsWith(endung) ? "" : endung);
 
             // Reuse the existing supplier images folder structure
             Path lieferantDir = Paths.get("uploads", "lieferanten",

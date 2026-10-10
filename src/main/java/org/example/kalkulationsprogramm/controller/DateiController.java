@@ -13,10 +13,12 @@ import java.util.function.Function;
 
 
 import org.example.kalkulationsprogramm.domain.Dokument;
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.dto.OpenExternalResponse;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.MobileObjectAccessService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
@@ -39,19 +41,60 @@ public class DateiController {
 
     private final DateiSpeicherService dateiSpeicherService;
     private final BildVorschauService bildVorschauService;
+    private final MobileObjectAccessService mobileObjectAccessService;
 
     private static final Logger log = LoggerFactory.getLogger(DateiController.class);
 
+    private static final String NOSNIFF = "X-Content-Type-Options";
+
+    /** Nur Fotos und PDFs zeigt der Browser direkt an. SVG und HTML könnten Skript im Ursprung des ERP ausführen. */
+    private static final java.util.Set<String> INLINE_SICHERE_TYPEN = java.util.Set.of(
+            MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE, MediaType.IMAGE_GIF_VALUE, "image/webp",
+            "image/heic", "image/heif", "image/bmp", MediaType.APPLICATION_PDF_VALUE);
+
+    /** Wie eine Datei ausgeliefert wird: sichere Typen inline, alles andere als Download. */
+    record Auslieferung(String typ, boolean inline) {
+        String disposition(String dateiname) {
+            String name = dateiname != null && !dateiname.isBlank() ? dateiname : "datei";
+            ContentDisposition.Builder builder = inline ? ContentDisposition.inline() : ContentDisposition.attachment();
+            // Reine ASCII-Namen bleiben lesbar; alles andere kodiert ContentDisposition nach RFC 5987,
+            // damit Anführungszeichen oder Zeilenumbrüche im Namen den Header nicht aufbrechen.
+            boolean einfach = name.chars().allMatch(c -> c >= 0x20 && c < 0x7f && c != '"' && c != '\\');
+            return (einfach ? builder.filename(name) : builder.filename(name, StandardCharsets.UTF_8)).build().toString();
+        }
+    }
+
+    static Auslieferung auslieferung(String contentType) {
+        String typ = contentType == null ? "" : contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        if (INLINE_SICHERE_TYPEN.contains(typ)) {
+            return new Auslieferung(typ, true);
+        }
+        // Downloads behalten ihren Typ (Excel, Word …). Was der Browser als Seite oder Skript
+        // ausführen würde (HTML, SVG, XML, JavaScript), bekommt einen neutralen Typ.
+        return new Auslieferung(istAktiverInhalt(typ) ? MediaType.APPLICATION_OCTET_STREAM_VALUE : typ, false);
+    }
+
+    private static boolean istAktiverInhalt(String typ) {
+        int strich = typ.indexOf('/');
+        if (strich <= 0) return true;
+        String haupt = typ.substring(0, strich);
+        String unter = typ.substring(strich + 1);
+        if (haupt.equals("text")) return !unter.equals("plain") && !unter.equals("csv");
+        if (haupt.equals("multipart")) return true;
+        return unter.equals("xml") || unter.endsWith("+xml") || unter.contains("javascript")
+                || unter.contains("ecmascript") || unter.equals("xsl") || unter.contains("html");
+    }
+
     /**
      * Gespeicherte Bilder tragen einen eindeutigen UUID-Namen und werden nie
-     * überschrieben – unter derselben Adresse liegt also immer dasselbe Bild. Das Handy
-     * darf es deshalb lange behalten und muss Baustellenfotos nicht bei jedem Öffnen
-     * neu laden. {@code private}: Fotos sind personenbezogen und gehören in den Cache
-     * des Geräts, nicht in einen geteilten Zwischenspeicher (Proxy, CDN).
+     * überschrieben – unter derselben Adresse liegt also immer dasselbe Bild.
+     * Desktop-Sitzungen behalten deshalb den bisherigen privaten Browser-Cache.
+     * Mobile Antworten verwenden {@code no-store}, damit Änderungen an der
+     * Objektfreigabe bei jeder Anfrage geprüft werden.
      *
      * <p>Bewusst in Kauf genommen: Wird ein Foto im ERP gelöscht, bleibt die Kopie im
-     * Gerät bis zum Abmelden (die App leert dann ihren Bilder-Cache) bzw. höchstens
-     * 30 Tage bestehen. Der Server selbst liefert es ab sofort nicht mehr aus.</p>
+     * Desktop-Browser höchstens 30 Tage bestehen. Der Server selbst liefert es
+     * ab sofort nicht mehr aus.</p>
      */
     static final CacheControl BILD_CACHE = CacheControl.maxAge(30, TimeUnit.DAYS).cachePrivate();
 
@@ -61,6 +104,8 @@ public class DateiController {
         byte[] erzeuge(String dateiname, Resource resource) throws IOException;
     }
 
+    private record MobileDatei(Resource resource, String cacheKey) {}
+
     /**
      * Dieser Endpunkt liefert gespeicherte Bilder aus.
      * Das ":.+" ist wichtig, damit auch Dateiendungen im Dateinamen erlaubt sind.
@@ -69,15 +114,17 @@ public class DateiController {
      */
     @GetMapping("/api/images/{dateiname:.+}")
     public ResponseEntity<Resource> liefereBild(@PathVariable String dateiname) {
-        Resource resource = dateiSpeicherService.ladeBildAlsResource(dateiname);
+        MobileDatei mobileDatei = ladeMobileDatei(dateiname);
+        Resource resource = mobileDatei != null ? mobileDatei.resource()
+                : dateiSpeicherService.ladeBildAlsResource(dateiname);
 
-        String contentType = bestimmeContentType(resource, dateiname);
+        Auslieferung art = auslieferung(bestimmeContentType(resource, dateiname));
 
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .cacheControl(BILD_CACHE)
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\"" + resource.getFilename() + "\"")
+                .contentType(MediaType.parseMediaType(art.typ()))
+                .cacheControl(bildCache())
+                .header(HttpHeaders.CONTENT_DISPOSITION, art.disposition(resource.getFilename()))
+                .header(NOSNIFF, "nosniff")
                 .body(resource);
     }
 
@@ -86,6 +133,18 @@ public class DateiController {
                                              @RequestParam(required = false) String token,
                                              @RequestParam(required = false, defaultValue = "false") boolean download,
                                              Principal principal) {
+        MobileDatei mobileDatei = ladeMobileDatei(dateiname);
+        if (mobileDatei != null) {
+            // Mobile Dateien wurden bereits am konkreten Objekt freigegeben.
+            // Der Desktop-Metadatenlookup darf daraus keinen Originalnamen-Alias machen.
+            Auslieferung art = auslieferung(bestimmeContentType(mobileDatei.resource(), dateiname));
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .contentType(MediaType.parseMediaType(art.typ()))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, art.disposition(dateiname))
+                    .header(NOSNIFF, "nosniff")
+                    .body(mobileDatei.resource());
+        }
         Dokument dokument;
         try {
             dokument = dateiSpeicherService.ladeDokumentMetadaten(dateiname);
@@ -142,13 +201,12 @@ public class DateiController {
                 ? originalerDateiname
                 : resource.getFilename();
 
-        boolean inline = contentType != null && (MediaType.APPLICATION_PDF_VALUE.equalsIgnoreCase(contentType)
-                || contentType.toLowerCase().startsWith("image/"));
-        String disposition = inline ? "inline" : "attachment";
+        Auslieferung art = auslieferung(contentType);
 
-        return mitBildCache(ResponseEntity.ok(), contentType)
-                .contentType(MediaType.parseMediaType(contentType))
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition + "; filename=\"" + filename + "\"")
+        return mitBildCache(ResponseEntity.ok(), art.typ())
+                .contentType(MediaType.parseMediaType(art.typ()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, art.disposition(filename))
+                .header(NOSNIFF, "nosniff")
                 .body(resource);
     }
 
@@ -179,20 +237,25 @@ public class DateiController {
         // Original-Datei laden – auch wenn die verkleinerte Fassung schon im Cache liegt.
         // Fehlt die Datei, wurde das Foto gelöscht und darf nicht weiter ausgeliefert werden,
         // egal über welchen Weg (Bautagebuch, Anfrage, PC) es entfernt wurde.
-        Resource resource;
-        try {
-            resource = dateiSpeicherService.ladeDokumentAlsResource(dateiname);
-        } catch (RuntimeException ex) {
-            // Fallback: versuche als Bild zu laden
+        MobileDatei mobileDatei = ladeMobileDatei(dateiname);
+        Resource resource = mobileDatei == null ? null : mobileDatei.resource();
+        if (mobileDatei == null) {
             try {
-                resource = dateiSpeicherService.ladeBildAlsResource(dateiname);
-            } catch (RuntimeException ex2) {
-                bildVorschauService.vergiss(dateiname);
-                throw new NotFoundException("Dokument nicht gefunden: " + dateiname);
+                resource = dateiSpeicherService.ladeDokumentAlsResource(dateiname);
+            } catch (RuntimeException ex) {
+                // Fallback ausschließlich für Desktop-Anfragen.
+                try {
+                    resource = dateiSpeicherService.ladeBildAlsResource(dateiname);
+                } catch (RuntimeException ex2) {
+                    bildVorschauService.vergiss(dateiname);
+                    throw new NotFoundException("Dokument nicht gefunden: " + dateiname);
+                }
             }
         }
 
-        byte[] cached = ausCache.apply(dateiname);
+        // Desktop-Fallbacks und unterschiedliche Speicher dürfen keinen Cache-Eintrag teilen.
+        String cacheKey = mobileDatei == null ? dateiname : mobileDatei.cacheKey();
+        byte[] cached = ausCache.apply(cacheKey);
         if (cached != null) {
             return verkleinertesBild(cached, antwortName);
         }
@@ -201,16 +264,18 @@ public class DateiController {
         String contentType = bestimmeContentType(resource, dateiname);
         if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
             // Kein Bild – Original zurückgeben als Fallback
+            Auslieferung art = auslieferung(contentType);
             return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType != null ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + dateiname + "\"")
+                    .contentType(MediaType.parseMediaType(art.typ()))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, art.disposition(dateiname))
+                    .header(NOSNIFF, "nosniff")
                     .body(resourceToBytes(resource));
         }
 
         try {
             byte[] jpegBytes;
             try {
-                jpegBytes = verkleinerung.erzeuge(dateiname, resource);
+                jpegBytes = verkleinerung.erzeuge(cacheKey, resource);
             } catch (BildVorschauService.UmrechnungAusgelastetException ausgelastet) {
                 // Vorübergehend: nichts speichern lassen, die App lädt dann das Original
                 // und versucht es beim nächsten Öffnen wieder mit der kleinen Fassung.
@@ -236,7 +301,7 @@ public class DateiController {
         String jpegName = dateiname.replaceFirst("\\.[^.]*+$", "") + ".jpg";
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
-                .cacheControl(BILD_CACHE)
+                .cacheControl(bildCache())
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.inline().filename(jpegName).build().toString())
                 .body(jpegBytes);
@@ -244,10 +309,12 @@ public class DateiController {
 
     private ResponseEntity<byte[]> fallbackOriginal(Resource resource, String dateiname, String contentType) {
         try {
+            Auslieferung art = auslieferung(contentType);
             return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .cacheControl(BILD_CACHE)
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + dateiname + "\"")
+                    .contentType(MediaType.parseMediaType(art.typ()))
+                    .cacheControl(bildCache())
+                    .header(HttpHeaders.CONTENT_DISPOSITION, art.disposition(dateiname))
+                    .header(NOSNIFF, "nosniff")
                     .body(resourceToBytes(resource));
         } catch (Exception e) {
             throw new RuntimeException("Fehler beim Lesen der Datei: " + dateiname, e);
@@ -285,14 +352,12 @@ public class DateiController {
         if (resource == null) {
             throw new NotFoundException("Dokument nicht gefunden: " + dateiname);
         }
-        String contentType = bestimmeContentType(resource, dateiname);
-        boolean inline = contentType != null && (MediaType.APPLICATION_PDF_VALUE.equalsIgnoreCase(contentType)
-                || contentType.toLowerCase().startsWith("image/"));
-        String disposition = inline ? "inline" : "attachment";
+        Auslieferung art = auslieferung(bestimmeContentType(resource, dateiname));
 
-        return mitBildCache(ResponseEntity.ok(), contentType)
-                .contentType(MediaType.parseMediaType(contentType))
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition + "; filename=\"" + dateiname + "\"")
+        return mitBildCache(ResponseEntity.ok(), art.typ())
+                .contentType(MediaType.parseMediaType(art.typ()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, art.disposition(dateiname))
+                .header(NOSNIFF, "nosniff")
                 .body(resource);
     }
 
@@ -302,9 +367,23 @@ public class DateiController {
      */
     private ResponseEntity.BodyBuilder mitBildCache(ResponseEntity.BodyBuilder builder, String contentType) {
         if (contentType != null && contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
-            builder.cacheControl(BILD_CACHE);
+            builder.cacheControl(bildCache());
         }
         return builder;
+    }
+
+    private MobileDatei ladeMobileDatei(String dateiname) {
+        MobilePrincipal principal = MobilePrincipal.current();
+        if (principal == null) {
+            return null;
+        }
+        var datei = mobileObjectAccessService.requireReadableFile(dateiname, principal.mitarbeiterId());
+        return new MobileDatei(dateiSpeicherService.ladeMobileDateiAlsResource(datei),
+                "mobile:" + datei.speicher().name() + ":" + datei.dateiname());
+    }
+
+    private CacheControl bildCache() {
+        return MobilePrincipal.current() == null ? BILD_CACHE : CacheControl.noStore();
     }
 
     private String bestimmeContentType(Resource resource, String filename) {

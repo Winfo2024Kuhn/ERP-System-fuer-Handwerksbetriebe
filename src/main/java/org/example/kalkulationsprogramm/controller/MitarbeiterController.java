@@ -5,7 +5,13 @@ import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterErstellenDto;
+import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.domain.FrontendUserRole;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.MitarbeiterService;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,27 +25,58 @@ import java.util.List;
 public class MitarbeiterController {
 
     private final MitarbeiterService service;
+    private final BelegService belegService;
 
     @GetMapping
-    public ResponseEntity<List<MitarbeiterDto>> list() {
-        return ResponseEntity.ok(service.list());
+    public ResponseEntity<List<MitarbeiterDto>> list(Authentication authentication) {
+        Zugang zugang = zugang(authentication);
+        List<MitarbeiterDto> liste = service.list();
+        liste.forEach(zugang::verbergeFremdenCode);
+        return ResponseEntity.ok(liste);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<MitarbeiterDto> get(@PathVariable Long id) {
+    public ResponseEntity<MitarbeiterDto> get(@PathVariable Long id, Authentication authentication) {
+        Zugang zugang = zugang(authentication);
         return service.findById(id)
+                .map(zugang::verbergeFremdenCode)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    public ResponseEntity<MitarbeiterDto> create(@RequestBody MitarbeiterErstellenDto dto) {
-        return ResponseEntity.ok(service.save(null, dto));
+    public ResponseEntity<MitarbeiterDto> create(@RequestBody MitarbeiterErstellenDto dto, Authentication authentication) {
+        return ResponseEntity.ok(zugang(authentication).verbergeFremdenCode(service.save(null, dto)));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<MitarbeiterDto> update(@PathVariable Long id, @RequestBody MitarbeiterErstellenDto dto) {
-        return ResponseEntity.ok(service.save(id, dto));
+    public ResponseEntity<MitarbeiterDto> update(@PathVariable Long id, @RequestBody MitarbeiterErstellenDto dto,
+            Authentication authentication) {
+        return ResponseEntity.ok(zugang(authentication).verbergeFremdenCode(service.save(id, dto)));
+    }
+
+    /**
+     * Wer darf Anmelde-Codes (Login-Tokens) sehen? Mit einem Code meldet man sich in der Handy-App als
+     * dieser Mitarbeiter an – auch von außerhalb. Deshalb nur Admins und der Mitarbeiter selbst.
+     */
+    private record Zugang(boolean admin, Long eigeneMitarbeiterId) {
+        boolean darfCodeSehen(Long mitarbeiterId) {
+            return admin || (eigeneMitarbeiterId != null && eigeneMitarbeiterId.equals(mitarbeiterId));
+        }
+
+        MitarbeiterDto verbergeFremdenCode(MitarbeiterDto dto) {
+            if (dto != null && !darfCodeSehen(dto.getId())) {
+                dto.setLoginToken(null);
+            }
+            return dto;
+        }
+    }
+
+    private Zugang zugang(Authentication authentication) {
+        boolean admin = authentication != null && authentication.getPrincipal() instanceof FrontendUserPrincipal p
+                && p.hasRole(FrontendUserRole.ADMIN);
+        Mitarbeiter eigener = admin ? null : belegService.findCaller(null, authentication);
+        return new Zugang(admin, eigener != null ? eigener.getId() : null);
     }
 
     @DeleteMapping("/{id}")
@@ -69,7 +106,11 @@ public class MitarbeiterController {
     @GetMapping(value = "/{id}/qr-code", produces = MediaType.IMAGE_PNG_VALUE)
     public ResponseEntity<byte[]> getQrCode(@PathVariable Long id,
             @RequestParam(defaultValue = "300") int width,
-            @RequestParam(defaultValue = "300") int height) {
+            @RequestParam(defaultValue = "300") int height,
+            Authentication authentication) {
+        if (!zugang(authentication).darfCodeSehen(id)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         try {
             byte[] qrCode = service.generateQrCode(id, width, height);
             return ResponseEntity.ok()
@@ -81,7 +122,10 @@ public class MitarbeiterController {
     }
 
     @PostMapping("/{id}/regenerate-token")
-    public ResponseEntity<String> regenerateToken(@PathVariable Long id) {
+    public ResponseEntity<String> regenerateToken(@PathVariable Long id, Authentication authentication) {
+        if (!zugang(authentication).darfCodeSehen(id)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         try {
             String newToken = service.generateLoginToken(id);
             return ResponseEntity.ok(newToken);

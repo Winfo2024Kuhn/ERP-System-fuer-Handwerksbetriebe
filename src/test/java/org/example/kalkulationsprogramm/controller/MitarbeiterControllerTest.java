@@ -42,6 +42,9 @@ class MitarbeiterControllerTest {
     @MockBean
     private MitarbeiterService service;
 
+    @MockBean
+    private org.example.kalkulationsprogramm.service.BelegService belegService;
+
     private MitarbeiterDto buildMitarbeiterDto(Long id, String vorname, String nachname) {
         MitarbeiterDto dto = new MitarbeiterDto();
         dto.setId(id);
@@ -340,7 +343,7 @@ class MitarbeiterControllerTest {
         void regeneriertTokenErfolgreich() throws Exception {
             given(service.generateLoginToken(1L)).willReturn("new-token-abc");
 
-            mockMvc.perform(post("/api/mitarbeiter/1/regenerate-token"))
+            mockMvc.perform(post("/api/mitarbeiter/1/regenerate-token").principal(anmeldung(true)))
                     .andExpect(status().isOk())
                     .andExpect(content().string("new-token-abc"));
         }
@@ -350,8 +353,64 @@ class MitarbeiterControllerTest {
         void regeneriertTokenGibt404BeiUnbekannterId() throws Exception {
             given(service.generateLoginToken(999L)).willThrow(new RuntimeException("Nicht gefunden"));
 
-            mockMvc.perform(post("/api/mitarbeiter/999/regenerate-token"))
+            mockMvc.perform(post("/api/mitarbeiter/999/regenerate-token").principal(anmeldung(true)))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        @DisplayName("Anmelde-Codes anderer Mitarbeiter: nur Admins (QR-Code, neuer Code, Liste)")
+        void fremdeCodesNurFuerAdmins() throws Exception {
+            var benutzer = anmeldung(false);
+            var eigener = new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+            eigener.setId(2L);
+            given(belegService.findCaller(null, benutzer)).willReturn(eigener);
+            MitarbeiterDto kollege = buildMitarbeiterDto(1L, "Erika", "Mustermann");
+            kollege.setLoginToken("12345678-1234-4234-8234-123456789abc");
+            MitarbeiterDto selbst = buildMitarbeiterDto(2L, "Max", "Mustermann");
+            selbst.setLoginToken("87654321-4321-4321-8321-cba987654321");
+            given(service.list()).willReturn(List.of(kollege, selbst));
+
+            mockMvc.perform(post("/api/mitarbeiter/1/regenerate-token").principal(benutzer))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(get("/api/mitarbeiter/1/qr-code").principal(benutzer))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(get("/api/mitarbeiter").principal(benutzer))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].loginToken").doesNotExist())
+                    .andExpect(jsonPath("$[1].loginToken").value("87654321-4321-4321-8321-cba987654321"));
+            org.mockito.Mockito.verify(service, org.mockito.Mockito.never()).generateLoginToken(1L);
+        }
+
+        @Test
+        @DisplayName("Admin sieht alle Codes, eigener Code und QR-Code sind erlaubt")
+        void adminUndEigenerCode() throws Exception {
+            MitarbeiterDto kollege = buildMitarbeiterDto(1L, "Erika", "Mustermann");
+            kollege.setLoginToken("12345678-1234-4234-8234-123456789abc");
+            given(service.findById(1L)).willReturn(Optional.of(kollege));
+            given(service.generateQrCode(1L, 300, 300)).willReturn(new byte[] { 1 });
+
+            mockMvc.perform(get("/api/mitarbeiter/1").principal(anmeldung(true)))
+                    .andExpect(jsonPath("$.loginToken").value("12345678-1234-4234-8234-123456789abc"));
+            mockMvc.perform(get("/api/mitarbeiter/1/qr-code").principal(anmeldung(true)))
+                    .andExpect(status().isOk());
+
+            var benutzer = anmeldung(false);
+            var eigener = new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+            eigener.setId(1L);
+            given(belegService.findCaller(null, benutzer)).willReturn(eigener);
+            mockMvc.perform(get("/api/mitarbeiter/1/qr-code").principal(benutzer))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/mitarbeiter/1/qr-code"))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    private static org.springframework.security.core.Authentication anmeldung(boolean admin) {
+        var principal = new org.example.kalkulationsprogramm.config.FrontendUserPrincipal(5L, "max.mustermann",
+                "Max Mustermann", "hash", true,
+                java.util.Set.of(admin ? org.example.kalkulationsprogramm.domain.FrontendUserRole.ADMIN
+                        : org.example.kalkulationsprogramm.domain.FrontendUserRole.USER));
+        return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                principal, null, principal.getAuthorities());
     }
 }

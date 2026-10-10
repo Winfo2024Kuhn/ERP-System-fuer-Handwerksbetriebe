@@ -162,6 +162,17 @@ export const NotificationService = {
         }
     },
 
+    /** Erst nach erfolgreicher Serverprüfung darf derselbe Token wieder genutzt werden. */
+    async confirmValidatedTokenForSW(token: string): Promise<void> {
+        if (!('serviceWorker' in navigator)) return
+        try {
+            const registration = await navigator.serviceWorker.getRegistration('/zeiterfassung/')
+            registration?.active?.postMessage({ type: 'AUTH_VALIDATED', token })
+        } catch {
+            // Die Anmeldung bleibt auch ohne verfügbaren Service Worker nutzbar.
+        }
+    },
+
     /**
      * Open the shared IndexedDB for notification tracking
      */

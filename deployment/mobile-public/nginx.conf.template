@@ -1,0 +1,84 @@
+worker_processes auto;
+pid /tmp/nginx.pid;
+# Error logs can contain request paths/tokens, even when access logging is off.
+error_log /dev/null;
+events { worker_connections 1024; }
+http {
+    access_log off;
+    server_tokens off;
+    client_body_temp_path /tmp/client_body;
+    proxy_temp_path /tmp/proxy;
+    client_max_body_size 25m;
+    client_header_timeout 10s;
+    client_body_timeout 30s;
+    send_timeout 30s;
+    keepalive_timeout 30s;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 90s;
+    proxy_send_timeout 90s;
+    proxy_request_buffering on;
+    proxy_buffering off;
+    proxy_cache off;
+
+    map $request_method $mobile_method { default $request_method; HEAD GET; }
+    map "$mobile_method:$uri" $mobile_allowed {
+        default 0;
+        include /etc/nginx/mobile-routes.conf;
+    }
+    # Refuse ambiguous path encodings before passing the original URI upstream.
+    map $request_uri $ambiguous_path {
+        default 0;
+        "~^[^?]*(?:%2[fF]|%5[cC]|%00|;|\\.\\.)" 1;
+    }
+    map $cookie_ze_token $mobile_cookie {
+        default "";
+        "~^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" "ze_token=$cookie_ze_token";
+    }
+    # Bilder einer Galerie laden viele Vorschauen auf einmal: eigene, großzügigere Grenze.
+    map "$mobile_method:$uri" $api_limit_key {
+        default "";
+        "~^GET:/api/(?:images|dokumente)/" "";
+        "~^GET:/api/lieferanten/bilder/file/" "";
+        "~^[A-Z]+:/api/" $binary_remote_addr;
+    }
+    map "$mobile_method:$uri" $bild_limit_key {
+        default "";
+        "~^GET:/api/(?:images|dokumente)/" $binary_remote_addr;
+        "~^GET:/api/lieferanten/bilder/file/" $binary_remote_addr;
+    }
+    map $uri $login_limit_key { default ""; ~^/api/mitarbeiter/by-token/ $binary_remote_addr; }
+    map $uri $response_cache { default no-cache; ~^/api/ no-store; }
+    map $uri $mobile_csp { default ""; ~^/api/ "sandbox; default-src 'none'"; }
+    limit_req_zone $binary_remote_addr zone=mobile_all:10m rate=60r/s;
+    limit_req_zone $api_limit_key zone=mobile_api:10m rate=10r/s;
+    limit_req_zone $bild_limit_key zone=mobile_bilder:10m rate=30r/s;
+    limit_req_zone $login_limit_key zone=mobile_login:1m rate=1r/s;
+    limit_conn_zone $binary_remote_addr zone=mobile_connections:10m;
+    limit_req_status 429;
+    limit_conn_status 429;
+
+    upstream erp { server ${ERP_UPSTREAM}; keepalive 16; }
+
+    server {
+        listen 8081;
+        set_real_ip_from 172.30.50.2/32;
+        real_ip_header X-Forwarded-For;
+        real_ip_recursive off;
+        if ($realip_remote_addr != 172.30.50.2) { return 403; }
+        include /etc/nginx/mobile-server.conf;
+    }
+    server {
+        listen 8082;
+        set_real_ip_from 172.30.50.4/32;
+        real_ip_header CF-Connecting-IP;
+        real_ip_recursive off;
+        if ($realip_remote_addr != 172.30.50.4) { return 403; }
+        if ($http_x_forwarded_proto != https) { return 308 https://$host$request_uri; }
+        include /etc/nginx/mobile-server.conf;
+    }
+    server {
+        listen 127.0.0.1:8083;
+        location = /healthz { return 200 "ready\n"; }
+        location / { return 404; }
+    }
+}

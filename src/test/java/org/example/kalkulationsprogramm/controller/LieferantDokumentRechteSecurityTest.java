@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -155,6 +156,31 @@ class LieferantDokumentRechteSecurityTest {
         };
     }
 
+    /** Login-Tokens sind UUIDs; der Token-Filter weist andere Formate ab. */
+    private static final String TOKEN_MAX = "12345678-1234-4234-8234-123456789abc";
+
+    private static final java.util.concurrent.atomic.AtomicInteger NAECHSTE_IP = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * Mobile-Aufruf mit {@code ?token=}. Jede Anfrage kommt von einer eigenen Loopback-Adresse, weil der
+     * Token-Limiter Fehlversuche pro Client-IP zählt und im gemeinsamen Test-Kontext weiterlebt.
+     */
+    private static RequestPostProcessor mobil(String token) {
+        int n = NAECHSTE_IP.incrementAndGet();
+        return request -> {
+            request.setRemoteAddr("127.0." + (n / 250) + "." + (n % 250 + 1));
+            request.setParameter("token", token);
+            return request;
+        };
+    }
+
+    /** Der Token-Filter lässt nur Tokens aktiver Mitarbeiter durch. */
+    private void tokenGueltigFuer(String token, long mitarbeiterId) {
+        Mitarbeiter m = mitarbeiter(mitarbeiterId);
+        m.setAktiv(true);
+        given(mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)).willReturn(java.util.Optional.of(m));
+    }
+
     private static Mitarbeiter mitarbeiter(long id) {
         Mitarbeiter m = new Mitarbeiter();
         m.setId(id);
@@ -236,7 +262,7 @@ class LieferantDokumentRechteSecurityTest {
                         .content("{\"lieferantenname\":\"Muster Lieferant GmbH\"}")
                 : get("/api/lieferanten/7");
 
-        mockMvc.perform(request.with(sessionAls(FrontendUserRole.USER)))
+        mockMvc.perform(request.with(csrf()).with(sessionAls(FrontendUserRole.USER)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.dokumente[0].verknuepfteDokumente.length()").value(1))
                 .andExpect(jsonPath("$.dokumente[0].verknuepfteDokumente[0].id").value(2));
@@ -305,11 +331,12 @@ class LieferantDokumentRechteSecurityTest {
     @DisplayName("Mobile: gültiges Token ohne Session nutzt die Rechte des Mitarbeiters")
     void listeMobileTokenNutztMitarbeiterRechte() throws Exception {
         given(lieferantenRepository.existsById(7L)).willReturn(true);
-        given(belegService.findByToken("token-max")).willReturn(mitarbeiter(8L));
+        tokenGueltigFuer(TOKEN_MAX, 8L);
+        given(belegService.findByToken(TOKEN_MAX)).willReturn(mitarbeiter(8L));
         mitarbeiterDarfSehen(8L, LieferantDokumentTyp.LIEFERSCHEIN);
 
         mockMvc.perform(get("/api/lieferanten/7/dokumente")
-                .param("typ", "LIEFERSCHEIN").param("token", "token-max"))
+                .param("typ", "LIEFERSCHEIN").with(mobil(TOKEN_MAX)))
                 .andExpect(status().isOk());
 
         org.assertj.core.api.Assertions.assertThat(weitergegebeneTypen(7L, LieferantDokumentTyp.LIEFERSCHEIN))
@@ -320,7 +347,7 @@ class LieferantDokumentRechteSecurityTest {
     @ValueSource(strings = { "unbekannt", "'; DROP TABLE x; --", "<script>alert(1)</script>" })
     @DisplayName("Ohne Session und mit ungültigem Token: 401, keine Dokumente")
     void listeUngueltigesTokenWird401(String token) throws Exception {
-        mockMvc.perform(get("/api/lieferanten/7/dokumente").param("token", token))
+        mockMvc.perform(get("/api/lieferanten/7/dokumente").with(mobil(token)))
                 .andExpect(status().isUnauthorized());
 
         verify(dokumentService, never()).getDokumenteFiltered(anyLong(), any(), any());
@@ -367,18 +394,14 @@ class LieferantDokumentRechteSecurityTest {
     }
 
     @Test
-    @DisplayName("Positionssuche mit Mobile-Token verwendet dessen Dokumentrechte")
-    void positionssucheNutztMobileRechte() throws Exception {
-        given(lieferantenRepository.existsById(7L)).willReturn(true);
-        given(belegService.findByToken("token-max")).willReturn(mitarbeiter(8L));
-        mitarbeiterDarfSehen(8L, LieferantDokumentTyp.LIEFERSCHEIN);
+    @DisplayName("Positionssuche ist reine PC-Funktion: Mobile-Token bekommt 403, keine Suche")
+    void positionssucheMitMobileTokenNichtErlaubt() throws Exception {
+        tokenGueltigFuer(TOKEN_MAX, 8L);
 
         mockMvc.perform(get("/api/lieferanten/7/dokumente/positionssuche").param("q", "S235JR")
-                        .param("token", "token-max"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
-        verify(dokumentSucheService).suchePositionen("S235JR", 7L,
-                EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN), null, null);
+                        .with(mobil(TOKEN_MAX)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(dokumentSucheService, lieferantenRepository);
     }
 
     @Test
@@ -399,7 +422,7 @@ class LieferantDokumentRechteSecurityTest {
     @DisplayName("Anonyme Positionssuche wird vor dem Datenzugriff abgewiesen")
     void positionssucheAnonym(String token) throws Exception {
         mockMvc.perform(get("/api/lieferanten/7/dokumente/positionssuche").param("q", "S235JR")
-                        .param("token", token))
+                        .with(mobil(token)))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(dokumentSucheService, lieferantenRepository);
     }
@@ -452,19 +475,11 @@ class LieferantDokumentRechteSecurityTest {
     }
 
     @Test
-    @DisplayName("Lieferanten-Detail ohne Anmeldung: Stammdaten ja, Dokumente nein")
-    void detailAnonymOhneDokumente() throws Exception {
-        var detail = new LieferantDetailDto();
-        detail.setId(7L);
-        detail.setLieferantenname("Muster Lieferant GmbH");
-        detail.setDokumente(List.of(
-                LieferantDokumentDto.Response.builder().id(1L).typ(LieferantDokumentTyp.RECHNUNG).build()));
-        given(lieferantenDetailService.loadDetails(7L)).willReturn(detail);
-
+    @DisplayName("Lieferanten-Detail ohne Anmeldung: 401, auch keine Stammdaten")
+    void detailAnonymWird401() throws Exception {
         mockMvc.perform(get("/api/lieferanten/7"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lieferantenname").value("Muster Lieferant GmbH"))
-                .andExpect(jsonPath("$.dokumente").isEmpty());
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(lieferantenDetailService);
     }
 
     @Test
@@ -519,11 +534,12 @@ class LieferantDokumentRechteSecurityTest {
     @Test
     @DisplayName("Download mit Mobile-Token liefert die Datei eines erlaubten Typs")
     void downloadErlaubterTypPassiertPruefung() throws Exception {
-        given(belegService.findByToken("token-max")).willReturn(mitarbeiter(8L));
+        tokenGueltigFuer(TOKEN_MAX, 8L);
+        given(belegService.findByToken(TOKEN_MAX)).willReturn(mitarbeiter(8L));
         mitarbeiterDarfSehen(8L, LieferantDokumentTyp.LIEFERSCHEIN);
         byte[] datei = downloadDatei(LieferantDokumentTyp.LIEFERSCHEIN);
 
-        mockMvc.perform(get("/api/lieferanten/7/dokumente/9/download").param("token", "token-max"))
+        mockMvc.perform(get("/api/lieferanten/7/dokumente/9/download").with(mobil(TOKEN_MAX)))
                 .andExpect(status().isOk())
                 .andExpect(content().bytes(datei));
     }
@@ -754,7 +770,7 @@ class LieferantDokumentRechteSecurityTest {
         given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("altes-token"))
                 .willReturn(java.util.Optional.empty());
 
-        mockMvc.perform(get("/api/lieferanten/berechtigungen").param("token", "altes-token"))
+        mockMvc.perform(get("/api/lieferanten/berechtigungen").with(mobil("altes-token")))
                 .andExpect(status().isUnauthorized());
 
         verify(mitarbeiterRepository, never()).findByLoginToken(any());
@@ -762,18 +778,16 @@ class LieferantDokumentRechteSecurityTest {
     }
 
     @Test
-    @DisplayName("Berechtigungen: Token eines aktiven Mitarbeiters liefert dessen Rechte")
-    void berechtigungenMitAktivemMitarbeiter() throws Exception {
-        given(mitarbeiterRepository.findByLoginTokenAndAktivTrue("token-max"))
-                .willReturn(java.util.Optional.of(mitarbeiter(8L)));
-        mitarbeiterDarfSehen(8L, LieferantDokumentTyp.LIEFERSCHEIN);
+    @DisplayName("Berechtigungen: nutzt die mobile App nicht - auch ein gültiges Token bekommt 403")
+    void berechtigungenMitMobileTokenNichtErlaubt() throws Exception {
+        tokenGueltigFuer(TOKEN_MAX, 8L);
 
-        mockMvc.perform(get("/api/lieferanten/berechtigungen").param("token", "token-max"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.sichtbareTypen[0]").value("LIEFERSCHEIN"));
+        mockMvc.perform(get("/api/lieferanten/berechtigungen").with(mobil(TOKEN_MAX)))
+                .andExpect(status().isForbidden());
+        verify(dokumentService, never()).getBerechtigungen(anyLong());
     }
 
-    // ------------------------- POST /api/lieferanten/{lid}/dokumente/{did}/verknuepfen (offene Chain)
+    // ------------------------- POST /api/lieferanten/{lid}/dokumente/{did}/verknuepfen (Session + CSRF)
 
     private LieferantDokument dokumentFuerVerknuepfung(long id, LieferantDokumentTyp typ, long lieferantId) {
         var lieferant = new Lieferanten();
@@ -806,7 +820,7 @@ class LieferantDokumentRechteSecurityTest {
         given(lieferantDokumentRepository.findById(1L)).willReturn(
                 java.util.Optional.of(dokumentFuerVerknuepfung(1L, LieferantDokumentTyp.RECHNUNG, 7L)));
 
-        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+        mockMvc.perform(post(VERKNUEPFEN).with(csrf()).with(sessionAls(FrontendUserRole.USER))
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[]"))
                 .andExpect(status().isNotFound());
 
@@ -823,12 +837,12 @@ class LieferantDokumentRechteSecurityTest {
         given(lieferantDokumentRepository.findAllById(any())).willReturn(
                 List.of(dokumentFuerVerknuepfung(2L, LieferantDokumentTyp.RECHNUNG, 7L)));
 
-        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+        mockMvc.perform(post(VERKNUEPFEN).with(csrf()).with(sessionAls(FrontendUserRole.USER))
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[2]"))
                 .andExpect(status().isNotFound());
         // unbekannte ID (Long.MAX_VALUE): findAllById liefert weniger Treffer als angefragt
         given(lieferantDokumentRepository.findAllById(any())).willReturn(List.of());
-        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+        mockMvc.perform(post(VERKNUEPFEN).with(csrf()).with(sessionAls(FrontendUserRole.USER))
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .content("[" + Long.MAX_VALUE + "]"))
                 .andExpect(status().isNotFound());
@@ -842,7 +856,7 @@ class LieferantDokumentRechteSecurityTest {
         given(lieferantDokumentRepository.findById(1L)).willReturn(
                 java.util.Optional.of(dokumentFuerVerknuepfung(1L, LieferantDokumentTyp.LIEFERSCHEIN, 99L)));
 
-        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.ADMIN))
+        mockMvc.perform(post(VERKNUEPFEN).with(csrf()).with(sessionAls(FrontendUserRole.ADMIN))
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[]"))
                 .andExpect(status().isNotFound());
 
@@ -860,7 +874,7 @@ class LieferantDokumentRechteSecurityTest {
                 List.of(dokumentFuerVerknuepfung(3L, LieferantDokumentTyp.LIEFERSCHEIN, 7L)));
         given(dokumentService.addVerknuepfungen(eq(1L), any())).willReturn(dokumentMitVerknuepfungen());
 
-        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.USER))
+        mockMvc.perform(post(VERKNUEPFEN).with(csrf()).with(sessionAls(FrontendUserRole.USER))
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[3]"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.verknuepfteDokumente.length()").value(1))
@@ -870,7 +884,7 @@ class LieferantDokumentRechteSecurityTest {
     @Test
     @DisplayName("Verknüpfen: null-Element im Body -> 400 statt 500")
     void verknuepfenNullElementGibt400() throws Exception {
-        mockMvc.perform(post(VERKNUEPFEN).with(sessionAls(FrontendUserRole.ADMIN))
+        mockMvc.perform(post(VERKNUEPFEN).with(csrf()).with(sessionAls(FrontendUserRole.ADMIN))
                 .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("[null]"))
                 .andExpect(status().isBadRequest());
 

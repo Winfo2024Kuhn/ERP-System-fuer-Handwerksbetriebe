@@ -262,14 +262,10 @@ export default function ZeiterfassungKalender() {
         const mitarbeiterId = selectedMitarbeiter;
         const saldoJahr = jahr;
         try {
-            // Hole den Login-Token des Mitarbeiters aus der Mitarbeiterliste
-            const mitarbeiterRes = await fetch(`/api/mitarbeiter/${selectedMitarbeiter}`);
-            if (!mitarbeiterRes.ok) return;
-            const mitarbeiterData = await mitarbeiterRes.json();
-            const token = mitarbeiterData.loginToken;
-            if (!token) return;
-
             // ========== API-Aufruf für Jahressaldo ==========
+            //
+            // Das Büro fragt über die Mitarbeiter-ID ab, nicht über den Anmelde-Code der App:
+            // fremde Codes sieht nur noch der Admin.
             //
             // GESAMTSALDO-BERECHNUNG (PC Frontend):
             // Das Gesamtstundenkonto wird bis zum Ende des ausgewählten Jahres berechnet:
@@ -282,7 +278,7 @@ export default function ZeiterfassungKalender() {
             // Die Mobile App hat ein anderes Verhalten (gesamtBisHeute=true):
             // Dort wird das Gesamtsaldo IMMER bis heute berechnet.
             //
-            const res = await fetch(`/api/zeiterfassung/saldo/${token}?jahr=${jahr}`);
+            const res = await fetch(`/api/zeitverwaltung/mitarbeiter/${encodeURIComponent(String(mitarbeiterId))}/saldo?jahr=${jahr}`);
             if (res.ok) {
                 const data = await res.json();
                 if (anfrage !== jahresSaldoAnfrageRef.current) return;

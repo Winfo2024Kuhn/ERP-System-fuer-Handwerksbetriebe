@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate, useSearchParams } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { LOGIN_RETRY_KEY, readLoginRetryAt, TokenLoginError, tokenRetryError, validateLoginToken } from './auth/mobileTransport'
+import { useToast } from './components/ui/toast'
 import SetupPage from './pages/SetupPage'
 
 // ─── Cookie helpers (iOS PWA: localStorage gets cleared, cookies persist) ───
@@ -98,14 +100,22 @@ import { starteBenachrichtigungenFallsErlaubt, stoppeBenachrichtigungsIntervall 
 import { NotificationService } from './services/NotificationService'
 
 function App() {
+  const toast = useToast()
   const [searchParams] = useSearchParams()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [mitarbeiter, setMitarbeiter] = useState<{ id: number; name: string; vorname?: string; nachname?: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'done' | 'error'>('syncing')
   const [error, setError] = useState<string | null>(null)
+  const [retryAt, setRetryAt] = useState(readLoginRetryAt)
+  const loginPending = useRef(false)
+  const initialized = useRef(false)
+  // Genau ein geplanter Abgleich nach einer Wartezeit (429), beim Abmelden verworfen.
+  const abgleichNachWartezeit = useRef<number | null>(null)
 
   useEffect(() => {
+    if (initialized.current) return
+    initialized.current = true
     initializeApp()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -200,7 +210,20 @@ function App() {
     const token = localStorage.getItem('zeiterfassung_token')
     if (token) {
       try {
-        const res = await fetch(`/api/mitarbeiter/by-token/${token}`)
+        const res = await fetch(`/api/mitarbeiter/by-token/${encodeURIComponent(token)}`, { cache: 'no-store' })
+        if (res.status === 429) {
+          // Wartezeit gilt für die ganze Internetverbindung (z. B. Firmen-WLAN) und sagt nichts
+          // über diesen Token: angemeldet bleiben, Buchungen bleiben gespeichert, später erneut abgleichen.
+          const sekunden = tokenRetryError(res).retryAfterSeconds
+          setSyncStatus('error')
+          toast.error(`Gerade zu viele Anfragen aus diesem Netz. Die App gleicht in ${sekunden} Sekunden erneut ab.`)
+          if (abgleichNachWartezeit.current !== null) window.clearTimeout(abgleichNachWartezeit.current)
+          abgleichNachWartezeit.current = window.setTimeout(() => {
+            abgleichNachWartezeit.current = null
+            void syncData()
+          }, sekunden * 1000)
+          return
+        }
         if (res.status === 404 || res.status === 401 || res.status === 403) {
           // Mitarbeiter nicht gefunden oder Token ungültig -> abmelden
           console.log('Token ungültig (' + res.status + ') - automatische Abmeldung')
@@ -236,46 +259,52 @@ function App() {
   }
 
   const validateAndStoreToken = async (token: string) => {
+    // Auch während einer Wartezeit dürfen Anmeldelinks keinen Token zurücklassen.
+    const cleanUrl = new URL(window.location.href)
+    cleanUrl.searchParams.delete('token')
+    window.history.replaceState(window.history.state, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash)
+    if (loginPending.current) return
+    if (Math.max(retryAt, readLoginRetryAt()) > Date.now()) {
+      showLoginError(new TokenLoginError('Zu viele Anmeldeversuche. Bitte warte kurz.'))
+      return
+    }
+    loginPending.current = true
     setError(null)
     try {
-      console.log('Validiere Token:', token.substring(0, 8) + '...')
-      const res = await fetch(`/api/mitarbeiter/by-token/${token}`)
-
-      if (res.ok) {
-        const data = await res.json()
-        console.log('Token gültig, Mitarbeiter:', data.vorname, data.nachname)
-
-        const mitarbeiterData = { id: data.id, name: `${data.vorname} ${data.nachname}`, vorname: data.vorname, nachname: data.nachname }
-
-        // Speichere Token und Mitarbeiter (localStorage + Cookie für iOS PWA)
-        saveAuth(token, mitarbeiterData)
-
-        setMitarbeiter(mitarbeiterData)
-        setIsAuthenticated(true)
-
-        // Sync all data after login
-        await OfflineService.syncAll()
-        setSyncStatus('done')
-
-        // Siehe oben: hier wird nicht ungefragt nach der Erlaubnis gefragt.
-        starteBenachrichtigungenFallsErlaubt(token)
-
-        // Remove token from URL (clean up) - wichtig für Homescreen!
-        window.history.replaceState({}, '', window.location.pathname)
-      } else {
-        console.error('Token ungültig, Status:', res.status)
-        setError(`Token ungültig (${res.status}). Bitte neuen QR-Code anfordern.`)
-      }
+      const data = await validateLoginToken(token)
+      await NotificationService.confirmValidatedTokenForSW(token)
+      const mitarbeiterData = { id: data.id, name: `${data.vorname} ${data.nachname}`, vorname: data.vorname, nachname: data.nachname }
+      saveAuth(token, mitarbeiterData)
+      sessionStorage.removeItem(LOGIN_RETRY_KEY)
+      setRetryAt(0)
+      setMitarbeiter(mitarbeiterData)
+      setIsAuthenticated(true)
+      const result = await OfflineService.syncAll()
+      setSyncStatus(result.success ? 'done' : 'error')
+      starteBenachrichtigungenFallsErlaubt(token)
     } catch (err) {
-      console.error('Token validation failed:', err)
-      // Offline-Modus: Speichere Token trotzdem und versuche später
-      localStorage.setItem('zeiterfassung_token', token)
-      setCookie(COOKIE_NAME, token)
-      setError('Server nicht erreichbar. Bitte später erneut versuchen.')
+      showLoginError(err)
+    } finally {
+      loginPending.current = false
     }
   }
 
+  const showLoginError = (err: unknown) => {
+    if (err instanceof TokenLoginError && err.retryAfterSeconds > 0) {
+      const until = Date.now() + err.retryAfterSeconds * 1000
+      sessionStorage.setItem(LOGIN_RETRY_KEY, String(until))
+      setRetryAt(until)
+    }
+    const message = err instanceof TokenLoginError ? err.message : 'Server nicht erreichbar. Bitte später erneut versuchen.'
+    setError(message)
+    toast.error(message)
+  }
+
   const handleLogout = () => {
+    if (abgleichNachWartezeit.current !== null) {
+      window.clearTimeout(abgleichNachWartezeit.current)
+      abgleichNachWartezeit.current = null
+    }
     stoppeBenachrichtigungsIntervall()
     clearAuth()
     setIsAuthenticated(false)
@@ -294,7 +323,7 @@ function App() {
 
   // Show setup page if not authenticated (need to scan QR code)
   if (!isAuthenticated) {
-    return <SetupPage error={error} onTokenScanned={validateAndStoreToken} />
+    return <SetupPage error={error} retryAt={retryAt} onTokenScanned={validateAndStoreToken} />
   }
 
   return (

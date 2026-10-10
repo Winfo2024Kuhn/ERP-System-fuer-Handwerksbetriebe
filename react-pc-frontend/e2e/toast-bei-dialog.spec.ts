@@ -85,6 +85,17 @@ async function stubbeLieferantApi(page: Page, acquireVerhalten: AcquireVerhalten
         if (pfad === '/api/lieferanten') {
             return json(route, { lieferanten: [], gesamt: 0 });
         }
+        // Die Detailseite lädt diese Daten auch im Dokumente-Reiter nach.
+        // Nur der jeweilige Test darf hier eine Fehlermeldung auslösen.
+        if (route.request().method() === 'GET') {
+            if (pfad === `/api/lieferanten/${LIEFERANT_ID}/statistik`) {
+                return json(route, { bestellungAnzahl: 0, artikelAnzahl: 0, gesamtKosten: 0 });
+            }
+            if (pfad === `/api/lieferanten/${LIEFERANT_ID}/email-verlauf`
+                || pfad === `/api/lieferanten/${LIEFERANT_ID}/notizen`) {
+                return json(route, []);
+            }
+        }
         return route.fulfill({ status: 404, body: '' });
     });
 

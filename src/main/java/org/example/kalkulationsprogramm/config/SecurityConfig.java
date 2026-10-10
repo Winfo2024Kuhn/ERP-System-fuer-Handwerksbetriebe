@@ -2,6 +2,10 @@ package org.example.kalkulationsprogramm.config;
 
 import java.io.IOException;
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
+import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,14 +30,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 
-/**
- * Security-Konfiguration für Frontend-Login mit Rollen und Session-Cookie.
- *
- * <p><b>Achtung:</b> Die Pfade der {@link #zeiterfassungFilterChain(HttpSecurity)}
- * sind vollständig unauthentifiziert erreichbar. Es gibt dort KEINE
- * Token-Prüfung auf Chain-Ebene — Details und bekannte Lücken siehe Javadoc
- * an {@link #ZEITERFASSUNG_PATHS}.
- */
+/** Security-Konfiguration mit getrennten Desktop- und Mobile-Rechten. */
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
@@ -85,32 +82,7 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * Pfade der {@link #zeiterfassungFilterChain(HttpSecurity)}.
-     *
-     * <p><b>Alles hier ist ohne jede Authentifizierung erreichbar</b> — inklusive
-     * schreibender Operationen. Die Chain hat {@code permitAll()} und {@code csrf.disable()},
-     * und weil sie {@code @Order(1)} hat, erreichen diese Pfade die
-     * {@link #apiFilterChain(HttpSecurity)} (Session-Login + CSRF + Rollen) nie.
-     *
-     * <p><b>Kein Token-Schutz:</b> Der {@link ZeiterfassungSecurityFilter} prüft
-     * <i>keine</i> Token. Er vergleicht die Client-IP gegen lokale Präfixe (inkl.
-     * Tailscale {@code 100.}) und lässt lokale IPs komplett ungeprüft durch; für
-     * externe IPs greift nur eine Pfad-Whitelist, ebenfalls ohne Auth. Einzelne
-     * Controller lösen zwar einen Mitarbeiter über {@code ?token=} bzw.
-     * {@code X-Auth-Token} auf, andere vertrauen aber den frei wählbaren Headern
-     * {@code X-Mitarbeiter-Id} / {@code X-User-Profile-Id}. Ein Chain-weiter
-     * Schutz existiert nicht.
-     *
-     * <p><b>Bekannte Lücke:</b> Die Wildcards {@code /api/projekte/**},
-     * {@code /api/anfragen/**}, {@code /api/kunden/**}, {@code /api/lieferanten/**},
-     * {@code /api/produktkategorien/**} und {@code /api/arbeitsgaenge/**} öffnen die
-     * kompletten Controller (~134 Endpoints, davon ~78 schreibend), obwohl die PWA
-     * nur einen kleinen Teil davon braucht. Aktuell durch den VPN-Betrieb abgefedert,
-     * beim Ziel "öffentlicher Server mit reinem Login" aber nicht mehr tragbar.
-     * Der Ist-Zustand ist in {@code ZeiterfassungFilterChainMatcherTest} festgeschrieben;
-     * beim Eingrenzen schlägt der Test bewusst fehl und muss mit angepasst werden.
-     */
+    /** Gemeinsame API-Bereiche: immer authentifiziert; MobileApiPolicy begrenzt mobile Methoden. */
     static final String[] ZEITERFASSUNG_PATHS = {
             "/zeiterfassung", "/zeiterfassung/**", "/api/zeiterfassung/**", "/api/mitarbeiter/by-token/**",
             "/api/urlaub/**", "/api/kalender/mobile/**",
@@ -119,36 +91,40 @@ public class SecurityConfig {
             "/api/projekte/**", "/api/anfragen/**", "/api/kunden/**",
             "/api/lieferanten/**", "/api/produktkategorien/**", "/api/arbeitsgaenge/**",
             "/api/abwesenheit/**",
-            // Reklamations-Seiten der PWA: liefen bisher gegen die apiFilterChain und
-            // damit fuer Mobile-Nutzer in 401. Bewusst eng gefasst — PATCH /{id}/status
-            // und GET /lieferscheine/search bleiben hinter dem Login.
-            // Hinweis: /api/reklamationen/* deckt methodenunabhaengig auch
-            // DELETE /api/reklamationen/{id} mit ab.
+            // Gemeinsame Reklamationspfade. MobileApiPolicy verweigert unter anderem
+            // Statusänderungen und Löschungen; Desktop-Zugriffe benötigen eine Session.
             "/api/reklamationen/lieferant/**", "/api/reklamationen/*", "/api/reklamationen/*/bilder",
-            // Feiertags-Lookup im Urlaubsantrag. Exakter Pfad, damit
-            // POST /feiertage/regenerieren nicht mit geoeffnet wird.
+            // Feiertags-Lookup im Urlaubsantrag; Regenerieren bleibt in der Desktop-Kette.
             "/api/zeitverwaltung/feiertage/zwischen",
-            // Buchhaltungs-Belegerfassung: NUR der Mobile-Subpath ist Token-only.
-            // PC-Endpoints wie /api/buchhaltung/belege bleiben in der apiFilterChain
-            // (Session-Auth + CSRF). Auth-Pruefung im Controller via Mitarbeiter-Token.
+            // Mobile Belegerfassung: Token-Prüfung im Filter plus fachliche Controller-Rechte.
+            // Desktop-Buchhaltung bleibt in der apiFilterChain (Session + CSRF).
             "/api/buchhaltung/mobile/**",
-            // Diktat der mobilen Zeiterfassung. Auth im Controller ueber Mitarbeiter-Token.
+            // Mobiles Diktat mit zentraler Token-Prüfung und zusätzlichen Controller-Rechten.
             "/api/spracheingabe/**"
     };
 
-    /**
-     * Zeiterfassungs-PWA: erreichbar ohne Login.
-     *
-     * <p>Welche Pfade das betrifft und warum das derzeit ungeschützt ist,
-     * steht an {@link #ZEITERFASSUNG_PATHS}.
-     */
     @Bean
     @Order(1)
-    public SecurityFilterChain zeiterfassungFilterChain(HttpSecurity http) throws Exception {
-        http
-                .securityMatcher(ZEITERFASSUNG_PATHS)
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+    public SecurityFilterChain zeiterfassungFilterChain(HttpSecurity http,
+            ObjectProvider<MitarbeiterRepository> mitarbeiter,
+            @Value("${zeiterfassung.security.trusted-proxies:}") String trustedProxies) throws Exception {
+        var mobileFilter = new MobileTokenAuthenticationFilter(
+                token -> mitarbeiter.getObject().findByLoginTokenAndAktivTrue(token),
+                new TokenAttemptLimiter(), new ClientIpResolver(trustedProxies), objectMapper);
+        http.securityMatcher(ZEITERFASSUNG_PATHS)
+                .addFilterBefore(mobileFilter, CsrfFilter.class)
+                .csrf(csrf -> csrf
+                    .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                    .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                    // Nur explizit geprüfte Tokens, niemals automatisch gesendete Cookies.
+                    .ignoringRequestMatchers(request -> Boolean.TRUE.equals(request.getAttribute(MobileTokenAuthenticationFilter.EXPLICIT_TOKEN))))
+                .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
+                .authorizeHttpRequests(auth -> auth
+                    .requestMatchers("/zeiterfassung", "/zeiterfassung/**").permitAll()
+                    .anyRequest().authenticated())
+                .exceptionHandling(ex -> ex
+                    .authenticationEntryPoint((request, response, exception) -> writeJson(response, 401, Map.of("error", "Anmeldung erforderlich.")))
+                    .accessDeniedHandler((request, response, exception) -> writeJson(response, 403, Map.of("error", "Zugriff verweigert."))));
         return http.build();
     }
 
@@ -221,7 +197,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/api/lieferant-dokumente/**").hasRole("ADMIN")
                 // Backfill der Dokumentenketten schreibt über den gesamten Lieferanten-Bestand.
                 // Bewusst ohne Button: nur Admins rufen ihn direkt auf. Absichtlich NICHT
-                // unter /api/lieferanten/** – das liegt in der offenen Zeiterfassungs-Chain.
+                // unter /api/lieferanten/** – das liegt in der mobilen Chain (Token oder Session).
                 .requestMatchers(HttpMethod.POST,
                         "/api/lieferant-dokumente/relink-all",
                         "/api/lieferant-dokumente/lieferant/*/relink").hasRole("ADMIN")

@@ -1,0 +1,25 @@
+{
+    admin off
+    persist_config off
+    # Runtime proxy-error logs may contain token URLs; suppress these too.
+    log {
+        output discard
+    }
+}
+
+{$MOBILE_DOMAIN} {
+    {$MOBILE_TLS_DIRECTIVE}
+    request_body {
+        max_size 25MiB
+    }
+    reverse_proxy gateway:8081 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {$MOBILE_DOMAIN}
+        header_up Host {$MOBILE_DOMAIN}
+        header_up -Forwarded
+        header_up -CF-Connecting-IP
+        header_up -True-Client-IP
+    }
+}

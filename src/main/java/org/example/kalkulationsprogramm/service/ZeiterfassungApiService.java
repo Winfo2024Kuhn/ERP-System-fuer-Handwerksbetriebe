@@ -984,9 +984,23 @@ public class ZeiterfassungApiService {
      */
     @Transactional(readOnly = true)
     public Map<String, Object> getSaldo(String token, Integer jahr, Integer monat, Boolean gesamtBisHeute) {
+        return berechneSaldo(mitarbeiterRepository.findByLoginTokenAndAktivTrue(token), jahr, monat, gesamtBisHeute);
+    }
+
+    /**
+     * Saldo für das Büro: über die Mitarbeiter-ID statt über dessen Anmelde-Code, damit das Büro keine
+     * fremden Codes braucht. Wie in der App nur für aktive Mitarbeiter.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getSaldoFuerMitarbeiter(Long mitarbeiterId, Integer jahr) {
+        return berechneSaldo(mitarbeiterRepository.findById(mitarbeiterId)
+                .filter(m -> Boolean.TRUE.equals(m.getAktiv())), jahr, null, null);
+    }
+
+    private Map<String, Object> berechneSaldo(Optional<Mitarbeiter> mitarbeiterOpt, Integer jahr, Integer monat,
+            Boolean gesamtBisHeute) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        Optional<Mitarbeiter> mitarbeiterOpt = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token);
         if (mitarbeiterOpt.isEmpty()) {
             result.put("error", "Mitarbeiter nicht gefunden");
             return result;

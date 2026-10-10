@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -30,6 +31,7 @@ import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.MobileObjectAccessService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
 import org.junit.jupiter.api.AfterAll;
@@ -63,6 +65,7 @@ class DateiControllerBildIntegrationTest {
     private static Path wurzel;
     private static Path uploadOrdner;
     private static Path bilderOrdner;
+    private static Path anfrageOrdner;
 
     private static MockMvc mockMvc;
     private static DateiSpeicherService speicher;
@@ -72,6 +75,7 @@ class DateiControllerBildIntegrationTest {
         wurzel = Files.createTempDirectory("tagebuch-bilder");
         uploadOrdner = Files.createDirectories(wurzel.resolve("uploads"));
         bilderOrdner = Files.createDirectories(wurzel.resolve("bilder"));
+        anfrageOrdner = Files.createDirectories(wurzel.resolve("anfragen"));
 
         // Bautagebuch: Handyfoto quer, 4000 x 3000
         Files.write(uploadOrdner.resolve("projekt-notiz.jpg"), jpeg(4000, 3000, null));
@@ -83,7 +87,7 @@ class DateiControllerBildIntegrationTest {
         SystemSettingsService einstellungen = mock(SystemSettingsService.class);
         when(einstellungen.getDateiOrdnerPfad()).thenReturn(wurzel.resolve("hicad").toString());
         speicher = new DateiSpeicherService(
-                uploadOrdner.toString(), uploadOrdner.toString(),
+                uploadOrdner.toString(), anfrageOrdner.toString(),
                 bilderOrdner.toString(), bilderOrdner.toString(), "",
                 mock(ProjektDokumentRepository.class), mock(ProjektRepository.class),
                 mock(AnfrageDokumentRepository.class), mock(AnfrageRepository.class),
@@ -91,13 +95,69 @@ class DateiControllerBildIntegrationTest {
                 mock(ZugferdExtractorService.class), mock(ProduktkategorieMapper.class),
                 einstellungen, mock(AusgangsGeschaeftsDokumentService.class));
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DateiController(speicher, new BildVorschauService()))
+                .standaloneSetup(new DateiController(speicher, new BildVorschauService(), mock(MobileObjectAccessService.class)))
                 .build();
     }
 
     @AfterAll
     static void raeumeAuf() throws IOException {
         FileSystemUtils.deleteRecursively(wurzel);
+    }
+
+    @Test
+    void mobileDateiBleibtAuchBeiGleichenNamenImFreigegebenenSpeicher() throws Exception {
+        Files.writeString(uploadOrdner.resolve("gleicher-name.jpg"), "Projektfoto");
+        Files.writeString(anfrageOrdner.resolve("gleicher-name.jpg"), "Anfragefoto");
+        Files.writeString(bilderOrdner.resolve("gleicher-name.jpg"), "Notizfoto");
+
+        for (var eintrag : java.util.Map.of(
+                MobileObjectAccessService.Speicher.PROJEKT, "Projektfoto",
+                MobileObjectAccessService.Speicher.ANFRAGE, "Anfragefoto",
+                MobileObjectAccessService.Speicher.BILD, "Notizfoto").entrySet()) {
+            var resource = speicher.ladeMobileDateiAlsResource(new MobileObjectAccessService.FreigegebeneDatei(
+                    "gleicher-name.jpg", eintrag.getKey()));
+            assertThat(resource.getContentAsString(StandardCharsets.UTF_8)).isEqualTo(eintrag.getValue());
+        }
+    }
+
+    @Test
+    void fehlendeMobileDateiFaelltNichtAufAnderenSpeicherOderSymlinkZurueck() throws Exception {
+        Files.writeString(bilderOrdner.resolve("nur-im-bilderordner.jpg"), "Privater Inhalt");
+        var falscherSpeicher = new MobileObjectAccessService.FreigegebeneDatei(
+                "nur-im-bilderordner.jpg", MobileObjectAccessService.Speicher.PROJEKT);
+        assertThatThrownBy(() -> speicher.ladeMobileDateiAlsResource(falscherSpeicher))
+                .isInstanceOf(org.example.kalkulationsprogramm.exception.NotFoundException.class);
+
+        Files.writeString(wurzel.resolve("private-akte.jpg"), "Private Akte");
+        Files.createSymbolicLink(uploadOrdner.resolve("verknuepfung.jpg"), wurzel.resolve("private-akte.jpg"));
+        var symlink = new MobileObjectAccessService.FreigegebeneDatei(
+                "verknuepfung.jpg", MobileObjectAccessService.Speicher.PROJEKT);
+        assertThatThrownBy(() -> speicher.ladeMobileDateiAlsResource(symlink))
+                .isInstanceOf(org.example.kalkulationsprogramm.exception.NotFoundException.class);
+    }
+
+    @Test
+    void projektNotizUploadUndLoeschenVerwendenDenKonfiguriertenSpeicher() throws Exception {
+        byte[] bild = jpeg(10, 10, null);
+        var upload = new org.springframework.mock.web.MockMultipartFile("datei", "../../foto.jpg", "image/jpeg", bild);
+        String dateiname = speicher.speichereProjektNotizBild(upload);
+
+        assertThat(dateiname).matches("[0-9a-f-]+\\.jpg");
+        assertThat(Files.readAllBytes(uploadOrdner.resolve(dateiname))).isEqualTo(bild);
+        assertThat(Files.exists(bilderOrdner.resolve(dateiname))).isFalse();
+        speicher.loescheProjektNotizBild(dateiname);
+        assertThat(Files.exists(uploadOrdner.resolve(dateiname))).isFalse();
+    }
+
+    @Test
+    void projektNotizUploadLehntAktiveDateitypenAbUndBereinigtBildnamen() throws Exception {
+        var html = new org.springframework.mock.web.MockMultipartFile("datei", "datei.html", "text/html", "<script></script>".getBytes());
+        assertThatThrownBy(() -> speicher.speichereProjektNotizBild(html)).isInstanceOf(IllegalArgumentException.class);
+        var leer = new org.springframework.mock.web.MockMultipartFile("datei", "foto.jpg", "image/jpeg", new byte[0]);
+        assertThatThrownBy(() -> speicher.speichereProjektNotizBild(leer)).isInstanceOf(IllegalArgumentException.class);
+        var bild = new org.springframework.mock.web.MockMultipartFile("datei", "C:\\tmp\\foto.html", "image/jpeg", jpeg(10, 10, null));
+        String dateiname = speicher.speichereProjektNotizBild(bild);
+        assertThat(dateiname).matches("[0-9a-f-]+\\.jpg");
     }
 
     @Test
@@ -195,7 +255,7 @@ class DateiControllerBildIntegrationTest {
     @DisplayName("Bei Überlast: 503 ohne Speichern, damit das Handy nicht auf dem Original sitzen bleibt")
     void ueberlastWirdNichtGespeichert() throws Exception {
         MockMvc ausgelastet = MockMvcBuilders
-                .standaloneSetup(new DateiController(speicher, new BildVorschauService(0, 0)))
+                .standaloneSetup(new DateiController(speicher, new BildVorschauService(0, 0), mock(MobileObjectAccessService.class)))
                 .build();
 
         ausgelastet.perform(get("/api/dokumente/projekt-notiz.jpg/anzeige"))

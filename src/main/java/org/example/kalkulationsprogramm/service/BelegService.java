@@ -19,6 +19,7 @@ import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
 import org.example.kalkulationsprogramm.dto.BelegDto;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.repository.AbteilungDokumentBerechtigungRepository;
 import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
@@ -29,6 +30,8 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.SachkontoRepository;
 import org.springframework.security.core.Authentication;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -294,12 +297,25 @@ public class BelegService {
 
     @Transactional(readOnly = true)
     public BelegDto.Response getBeleg(Long id) {
-        return belegRepository.findById(id).map(b -> toDto(b, true)).orElse(null);
+        Beleg beleg = getRawBeleg(id);
+        return beleg == null ? null : toDto(beleg, true);
     }
 
     @Transactional(readOnly = true)
     public Beleg getRawBeleg(Long id) {
-        return belegRepository.findById(id).orElse(null);
+        Beleg beleg = belegRepository.findById(id).orElse(null);
+        assertMobileOwnership(beleg);
+        return beleg;
+    }
+
+    /** Mobile zeigt wie die bestehende Scan-Liste ausschließlich eigene Uploads. */
+    private void assertMobileOwnership(Beleg beleg) {
+        MobilePrincipal mobile = MobilePrincipal.current();
+        if (mobile != null && (beleg == null || beleg.getUploadedBy() == null
+                || !Objects.equals(mobile.mitarbeiterId(), beleg.getUploadedBy().getId()))) {
+            // Fremde, nicht zugeordnete und fehlende Belege sind nicht unterscheidbar.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Beleg nicht gefunden");
+        }
     }
 
     public Path getBelegDatei(Beleg beleg) {
@@ -687,6 +703,10 @@ public class BelegService {
      */
     @Transactional
     public BelegDto.Response setzePositionsAuswahl(Long belegId, List<Long> firmaPositionIds) {
+        if (MobilePrincipal.current() != null) {
+            // Vor jeder Änderung prüfen; der Desktop behält seine Abteilungsrechte.
+            getRawBeleg(belegId);
+        }
         java.util.Set<Long> ids = firmaPositionIds == null
                 ? java.util.Set.of()
                 : java.util.Set.copyOf(firmaPositionIds);
@@ -1285,6 +1305,12 @@ public class BelegService {
     public Mitarbeiter findCaller(String token, Authentication auth) {
         Mitarbeiter byToken = findByToken(token);
         if (byToken != null) return byToken;
+        if (auth != null && auth.getPrincipal() instanceof MobilePrincipal mobile) {
+            // Vom Token-Filter geprüfter Mitarbeiter (Token im Header statt im Querystring).
+            return mitarbeiterRepository.findById(mobile.mitarbeiterId())
+                    .filter(m -> Boolean.TRUE.equals(m.getAktiv()))
+                    .orElse(null);
+        }
         if (auth == null || !(auth.getPrincipal() instanceof FrontendUserPrincipal principal)) {
             return null;
         }

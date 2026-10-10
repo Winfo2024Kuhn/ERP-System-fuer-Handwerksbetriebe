@@ -2,8 +2,8 @@
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching'
 import { clientsClaim } from 'workbox-core'
 import { registerRoute } from 'workbox-routing'
-import { CacheFirst, NetworkFirst, NetworkOnly } from 'workbox-strategies'
-import { ExpirationPlugin } from 'workbox-expiration'
+import { NetworkOnly } from 'workbox-strategies'
+import { tokenRetryError } from './auth/mobileTransport'
 
 declare let self: ServiceWorkerGlobalScope
 
@@ -15,53 +15,16 @@ precacheAndRoute(self.__WB_MANIFEST)
 self.skipWaiting()
 clientsClaim()
 
-// ─── Baustellenfotos: erst aus dem Gerät, dann vom Server ───
-// Gespeicherte Bilder haben eindeutige Namen und ändern sich nie. Einmal geladen,
-// kommen Vorschau und Anzeigegröße deshalb sofort aus dem Cache – auch nach einem
-// Neustart der App und ohne Netz auf der Baustelle. Beide Routen müssen VOR der
-// allgemeinen /api-Route stehen, sonst landen die Bilder dort im NetworkFirst-
-// Cache, laden jedes Mal neu und verdrängen die eigentlichen Daten.
-const istGespeichertesBild = (url: URL) =>
-  url.pathname.startsWith('/api/dokumente/') || url.pathname.startsWith('/api/images/')
-const istVerkleinert = (url: URL) =>
-  url.pathname.endsWith('/thumbnail') || url.pathname.endsWith('/anzeige')
-
+// Geschützte API-Daten müssen bei jedem Zugriff die aktuellen Serverrechte
+// durchlaufen. Der gezielte OfflineService behält seine Arbeitsbuchungen separat.
 registerRoute(
-  ({ request, url }) => request.destination === 'image' && istGespeichertesBild(url) && istVerkleinert(url),
-  new CacheFirst({
-    cacheName: 'bilder-cache',
-    plugins: [
-      new ExpirationPlugin({
-        maxEntries: 300,
-        maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Tage
-        purgeOnQuotaError: true
-      })
-    ]
-  })
+  ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/api/'),
+  new NetworkOnly({ fetchOptions: { cache: 'no-store' } })
 )
 
-// Originale (3–5 MB, nur nach dem Hineinzoomen) nicht dauerhaft im knappen
-// iOS-Speicher ablegen – sie würden die kleinen Fassungen verdrängen. Der normale
-// Browser-Cache greift dank Cache-Control vom Server trotzdem.
-registerRoute(
-  ({ request, url }) => request.destination === 'image' && istGespeichertesBild(url),
-  new NetworkOnly()
-)
-
-// ─── Runtime Caching for API ───
-registerRoute(
-  ({ url }) => url.pathname.startsWith('/api'),
-  new NetworkFirst({
-    cacheName: 'api-cache',
-    plugins: [
-      new ExpirationPlugin({
-        maxEntries: 50,
-        maxAgeSeconds: 60 * 60 * 24 // 1 day
-      })
-    ],
-    networkTimeoutSeconds: 3
-  })
-)
+self.addEventListener('activate', event => {
+  event.waitUntil(Promise.all(['bilder-cache', 'api-cache'].map(name => caches.delete(name))))
+})
 
 // ─── Navigation Fallback for Offline ───
 registerRoute(
@@ -87,7 +50,7 @@ interface Appointment {
 }
 
 interface CheckNotificationsMessage {
-  type: 'CHECK_NOTIFICATIONS'
+  type: 'CHECK_NOTIFICATIONS' | 'AUTH_VALIDATED'
   token: string
 }
 
@@ -102,6 +65,15 @@ const CHECK_WINDOW_MS = 10 * 60 * 1000 // 10 minute window
 // IndexedDB-based tracking for sent notifications (localStorage not available in SW)
 const SENT_DB_NAME = 'sw-notifications'
 const SENT_STORE_NAME = 'sent'
+const AUTH_STATE_KEY = '__auth_state'
+
+interface NotificationAuthState {
+  invalidToken?: string
+  retryAt?: number
+}
+
+let checkingAppointments = false
+let authValidationVersion = 0
 
 async function openSentDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -115,6 +87,45 @@ async function openSentDB(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
   })
+}
+
+async function readNotificationAuthState(db: IDBDatabase): Promise<NotificationAuthState> {
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(SENT_STORE_NAME).objectStore(SENT_STORE_NAME).get(AUTH_STATE_KEY)
+    request.onsuccess = () => resolve(request.result || {})
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function saveNotificationAuthState(db: IDBDatabase, state: NotificationAuthState, invalidToken?: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SENT_STORE_NAME, 'readwrite')
+    const store = tx.objectStore(SENT_STORE_NAME)
+    store.put({ key: AUTH_STATE_KEY, ...state })
+    if (invalidToken) {
+      const request = store.get('__auth_token')
+      request.onsuccess = () => {
+        // Ein inzwischen vom Vordergrund gespeicherter neuer Token bleibt erhalten.
+        if (request.result?.value === invalidToken) store.delete('__auth_token')
+      }
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+async function confirmValidatedToken(token: string): Promise<void> {
+  const db = await openSentDB()
+  try {
+    const state = await readNotificationAuthState(db)
+    if (state.invalidToken === token) {
+      delete state.invalidToken
+      await saveNotificationAuthState(db, state)
+    }
+  } finally {
+    db.close()
+  }
 }
 
 async function hasBeenSent(appointmentId: number, type: '24h' | '1h'): Promise<boolean> {
@@ -237,7 +248,17 @@ async function checkAndNotify(appointments: Appointment[]): Promise<void> {
 }
 
 async function fetchAndCheckAppointments(token: string): Promise<void> {
+  if (checkingAppointments) return
+  checkingAppointments = true
+  const validationVersion = authValidationVersion
+  let db: IDBDatabase | undefined
   try {
+    db = await openSentDB()
+    const authState = await readNotificationAuthState(db)
+    // Der Vordergrund kann einen veralteten Token erneut eintragen. Die Ablehnung
+    // und die IP-weite Wartezeit müssen deshalb Worker-Neustarts überstehen.
+    if (authState.invalidToken === token || (authState.retryAt ?? 0) > Date.now()) return
+
     const now = new Date()
     const currentMonth = now.getMonth() + 1
     const currentYear = now.getFullYear()
@@ -249,25 +270,45 @@ async function fetchAndCheckAppointments(token: string): Promise<void> {
       nextYear++
     }
 
-    const [res1, res2] = await Promise.all([
-      fetch(`/api/kalender/mobile?token=${token}&jahr=${currentYear}&monat=${currentMonth}`),
-      fetch(`/api/kalender/mobile?token=${token}&jahr=${nextYear}&monat=${nextMonth}`)
-    ])
-
-    const appointments1: Appointment[] = res1.ok ? await res1.json() : []
-    const appointments2: Appointment[] = res2.ok ? await res2.json() : []
-
-    const allAppointments = [...appointments1, ...appointments2]
+    const allAppointments: Appointment[] = []
+    // Nacheinander prüfen, damit eine Ablehnung keinen zweiten Fehlversuch erzeugt.
+    for (const [year, month] of [[currentYear, currentMonth], [nextYear, nextMonth]]) {
+      const response = await fetch(`/api/kalender/mobile?token=${encodeURIComponent(token)}&jahr=${year}&monat=${month}`, {
+        headers: { 'X-Auth-Token': token },
+        redirect: 'error',
+        cache: 'no-store',
+      })
+      if (response.status === 401 || response.status === 403) {
+        if (validationVersion !== authValidationVersion) return
+        await saveNotificationAuthState(db, { ...authState, invalidToken: token }, token)
+        return
+      }
+      if (response.status === 429) {
+        await saveNotificationAuthState(db, { ...authState, retryAt: Date.now() + tokenRetryError(response).retryAfterSeconds * 1000 })
+        return
+      }
+      if (!response.ok) return
+      allAppointments.push(...await response.json())
+    }
     await checkAndNotify(allAppointments)
     await cleanupOldSentEntries()
   } catch (err) {
     console.error('[SW] Error fetching appointments:', err)
+  } finally {
+    db?.close()
+    checkingAppointments = false
   }
 }
 
 // ─── Message Handler: triggered by main app ───
 self.addEventListener('message', (event) => {
   const data = event.data as CheckNotificationsMessage
+  if (data?.type === 'AUTH_VALIDATED' && data.token) {
+    // Nur nach einer echten erfolgreichen Tokenprüfung im Vordergrund gesendet.
+    authValidationVersion++
+    event.waitUntil(confirmValidatedToken(data.token))
+    return
+  }
   if (data?.type === 'CHECK_NOTIFICATIONS' && data.token) {
     event.waitUntil(fetchAndCheckAppointments(data.token))
   }

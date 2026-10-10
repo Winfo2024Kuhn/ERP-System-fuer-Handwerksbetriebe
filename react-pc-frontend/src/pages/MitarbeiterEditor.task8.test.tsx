@@ -6,6 +6,9 @@ import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import { ToastProvider } from '../components/ui/toast';
 import MitarbeiterEditor from './MitarbeiterEditor';
 
+const auth = vi.hoisted(() => ({ isAdmin: true, user: null as null | { mitarbeiter?: { id: number } } }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => auth }));
+
 const MITARBEITER = {
     id: 42, vorname: 'Max', nachname: 'Mustermann', strasse: null, plz: null, ort: null,
     email: 'max.mustermann@example.invalid', telefon: null, festnetz: null, qualifikation: null,
@@ -76,7 +79,7 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         global.fetch = fetchMock as unknown as typeof fetch;
     });
 
-    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); auth.isAdmin = true; auth.user = null; });
 
     it('zeigt die fehlende Einrichtung, erstellt eine Vorschau und speichert nur über den Wechsel-Endpunkt', async () => {
         const user = userEvent.setup();
@@ -203,6 +206,23 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         expect(await screen.findByText(/Hinweis für Geschäftsführer/i)).toBeInTheDocument();
         expect(screen.getByText(/Als Geschäftsführer müssen Sie keine Arbeitszeit einrichten/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Arbeitszeit optional einrichten' })).toBeVisible();
+    });
+
+    it('zeigt Anmelde-Code und QR-Code nur Admins und dem Mitarbeiter selbst', async () => {
+        const user = userEvent.setup();
+        auth.isAdmin = false;
+        auth.user = { mitarbeiter: { id: 7 } };
+        const { unmount } = renderEditor();
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await screen.findByRole('button', { name: 'Bearbeiten' });
+        expect(screen.queryByRole('button', { name: /Token erstellen/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /QR-Code/ })).not.toBeInTheDocument();
+        unmount();
+
+        auth.user = { mitarbeiter: { id: 42 } };
+        renderEditor();
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        expect(await screen.findByRole('button', { name: /Token erstellen/ })).toBeVisible();
     });
 
 });

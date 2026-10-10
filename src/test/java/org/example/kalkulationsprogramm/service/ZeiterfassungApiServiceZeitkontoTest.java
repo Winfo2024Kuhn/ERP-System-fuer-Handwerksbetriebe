@@ -135,6 +135,20 @@ class ZeiterfassungApiServiceZeitkontoTest {
     }
 
     @Test
+    void bueroSaldoPerMitarbeiterIdOhneAnmeldeCode() {
+        mitarbeiter.setAktiv(true);
+        when(mitarbeiterRepository.findById(1L)).thenReturn(Optional.of(mitarbeiter));
+        when(monatsSaldoService.getOrBerechne(eq(1L), eq(2020), anyInt())).thenReturn(monat(true));
+
+        assertThat(service.getSaldoFuerMitarbeiter(1L, 2020)).containsKey("gesamt");
+
+        mitarbeiter.setAktiv(false);
+        assertThat(service.getSaldoFuerMitarbeiter(1L, 2020)).containsEntry("error", "Mitarbeiter nicht gefunden");
+        when(mitarbeiterRepository.findById(9L)).thenReturn(Optional.empty());
+        assertThat(service.getSaldoFuerMitarbeiter(9L, 2020)).containsEntry("error", "Mitarbeiter nicht gefunden");
+    }
+
+    @Test
     void ohneGeschaeftsfuehrungBleibenSollUndGesamtsaldoErhalten() {
         leseZugang();
         when(monatsSaldoService.getOrBerechne(eq(1L), eq(2020), anyInt())).thenReturn(monat(true));

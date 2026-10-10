@@ -1,0 +1,71 @@
+name: erp-mobile-public
+services:
+  gateway:
+    image: nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    restart: unless-stopped
+    environment:
+      ERP_UPSTREAM: ${ERP_UPSTREAM:-app:8080}
+      NGINX_ENVSUBST_FILTER: ^ERP_UPSTREAM$
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+      - ./mobile-server.conf:/etc/nginx/mobile-server.conf:ro
+      - ./mobile-headers.conf:/etc/nginx/mobile-headers.conf:ro
+      - ./mobile-routes.conf:/etc/nginx/mobile-routes.conf:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8083/healthz]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      edge: {ipv4_address: 172.30.50.3}
+      backend: {ipv4_address: 172.30.51.2}
+  caddy:
+    profiles: [domain]
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    restart: unless-stopped
+    environment:
+      MOBILE_DOMAIN: ${MOBILE_DOMAIN:-mobile.invalid}
+      MOBILE_TLS_DIRECTIVE: ""
+    ports:
+      - "${MOBILE_PUBLIC_BIND_IP:-0.0.0.0}:80:80"
+      - "${MOBILE_PUBLIC_BIND_IP:-0.0.0.0}:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      gateway: {condition: service_healthy}
+    networks:
+      edge: {ipv4_address: 172.30.50.2}
+      internet: {}
+  tunnel:
+    profiles: [quick]
+    build:
+      context: ./tunnel
+    init: true
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp:size=16m,mode=1777]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      gateway: {condition: service_healthy}
+    networks:
+      edge: {ipv4_address: 172.30.50.4}
+      internet: {}
+networks:
+  edge:
+    internal: true
+    ipam:
+      config: [{subnet: 172.30.50.0/29}]
+  backend:
+    external: true
+    name: erp-mobile-backend
+  internet: {}
+volumes:
+  caddy_data:
+  caddy_config:

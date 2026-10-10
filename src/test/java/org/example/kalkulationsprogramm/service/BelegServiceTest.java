@@ -365,6 +365,27 @@ class BelegServiceTest {
     // korrekt verknuepft war. findCaller nutzt nun primaer diese FK.
 
     @Test
+    @DisplayName("findCaller: Header-Token (MobilePrincipal) -> aktiver Mitarbeiter, deaktivierter -> null")
+    void findCaller_mobilePrincipal_nurAktiverMitarbeiter() {
+        Mitarbeiter aktiv = mitarbeiter(42L, Set.of());
+        aktiv.setAktiv(true);
+        Mitarbeiter inaktiv = mitarbeiter(43L, Set.of());
+        inaktiv.setAktiv(false);
+        given(mitarbeiterRepository.findById(42L)).willReturn(java.util.Optional.of(aktiv));
+        given(mitarbeiterRepository.findById(43L)).willReturn(java.util.Optional.of(inaktiv));
+        given(mitarbeiterRepository.findById(44L)).willReturn(java.util.Optional.empty());
+
+        assertThat(service.findCaller(null, mobileAuth(42L))).isEqualTo(aktiv);
+        assertThat(service.findCaller(null, mobileAuth(43L))).isNull();
+        assertThat(service.findCaller(null, mobileAuth(44L))).isNull();
+    }
+
+    private static Authentication mobileAuth(long mitarbeiterId) {
+        return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                new org.example.kalkulationsprogramm.config.MobilePrincipal(mitarbeiterId), null, java.util.List.of());
+    }
+
+    @Test
     @DisplayName("findCaller: PC-Login mit verknuepftem Mitarbeiter via Profile-FK -> Treffer")
     void findCaller_pcLogin_mitProfileFk_liefertMitarbeiter() {
         Mitarbeiter m = mitarbeiter(42L, Set.of());

@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -76,6 +78,8 @@ import lombok.RequiredArgsConstructor;
 @RequestMapping("/api/lieferanten")
 @RequiredArgsConstructor
 public class LieferantenController {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(LieferantenController.class);
 
     private final LieferantenRepository lieferantenRepository;
     private final BildVorschauService bildVorschauService;
@@ -269,7 +273,8 @@ public class LieferantenController {
             @RequestParam(value = "nurStammdaten", defaultValue = "false") boolean nurStammdaten,
             @RequestParam(value = "token", required = false) String token,
             Authentication authentication) {
-        LieferantDetailDto detail = nurStammdaten
+        // Die App zeigt nur den Namen: Preise, E-Mails und Notizen gehen nicht übers Handy-Gateway raus.
+        LieferantDetailDto detail = nurStammdaten || MobilePrincipal.current() != null
                 ? lieferantenDetailService.loadStammdaten(id)
                 : lieferantenDetailService.loadDetails(id);
         if (detail == null) {
@@ -680,9 +685,16 @@ public class LieferantenController {
         }
 
         try {
+            var mobile = MobilePrincipal.current();
+            if (mobile != null && dokumentService.getBerechtigungen(mobile.mitarbeiterId()).getScanbarTypen().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            if (mobile != null && !org.example.kalkulationsprogramm.service.MobileObjectAccessService.istErlaubterMobilScan(datei)) {
+                return ResponseEntity.badRequest().build();
+            }
             // Temporär speichern für Analyse
-            String originalFilename = org.springframework.util.StringUtils.cleanPath(
-                    java.util.Objects.requireNonNull(datei.getOriginalFilename()));
+            String originalFilename = Path.of(java.util.Objects.requireNonNull(datei.getOriginalFilename())).getFileName().toString()
+                    .replaceAll("[\\\\/:*?\"<>|]", "_");
             if (originalFilename.contains("..") || originalFilename.contains("/") || originalFilename.contains("\\")) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ungültiger Dateiname");
             }
@@ -716,7 +728,7 @@ public class LieferantenController {
             }
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.warn("Analyse des Lieferanten-Dokuments fehlgeschlagen: {}", e.getMessage());
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -738,6 +750,14 @@ public class LieferantenController {
             return ResponseEntity.notFound().build();
         }
 
+        var mobile = MobilePrincipal.current();
+        var requestedType = request.getDokumentTyp() != null ? request.getDokumentTyp() : LieferantDokumentTyp.RECHNUNG;
+        if (mobile != null && !dokumentService.getBerechtigungen(mobile.mitarbeiterId()).getScanbarTypen().contains(requestedType)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (mobile != null && !org.example.kalkulationsprogramm.service.MobileObjectAccessService.istErlaubterMobilScan(datei)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Bitte ein Foto oder PDF hochladen."));
+        }
         // Duplikat-Prüfung: Dokumentnummer muss pro Lieferant eindeutig sein
         if (StringUtils.hasText(request.getDokumentNummer())) {
             boolean exists = geschaeftsdokumentRepository.existsByLieferantIdAndDokumentNummer(
@@ -751,8 +771,8 @@ public class LieferantenController {
 
         try {
             // 1. Datei speichern
-            String originalFilename = org.springframework.util.StringUtils.cleanPath(
-                    java.util.Objects.requireNonNull(datei.getOriginalFilename()));
+            String originalFilename = Path.of(java.util.Objects.requireNonNull(datei.getOriginalFilename())).getFileName().toString()
+                    .replaceAll("[\\\\/:*?\"<>|]", "_");
             String storedFilename = java.util.UUID.randomUUID() + "_" + originalFilename;
 
             java.nio.file.Path lieferantDir = Path.of("uploads", "lieferanten", id.toString());
@@ -819,7 +839,7 @@ public class LieferantenController {
             return ResponseEntity.ok(dokumentService.getDokumentById(dokument.getId()));
 
         } catch (Exception e) {
-            e.printStackTrace();
+            log.warn("Import des Lieferanten-Dokuments fehlgeschlagen: {}", e.getMessage());
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -834,7 +854,7 @@ public class LieferantenController {
             @RequestBody Set<Long> verknuepfteIds,
             @RequestParam(value = "token", required = false) String token,
             Authentication authentication) {
-        // Der Pfad liegt in der offenen Zeiterfassungs-Chain: ohne Token/Session geht nichts, und
+        // Der Pfad liegt in der mobilen Chain (Token oder Session, Desktop mit CSRF), und
         // Quelle wie Ziele müssen Dokumenttypen sein, die der Aufrufer sehen darf.
         var sichtbareTypen = dokumentZugriffService.sichtbareTypen(token, authentication);
         if (sichtbareTypen.isEmpty()) {
@@ -924,15 +944,14 @@ public class LieferantenController {
         try {
             byte[] bytes = java.nio.file.Files.readAllBytes(filePath);
             String filename = dokument.getEffektiverDateiname();
-            String contentType = java.nio.file.Files.probeContentType(filePath);
-            if (contentType == null) {
-                contentType = "application/octet-stream";
-            }
+            String inlineTyp = sichererInlineTyp(filePath);
 
             return ResponseEntity.ok()
                     .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
-                            "inline; filename=\"" + filename + "\"")
-                    .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, contentType)
+                            disposition(inlineTyp, filename != null ? filename : filePath.getFileName().toString()))
+                    .header(org.springframework.http.HttpHeaders.CONTENT_TYPE,
+                            inlineTyp != null ? inlineTyp : MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                    .header("X-Content-Type-Options", "nosniff")
                     .body(bytes);
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
@@ -1092,6 +1111,12 @@ public class LieferantenController {
             return ResponseEntity.notFound().build();
         }
         var bild = bildOpt.get();
+        if (MobilePrincipal.current() != null && (bild.getReklamation() == null || bild.getLieferant() == null
+                || !dateiname.equals(bild.getGespeicherterDateiname())
+                || bild.getReklamation().getLieferant() == null
+                || !java.util.Objects.equals(bild.getLieferant().getId(), bild.getReklamation().getLieferant().getId()))) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             Path path = loeseBildPfadAuf(bild);
             if (path == null || !java.nio.file.Files.exists(path)) {
@@ -1099,13 +1124,14 @@ public class LieferantenController {
             }
 
             org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(path.toUri());
-            String contentType = java.nio.file.Files.probeContentType(path);
-            if (contentType == null) {
-                contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-            }
+            String inlineTyp = sichererInlineTyp(path);
 
             return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
+                    .contentType(MediaType.parseMediaType(
+                            inlineTyp != null ? inlineTyp : MediaType.APPLICATION_OCTET_STREAM_VALUE))
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                            disposition(inlineTyp, path.getFileName().toString()))
+                    .header("X-Content-Type-Options", "nosniff")
                     .body(resource);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
@@ -1127,6 +1153,12 @@ public class LieferantenController {
             return ResponseEntity.notFound().build();
         }
         var bild = bildOpt.get();
+        if (MobilePrincipal.current() != null && (bild.getReklamation() == null || bild.getLieferant() == null
+                || !dateiname.equals(bild.getGespeicherterDateiname())
+                || bild.getReklamation().getLieferant() == null
+                || !java.util.Objects.equals(bild.getLieferant().getId(), bild.getReklamation().getLieferant().getId()))) {
+            return ResponseEntity.notFound().build();
+        }
 
         // Der Dateiname allein ist als Cache-Schlüssel eindeutig (UUID-Präfix beim Upload),
         // durch das Präfix kollidiert er aber auch nicht mit Dokument-Thumbnails.
@@ -1196,21 +1228,53 @@ public class LieferantenController {
     private ResponseEntity<byte[]> vorschauAntwort(byte[] jpeg, String dateiname) {
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
-                .cacheControl(org.springframework.http.CacheControl
-                        .maxAge(86400, java.util.concurrent.TimeUnit.SECONDS).cachePrivate())
+                .cacheControl(MobilePrincipal.current() != null ? org.springframework.http.CacheControl.noStore()
+                        : org.springframework.http.CacheControl.maxAge(86400, java.util.concurrent.TimeUnit.SECONDS).cachePrivate())
                 .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
                         inlineDisposition("vorschau_" + dateiname))
                 .body(jpeg);
     }
 
     private ResponseEntity<byte[]> getBildDateiAlsBytes(java.nio.file.Path path, String dateiname) throws IOException {
-        String contentType = java.nio.file.Files.probeContentType(path);
+        String inlineTyp = sichererInlineTyp(path);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(
-                        contentType != null ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE))
+                        inlineTyp != null ? inlineTyp : MediaType.APPLICATION_OCTET_STREAM_VALUE))
                 .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
-                        inlineDisposition(dateiname))
+                        disposition(inlineTyp, dateiname))
+                .header("X-Content-Type-Options", "nosniff")
                 .body(java.nio.file.Files.readAllBytes(path));
+    }
+
+    /**
+     * Typ für die Anzeige im Browser, allein aus der Endung der gespeicherten Datei – nie aus
+     * {@code Files.probeContentType} (hängt vom Betriebssystem ab und kennt {@code .html}/{@code .svg}).
+     * Nur Fotos und PDFs; alles andere ({@code null}) geht als Download raus, damit eine
+     * hochgeladene SVG- oder HTML-Datei kein Skript im Ursprung des ERP ausführt.
+     */
+    static String sichererInlineTyp(java.nio.file.Path path) {
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        int punkt = name.lastIndexOf('.');
+        String endung = punkt < 0 ? "" : name.substring(punkt + 1);
+        return switch (endung) {
+            case "jpg", "jpeg" -> MediaType.IMAGE_JPEG_VALUE;
+            case "png" -> MediaType.IMAGE_PNG_VALUE;
+            case "gif" -> MediaType.IMAGE_GIF_VALUE;
+            case "webp" -> "image/webp";
+            case "heic" -> "image/heic";
+            case "heif" -> "image/heif";
+            case "pdf" -> MediaType.APPLICATION_PDF_VALUE;
+            default -> null;
+        };
+    }
+
+    /** Inline nur für sichere Typen, sonst Download. */
+    private String disposition(String inlineTyp, String dateiname) {
+        return inlineTyp != null ? inlineDisposition(dateiname)
+                : org.springframework.http.ContentDisposition.attachment()
+                        .filename(dateiname, java.nio.charset.StandardCharsets.UTF_8)
+                        .build()
+                        .toString();
     }
 
     /**
@@ -1247,8 +1311,8 @@ public class LieferantenController {
 
         try {
             // Datei speichern
-            String originalFilename = org.springframework.util.StringUtils.cleanPath(
-                    java.util.Objects.requireNonNull(datei.getOriginalFilename()));
+            String originalFilename = Path.of(java.util.Objects.requireNonNull(datei.getOriginalFilename())).getFileName().toString()
+                    .replaceAll("[\\\\/:*?\"<>|]", "_");
             String storedFilename = java.util.UUID.randomUUID() + "_" + originalFilename;
 
             java.nio.file.Path lieferantDir = Path.of("uploads", "lieferanten", id.toString(),

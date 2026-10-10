@@ -10,32 +10,21 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.List;
 
-/**
- * Netz-Filter für externe Zugriffe über den Cloudflare Tunnel: erlaubt von
- * außen nur die Pfade aus {@link #ALLOWED_PATHS}, alles andere ist nur aus dem
- * lokalen Netz bzw. dem VPN erreichbar.
+/** Zusätzliche Netzgrenze. Identität und Rechte prüft immer die Spring-Security-Kette.
+ * Weiterleitungs-Header gelten ausschließlich von konfigurierten vertrauenswürdigen Proxys.
  *
- * <p><b>Das ist keine Authentifizierung.</b> Der Filter prüft ausschließlich
- * Client-IP und Pfad — nie ein Token, nie eine Identität:
- * <ul>
- *   <li>IPs aus {@link #LOCAL_IP_PREFIXES} (inkl. Tailscale {@code 100.}) werden
- *       ungeprüft durchgelassen, auf <i>jeden</i> Pfad.</li>
- *   <li>Externe IPs kommen auf die Pfade aus {@link #ALLOWED_PATHS} — ebenfalls
- *       ohne jede Auth.</li>
- *   <li>Die Client-IP stammt aus {@code CF-Connecting-IP} bzw.
- *       {@code X-Forwarded-For}. Wer das Backend direkt erreicht (also nicht über
- *       den Tunnel), kann diese Header frei setzen und sich als lokal ausgeben.</li>
- * </ul>
- * Der eigentliche Auth-Schutz muss aus der Security-Chain kommen; für die
- * Mobile-Pfade fehlt er derzeit, siehe
- * {@code SecurityConfig#ZEITERFASSUNG_PATHS}.
+ * <p>Läuft <strong>vor</strong> Spring Security (Order -100): Sonst beantwortet der Login-Filter
+ * {@code POST /api/auth/login} selbst, und die Netzgrenze käme für die Anmeldung nie zum Zug.</p>
  */
 @Component
-@Order(1)
+@Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 30)
 public class ZeiterfassungSecurityFilter implements Filter {
 
     @Value("${zeiterfassung.security.enabled:true}")
     private boolean securityEnabled;
+
+    @Value("${zeiterfassung.security.trusted-proxies:}")
+    private String trustedProxies = "";
 
     // Erlaubte Pfade für externe Zugriffe
     private static final List<String> ALLOWED_PATHS = List.of(
@@ -54,32 +43,10 @@ public class ZeiterfassungSecurityFilter implements Filter {
             "/api/kalender/mobile",
             "/api/push",
             "/api/abwesenheit",
-            "/api/spracheingabe");
-
-    // Lokale IP-Bereiche die immer Zugriff haben
-    private static final List<String> LOCAL_IP_PREFIXES = List.of(
-            "127.0.0.1",
-            "192.168.",
-            "10.",
-            "100.", // Tailscale VPN
-            "172.16.",
-            "172.17.",
-            "172.18.",
-            "172.19.",
-            "172.20.",
-            "172.21.",
-            "172.22.",
-            "172.23.",
-            "172.24.",
-            "172.25.",
-            "172.26.",
-            "172.27.",
-            "172.28.",
-            "172.29.",
-            "172.30.",
-            "172.31.",
-            "0:0:0:0:0:0:0:1" // IPv6 localhost
-    );
+            "/api/spracheingabe",
+            "/api/reklamationen",
+            "/api/buchhaltung/mobile",
+            "/api/zeitverwaltung/feiertage/zwischen");
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -94,10 +61,13 @@ public class ZeiterfassungSecurityFilter implements Filter {
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
         String path = httpRequest.getRequestURI();
-        String clientIp = getClientIp(httpRequest);
+        ClientIpResolver resolver = resolver();
+        String clientIp = resolver.resolve(httpRequest);
 
-        // Lokale IPs haben immer vollen Zugriff
-        if (isLocalIp(clientIp)) {
+        // Lokale IPs passieren die Netzgrenze; Spring Security prüft weiterhin den Zugriff.
+        // Fail-closed: Kommt eine weitergeleitete Anfrage von einem nicht freigegebenen Proxy
+        // (z. B. cloudflared auf localhost), ist der Absender unbekannt und gilt als extern.
+        if (isLocalIp(clientIp) && !resolver.weitergeleitetVonUnbekanntemProxy(httpRequest)) {
             chain.doFilter(request, response);
             return;
         }
@@ -114,37 +84,35 @@ public class ZeiterfassungSecurityFilter implements Filter {
         httpResponse.getWriter().write("{\"error\":\"Zugriff verweigert\"}");
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        // Cloudflare sendet die echte Client-IP im CF-Connecting-IP Header
-        String cfIp = request.getHeader("CF-Connecting-IP");
-        if (cfIp != null && !cfIp.isEmpty()) {
-            return cfIp;
-        }
+    private static final List<org.springframework.security.web.util.matcher.IpAddressMatcher> LOKALE_NETZE =
+            java.util.stream.Stream.of("127.0.0.0/8", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12", "100.64.0.0/10", "::1/128")
+                    .map(org.springframework.security.web.util.matcher.IpAddressMatcher::new).toList();
 
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
+    private volatile ClientIpResolver resolver;
+    private volatile String resolverFuer;
 
-        return request.getRemoteAddr();
+    /** Einmal je Konfiguration gebaut statt pro Anfrage. */
+    private ClientIpResolver resolver() {
+        String proxies = trustedProxies == null ? "" : trustedProxies;
+        ClientIpResolver aktuell = resolver;
+        if (aktuell == null || !proxies.equals(resolverFuer)) {
+            aktuell = new ClientIpResolver(proxies);
+            resolver = aktuell;
+            resolverFuer = proxies;
+        }
+        return aktuell;
     }
 
     private boolean isLocalIp(String ip) {
-        if (ip == null)
-            return false;
-        for (String prefix : LOCAL_IP_PREFIXES) {
-            if (ip.startsWith(prefix)) {
-                return true;
-            }
-        }
-        return false;
+        if (ip == null) return false;
+        return LOKALE_NETZE.stream().anyMatch(m -> m.matches(ip));
     }
 
     private boolean isAllowedPath(String path) {
         if (path == null)
             return false;
         for (String allowed : ALLOWED_PATHS) {
-            if (path.startsWith(allowed)) {
+            if ((path.equals(allowed) || path.startsWith(allowed + "/"))) {
                 return true;
             }
         }

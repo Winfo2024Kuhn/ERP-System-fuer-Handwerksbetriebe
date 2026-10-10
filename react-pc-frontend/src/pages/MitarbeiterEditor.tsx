@@ -21,6 +21,7 @@ import { Select } from '../components/ui/select-custom';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { useToast } from '../components/ui/toast';
+import { useAuth } from '../auth/AuthContext';
 import { StundenlohnHistorieList } from '../components/mitarbeiter/StundenlohnHistorieList';
 import { BeschaeftigungsWizard, type Beschaeftigungsart } from '../components/mitarbeiter/BeschaeftigungsWizard';
 import type { Arbeitszeit, Zeitkontenmodell, ZeitkontoStatus, ZeitkontoWechsel, ZeitkontoWechselErgebnis } from '../types/zeitkonto';
@@ -115,10 +116,15 @@ const mitarbeiterEntwurf = (m: Partial<Mitarbeiter>): MitarbeiterEntwurf => ({ .
 export default function MitarbeiterEditor() {
     const confirmDialog = useConfirm();
     const toast = useToast();
+    const { isAdmin, user } = useAuth();
     const showError = toast.error;
     const [view, setView] = useState<'LIST' | 'DETAIL'>('LIST');
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
     const [selectedMitarbeiter, setSelectedMitarbeiter] = useState<Mitarbeiter | null>(null);
+    // Mit dem Anmelde-Code meldet man sich in der Handy-App als dieser Mitarbeiter an:
+    // nur Admins und der Mitarbeiter selbst sehen QR-Code und Code.
+    const darfAnmeldeCodeSehen = !!selectedMitarbeiter
+        && (isAdmin || user?.mitarbeiter?.id === selectedMitarbeiter.id);
     const [dokumente, setDokumente] = useState<MitarbeiterDokument[]>([]);
     const [abteilungen, setAbteilungen] = useState<Abteilung[]>([]);
 
@@ -594,7 +600,7 @@ export default function MitarbeiterEditor() {
                 </p>
             </div>
             <div className="flex gap-2 shrink-0">
-                {selectedMitarbeiter?.loginToken && (
+                {darfAnmeldeCodeSehen && selectedMitarbeiter?.loginToken && (
                     <Button
                         variant="outline"
                         onClick={() => setIsQrModalOpen(true)}
@@ -603,7 +609,7 @@ export default function MitarbeiterEditor() {
                         <QrCode className="w-4 h-4 mr-2" /> QR-Code
                     </Button>
                 )}
-                {!selectedMitarbeiter?.loginToken && (
+                {darfAnmeldeCodeSehen && !selectedMitarbeiter?.loginToken && (
                     <Button
                         variant="outline"
                         onClick={handleRegenerateToken}

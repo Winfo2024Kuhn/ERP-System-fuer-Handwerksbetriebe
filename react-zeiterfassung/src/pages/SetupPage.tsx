@@ -4,15 +4,23 @@ import { Html5Qrcode } from 'html5-qrcode'
 
 interface SetupPageProps {
     error?: string | null
+    retryAt?: number
     onTokenScanned?: (token: string) => void
 }
 
-export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
+export default function SetupPage({ error, retryAt = 0, onTokenScanned }: SetupPageProps) {
+    const [now, setNow] = useState(Date.now)
+    const secondsRemaining = Math.max(0, Math.ceil((retryAt - now) / 1000))
+    useEffect(() => {
+        if (!retryAt) return
+        const timer = window.setInterval(() => setNow(Date.now()), 200)
+        return () => window.clearInterval(timer)
+    }, [retryAt])
     const [processing, setProcessing] = useState(false)
     // Schlägt die Anmeldung fehl (ungültiger Token, Server nicht erreichbar), meldet
     // App.tsx das über `error`. Der Spinner "Anmeldung wird verarbeitet..." darf dann
     // nicht stehen bleiben – beim nächsten Versuch setzt App.tsx `error` wieder auf null.
-    const zeigeSpinner = processing && !error
+    const zeigeSpinner = processing && !error && secondsRemaining === 0
     const [showManualInput, setShowManualInput] = useState(false)
     const [manualToken, setManualToken] = useState('')
     const [scanning, setScanning] = useState(false)
@@ -40,6 +48,7 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
     }, [])
 
     const startScanner = async () => {
+        if (Date.now() < retryAt) return
         setScanError(null)
         setScanning(true)
         setShowManualInput(false)
@@ -84,7 +93,7 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
     }
 
     const handleManualSubmit = () => {
-        if (manualToken.trim() && onTokenScanned) {
+        if (Date.now() >= retryAt && manualToken.trim() && onTokenScanned) {
             setProcessing(true)
             onTokenScanned(manualToken.trim())
         }
@@ -145,11 +154,19 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                 Scanne deinen persönlichen QR-Code oder gib das Token manuell ein.
             </p>
 
+            {secondsRemaining > 0 && (
+                <p role="status" aria-live="polite" className="mb-4 text-sm text-slate-700">
+                    Erneuter Versuch in {secondsRemaining} {secondsRemaining === 1 ? 'Sekunde' : 'Sekunden'}.
+                </p>
+            )}
+
             {/* Primary: Scan with camera */}
             <button
                 type="button"
                 onClick={startScanner}
-                className="w-full max-w-sm bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-3 mb-4 shadow-md transition-colors"
+                disabled={secondsRemaining > 0}
+                title={secondsRemaining > 0 ? `Bitte noch ${secondsRemaining} Sekunden warten` : undefined}
+                className="w-full max-w-sm bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-3 mb-4 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 <Camera className="w-5 h-5" />
                 Kamera öffnen &amp; QR-Code scannen
@@ -167,7 +184,9 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
             {showManualInput && (
                 <div className="w-full max-w-sm mb-8">
                     <input
-                        type="text"
+                        type="password"
+                        autoComplete="off"
+                        aria-label="Persönlicher Anmelde-Token"
                         value={manualToken}
                         onChange={(e) => setManualToken(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
@@ -176,7 +195,8 @@ export default function SetupPage({ error, onTokenScanned }: SetupPageProps) {
                     />
                     <button
                         onClick={handleManualSubmit}
-                        disabled={!manualToken.trim()}
+                        disabled={!manualToken.trim() || secondsRemaining > 0}
+                        title={secondsRemaining > 0 ? `Bitte noch ${secondsRemaining} Sekunden warten` : undefined}
                         className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Anmelden

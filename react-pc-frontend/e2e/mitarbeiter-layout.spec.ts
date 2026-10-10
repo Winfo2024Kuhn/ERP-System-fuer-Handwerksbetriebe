@@ -161,9 +161,11 @@ async function stubMitarbeiterApi(page: Page) {
         const pfad = new URL(route.request().url()).pathname;
 
         if (pfad === '/api/auth/me') {
+            // Admin: Nur Admins (und der Mitarbeiter selbst) sehen den Knopf "Token erstellen",
+            // den die Kopfzeilen-Zusicherung unten als dritten Kopf-Knopf braucht.
             return json(route, {
                 id: 1, username: 'anna.buero', displayName: 'Anna Büro',
-                active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false,
             });
         }
         if (pfad === '/api/notifications/summary') {

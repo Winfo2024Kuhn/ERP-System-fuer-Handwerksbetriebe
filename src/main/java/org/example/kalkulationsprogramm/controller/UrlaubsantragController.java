@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
 import org.example.kalkulationsprogramm.service.UrlaubsantragService;
 import org.springframework.http.ResponseEntity;
@@ -19,7 +20,12 @@ public class UrlaubsantragController {
     @PostMapping("/api/urlaub/antraege")
     public ResponseEntity<?> createAntrag(@RequestBody Map<String, Object> body) {
         try {
-            Long mitarbeiterId = ((Number) body.get("mitarbeiterId")).longValue();
+            Number requestedMitarbeiterId = (Number) body.get("mitarbeiterId");
+            Long mitarbeiterId = MobilePrincipal.ownMitarbeiterId(
+                    requestedMitarbeiterId == null ? null : requestedMitarbeiterId.longValue());
+            if (mitarbeiterId == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Mitarbeiter fehlt."));
+            }
             LocalDate von = LocalDate.parse((String) body.get("von"));
             LocalDate bis = LocalDate.parse((String) body.get("bis"));
             String bemerkung = (String) body.get("bemerkung");
@@ -38,6 +44,8 @@ public class UrlaubsantragController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long mitarbeiterId,
             @RequestParam(required = false) Integer jahr) {
+
+        mitarbeiterId = MobilePrincipal.ownMitarbeiterId(mitarbeiterId);
 
         // Mitarbeiter + Jahr Filter
         if (mitarbeiterId != null && jahr != null) {
@@ -95,6 +103,7 @@ public class UrlaubsantragController {
     public ResponseEntity<?> getResturlaub(
             @RequestParam Long mitarbeiterId,
             @RequestParam(required = false) Integer jahr) {
+        mitarbeiterId = MobilePrincipal.ownMitarbeiterId(mitarbeiterId);
         int targetJahr = (jahr != null) ? jahr : java.time.LocalDate.now().getYear();
         try {
             int verbleibend = service.getResturlaub(mitarbeiterId, targetJahr);
@@ -110,16 +119,9 @@ public class UrlaubsantragController {
      * der Antrag selbst (POST /api/urlaub/antraege, auch von der Handy-App
      * genutzt) bleibt davon unberührt.
      *
-     * <p><b>Bewusst NICHT unter {@code /api/urlaub/**}:</b> Dieses Präfix
-     * steht auf der {@code permitAll}-Kette der Mobile-App
-     * ({@link org.example.kalkulationsprogramm.config.SecurityConfig#ZEITERFASSUNG_PATHS}).
-     * Die Antwort verrät Existenz und Beginndatum einer Langzeitkrankmeldung —
-     * Gesundheitsdaten nach Art. 9 DSGVO — und muss deshalb hinter dem Login
-     * liegen. {@code /api/langzeitkrankmeldungen/**} ist bereits
-     * {@code authenticated()} (siehe {@code apiFilterChain}), ohne dass diese
-     * SecurityConfig dafür angefasst werden musste (Abschnitt 4 Nachbesserung,
-     * Befund 1; abgesichert durch {@code UrlaubsHinweiseSicherheitTest} im
-     * {@code config}-Testpackage).
+     * <p>Die Antwort verrät Existenz und Beginndatum einer Langzeitkrankmeldung
+     * und bleibt deshalb hinter der Desktop-Anmeldung. MobileApiPolicy gibt
+     * diesen Büro-Endpunkt auch mit gültigem Mitarbeiter-Token nicht frei.
      */
     @GetMapping("/api/langzeitkrankmeldungen/urlaubs-hinweise")
     public ResponseEntity<Map<String, List<String>>> getHinweise(

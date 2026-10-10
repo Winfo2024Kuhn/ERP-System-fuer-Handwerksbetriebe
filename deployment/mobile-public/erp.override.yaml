@@ -1,0 +1,26 @@
+# Compose >= 2.24.4: !override REPLACES ports rather than retaining old public bindings.
+services:
+  app:
+    ports: !override
+      - "${ERP_PRIVATE_BIND_IP:-127.0.0.1}:8080:8080"
+    environment:
+      ZEITERFASSUNG_SECURITY_TRUSTED_PROXIES: 172.30.51.2/32
+      ZEITERFASSUNG_URL: ${ZEITERFASSUNG_URL:-http://localhost:8080}
+      SERVER_FORWARD_HEADERS_STRATEGY: none
+      SERVER_TOMCAT_ACCESSLOG_ENABLED: "false"
+    networks:
+      default: {}
+      mobile_backend:
+        ipv4_address: 172.30.51.3
+        aliases: [app]
+  mysql:
+    ports: !override
+      - "127.0.0.1:3307:3306"
+  qdrant:
+    ports: !override
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+networks:
+  mobile_backend:
+    external: true
+    name: erp-mobile-backend

@@ -83,9 +83,9 @@ public class BelegController {
     }
 
     // === Mobile-Spiegel: dieselben Endpoints, aber unter /mobile/ ===
-    // Spring Security routet /api/buchhaltung/mobile/** in die token-only
-    // zeiterfassungFilterChain — anders als /api/buchhaltung/** das Session-Auth
-    // braucht. Die Mobile-PWA hat keine Session, nur einen loginToken.
+    // Spring Security routet /api/buchhaltung/mobile/** in die mobile Chain: Der
+    // MobileTokenAuthenticationFilter prüft den loginToken (MobileApiPolicy), anders als
+    // /api/buchhaltung/**, das Session-Auth braucht. Die Mobile-PWA hat keine Session.
 
     @GetMapping("/mobile/me/permissions")
     public ResponseEntity<BelegDto.PermissionResponse> myPermissionsMobile(

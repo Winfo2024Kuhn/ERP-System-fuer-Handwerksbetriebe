@@ -1,0 +1,31 @@
+services:
+  gateway:
+    environment:
+      ERP_UPSTREAM: app:8080
+  caddy:
+    ports: !override
+      - "127.0.0.1::443"
+    environment:
+      MOBILE_DOMAIN: localhost
+      MOBILE_TLS_DIRECTIVE: tls internal
+  app:
+    image: python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+    command: [python, /support/mock_backend.py]
+    volumes:
+      - ./tests/mock_backend.py:/support/mock_backend.py:ro
+    networks:
+      backend:
+        ipv4_address: 172.30.51.3
+  probe:
+    image: python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+    command: [sleep, infinity]
+    networks:
+      edge: {ipv4_address: 172.30.50.4}
+  rogue:
+    image: python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+    command: [sleep, infinity]
+    networks:
+      edge: {ipv4_address: 172.30.50.5}
+networks:
+  backend:
+    name: ${TEST_BACKEND_NETWORK:?integration test network name required}

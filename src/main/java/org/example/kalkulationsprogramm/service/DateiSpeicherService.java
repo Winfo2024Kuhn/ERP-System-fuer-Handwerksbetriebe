@@ -1476,6 +1476,45 @@ public class DateiSpeicherService {
         return "/api/images/" + speichername;
     }
 
+    /** Speichert ein Projekt-Notizbild im selben konfigurierten Ordner wie die Dateiauslieferung. */
+    public String speichereProjektNotizBild(MultipartFile datei) {
+        String dateityp = datei.getContentType();
+        if (datei.isEmpty() || dateityp == null || !ERLAUBTE_BILD_TYPEN.contains(dateityp)) {
+            throw new IllegalArgumentException("Bitte ein Bild als JPEG, PNG, GIF oder WebP auswählen.");
+        }
+        String originalDateiname = Path.of(Objects.requireNonNullElse(datei.getOriginalFilename(), "bild"))
+                .getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
+        // Die erlaubte MIME-Klasse bestimmt die Endung, kein vom Client gelieferter HTML-/JS-Name.
+        String endung = switch (dateityp) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/gif" -> ".gif";
+            case "image/webp" -> ".webp";
+            default -> throw new IllegalArgumentException("Ungültiger Bildtyp.");
+        };
+        String dateiname = generiereEinzigartigenDateinamen(originalDateiname + endung);
+        Path ziel = resolveAndValidate(dokumentenSpeicherplatz, dateiname);
+        try (var input = datei.getInputStream()) {
+            Files.copy(input, ziel);
+        } catch (IOException e) {
+            throw new RuntimeException("Bild konnte nicht gespeichert werden.", e);
+        }
+        return dateiname;
+    }
+
+    /** Entfernt ein Notizbild ohne Abhängigkeit von einer ProjektDokument-ID. */
+    public void loescheProjektNotizBild(String dateiname) {
+        if (dateiname == null || dateiname.isBlank() || dateiname.contains("/") || dateiname.contains("\\")
+                || dateiname.equals(".") || dateiname.equals("..")) {
+            throw new IllegalArgumentException("Ungültiger Bildname.");
+        }
+        try {
+            Files.deleteIfExists(resolveAndValidate(dokumentenSpeicherplatz, dateiname));
+        } catch (IOException e) {
+            throw new RuntimeException("Bild konnte nicht gelöscht werden.", e);
+        }
+    }
+
     /**
      * Kopiert ein Notiz-Bild aus dem Bilder-Speicherplatz in den Dokumenten-Speicherplatz
      * und vergibt einen frischen UUID-Dateinamen. Wird beim Transfer Anfrage→Projekt
@@ -1545,6 +1584,34 @@ public class DateiSpeicherService {
             Files.deleteIfExists(pfad);
         } catch (Exception e) {
             log.warn("Freigabe-PDF konnte nicht gelöscht werden: {}", dateiname, e);
+        }
+    }
+
+    /**
+     * Liest ausschließlich die zuvor freigegebene mobile Datei im zugehörigen
+     * Speicher. Keine Originalnamen-Aliasse, HiCAD-Suche oder anderen Ordner.
+     */
+    public Resource ladeMobileDateiAlsResource(MobileObjectAccessService.FreigegebeneDatei datei) {
+        Path basis = switch (datei.speicher()) {
+            case PROJEKT -> dokumentenSpeicherplatz;
+            case ANFRAGE -> anfragenSpeicherplatz;
+            case BILD -> bilderSpeicherplatz;
+        };
+        String name = datei.dateiname();
+        if (name == null || name.isBlank() || name.contains("/") || name.contains("\\")
+                || name.equals(".") || name.equals("..")) {
+            throw new NotFoundException("Datei nicht gefunden.");
+        }
+        Path pfad = basis.resolve(name).normalize();
+        try {
+            if (!pfad.startsWith(basis) || Files.isSymbolicLink(pfad)
+                    || !Files.isRegularFile(pfad) || !Files.isReadable(pfad)
+                    || !pfad.toRealPath().startsWith(basis.toRealPath())) {
+                throw new NotFoundException("Datei nicht gefunden.");
+            }
+            return new UrlResource(pfad.toUri());
+        } catch (IOException e) {
+            throw new NotFoundException("Datei nicht gefunden.");
         }
     }
 

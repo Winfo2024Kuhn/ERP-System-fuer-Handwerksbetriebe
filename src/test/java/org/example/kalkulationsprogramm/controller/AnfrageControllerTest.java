@@ -131,10 +131,10 @@ class AnfrageControllerTest {
         when(anfrageService.suche(null, null, null, null, null, false))
                 .thenReturn(List.of(dto));
 
-        List<AnfrageResponseDto> result = controller.liste(null, null, null, null, null, null, false);
+        List<?> result = controller.liste(null, null, null, null, null, null, false, null);
 
         assertEquals(1, result.size());
-        assertEquals(1L, result.get(0).getId());
+        assertEquals(1L, ((AnfrageResponseDto) result.get(0)).getId());
         verify(anfrageService).suche(null, null, null, null, null, false);
         verify(anfrageService, never()).sucheSeiteGefiltert(any(), any(), any(), any(), any(), anyBoolean(), any(),
                 anyInt(), anyInt());

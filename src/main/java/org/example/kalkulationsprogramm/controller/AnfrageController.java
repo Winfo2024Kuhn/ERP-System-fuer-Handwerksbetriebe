@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.controller;
 
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
+import org.example.kalkulationsprogramm.service.MobileObjectAccessService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Anfrage;
@@ -164,6 +167,13 @@ public class AnfrageController {
             @RequestParam("datei") List<MultipartFile> dateien,
             @RequestParam(value = "gruppe", required = false) DokumentGruppe gruppe) {
         try {
+            if (MobilePrincipal.current() != null && gruppe != DokumentGruppe.BILDER) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            if (MobilePrincipal.current() != null
+                    && !dateien.stream().allMatch(MobileObjectAccessService::istErlaubtesMobilBild)) {
+                return ResponseEntity.badRequest().build();
+            }
             DokumentGruppe verwendeteGruppe = gruppe != null ? gruppe : DokumentGruppe.DIVERSE_DOKUMENTE;
             List<AnfrageDokumentResponseDto> dtos = dateien.stream().map(datei -> {
                 AnfrageDokument dokument = dateiSpeicherService.speichereAnfragesDatei(datei, anfrageID,
@@ -221,6 +231,9 @@ public class AnfrageController {
     public ResponseEntity<List<AnfrageDokumentResponseDto>> listeDokumente(@PathVariable Long anfrageID,
             @RequestParam(value = "gruppe", required = false) DokumentGruppe gruppe) {
         List<AnfrageDokument> dokumente = dateiSpeicherService.holeDokumenteZuAnfrage(anfrageID);
+        if (MobilePrincipal.current() != null) {
+            dokumente = dokumente.stream().filter(MobileObjectAccessService::canReadAnfrageDokument).toList();
+        }
         // Filter by DokumentGruppe if specified
         if (gruppe != null) {
             dokumente = dokumente.stream()
@@ -238,6 +251,9 @@ public class AnfrageController {
     @GetMapping("/{anfrageID}/email-dokumente")
     public ResponseEntity<List<AnfrageDokumentResponseDto>> emailDokumente(@PathVariable Long anfrageID) {
         List<AnfrageDokument> dokumente = dateiSpeicherService.holeDokumenteZuAnfrage(anfrageID);
+        if (MobilePrincipal.current() != null) {
+            dokumente = dokumente.stream().filter(MobileObjectAccessService::canReadAnfrageDokument).toList();
+        }
         java.util.List<AnfrageDokumentResponseDto> dtos = dokumente.stream()
                 .filter(d -> {
                     boolean isBusiness = d instanceof AnfrageGeschaeftsdokument;
@@ -281,17 +297,29 @@ public class AnfrageController {
      * Liefert weiterhin die ungeseiteten DTOs als flache Liste.
      */
     @GetMapping
-    public List<AnfrageResponseDto> liste(@RequestParam(required = false) Integer jahr,
+    public List<?> liste(@RequestParam(required = false) Integer jahr,
             @RequestParam(required = false) String kundenname,
             @RequestParam(required = false) String kunde,
             @RequestParam(required = false) String bauvorhaben,
             @RequestParam(required = false) String anfragesnummer,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false, defaultValue = "false") boolean nurOhneProjekt) {
+            @RequestParam(required = false, defaultValue = "false") boolean nurOhneProjekt,
+            @RequestParam(required = false) Integer size) {
         // "kunde" als Alias für "kundenname" akzeptieren
         String effektiverKundenname = kundenname != null ? kundenname : kunde;
-        return anfrageService.suche(jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt);
+        List<AnfrageResponseDto> treffer = anfrageService.suche(jahr, effektiverKundenname, bauvorhaben,
+                anfragesnummer, q, nurOhneProjekt);
+        if (MobilePrincipal.current() != null) {
+            // Die App zeigt nur offene Anfragen seitenweise – und nur die Felder, die sie anzeigt.
+            int grenze = size == null || size < 1 ? MOBIL_STANDARD_ANZAHL : Math.min(size, MOBIL_HOECHSTE_ANZAHL);
+            return treffer.stream().filter(a -> !a.isAbgeschlossen()).limit(grenze)
+                    .map(org.example.kalkulationsprogramm.dto.Anfrage.AnfrageMobilDto::von).toList();
+        }
+        return treffer;
     }
+
+    private static final int MOBIL_STANDARD_ANZAHL = 20;
+    private static final int MOBIL_HOECHSTE_ANZAHL = 50;
 
     /**
      * Paginierte Variante: Wird aufgerufen, sobald der Aufrufer einen {@code page}-Param
@@ -318,6 +346,10 @@ public class AnfrageController {
             @RequestParam(required = false) String sortierung,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "12") int size) {
+        if (MobilePrincipal.current() != null) {
+            // Die App blättert nicht; die volle Seitenansicht (Beträge, E-Mails) bleibt im Büro.
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.FORBIDDEN);
+        }
         String effektiverKundenname = kundenname != null ? kundenname : kunde;
         return anfrageService.sucheSeiteGefiltert(
                 jahr, effektiverKundenname, bauvorhaben, anfragesnummer, q, nurOhneProjekt,
@@ -383,9 +415,14 @@ public class AnfrageController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<AnfrageResponseDto> hole(@PathVariable Long id) {
+    public ResponseEntity<?> hole(@PathVariable Long id) {
         AnfrageResponseDto dto = anfrageService.findeDto(id);
-        return dto != null ? ResponseEntity.ok(dto) : ResponseEntity.notFound().build();
+        if (dto == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return MobilePrincipal.current() != null
+                ? ResponseEntity.ok(org.example.kalkulationsprogramm.dto.Anfrage.AnfrageMobilDto.von(dto))
+                : ResponseEntity.ok(dto);
     }
 
     @GetMapping("/{id}/projekt-vorlage")
@@ -510,7 +547,7 @@ public class AnfrageController {
             return mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
         }
         if (token != null && !token.isBlank()) {
-            return mitarbeiterRepository.findByLoginToken(token).orElse(null);
+            return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
         }
         if (userProfileId != null) {
             return frontendUserProfileService.findById(userProfileId)
@@ -521,6 +558,8 @@ public class AnfrageController {
     }
 
     private boolean hasEditPermission(AnfrageNotiz notiz, Mitarbeiter requester, boolean isMobile) {
+        var mobile = MobilePrincipal.current();
+        if (mobile != null && !MobileObjectAccessService.canReadAnfrageNotiz(notiz, mobile.mitarbeiterId())) return false;
         if (requester == null)
             return false;
         if (!isMobile)
@@ -590,6 +629,7 @@ public class AnfrageController {
 
         List<AnfrageNotizDto> dtos = notizen.stream()
                 .filter(n -> {
+                    if (MobilePrincipal.current() != null && !MobileObjectAccessService.canReadAnfrageNotiz(n, MobilePrincipal.current().mitarbeiterId())) return false;
                     // Privacy Check (nurFuerErsteller)
                     if (n.isNurFuerErsteller()) {
                         if (finalUser.getId() == null)
@@ -665,6 +705,10 @@ public class AnfrageController {
 
         AnfrageNotiz notiz = anfrageNotizRepository.findById(notizId)
                 .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
+            if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null
+                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) {
+                return ResponseEntity.notFound().build();
+            }
 
         Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
         boolean isMobile = token != null && !token.isBlank();
@@ -689,6 +733,10 @@ public class AnfrageController {
 
         AnfrageNotiz notiz = anfrageNotizRepository.findById(notizId)
                 .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
+            if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null
+                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) {
+                return ResponseEntity.notFound().build();
+            }
 
         Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
         boolean isMobile = token != null && !token.isBlank();
@@ -718,6 +766,10 @@ public class AnfrageController {
 
         AnfrageNotiz notiz = anfrageNotizRepository.findById(notizId)
                 .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
+            if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null
+                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) {
+                return ResponseEntity.notFound().build();
+            }
 
         Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
         boolean isMobile = token != null && !token.isBlank();
@@ -760,6 +812,7 @@ public class AnfrageController {
         }
 
         AnfrageNotiz notiz = bild.getNotiz();
+        if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) return ResponseEntity.notFound().build();
         Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
         boolean isMobile = token != null && !token.isBlank();
 

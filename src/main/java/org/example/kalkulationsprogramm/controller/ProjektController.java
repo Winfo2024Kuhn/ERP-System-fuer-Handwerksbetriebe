@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.controller;
 
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
+import org.example.kalkulationsprogramm.service.MobileObjectAccessService;
+
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -514,6 +517,13 @@ public class ProjektController {
             @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
             @RequestHeader(value = "X-Lieferant-Id", required = false) Long lieferantId) {
         try {
+            if (MobilePrincipal.current() != null && gruppe != DokumentGruppe.BILDER) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            if (MobilePrincipal.current() != null
+                    && !dateien.stream().allMatch(MobileObjectAccessService::istErlaubtesMobilBild)) {
+                return ResponseEntity.badRequest().build();
+            }
             DokumentGruppe verwendeteGruppe = gruppe != null ? gruppe : DokumentGruppe.DIVERSE_DOKUMENTE;
             // Ermittle den Mitarbeiter: X-Mitarbeiter-Id hat Vorrang (für mobile App)
             Mitarbeiter uploadedBy = null;
@@ -595,6 +605,9 @@ public class ProjektController {
     @GetMapping("/{projektID}/dokumente")
     public ResponseEntity<List<ProjektDokumentResponseDto>> listeDokumente(@PathVariable Long projektID) {
         List<ProjektDokument> dokumente = dateiSpeicherService.holeDokumenteZuProjekt(projektID);
+        if (MobilePrincipal.current() != null) {
+            dokumente = dokumente.stream().filter(MobileObjectAccessService::canReadProjektDokument).toList();
+        }
         List<ProjektDokumentResponseDto> dtos = dokumente.stream()
                 .map(this::mappeDokumentZuDto)
                 .toList();
@@ -821,6 +834,9 @@ public class ProjektController {
     @GetMapping("/{projektID}/email-dokumente")
     public ResponseEntity<List<ProjektDokumentResponseDto>> emailDokumente(@PathVariable Long projektID) {
         List<ProjektDokument> dokumente = dateiSpeicherService.holeDokumenteZuProjekt(projektID);
+        if (MobilePrincipal.current() != null) {
+            dokumente = dokumente.stream().filter(MobileObjectAccessService::canReadProjektDokument).toList();
+        }
         java.util.List<ProjektDokumentResponseDto> dtos = dokumente.stream()
                 .filter(d -> {
                     boolean isBusiness = d instanceof ProjektGeschaeftsdokument;
@@ -1009,7 +1025,7 @@ public class ProjektController {
                 dto.setGeschaeftsdokumentart("Zeichnung");
             }
         }
-        if (dokument.getProjekt() != null) {
+        if (dokument.getProjekt() != null && MobilePrincipal.current() == null) {
             dto.setProjektId(dokument.getProjekt().getId());
             dto.setProjektAuftragsnummer(dokument.getProjekt().getAuftragsnummer());
             dto.setProjektKunde(dokument.getProjekt().getKunde());
@@ -1341,7 +1357,7 @@ public class ProjektController {
         boolean isMobileRequest = token != null && !token.isBlank();
 
         if (isMobileRequest) {
-            requester = mitarbeiterRepository.findByLoginToken(token).orElse(null);
+            requester = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
         } else if (userProfileId != null) {
             requester = frontendUserProfileService.findById(userProfileId)
                     .map(profile -> profile.getMitarbeiter())
@@ -1448,6 +1464,10 @@ public class ProjektController {
         try {
             ProjektNotiz notiz = projektNotizRepository.findById(notizId)
                     .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
+            if (MobilePrincipal.current() != null && (notiz.getProjekt() == null
+                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId))) {
+                return ResponseEntity.notFound().build();
+            }
 
             Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
             boolean isMobile = token != null && !token.isBlank();
@@ -1483,6 +1503,10 @@ public class ProjektController {
         try {
             ProjektNotiz notiz = projektNotizRepository.findById(notizId)
                     .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
+            if (MobilePrincipal.current() != null && (notiz.getProjekt() == null
+                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId))) {
+                return ResponseEntity.notFound().build();
+            }
 
             Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
             boolean isMobile = token != null && !token.isBlank();
@@ -1501,7 +1525,7 @@ public class ProjektController {
 
     private Mitarbeiter resolveMitarbeiter(Long userProfileId, String token) {
         if (token != null && !token.isBlank()) {
-            return mitarbeiterRepository.findByLoginToken(token).orElse(null);
+            return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
         } else if (userProfileId != null) {
             return frontendUserProfileService.findById(userProfileId)
                     .map(profile -> profile.getMitarbeiter())
@@ -1511,6 +1535,8 @@ public class ProjektController {
     }
 
     private boolean hasEditPermission(ProjektNotiz notiz, Mitarbeiter requester, boolean isMobile) {
+        var mobile = MobilePrincipal.current();
+        if (mobile != null && !MobileObjectAccessService.canReadProjektNotiz(notiz, mobile.mitarbeiterId())) return false;
         if (requester == null)
             return false;
         // PC Nutzer dürfen alles (vereinfacht, oder man prüft ob Admin)
@@ -1580,6 +1606,10 @@ public class ProjektController {
         try {
             ProjektNotiz notiz = projektNotizRepository.findById(notizId)
                     .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
+            if (MobilePrincipal.current() != null && (notiz.getProjekt() == null
+                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId))) {
+                return ResponseEntity.notFound().build();
+            }
 
             // Berechtigungsprüfung
             Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
@@ -1588,18 +1618,8 @@ public class ProjektController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
 
-            // Datei speichern (nutze DateiSpeicherService-Logik)
             String originalName = datei.getOriginalFilename();
-            String extension = "";
-            if (originalName != null && originalName.contains(".")) {
-                extension = originalName.substring(originalName.lastIndexOf("."));
-            }
-            String gespeicherterName = java.util.UUID.randomUUID().toString() + extension;
-
-            // Speichere in uploads-Verzeichnis
-            Path uploadPath = Path.of("uploads", gespeicherterName);
-            Files.createDirectories(uploadPath.getParent());
-            Files.copy(datei.getInputStream(), uploadPath, StandardCopyOption.REPLACE_EXISTING);
+            String gespeicherterName = dateiSpeicherService.speichereProjektNotizBild(datei);
 
             // Erstelle Bild-Entity
             ProjektNotizBild bild = new ProjektNotizBild();
@@ -1612,8 +1632,10 @@ public class ProjektController {
             ProjektNotizBild gespeichert = projektNotizBildRepository.save(bild);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(mapBildToDto(gespeichert));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
         } catch (Exception e) {
-            e.printStackTrace();
+            log.warn("Notizbild konnte nicht gespeichert werden");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -1637,6 +1659,8 @@ public class ProjektController {
                 return ResponseEntity.badRequest().build();
             }
 
+            if (MobilePrincipal.current() != null && (bild.getNotiz().getProjekt() == null
+                    || !java.util.Objects.equals(bild.getNotiz().getProjekt().getId(), projektId))) return ResponseEntity.notFound().build();
             // Berechtigungsprüfung über die Notiz
             Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
             boolean isMobile = token != null && !token.isBlank();
@@ -1646,8 +1670,7 @@ public class ProjektController {
 
             // Datei löschen
             try {
-                Path filePath = Path.of("uploads", bild.getGespeicherterDateiname());
-                Files.deleteIfExists(filePath);
+                dateiSpeicherService.loescheProjektNotizBild(bild.getGespeicherterDateiname());
             } catch (Exception ignored) {
             }
 

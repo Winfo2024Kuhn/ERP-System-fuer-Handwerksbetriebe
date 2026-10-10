@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
+import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
@@ -115,6 +116,26 @@ class LieferantDokumentZugriffServiceTest {
         var typen = service.sichtbareTypen("tok", session(FrontendUserRole.ADMIN));
 
         assertThat(typen).contains(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN));
+    }
+
+    @Test
+    @DisplayName("Header-Token (MobilePrincipal) bekommt die Typen seines Mitarbeiters, nie Admin-Rechte")
+    void mobilePrincipalSiehtNurTypenDesMitarbeiters() {
+        Authentication mobile = new UsernamePasswordAuthenticationToken(new MobilePrincipal(9L), null, List.of());
+        given(belegService.findCaller(null, mobile)).willReturn(mitarbeiter(9L));
+        berechtigt(9L, LieferantDokumentTyp.LIEFERSCHEIN);
+
+        assertThat(service.sichtbareTypen(null, mobile)).contains(EnumSet.of(LieferantDokumentTyp.LIEFERSCHEIN));
+    }
+
+    @Test
+    @DisplayName("MobilePrincipal ohne aktiven Mitarbeiter sieht nichts (angemeldet, aber leer)")
+    void mobilePrincipalOhneMitarbeiterSiehtNichts() {
+        Authentication mobile = new UsernamePasswordAuthenticationToken(new MobilePrincipal(9L), null, List.of());
+        given(belegService.findCaller(null, mobile)).willReturn(null);
+
+        assertThat(service.sichtbareTypen(null, mobile)).get().satisfies(t -> assertThat(t).isEmpty());
+        verifyNoInteractions(dokumentService);
     }
 
     @Test

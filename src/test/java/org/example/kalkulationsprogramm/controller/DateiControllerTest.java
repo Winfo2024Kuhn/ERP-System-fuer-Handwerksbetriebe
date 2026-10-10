@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
+import org.example.kalkulationsprogramm.service.MobileObjectAccessService;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -40,6 +41,9 @@ class DateiControllerTest {
 
     @MockBean
     private DateiSpeicherService dateiSpeicherService;
+
+    @MockBean
+    private MobileObjectAccessService mobileObjectAccessService;
 
     @Autowired
     private BildVorschauService bildVorschauService;
@@ -510,4 +514,3 @@ class DateiControllerTest {
                 .andExpect(header().doesNotExist(HttpHeaders.CACHE_CONTROL));
     }
 }
-

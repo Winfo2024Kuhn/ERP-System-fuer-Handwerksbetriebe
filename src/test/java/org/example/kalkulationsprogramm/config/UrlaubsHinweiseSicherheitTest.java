@@ -13,33 +13,16 @@ import java.util.Arrays;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Sicherheits-Regressionstest zum Abschnitts-4-Nachbesserung-Befund 1: der
- * Hinweis-Endpoint (GET .../urlaubs-hinweise) verrät Existenz und
- * Beginndatum einer Langzeitkrankmeldung eines Mitarbeiters - Gesundheitsdaten
- * nach Art. 9 DSGVO. Er lag ursprünglich unter {@code /api/urlaub/antraege/hinweise}
- * und damit versehentlich auf der {@code permitAll()}-Kette der Mobile-App
- * ({@link SecurityConfig#ZEITERFASSUNG_PATHS}, Muster {@code /api/urlaub/**}).
- * Er MUSS hinter dem Login liegen.
- *
- * <p>Steht bewusst im {@code config}-Package: {@link SecurityConfig#ZEITERFASSUNG_PATHS}
- * ist package-private, ein Test in {@code controller} oder {@code service}
- * (die Dateien des Nachbesserungs-Auftrags) käme nicht dran, ohne die
- * Sichtbarkeit in {@code SecurityConfig} selbst zu ändern - das war ausdrücklich
- * nicht erlaubt.
- *
- * <p>Der tatsächlich gemappte Pfad wird per Reflection aus
- * {@link UrlaubsantragController} gelesen (Klassen- + Methoden-Annotation),
- * statt ihn im Test hart zu verdrahten - eine künftige Pfadänderung fällt so
- * sofort auf, egal ob sie den Endpoint zurück auf die permitAll-Kette schiebt.
- * Ein reiner "liefert 200 mit Login"-Test würde genau diesen Fehler nicht
- * fangen (der Endpoint hat vorher ja auch mit Login 200 geliefert - das
- * Problem war, dass er das AUCH ohne Login tat).
+ * Der Büro-Hinweis verrät Gesundheitsdaten und bleibt für mobile Tokens gesperrt.
+ * Der gemappte Pfad wird aus dem echten Controller gelesen, damit auch ein Umzug
+ * in eine gemeinsam geroutete API die Methoden-/Routenfreigabe nicht umgeht.
+ * Kettenzuordnung allein sagt nichts über anonymen Zugriff aus.
  */
 class UrlaubsHinweiseSicherheitTest {
 
     private static final AntPathMatcher MATCHER = new AntPathMatcher();
 
-    private static boolean ohneLoginErreichbar(String pfad) {
+    private static boolean nutztMobileFilterkette(String pfad) {
         return Arrays.stream(SecurityConfig.ZEITERFASSUNG_PATHS)
                 .anyMatch(pattern -> MATCHER.match(pattern, pfad));
     }
@@ -71,31 +54,29 @@ class UrlaubsHinweiseSicherheitTest {
     }
 
     @Test
-    @DisplayName("Befund 1: Der Hinweis-Endpoint liegt NICHT mehr auf der permitAll-Kette")
-    void hinweiseEndpointLiegtNichtAufDerPermitAllKette() {
+    @DisplayName("Der Büro-Hinweis ist kein freigegebener mobiler Lesezugriff")
+    void hinweiseEndpointBleibtFuerMobileTokensGesperrt() {
         String pfad = gemappterHinweisePfad();
-        assertThat(ohneLoginErreichbar(pfad))
-                .as("GET %s verrät Existenz/Beginndatum einer Krankmeldung (Art. 9 DSGVO) - muss authenticated() sein",
-                        pfad)
-                .isFalse();
+        assertThat(nutztMobileFilterkette(pfad)).isFalse();
+        assertThat(MobileApiPolicy.allows("GET", pfad)).isFalse();
+        assertThat(MobileApiPolicy.allows("HEAD", pfad)).isFalse();
     }
 
     @Test
-    @DisplayName("Gegenprobe: der ursprüngliche Pfad wäre auf der permitAll-Kette gelandet")
-    void derUrspruenglicheUrlaubsPfadWaereOhneLoginErreichbarGewesen() {
-        // Dokumentiert den Befund: hätte der Endpoint weiterhin unter
-        // /api/urlaub/antraege/hinweise gelegen, wäre er über /api/urlaub/**
-        // (Mobile-Whitelist) ohne jede Authentifizierung erreichbar gewesen.
-        assertThat(ohneLoginErreichbar("/api/urlaub/antraege/hinweise")).isTrue();
+    @DisplayName("Auch unter dem früheren Urlaubspfad erlaubt die Policy keine Gesundheitsdaten")
+    void historischerUrlaubspfadIstTrotzGemeinsamerKetteNichtFreigegeben() {
+        String pfad = "/api/urlaub/antraege/hinweise";
+        assertThat(nutztMobileFilterkette(pfad)).isTrue();
+        assertThat(MobileApiPolicy.allows("GET", pfad)).isFalse();
+        assertThat(MobileApiPolicy.allows("HEAD", pfad)).isFalse();
     }
 
     @Test
-    @DisplayName("Die eigentlichen Mobile-Endpoints des Urlaubsantrags bleiben unangetastet")
-    void mobileUrlaubsEndpointsBleibenWeiterhinOhneLoginErreichbar() {
-        // Der Umzug des Hinweis-Endpoints darf die Endpoints, die die Handy-App
-        // wirklich braucht (Antrag stellen, Anträge lesen, Resturlaub), nicht
-        // versehentlich mit hinter den Login ziehen.
-        assertThat(ohneLoginErreichbar("/api/urlaub/antraege")).isTrue();
-        assertThat(ohneLoginErreichbar("/api/urlaub/resturlaub")).isTrue();
+    @DisplayName("Mobile Tokens dürfen eigene Urlaubsanträge lesen und stellen")
+    void mobileUrlaubsEndpointsSindNurMitDenBenoetigtenMethodenFreigegeben() {
+        assertThat(MobileApiPolicy.allows("GET", "/api/urlaub/antraege")).isTrue();
+        assertThat(MobileApiPolicy.allows("POST", "/api/urlaub/antraege")).isTrue();
+        assertThat(MobileApiPolicy.allows("GET", "/api/urlaub/resturlaub")).isTrue();
+        assertThat(MobileApiPolicy.allows("PUT", "/api/urlaub/antraege/7/approve")).isFalse();
     }
 }
