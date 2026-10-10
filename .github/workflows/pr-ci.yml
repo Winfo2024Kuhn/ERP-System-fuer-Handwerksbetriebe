@@ -6,9 +6,9 @@ name: PR Quality Checks
 # auf main damit genau der, der hier gruen getestet wurde. Ein zweiter Lauf auf
 # main faende nichts Neues, kostete ~25 Minuten bis zum Image und liesse einen
 # wackeligen Test das Image blockieren.
-# ACHTUNG: Wird "Branch muss aktuell sein" oder die PR-Pflicht im Ruleset
-# abgeschaltet, gilt das nicht mehr - dann den push-Ausloeser auf main wieder
-# einbauen (und docker-image.yml wieder auf diesen Lauf warten lassen).
+# docker-image.yml prueft vor dem Bauen selbst nach, dass der Stand auf main
+# aus einem PR mit gruenem "PR Quality Gate" stammt und genau so getestet
+# wurde - ein Merge am Ruleset vorbei bekommt also kein Image.
 
 on:
   pull_request:

@@ -6,8 +6,9 @@ Versionen holt sich der Rechner nachts um 3 Uhr selbst ab (Pull-Prinzip).
 GitHub braucht also keinen Zugang ins Firmennetz: keine offenen Ports, kein VPN.
 
 ```
- git push main ─► GitHub Actions                       Rechner beim Kunden (Windows-PC oder Linux-Server)
-                  1. Tests (PR Quality Checks)          ┌─ postgres ─ Datenbank (eigener Server: mysql)
+ Pull Request ──► GitHub Actions                       Rechner beim Kunden (Windows-PC oder Linux-Server)
+  ─► Merge auf    1. Tests im PR (PR Quality Checks),   ┌─ postgres ─ Datenbank (eigener Server: mysql)
+     main            beim Bauen nachgeprueft            │
                   2. Docker-Image (Backend + beide      ├─ app ───── ERP (Backend + PC-Oberflaeche + Zeiterfassung)
                      Frontends in EINEM Image)          └─ updater ─ 03:00: neues Image holen ◄─────┐
                   3. Starttest: Kundenstand + neue          sichern, wechseln, Health-Check,     │

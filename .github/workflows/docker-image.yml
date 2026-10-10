@@ -10,8 +10,9 @@ name: Docker-Image fuer Kundenserver
 # main nimmt nur PRs an, die gruen und auf dem aktuellen Stand von main sind -
 # was hier ankommt, ist also genau der getestete Stand. Deshalb wartet dieser
 # Workflow nicht auf einen zweiten Testlauf auf main.
-# ACHTUNG: Das haengt am Ruleset (PR-Pflicht + "Branch muss aktuell sein").
-# Wird es gelockert, wieder auf den gruenen Testlauf warten (workflow_run).
+# Abgesichert wird das zusaetzlich im ersten Schritt unten: Ohne gemergten PR
+# mit gruenem "PR Quality Gate" fuer genau diesen Stand gibt es kein Image -
+# auch nicht nach einem Admin-Merge am Ruleset vorbei.
 #
 # Tags:
 #   :stable          -> das, was die Kundenserver nachts installieren
@@ -38,10 +39,44 @@ jobs:
     permissions:
       contents: read
       packages: write
+      pull-requests: read   # PR zum Commit finden (Pruefschritt)
+      checks: read          # "PR Quality Gate" des PR lesen (Pruefschritt)
     timeout-minutes: 45
     env:
       COMMIT: ${{ github.sha }}
     steps:
+      # Ersatz fuer den frueheren zweiten Testlauf auf main, in Sekunden statt
+      # ~25 Minuten: Der Commit muss aus einem gemergten PR stammen, dessen
+      # "PR Quality Gate" (GitHub Actions, App 15368) gruen war, und genau den
+      # Stand haben, der dort getestet wurde. Sonst kein Image - z. B. nach
+      # einem Admin-Merge ohne gruene Checks oder mit veraltetem Branch.
+      - name: Pruefen, dass genau dieser Stand im PR gruen getestet wurde
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          pr_head="$(gh api "repos/$repo/commits/$COMMIT/pulls" \
+            --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"$COMMIT\")][0].head.sha // empty")"
+          if [ -z "$pr_head" ]; then
+            echo "::error::$COMMIT stammt aus keinem gemergten Pull Request - kein Image."
+            exit 1
+          fi
+          gate="$(gh api "repos/$repo/commits/$pr_head/check-runs?check_name=PR%20Quality%20Gate&filter=latest" \
+            --jq '[.check_runs[] | select(.app.id == 15368 and .conclusion == "success")] | length')"
+          if [ "$gate" -lt 1 ]; then
+            echo "::error::Kein gruener \"PR Quality Gate\" fuer den PR-Stand $pr_head - kein Image."
+            exit 1
+          fi
+          baum_main="$(gh api "repos/$repo/git/commits/$COMMIT" --jq .tree.sha)"
+          baum_pr="$(gh api "repos/$repo/git/commits/$pr_head" --jq .tree.sha)"
+          if [ "$baum_main" != "$baum_pr" ]; then
+            echo "::error::Stand auf main weicht vom getesteten PR-Stand $pr_head ab (Branch war nicht aktuell) - kein Image."
+            exit 1
+          fi
+          echo "Getestet im PR (Stand $pr_head, PR Quality Gate gruen) - Image wird gebaut."
+
       - name: Checkout (genau der getestete Commit)
         uses: actions/checkout@v4
         with:
