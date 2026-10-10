@@ -72,10 +72,13 @@ jobs:
               continue
             fi
             if [ "$behind" -eq 0 ]; then
-              # Selbstheilung: aktuell, aber noch nie getestet (z. B. frueherer
-              # Lauf brach nach dem Update ab) -> Tests nachholen.
-              laeufe="$(gh api "repos/$GH_REPO/commits/$kopf/check-runs?check_name=PR%20Quality%20Gate" \
-                --jq .total_count 2>/dev/null || echo "?")"
+              # Selbstheilung: aktuell, aber fuer diesen Stand gibt es gar keinen
+              # Testlauf (z. B. frueherer Lauf brach nach dem Update ab) -> nachholen.
+              # Gezaehlt werden pr-ci-Laeufe in jedem Zustand, auch laufende - sonst
+              # gaebe es neben einem laufenden PR-Lauf einen zweiten.
+              laeufe="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$kopf&per_page=100" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/pr-ci.yml")] | length' \
+                2>/dev/null || echo "?")"
               if [ "$laeufe" = "0" ]; then
                 echo "PR #$nummer ist aktuell, aber ungetestet - starte Tests."
                 starte_tests "$branch" || echo "::warning::PR #$nummer: Tests liessen sich nicht starten."
