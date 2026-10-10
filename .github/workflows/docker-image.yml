@@ -78,9 +78,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Der wichtigste Schritt: Faehrt die neue Version auf dem Datenbankstand
-      # hoch, den die Kunden gerade haben (= aktuelles :stable), inklusive der
-      # neuen Migrationen? Kaputte Migrationen oder Startfehler fallen hier auf -
-      # und nicht erst nachts bei jedem Kunden. Details: starttest.sh
+      # hoch, den die Kunden gerade haben (= aktuelles :stable richtet eine leere
+      # Datenbank ein), inklusive der neuen Migrationen? Kaputte Migrationen oder
+      # Startfehler fallen hier auf - und nicht erst nachts bei jedem Kunden.
+      # Details: deployment/docker-server/starttest.sh
       - name: Starttest (Upgrade vom aktuellen Kundenstand)
         shell: bash
         run: |
@@ -89,14 +90,14 @@ jobs:
           if ausgabe="$(docker pull -q "$basis" 2>&1)"; then
             echo "Ausgangsstand: $basis"
           elif grep -qiE "manifest unknown|not found" <<<"$ausgabe"; then
-            echo "Noch kein :stable veroeffentlicht - pruefe nur den Start."
-            basis="erp-starttest:latest"
+            echo "Noch kein :stable veroeffentlicht - pruefe nur die Neuinstallation."
+            basis=""
           else
             # Netz/Registry-Problem: lieber abbrechen als still ohne Migrationstest
             echo "::error::Kundenstand $basis nicht ladbar: $ausgabe"
             exit 1
           fi
-          if ! deployment/docker-server/starttest.sh erp-starttest:latest "$basis"; then
+          if ! deployment/docker-server/starttest.sh erp-starttest:latest ${basis:+"$basis"}; then
             echo "::error::Image faehrt nicht sauber hoch - wird NICHT veroeffentlicht."
             exit 1
           fi

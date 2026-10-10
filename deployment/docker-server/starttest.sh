@@ -5,27 +5,26 @@
 # Frage: Faehrt die neue Version auf einer Datenbank hoch, wie sie die Kunden
 # gerade haben - inklusive aller NEUEN Flyway-Migrationen?
 #
-# Warum nicht einfach gegen eine leere Datenbank? Die Migrationen beginnen erst
-# bei V208; das Grundschema davor hat frueher Hibernate angelegt. Ab null kann
-# Flyway die Datenbank deshalb nicht aufbauen. Stattdessen:
-#   1. Schema mit der Version erzeugen, die gerade bei den Kunden laeuft
-#      (vorheriges Image, Hibernate ddl-auto=update, Flyway aus).
-#   2. Flyway-Stand auf deren hoechste Migration setzen (Baseline).
-#   3. Neue Version starten -> sie fuehrt genau die neu hinzugekommenen
-#      Migrationen aus. /actuator/health muss 200 liefern.
-# Das ist eine Annaeherung (Hibernate-Schema statt echtem Kundenschema, keine
-# Daten). Die eigentliche Absicherung pro Kunde bleibt das Nachtupdate mit
-# Sicherung + Rollback.
+#   1. Leere MySQL; die Version, die gerade bei den Kunden laeuft (:stable),
+#      richtet sie ein - genau wie bei einer Neuinstallation (Basis-Schema +
+#      ihre Migrationen, siehe FlywayStartSetupConfig).
+#   2. Die neue Version startet auf dieser Datenbank und fuehrt nur die neu
+#      hinzugekommenen Migrationen aus. /actuator/health muss 200 liefern.
+# Die Flyway-Historie ist dabei echt - auch neue Migrationen mit kleinerer
+# Nummer (out-of-order) laufen also mit.
+#
+# Grenze: Die Datenbank enthaelt nur Stammdaten, keine Kundendaten. Was nur an
+# echten Daten scheitert (z.B. Dubletten bei einem neuen UNIQUE), faengt erst
+# das Nachtupdate ab - mit Rollback.
 #
 # Aufruf:  ./starttest.sh <neues-image> [<image-der-kunden>]
-#          Ohne zweites Image wird das neue auch als Ausgangsstand genommen
-#          (dann wird nur der Start geprueft, keine Migration).
+#          Ohne zweites Image: nur Neuinstallation mit dem neuen Image.
 # =============================================================================
 
 set -Eeuo pipefail
 
 NEU="${1:?Aufruf: starttest.sh <neues-image> [<image-der-kunden>]}"
-BASIS="${2:-$NEU}"
+BASIS="${2:-}"
 WARTEZEIT="${STARTTEST_WARTEZEIT:-300}"
 NETZ="erp-starttest"
 DB="kalkulationsprogramm_db"
@@ -38,43 +37,36 @@ log() {
 }
 
 aufraeumen() {
-    docker rm -f erp-starttest-basis erp-starttest-app erp-starttest-mysql >/dev/null 2>&1 || true
+    docker rm -f erp-starttest-app erp-starttest-mysql >/dev/null 2>&1 || true
     docker network rm "$NETZ" >/dev/null 2>&1 || true
 }
 trap aufraeumen EXIT
 
-# migrationen <image>: alle Versionsnummern unter db/migration im JAR, sortiert
-migrationen() {
-    local tmp container
-    tmp="$(mktemp -d)"
-    container="$(docker create "$1")"
-    docker cp "$container:/app/app.jar" "$tmp/app.jar" >/dev/null
-    docker rm "$container" >/dev/null
-    unzip -Z1 "$tmp/app.jar" 'BOOT-INF/classes/db/migration/*' \
-        | sed -nE 's#^BOOT-INF/classes/db/migration/V([0-9]+)__.*#\1#p' \
-        | sort -n
-    rm -rf "$tmp"
-}
-
-# app_laeuft <container> <port>: wartet auf /actuator/health = 200
-app_laeuft() {
-    local name="$1" port="$2" ende=$((SECONDS + WARTEZEIT))
+# starten <image>: App auf der Test-Datenbank starten, wartet auf Health 200
+starten() {
+    docker rm -f erp-starttest-app >/dev/null 2>&1 || true
+    docker run -d --name erp-starttest-app --network "$NETZ" -p 127.0.0.1:18080:8080 \
+        -e APP_DB_URL="$DB_URL" -e APP_DB_USER=erp_user -e APP_DB_PASS="$TEST_PW" \
+        "$1" >/dev/null
+    local ende=$((SECONDS + WARTEZEIT))
     while (( SECONDS < ende )); do
-        if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:$port/actuator/health" || true)" == "200" ]]; then
+        if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:18080/actuator/health || true)" == "200" ]]; then
             return 0
         fi
-        if [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != "true" ]]; then
-            log "$name ist abgestuerzt."
-            return 1
+        if [[ "$(docker inspect -f '{{.State.Running}}' erp-starttest-app 2>/dev/null)" != "true" ]]; then
+            log "$1 ist abgestuerzt."
+            break
         fi
         sleep 1
     done
-    log "$name antwortet nach $WARTEZEIT s nicht mit 200."
+    docker logs --tail 400 erp-starttest-app 2>&1 \
+        | grep -E "ERROR|Caused by|Message    :|Statement  :|Location   :|APPLICATION FAILED" | head -n 40 || true
     return 1
 }
 
-zeige_fehler() {
-    docker logs --tail 400 "$1" 2>&1 | grep -E "ERROR|Caused by|Message    :|Statement  :|Location   :|APPLICATION FAILED" | head -n 40 || true
+stand() {
+    docker exec -e MYSQL_PWD="$TEST_PW" erp-starttest-mysql mysql -uroot -N -B \
+        -e "SELECT COALESCE(MAX(installed_rank), 0) FROM $DB.flyway_schema_history" 2>/dev/null || echo 0
 }
 
 aufraeumen
@@ -86,55 +78,43 @@ docker run -d --name erp-starttest-mysql --network "$NETZ" \
     -e MYSQL_USER=erp_user -e MYSQL_PASSWORD="$TEST_PW" \
     mysql:8.0 --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci >/dev/null
 for _ in $(seq 1 90); do
-    if docker exec -e MYSQL_PWD="$TEST_PW" erp-starttest-mysql mysqladmin ping -h 127.0.0.1 -uroot --silent >/dev/null 2>&1; then
+    if docker exec -e MYSQL_PWD="$TEST_PW" erp-starttest-mysql mysql -h 127.0.0.1 -uroot -e "SELECT 1" >/dev/null 2>&1; then
         break
     fi
     sleep 2
 done
 
-BASIS_MIGRATIONEN="$(migrationen "$BASIS")"
-BASELINE="$(tail -n 1 <<<"$BASIS_MIGRATIONEN")"
-[[ -n "$BASELINE" ]] || { log "Keine Migrationen im Ausgangs-Image gefunden."; exit 1; }
-log "Ausgangsstand: $BASIS (hoechste Migration V$BASELINE)"
+# Kundenstaende ohne Startsetup (vor FlywayStartSetupConfig) koennen eine leere
+# Datenbank nicht einrichten - dann bleibt nur der Test der Neuinstallation.
+if [[ -n "$BASIS" ]]; then
+    container="$(docker create "$BASIS")"
+    tmp="$(mktemp -d)"
+    docker cp "$container:/app/app.jar" "$tmp/app.jar" >/dev/null
+    docker rm "$container" >/dev/null
+    if ! unzip -Z1 "$tmp/app.jar" 'BOOT-INF/classes/db/basis/*' 2>/dev/null | grep -q '\.sql$'; then
+        log "WARNUNG: $BASIS hat noch kein Startsetup - pruefe nur die Neuinstallation."
+        [[ -n "${GITHUB_ACTIONS-}" ]] && echo "::warning::Kundenstand ohne Startsetup - nur Neuinstallation getestet, kein Upgrade."
+        BASIS=""
+    fi
+    rm -rf "$tmp"
+fi
 
-# Grenze dieses Tests: Flyway laeuft mit out-of-order=true. Neue Migrationen
-# mit einer Nummer UNTER der Baseline (z.B. reservierte Nummernbloecke) laufen
-# bei den Kunden, werden hier aber von der Baseline verdeckt. Deutlich melden.
-NEU_MIGRATIONEN="$(migrationen "$NEU")"
-[[ -n "$NEU_MIGRATIONEN" ]] || { log "Keine Migrationen im neuen Image gefunden."; exit 1; }
-verdeckt="$(comm -13 <(sort <<<"$BASIS_MIGRATIONEN") <(sort <<<"$NEU_MIGRATIONEN") \
-    | awk -v b="$BASELINE" '$1 <= b {printf "V%s ", $1}')"
-if [[ -n "$verdeckt" ]]; then
-    log "WARNUNG: Neue Migrationen unterhalb von V$BASELINE werden hier NICHT getestet: $verdeckt"
-    if [[ -n "${GITHUB_ACTIONS-}" ]]; then
-        echo "::warning::Starttest deckt diese neuen Migrationen nicht ab (Nummer unter V$BASELINE): $verdeckt - Absicherung nur durch Nachtupdate mit Rollback."
+if [[ -n "$BASIS" ]]; then
+    log "Kundenstand: $BASIS richtet die leere Datenbank ein ..."
+    if ! starten "$BASIS"; then
+        log "FEHLER: Der Kundenstand selbst startet nicht - Test nicht aussagekraeftig."
+        exit 1
     fi
 fi
+vorher="$(stand)"
 
-log "Lege Schema mit dem Ausgangs-Image an ..."
-docker run -d --name erp-starttest-basis --network "$NETZ" -p 127.0.0.1:18081:8080 \
-    -e APP_DB_URL="$DB_URL" -e APP_DB_USER=erp_user -e APP_DB_PASS="$TEST_PW" \
-    -e SPRING_FLYWAY_ENABLED=false -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
-    "$BASIS" >/dev/null
-if ! app_laeuft erp-starttest-basis 18081; then
-    zeige_fehler erp-starttest-basis
-    log "FEHLER: Ausgangs-Image startet nicht - Test nicht aussagekraeftig."
-    exit 1
-fi
-docker rm -f erp-starttest-basis >/dev/null
-
-log "Starte neues Image $NEU (fuehrt alle Migrationen nach V$BASELINE aus) ..."
-docker run -d --name erp-starttest-app --network "$NETZ" -p 127.0.0.1:18080:8080 \
-    -e APP_DB_URL="$DB_URL" -e APP_DB_USER=erp_user -e APP_DB_PASS="$TEST_PW" \
-    -e SPRING_FLYWAY_BASELINE_VERSION="$BASELINE" \
-    "$NEU" >/dev/null
-if ! app_laeuft erp-starttest-app 18080; then
-    zeige_fehler erp-starttest-app
+log "Neue Version $NEU ..."
+if ! starten "$NEU"; then
     log "FEHLER: Neue Version faehrt nicht sauber hoch."
     exit 1
 fi
 
 neue="$(docker exec -e MYSQL_PWD="$TEST_PW" erp-starttest-mysql mysql -uroot -N -B \
-    -e "SELECT CONCAT('V', version, ' ', description) FROM $DB.flyway_schema_history WHERE success = 1 AND type = 'SQL' ORDER BY installed_rank" 2>/dev/null || true)"
+    -e "SELECT CONCAT('V', version, ' ', description) FROM $DB.flyway_schema_history WHERE installed_rank > $vorher AND success = 1 ORDER BY installed_rank" 2>/dev/null | paste -sd ',' || true)"
 log "Neue Migrationen in diesem Test: ${neue:-(keine)}"
 log "OK - neue Version laeuft (/actuator/health = 200)."

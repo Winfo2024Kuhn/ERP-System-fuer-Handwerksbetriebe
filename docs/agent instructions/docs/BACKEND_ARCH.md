@@ -15,6 +15,7 @@
 - **Injection:** Constructor Injection; Lombok `@AllArgsConstructor` ist erlaubt.
 - **SQL:** Nur parametrisierte Queries (`@Query` mit `:param`), kein String-Concat.
 - **Flyway:** Neue Skripte unter `src/main/resources/db/migration/V{N}__{beschreibung}.sql`. Bestehende Migrationen NIEMALS ändern. Sollen immer idempotent sein!!
+  Neuinstallationen bekommen auf leerer DB zuerst `db/basis/V1__basis_schema.sql` (`FlywayStartSetupConfig`, erzeugt mit `scripts/basis-schema/erzeugen.sh`); `FlywayStartSetupConfigTest` prüft die Checksummen der darin enthaltenen Migrationen.
 - **Java-Enums in MySQL = native `ENUM`-Spalte (NICHT `VARCHAR`!):** Hibernate 6.x mit MySQL-Dialekt mappt `@Enumerated(EnumType.STRING)` standardmäßig auf einen nativen `ENUM`-Spaltentyp. Wenn du in einer Migration eine Spalte für ein Java-Enum anlegst, **immer** als `ENUM('WERT_A','WERT_B',...)` schreiben — sonst schlägt `ddl-auto=validate` beim Startup fehl mit `wrong column type ... found [varchar], but expecting [enum (...)]`. Werte exakt wie die Java-Enum-Konstanten (UPPERCASE). Beispiel siehe `kunde.anrede` und `V291__steuerberater_ansprechpartner_anrede_enum.sql`.
 
 ## Architektur-Patterns
