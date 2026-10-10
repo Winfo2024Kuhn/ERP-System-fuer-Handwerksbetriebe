@@ -256,12 +256,12 @@ gh pr checks <nr> --watch
 
 Warte, bis **kein** Check mehr `pending` ist.
 
-> ⚠️ **Dieses Repo hat auf Pull Requests aktuell KEINE Build- oder Test-Checks.**
-> `.github/workflows/release.yml` triggert nur auf `v*`-Tags; auf dem PR läuft
-> ausschließlich CodeQL (Security-Scanning). „Alle Checks grün" heißt hier also
-> **nicht**, dass Tests gelaufen sind. Die Absicherung sind und bleiben deine
-> lokalen Läufe aus Phase 1. Sag das im Abschlussbericht ausdrücklich dazu, damit
-> niemand ein grünes Häkchen für einen Testlauf hält.
+> **Auf jedem PR läuft `.github/workflows/pr-ci.yml`** (Backend-Tests,
+> Datenbank-Kompatibilität gegen echtes MySQL und PostgreSQL, Lint, Unit-, Build- und
+> E2E-Tests beider Frontends), etwa 30–40 Minuten. Der Sammel-Check „PR Quality Gate“
+> ist auf `main` Pflicht: ohne ihn lässt GitHub keinen Merge zu. Scheitert ein Check
+> nur zufällig (lokal grün, Code nicht betroffen), den Lauf wiederholen:
+> `gh run rerun <run-id> --failed` – nicht umgehen.
 
 ### 4c. Mergen
 
@@ -273,15 +273,18 @@ Merge automatisch, sobald **alle** Bedingungen erfüllt sind:
 - ✅ `gh pr view <nr> --json mergeable -q .mergeable` liefert `MERGEABLE`
 
 ```bash
-gh pr merge <nr> --squash --delete-branch
+# --auto: GitHub führt zusammen, sobald „PR Quality Gate“ grün ist – kein Warten nötig
+gh pr merge <nr> --squash --auto --delete-branch
 ```
+
+Ein grüner Merge geht in der nächsten Nacht als `:stable` auf den eigenen Server und zu
+den Kunden (Nachtupdate 03:00). Direkt auf `main` pushen geht nicht, das Ruleset lehnt es ab.
 
 **Verboten:**
 
 - Merge bei rotem oder noch laufendem Check.
 - `--admin` oder sonst irgendein Weg, der einen Check überspringt.
-- Merge, wenn dein eigener Testlauf rot war — auch dann nicht, wenn GitHub grün meldet
-  (siehe die Warnung in 4b: GitHub testet hier gar nicht).
+- Merge, wenn dein eigener Testlauf rot war — auch dann nicht, wenn GitHub grün meldet.
 - Merge eines Branches, der fremde unfertige Arbeit mitbringt (siehe 4a).
 
 Bleibt ein Check rot: **nicht mergen**, sondern nach dem Muster unten berichten.
