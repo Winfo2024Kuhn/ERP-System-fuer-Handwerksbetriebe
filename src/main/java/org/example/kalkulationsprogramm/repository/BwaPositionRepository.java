@@ -12,7 +12,7 @@ import java.util.List;
 public interface BwaPositionRepository extends JpaRepository<BwaPosition, Long> {
 
     // Als @Query statt abgeleitet: nur so laesst sich festlegen, wohin leere Werte sortieren
-    // (wie MySQL: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
+    // (wie bisher: aufsteigend zuerst, absteigend zuletzt) - siehe DatenbankKompatibilitaetSortierungTest
     @Query("SELECT p FROM BwaPosition p WHERE p.bwaUpload.id = :bwaUploadId ORDER BY p.kontonummer ASC NULLS FIRST")
     List<BwaPosition> findByBwaUploadIdOrderByKontonummerAsc(@Param("bwaUploadId") Long bwaUploadId);
 

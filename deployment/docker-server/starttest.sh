@@ -17,10 +17,10 @@
 # echten Daten scheitert (z.B. Dubletten bei einem neuen UNIQUE), faengt erst
 # das Nachtupdate ab - mit Rollback.
 #
-# Aufruf:  [STARTTEST_DB=postgres|mysql] ./starttest.sh <neues-image> [<image-der-kunden>]
+# Aufruf:  ./starttest.sh <neues-image> [<image-der-kunden>]
 #          Ohne zweites Image: nur Neuinstallation mit dem neuen Image.
-#          STARTTEST_DB: PostgreSQL (Kunden, Standard) oder MySQL (eigener
-#          Server) - die GitHub Action prueft beide.
+#          Datenbank ist PostgreSQL 16 wie bei allen Installationen.
+#          STARTTEST_DB darf nur noch "postgres" sein (oder fehlen).
 # =============================================================================
 
 set -Eeuo pipefail
@@ -31,12 +31,11 @@ BASIS="${2:-}"
 WARTEZEIT="${STARTTEST_WARTEZEIT:-300}"
 NETZ="erp-starttest"
 DB="kalkulationsprogramm_db"
-DB_ART="${STARTTEST_DB:-postgres}"
-case "$DB_ART" in
-    postgres) DB_URL="jdbc:postgresql://erp-starttest-db:5432/$DB" ;;
-    mysql) DB_URL="jdbc:mysql://erp-starttest-db:3306/$DB?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC" ;;
-    *) echo "STARTTEST_DB muss postgres oder mysql sein" >&2; exit 2 ;;
-esac
+if [[ "${STARTTEST_DB:-postgres}" != "postgres" ]]; then
+    echo "STARTTEST_DB=$STARTTEST_DB: Das ERP kennt nur noch PostgreSQL (STARTTEST_DB weglassen)." >&2
+    exit 2
+fi
+DB_URL="jdbc:postgresql://erp-starttest-db:5432/$DB"
 # Wegwerf-Zugangsdaten nur fuer diesen Testcontainer
 TEST_PW="starttest-$RANDOM$RANDOM"
 
@@ -55,13 +54,14 @@ starten() {
     docker rm -f erp-starttest-app >/dev/null 2>&1 || true
     # Dieselbe Abschottung wie beim Kunden (docker-compose.yml): schreibgeschuetzt,
     # ohne Linux-Berechtigungen - eine Version, die so nicht startet, darf nicht
-    # veroeffentlicht werden.
+    # veroeffentlicht werden. Das Profil "postgres" (wie dort) brauchen nur
+    # Kundenstaende von vor Oktober 2026; neuere Versionen ignorieren es.
     docker run -d --name erp-starttest-app --network "$NETZ" -p 127.0.0.1:18080:8080 \
         --read-only --tmpfs /tmp:size=2g,mode=1777,exec \
         --tmpfs /app/uploads:mode=1777 --tmpfs /app/logs:mode=1777 \
         --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID \
         --security-opt no-new-privileges:true \
-        -e SPRING_PROFILES_ACTIVE="docker,$DB_ART" \
+        -e SPRING_PROFILES_ACTIVE="docker,postgres" \
         -e APP_DB_URL="$DB_URL" -e APP_DB_USER=erp_user -e APP_DB_PASS="$TEST_PW" \
         "$1" >/dev/null
     local ende=$((SECONDS + WARTEZEIT))
@@ -81,14 +81,10 @@ starten() {
 }
 
 # sql <abfrage>: eine Abfrage in der Test-Datenbank, Ergebnis ohne Kopfzeile.
-# Ueber TCP: Beide Images starten beim ersten Einrichten kurz einen Server nur
+# Ueber TCP: Das Image startet beim ersten Einrichten kurz einen Server nur
 # am Unix-Socket - "bereit" heisst erst, wenn das Netz antwortet.
 sql() {
-    if [[ "$DB_ART" == "postgres" ]]; then
-        docker exec -e PGPASSWORD="$TEST_PW" erp-starttest-db psql -h 127.0.0.1 -U erp_user -d "$DB" -At -c "$1"
-    else
-        docker exec -e MYSQL_PWD="$TEST_PW" erp-starttest-db mysql -h 127.0.0.1 -uroot -N -B "$DB" -e "$1"
-    fi
+    docker exec -e PGPASSWORD="$TEST_PW" erp-starttest-db psql -h 127.0.0.1 -U erp_user -d "$DB" -At -c "$1"
 }
 
 stand() {
@@ -98,23 +94,15 @@ stand() {
 aufraeumen
 docker network create "$NETZ" >/dev/null
 
-if [[ "$DB_ART" == "postgres" ]]; then
-    log "Starte PostgreSQL 16 ..."
-    # Wie beim Kunden (docker-compose.yml): Verwalter "postgres", die App als
-    # Rolle OHNE Superuser-Rechte - eine Migration, die mehr braucht, muss hier
-    # scheitern und nicht erst nachts beim Kunden.
-    docker run -d --name erp-starttest-db --network "$NETZ" \
-        -e POSTGRES_DB="$DB" -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD="$TEST_PW" \
-        -e ERP_DB_USER=erp_user -e ERP_DB_PASSWORD="$TEST_PW" \
-        -v "$SKRIPT_DIR/postgres-init:/docker-entrypoint-initdb.d:ro" \
-        postgres:16 >/dev/null
-else
-    log "Starte MySQL 8.0 ..."
-    docker run -d --name erp-starttest-db --network "$NETZ" \
-        -e MYSQL_ROOT_PASSWORD="$TEST_PW" -e MYSQL_DATABASE="$DB" \
-        -e MYSQL_USER=erp_user -e MYSQL_PASSWORD="$TEST_PW" \
-        mysql:8.0 --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci >/dev/null
-fi
+log "Starte PostgreSQL 16 ..."
+# Wie beim Kunden (docker-compose.yml): Verwalter "postgres", die App als
+# Rolle OHNE Superuser-Rechte - eine Migration, die mehr braucht, muss hier
+# scheitern und nicht erst nachts beim Kunden.
+docker run -d --name erp-starttest-db --network "$NETZ" \
+    -e POSTGRES_DB="$DB" -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD="$TEST_PW" \
+    -e ERP_DB_USER=erp_user -e ERP_DB_PASSWORD="$TEST_PW" \
+    -v "$SKRIPT_DIR/postgres-init:/docker-entrypoint-initdb.d:ro" \
+    postgres:16 >/dev/null
 for _ in $(seq 1 90); do
     if sql "SELECT 1" >/dev/null 2>&1; then
         break
@@ -122,19 +110,18 @@ for _ in $(seq 1 90); do
     sleep 2
 done
 
-# Kundenstaende ohne Startsetup (vor FlywayStartSetupConfig) koennen eine leere
-# Datenbank nicht einrichten - dann bleibt nur der Test der Neuinstallation.
-# Dasselbe fuer Staende, die PostgreSQL noch nicht kannten.
-BASIS_ORDNER="BOOT-INF/classes/db/basis/*"
-[[ "$DB_ART" == "postgres" ]] && BASIS_ORDNER="BOOT-INF/classes/db/postgresql/basis/*"
+# Kundenstaende ohne PostgreSQL-Startsetup (vor FlywayStartSetupConfig bzw.
+# vor PostgreSQL) koennen eine leere Datenbank nicht einrichten - dann bleibt
+# nur der Test der Neuinstallation.
+BASIS_ORDNER="BOOT-INF/classes/db/postgresql/basis/*"
 if [[ -n "$BASIS" ]]; then
     container="$(docker create "$BASIS")"
     tmp="$(mktemp -d)"
     docker cp "$container:/app/app.jar" "$tmp/app.jar" >/dev/null
     docker rm "$container" >/dev/null
     if ! unzip -Z1 "$tmp/app.jar" "$BASIS_ORDNER" 2>/dev/null | grep -q '\.sql$'; then
-        log "WARNUNG: $BASIS hat noch kein Startsetup fuer $DB_ART - pruefe nur die Neuinstallation."
-        [[ -n "${GITHUB_ACTIONS-}" ]] && echo "::warning::Kundenstand ohne Startsetup ($DB_ART) - nur Neuinstallation getestet, kein Upgrade."
+        log "WARNUNG: $BASIS hat noch kein PostgreSQL-Startsetup - pruefe nur die Neuinstallation."
+        [[ -n "${GITHUB_ACTIONS-}" ]] && echo "::warning::Kundenstand ohne PostgreSQL-Startsetup - nur Neuinstallation getestet, kein Upgrade."
         BASIS=""
     fi
     rm -rf "$tmp"
@@ -157,4 +144,4 @@ fi
 
 neue="$(sql "SELECT CONCAT('V', version, ' ', description) FROM flyway_schema_history WHERE installed_rank > $vorher AND success ORDER BY installed_rank" 2>/dev/null | paste -sd ',' || true)"
 log "Neue Migrationen in diesem Test: ${neue:-(keine)}"
-log "OK - neue Version laeuft auf $DB_ART (/actuator/health = 200)."
+log "OK - neue Version laeuft auf PostgreSQL (/actuator/health = 200)."

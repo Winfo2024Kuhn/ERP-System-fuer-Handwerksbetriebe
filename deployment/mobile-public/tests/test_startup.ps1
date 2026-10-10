@@ -10,7 +10,7 @@ foreach ($name in @('Start-MobilePublic.ps1', 'Stop-MobilePublic.ps1')) {
 $global:MobileProxyTest = @{}
 function Reset-TestState {
     $global:MobileProxyTest = @{badCredentials=$false; unsafeBinding=$false; version='2.24.4'; existing=$true;
-        emptyAdmin=$false; gateHeader=$true; gateStatus=404; setupRequired=$false; exposed=$false}
+        emptyAdmin=$false; gateHeader=$true; gateStatus=404; setupRequired=$false; exposed=$false; mysqlRest=$false}
 }
 function global:Start-Sleep { }
 function global:docker {
@@ -31,11 +31,18 @@ function global:docker {
             $adminPassword = if ($state.emptyAdmin) { '' } else { $password }
             $bind = if ($state.unsafeBinding) { '0.0.0.0' } else { '127.0.0.1' }
             return @{services=@{
-                app=@{environment=@{APP_DB_URL='jdbc:mysql://mysql:3306/test';APP_DB_USER='erp_user';APP_DB_PASS=$password;APP_ADMIN_USER=$admin;APP_ADMIN_PASS=$adminPassword};ports=@(@{host_ip=$bind})}
-                mysql=@{environment=@{MYSQL_ROOT_PASSWORD=$password;MYSQL_PASSWORD=$password;MYSQL_USER='erp_user'}}
+                app=@{environment=@{APP_DB_URL='jdbc:postgresql://postgres:5432/test';APP_DB_USER='erp_user';APP_DB_PASS=$password;APP_ADMIN_USER=$admin;APP_ADMIN_PASS=$adminPassword};ports=@(@{host_ip=$bind})}
+                postgres=@{environment=@{POSTGRES_PASSWORD=$password;POSTGRES_USER='erp_user'}}
             }} | ConvertTo-Json -Depth 8 -Compress
         }
         return @{services=@{gateway=@{environment=@{ERP_UPSTREAM='app:8080'}};caddy=@{environment=@{MOBILE_DOMAIN='mobile.invalid'}}}} | ConvertTo-Json -Depth 8 -Compress
+    }
+    if ($arguments -match '^volume inspect') {
+        # Nur bei mysqlRest gibt es das alte MySQL-Volume (und kein PostgreSQL-Volume)
+        if ($state.mysqlRest -and $arguments -match '_mysql_data$') { return '[{}]' }
+        if (-not $state.mysqlRest -and $arguments -match '_postgres_data$') { return '[{}]' }
+        $global:LASTEXITCODE = 1
+        return ''
     }
     if ($arguments -match '^network inspect') { return '[{"Internal":true,"IPAM":{"Config":[{"Subnet":"172.30.51.0/29"}]}}]' }
     if ($arguments -match 'stop caddy tunnel') { return '' }
@@ -59,7 +66,7 @@ try {
     $global:MobileProxyTest.emptyAdmin = $true
     & (Join-Path $Package 'Start-MobilePublic.ps1') -EnvFile $file
     if (-not $global:MobileProxyTest.exposed) { throw 'A protected existing ERP with completed setup should be allowed.' }
-    $cases = @('credentials', 'binding', 'project', 'version', 'domain', 'missing-gate-header', 'old-403', 'unfinished-setup', 'new-without-admin')
+    $cases = @('credentials', 'binding', 'project', 'version', 'domain', 'missing-gate-header', 'old-403', 'unfinished-setup', 'new-without-admin', 'mysql-rest')
     foreach ($case in $cases) {
         Reset-TestState
         $state = $global:MobileProxyTest
@@ -69,6 +76,7 @@ try {
         if ($case -eq 'missing-gate-header') { $state.gateHeader = $false }
         if ($case -eq 'old-403') { $state.gateStatus = 403; $state.gateHeader = $false }
         if ($case -eq 'unfinished-setup') { $state.setupRequired = $true }
+        if ($case -eq 'mysql-rest') { $state.mysqlRest = $true }
         $parameters = @{EnvFile=$file}
         if ($case -eq 'project') { $parameters.ErpProjectName = 'different-erp' }
         if ($case -eq 'domain') { $parameters.Mode = 'domain' }
@@ -77,10 +85,11 @@ try {
         try { & (Join-Path $Package 'Start-MobilePublic.ps1') @parameters } catch {
             $rejected = $true
             if ($_.Exception.Message -match 'Dummy-Password|CHANGE_ME_DB_PW') { throw 'Credential leaked into a diagnostic.' }
+            if ($case -eq 'mysql-rest' -and $_.Exception.Message -notmatch 'MySQL') { throw "mysql-rest was rejected for another reason: $($_.Exception.Message)" }
         }
         if (-not $rejected -or $state.exposed) { throw "Startup should reject $case before exposure." }
     }
-    Write-Host 'PowerShell syntax and 11 startup scenarios passed; no real Docker mutations.'
+    Write-Host 'PowerShell syntax and 12 startup scenarios passed; no real Docker mutations.'
 } finally {
     Remove-Item -LiteralPath $file
     Remove-Item Function:global:docker

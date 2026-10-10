@@ -51,17 +51,16 @@ try {
     $publicConfig = (Docker-Checked ($public + @('--profile', $Mode, 'config', '--format', 'json')) 'Proxy-Konfigurationspruefung') | ConvertFrom-Json
 } catch { throw 'Compose-Konfiguration konnte nicht ausgewertet werden. Keine Konfigurationswerte ausgegeben.' }
 $appEnv = $erpConfig.services.app.environment
-$dbEnv = $erpConfig.services.mysql.environment
-Assert-Credential 'MYSQL_ROOT_PASSWORD' $dbEnv.MYSQL_ROOT_PASSWORD 16
-Assert-Credential 'MYSQL_PASSWORD' $dbEnv.MYSQL_PASSWORD 16
+$dbEnv = $erpConfig.services.postgres.environment
+Assert-Credential 'DB_PASSWORD' $dbEnv.POSTGRES_PASSWORD 16
 Assert-Credential 'APP_DB_PASS' $appEnv.APP_DB_PASS 16
 if (-not $existingInstallation -or $appEnv.APP_ADMIN_USER -or $appEnv.APP_ADMIN_PASS) {
     Assert-Credential 'APP_ADMIN_USER' $appEnv.APP_ADMIN_USER
     Assert-Credential 'APP_ADMIN_PASS' $appEnv.APP_ADMIN_PASS 16
 }
-if ($appEnv.APP_DB_URL -match 'jdbc:mysql://mysql:' -and
-    ($appEnv.APP_DB_PASS -ne $dbEnv.MYSQL_PASSWORD -or $appEnv.APP_DB_USER -ne $dbEnv.MYSQL_USER)) {
-    throw 'App- und MySQL-Zugangsdaten stimmen fuer die interne Datenbank nicht ueberein.'
+if ($appEnv.APP_DB_URL -match 'jdbc:postgresql://postgres:' -and
+    ($appEnv.APP_DB_PASS -ne $dbEnv.POSTGRES_PASSWORD -or $appEnv.APP_DB_USER -ne $dbEnv.POSTGRES_USER)) {
+    throw 'App- und Datenbank-Zugangsdaten stimmen fuer die interne Datenbank nicht ueberein.'
 }
 $bind = $erpConfig.services.app.ports[0].host_ip
 $parsedBind = $null
@@ -80,6 +79,12 @@ if ($Mode -eq 'domain') {
         throw 'ZEITERFASSUNG_URL muss fuer feste Domains genau https://MOBILE_DOMAIN entsprechen (ohne Pfad oder abschliessenden Schraegstrich).'
     }
 }
+# Reste einer MySQL-Installation: nicht still mit leerer PostgreSQL starten (das waere eine
+# Neuinstallation - wer sich zuerst registriert, wird Admin). Erst die Daten umziehen.
+if ((Docker-Result @('volume', 'inspect', "${ErpProjectName}_mysql_data")).Code -eq 0 -and
+    (Docker-Result @('volume', 'inspect', "${ErpProjectName}_postgres_data")).Code -ne 0) {
+    throw 'Diese Installation hat noch MySQL-Daten, aber keine PostgreSQL-Datenbank. Das ERP laeuft nur noch mit PostgreSQL - Daten zuerst umziehen (deployment/docker-server/README.md).'
+}
 Write-Host 'Vorpruefung bestanden: private ERP-Ports, enge Proxy-Adresse und eigene Zugangsdaten.'
 if ($ValidateOnly) { return }
 
@@ -94,7 +99,7 @@ if ($network.Code -eq 0) {
 }
 # Switching profiles must not leave the old public entry point running.
 $null = Docker-Checked ($public + @('--profile', 'quick', '--profile', 'domain', 'stop', 'caddy', 'tunnel')) 'Bisherigen oeffentlichen Zugang stoppen'
-$null = Docker-Checked ($erp + @('up', '-d', '--no-build', 'mysql', 'qdrant', 'app')) 'ERP mit privaten Portbindungen starten'
+$null = Docker-Checked ($erp + @('up', '-d', '--no-build', 'postgres', 'qdrant', 'app')) 'ERP mit privaten Portbindungen starten'
 $null = Docker-Checked ($public + @('up', '-d', '--wait', 'gateway')) 'Mobiles Gateway starten'
 $protected = $false
 for ($attempt = 0; $attempt -lt 24; $attempt++) {

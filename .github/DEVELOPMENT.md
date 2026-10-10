@@ -9,9 +9,10 @@
 
 ## Build, Test, and Run
 - Build JAR: `./mvnw clean package` – compiles, tests, packages
+- Database: PostgreSQL 16 is the only database. Start one locally before running the app, e.g. `docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 -e POSTGRES_DB=kalkulationsprogramm_db -e POSTGRES_USER=erp_user -e POSTGRES_PASSWORD=erp_dev postgres:16`, and put the credentials into `application-local.properties` (never committed). An empty database gets the base schema and all migrations on first start.
 - Run locally: `./mvnw spring-boot:run` – starts the API on the configured port
-- Run tests: `./mvnw test` – executes unit/integration tests
-- Windows installer: `./mvnw jpackage:jpackage` – after packaging
+- Run tests: `./mvnw test` – executes unit/integration tests (H2 in memory, no database needed)
+- Database tests against real PostgreSQL: `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat -Dkompat.db.user=kompat -Dkompat.db.pass=kompat` (throwaway `postgres:16` container)
 - Requires Java 23; Maven wrapper included (no global install needed)
 
 ## Coding Style & Naming
@@ -41,7 +42,7 @@
 | **Mockito** | Mocking (`@Mock`, `@InjectMocks`, `@ExtendWith(MockitoExtension.class)`) |
 | **MockMvc** | REST-Controller-Tests (`@WebMvcTest`) |
 | **AssertJ** | Fluent Assertions (`.isEqualTo()`, `.containsExactly()`, `.isNotNull()`) |
-| **H2** | In-Memory-Datenbank für Repository-Tests (`@DataJpaTest`) |
+| **H2** | In-Memory-Datenbank für Repository-Tests (`@DataJpaTest`) – nur in Tests; die Anwendung selbst läuft immer auf PostgreSQL |
 | **Awaitility** | Asynchrone Assertions für zeitbasierte Logik |
 
 #### Dateistruktur & Namenskonventionen

@@ -70,8 +70,9 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 ### Wichtigste Backend-Regeln:
 - **Constructor Injection:** `@RequiredArgsConstructor` oder expliziter Konstruktor. Keine Field Injection mit `@Autowired`.
 - **SQL:** Ausschließlich parametrisierte Queries (`@Query` mit `:param`), niemals String-Konkatenation.
-- **Flyway:** Neue Skripte unter `src/main/resources/db/migration/V{N}__{beschreibung}.sql`. Bestehende Migrationen NIEMALS ändern!
-- **Java-Enums in MySQL = native `ENUM(...)`-Spalte:** Hibernate 6.x mappt `@Enumerated(EnumType.STRING)` auf native MySQL ENUMs. In Migrationen immer `ENUM('WERT1','WERT2')` (UPPERCASE) definieren, nicht `VARCHAR`.
+- **Datenbank:** Nur PostgreSQL 16 (H2 nur im Speicher in den Unit-Tests). Kein MySQL/MariaDB mehr.
+- **Flyway:** Eine neue Migration ist eine Datei unter `src/main/resources/db/postgresql/migration/V{N}__{beschreibung}.sql` (N = höchste vorhandene + 1, idempotent). Bestehende Migrationen NIEMALS ändern! In `db/migration/` nichts mehr ablegen (`FlywayMigrationenTest` bricht sonst den Build).
+- **Java-Enums = `VARCHAR(n)`-Spalte ohne `CHECK` mit Werteliste:** `@Enumerated(EnumType.STRING)` liegt in PostgreSQL als `VARCHAR`; neue Enum-Werte sollen keine Migration brauchen. Werte exakt wie die Java-Konstanten (UPPERCASE).
 - **DTOs:** Entities niemals direkt über Controller exponieren. Immer DTOs verwenden.
 
 ### Wichtigste Frontend-Regeln:
@@ -97,6 +98,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 
 ## 🚀 Build & Run (Quickstart)
 
+- **Datenbank starten (PostgreSQL 16 im Container):** `docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 -e POSTGRES_DB=kalkulationsprogramm_db -e POSTGRES_USER=erp_user -e POSTGRES_PASSWORD=erp_dev postgres:16` – Zugangsdaten in `application-local.properties` (`spring.datasource.username`/`password`). Eine leere DB bekommt Basis-Schema und Migrationen automatisch. Später: `docker start erp-dev-pg`.
 - **Backend starten:** `./mvnw spring-boot:run` (Port 8080)
 - **Backend testen:** `./mvnw test`
 - **Frontend PC:**

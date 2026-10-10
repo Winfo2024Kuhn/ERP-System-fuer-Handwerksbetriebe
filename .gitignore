@@ -97,7 +97,7 @@ react-zeiterfassung/graphify-out/
 # Aufruf ueber den versionierten Wrapper scripts/graphify (bzw. scripts\graphify.cmd),
 # der auch in Git-Worktrees das venv des Haupt-Checkouts findet.
 # Das [sql]-Extra ist Pflicht, sonst bleiben die Flyway-Migrationen unter
-# src/main/resources/db/migration/ komplett aus dem Graphen.
+# src/main/resources/db/postgresql/migration/ komplett aus dem Graphen.
 # Ohne Schrägstrich am Ende, damit auch der Symlink aus der Cloud-Sitzung
 # (scripts/claude-cloud/setup.sh) ignoriert wird.
 .graphify-venv

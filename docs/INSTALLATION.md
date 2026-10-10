@@ -1,55 +1,34 @@
 # Installation & Einrichtung
 
-> **Ziel:** In 2 Minuten von Download bis zum laufenden ERP-System – ohne Vorkenntnisse.
+> **Ziel:** Vom Download bis zum laufenden ERP-System in wenigen Minuten – ohne Vorkenntnisse.
+>
+> Die Datenbank ist immer **PostgreSQL 16**. Sie läuft als eigener Docker-Container und wird beim ersten Start automatisch eingerichtet.
 
 ---
 
-## Variante 1: Windows-Installer (empfohlen für Endanwender)
+## Variante 1: Docker beim Kunden (empfohlen für Betriebe)
 
-Die einfachste Methode. **Keine Voraussetzungen** – kein Java, kein Docker, keine Datenbank.
+Für einen Windows-PC oder Linux-Server, auf dem das ERP dauerhaft läuft. Ein Doppelklick bzw. ein Befehl richtet alles ein: Datenbank, ERP und einen kleinen Updater, der nachts neue Versionen einspielt – mit Sicherung vorher und automatischem Rückweg bei Problemen.
 
-### Schritt 1 – Herunterladen
-
-Lade den neuesten Installer von der [**Releases-Seite**](https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe/releases) herunter:
-
-```
-ERP-Handwerk-<Version>.exe
-```
-
-### Schritt 2 – Installieren
-
-1. Doppelklick auf `ERP-Handwerk-<Version>.exe`
-2. Installationsordner wählen (Standard: `C:\Program Files\ERP-Handwerk`)
-3. **„Installieren"** klicken
-
-Der Installer erstellt automatisch:
-- ✅ Startmenü-Eintrag unter **„ERP Handwerk"**
-- ✅ Desktop-Verknüpfung
-- ✅ Eigene Java-Laufzeitumgebung (JRE)
-- ✅ Eingebettete H2-Datenbank
-
-### Schritt 3 – Starten
-
-Startmenü → **„ERP Handwerk"** → Anwendung startet und der Browser öffnet sich automatisch.
+1. Den Ordner `deployment/docker-server` auf den Rechner kopieren, z. B. nach `C:\ERP-Handwerk`.
+2. Windows: **`Einrichten.cmd` doppelklicken**. Linux: `sudo ./einrichten.sh`.
+3. Im Browser öffnet sich das ERP.
 
 Bei einer neuen Datenbank ohne vorkonfigurierten Admin legst du im Browser den ersten Benutzer an; dieser wird Administrator. Schließe die Ersteinrichtung im geschützten Netz ab, bevor die Anwendung über eine öffentliche Domain erreichbar wird. Es gibt keine fest eingebauten Standard-Zugangsdaten für diese Einrichtung.
+
+Alles Weitere (Umzug von einem anderen Server, Handy-Nachrichten, Sicherheit, was nachts passiert): **[deployment/docker-server/README.md](../deployment/docker-server/README.md)**
 
 ### Wo werden meine Daten gespeichert?
 
 | Daten | Speicherort |
 |-------|-------------|
-| Datenbank | `%USERPROFILE%\ERP-Handwerk\datenbank.mv.db` |
-| Uploads | Im Installationsverzeichnis unter `uploads\` |
-
-### Deinstallation
-
-Windows → Einstellungen → Apps → **„ERP-Handwerk"** → Deinstallieren
-
-> 💡 Die Datenbank unter `%USERPROFILE%\ERP-Handwerk\` bleibt nach der Deinstallation erhalten. Lösche den Ordner manuell, wenn du alle Daten entfernen möchtest.
+| Datenbank | Docker-Volume `postgres_data` (PostgreSQL) |
+| Uploads | Docker-Volume `app_uploads` oder ein eigener Ordner (`UPLOADS_ORDNER` in der `.env`) |
+| Sicherungen vor jedem Update | Ordner `sicherungen\` im ERP-Ordner |
 
 ---
 
-## Variante 2: Docker (empfohlen für Entwickler & Server)
+## Variante 2: Docker zum Ausprobieren (aus dem Projektordner)
 
 Benötigt: [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
@@ -62,23 +41,25 @@ docker compose up -d --build
 Oder unter Windows einfach `start-docker.bat` doppelklicken.
 
 **Was passiert automatisch:**
-- MariaDB 11 wird heruntergeladen und konfiguriert
-- Datenbank und Tabellen werden erstellt
+- PostgreSQL 16 wird heruntergeladen und gestartet
+- Die leere Datenbank bekommt beim ersten Start alle Tabellen und Stammdaten
 - Qdrant (Vektor-DB für KI) wird gestartet
 - Die Anwendung startet auf `http://localhost:8080`
+
+Benutzer und Passwort der Datenbank stehen in der `.env` (Vorlage: `.env.example`, Werte `DB_USER` und `DB_PASSWORD`).
 
 **Stoppen:** `stop-docker.bat` oder `docker compose down`
 
 ---
 
-## Variante 3: Manuelle Installation (für Entwickler)
+## Variante 3: Entwickeln (Backend mit Maven)
 
 ### Voraussetzungen
 
 | Komponente | Version | Download |
 |------------|---------|----------|
 | Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
-| MariaDB | 11+ | [MariaDB Downloads](https://mariadb.org/download/) |
+| Docker Desktop | aktuell | [docker.com](https://www.docker.com/products/docker-desktop/) (für die PostgreSQL-Datenbank) |
 | Node.js | 18+ | [nodejs.org](https://nodejs.org/) (nur für Frontend-Entwicklung) |
 
 ### 1. Repository klonen
@@ -88,28 +69,25 @@ git clone https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe.git
 cd ERP-System-fuer-Handwerksbetriebe
 ```
 
-### 2. Datenbank einrichten (MariaDB oder MySQL)
+### 2. Datenbank starten (PostgreSQL im Container)
 
-```sql
-CREATE DATABASE kalkulationsprogramm_db
-   CHARACTER SET utf8mb4
-   COLLATE utf8mb4_german2_ci;
-CREATE USER 'erp'@'localhost' IDENTIFIED BY 'DEIN_DB_PASSWORT';
-GRANT ALL PRIVILEGES ON kalkulationsprogramm_db.* TO 'erp'@'localhost';
+```bash
+docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 \
+  -e POSTGRES_DB=kalkulationsprogramm_db \
+  -e POSTGRES_USER=erp_user \
+  -e POSTGRES_PASSWORD=DEIN_DB_PASSWORT \
+  postgres:16
 ```
+
+Die leere Datenbank bekommt beim ersten Start des Backends automatisch Basis-Schema und alle Migrationen. Später genügt `docker start erp-dev-pg`.
 
 ### 3. Konfiguration erstellen
 
-Erstelle `src/main/resources/application-local.properties`:
+Kopiere `src/main/resources/application-local.properties.example` nach `src/main/resources/application-local.properties` (wird nie committet) und trage die Zugangsdaten ein:
 
 ```properties
-# MariaDB (Standard)
-spring.datasource.url=jdbc:mariadb://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
-
-# oder MySQL 8+
-# spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
-
-spring.datasource.username=erp
+spring.datasource.url=jdbc:postgresql://localhost:5432/kalkulationsprogramm_db
+spring.datasource.username=erp_user
 spring.datasource.password=DEIN_DB_PASSWORT
 ```
 
@@ -137,58 +115,11 @@ npm run dev
 
 ---
 
-## Installer selbst bauen (für Entwickler)
-
-Um den Windows-Installer selbst zu erstellen:
-
-### Voraussetzungen auf der Build-Maschine
-
-| Tool | Version | Download |
-|------|---------|----------|
-| JDK | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
-| WiX Toolset | 3.x | [github.com/wixtoolset/wix3/releases](https://github.com/wixtoolset/wix3/releases) |
-
-### Build-Schritte
-
-```bash
-# 1. JAR bauen
-./mvnw clean package -DskipTests
-
-# 2. Staging-Verzeichnis erstellen
-mkdir target/jpackage-input
-cp target/Kalkulationsprogramm-<Version>.jar target/jpackage-input/
-
-# 3. Installer erstellen
-./mvnw jpackage:jpackage
-```
-
-Oder einfach: `build-installer.bat` doppelklicken.
-
-Der Installer liegt dann unter: `target/installer/ERP-Handwerk-<Version>.exe`
-
-### Was der Installer enthält
-
-| Komponente | Beschreibung |
-|------------|--------------|
-| JRE 23 | Eigene Java-Laufzeitumgebung (~170 MB) |
-| Spring Boot App | Backend + eingebettetes Frontend |
-| H2-Datenbank | Eingebettete Datenbank (kein MariaDB nötig) |
-| JVM-Parameter | `-Dspring.profiles.active=h2 -Xmx512m` |
-
----
-
 ## Häufige Fragen (FAQ)
 
-### Kann ich von H2 auf MariaDB wechseln?
+### Welche Datenbank brauche ich?
 
-Ja. Die H2-Datenbank ist für den Einstieg gedacht. Für den produktiven Einsatz mit mehreren Nutzern empfehlen wir MariaDB:
-
-1. MariaDB installieren und Datenbank anlegen (siehe Variante 3)
-2. `application-local.properties` erstellen
-3. Die Anwendung ohne `h2`-Profil starten:
-   ```bash
-java -jar Kalkulationsprogramm-<Version>.jar --spring.profiles.active=local
-   ```
+Immer PostgreSQL 16. Bei Variante 1 und 2 kommt sie als Docker-Container automatisch mit. MySQL, MariaDB und die frühere eingebaute H2-Datenbank der Windows-Installationsdatei werden nicht mehr unterstützt.
 
 ### Port 8080 ist belegt – was tun?
 
@@ -199,9 +130,8 @@ java -jar Kalkulationsprogramm-<Version>.jar --server.port=9090
 
 ### Wie sichere ich meine Daten?
 
-- **H2-Modus:** Kopiere den Ordner `%USERPROFILE%\ERP-Handwerk\` regelmäßig auf ein Backup-Medium
-- **MariaDB-Modus:** Verwende `mariadb-dump` oder `mysqldump` für regelmäßige Backups
-- **Docker-Modus:** Die Daten liegen in Docker Volumes – sichere diese über `docker cp` oder Volume-Backups
+- **Datenbank:** Vor jedem nächtlichen Update legt Variante 1 eine komplette Sicherung in `sicherungen\` ab. Für eine tägliche Sicherung außer Haus: `pg_dump` im Datenbank-Container, z. B. `docker exec erp-postgres pg_dump -U postgres -d kalkulationsprogramm_db --no-owner --no-privileges > sicherung.sql` unter Linux. Unter Windows nicht mit `>` umleiten (Windows PowerShell 5.1 speichert dann UTF-16 und die Sicherung lässt sich nicht einspielen) – dort erledigt das `deployment/scripts/backup-database.ps1`.
+- **Hochgeladene Dateien:** Docker-Volume `app_uploads` bzw. der Ordner aus `UPLOADS_ORDNER` – diese gehören mit in die tägliche Sicherung.
 
 ### Kann ich das Programm im Netzwerk nutzen?
 
@@ -222,8 +152,10 @@ Das Handwerkerprogramm kann auf zwei Arten betrieben werden: **lokal im Firmenne
 | Komponente | Version | Hinweis |
 |------------|---------|---------|
 | Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
-| MariaDB | 11+ | Datenbank `kalkulationsprogramm_db` anlegen |
+| PostgreSQL | 16 | Datenbank `kalkulationsprogramm_db`, am einfachsten als Docker-Container (siehe Variante 3) |
 | Node.js | 18+ | Nur für Frontend-Build nötig |
+
+> Am einfachsten ist **[Variante 1](#variante-1-docker-beim-kunden-empfohlen-für-betriebe)**: Dort kommen ERP und Datenbank fertig als Docker-Container, mit Updates und Sicherung. Die folgenden Schritte beschreiben den Betrieb als JAR.
 
 ### Backend für Produktion vorbereiten
 
@@ -264,28 +196,17 @@ Die Variablen werden nur zur ersten Anlage verwendet, solange noch kein Login-Be
 
 Ideal, wenn alle Nutzer im **gleichen Netzwerk (LAN/WLAN)** arbeiten – z. B. im Büro oder in der Werkstatt.
 
-#### 1. Datenbank einrichten (MariaDB oder MySQL)
+#### 1. Datenbank einrichten (PostgreSQL)
 
-```sql
-CREATE DATABASE kalkulationsprogramm_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_german2_ci;
-CREATE USER 'erp'@'localhost' IDENTIFIED BY 'DEIN_DB_PASSWORT';
-GRANT ALL PRIVILEGES ON kalkulationsprogramm_db.* TO 'erp'@'localhost';
-```
+Wie in [Variante 3, Schritt 2](#2-datenbank-starten-postgresql-im-container): PostgreSQL 16 als Container mit der Datenbank `kalkulationsprogramm_db`. Die Tabellen legt das ERP beim ersten Start selbst an.
 
 #### 2. Konfiguration anpassen
 
 Erstelle `src/main/resources/application-local.properties`:
 
 ```properties
-# MariaDB (Standard)
-spring.datasource.url=jdbc:mariadb://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8
-
-# oder MySQL 8+
-# spring.datasource.url=jdbc:mysql://localhost:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
-
-spring.datasource.username=erp
+spring.datasource.url=jdbc:postgresql://localhost:5432/kalkulationsprogramm_db
+spring.datasource.username=erp_user
 spring.datasource.password=DEIN_DB_PASSWORT
 ```
 
@@ -465,9 +386,9 @@ Aufruf aus dem Projekt-Root. Unter Windows `./mvnw.cmd …`, unter Linux/macOS `
 |--------|--------------|
 | `./mvnw spring-boot:run` | Backend starten (Port 8080, Profile `local` über `application-local.properties`) |
 | `./mvnw clean package` | JAR bauen inkl. Tests (`target/Kalkulationsprogramm-<Version>.jar`) |
-| `./mvnw clean package -DskipTests` | JAR ohne Test-Lauf bauen (für Installer-Build) |
-| `./mvnw test` | Nur Backend-Tests ausführen (JUnit 5 + Spring Boot Test) |
-| `./mvnw jpackage:jpackage` | Windows-Installer erzeugen (`target/installer/`) |
+| `./mvnw clean package -DskipTests` | JAR ohne Test-Lauf bauen |
+| `./mvnw test` | Nur Backend-Tests ausführen (JUnit 5 + Spring Boot Test, Datenbank: H2 im Speicher) |
+| `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=… -Dkompat.db.user=… -Dkompat.db.pass=…` | Datenbank-Tests gegen ein echtes PostgreSQL (Wegwerf-Container `postgres:16`) |
 
 ### Desktop-Frontend (`react-pc-frontend/`)
 
@@ -507,14 +428,12 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 >
 > Hinweis: SMTP/IMAP-Zugangsdaten und der Gemini-API-Key werden **nicht** über ENV-Variablen, sondern nach dem ersten Start in der UI unter **System-Einstellungen → E-Mail-Konto / KI Gemini** in der Datenbank gepflegt.
 
-### Docker-Compose (MariaDB)
+### Docker-Compose (PostgreSQL)
 
 | Variable | Pflicht | Beschreibung | Beispielwert |
 |----------|---------|--------------|--------------|
-| `MARIADB_ROOT_PASSWORD` | Optional¹ | Root-Passwort der MariaDB im Compose-Stack | `CHANGE_ME_ROOT_PW` |
-| `MARIADB_DATABASE` | Optional¹ | Name der App-Datenbank | `kalkulationsprogramm_db` |
-| `MARIADB_USER` | Optional¹ | App-DB-Benutzer | `erp_user` |
-| `MARIADB_PASSWORD` | Optional¹ | App-DB-Passwort | `CHANGE_ME_DB_PW` |
+| `DB_USER` | Optional¹ | Benutzer der PostgreSQL-Datenbank im Compose-Stack, gilt auch für die App | `erp_user` |
+| `DB_PASSWORD` | Optional¹ | Passwort dazu, gilt auch für die App | `CHANGE_ME_DB_PW` |
 
 ¹ Nur nötig, wenn die Default-Werte aus `docker-compose.yml` überschrieben werden sollen.
 
@@ -522,9 +441,7 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 
 | Variable | Pflicht | Beschreibung | Beispielwert |
 |----------|---------|--------------|--------------|
-| `APP_DB_URL` | Optional² | JDBC-URL für externes MariaDB/MySQL | `jdbc:mariadb://host.docker.internal:3306/kalkulationsprogramm_db?useUnicode=true&characterEncoding=UTF-8` |
-| `APP_DB_USER` | Optional² | DB-Benutzer für externe DB | `mariadb_user` |
-| `APP_DB_PASS` | Optional² | DB-Passwort für externe DB | `mariadb_password` |
+| `APP_DB_URL` | Optional² | JDBC-URL für ein PostgreSQL außerhalb des Compose-Stacks (`DB_USER`/`DB_PASSWORD` gelten dafür) | `jdbc:postgresql://host.docker.internal:5432/kalkulationsprogramm_db` |
 
 ² Nur setzen, wenn die App auf eine DB außerhalb des Compose-Stacks zeigen soll.
 
@@ -532,7 +449,7 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 
 | Variable | Pflicht | Beschreibung | Beispielwert |
 |----------|---------|--------------|--------------|
-| `APP_ADMIN_USER` | Ja | Login-Name des initialen Admin-Users | `Marvin` |
+| `APP_ADMIN_USER` | Ja | Login-Name des initialen Admin-Users | `admin` |
 | `APP_ADMIN_PASS` | Ja | Initiales Admin-Passwort (nach erstem Login ändern!) | `change_me_strong_password` |
 
 ### Optionale Integration

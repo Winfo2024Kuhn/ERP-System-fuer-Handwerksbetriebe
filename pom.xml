@@ -103,18 +103,7 @@
             <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
-        <dependency>
-            <groupId>org.mariadb.jdbc</groupId>
-            <artifactId>mariadb-java-client</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.mysql</groupId>
-            <artifactId>mysql-connector-j</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <!-- PostgreSQL fuer Kunden-Installationen (Profil "postgres"). Der eigene
-             Produktivserver bleibt auf MySQL - beide Datenbanken werden unterstuetzt. -->
+        <!-- PostgreSQL ist die einzige Datenbank (eigener Server und Kunden) -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
@@ -136,10 +125,6 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-mysql</artifactId>
         </dependency>
         <dependency>
             <groupId>com.sun.mail</groupId>
@@ -192,7 +177,8 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
+            <!-- Nur noch In-Memory-Datenbank fuer die Unit-Tests -->
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.awaitility</groupId>
@@ -283,33 +269,6 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>org.panteleyev</groupId>
-                <artifactId>jpackage-maven-plugin</artifactId>
-                <version>1.7.2</version>
-                <configuration>
-                    <name>ERP-Handwerk</name>
-                    <appVersion>${project.version}</appVersion>
-                    <vendor>Winfo2024Kuhn</vendor>
-                    <description>ERP-System fuer Handwerksbetriebe</description>
-                    <input>${project.build.directory}/jpackage-input</input>
-                    <mainJar>${project.build.finalName}.jar</mainJar>
-                    <mainClass>org.springframework.boot.loader.launch.JarLauncher</mainClass>
-                    <destination>${project.build.directory}/installer</destination>
-                    <javaOptions>
-                        <option>-Dspring.profiles.active=h2</option>
-                        <option>-Xmx512m</option>
-                        <option>-Dfile.encoding=UTF-8</option>
-                    </javaOptions>
-                    <type>EXE</type>
-                    <winConsole>true</winConsole>
-                    <winDirChooser>true</winDirChooser>
-                    <winShortcut>true</winShortcut>
-                    <winMenu>true</winMenu>
-                    <winMenuGroup>ERP Handwerk</winMenuGroup>
-                </configuration>
-            </plugin>
-
-            <plugin>
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-maven-plugin</artifactId>
                 <version>9.22.3</version>
@@ -317,18 +276,13 @@
                     <url>${flyway.url}</url>
                     <user>${flyway.user}</user>
                     <password>${flyway.password}</password>
-                    <locations>classpath:db/migration</locations>
+                    <locations>classpath:db/postgresql/migration</locations>
                 </configuration>
                 <dependencies>
                     <dependency>
-                        <groupId>org.mariadb.jdbc</groupId>
-                        <artifactId>mariadb-java-client</artifactId>
-                        <version>3.4.3</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>com.mysql</groupId>
-                        <artifactId>mysql-connector-j</artifactId>
-                        <version>8.4.0</version>
+                        <groupId>org.postgresql</groupId>
+                        <artifactId>postgresql</artifactId>
+                        <version>42.6.2</version>
                     </dependency>
                 </dependencies>
             </plugin>

@@ -13,9 +13,9 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | Spring Boot (Data JPA, Web, Security, Validation, DevTools, Test) | 3.2.5 | Apache License 2.0 | https://spring.io/projects/spring-boot |
 | Mustang Project – Library | 2.18.0 | Apache License 2.0 | https://www.mustangproject.org/ |
 | Mustang Project – Validator | 2.17.0 | Apache License 2.0 | https://www.mustangproject.org/ |
-| MySQL Connector/J | (managed) | GPL 2.0 mit FOSS Exception | https://dev.mysql.com/downloads/connector/j/ |
+| PostgreSQL JDBC Driver (pgJDBC) | (managed) | BSD 2-Clause License | https://jdbc.postgresql.org/ |
 | Project Lombok | 1.18.42 | MIT License | https://projectlombok.org/ |
-| Flyway (Core, MySQL) | (managed) | Apache License 2.0 | https://flywaydb.org/ |
+| Flyway (Core) | (managed) | Apache License 2.0 | https://flywaydb.org/ |
 | Jakarta Mail | 2.0.1 | EPL 2.0 / GPL 2.0 mit Classpath Exception | https://eclipse-ee4j.github.io/mail/ |
 | Jakarta Activation | 2.0.1 | EDL 1.0 (BSD 3-Clause) | https://eclipse-ee4j.github.io/jaf/ |
 | jsoup | 1.17.2 | MIT License | https://jsoup.org/ |
@@ -128,14 +128,19 @@ für das Gesamtprojekt erlaubt.
 - Eclipse Public License 2.0: https://www.eclipse.org/legal/epl-2.0/
 - GPL 2.0 mit Classpath Exception: https://openjdk.org/legal/gplv2+ce.html
 
-### GPL 2.0 mit FOSS Exception
-Betrifft: MySQL Connector/J
+### BSD 2-Clause License
+Betrifft: PostgreSQL JDBC Driver (pgJDBC)
 
-Der MySQL Connector/J steht unter der GPL 2.0 mit einer FOSS-Ausnahme (FOSS Exception),
-die die Nutzung in Open-Source-Projekten unter anerkannten OSI-Lizenzen (einschließlich
-MIT) ohne GPL-Copyleft-Pflicht für das Gesamtprojekt erlaubt.
+> Redistribution and use in source and binary forms, with or without modification, are
+> permitted provided that the following conditions are met:
+>
+> 1. Redistributions of source code must retain the above copyright notice, this list of
+>    conditions and the following disclaimer.
+> 2. Redistributions in binary form must reproduce the above copyright notice, this list
+>    of conditions and the following disclaimer in the documentation and/or other materials
+>    provided with the distribution.
 
-- Lizenztext: https://www.mysql.com/about/legal/licensing/foss-exception/
+- Lizenztext: https://jdbc.postgresql.org/license/
 
 ### ISC License
 Betrifft: Lucide React, idb
@@ -167,4 +172,4 @@ Diese Datei dient der Erfüllung der Lizenzbedingungen aller eingebundenen Dritt
 Bibliotheken. Für die vollständigen Lizenztexte wird auf die jeweiligen Quellen und die
 Dateien in den Bibliotheks-Archiven (JAR/node_modules) verwiesen.
 
-Letzte Aktualisierung: Mai 2026
+Letzte Aktualisierung: Oktober 2026

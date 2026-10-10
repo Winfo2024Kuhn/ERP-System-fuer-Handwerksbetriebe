@@ -399,21 +399,25 @@ einen Nachlauf ohne Konkurrenz ueberlebt hat.
   ist grün für eine Lösung, die zurücksetzt und danach nichts mehr plant.
   Immer zusätzlich prüfen, dass der neue Zyklus wirklich anläuft.
 
-### PC-App für Browser-Prüfungen lokal starten: H2 reicht, aber mit Fallen
+### PC-App für Browser-Prüfungen lokal starten: PostgreSQL-Container, aber mit Fallen
 
-Für Playwright-Durchläufe mit echten Daten braucht es kein MySQL und kein
-Docker: `./mvnw -B spring-boot:run -Dspring-boot.run.profiles=h2` mit
-`-Dspring-boot.run.jvmArguments=-Duser.home=<scratchpad>/erp-home`, sonst
-legt H2 `~/ERP-Handwerk/` auf dem Rechner an. Das Backend spricht **http**,
+Das Backend braucht PostgreSQL 16 – die einzige Datenbank, ein `h2`-Profil
+gibt es nicht mehr. Für Playwright-Durchläufe mit echten Daten reicht ein
+Wegwerf-Container:
+`docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 -e POSTGRES_DB=kalkulationsprogramm_db -e POSTGRES_USER=erp_user -e POSTGRES_PASSWORD=erp_dev postgres:16`.
+Dann `./mvnw -B spring-boot:run` mit den Zugangsdaten: steht im Worktree keine
+`application-local.properties` (gitignored), genügen die Umgebungsvariablen
+`APP_DB_USER=erp_user` und `APP_DB_PASS=erp_dev` – die Adresse
+`jdbc:postgresql://localhost:5432/kalkulationsprogramm_db` ist Standard. Die
+leere Datenbank bekommt beim ersten Start Basis-Schema und Migrationen.
+Hinterher `docker rm -f erp-dev-pg`. Das Backend spricht **http**,
 der Vite-Proxy in `vite.config.ts` zeigt aber auf `https://localhost:8080`
 und scheitert. Nicht die Datei ändern: ein kleines Node-Skript im Scratchpad
 startet `createServer` aus `node_modules/vite` mit der echten `configFile`
 und überschriebenem Proxy auf eigenem Port. Erstanmeldung über „Konto
-anlegen", danach blockt `/onboarding`, bis SMTP, Gemini-Key und Datei-Ordner
+anlegen", danach blockt `/onboarding`, bis SMTP und Gemini-Key
 per `PUT /api/settings/...` mit Dummy-Werten gesetzt sind (CSRF-Header
-`X-XSRF-TOKEN` aus dem Cookie). H2 kennt kein `DATE_SUB`: Kunden nur mit
-manueller Kundennummer anlegen; `mwstSatz` ist ein Bruch (0.19). Details in
-der Memory-Datei `erp-lokal-starten-h2`.
+`X-XSRF-TOKEN` aus dem Cookie). `mwstSatz` ist ein Bruch (0.19).
 
 ### Session muss im Repo-Ordner starten, sonst fehlen die Pipeline-Agenten
 

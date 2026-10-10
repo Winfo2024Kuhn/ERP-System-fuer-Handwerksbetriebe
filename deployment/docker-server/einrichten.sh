@@ -8,11 +8,9 @@
 #   3. startet alles mit "docker compose up -d" und wartet, bis das ERP laeuft
 #   4. optional: uebernimmt eine bestehende Datenbank (Umzug vom alten Server)
 #
-# Aufruf:  sudo ./einrichten.sh [--mysql] [--import <sicherung.sql oder .sql.gz>]
-#   Standard ist PostgreSQL (Kunden-Installationen). --mysql fuer den eigenen
-#   Server; dessen bisherige Datenbank kommt mit --import <mysqldump> mit.
-#   Eine Sicherung passt nur zur selben Datenbankart - bei --import wird die
-#   Art aus der Datei erkannt.
+# Aufruf:  sudo ./einrichten.sh [--import <sicherung.sql oder .sql.gz>]
+#   Datenbank ist PostgreSQL. --import nimmt eine PostgreSQL-Sicherung
+#   (pg_dump, z. B. aus sicherungen/ eines anderen ERP-Servers) mit.
 #
 # Eine leere Datenbank richtet die App beim ersten Start selbst ein. Das
 # Nachtupdate um 3 Uhr uebernimmt der Updater-Container - kein cron noetig.
@@ -32,34 +30,26 @@ fehler() {
 }
 
 IMPORT_DATEI=""
-DATENBANK=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --mysql) DATENBANK=mysql; shift ;;
-        --postgres) DATENBANK=postgres; shift ;;
         --import)
             IMPORT_DATEI="${2:?Bitte die Sicherungsdatei angeben: --import <datei.sql[.gz]>}"
             [[ -f "$IMPORT_DATEI" ]] || fehler "Sicherungsdatei nicht gefunden: $IMPORT_DATEI"
             shift 2 ;;
-        *) fehler "Unbekannte Option: $1 (erlaubt: --mysql, --postgres, --import <datei>)" ;;
+        *) fehler "Unbekannte Option: $1 (erlaubt: --import <datei>)" ;;
     esac
 done
 
-# Eine Sicherung passt nur zur selben Datenbankart. Vor dem Anlegen pruefen -
-# sonst steht bei vergessenem --mysql schon eine leere PostgreSQL-Installation.
+# Nur PostgreSQL-Sicherungen passen. Vor dem Anlegen pruefen - sonst steht bei
+# einer falschen Datei schon eine leere Installation da.
 if [[ -n "$IMPORT_DATEI" ]]; then
     if gzip -t "$IMPORT_DATEI" 2>/dev/null; then
         kopf="$(gzip -cd "$IMPORT_DATEI" | head -c 4096 | tr -d '\0' || true)"
     else
         kopf="$(head -c 4096 "$IMPORT_DATEI" | tr -d '\0' || true)"
     fi
-    import_art=mysql
-    [[ "$kopf" == *"PostgreSQL database dump"* ]] && import_art=postgres
-    if [[ -n "$DATENBANK" && "$DATENBANK" != "$import_art" ]]; then
-        fehler "Die Sicherung stammt aus $import_art, eingerichtet werden soll $DATENBANK - das passt nicht zusammen."
-    fi
-    DATENBANK="$import_art"
-    echo "Sicherung stammt aus $import_art - richte $import_art ein."
+    [[ "$kopf" == *"PostgreSQL database dump"* ]] \
+        || fehler "Die Sicherung ist keine PostgreSQL-Sicherung (pg_dump). MySQL-Sicherungen lassen sich nicht mehr einspielen."
 fi
 
 # --- 1. Voraussetzungen ---
@@ -83,17 +73,17 @@ if [[ ! -f .env ]]; then
     kunde="${KUNDE_NAME:-$(hostname)}"
     # awk statt sed, Name ueber ENVIRON (nicht -v, das wertet \n usw. aus):
     # Sonderzeichen im Firmennamen (& / \ | $) bleiben, wie sie sind
-    ERP_KUNDE="$kunde" awk -v root="$(zufallspasswort)" -v db="$(zufallspasswort)" -v datenbank="${DATENBANK:-postgres}" '
+    ERP_KUNDE="$kunde" awk -v root="$(zufallspasswort)" -v db="$(zufallspasswort)" '
         /^KUNDE_NAME=/ { print "KUNDE_NAME=" ENVIRON["ERP_KUNDE"]; next }
-        /^COMPOSE_PROFILES=/ { print "COMPOSE_PROFILES=" datenbank; next }
         { sub(/CHANGE_ME_ROOT_PW/, root); sub(/CHANGE_ME_DB_PW/, db); print }
     ' .env.example > .env
-    echo ".env mit zufaelligen Passwoertern angelegt (Datenbank: ${DATENBANK:-postgres}, KUNDE_NAME=$kunde) - WEBHOOK_URL bei Bedarf eintragen."
+    echo ".env mit zufaelligen Passwoertern angelegt (KUNDE_NAME=$kunde) - WEBHOOK_URL bei Bedarf eintragen."
 else
+    # Aeltere .env-Dateien enthalten noch COMPOSE_PROFILES. "postgres" ist
+    # harmlos; eine Installation, die noch auf MySQL laeuft, nicht anfassen.
     vorhanden="$(grep -E '^COMPOSE_PROFILES=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r"' || true)"
-    [[ -n "$vorhanden" ]] || fehler ".env stammt aus einer aelteren Einrichtung (COMPOSE_PROFILES fehlt) - mit .env.example abgleichen."
-    if [[ -n "$DATENBANK" && "$DATENBANK" != "$vorhanden" ]]; then
-        fehler "Diese Installation laeuft schon mit $vorhanden - die Datenbank wird nicht gewechselt."
+    if [[ "$vorhanden" == *mysql* ]]; then
+        fehler "Diese Installation laeuft noch auf MySQL (COMPOSE_PROFILES=$vorhanden in .env). Das ERP kennt nur noch PostgreSQL - siehe README, Abschnitt Aeltere Einrichtungen."
     fi
 fi
 chmod 600 .env
