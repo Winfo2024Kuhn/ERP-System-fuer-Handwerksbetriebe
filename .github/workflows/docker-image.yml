@@ -57,8 +57,14 @@ jobs:
         run: |
           set -euo pipefail
           repo="$GITHUB_REPOSITORY"
-          pr_head="$(gh api "repos/$repo/commits/$COMMIT/pulls" \
-            --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"$COMMIT\")][0].head.sha // empty")"
+          # Direkt nach dem Merge ordnet GitHub den PR manchmal erst Sekunden spaeter zu.
+          pr_head=""
+          for versuch in 1 2 3 4 5; do
+            pr_head="$(gh api "repos/$repo/commits/$COMMIT/pulls" \
+              --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"$COMMIT\")][0].head.sha // empty")"
+            [ -n "$pr_head" ] && break
+            sleep 10
+          done
           if [ -z "$pr_head" ]; then
             echo "::error::$COMMIT stammt aus keinem gemergten Pull Request - kein Image."
             exit 1
