@@ -5,3 +5,5 @@
 sicherungen/
 logs/
 .status/
+# Weitere ERP-Einstellungen (API-Schluessel, Verschluesselungs-Schluessel ...)
+app.env

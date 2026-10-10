@@ -58,7 +58,15 @@ LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
 
 WORKDIR /app
 
-# Create directories for uploads and logs
+# Eigener Benutzer ohne Rechte und ohne Login. Das ERP laeuft als dieser
+# Benutzer, nie als root (siehe deployment/docker-image/app-start.sh).
+RUN groupadd --system --gid 10001 erp \
+ && useradd --system --uid 10001 --gid erp --home-dir /tmp --no-create-home \
+            --shell /usr/sbin/nologin erp
+
+# Ordner fuer Uploads und Logs - die einzigen, in die das ERP schreibt
+# (plus /tmp). Alles andere, auch das JAR, gehoert root und bleibt
+# unveraenderlich.
 RUN mkdir -p /app/uploads/attachments \
              /app/uploads/CADdrawings \
              /app/uploads/cutaway_images \
@@ -66,10 +74,12 @@ RUN mkdir -p /app/uploads/attachments \
              /app/uploads/images \
              /app/uploads/offers \
              /app/uploads/attachments/lieferanten \
-             /app/logs
+             /app/logs \
+ && chown -R erp:erp /app/uploads /app/logs
 
 # Copy the built JAR from builder stage
 COPY --from=builder /app/app.jar app.jar
+COPY --chmod=0755 deployment/docker-image/app-start.sh /usr/local/bin/erp-start
 
 # Expose server port
 EXPOSE 8080
@@ -86,4 +96,5 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=120s \
 # fuer Kunden-Installationen mit PostgreSQL. Ein --spring.profiles.active-Argument
 # haette Vorrang vor der Umgebung und wuerde das verhindern.
 ENV SPRING_PROFILES_ACTIVE=docker
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# erp-start richtet die Daten-Ordner ein und startet Java als Benutzer "erp"
+ENTRYPOINT ["/usr/local/bin/erp-start", "java", "-jar", "app.jar"]

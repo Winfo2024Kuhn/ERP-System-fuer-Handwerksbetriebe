@@ -6,17 +6,27 @@
 #   Linux:    sudo ./einrichten.sh
 # Danach genuegt jederzeit:   docker compose up -d
 #
-#   postgres Datenbank fuer Kunden-Installationen (Standard)
-#   mysql    Datenbank des eigenen Servers (Einrichtung mit --mysql)
-#            Welche laeuft, steht in .env: COMPOSE_PROFILES=postgres bzw. mysql.
-#            Eine leere Datenbank richtet die App beim ersten Start selbst ein
-#            (Basis-Schema + Stammdaten).
-#   app      Das ERP. Kommt als fertiges Image aus der GitHub Container Registry.
-#   updater  Spielt jede Nacht um 3 Uhr neue Versionen ein - mit Sicherung,
-#            Health-Check und automatischem Rollback (nachtupdate.sh).
+#   postgres   Datenbank fuer Kunden-Installationen (Standard)
+#   mysql      Datenbank fuer Altinstallationen (Einrichtung mit --mysql)
+#              Welche laeuft, steht in .env: COMPOSE_PROFILES=postgres bzw. mysql.
+#              Eine leere Datenbank richtet die App beim ersten Start selbst ein
+#              (Basis-Schema + Stammdaten).
+#   app        Das ERP. Kommt als fertiges Image aus der GitHub Container Registry.
+#   updater    Spielt jede Nacht um 3 Uhr neue Versionen ein - mit Sicherung,
+#              Health-Check und automatischem Rollback (nachtupdate.sh).
+#   netzsperre Trennt das ERP vom Firmennetz (netzsperre/sperre.sh).
+#
+# Abschottung (README, Abschnitt "Sicherheit"):
+#   - Die Datenbank haengt nur im Netz "intern" - ohne Verbindung nach aussen,
+#     erreichbar nur fuer die App.
+#   - Die App laeuft als Benutzer ohne Rechte, mit schreibgeschuetztem
+#     Dateisystem (nur Uploads, Logs und /tmp beschreibbar) und ohne
+#     Linux-Berechtigungen. Sie bekommt keinen Docker-Socket.
+#   - Aus ihrem Netz "extern" darf die App ins Internet, aber nicht ins
+#     Firmennetz (ausser NETZSPERRE_AUSNAHMEN, z. B. die FRITZ!Box).
 #
 # restart: always - nach jedem Neustart des Rechners (bzw. von Docker) laufen
-# alle drei wieder von selbst an, auch wenn sie vorher gestoppt waren.
+# alle Dienste wieder von selbst an, auch wenn sie vorher gestoppt waren.
 #
 # Wichtig: "docker compose pull" fuer die App NICHT von Hand ausfuehren. Welche
 # App-Version laeuft, steuert nachtupdate.sh ueber das lokale Image-Tag; ein
@@ -53,8 +63,14 @@ services:
       postgres
       -c tcp_keepalives_idle=60
       -c idle_in_transaction_session_timeout=10min
-    # Kein Port nach aussen: nur die App spricht mit der Datenbank.
-    # Fuer Wartung: docker compose exec postgres psql -U postgres kalkulationsprogramm_db
+    # Kein Port nach aussen und nur im Netz "intern": nur die App spricht mit
+    # der Datenbank. Fuer Wartung: docker compose exec postgres psql -U postgres kalkulationsprogramm_db
+    networks: [intern]
+    # Nur, was das Startskript des Images braucht (Datenordner dem Benutzer
+    # "postgres" geben, dann zu ihm wechseln) - danach laeuft der Server ohne Rechte.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
@@ -77,8 +93,12 @@ services:
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
-    # Kein Port nach aussen: nur die App spricht mit der Datenbank.
-    # Fuer Wartung: docker compose exec mysql mysql -uroot -p
+    # Kein Port nach aussen und nur im Netz "intern": nur die App spricht mit
+    # der Datenbank. Fuer Wartung: docker compose exec mysql mysql -uroot -p
+    networks: [intern]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
       interval: 10s
@@ -94,7 +114,14 @@ services:
     pull_policy: missing
     container_name: erp-app
     ports:
-      - "${APP_PORT:-8080}:8080"
+      # APP_ADRESSE=127.0.0.1: nur von diesem Rechner aus erreichbar (z. B. wenn
+      # tailscale serve davor sitzt). Standard 0.0.0.0 = im ganzen Firmennetz.
+      - "${APP_ADRESSE:-0.0.0.0}:${APP_PORT:-8080}:8080"
+    # Weitere Einstellungen des ERP (API-Schluessel, Funktionen, ...) als
+    # Umgebungsvariablen, z. B. AI_GEMINI_APIKEY=... - Datei ist optional.
+    env_file:
+      - path: ./app.env
+        required: false
     environment:
       # "docker,postgres" bzw. "docker,mysql": das Profil "postgres" stellt
       # Treiber und Migrationslinie um (application-postgres.properties).
@@ -105,12 +132,31 @@ services:
       APP_ADMIN_USER: ${APP_ADMIN_USER:-}
       APP_ADMIN_PASS: ${APP_ADMIN_PASS:-}
       ZEITERFASSUNG_URL: ${ZEITERFASSUNG_URL:-http://localhost:8080}
-      FREIGABE_PUBLIC_BASE_URL: ${FREIGABE_PUBLIC_BASE_URL:-}
+      # = freigabe.public-base-url (Spring liest Umgebungsvariablen ohne "-")
+      FREIGABE_PUBLICBASEURL: ${FREIGABE_PUBLIC_BASE_URL:-}
+      # ja = einem Proxy auf diesem Rechner (tailscale serve, cloudflared) die
+      # Absender-Adresse glauben. Nur zusammen mit APP_ADRESSE=127.0.0.1!
+      ERP_LOKALER_PROXY: ${LOKALER_PROXY:-nein}
       # Ortszeit wie auf dem bisherigen Windows-Server (JDBC bleibt wie dort auf UTC)
       TZ: Europe/Berlin
     volumes:
-      - app_uploads:/app/uploads
+      # UPLOADS_ORDNER: vorhandener Ordner auf dem Rechner statt Docker-Volume,
+      # z. B. wenn er im Firmennetz freigegeben ist (CAD-Zeichnungen).
+      - ${UPLOADS_ORDNER:-app_uploads}:/app/uploads
       - app_logs:/app/logs
+    networks: [intern, extern]
+    # Schreibgeschuetzt: Wer eine Luecke findet, kann weder das ERP noch das
+    # System im Container veraendern. Beschreibbar sind nur die Volumes oben und
+    # /tmp. "exec" auf /tmp ist noetig: OpenCV (Bildbearbeitung) entpackt beim
+    # Start seine native Bibliothek dorthin und laedt sie von dort.
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777,exec
+    # CHOWN/SETUID/SETGID braucht nur das Startskript (Datenordner uebernehmen,
+    # dann zum Benutzer "erp" wechseln). Java selbst laeuft ohne jede Berechtigung.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
     # Nur eine der beiden Datenbanken laeuft (Profil) - die andere ist optional
     depends_on:
       postgres:
@@ -136,11 +182,44 @@ services:
     volumes:
       # Steuert die Container dieses Projekts. Wer den Socket hat, hat volle
       # Kontrolle ueber Docker - deshalb tut der Updater nur, was in
-      # nachtupdate.sh steht.
+      # nachtupdate.sh steht, hat keinen Port und ist von aussen nicht
+      # erreichbar. Die App selbst bekommt den Socket nie.
       - /var/run/docker.sock:/var/run/docker.sock
       # Projektordner: Skripte, .env, sicherungen/, logs/
       - .:/erp
+    networks: [extern]
+    security_opt: [no-new-privileges:true]
     restart: always
+
+  netzsperre:
+    build: ./netzsperre
+    image: erp-netzsperre:lokal
+    container_name: erp-netzsperre
+    # Setzt Firewall-Regeln im Netz des Rechners (bzw. der Docker-Desktop-VM)
+    network_mode: host
+    environment:
+      TZ: Europe/Berlin
+      # ja = das ERP erreicht aus dem Firmennetz nur NETZSPERRE_AUSNAHMEN
+      NETZSPERRE: ${NETZSPERRE:-ja}
+      # ziel:port, Komma-getrennt. Standard: FRITZ!Box (Anrufliste, Anrufbeantworter)
+      NETZSPERRE_AUSNAHMEN: ${NETZSPERRE_AUSNAHMEN-fritz.box:49000}
+      NETZSPERRE_BRIDGE: erp-extern
+    read_only: true
+    tmpfs: [/tmp, /run]
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: [no-new-privileges:true]
+    restart: always
+
+networks:
+  # Datenbank <-> App. "internal": Docker laesst aus diesem Netz nichts nach aussen.
+  intern:
+    internal: true
+  # App (und Updater) <-> Internet, Port fuer den Browser. Fester Bridge-Name,
+  # damit die Netzsperre ihre Regeln genau an dieses Netz haengen kann.
+  extern:
+    driver_opts:
+      com.docker.network.bridge.name: erp-extern
 
 volumes:
   postgres_data:

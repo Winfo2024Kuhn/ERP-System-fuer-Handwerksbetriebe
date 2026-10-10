@@ -53,7 +53,14 @@ trap aufraeumen EXIT
 # starten <image>: App auf der Test-Datenbank starten, wartet auf Health 200
 starten() {
     docker rm -f erp-starttest-app >/dev/null 2>&1 || true
+    # Dieselbe Abschottung wie beim Kunden (docker-compose.yml): schreibgeschuetzt,
+    # ohne Linux-Berechtigungen - eine Version, die so nicht startet, darf nicht
+    # veroeffentlicht werden.
     docker run -d --name erp-starttest-app --network "$NETZ" -p 127.0.0.1:18080:8080 \
+        --read-only --tmpfs /tmp:size=2g,mode=1777,exec \
+        --tmpfs /app/uploads:mode=1777 --tmpfs /app/logs:mode=1777 \
+        --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID \
+        --security-opt no-new-privileges:true \
         -e SPRING_PROFILES_ACTIVE="docker,$DB_ART" \
         -e APP_DB_URL="$DB_URL" -e APP_DB_USER=erp_user -e APP_DB_PASS="$TEST_PW" \
         "$1" >/dev/null

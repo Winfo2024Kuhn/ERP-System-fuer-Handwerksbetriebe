@@ -26,8 +26,11 @@ Handys lädt die neue Version beim nächsten Öffnen.
 
 | | Datenbank | Einrichten |
 | --- | --- | --- |
-| **Kunden** | PostgreSQL (Standard) | `Einrichten.cmd` bzw. `./einrichten.sh` |
-| **Eigener Server** | MySQL (wie bisher) | `Einrichten.cmd -Datenbank mysql` bzw. `./einrichten.sh --mysql` |
+| **Alle Installationen** | PostgreSQL (Standard) | `Einrichten.cmd` bzw. `./einrichten.sh` |
+| Altinstallationen | MySQL (Übergang, wird entfernt) | `Einrichten.cmd -Datenbank mysql` bzw. `./einrichten.sh --mysql` |
+
+Der eigene Server läuft seit dem 10.10.2026 ebenfalls auf PostgreSQL. MySQL bleibt nur
+noch als Rückweg im Code, bis PostgreSQL sich im Betrieb bewährt hat.
 
 Beide bekommen **dasselbe Image und dieselben Nachtupdates**. Die App erkennt die
 Datenbank am Profil (`COMPOSE_PROFILES` in der `.env`) und nimmt die passende
@@ -112,6 +115,78 @@ echo <TOKEN> | docker login ghcr.io -u <github-benutzer> --password-stdin
 
 Für ein Open-Source-ERP ist es einfacher, das Paket öffentlich zu stellen
 (GitHub → Packages → Package settings → Change visibility).
+
+### Weitere Einstellungen: `app.env`
+
+API-Schlüssel, der Schlüssel für die Mail-Zugänge, Funktionsschalter und alles andere, was
+früher in der `application-local.properties` stand, kommen in die Datei `app.env` neben der
+`.env`. Sie ist optional und wird nie committet. Der Name ergibt sich aus dem Schlüssel:
+Punkte werden zu `_`, Bindestriche entfallen, alles groß. Werte in einfachen Anführungszeichen:
+
+```ini
+AI_GEMINI_APIKEY='...'
+MAIL_CREDENTIALS_ENCRYPTIONKEY='...'
+EMAIL_FEATURES_ENABLED='true'
+```
+
+Nach einer Änderung: `docker compose up -d app`.
+
+### Uploads in einem vorhandenen Ordner
+
+Standardmäßig liegen Uploads im Docker-Volume `app_uploads`. Soll ein vorhandener Ordner
+auf dem Rechner bleiben, etwa weil er im Firmennetz freigegeben ist (CAD-Zeichnungen),
+steht er in der `.env` unter `UPLOADS_ORDNER`. Unter Windows schreibt man ihn so, wie ihn die
+Docker-Desktop-VM sieht. Dann versteht ihn auch der Updater:
+
+```ini
+UPLOADS_ORDNER=/run/desktop/mnt/host/c/Kalkulationsprogramm/uploads
+```
+
+Solche Ordner sichert das Nachtupdate nicht mit. Das bleibt Aufgabe der täglichen Sicherung.
+
+### Hinter `tailscale serve` (nur über Tailscale erreichbar)
+
+```ini
+APP_ADRESSE=127.0.0.1
+LOKALER_PROXY=ja
+```
+
+Der Port lauscht dann nur auf dem Rechner selbst, im LAN ist nichts offen. `tailscale serve`
+leitet an `http://127.0.0.1:<APP_PORT>` weiter. Mit `LOKALER_PROXY=ja` glaubt das ERP dem
+Proxy die echte Absender-Adresse (`X-Forwarded-For`). Das ist nötig für die Regel „von außen
+nur die Zeiterfassung" und für die Code-Sperre pro Gerät. **Nie mit `APP_ADRESSE=0.0.0.0`
+kombinieren:** Unter Docker Desktop kommen dann alle Anfragen aus dem LAN über dieselbe
+Gateway-Adresse, und jeder könnte sich als beliebiger Absender ausgeben.
+
+## Sicherheit: so ist das ERP abgeschottet
+
+Findet jemand eine Lücke im ERP, soll er weder an den Rechner noch an das Firmennetz kommen.
+
+| Maßnahme | Wo | Wirkung |
+| --- | --- | --- |
+| Eigener Benutzer `erp` (uid 10001) | `Dockerfile`, `deployment/docker-image/app-start.sh` | Java läuft nie als root. Das Startskript gibt nur noch alte Upload-/Log-Ordner an `erp` und wechselt dann den Benutzer. Dabei verliert der Prozess alle Berechtigungen. |
+| Schreibgeschütztes Dateisystem | `read_only: true` | Das ERP kann weder sich selbst noch das System im Container verändern. Beschreibbar: Uploads, Logs, `/tmp`. |
+| Keine Linux-Berechtigungen | `cap_drop: [ALL]`, `no-new-privileges` | Kein Zugriff auf Kernel-Funktionen, kein Weg zurück zu root. |
+| Kein Docker-Socket für die App | `docker-compose.yml` | Den Socket hat nur der Updater. Er hat keinen Port und führt nur `nachtupdate.sh` aus. |
+| Datenbank ohne Netz nach außen | Netz `intern` (`internal: true`) | PostgreSQL/MySQL erreicht nur die App, keinen Port und kein Internet. |
+| Netzsperre | Dienst `netzsperre` | Die App darf ins Internet (Mail, KI, Website), aber nicht ins Firmennetz: keine PCs, keine Buchhaltung, keine Dateifreigaben, auch nicht der Rechner selbst. Ausnahmen in `NETZSPERRE_AUSNAHMEN`, Standard `fritz.box:49000` (Anrufliste und Anrufbeantworter). |
+| Nur ein Port | `APP_ADRESSE`, `APP_PORT` | Der Browser-Zugang, sonst nichts. Hinter `tailscale serve` nur auf `127.0.0.1`. |
+
+Die Netzsperre setzt Regeln in Dockers eigene Firewall-Kette `DOCKER-USER`, nur für die
+Bridge `erp-extern`. Das geht auf Linux-Servern und in der Docker-Desktop-VM unter Windows
+gleich. Docker löscht die Regeln bei jedem Neustart, deshalb läuft der Dienst dauerhaft, setzt
+sie beim Start und prüft sie jede Minute. Beim Stoppen entfernt er sie. Prüfen:
+`docker compose logs netzsperre` (dort steht „Sperre aktiv“ mit den erlaubten Zielen).
+Ausschalten (nicht empfohlen): `NETZSPERRE=nein` in der `.env`, dann
+`docker compose up -d netzsperre`.
+
+> **Bestehende Installationen:** Nach dem Kopieren dieser `docker-compose.yml` einmal
+> `docker compose up -d` ausführen. Damit entstehen die Netze `intern`/`extern` und alle
+> Dienste werden neu angelegt. Das Nachtupdate tauscht nur die App und würde sie sonst in
+> ein Netz ohne Datenbank stellen.
+
+Am sichersten ist ein eigener kleiner Rechner nur für das ERP, in einem eigenen Netz (VLAN
+oder Gastnetz). Dann bleibt auch beim schlimmsten Vorfall der Rest der Firma unberührt.
 
 ## Was nachts passiert
 
@@ -249,9 +324,11 @@ dann mit Rollback.
 
 | Datei | Zweck |
 | --- | --- |
-| `docker-compose.yml` | postgres oder mysql (Profil), app, updater, alle mit `restart: always` |
+| `docker-compose.yml` | postgres oder mysql (Profil), app, updater, netzsperre, alle mit `restart: always` |
 | `postgres-init/` | Legt beim ersten Start die App-Rolle in PostgreSQL an (ohne Superuser-Rechte) |
 | `.env.example` | Vorlage für `.env`. Die `.env` wird beim Einrichten erzeugt und nie committet |
+| `app.env` | Optional, weitere ERP-Einstellungen (API-Schlüssel …). Nie committet |
+| `netzsperre/` | Image der Netzsperre (Firewall-Regeln: ERP nicht ins Firmennetz) |
 | `Einrichten.cmd`, `einrichten-windows.ps1` | Einrichtung auf einem Windows-PC |
 | `einrichten.sh` | Einrichtung auf einem Linux-Server, optional mit `--mysql` und `--import` |
 | `nachtupdate.sh` | Nachtupdate, Rollback, Wiederaufnahme nach Neustart, Import |
