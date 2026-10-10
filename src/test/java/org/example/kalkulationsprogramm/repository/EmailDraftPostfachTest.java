@@ -64,4 +64,35 @@ class EmailDraftPostfachTest {
         assertThat(alt.postfachId()).isNull();
         assertThat(alt.einzelversand()).isNull();
     }
+
+    private static EmailDraftDto weiterleitung(Long weitergeleitetVon) {
+        return new EmailDraftDto(null, "buero@example.org", null, "WG: Rechnung 4711", "<p>Zur Info</p>",
+                null, null, null, null, false, null, false, weitergeleitetVon, null, null, null);
+    }
+
+    @Test
+    void weiterleitungBehaeltDieOriginalMail() {
+        Long id = service.save(null, weiterleitung(42L), List.of()).id();
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(service.get(id).weitergeleitetVonEmailId()).isEqualTo(42L);
+        assertThat(service.list().getFirst().weitergeleitetVonEmailId()).isEqualTo(42L);
+    }
+
+    @Test
+    void ohneWeiterleitungLeer() {
+        Long id = service.save(null, entwurf(null, null), List.of()).id();
+
+        assertThat(service.get(id).weitergeleitetVonEmailId()).isNull();
+    }
+
+    @Test
+    void ungueltigeWeiterleitungWirdAbgelehnt() {
+        for (Long ungueltig : List.of(-1L, 0L, Long.MIN_VALUE)) {
+            assertThatThrownBy(() -> service.save(null, weiterleitung(ungueltig), List.of()))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("Ungültige Kennnummer");
+        }
+    }
 }

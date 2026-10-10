@@ -145,6 +145,24 @@ describe('EmailCenter', () => {
             expect(await screen.findByTestId('absender-fest')).toHaveTextContent('Musterbetrieb <info@musterbetrieb.example>');
             expect(screen.getByText(/Weiterleitungen gehen über das Postfach raus/)).toBeInTheDocument();
         });
+
+        it('öffnet einen Weiterleitungs-Entwurf mit festem Absender statt „Senden von“', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const entwurf = {
+                id: 55, recipient: 'kollege@example.org', subject: 'WG: Angebot für Treppe', body: '<p>Bitte ansehen.</p>',
+                replyEmailId: null, weitergeleitetVonEmailId: 1, attachments: [], updatedAt: '2026-10-10T09:00:00',
+            };
+            global.fetch = mockFetchResponses({
+                '/api/emails/drafts': [entwurf],
+                '/api/emails/drafts/55': entwurf,
+                '/api/emails/1': { ...mockEmails[0], antwortPostfach: { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' } },
+            }) as unknown as typeof fetch;
+            renderEmailCenter('drafts');
+            await user.click(await screen.findByText('kollege@example.org'));
+            expect(await screen.findByTestId('absender-fest')).toHaveTextContent('Musterbetrieb <info@musterbetrieb.example>');
+            expect(screen.getByText(/Weiterleitungen gehen über das Postfach raus/)).toBeInTheDocument();
+            expect(screen.queryByRole('combobox', { name: 'Senden von' })).not.toBeInTheDocument();
+        });
     });
 
     describe('Rendering', () => {

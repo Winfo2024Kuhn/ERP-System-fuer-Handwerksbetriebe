@@ -91,11 +91,25 @@ export function AbsenderPostfachAuswahl(props: AbsenderPostfachAuswahlProps) {
             </p>
         );
     }
+    // Kein Postfach zur Auswahl (keins freigegeben oder noch keins eingerichtet): statt eines
+    // leeren, grauen Auswahlfelds klar sagen, worüber die Mail rausgeht.
+    if (!laedt && !ladeFehler && optionen.length === 0) {
+        return (
+            <>
+                <p id={props.id} data-testid="absender-fest" aria-describedby={`${props.id}-hinweis`}
+                    className="min-w-0 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    Standard-Absender des Betriebs
+                </p>
+                <p id={`${props.id}-hinweis`} className={hinweisKlasse(inline)}>
+                    Kein Postfach zur Auswahl – die Mail geht über den Standard-Absender des Betriebs raus.
+                    Welche Postfächer Sie nutzen dürfen, legt Ihr Admin fest.
+                </p>
+            </>
+        );
+    }
     const hinweis = ladeFehler
         ? 'Die Postfächer konnten nicht geladen werden. Die Mail geht über Ihr eigenes Postfach bzw. das Hauptpostfach raus.'
-        : !laedt && optionen.length === 0
-            ? 'Noch kein Postfach eingerichtet – die Mail geht über den Standard-Absender raus.'
-            : null;
+        : null;
     return (
         <>
             <Select

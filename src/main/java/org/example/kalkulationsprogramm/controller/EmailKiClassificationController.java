@@ -31,6 +31,16 @@ public class EmailKiClassificationController {
     private final EmailRepository emailRepository;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
+    private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
+
+    /**
+     * Mail nur, wenn der Benutzer sie im E-Mail-Center sieht – sonst wie „gibt es nicht“.
+     * Sonst könnte die KI eine fremde Mail einem Projekt zuordnen und damit lesbar machen.
+     */
+    private Optional<Email> findeSichtbar(Long emailId, org.springframework.security.core.Authentication authentication) {
+        var sicht = postfachSichtbarkeitService.fuer(authentication);
+        return emailRepository.findById(emailId).filter(sicht::siehtEmail);
+    }
 
     /**
      * Status der KI-Email-Zuordnung (Gemini-API verfuegbar?).
@@ -52,8 +62,9 @@ public class EmailKiClassificationController {
      * @param emailId Die ID der zu klassifizierenden Email
      */
     @PostMapping("/classify/{emailId}")
-    public ResponseEntity<Map<String, Object>> classifyEmail(@PathVariable Long emailId) {
-        Optional<Email> emailOpt = emailRepository.findById(emailId);
+    public ResponseEntity<Map<String, Object>> classifyEmail(@PathVariable Long emailId,
+            org.springframework.security.core.Authentication authentication) {
+        Optional<Email> emailOpt = findeSichtbar(emailId, authentication);
         if (emailOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Email nicht gefunden: " + emailId));
         }
@@ -100,8 +111,9 @@ public class EmailKiClassificationController {
      * Klassifiziert eine Email UND wendet die Zuordnung direkt an (wenn confidence >= 0.6).
      */
     @PostMapping("/classify-and-assign/{emailId}")
-    public ResponseEntity<Map<String, Object>> classifyAndAssign(@PathVariable Long emailId) {
-        Optional<Email> emailOpt = emailRepository.findById(emailId);
+    public ResponseEntity<Map<String, Object>> classifyAndAssign(@PathVariable Long emailId,
+            org.springframework.security.core.Authentication authentication) {
+        Optional<Email> emailOpt = findeSichtbar(emailId, authentication);
         if (emailOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("error", "Email nicht gefunden: " + emailId));
         }
@@ -151,37 +163,6 @@ public class EmailKiClassificationController {
                 ),
                 "applied", applied,
                 "minConfidence", 0.6
-        ));
-    }
-
-    /**
-     * Zeigt den generierten Prompt für eine Email (Debug/Entwicklung).
-     */
-    @GetMapping("/debug-prompt/{emailId}")
-    public ResponseEntity<Map<String, Object>> debugPrompt(@PathVariable Long emailId) {
-        Optional<Email> emailOpt = emailRepository.findById(emailId);
-        if (emailOpt.isEmpty()) {
-            return ResponseEntity.status(404).body(Map.of("error", "Email nicht gefunden: " + emailId));
-        }
-        Email email = emailOpt.get();
-
-        String fromAddress = email.getFromAddress();
-        if (fromAddress == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Kein Absender"));
-        }
-
-        String emailLower = fromAddress.toLowerCase().trim();
-        List<Projekt> projekte = projektRepository.findByKundenEmail(emailLower);
-        List<Anfrage> anfragen = anfrageRepository.findByKundenEmail(emailLower);
-
-        String prompt = classificationService.buildUserPrompt(email, projekte, anfragen);
-
-        return ResponseEntity.ok(Map.of(
-                "emailId", emailId,
-                "subject", nullSafe(email.getSubject()),
-                "candidateCount", projekte.size() + anfragen.size(),
-                "promptLength", prompt.length(),
-                "prompt", prompt
         ));
     }
 

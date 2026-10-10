@@ -72,6 +72,7 @@ class NotificationControllerTest {
     @Mock org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
     @Mock org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService telefonBerechtigungService;
     @Mock org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService telefonBenachrichtigungService;
+    @Mock org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
 
     @InjectMocks
     private NotificationController controller;
@@ -282,5 +283,45 @@ class NotificationControllerTest {
         e.setZuordnungTyp(zuordnung);
         e.setSentAt(LocalDateTime.now().minusHours(1));
         return e;
+    }
+
+    @Test
+    @DisplayName("Glocke: Mails aus nicht sichtbaren Postfächern fehlen, fehlende Angaben werden ersetzt")
+    void glockeFiltertVerborgeneMailsUndErsetztLeereFelder() {
+        Email sichtbar = email("leer", "leer", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        sichtbar.setSubject(null);
+        sichtbar.setFromAddress(null);
+        sichtbar.setId(10L);
+        sichtbar.setSentAt(null);
+        Email verborgen = email("Persönlich an Max", "kunde@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        verborgen.setId(20L);
+        Email gelesen = email("Gelesen", "kunde@example.org", EmailDirection.IN, true, EmailZuordnungTyp.KEINE);
+        gelesen.setId(30L);
+        Email nichtZugeordnet = email("Bekannter Kunde", "kunde@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        nichtZugeordnet.setId(40L);
+        given(emailRepository.findUnassigned()).willReturn(List.of(nichtZugeordnet));
+        given(emailRepository.findInboxFiltered()).willReturn(List.of(sichtbar, verborgen, gelesen, nichtZugeordnet));
+        Email geloeschterNewsletter = email("Alt", "news@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        geloeschterNewsletter.setDeletedAt(LocalDateTime.now());
+        Email newsletter = email("Neu", "news@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        newsletter.setId(50L);
+        given(emailRepository.findNewsletter()).willReturn(List.of(geloeschterNewsletter, newsletter));
+        Email geloeschterSpam = email("Spam alt", "spam@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        geloeschterSpam.setDeletedAt(LocalDateTime.now());
+        given(emailRepository.findSpam()).willReturn(List.of(geloeschterSpam));
+        given(postfachSichtbarkeitService.verborgeneEmailIds(any())).willReturn(java.util.Set.of(20L));
+
+        NotificationSummaryDto summary = controller.getSummary(null, null);
+
+        assertThat(summary.categories()).filteredOn(c -> "EMAILS".equals(c.type())).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(1));
+        assertThat(summary.recentItems()).filteredOn(i -> i.link().startsWith("/emails/inbox/")).singleElement()
+                .satisfies(i -> {
+                    assertThat(i.title()).isEqualTo("Kein Betreff");
+                    assertThat(i.subtitle()).isEqualTo("Von: Unbekannt");
+                });
+        assertThat(summary.categories()).filteredOn(c -> "EMAILS_NEWSLETTER".equals(c.type())).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(1));
+        assertThat(summary.categories()).noneMatch(c -> "EMAILS_SPAM".equals(c.type()));
     }
 }

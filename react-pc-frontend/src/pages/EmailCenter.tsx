@@ -308,7 +308,7 @@ export default function EmailCenter() {
     const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
 
     // Drafts
-    interface DraftItem { id: number; recipient?: string; cc?: string; subject?: string; body?: string; fromAddress?: string; replyEmailId?: number; projektId?: number; anfrageId?: number; updatedAt?: string; }
+    interface DraftItem { id: number; recipient?: string; cc?: string; subject?: string; body?: string; fromAddress?: string; replyEmailId?: number; weitergeleitetVonEmailId?: number | null; projektId?: number; anfrageId?: number; updatedAt?: string; }
     const [drafts, setDrafts] = useState<DraftItem[]>([]);
     const [activeDraftId, setActiveDraftId] = useState<number | undefined>(undefined);
     const [activeDraft, setActiveDraft] = useState<DraftItem | null>(null);
@@ -1598,7 +1598,8 @@ export default function EmailCenter() {
                     replyQuote={replyQuote}
                     draftId={activeDraftId}
                     replyEmailId={replyToEmailId}
-                    weitergeleitetVonEmailId={forwardEmail?.id}
+                    // Weiterleitungs-Entwurf: fester Absender wie bei der Weiterleitung selbst.
+                    weitergeleitetVonEmailId={forwardEmail?.id ?? activeDraft?.weitergeleitetVonEmailId ?? undefined}
                     // Antwort-Postfach nur übergeben, wenn es zur beantworteten Mail gehört;
                     // sonst holt das Formular es selbst (z. B. Antwort auf eine ältere Mail im Verlauf).
                     antwortPostfach={forwardEmail

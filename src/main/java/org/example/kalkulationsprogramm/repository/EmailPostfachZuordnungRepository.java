@@ -41,4 +41,17 @@ public interface EmailPostfachZuordnungRepository extends JpaRepository<EmailPos
             + "WHERE NOT EXISTS (SELECT 1 FROM email_postfach_zuordnung z WHERE z.email_id = e.id)",
             nativeQuery = true)
     int ordneOhnePostfachZu(@Param("postfachId") Long postfachId);
+
+    /**
+     * Mails, die nur in Postfächern außerhalb von {@code sichtbarePostfachIds} liegen – für den
+     * Benutzer also unsichtbar. Mails ohne jede Zuordnung gelten als Hauptpostfach-Mails und
+     * tauchen hier nicht auf. {@code sichtbarePostfachIds} darf nicht leer sein (Platzhalter
+     * {@code -1} übergeben).
+     */
+    @Query("SELECT DISTINCT z.email.id FROM EmailPostfachZuordnung z "
+            + "WHERE z.postfach.id NOT IN :sichtbarePostfachIds "
+            + "AND NOT EXISTS (SELECT 1 FROM EmailPostfachZuordnung s "
+            + "WHERE s.email = z.email AND s.postfach.id IN :sichtbarePostfachIds)")
+    java.util.Set<Long> findEmailIdsNurInAnderenPostfaechern(
+            @Param("sichtbarePostfachIds") java.util.Collection<Long> sichtbarePostfachIds);
 }

@@ -9,6 +9,11 @@ export interface EmailDraftContent {
     /** Sammel-Mail einzeln verschicken. Ältere Entwürfe: fehlt. */
     einzelversand?: boolean;
     replyEmailId: number | null;
+    /**
+     * Weiterleitungs-Entwurf: ID der weitergeleiteten Mail. Beim Wiederöffnen steht
+     * der Absender dann wieder fest auf deren Postfach. Ältere Entwürfe: fehlt.
+     */
+    weitergeleitetVonEmailId?: number | null;
     projektId: number | null;
     anfrageId: number | null;
     geschaeftsdokument: boolean;

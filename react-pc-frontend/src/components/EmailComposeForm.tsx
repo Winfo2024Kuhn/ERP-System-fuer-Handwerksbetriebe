@@ -226,7 +226,7 @@ export function EmailComposeForm({
     initialBody = '',
     replyQuote,
     replyEmailId: initialReplyEmailId,
-    weitergeleitetVonEmailId,
+    weitergeleitetVonEmailId: initialWeitergeleitetVonEmailId,
     antwortPostfach: bekanntesAntwortPostfach,
     initialAttachments,
     geschaeftsdokument: initialGeschaeftsdokument = false,
@@ -238,6 +238,8 @@ export function EmailComposeForm({
     const inline = variant !== 'modal';
     const toast = useToast();
     const [replyEmailId, setReplyEmailId] = useState(initialReplyEmailId);
+    /** Weiterleitung – auch aus einem gespeicherten Entwurf, damit der Absender fest bleibt. */
+    const [weitergeleitetVonEmailId, setWeitergeleitetVonEmailId] = useState(initialWeitergeleitetVonEmailId);
     const [geschaeftsdokument, setGeschaeftsdokument] = useState(initialGeschaeftsdokument);
     const [draftLoading, setDraftLoading] = useState(!!initialDraftId);
     const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
@@ -500,13 +502,14 @@ export function EmailComposeForm({
             postfachId: absenderModus === 'auswahl' ? postfachId : null,
             einzelversand: einzelversandAktiv,
             replyEmailId: replyEmailId || null,
+            weitergeleitetVonEmailId: weitergeleitetVonEmailId || null,
             projektId: !isAnfrageContext && entityId ? entityId : null,
             anfrageId: isAnfrageContext && entityId ? entityId : null,
             geschaeftsdokument,
         },
         files: uploadedFiles.map(entry => entry.file),
     }), [recipient, ccRecipients, subject, body, absenderModus, gewaehltesPostfach, postfachId, einzelversandAktiv,
-        replyEmailId, isAnfrageContext, entityId, geschaeftsdokument, uploadedFiles]);
+        replyEmailId, weitergeleitetVonEmailId, isAnfrageContext, entityId, geschaeftsdokument, uploadedFiles]);
     const draft = useEmailDraft(draftSnapshot, initialDraftId,
         !draftLoading && !draftLoadError && !komprimiereAnhaenge, reportDraftError);
     const markDirty = draft.markDirty;
@@ -530,6 +533,7 @@ export function EmailComposeForm({
             setEinzelversand(gespeicherterEinzelversand);
             if (content.postfachId != null) setPostfachId(content.postfachId);
             setReplyEmailId(content.replyEmailId ?? initialReplyEmailId);
+            setWeitergeleitetVonEmailId(content.weitergeleitetVonEmailId ?? initialWeitergeleitetVonEmailId ?? undefined);
             setGeschaeftsdokument(content.geschaeftsdokument ?? initialGeschaeftsdokument);
             if (content.projektId) setZuordnung({ typ: 'PROJEKT', id: content.projektId, titel: '' });
             else if (content.anfrageId) setZuordnung({ typ: 'ANFRAGE', id: content.anfrageId, titel: '' });
@@ -546,7 +550,7 @@ export function EmailComposeForm({
         });
         return () => { cancelled = true; };
     }, [initialDraftId, loadAttempt, initialRecipient, initialSubject, initialBody,
-        initialReplyEmailId, initialGeschaeftsdokument, reportDraftError]);
+        initialReplyEmailId, initialWeitergeleitetVonEmailId, initialGeschaeftsdokument, reportDraftError]);
 
     // After restoring all attachments the editable element is mounted again.
     useEffect(() => {
@@ -1283,8 +1287,8 @@ export function EmailComposeForm({
                                         inline={inline}
                                         postfach={festesPostfach}
                                         hinweis={weitergeleitetVonEmailId
-                                            ? 'Weiterleitungen gehen über das Postfach raus, in dem die Mail ankam.'
-                                            : 'Antworten gehen über das Postfach raus, in dem die Mail ankam.'}
+                                            ? 'Weiterleitungen gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.'
+                                            : 'Antworten gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.'}
                                     />
                                 ) : geschaeftsdokument ? (
                                     <AbsenderPostfachAuswahl

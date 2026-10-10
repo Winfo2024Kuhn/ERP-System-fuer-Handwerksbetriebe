@@ -78,6 +78,7 @@ public class NotificationController {
         private final org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
         private final org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService telefonBerechtigungService;
         private final org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService telefonBenachrichtigungService;
+        private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
 
         @GetMapping("/summary")
         public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId,
@@ -129,51 +130,56 @@ public class NotificationController {
                         /* Funnel-Auswertung darf das Notification-Center nicht blockieren */
                 }
 
-                // 1. Ungelesene E-Mails
-                try {
-                        Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
-                                        .map(Email::getId)
-                                        .collect(Collectors.toSet());
-                        long inboxUnread = emailRepository.findInboxFiltered().stream()
-                                        .filter(e -> !unassignedIds.contains(e.getId()))
-                                        .filter(e -> !e.isRead())
-                                        .count();
-                        if (inboxUnread > 0) {
-                                categories.add(new CategoryDto("EMAILS", "Ungelesene E-Mails", (int) inboxUnread,
-                                                "Mail", "/emails"));
-
-                                emailRepository.findInboxFiltered().stream()
+                // 1. Ungelesene E-Mails – nur aus Postfächern, die der Benutzer sieht (Admin: alle).
+                // Lässt sich die Sichtbarkeit nicht ermitteln, gibt es keine Mail-Hinweise (lieber
+                // nichts zeigen als Betreff und Absender aus fremden Postfächern).
+                java.util.function.Predicate<Email> sichtbar = sichtbareMails(authentication);
+                if (sichtbar != null) {
+                        try {
+                                Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
+                                                .map(Email::getId)
+                                                .collect(Collectors.toSet());
+                                List<Email> inboxUngelesen = emailRepository.findInboxFiltered().stream()
                                                 .filter(e -> !unassignedIds.contains(e.getId()))
                                                 .filter(e -> !e.isRead())
-                                                .sorted(Comparator.comparing(Email::getSentAt,
-                                                                Comparator.nullsLast(Comparator.reverseOrder())))
-                                                .limit(3)
-                                                .forEach(e -> recentItems.add(new RecentItemDto(
-                                                                "EMAIL",
-                                                                e.getSubject() != null ? e.getSubject()
-                                                                                : "Kein Betreff",
-                                                                "Von: " + (e.getFromAddress() != null
-                                                                                ? e.getFromAddress()
-                                                                                : "Unbekannt"),
-                                                                e.getSentAt() != null ? e.getSentAt().toString() : "",
-                                                                "/emails/inbox/" + e.getId())));
-                        }
-                } catch (Exception ignored) {
-                        /* Email service may not be available */ }
+                                                .filter(sichtbar)
+                                                .toList();
+                                long inboxUnread = inboxUngelesen.size();
+                                if (inboxUnread > 0) {
+                                        categories.add(new CategoryDto("EMAILS", "Ungelesene E-Mails", (int) inboxUnread,
+                                                        "Mail", "/emails"));
 
-                // 1b. Ungelesene E-Mails aus weiteren Ordnern (Projekte, Angebote, Lieferanten, Spam, Newsletter)
-                addEmailCategory(categories, recentItems, emailRepository.findProjectEmails(),
-                        "EMAILS_PROJECTS", "Ungelesene Projekt-E-Mails", "projects");
-                addEmailCategory(categories, recentItems, emailRepository.findAnfrageEmails(),
-                        "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers");
-                addEmailCategory(categories, recentItems, emailRepository.findLieferantEmails(),
-                        "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers");
-                addEmailCategory(categories, recentItems, emailRepository.findSpam().stream()
-                        .filter(e -> e.getDeletedAt() == null).toList(),
-                        "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam");
-                addEmailCategory(categories, recentItems, emailRepository.findNewsletter().stream()
-                        .filter(e -> e.getDeletedAt() == null).toList(),
-                        "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter");
+                                        inboxUngelesen.stream()
+                                                        .sorted(Comparator.comparing(Email::getSentAt,
+                                                                        Comparator.nullsLast(Comparator.reverseOrder())))
+                                                        .limit(3)
+                                                        .forEach(e -> recentItems.add(new RecentItemDto(
+                                                                        "EMAIL",
+                                                                        e.getSubject() != null ? e.getSubject()
+                                                                                        : "Kein Betreff",
+                                                                        "Von: " + (e.getFromAddress() != null
+                                                                                        ? e.getFromAddress()
+                                                                                        : "Unbekannt"),
+                                                                        e.getSentAt() != null ? e.getSentAt().toString() : "",
+                                                                        "/emails/inbox/" + e.getId())));
+                                }
+                        } catch (Exception ignored) {
+                                /* Email service may not be available */ }
+
+                        // 1b. Ungelesene E-Mails aus weiteren Ordnern (Projekte, Angebote, Lieferanten, Spam, Newsletter)
+                        addEmailCategory(categories, recentItems, emailRepository.findProjectEmails(), sichtbar,
+                                "EMAILS_PROJECTS", "Ungelesene Projekt-E-Mails", "projects");
+                        addEmailCategory(categories, recentItems, emailRepository.findAnfrageEmails(), sichtbar,
+                                "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers");
+                        addEmailCategory(categories, recentItems, emailRepository.findLieferantEmails(), sichtbar,
+                                "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers");
+                        addEmailCategory(categories, recentItems, emailRepository.findSpam().stream()
+                                .filter(e -> e.getDeletedAt() == null).toList(), sichtbar,
+                                "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam");
+                        addEmailCategory(categories, recentItems, emailRepository.findNewsletter().stream()
+                                .filter(e -> e.getDeletedAt() == null).toList(), sichtbar,
+                                "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter");
+                }
 
                 // 2. Offene Urlaubsanträge
                 try {
@@ -777,8 +783,24 @@ public class NotificationController {
                 }
         }
 
+        /**
+         * Filter auf Mails aus Postfächern, die der Benutzer sieht; {@code null}, wenn sich das
+         * nicht ermitteln lässt (dann keine Mail-Hinweise).
+         */
+        private java.util.function.Predicate<Email> sichtbareMails(
+                        org.springframework.security.core.Authentication authentication) {
+                try {
+                        Set<Long> verborgen = postfachSichtbarkeitService
+                                        .verborgeneEmailIds(postfachSichtbarkeitService.fuer(authentication));
+                        return e -> !verborgen.contains(e.getId());
+                } catch (RuntimeException e) {
+                        return null;
+                }
+        }
+
         private void addEmailCategory(List<CategoryDto> categories, List<RecentItemDto> recentItems,
-                        List<Email> allEmails, String type, String label, String folder) {
+                        List<Email> allEmails, java.util.function.Predicate<Email> sichtbar,
+                        String type, String label, String folder) {
                 try {
                         // Selbst gesendete E-Mails (OUT) tauchen in den Ordnern Projekte/Angebote/Lieferanten
                         // sowie Spam/Newsletter mit auf, weil die Repo-Queries dort nicht nach Direction filtern.
@@ -786,7 +808,8 @@ public class NotificationController {
                         // klingelt es bei jeder eigenen Antwort.
                         List<Email> unread = allEmails.stream()
                                         .filter(e -> e.getDirection() == EmailDirection.IN)
-                                        .filter(e -> !e.isRead()).toList();
+                                        .filter(e -> !e.isRead())
+                                        .filter(sichtbar).toList();
                         if (unread.isEmpty()) return;
                         categories.add(new CategoryDto(type, label, unread.size(), "Mail",
                                         "/emails/" + folder));

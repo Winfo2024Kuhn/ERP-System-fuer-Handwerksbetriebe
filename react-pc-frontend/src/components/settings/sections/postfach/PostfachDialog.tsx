@@ -1,18 +1,23 @@
-import { useId, useState } from 'react';
-import { ChevronDown, ChevronUp, Loader2, Save, Server, TestTube, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
+import { ChevronDown, ChevronUp, Eye, Loader2, PlugZap, Save, Server, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../ui/dialog';
 import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
 import { useToast } from '../../../ui/toast';
+import { useConfirm } from '../../../ui/confirm-dialog';
 import { PasswordField, TestResultBanner } from '../../settingsUi';
 import { parseErrorMessage } from '../../settingsApi';
+import { cn } from '../../../../lib/utils';
 import type {
     PostfachDto,
     PostfachSpeichernRequest,
     PostfachTestErgebnis,
     PostfachTestRequest,
 } from '../../../../features/email/postfach';
+
+const AUSLAUFEND_KEIN_HAUPTPOSTFACH = 'Ein auslaufendes Postfach kann nicht Hauptpostfach werden. Zuerst „Läuft aus“ abwählen.';
+const AUSLAUFEND_KEIN_RECHNUNGSPOSTFACH = 'Ein auslaufendes Postfach kann nicht für Rechnungen & Mahnungen genutzt werden. Zuerst „Läuft aus“ abwählen.';
 
 /** Standard-Ports bei Hetzner und den meisten Anbietern (SSL). */
 const SMTP_PORT_STANDARD = '465';
@@ -25,6 +30,7 @@ interface Formular {
     hauptpostfach: boolean;
     fuerGeschaeftsdokumente: boolean;
     aktiv: boolean;
+    laeuftAus: boolean;
     benutzername: string;
     smtpHost: string;
     smtpPort: string;
@@ -48,6 +54,7 @@ function startwerte(postfach: PostfachDto | null, vorlage: PostfachDto | undefin
             hauptpostfach: postfach.hauptpostfach,
             fuerGeschaeftsdokumente: postfach.fuerGeschaeftsdokumente,
             aktiv: postfach.aktiv,
+            laeuftAus: postfach.laeuftAus === true,
             // Gleich der Adresse = Standard, dann bleibt das Feld leer und zeigt die Adresse als Platzhalter.
             benutzername: postfach.benutzername && postfach.benutzername !== postfach.emailAdresse ? postfach.benutzername : '',
             smtpHost: alsText(postfach.smtpHost),
@@ -63,6 +70,7 @@ function startwerte(postfach: PostfachDto | null, vorlage: PostfachDto | undefin
         hauptpostfach: erstesPostfach,
         fuerGeschaeftsdokumente: false,
         aktiv: true,
+        laeuftAus: false,
         benutzername: '',
         smtpHost: alsText(vorlage?.smtpHost),
         smtpPort: alsText(vorlage?.smtpPort) || SMTP_PORT_STANDARD,
@@ -107,15 +115,24 @@ export function PostfachDialog({
     open, postfach, vorlage, erstesPostfach = false, anzahlPostfaecher, onClose, onSaved,
 }: PostfachDialogProps) {
     const toast = useToast();
+    const confirm = useConfirm();
     const idPraefix = useId();
     const feldId = (name: string) => `${idPraefix}-${name}`;
     const [formular, setFormular] = useState<Formular>(() => startwerte(postfach, vorlage, erstesPostfach));
+    /** Ausgangsstand, um ungespeicherte Änderungen zu erkennen. */
+    const [ausgangsstand] = useState<Formular>(() => startwerte(postfach, vorlage, erstesPostfach));
     const [serverOffen, setServerOffen] = useState(false);
     const [testEmpfaenger, setTestEmpfaenger] = useState('');
     const [speichert, setSpeichert] = useState(false);
     const [testet, setTestet] = useState(false);
     const [testErgebnis, setTestErgebnis] = useState<PostfachTestErgebnis | null>(null);
     const [fehler, setFehler] = useState<string | null>(null);
+    const fehlerRef = useRef<HTMLDivElement>(null);
+
+    // Die Meldung steht oben im scrollbaren Inhalt – wer weiter unten speichert, soll sie trotzdem sehen.
+    useEffect(() => {
+        if (fehler) fehlerRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    }, [fehler]);
 
     const bearbeiten = !!postfach;
     /** Das gespeicherte Hauptpostfach kann man nur abgeben, indem ein anderes es wird. */
@@ -153,6 +170,7 @@ export function PostfachDialog({
             sortierung: postfach?.sortierung ?? anzahlPostfaecher * 10,
             hauptpostfach: formular.hauptpostfach,
             fuerGeschaeftsdokumente: formular.fuerGeschaeftsdokumente,
+            laeuftAus: formular.laeuftAus,
             benutzername: benutzername(),
             // Leer = gespeichertes Passwort bleibt unverändert.
             passwort: formular.passwort ? formular.passwort : null,
@@ -160,6 +178,10 @@ export function PostfachDialog({
             smtpPort: lesePort(formular.smtpPort) ?? null,
             imapHost: leerZuNull(formular.imapHost),
             imapPort: lesePort(formular.imapPort) ?? null,
+            // Sichtbarkeit wird unter Einstellungen → Berechtigungen gepflegt: hier immer unverändert.
+            sichtbarFuerAlle: null,
+            abteilungIds: null,
+            benutzerIds: null,
         };
         setSpeichert(true);
         try {
@@ -242,6 +264,33 @@ export function PostfachDialog({
     ].filter(Boolean).join(' · ');
 
     const beschaeftigt = speichert || testet;
+    // „Läuft aus“ verträgt sich nicht mit Hauptpostfach und Rechnungs-Postfach – in beide Richtungen sperren.
+    const auslaufenGesperrtGrund = formular.hauptpostfach
+        ? 'Das Hauptpostfach kann nicht auslaufen. Bitte zuerst ein anderes Postfach zum Hauptpostfach machen.'
+        : formular.fuerGeschaeftsdokumente
+            ? 'Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.'
+            : null;
+    const hauptpostfachGesperrtDurchAuslaufen = formular.laeuftAus && !istGespeichertesHauptpostfach;
+    const rechnungenGesperrtDurchAuslaufen = formular.laeuftAus;
+    const ungespeichert = (Object.keys(ausgangsstand) as (keyof Formular)[])
+        .some(feld => formular[feld] !== ausgangsstand[feld]);
+
+    /**
+     * Link „Einstellungen → Berechtigungen“: wechselt den Reiter und schließt damit den Dialog.
+     * Ungespeicherte Eingaben gehen dabei nicht still verloren – erst nachfragen.
+     */
+    const zuDenBerechtigungen = async (event: MouseEvent<HTMLAnchorElement>) => {
+        if (!ungespeichert) return; // Normaler Anker-Sprung.
+        event.preventDefault();
+        const ok = await confirm({
+            title: 'Änderungen verwerfen?',
+            message: 'Sie haben noch nicht gespeichert. Trotzdem zu den Berechtigungen wechseln?',
+            confirmLabel: 'Verwerfen',
+            cancelLabel: 'Weiter bearbeiten',
+            variant: 'warning',
+        });
+        if (ok) window.location.hash = 'berechtigungen';
+    };
 
     return (
         <Dialog open={open} onOpenChange={(offen) => { if (!offen && !beschaeftigt) onClose(); }}
@@ -260,7 +309,7 @@ export function PostfachDialog({
 
                 <div className="-mx-1 flex-1 min-h-0 space-y-5 overflow-y-auto px-1 pb-1">
                     {fehler && (
-                        <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                        <div ref={fehlerRef} role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                             {fehler}
                         </div>
                     )}
@@ -303,11 +352,13 @@ export function PostfachDialog({
                     </div>
 
                     <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                        <label className="flex cursor-pointer items-start gap-3 select-none">
+                        <label className={cn('flex items-start gap-3 select-none',
+                            hauptpostfachGesperrtDurchAuslaufen ? 'cursor-not-allowed' : 'cursor-pointer')}
+                            title={hauptpostfachGesperrtDurchAuslaufen ? AUSLAUFEND_KEIN_HAUPTPOSTFACH : undefined}>
                             <input
                                 type="checkbox"
                                 checked={formular.hauptpostfach}
-                                disabled={istGespeichertesHauptpostfach}
+                                disabled={istGespeichertesHauptpostfach || hauptpostfachGesperrtDurchAuslaufen}
                                 onChange={(e) => {
                                     setze('hauptpostfach', e.target.checked);
                                     if (e.target.checked) setze('aktiv', true);
@@ -319,26 +370,35 @@ export function PostfachDialog({
                                 <span className="block text-xs text-slate-500">
                                     {istGespeichertesHauptpostfach
                                         ? 'Das ist Ihr Hauptpostfach. Um das zu ändern, ein anderes Postfach als Hauptpostfach markieren.'
-                                        : 'Darüber geht alles raus, wofür kein anderes Postfach passt. Es gibt genau eins – ein bisheriges Hauptpostfach verliert den Haken.'}
+                                        : hauptpostfachGesperrtDurchAuslaufen
+                                            ? AUSLAUFEND_KEIN_HAUPTPOSTFACH
+                                            : 'Darüber geht alles raus, wofür kein anderes Postfach passt. Es gibt genau eins – ein bisheriges Hauptpostfach verliert den Haken.'}
                                 </span>
                             </span>
                         </label>
 
-                        <label className="flex cursor-pointer items-start gap-3 select-none">
+                        <label className={cn('flex items-start gap-3 select-none',
+                            rechnungenGesperrtDurchAuslaufen ? 'cursor-not-allowed' : 'cursor-pointer')}
+                            title={rechnungenGesperrtDurchAuslaufen ? AUSLAUFEND_KEIN_RECHNUNGSPOSTFACH : undefined}>
                             <input
                                 type="checkbox"
                                 checked={formular.fuerGeschaeftsdokumente}
+                                disabled={rechnungenGesperrtDurchAuslaufen}
                                 onChange={(e) => setze('fuerGeschaeftsdokumente', e.target.checked)}
-                                className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 disabled:opacity-60"
                             />
                             <span>
                                 <span className="font-medium text-slate-900">Für Rechnungen &amp; Mahnungen</span>
                                 <span className="block text-xs text-slate-500">
-                                    Rechnungen, Mahnungen, Angebote und Auftragsbestätigungen gehen über dieses
-                                    Postfach raus. Das hilft, wenn solche Mails beim Kunden im Spam landen: Bei einer
-                                    Freemail-Adresse (t-online, GMX, Web.de) gehören die Echtheitsnachweise dem
-                                    Anbieter, nicht Ihnen. Mit einem Postfach auf der eigenen Domain fällt dieser
-                                    Nachteil weg. Ist kein Postfach dafür markiert, nimmt das System das Hauptpostfach.
+                                    {rechnungenGesperrtDurchAuslaufen ? AUSLAUFEND_KEIN_RECHNUNGSPOSTFACH : (
+                                        <>
+                                            Rechnungen, Mahnungen, Angebote und Auftragsbestätigungen gehen über dieses
+                                            Postfach raus. Das hilft, wenn solche Mails beim Kunden im Spam landen: Bei einer
+                                            Freemail-Adresse (t-online, GMX, Web.de) gehören die Echtheitsnachweise dem
+                                            Anbieter, nicht Ihnen. Mit einem Postfach auf der eigenen Domain fällt dieser
+                                            Nachteil weg. Ist kein Postfach dafür markiert, nimmt das System das Hauptpostfach.
+                                        </>
+                                    )}
                                 </span>
                             </span>
                         </label>
@@ -360,7 +420,36 @@ export function PostfachDialog({
                                 </span>
                             </span>
                         </label>
+
+                        <label className={cn('flex items-start gap-3 select-none',
+                            auslaufenGesperrtGrund ? 'cursor-not-allowed' : 'cursor-pointer')}
+                            title={auslaufenGesperrtGrund ?? undefined}>
+                            <input
+                                type="checkbox"
+                                checked={formular.laeuftAus}
+                                disabled={!!auslaufenGesperrtGrund}
+                                onChange={(e) => setze('laeuftAus', e.target.checked)}
+                                className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 disabled:opacity-60"
+                            />
+                            <span>
+                                <span className="font-medium text-slate-900">Läuft aus</span>
+                                <span className="block text-xs text-slate-500">
+                                    {auslaufenGesperrtGrund ?? 'Mails kommen hier weiter an. Antworten gehen über das Hauptpostfach raus, und für neue Mails ist es nicht mehr wählbar. So gewöhnen sich Ihre Kunden an die neue Adresse.'}
+                                </span>
+                            </span>
+                        </label>
                     </div>
+
+                    <p className="flex items-start gap-1.5 text-xs text-slate-500" data-testid="postfach-sichtbarkeit-hinweis">
+                        <Eye className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>
+                            Wer dieses Postfach sehen darf, legen Sie unter{' '}
+                            <a href="#berechtigungen" onClick={(e) => void zuDenBerechtigungen(e)} className="font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded">
+                                Einstellungen → Berechtigungen
+                            </a>{' '}
+                            fest.
+                        </span>
+                    </p>
 
                     <div className="rounded-xl border border-slate-200">
                         <button
@@ -461,7 +550,7 @@ export function PostfachDialog({
                                 title={testGrund}
                                 className="border-rose-300 text-rose-700 hover:bg-rose-50"
                             >
-                                {testet ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" /> : <TestTube className="h-4 w-4" />}
+                                {testet ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" /> : <PlugZap aria-hidden="true" className="h-4 w-4" />}
                                 {testet ? 'Teste …' : 'Verbindung testen'}
                             </Button>
                         </div>

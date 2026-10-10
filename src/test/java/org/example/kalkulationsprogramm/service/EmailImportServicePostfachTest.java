@@ -179,6 +179,102 @@ class EmailImportServicePostfachTest {
             verify(emailRepository, never()).findByMessageId(anyString());
         }
 
+        // ---- Sicherheits-Nachtrag 2.4: Message-ID allein reicht nicht ----
+
+        private Message nachricht(String messageId, String von, String betreff) throws Exception {
+            Message msg = nachricht(messageId);
+            when(msg.getFrom()).thenReturn(von == null ? null
+                    : new jakarta.mail.Address[] { new jakarta.mail.internet.InternetAddress(von) });
+            // Bei falschem Absender wird der Betreff gar nicht mehr gelesen.
+            org.mockito.Mockito.lenient().when(msg.getSubject()).thenReturn(betreff);
+            return msg;
+        }
+
+        private Email gespeichert(String von, String betreff) {
+            Email vorhanden = new Email();
+            vorhanden.setId(11L);
+            vorhanden.setDirection(EmailDirection.IN);
+            vorhanden.setFromAddress(von);
+            vorhanden.setSubject(betreff);
+            return vorhanden;
+        }
+
+        private void bekannt(String messageId, Email vorhanden) {
+            when(emailRepository.existsByMessageId(messageId)).thenReturn(true);
+            when(emailRepository.findByMessageId(messageId)).thenReturn(Optional.of(vorhanden));
+        }
+
+        @Test
+        void fremderAbsenderMitBekannterMessageIdBekommtKeinPostfach() throws Exception {
+            Email vorhanden = gespeichert("kunde@example.org", "Anfrage Treppe");
+            bekannt("<geheim@example.org>", vorhanden);
+            Message angriff = nachricht("<geheim@example.org>", "angreifer@example.net", "Anfrage Treppe");
+
+            assertThat(service.importMessage(angriff, mock(IMAPFolder.class), EmailDirection.IN, 5L)).isFalse();
+
+            assertThat(vorhanden.getPostfachZuordnungen()).isEmpty();
+            verify(emailRepository, never()).save(any());
+            verify(emailAbsenderRepository, never()).getReferenceById(any());
+        }
+
+        @Test
+        void andererBetreffMitBekannterMessageIdBekommtKeinPostfach() throws Exception {
+            Email vorhanden = gespeichert("kunde@example.org", "Anfrage Treppe");
+            bekannt("<geheim@example.org>", vorhanden);
+            Message angriff = nachricht("<geheim@example.org>", "kunde@example.org", "Bitte hier klicken");
+
+            service.importMessage(angriff, mock(IMAPFolder.class), EmailDirection.IN, 5L);
+
+            assertThat(vorhanden.getPostfachZuordnungen()).isEmpty();
+            verify(emailRepository, never()).save(any());
+        }
+
+        @Test
+        void gleicheMailMitAnderenSchreibweisenWirdZugeordnet() throws Exception {
+            Email vorhanden = gespeichert("Kunde@Example.org", "Anfrage  Treppe");
+            bekannt("<doppelt@example.org>", vorhanden);
+            Message msg = nachricht("<doppelt@example.org>", "Max Mustermann <kunde@example.ORG>", " anfrage treppe ");
+            IMAPFolder folder = mock(IMAPFolder.class);
+            when(folder.getFullName()).thenReturn("INBOX");
+            EmailAbsender max = new EmailAbsender();
+            max.setId(5L);
+            when(emailAbsenderRepository.getReferenceById(5L)).thenReturn(max);
+
+            service.importMessage(msg, folder, EmailDirection.IN, 5L);
+
+            assertThat(vorhanden.getPostfachZuordnungen()).singleElement()
+                    .satisfies(z -> assertThat(z.getPostfach()).isSameAs(max));
+            verify(emailRepository).save(vorhanden);
+        }
+
+        @Test
+        void absenderOhneInternetAdresseWirdAlsTextVerglichen() throws Exception {
+            Email vorhanden = gespeichert("kunde@example.org", null);
+            Message msg = mock(Message.class);
+            jakarta.mail.Address roh = mock(jakarta.mail.Address.class);
+            when(roh.toString()).thenReturn("kunde@example.org");
+            when(msg.getFrom()).thenReturn(new jakarta.mail.Address[] { roh });
+
+            assertThat(EmailImportService.passtZurGespeichertenMail(vorhanden, msg)).isTrue();
+
+            when(msg.getFrom()).thenReturn(new jakarta.mail.Address[] { null });
+            assertThat(EmailImportService.passtZurGespeichertenMail(vorhanden, msg)).isFalse();
+            when(msg.getFrom()).thenReturn(new jakarta.mail.Address[0]);
+            assertThat(EmailImportService.passtZurGespeichertenMail(vorhanden, msg)).isFalse();
+        }
+
+        @Test
+        void normalisierung() {
+            assertThat(EmailImportService.normalisierteAdresse(null)).isEmpty();
+            assertThat(EmailImportService.normalisierteAdresse(" Max Mustermann <Max@Example.com> ")).isEqualTo("max@example.com");
+            assertThat(EmailImportService.normalisierteAdresse("max@example.com>")).isEqualTo("max@example.com>");
+            assertThat(EmailImportService.normalisierteAdresse("> kaputt <")).isEqualTo("> kaputt <");
+            assertThat(EmailImportService.normalisierterBetreff(null)).isEmpty();
+            assertThat(EmailImportService.normalisierterBetreff(" AW:\t Angebot\r\n  Treppe ")).isEqualTo("aw: angebot treppe");
+            // ReDoS-Probe: lange Leerzeichenfolge ist sofort durch.
+            assertThat(EmailImportService.normalisierterBetreff("a" + " ".repeat(50_000) + "b")).isEqualTo("a b");
+        }
+
         @Test
         void verschwundeneMailWirdIgnoriert() throws Exception {
             Message msg = nachricht("<weg@example.org>");

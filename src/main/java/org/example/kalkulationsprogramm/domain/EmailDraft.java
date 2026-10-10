@@ -67,6 +67,13 @@ public class EmailDraft {
     @Column(name = "postfach_id")
     private Long postfachId;
 
+    /**
+     * Weiterleitung: ID der weitergeleiteten Mail. Beim Wiederöffnen bleibt der Absender
+     * fest das Postfach dieser Mail.
+     */
+    @Column(name = "weitergeleitet_von_email_id")
+    private Long weitergeleitetVonEmailId;
+
     /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail. */
     @Column(nullable = false)
     private boolean einzelversand;

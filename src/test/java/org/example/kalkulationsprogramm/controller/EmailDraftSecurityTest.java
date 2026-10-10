@@ -28,6 +28,7 @@ class EmailDraftSecurityTest {
     }
     @Autowired private MockMvc mvc;
     @MockBean private EmailDraftService service;
+    @MockBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
 
     @Test
@@ -58,6 +59,8 @@ class EmailDraftSecurityTest {
     @Test
     @WithMockUser
     void authenticatedUserCanDownloadTheirTeamsDraftAttachment() throws Exception {
+        when(service.get(42L)).thenReturn(new org.example.kalkulationsprogramm.dto.Email.EmailDraftDto(42L, null, null,
+                "Plan", null, null, null, null, null, false, null, false, null, null, null, java.util.List.of()));
         when(service.download(42L, 7L)).thenReturn(new EmailDraftService.Download("plan.pdf", "application/pdf", new byte[] {1, 2, 3}));
         mvc.perform(get("/api/emails/drafts/42/attachments/7"))
                 .andExpect(status().isOk()).andExpect(content().bytes(new byte[] {1, 2, 3}));

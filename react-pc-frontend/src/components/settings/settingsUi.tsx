@@ -138,16 +138,22 @@ interface SaveButtonProps {
     onClick: () => void;
     saving: boolean;
     disabled?: boolean;
+    /** Tooltip – bei deaktiviertem Knopf: warum. */
+    title?: string;
+    /** Eindeutiger Name, wenn mehrere Speichern-Knöpfe auf einer Seite stehen. */
+    ariaLabel?: string;
     children: React.ReactNode;
 }
 
 /** Rechtsbündiger Speichern-Knopf mit Ladekringel während des Speicherns. */
-export function SaveButton({ onClick, saving, disabled, children }: SaveButtonProps) {
+export function SaveButton({ onClick, saving, disabled, title, ariaLabel, children }: SaveButtonProps) {
     return (
         <div className="flex justify-end mt-6">
             <Button
                 onClick={onClick}
                 disabled={saving || disabled}
+                title={title}
+                aria-label={ariaLabel}
                 className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
             >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

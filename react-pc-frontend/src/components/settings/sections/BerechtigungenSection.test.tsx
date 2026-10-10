@@ -3,6 +3,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { BerechtigungenSection } from './BerechtigungenSection';
 const { toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('../../ui/toast', () => ({ useToast: () => toast }));
+// Die Postfach-Karte lädt eigenständig und hat eigene Tests (berechtigungen/PostfachSichtbarkeitKarte.test.tsx).
+vi.mock('./berechtigungen/PostfachSichtbarkeitKarte', () => ({ PostfachSichtbarkeitKarte: () => <div data-testid="postfach-karte" /> }));
 const fetchMock = vi.fn();
 beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('fetch', fetchMock); });
 const abteilung = { abteilungId: 1, abteilungName: 'Testabteilung', berechtigungen: [], darfMonatAbschliessen: false };
@@ -61,4 +63,10 @@ it('zeigt den Typ BELEG als Klartext', async () => {
     render(<BerechtigungenSection />);
     expect(await screen.findByRole('checkbox', { name: 'Belege (Kasse, Bank) sehen' })).toBeChecked();
     expect(screen.queryByText('BELEG')).not.toBeInTheDocument();
+});
+it('zeigt die Postfach-Karte ganz oben, auch während die Abteilungen noch laden', async () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    render(<BerechtigungenSection />);
+    expect(screen.getByTestId('postfach-karte')).toBeInTheDocument();
+    expect(screen.getByText(/Lade Einstellungen/)).toBeInTheDocument();
 });

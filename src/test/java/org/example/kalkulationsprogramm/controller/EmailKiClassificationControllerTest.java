@@ -48,6 +48,16 @@ class EmailKiClassificationControllerTest {
     @MockBean
     private AnfrageRepository anfrageRepository;
 
+    @MockBean
+    private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void allesSichtbar() {
+        // Sichtbarkeit prüft EmailKiClassificationSicherheitTest gezielt.
+        when(postfachSichtbarkeitService.fuer(any())).thenReturn(
+                org.example.kalkulationsprogramm.service.PostfachSichtbarkeit.ALLES);
+    }
+
     @Test
     void getStatus_returnsGeminiEnabledState() throws Exception {
         when(geminiClient.isEnabled()).thenReturn(true);
@@ -123,21 +133,11 @@ class EmailKiClassificationControllerTest {
     }
 
     @Test
-    void debugPrompt_returnsPromptDetails() throws Exception {
-        Email testEmail = createTestEmail(100L, "test@example.com", "Test Betreff");
-        Projekt testProjekt = createTestProjekt(42L, "Testprojekt");
-
-        when(emailRepository.findById(100L)).thenReturn(Optional.of(testEmail));
-        when(projektRepository.findByKundenEmail("test@example.com")).thenReturn(List.of(testProjekt));
-        when(anfrageRepository.findByKundenEmail("test@example.com")).thenReturn(List.of());
-        when(classificationService.buildUserPrompt(any(), anyList(), anyList()))
-                .thenReturn("Test-Prompt Inhalt");
-
+    void debugPromptGibtEsNichtMehr() throws Exception {
+        // Zeigte Mail-Inhalte ohne Sichtbarkeitsprüfung und wurde von keinem Frontend genutzt.
         mockMvc.perform(get("/api/email-ki/debug-prompt/100"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.emailId").value(100))
-                .andExpect(jsonPath("$.prompt").value("Test-Prompt Inhalt"))
-                .andExpect(jsonPath("$.candidateCount").value(1));
+                .andExpect(status().isNotFound());
+        org.mockito.Mockito.verifyNoInteractions(emailRepository, classificationService);
     }
 
     // ═══════════════════════════════════════════════════════════════

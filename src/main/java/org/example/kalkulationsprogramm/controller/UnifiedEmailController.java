@@ -99,6 +99,7 @@ public class UnifiedEmailController {
     private final SteuerberaterKontaktService steuerberaterKontaktService;
     private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -145,27 +146,92 @@ public class UnifiedEmailController {
     @GetMapping("/absender-postfaecher")
     public ResponseEntity<List<org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto>> getAbsenderPostfaecher(
             org.springframework.security.core.Authentication authentication) {
-        Long eigenesPostfachId = angemeldeterBenutzer(authentication, null)
+        Long eigenesPostfachId = angemeldeterBenutzer(authentication)
                 .flatMap(postfachVersandService::eigenesPostfach)
                 .map(org.example.kalkulationsprogramm.domain.EmailAbsender::getId)
                 .orElse(null);
-        return ResponseEntity.ok(postfachService.absenderAuswahl(eigenesPostfachId));
+        return ResponseEntity.ok(postfachService.absenderAuswahl(eigenesPostfachId, sichtbarkeit(authentication)));
     }
 
     /**
-     * Angemeldeter Benutzer. Ohne Anmeldung (z. B. Hintergrundaufrufe) zählt die
-     * vom Frontend mitgeschickte Benutzer-Id – wie bisher beim Absender.
+     * Angemeldeter Benutzer – ausschließlich aus der Anmeldung. Eine vom Client geschickte
+     * Benutzer-Id zählt nicht (sonst könnte jeder fremde Postfächer vorbelegen lassen).
      */
-    private java.util.Optional<Long> angemeldeterBenutzer(org.springframework.security.core.Authentication authentication,
-            Long ersatzFrontendUserId) {
-        if (authentication != null && authentication.getName() != null) {
-            java.util.Optional<Long> angemeldet = frontendUserProfileService.findByUsername(authentication.getName())
-                    .map(org.example.kalkulationsprogramm.domain.FrontendUserProfile::getId);
-            if (angemeldet.isPresent()) {
-                return angemeldet;
-            }
+    private java.util.Optional<Long> angemeldeterBenutzer(org.springframework.security.core.Authentication authentication) {
+        if (authentication == null) {
+            return java.util.Optional.empty();
         }
-        return java.util.Optional.ofNullable(ersatzFrontendUserId);
+        return frontendUserProfileService.findByUsername(authentication.getName())
+                .map(org.example.kalkulationsprogramm.domain.FrontendUserProfile::getId);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SICHTBARKEIT DER POSTFÄCHER
+    // ═══════════════════════════════════════════════════════════════
+
+    private org.example.kalkulationsprogramm.service.PostfachSichtbarkeit sichtbarkeit(
+            org.springframework.security.core.Authentication authentication) {
+        return postfachSichtbarkeitService.fuer(authentication);
+    }
+
+    /** Mail, die der Benutzer im E-Mail-Center sieht – nur solche darf er bearbeiten. Sonst leer (404). */
+    private java.util.Optional<Email> findeSichtbar(Long id, org.springframework.security.core.Authentication authentication) {
+        var sicht = sichtbarkeit(authentication);
+        return emailRepository.findById(id).filter(sicht::siehtEmail);
+    }
+
+    /** Mail, die der Benutzer öffnen darf: sichtbar oder einem Projekt/einer Anfrage/einem Lieferanten zugeordnet. */
+    private java.util.Optional<Email> findeLesbar(Long id, org.springframework.security.core.Authentication authentication) {
+        var sicht = sichtbarkeit(authentication);
+        return emailRepository.findById(id).filter(sicht::darfLesen);
+    }
+
+    /**
+     * Filter für Mail-Listen: Mails, die nur in nicht sichtbaren Postfächern liegen, fallen
+     * heraus – immer VOR dem Seitenschnitt (offset/limit), damit die Seiten stimmen.
+     */
+    private ListenFilter listenFilter(org.springframework.security.core.Authentication authentication) {
+        return new ListenFilter(postfachSichtbarkeitService.verborgeneEmailIds(sichtbarkeit(authentication)));
+    }
+
+    /**
+     * Wer fragt: Sichtbarkeit und Benutzer. Daraus ergibt sich das feste Absender-Postfach für
+     * Antworten/Weiterleitungen, das die Detailansicht anzeigt – genau das, über das gesendet wird.
+     */
+    record AbsenderKontext(org.example.kalkulationsprogramm.service.PostfachSichtbarkeit sichtbarkeit, Long benutzerId,
+            org.example.kalkulationsprogramm.domain.EmailAbsender eigenesPostfach) {
+    }
+
+    /**
+     * Einmal je Anfrage: Sichtbarkeit, Benutzer und sein eigenes Postfach (auch beim Admin – Antworten
+     * auf Mails aus dem Rechnungs-Postfach gehen über das eigene). So fragen Listen (Projekt-Reiter …)
+     * das eigene Postfach nicht pro Zeile ab.
+     */
+    private AbsenderKontext absenderKontext(org.springframework.security.core.Authentication authentication) {
+        Long benutzerId = angemeldeterBenutzer(authentication).orElse(null);
+        var eigenes = postfachVersandService.eigenesPostfach(benutzerId).orElse(null);
+        return new AbsenderKontext(sichtbarkeit(authentication), benutzerId, eigenes);
+    }
+
+    /** Für diesen Aufruf ausgeblendete Mails; leer = nichts auszublenden (Admin oder alles sichtbar). */
+    record ListenFilter(Set<Long> verborgen) implements java.util.function.Predicate<Email> {
+
+        ListenFilter {
+            verborgen = verborgen == null ? Set.of() : verborgen;
+        }
+
+        boolean aktiv() {
+            return !verborgen.isEmpty();
+        }
+
+        @Override
+        public boolean test(Email email) {
+            return email != null && !verborgen.contains(email.getId());
+        }
+
+        List<Email> anwenden(List<Email> emails) {
+            return aktiv() ? emails.stream().filter(this).collect(Collectors.toList()) : emails;
+        }
     }
 
     @GetMapping("/{emailId}/attachments/{attachmentId}")
@@ -186,7 +252,7 @@ public class UnifiedEmailController {
             return ResponseEntity.notFound().build();
         }
 
-        Email email = emailRepository.findById(emailId).orElse(null);
+        Email email = findeLesbar(emailId, authentication).orElse(null);
         if (email == null) {
             log.warn("Email not found: {}", emailId);
             return ResponseEntity.notFound().build();
@@ -315,8 +381,8 @@ public class UnifiedEmailController {
 
     @PostMapping("/{emailId}/block-sender")
     @Transactional
-    public ResponseEntity<String> blockSender(@PathVariable Long emailId) {
-        Email email = emailRepository.findById(emailId)
+    public ResponseEntity<String> blockSender(@PathVariable Long emailId, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(emailId, authentication)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
 
@@ -341,7 +407,9 @@ public class UnifiedEmailController {
         //    Spam-Markierung würde das Bayes-Modell verfälschen (User trainiert
         //    sonst implizit auf Inhalte, die er gar nicht mehr sehen will). Auch
         //    Frontend soll diese Mails nicht mehr zeigen, also Hard-Delete.
-        List<Email> existingEmails = emailRepository.findByFromAddressIgnoreCase(sender);
+        // Nur Mails, die der Benutzer sieht: Wer ein Postfach nicht sieht, löscht darin auch nichts.
+        List<Email> existingEmails = listenFilter(authentication)
+                .anwenden(emailRepository.findByFromAddressIgnoreCase(sender));
         int deleted = 0;
         for (Email e : existingEmails) {
             try {
@@ -383,8 +451,8 @@ public class UnifiedEmailController {
 
     @PostMapping("/{emailId}/mark-spam")
     @Transactional
-    public ResponseEntity<String> markAsSpam(@PathVariable Long emailId) {
-        Email email = emailRepository.findById(emailId)
+    public ResponseEntity<String> markAsSpam(@PathVariable Long emailId, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(emailId, authentication)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
 
@@ -413,8 +481,8 @@ public class UnifiedEmailController {
 
     @PostMapping("/{emailId}/mark-not-spam")
     @Transactional
-    public ResponseEntity<String> markAsNotSpam(@PathVariable Long emailId) {
-        Email email = emailRepository.findById(emailId)
+    public ResponseEntity<String> markAsNotSpam(@PathVariable Long emailId, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(emailId, authentication)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
 
@@ -448,8 +516,8 @@ public class UnifiedEmailController {
      */
     @PostMapping("/{emailId}/mark-not-newsletter")
     @Transactional
-    public ResponseEntity<String> markAsNotNewsletter(@PathVariable Long emailId) {
-        Email email = emailRepository.findById(emailId)
+    public ResponseEntity<String> markAsNotNewsletter(@PathVariable Long emailId, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(emailId, authentication)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
 
@@ -479,8 +547,8 @@ public class UnifiedEmailController {
      */
     @PostMapping("/{emailId}/confirm-newsletter")
     @Transactional
-    public ResponseEntity<String> confirmNewsletter(@PathVariable Long emailId) {
-        Email email = emailRepository.findById(emailId)
+    public ResponseEntity<String> confirmNewsletter(@PathVariable Long emailId, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(emailId, authentication)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Email not found"));
 
@@ -559,7 +627,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<UnifiedEmailDto>> getEmailsByProjekt(
             @PathVariable Long projektId,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            org.springframework.security.core.Authentication authentication) {
+        AbsenderKontext kontext = absenderKontext(authentication);
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
         if (projekt == null) {
             return ResponseEntity.notFound().build();
@@ -567,7 +637,7 @@ public class UnifiedEmailController {
         List<Email> emails = emailRepository.findByProjektOrderBySentAtDesc(projekt);
         return ResponseEntity.ok(emails.stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(e -> toDto(e, kontext))
                 .collect(Collectors.toList()));
     }
 
@@ -579,7 +649,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<UnifiedEmailDto>> getEmailsByAnfrage(
             @PathVariable Long anfrageId,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            org.springframework.security.core.Authentication authentication) {
+        AbsenderKontext kontext = absenderKontext(authentication);
         Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
         if (anfrage == null) {
             return ResponseEntity.notFound().build();
@@ -587,7 +659,7 @@ public class UnifiedEmailController {
         List<Email> emails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
         return ResponseEntity.ok(emails.stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(e -> toDto(e, kontext))
                 .collect(Collectors.toList()));
     }
 
@@ -599,7 +671,9 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<UnifiedEmailDto>> getEmailsByLieferant(
             @PathVariable Long lieferantId,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            org.springframework.security.core.Authentication authentication) {
+        AbsenderKontext kontext = absenderKontext(authentication);
         Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
         if (lieferant == null) {
             return ResponseEntity.notFound().build();
@@ -607,7 +681,7 @@ public class UnifiedEmailController {
         List<Email> emails = emailRepository.findByLieferantOrderBySentAtDesc(lieferant);
         return ResponseEntity.ok(emails.stream()
                 .limit(limit)
-                .map(this::toDto)
+                .map(e -> toDto(e, kontext))
                 .collect(Collectors.toList()));
     }
 
@@ -619,8 +693,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getUnassignedEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findUnassigned().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -633,8 +709,10 @@ public class UnifiedEmailController {
 
     @GetMapping("/inquiries")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getInquiryEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getInquiryEmails(@RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findPotentialInquiries().stream()
+                .filter(listenFilter(authentication))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -646,8 +724,10 @@ public class UnifiedEmailController {
 
     @GetMapping("/new/projekt")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getNewProjektEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getNewProjektEmails(@RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.PROJEKT).stream()
+                .filter(listenFilter(authentication))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -655,8 +735,10 @@ public class UnifiedEmailController {
 
     @GetMapping("/new/anfrage")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getNewAnfrageEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getNewAnfrageEmails(@RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.ANFRAGE).stream()
+                .filter(listenFilter(authentication))
                 .limit(limit)
                 .map(this::toListDto)
                 .collect(Collectors.toList());
@@ -664,8 +746,10 @@ public class UnifiedEmailController {
 
     @GetMapping("/new/lieferant")
     @Transactional(readOnly = true)
-    public List<UnifiedEmailDto> getNewLieferantEmails(@RequestParam(value = "limit", defaultValue = "100") int limit) {
+    public List<UnifiedEmailDto> getNewLieferantEmails(@RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findByZuordnungTypOrderBySentAtDesc(EmailZuordnungTyp.LIEFERANT).stream()
+                .filter(listenFilter(authentication))
                 .filter(e -> e.getDeletedAt() == null)
                 .limit(limit)
                 .map(this::toListDto)
@@ -681,11 +765,13 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> searchEmails(
             @RequestParam("q") String query,
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+            @RequestParam(value = "limit", defaultValue = "50") int limit,
+            org.springframework.security.core.Authentication authentication) {
         if (query == null || query.trim().length() < 2) {
             return List.of();
         }
         return emailRepository.searchGlobal(query.trim()).stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -700,7 +786,8 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getInboxEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         // Get IDs of "Nicht zugeordnet" emails to exclude from inbox
         Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
                 .map(Email::getId)
@@ -708,6 +795,7 @@ public class UnifiedEmailController {
 
         return emailRepository.findInboxFiltered().stream()
                 .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -718,8 +806,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getProjectFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findProjectEmails().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -730,8 +820,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getOfferFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findAnfrageEmails().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -742,8 +834,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSupplierFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findLieferantEmails().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -754,8 +848,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getTaxAdvisorFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return findTaxAdvisorEmails().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -766,9 +862,11 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSentEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null)
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -779,8 +877,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getTrashEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -791,8 +891,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getSpamEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findSpam().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -803,8 +905,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getNewsletterEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findNewsletter().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -815,8 +919,10 @@ public class UnifiedEmailController {
     @Transactional(readOnly = true)
     public List<UnifiedEmailDto> getStarredEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
-            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+            @RequestParam(value = "limit", defaultValue = "100") int limit,
+            org.springframework.security.core.Authentication authentication) {
         return emailRepository.findStarred().stream()
+                .filter(listenFilter(authentication))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -829,9 +935,10 @@ public class UnifiedEmailController {
 
     @GetMapping("/{id:[0-9]+}")
     @Transactional(readOnly = true)
-    public ResponseEntity<UnifiedEmailDto> getEmailById(@PathVariable Long id) {
-        return emailRepository.findById(id)
-                .map(this::toDto)
+    public ResponseEntity<UnifiedEmailDto> getEmailById(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        AbsenderKontext kontext = absenderKontext(authentication);
+        return findeLesbar(id, authentication)
+                .map(e -> toDto(e, kontext))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -841,14 +948,18 @@ public class UnifiedEmailController {
      * Die angeklickte E-Mail ist als focusedEmailId markiert und wird im Frontend
      * auto-expandiert und hervorgehoben.
      *
+     * Im Verlauf erscheinen nur Mails, die der Benutzer öffnen darf (sichtbar oder einem
+     * Projekt/einer Anfrage/einem Lieferanten zugeordnet); sonst 404.
+     *
      * @param emailId ID der fokussierten E-Mail
      * @return EmailThreadDto mit chronologisch sortierten Eintraegen
      */
     @GetMapping("/{emailId}/thread")
     @Transactional(readOnly = true)
-    public ResponseEntity<EmailThreadDto> getEmailThread(@PathVariable Long emailId) {
+    public ResponseEntity<EmailThreadDto> getEmailThread(@PathVariable Long emailId, org.springframework.security.core.Authentication authentication) {
         log.debug("Thread requested for emailId={}", emailId);
-        EmailThreadDto thread = emailThreadService.loadThreadFor(emailId);
+        var sicht = sichtbarkeit(authentication);
+        EmailThreadDto thread = emailThreadService.loadThreadFor(emailId, sicht::darfLesen);
         return ResponseEntity.ok(thread);
     }
 
@@ -884,8 +995,9 @@ public class UnifiedEmailController {
 
     @GetMapping("/{id}/mark-viewed")
     @Transactional
-    public ResponseEntity<Void> markAsViewed(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
+    public ResponseEntity<Void> markAsViewed(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        // Gehört zum Öffnen der Mail (z. B. aus dem Projekt-Reiter) – daher wie das Lesen erlaubt.
+        Email email = findeLesbar(id, authentication).orElse(null);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -904,8 +1016,9 @@ public class UnifiedEmailController {
     @Transactional
     public ResponseEntity<UnifiedEmailDto> assignToProjekt(
             @PathVariable Long id,
-            @PathVariable Long projektId) {
-        Email email = emailRepository.findById(id).orElse(null);
+            @PathVariable Long projektId,
+            org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(id, authentication).orElse(null);
         Projekt projekt = projektRepository.findById(projektId).orElse(null);
         if (email == null || projekt == null) {
             return ResponseEntity.notFound().build();
@@ -913,15 +1026,16 @@ public class UnifiedEmailController {
         email.assignToProjekt(projekt);
         trainImplicitHam(email);
         emailRepository.save(email);
-        return ResponseEntity.ok(toDto(email));
+        return ResponseEntity.ok(toDto(email, absenderKontext(authentication)));
     }
 
     @PostMapping("/{id}/assign/anfrage/{anfrageId}")
     @Transactional
     public ResponseEntity<UnifiedEmailDto> assignToAnfrage(
             @PathVariable Long id,
-            @PathVariable Long anfrageId) {
-        Email email = emailRepository.findById(id).orElse(null);
+            @PathVariable Long anfrageId,
+            org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(id, authentication).orElse(null);
         Anfrage anfrage = anfrageRepository.findById(anfrageId).orElse(null);
         if (email == null || anfrage == null) {
             return ResponseEntity.notFound().build();
@@ -929,15 +1043,16 @@ public class UnifiedEmailController {
         email.assignToAnfrage(anfrage);
         trainImplicitHam(email);
         emailRepository.save(email);
-        return ResponseEntity.ok(toDto(email));
+        return ResponseEntity.ok(toDto(email, absenderKontext(authentication)));
     }
 
     @PostMapping("/{id}/assign/lieferant/{lieferantId}")
     @Transactional
     public ResponseEntity<UnifiedEmailDto> assignToLieferant(
             @PathVariable Long id,
-            @PathVariable Long lieferantId) {
-        Email email = emailRepository.findById(id).orElse(null);
+            @PathVariable Long lieferantId,
+            org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(id, authentication).orElse(null);
         Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
         if (email == null || lieferant == null) {
             return ResponseEntity.notFound().build();
@@ -945,25 +1060,25 @@ public class UnifiedEmailController {
         email.assignToLieferant(lieferant);
         trainImplicitHam(email);
         emailRepository.save(email);
-        return ResponseEntity.ok(toDto(email));
+        return ResponseEntity.ok(toDto(email, absenderKontext(authentication)));
     }
 
     @PostMapping("/{id}/unassign")
     @Transactional
-    public ResponseEntity<UnifiedEmailDto> removeAssignment(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
+    public ResponseEntity<UnifiedEmailDto> removeAssignment(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(id, authentication).orElse(null);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
         email.clearAssignment();
         emailRepository.save(email);
-        return ResponseEntity.ok(toDto(email));
+        return ResponseEntity.ok(toDto(email, absenderKontext(authentication)));
     }
 
     @DeleteMapping("/{id}")
     @Transactional
-    public ResponseEntity<Void> deleteEmail(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
+    public ResponseEntity<Void> deleteEmail(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(id, authentication).orElse(null);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -978,13 +1093,16 @@ public class UnifiedEmailController {
 
     @DeleteMapping("/{id}/permanent")
     @Transactional
-    public ResponseEntity<Void> deleteEmailPermanently(@PathVariable Long id) {
+    public ResponseEntity<Void> deleteEmailPermanently(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
         // Pessimistic Lock serialisiert parallele Doppel-DELETEs (Doppelklick im
         // Frontend). Die zweite Anfrage wartet, findet die Zeile dann nicht mehr
         // und liefert idempotent 204 statt StaleStateException -> HTTP 500.
         Email email = emailRepository.findByIdForUpdate(id).orElse(null);
         if (email == null) {
             return ResponseEntity.noContent().build();
+        }
+        if (!sichtbarkeit(authentication).siehtEmail(email)) {
+            return ResponseEntity.notFound().build();
         }
 
         // Emails mit hoher Spam-Wahrscheinlichkeit (>= 85%) als Spam klassifizieren
@@ -1030,7 +1148,7 @@ public class UnifiedEmailController {
      */
     @PostMapping("/bulk/move-to-folder")
     @Transactional
-    public ResponseEntity<Map<String, Integer>> moveToFolder(@RequestBody MoveToFolderRequest req) {
+    public ResponseEntity<Map<String, Integer>> moveToFolder(@RequestBody MoveToFolderRequest req, org.springframework.security.core.Authentication authentication) {
         if (req == null || req.ids() == null || req.targetFolder() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ids und targetFolder sind Pflicht");
         }
@@ -1041,7 +1159,11 @@ public class UnifiedEmailController {
                     "Ungültiger targetFolder: " + target);
         }
 
-        List<Email> emails = emailRepository.findAllById(req.ids());
+        // Mails aus nicht sichtbaren Postfächern werden still übergangen (zählen nicht als verschoben).
+        var sicht = sichtbarkeit(authentication);
+        List<Email> emails = emailRepository.findAllById(req.ids()).stream()
+                .filter(sicht::siehtEmail)
+                .collect(Collectors.toList());
         int moved = 0;
         for (Email email : emails) {
             switch (target) {
@@ -1081,8 +1203,8 @@ public class UnifiedEmailController {
     /** Alle E-Mails eines Ordners auf gelesen setzen. */
     @PostMapping("/mark-all-read")
     @Transactional
-    public ResponseEntity<Map<String, Integer>> markAllRead(@RequestParam String folder) {
-        List<Email> emails = switch (folder) {
+    public ResponseEntity<Map<String, Integer>> markAllRead(@RequestParam String folder, org.springframework.security.core.Authentication authentication) {
+        List<Email> alle = switch (folder) {
             case "inbox"      -> emailRepository.findInboxFiltered();
             case "spam"       -> emailRepository.findSpam();
             case "newsletter" -> emailRepository.findNewsletter();
@@ -1097,6 +1219,7 @@ public class UnifiedEmailController {
             case "sent"       -> java.util.Collections.emptyList();
             default           -> java.util.Collections.emptyList();
         };
+        List<Email> emails = listenFilter(authentication).anwenden(alle);
 
         int count = 0;
         for (Email email : emails) {
@@ -1112,8 +1235,8 @@ public class UnifiedEmailController {
 
     @PostMapping("/{id}/mark-read")
     @Transactional
-    public ResponseEntity<Void> markAsRead(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
+    public ResponseEntity<Void> markAsRead(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(id, authentication).orElse(null);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -1129,8 +1252,8 @@ public class UnifiedEmailController {
 
     @PostMapping("/{id}/toggle-star")
     @Transactional
-    public ResponseEntity<Map<String, Boolean>> toggleStar(@PathVariable Long id) {
-        Email email = emailRepository.findById(id).orElse(null);
+    public ResponseEntity<Map<String, Boolean>> toggleStar(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        Email email = findeSichtbar(id, authentication).orElse(null);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -1151,7 +1274,7 @@ public class UnifiedEmailController {
         if (sichtbareTypen.isEmpty()) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
         }
-        Email email = emailRepository.findById(emailId).orElse(null);
+        Email email = findeLesbar(emailId, authentication).orElse(null);
         if (email == null) {
             return ResponseEntity.notFound().build();
         }
@@ -1223,17 +1346,20 @@ public class UnifiedEmailController {
 
     @GetMapping("/stats")
     @Transactional(readOnly = true)
-    public FolderStatsDto getStats() {
+    public FolderStatsDto getStats(org.springframework.security.core.Authentication authentication) {
         FolderStatsDto stats = new FolderStatsDto();
+        // Zähler nur über sichtbare Mails. Ohne ausgeblendete Mails (Admin, alles sichtbar)
+        // bleiben die schnellen Zähl-Abfragen; sonst wird aus den gefilterten Listen gezählt.
+        ListenFilter filter = listenFilter(authentication);
 
         // Liste der "Nicht zugeordnet"-IDs (werden aus Posteingang ausgeschlossen)
-        List<Email> unassignedList = emailRepository.findUnassigned();
+        List<Email> unassignedList = filter.anwenden(emailRepository.findUnassigned());
         Set<Long> unassignedIds = unassignedList.stream()
                 .map(Email::getId)
                 .collect(Collectors.toSet());
 
         // Posteingang: einmal laden und sowohl Total als auch Unread daraus ableiten
-        List<Email> inboxList = emailRepository.findInboxFiltered();
+        List<Email> inboxList = filter.anwenden(emailRepository.findInboxFiltered());
         long inboxTotal = inboxList.stream()
                 .filter(e -> !unassignedIds.contains(e.getId()))
                 .count();
@@ -1244,43 +1370,56 @@ public class UnifiedEmailController {
         stats.setInboxCount(inboxUnread);
         stats.setInboxTotal(inboxTotal);
 
+        List<Email> projekte = filter.anwenden(emailRepository.findProjectEmails());
+        List<Email> anfragen = filter.anwenden(emailRepository.findAnfrageEmails());
+        List<Email> lieferanten = filter.anwenden(emailRepository.findLieferantEmails());
+        List<Email> taxAdvisorEmails = filter.anwenden(findTaxAdvisorEmails());
+        List<Email> newsletter = filter.anwenden(emailRepository.findNewsletter());
+        List<Email> spam = filter.anwenden(emailRepository.findSpam());
+        List<Email> gesendet = filter.anwenden(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
+                .filter(e -> e.getDeletedAt() == null).collect(Collectors.toList()));
+        List<Email> papierkorb = filter.anwenden(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc());
+        List<Email> markiert = filter.anwenden(emailRepository.findStarred());
+
         // Other unread counts
-        stats.setProjectCount(emailRepository.countProjectEmailsUnread());
-        stats.setOfferCount(emailRepository.countAnfrageEmailsUnread());
-        stats.setSupplierCount(emailRepository.countLieferantEmailsUnread());
-
-        List<Email> taxAdvisorEmails = findTaxAdvisorEmails();
-        stats.setTaxAdvisorCount(taxAdvisorEmails.stream().filter(e -> !e.isRead()).count());
-
-        stats.setNewsletterCount(emailRepository.countNewsletterUnread());
-        stats.setSpamCount(emailRepository.countSpamUnread());
+        stats.setProjectCount(filter.aktiv() ? ungelesen(projekte) : emailRepository.countProjectEmailsUnread());
+        stats.setOfferCount(filter.aktiv() ? ungelesen(anfragen) : emailRepository.countAnfrageEmailsUnread());
+        stats.setSupplierCount(filter.aktiv() ? ungelesen(lieferanten) : emailRepository.countLieferantEmailsUnread());
+        stats.setTaxAdvisorCount(ungelesen(taxAdvisorEmails));
+        stats.setNewsletterCount(filter.aktiv() ? ungelesen(newsletter) : emailRepository.countNewsletterUnread());
+        stats.setSpamCount(filter.aktiv() ? ungelesen(spam) : emailRepository.countSpamUnread());
 
         // Total Counts (Gesendet, Papierkorb, Nicht zugeordnet, Anfragen)
         // Hinweis: sentCount ist seit V257 strukturell ~0, weil alle OUT-Mails
         // beim Erzeugen/Importieren als gelesen markiert werden. Query bleibt
         // als Safety-Net für eventuelle Edge-Cases (z.B. manuelle DB-Inserts).
-        stats.setSentCount(emailRepository.countByDirectionAndIsReadFalse(EmailDirection.OUT));
-        // Trash count
-        stats.setTrashCount(emailRepository.countByDeletedAtIsNotNullAndIsReadFalse());
+        stats.setSentCount(filter.aktiv() ? ungelesen(gesendet)
+                : emailRepository.countByDirectionAndIsReadFalse(EmailDirection.OUT));
+        stats.setTrashCount(filter.aktiv() ? ungelesen(papierkorb)
+                : emailRepository.countByDeletedAtIsNotNullAndIsReadFalse());
+        stats.setUnassignedCount(filter.aktiv() ? ungelesen(unassignedList) : emailRepository.countUnassigned());
+        stats.setInquiriesCount(filter.aktiv()
+                ? ungelesen(filter.anwenden(emailRepository.findPotentialInquiries()))
+                : emailRepository.countPotentialInquiries());
+        stats.setStarredCount(filter.aktiv() ? ungelesen(markiert) : emailRepository.countStarredUnread());
 
-        stats.setUnassignedCount(emailRepository.countUnassigned());
-        stats.setInquiriesCount(emailRepository.countPotentialInquiries());
-        stats.setStarredCount(emailRepository.countStarredUnread());
-
-        // Gesamt-Counts pro Ordner – via existierenden Listen-Queries (alle bereits sortiert/gefiltert)
+        // Gesamt-Counts pro Ordner – aus denselben (gefilterten) Listen
         stats.setUnassignedTotal(unassignedList.size());
-        stats.setSentTotal(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
-                .filter(e -> e.getDeletedAt() == null).count());
-        stats.setTrashTotal(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().size());
-        stats.setSpamTotal(emailRepository.findSpam().size());
-        stats.setNewsletterTotal(emailRepository.findNewsletter().size());
-        stats.setStarredTotal(emailRepository.findStarred().size());
-        stats.setProjectTotal(emailRepository.findProjectEmails().size());
-        stats.setOfferTotal(emailRepository.findAnfrageEmails().size());
-        stats.setSupplierTotal(emailRepository.findLieferantEmails().size());
+        stats.setSentTotal(gesendet.size());
+        stats.setTrashTotal(papierkorb.size());
+        stats.setSpamTotal(spam.size());
+        stats.setNewsletterTotal(newsletter.size());
+        stats.setStarredTotal(markiert.size());
+        stats.setProjectTotal(projekte.size());
+        stats.setOfferTotal(anfragen.size());
+        stats.setSupplierTotal(lieferanten.size());
         stats.setTaxAdvisorTotal(taxAdvisorEmails.size());
 
         return stats;
+    }
+
+    private static long ungelesen(List<Email> emails) {
+        return emails.stream().filter(e -> !e.isRead()).count();
     }
 
     /**
@@ -1443,8 +1582,8 @@ public class UnifiedEmailController {
 
     @GetMapping("/{id}/possible-assignments")
     public ResponseEntity<EmailAutoAssignmentService.PossibleAssignments> getPossibleAssignments(
-            @PathVariable Long id) {
-        Email email = emailRepository.findById(id)
+            @PathVariable Long id, org.springframework.security.core.Authentication authentication) {
+        Email email = findeLesbar(id, authentication)
                 .orElseThrow(() -> new org.example.kalkulationsprogramm.exception.NotFoundException(
                         "Email nicht gefunden: " + id));
 
@@ -1643,7 +1782,9 @@ public class UnifiedEmailController {
             // Rechnungen und Mahnungen raus. Das Kennzeichen setzt der
             // Dokument-Editor (der Anhang kommt dort als gewoehnliche Datei hoch);
             // die Pruefung auf ein verknuepftes Dokument deckt Aufrufer mit
-            // dokumentId ab.
+            // dokumentId ab. Das Rechnungs-Postfach sieht jeder im Betrieb – keine
+            // Sichtbarkeitspruefung noetig.
+            AbsenderKontext kontext = absenderKontext(authentication);
             boolean istGeschaeftsdokument = dto.isGeschaeftsdokument()
                     || projektDokument instanceof org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument
                     || anfrageDokument instanceof org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
@@ -1652,17 +1793,27 @@ public class UnifiedEmailController {
             // Geschaeftsdokument-Postfach, gewaehltes, eigenes oder Hauptpostfach.
             org.example.kalkulationsprogramm.domain.EmailAbsender postfach;
             if (dto.getWeitergeleitetVonEmailId() != null) {
-                Email weitergeleitet = emailRepository.findById(dto.getWeitergeleitetVonEmailId()).orElse(null);
+                // Weiterleiten darf nur, wer die Mail öffnen darf – sonst wie "gibt es nicht".
+                Email weitergeleitet = findeLesbar(dto.getWeitergeleitetVonEmailId(), authentication).orElse(null);
                 if (weitergeleitet == null) {
                     return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(Map.of(
                             "message", "Die weitergeleitete E-Mail gibt es nicht mehr."));
                 }
-                postfach = postfachVersandService.antwortPostfach(weitergeleitet);
+                // Fest das Antwort-Postfach der Original-Mail – unter den Postfächern, die der
+                // Benutzer sieht; sonst sein eigenes, sonst das Hauptpostfach.
+                postfach = postfachVersandService.antwortPostfachFuer(weitergeleitet, kontext.sichtbarkeit(),
+                        kontext.eigenesPostfach());
             } else {
+                // Sonst darf nur über ein Postfach gesendet werden, das der Benutzer sieht.
+                if (!istGeschaeftsdokument && dto.getPostfachId() != null
+                        && postfachService.aktivesPostfach(dto.getPostfachId()).isPresent()
+                        && !kontext.sichtbarkeit().siehtPostfach(dto.getPostfachId())) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                            "message", "Über dieses Postfach dürfen Sie nicht senden."));
+                }
                 try {
                     postfach = postfachVersandService.postfachFuerNeueMail(dto.getPostfachId(),
-                            angemeldeterBenutzer(authentication, dto.getFrontendUserId()).orElse(null),
-                            istGeschaeftsdokument);
+                            kontext.benutzerId(), istGeschaeftsdokument);
                 } catch (IllegalArgumentException ex) {
                     return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
                 }
@@ -1715,7 +1866,7 @@ public class UnifiedEmailController {
                 ausgangsmailService.vermerkeVersand(projektDokument, anfrageDokument);
                 return ResponseEntity.ok(new org.example.kalkulationsprogramm.dto.Email.EinzelversandAntwortDto(
                         ergebnis.verschickt().size(), fehlgeschlagen, nichtGespeichert,
-                        ergebnis.verschickt().stream().flatMap(java.util.Optional::stream).map(this::toDto).toList()));
+                        ergebnis.verschickt().stream().flatMap(java.util.Optional::stream).map(e -> toDto(e, kontext)).toList()));
             }
 
             String messageId = sendeSmtpMail(
@@ -1734,7 +1885,7 @@ public class UnifiedEmailController {
                     versand.postfach(), recipient, cc, htmlBody, null, anhaenge));
             ausgangsmailService.vermerkeVersand(projektDokument, anfrageDokument);
 
-            return ResponseEntity.ok(toDto(email));
+            return ResponseEntity.ok(toDto(email, kontext));
         } catch (Exception e) {
             log.error("Fehler beim Senden der Email", e);
             return ResponseEntity.internalServerError().build();
@@ -1756,19 +1907,22 @@ public class UnifiedEmailController {
     public ResponseEntity<?> replyToEmail(
             @PathVariable Long emailId,
             @RequestPart("dto") ProjektEmailDto dto,
-            @RequestPart(value = "attachments", required = false) MultipartFile[] attachments) {
+            @RequestPart(value = "attachments", required = false) MultipartFile[] attachments,
+            org.springframework.security.core.Authentication authentication) {
 
-        Email parentEmail = emailRepository.findById(emailId).orElse(null);
+        Email parentEmail = findeSichtbar(emailId, authentication).orElse(null);
         if (parentEmail == null) {
             return ResponseEntity.notFound().build();
         }
         emailDraftService.validateForSending(dto.getDraftId(), emailId);
 
         try {
-            // Antworten gehen fest aus dem Postfach raus, in dem die Mail ankam
-            // (bzw. aus dem die eigene Mail verschickt wurde) – keine Auswahl.
+            // Antworten gehen fest aus dem Postfach raus, in dem die Mail ankam (bzw. aus dem
+            // die eigene Mail verschickt wurde) – unter den Postfächern, die der Benutzer sieht.
+            AbsenderKontext kontext = absenderKontext(authentication);
             org.example.kalkulationsprogramm.service.PostfachVersandService.Versand versand =
-                    postfachVersandService.versandUeber(postfachVersandService.antwortPostfach(parentEmail));
+                    postfachVersandService.versandUeber(postfachVersandService.antwortPostfachFuer(parentEmail,
+                            kontext.sichtbarkeit(), kontext.eigenesPostfach()));
 
             // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)
             long totalReplyAttachmentsSize = 0L;
@@ -1839,7 +1993,7 @@ public class UnifiedEmailController {
             trainImplicitHam(parentEmail);
             emailRepository.save(parentEmail);
 
-            return ResponseEntity.ok(toDto(email));
+            return ResponseEntity.ok(toDto(email, kontext));
         } catch (Exception e) {
             log.error("Fehler beim Senden der Antwort-Email", e);
             return ResponseEntity.internalServerError().build();
@@ -1930,14 +2084,14 @@ public class UnifiedEmailController {
      * Detailansicht: die Ermittlung kann Abfragen kosten (Rückfall auf Hauptpostfach/Absender),
      * in Listen wäre das eine Abfrage pro Zeile.
      */
-    private void applyPostfachInfo(Email email, UnifiedEmailDto dto) {
+    private void applyPostfachInfo(Email email, UnifiedEmailDto dto, AbsenderKontext kontext) {
         applyPostfachSchilder(email, dto);
         dto.setAntwortPostfach(org.example.kalkulationsprogramm.dto.Postfach.PostfachRefDto.von(
-                postfachVersandService.antwortPostfach(email)));
+                postfachVersandService.antwortPostfachFuer(email, kontext.sichtbarkeit(), kontext.eigenesPostfach())));
     }
 
     /** Full DTO with htmlBody + CID-rewriting – for detail/thread views only. */
-    private UnifiedEmailDto toDto(Email email) {
+    private UnifiedEmailDto toDto(Email email, AbsenderKontext kontext) {
         UnifiedEmailDto dto = new UnifiedEmailDto();
         dto.setId(email.getId());
         dto.setMessageId(email.getMessageId());
@@ -1957,7 +2111,7 @@ public class UnifiedEmailController {
         dto.setSpamScore(email.getSpamScore());
 
         applyZuordnungsInfo(email, dto);
-        applyPostfachInfo(email, dto);
+        applyPostfachInfo(email, dto, kontext);
         applyKundeLookup(email, dto);
 
         // Compute folder
@@ -2058,7 +2212,7 @@ public class UnifiedEmailController {
      * OUT-Mails der erste Empfänger gegen {@code Kunde.kundenEmails} geprüft.
      * Setzt {@code kundeId}/{@code kundeName} im DTO, wenn ein Treffer existiert.
      * <p>
-     * Wird bewusst nur aus {@link #toDto(Email)} (Detailansicht) aufgerufen,
+     * Wird bewusst nur aus {@link #toDto(Email, AbsenderKontext)} (Detailansicht) aufgerufen,
      * nicht aus {@link #toListDto(Email)}, um N+1-Queries auf Listen-Endpoints
      * zu vermeiden.
      */

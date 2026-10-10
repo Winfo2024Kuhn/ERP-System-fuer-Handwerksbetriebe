@@ -193,4 +193,248 @@ class PostfachControllerTest {
                     .andExpect(jsonPath("$.abrufOk").value(false));
         }
     }
+
+    @Nested
+    @DisplayName("Sichtbarkeit (Etappe 2)")
+    class Sichtbarkeit {
+
+        private static final String NUR_BESTIMMTE = """
+                {"emailAdresse":"max@example.com","aktiv":true,"hauptpostfach":false,
+                 "sichtbarFuerAlle":false,"abteilungIds":[2],"benutzerIds":[7]}
+                """;
+
+        @Test
+        @WithMockUser(roles = "USER")
+        void normalerBenutzerDarfSichtbarkeitNichtAendern403() throws Exception {
+            mockMvc.perform(put("/api/postfaecher/5").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(NUR_BESTIMMTE))
+                    .andExpect(status().isForbidden());
+            verifyNoInteractions(postfachService);
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void felderKommenBeimServiceAn() throws Exception {
+            given(postfachService.aendern(eq(5L), any(PostfachSpeichernRequest.class))).willReturn(dto(5, "max@example.com"));
+
+            mockMvc.perform(put("/api/postfaecher/5").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(NUR_BESTIMMTE))
+                    .andExpect(status().isOk());
+
+            org.mockito.ArgumentCaptor<PostfachSpeichernRequest> captor =
+                    org.mockito.ArgumentCaptor.forClass(PostfachSpeichernRequest.class);
+            verify(postfachService).aendern(eq(5L), captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().sichtbarFuerAlle()).isFalse();
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().abteilungIds()).containsExactly(2L);
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().benutzerIds()).containsExactly(7L);
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void ohneFelderBleibenSieNull() throws Exception {
+            given(postfachService.aendern(eq(5L), any(PostfachSpeichernRequest.class))).willReturn(dto(5, "max@example.com"));
+
+            mockMvc.perform(put("/api/postfaecher/5").with(csrf()).contentType(MediaType.APPLICATION_JSON).content(GUELTIG))
+                    .andExpect(status().isOk());
+
+            org.mockito.ArgumentCaptor<PostfachSpeichernRequest> captor =
+                    org.mockito.ArgumentCaptor.forClass(PostfachSpeichernRequest.class);
+            verify(postfachService).aendern(eq(5L), captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().sichtbarFuerAlle()).isNull();
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().abteilungIds()).isNull();
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().benutzerIds()).isNull();
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void antwortEnthaeltSichtbarkeit() throws Exception {
+            given(postfachService.alle()).willReturn(List.of(new PostfachDto(5L, "max@example.com", null, true, 0, false,
+                    false, null, true, null, null, null, null, false, null, null, List.of(), false,
+                    List.of(new PostfachDto.AbteilungRefDto(2L, "Büro")),
+                    List.of(new PostfachDto.BenutzerRefDto(7L, "Max Mustermann")), false)));
+
+            mockMvc.perform(get("/api/postfaecher"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].sichtbarFuerAlle").value(false))
+                    .andExpect(jsonPath("$[0].sichtbarFuerAbteilungen[0].id").value(2))
+                    .andExpect(jsonPath("$[0].sichtbarFuerAbteilungen[0].name").value("Büro"))
+                    .andExpect(jsonPath("$[0].sichtbarFuerBenutzer[0].id").value(7))
+                    .andExpect(jsonPath("$[0].sichtbarFuerBenutzer[0].displayName").value("Max Mustermann"));
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void unbekannteIdGibt400MitMeldung() throws Exception {
+            given(postfachService.aendern(eq(5L), any()))
+                    .willThrow(new IllegalArgumentException("Diese Abteilung gibt es nicht (mehr)."));
+
+            for (String id : List.of(String.valueOf(Long.MAX_VALUE), "-1", "0")) {
+                mockMvc.perform(put("/api/postfaecher/5").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"emailAdresse\":\"max@example.com\",\"abteilungIds\":[" + id + "]}"))
+                        .andExpect(status().isBadRequest())
+                        .andExpect(jsonPath("$.message").value("Diese Abteilung gibt es nicht (mehr)."));
+            }
+        }
+
+        // ---- PUT /api/postfaecher/{id}/sichtbarkeit ----
+
+        private static final String SICHTBARKEIT = "{\"sichtbarFuerAlle\":false,\"abteilungIds\":[2],\"benutzerIds\":[7]}";
+
+        @Test
+        void nurSichtbarkeitOhneAnmeldung401() throws Exception {
+            mockMvc.perform(put("/api/postfaecher/5/sichtbarkeit").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(SICHTBARKEIT))
+                    .andExpect(status().isUnauthorized());
+            verifyNoInteractions(postfachService);
+        }
+
+        @Test
+        @WithMockUser(roles = "USER")
+        void nurSichtbarkeitNormalerBenutzer403() throws Exception {
+            mockMvc.perform(put("/api/postfaecher/5/sichtbarkeit").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(SICHTBARKEIT))
+                    .andExpect(status().isForbidden());
+            verifyNoInteractions(postfachService);
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void nurSichtbarkeitOhneCsrf403() throws Exception {
+            mockMvc.perform(put("/api/postfaecher/5/sichtbarkeit").contentType(MediaType.APPLICATION_JSON)
+                            .content(SICHTBARKEIT))
+                    .andExpect(status().isForbidden());
+            verifyNoInteractions(postfachService);
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void nurSichtbarkeit200() throws Exception {
+            given(postfachService.sichtbarkeitAendern(eq(5L), any())).willReturn(new PostfachDto(5L, "max@example.com",
+                    null, true, 0, false, false, null, true, null, null, null, null, false, null, null, List.of(), false,
+                    List.of(new PostfachDto.AbteilungRefDto(2L, "Büro")), List.of(new PostfachDto.BenutzerRefDto(7L, "Erika Mustermann")), false));
+
+            mockMvc.perform(put("/api/postfaecher/5/sichtbarkeit").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(SICHTBARKEIT))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.sichtbarFuerAlle").value(false))
+                    .andExpect(jsonPath("$.sichtbarFuerAbteilungen[0].name").value("Büro"))
+                    .andExpect(jsonPath("$.sichtbarFuerBenutzer[0].displayName").value("Erika Mustermann"));
+
+            org.mockito.ArgumentCaptor<org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest> captor =
+                    org.mockito.ArgumentCaptor.forClass(org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest.class);
+            verify(postfachService).sichtbarkeitAendern(eq(5L), captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().abteilungIds()).containsExactly(2L);
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().benutzerIds()).containsExactly(7L);
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void nurSichtbarkeitHauptpostfach400() throws Exception {
+            given(postfachService.sichtbarkeitAendern(eq(1L), any()))
+                    .willThrow(new IllegalArgumentException("Das Hauptpostfach sieht jeder im Betrieb."));
+
+            mockMvc.perform(put("/api/postfaecher/1/sichtbarkeit").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content(SICHTBARKEIT))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Das Hauptpostfach sieht jeder im Betrieb."));
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void nurSichtbarkeitUnbekannteAbteilung400() throws Exception {
+            given(postfachService.sichtbarkeitAendern(eq(5L), any()))
+                    .willThrow(new IllegalArgumentException("Diese Abteilung gibt es nicht (mehr)."));
+
+            mockMvc.perform(put("/api/postfaecher/5/sichtbarkeit").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"sichtbarFuerAlle\":false,\"abteilungIds\":[" + Long.MAX_VALUE + "],\"benutzerIds\":[]}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Diese Abteilung gibt es nicht (mehr)."));
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void nurSichtbarkeitUnbekanntesPostfach404() throws Exception {
+            given(postfachService.sichtbarkeitAendern(any(), any()))
+                    .willThrow(new NoSuchElementException("Postfach nicht gefunden."));
+
+            for (String id : List.of(String.valueOf(Long.MAX_VALUE), "-1", "0")) {
+                mockMvc.perform(put("/api/postfaecher/" + id + "/sichtbarkeit").with(csrf())
+                                .contentType(MediaType.APPLICATION_JSON).content(SICHTBARKEIT))
+                        .andExpect(status().isNotFound())
+                        .andExpect(jsonPath("$.message").value("Postfach nicht gefunden."));
+            }
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void nurSichtbarkeitAngriffsTextAlsPfad400() throws Exception {
+            for (String boese : List.of("'; DROP TABLE email_absender; --", "<img src=x onerror=alert(1)>")) {
+                mockMvc.perform(put("/api/postfaecher/{id}/sichtbarkeit", boese).with(csrf())
+                                .contentType(MediaType.APPLICATION_JSON).content(SICHTBARKEIT))
+                        .andExpect(status().isBadRequest());
+            }
+            // Mit Schrägstrich ("</script>") trifft der Pfad gar keinen Endpoint – abgewiesen ist er trotzdem.
+            mockMvc.perform(put("/api/postfaecher/{id}/sichtbarkeit", "<script>alert(1)</script>").with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON).content(SICHTBARKEIT))
+                    .andExpect(status().is4xxClientError());
+            mockMvc.perform(put("/api/postfaecher/5/sichtbarkeit").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"sichtbarFuerAlle\":false,\"abteilungIds\":[\"<script>alert(1)</script>\"]}"))
+                    .andExpect(status().isBadRequest());
+            verify(postfachService, never()).sichtbarkeitAendern(any(), any());
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void textStattIdIst400() throws Exception {
+            for (String boese : List.of("\"'; DROP TABLE abteilung; --\"", "\"<script>alert(1)</script>\"")) {
+                mockMvc.perform(put("/api/postfaecher/5").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"emailAdresse\":\"max@example.com\",\"benutzerIds\":[" + boese + "]}"))
+                        .andExpect(status().isBadRequest());
+            }
+            verify(postfachService, never()).aendern(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Läuft aus")
+    @WithMockUser(roles = "ADMIN")
+    class LaeuftAus {
+
+        @Test
+        void feldKommtAnUndGehtZurueck() throws Exception {
+            given(postfachService.aendern(eq(6L), any(PostfachSpeichernRequest.class))).willReturn(new PostfachDto(6L,
+                    "betrieb@t-online.de", null, true, 0, false, false, null, true, null, null, null, null, true, null,
+                    null, List.of(), true, List.of(), List.of(), true));
+
+            mockMvc.perform(put("/api/postfaecher/6").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"emailAdresse\":\"betrieb@t-online.de\",\"laeuftAus\":true}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.laeuftAus").value(true));
+
+            org.mockito.ArgumentCaptor<PostfachSpeichernRequest> captor =
+                    org.mockito.ArgumentCaptor.forClass(PostfachSpeichernRequest.class);
+            verify(postfachService).aendern(eq(6L), captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().laeuftAus()).isTrue();
+        }
+
+        @Test
+        void hauptpostfachAuslaufen400() throws Exception {
+            given(postfachService.aendern(eq(1L), any())).willThrow(new IllegalArgumentException(
+                    "Das Hauptpostfach kann nicht auslaufen. Bitte zuerst ein anderes Postfach zum Hauptpostfach machen."));
+
+            mockMvc.perform(put("/api/postfaecher/1").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"emailAdresse\":\"info@example.com\",\"hauptpostfach\":true,\"laeuftAus\":true}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(
+                            "Das Hauptpostfach kann nicht auslaufen. Bitte zuerst ein anderes Postfach zum Hauptpostfach machen."));
+        }
+
+        @Test
+        void textStattWahrheitswert400() throws Exception {
+            mockMvc.perform(put("/api/postfaecher/6").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"emailAdresse\":\"betrieb@t-online.de\",\"laeuftAus\":\"<script>alert(1)</script>\"}"))
+                    .andExpect(status().isBadRequest());
+            verify(postfachService, never()).aendern(any(), any());
+        }
+    }
 }

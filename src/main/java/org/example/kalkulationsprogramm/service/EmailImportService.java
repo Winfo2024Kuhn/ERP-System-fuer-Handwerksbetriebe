@@ -1283,6 +1283,10 @@ public class EmailImportService {
     /**
      * Bekannte Mail in einem weiteren Postfach gefunden (gleichzeitig an info@ und max@,
      * oder die eigene Gesendet-Kopie): nur die Zuordnung ergänzen, Inhalt bleibt unangetastet.
+     *
+     * <p>Schutz: Die Message-ID allein reicht nicht. Sonst könnte ein Externer eine fremde
+     * Message-ID an ein anderes Postfach schicken und die Original-Mail dort sichtbar machen.
+     * Ergänzt wird nur, wenn Absender-Adresse und Betreff zur gespeicherten Mail passen.</p>
      */
     private void ergaenzePostfach(String messageId, Long postfachId, IMAPFolder folder, Message msg)
             throws MessagingException {
@@ -1294,11 +1298,57 @@ public class EmailImportService {
             return;
         }
         Email email = vorhanden.get();
+        if (!passtZurGespeichertenMail(email, msg)) {
+            // Bewusst ohne Adressen, Betreff und Message-ID (DSGVO).
+            log.warn("[EmailImport] Bekannte Message-ID mit anderem Absender oder Betreff in Postfach {} "
+                    + "(gespeicherte Mail {}) – Zuordnung NICHT ergänzt", postfachId, email.getId());
+            return;
+        }
         if (email.ordnePostfachZu(emailAbsenderRepository.getReferenceById(postfachId),
                 folder.getFullName(), folder.getUID(msg))) {
             emailRepository.save(email);
         }
     }
+
+    /**
+     * Gehört die abgerufene Nachricht zur gespeicherten Mail? Absender-Adresse und Betreff müssen
+     * übereinstimmen – ohne Rücksicht auf Groß-/Kleinschreibung, Leerzeichen und einen
+     * Anzeigenamen („Max Mustermann &lt;max@example.com&gt;“).
+     */
+    static boolean passtZurGespeichertenMail(Email gespeichert, Message msg) throws MessagingException {
+        String absender = null;
+        Address[] von = msg.getFrom();
+        if (von != null && von.length > 0 && von[0] != null) {
+            absender = von[0] instanceof InternetAddress ia ? ia.getAddress() : von[0].toString();
+        }
+        return normalisierteAdresse(absender).equals(normalisierteAdresse(gespeichert.getFromAddress()))
+                && normalisierterBetreff(msg.getSubject()).equals(normalisierterBetreff(gespeichert.getSubject()));
+    }
+
+    /** Nackte Adresse in Kleinbuchstaben; aus „Name &lt;adresse&gt;“ wird „adresse“. */
+    static String normalisierteAdresse(String adresse) {
+        if (adresse == null) {
+            return "";
+        }
+        String wert = adresse.trim();
+        int auf = wert.lastIndexOf('<');
+        int zu = wert.lastIndexOf('>');
+        if (auf >= 0 && zu > auf) {
+            wert = wert.substring(auf + 1, zu);
+        }
+        return wert.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Betreff ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen-Folgen (Header-Faltung). */
+    static String normalisierterBetreff(String betreff) {
+        if (betreff == null) {
+            return "";
+        }
+        return WEISSRAUM.matcher(betreff.trim()).replaceAll(" ").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Possessiv – kein Backtracking (ReDoS). */
+    private static final java.util.regex.Pattern WEISSRAUM = java.util.regex.Pattern.compile("\\s++");
 
     /** Eigene Adressen: Absender gesendeter Mails, alle Postfächer sowie die Postfach-Logins. */
     Set<String> eigeneAdressen() {

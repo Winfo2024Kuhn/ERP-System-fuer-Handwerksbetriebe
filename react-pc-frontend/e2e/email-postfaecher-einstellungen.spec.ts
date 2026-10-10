@@ -153,3 +153,42 @@ test('Hauptpostfach wechseln: der Haken wandert, das alte verliert ihn', async (
     await expect(page.getByRole('button', { name: 'Postfach rechnungen@musterbetrieb.example löschen' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Postfach info@musterbetrieb.example löschen' })).toBeEnabled();
 });
+
+test('Läuft aus: altes Postfach auslaufen lassen – Request und Schild in der Liste', async ({ page }, info) => {
+    const mitschrift = await stubbeEinstellungen(page);
+    await page.goto('/einstellungen#email');
+    const liste = page.getByRole('list', { name: 'Postfächer' });
+    const rechnungenZeile = liste.getByRole('listitem').filter({ hasText: 'rechnungen@musterbetrieb.example' });
+
+    // Ein weiteres, altes Postfach anlegen (das Rechnungs-Postfach selbst darf nicht auslaufen).
+    await page.getByRole('button', { name: 'Neues Postfach' }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByLabel('E-Mail-Adresse *').fill('alt@musterbetrieb.example');
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const altZeile = liste.getByRole('listitem').filter({ hasText: 'alt@musterbetrieb.example' });
+    await expect(altZeile.getByText('läuft aus', { exact: true })).toHaveCount(0);
+
+    // Beim Rechnungs-Postfach ist der Schalter gesperrt und erklärt warum.
+    await page.getByRole('button', { name: 'Postfach rechnungen@musterbetrieb.example bearbeiten' }).click();
+    dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('checkbox', { name: /^Läuft aus/ })).toBeDisabled();
+    await expect(dialog.getByText('Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Postfach alt@musterbetrieb.example bearbeiten' }).click();
+    dialog = page.getByRole('dialog');
+    await dialog.getByRole('checkbox', { name: /^Läuft aus/ }).check();
+    await expect(dialog.getByRole('checkbox', { name: /^Hauptpostfach/ })).toBeDisabled();
+    await expect(dialog.getByRole('checkbox', { name: /^Für Rechnungen & Mahnungen/ })).toBeDisabled();
+    await dialog.getByRole('checkbox', { name: /^Läuft aus/ }).scrollIntoViewIfNeeded();
+    await designPruefung(page, info, 'postfach-dialog-laeuft-aus', { primaerAktion: dialog.getByRole('button', { name: 'Speichern' }) });
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    expect(mitschrift.geaendert.at(-1)).toMatchObject({ emailAdresse: 'alt@musterbetrieb.example', laeuftAus: true });
+    await expect(altZeile.getByText('läuft aus', { exact: true })).toBeVisible();
+    await expect(rechnungenZeile.getByText('läuft aus', { exact: true })).toHaveCount(0);
+    await designPruefung(page, info, 'postfaecher-liste-laeuft-aus', { primaerAktion: page.getByRole('button', { name: 'Neues Postfach' }) });
+});

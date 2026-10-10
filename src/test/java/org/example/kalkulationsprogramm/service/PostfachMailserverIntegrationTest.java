@@ -222,6 +222,28 @@ class PostfachMailserverIntegrationTest {
     }
 
     @Test
+    void fremdeMessageIdVonAnderemAbsenderLandetNichtImZweitenPostfach() throws Exception {
+        MimeMessage original = nachricht("<vertraulich-1@example.org>", "info@example.com", null, "Angebot Treppe");
+        MAILSERVER.getUserManager().getUser("info@example.com").deliver(original);
+        emailImportService.doImport();
+
+        // Ein Externer schickt an max@ eine Mail mit derselben Message-ID, aber eigenem Absender.
+        MimeMessage angriff = nachricht("<vertraulich-1@example.org>", "max@example.com", null, "Angebot Treppe");
+        angriff.setFrom(new InternetAddress("angreifer@example.net"));
+        angriff.saveChanges();
+        MAILSERVER.getUserManager().getUser("max@example.com").deliver(angriff);
+        // Und noch eine mit richtigem Absender, aber anderem Betreff.
+        MimeMessage angriff2 = nachricht("<vertraulich-1@example.org>", "max@example.com", null, "Bitte Rechnung zahlen");
+        MAILSERVER.getUserManager().getUser("max@example.com").deliver(angriff2);
+        emailImportService.doImport();
+
+        List<Email> mails = emailRepository.findAll();
+        assertThat(mails).hasSize(1);
+        assertThat(zuordnungen(mails.get(0))).extracting(z -> z.getPostfach().getEmailAdresse())
+                .containsExactly("info@example.com");
+    }
+
+    @Test
     void falschesPasswortBremstDieAnderenPostfaecherNicht() throws Exception {
         max.setPasswortVerschluesselt(mailSecretService.encrypt("falsch"));
         postfachRepository.save(max);
@@ -277,6 +299,32 @@ class PostfachMailserverIntegrationTest {
         versand.dienst().sendEmailWithMultipleAttachments("kunde@example.org", null, versand.absenderAdresse(),
                 "AW: Anfrage Carport", "<p>Gern</p>", Map.of(), List.of());
 
+        assertThat(antwortPostfach.getEmailAdresse()).isEqualTo("info@example.com");
+        MimeMessage antwort = posteingang("kunde@example.org").get(0);
+        assertThat(((InternetAddress) antwort.getFrom()[0]).getAddress()).isEqualTo("info@example.com");
+    }
+
+    @Test
+    void antwortAufMailAnAuslaufendesPostfachGehtVonInfoRaus() throws Exception {
+        max.setLaeuftAus(true);
+        max = postfachRepository.save(max);
+        MAILSERVER.getUserManager().getUser("max@example.com")
+                .deliver(nachricht("<alt-tonline-1@example.org>", "max@example.com", null, "Frage zum Angebot"));
+        emailImportService.doImport();
+        Email eingang = new TransactionTemplate(transactionManager).execute(s -> {
+            Email e = emailRepository.findAll().get(0);
+            e.getPostfachZuordnungen().size();
+            return e;
+        });
+
+        EmailAbsender antwortPostfach = postfachVersandService.antwortPostfach(eingang);
+        PostfachVersandService.Versand versand = postfachVersandService.versandUeber(antwortPostfach);
+        versand.dienst().sendEmailWithMultipleAttachments("kunde@example.org", null, versand.absenderAdresse(),
+                "AW: Frage zum Angebot", "<p>Gern</p>", Map.of(), List.of());
+
+        // Abgerufen wurde die Mail aus dem auslaufenden Postfach, geantwortet wird von info@.
+        assertThat(zuordnungen(eingang)).extracting(z -> z.getPostfach().getEmailAdresse())
+                .containsExactly("max@example.com");
         assertThat(antwortPostfach.getEmailAdresse()).isEqualTo("info@example.com");
         MimeMessage antwort = posteingang("kunde@example.org").get(0);
         assertThat(((InternetAddress) antwort.getFrom()[0]).getAddress()).isEqualTo("info@example.com");

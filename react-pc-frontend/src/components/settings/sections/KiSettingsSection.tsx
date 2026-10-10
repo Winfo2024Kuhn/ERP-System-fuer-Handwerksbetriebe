@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Brain, Loader2, MessageSquareWarning, TestTube } from 'lucide-react';
+import { Brain, Loader2, MessageSquareWarning, PlugZap } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { useToast } from '../../ui/toast';
 import {
@@ -173,7 +173,7 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                         disabled={testing || (!apiKey && !apiKeySet)}
                         className="border-rose-300 text-rose-700 hover:bg-rose-50"
                     >
-                        {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
+                        {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap aria-hidden="true" className="w-4 h-4" />}
                         {testing ? 'Teste...' : 'API testen'}
                     </Button>
                 </div>

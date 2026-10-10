@@ -59,6 +59,16 @@ function useTabInHash(): [TabId, (tab: TabId) => void] {
         return istGueltigerTab(raw) ? raw : 'email';
     });
 
+    // Links wie „Einstellungen → Berechtigungen“ (`href="#berechtigungen"`) wechseln den Reiter über die Adresse.
+    useEffect(() => {
+        const beiHashWechsel = () => {
+            const raw = window.location.hash.replace(/^#/, '');
+            if (istGueltigerTab(raw)) setActiveTab(raw);
+        };
+        window.addEventListener('hashchange', beiHashWechsel);
+        return () => window.removeEventListener('hashchange', beiHashWechsel);
+    }, []);
+
     const wechsleTab = useCallback((tab: TabId) => {
         setActiveTab(tab);
         window.history.replaceState(null, '', `${window.location.pathname}#${tab}`);

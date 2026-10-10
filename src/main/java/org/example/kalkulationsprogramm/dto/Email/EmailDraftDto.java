@@ -6,14 +6,25 @@ import java.util.List;
 /**
  * Draft content and attachment metadata. Binary content is downloaded separately.
  *
- * @param postfachId    gewähltes Absender-Postfach einer neuen Mail ({@code null} = Vorbelegung)
- * @param einzelversand Sammel-Mail: jeder Empfänger bekommt eine eigene Mail
+ * @param postfachId               gewähltes Absender-Postfach einer neuen Mail ({@code null} = Vorbelegung)
+ * @param einzelversand            Sammel-Mail: jeder Empfänger bekommt eine eigene Mail
+ * @param weitergeleitetVonEmailId Weiterleitung: die weitergeleitete Mail (fester Absender), sonst {@code null}
  */
 public record EmailDraftDto(Long id, String recipient, String cc, String subject, String body,
         String fromAddress, Long replyEmailId, Long projektId, Long anfrageId,
-        Boolean geschaeftsdokument, Long postfachId, Boolean einzelversand,
+        Boolean geschaeftsdokument, Long postfachId, Boolean einzelversand, Long weitergeleitetVonEmailId,
         LocalDateTime createdAt, LocalDateTime updatedAt,
         List<Attachment> attachments) {
+
+    /** Entwurf ohne Weiterleitungs-Bezug (wie in Etappe 1). */
+    public EmailDraftDto(Long id, String recipient, String cc, String subject, String body,
+            String fromAddress, Long replyEmailId, Long projektId, Long anfrageId,
+            Boolean geschaeftsdokument, Long postfachId, Boolean einzelversand,
+            LocalDateTime createdAt, LocalDateTime updatedAt,
+            List<Attachment> attachments) {
+        this(id, recipient, cc, subject, body, fromAddress, replyEmailId, projektId, anfrageId,
+                geschaeftsdokument, postfachId, einzelversand, null, createdAt, updatedAt, attachments);
+    }
 
     /** Entwurf ohne Postfach-Angaben (wie vor den Postfächern). */
     public EmailDraftDto(Long id, String recipient, String cc, String subject, String body,
@@ -21,7 +32,7 @@ public record EmailDraftDto(Long id, String recipient, String cc, String subject
             Boolean geschaeftsdokument, LocalDateTime createdAt, LocalDateTime updatedAt,
             List<Attachment> attachments) {
         this(id, recipient, cc, subject, body, fromAddress, replyEmailId, projektId, anfrageId,
-                geschaeftsdokument, null, null, createdAt, updatedAt, attachments);
+                geschaeftsdokument, null, null, null, createdAt, updatedAt, attachments);
     }
 
     public record Attachment(Long id, String filename, String contentType, long size) { }

@@ -2,22 +2,30 @@ package org.example.kalkulationsprogramm.service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.EmailAbsender;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachDto;
+import org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachSpeichernRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachTestErgebnis;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachTestRequest;
+import org.example.kalkulationsprogramm.repository.AbteilungRepository;
 import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
 import org.example.kalkulationsprogramm.repository.EmailPostfachZuordnungRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
@@ -35,6 +43,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>Regeln: genau ein Hauptpostfach, höchstens ein Postfach für Rechnungen und
  * Mahnungen, Login und Adresse auf derselben Domain, Passwort nur verschlüsselt.</p>
+ *
+ * <p>Sichtbarkeit (Etappe 2): „für alle sichtbar“ oder nur für freigegebene Abteilungen und
+ * Benutzer. Das Hauptpostfach sieht immer jeder – seine Sichtbarkeitsfelder werden ignoriert.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -51,6 +62,7 @@ public class PostfachService {
     private final FrontendUserProfileRepository frontendUserProfileRepository;
     private final MailSecretService mailSecretService;
     private final SystemSettingsService systemSettingsService;
+    private final AbteilungRepository abteilungRepository;
 
     // ==================== Lesen ====================
 
@@ -71,12 +83,17 @@ public class PostfachService {
     }
 
     /**
-     * Auswahl „Senden von“: alle aktiven Postfächer, eigenes zuerst, dann das
-     * Hauptpostfach, dann nach Sortierung. (Etappe 2: nur sichtbare.)
+     * Auswahl „Senden von“: alle aktiven Postfächer, die der Benutzer sieht und die nicht
+     * auslaufen – eigenes zuerst,
+     * dann das Hauptpostfach, dann nach Sortierung.
      */
     @Transactional(readOnly = true)
-    public List<AbsenderPostfachDto> absenderAuswahl(Long eigenesPostfachId) {
+    public List<AbsenderPostfachDto> absenderAuswahl(Long eigenesPostfachId, PostfachSichtbarkeit sichtbarkeit) {
+        PostfachSichtbarkeit sicht = sichtbarkeit == null ? PostfachSichtbarkeit.ALLES : sichtbarkeit;
         List<AbsenderPostfachDto> liste = new ArrayList<>(repository.findByAktivTrueOrderBySortierungAscIdAsc().stream()
+                .filter(sicht::siehtPostfach)
+                // Ein auslaufendes Postfach ist für neue Mails nicht mehr wählbar.
+                .filter(p -> !p.isLaeuftAus())
                 .map(p -> new AbsenderPostfachDto(p.getId(), p.getEmailAdresse(), p.getAnzeigename(),
                         p.getId().equals(eigenesPostfachId), p.isHauptpostfach()))
                 .toList());
@@ -100,6 +117,37 @@ public class PostfachService {
         EmailAbsender postfach = finde(id);
         uebernehme(postfach, request, false);
         return toDto(postfach, frontendUserProfileRepository.findByEmailAbsenderId(id));
+    }
+
+    /**
+     * Nur die Sichtbarkeit ändern (Einstellungen → Berechtigungen). Fehlende Listen gelten als leer.
+     *
+     * @throws NoSuchElementException   Postfach unbekannt (404)
+     * @throws IllegalArgumentException Hauptpostfach, fehlende Angabe oder unbekannte Abteilung/Benutzer (400)
+     */
+    @Transactional
+    public PostfachDto sichtbarkeitAendern(Long id, PostfachSichtbarkeitRequest request) {
+        EmailAbsender postfach = finde(id);
+        if (request == null) {
+            throw new IllegalArgumentException("Daten fehlen.");
+        }
+        if (postfach.isHauptpostfach()) {
+            throw new IllegalArgumentException("Das Hauptpostfach sieht jeder im Betrieb.");
+        }
+        if (postfach.isFuerGeschaeftsdokumente()) {
+            throw new IllegalArgumentException("Das Postfach für Rechnungen & Mahnungen sieht jeder im Betrieb.");
+        }
+        if (request.sichtbarFuerAlle() == null) {
+            throw new IllegalArgumentException("Bitte angeben, ob alle im Betrieb das Postfach sehen dürfen.");
+        }
+        uebernehmeSichtbarkeit(postfach, request.sichtbarFuerAlle(),
+                request.abteilungIds() == null ? List.of() : request.abteilungIds(),
+                request.benutzerIds() == null ? List.of() : request.benutzerIds(), false);
+        EmailAbsender gespeichert = repository.save(postfach);
+        log.info("[Postfach] Sichtbarkeit von Postfach {} geändert (für alle: {}, Abteilungen: {}, Benutzer: {})",
+                gespeichert.getId(), gespeichert.isSichtbarFuerAlle(), gespeichert.getSichtbarFuerAbteilungen().size(),
+                gespeichert.getSichtbarFuerBenutzer().size());
+        return toDto(gespeichert, frontendUserProfileRepository.findByEmailAbsenderId(gespeichert.getId()));
     }
 
     @Transactional
@@ -236,6 +284,17 @@ public class PostfachService {
         if (wirdHaupt && !aktiv) {
             throw new IllegalArgumentException("Das Hauptpostfach kann nicht ausgeschaltet werden.");
         }
+        // Auslaufen: null = unverändert. Haupt- und Rechnungs-Postfach laufen nie aus – in beide
+        // Richtungen (auch ein auslaufendes Postfach wird nicht zum Haupt-/Rechnungs-Postfach).
+        boolean laeuftAus = request.laeuftAus() != null ? request.laeuftAus() : postfach.isLaeuftAus();
+        boolean wirdGeschaeftsdokumente = Boolean.TRUE.equals(request.fuerGeschaeftsdokumente());
+        if (laeuftAus && wirdHaupt) {
+            throw new IllegalArgumentException("Das Hauptpostfach kann nicht auslaufen. "
+                    + "Bitte zuerst ein anderes Postfach zum Hauptpostfach machen.");
+        }
+        if (laeuftAus && wirdGeschaeftsdokumente) {
+            throw new IllegalArgumentException("Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.");
+        }
 
         pruefePasswortBeiServerwechsel(postfach, neu, adresse, benutzername, request);
 
@@ -257,7 +316,12 @@ public class PostfachService {
             }
         }
 
-        boolean wirdGeschaeftsdokumente = Boolean.TRUE.equals(request.fuerGeschaeftsdokumente());
+        if (!wirdHaupt) {
+            // Das Hauptpostfach sieht immer jeder – seine Sichtbarkeitsfelder werden ignoriert.
+            uebernehmeSichtbarkeit(postfach, request.sichtbarFuerAlle(), request.abteilungIds(), request.benutzerIds(), neu);
+        }
+
+        postfach.setLaeuftAus(laeuftAus);
         postfach.setHauptpostfach(wirdHaupt);
         postfach.setFuerGeschaeftsdokumente(wirdGeschaeftsdokumente);
         EmailAbsender gespeichert = repository.save(postfach);
@@ -282,6 +346,59 @@ public class PostfachService {
         // Bewusst ohne Passwort geloggt.
         log.info("[Postfach] Postfach {} gespeichert (Hauptpostfach: {}, Rechnungen: {}, aktiv: {})",
                 gespeichert.getId(), wirdHaupt, wirdGeschaeftsdokumente, aktiv);
+    }
+
+    /**
+     * „Wer darf es sehen?“: {@code null} = unverändert (neues Postfach: für alle sichtbar),
+     * leere Liste = Freigaben entfernen. Unbekannte IDs werden abgelehnt, bevor etwas geändert wird.
+     */
+    private void uebernehmeSichtbarkeit(EmailAbsender postfach, Boolean sichtbarFuerAlle, List<Long> abteilungIds,
+            List<Long> benutzerIds, boolean neu) {
+        Set<Abteilung> abteilungen = abteilungIds == null ? null
+                : ladeAlle(abteilungIds, abteilungRepository::findAllById, Abteilung::getId,
+                        "Diese Abteilung gibt es nicht (mehr).");
+        Set<FrontendUserProfile> benutzer = benutzerIds == null ? null
+                : ladeAlle(benutzerIds, frontendUserProfileRepository::findAllById, FrontendUserProfile::getId,
+                        "Diesen Benutzer gibt es nicht (mehr).");
+
+        if (sichtbarFuerAlle != null) {
+            postfach.setSichtbarFuerAlle(sichtbarFuerAlle);
+        } else if (neu) {
+            postfach.setSichtbarFuerAlle(true);
+        }
+        if (abteilungen != null) {
+            postfach.getSichtbarFuerAbteilungen().clear();
+            postfach.getSichtbarFuerAbteilungen().addAll(abteilungen);
+        }
+        if (benutzer != null) {
+            postfach.getSichtbarFuerBenutzer().clear();
+            postfach.getSichtbarFuerBenutzer().addAll(benutzer);
+        }
+    }
+
+    /**
+     * Lädt alle Einträge zu den IDs; fehlt einer (unbekannt, gelöscht, ungültige ID wie 0 oder
+     * negativ), gibt es eine Meldung statt einer stillschweigend gekürzten Auswahl.
+     */
+    private static <T> Set<T> ladeAlle(List<Long> ids, Function<Collection<Long>, List<T>> laden,
+            Function<T, Long> idVon, String fehlermeldung) {
+        Set<Long> gesucht = new LinkedHashSet<>();
+        for (Long id : ids) {
+            if (id == null || id <= 0) {
+                throw new IllegalArgumentException(fehlermeldung);
+            }
+            gesucht.add(id);
+        }
+        if (gesucht.isEmpty()) {
+            return new LinkedHashSet<>();
+        }
+        List<T> gefunden = laden.apply(gesucht);
+        Set<Long> gefundeneIds = gefunden.stream().map(idVon).filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!gefundeneIds.containsAll(gesucht)) {
+            throw new IllegalArgumentException(fehlermeldung);
+        }
+        return new LinkedHashSet<>(gefunden);
     }
 
     /**
@@ -332,7 +449,25 @@ public class PostfachService {
                 p.getLetzterAbrufFehler(),
                 benutzer.stream()
                         .map(u -> new PostfachDto.BenutzerRefDto(u.getId(), u.getDisplayName()))
-                        .toList());
+                        .toList(),
+                // Hauptpostfach und Rechnungs-Postfach sieht immer jeder – egal, was gespeichert ist.
+                // Die gespeicherte Auswahl bleibt stehen und gilt wieder, wenn der Haken wandert.
+                siehtJeder(p) || p.isSichtbarFuerAlle(),
+                siehtJeder(p) ? List.of() : p.getSichtbarFuerAbteilungen().stream()
+                        .sorted(Comparator.comparing(Abteilung::getName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+                        .map(a -> new PostfachDto.AbteilungRefDto(a.getId(), a.getName()))
+                        .toList(),
+                siehtJeder(p) ? List.of() : p.getSichtbarFuerBenutzer().stream()
+                        .sorted(Comparator.comparing(FrontendUserProfile::getDisplayName,
+                                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+                        .map(u -> new PostfachDto.BenutzerRefDto(u.getId(), u.getDisplayName()))
+                        .toList(),
+                p.isLaeuftAus());
+    }
+
+    /** Hauptpostfach und Postfach für Rechnungen & Mahnungen sieht jeder im Betrieb. */
+    private static boolean siehtJeder(EmailAbsender postfach) {
+        return postfach.isHauptpostfach() || postfach.isFuerGeschaeftsdokumente();
     }
 
     private String entschluessele(EmailAbsender postfach) {

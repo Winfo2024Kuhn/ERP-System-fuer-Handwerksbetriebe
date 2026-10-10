@@ -29,11 +29,27 @@ describe('AbsenderPostfachAuswahl – Auswahl', () => {
     it('erklärt Ladefehler und fehlende Postfächer', () => {
         const { rerender } = render(<AbsenderPostfachAuswahl id="von" modus="auswahl" postfaecher={[]} value={null} onChange={vi.fn()} ladeFehler inline />);
         expect(screen.getByText(/konnten nicht geladen werden/)).toHaveClass('col-span-2', 'text-rose-700');
-        rerender(<AbsenderPostfachAuswahl id="von" modus="auswahl" postfaecher={[]} value={null} onChange={vi.fn()} />);
-        expect(screen.getByText(/Noch kein Postfach eingerichtet/)).not.toHaveClass('col-span-2');
         expect(screen.getByRole('combobox', { name: 'Senden von' })).toHaveAttribute('aria-describedby', 'von-hinweis');
         rerender(<AbsenderPostfachAuswahl id="von" modus="auswahl" postfaecher={[]} value={null} onChange={vi.fn()} laedt />);
         expect(screen.getByRole('combobox', { name: 'Senden von' })).toHaveTextContent('Postfächer werden geladen');
+    });
+});
+
+describe('AbsenderPostfachAuswahl – kein Postfach zur Auswahl', () => {
+    it('zeigt statt eines leeren Feldes den Standard-Absender mit verständlichem Hinweis', () => {
+        render(<AbsenderPostfachAuswahl id="von" modus="auswahl" postfaecher={[]} value={null} onChange={vi.fn()} />);
+        expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+        const zeile = screen.getByTestId('absender-fest');
+        expect(zeile).toHaveTextContent('Standard-Absender des Betriebs');
+        expect(zeile).toHaveAttribute('aria-describedby', 'von-hinweis');
+        const hinweis = screen.getByText(/Kein Postfach zur Auswahl/);
+        expect(hinweis).toHaveTextContent('Welche Postfächer Sie nutzen dürfen, legt Ihr Admin fest.');
+        expect(hinweis).not.toHaveClass('col-span-2');
+    });
+
+    it('lässt den Hinweis im E-Mail-Center über beide Spalten laufen', () => {
+        render(<AbsenderPostfachAuswahl id="von" modus="auswahl" postfaecher={[]} value={null} onChange={vi.fn()} inline />);
+        expect(screen.getByText(/Kein Postfach zur Auswahl/)).toHaveClass('col-span-2');
     });
 });
 

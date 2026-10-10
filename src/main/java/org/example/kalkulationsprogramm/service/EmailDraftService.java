@@ -91,6 +91,7 @@ public class EmailDraftService {
         draft.setAnfrageId(dto.anfrageId());
         if (dto.geschaeftsdokument() != null) draft.setGeschaeftsdokument(dto.geschaeftsdokument());
         draft.setPostfachId(dto.postfachId());
+        draft.setWeitergeleitetVonEmailId(dto.weitergeleitetVonEmailId());
         if (dto.einzelversand() != null) draft.setEinzelversand(dto.einzelversand());
         if (attachments != null) {
             draft.getAttachments().clear();
@@ -147,7 +148,8 @@ public class EmailDraftService {
         checkLength(dto.subject(), 10_000);
         checkLength(dto.body(), 1_000_000);
         checkLength(dto.fromAddress(), 255);
-        for (Long id : new Long[] {dto.replyEmailId(), dto.projektId(), dto.anfrageId(), dto.postfachId()}) {
+        for (Long id : new Long[] {dto.replyEmailId(), dto.projektId(), dto.anfrageId(), dto.postfachId(),
+                dto.weitergeleitetVonEmailId()}) {
             if (id != null) requirePositive(id);
         }
         if (dto.projektId() != null && dto.anfrageId() != null)
@@ -237,6 +239,6 @@ public class EmailDraftService {
         return new EmailDraftDto(draft.getId(), draft.getRecipient(), draft.getCc(), draft.getSubject(),
                 draft.getBody(), draft.getFromAddress(), draft.getReplyEmailId(), draft.getProjektId(),
                 draft.getAnfrageId(), draft.isGeschaeftsdokument(), draft.getPostfachId(), draft.isEinzelversand(),
-                draft.getCreatedAt(), draft.getUpdatedAt(), attachments);
+                draft.getWeitergeleitetVonEmailId(), draft.getCreatedAt(), draft.getUpdatedAt(), attachments);
     }
 }

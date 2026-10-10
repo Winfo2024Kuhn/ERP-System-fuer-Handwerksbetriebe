@@ -75,6 +75,21 @@ describe('SystemSetupConfigurator – Reiter', () => {
         expect(screen.queryByText(/Wo sollen Zeichnungen und Dateien liegen/i)).not.toBeInTheDocument();
     });
 
+    it('wechselt den Reiter, wenn ein Link nur die Adresse ändert (#berechtigungen)', async () => {
+        stubFetch();
+        renderConfigurator();
+        expect(await screen.findByText('info@musterbetrieb.example')).toBeInTheDocument();
+
+        window.history.pushState(null, '', '/#unbekannt');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+        expect(screen.getByRole('tab', { name: /E-Mail/ })).toHaveAttribute('aria-selected', 'true');
+
+        window.history.pushState(null, '', '/#berechtigungen');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+        await waitFor(() => expect(screen.getByRole('tab', { name: /Berechtigungen/ })).toHaveAttribute('aria-selected', 'true'));
+        expect(await screen.findByText('E-Mail-Postfächer – wer sieht welches Postfach?')).toBeInTheDocument();
+    });
+
     it('merkt sich den offenen Reiter in der Adresszeile', async () => {
         stubFetch();
         renderConfigurator();

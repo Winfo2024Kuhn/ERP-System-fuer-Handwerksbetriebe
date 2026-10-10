@@ -55,12 +55,26 @@ public class EmailThreadService {
      */
     @Transactional(readOnly = true)
     public EmailThreadDto loadThreadFor(Long emailId) {
+        return loadThreadFor(emailId, email -> true);
+    }
+
+    /**
+     * Wie {@link #loadThreadFor(Long)}, zeigt aber nur Mails, die {@code zeigen} erlaubt
+     * (z. B. nur die für den Benutzer sichtbaren). Entwürfe erscheinen nur zu gezeigten Mails.
+     *
+     * @throws ResponseStatusException 404 wenn die Mail fehlt oder selbst nicht gezeigt werden darf
+     */
+    @Transactional(readOnly = true)
+    public EmailThreadDto loadThreadFor(Long emailId, java.util.function.Predicate<Email> zeigen) {
         Email focusedEmail = emailRepository.findById(emailId)
+                .filter(zeigen)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Email not found: " + emailId));
 
         Email root = findRoot(focusedEmail);
-        List<Email> allInThread = collectThread(root);
+        List<Email> allInThread = collectThread(root).stream()
+                .filter(zeigen)
+                .collect(Collectors.toList());
 
         List<EmailThreadEntryDto> entries = allInThread.stream()
                 .map(this::toEntryDto)

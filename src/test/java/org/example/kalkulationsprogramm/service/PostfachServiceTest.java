@@ -48,6 +48,7 @@ class PostfachServiceTest {
     @Mock private FrontendUserProfileRepository frontendUserProfileRepository;
     @Mock private MailSecretService mailSecretService;
     @Mock private SystemSettingsService systemSettingsService;
+    @Mock private org.example.kalkulationsprogramm.repository.AbteilungRepository abteilungRepository;
 
     @InjectMocks private PostfachService service;
 
@@ -458,7 +459,7 @@ class PostfachServiceTest {
             EmailAbsender max = postfach(5L, "max@example.com", false);
             when(repository.findByAktivTrueOrderBySortierungAscIdAsc()).thenReturn(List.of(rechnungen, info, max));
 
-            List<AbsenderPostfachDto> auswahl = service.absenderAuswahl(5L);
+            List<AbsenderPostfachDto> auswahl = service.absenderAuswahl(5L, PostfachSichtbarkeit.ALLES);
 
             assertThat(auswahl).extracting(AbsenderPostfachDto::emailAdresse)
                     .containsExactly("max@example.com", "info@example.com", "rechnungen@example.com");
@@ -612,6 +613,384 @@ class PostfachServiceTest {
             assertThatThrownBy(() -> service.teste(new PostfachTestRequest(null, "max@example.com", "pw",
                     "h".repeat(300), null, null, null, null)))
                     .hasMessageContaining("zu lang");
+        }
+    }
+
+    @Nested
+    class Sichtbarkeit {
+
+        private org.example.kalkulationsprogramm.domain.Abteilung abteilung(Long id, String name) {
+            org.example.kalkulationsprogramm.domain.Abteilung a = new org.example.kalkulationsprogramm.domain.Abteilung();
+            a.setId(id);
+            a.setName(name);
+            return a;
+        }
+
+        private FrontendUserProfile benutzer(Long id, String name) {
+            FrontendUserProfile u = new FrontendUserProfile();
+            u.setId(id);
+            u.setDisplayName(name);
+            return u;
+        }
+
+        private PostfachSpeichernRequest mitSichtbarkeit(Boolean fuerAlle, List<Long> abteilungen, List<Long> benutzer) {
+            return new PostfachSpeichernRequest("max@example.com", null, true, null, false, false, null, "geheim",
+                    "mail.example.com", 465, "mail.example.com", 993, fuerAlle, abteilungen, benutzer, null);
+        }
+
+        private EmailAbsender gespeichertesMax() {
+            EmailAbsender max = postfach(5L, "max@example.com", false);
+            when(repository.findById(5L)).thenReturn(Optional.of(max));
+            return max;
+        }
+
+        @Test
+        void neuesPostfachOhneAngabeIstFuerAlleSichtbar() {
+            PostfachDto dto = service.anlegen(request("max@example.com"));
+
+            assertThat(dto.sichtbarFuerAlle()).isTrue();
+            assertThat(dto.sichtbarFuerAbteilungen()).isEmpty();
+            assertThat(dto.sichtbarFuerBenutzer()).isEmpty();
+        }
+
+        @Test
+        void nurBestimmteMitAbteilungenUndBenutzern() {
+            when(abteilungRepository.findAllById(any())).thenReturn(List.of(abteilung(3L, "Werkstatt"), abteilung(2L, "Büro")));
+            when(frontendUserProfileRepository.findAllById(any())).thenReturn(List.of(
+                    benutzer(8L, "Max Mustermann"), benutzer(7L, "Erika Mustermann")));
+
+            PostfachDto dto = service.anlegen(mitSichtbarkeit(false, List.of(2L, 3L, 2L), List.of(7L, 8L)));
+
+            assertThat(dto.sichtbarFuerAlle()).isFalse();
+            assertThat(dto.sichtbarFuerAbteilungen()).extracting(PostfachDto.AbteilungRefDto::name)
+                    .containsExactly("Büro", "Werkstatt");
+            assertThat(dto.sichtbarFuerBenutzer()).extracting(PostfachDto.BenutzerRefDto::displayName)
+                    .containsExactly("Erika Mustermann", "Max Mustermann");
+        }
+
+        @Test
+        void aendernOhneAngabeLaesstSichtbarkeitUnveraendert() {
+            EmailAbsender max = gespeichertesMax();
+            max.setSichtbarFuerAlle(false);
+            max.getSichtbarFuerAbteilungen().add(abteilung(2L, "Büro"));
+            max.getSichtbarFuerBenutzer().add(benutzer(7L, "Erika Mustermann"));
+
+            PostfachDto dto = service.aendern(5L, request("max@example.com"));
+
+            assertThat(dto.sichtbarFuerAlle()).isFalse();
+            assertThat(dto.sichtbarFuerAbteilungen()).hasSize(1);
+            assertThat(dto.sichtbarFuerBenutzer()).hasSize(1);
+            verify(abteilungRepository, never()).findAllById(any());
+            verify(frontendUserProfileRepository, never()).findAllById(any());
+        }
+
+        @Test
+        void leereListenEntfernenFreigaben() {
+            EmailAbsender max = gespeichertesMax();
+            max.getSichtbarFuerAbteilungen().add(abteilung(2L, "Büro"));
+            max.getSichtbarFuerBenutzer().add(benutzer(7L, "Erika Mustermann"));
+
+            PostfachDto dto = service.aendern(5L, mitSichtbarkeit(true, List.of(), List.of()));
+
+            assertThat(dto.sichtbarFuerAlle()).isTrue();
+            assertThat(max.getSichtbarFuerAbteilungen()).isEmpty();
+            assertThat(max.getSichtbarFuerBenutzer()).isEmpty();
+            verify(abteilungRepository, never()).findAllById(any());
+        }
+
+        @Test
+        void fuerAlleBehaeltDieAuswahlFuerSpaeter() {
+            when(abteilungRepository.findAllById(any())).thenReturn(List.of(abteilung(2L, "Büro")));
+
+            PostfachDto dto = service.anlegen(mitSichtbarkeit(true, List.of(2L), null));
+
+            assertThat(dto.sichtbarFuerAlle()).isTrue();
+            assertThat(dto.sichtbarFuerAbteilungen()).extracting(PostfachDto.AbteilungRefDto::id).containsExactly(2L);
+        }
+
+        @Test
+        void unbekannteAbteilungWirdAbgelehnt() {
+            when(abteilungRepository.findAllById(any())).thenReturn(List.of(abteilung(2L, "Büro")));
+
+            assertThatThrownBy(() -> service.anlegen(mitSichtbarkeit(false, List.of(2L, Long.MAX_VALUE), null)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Diese Abteilung gibt es nicht (mehr).");
+            verify(repository, never()).save(any());
+        }
+
+        @Test
+        void unbekannterBenutzerWirdAbgelehnt() {
+            when(frontendUserProfileRepository.findAllById(any())).thenReturn(List.of());
+
+            assertThatThrownBy(() -> service.anlegen(mitSichtbarkeit(false, null, List.of(99L))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Diesen Benutzer gibt es nicht (mehr).");
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = { 0L, -1L, Long.MIN_VALUE })
+        void ungueltigeIdsWerdenAbgelehnt(long id) {
+            assertThatThrownBy(() -> service.anlegen(mitSichtbarkeit(false, List.of(id), null)))
+                    .hasMessage("Diese Abteilung gibt es nicht (mehr).");
+            assertThatThrownBy(() -> service.anlegen(mitSichtbarkeit(false, null, List.of(id))))
+                    .hasMessage("Diesen Benutzer gibt es nicht (mehr).");
+            verify(abteilungRepository, never()).findAllById(any());
+        }
+
+        @Test
+        void nullInDerListeWirdAbgelehnt() {
+            List<Long> mitNull = new ArrayList<>();
+            mitNull.add(null);
+
+            assertThatThrownBy(() -> service.anlegen(mitSichtbarkeit(false, mitNull, null)))
+                    .hasMessage("Diese Abteilung gibt es nicht (mehr).");
+        }
+
+        @Test
+        void hauptpostfachIgnoriertSichtbarkeit() {
+            EmailAbsender info = postfach(1L, "info@example.com", true);
+            when(repository.findById(1L)).thenReturn(Optional.of(info));
+            PostfachSpeichernRequest nurBestimmte = new PostfachSpeichernRequest("info@example.com", null, true, null,
+                    true, false, null, "geheim", "mail.example.com", 465, "mail.example.com", 993, false,
+                    List.of(Long.MAX_VALUE), List.of(Long.MAX_VALUE), null);
+
+            PostfachDto dto = service.aendern(1L, nurBestimmte);
+
+            assertThat(info.isSichtbarFuerAlle()).isTrue();
+            assertThat(dto.sichtbarFuerAlle()).isTrue();
+            assertThat(dto.sichtbarFuerAbteilungen()).isEmpty();
+            assertThat(dto.sichtbarFuerBenutzer()).isEmpty();
+            verify(abteilungRepository, never()).findAllById(any());
+        }
+
+        @Test
+        void hauptpostfachZeigtImmerFuerAlleAuchWennAltesGespeichert() {
+            EmailAbsender info = postfach(1L, "info@example.com", true);
+            info.setSichtbarFuerAlle(false);
+            info.getSichtbarFuerAbteilungen().add(abteilung(2L, "Büro"));
+            when(repository.findById(1L)).thenReturn(Optional.of(info));
+            when(frontendUserProfileRepository.findByEmailAbsenderId(1L)).thenReturn(List.of());
+
+            PostfachDto dto = service.eins(1L);
+
+            assertThat(dto.sichtbarFuerAlle()).isTrue();
+            assertThat(dto.sichtbarFuerAbteilungen()).isEmpty();
+        }
+
+        @Test
+        void xssUndSqlInNamenWerdenNurAusgeliefert() {
+            EmailAbsender max = gespeichertesMax();
+            max.setSichtbarFuerAlle(false);
+            max.getSichtbarFuerAbteilungen().add(abteilung(2L, "<script>alert(1)</script>"));
+            max.getSichtbarFuerBenutzer().add(benutzer(7L, "'; DROP TABLE email; --"));
+            when(frontendUserProfileRepository.findByEmailAbsenderId(5L)).thenReturn(List.of());
+
+            PostfachDto dto = service.eins(5L);
+
+            assertThat(dto.sichtbarFuerAbteilungen().get(0).name()).isEqualTo("<script>alert(1)</script>");
+            assertThat(dto.sichtbarFuerBenutzer().get(0).displayName()).isEqualTo("'; DROP TABLE email; --");
+        }
+
+        // ---- PUT /api/postfaecher/{id}/sichtbarkeit ----
+
+        @Test
+        void nurSichtbarkeitAendern() {
+            EmailAbsender max = gespeichertesMax();
+            max.setAnzeigename("Max Mustermann");
+            when(abteilungRepository.findAllById(any())).thenReturn(List.of(abteilung(2L, "Büro")));
+            when(frontendUserProfileRepository.findAllById(any())).thenReturn(List.of(benutzer(7L, "Erika Mustermann")));
+            when(frontendUserProfileRepository.findByEmailAbsenderId(5L)).thenReturn(List.of());
+
+            PostfachDto dto = service.sichtbarkeitAendern(5L,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(false, List.of(2L), List.of(7L)));
+
+            assertThat(dto.sichtbarFuerAlle()).isFalse();
+            assertThat(dto.sichtbarFuerAbteilungen()).extracting(PostfachDto.AbteilungRefDto::name).containsExactly("Büro");
+            assertThat(dto.sichtbarFuerBenutzer()).extracting(PostfachDto.BenutzerRefDto::id).containsExactly(7L);
+            assertThat(dto.anzeigename()).isEqualTo("Max Mustermann");
+            verify(repository).save(max);
+        }
+
+        @Test
+        void nurSichtbarkeitFehlendeListenSindLeer() {
+            EmailAbsender max = gespeichertesMax();
+            max.getSichtbarFuerAbteilungen().add(abteilung(2L, "Büro"));
+            max.getSichtbarFuerBenutzer().add(benutzer(7L, "Erika Mustermann"));
+
+            service.sichtbarkeitAendern(5L,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(true, null, null));
+
+            assertThat(max.isSichtbarFuerAlle()).isTrue();
+            assertThat(max.getSichtbarFuerAbteilungen()).isEmpty();
+            assertThat(max.getSichtbarFuerBenutzer()).isEmpty();
+        }
+
+        @Test
+        void nurSichtbarkeitBeimHauptpostfach400() {
+            EmailAbsender info = postfach(1L, "info@example.com", true);
+            when(repository.findById(1L)).thenReturn(Optional.of(info));
+
+            assertThatThrownBy(() -> service.sichtbarkeitAendern(1L,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(false, List.of(), List.of())))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Das Hauptpostfach sieht jeder im Betrieb.");
+            verify(repository, never()).save(any());
+        }
+
+        @Test
+        void nurSichtbarkeitBeimRechnungsPostfach400() {
+            EmailAbsender rechnungen = gespeichertesMax();
+            rechnungen.setFuerGeschaeftsdokumente(true);
+
+            assertThatThrownBy(() -> service.sichtbarkeitAendern(5L,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(false, List.of(), List.of())))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Das Postfach für Rechnungen & Mahnungen sieht jeder im Betrieb.");
+            verify(repository, never()).save(any());
+        }
+
+        @Test
+        void rechnungsPostfachZeigtFuerAlleUndBehaeltAuswahl() {
+            EmailAbsender rechnungen = gespeichertesMax();
+            rechnungen.setFuerGeschaeftsdokumente(true);
+            rechnungen.setSichtbarFuerAlle(false);
+            rechnungen.getSichtbarFuerAbteilungen().add(abteilung(2L, "Büro"));
+            rechnungen.getSichtbarFuerBenutzer().add(benutzer(7L, "Erika Mustermann"));
+            when(frontendUserProfileRepository.findByEmailAbsenderId(5L)).thenReturn(List.of());
+
+            PostfachDto dto = service.eins(5L);
+
+            assertThat(dto.sichtbarFuerAlle()).isTrue();
+            assertThat(dto.sichtbarFuerAbteilungen()).isEmpty();
+            assertThat(dto.sichtbarFuerBenutzer()).isEmpty();
+            // Gespeichert bleibt die eigene Auswahl – sie gilt wieder, wenn der Haken wandert.
+            assertThat(rechnungen.isSichtbarFuerAlle()).isFalse();
+            assertThat(rechnungen.getSichtbarFuerAbteilungen()).hasSize(1);
+            rechnungen.setFuerGeschaeftsdokumente(false);
+            assertThat(service.eins(5L).sichtbarFuerAbteilungen()).hasSize(1);
+        }
+
+        @Test
+        void nurSichtbarkeitOhneAngaben400() {
+            gespeichertesMax();
+
+            assertThatThrownBy(() -> service.sichtbarkeitAendern(5L, null)).hasMessage("Daten fehlen.");
+            assertThatThrownBy(() -> service.sichtbarkeitAendern(5L,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(null, List.of(), List.of())))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("alle im Betrieb");
+            verify(repository, never()).save(any());
+        }
+
+        @Test
+        void nurSichtbarkeitUnbekannteIds400() {
+            gespeichertesMax();
+            when(abteilungRepository.findAllById(any())).thenReturn(List.of());
+
+            assertThatThrownBy(() -> service.sichtbarkeitAendern(5L,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(false, List.of(Long.MAX_VALUE), null)))
+                    .hasMessage("Diese Abteilung gibt es nicht (mehr).");
+            assertThatThrownBy(() -> service.sichtbarkeitAendern(5L,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(false, null, List.of(-7L))))
+                    .hasMessage("Diesen Benutzer gibt es nicht (mehr).");
+            verify(repository, never()).save(any());
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = { 0L, -1L, Long.MAX_VALUE })
+        void nurSichtbarkeitUnbekanntesPostfach404(long id) {
+            lenient().when(repository.findById(id)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.sichtbarkeitAendern(id,
+                    new org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest(true, null, null)))
+                    .isInstanceOf(NoSuchElementException.class);
+        }
+
+        @Test
+        void absenderAuswahlNurSichtbare() {
+            EmailAbsender info = postfach(1L, "info@example.com", true);
+            EmailAbsender max = postfach(5L, "max@example.com", false);
+            EmailAbsender fremd = postfach(6L, "fremd@example.com", false);
+            when(repository.findByAktivTrueOrderBySortierungAscIdAsc()).thenReturn(List.of(info, max, fremd));
+
+            List<AbsenderPostfachDto> auswahl = service.absenderAuswahl(5L,
+                    new PostfachSichtbarkeit(false, java.util.Set.of(1L, 5L)));
+
+            assertThat(auswahl).extracting(AbsenderPostfachDto::emailAdresse)
+                    .containsExactly("max@example.com", "info@example.com");
+            assertThat(service.absenderAuswahl(null, null)).hasSize(3);
+        }
+    }
+
+    @Nested
+    class LaeuftAus {
+
+        private PostfachSpeichernRequest mitLaeuftAus(Boolean haupt, Boolean rechnungen, Boolean laeuftAus) {
+            return new PostfachSpeichernRequest("max@example.com", null, true, null, haupt, rechnungen, null, "geheim",
+                    "mail.example.com", 465, "mail.example.com", 993, null, null, null, laeuftAus);
+        }
+
+        private EmailAbsender gespeichertesMax() {
+            EmailAbsender max = postfach(5L, "max@example.com", false);
+            when(repository.findById(5L)).thenReturn(Optional.of(max));
+            return max;
+        }
+
+        @Test
+        void auslaufenSpeichernUndImDto() {
+            PostfachDto dto = service.anlegen(mitLaeuftAus(false, false, true));
+
+            assertThat(dto.laeuftAus()).isTrue();
+            assertThat(service.anlegen(mitLaeuftAus(false, false, null)).laeuftAus()).isFalse();
+        }
+
+        @Test
+        void ohneAngabeUnveraendert() {
+            EmailAbsender max = gespeichertesMax();
+            max.setLaeuftAus(true);
+            when(frontendUserProfileRepository.findByEmailAbsenderId(5L)).thenReturn(List.of());
+
+            assertThat(service.aendern(5L, mitLaeuftAus(false, false, null)).laeuftAus()).isTrue();
+            assertThat(service.aendern(5L, mitLaeuftAus(false, false, false)).laeuftAus()).isFalse();
+        }
+
+        @Test
+        void hauptpostfachKannNichtAuslaufen() {
+            assertThatThrownBy(() -> service.anlegen(mitLaeuftAus(true, false, true)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Das Hauptpostfach kann nicht auslaufen. "
+                            + "Bitte zuerst ein anderes Postfach zum Hauptpostfach machen.");
+            verify(repository, never()).save(any());
+        }
+
+        @Test
+        void auslaufendesWirdNichtZumHauptpostfach() {
+            gespeichertesMax().setLaeuftAus(true);
+
+            assertThatThrownBy(() -> service.aendern(5L, mitLaeuftAus(true, false, null)))
+                    .hasMessageContaining("Das Hauptpostfach kann nicht auslaufen.");
+        }
+
+        @Test
+        void rechnungsPostfachKannNichtAuslaufenInBeideRichtungen() {
+            assertThatThrownBy(() -> service.anlegen(mitLaeuftAus(false, true, true)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.");
+            gespeichertesMax().setLaeuftAus(true);
+            assertThatThrownBy(() -> service.aendern(5L, mitLaeuftAus(false, true, null)))
+                    .hasMessage("Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.");
+            verify(repository, never()).save(any());
+        }
+
+        @Test
+        void absenderAuswahlOhneAuslaufende() {
+            EmailAbsender info = postfach(1L, "info@example.com", true);
+            EmailAbsender tonline = postfach(6L, "betrieb@t-online.de", false);
+            tonline.setLaeuftAus(true);
+            when(repository.findByAktivTrueOrderBySortierungAscIdAsc()).thenReturn(List.of(info, tonline));
+
+            assertThat(service.absenderAuswahl(6L, PostfachSichtbarkeit.ALLES))
+                    .extracting(AbsenderPostfachDto::emailAdresse).containsExactly("info@example.com");
         }
     }
 

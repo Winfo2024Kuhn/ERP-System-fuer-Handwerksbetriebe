@@ -103,9 +103,16 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
+    @MockBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
 
     @org.junit.jupiter.api.BeforeEach
     void threadKennzahlenWieEinzelmail() {
+        // Sichtbarkeit prüft UnifiedEmailSichtbarkeitTest gezielt; hier sieht der Aufrufer alles.
+        given(postfachSichtbarkeitService.fuer(any())).willReturn(
+                org.example.kalkulationsprogramm.service.PostfachSichtbarkeit.ALLES);
+        // Wer alles sieht, bekommt das Antwort-Postfach wie bisher und darf das Rechnungs-Postfach nutzen.
+        given(postfachVersandService.antwortPostfachFuer(any(), any(), any())).willAnswer(
+                invocation -> postfachVersandService.antwortPostfach(invocation.getArgument(0)));
         // Anhang-Rechte prüft der Test "Attachment Download Tests" gezielt; sonst darf der Aufrufer alles öffnen.
         given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.of(
                 java.util.EnumSet.allOf(org.example.kalkulationsprogramm.domain.LieferantDokumentTyp.class)));
@@ -767,7 +774,7 @@ class UnifiedEmailControllerTest {
                     makeEntry(2L, "Re: Anfrage Sanierung Bad", "OUT")
             ));
 
-            given(emailThreadService.loadThreadFor(2L)).willReturn(dto);
+            given(emailThreadService.loadThreadFor(eq(2L), any())).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/2/thread"))
                     .andExpect(status().isOk())
@@ -789,7 +796,7 @@ class UnifiedEmailControllerTest {
             dto.setFocusedEmailId(5L);
             dto.setEmails(List.of(makeEntry(5L, "Einzelnachricht", "IN")));
 
-            given(emailThreadService.loadThreadFor(5L)).willReturn(dto);
+            given(emailThreadService.loadThreadFor(eq(5L), any())).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/5/thread"))
                     .andExpect(status().isOk())
@@ -801,7 +808,7 @@ class UnifiedEmailControllerTest {
         @Test
         @DisplayName("Nicht existierende E-Mail gibt 404")
         void getThread_notFound() throws Exception {
-            given(emailThreadService.loadThreadFor(999L))
+            given(emailThreadService.loadThreadFor(eq(999L), any()))
                     .willThrow(new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.NOT_FOUND, "Email not found: 999"));
 
@@ -827,7 +834,7 @@ class UnifiedEmailControllerTest {
             dto.setFocusedEmailId(1L);
             dto.setEmails(List.of(entry));
 
-            given(emailThreadService.loadThreadFor(1L)).willReturn(dto);
+            given(emailThreadService.loadThreadFor(eq(1L), any())).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/1/thread"))
                     .andExpect(status().isOk())
@@ -839,7 +846,7 @@ class UnifiedEmailControllerTest {
         @Test
         @DisplayName("Ungültige ID (negativ) gibt 404")
         void getThread_negativeId() throws Exception {
-            given(emailThreadService.loadThreadFor(-1L))
+            given(emailThreadService.loadThreadFor(eq(-1L), any()))
                     .willThrow(new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.NOT_FOUND, "Email not found: -1"));
 
@@ -1029,7 +1036,7 @@ class UnifiedEmailControllerTest {
             max.setId(7L);
             given(frontendUserProfileService.findByUsername("max")).willReturn(Optional.of(max));
             given(postfachVersandService.eigenesPostfach(7L)).willReturn(Optional.of(postfach(3L, "max@example.com")));
-            given(postfachService.absenderAuswahl(3L)).willReturn(List.of(
+            given(postfachService.absenderAuswahl(eq(3L), any())).willReturn(List.of(
                     new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(3L, "max@example.com", "Max Mustermann", true, false),
                     new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(1L, "info@example.com", null, false, true)));
 
@@ -1044,12 +1051,12 @@ class UnifiedEmailControllerTest {
         @Test
         @DisplayName("absender-postfaecher: ohne Anmeldung kein eigenes Postfach")
         void absenderPostfaecherOhneAnmeldung() throws Exception {
-            given(postfachService.absenderAuswahl(isNull())).willReturn(List.of());
+            given(postfachService.absenderAuswahl(isNull(), any())).willReturn(List.of());
 
             mockMvc.perform(get("/api/emails/absender-postfaecher"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$").isEmpty());
-            verify(postfachService).absenderAuswahl(isNull());
+            verify(postfachService).absenderAuswahl(isNull(), any());
         }
 
         @Test
@@ -1350,7 +1357,8 @@ class UnifiedEmailControllerTest {
         }
 
         @Test
-        void sendMitUnbekanntemAngemeldetemBenutzerNimmtMitgeschickteId() throws Exception {
+        @DisplayName("send: eine vom Client geschickte Benutzer-Id zählt nicht – nur die Anmeldung")
+        void sendMitUnbekanntemAngemeldetemBenutzerIgnoriertMitgeschickteId() throws Exception {
             smtpOk();
             given(frontendUserProfileService.findByUsername("unbekannt")).willReturn(Optional.empty());
 
@@ -1359,7 +1367,7 @@ class UnifiedEmailControllerTest {
                             .principal(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("unbekannt", null)))
                     .andExpect(status().isOk());
 
-            verify(postfachVersandService).postfachFuerNeueMail(isNull(), eq(7L), eq(false));
+            verify(postfachVersandService).postfachFuerNeueMail(isNull(), isNull(), eq(false));
         }
 
         @Test

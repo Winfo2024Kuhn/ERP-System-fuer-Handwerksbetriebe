@@ -80,10 +80,14 @@ public class PostfachVersandService {
             return hauptpostfach().orElse(null);
         }
         if (gewaehltesPostfachId != null) {
-            return postfachRepository.findById(gewaehltesPostfachId)
+            EmailAbsender gewaehlt = postfachRepository.findById(gewaehltesPostfachId)
                     .filter(EmailAbsender::isAktiv)
                     .orElseThrow(() -> new IllegalArgumentException(
                             "Dieses Postfach gibt es nicht (mehr) oder es ist ausgeschaltet. Bitte ein anderes wählen."));
+            if (gewaehlt.isLaeuftAus()) {
+                throw new IllegalArgumentException("Dieses Postfach läuft aus. Bitte ein anderes Postfach wählen.");
+            }
+            return gewaehlt;
         }
         return eigenesPostfach(frontendUserId)
                 .or(this::hauptpostfach)
@@ -91,7 +95,7 @@ public class PostfachVersandService {
                 .orElse(null);
     }
 
-    /** Eigenes, aktives Postfach eines Benutzers. */
+    /** Eigenes, aktives Postfach eines Benutzers; ein auslaufendes zählt nicht (dann Hauptpostfach). */
     @Transactional(readOnly = true)
     public Optional<EmailAbsender> eigenesPostfach(Long frontendUserId) {
         if (frontendUserId == null) {
@@ -99,35 +103,98 @@ public class PostfachVersandService {
         }
         return frontendUserProfileRepository.findById(frontendUserId)
                 .map(FrontendUserProfile::getEmailAbsender)
-                .filter(EmailAbsender::isAktiv);
+                .filter(p -> p.isAktiv() && !p.isLaeuftAus());
     }
 
     /**
      * Postfach, aus dem eine Antwort oder Weiterleitung auf {@code email} rausgeht –
-     * fest, ohne Auswahl.
-     *
-     * <ul>
-     *   <li>Eigene gesendete Mail: das Postfach, aus dem sie rausging.</li>
-     *   <li>Eingang: das Postfach, an das die Mail im „An“ adressiert war, sonst im
-     *       „CC“, sonst das Hauptpostfach, sonst das erste, in dem sie liegt.</li>
-     *   <li>Mail aus der Zeit vor den Postfächern: Postfach mit der Absender-Adresse
-     *       (Ausgang), sonst das Hauptpostfach.</li>
-     *   <li>Ist das ermittelte Postfach ausgeschaltet: das Hauptpostfach.</li>
-     * </ul>
+     * fest, ohne Auswahl. Wie {@link #antwortPostfachFuer} für jemanden, der alles sieht und
+     * kein eigenes Postfach hat.
      *
      * @return {@code null} nur, wenn es gar kein Postfach gibt
      */
     @Transactional(readOnly = true)
     public EmailAbsender antwortPostfach(Email email) {
-        EmailAbsender postfach = antwortPostfachOhnePruefung(email);
-        // Ein ausgeschaltetes Postfach verschickt nichts mehr – die Antwort geht dann übers Hauptpostfach.
-        if (postfach != null && !postfach.isAktiv()) {
-            return hauptpostfach().orElse(null);
-        }
-        return postfach;
+        return antwortPostfachFuer(email, PostfachSichtbarkeit.ALLES, null);
     }
 
-    private EmailAbsender antwortPostfachOhnePruefung(Email email) {
+    /**
+     * Postfach, aus dem eine Antwort oder Weiterleitung auf {@code email} für einen bestimmten
+     * Benutzer rausgeht – fest, ohne Auswahl. Genau dieses Postfach zeigt die Detailansicht als
+     * festen Absender an.
+     *
+     * <ul>
+     *   <li>Es zählen nur Postfächer der Mail, die der Benutzer sieht (Admin: alle) und über die
+     *       geantwortet wird: Das Postfach für Rechnungen und Mahnungen ist ein reines
+     *       Ausgangspostfach und kommt nie in Frage – außer es ist zugleich das Hauptpostfach.
+     *       Ein auslaufendes Postfach (z. B. alte T-Online-Adresse) ebenfalls nicht.</li>
+     *   <li>Darunter: eigene gesendete Mail – das Postfach, aus dem sie rausging; Eingang – das
+     *       Postfach aus dem „An“, sonst aus dem „CC“, sonst das Hauptpostfach, sonst das erste.</li>
+     *   <li>Mail aus der Zeit vor den Postfächern: Postfach mit der Absender-Adresse (Ausgang),
+     *       sonst das Hauptpostfach.</li>
+     *   <li>Ist das ermittelte Postfach ausgeschaltet: das Hauptpostfach.</li>
+     *   <li>Kommt keins der Postfächer der Mail in Frage: Lag sie in einem auslaufenden Postfach,
+     *       das Hauptpostfach (die Kunden sollen die neue Adresse lernen); sonst das eigene
+     *       Postfach, sonst das Hauptpostfach.</li>
+     * </ul>
+     *
+     * @param sichtbarkeit    was der Benutzer sieht; {@code null} = alles
+     * @param eigenesPostfach eigenes Postfach des Benutzers ({@link #eigenesPostfach(Long)}), einmal je
+     *                        Anfrage geladen – Listen fragen es so nicht pro Zeile ab
+     * @return {@code null} nur, wenn es gar kein Postfach gibt
+     */
+    @Transactional(readOnly = true)
+    public EmailAbsender antwortPostfachFuer(Email email, PostfachSichtbarkeit sichtbarkeit, EmailAbsender eigenesPostfach) {
+        PostfachSichtbarkeit sicht = sichtbarkeit == null ? PostfachSichtbarkeit.ALLES : sichtbarkeit;
+        java.util.function.Predicate<EmailAbsender> erlaubt =
+                p -> p != null && istAntwortPostfach(p) && sicht.siehtPostfach(p);
+        // Liegt die Mail nur in Postfächern, die nicht in Frage kommen (fremd oder rechnungen@),
+        // geht es über das eigene Postfach – nicht stillschweigend übers Hauptpostfach.
+        List<EmailAbsender> herkunft = herkunftsPostfaecher(email);
+        boolean keinsKommtInFrage = !herkunft.isEmpty() && herkunft.stream().noneMatch(erlaubt);
+        if (!keinsKommtInFrage) {
+            EmailAbsender postfach = antwortPostfachOhnePruefung(email, erlaubt);
+            if (postfach != null && erlaubt.test(postfach)) {
+                // Ein ausgeschaltetes Postfach verschickt nichts mehr – dann übers Hauptpostfach.
+                return postfach.isAktiv() ? postfach : hauptpostfach().orElse(null);
+            }
+        }
+        if (herkunft.stream().anyMatch(p -> p.isLaeuftAus() && sicht.siehtPostfach(p))) {
+            return hauptpostfach().orElse(null);
+        }
+        return Optional.ofNullable(eigenesPostfach).filter(p -> p.isAktiv() && !p.isLaeuftAus())
+                .or(this::hauptpostfach).orElse(null);
+    }
+
+    /**
+     * Wird über dieses Postfach geantwortet? Nicht über das reine Rechnungs-Ausgangspostfach
+     * (außer es ist zugleich das Hauptpostfach) und nicht über ein auslaufendes Postfach.
+     */
+    static boolean istAntwortPostfach(EmailAbsender postfach) {
+        return !postfach.isLaeuftAus() && (!postfach.isFuerGeschaeftsdokumente() || postfach.isHauptpostfach());
+    }
+
+    /**
+     * Postfächer, in denen die Mail liegt; bei alten Ausgangsmails ohne Zuordnung das Postfach
+     * mit ihrer Absender-Adresse.
+     */
+    private List<EmailAbsender> herkunftsPostfaecher(Email email) {
+        if (email == null) {
+            return List.of();
+        }
+        if (email.getPostfachZuordnungen() != null && !email.getPostfachZuordnungen().isEmpty()) {
+            return email.getPostfachZuordnungen().stream()
+                    .map(EmailPostfachZuordnung::getPostfach)
+                    .filter(p -> p != null)
+                    .toList();
+        }
+        if (email.getDirection() == EmailDirection.OUT) {
+            return postfachMitAdresse(email.getFromAddress()).map(List::of).orElse(List.of());
+        }
+        return List.of();
+    }
+
+    private EmailAbsender antwortPostfachOhnePruefung(Email email, java.util.function.Predicate<EmailAbsender> zulassen) {
         if (email == null) {
             return hauptpostfach().orElse(null);
         }
@@ -136,14 +203,19 @@ public class PostfachVersandService {
                         .sorted(Comparator.comparing(EmailPostfachZuordnung::getId,
                                 Comparator.nullsLast(Comparator.naturalOrder())))
                         .map(EmailPostfachZuordnung::getPostfach)
-                        .filter(p -> p != null)
+                        .filter(p -> p != null && zulassen.test(p))
                         .toList();
 
         if (email.getDirection() == EmailDirection.OUT) {
             if (!postfaecher.isEmpty()) {
                 return postfaecher.get(0);
             }
-            return postfachMitAdresse(email.getFromAddress()).or(this::hauptpostfach).orElse(null);
+            Optional<EmailAbsender> absender = postfachMitAdresse(email.getFromAddress());
+            if (absender.isPresent() && !zulassen.test(absender.get())) {
+                // Ging über ein Postfach raus, das nicht in Frage kommt: eigenes bzw. Hauptpostfach.
+                return null;
+            }
+            return absender.or(this::hauptpostfach).orElse(null);
         }
 
         if (postfaecher.isEmpty()) {

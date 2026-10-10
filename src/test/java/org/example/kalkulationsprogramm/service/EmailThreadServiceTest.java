@@ -336,4 +336,40 @@ class EmailThreadServiceTest {
         assertThat(EmailThreadService.verbindeAdressen(java.util.Arrays.asList(" a@example.com ", null, "b@example.com")))
                 .isEqualTo("a@example.com, b@example.com");
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // GEFILTERTER VERLAUF (Postfach-Sichtbarkeit)
+    // ═══════════════════════════════════════════════════════════════
+
+    @Test
+    void gefilterterVerlaufZeigtNurErlaubteMailsUndDerenEntwuerfe() {
+        // A (sichtbar) → B (fremdes Postfach) → C (sichtbar, fokussiert)
+        Email a = makeEmail(1L, "Anfrage", null);
+        Email b = makeEmail(2L, "Re: Anfrage", a);
+        Email c = makeEmail(3L, "Re: Re: Anfrage", b);
+        a.getReplies().add(b);
+        b.getReplies().add(c);
+        when(emailRepository.findById(3L)).thenReturn(Optional.of(c));
+        org.example.kalkulationsprogramm.domain.EmailDraft entwurf = new org.example.kalkulationsprogramm.domain.EmailDraft();
+        entwurf.setId(50L);
+        entwurf.setReplyEmailId(1L);
+        org.mockito.ArgumentCaptor<java.util.Collection<Long>> ids = org.mockito.ArgumentCaptor.forClass(java.util.Collection.class);
+        when(emailDraftRepository.findByReplyEmailIdIn(ids.capture())).thenReturn(new ArrayList<>(List.of(entwurf)));
+
+        EmailThreadDto result = service.loadThreadFor(3L, email -> email.getId() != 2L);
+
+        assertThat(result.getEmails()).extracting(e -> e.getId() == null ? e.getDraftId() : e.getId())
+                .containsExactly(1L, 3L, 50L);
+        assertThat(ids.getValue()).containsExactlyInAnyOrder(1L, 3L);
+    }
+
+    @Test
+    void gefilterterVerlaufNichtErlaubteMail404() {
+        Email a = makeEmail(1L, "Anfrage", null);
+        when(emailRepository.findById(1L)).thenReturn(Optional.of(a));
+
+        assertThatThrownBy(() -> service.loadThreadFor(1L, email -> false))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404");
+    }
 }

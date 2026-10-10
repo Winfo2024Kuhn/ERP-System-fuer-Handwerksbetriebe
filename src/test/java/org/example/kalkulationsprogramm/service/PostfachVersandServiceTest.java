@@ -371,4 +371,272 @@ class PostfachVersandServiceTest {
         assertThat(service.dienst(new SystemSettingsService.MailKonto("h", 465, "u", "p", "a@example.com", ""), "Name"))
                 .isNotNull();
     }
+
+    @Nested
+    class AntwortPostfachFuerBenutzer {
+
+        /** Erika sieht nur info@ (Hauptpostfach). */
+        private final PostfachSichtbarkeit nurInfo = new PostfachSichtbarkeit(false, java.util.Set.of(1L));
+        private final EmailAbsender eigenes = postfach(9L, "erika@example.com", false);
+
+        @Test
+        void adminWieBisher() {
+            Email mail = eingang("max@example.com", null, info, max);
+
+            assertThat(service.antwortPostfachFuer(mail, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(max);
+            assertThat(service.antwortPostfachFuer(mail, null, eigenes)).isSameAs(max);
+        }
+
+        @Test
+        void nurSichtbarePostfaecherDerMailZaehlen() {
+            // An max@ adressiert, liegt in info@ und max@ – Erika sieht max@ nicht: info@.
+            Email mail = eingang("max@example.com", "info@example.com", info, max);
+
+            assertThat(service.antwortPostfachFuer(mail, nurInfo, eigenes)).isSameAs(info);
+        }
+
+        @Test
+        void sichtbaresPostfachAusDemAnGewinnt() {
+            PostfachSichtbarkeit infoUndMax = new PostfachSichtbarkeit(false, java.util.Set.of(1L, 3L));
+            Email mail = eingang("max@example.com", null, info, max);
+
+            assertThat(service.antwortPostfachFuer(mail, infoUndMax, eigenes)).isSameAs(max);
+        }
+
+        @Test
+        void mailNurInFremdemPostfachGehtUeberEigenes() {
+            assertThat(service.antwortPostfachFuer(eingang("max@example.com", null, max), nurInfo, eigenes))
+                    .isSameAs(eigenes);
+        }
+
+        @Test
+        void ohneEigenesUeberDasHauptpostfach() {
+            assertThat(service.antwortPostfachFuer(eingang("max@example.com", null, max), nurInfo, null)).isSameAs(info);
+        }
+
+        @Test
+        void ausgeschaltetesEigenesZaehltNicht() {
+            eigenes.setAktiv(false);
+
+            assertThat(service.antwortPostfachFuer(eingang("max@example.com", null, max), nurInfo, eigenes)).isSameAs(info);
+        }
+
+        @Test
+        void ausgeschaltetesPostfachBeimAdminGehtUebersHauptpostfach() {
+            max.setAktiv(false);
+
+            assertThat(service.antwortPostfachFuer(eingang("max@example.com", null, max), PostfachSichtbarkeit.ALLES, eigenes))
+                    .isSameAs(info);
+        }
+
+        @Test
+        void mailOhneZuordnungIstHauptpostfachMail() {
+            assertThat(service.antwortPostfachFuer(eingang("info@example.com", null), nurInfo, eigenes)).isSameAs(info);
+
+            Email ohneListe = new Email();
+            ohneListe.setDirection(EmailDirection.IN);
+            ohneListe.setPostfachZuordnungen(null);
+            assertThat(service.antwortPostfachFuer(ohneListe, nurInfo, eigenes)).isSameAs(info);
+            assertThat(service.antwortPostfachFuer(null, nurInfo, eigenes)).isSameAs(info);
+        }
+
+        @Test
+        void alteGesendeteMailAusFremdemPostfachGehtUeberEigenes() {
+            when(postfachRepository.findAllByOrderBySortierungAscIdAsc()).thenReturn(java.util.List.of(info, max));
+            Email gesendet = new Email();
+            gesendet.setDirection(EmailDirection.OUT);
+            gesendet.setFromAddress("max@example.com");
+
+            assertThat(service.antwortPostfachFuer(gesendet, nurInfo, eigenes)).isSameAs(eigenes);
+            assertThat(service.antwortPostfachFuer(gesendet, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(max);
+        }
+
+        @Test
+        void hauptpostfachNichtImSichtbarenTeilFaelltAufEigenesZurueck() {
+            assertThat(service.antwortPostfachFuer(eingang("info@example.com", null),
+                    new PostfachSichtbarkeit(false, java.util.Set.of()), eigenes)).isSameAs(eigenes);
+        }
+
+        @Test
+        void ohneHauptpostfachUndOhneZuordnungNull() {
+            when(postfachRepository.findFirstByHauptpostfachTrueOrderByIdAsc()).thenReturn(Optional.empty());
+
+            assertThat(service.antwortPostfachFuer(eingang("info@example.com", null), nurInfo, null)).isNull();
+            assertThat(service.antwortPostfach(eingang("info@example.com", null))).isNull();
+            assertThat(service.antwortPostfachFuer(eingang("max@example.com", null, max), nurInfo, null)).isNull();
+        }
+    }
+
+    /** rechnungen@ ist ein reines Ausgangspostfach: darüber wird nie geantwortet oder weitergeleitet. */
+    @Nested
+    class RechnungsPostfachIstNurAusgang {
+
+        private final PostfachSichtbarkeit nurInfoUndRechnungen = new PostfachSichtbarkeit(false, java.util.Set.of(1L, 2L));
+        private final EmailAbsender eigenes = postfach(9L, "erika@example.com", false);
+
+        @BeforeEach
+        void rechnungsPostfach() {
+            rechnungen.setFuerGeschaeftsdokumente(true);
+        }
+
+        @Test
+        void mailNurInRechnungenGehtUeberEigenesSonstHauptpostfach() {
+            Email mail = eingang("rechnungen@example.com", null, rechnungen);
+
+            assertThat(service.antwortPostfachFuer(mail, nurInfoUndRechnungen, eigenes)).isSameAs(eigenes);
+            assertThat(service.antwortPostfachFuer(mail, nurInfoUndRechnungen, null)).isSameAs(info);
+        }
+
+        @Test
+        void adminGenauso() {
+            Email mail = eingang("rechnungen@example.com", null, rechnungen);
+
+            assertThat(service.antwortPostfachFuer(mail, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(eigenes);
+            assertThat(service.antwortPostfach(mail)).isSameAs(info);
+        }
+
+        @Test
+        void mailInRechnungenUndInfoGehtUeberInfo() {
+            Email mail = eingang("rechnungen@example.com", "info@example.com", rechnungen, info);
+
+            assertThat(service.antwortPostfachFuer(mail, nurInfoUndRechnungen, eigenes)).isSameAs(info);
+            assertThat(service.antwortPostfachFuer(mail, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(info);
+        }
+
+        @Test
+        void eigeneGesendeteMailAusRechnungenGehtUeberEigenes() {
+            Email gesendet = new Email();
+            gesendet.setDirection(EmailDirection.OUT);
+            gesendet.ordnePostfachZu(rechnungen, "INBOX.Sent", 1L);
+
+            assertThat(service.antwortPostfachFuer(gesendet, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(eigenes);
+            assertThat(service.antwortPostfachFuer(gesendet, nurInfoUndRechnungen, null)).isSameAs(info);
+        }
+
+        @Test
+        void alteGesendeteMailVonRechnungenOhneZuordnung() {
+            when(postfachRepository.findAllByOrderBySortierungAscIdAsc()).thenReturn(java.util.List.of(info, rechnungen));
+            Email gesendet = new Email();
+            gesendet.setDirection(EmailDirection.OUT);
+            gesendet.setFromAddress("rechnungen@example.com");
+
+            assertThat(service.antwortPostfachFuer(gesendet, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(eigenes);
+        }
+
+        @Test
+        void rechnungsPostfachIstZugleichHauptpostfachWieBisher() {
+            info.setFuerGeschaeftsdokumente(true);
+            Email mail = eingang("info@example.com", null, info);
+
+            assertThat(service.antwortPostfachFuer(mail, nurInfoUndRechnungen, eigenes)).isSameAs(info);
+            assertThat(service.antwortPostfach(mail)).isSameAs(info);
+        }
+
+        @Test
+        void antwortTauglich() {
+            assertThat(PostfachVersandService.istAntwortPostfach(rechnungen)).isFalse();
+            assertThat(PostfachVersandService.istAntwortPostfach(max)).isTrue();
+            info.setFuerGeschaeftsdokumente(true);
+            assertThat(PostfachVersandService.istAntwortPostfach(info)).isTrue();
+        }
+    }
+
+    /** Auslaufendes Postfach (alte T-Online-Adresse): Antworten über info@, für neue Mails nicht wählbar. */
+    @Nested
+    class AuslaufendesPostfach {
+
+        private final EmailAbsender eigenes = postfach(9L, "erika@example.com", false);
+        private EmailAbsender tonline;
+
+        @BeforeEach
+        void tonline() {
+            tonline = postfach(6L, "betrieb@t-online.de", false);
+            tonline.setLaeuftAus(true);
+        }
+
+        @Test
+        void mailNurInTonlineGehtUeberHauptpostfachAuchMitEigenem() {
+            Email mail = eingang("betrieb@t-online.de", null, tonline);
+
+            assertThat(service.antwortPostfachFuer(mail, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(info);
+            assertThat(service.antwortPostfachFuer(mail, new PostfachSichtbarkeit(false, java.util.Set.of(1L, 6L)), eigenes))
+                    .isSameAs(info);
+            assertThat(service.antwortPostfach(mail)).isSameAs(info);
+        }
+
+        @Test
+        void mailInTonlineUndInfoGehtUeberInfo() {
+            Email mail = eingang("betrieb@t-online.de", "info@example.com", tonline, info);
+
+            assertThat(service.antwortPostfachFuer(mail, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(info);
+        }
+
+        @Test
+        void mailInTonlineUndMaxGehtUeberMax() {
+            Email mail = eingang("betrieb@t-online.de", "max@example.com", tonline, max);
+
+            assertThat(service.antwortPostfachFuer(mail, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(max);
+        }
+
+        @Test
+        void eigeneGesendeteMailAusTonlineGehtUeberHauptpostfach() {
+            Email gesendet = new Email();
+            gesendet.setDirection(EmailDirection.OUT);
+            gesendet.ordnePostfachZu(tonline, "Sent", 1L);
+
+            assertThat(service.antwortPostfachFuer(gesendet, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(info);
+        }
+
+        @Test
+        void alteGesendeteMailVonTonlineOhneZuordnung() {
+            when(postfachRepository.findAllByOrderBySortierungAscIdAsc()).thenReturn(java.util.List.of(info, tonline));
+            Email gesendet = new Email();
+            gesendet.setDirection(EmailDirection.OUT);
+            gesendet.setFromAddress("betrieb@t-online.de");
+
+            assertThat(service.antwortPostfachFuer(gesendet, PostfachSichtbarkeit.ALLES, eigenes)).isSameAs(info);
+        }
+
+        @Test
+        void fremdesAuslaufendesPostfachZaehltWieFremd() {
+            // Sieht der Benutzer das auslaufende Postfach nicht, gilt die Regel für fremde Postfächer.
+            Email mail = eingang("betrieb@t-online.de", null, tonline);
+
+            assertThat(service.antwortPostfachFuer(mail, new PostfachSichtbarkeit(false, java.util.Set.of(1L)), eigenes))
+                    .isSameAs(eigenes);
+        }
+
+        @Test
+        void auslaufendesEigenesPostfachZaehltNicht() {
+            Email mail = eingang("max@example.com", null, max);
+
+            assertThat(service.antwortPostfachFuer(mail, new PostfachSichtbarkeit(false, java.util.Set.of(1L)), tonline))
+                    .isSameAs(info);
+        }
+
+        @Test
+        void fuerNeueMailNichtWaehlbar() {
+            when(postfachRepository.findById(6L)).thenReturn(Optional.of(tonline));
+
+            assertThatThrownBy(() -> service.postfachFuerNeueMail(6L, 7L, false))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Dieses Postfach läuft aus. Bitte ein anderes Postfach wählen.");
+        }
+
+        @Test
+        void auslaufendesEigenesFaelltAufsHauptpostfach() {
+            FrontendUserProfile erika = new FrontendUserProfile();
+            erika.setId(7L);
+            erika.setEmailAbsender(tonline);
+            when(frontendUserProfileRepository.findById(7L)).thenReturn(Optional.of(erika));
+
+            assertThat(service.eigenesPostfach(7L)).isEmpty();
+            assertThat(service.postfachFuerNeueMail(null, 7L, false)).isSameAs(info);
+        }
+
+        @Test
+        void antwortTauglich() {
+            assertThat(PostfachVersandService.istAntwortPostfach(tonline)).isFalse();
+        }
+    }
 }

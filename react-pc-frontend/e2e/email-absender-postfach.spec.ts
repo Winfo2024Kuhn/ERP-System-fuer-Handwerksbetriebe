@@ -52,7 +52,7 @@ test('Antworten: Absender steht fest auf dem Postfach, in dem die Mail ankam', a
     const fest = page.getByTestId('absender-fest');
     await expect(fest).toHaveText('Musterbetrieb <info@musterbetrieb.example>');
     await expect(page.getByRole('combobox', { name: 'Senden von' })).toHaveCount(0);
-    await expect(page.getByText('Antworten gehen über das Postfach raus, in dem die Mail ankam.')).toBeVisible();
+    await expect(page.getByText('Antworten gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.')).toBeVisible();
     await expect(page.getByLabel(/Einzeln verschicken/)).toHaveCount(0);
     await designPruefung(page, info, 'absender-postfach-antwort');
 
@@ -68,7 +68,7 @@ test('Weiterleiten: fester Absender und weitergeleitetVonEmailId im Versand', as
     await page.getByRole('menuitem', { name: 'Weiterleiten' }).click();
 
     await expect(page.getByTestId('absender-fest')).toHaveText('Musterbetrieb <info@musterbetrieb.example>');
-    await expect(page.getByText('Weiterleitungen gehen über das Postfach raus, in dem die Mail ankam.')).toBeVisible();
+    await expect(page.getByText('Weiterleitungen gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.')).toBeVisible();
     await page.getByPlaceholder('Name, Firma oder E-Mail eingeben').fill('kollege@example.org');
     await sendenBestaetigen(page);
 

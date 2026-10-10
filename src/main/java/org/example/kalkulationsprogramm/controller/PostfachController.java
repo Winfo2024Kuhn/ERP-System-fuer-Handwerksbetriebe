@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachDto;
+import org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachSpeichernRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachTestErgebnis;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachTestRequest;
@@ -46,6 +47,12 @@ public class PostfachController {
     @PutMapping("/{id}")
     public PostfachDto aendern(@PathVariable Long id, @RequestBody PostfachSpeichernRequest request) {
         return postfachService.aendern(id, request);
+    }
+
+    /** „Wer darf es sehen?“ – gepflegt unter Einstellungen → Berechtigungen. */
+    @PutMapping("/{id}/sichtbarkeit")
+    public PostfachDto sichtbarkeitAendern(@PathVariable Long id, @RequestBody PostfachSichtbarkeitRequest request) {
+        return postfachService.sichtbarkeitAendern(id, request);
     }
 
     @DeleteMapping("/{id}")

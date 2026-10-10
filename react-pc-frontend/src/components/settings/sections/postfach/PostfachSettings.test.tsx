@@ -11,6 +11,7 @@ const info: PostfachDto = {
     hauptpostfach: true, fuerGeschaeftsdokumente: false, benutzername: 'info@musterbetrieb.example', passwortGesetzt: true,
     smtpHost: 'mail.your-server.de', smtpPort: 465, imapHost: 'mail.your-server.de', imapPort: 993, abrufAktiv: true,
     letzterAbrufAm: null, letzterAbrufFehler: null, zugewieseneBenutzer: [],
+    sichtbarFuerAlle: true, sichtbarFuerAbteilungen: [], sichtbarFuerBenutzer: [], laeuftAus: false,
 };
 const rechnungen: PostfachDto = {
     ...info, id: 4, emailAdresse: 'rechnungen@musterbetrieb.example', anzeigename: null, hauptpostfach: false,
@@ -147,12 +148,17 @@ describe('PostfachSettings – Anlegen', () => {
             sortierung: 10,
             hauptpostfach: false,
             fuerGeschaeftsdokumente: false,
+            laeuftAus: false,
             benutzername: 'max@musterbetrieb.example',
             passwort: 'geheim-123',
             smtpHost: 'mail.your-server.de',
             smtpPort: 465,
             imapHost: 'mail.your-server.de',
             imapPort: 993,
+            // Sichtbarkeit wird unter Einstellungen → Berechtigungen gepflegt: hier immer unverändert.
+            sichtbarFuerAlle: null,
+            abteilungIds: null,
+            benutzerIds: null,
         });
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
         expect(await screen.findByText('Postfach angelegt.')).toBeInTheDocument();
@@ -431,5 +437,202 @@ describe('PostfachSettings – Löschen', () => {
         bestaetigung = await screen.findByRole('alertdialog').catch(() => screen.findByRole('dialog'));
         await user.click(within(bestaetigung).getByRole('button', { name: 'Löschen' }));
         expect(await screen.findByText(/Postfach wurde nicht gelöscht/)).toBeInTheDocument();
+    });
+});
+
+describe('PostfachSettings – Sichtbarkeit', () => {
+    const nurBuero: PostfachDto = {
+        ...info, id: 6, emailAdresse: 'buero@musterbetrieb.example', hauptpostfach: false, sortierung: 30,
+        sichtbarFuerAlle: false, sichtbarFuerAbteilungen: [{ id: 2, name: 'Büro' }],
+        sichtbarFuerBenutzer: [
+            { id: 7, displayName: 'Max Mustermann' }, { id: 8, displayName: 'Erika Musterfrau' }, { id: 9, displayName: 'Moritz Muster' },
+        ],
+    };
+
+    it('zeigt „Sichtbar: …“ je Postfach, gekürzt mit „+N“, und verlinkt zu den Berechtigungen', async () => {
+        stubFetch([info, nurBuero]);
+        renderSettings();
+        const liste = await screen.findByRole('list', { name: 'Postfächer' });
+        const [haupt, buero] = within(liste).getAllByRole('listitem');
+        expect(within(haupt).getByTestId('postfach-sichtbarkeit')).toHaveTextContent('Sichtbar: alle');
+        // Das Hauptpostfach lässt sich nicht einschränken – kein Link.
+        expect(within(haupt).queryByRole('link')).not.toBeInTheDocument();
+        const zeile = within(buero).getByTestId('postfach-sichtbarkeit');
+        expect(zeile).toHaveTextContent('Sichtbar: Büro, Max Mustermann, Erika Musterfrau+1');
+        expect(zeile).toHaveAttribute('title', 'Büro, Max Mustermann, Erika Musterfrau, Moritz Muster');
+        expect(within(buero).getByRole('link', { name: 'Sichtbarkeit von buero@musterbetrieb.example unter Berechtigungen ändern' }))
+            .toHaveAttribute('href', '#berechtigungen');
+    });
+
+    it('zeigt beim Postfach für Rechnungen & Mahnungen „Sichtbar: alle“ ohne Link', async () => {
+        stubFetch([info, { ...rechnungen, sichtbarFuerAlle: false, sichtbarFuerAbteilungen: [{ id: 2, name: 'Büro' }] }]);
+        renderSettings();
+        const liste = await screen.findByRole('list', { name: 'Postfächer' });
+        const zeile = within(liste).getAllByRole('listitem')[1];
+        expect(within(zeile).getByTestId('postfach-sichtbarkeit')).toHaveTextContent('Sichtbar: alle');
+        expect(within(zeile).queryByRole('link')).not.toBeInTheDocument();
+    });
+
+    it('hat im Dialog keine Sichtbarkeits-Auswahl, nur den Hinweis mit Link, und schickt die Felder als null', async () => {
+        const user = userEvent.setup();
+        const fetchMock = stubFetch([info, nurBuero], (url, init) => (url === '/api/postfaecher/6' && init?.method === 'PUT'
+            ? { body: nurBuero } : undefined));
+        renderSettings();
+        await user.click(await screen.findByRole('button', { name: 'Postfach buero@musterbetrieb.example bearbeiten' }));
+        const dialog = await screen.findByRole('dialog');
+
+        expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
+        expect(within(dialog).queryByText('Wer darf es sehen?')).not.toBeInTheDocument();
+        expect(within(dialog).getByTestId('postfach-sichtbarkeit-hinweis'))
+            .toHaveTextContent('Wer dieses Postfach sehen darf, legen Sie unter Einstellungen → Berechtigungen fest.');
+        expect(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' })).toHaveAttribute('href', '#berechtigungen');
+        // Keine Häkchen-Listen mehr nötig.
+        expect(fetchMock.mock.calls.some(([u]) => String(u) === '/api/abteilungen/berechtigungen')).toBe(false);
+
+        await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(bodyVon(fetchMock, '/api/postfaecher/6', 'PUT')).toMatchObject({
+            sichtbarFuerAlle: null, abteilungIds: null, benutzerIds: null,
+        }));
+    });
+});
+
+describe('PostfachDialog – Link zu den Berechtigungen', () => {
+    afterEach(() => {
+        window.history.replaceState(null, '', '/');
+    });
+
+    async function oeffneMax(user: ReturnType<typeof userEvent.setup>) {
+        stubFetch([info, rechnungen]);
+        renderSettings();
+        await user.click(await screen.findByRole('button', { name: 'Postfach rechnungen@musterbetrieb.example bearbeiten' }));
+        return screen.findByRole('dialog');
+    }
+
+    it('wechselt ohne Änderungen direkt, ohne Rückfrage', async () => {
+        const user = userEvent.setup();
+        const dialog = await oeffneMax(user);
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+        expect(screen.queryByText('Änderungen verwerfen?')).not.toBeInTheDocument();
+        await waitFor(() => expect(window.location.hash).toBe('#berechtigungen'));
+    });
+
+    it('fragt bei ungespeicherten Änderungen nach; „Weiter bearbeiten“ lässt Dialog und Eingaben stehen', async () => {
+        const user = userEvent.setup();
+        const dialog = await oeffneMax(user);
+        const name = within(dialog).getByLabelText('Angezeigter Name');
+        await user.type(name, 'Buchhaltung');
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+
+        expect(await screen.findByText('Änderungen verwerfen?')).toBeInTheDocument();
+        expect(screen.getByText('Sie haben noch nicht gespeichert. Trotzdem zu den Berechtigungen wechseln?')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+
+        await waitFor(() => expect(screen.queryByText('Änderungen verwerfen?')).not.toBeInTheDocument());
+        expect(window.location.hash).toBe('');
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(within(screen.getByRole('dialog')).getByLabelText('Angezeigter Name')).toHaveValue('Buchhaltung');
+    });
+
+    it('wechselt nach Bestätigung trotz ungespeicherter Änderungen', async () => {
+        const user = userEvent.setup();
+        const dialog = await oeffneMax(user);
+        await user.click(within(dialog).getByRole('checkbox', { name: /Für Rechnungen & Mahnungen/ }));
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+        await user.click(await screen.findByRole('button', { name: 'Verwerfen' }));
+        await waitFor(() => expect(window.location.hash).toBe('#berechtigungen'));
+    });
+});
+
+describe('PostfachDialog – Läuft aus', () => {
+    const laeuftAusSchalter = (dialog: HTMLElement) => within(dialog).getByRole('checkbox', { name: /^Läuft aus/ });
+
+    it('setzt „Läuft aus“, sperrt dann Hauptpostfach und Rechnungen und schickt laeuftAus mit', async () => {
+        const user = userEvent.setup();
+        const max: PostfachDto = { ...info, id: 5, emailAdresse: 'max@musterbetrieb.example', hauptpostfach: false, sortierung: 20 };
+        const fetchMock = stubFetch([info, max], (url, init) => (url === '/api/postfaecher/5' && init?.method === 'PUT'
+            ? { body: { ...max, laeuftAus: true } } : undefined));
+        renderSettings();
+        await user.click(await screen.findByRole('button', { name: 'Postfach max@musterbetrieb.example bearbeiten' }));
+        const dialog = await screen.findByRole('dialog');
+
+        const schalter = laeuftAusSchalter(dialog);
+        expect(schalter).toBeEnabled();
+        expect(schalter).not.toBeChecked();
+        expect(within(dialog).getByText(/Mails kommen hier weiter an\. Antworten gehen über das Hauptpostfach raus/)).toBeInTheDocument();
+        await user.click(schalter);
+
+        const haupt = within(dialog).getByRole('checkbox', { name: /^Hauptpostfach/ });
+        const rechnung = within(dialog).getByRole('checkbox', { name: /^Für Rechnungen & Mahnungen/ });
+        expect(haupt).toBeDisabled();
+        expect(rechnung).toBeDisabled();
+        expect(haupt.closest('label')).toHaveAttribute('title', 'Ein auslaufendes Postfach kann nicht Hauptpostfach werden. Zuerst „Läuft aus“ abwählen.');
+        expect(rechnung.closest('label')).toHaveAttribute('title', expect.stringMatching(/kann nicht für Rechnungen & Mahnungen genutzt werden/));
+
+        await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(bodyVon(fetchMock, '/api/postfaecher/5', 'PUT')).toMatchObject({ laeuftAus: true }));
+    });
+
+    it('sperrt „Läuft aus“ beim Hauptpostfach und beim Rechnungs-Postfach mit Begründung', async () => {
+        const user = userEvent.setup();
+        stubFetch([info, rechnungen, max]);
+        renderSettings();
+
+        await user.click(await screen.findByRole('button', { name: 'Postfach info@musterbetrieb.example bearbeiten' }));
+        let dialog = await screen.findByRole('dialog');
+        expect(laeuftAusSchalter(dialog)).toBeDisabled();
+        expect(laeuftAusSchalter(dialog).closest('label')).toHaveAttribute('title',
+            'Das Hauptpostfach kann nicht auslaufen. Bitte zuerst ein anderes Postfach zum Hauptpostfach machen.');
+        await user.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+
+        await user.click(screen.getByRole('button', { name: 'Postfach rechnungen@musterbetrieb.example bearbeiten' }));
+        dialog = await screen.findByRole('dialog');
+        expect(laeuftAusSchalter(dialog)).toBeDisabled();
+        expect(within(dialog).getAllByText('Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.').length).toBeGreaterThan(0);
+        // Haken „Rechnungen“ abwählen → „Läuft aus“ wieder möglich.
+        await user.click(within(dialog).getByRole('checkbox', { name: /^Für Rechnungen & Mahnungen/ }));
+        expect(laeuftAusSchalter(dialog)).toBeEnabled();
+        // Im Dialog zum Hauptpostfach machen → wieder gesperrt.
+        await user.click(within(dialog).getByRole('checkbox', { name: /^Hauptpostfach/ }));
+        expect(laeuftAusSchalter(dialog)).toBeDisabled();
+    });
+
+    it('zeigt das Schild „läuft aus“ in der Liste und belegt den Schalter vor', async () => {
+        const user = userEvent.setup();
+        stubFetch([info, { ...max, aktiv: true, abrufAktiv: true, laeuftAus: true }]);
+        renderSettings();
+        const liste = await screen.findByRole('list', { name: 'Postfächer' });
+        const [haupt, alt] = within(liste).getAllByRole('listitem');
+        expect(within(haupt).queryByText('läuft aus')).not.toBeInTheDocument();
+        const schild = within(alt).getByText('läuft aus');
+        expect(schild).toHaveClass('text-slate-600');
+        expect(schild).toHaveAttribute('title', expect.stringMatching(/^Läuft aus:/));
+
+        await user.click(within(alt).getByRole('button', { name: /bearbeiten/ }));
+        expect(laeuftAusSchalter(await screen.findByRole('dialog'))).toBeChecked();
+    });
+
+    it('zeigt die 400-Meldung des Servers im Dialog und als Toast', async () => {
+        const user = userEvent.setup();
+        stubFetch([info, max], (url, init) => (url === '/api/postfaecher/5' && init?.method === 'PUT'
+            ? { status: 400, body: { message: 'Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.' } } : undefined));
+        renderSettings();
+        await user.click(await screen.findByRole('button', { name: 'Postfach max@musterbetrieb.example bearbeiten' }));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(laeuftAusSchalter(dialog));
+        await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+        expect(await within(dialog).findByRole('alert')).toHaveTextContent('Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.');
+        expect(screen.getAllByText('Das Postfach für Rechnungen & Mahnungen kann nicht auslaufen.').length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('zählt eine Änderung an „Läuft aus“ als ungespeichert (Rückfrage beim Link)', async () => {
+        const user = userEvent.setup();
+        stubFetch([info, max]);
+        renderSettings();
+        await user.click(await screen.findByRole('button', { name: 'Postfach max@musterbetrieb.example bearbeiten' }));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(laeuftAusSchalter(dialog));
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+        expect(await screen.findByText('Änderungen verwerfen?')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
     });
 });

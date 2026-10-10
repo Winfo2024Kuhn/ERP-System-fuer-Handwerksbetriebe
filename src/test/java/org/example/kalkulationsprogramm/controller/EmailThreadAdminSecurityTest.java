@@ -62,6 +62,7 @@ class EmailThreadAdminSecurityTest {
     @MockBean private org.example.kalkulationsprogramm.service.EmailDraftService emailDraftService;
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
     @MockBean private ProjektRepository projektRepository;
     @MockBean private AnfrageRepository anfrageRepository;
     @MockBean private LieferantenRepository lieferantenRepository;

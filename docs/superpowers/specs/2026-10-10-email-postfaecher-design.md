@@ -306,20 +306,139 @@ Aufrufer (auch `react-zeiterfassung`) sie nutzt; sonst bleiben sie bestehen.
 
 ---
 
-## Etappe 2 – Sichtbarkeit (Überblick, eigene Spec-Ergänzung vor dem Bau)
+## Etappe 2 – Sichtbarkeit
 
-- `email_absender.sichtbar_fuer_alle` (Default TRUE nach Umzug), Tabellen
-  `email_absender_abteilung`, `email_absender_benutzer`.
-- Sichtbar für Benutzer U: eigenes Postfach ∪ `sichtbar_fuer_alle` ∪ Abteilung von
-  U (über `Mitarbeiter.abteilungen`) ∪ U direkt. Admin: alles.
-- Durchgesetzt im Backend für alle E-Mail-Center-Endpoints (Listen, Suche,
-  Zähler/`stats`, Detail, Verlauf, Anhänge, Massenaktionen) → fremde Mail 404.
-  Projekt-/Anfrage-/Lieferanten-Reiter **nicht** gefiltert.
-- `absender-postfaecher` und Versand nur aus sichtbaren Postfächern (403 sonst).
-- UI: im Postfach-Dialog „Wer darf es sehen?“ – Alle / Nur bestimmte (Häkchen
-  Abteilungen + Benutzer).
+### 2.1 Regeln
 
----
+- **Hauptpostfach (info@) sieht immer jeder** – nicht einstellbar (Nutzervorgabe: „info@-Mails
+  bekommt jeder in der Firma“).
+- Jedes andere Postfach: **„Für alle sichtbar“** (Standard) oder **„Nur bestimmte“** mit Häkchen
+  bei Abteilungen und/oder einzelnen Benutzern.
+- Ein Benutzer U (nicht Admin) sieht ein Postfach, wenn es das Hauptpostfach ist, ODER für alle
+  sichtbar ist, ODER sein eigenes Postfach ist (`FrontendUserProfile.emailAbsender`), ODER U direkt
+  freigegeben ist, ODER eine Abteilung von U freigegeben ist (`FrontendUserProfile.mitarbeiter
+  .abteilungen`). Ausgeschaltete Postfächer zählen nicht.
+- **Admin** (`ROLE_ADMIN`) sieht alles – unverändert eine gemeinsame Liste.
+- Eine Mail ist im E-Mail-Center sichtbar, wenn sie in mindestens einem sichtbaren Postfach liegt.
+  Mails **ohne** Zuordnung gelten als Hauptpostfach-Mails (sichtbar).
+- **Projekt-, Anfrage-, Lieferanten-Reiter bleiben ungefiltert** (Nutzerentscheidung). Daraus folgt:
+  Detail, Verlauf und Anhänge einer Mail sind auch dann erlaubt, wenn die Mail einem Projekt, einer
+  Anfrage oder einem Lieferanten zugeordnet ist (die Reiter öffnen Mails darüber).
+- Der Benutzer kommt **ausschließlich aus der Anmeldung** (`Authentication` → `FrontendUserProfile`
+  per Benutzername). Kein Rückfall auf eine vom Client geschickte `frontendUserId` mehr.
+
+### 2.2 Datenmodell (Flyway V408, idempotent)
+
+- `email_absender.sichtbar_fuer_alle BOOLEAN NOT NULL DEFAULT TRUE` (bestehende Postfächer bleiben
+  für alle sichtbar).
+- `email_absender_abteilung (postfach_id FK email_absender ON DELETE CASCADE, abteilung_id FK
+  abteilung ON DELETE CASCADE, PK beide)`.
+- `email_absender_benutzer (postfach_id FK email_absender ON DELETE CASCADE,
+  frontend_user_profile_id FK frontend_user_profile ON DELETE CASCADE, PK beide)`.
+- `email_draft.weitergeleitet_von_email_id BIGINT NULL` (Review-Punkt aus Etappe 1).
+
+### 2.3 API-Vertrag Etappe 2
+
+`PostfachDto` (GET/POST/PUT `/api/postfaecher`) – zusätzlich:
+
+```json
+"sichtbarFuerAlle": true,
+"sichtbarFuerAbteilungen": [{ "id": 2, "name": "Büro" }],
+"sichtbarFuerBenutzer": [{ "id": 7, "displayName": "Max Mustermann" }]
+```
+
+Beim Hauptpostfach immer `sichtbarFuerAlle: true` und leere Listen.
+
+`PostfachSpeichernRequest` – zusätzlich:
+
+```json
+"sichtbarFuerAlle": false,
+"abteilungIds": [2],
+"benutzerIds": [7]
+```
+
+- `sichtbarFuerAlle` `null` = bei neuen Postfächern `true`, beim Ändern unverändert. Listen `null` =
+  unverändert, `[]` = leeren. Bei `sichtbarFuerAlle: true` werden die Listen gespeichert, wirken aber
+  nicht (bleiben für ein späteres Umschalten erhalten).
+- Unbekannte Abteilungs-/Benutzer-Id → 400 „Diese Abteilung gibt es nicht (mehr).“ bzw.
+  „Diesen Benutzer gibt es nicht (mehr).“. Hauptpostfach: Sichtbarkeitsfelder werden ignoriert.
+
+Daten für die Häkchen (vorhanden, nur Admin): `GET /api/abteilungen/berechtigungen` (Abteilungen),
+`GET /api/frontend-users` (Benutzer).
+
+**Eigener Endpoint (Nutzerentscheidung: Pflege unter Einstellungen → Berechtigungen):**
+`PUT /api/postfaecher/{id}/sichtbarkeit` (nur Admin), Body
+`{"sichtbarFuerAlle": boolean, "abteilungIds": number[], "benutzerIds": number[]}` → `200 PostfachDto`.
+Unbekannte Abteilung/Benutzer → 400, unbekanntes Postfach → 404, Hauptpostfach → 400 „Das
+Hauptpostfach sieht jeder im Betrieb.“. Im normalen Postfach-PUT/POST bleiben die Felder optional
+(`null` = unverändert); der Postfach-Dialog schickt `null`.
+
+E-Mail-Center (`/api/emails/**`), jeder angemeldete Benutzer:
+
+- **Gefiltert** (nur Mails aus sichtbaren Postfächern): alle Ordner-Listen (`/inbox`, `/sent`,
+  `/projects`, `/offers`, `/suppliers`, `/tax-advisors`, `/trash`, `/spam`, `/newsletter`,
+  `/starred`, `/unassigned`, `/inquiries`, `/new/*`), `/search`, `/stats` (Zähler),
+  `/mark-all-read`, Massenaktionen (`/bulk/**`). Paginierung muss **nach** dem Filter stimmen
+  (Filter in der Abfrage, nicht nachträglich auf einer Seite).
+- **Einzelmail** (`/{id}`, `/{id}/thread`, Anhänge, `mark-read`, `toggle-star`, `assign/*`,
+  `unassign`, `DELETE`, `mark-spam` …, `/{id}/reply`): nicht sichtbar → **404**. Ausnahme lesend
+  (Detail, Verlauf, Anhänge): Mail ist einem Projekt/einer Anfrage/einem Lieferanten zugeordnet →
+  erlaubt. Im Verlauf erscheinen nur sichtbare bzw. zugeordnete Mails.
+- **Ungefiltert wie bisher:** `/projekt/{id}`, `/anfrage/{id}`, `/lieferant/{id}`.
+- `GET /absender-postfaecher`: nur sichtbare, aktive Postfächer.
+- `POST /send`: `postfachId` nicht sichtbar → 403 `{message: "Über dieses Postfach dürfen Sie nicht
+  senden."}`; `weitergeleitetVonEmailId` nicht sichtbar (und nicht zugeordnet) → 404.
+  Geschäftsdokumente gehen weiter über das Rechnungs-Postfach (Sichtbarkeit egal – der Versand ist
+  ein Firmenvorgang).
+- **Das Postfach für Rechnungen & Mahnungen sieht – wie das Hauptpostfach – immer jeder im
+  Betrieb** (Nutzerentscheidung nach Review). Die Sichtbarkeit lässt sich dafür nicht einschränken
+  (`PUT …/sichtbarkeit` → 400 „Das Postfach für Rechnungen & Mahnungen sieht jeder im Betrieb.“).
+  Damit braucht der Versand von Geschäftsdokumenten keinen eigenen Nachweis.
+- **Das Rechnungs-Postfach ist ein reines Ausgangspostfach** (Nutzerentscheidung): Antworten und
+  Weiterleitungen gehen nie darüber (außer es ist zugleich das Hauptpostfach). Liegt die Mail auch in
+  anderen sichtbaren Postfächern, gilt unter diesen die bisherige Reihenfolge; sonst eigenes
+  Postfach, sonst Hauptpostfach – für alle, auch Admins. Unter „Senden von“ bleibt es wählbar;
+  Auto-AB und Mahnlauf senden weiter darüber.
+- **Schalter „Läuft aus“** (Nutzerentscheidung, Anlass: altes T-Online-Postfach): Spalte
+  `email_absender.laeuft_aus` (V408), `PostfachDto.laeuftAus`, `PostfachSpeichernRequest.laeuftAus`
+  (`null` = unverändert). Mails kommen weiter an und bleiben sichtbar. Antworten/Weiterleitungen nie
+  darüber: andere Postfächer der Mail in bisheriger Reihenfolge, sonst Hauptpostfach. Nicht in
+  `/absender-postfaecher`; `POST /send` damit → 400 „Dieses Postfach läuft aus. Bitte ein anderes
+  Postfach wählen.“ Hauptpostfach bzw. Rechnungs-Postfach können nicht auslaufen (400).
+- **Antwort und Weiterleitung** (Nutzerentscheidung nach Review): fest ist das Postfach der Mail,
+  das der Benutzer **sieht** (Reihenfolge wie in Etappe 1: An, Cc, Hauptpostfach, erstes). Sieht er
+  keins davon (Mail nur über Zuordnung lesbar), geht sie über sein eigenes Postfach, sonst über das
+  Hauptpostfach – nie über ein Postfach, das er nicht sieht. `antwortPostfach` im Detail zeigt genau
+  dieses Postfach.
+- Weitere Wege, die Mails ausliefern, filtern ebenso: KI-Klassifizierung (`/api/email-ki/**`;
+  der ungenutzte `debug-prompt`-Endpoint ist entfernt), Benachrichtigungs-Glocke (`/api/notifications/summary`), Entwürfe mit
+  Bezug auf eine nicht lesbare Mail oder mit einem nicht sichtbaren `postfachId` (404 bzw.
+  ausgeblendet).
+- Entwürfe: `EmailDraftDto` und Entwurf speichern zusätzlich `weitergeleitetVonEmailId`.
+
+### 2.4 Sicherheits-Nachtrag aus dem Review (Pflicht in Etappe 2)
+
+Dedupe beim Abruf ergänzt eine Postfach-Zuordnung zu einer **bereits bekannten** Message-ID nur,
+wenn Absender-Adresse und Betreff der abgerufenen Nachricht zur gespeicherten Mail passen (sonst
+Warnung ohne Adressen im Log, keine Zuordnung). Sonst könnte ein Externer mit einer fremden
+Message-ID eine Mail in ein anderes Postfach „schieben“ und so sichtbar machen.
+
+### 2.5 Oberfläche Etappe 2
+
+- **Einstellungen → Berechtigungen** (Nutzerentscheidung): neue Karte ganz oben „E-Mail-Postfächer –
+  wer sieht welches Postfach?“. Pro Postfach Auswahl „Alle im Betrieb“ / „Nur bestimmte“; bei „Nur
+  bestimmte“ Häkchen-Listen **Abteilungen** und **Benutzer** (Hinweis: „Der Inhaber des Postfachs
+  und Admins sehen es immer.“), eigener Speichern-Knopf je Postfach. Beim Hauptpostfach nur der
+  Text „Das Hauptpostfach sieht jeder im Betrieb.“, beim Rechnungs-Postfach „Das Postfach für
+  Rechnungen & Mahnungen sieht jeder im Betrieb.“
+- Postfach-Dialog: nur ein Hinweis mit Link „Wer dieses Postfach sehen darf, legen Sie unter
+  Einstellungen → Berechtigungen fest.“ Ungespeicherte Änderungen → Rückfrage vor dem Wechsel.
+- Karte weist darauf hin, dass zugeordnete Mails (Projekt, Anfrage, Lieferant) in diesen Reitern
+  jeder sieht.
+- Postfach-Liste: kleine Zeile „Sichtbar: alle“ bzw. „Sichtbar: Büro, Max Mustermann“.
+- E-Mail-Center: keine sichtbare Änderung außer dass Listen gefiltert sind; 403 beim Senden als
+  Toast; „Senden von“ zeigt nur erlaubte Postfächer.
+- Weiterleitungs-Entwurf behält beim Wiederöffnen den festen Absender (`weitergeleitetVonEmailId`).
 
 ## Tests (verbindlich, beide Etappen)
 
@@ -417,6 +536,18 @@ Abschlussbericht je Datei ausgewiesen.
   (Muster: `ProjektEmailArchivService.registriereRollbackBereinigung`).
 - `ordneAusgangsmailsNachAbsenderZu` erkennt nur nackte Absender-Adressen, nicht `Name <adresse>`.
 - JaCoCo auf 0.8.13 (offizielle Java-23-Unterstützung).
+
+### Erledigt in Etappe 2 / bewusst verschoben
+
+Erledigt: Dedupe-Schutz (Absender + Betreff), Sichtbarkeitsprüfung für `postfachId`,
+`weitergeleitetVonEmailId` und `/absender-postfaecher`, Entwurf mit `weitergeleitetVonEmailId`,
+kein Rückfall auf die Client-`frontendUserId`.
+
+Verschoben (eigene Aufgabe, nicht Teil der Sichtbarkeit): Bean-Validation und eigene Exception im
+`PostfachController`, DB-Absicherung „genau ein Hauptpostfach“, Konto-Getter-Caching im
+`SystemSettingsService`, äußere Transaktion in `sendEmail`, Waisen-Dateien, `Name <adresse>` im
+Umzug, JaCoCo 0.8.13, Datumsvergleich im Dedupe, Filter in SQL statt im Speicher (Paginierung in
+der Datenbank), globale Absender-Sperre bei `block-sender`.
 
 ## Freigaben laut CLAUDE.md (Auslagerung)
 

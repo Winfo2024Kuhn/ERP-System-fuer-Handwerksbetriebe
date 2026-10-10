@@ -139,7 +139,7 @@ describe('EmailComposeForm – fester Absender bei Antwort und Weiterleitung', (
             antwortPostfach={{ id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' }} />);
 
         expect(await screen.findByTestId('absender-fest')).toHaveTextContent('Musterbetrieb <info@musterbetrieb.example>');
-        expect(screen.getByText(/Antworten gehen über das Postfach raus/)).toBeInTheDocument();
+        expect(screen.getByText('Antworten gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.')).toBeInTheDocument();
         expect(screen.queryByRole('combobox', { name: 'Senden von' })).not.toBeInTheDocument();
         // Antworten können nicht einzeln verschickt werden.
         expect(screen.queryByLabelText(/Einzeln verschicken/)).not.toBeInTheDocument();
@@ -174,7 +174,7 @@ describe('EmailComposeForm – fester Absender bei Antwort und Weiterleitung', (
         render(<EmailComposeForm onClose={() => {}} weitergeleitetVonEmailId={5} initialSubject="Fwd: Treppe"
             antwortPostfach={{ id: 7, emailAdresse: 'max@musterbetrieb.example', anzeigename: null }} />);
         expect(await screen.findByTestId('absender-fest')).toHaveTextContent('max@musterbetrieb.example');
-        expect(screen.getByText(/Weiterleitungen gehen über das Postfach raus/)).toBeInTheDocument();
+        expect(screen.getByText('Weiterleitungen gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.')).toBeInTheDocument();
         await userEvent.type(screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben'), 'kollege@example.org');
         await sende();
         await waitFor(() => expect(gesendet[0]?.url).toBe('/api/emails/send'));
@@ -320,5 +320,87 @@ describe('EmailComposeForm – Einzelversand', () => {
         await userEvent.click(await screen.findByLabelText(/Einzeln verschicken/));
         await sende();
         expect((await screen.findAllByText('Keine der E-Mails konnte verschickt werden.')).length).toBeGreaterThan(0);
+    });
+});
+
+describe('EmailComposeForm – Sichtbarkeit der Postfächer (Etappe 2)', () => {
+    it('meldet 403 beim Senden über ein nicht erlaubtes Postfach als Toast und lässt das Formular offen', async () => {
+        sendeAntwort = { status: 403, body: { message: 'Über dieses Postfach dürfen Sie nicht senden.' } };
+        stubFetch();
+        const onClose = vi.fn();
+        const onSuccess = vi.fn();
+        render(<EmailComposeForm onClose={onClose} onSuccess={onSuccess} initialRecipient="kunde@example.org" initialSubject="Termin" />);
+        await screen.findByRole('combobox', { name: 'Senden von' });
+        await sende();
+
+        // Einmal im Formular, einmal als Toast.
+        await waitFor(() => expect(screen.getAllByText('Über dieses Postfach dürfen Sie nicht senden.')).toHaveLength(2));
+        expect(onClose).not.toHaveBeenCalled();
+        expect(onSuccess).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: /E-Mail senden/ })).toBeEnabled();
+        expect(screen.getByDisplayValue('Termin')).toBeInTheDocument();
+    });
+
+    it('zeigt ohne erlaubtes Postfach einen verständlichen Hinweis statt einer leeren Auswahl', async () => {
+        absenderAntwort = { body: [] };
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} initialRecipient="kunde@example.org" initialSubject="Termin" />);
+        expect(await screen.findByText(/Kein Postfach zur Auswahl/)).toBeInTheDocument();
+        expect(screen.getByTestId('absender-fest')).toHaveTextContent('Standard-Absender des Betriebs');
+        expect(screen.queryByRole('combobox', { name: 'Senden von' })).not.toBeInTheDocument();
+        await sende();
+        await waitFor(() => expect(gesendet[0]?.dto).toMatchObject({ postfachId: null }));
+    });
+
+    it('speichert beim Weiterleiten weitergeleitetVonEmailId im Entwurf', async () => {
+        const fetchMock = stubFetch();
+        render(<EmailComposeForm onClose={() => {}} weitergeleitetVonEmailId={5} initialSubject="WG: Treppe"
+            antwortPostfach={{ id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' }} />);
+        await userEvent.type(screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben'), 'kollege@example.org');
+        await userEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+        await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/emails/drafts' && init?.method === 'POST')).toBe(true));
+        const call = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/emails/drafts' && init?.method === 'POST')!;
+        expect(await dtoAus(call[1]?.body)).toMatchObject({ weitergeleitetVonEmailId: 5, postfachId: null, fromAddress: null, replyEmailId: null });
+    });
+
+    it('zeigt beim Wiederöffnen eines Weiterleitungs-Entwurfs den festen Absender und schickt die Weiterleitung mit', async () => {
+        entwurfAntwort = { body: { id: 55, recipient: 'kollege@example.org', subject: 'WG: Treppe', body: '<p>x</p>',
+            replyEmailId: null, weitergeleitetVonEmailId: 5, attachments: [] } };
+        const fetchMock = stubFetch();
+        render(<EmailComposeForm onClose={() => {}} draftId={55} />);
+
+        expect(await screen.findByText('Musterbetrieb <info@musterbetrieb.example>')).toBeInTheDocument();
+        expect(screen.getByText(/Weiterleitungen gehen über das Postfach raus/)).toBeInTheDocument();
+        expect(screen.queryByRole('combobox', { name: 'Senden von' })).not.toBeInTheDocument();
+        expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/emails/5')).toBe(true);
+
+        await sende();
+        await waitFor(() => expect(gesendet[0]?.url).toBe('/api/emails/send'));
+        expect(gesendet[0].dto).toMatchObject({ weitergeleitetVonEmailId: 5, postfachId: null, draftId: 55 });
+    });
+
+    it('nimmt die Weiterleitung vom Aufrufer, wenn ein älterer Entwurf das Feld nicht kennt', async () => {
+        entwurfAntwort = { body: { id: 55, recipient: 'kollege@example.org', subject: 'WG: Treppe', body: '<p>x</p>', attachments: [] } };
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} draftId={55} weitergeleitetVonEmailId={5} />);
+        expect(await screen.findByText(/Weiterleitungen gehen über das Postfach raus/)).toBeInTheDocument();
+        await sende();
+        await waitFor(() => expect(gesendet[0]?.dto).toMatchObject({ weitergeleitetVonEmailId: 5 }));
+    });
+});
+
+describe('EmailComposeForm – auslaufendes Postfach', () => {
+    it('meldet 400 „läuft aus“ als Toast und lässt das Formular offen', async () => {
+        sendeAntwort = { status: 400, body: { message: 'Dieses Postfach läuft aus. Bitte ein anderes Postfach wählen.' } };
+        stubFetch();
+        const onClose = vi.fn();
+        render(<EmailComposeForm onClose={onClose} initialRecipient="kunde@example.org" initialSubject="Termin" />);
+        await screen.findByRole('combobox', { name: 'Senden von' });
+        await sende();
+
+        await waitFor(() => expect(screen.getAllByText('Dieses Postfach läuft aus. Bitte ein anderes Postfach wählen.')).toHaveLength(2));
+        expect(onClose).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: /E-Mail senden/ })).toBeEnabled();
+        expect(screen.getByDisplayValue('Termin')).toBeInTheDocument();
     });
 });

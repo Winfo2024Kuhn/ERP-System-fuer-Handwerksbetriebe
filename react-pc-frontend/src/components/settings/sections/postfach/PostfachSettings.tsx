@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, CircleSlash, Clock, Inbox, Mail, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleSlash, Clock, Eye, Inbox, Mail, Pencil, Plus, RefreshCw, Trash2, Users } from 'lucide-react';
 import { Button } from '../../../ui/button';
 import { useToast } from '../../../ui/toast';
 import { useConfirm } from '../../../ui/confirm-dialog';
 import { SectionLoading, SettingsCard } from '../../settingsUi';
 import { parseErrorMessage } from '../../settingsApi';
 import { cn } from '../../../../lib/utils';
-import { beschreibeAbruf, type AbrufStatusArt, type PostfachDto } from '../../../../features/email/postfach';
+import {
+    beschreibeAbruf, beschreibeSichtbarkeit, immerFuerAlleSichtbar, parsePostfaecher, type AbrufStatusArt, type PostfachDto,
+} from '../../../../features/email/postfach';
 import { PostfachDialog } from './PostfachDialog';
 
 const statusStil: Record<AbrufStatusArt, { klasse: string; icon: typeof CheckCircle2 }> = {
@@ -41,7 +43,7 @@ export function PostfachSettings({ onSaved }: { onSaved?: () => void }) {
             const res = await fetch('/api/postfaecher');
             if (!res.ok) throw new Error(await parseErrorMessage(res, 'Postfächer konnten nicht geladen werden.'));
             const daten = await res.json();
-            setPostfaecher(Array.isArray(daten) ? daten : []);
+            setPostfaecher(parsePostfaecher(daten));
             setLadeFehler(null);
         } catch (err) {
             const text = err instanceof Error && err.message ? err.message : 'Postfächer konnten nicht geladen werden.';
@@ -135,6 +137,7 @@ export function PostfachSettings({ onSaved }: { onSaved?: () => void }) {
                     {postfaecher.map(postfach => {
                         const status = beschreibeAbruf(postfach);
                         const StatusIcon = statusStil[status.art].icon;
+                        const sichtbar = beschreibeSichtbarkeit(postfach);
                         return (
                             <li key={postfach.id} className={cn('flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between',
                                 !postfach.aktiv && 'bg-slate-50/70')}>
@@ -151,6 +154,12 @@ export function PostfachSettings({ onSaved }: { onSaved?: () => void }) {
                                                 Rechnungen &amp; Mahnungen
                                             </span>
                                         )}
+                                        {postfach.laeuftAus && (
+                                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600"
+                                                title="Läuft aus: Mails kommen weiter an, Antworten gehen über das Hauptpostfach raus, für neue Mails nicht mehr wählbar.">
+                                                läuft aus
+                                            </span>
+                                        )}
                                     </div>
                                     {postfach.anzeigename && <p className="text-sm text-slate-600">{postfach.anzeigename}</p>}
                                     <p className={cn('flex items-start gap-1.5 text-xs', statusStil[status.art].klasse)}>
@@ -163,6 +172,31 @@ export function PostfachSettings({ onSaved }: { onSaved?: () => void }) {
                                             {postfach.zugewieseneBenutzer.length > 0
                                                 ? postfach.zugewieseneBenutzer.map(b => b.displayName).join(', ')
                                                 : 'Keinem Benutzer als eigenes Postfach zugeordnet'}
+                                        </span>
+                                    </p>
+                                    <p className="flex items-start gap-1.5 text-xs text-slate-500" title={sichtbar.vollstaendig}
+                                        data-testid="postfach-sichtbarkeit">
+                                        <Eye className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                        <span className="min-w-0">
+                                            Sichtbar: {sichtbar.text}
+                                            {sichtbar.weitere > 0 && (
+                                                <>
+                                                    <span aria-hidden="true" className="ml-1 rounded-full bg-slate-100 px-1.5 py-px font-medium text-slate-600">
+                                                        +{sichtbar.weitere}
+                                                    </span>
+                                                    <span className="sr-only">, insgesamt: {sichtbar.vollstaendig}</span>
+                                                </>
+                                            )}
+                                            {!immerFuerAlleSichtbar(postfach) && (
+                                                <>
+                                                    {' · '}
+                                                    <a href="#berechtigungen"
+                                                        aria-label={`Sichtbarkeit von ${postfach.emailAdresse} unter Berechtigungen ändern`}
+                                                        className="font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded">
+                                                        ändern
+                                                    </a>
+                                                </>
+                                            )}
                                         </span>
                                     </p>
                                 </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, FolderOpen, Loader2, Share2, TestTube } from 'lucide-react';
+import { ChevronDown, ChevronUp, FolderCheck, FolderOpen, Loader2, Share2 } from 'lucide-react';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Button } from '../../ui/button';
@@ -126,7 +126,7 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
                             placeholder="C:\Zeichnungen"
                         />
                         <Button variant="outline" onClick={handleTest} disabled={testing || !pfad.trim()}>
-                            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
+                            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderCheck aria-hidden="true" className="w-4 h-4" />}
                             {testing ? 'Prüfe...' : 'Ordner prüfen'}
                         </Button>
                     </div>
