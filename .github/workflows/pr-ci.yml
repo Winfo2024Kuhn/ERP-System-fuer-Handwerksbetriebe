@@ -102,11 +102,13 @@ jobs:
           "-Dkompat.db.url=${{ matrix.url }}" -Dkompat.db.user=${{ matrix.user }} -Dkompat.db.pass=kompat
 
       # Die Tests sind an -Dkompat.db.url gebunden. Kommt die Property nicht an,
-      # waeren alle Tests "uebersprungen" - und der Job trotzdem gruen.
+      # waeren alle Tests "uebersprungen" - und der Job trotzdem gruen. Geprueft wird
+      # jede DatenbankKompatibilitaet*Test-Klasse im Quellcode, auch kuenftige.
       - name: Pruefen, dass die Tests wirklich liefen
         shell: bash
         run: |
-          for klasse in DatenbankKompatibilitaetTest DatenbankKompatibilitaetBetriebTest; do
+          for quelle in src/test/java/org/example/kalkulationsprogramm/repository/DatenbankKompatibilitaet*Test.java; do
+            klasse="$(basename "$quelle" .java)"
             bericht="target/surefire-reports/TEST-org.example.kalkulationsprogramm.repository.$klasse.xml"
             kopf="$(grep -o '<testsuite [^>]*' "$bericht" || true)"
             if [[ -z "$kopf" || "$kopf" != *' skipped="0"'* || "$kopf" == *' tests="0"'* ]]; then
