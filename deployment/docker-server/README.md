@@ -286,12 +286,15 @@ nicht überschreiben.
   läuft auch noch darauf. Der Umstieg auf **8.4 LTS** sollte für beide gemeinsam geplant
   und getestet werden.
 - **PostgreSQL verhält sich in Kleinigkeiten anders als MySQL.** Abgefangen sind
-  Spaltentypen, Upserts, Datumsrechnung und Parameter-Typen (`DatenbankKompatibilitaetTest`
-  prüft jede Abfrage gegen beide Datenbanken). Bekannte Unterschiede, die noch auffallen
-  können: `=` und `LIKE` unterscheiden in PostgreSQL Groß-/Kleinschreibung (die
-  Suchfelder nutzen `LOWER`, Einzelvergleiche nicht immer), leere Werte sortieren bei
-  `ORDER BY … DESC` oben statt unten, und bei Verstößen gegen Eindeutigkeit/Fremdschlüssel
-  zeigt die Oberfläche eine allgemeine statt der genauen Fehlermeldung.
+  Spaltentypen, Upserts, Datumsrechnung und Parameter-Typen, Suchen mit Filtern und
+  Sortierung, Groß-/Kleinschreibung in Suchen, Lieferantennamen und Belegnummern, die
+  Reihenfolge leerer Werte beim Sortieren (wie bisher auf MySQL: aufsteigend oben,
+  absteigend unten) und das Speichern leerer Felder. Die Tests
+  `DatenbankKompatibilitaet*Test` prüfen das gegen beide Datenbanken (CI-Job
+  „Datenbank-Kompatibilität“). Bekannte Unterschiede, die bleiben: PostgreSQL vergleicht
+  Umlaute nicht akzentfrei (die Suche nach „wurth“ findet „Würth“ nur auf MySQL),
+  Leerzeichen am Ende zählen bei exakten Vergleichen mit, und bei zu langen Texten nennt
+  die Fehlermeldung die Höchstlänge, aber nicht das Feld.
 
 ## Neuinstallation: das Basis-Schema
 
