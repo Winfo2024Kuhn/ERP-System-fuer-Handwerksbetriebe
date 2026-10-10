@@ -3,28 +3,31 @@ package org.example.kalkulationsprogramm.service;
 import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.kalkulationsprogramm.domain.EmailAbsender;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.OooReplyLog;
 import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
-import org.example.email.ImapAppendService;
+import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
 import org.example.kalkulationsprogramm.repository.OooReplyLogRepository;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
-import org.example.kalkulationsprogramm.service.mail.HtmlMailSender;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.File;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
@@ -42,16 +45,20 @@ public class OutOfOfficeResponder {
 
     private final OutOfOfficeScheduleRepository scheduleRepository;
     private final EmailSignatureService emailSignatureService;
-    private final HtmlMailSender mailSender;
     private final SystemSettingsService systemSettingsService;
-    private final ImapAppendService imapAppendService;
     private final OooReplyLogRepository replyLogRepository;
+    private final EmailAbsenderRepository postfachRepository;
+    private final PostfachVersandService postfachVersandService;
 
     /**
      * Kontext einer eingehenden E-Mail, der für die Auto-Reply-Entscheidung
      * benötigt wird. Wird vom Import-Flow befüllt.
+     *
+     * @param postfachId Postfach, in dem die Mail ankam; {@code null} = Standard-Konto aus den
+     *                   Einstellungen (zählt wie überall als Hauptpostfach)
      */
     public record IncomingMail(
+            Long postfachId,
             String fromAddress,
             String subject,
             LocalDateTime sentAt,
@@ -68,8 +75,9 @@ public class OutOfOfficeResponder {
      *   <li>E-Mail ist NICHT als Spam oder Newsletter klassifiziert.</li>
      *   <li>E-Mail ist KEINE Auto-Reply (Auto-Submitted/Precedence/List-Id) und
      *       der Absender ist keine System-/Bounce-/Test-Adresse (Loop-Schutz).</li>
-     *   <li>Es existiert ein aktiver Abwesenheitsplan, dessen Datum die
-     *       <em>Sendezeit</em> der Mail einschließt (TZ Europe/Berlin).</li>
+     *   <li>Es existiert ein aktiver Abwesenheitsplan für das Postfach, in dem die Mail
+     *       ankam, dessen Datum die <em>Sendezeit</em> der Mail einschließt (TZ Europe/Berlin).
+     *       Geantwortet wird aus genau diesem Postfach.</li>
      *   <li>Innerhalb dieses Plans wurde an diesen Absender noch nicht geantwortet.</li>
      * </ul>
      * Es gibt KEINE Beschränkung auf bekannte Kunden — die Auto-Reply geht an
@@ -93,8 +101,12 @@ public class OutOfOfficeResponder {
             log.debug("OOO-Antwort an Test-Adresse {} unterdrueckt.", maskAddress(sender));
             return;
         }
-        String defaultFromAddress = systemSettingsService.getSmtpUsername();
-        if (StringUtils.hasText(defaultFromAddress) && sender.equalsIgnoreCase(defaultFromAddress)) {
+        if (istEigeneAdresse(sender)) {
+            return; // Mail aus einem eigenen Postfach (z. B. max@ an info@) – keine Auto-Antwort im Haus.
+        }
+
+        Optional<EmailAbsender> postfach = postfachDerMail(incoming.postfachId());
+        if (postfach.isPresent() && !AbwesenheitsnotizService.antwortetAutomatisch(postfach.get())) {
             return;
         }
 
@@ -102,23 +114,47 @@ public class OutOfOfficeResponder {
                 ? incoming.sentAt().atZone(ZoneId.systemDefault()).withZoneSameInstant(BUSINESS_ZONE).toLocalDate()
                 : LocalDate.now(BUSINESS_ZONE);
 
-        Optional<OutOfOfficeSchedule> scheduleOpt = scheduleRepository
-                .findFirstByActiveTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByStartAtDesc(
-                        referenceDate, referenceDate);
-        if (scheduleOpt.isEmpty()) {
+        List<OutOfOfficeSchedule> passend = postfach
+                .map(p -> scheduleRepository.findAktiveFuerPostfach(p.getId(), referenceDate))
+                .orElseGet(() -> scheduleRepository.findAktiveOhnePostfach(referenceDate));
+        if (passend.isEmpty()) {
             return;
         }
-        OutOfOfficeSchedule schedule = scheduleOpt.get();
+        OutOfOfficeSchedule schedule = passend.get(0);
         if (replyLogRepository.existsByScheduleIdAndSenderAddressIgnoreCase(schedule.getId(), sender)) {
             log.debug("OOO-Antwort an {} bereits versendet (Plan {}).", maskAddress(sender), schedule.getId());
             return;
         }
 
-        sendReply(schedule, sender, incoming.subject(), defaultFromAddress);
+        sendReply(schedule, postfach.orElse(null), sender, incoming.subject());
     }
 
-    private void sendReply(OutOfOfficeSchedule schedule, String sender, String originalSubject,
-                           String defaultFromAddress) {
+    /** Postfach der Mail; ohne Angabe das Hauptpostfach, gibt es keins: leer (Standard-Konto). */
+    private Optional<EmailAbsender> postfachDerMail(Long postfachId) {
+        if (postfachId != null) {
+            return postfachRepository.findById(postfachId);
+        }
+        return postfachRepository.findFirstByHauptpostfachTrueOrderByIdAsc();
+    }
+
+    /** Absender ist eines unserer Postfächer oder das Standard-Konto? */
+    private boolean istEigeneAdresse(String sender) {
+        for (String standard : new String[] { systemSettingsService.getSmtpUsername(),
+                systemSettingsService.getMailFromAddress() }) {
+            if (StringUtils.hasText(standard) && sender.equalsIgnoreCase(standard.trim())) {
+                return true;
+            }
+        }
+        return postfachRepository.existsByEmailAdresseIgnoreCase(sender);
+    }
+
+    /**
+     * Verschickt die Antwort über das Postfach, in dem die Mail ankam (eigener Zugang oder – bei
+     * reiner Absender-Adresse – über das Hauptpostfach mit dieser Adresse). Die Gesendet-Kopie
+     * legt der Versand selbst ab.
+     */
+    private void sendReply(OutOfOfficeSchedule schedule, EmailAbsender postfach, String sender,
+                           String originalSubject) {
         EmailSignature signature = schedule.getSignature();
         String subject = buildSubject(schedule, originalSubject);
         String htmlBody = buildBodyHtml(schedule, signature, originalSubject);
@@ -126,22 +162,13 @@ public class OutOfOfficeResponder {
                 ? emailSignatureService.buildInlineCidFileMap(signature)
                 : Map.of();
         try {
-            mailSender.send(defaultFromAddress, sender, subject, htmlBody, inlineImages);
-            log.info("Automatische Abwesenheitsantwort an {} versendet.", maskAddress(sender));
-            try {
-                imapAppendService.appendToSent(
-                        defaultFromAddress,
-                        java.util.List.of(sender),
-                        subject,
-                        htmlBody,
-                        null,
-                        LocalDateTime.now());
-                log.debug("OOO-Antwort im Gesendet-Ordner abgelegt.");
-            } catch (Exception ex) {
-                log.warn("Konnte OOO-Antwort nicht im Gesendet-Ordner ablegen: {}", ex.getMessage());
-            }
+            PostfachVersandService.Versand versand = postfachVersandService.versandUeber(postfach);
+            versand.dienst().sendEmailAndReturnMessageIdWithInline(
+                    sender, null, versand.absenderAdresse(), subject, htmlBody, inlineImages, null, null);
+            log.info("Automatische Abwesenheitsantwort an {} versendet (Postfach {}).", maskAddress(sender),
+                    postfach != null ? postfach.getId() : "Standard");
             recordReply(schedule.getId(), sender);
-        } catch (MessagingException ex) {
+        } catch (MessagingException | IOException | RuntimeException ex) {
             log.warn("Abwesenheitsantwort konnte nicht gesendet werden: {}", ex.getMessage());
         }
     }
@@ -231,7 +258,7 @@ public class OutOfOfficeResponder {
         // sein (Absaetze, Listen, eingebettete Signatur-Tabellen). Aeltere Eintraege
         // sind reiner Plaintext. Heuristisch unterscheiden, damit Plaintext nicht
         // als <pre>-escaped landet und HTML nicht doppelt-escaped beim Empfaenger.
-        String htmlBody = looksLikeHtml(message)
+        String htmlBody = AbwesenheitsnotizService.siehtNachHtmlAus(message)
                 ? EmailHtmlSanitizer.sanitizeDetailHtml(message)
                 : EmailHtmlSanitizer.plainTextToHtml(message);
         if (signature != null) {
@@ -243,14 +270,6 @@ public class OutOfOfficeResponder {
         return htmlBody;
     }
 
-    private static boolean looksLikeHtml(String value) {
-        if (value == null) {
-            return false;
-        }
-        // Sehr simple Heuristik: irgendein <tag> oder &nbsp;-aehnliche Entity.
-        return value.matches("(?is).*<\\s*[a-zA-Z][^>]*>.*");
-    }
-
     private String applyTokens(String template, OutOfOfficeSchedule schedule, String originalSubject) {
         if (template == null) {
             return "";
@@ -260,10 +279,11 @@ public class OutOfOfficeResponder {
         String end = formatDate(schedule.getEndAt());
         String title = Optional.ofNullable(schedule.getTitle()).orElse("");
         String subject = Optional.ofNullable(originalSubject).orElse("");
-        value = START_TOKEN.matcher(value).replaceAll(Objects.requireNonNullElse(start, ""));
-        value = END_TOKEN.matcher(value).replaceAll(Objects.requireNonNullElse(end, ""));
-        value = TITLE_TOKEN.matcher(value).replaceAll(title);
-        value = SUBJECT_TOKEN.matcher(value).replaceAll(subject);
+        // quoteReplacement: "$" und "\" im Betreff des Absenders sind Text, keine Gruppen-Verweise.
+        value = START_TOKEN.matcher(value).replaceAll(Matcher.quoteReplacement(Objects.requireNonNullElse(start, "")));
+        value = END_TOKEN.matcher(value).replaceAll(Matcher.quoteReplacement(Objects.requireNonNullElse(end, "")));
+        value = TITLE_TOKEN.matcher(value).replaceAll(Matcher.quoteReplacement(title));
+        value = SUBJECT_TOKEN.matcher(value).replaceAll(Matcher.quoteReplacement(subject));
         return value;
     }
 

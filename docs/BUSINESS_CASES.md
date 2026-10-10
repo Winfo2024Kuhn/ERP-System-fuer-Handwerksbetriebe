@@ -53,7 +53,7 @@ Handwerksbetriebe kämpfen mit dezentralen Papierprozessen, fehlender Projektkos
 **Features:**
 - Automatische Zuordnung zu Kunden/Lieferanten/Projekten basierend auf E-Mail-Adressen
 - Anhänge werden als Lieferantendokumente analysiert
-- Signaturen und Abwesenheitsnotizen verwaltbar
+- Signaturen und Abwesenheitsnotizen verwaltbar (Kommunikation › E-Mail-Einstellungen); Abwesenheitsnotizen gelten pro Postfach – Mitarbeiter für das eigene und allgemeine Postfächer, Admins für alle – und antworten aus dem Postfach, in dem die Mail ankam
 
 **Business Value:** Keine verlorenen E-Mails, vollständige Kommunikationshistorie pro Projekt
 
