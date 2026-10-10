@@ -12,4 +12,6 @@ public interface LieferantReklamationRepository extends JpaRepository<LieferantR
     List<LieferantReklamation> findByLieferantIdOrderByStatusAscErstelltAmDesc(Long lieferantId);
 
     List<LieferantReklamation> findByStatusOrderByErstelltAmDesc(ReklamationStatus status);
+
+    boolean existsByLieferscheinId(Long lieferscheinId);
 }

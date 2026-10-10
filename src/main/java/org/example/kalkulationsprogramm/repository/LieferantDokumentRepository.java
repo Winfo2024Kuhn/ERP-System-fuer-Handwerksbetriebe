@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface LieferantDokumentRepository extends JpaRepository<LieferantDokument, Long> {
@@ -143,6 +144,22 @@ public interface LieferantDokumentRepository extends JpaRepository<LieferantDoku
                         "OR NOT EXISTS (SELECT p.id FROM LieferantDokumentPosition p WHERE p.geschaeftsdokument = gd)) " +
                         "ORDER BY d.id")
         List<Long> findIdsOhneVollstaendigeDaten(@Param("typ") LieferantDokumentTyp typ);
+
+        /**
+         * Dokumente, deren gespeicherte Datei beim selben Lieferanten noch ein zweites Mal
+         * als Dokument existiert (Duplikate aus dem erneuten Verarbeiten von Mail-Anhängen).
+         * Zeilen: {@code [id, lieferantId, gespeicherterDateiname]}, nach Gruppe und ID sortiert.
+         */
+        @Query("SELECT d.id, d.lieferant.id, d.gespeicherterDateiname FROM LieferantDokument d " +
+                        "WHERE d.gespeicherterDateiname IS NOT NULL " +
+                        "AND EXISTS (SELECT o.id FROM LieferantDokument o WHERE o.lieferant = d.lieferant " +
+                        "AND o.gespeicherterDateiname = d.gespeicherterDateiname AND o.id <> d.id) " +
+                        "ORDER BY d.lieferant.id, d.gespeicherterDateiname, d.id")
+        List<Object[]> findDateiDuplikate();
+
+        /** Das (älteste) Dokument eines Lieferanten zu dieser gespeicherten Datei. */
+        Optional<LieferantDokument> findFirstByLieferantIdAndGespeicherterDateinameOrderByIdAsc(
+                        Long lieferantId, String gespeicherterDateiname);
 
         /** Anzahl der Dokumente (0 oder 1) mit dieser ID, die mit mindestens einem anderen Dokument verknüpft sind. */
         @Query("SELECT COUNT(d) FROM LieferantDokument d WHERE d.id = :id " +

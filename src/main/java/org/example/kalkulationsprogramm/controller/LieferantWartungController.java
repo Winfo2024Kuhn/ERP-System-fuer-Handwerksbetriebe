@@ -37,7 +37,10 @@ public class LieferantWartungController {
 
     /**
      * Verarbeitet alle PDF-Anhänge der Mails eines Lieferanten erneut.
-     * Setzt das aiProcessed-Flag zurück und kostet je Anhang einen KI-Aufruf.
+     * Setzt das aiProcessed-Flag zurück. Anhänge, zu denen es schon ein Dokument gibt,
+     * werden nur wieder damit verknüpft (kein zweites Dokument, kein KI-Aufruf); nur
+     * Anhänge ohne Dokument werden neu gelesen. Bestehende Dokumente neu von der KI
+     * lesen lassen: {@code POST /api/lieferant-dokumente/lieferant/{id}/reanalyze}.
      */
     @PostMapping("/{id}/reprocess-attachments")
     // KEIN @Transactional - jeder innere saveAndFlush soll sofort committen

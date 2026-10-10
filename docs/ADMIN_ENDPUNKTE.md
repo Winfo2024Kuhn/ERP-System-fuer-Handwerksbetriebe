@@ -214,11 +214,22 @@ await fetch('/api/lieferant-dokumente/process-email/{emailId}',{method:'POST',he
 ```
 
 ### Alle Anhänge eines Lieferanten neu verarbeiten (nur Admin)
-Setzt die „schon verarbeitet“-Markierung der PDF-Anhänge zurück und lässt sie
-neu von der KI lesen. Kostet KI-Aufrufe.
+Setzt die „schon verarbeitet“-Markierung der PDF-Anhänge zurück. Anhänge, zu denen
+es schon ein Dokument gibt, werden nur wieder damit verknüpft – es entsteht kein
+zweites Dokument und kein KI-Aufruf. Nur Anhänge ohne Dokument werden neu gelesen
+(kostet KI-Aufrufe). Bestehende Dokumente neu lesen lassen: siehe „reanalyze“ oben.
 ```js
 await fetch('/api/admin/lieferanten/{lieferantId}/reprocess-attachments',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
+
+### Doppelte Lieferanten-Dokumente (läuft automatisch, kein Endpoint)
+Beim Start löscht `LieferantDokumentDuplikatBackfillRunner` Dokumente, die dieselbe
+gespeicherte Datei beim selben Lieferanten doppelt zeigen; je Gruppe bleibt eins.
+Gruppen, in denen mehrere Exemplare von Hand gepflegt sind (Projekt-Zuordnung, Beleg,
+Reklamation, bezahlt, freigegeben, Lagerbestellung), bleiben stehen und erscheinen im
+Log unter `[Duplikate] Gruppe … übersprungen` – dann bei jedem Start erneut, bis sie von
+Hand bereinigt sind. Erledigt ist der Lauf, wenn in den System-Einstellungen
+`lieferant.duplikate.version` = `1` steht.
 
 ---
 

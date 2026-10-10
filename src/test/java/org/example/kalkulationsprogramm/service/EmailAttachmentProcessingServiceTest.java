@@ -761,4 +761,76 @@ class EmailAttachmentProcessingServiceTest {
             verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Erneutes Verarbeiten darf keine Duplikate anlegen
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class KeineDuplikateBeimNeuVerarbeiten {
+
+        private EmailAttachment vorbereiten(Email email) throws IOException {
+            EmailAttachment pdfAtt = erstellePdfAttachment("Werkszeugnis.pdf");
+            pdfAtt.setEmail(email);
+            email.getAttachments().add(pdfAtt);
+            Files.write(tempDir.resolve(pdfAtt.getStoredFilename()), new byte[]{0x25, 0x50, 0x44, 0x46});
+            when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
+            return pdfAtt;
+        }
+
+        @Test
+        void anhangMitDokumentWirdNichtNochmalAngelegtUndNichtAnalysiert() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            EmailAttachment pdfAtt = vorbereiten(email);
+            LieferantDokument vorhanden = new LieferantDokument();
+            vorhanden.setId(850L);
+            vorhanden.setLieferant(lieferant);
+            pdfAtt.setLieferantDokument(vorhanden);
+
+            assertThat(service.processLieferantAttachments(email)).isZero();
+
+            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            assertThat(pdfAtt.getAiProcessed()).isTrue();
+            assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
+        }
+
+        @Test
+        void dokumentEinesAnderenLieferantenVerhindertDasAnlegenNicht() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            EmailAttachment pdfAtt = vorbereiten(email);
+            LieferantDokument fremd = new LieferantDokument();
+            fremd.setId(700L);
+            fremd.setLieferant(erstelleLieferant(11L));
+            pdfAtt.setLieferantDokument(fremd);
+            LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
+            daten.setDokumentNummer("LS-2026-001");
+            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
+            when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
+            when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            assertThat(service.processLieferantAttachments(email)).isEqualTo(1);
+
+            verify(lieferantDokumentRepository).save(any(LieferantDokument.class));
+        }
+
+        @Test
+        void gleicheDateiBeimLieferantenWirdWiederVerknuepftStattNeuAngelegt() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            EmailAttachment pdfAtt = vorbereiten(email);
+            LieferantDokument vorhanden = new LieferantDokument();
+            vorhanden.setId(851L);
+            when(lieferantDokumentRepository.findFirstByLieferantIdAndGespeicherterDateinameOrderByIdAsc(10L,
+                    pdfAtt.getStoredFilename())).thenReturn(Optional.of(vorhanden));
+
+            assertThat(service.processLieferantAttachments(email)).isZero();
+
+            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
+        }
+    }
 }

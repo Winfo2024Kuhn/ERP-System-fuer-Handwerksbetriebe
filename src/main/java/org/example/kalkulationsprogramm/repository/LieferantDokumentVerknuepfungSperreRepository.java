@@ -19,6 +19,10 @@ public interface LieferantDokumentVerknuepfungSperreRepository extends
             + "WHERE d.id = s.dokumentId AND d.lieferant.id = :lieferantId")
     List<LieferantDokumentVerknuepfungSperre> findByLieferantId(@Param("lieferantId") Long lieferantId);
 
+    /** Alle Sperren, an denen das Dokument beteiligt ist – in beiden Richtungen. */
+    @Query("SELECT s FROM LieferantDokumentVerknuepfungSperre s WHERE s.dokumentId = :id OR s.verknuepftId = :id")
+    List<LieferantDokumentVerknuepfungSperre> findByBeteiligtemDokument(@Param("id") Long id);
+
     /** Hebt die Sperre eines Paares auf, egal in welcher Richtung sie gespeichert ist. */
     @Modifying
     @Query("DELETE FROM LieferantDokumentVerknuepfungSperre s "

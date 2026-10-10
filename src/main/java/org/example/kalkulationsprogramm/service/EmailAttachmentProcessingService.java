@@ -384,6 +384,23 @@ public class EmailAttachmentProcessingService {
         }
         String anzeigeFilename = effektiveAnzeige.getOriginalFilename();
 
+        // 0. Gibt es zu dieser Datei schon ein Dokument? Ein erneuter Lauf (z. B. „Anhänge
+        // neu verarbeiten“) darf kein zweites anlegen – sonst entstehen Duplikate, und
+        // ein Zeugnis ohne eigene Nummer fängt der Nummern-Check unten nicht ab.
+        LieferantDokument vorhanden = findeVorhandenesDokument(effektiveAnzeige, lieferantId);
+        if (vorhanden == null && !metaAttachment.getId().equals(effektiveAnzeige.getId())) {
+            vorhanden = findeVorhandenesDokument(metaAttachment, lieferantId);
+        }
+        if (vorhanden != null) {
+            log.info("Anhang {} hat schon Dokument {} - lege kein weiteres an", effektiveAnzeige.getId(),
+                    vorhanden.getId());
+            markProcessed(effektiveAnzeige, vorhanden);
+            if (!metaAttachment.getId().equals(effektiveAnzeige.getId())) {
+                markProcessed(metaAttachment, vorhanden);
+            }
+            return false;
+        }
+
         // 1. Analyse durchführen (InMemory, noch keine DB-Erstellung)
         // Das verhindert, dass leere Dokumente im Frontend auftauchen während die
         // Analyse läuft. Metadaten kommen aus der Metadaten-Datei (XML bei einem Paar).
@@ -486,6 +503,25 @@ public class EmailAttachmentProcessingService {
                 geschaeftsdaten != null ? "Ja" : "Nein");
 
         return true;
+    }
+
+    /**
+     * Das Dokument dieses Lieferanten, das der Anhang schon hat, sonst eins des Lieferanten
+     * mit derselben gespeicherten Datei. Ein Dokument eines anderen Lieferanten (Mail
+     * wurde umgehängt) zählt nicht.
+     */
+    private LieferantDokument findeVorhandenesDokument(EmailAttachment anhang, Long lieferantId) {
+        LieferantDokument verknuepft = anhang.getLieferantDokument();
+        if (verknuepft != null && verknuepft.getLieferant() != null
+                && lieferantId.equals(verknuepft.getLieferant().getId())) {
+            return verknuepft;
+        }
+        if (anhang.getStoredFilename() == null) {
+            return null;
+        }
+        return lieferantDokumentRepository
+                .findFirstByLieferantIdAndGespeicherterDateinameOrderByIdAsc(lieferantId, anhang.getStoredFilename())
+                .orElse(null);
     }
 
     /**

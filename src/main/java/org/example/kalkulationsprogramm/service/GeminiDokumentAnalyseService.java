@@ -1213,9 +1213,9 @@ public class GeminiDokumentAnalyseService {
                 speichereVerbessertenPartner(partner, freshDokument.getTyp(), partnerPositionen);
             }
 
-            log.info("Dokument {} erfolgreich analysiert: {} (Quelle: {}, Confidence: {})",
+            log.info("Dokument {} analysiert: Nr. {} (Quelle: {}, Confidence: {})",
                     freshDokument.getId(),
-                    geschaeftsdaten.getDokumentNummer(),
+                    geschaeftsdaten.getDokumentNummer() != null ? geschaeftsdaten.getDokumentNummer() : "nicht erkannt",
                     geschaeftsdaten.getAiRawJson() != null ? "KI" : "ZUGFeRD/XML",
                     geschaeftsdaten.getAiConfidence());
 
@@ -1816,22 +1816,28 @@ public class GeminiDokumentAnalyseService {
                 }
             }
 
-            // Validiere die extrahierten Daten
-            // Typ haben wir hier potentiell noch nicht sicher, wir validieren allgemein auf
-            // Nummer
-            boolean validierungBestanden = validiereGeschaeftsdaten(result, null);
+            // Validiere die extrahierten Daten gegen die Pflichtfelder des von der KI erkannten Typs
+            // (ohne erkannten Typ oder bei „Sonstiges“: allgemein auf Dokumentnummer)
+            boolean validierungBestanden = validiereGeschaeftsdaten(result, pruefTyp(result));
 
-            if (!validierungBestanden) {
+            if (!validierungBestanden && !hatEigenesProModel()) {
+                // Pro-Model ist auf dasselbe Model konfiguriert: ein zweiter, identischer Aufruf
+                // (temperature 0) liefert dasselbe Ergebnis und kostet nur Zeit und Geld.
                 log.warn(
-                        "[KI-Analyse] Datenvalidierung fehlgeschlagen für Dokument {} (Typ unbekannt). Versuche mit Pro-Model...",
-                        docIdForLog);
+                        "[KI-Analyse] Datenvalidierung fehlgeschlagen für Dokument {} (Typ {}) - markiere zur manuellen Prüfung (kein eigenes Pro-Model konfiguriert)",
+                        docIdForLog, result.getDetectedTyp());
+                result.setManuellePruefungErforderlich(true);
+            } else if (!validierungBestanden) {
+                log.warn(
+                        "[KI-Analyse] Datenvalidierung fehlgeschlagen für Dokument {} (Typ {}). Versuche mit Pro-Model...",
+                        docIdForLog, result.getDetectedTyp());
 
                 // Retry mit Pro-Model; eine abgeschnittene Antwort hätte eine halbe Positionsliste
                 KiAntwort proAntwort = rufGeminiApiMitStatus(bytes, mimeType, true, false);
                 jsonResponse = proAntwort != null && !proAntwort.abgeschnitten() ? proAntwort.text() : null;
                 if (jsonResponse != null) {
                     LieferantGeschaeftsdokument retryResult = mapJsonToData(jsonResponse);
-                    if (retryResult != null && validiereGeschaeftsdaten(retryResult, null)) {
+                    if (retryResult != null && validiereGeschaeftsdaten(retryResult, pruefTyp(retryResult))) {
                         log.info("[KI-Analyse] Pro-Model erfolgreich - Datenvalidierung bestanden");
                         retryResult.setManuellePruefungErforderlich(false);
                         return retryResult;
@@ -1977,6 +1983,21 @@ public class GeminiDokumentAnalyseService {
         }
     }
 
+    /** Ein Pro-Retry lohnt nur, wenn dafür wirklich ein anderes Model konfiguriert ist. */
+    private boolean hatEigenesProModel() {
+        return geminiProModel != null && !geminiProModel.equals(geminiModel);
+    }
+
+    /**
+     * Typ, nach dem die Pflichtfelder geprüft werden. „Sonstiges“ hat keine Pflichtfelder –
+     * dann wie bei unbekanntem Typ mindestens auf eine Nummer prüfen, damit eine falsch
+     * eingeordnete Rechnung weiter in „Zu prüfen“ landet.
+     */
+    private static LieferantDokumentTyp pruefTyp(LieferantGeschaeftsdokument gd) {
+        LieferantDokumentTyp typ = gd.getDetectedTyp();
+        return typ == LieferantDokumentTyp.SONSTIG ? null : typ;
+    }
+
     /**
      * Validiert ob die extrahierten Geschäftsdaten vollständig sind basierend auf
      * dem Dokumenttyp.
@@ -1984,7 +2005,7 @@ public class GeminiDokumentAnalyseService {
      * Pflichtfelder je Typ:
      * - RECHNUNG: Dokumentnummer + (BetragBrutto ODER BetragNetto)
      * - LIEFERSCHEIN: Dokumentnummer
-     * - WERKSTOFFZEUGNIS: Dokumentnummer (Zeugnisse tragen keine Beträge)
+     * - WERKSTOFFZEUGNIS: Dokumentnummer ODER Lieferschein-Nr. (keine Beträge)
      * - ANGEBOT: Dokumentnummer + (BetragBrutto ODER BetragNetto)
      * - AUFTRAGSBESTAETIGUNG: Dokumentnummer
      * - GUTSCHRIFT: Dokumentnummer + (BetragBrutto ODER BetragNetto)
@@ -2022,10 +2043,19 @@ public class GeminiDokumentAnalyseService {
                 return true;
 
             case LIEFERSCHEIN:
-            case WERKSTOFFZEUGNIS:
-                // Lieferschein und Werkstoffzeugnis: Nur Dokumentnummer (keine Beträge)
+                // Lieferschein: Nur Dokumentnummer (keine Beträge)
                 if (!hatDokumentNummer) {
-                    log.debug("[Validierung] {}: Dokumentnummer fehlt", typ);
+                    log.debug("[Validierung] LIEFERSCHEIN: Dokumentnummer fehlt");
+                    return false;
+                }
+                return true;
+
+            case WERKSTOFFZEUGNIS:
+                // Händler-Werkszeugnisse sind oft nur ein Begleitschreiben ohne eigene Nummer;
+                // die Lieferschein-Nr. (referenzNummer) ordnet sie trotzdem eindeutig zu.
+                boolean hatLieferscheinNummer = gd.getReferenzNummer() != null && !gd.getReferenzNummer().isBlank();
+                if (!hatDokumentNummer && !hatLieferscheinNummer) {
+                    log.debug("[Validierung] WERKSTOFFZEUGNIS: weder Zeugnis- noch Lieferschein-Nr.");
                     return false;
                 }
                 return true;
@@ -2728,7 +2758,8 @@ public class GeminiDokumentAnalyseService {
                 gd.setNettoTage(nettoTage);
                 log.info("Netto Tage: {}", nettoTage);
             } else {
-                log.info("KEIN nettoTage in KI-Response gefunden. JSON hat: {}", json.fieldNames());
+                // Normal bei Lieferscheinen und Zeugnissen, deshalb nur debug
+                log.debug("Kein nettoTage in KI-Antwort gefunden");
             }
 
             // Fallback: Berechne zahlungsziel aus nettoTage wenn nicht vorhanden

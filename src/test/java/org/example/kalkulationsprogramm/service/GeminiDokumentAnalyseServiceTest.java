@@ -24,6 +24,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -2025,5 +2026,71 @@ class GeminiDokumentAnalyseServiceTest {
             "mapJsonToData", String.class);
         method.setAccessible(true);
         return (LieferantGeschaeftsdokument) method.invoke(service, json);
+    }
+
+    /**
+     * Händler-Werkszeugnisse (z. B. ein Begleitschreiben vor den Hersteller-Zeugnissen)
+     * tragen oft keine eigene Nummer, aber die Lieferschein-Nr. – das reicht.
+     */
+    @Nested
+    class WerkstoffzeugnisValidierung {
+
+        private boolean validiere(LieferantGeschaeftsdokument gd, LieferantDokumentTyp typ) throws Exception {
+            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+                    "validiereGeschaeftsdaten", LieferantGeschaeftsdokument.class, LieferantDokumentTyp.class);
+            method.setAccessible(true);
+            return (boolean) method.invoke(service, gd, typ);
+        }
+
+        @Test
+        void zeugnisOhneEigeneNummerMitLieferscheinNummerIstVollstaendig() throws Exception {
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setReferenzNummer("90000001/01");
+
+            assertThat(validiere(gd, LieferantDokumentTyp.WERKSTOFFZEUGNIS)).isTrue();
+        }
+
+        @Test
+        void zeugnisOhneJedeNummerIstUnvollstaendig() throws Exception {
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setReferenzNummer(" ");
+
+            assertThat(validiere(gd, LieferantDokumentTyp.WERKSTOFFZEUGNIS)).isFalse();
+        }
+
+        @Test
+        void lieferscheinBrauchtWeiterSeineEigeneNummer() throws Exception {
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setReferenzNummer("AB-4711");
+
+            assertThat(validiere(gd, LieferantDokumentTyp.LIEFERSCHEIN)).isFalse();
+        }
+    }
+
+    /** Ist das Pro-Model auf dasselbe Model gestellt, bringt ein zweiter Aufruf nichts. */
+    @Nested
+    class ProModelNachversuch {
+
+        private boolean hatEigenesProModel() throws Exception {
+            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod("hatEigenesProModel");
+            method.setAccessible(true);
+            return (boolean) method.invoke(service);
+        }
+
+        @Test
+        void gleichesModelHeisstKeinNachversuch() throws Exception {
+            ReflectionTestUtils.setField(service, "geminiModel", "gemini-flash");
+            ReflectionTestUtils.setField(service, "geminiProModel", "gemini-flash");
+
+            assertThat(hatEigenesProModel()).isFalse();
+        }
+
+        @Test
+        void anderesModelHeisstNachversuch() throws Exception {
+            ReflectionTestUtils.setField(service, "geminiModel", "gemini-flash");
+            ReflectionTestUtils.setField(service, "geminiProModel", "gemini-pro");
+
+            assertThat(hatEigenesProModel()).isTrue();
+        }
     }
 }
