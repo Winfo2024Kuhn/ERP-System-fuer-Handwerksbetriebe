@@ -159,10 +159,10 @@ public class PostfachService {
         if (zuordnungRepository.existsByPostfachId(id)) {
             throw new IllegalArgumentException("Dieses Postfach hat schon E-Mails – bitte stattdessen ausschalten.");
         }
-        for (FrontendUserProfile benutzer : frontendUserProfileRepository.findByEmailAbsenderId(id)) {
-            benutzer.setEmailAbsender(null);
-            frontendUserProfileRepository.save(benutzer);
-        }
+        // Benutzer mit diesem Postfach als Absender verlieren es über die
+        // Datenbank (ON DELETE SET NULL, V410) - hier ist nichts mehr zu tun.
+        // Achtung: Ein in dieser Transaktion geladenes und geändertes Benutzerprofil
+        // schriebe beim Flush die alte email_absender_id zurück - dann vorher leeren.
         repository.delete(postfach);
     }
 

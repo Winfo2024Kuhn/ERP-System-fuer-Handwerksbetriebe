@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -34,10 +36,12 @@ public class Abwesenheit {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "langzeitkrankmeldung_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private Langzeitkrankmeldung langzeitkrankmeldung;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "langzeitkrankmeldung_phase_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private LangzeitkrankmeldungPhase langzeitkrankmeldungPhase;
 
     @Enumerated(EnumType.STRING)

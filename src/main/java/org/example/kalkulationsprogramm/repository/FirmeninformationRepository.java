@@ -9,6 +9,9 @@ import java.util.Optional;
 @Repository
 public interface FirmeninformationRepository extends JpaRepository<Firmeninformation, Long> {
 
+    /** Ist dieses Gewerk in den Firmendaten eingetragen (liefert den BG-Satz)? */
+    boolean existsByGewerkId(Long gewerkId);
+
     /**
      * Lädt die Firmeninformation (Singleton mit id=1).
      */

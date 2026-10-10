@@ -400,18 +400,15 @@ class PostfachServiceTest {
         }
 
         @Test
-        void loeschenLoestBenutzerZuordnung() {
+        void loeschenUeberlaesstBenutzerZuordnungDerDatenbank() {
             EmailAbsender max = postfach(5L, "max@example.com", false);
             when(repository.findById(5L)).thenReturn(Optional.of(max));
-            FrontendUserProfile benutzer = new FrontendUserProfile();
-            benutzer.setEmailAbsender(max);
-            when(frontendUserProfileRepository.findByEmailAbsenderId(5L)).thenReturn(List.of(benutzer));
 
             service.loeschen(5L);
 
-            assertThat(benutzer.getEmailAbsender()).isNull();
-            verify(frontendUserProfileRepository).save(benutzer);
+            // ON DELETE SET NULL (V410) leert email_absender_id der Benutzer
             verify(repository).delete(max);
+            verify(frontendUserProfileRepository, never()).save(any());
         }
     }
 

@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -71,6 +73,7 @@ public class LieferantDokument {
     // werden weiterhin ueber den Beleg-Endpoint ausgeliefert.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "beleg_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     @BatchSize(size = 50)
     private Beleg beleg;
 

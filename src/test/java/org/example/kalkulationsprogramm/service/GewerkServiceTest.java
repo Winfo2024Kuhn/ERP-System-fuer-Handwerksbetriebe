@@ -4,25 +4,32 @@ import java.math.BigDecimal;
 
 import org.example.kalkulationsprogramm.domain.Gewerk;
 import org.example.kalkulationsprogramm.dto.GewerkDto;
+import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.example.kalkulationsprogramm.repository.GewerkRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class GewerkServiceTest {
 
     private GewerkRepository repository;
+    private FirmeninformationRepository firmeninformationRepository;
     private GewerkService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(GewerkRepository.class);
-        service = new GewerkService(repository);
+        firmeninformationRepository = mock(FirmeninformationRepository.class);
+        service = new GewerkService(repository, firmeninformationRepository);
         when(repository.save(any(Gewerk.class))).thenAnswer(inv -> {
             Gewerk g = inv.getArgument(0);
             if (g.getId() == null) g.setId(33L);
@@ -77,5 +84,26 @@ class GewerkServiceTest {
         assertThat(saved.getBgName()).isEqualTo("BGHM");
         assertThat(saved.getBgSatzProzent()).isEqualByComparingTo("1.13");
         assertThat(saved.getAktiv()).isTrue();
+    }
+
+    @Test
+    void gewerkDerFirmaLaesstSichNichtLoeschen() {
+        when(firmeninformationRepository.existsByGewerkId(7L)).thenReturn(true);
+
+        // Sonst leerte die Datenbank das Gewerk der Firma und der BG-Satz fiele still weg
+        assertThatThrownBy(() -> service.delete(7L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("in den Firmendaten eingetragen")
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        verify(repository, never()).deleteById(7L);
+    }
+
+    @Test
+    void unbenutztesGewerkWirdGeloescht() {
+        when(firmeninformationRepository.existsByGewerkId(8L)).thenReturn(false);
+
+        service.delete(8L);
+
+        verify(repository).deleteById(8L);
     }
 }

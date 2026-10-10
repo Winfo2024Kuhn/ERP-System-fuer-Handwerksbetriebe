@@ -25,6 +25,8 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 @Entity
 @Table(
@@ -68,6 +70,7 @@ public class FrontendUserProfile {
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "email_absender_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private EmailAbsender emailAbsender;
 
     // Links this PC frontend profile to an employee for document upload tracking

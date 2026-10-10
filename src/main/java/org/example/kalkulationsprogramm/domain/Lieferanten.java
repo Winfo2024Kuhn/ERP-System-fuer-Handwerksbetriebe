@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -83,6 +85,7 @@ public class Lieferanten {
      */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "standard_kostenstelle_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private Kostenstelle standardKostenstelle;
 
     /**

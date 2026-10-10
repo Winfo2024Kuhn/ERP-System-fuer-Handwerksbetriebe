@@ -3,9 +3,12 @@ package org.example.kalkulationsprogramm.service;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Gewerk;
 import org.example.kalkulationsprogramm.dto.GewerkDto;
+import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.example.kalkulationsprogramm.repository.GewerkRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -14,6 +17,7 @@ import java.util.List;
 public class GewerkService {
 
     private final GewerkRepository repository;
+    private final FirmeninformationRepository firmeninformationRepository;
 
     @Transactional(readOnly = true)
     public List<GewerkDto> findAll() {
@@ -49,6 +53,13 @@ public class GewerkService {
 
     @Transactional
     public void delete(Long id) {
+        // Die Datenbank wuerde das Gewerk der Firma still leeren (ON DELETE SET NULL) -
+        // dann fehlte der BG-Satz und der Verrechnungslohn waere unbemerkt zu niedrig
+        if (firmeninformationRepository.existsByGewerkId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Dieses Gewerk ist in den Firmendaten eingetragen. Bitte dort zuerst ein anderes Gewerk wählen "
+                            + "oder dieses Gewerk ausschalten.");
+        }
         repository.deleteById(id);
     }
 

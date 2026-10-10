@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.math.BigDecimal;
 
@@ -98,6 +100,7 @@ public class Firmeninformation {
     // Gewerk der Firma - liefert den Default-BG-Satz (Unfallversicherung).
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "gewerk_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private Gewerk gewerk;
 
     // Tatsaechlicher BG-Satz aus dem Beitragsbescheid. Wenn NULL, gilt der

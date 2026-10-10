@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import org.example.kalkulationsprogramm.config.DatenbankArt;
 import org.example.kalkulationsprogramm.config.FlywayStartSetupConfig;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -440,5 +441,42 @@ class DatenbankKompatibilitaetTest {
         assertThat(offen).extracting(m -> YearMonth.of(m.getJahr(), m.getMonat()))
                 .containsExactly(start, start.plusMonths(1), start.plusMonths(2));
         assertThat(offen).allSatisfy(m -> assertThat(m.getAnzahl()).isEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("V410: je Spalte genau ein Fremdschluessel mit der gewollten Loeschregel")
+    void keineDoppeltenFremdschluessel() {
+        // Zwei Schluessel (Hibernate ohne Regel + fk_... mit SET NULL) liessen MySQL
+        // das Loeschen blockieren - das gewollte "auf leer setzen" griff nie
+        List<String> erwartet = List.of(
+                "abwesenheit.langzeitkrankmeldung_id fk_abwesenheit_langzeitkrankmeldung SET NULL",
+                "abwesenheit.langzeitkrankmeldung_phase_id fk_abwesenheit_langzeitkrankmeldung_phase SET NULL",
+                "firmeninformation.gewerk_id fk_firmeninformation_gewerk SET NULL",
+                "frontend_user_profile.email_absender_id fk_frontend_user_email_absender SET NULL",
+                "lieferant_dokument.beleg_id fk_lieferant_dokument_beleg SET NULL",
+                "lieferant_dokument_projekt_anteil.zugeordnet_von_user_id fk_projekt_anteil_zugeordnet_von SET NULL",
+                "lieferanten.standard_kostenstelle_id fk_lieferanten_standard_kostenstelle SET NULL",
+                "mitarbeiter.krankenkasse_id fk_mitarbeiter_krankenkasse SET NULL",
+                "monats_saldo.festgeschrieben_von_mitarbeiter_id fk_monats_saldo_festgeschrieben_von NO ACTION");
+        String abfrage = """
+                SELECT k.constraint_name, r.delete_rule
+                FROM information_schema.key_column_usage k
+                JOIN information_schema.referential_constraints r
+                  ON r.constraint_schema = k.constraint_schema AND r.constraint_name = k.constraint_name
+                WHERE k.table_name = :tabelle AND k.column_name = :spalte AND k.table_schema = """
+                + (DatenbankArt.istPostgres(em) ? "current_schema()" : "DATABASE()");
+        List<String> gefunden = new ArrayList<>();
+        for (String eintrag : erwartet) {
+            String[] spalte = eintrag.substring(0, eintrag.indexOf(' ')).split("\\.");
+            @SuppressWarnings("unchecked")
+            List<Object[]> zeilen = em.createNativeQuery(abfrage)
+                    .setParameter("tabelle", spalte[0])
+                    .setParameter("spalte", spalte[1])
+                    .getResultList();
+            for (Object[] zeile : zeilen) {
+                gefunden.add(spalte[0] + "." + spalte[1] + " " + zeile[0].toString().toLowerCase() + " " + zeile[1]);
+            }
+        }
+        assertThat(gefunden).containsExactlyInAnyOrderElementsOf(erwartet);
     }
 }

@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -74,6 +76,7 @@ public class Mitarbeiter {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "krankenkasse_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private Krankenkasse krankenkasse;
 
     @Column(nullable = false)

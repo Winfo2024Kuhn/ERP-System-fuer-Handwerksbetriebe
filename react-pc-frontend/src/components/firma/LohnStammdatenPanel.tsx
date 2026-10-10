@@ -11,6 +11,7 @@ import { DatePicker } from '../ui/datepicker';
 import { useToast } from '../ui/toast';
 import { useConfirm } from '../ui/confirm-dialog';
 import { cn } from '../../lib/utils';
+import { leseFehlermeldung } from '../verrechnungslohnFormat';
 
 type SubTab = 'krankenkassen' | 'sv-saetze' | 'gewerke';
 
@@ -212,7 +213,8 @@ export function LohnStammdatenPanel() {
         if (!ok) return;
         try {
             const res = await fetch(`/api/lohn-stammdaten/gewerke/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
-            if (!res.ok) { toast.error('Gewerk konnte nicht gelöscht werden.'); return; }
+            // Ist das Gewerk in den Firmendaten eingetragen, sagt das Backend warum (409)
+            if (!res.ok) { toast.error(await leseFehlermeldung(res, 'Gewerk konnte nicht gelöscht werden')); return; }
             await loadGewerke();
         } catch {
             toast.error('Gewerk konnte nicht gelöscht werden.');
@@ -352,8 +354,8 @@ export function LohnStammdatenPanel() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-2 text-right">
-                                            <Button variant="ghost" size="sm" onClick={() => setEditingGewerk({ ...g, bgSatzProzent: formatDecimalInput(Number(g.bgSatzProzent)) })}><Edit2 className="w-4 h-4" /></Button>
-                                            <Button variant="ghost" size="sm" onClick={() => g.id && deleteGewerk(g.id)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></Button>
+                                            <Button variant="ghost" size="sm" aria-label={`Gewerk ${g.name} bearbeiten`} title="Bearbeiten" onClick={() => setEditingGewerk({ ...g, bgSatzProzent: formatDecimalInput(Number(g.bgSatzProzent)) })}><Edit2 className="w-4 h-4" /></Button>
+                                            <Button variant="ghost" size="sm" aria-label={`Gewerk ${g.name} löschen`} title="Löschen" onClick={() => g.id && deleteGewerk(g.id)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></Button>
                                         </td>
                                     </tr>
                                 ))}
