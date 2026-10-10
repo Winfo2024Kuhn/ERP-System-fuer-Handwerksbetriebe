@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonIncludeProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.persistence.CollectionTable;
@@ -74,9 +74,11 @@ public class FrontendUserProfile {
     private EmailAbsender emailAbsender;
 
     // Links this PC frontend profile to an employee for document upload tracking
+    // Im JSON nur Name und ID: Der ganze Mitarbeiter brach die Benutzerliste, sobald
+    // eine Krankenkasse (lazy) eingetragen war, und verriet Login-Code und Lohndaten.
     @OneToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "mitarbeiter_id")
-    @JsonIgnoreProperties({"abteilungen", "zeitkonten", "buchungen", "antraege", "dokumente", "hibernateLazyInitializer", "handler"})
+    @JsonIncludeProperties({"id", "vorname", "nachname"})
     private Mitarbeiter mitarbeiter;
 
     @Transient
