@@ -25,9 +25,12 @@ on:
 
 permissions: {}
 
+# Nicht abbrechen: Ein Abbruch zwischen "Branch aktualisiert" und "Tests
+# gestartet" liesse den PR ohne Tests liegen. Hoechstens ein Lauf aktiv, einer
+# wartend - die Schleife vertraegt Wiederholungen.
 concurrency:
   group: pr-aktualisieren
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   aktualisieren:
@@ -55,31 +58,52 @@ jobs:
             echo "Keine offenen PRs mit Auto-Merge."
             exit 0
           fi
+          # Tests fuer einen Branch starten (Check-Runs landen auf dessen Kopf-Commit).
+          starte_tests() {
+            gh workflow run pr-ci.yml --ref="$1"
+          }
           # Eigener Kanal (3): gh in der Schleife darf die Liste nicht von stdin wegessen.
+          # Fehler bei einem PR brechen nicht alles ab - die anderen kommen trotzdem dran.
           while read -r nummer kopf branch <&3; do
             [ -n "$nummer" ] || continue
-            behind="$(gh api "repos/$GH_REPO/compare/main...$kopf" --jq .behind_by)"
+            if ! behind="$(gh api "repos/$GH_REPO/compare/main...$kopf" --jq .behind_by)" \
+                || ! [[ "$behind" =~ ^[0-9]+$ ]]; then
+              echo "::warning::PR #$nummer: Abstand zu main nicht lesbar - uebersprungen."
+              continue
+            fi
             if [ "$behind" -eq 0 ]; then
-              echo "PR #$nummer ist aktuell."
+              # Selbstheilung: aktuell, aber noch nie getestet (z. B. frueherer
+              # Lauf brach nach dem Update ab) -> Tests nachholen.
+              laeufe="$(gh api "repos/$GH_REPO/commits/$kopf/check-runs?check_name=PR%20Quality%20Gate" \
+                --jq .total_count 2>/dev/null || echo "?")"
+              if [ "$laeufe" = "0" ]; then
+                echo "PR #$nummer ist aktuell, aber ungetestet - starte Tests."
+                starte_tests "$branch" || echo "::warning::PR #$nummer: Tests liessen sich nicht starten."
+              else
+                echo "PR #$nummer ist aktuell."
+              fi
               continue
             fi
             echo "PR #$nummer liegt $behind Commit(s) hinter main - aktualisiere $branch."
             if ! gh api -X PUT "repos/$GH_REPO/pulls/$nummer/update-branch" \
                 -f expected_head_sha="$kopf" --silent; then
-              echo "::warning::PR #$nummer liess sich nicht aktualisieren (Konflikt?) - bitte von Hand."
+              echo "::warning::PR #$nummer liess sich nicht aktualisieren (Konflikt oder inzwischen neuer Push) - bitte ansehen."
               continue
             fi
             # update-branch arbeitet im Hintergrund: warten, bis der neue Kopf da ist.
             neu="$kopf"
             for versuch in $(seq 1 30); do
-              neu="$(gh pr view "$nummer" --json headRefOid --jq .headRefOid)"
+              neu="$(gh pr view "$nummer" --json headRefOid --jq .headRefOid || echo "$kopf")"
               [ "$neu" != "$kopf" ] && break
               sleep 4
             done
             if [ "$neu" = "$kopf" ]; then
-              echo "::warning::PR #$nummer: neuer Stand nach 2 Minuten nicht sichtbar - Tests nicht gestartet."
+              echo "::warning::PR #$nummer: neuer Stand nach 2 Minuten nicht sichtbar - Tests holt der naechste Lauf nach."
               continue
             fi
-            gh workflow run pr-ci.yml --ref "$branch"
-            echo "PR #$nummer aktualisiert ($neu), Tests gestartet."
+            if starte_tests "$branch"; then
+              echo "PR #$nummer aktualisiert ($neu), Tests gestartet."
+            else
+              echo "::warning::PR #$nummer aktualisiert, Tests liessen sich nicht starten - der naechste Lauf holt sie nach."
+            fi
           done 3<<< "$prs"
