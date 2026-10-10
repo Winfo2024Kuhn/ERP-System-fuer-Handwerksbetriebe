@@ -131,7 +131,8 @@ function dialog(page: Page) {
 
 async function oeffneDokumentModal(page: Page) {
     await page.goto(`/lieferanten?lieferantId=${LIEFERANT_ID}&tab=dokumente`);
-    await page.getByRole('button', { name: /RE-2026-210/ }).click();
+    // Verankert: "Rechnung RE-2026-210 zu Kette zuordnen" nennt die Nummer ebenfalls.
+    await page.getByRole('button', { name: /^RE-2026-210/ }).click();
     await expect(dialog(page)).toBeVisible();
 }
 
