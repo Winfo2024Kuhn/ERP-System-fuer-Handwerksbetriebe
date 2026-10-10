@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight, FolderOpen, Headset, Phone, PhoneCall, PhoneMissed, Voicemail, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
@@ -76,7 +76,10 @@ export function AnrufFenster({ anruf, weitere, onSchliessen, onKontaktOeffnen, u
     const titelId = useId();
     const laufzeit = formatLaufzeit(useLaufendeSekunden(anruf.status === 'IM_GESPRAECH' ? anruf.gespraechSeit : null));
 
-    useEffect(() => {
+    // Layout-Effekt: Escape wirkt ab dem Moment, in dem das Fenster im DOM steht. Mit
+    // useEffect gab es auf langsamen Rechnern eine Lücke zwischen „sichtbar“ und
+    // „Escape angemeldet“, in der ein Tastendruck verpuffte.
+    useLayoutEffect(() => {
         const beiTaste = (ereignis: KeyboardEvent) => {
             if (ereignis.key !== 'Escape' || ereignis.defaultPrevented) return;
             // Escape in einem Dialog (z. B. Telefon-Auswahl beim Zurückrufen) schließt nur diesen.
