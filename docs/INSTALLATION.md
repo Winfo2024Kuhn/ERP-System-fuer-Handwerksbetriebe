@@ -353,6 +353,70 @@ java -jar kalkulationsprogramm-*.jar \
 
 Dann erreichbar über: `https://mein-server.tail-xxxx.ts.net:8443`
 
+Einfacher geht es mit `tailscale serve --bg 8080`: Tailscale holt das Zertifikat selbst und reicht `https://mein-server.tail-xxxx.ts.net` an Port 8080 weiter. Das ERP erkennt dabei den echten Absender, ohne dass etwas konfiguriert werden muss.
+
+**Empfohlen – Handys nur zum ERP lassen:** Ohne eigene Regeln erreicht in Tailscale jedes Gerät jedes andere, also auch jedes Mitarbeiter-Handy die Büro-PCs. In der Tailscale-Verwaltung unter *Access controls* lassen sich die Handys davon trennen. Dazu bekommen die Handys in der Geräteliste über *Edit ACL tags* die Markierung `tag:handy`; alle anderen Geräte bleiben, wie sie sind:
+
+```jsonc
+{
+  "tagOwners": {"tag:handy": ["autogroup:admin"]},
+  // Tailscale-IP des ERP-Rechners (steht in der Geräteliste)
+  "hosts": {"erp-rechner": "100.x.y.z"},
+  "acls": [
+    // Handys: nur Port 443 des ERP-Rechners (tailscale serve) – darüber aber das ganze ERP
+    {"action": "accept", "src": ["tag:handy"], "dst": ["erp-rechner:443"]},
+    // Büro-PCs und Server der Kontoinhaber: wie bisher alles
+    {"action": "accept", "src": ["autogroup:member"], "dst": ["*:*"]}
+  ]
+}
+```
+
+Vorhandene Regeln (z. B. `ssh`) übernehmen und die Änderung vor dem Speichern mit *Preview rules* prüfen. Geräte, die bereits eine Markierung tragen (etwa ein Website-Server mit `tag:…`), fallen nicht unter `autogroup:member` und brauchen eine eigene Regel. Die Regel trennt die Handys von den übrigen Geräten; das ERP selbst sehen sie weiterhin wie ein Büro-PC. Desktop und Handy-App verlangen Anmeldung bzw. Code. Die Schnittstelle für die Internetseite (`/api/internal/…`) hat dagegen noch keinen eigenen Schlüssel; sie ist nur durch das Netz geschützt.
+
+---
+
+#### Variante 1b: Tailscale Funnel – Handys ohne Tailscale-App
+
+Für Betriebe, in denen nicht jeder Mitarbeiter eine VPN-App auf dem Handy haben soll. Nur der ERP-Rechner hat Tailscale. Tailscale Funnel macht die Handy-App unter einer festen Adresse wie `https://erp-rechner.tail-xxxx.ts.net/zeiterfassung/` aus dem Internet erreichbar. Kein Router-Umbau, keine eigene Domain, kein zusätzlicher Server. Die Verbindung bleibt bis zum ERP-Rechner verschlüsselt; Tailscale reicht sie nur weiter.
+
+**Was von außen erreichbar ist:** Nur die Handy-App und ihre Schnittstelle, mit dem persönlichen Code des Mitarbeiters. Falsche Codes lösen steigende Wartezeiten aus. Die Desktop-Anmeldung, die Verwaltung und interne Schnittstellen bleiben gesperrt, auch für Büro-Sitzungen. Geräte im eigenen Tailscale-Netz erreichen über dieselbe Adresse weiterhin das ganze ERP.
+
+**Voraussetzung:** Das ERP läuft direkt auf dem Rechner mit Tailscale (JAR bzw. Windows-Dienst). Läuft es in Docker, sieht es statt `localhost` das Docker-Netz als Absender; dafür das [Docker-Gateway](../deployment/mobile-public/README.md) verwenden.
+
+**Einrichten (einmalig, auf dem ERP-Rechner):**
+
+1. Tailscale installieren und mit dem Firmenkonto anmelden.
+2. In der Tailscale-Verwaltung unter *DNS* MagicDNS und *HTTPS Certificates* einschalten.
+3. Funnel starten (Windows: Eingabeaufforderung als Administrator):
+   ```bash
+   tailscale funnel --bg 8080
+   ```
+   Beim ersten Mal zeigt der Befehl einen Link, über den Funnel für diesen Rechner freigegeben wird.
+4. Die Adresse anzeigen lassen:
+   ```bash
+   tailscale funnel status
+   ```
+5. Diese Adresse für die QR-Codes eintragen (`application-local.properties`, ohne `/zeiterfassung` und ohne Schrägstrich am Ende) und das ERP neu starten:
+   ```properties
+   zeiterfassung.base-url=https://erp-rechner.tail-xxxx.ts.net
+   ```
+6. Mitarbeiter scannen ihren QR-Code neu. Eine bereits installierte App mit anderer Adresse vorher abgleichen lassen: Offline-Buchungen gehören zur alten Adresse.
+
+**Prüfen – vom Handy mit ausgeschaltetem WLAN:**
+
+- `https://erp-rechner.tail-xxxx.ts.net/` öffnet die Handy-App.
+- `https://erp-rechner.tail-xxxx.ts.net/login` zeigt „Zugriff verweigert“.
+- Anmelden per QR-Code, Stempeln und Projektfotos funktionieren – auf iPhone und Android, jeweils über Mobilfunk.
+
+**Abschalten:** `tailscale funnel --https=443 off`
+
+**Nicht verwenden:**
+
+- `tailscale funnel --tcp …`, `--tls-terminated-tcp …` oder andere reine Weiterleitungen ohne HTTP (`netsh interface portproxy`, `ssh -R`): Dann kommt jeder Zugriff aus dem Internet als `localhost` ohne Absenderangabe an und gilt als lokal – Desktop-Anmeldung und interne Schnittstellen wären öffentlich.
+- `zeiterfassung.security.enabled=false`: Das schaltet die Netzgrenze ab; mit Funnel wäre das ganze ERP öffentlich.
+
+**Abwägung:** Die Tailscale-App auf jedem Handy (Variante 1) ist sicherer, weil das ERP dann aus dem Internet gar nicht sichtbar ist. Mit Funnel ist die Anmeldeseite der Handy-App öffentlich; automatische Suchprogramme finden die Adresse und probieren sie aus. Der Schutz liegt dann im persönlichen Code und in den Regeln des ERP. Codes daher nicht weitergeben, bei verlorenem Handy oder Austritt sofort neu erzeugen. Die Adresse endet immer auf `.ts.net`; für eine eigene Domain siehe Variante 2. Uploads von außen begrenzt das ERP selbst auf 25 MB. Eine Begrenzung der Anfragerate wie im [Docker-Gateway](../deployment/mobile-public/README.md) gibt es bei Funnel nicht, nur die Wartezeiten nach falschen Codes. Diese merkt sich das ERP für höchstens 10.000 Absender; wer die Liste mit sehr vielen Adressen füllt, lässt neue Geräte bis zu fünf Minuten warten.
+
 ---
 
 #### Variante 2: HTTPS mit Reverse Proxy (für öffentlichen Zugriff)
@@ -361,7 +425,7 @@ Für eine Domain ohne VPN kann ein Reverse Proxy die HTTPS-Verbindung annehmen u
 
 Vor der Freigabe werden die benötigten mobilen Seiten, Ressourcen und API-Methoden ausdrücklich festgelegt. Eine pauschale Weiterleitung des gesamten ERP auf `localhost:8080` ist keine vollständige Absicherung. Die Token-Prüfung ersetzt weder diese Proxy-Regeln noch die Prüfung, welche konkreten Projekte, Dokumente und Mitarbeiterdaten ein angemeldeter Nutzer abrufen darf.
 
-Die [Betriebsanleitung zur mobilen Token-Sicherheit](MOBILE_TOKEN_SECURITY.md) beschreibt die konkreten Einstellungen für `zeiterfassung.security.trusted-proxies`, das Verhalten von `X-Forwarded-For`, die zusätzliche externe Netzliste und die notwendigen Funktionsprüfungen. Für Windows mit Docker steht das [vorbereitete Startpaket](../deployment/mobile-public/README.md) bereit: temporäre HTTPS-Testadresse oder feste Domain, begrenzte mobile Routen, private Backend-Ports und Vorprüfungen vor dem Öffnen.
+Die [Betriebsanleitung zur mobilen Token-Sicherheit](MOBILE_TOKEN_SECURITY.md) beschreibt die konkreten Einstellungen für `zeiterfassung.security.trusted-proxies`, das Verhalten von `X-Forwarded-For`, was von außen erreichbar ist und die notwendigen Funktionsprüfungen. Für Windows mit Docker steht das [vorbereitete Startpaket](../deployment/mobile-public/README.md) bereit: temporäre HTTPS-Testadresse oder feste Domain, begrenzte mobile Routen, private Backend-Ports und Vorprüfungen vor dem Öffnen.
 
 ---
 
@@ -369,19 +433,20 @@ Die [Betriebsanleitung zur mobilen Token-Sicherheit](MOBILE_TOKEN_SECURITY.md) b
 
 Ein [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) kann einen Zugangsweg über eine Domain bereitstellen. Auch dafür sind die öffentliche Routenfreigabe, HTTPS, Objektberechtigungen und die Abschottung des Backends zu prüfen. Die Einrichtung eines Tunnels allein schützt keine zusätzlich erreichbaren Backend-Ports und gewährt keine fachlichen Berechtigungen.
 
-Die Anwendung wertet derzeit **nicht `CF-Connecting-IP`** aus. Sie übernimmt `X-Forwarded-For` nur von ausdrücklich konfigurierten vertrauenswürdigen Proxys. Ein Tunnel, der sich wie `cloudflared` auf `localhost:8080` verbindet, gilt deshalb **nicht** als lokal: Trägt eine Anfrage Weiterleitungs-Header (`CF-Connecting-IP`, `X-Forwarded-For`, `Forwarded`, `X-Real-IP`) und kommt sie nicht von einem freigegebenen Proxy, behandelt die Netzgrenze sie als extern und lässt nur die mobilen Pfade durch – Desktop-Oberfläche und Anmeldung bleiben gesperrt. Alle Tunnel-Nutzer teilen sich dabei eine IP-Sperre; für getrennte Sperren das Docker-Gateway aus `deployment/mobile-public/` verwenden. **Nach dem Update:** Wer bisher den ganzen ERP-Rechner per Tunnel freigegeben hat, erreicht darüber nur noch die mobile Zeiterfassung. Details: [Vertrauenswürdige Proxys konfigurieren](MOBILE_TOKEN_SECURITY.md#vertrauenswürdige-proxys-konfigurieren).
+`cloudflared` verbindet sich auf `localhost:8080`; Proxys auf dem ERP-Rechner selbst gelten als freigegeben. Die Cloudflare-Edge hängt den echten Absender an `X-Forwarded-For` an, das ERP wertet diese Kette aus und gleicht sie mit `CF-Connecting-IP` ab. Anfragen aus dem Internet gelten damit als extern: Die Netzgrenze lässt nur die Handy-App durch, Desktop-Oberfläche und Anmeldung bleiben gesperrt. Jeder Nutzer hat eine eigene Code-Sperre über seine echte IP. Passen die Angaben nicht zusammen, gilt die Anfrage ebenfalls als extern. **Nach dem Update:** Wer bisher den ganzen ERP-Rechner per Tunnel freigegeben hat, erreicht darüber nur noch die mobile Zeiterfassung. Details: [Vertrauenswürdige Proxys konfigurieren](MOBILE_TOKEN_SECURITY.md#vertrauenswürdige-proxys-konfigurieren).
 
 ---
 
 ### Übersicht: Welche Variante passt zu mir?
 
-| Kriterium | LAN (lokal) | Tailscale VPN | HTTPS + Reverse Proxy | Cloudflare Tunnel |
-|-----------|:-----------:|:-------------:|:---------------------:|:-----------------:|
-| Einrichtung | ⭐ Einfach | ⭐ Einfach | ⭐⭐ Mittel | ⭐⭐ Mittel |
-| Zugriff von unterwegs | ❌ | ✅ | ✅ | ✅ |
-| Öffentlich erreichbar | Nein, bei passender Firewall | Nein, bei passender Firewall | Nur freigegebene Routen (Proxy-Regeln) | Nur mobile Pfade (Netzgrenze) |
-| HTTPS | Für den Betriebsweg prüfen | Für den Betriebsweg prüfen | Einrichten und prüfen | Gesamten Verbindungsweg prüfen |
-| Port öffnen | Nur LAN | Kein Port | Port 80 + 443 | Kein Port |
+| Kriterium | LAN (lokal) | Tailscale VPN | Tailscale Funnel | HTTPS + Reverse Proxy | Cloudflare Tunnel |
+|-----------|:-----------:|:-------------:|:----------------:|:---------------------:|:-----------------:|
+| Einrichtung | ⭐ Einfach | ⭐ Einfach | ⭐ Einfach | ⭐⭐ Mittel | ⭐⭐ Mittel |
+| Zugriff von unterwegs | ❌ | ✅ | ✅ (nur Handy-App) | ✅ | ✅ |
+| App auf jedem Handy | – | Tailscale-App | Keine | Keine | Keine |
+| Öffentlich erreichbar | Nein, bei passender Firewall | Nein, bei passender Firewall | Nur Handy-App (Netzgrenze) | Nur freigegebene Routen (Proxy-Regeln) | Nur Handy-App (Netzgrenze) |
+| HTTPS | Für den Betriebsweg prüfen | Für den Betriebsweg prüfen | Automatisch | Einrichten und prüfen | Gesamten Verbindungsweg prüfen |
+| Port öffnen | Nur LAN | Kein Port | Kein Port | Port 80 + 443 | Kein Port |
 
 ---
 

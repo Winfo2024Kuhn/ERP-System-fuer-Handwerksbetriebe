@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.config;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -25,9 +26,11 @@ import org.springframework.test.web.servlet.MockMvc;
         NetzgrenzeVorAnmeldungTest.Leer.class })
 class NetzgrenzeVorAnmeldungTest {
 
-    /** Kein Controller nötig: Die Anmeldung beantwortet Spring Security selbst. */
+    /** Die Anmeldung beantwortet Spring Security selbst; die Projektliste zeigt, wer durchkommt. */
     @org.springframework.web.bind.annotation.RestController
     static class Leer {
+        @org.springframework.web.bind.annotation.GetMapping("/api/zeiterfassung/projekte")
+        String projekte() { return "[]"; }
     }
 
     @TestConfiguration
@@ -47,6 +50,35 @@ class NetzgrenzeVorAnmeldungTest {
                 .param("username", "max.mustermann").param("password", "falsch"))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(users);
+    }
+
+    @Test
+    void anmeldungUeberTailscaleFunnelWirdAbgewiesen() throws Exception {
+        mvc.perform(post("/api/auth/login")
+                .with(r -> { r.setRemoteAddr("127.0.0.1"); return r; })
+                .header("X-Forwarded-For", "203.0.113.8")
+                .param("username", "max.mustermann").param("password", "falsch"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(users);
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithMockUser
+    void desktopSitzungZaehltVonAussenNicht() throws Exception {
+        // Ohne Gateway davor (Tailscale Funnel) muss das ERP selbst einen Mitarbeiter-Code verlangen.
+        mvc.perform(get("/api/zeiterfassung/projekte")
+                .with(r -> { r.setRemoteAddr("127.0.0.1"); return r; })
+                .header("X-Forwarded-For", "203.0.113.8"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithMockUser
+    void desktopSitzungAusDemTailnetBleibtNutzbar() throws Exception {
+        mvc.perform(get("/api/zeiterfassung/projekte")
+                .with(r -> { r.setRemoteAddr("127.0.0.1"); return r; })
+                .header("X-Forwarded-For", "100.101.102.103"))
+                .andExpect(status().isOk());
     }
 
     @Test

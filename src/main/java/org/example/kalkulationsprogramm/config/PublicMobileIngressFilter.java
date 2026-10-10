@@ -15,20 +15,29 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 public final class PublicMobileIngressFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-ERP-Public-Mobile";
+    /** Request-Attribut: Die Netzgrenze hat die Anfrage als „von außen“ erkannt (z. B. über Tailscale Funnel). */
+    static final String VON_AUSSEN = PublicMobileIngressFilter.class.getName() + ".vonAussen";
 
+    /** Öffentlicher Handy-Zugang: über das Gateway (Marker) oder von der Netzgrenze als extern erkannt. */
     public static boolean isPublic(HttpServletRequest request) {
         // Ein fremd gesetzter Marker kann Rechte ausschließlich einschränken.
-        return request.getHeader(HEADER) != null;
+        return request.getHeader(HEADER) != null || Boolean.TRUE.equals(request.getAttribute(VON_AUSSEN));
+    }
+
+    /** Von außen erreichbar: die Seiten der Handy-App (nur lesen) und die freigegebenen mobilen API-Aufrufe. */
+    static boolean vonAussenErlaubt(String method, String path) {
+        boolean read = "GET".equals(method) || "HEAD".equals(method);
+        boolean mobilePage = read && (path.equals("/zeiterfassung") || path.startsWith("/zeiterfassung/"));
+        return mobilePage || MobileApiPolicy.allows(method, path);
     }
 
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        if (isPublic(request)) {
+        String marker = request.getHeader(HEADER);
+        if (marker != null) {
             response.setHeader(HEADER, "1");
             String path = request.getRequestURI().substring(request.getContextPath().length());
-            boolean read = "GET".equals(request.getMethod()) || "HEAD".equals(request.getMethod());
-            boolean mobilePage = read && (path.equals("/zeiterfassung") || path.startsWith("/zeiterfassung/"));
-            if (!"1".equals(request.getHeader(HEADER)) || (!mobilePage && !MobileApiPolicy.allows(request.getMethod(), path))) {
+            if (!"1".equals(marker) || !vonAussenErlaubt(request.getMethod(), path)) {
                 response.setStatus(404);
                 response.setHeader("Cache-Control", "no-store");
                 return;

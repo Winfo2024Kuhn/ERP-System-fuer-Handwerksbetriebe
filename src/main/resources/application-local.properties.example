@@ -21,7 +21,9 @@ spring.datasource.password=DEIN_DB_PASSWORT
 #hicad.network-drive-letter=Z:
 
 # ========== Zeiterfassung PWA Base-URL (optional) ==========
-#zeiterfassung.base-url=https://deine-subdomain.trycloudflare.com
+# Adresse für die QR-Codes der Handy-App, ohne /zeiterfassung und ohne Schrägstrich am Ende.
+# Mit Tailscale Funnel (docs/INSTALLATION.md, Variante 1b) z. B.:
+#zeiterfassung.base-url=https://erp-rechner.tail-xxxx.ts.net
 
 # ========== Vendor Integrations (optional) ==========
 #vendor.microsoft.enabled=true
