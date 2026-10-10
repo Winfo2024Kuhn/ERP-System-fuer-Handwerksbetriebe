@@ -44,13 +44,23 @@ const EMAILS = [
     },
 ];
 
+/** Lieferantenakte, die der per Strg/Cmd-Klick geöffnete Tab lädt. */
+const LIEFERANT = {
+    id: 7, lieferantenname: 'Musterhandel GmbH', lieferantenTyp: 'Lieferant', rollen: [],
+    strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt',
+    emails: [], kommunikation: [], notizen: [], kundenEmails: [], dokumente: [],
+};
+
 async function vorbereiten(page: Page, start: string) {
-    await page.route('**/api/**', async route => {
+    // Am Context statt an der Page: ein per Strg/Cmd-Klick geöffneter Tab erbt die Stubs,
+    // sonst scheitert dort die Anmeldung und er springt nach /login.
+    await page.context().route('**/api/**', async route => {
         const pfad = new URL(route.request().url()).pathname;
         let body: unknown = [];
         if (pfad.endsWith('/emails/stats')) body = { inboxCount: EMAILS.length };
         else if (pfad.endsWith('/absender-postfaecher')) body = [{ id: 1, emailAdresse: 'info@musterbetrieb.example', anzeigename: null, eigenes: false, hauptpostfach: true }];
         else if (/\/emails\/inbox$/.test(pfad)) body = EMAILS;
+        else if (/\/lieferanten\/7$/.test(pfad)) body = LIEFERANT;
         else {
             const treffer = pfad.match(/\/emails\/(\d+)(\/thread)?$/);
             const email = treffer && EMAILS.find(e => e.id === Number(treffer[1]));
@@ -113,8 +123,10 @@ test('Strg/Cmd-Klick öffnet die Lieferantenakte in einem neuen Tab', async ({ p
     const neuerTab = context.waitForEvent('page');
     await page.getByRole('link', { name: 'Lieferant · Musterhandel GmbH öffnen' }).click({ modifiers: ['ControlOrMeta'] });
     const tab = await neuerTab;
-    await tab.waitForLoadState('domcontentloaded');
-    expect(tab.url()).toMatch(/\/lieferanten\?lieferantId=7$/);
+    // Wartend prüfen: der neue Tab steht anfangs noch auf about:blank.
+    await expect(tab).toHaveURL(/\/lieferanten\?lieferantId=7$/);
+    await expect(tab.getByRole('heading', { name: 'LIEFERANTENDETAILS' })).toBeVisible();
+    await expect(tab.getByRole('heading', { level: 1, name: 'Musterhandel GmbH', exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/emails\/inbox$/);
 });
 
