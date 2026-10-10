@@ -2,36 +2,92 @@
 # Automatisches Datenbank- und Uploads-Backup Script
 # Kalkulationsprogramm
 # =========================================================
-# Sichert Datenbank + Uploads-Verzeichnis an DREI Orten:
-#   1. Lokal (immer verfuegbar, kritischstes Backup)
-#   2. Externe Festplatte E:\ (falls angeschlossen)
+# Datenbank: taeglicher Dump (.sql.gz), 30 Tage aufbewahrt, an
+# DREI Orten:
+#   1. Lokal (immer verfuegbar)
+#   2. Externe Festplatte (falls angeschlossen, siehe unten)
 #   3. OneDrive (Cloud-Sync)
 #
-# WICHTIG: Die externe Festplatte ist ABSICHTLICH kein hartes
-# Abbruchkriterium mehr. Frueher ist das komplette Backup
-# (inkl. OneDrive!) fehlgeschlagen, sobald E:\ nicht verfuegbar
-# war. Jetzt wird IMMER zuerst lokal gesichert; externe Platte
-# und OneDrive sind zusaetzliche, unabhaengige Kopien.
+# Uploads: KEIN taegliches Voll-ZIP mehr. Frueher wurde jede Nacht
+# der komplette uploads-Ordner (~8 GB) gezippt und 30 Tage lang
+# lokal UND in OneDrive aufbewahrt -> ~490 GB fuer ~10 GB Daten,
+# C: lief voll. Jetzt wird uploads per robocopy inkrementell nach
+# OneDrive und auf die externe Platte gespiegelt: nur neue/geaenderte
+# Dateien werden kopiert, jede Datei liegt genau einmal im Backup.
+# Bewusst OHNE /PURGE bzw. /MIR: Im ERP geloeschte Dateien bleiben
+# im Backup erhalten. Gegen Ueberschreiben (z. B. Ransomware) hilft
+# zusaetzlich der Versionsverlauf von OneDrive.
+# Lokal wird uploads nicht mehr gesichert - eine zweite Kopie auf
+# derselben Platte schuetzt nicht vor Plattenausfall.
+# Alte uploads_*.zip werden von der Aufbewahrung weiter nach 30
+# Tagen entfernt, damit Altbestaende von selbst verschwinden.
+#
+# Externe Platte: wird ueber das Volume-Label gefunden (USB-Platten
+# bekommen nicht immer denselben Laufwerksbuchstaben); falls nicht
+# gefunden, wird $ExternalFallbackDrive versucht. Die Intenso-Platte
+# ist FAT32 (max. 4 GB pro Datei) - deshalb ebenfalls Spiegel statt
+# ZIP, und robocopy /FFT wegen der 2-Sekunden-Zeitstempel von FAT.
+#
+# WICHTIG: Externe Platte und OneDrive sind ABSICHTLICH kein hartes
+# Abbruchkriterium. Es wird IMMER zuerst lokal gesichert; externe
+# Platte und OneDrive sind zusaetzliche, unabhaengige Kopien.
 # =========================================================
 
 param(
     [string]$LocalStagingDir = "C:\Kalkulationsprogramm\backups\db",
-    [string]$ExternalBackupDir = "E:\Kalkulationsprogramm\Backups",
+    [string]$ExternalVolumeLabel = "INTENSO",
+    [string]$ExternalFallbackDrive = "E",
+    [string]$ExternalBackupSubDir = "Kalkulationsprogramm-Backup",
     [string]$OneDriveBackupDir = "C:\Users\bausc\OneDrive\backup_handwerkerprogramm",
     [string]$LogDir = "C:\Kalkulationsprogramm\logs\backups",
     [int]$RetentionDays = 30,
-    [string]$UploadsDir = "C:\Kalkulationsprogramm\uploads"
+    [string]$UploadsDir = "C:\Kalkulationsprogramm\uploads",
+    [string]$DbPropertiesFile = "C:\Kalkulationsprogramm\config\application-local.properties"
 )
 
 # Konfiguration
-# WICHTIG: Diese Platzhalter NIEMALS mit echten Zugangsdaten committen!
-# Auf dem Produktivserver wird diese Datei NACH dem Deployment lokal
-# (ausserhalb von Git) mit echten Werten befuellt - siehe DEPLOYMENT_README.md.
-$DB_HOST = "localhost"
-$DB_PORT = "3307"
-$DB_NAME = "kalkulationsprogramm_db"
-$DB_USER = "YOUR_DB_USERNAME"
-$DB_PASSWORD = "YOUR_DB_PASSWORD"
+# Die DB-Zugangsdaten stehen NICHT in diesem Script (das Repo ist oeffentlich),
+# sondern werden aus der application-local.properties der Anwendung gelesen.
+# update-production.ps1 kopiert diese Datei bei jedem Update aus dem (per
+# .gitignore ausgeschlossenen) src/main/resources des Repos nach config\.
+function Read-DbConfig {
+    param([string]$PropertiesFile)
+
+    if (-not (Test-Path $PropertiesFile)) {
+        return $null
+    }
+    $props = @{}
+    foreach ($line in Get-Content $PropertiesFile) {
+        if ($line -match '^\s*([^#!\s][^=]*?)\s*=\s*(.*)$') {
+            $props[$matches[1]] = $matches[2].Trim()
+        }
+    }
+    $url = $props['spring.datasource.url']
+    if (-not $url -or $url -notmatch '^jdbc:(?:mysql|mariadb)://([^:/?]+)(?::(\d+))?/([^?;]+)') {
+        return $null
+    }
+    return @{
+        Host     = $matches[1]
+        Port     = $(if ($matches[2]) { $matches[2] } else { "3306" })
+        Name     = $matches[3]
+        User     = $props['spring.datasource.username']
+        Password = $props['spring.datasource.password']
+    }
+}
+
+$dbConfig = Read-DbConfig $DbPropertiesFile
+if (-not $dbConfig -or -not $dbConfig.User) {
+    Write-Host "FEHLER: DB-Zugangsdaten nicht lesbar aus $DbPropertiesFile (spring.datasource.url/username/password)"
+    if (Test-Path $LogDir) {
+        Add-Content -Path (Join-Path $LogDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').log") -Value "[ERROR] DB-Zugangsdaten nicht lesbar aus $DbPropertiesFile"
+    }
+    exit 1
+}
+$DB_HOST = $dbConfig.Host
+$DB_PORT = $dbConfig.Port
+$DB_NAME = $dbConfig.Name
+$DB_USER = $dbConfig.User
+$DB_PASSWORD = $dbConfig.Password
 
 # Alternative Pfade für Dump-Tools falls nicht gefunden
 $MYSQLDUMP_ALTERNATIVES = @(
@@ -54,8 +110,6 @@ $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $backupFileName = "kalkulationsprogramm_db_${timestamp}.sql"
 $localBackupFilePath = Join-Path $LocalStagingDir $backupFileName
 $localCompressedFilePath = "${localBackupFilePath}.gz"
-$uploadsBackupFileName = "uploads_${timestamp}.zip"
-$localUploadsBackupFilePath = Join-Path $LocalStagingDir $uploadsBackupFileName
 $logFileName = "backup_${timestamp}.log"
 $logFilePath = Join-Path $LogDir $logFileName
 
@@ -105,19 +159,27 @@ function Find-MySQLDump {
     return $null
 }
 
-function Test-ExternalDrive {
-    param([string]$DriveLetter)
-
-    $drive = Get-PSDrive -Name $DriveLetter -ErrorAction SilentlyContinue
-    if (-not $drive) {
-        return $false
+function Resolve-ExternalBackupRoot {
+    # Liefert "<Laufwerk>:\<Unterordner>" der externen Platte oder $null.
+    $letter = $null
+    $volume = Get-Volume -FileSystemLabel $ExternalVolumeLabel -ErrorAction SilentlyContinue |
+              Where-Object { $_.DriveLetter } | Select-Object -First 1
+    if ($volume) {
+        $letter = "$($volume.DriveLetter)"
+    }
+    elseif (Get-PSDrive -Name $ExternalFallbackDrive -ErrorAction SilentlyContinue) {
+        $letter = $ExternalFallbackDrive
+    }
+    if (-not $letter) {
+        return $null
     }
 
-    if ($drive.Free -lt 1GB) {
-        Write-Log "WARNUNG: Weniger als 1GB freier Speicherplatz auf ${DriveLetter}:\" "WARN"
+    $drive = Get-PSDrive -Name $letter -ErrorAction SilentlyContinue
+    if ($drive -and $drive.Free -lt 1GB) {
+        Write-Log "WARNUNG: Weniger als 1GB freier Speicherplatz auf ${letter}:\" "WARN"
     }
 
-    return $true
+    return "${letter}:\$ExternalBackupSubDir"
 }
 
 function Compress-File {
@@ -147,43 +209,42 @@ function Compress-File {
     }
 }
 
-function Backup-UploadsDirectory {
+function Sync-UploadsDirectory {
     param(
+        [string]$Label,
         [string]$SourceDir,
-        [string]$DestinationZip
+        [string]$DestinationDir
     )
 
-    try {
-        if (-not (Test-Path $SourceDir)) {
-            Write-Log "WARNUNG: Uploads-Verzeichnis nicht gefunden: $SourceDir" "WARN"
-            return $false
-        }
-
-        $fileCount = (Get-ChildItem -Path $SourceDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count
-        if ($fileCount -eq 0) {
-            Write-Log "WARNUNG: Uploads-Verzeichnis ist leer" "WARN"
-            return $false
-        }
-
-        Write-Log "Sichere $fileCount Datei(en) aus uploads..."
-
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [System.IO.Compression.ZipFile]::CreateFromDirectory($SourceDir, $DestinationZip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
-
-        if (Test-Path $DestinationZip) {
-            $zipSize = (Get-Item $DestinationZip).Length / 1MB
-            Write-Log "Uploads-Backup erstellt: $([math]::Round($zipSize, 2)) MB"
-            return $true
-        }
-        else {
-            Write-Log "Fehler: ZIP-Datei wurde nicht erstellt" "ERROR"
-            return $false
-        }
-    }
-    catch {
-        Write-Log "Fehler beim Sichern der Uploads: $_" "ERROR"
+    if (-not (Test-Path $SourceDir)) {
+        Write-Log "WARNUNG: Uploads-Verzeichnis nicht gefunden: $SourceDir" "WARN"
         return $false
     }
+
+    if (-not (Ensure-Directory $DestinationDir)) {
+        Write-Log "$Label (uploads) uebersprungen: Zielverzeichnis nicht erreichbar" "WARN"
+        return $false
+    }
+
+    # /E kopiert Unterordner, ohne /PURGE: im Ziel wird nie etwas geloescht.
+    # /FFT: 2-Sekunden-Toleranz bei Zeitstempeln (FAT32), sonst wuerde jede
+    # Nacht alles neu kopiert. /XJ: keine Junctions verfolgen.
+    $robocopyArgs = @(
+        $SourceDir, $DestinationDir,
+        "/E", "/FFT", "/XJ", "/R:2", "/W:5",
+        "/NP", "/NDL", "/NFL", "/NJH",
+        "/LOG+:$logFilePath"
+    )
+    & robocopy.exe @robocopyArgs | Out-Null
+    $code = $LASTEXITCODE
+
+    # robocopy: 0-7 = Erfolg (1 = Dateien kopiert, 2/3 = Extras im Ziel), ab 8 = Fehler
+    if ($code -ge 8) {
+        Write-Log "$Label (uploads): robocopy mit Fehlercode $code beendet - Details oben im Log" "ERROR"
+        return $false
+    }
+    Write-Log "$Label (uploads): synchronisiert nach $DestinationDir (robocopy-Code $code)"
+    return $true
 }
 
 function Copy-ToDestination {
@@ -229,10 +290,16 @@ function Remove-OldBackups {
         $oldDbBackups = Get-ChildItem -Path $BackupDirectory -Filter "kalkulationsprogramm_db_*.sql.gz" -ErrorAction SilentlyContinue |
                         Where-Object { $_.LastWriteTime -lt $cutoffDate }
 
+        # Unkomprimierte .sql-Dumps (z. B. manuell vor Updates erstellt) lagen
+        # bisher ewig herum; sie bekommen dieselbe Aufbewahrungsfrist.
+        $oldPlainDbBackups = Get-ChildItem -Path $BackupDirectory -Filter "kalkulationsprogramm_db_*.sql" -ErrorAction SilentlyContinue |
+                             Where-Object { $_.Extension -eq ".sql" -and $_.LastWriteTime -lt $cutoffDate }
+
+        # Altbestand aus der Zeit der taeglichen Voll-ZIPs - es kommen keine neuen hinzu.
         $oldUploadsBackups = Get-ChildItem -Path $BackupDirectory -Filter "uploads_*.zip" -ErrorAction SilentlyContinue |
                              Where-Object { $_.LastWriteTime -lt $cutoffDate }
 
-        $oldBackups = @($oldDbBackups) + @($oldUploadsBackups)
+        $oldBackups = @(@($oldDbBackups) + @($oldPlainDbBackups) + @($oldUploadsBackups) | Where-Object { $_ })
 
         if ($oldBackups.Count -gt 0) {
             Write-Log "Lösche $($oldBackups.Count) alte Backup(s) älter als $Days Tage in $BackupDirectory..."
@@ -322,50 +389,50 @@ else {
     $localCompressedFilePath = $localBackupFilePath
 }
 
-# Schritt 5: Uploads-Verzeichnis sichern (lokal)
-Write-Log "Sichere Uploads-Verzeichnis..."
-Write-Log "Quelle: $UploadsDir"
-$uploadsBackedUp = Backup-UploadsDirectory -SourceDir $UploadsDir -DestinationZip $localUploadsBackupFilePath
-
 $filesToCopy = @($localCompressedFilePath)
-if ($uploadsBackedUp) {
-    $filesToCopy += $localUploadsBackupFilePath
-}
 
-# Schritt 6: Auf externe Festplatte E:\ kopieren (best effort, KEIN Abbruch bei Fehlen)
-$externalSuccess = $false
-Write-Log "Prüfe externe Festplatte E:\..."
-if (Test-ExternalDrive "E") {
-    $externalSuccess = Copy-ToDestination -Label "Externe Festplatte" -DestinationDir $ExternalBackupDir -Files $filesToCopy
-    if ($externalSuccess) {
-        Remove-OldBackups -BackupDirectory $ExternalBackupDir -Days $RetentionDays
+# Schritt 5: Externe Festplatte (best effort, KEIN Abbruch bei Fehlen)
+#   <Platte>:\Kalkulationsprogramm-Backup\db       -> DB-Dumps (30 Tage)
+#   <Platte>:\Kalkulationsprogramm-Backup\uploads  -> inkrementeller Spiegel
+$externalDbSuccess = $false
+$externalUploadsSuccess = $false
+Write-Log "Suche externe Festplatte (Label '$ExternalVolumeLabel', sonst ${ExternalFallbackDrive}:)..."
+$externalRoot = Resolve-ExternalBackupRoot
+if ($externalRoot) {
+    $externalDbDir = Join-Path $externalRoot "db"
+    $externalDbSuccess = Copy-ToDestination -Label "Externe Festplatte" -DestinationDir $externalDbDir -Files $filesToCopy
+    if ($externalDbSuccess) {
+        Remove-OldBackups -BackupDirectory $externalDbDir -Days $RetentionDays
     }
+    $externalUploadsSuccess = Sync-UploadsDirectory -Label "Externe Festplatte" -SourceDir $UploadsDir -DestinationDir (Join-Path $externalRoot "uploads")
 }
 else {
-    Write-Log "Externe Festplatte E:\ nicht angeschlossen - übersprungen (lokales Backup bleibt gültig)." "WARN"
+    Write-Log "Externe Festplatte nicht angeschlossen - uebersprungen (lokales Backup bleibt gueltig)." "WARN"
 }
 
-# Schritt 7: Auf OneDrive kopieren (best effort)
+# Schritt 6: OneDrive (best effort)
+#   DB-Dumps direkt im OneDrive-Ordner (wie bisher), uploads im Unterordner "uploads"
 Write-Log "Kopiere Backups auf OneDrive: $OneDriveBackupDir"
-$oneDriveSuccess = Copy-ToDestination -Label "OneDrive" -DestinationDir $OneDriveBackupDir -Files $filesToCopy
-if ($oneDriveSuccess) {
+$oneDriveDbSuccess = Copy-ToDestination -Label "OneDrive" -DestinationDir $OneDriveBackupDir -Files $filesToCopy
+if ($oneDriveDbSuccess) {
     Remove-OldBackups -BackupDirectory $OneDriveBackupDir -Days $RetentionDays
 }
+$oneDriveUploadsSuccess = Sync-UploadsDirectory -Label "OneDrive" -SourceDir $UploadsDir -DestinationDir (Join-Path $OneDriveBackupDir "uploads")
 
-# Schritt 8: Alte lokale Backups löschen
-Write-Log "Prüfe alte lokale Backups..."
+# Schritt 7: Alte lokale Backups loeschen
+Write-Log "Pruefe alte lokale Backups..."
 Remove-OldBackups -BackupDirectory $LocalStagingDir -Days $RetentionDays
 
-# Schritt 9: Zusammenfassung
+# Schritt 8: Zusammenfassung
+function Format-Status([bool]$ok, [string]$failText) { if ($ok) { 'OK' } else { $failText } }
+$externalOk = $externalDbSuccess -and $externalUploadsSuccess
+$oneDriveOk = $oneDriveDbSuccess -and $oneDriveUploadsSuccess
 Write-Log "========================================"
 Write-Log "Backup abgeschlossen!"
 Write-Log "Datenbank-Backup: $(Split-Path $localCompressedFilePath -Leaf)"
-if ($uploadsBackedUp) {
-    Write-Log "Uploads-Backup: $(Split-Path $localUploadsBackupFilePath -Leaf)"
-}
-Write-Log "Speicherort 1 (Lokal):  $LocalStagingDir - OK"
-Write-Log "Speicherort 2 (Extern): $ExternalBackupDir - $(if ($externalSuccess) { 'OK' } else { 'ÜBERSPRUNGEN' })" $(if ($externalSuccess) { "INFO" } else { "WARN" })
-Write-Log "Speicherort 3 (OneDrive): $OneDriveBackupDir - $(if ($oneDriveSuccess) { 'OK' } else { 'FEHLGESCHLAGEN' })" $(if ($oneDriveSuccess) { "INFO" } else { "WARN" })
+Write-Log "Speicherort 1 (Lokal, nur DB):  $LocalStagingDir - OK"
+Write-Log "Speicherort 2 (Extern): $(if ($externalRoot) { $externalRoot } else { '-' }) - DB $(Format-Status $externalDbSuccess 'UEBERSPRUNGEN'), uploads $(Format-Status $externalUploadsSuccess 'UEBERSPRUNGEN')" $(if ($externalOk) { "INFO" } else { "WARN" })
+Write-Log "Speicherort 3 (OneDrive): $OneDriveBackupDir - DB $(Format-Status $oneDriveDbSuccess 'FEHLGESCHLAGEN'), uploads $(Format-Status $oneDriveUploadsSuccess 'FEHLGESCHLAGEN')" $(if ($oneDriveOk) { "INFO" } else { "WARN" })
 Write-Log "========================================"
 
 # Exit-Code: Nur die eigentliche DB-Sicherung ist kritisch. Fehlende externe
