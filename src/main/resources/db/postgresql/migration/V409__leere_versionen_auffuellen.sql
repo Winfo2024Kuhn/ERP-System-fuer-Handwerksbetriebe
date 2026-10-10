@@ -5,7 +5,7 @@
 -- kann solche Datensaetze weder aendern (NullPointerException beim Hochzaehlen)
 -- noch auf PostgreSQL sperren. Betrifft jede Neuinstallation und evtl. alte
 -- Zeilen auf bestehenden Servern. Idempotent: aendert nur noch leere Werte.
--- Zwilling: db/postgresql/migration/V407__leere_versionen_auffuellen.sql
+-- Zwilling: db/migration/V409__leere_versionen_auffuellen.sql
 
 UPDATE anfrage SET version = 0 WHERE version IS NULL;
 UPDATE arbeitsgang SET version = 0 WHERE version IS NULL;
