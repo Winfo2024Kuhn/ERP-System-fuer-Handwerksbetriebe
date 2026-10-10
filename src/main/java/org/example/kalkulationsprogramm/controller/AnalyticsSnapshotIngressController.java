@@ -26,12 +26,11 @@ import java.util.stream.Collectors;
  * Webseite (bauschlosserei-kuhn.de).
  * <p>
  * Auth: laeuft unter der {@code /api/internal/**}-Filterchain in
- * {@link org.example.kalkulationsprogramm.config.SecurityConfig#funnelFilterChain}
- * - Tailscale-VPN als Transportschicht plus optionaler Cloudflare-Access-JWT
- * via {@link org.example.kalkulationsprogramm.config.CloudflareAccessJwtFilter}
- * (Property {@code cloudflare.access.enabled=true} schaltet die Signaturpruefung
- * scharf). VPN allein zaehlt nicht als Auth - Production muss
- * {@code cloudflare.access.enabled=true} setzen.
+ * {@link org.example.kalkulationsprogramm.config.SecurityConfig#funnelFilterChain}.
+ * Die Website muss den gemeinsamen Schluessel im Header {@code X-ERP-Website-Key}
+ * senden ({@link org.example.kalkulationsprogramm.config.WebsiteInternalApiKeyFilter},
+ * Property {@code website.internal-api.key}); ohne Schluessel antwortet die Kette mit 401.
+ * VPN allein zaehlt nicht als Auth.
  * <p>
  * Spezifikation des Payloads liegt im Website-Repo
  * (docs ANALYTICS_SNAPSHOT_API.md, schemaVersion=1).

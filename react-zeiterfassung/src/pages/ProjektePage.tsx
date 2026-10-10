@@ -4,6 +4,7 @@ import { ArrowLeft, Search, Briefcase, MapPin, User, Loader2, Image, ChevronRigh
 import { OfflineService } from '../services/OfflineService'
 import { ImageViewer } from '../components/ui/image-viewer'
 import { useToast } from '../components/ui/toast'
+import { fotoFehlerText, ladeFotosEinzelnHoch, sendeFoto, fotoErgebnisMeldung, fortschrittText } from '../lib/fotoUpload'
 
 interface Projekt {
     id: number
@@ -40,6 +41,8 @@ interface Bild {
 interface PendingPhoto {
     file: File
     url: string
+    /** Grund, warum dieses Foto nicht hochgeladen werden konnte */
+    fehler?: string
 }
 
 
@@ -69,6 +72,9 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
     const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
     const pendingPhotosRef = useRef<PendingPhoto[]>([])
     pendingPhotosRef.current = pendingPhotos
+    const [uploadFortschritt, setUploadFortschritt] = useState<{ nummer: number; gesamt: number } | null>(null)
+    // Id des gerade offenen Eintrags (null nach dem Verlassen): Ein laufender Upload darf dann nichts mehr umschalten.
+    const aktivIdRef = useRef<number | null>(null)
 
     const loadProjekte = async () => {
         setLoading(true)
@@ -153,6 +159,11 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
     useEffect(() => () => {
         pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
     }, [])
+
+    useEffect(() => {
+        aktivIdRef.current = selectedProjekt?.id ?? null
+        return () => { aktivIdRef.current = null }
+    }, [selectedProjekt?.id])
 
     // Reset pendingPhotos beim Wechsel des Projekts
     useEffect(() => {
@@ -311,32 +322,39 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
     }
 
     const uploadPendingPhotos = async () => {
-        if (pendingPhotos.length === 0 || !selectedProjekt) return
+        if (uploading || pendingPhotos.length === 0 || !selectedProjekt) return
 
-        setUploading(true)
-        const formData = new FormData()
-        pendingPhotos.forEach(p => formData.append('datei', p.file))
-
+        const projektId = selectedProjekt.id
         const headers: Record<string, string> = {}
         if (mitarbeiter?.id) {
             headers['X-Mitarbeiter-Id'] = String(mitarbeiter.id)
         }
 
+        // Jedes Foto geht einzeln raus: Mehrere Fotos in einer Anfrage sprengen von außen schnell die 25-MB-Grenze.
+        // Verlässt der Nutzer die Seite, läuft der Upload zu Ende, damit keine Fotos verloren gehen.
+        setUploading(true)
+        setPendingPhotos(prev => prev.map(p => ({ ...p, fehler: undefined })))
         try {
-            const res = await fetch(`/api/projekte/${selectedProjekt.id}/dokumente?gruppe=BILDER`, {
-                method: 'POST',
-                headers,
-                body: formData
+            const ergebnis = await ladeFotosEinzelnHoch(pendingPhotos, {
+                senden: p => sendeFoto(`/api/projekte/${projektId}/dokumente?gruppe=BILDER`, p.file, { headers }),
+                beiStart: (nummer, gesamt) => setUploadFortschritt({ nummer, gesamt }),
+                // Gesendete Fotos sofort aus der Auswahl nehmen, damit sie nie doppelt hochgeladen werden.
+                beiErfolg: p => {
+                    URL.revokeObjectURL(p.url)
+                    setPendingPhotos(prev => prev.filter(x => x.url !== p.url))
+                },
+                beiFehler: (p, fehler) => setPendingPhotos(prev => prev.map(x => x.url === p.url ? { ...x, fehler: fotoFehlerText(fehler.grund) } : x)),
             })
-            if (res.ok) {
-                clearPendingPhotos()
-                setShowUploadModal(false)
-                await loadProjektDetail(selectedProjekt)
-            }
-        } catch (err) {
-            console.error('Upload fehlgeschlagen:', err)
+            const nochDa = aktivIdRef.current === projektId
+            if (nochDa && ergebnis.erfolgreich.length > 0) await loadProjektDetail(selectedProjekt)
+            const meldung = fotoErgebnisMeldung(ergebnis, nochDa)
+            if (meldung) toast.error(meldung)
+            // Hat der Nutzer den Eintrag verlassen, gibt es nichts mehr, wozu das Fenster gehören könnte.
+            if (!nochDa || !meldung) setShowUploadModal(false)
+        } finally {
+            setUploadFortschritt(null)
+            setUploading(false)
         }
-        setUploading(false)
     }
 
     const hasPhoneNumber = selectedProjekt?.kundenTelefon || selectedProjekt?.kundenMobil
@@ -438,6 +456,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                                         />
                                         <button
                                             onClick={() => setShowUploadModal(true)}
+                                            aria-label="Fotos hinzufügen"
                                             disabled={uploading}
                                             className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
                                         >
@@ -657,7 +676,7 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
 
             {/* Modals */}
             {showUploadModal && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+                <div role="dialog" aria-modal="true" aria-label="Fotos hochladen" className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
                     <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 animate-slide-up">
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold text-slate-900">
@@ -667,7 +686,9 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                             </h3>
                             <button
                                 onClick={closeUploadModal}
-                                className="p-2 hover:bg-slate-100 rounded-full"
+                                disabled={uploading}
+                                aria-label="Schließen"
+                                className="p-2 hover:bg-slate-100 rounded-full disabled:opacity-50"
                             >
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
@@ -676,16 +697,22 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                         {pendingPhotos.length > 0 && (
                             <div className="grid grid-cols-3 gap-2 mb-4 max-h-56 overflow-auto">
                                 {pendingPhotos.map((p, idx) => (
-                                    <div key={idx} className="relative aspect-square">
+                                    <div key={p.url} className="relative aspect-square">
                                         <img
                                             src={p.url}
                                             alt={`Bild ${idx + 1}`}
-                                            className="w-full h-full object-cover rounded-lg"
+                                            className={`w-full h-full object-cover rounded-lg ${p.fehler ? 'border-2 border-rose-500' : ''}`}
                                         />
+                                        {p.fehler && (
+                                            <p className="absolute inset-x-0 bottom-0 rounded-b-lg bg-rose-600 px-1 py-0.5 text-center text-xs font-medium leading-tight text-white">
+                                                {p.fehler}
+                                            </p>
+                                        )}
                                         <button
                                             onClick={() => removePendingPhoto(idx)}
+                                            disabled={uploading}
                                             aria-label="Bild entfernen"
-                                            className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow"
+                                            className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-full shadow disabled:opacity-50"
                                         >
                                             <X className="w-3 h-3" />
                                         </button>
@@ -725,6 +752,21 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                             </button>
                         </div>
 
+                        {uploadFortschritt && (
+                            <div role="status" aria-live="polite" className="mt-4">
+                                <p className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                                    <Loader2 className="w-4 h-4 animate-spin text-rose-600" aria-hidden="true" />
+                                    {fortschrittText(uploadFortschritt.nummer, uploadFortschritt.gesamt)}
+                                </p>
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                        className="h-full rounded-full bg-rose-600 transition-all"
+                                        style={{ width: `${((uploadFortschritt.nummer - 1) / uploadFortschritt.gesamt) * 100}%` }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         {pendingPhotos.length > 0 && (
                             <button
                                 onClick={uploadPendingPhotos}
@@ -733,6 +775,8 @@ export default function ProjektePage({ mitarbeiter, syncStatus, onSync }: Projek
                             >
                                 {uploading ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : pendingPhotos.some(p => p.fehler) ? (
+                                    <>Erneut versuchen ({pendingPhotos.length})</>
                                 ) : (
                                     <>Hochladen ({pendingPhotos.length})</>
                                 )}

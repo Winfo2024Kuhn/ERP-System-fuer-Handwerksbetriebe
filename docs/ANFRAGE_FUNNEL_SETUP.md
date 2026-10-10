@@ -28,6 +28,15 @@ Besucher → Website-Server (Funnel-Form, Validierung, Captcha optional)
 Eingang ist nur erreichbar, wenn der Service Token gültig ist. Im LAN ist der
 Spring-Port nicht öffentlich – Anfragen kommen ausschließlich durch den Tunnel.
 
+> **Hinweis: Der Cloudflare-Weg unten ist veraltet** – die Netzgrenze sperrt `/api/internal/**` für Tunnel-Anfragen mit öffentlicher Absender-IP. Aktuell läuft die Anbindung über Tailscale:
+>
+> **Betrieb über Tailscale statt Cloudflare:** Die Website sendet in jedem Aufruf
+> zusätzlich `X-ERP-Website-Key` (ERP: `website.internal-api.key` /
+> `WEBSITE_INTERNAL_API_KEY`, Website: `ERP_INTERNAL_API_KEY`). Ohne diesen Schlüssel
+> antwortet `/api/internal/**` mit 401, auch für Geräte im Firmen- oder Tailscale-Netz.
+> Ist Cloudflare Access aktiv (`cloudflare.access.enabled=true`), zählt nur der JWT. Einrichtung und
+> Umstellungsreihenfolge: [MOBILE_TOKEN_SECURITY.md](MOBILE_TOKEN_SECURITY.md#website-schnittstelle-apiinternal).
+
 ---
 
 ## Schritt 1 — Cloudflare Zero Trust einrichten
@@ -189,10 +198,11 @@ Content-Type: multipart/form-data
 
 ### 4a. Lokal (ohne Cloudflare)
 
-`CF_ACCESS_ENABLED=false`, dann mit curl:
+`CF_ACCESS_ENABLED=false` und `WEBSITE_INTERNAL_API_KEY` gesetzt, dann mit curl:
 
 ```bash
 curl -X POST http://localhost:8080/api/internal/anfrage \
+  -H "X-ERP-Website-Key: $WEBSITE_INTERNAL_API_KEY" \
   -F 'anfrage={"serviceTyp":"Neubau","nachricht":"Test","vorname":"Max",
        "nachname":"Mustermann","email":"max@example.de",
        "datenschutzAkzeptiert":true};type=application/json' \
@@ -218,6 +228,7 @@ Ohne korrekte Header: HTTP 401 von Cloudflare oder vom JWT-Filter.
 
 ### 4c. Negativ-Tests
 
+- Fehlender oder falscher `X-ERP-Website-Key` (ohne Cloudflare): 401 vom ERP
 - Falsches Service-Secret → 401 (Cloudflare blockiert)
 - Direkter Zugriff aus dem LAN auf `http://erp-server:8080/api/internal/anfrage`
   ohne JWT (CF_ACCESS_ENABLED=true): 401 (CloudflareAccessJwtFilter blockiert)

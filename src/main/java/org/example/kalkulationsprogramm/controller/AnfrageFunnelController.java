@@ -22,9 +22,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Public S2S-Endpoint für den Anfrage-Funnel der Marketing-Webseite.
- * Erreichbar nur über Cloudflare-Tunnel + Access Service Token. Lokal/im LAN
- * sollte der Spring-Port nicht direkt exponiert werden.
+ * S2S-Endpoint für den Anfrage-Funnel der Marketing-Webseite. Geschützt durch den
+ * gemeinsamen Schlüssel {@code X-ERP-Website-Key} (siehe {@code WebsiteInternalApiKeyFilter})
+ * bzw. den Cloudflare-Access-JWT; ohne beides antwortet die Kette mit 401.
  */
 @Slf4j
 @RestController
