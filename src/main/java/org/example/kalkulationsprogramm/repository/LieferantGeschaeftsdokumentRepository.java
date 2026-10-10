@@ -8,7 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
-public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<LieferantGeschaeftsdokument, Long> {
+public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<LieferantGeschaeftsdokument, Long>, LieferantGeschaeftsdokumentRepositoryErweiterung {
 
         /**
          * Findet Geschäftsdaten anhand der Dokumentnummer.
@@ -141,20 +141,6 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         @Param("endDate") java.time.LocalDate endDate);
 
         /**
-         * Berechnet die durchschnittliche Lieferzeit in Tagen für einen Lieferanten
-         * basierend auf Auftragsbestätigungen (dokumentDatum -> liefertermin).
-         * Native Query weil DATEDIFF MySQL-spezifisch ist.
-         */
-        @Query(value = "SELECT AVG(DATEDIFF(gd.liefertermin, gd.dokument_datum)) " +
-                        "FROM lieferant_geschaeftsdokument gd " +
-                        "JOIN lieferant_dokument d ON gd.id = d.id " +
-                        "WHERE d.lieferant_id = :lieferantId " +
-                        "AND d.typ = 'AUFTRAGSBESTAETIGUNG' " +
-                        "AND gd.dokument_datum IS NOT NULL " +
-                        "AND gd.liefertermin IS NOT NULL", nativeQuery = true)
-        Double calculateAverageLieferzeitByLieferantId(@Param("lieferantId") Long lieferantId);
-
-        /**
          * Zählt die Anzahl der Bestellungen (Auftragsbestätigungen) für einen
          * Lieferanten.
          */
@@ -178,15 +164,15 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
          * Lieferantenkosten pro Jahr (für Erfolgsanalyse).
          * Gibt Jahreszahl und Summe Netto aller Rechnungen zurück.
          */
-        @Query(value = "SELECT YEAR(gd.dokument_datum) as jahr, " +
+        @Query(value = "SELECT EXTRACT(YEAR FROM gd.dokument_datum) as jahr, " +
                         "COUNT(DISTINCT d.id) as bestellungen, " +
                         "COALESCE(SUM(gd.betrag_netto), 0) as netto " +
                         "FROM lieferant_geschaeftsdokument gd " +
                         "JOIN lieferant_dokument d ON gd.id = d.id " +
                         "WHERE d.typ = 'RECHNUNG' " +
                         "AND gd.dokument_datum IS NOT NULL " +
-                        "GROUP BY YEAR(gd.dokument_datum) " +
-                        "ORDER BY YEAR(gd.dokument_datum) DESC", nativeQuery = true)
+                        "GROUP BY EXTRACT(YEAR FROM gd.dokument_datum) " +
+                        "ORDER BY EXTRACT(YEAR FROM gd.dokument_datum) DESC", nativeQuery = true)
         java.util.List<Object[]> getLieferantenkostenProJahr();
 
         /**
@@ -214,7 +200,10 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "LEFT JOIN lieferant_dokument d ON d.lieferant_id = l.id " +
                         "LEFT JOIN lieferant_geschaeftsdokument gd ON gd.id = d.id " +
                         "WHERE (gd.dokument_datum IS NULL OR " +
-                        "       (YEAR(gd.dokument_datum) = :jahr AND (:monat IS NULL OR MONTH(gd.dokument_datum) = :monat))) " +
+                        "       (EXTRACT(YEAR FROM gd.dokument_datum) = :jahr " +
+                        // COALESCE statt ":monat IS NULL": PostgreSQL kann den Typ eines leeren
+                        // Parameters sonst nicht bestimmen
+                        "        AND EXTRACT(MONTH FROM gd.dokument_datum) = COALESCE(:monat, EXTRACT(MONTH FROM gd.dokument_datum)))) " +
                         "GROUP BY l.id, l.lieferantenname " +
                         "HAVING SUM(CASE WHEN d.typ = 'RECHNUNG' THEN gd.betrag_netto ELSE 0 END) > 0 " +
                         "ORDER BY netto DESC", nativeQuery = true)

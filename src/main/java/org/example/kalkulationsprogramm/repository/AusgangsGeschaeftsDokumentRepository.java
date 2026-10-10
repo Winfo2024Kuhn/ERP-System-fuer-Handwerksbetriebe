@@ -160,8 +160,8 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
             SELECT d FROM AusgangsGeschaeftsDokument d
             WHERE d.typ IN :typen
               AND (d.gebucht = true OR d.versandDatum IS NOT NULL OR d.storniert = true)
-              AND (:start IS NULL OR d.datum >= :start)
-              AND (:end IS NULL OR d.datum <= :end)
+              AND (CAST(:start AS LocalDate) IS NULL OR d.datum >= :start)
+              AND (CAST(:end AS LocalDate) IS NULL OR d.datum <= :end)
             ORDER BY d.datum DESC, d.id DESC
             """)
     List<AusgangsGeschaeftsDokument> findRechnungenFuerUebersicht(

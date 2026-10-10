@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
  * Repository für MonatsSaldo-Cache-Einträge.
  */
 @Repository
-public interface MonatsSaldoRepository extends JpaRepository<MonatsSaldo, Long> {
+public interface MonatsSaldoRepository extends JpaRepository<MonatsSaldo, Long>, MonatsSaldoRepositoryErweiterung {
 
     /**
      * Findet den Cache-Eintrag für einen bestimmten Mitarbeiter/Monat.
@@ -75,49 +75,4 @@ public interface MonatsSaldoRepository extends JpaRepository<MonatsSaldo, Long> 
         Integer getAnzahl();
     }
 
-    /** One set query, including months without cache; technical migration dates are never anchors. */
-    @Query(value = """
-            WITH RECURSIVE ereignisse AS (
-                SELECT mitarbeiter_id, DATE(start_zeit) AS datum FROM zeitbuchung
-                UNION SELECT mitarbeiter_id, datum FROM abwesenheit
-                UNION SELECT mitarbeiter_id, datum FROM zeitkonto_korrektur
-                UNION SELECT mitarbeiter_id, STR_TO_DATE(CONCAT(jahr, '-', monat, '-01'), '%Y-%c-%d') FROM monats_saldo
-            ), anker AS (
-                SELECT mitarbeiter_id, datum FROM ereignisse
-                UNION SELECT id, eintrittsdatum FROM mitarbeiter WHERE eintrittsdatum IS NOT NULL
-                UNION SELECT mitarbeiter_id, gueltig_von FROM zeitkonto_version WHERE gueltig_von > '1000-01-01'
-            ), grenzen AS (
-                SELECT mitarbeiter_id, MIN(datum) AS von FROM anker GROUP BY mitarbeiter_id
-            ), letzte_daten AS (
-                SELECT mitarbeiter_id, MAX(datum) AS bis FROM ereignisse GROUP BY mitarbeiter_id
-            ), monate (tag) AS (
-                SELECT CAST(DATE_FORMAT(MIN(von), '%Y-%m-01') AS DATE) FROM grenzen
-                WHERE von < :aktuellerMonat
-                UNION ALL
-                SELECT DATE_ADD(tag, INTERVAL 1 MONTH) FROM monate
-                WHERE DATE_ADD(tag, INTERVAL 1 MONTH) < :aktuellerMonat
-            ), kandidaten AS (
-                SELECT DISTINCT m.id, mo.tag
-                FROM mitarbeiter m
-                JOIN grenzen g ON g.mitarbeiter_id = m.id
-                JOIN monate mo ON mo.tag >= CAST(DATE_FORMAT(g.von, '%Y-%m-01') AS DATE)
-                LEFT JOIN letzte_daten ld ON ld.mitarbeiter_id = m.id
-                WHERE m.art = 'MENSCH' AND mo.tag < :aktuellerMonat
-                  AND m.fuehrt_zeitkonto = TRUE AND (m.ist_geschaeftsfuehrer IS NULL OR m.ist_geschaeftsfuehrer = FALSE)
-                  AND (EXISTS (SELECT 1 FROM zeitkonto_version v
-                      WHERE v.mitarbeiter_id = m.id AND v.gueltig_von <= LAST_DAY(mo.tag)
-                        AND (v.gueltig_bis IS NULL OR v.gueltig_bis >= mo.tag)
-                        AND (m.aktiv = TRUE OR mo.tag <= COALESCE(v.gueltig_bis, ld.bis)))
-                    OR EXISTS (SELECT 1 FROM ereignisse e WHERE e.mitarbeiter_id = m.id
-                        AND e.datum >= mo.tag AND e.datum < DATE_ADD(mo.tag, INTERVAL 1 MONTH)))
-            )
-            SELECT /*+ SET_VAR(cte_max_recursion_depth=120000) */ YEAR(k.tag) AS jahr,
-                MONTH(k.tag) AS monat, COUNT(*) AS anzahl
-            FROM kandidaten k
-            LEFT JOIN monats_saldo ms ON ms.mitarbeiter_id = k.id
-                AND ms.jahr = YEAR(k.tag) AND ms.monat = MONTH(k.tag)
-            WHERE ms.id IS NULL OR ms.festgeschrieben = FALSE
-            GROUP BY k.tag ORDER BY k.tag
-            """, nativeQuery = true)
-    List<OffenerMonat> findOffeneAbschlussMonate(@Param("aktuellerMonat") java.time.LocalDate aktuellerMonat);
 }

@@ -13,8 +13,21 @@ public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecific
 {
     Optional<Kunde> findByKundennummerIgnoreCase(String kundennummer);
 
-    @Query(value = "SELECT kundennummer FROM kunde ORDER BY CAST(kundennummer AS UNSIGNED) DESC LIMIT 1", nativeQuery = true)
-    Optional<String> findMaxKundennummer();
+    @Query("SELECT k.kundennummer FROM Kunde k WHERE k.kundennummer IS NOT NULL")
+    List<String> findAlleKundennummern();
+
+    /**
+     * Groesste rein numerische Kundennummer. Bewusst in Java statt per
+     * "CAST(... AS UNSIGNED)": das gibt es nur in MySQL, und auf PostgreSQL
+     * wuerde ein Cast an Nummern wie "K-100" scheitern. Nicht-numerische
+     * Nummern zaehlen wie bisher nicht mit.
+     */
+    default Optional<String> findMaxKundennummer() {
+        return findAlleKundennummern().stream()
+                .map(String::trim)
+                .filter(nummer -> !nummer.isEmpty() && nummer.length() <= 18 && nummer.chars().allMatch(Character::isDigit))
+                .max(java.util.Comparator.comparingLong(Long::parseLong));
+    }
 
     /**
      * Sucht Kunden nach Name, Ansprechpartner, Kundennummer oder E-Mail.

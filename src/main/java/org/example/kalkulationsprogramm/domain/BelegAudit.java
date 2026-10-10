@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.domain;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -133,6 +135,7 @@ public class BelegAudit {
     private String gespeicherterDateiname;
 
     /** SHA-256 des Belegfotos. Erkennt, wenn im Ordner ein anderes Bild liegt als geprueft wurde. */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "datei_hash", columnDefinition = "CHAR(64)")
     private String dateiHash;
 
@@ -161,9 +164,11 @@ public class BelegAudit {
     // ============== Hash-Kette ==============
 
     /** entry_hash des Vorgaengers. NULL beim allerersten Eintrag. */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "previous_hash", columnDefinition = "CHAR(64)")
     private String previousHash;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "entry_hash", columnDefinition = "CHAR(64)")
     private String entryHash;
 

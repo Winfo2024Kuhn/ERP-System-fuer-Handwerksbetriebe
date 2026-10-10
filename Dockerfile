@@ -81,5 +81,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=120s \
     CMD wget -qO- http://localhost:8080/actuator/health >/dev/null 2>&1 || exit 1
 
-# Run with docker profile
-ENTRYPOINT ["java", "-jar", "app.jar", "--spring.profiles.active=docker"]
+# Profil per Umgebungsvariable (nicht als Startargument): so kann
+# docker-compose es ueberschreiben, z. B. SPRING_PROFILES_ACTIVE=docker,postgres
+# fuer Kunden-Installationen mit PostgreSQL. Ein --spring.profiles.active-Argument
+# haette Vorrang vor der Umgebung und wuerde das verhindern.
+ENV SPRING_PROFILES_ACTIVE=docker
+ENTRYPOINT ["java", "-jar", "app.jar"]

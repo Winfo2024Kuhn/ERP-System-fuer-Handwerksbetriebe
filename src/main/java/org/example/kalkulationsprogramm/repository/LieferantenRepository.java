@@ -15,7 +15,8 @@ public interface LieferantenRepository extends JpaRepository<Lieferanten, Long>,
 
     Optional<Lieferanten> findByLieferantennameIgnoreCase(String lieferantenname);
 
-    @Query("select l from Lieferanten l join l.kundenEmails e where e = :email")
+    // lower(): wie MySQL (Collation) auch auf PostgreSQL ohne Gross-/Kleinschreibung
+    @Query("select l from Lieferanten l join l.kundenEmails e where lower(e) = lower(:email)")
     Optional<Lieferanten> findByEmail(@Param("email") String email);
 
     /**

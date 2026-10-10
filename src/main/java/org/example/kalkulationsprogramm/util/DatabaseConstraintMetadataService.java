@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.util;
 
+import org.example.kalkulationsprogramm.config.DatenbankArt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -47,7 +48,33 @@ public class DatabaseConstraintMetadataService {
             " AND tc.table_schema = rc.constraint_schema " +
             "WHERE tc.table_schema = ?";
 
+    // PostgreSQL (Kunden-Installationen): kein DATABASE(), keine Kommentar-Spalten
+    // in information_schema, Ziel eines Fremdschluessels steht in
+    // constraint_column_usage. Die Basis hat keine Kommentare - Labels kommen
+    // dann aus den Spaltennamen.
+    private static final String PG_SELECT_SCHEMA = "SELECT current_schema()";
+    private static final String PG_SELECT_TABLES =
+            "SELECT table_name, table_name AS table_comment FROM information_schema.tables WHERE table_schema = ?";
+    private static final String PG_SELECT_COLUMNS =
+            "SELECT table_name, column_name, column_name AS column_comment, " +
+            "character_maximum_length, is_nullable FROM information_schema.columns WHERE table_schema = ?";
+    private static final String PG_SELECT_CONSTRAINTS =
+            "SELECT tc.constraint_name, tc.table_name, tc.constraint_type, kcu.column_name, " +
+            "ccu.table_name AS referenced_table_name, ccu.column_name AS referenced_column_name " +
+            "FROM information_schema.table_constraints tc " +
+            "LEFT JOIN information_schema.key_column_usage kcu " +
+            "  ON tc.constraint_name = kcu.constraint_name " +
+            " AND tc.table_schema = kcu.table_schema " +
+            " AND tc.table_name = kcu.table_name " +
+            "LEFT JOIN information_schema.constraint_column_usage ccu " +
+            "  ON tc.constraint_type = 'FOREIGN KEY' " +
+            " AND tc.constraint_name = ccu.constraint_name " +
+            " AND tc.table_schema = ccu.constraint_schema " +
+            "WHERE tc.table_schema = ?";
+
     private final JdbcTemplate jdbcTemplate;
+    /** PostgreSQL braucht eigene Abfragen (PG_*), MySQL nutzt DATABASE() und Kommentare. */
+    private final boolean postgres;
     private final AtomicBoolean initialised = new AtomicBoolean(false);
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -58,8 +85,9 @@ public class DatabaseConstraintMetadataService {
     private volatile Map<String, TableMetadata> tablesByName = Map.of();
 
     /** Erstellt den Dienst und merkt sich das zu verwendende {@link JdbcTemplate}. */
-    public DatabaseConstraintMetadataService(JdbcTemplate jdbcTemplate) {
+    public DatabaseConstraintMetadataService(JdbcTemplate jdbcTemplate, DatenbankArt datenbankArt) {
         this.jdbcTemplate = jdbcTemplate;
+        this.postgres = datenbankArt.istPostgres();
     }
 
     /**
@@ -152,9 +180,12 @@ public class DatabaseConstraintMetadataService {
             if (!force && initialised.get()) {
                 return;
             }
+            String sqlTables = postgres ? PG_SELECT_TABLES : SQL_SELECT_TABLES;
+            String sqlColumns = postgres ? PG_SELECT_COLUMNS : SQL_SELECT_COLUMNS;
+            String sqlConstraints = postgres ? PG_SELECT_CONSTRAINTS : SQL_SELECT_CONSTRAINTS;
             String schema = "";
             try {
-                schema = jdbcTemplate.queryForObject(SQL_SELECT_SCHEMA, String.class);
+                schema = jdbcTemplate.queryForObject(postgres ? PG_SELECT_SCHEMA : SQL_SELECT_SCHEMA, String.class);
             } catch (DataAccessException ex) {
                 LOG.warn("Could not determine active database schema", ex);
             }
@@ -169,7 +200,7 @@ public class DatabaseConstraintMetadataService {
             Map<String, ConstraintMetadataBuilder> builders = new LinkedHashMap<>();
 
             try {
-                jdbcTemplate.query(SQL_SELECT_TABLES, ps -> ps.setString(1, finalSchema), rs -> {
+                jdbcTemplate.query(sqlTables, ps -> ps.setString(1, finalSchema), rs -> {
                     TableMetadata meta = new TableMetadata(
                             rs.getString("table_name"),
                             toDisplayName(rs.getString("table_comment"))
@@ -177,7 +208,7 @@ public class DatabaseConstraintMetadataService {
                     tableBuffer.put(normalise(meta.tableName()), meta);
                 });
 
-                jdbcTemplate.query(SQL_SELECT_COLUMNS, ps -> ps.setString(1, finalSchema), rs -> {
+                jdbcTemplate.query(sqlColumns, ps -> ps.setString(1, finalSchema), rs -> {
                     Integer charMaxLen = null;
                     Object rawLen = rs.getObject("character_maximum_length");
                     if (rawLen != null) {
@@ -195,7 +226,7 @@ public class DatabaseConstraintMetadataService {
                     columnByNameBuffer.computeIfAbsent(normalise(meta.columnName()), key -> new ArrayList<>()).add(meta);
                 });
 
-                jdbcTemplate.query(SQL_SELECT_CONSTRAINTS, ps -> ps.setString(1, finalSchema), (ResultSet rs) -> {
+                jdbcTemplate.query(sqlConstraints, ps -> ps.setString(1, finalSchema), (ResultSet rs) -> {
                     while (rs.next()) {
                         String name = rs.getString("constraint_name");
                         String table = rs.getString("table_name");

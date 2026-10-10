@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /** Owned by a draft; its bytes are committed and deleted with that draft. */
 @Entity
@@ -29,8 +31,8 @@ public class EmailDraftAttachment {
     @Column(nullable = false)
     private long size;
 
-    @Lob
     @Basic(fetch = FetchType.LAZY)
-    @Column(nullable = false, columnDefinition = "LONGBLOB")
+    @JdbcTypeCode(SqlTypes.LONG32VARBINARY)
+    @Column(nullable = false)
     private byte[] data;
 }

@@ -22,7 +22,6 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -338,15 +337,18 @@ public class ArtikelImportService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        try {
-            Werkstoff werkstoff = new Werkstoff();
-            werkstoff.setName(normalized);
-            return werkstoffRepository.save(werkstoff);
-        } catch (DataIntegrityViolationException e) {
-            // Concurrent import created the same Werkstoff — re-fetch
-            return werkstoffRepository.findByNameIgnoreCase(normalized)
-                    .orElseThrow(() -> e);
+        // Anlegen ohne Dubletten-Fehler: Hat ein paralleler Import den Werkstoff
+        // gerade angelegt, passiert nichts. Eine gefangene Exception wuerde den
+        // ganzen Import trotzdem scheitern lassen (Transaktion nur noch Rollback,
+        // auf PostgreSQL sofort abgebrochen).
+        if (normalized.length() > 255) {
+            // MySQL wuerde beim Anlegen still kuerzen - dann faende ihn niemand wieder
+            throw new IllegalArgumentException("Werkstoffname ist zu lang (max. 255 Zeichen): "
+                    + normalized.substring(0, 40) + "...");
         }
+        werkstoffRepository.legeAnFallsNeu(normalized);
+        return werkstoffRepository.findByNameGesperrt(normalized)
+                .orElseThrow(() -> new IllegalStateException("Werkstoff fehlt nach dem Anlegen: " + normalized));
     }
 
     private BigDecimal normalizePreis(BigDecimal preis) {

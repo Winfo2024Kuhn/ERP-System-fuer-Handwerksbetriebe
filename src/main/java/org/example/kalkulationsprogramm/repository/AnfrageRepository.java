@@ -61,8 +61,8 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
                       :bauvorhaben IS NULL OR
                       LOWER(a.bauvorhaben) LIKE CONCAT('%', LOWER(:bauvorhaben), '%')
                  )
-                 AND (:startDate IS NULL OR a.anlegedatum >= :startDate)
-                 AND (:endDate IS NULL OR a.anlegedatum <= :endDate)
+                 AND (CAST(:startDate AS LocalDate) IS NULL OR a.anlegedatum >= :startDate)
+                 AND (CAST(:endDate AS LocalDate) IS NULL OR a.anlegedatum <= :endDate)
                  AND (
                       :anfragesnummer IS NULL OR EXISTS (
                           SELECT d FROM AusgangsGeschaeftsDokument d
@@ -81,10 +81,10 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
      List<Anfrage> findByAnlegedatumBetween(LocalDate startDatum, LocalDate endDatum);
 
      @Query("""
-               SELECT DISTINCT function('YEAR', a.anlegedatum)
+               SELECT DISTINCT YEAR(a.anlegedatum)
                FROM Anfrage a
                WHERE a.anlegedatum IS NOT NULL
-               ORDER BY function('YEAR', a.anlegedatum) DESC
+               ORDER BY YEAR(a.anlegedatum) DESC
                """)
      List<Integer> findDistinctAnlegedatumJahre();
 

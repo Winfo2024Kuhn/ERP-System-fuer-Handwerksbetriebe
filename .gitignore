@@ -135,3 +135,6 @@ previewConfig.json
 
 # Unter macOS/Linux von Windows-UNC-Pfadtests erzeugtes lokales Verzeichnis.
 /\\\\server\\share/
+
+# Python (scripts/basis-schema)
+__pycache__/

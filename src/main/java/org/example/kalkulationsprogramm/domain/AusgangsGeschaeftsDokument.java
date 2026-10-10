@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.List;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Zentrale Entity für alle ausgehenden Geschäftsdokumente.
@@ -84,13 +86,13 @@ public class AusgangsGeschaeftsDokument {
     /**
      * HTML-Inhalt aus dem DocumentBuilder Editor
      */
-    @Column(columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     private String htmlInhalt;
 
     /**
      * JSON der Leistungspositionen (für Neuberechnung bei Konvertierung)
      */
-    @Column(columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     private String positionenJson;
 
     /** Archivierte PDF, auch für Stornos und Rechnungen ohne Projekt. */

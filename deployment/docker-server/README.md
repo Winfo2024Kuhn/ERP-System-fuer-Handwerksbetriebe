@@ -7,11 +7,11 @@ GitHub braucht also keinen Zugang ins Firmennetz: keine offenen Ports, kein VPN.
 
 ```
  git push main ─► GitHub Actions                       Rechner beim Kunden (Windows-PC oder Linux-Server)
-                  1. Tests (PR Quality Checks)          ┌─ mysql ─── Datenbank
+                  1. Tests (PR Quality Checks)          ┌─ postgres ─ Datenbank (eigener Server: mysql)
                   2. Docker-Image (Backend + beide      ├─ app ───── ERP (Backend + PC-Oberflaeche + Zeiterfassung)
                      Frontends in EINEM Image)          └─ updater ─ 03:00: neues Image holen ◄─────┐
                   3. Starttest: Kundenstand + neue          sichern, wechseln, Health-Check,     │
-                     Migrationen                            bei Fehler Rollback + Handy-Nachricht│
+                     Migrationen, PostgreSQL + MySQL        bei Fehler Rollback + Handy-Nachricht│
                   4. nur wenn gruen: ghcr.io :stable ───────────────────────────────────────────┘
 ```
 
@@ -21,6 +21,27 @@ Damit können Oberfläche und Backend nie auseinanderlaufen. Die Zeiterfassungs-
 Handys lädt die neue Version beim nächsten Öffnen.
 
 ## Einrichten
+
+### Welche Datenbank?
+
+| | Datenbank | Einrichten |
+| --- | --- | --- |
+| **Kunden** | PostgreSQL (Standard) | `Einrichten.cmd` bzw. `./einrichten.sh` |
+| **Eigener Server** | MySQL (wie bisher) | `Einrichten.cmd -Datenbank mysql` bzw. `./einrichten.sh --mysql` |
+
+Beide bekommen **dasselbe Image und dieselben Nachtupdates**. Die App erkennt die
+Datenbank am Profil (`COMPOSE_PROFILES` in der `.env`) und nimmt die passende
+Migrationslinie. Die Wahl gilt für immer: Ein späteres Umstellen in der `.env` zieht die
+Daten nicht mit um.
+
+Auf PostgreSQL verbindet sich das ERP mit einer eigenen Rolle **ohne Superuser-Rechte**
+(`DB_USER`, angelegt von `postgres-init/01-app-rolle.sh` beim ersten Start). Der
+Superuser `postgres` (`DB_ROOT_PASSWORD`) dient nur für Wartung, Sicherung und Rollback.
+
+> **`.env` aus einer früheren Einrichtung** (mit `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`
+> …): Die Variablen heißen jetzt `DB_ROOT_PASSWORD`, `DB_PASSWORD`, `DB_USER`, dazu
+> kommt `COMPOSE_PROFILES=mysql`. Werte übernehmen, Namen anpassen – sonst startet
+> nichts, und das Nachtupdate meldet sich per Nachricht.
 
 ### Windows-PC (Docker Desktop)
 
@@ -65,16 +86,20 @@ Passwörtern an und startet alles. Danach genügt jederzeit `docker compose up -
 ### Umzug von einem bestehenden Server
 
 Ein leerer Rechner richtet die Datenbank selbst ein, mit Basis-Schema und Stammdaten.
-Bei einem **Umzug** spielst du stattdessen die Sicherung des alten Servers ein. Die
-tägliche Sicherung des Windows-Servers (`kalkulationsprogramm_db_<datum>.sql.gz`) passt direkt.
+Bei einem **Umzug** spielst du stattdessen die Sicherung des alten Servers ein. Eine
+Sicherung passt nur zur **selben Datenbankart**: Die tägliche Sicherung des eigenen
+Windows-Servers (`kalkulationsprogramm_db_<datum>.sql.gz`, MySQL) also in eine
+MySQL-Einrichtung. Eine unpassende Datei lehnt das Skript ab, ohne etwas zu verändern.
 
 ```bash
-# Linux:   sudo ./einrichten.sh --import /pfad/zur/sicherung.sql.gz
-# Windows: Sicherung in den ERP-Ordner legen, dann in diesem Ordner:
+# Linux:   sudo ./einrichten.sh --mysql --import /pfad/zur/sicherung.sql.gz
+# Windows: Einrichten.cmd -Datenbank mysql, Sicherung in den ERP-Ordner legen, dann dort:
 docker compose exec updater bash /erp/nachtupdate.sh --importieren sicherung.sql.gz
 ```
 
 Was vorher in der Datenbank stand, wird vor dem Import gesichert (`sicherungen/vor-import-…`).
+Eine PostgreSQL-Sicherung von woanders muss eine Klartext-Sicherung ohne Besitzer sein:
+`pg_dump --no-owner --no-privileges <datenbank> | gzip > sicherung.sql.gz` (kein `-Fc`).
 
 ### Image privat?
 
@@ -94,10 +119,14 @@ Für ein Open-Source-ERP ist es einfacher, das Paket öffentlich zu stellen
 | --- | --- | --- |
 | 1 | `docker pull` von `ERP_IMAGE` (`:stable`). Gleiches Image wie aktiv → fertig. | Nachricht „Download fehlgeschlagen“, nichts verändert |
 | 2 | Läuft die aktuelle Version gesund? (Health-Check, max. 2 min) | Nachricht „Update ausgelassen“, denn ohne gesunde Ausgangslage gibt es keinen sicheren Rückweg |
-| 3 | Platz prüfen, **App stoppen**, dann kompletter `mysqldump` nach `sicherungen/` | Alte Version startet wieder, Nachricht |
+| 3 | Platz prüfen, **App stoppen**, dann komplette Sicherung (`pg_dump` bzw. `mysqldump`) nach `sicherungen/` | Alte Version startet wieder, Nachricht |
 | 4 | Neue Version starten, Flyway spielt offene Migrationen selbst ein | |
 | 5 | Jede Sekunde `/actuator/health` abfragen (Standard: max. 300 s) | Ein Absturz wird sofort erkannt |
 | 6 | **Rollback:** neue Version stoppen, Datenbank aus der Sicherung zurück, alte Version starten | Handy-Nachricht. Scheitert auch das: NOTFALL-Nachricht |
+
+PostgreSQL leert und befüllt die Datenbank beim Rollback in **einer** Transaktion:
+Scheitert das Einspielen, bleibt sie, wie sie war. MySQL kann das nicht (DDL läuft dort
+außerhalb von Transaktionen).
 
 - **App vor der Sicherung stoppen:** Sonst könnte zwischen Sicherung und Update noch
   jemand buchen, und der Rollback würde diese Buchung verschlucken.
@@ -163,11 +192,23 @@ nicht überschreiben.
 
 ## Offene Punkte
 
+- **PostgreSQL 16:** Ein späterer Wechsel der Hauptversion (z. B. auf 17) geht nicht
+  durch einfaches Austauschen des Images, sondern braucht Sicherung und Wiedereinspielen
+  (oder `pg_upgrade`). Das muss einmal geplant werden, wenn es so weit ist.
+- **Zeitzone:** Der PostgreSQL-Container läuft auf deutscher Zeit (`TZ=Europe/Berlin`),
+  MySQL-Server meist auf UTC. Die App setzt Zeitstempel selbst, das ist also gleich. Nur
+  wo die Datenbank selbst „jetzt“ einträgt (Spalten-Standardwert `CURRENT_TIMESTAMP`),
+  steht bei PostgreSQL Ortszeit.
 - **MySQL 8.0** bekommt seit April 2026 keine Updates mehr. Der eigene Produktivserver
   läuft auch noch darauf. Der Umstieg auf **8.4 LTS** sollte für beide gemeinsam geplant
   und getestet werden.
-- **PostgreSQL für Kunden** ist ein eigenes Projekt (eigene Migrationslinie, native
-  Abfragen anpassen).
+- **PostgreSQL verhält sich in Kleinigkeiten anders als MySQL.** Abgefangen sind
+  Spaltentypen, Upserts, Datumsrechnung und Parameter-Typen (`DatenbankKompatibilitaetTest`
+  prüft jede Abfrage gegen beide Datenbanken). Bekannte Unterschiede, die noch auffallen
+  können: `=` und `LIKE` unterscheiden in PostgreSQL Groß-/Kleinschreibung (die
+  Suchfelder nutzen `LOWER`, Einzelvergleiche nicht immer), leere Werte sortieren bei
+  `ORDER BY … DESC` oben statt unten, und bei Verstößen gegen Eindeutigkeit/Fremdschlüssel
+  zeigt die Oberfläche eine allgemeine statt der genauen Fehlermeldung.
 
 ## Neuinstallation: das Basis-Schema
 
@@ -180,16 +221,24 @@ normalen Migrationen. Bestehende Datenbanken sind davon nicht betroffen.
 Erzeugt wird die Datei mit `scripts/basis-schema/erzeugen.sh`. Neu erzeugen muss man
 sie nur selten, denn neue Migrationen laufen auf der Basis ganz normal.
 
+**PostgreSQL** hat eine eigene Basis (`db/postgresql/basis`, erzeugt mit
+`scripts/basis-schema/postgres_erzeugen.sh`) und eine eigene Migrationslinie
+(`db/postgresql/migration`). Jede neue Migration gibt es deshalb **zweimal mit derselben
+Nummer**, einmal pro Datenbank. Fehlt ein Zwilling, scheitert der Build
+(`PostgresMigrationslinieTest`). Übersetzungshilfe: `db/postgresql/migration/README.md`.
+
 ## Der Starttest in GitHub
 
 `.github/workflows/docker-image.yml` läuft nach jedem grünen Push auf `main`. Es
 veröffentlicht nur, wenn `starttest.sh` grün ist. Dabei richtet das aktuelle `:stable`
 (also der Kundenstand) eine leere Datenbank ein, darauf startet die neue Version, und
 `/actuator/health` muss 200 liefern. Neue Migrationen laufen dabei einmal echt durch,
-auch solche mit kleinerer Nummer (out-of-order). Lokal geht es genauso:
+auch solche mit kleinerer Nummer (out-of-order). Das passiert zweimal: auf PostgreSQL
+und auf MySQL. Lokal geht es genauso:
 
 ```bash
-deployment/docker-server/starttest.sh <neues-image> [<image-der-kunden>]
+STARTTEST_DB=postgres deployment/docker-server/starttest.sh <neues-image> [<image-der-kunden>]
+STARTTEST_DB=mysql    deployment/docker-server/starttest.sh <neues-image> [<image-der-kunden>]
 ```
 
 Grenze: Die Testdatenbank enthält nur Stammdaten. Migrationen, die nur an echten Daten
@@ -200,10 +249,11 @@ dann mit Rollback.
 
 | Datei | Zweck |
 | --- | --- |
-| `docker-compose.yml` | mysql, app, updater, alle mit `restart: always` |
+| `docker-compose.yml` | postgres oder mysql (Profil), app, updater, alle mit `restart: always` |
+| `postgres-init/` | Legt beim ersten Start die App-Rolle in PostgreSQL an (ohne Superuser-Rechte) |
 | `.env.example` | Vorlage für `.env`. Die `.env` wird beim Einrichten erzeugt und nie committet |
 | `Einrichten.cmd`, `einrichten-windows.ps1` | Einrichtung auf einem Windows-PC |
-| `einrichten.sh` | Einrichtung auf einem Linux-Server, optional mit `--import` |
+| `einrichten.sh` | Einrichtung auf einem Linux-Server, optional mit `--mysql` und `--import` |
 | `nachtupdate.sh` | Nachtupdate, Rollback, Wiederaufnahme nach Neustart, Import |
 | `updater/` | Image des Updater-Containers (Zeitplan per crond) |
 | `starttest.sh` | Starttest für die GitHub Action |

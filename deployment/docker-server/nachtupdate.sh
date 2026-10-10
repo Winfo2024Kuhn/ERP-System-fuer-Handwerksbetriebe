@@ -37,8 +37,9 @@
 #   3  Voraussetzung fehlt (Einrichtung, Docker, .env ...)
 # =============================================================================
 
-# SC2016: Die $MYSQL_*-Variablen in den sh -c '...'-Aufrufen sollen bewusst erst
-#         IM MySQL-Container aufgeloest werden - das Passwort verlaesst ihn nie.
+# SC2016: Die $MYSQL_*/$POSTGRES_*-Variablen in den sh -c '...'-Aufrufen sollen
+#         bewusst erst IM Datenbank-Container aufgeloest werden - das Passwort
+#         verlaesst ihn nie.
 # SC2012: ls -t sortiert nur unsere eigenen Sicherungsdateien (ohne Leerzeichen).
 # shellcheck disable=SC2016,SC2012
 
@@ -139,6 +140,10 @@ zahl_pruefen() {  # zahl_pruefen <Name> <Wert> <Minimum>
         exit 3
     fi
 }
+# Welche Datenbank laeuft - gleichzeitig der Name ihres Compose-Dienstes.
+# Geprueft wird weiter unten (dann mit Handy-Nachricht).
+DATENBANK="$(env_wert COMPOSE_PROFILES)"
+
 zahl_pruefen HEALTH_WARTEZEIT_SEKUNDEN "$WARTEZEIT" 30
 zahl_pruefen SICHERUNGEN_BEHALTEN "$SICHERUNGEN_BEHALTEN" 1
 zahl_pruefen APP_PORT "$APP_PORT" 1
@@ -311,22 +316,58 @@ laufende_image_id() {
     [[ -n "$container" ]] && docker inspect -f '{{.Image}}' "$container"
 }
 
-# Komplette Sicherung der Datenbank. Das Passwort bleibt im MySQL-Container
-# (dort liegt es schon als Umgebungsvariable) und taucht in keiner
-# Prozessliste auf.
+# Schreibt die komplette Datenbank als SQL auf stdout. Das Passwort bleibt im
+# Datenbank-Container (dort liegt es schon als Umgebungsvariable) und taucht
+# in keiner Prozessliste auf. PostgreSQL: lokale Verbindung im Container;
+# haelt jemand eine Sperre, gibt pg_dump nach 2 Minuten auf statt ewig zu
+# warten (sonst haengt das Nachtupdate still mit ausgeschaltetem ERP).
+datenbank_ausgeben() {
+    if [[ "$DATENBANK" == "postgres" ]]; then
+        # Die App ist an dieser Stelle gestoppt. Eine Verbindung, die beim harten
+        # Entfernen ihres Containers "idle in transaction" haengen blieb, haelt
+        # aber evtl. noch Sperren - trennen, sonst wartet pg_dump vergeblich.
+        "${COMPOSE[@]}" exec -T postgres sh -c \
+            'exec psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()"' \
+            >/dev/null || true
+        "${COMPOSE[@]}" exec -T postgres sh -c \
+            'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --lock-wait-timeout=120s'
+    else
+        "${COMPOSE[@]}" exec -T mysql sh -c \
+            'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --quick --routines --triggers --events --hex-blob --no-tablespaces --set-gtid-purged=OFF --default-character-set=utf8mb4 "$MYSQL_DATABASE"'
+    fi
+}
+
+# Beide Werkzeuge schreiben zum Schluss eine feste Abschlusszeile (pg_dump
+# danach evtl. noch "\unrestrict ..."). Fehlt sie, ist die Sicherung
+# abgeschnitten und taugt nicht fuer einen Rollback.
+sicherung_vollstaendig() {
+    local abschluss="Dump completed"
+    [[ "$DATENBANK" == "postgres" ]] && abschluss="PostgreSQL database dump complete"
+    gzip -cd "$1" | tail -n 5 | grep -q "$abschluss"
+}
+
+# Passt eine Sicherung zur laufenden Datenbank? Ein MySQL-Dump laesst sich
+# nicht in PostgreSQL einspielen und umgekehrt.
+sicherung_passt() {
+    local kopf
+    kopf="$(gzip -cd "$1" 2>/dev/null | head -c 4096 | tr -d '\0' || true)"
+    if [[ "$DATENBANK" == "postgres" ]]; then
+        [[ "$kopf" == *"PostgreSQL database dump"* ]]
+    else
+        [[ "$kopf" != *"PostgreSQL database dump"* ]]
+    fi
+}
+
+# Komplette Sicherung der Datenbank.
 # sicherung_erstellen [Praefix]
 sicherung_erstellen() {
     local ziel="$SICHERUNGS_DIR/${1:-vor-update}-$ZEITSTEMPEL.sql.gz"
     local unfertig="$ziel.unfertig"
-    if ! "${COMPOSE[@]}" exec -T mysql sh -c \
-        'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --quick --routines --triggers --events --hex-blob --no-tablespaces --set-gtid-purged=OFF --default-character-set=utf8mb4 "$MYSQL_DATABASE"' \
-        | gzip > "$unfertig"; then
+    if ! datenbank_ausgeben | gzip > "$unfertig"; then
         rm -f "$unfertig"
         return 1
     fi
-    # mysqldump schreibt als letzte Zeile "-- Dump completed ..." - fehlt sie,
-    # ist die Sicherung abgeschnitten und taugt nicht fuer einen Rollback.
-    if ! gzip -cd "$unfertig" | tail -n 1 | grep -q "Dump completed"; then
+    if ! sicherung_vollstaendig "$unfertig"; then
         log "Sicherung ist unvollstaendig."
         rm -f "$unfertig"
         return 1
@@ -337,9 +378,8 @@ sicherung_erstellen() {
 }
 
 # Setzt die Datenbank komplett auf den Stand der Sicherung zurueck.
-# Leeren + neu anlegen ist noetig, weil MySQL DDL nicht in Transaktionen
-# kapselt: eine halb gelaufene Migration hinterlaesst neue Tabellen/Spalten
-# und einen Fehleintrag in flyway_schema_history.
+# Leeren + neu anlegen ist noetig: eine halb gelaufene Migration hinterlaesst
+# neue Tabellen/Spalten und einen Fehleintrag in flyway_schema_history.
 datenbank_zuruecksetzen() {
     # Erst pruefen, ob die Sicherung lesbar ist - sonst wuerde das DROP eine
     # leere Datenbank hinterlassen.
@@ -347,6 +387,40 @@ datenbank_zuruecksetzen() {
         log "Sicherung fehlt oder ist beschaedigt: $1 - Datenbank bleibt unangetastet."
         return 1
     fi
+    if ! sicherung_passt "$1"; then
+        log "Sicherung $1 stammt nicht aus $DATENBANK - Datenbank bleibt unangetastet."
+        return 1
+    fi
+    # Die App darf nicht mehr laufen: Sie wuerde sonst in die zurueckgespielte
+    # Datenbank weiterschreiben (bzw. bei PostgreSQL das Leeren blockieren).
+    if [[ -n "$(app_container)" ]]; then
+        app_anhalten || true
+        if [[ -n "$(app_container)" ]]; then
+            log "App laesst sich nicht anhalten - Datenbank bleibt unangetastet."
+            return 1
+        fi
+    fi
+    if [[ "$DATENBANK" == "postgres" ]]; then
+        # PostgreSQL kapselt auch DDL in Transaktionen: Leeren und Einspielen
+        # in EINER Transaktion - scheitert etwas, bleibt alles wie es war.
+        # - Andere Verbindungen (z. B. ein vergessenes psql) werden getrennt,
+        #   und keine Sperre darf ewig warten - sonst haengt das Nachtupdate
+        #   mit ausgeschaltetem ERP, ohne je eine Nachricht zu schicken.
+        # - Eingespielt wird als App-Rolle (SET ROLE): Tabellen muessen ihr
+        #   gehoeren, sonst scheitern ihre spaeteren Migrationen.
+        { printf '%s\n' \
+            "SET lock_timeout = '120s';" \
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();" \
+            'SET ROLE :"rolle";' \
+            'DROP SCHEMA public CASCADE;' \
+            'CREATE SCHEMA public;'
+          gzip -cd "$1"; } \
+            | "${COMPOSE[@]}" exec -T postgres sh -c \
+                'exec psql --single-transaction -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v rolle="$ERP_DB_USER"' \
+                >/dev/null || return 1
+        return 0
+    fi
+    # MySQL kapselt DDL nicht in Transaktionen - also erst leeren, dann einspielen
     "${COMPOSE[@]}" exec -T mysql sh -c \
         'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot -e "DROP DATABASE IF EXISTS \`$MYSQL_DATABASE\`; CREATE DATABASE \`$MYSQL_DATABASE\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"' \
         || return 1
@@ -499,7 +573,7 @@ unterbrochenes_update_beenden() {
     ALT_VERSION="$(image_version "$ALT_ID")"
     NEU_VERSION="$(image_version "$NEU_ID")"
     log "=== Unterbrochenes Update gefunden (Schritt: $PHASE) - wird zu Ende gebracht ==="
-    "${COMPOSE[@]}" up -d --no-recreate --wait mysql || true
+    "${COMPOSE[@]}" up -d --no-recreate --wait "$DATENBANK" || true
     case "$PHASE" in
         gestoppt|import-vorbereitung)
             # Datenbank noch unveraendert - einfach die alte Version wieder starten
@@ -594,6 +668,13 @@ if [[ -z "$ERP_IMAGE" ]]; then
     log "FEHLER: ERP_IMAGE ist in .env nicht gesetzt."
     exit 3
 fi
+if [[ "$DATENBANK" != "postgres" && "$DATENBANK" != "mysql" ]]; then
+    log "FEHLER: COMPOSE_PROFILES=$DATENBANK in .env ist ungueltig (postgres oder mysql erwartet). Nichts veraendert."
+    # Sonst hoerten die Nachtupdates still auf (z. B. .env aus einer alten Einrichtung)
+    benachrichtigen hoch "ERP-Update nicht moeglich - $KUNDE_NAME" \
+        "In der .env fehlt COMPOSE_PROFILES (postgres oder mysql) - bitte mit .env.example abgleichen. Das ERP laeuft unveraendert weiter."
+    exit 3
+fi
 
 # --- Offener NOTFALL? Dann nichts anfassen, nur erinnern ---
 if [[ -f "$NOTFALL_DATEI" ]]; then
@@ -626,6 +707,10 @@ if [[ "$MODUS" == "importieren" ]]; then
     fi
     if ! gzip -t "$IMPORT_DATEI" 2>/dev/null; then
         log "FEHLER: $(basename "$IMPORT_DATEI") ist keine lesbare Sicherung - es wurde nichts veraendert."
+        exit 3
+    fi
+    if ! sicherung_passt "$IMPORT_DATEI"; then
+        log "FEHLER: $(basename "$IMPORT_DATEI") passt nicht zu dieser Installation ($DATENBANK) - es wurde nichts veraendert."
         exit 3
     fi
     log "=== Datenbank-Import: $(basename "$IMPORT_DATEI") ==="

@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.domain;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -76,6 +78,7 @@ public class KassenbuchMonatsabschluss {
     @Column(name = "chain_index")
     private Long chainIndex;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "entry_hash", columnDefinition = "CHAR(64)")
     private String entryHash;
 

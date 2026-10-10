@@ -135,10 +135,10 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
 
         /** Alle Jahre, in denen Projekte angelegt wurden – für den Jahresfilter der Projektsuche. */
         @Query("""
-                        SELECT DISTINCT function('YEAR', p.anlegedatum)
+                        SELECT DISTINCT YEAR(p.anlegedatum)
                         FROM Projekt p
                         WHERE p.anlegedatum IS NOT NULL
-                        ORDER BY function('YEAR', p.anlegedatum) DESC
+                        ORDER BY YEAR(p.anlegedatum) DESC
                         """)
         List<Integer> findDistinctAnlegedatumJahre();
 

@@ -9,6 +9,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.ColumnDefault;
 
 @Entity
 @Table(name = "anfrage")
@@ -59,7 +60,8 @@ public class Anfrage {
     @JoinColumn(name = "projekt_id")
     private Projekt projekt;
 
-    @Column(nullable = false, columnDefinition = "DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6)")
+    @ColumnDefault("CURRENT_TIMESTAMP(6)")
+    @Column(nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private boolean abgeschlossen = false;

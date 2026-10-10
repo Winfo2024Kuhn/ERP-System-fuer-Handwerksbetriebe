@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.domain;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -31,6 +33,7 @@ public class AuditChainState {
     @Column(name = "last_chain_index", nullable = false)
     private Long lastChainIndex;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "last_entry_hash", columnDefinition = "CHAR(64)")
     private String lastEntryHash;
 

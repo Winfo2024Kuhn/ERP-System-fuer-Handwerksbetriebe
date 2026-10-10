@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "email_signature")
@@ -16,8 +18,8 @@ public class EmailSignature {
     @Column(nullable = false, length = 200)
     private String name;
 
-    @Lob
-    @Column(name = "html", nullable = false, columnDefinition = "longtext")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "html", nullable = false)
     private String html;
 
     @Transient

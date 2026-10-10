@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 
@@ -11,9 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -34,21 +35,26 @@ class FlywayStartSetupConfigTest {
     private static final Path BASIS = Path.of("src", "main", "resources", "db", "basis", "V1__basis_schema.sql");
     private static final Path MIGRATIONEN = Path.of("src", "main", "resources", "db", "migration");
 
+    /** Datenbank, deren JDBC-Metadaten {@code anzahl} Tabellen melden. */
+    static DataSource dataSourceMitTabellen(long anzahl) throws SQLException {
+        DataSource dataSource = Mockito.mock(DataSource.class);
+        Connection verbindung = Mockito.mock(Connection.class);
+        DatabaseMetaData metadaten = Mockito.mock(DatabaseMetaData.class);
+        ResultSet tabellen = Mockito.mock(ResultSet.class);
+        given(dataSource.getConnection()).willReturn(verbindung);
+        given(verbindung.getMetaData()).willReturn(metadaten);
+        given(verbindung.getCatalog()).willReturn("kalkulationsprogramm_db");
+        given(metadaten.getTables(any(), any(), anyString(), any())).willReturn(tabellen);
+        given(tabellen.next()).willReturn(anzahl > 0);
+        return dataSource;
+    }
+
     @Nested
     @DisplayName("istLeer")
     class IstLeer {
 
         private DataSource dataSourceMitTabellen(long anzahl) throws SQLException {
-            DataSource dataSource = Mockito.mock(DataSource.class);
-            Connection verbindung = Mockito.mock(Connection.class);
-            Statement abfrage = Mockito.mock(Statement.class);
-            ResultSet ergebnis = Mockito.mock(ResultSet.class);
-            given(dataSource.getConnection()).willReturn(verbindung);
-            given(verbindung.createStatement()).willReturn(abfrage);
-            given(abfrage.executeQuery(anyString())).willReturn(ergebnis);
-            given(ergebnis.next()).willReturn(true);
-            given(ergebnis.getLong(1)).willReturn(anzahl);
-            return dataSource;
+            return FlywayStartSetupConfigTest.dataSourceMitTabellen(anzahl);
         }
 
         @Test
@@ -80,15 +86,7 @@ class FlywayStartSetupConfigTest {
         @Test
         @DisplayName("Bestehende Datenbank: nur normales migrate(), keine Basis")
         void bestehendeDatenbankNurMigrate() throws SQLException {
-            DataSource dataSource = Mockito.mock(DataSource.class);
-            Connection verbindung = Mockito.mock(Connection.class);
-            Statement abfrage = Mockito.mock(Statement.class);
-            ResultSet ergebnis = Mockito.mock(ResultSet.class);
-            given(dataSource.getConnection()).willReturn(verbindung);
-            given(verbindung.createStatement()).willReturn(abfrage);
-            given(abfrage.executeQuery(anyString())).willReturn(ergebnis);
-            given(ergebnis.next()).willReturn(true);
-            given(ergebnis.getLong(1)).willReturn(139L);
+            DataSource dataSource = dataSourceMitTabellen(139);
 
             Flyway flyway = Mockito.mock(Flyway.class);
             Configuration konfiguration = Mockito.mock(Configuration.class);
@@ -108,7 +106,7 @@ class FlywayStartSetupConfigTest {
     class BasisSchema {
 
         /** Segmente durch Punkte getrennt: possessiv und trotzdem treffend (ReDoS-sicher). */
-        private static final Pattern EMAIL = Pattern.compile(
+        static final Pattern EMAIL = Pattern.compile(
                 "[A-Za-z0-9._%+-]++@[A-Za-z0-9-]++(?:\\.[A-Za-z0-9-]++)++");
 
         /** version, script, checksum aus den INSERTs in flyway_schema_history */
@@ -155,7 +153,7 @@ class FlywayStartSetupConfigTest {
         }
 
         /** Nachbau von Flyways ChecksumCalculator (CRC32 ueber Zeilen ohne Umbruch, BOM entfernt). */
-        private int flywayChecksumme(Path datei) throws IOException {
+        static int flywayChecksumme(Path datei) throws IOException {
             CRC32 crc = new CRC32();
             try (BufferedReader leser = Files.newBufferedReader(datei, StandardCharsets.UTF_8)) {
                 String zeile = leser.readLine();

@@ -6,8 +6,11 @@
 #   Linux:    sudo ./einrichten.sh
 # Danach genuegt jederzeit:   docker compose up -d
 #
-#   mysql    Datenbank. Eine leere Datenbank richtet die App beim ersten Start
-#            selbst ein (Basis-Schema + Stammdaten).
+#   postgres Datenbank fuer Kunden-Installationen (Standard)
+#   mysql    Datenbank des eigenen Servers (Einrichtung mit --mysql)
+#            Welche laeuft, steht in .env: COMPOSE_PROFILES=postgres bzw. mysql.
+#            Eine leere Datenbank richtet die App beim ersten Start selbst ein
+#            (Basis-Schema + Stammdaten).
 #   app      Das ERP. Kommt als fertiges Image aus der GitHub Container Registry.
 #   updater  Spielt jede Nacht um 3 Uhr neue Versionen ein - mit Sicherung,
 #            Health-Check und automatischem Rollback (nachtupdate.sh).
@@ -26,14 +29,49 @@ name: erp-handwerk
 
 services:
 
+  postgres:
+    image: postgres:16
+    profiles: [postgres]
+    container_name: erp-postgres
+    environment:
+      POSTGRES_DB: kalkulationsprogramm_db
+      # Superuser nur fuer Wartung, Sicherung und Rueckspielen (Nachtupdate).
+      # Das ERP selbst verbindet sich mit einer eigenen Rolle ohne Superuser-
+      # Rechte (postgres-init/01-app-rolle.sh legt sie beim ersten Start an).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD fehlt in .env - zuerst einrichten}
+      ERP_DB_USER: ${DB_USER:-erp_user}
+      ERP_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD fehlt in .env - zuerst einrichten}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8
+      TZ: Europe/Berlin
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    # Verbindungen eines abgestuerzten/entfernten App-Containers nicht stundenlang
+    # mit offenen Sperren stehen lassen (TCP merkt das sonst erst nach ~2 h).
+    command: >
+      postgres
+      -c tcp_keepalives_idle=60
+      -c idle_in_transaction_session_timeout=10min
+    # Kein Port nach aussen: nur die App spricht mit der Datenbank.
+    # Fuer Wartung: docker compose exec postgres psql -U postgres kalkulationsprogramm_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: always
+
   mysql:
     image: mysql:8.0
+    profiles: [mysql]
     container_name: erp-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD fehlt in .env - zuerst einrichten}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-kalkulationsprogramm_db}
-      MYSQL_USER: ${MYSQL_USER:-erp_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD fehlt in .env - zuerst einrichten}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD fehlt in .env - zuerst einrichten}
+      MYSQL_DATABASE: kalkulationsprogramm_db
+      MYSQL_USER: ${DB_USER:-erp_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD fehlt in .env - zuerst einrichten}
     volumes:
       - mysql_data:/var/lib/mysql
     command: >
@@ -58,10 +96,12 @@ services:
     ports:
       - "${APP_PORT:-8080}:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: docker
-      APP_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-kalkulationsprogramm_db}?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC
-      APP_DB_USER: ${MYSQL_USER:-erp_user}
-      APP_DB_PASS: ${MYSQL_PASSWORD}
+      # "docker,postgres" bzw. "docker,mysql": das Profil "postgres" stellt
+      # Treiber und Migrationslinie um (application-postgres.properties).
+      # Die Datenbank-Adresse kommt aus dem Profil (Dienst postgres bzw. mysql).
+      SPRING_PROFILES_ACTIVE: docker,${COMPOSE_PROFILES:?COMPOSE_PROFILES fehlt in .env - zuerst einrichten}
+      APP_DB_USER: ${DB_USER:-erp_user}
+      APP_DB_PASS: ${DB_PASSWORD}
       APP_ADMIN_USER: ${APP_ADMIN_USER:-}
       APP_ADMIN_PASS: ${APP_ADMIN_PASS:-}
       ZEITERFASSUNG_URL: ${ZEITERFASSUNG_URL:-http://localhost:8080}
@@ -71,9 +111,14 @@ services:
     volumes:
       - app_uploads:/app/uploads
       - app_logs:/app/logs
+    # Nur eine der beiden Datenbanken laeuft (Profil) - die andere ist optional
     depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
       mysql:
         condition: service_healthy
+        required: false
     restart: always
 
   updater:
@@ -98,6 +143,7 @@ services:
     restart: always
 
 volumes:
+  postgres_data:
   mysql_data:
   app_uploads:
   app_logs:

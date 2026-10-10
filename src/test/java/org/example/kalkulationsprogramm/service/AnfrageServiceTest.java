@@ -14,6 +14,8 @@ import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -43,7 +45,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
-                mock(DokumentFreigabeService.class));
+                mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> {
             Anfrage a = invocation.getArgument(0);
@@ -86,7 +89,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
-                mock(DokumentFreigabeService.class));
+                mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
         Anfrage anfrage = new Anfrage();
         anfrage.setId(5L);
@@ -121,7 +125,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
-                mock(DokumentFreigabeService.class));
+                mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
         Projekt projekt = new Projekt();
         projekt.setId(9L);
@@ -160,7 +165,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
-                mock(DokumentFreigabeService.class));
+                mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
         when(anfrageRepository.findById(999L)).thenReturn(Optional.empty());
 
@@ -183,7 +189,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
-                mock(DokumentFreigabeService.class));
+                mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
         Anfrage a1 = new Anfrage();
         a1.setId(1L);
@@ -221,7 +228,8 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
-                mock(DokumentFreigabeService.class));
+                mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
 
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(kundeRepository.findById(anyLong())).thenReturn(java.util.Optional.empty());
@@ -255,7 +263,7 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
-                dokumentFreigabeService);
+                dokumentFreigabeService, new TransactionTemplate(mock(PlatformTransactionManager.class)));
     }
 
     private Anfrage anfrageMit(long id, LocalDateTime createdAt) {
@@ -476,5 +484,79 @@ class AnfrageServiceTest {
         DokumentFreigabe freigabe = new DokumentFreigabe();
         freigabe.setStatus(status);
         return freigabe;
+    }
+
+    /**
+     * Ein Kunde, der noch an anderen Daten haengt (Lieferantenrechnung, Kalender
+     * ...), darf das Loeschen der Anfrage nicht mitreissen: Anfrage in einer
+     * Transaktion (committet), Kunde in einer zweiten (zurueckgerollt).
+     */
+    @Test
+    void loeschenMitKunde_kundeNochVerwendet_anfrageTrotzdemGeloescht() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageDokumentRepository anfrageDokumentRepository = mock(AnfrageDokumentRepository.class);
+        KundeRepository kundeRepository = mock(KundeRepository.class);
+        org.example.kalkulationsprogramm.repository.EmailRepository emailRepository =
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class);
+        org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository =
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class);
+        org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository ausgangsRepository =
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class);
+        PlatformTransactionManager transaktionen = mock(PlatformTransactionManager.class);
+        AnfrageService service = new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
+                anfrageDokumentRepository, kundeRepository, emailRepository, projektRepository, ausgangsRepository,
+                null, mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DokumentFreigabeService.class),
+                new TransactionTemplate(transaktionen));
+
+        Kunde kunde = new Kunde();
+        kunde.setId(7L);
+        kunde.setName("Max Mustermann");
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(42L);
+        anfrage.setKunde(kunde);
+        when(anfrageRepository.findById(42L)).thenReturn(Optional.of(anfrage));
+        when(kundeRepository.findById(7L)).thenReturn(Optional.of(kunde));
+        // Kunde haengt noch an einer Lieferantenrechnung o.ae.
+        doThrow(new org.springframework.dao.DataIntegrityViolationException("fk_kunde"))
+                .when(kundeRepository).flush();
+
+        AnfrageService.LoeschResult ergebnis = service.loescheMitPruefung(42L, true);
+
+        assertThat(ergebnis.ok()).isTrue();
+        assertThat(ergebnis.kundeMitgeloescht()).isFalse();
+        verify(anfrageRepository).delete(anfrage);
+        // Zwei getrennte Transaktionen: die Anfrage committet, der Kunde zurueckgerollt
+        verify(transaktionen, times(2)).getTransaction(any());
+        verify(transaktionen, times(1)).commit(any());
+        verify(transaktionen, times(1)).rollback(any());
+    }
+
+    @Test
+    void loeschenMitKunde_kundeVerwaist_wirdMitgeloescht() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        KundeRepository kundeRepository = mock(KundeRepository.class);
+        AnfrageService service = new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
+                mock(AnfrageDokumentRepository.class), kundeRepository,
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
+
+        Kunde kunde = new Kunde();
+        kunde.setId(7L);
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(42L);
+        anfrage.setKunde(kunde);
+        when(anfrageRepository.findById(42L)).thenReturn(Optional.of(anfrage));
+        when(kundeRepository.findById(7L)).thenReturn(Optional.of(kunde));
+
+        AnfrageService.LoeschResult ergebnis = service.loescheMitPruefung(42L, true);
+
+        assertThat(ergebnis.ok()).isTrue();
+        assertThat(ergebnis.kundeMitgeloescht()).isTrue();
+        verify(kundeRepository).delete(kunde);
     }
 }

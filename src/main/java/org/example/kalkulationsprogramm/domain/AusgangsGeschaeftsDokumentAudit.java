@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.domain;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -115,16 +117,19 @@ public class AusgangsGeschaeftsDokumentAudit {
     private boolean digitalAngenommen;
 
     /** SHA-256-Hash des HTML-Inhalts; erkennt nachträgliche Manipulation am Dokument-Body. */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "inhalt_hash", columnDefinition = "CHAR(64)")
     private String inhaltHash;
 
     // ============== Hash-Kette ==============
 
     /** entry_hash des vorherigen Eintrags (NULL beim ersten Eintrag der Kette). */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "previous_hash", columnDefinition = "CHAR(64)")
     private String previousHash;
 
     /** SHA-256 über die kanonische Repräsentation dieses Eintrags + previousHash. */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "entry_hash", columnDefinition = "CHAR(64)")
     private String entryHash;
 

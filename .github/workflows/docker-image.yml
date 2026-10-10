@@ -81,8 +81,10 @@ jobs:
       # hoch, den die Kunden gerade haben (= aktuelles :stable richtet eine leere
       # Datenbank ein), inklusive der neuen Migrationen? Kaputte Migrationen oder
       # Startfehler fallen hier auf - und nicht erst nachts bei jedem Kunden.
+      # Beide Datenbanken: Kunden laufen auf PostgreSQL, der eigene Server auf
+      # MySQL - ein Image fuer alle.
       # Details: deployment/docker-server/starttest.sh
-      - name: Starttest (Upgrade vom aktuellen Kundenstand)
+      - name: Starttest (Upgrade vom aktuellen Kundenstand, PostgreSQL + MySQL)
         shell: bash
         run: |
           set -euo pipefail
@@ -97,10 +99,12 @@ jobs:
             echo "::error::Kundenstand $basis nicht ladbar: $ausgabe"
             exit 1
           fi
-          if ! deployment/docker-server/starttest.sh erp-starttest:latest ${basis:+"$basis"}; then
-            echo "::error::Image faehrt nicht sauber hoch - wird NICHT veroeffentlicht."
-            exit 1
-          fi
+          for datenbank in postgres mysql; do
+            if ! STARTTEST_DB="$datenbank" deployment/docker-server/starttest.sh erp-starttest:latest ${basis:+"$basis"}; then
+              echo "::error::Image faehrt auf $datenbank nicht sauber hoch - wird NICHT veroeffentlicht."
+              exit 1
+            fi
+          done
 
       - name: Image veroeffentlichen
         shell: bash
