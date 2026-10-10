@@ -12,6 +12,8 @@ const basis = {
     isRead: true, attachments: [], projektAuftragsnummer: null,
 };
 
+const LANGER_PROJEKTNAME = 'Garagentor und Vordach mit Edelstahlgeländer Familie Mustermann, Musterstraße 12';
+
 const EMAILS = [
     {
         ...basis, id: 801, subject: 'Re: Garagentor', isRead: false,
@@ -26,7 +28,7 @@ const EMAILS = [
         body: 'Anbei das Aufmaß.', htmlBody: '<p>Anbei das Aufmaß.</p>',
         sentAt: '2026-10-08T08:15:00',
         zuordnungTyp: 'PROJEKT', projektId: 41, projektAuftragsnummer: '2026-041',
-        projektName: 'Garagentor und Vordach mit Edelstahlgeländer Familie Mustermann, Musterstraße 12',
+        projektName: LANGER_PROJEKTNAME,
     },
     {
         ...basis, id: 803, subject: 'Lieferschein 4711',
@@ -82,7 +84,7 @@ test('Liste zeigt die Zuordnung als Link statt als Enum-Text', async ({ page }, 
     // Langer Projektname wird im Chip gekürzt, steht aber vollständig im Tooltip.
     const projekt = page.getByRole('link', { name: /^Projekt 2026-041 · Garagentor und Vordach/ });
     await expect(projekt).toHaveAttribute('href', '/projekte?projektId=41');
-    await expect(projekt).toHaveAttribute('title', `Projekt 2026-041 · ${EMAILS[1].projektName} öffnen`);
+    await expect(projekt).toHaveAttribute('title', `Projekt 2026-041 · ${LANGER_PROJEKTNAME} öffnen`);
     expect((await projekt.boundingBox())!.width).toBeLessThanOrEqual(16 * 16 + 1);
 
     // Steuerberater: Klartext, kein Link.
