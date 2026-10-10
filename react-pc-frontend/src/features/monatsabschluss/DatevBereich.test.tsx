@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { DatevBereich } from './DatevBereich';
 import type { Konfiguration, AuswahlStand } from './types';
@@ -8,21 +9,18 @@ const ids: AuswahlStand[] = [{ mitarbeiterId: 1, jahr: 2026, monat: 8, version: 
 const exportIds = ids.map(({ mitarbeiterId, jahr, monat, version }) => ({ mitarbeiterId, jahr, monat, version }));
 const mitarbeiter = [{ id: 1, name: 'Max Mustermann' }, { id: 2, name: 'Erika Mustermann' }];
 const kategorien = ['ARBEIT', 'FEIERTAG', 'URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'ZEITAUSGLEICH', 'KRANKENGELD', 'WIEDEREINGLIEDERUNG'];
-let config: Konfiguration; let requests: { url: string; body: unknown }[]; let exclusions: boolean; let saveConflict: boolean; let exportConflict: boolean;
+let config: Konfiguration; let requests: { url: string; method: string; body: unknown }[]; let exclusions: boolean; let exportConflict: boolean;
 const fetchMock = vi.fn();
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-const view = (auswahl = ids) => <DatevBereich auswahl={auswahl} mitarbeiter={mitarbeiter} />;
+const view = (auswahl = ids, darfEinrichten = true) => <MemoryRouter><DatevBereich auswahl={auswahl} mitarbeiter={mitarbeiter} darfEinrichten={darfEinrichten} /></MemoryRouter>;
 async function openExport() { fireEvent.click(screen.getByRole('button', { name: 'Für DATEV exportieren' })); const button = await screen.findByRole('button', { name: 'Vorprüfung starten' }); await waitFor(() => expect(button).toBeEnabled()); return button; }
 async function check() { fireEvent.click(await openExport()); await screen.findByText('Die Vorprüfung ist erfolgreich.'); }
 beforeEach(() => {
- vi.clearAllMocks(); requests = []; exclusions = true; saveConflict = false; exportConflict = false;
- config = { version: 2, ziel: 'LODAS', beraterNr: '001234', mandantenNr: '0012', zuordnungen: kategorien.map(kategorie => ({ kategorie, ausgeschlossen: kategorie !== 'ARBEIT', lohnart: kategorie === 'ARBEIT' ? '0200' : '' })), personalnummern: [{ mitarbeiterId: 1, personalnummer: '00014' }, { mitarbeiterId: 2, personalnummer: '00015' }] };
+ vi.clearAllMocks(); requests = []; exclusions = true; exportConflict = false;
+ config = { version: 2, ziel: 'LODAS', beraterNr: '001234', mandantenNr: '0012', stundenart: 'SOLL', zuordnungen: kategorien.map(kategorie => ({ kategorie, ausgeschlossen: kategorie !== 'ARBEIT', lohnart: kategorie === 'ARBEIT' ? '0200' : '' })), personalnummern: [{ mitarbeiterId: 1, personalnummer: '00014', stundenart: null }, { mitarbeiterId: 2, personalnummer: '00015', stundenart: null }] };
  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-  const body = init?.body ? JSON.parse(String(init.body)) : undefined; requests.push({ url, body });
-  if (url.endsWith('/konfiguration')) {
-   if (init?.method === 'PUT') { if (saveConflict) return response({ message: 'Einstellungen wurden geändert. Bitte neu laden.' }, 409); config = { ...body, version: 3 }; }
-   return response(config);
-  }
+  const body = init?.body ? JSON.parse(String(init.body)) : undefined; requests.push({ url, method: init?.method ?? 'GET', body });
+  if (url.endsWith('/datev/konfiguration')) return response(config);
   if (url.endsWith('/vorpruefung')) return response({ gueltig: true, fehler: [], ausschluesse: exclusions ? [{ referenz: ids[0], kategorie: 'KORREKTUR', stunden: 1.5, meldung: 'Zeitkontokorrekturen werden nicht ausgezahlt.' }] : [], auswahl: body.auswahl, konfigurationVersion: body.konfigurationVersion });
   if (url.endsWith('/export')) return exportConflict ? response({ message: 'Der Monatsstand wurde wieder geöffnet.' }, 409) : new Response('3;01/08/2026;120,50;01;200;14;\r\n', { headers: { 'Content-Disposition': 'attachment; filename="lodas-2026-08.txt"' } });
   throw new Error(url);
@@ -30,19 +28,76 @@ beforeEach(() => {
  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:datev-test'), revokeObjectURL: vi.fn() }));
  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 });
-it('lädt erst bei Bedarf und speichert Nummern mit führenden Nullen ohne zusätzliche Exportauswahl', async () => {
- render(view()); expect(requests).toHaveLength(0); fireEvent.click(screen.getByRole('button', { name: 'DATEV einrichten' }));
- const adviser = await screen.findByRole('textbox', { name: 'Beraternummer' }); expect(adviser).toHaveValue('001234'); fireEvent.focus(adviser); expect(adviser).toHaveValue('001234');
- fireEvent.change(screen.getByRole('textbox', { name: 'Personalnummer für Erika Mustermann' }), { target: { value: '00016' } });
- fireEvent.click(screen.getByRole('button', { name: 'Einstellungen speichern' })); await waitFor(() => expect(config.personalnummern[1].personalnummer).toBe('00016'));
- expect(config.beraterNr).toBe('001234'); expect(config.zuordnungen[0].lohnart).toBe('0200'); expect(requests.filter(r => r.url.endsWith('/export'))).toHaveLength(0);
+it('führt Admins über „DATEV einrichten“ in die Einstellungen statt ein Formular aufzuklappen', () => {
+ render(view());
+ const link = screen.getByRole('link', { name: 'DATEV einrichten' });
+ expect(link).toHaveAttribute('href', '/einstellungen#zeiterfassung');
+ fireEvent.click(link);
+ expect(screen.queryByRole('textbox', { name: 'Beraternummer' })).not.toBeInTheDocument();
+ expect(screen.queryByText('DATEV richtet ein Admin unter Einstellungen → Zeiterfassung ein.')).not.toBeInTheDocument();
+ expect(requests).toHaveLength(0);
 });
-it('kann unvollständige Einstellungen speichern und lehnt ungültige oder doppelte Nummern ab', async () => {
- config = { version: 0, ziel: 'LODAS', beraterNr: '', mandantenNr: '', zuordnungen: [], personalnummern: [] }; render(view()); fireEvent.click(screen.getByRole('button', { name: 'DATEV einrichten' })); await screen.findByRole('textbox', { name: 'Beraternummer' });
- fireEvent.click(screen.getByRole('button', { name: 'Einstellungen speichern' })); await waitFor(() => expect(requests.some(r => r.body && r.url.endsWith('/konfiguration'))).toBe(true)); const before = requests.length;
- fireEvent.change(screen.getByRole('textbox', { name: 'Beraternummer' }), { target: { value: '12,5' } }); fireEvent.click(screen.getByRole('button', { name: 'Einstellungen speichern' })); expect(requests).toHaveLength(before); expect(toast.error).toHaveBeenCalled();
- fireEvent.change(screen.getByRole('textbox', { name: 'Beraternummer' }), { target: { value: '' } });
- fireEvent.change(screen.getByRole('textbox', { name: 'Personalnummer für Max Mustermann' }), { target: { value: '00014' } }); fireEvent.change(screen.getByRole('textbox', { name: 'Personalnummer für Erika Mustermann' }), { target: { value: '14' } }); fireEvent.click(screen.getByRole('button', { name: 'Einstellungen speichern' })); expect(requests).toHaveLength(before); await screen.findByText(/mehrfach vergeben/);
+it('zeigt Nicht-Admins statt des Knopfs, wer DATEV einrichtet – exportieren geht trotzdem', async () => {
+ exclusions = false; render(view(ids, false));
+ expect(screen.queryByRole('link', { name: 'DATEV einrichten' })).not.toBeInTheDocument();
+ expect(screen.queryByRole('button', { name: 'DATEV einrichten' })).not.toBeInTheDocument();
+ expect(screen.getByText('DATEV richtet ein Admin unter Einstellungen → Zeiterfassung ein.')).toBeVisible();
+ await check(); fireEvent.click(screen.getByRole('button', { name: 'Datei herunterladen' }));
+ await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Datei heruntergeladen – bitte im Steuerbüro importieren.'));
+});
+it('liest die Einstellungen nur noch und schreibt nie auf die alte Monatsabschluss-Adresse', async () => {
+ exclusions = false; render(view()); await check();
+ expect(requests.filter(r => r.url.endsWith('/datev/konfiguration')).map(r => r.method)).toEqual(['GET']);
+ expect(requests.some(r => r.method === 'PUT')).toBe(false);
+ expect(screen.getByText('Als „Arbeit“ gehen die Soll-Stunden (laut Arbeitszeitkonto) ans Steuerbüro.')).toBeVisible();
+});
+it('nennt abweichende Stunden einzelner Mitarbeiter im Export-Dialog', async () => {
+ config = { ...config, stundenart: 'IST', personalnummern: [{ mitarbeiterId: 1, personalnummer: '00014', stundenart: 'SOLL' }] };
+ render(view()); await openExport();
+ expect(screen.getByText('Als „Arbeit“ gehen die Ist-Stunden (tatsächlich gearbeitet) ans Steuerbüro – bei einzelnen Mitarbeitern abweichend.')).toBeVisible();
+});
+it('weist bei fehlender Berater- oder Mandantennummer auf die Einstellungen hin und sperrt die Vorprüfung', async () => {
+ config = { ...config, beraterNr: '', mandantenNr: null };
+ const page = render(view()); fireEvent.click(screen.getByRole('button', { name: 'Für DATEV exportieren' }));
+ const dialog = await screen.findByRole('dialog', { name: 'DATEV-Export prüfen' });
+ expect(await within(dialog).findByText(/Beraternummer und Mandantennummer fehlen noch/)).toBeVisible();
+ expect(within(dialog).getByRole('link', { name: 'Jetzt in den Einstellungen eintragen' })).toHaveAttribute('href', '/einstellungen#zeiterfassung');
+ expect(within(dialog).getByRole('button', { name: 'Vorprüfung starten' })).toBeDisabled();
+ expect(requests.some(r => r.url.endsWith('/vorpruefung'))).toBe(false);
+ page.unmount(); render(view(ids, false)); fireEvent.click(screen.getByRole('button', { name: 'Für DATEV exportieren' }));
+ const ohneRecht = await screen.findByRole('dialog', { name: 'DATEV-Export prüfen' });
+ await within(ohneRecht).findByText(/Beraternummer und Mandantennummer fehlen noch/);
+ expect(within(ohneRecht).queryByRole('link')).not.toBeInTheDocument();
+ expect(within(ohneRecht).getByText('DATEV richtet ein Admin unter Einstellungen → Zeiterfassung ein.')).toBeVisible();
+});
+it('lädt die Einstellungen bei jedem Öffnen neu und prüft gegen die aktuelle Version', async () => {
+ exclusions = false; render(view()); await check();
+ fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+ config = { ...config, version: 5 };
+ fireEvent.click(await openExport());
+ await screen.findByText('Die Vorprüfung ist erfolgreich.');
+ expect(requests.filter(r => r.url.endsWith('/datev/konfiguration'))).toHaveLength(2);
+ expect(requests.filter(r => r.url.endsWith('/vorpruefung')).map(r => (r.body as { konfigurationVersion: number }).konfigurationVersion)).toEqual([2, 5]);
+});
+it('erklärt per Info-Knopf, was „Für DATEV exportieren“ tut und dass nichts automatisch verschickt wird', () => {
+ render(view(ids, false));
+ fireEvent.click(screen.getByRole('button', { name: 'Mehr zu: Für DATEV exportieren' }));
+ const info = screen.getByRole('dialog', { name: 'Für DATEV exportieren' });
+ expect(within(info).getByText(/Danach laden Sie eine LODAS-Textdatei herunter/)).toBeVisible();
+ expect(within(info).getByText(/Es wird nichts automatisch verschickt/)).toBeVisible();
+ expect(requests).toHaveLength(0);
+});
+it('zeigt Arbeitsstunden ohne Soll als Ausschluss, der bestätigt werden muss', async () => {
+ const normal = fetchMock.getMockImplementation()!;
+ fetchMock.mockImplementation((url: string, init?: RequestInit) => url.endsWith('/vorpruefung') ? response({ gueltig: true, fehler: [], ausschluesse: [{ referenz: ids[0], kategorie: 'ARBEIT', stunden: 12, meldung: 'Kein Soll hinterlegt – bitte den Mitarbeiter auf Ist-Stunden stellen.' }], auswahl: exportIds, konfigurationVersion: 2 }) : normal(url, init));
+ render(view()); fireEvent.click(await openExport());
+ const dialog = await screen.findByRole('dialog', { name: 'DATEV-Export prüfen' });
+ expect(await within(dialog).findByText('Kein Soll hinterlegt – bitte den Mitarbeiter auf Ist-Stunden stellen.')).toBeVisible();
+ expect(within(dialog).getByText(/Max Mustermann · 08\/2026 · Arbeit/)).toBeVisible();
+ expect(within(dialog).getByText('12,00 h')).toBeVisible();
+ expect(screen.getByRole('button', { name: 'Datei herunterladen' })).toBeDisabled();
+ fireEvent.click(screen.getByRole('checkbox', { name: /ausgeschlossenen Stunden/ }));
+ expect(screen.getByRole('button', { name: 'Datei herunterladen' })).toBeEnabled();
 });
 it('prüft nur explizite Stände, zeigt ausgeschlossene Stunden und verlangt deren Bestätigung', async () => {
  render(view()); await check(); const dialog = screen.getByRole('dialog', { name: 'DATEV-Export prüfen' }); expect(within(dialog).getByText('Max Mustermann')).toBeVisible(); expect(within(dialog).queryByText('Erika Mustermann')).not.toBeInTheDocument(); expect(within(dialog).getByText('1,50 h')).toBeVisible(); expect(within(dialog).getAllByText(/08\/2026/)).toHaveLength(2);
@@ -66,9 +121,6 @@ it('verwirft eine verspätete Vorprüfung nach Auswahlwechsel', async () => {
 it('erteilt nach Downloadkonflikt keine automatische neue Freigabe', async () => {
  exclusions = false; exportConflict = true; render(view()); await check(); fireEvent.click(screen.getByRole('button', { name: 'Datei herunterladen' })); await waitFor(() => expect(toast.error).toHaveBeenCalled()); expect(screen.getByRole('button', { name: 'Datei herunterladen' })).toBeDisabled(); expect(URL.createObjectURL).not.toHaveBeenCalled(); expect(requests.filter(r => r.url.endsWith('/vorpruefung'))).toHaveLength(1);
 });
-it('zeigt beim Speicherkonflikt den Entwurf und lädt neue Einstellungen nur ausdrücklich', async () => {
- saveConflict = true; render(view()); fireEvent.click(screen.getByRole('button', { name: 'DATEV einrichten' })); const input = await screen.findByRole('textbox', { name: 'Mandantennummer' }); fireEvent.change(input, { target: { value: '00021' } }); fireEvent.click(screen.getByRole('button', { name: 'Einstellungen speichern' })); await waitFor(() => expect(toast.error).toHaveBeenCalled()); expect(input).toHaveValue('00021'); expect(requests.filter(r => r.body === undefined)).toHaveLength(1);
-});
 it('weist mehrere Monate und fehlende Versionsstände ohne stille Teilmenge zurück', () => {
  const page = render(view([ids[0], { ...ids[0], monat: 7 }])); expect(screen.getByRole('button', { name: 'Für DATEV exportieren' })).toBeDisabled(); expect(screen.getByText(/einen Monat/)).toBeVisible(); page.rerender(view([{ ...ids[0], version: null }])); expect(screen.getByRole('button', { name: 'Für DATEV exportieren' })).toBeDisabled();
 });
@@ -85,11 +137,6 @@ it('verwirft einen verspäteten Download nach Schließen des Dialogs', async () 
  fetchMock.mockImplementation((url: string, init?: RequestInit) => url.endsWith('/export') ? new Promise(resolve => { finish = resolve; }) : normal(url, init));
  render(view()); await check(); fireEvent.click(screen.getByRole('button', { name: 'Datei herunterladen' })); fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
  await act(async () => finish(new Response('test', { headers: { 'Content-Disposition': 'attachment; filename="lodas-2026-08.txt"' } }))); expect(URL.createObjectURL).not.toHaveBeenCalled(); expect(toast.success).not.toHaveBeenCalled();
-});
-it('verlangt nach Änderung der Einstellungen erst Speichern und eine neue Prüfung', async () => {
- exclusions = false; render(view()); fireEvent.click(screen.getByRole('button', { name: 'DATEV einrichten' })); await screen.findByRole('textbox', { name: 'Beraternummer' }); await check();
- fireEvent.keyDown(document.activeElement!, { key: 'Escape' }); fireEvent.change(screen.getByRole('textbox', { name: 'Mandantennummer' }), { target: { value: '00021' } });
- fireEvent.click(screen.getByRole('button', { name: 'Für DATEV exportieren' })); expect(screen.getByRole('button', { name: 'Vorprüfung starten' })).toBeDisabled(); expect(screen.getByRole('button', { name: 'Datei herunterladen' })).toBeDisabled(); expect(screen.getByText(/zuerst die geänderten/)).toBeVisible();
 });
 
 it('sperrt offene Salden mit echter Version und akzeptiert dieselbe Version erst nach Abschluss', () => {

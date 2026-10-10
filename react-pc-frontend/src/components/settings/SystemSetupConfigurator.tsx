@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, Check, FolderOpen, Mail, Phone, Shield, Smartphone } from 'lucide-react';
+import { Brain, Check, Clock, FolderOpen, Mail, Phone, Shield } from 'lucide-react';
 import { EmailSettingsSection } from './sections/EmailSettingsSection';
 import { DateiOrdnerSection } from './sections/DateiOrdnerSection';
 import { KiSettingsSection } from './sections/KiSettingsSection';
@@ -33,7 +33,7 @@ const TABS: TabDefinition[] = [
     { id: 'email', label: 'E-Mail', icon: <Mail className="w-4 h-4" /> },
     { id: 'dateien', label: 'Dateien', icon: <FolderOpen className="w-4 h-4" /> },
     { id: 'ki', label: 'KI-Funktionen', icon: <Brain className="w-4 h-4" /> },
-    { id: 'zeiterfassung', label: 'Zeiterfassung', icon: <Smartphone className="w-4 h-4" /> },
+    { id: 'zeiterfassung', label: 'Zeiterfassung', icon: <Clock className="w-4 h-4" /> },
     { id: 'telefon', label: 'Telefon', icon: <Phone className="w-4 h-4" /> },
     { id: 'berechtigungen', label: 'Berechtigungen', icon: <Shield className="w-4 h-4" /> },
 ];
@@ -212,7 +212,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 {activeTab === 'email' && <EmailSettingsSection onSaved={handleSaved} />}
                 {activeTab === 'dateien' && <DateiOrdnerSection onSaved={handleSaved} />}
                 {activeTab === 'ki' && <KiSettingsSection onSaved={handleSaved} />}
-                {activeTab === 'zeiterfassung' && <ZeiterfassungSection />}
+                {activeTab === 'zeiterfassung' && <ZeiterfassungSection onSaved={handleSaved} />}
                 {activeTab === 'telefon' && <TelefonSettingsSection onSaved={handleSaved} />}
                 {activeTab === 'berechtigungen' && <BerechtigungenSection />}
             </div>

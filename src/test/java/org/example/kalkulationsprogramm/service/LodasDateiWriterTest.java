@@ -8,7 +8,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 
 class LodasDateiWriterTest {
- final Konfiguration config = new Konfiguration(0L,"LODAS","1234","123",List.of(),List.of());
+ final Konfiguration config = new Konfiguration(0L,"LODAS","1234","123","SOLL",List.of(),List.of());
  @Test void goldenBytesMitCrLfOhneBomUndNumerischerSortierung() throws Exception {
   var writer=new LodasDateiWriter();
   byte[] result=writer.schreiben(config,2026,1,List.of(

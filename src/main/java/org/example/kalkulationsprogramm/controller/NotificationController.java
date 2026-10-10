@@ -79,6 +79,7 @@ public class NotificationController {
         private final org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService telefonBerechtigungService;
         private final org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService telefonBenachrichtigungService;
         private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
+        private final org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService zeiterfassungEinstellungService;
 
         @GetMapping("/summary")
         public NotificationSummaryDto getSummary(@RequestParam(required = false) Long mitarbeiterId,
@@ -653,7 +654,9 @@ public class NotificationController {
 
                 // Only the authenticated session decides who receives closure reminders.
                 if (monatsabschlussBerechtigungService.darfMonatAbschliessen(authentication)) {
-                        var offeneMonate = monatsSaldoRepository.findOffeneAbschlussMonate(heute.withDayOfMonth(1));
+                        // Months before the business started time tracking never need closing.
+                        var offeneMonate = monatsSaldoRepository.findOffeneAbschlussMonate(heute.withDayOfMonth(1),
+                                        zeiterfassungEinstellungService.ersterAbschlussMonat());
                         if (!offeneMonate.isEmpty()) {
                                 var erster = offeneMonate.getFirst();
                                 categories.add(new CategoryDto("MONATSABSCHLUSS", "Monate abschließen",

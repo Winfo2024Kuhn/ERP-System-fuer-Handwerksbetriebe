@@ -11,7 +11,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 class MonatsSaldoRepositoryErweiterungImpl implements MonatsSaldoRepositoryErweiterung {
 
-    /** One set query, including months without cache; technical migration dates are never anchors. */
+    /**
+     * One set query, including months without cache; technical migration dates are never anchors.
+     * {@code :abMonat} lifts every employee's first month to the start of time tracking.
+     */
     static final String OFFENE_MONATE_MYSQL = """
             WITH RECURSIVE ereignisse AS (
                 SELECT mitarbeiter_id, DATE(start_zeit) AS datum FROM zeitbuchung
@@ -23,7 +26,7 @@ class MonatsSaldoRepositoryErweiterungImpl implements MonatsSaldoRepositoryErwei
                 UNION SELECT id, eintrittsdatum FROM mitarbeiter WHERE eintrittsdatum IS NOT NULL
                 UNION SELECT mitarbeiter_id, gueltig_von FROM zeitkonto_version WHERE gueltig_von > '1000-01-01'
             ), grenzen AS (
-                SELECT mitarbeiter_id, MIN(datum) AS von FROM anker GROUP BY mitarbeiter_id
+                SELECT mitarbeiter_id, CAST(GREATEST(MIN(datum), :abMonat) AS DATE) AS von FROM anker WHERE datum IS NOT NULL GROUP BY mitarbeiter_id
             ), letzte_daten AS (
                 SELECT mitarbeiter_id, MAX(datum) AS bis FROM ereignisse GROUP BY mitarbeiter_id
             ), monate (tag) AS (
@@ -68,7 +71,7 @@ class MonatsSaldoRepositoryErweiterungImpl implements MonatsSaldoRepositoryErwei
                 UNION SELECT id, eintrittsdatum FROM mitarbeiter WHERE eintrittsdatum IS NOT NULL
                 UNION SELECT mitarbeiter_id, gueltig_von FROM zeitkonto_version WHERE gueltig_von > DATE '1000-01-01'
             ), grenzen AS (
-                SELECT mitarbeiter_id, MIN(datum) AS von FROM anker GROUP BY mitarbeiter_id
+                SELECT mitarbeiter_id, CAST(GREATEST(MIN(datum), :abMonat) AS DATE) AS von FROM anker WHERE datum IS NOT NULL GROUP BY mitarbeiter_id
             ), letzte_daten AS (
                 SELECT mitarbeiter_id, MAX(datum) AS bis FROM ereignisse GROUP BY mitarbeiter_id
             ), monate (tag) AS (
@@ -101,14 +104,19 @@ class MonatsSaldoRepositoryErweiterungImpl implements MonatsSaldoRepositoryErwei
             GROUP BY k.tag ORDER BY k.tag
             """;
 
+    /** Below every real anchor and still a valid DATE in MySQL and PostgreSQL. */
+    private static final LocalDate OHNE_GRENZE = LocalDate.of(1000, 1, 1);
+
     private final EntityManager entityManager;
 
     @Override
     @SuppressWarnings("unchecked")
-    public List<MonatsSaldoRepository.OffenerMonat> findOffeneAbschlussMonate(LocalDate aktuellerMonat) {
+    public List<MonatsSaldoRepository.OffenerMonat> findOffeneAbschlussMonate(LocalDate aktuellerMonat, LocalDate abMonat) {
         List<Object[]> zeilen = entityManager
                 .createNativeQuery(DatenbankArt.istPostgres(entityManager) ? OFFENE_MONATE_POSTGRES : OFFENE_MONATE_MYSQL)
                 .setParameter("aktuellerMonat", aktuellerMonat)
+                // A real date instead of NULL: PostgreSQL cannot infer the type of a bare NULL inside GREATEST.
+                .setParameter("abMonat", abMonat != null ? abMonat.withDayOfMonth(1) : OHNE_GRENZE)
                 .getResultList();
         return zeilen.stream()
                 .<MonatsSaldoRepository.OffenerMonat>map(zeile -> new OffenerMonatZeile(

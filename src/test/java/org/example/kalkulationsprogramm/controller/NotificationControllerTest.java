@@ -73,6 +73,7 @@ class NotificationControllerTest {
     @Mock org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService telefonBerechtigungService;
     @Mock org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService telefonBenachrichtigungService;
     @Mock org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
+    @Mock org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService zeiterfassungEinstellungService;
 
     @InjectMocks
     private NotificationController controller;
@@ -83,12 +84,27 @@ class NotificationControllerTest {
         given(monatsabschlussBerechtigungService.darfMonatAbschliessen(auth)).willReturn(true);
         var month = org.mockito.Mockito.mock(org.example.kalkulationsprogramm.repository.MonatsSaldoRepository.OffenerMonat.class);
         given(month.getJahr()).willReturn(2026); given(month.getMonat()).willReturn(8); given(month.getAnzahl()).willReturn(3);
-        given(monatsSaldoRepository.findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1))).willReturn(List.of(month));
+        given(monatsSaldoRepository.findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1), null)).willReturn(List.of(month));
         var summary = controller.getSummary(999L, auth);
         assertThat(summary.categories()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).singleElement()
                 .satisfies(c -> { assertThat(c.count()).isEqualTo(3); assertThat(c.link()).isEqualTo("/monatsabschluss?jahr=2026&monat=8"); });
         assertThat(summary.recentItems()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).hasSize(1);
-        org.mockito.Mockito.verify(monatsSaldoRepository).findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1));
+        org.mockito.Mockito.verify(monatsSaldoRepository).findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1), null);
+    }
+
+    @Test
+    @DisplayName("Monatsabschluss: Monate vor dem Start der Zeiterfassung werden nicht verlangt")
+    void abschlussHinweisErstAbStartDerZeiterfassung() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        var start = java.time.LocalDate.of(2025, 3, 1);
+        given(monatsabschlussBerechtigungService.darfMonatAbschliessen(auth)).willReturn(true);
+        given(zeiterfassungEinstellungService.ersterAbschlussMonat()).willReturn(start);
+        given(monatsSaldoRepository.findOffeneAbschlussMonate(any(), any())).willReturn(List.of());
+
+        var summary = controller.getSummary(999L, auth);
+
+        org.mockito.Mockito.verify(monatsSaldoRepository).findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1), start);
+        assertThat(summary.categories()).noneMatch(c -> c.type().equals("MONATSABSCHLUSS"));
     }
 
     @Test

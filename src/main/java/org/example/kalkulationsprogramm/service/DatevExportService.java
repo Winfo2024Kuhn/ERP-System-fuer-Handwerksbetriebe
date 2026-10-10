@@ -59,7 +59,8 @@ public class DatevExportService {
     zip.finish();return new Datei("lodas-"+stand.monate().firstKey()+"-bis-"+stand.monate().lastKey()+".zip","application/zip",bytes.toByteArray());
    } catch(IOException ex) { throw new IllegalStateException("DATEV-Datei konnte nicht erzeugt werden",ex); }
   });
-  log.info("DATEV-Export erzeugt: monate={} staende={}",request.auswahl().stream().map(s->YearMonth.of(s.jahr(),s.monat())).distinct().count(),request.auswahl().size());
+  // The configuration version changes with every setup change (incl. SOLL/IST), so the log shows which setup produced the file.
+  log.info("DATEV-Export erzeugt: monate={} staende={} konfigurationVersion={}",request.auswahl().stream().map(s->YearMonth.of(s.jahr(),s.monat())).distinct().count(),request.auswahl().size(),request.konfigurationVersion());
   return result;
  }
  private <T>T inTransaktion(Function<TransactionStatus,T> action) {
@@ -77,15 +78,17 @@ public class DatevExportService {
   Set<Long> ids=new HashSet<>();Set<Integer> periods=new HashSet<>();
   request.auswahl().forEach(s->{ids.add(s.mitarbeiterId());periods.add(s.jahr()*100+s.monat());});
   var nummern=repo.personalnummern(ids);Map<Long,String> personal=new HashMap<>();Set<Integer> vergeben=new HashSet<>();
+  Map<Long,String> stundenarten=new HashMap<>();
   for(var n:nummern) {
    personal.put(n.getMitarbeiterId(),n.getPersonalnummer());
+   if(n.getStundenart()!=null) stundenarten.put(n.getMitarbeiterId(),n.getStundenart());
    if(nummerGueltig(n.getPersonalnummer(),1,5) && !vergeben.add(Integer.parseInt(n.getPersonalnummer())))
     hinweis(fehler,null,"PERSONALNUMMER",null,"Eine Personalnummer ist mehrfach vergeben (auch mit führenden Nullen).");
   }
   List<Zuordnung> zuordnungen;
   try { zuordnungen=JSON.readValue(configEntity.getZuordnungenJson(),new TypeReference<List<Zuordnung>>(){}); }
   catch(JsonProcessingException ex) { throw new IllegalStateException("Gespeicherte DATEV-Zuordnung ist ungültig",ex); }
-  var config=new Konfiguration(configEntity.getVersion(),configEntity.getZiel(),configEntity.getBeraterNr(),configEntity.getMandantenNr(),zuordnungen,List.of());
+  var config=new Konfiguration(configEntity.getVersion(),configEntity.getZiel(),configEntity.getBeraterNr(),configEntity.getMandantenNr(),configEntity.getStundenart(),zuordnungen,List.of());
   if(!"LODAS".equals(config.ziel()) || !nummerGueltig(config.beraterNr(),4,7) || !nummerGueltig(config.mandantenNr(),1,5))
    hinweis(fehler,null,"KONFIGURATION",null,"LODAS, eine gültige Beraternummer (4–7 Ziffern) und Mandantennummer (1–5 Ziffern) einrichten.");
   Map<String,Zuordnung> mapping=new HashMap<>();
@@ -110,7 +113,23 @@ public class DatevExportService {
    String pnr=personal.get(ref.mitarbeiterId());
    if(!nummerGueltig(pnr,1,5)) hinweis(fehler,ref,"PERSONALNUMMER",null,"Eine gültige Personalnummer mit 1–5 Ziffern fehlt.");
    var rows=monate.computeIfAbsent(YearMonth.of(ref.jahr(),ref.monat()),ignored->new ArrayList<>());
-   var werte=new LinkedHashMap<String,BigDecimal>();werte.put("ARBEIT",s.getIstStunden());werte.put("FEIERTAG",s.getFeiertagsStunden());
+   // IST books the hours actually worked. SOLL books the contractual month minus holidays and absences
+   // (each credited at the daily target); those go out under their own wage types, so nothing counts twice.
+   boolean soll="SOLL".equals(stundenarten.getOrDefault(ref.mitarbeiterId(),config.stundenart()));
+   BigDecimal arbeit=s.getIstStunden();
+   if(soll) {
+    arbeit=s.getSollStunden().subtract(s.getFeiertagsStunden()).subtract(s.getAbwesenheitsStunden());
+    if(arbeit.signum()<0) {
+     hinweis(fehler,ref,"ARBEIT",arbeit,s.getSollStunden().signum()==0
+      ?"Kein Soll hinterlegt, aber Feiertage oder Abwesenheiten. Für diesen Mitarbeiter in den Einstellungen Ist-Stunden wählen."
+      :"Feiertage und Abwesenheiten sind höher als das Soll. Bitte die Abwesenheiten dieses Monats im Kalender prüfen.");
+     arbeit=BigDecimal.ZERO;
+    }
+   }
+   var werte=new LinkedHashMap<String,BigDecimal>();werte.put("ARBEIT",arbeit);werte.put("FEIERTAG",s.getFeiertagsStunden());
+   // Without contractual hours SOLL books nothing; the worked hours must not vanish unnoticed.
+   if(soll&&s.getSollStunden()!=null&&s.getSollStunden().signum()==0&&s.getIstStunden()!=null&&s.getIstStunden().signum()>0)
+    hinweis(ausgeschlossen,ref,"ARBEIT",s.getIstStunden(),"Kein Soll hinterlegt – die gearbeiteten Stunden gehen nicht an das Steuerbüro. Für diesen Mitarbeiter in den Einstellungen Ist-Stunden wählen.");
    var details=Arrays.asList(s.getUrlaubStunden(),s.getKrankheitStunden(),s.getFortbildungStunden(),s.getZeitausgleichStunden(),s.getKrankengeldStunden(),s.getWiedereingliederungStunden());
    if(details.stream().anyMatch(Objects::isNull)) {
     boolean alleAus=ABWESENHEIT.stream().allMatch(k->mapping.containsKey(k)&&mapping.get(k).ausgeschlossen());

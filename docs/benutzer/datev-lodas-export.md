@@ -4,7 +4,14 @@ Der Export erstellt eine TXT-Datei mit Stundenbuchungen für **DATEV LODAS**. Er
 
 ## Einmal mit dem Steuerbüro einrichten
 
-Unter „Monatsabschluss → DATEV einrichten“ die Beraternummer (4–7 Ziffern), Mandantennummer (1–5 Ziffern) und vorhandenen DATEV-Personalnummern (1–5 Ziffern) eintragen. Nummern müssen größer als 0 sein; führende Nullen sind bei der Eingabe erlaubt. Personalnummern müssen auch ohne führende Nullen eindeutig sein.
+Unter **Einstellungen → Zeiterfassung** (nur für Admins; der Knopf „DATEV einrichten“ im Monatsabschluss führt dorthin) die Beraternummer (4–7 Ziffern), Mandantennummer (1–5 Ziffern) und vorhandenen DATEV-Personalnummern (1–5 Ziffern) eintragen. Nummern müssen größer als 0 sein; führende Nullen sind bei der Eingabe erlaubt. Personalnummern müssen auch ohne führende Nullen eindeutig sein. Wer das Recht zum Monatsabschluss hat, kann exportieren, die Einrichtung aber nicht ändern.
+
+**Soll- oder Ist-Stunden:** Für den ganzen Betrieb festlegen, welche Stunden als „Arbeit“ übergeben werden. Für einzelne Mitarbeiter mit Personalnummer lässt sich davon abweichen (z. B. Festgehalt = Soll, Stundenlohn = Ist).
+- **Soll:** Monats-Soll laut Arbeitszeitkonto minus Feiertage und Abwesenheiten (Urlaub, Krankheit, Fortbildung usw., jeweils mit dem Tages-Soll angerechnet) ergibt die Stunden für „Arbeit“. Feiertage und Abwesenheiten gehen mit ihrer eigenen Lohnart raus; zusammen ergibt das genau das Soll, nichts wird doppelt gezählt. Ist eine Abwesenheitsart auf „Nicht exportieren“ gestellt, fehlen deren Stunden in der Datei (die Vorprüfung zeigt sie als ausgelassen).
+- **Ist:** die tatsächlich gestempelten Stunden ohne Pausen.
+- Hat ein Soll-Mitarbeiter kein Soll hinterlegt, zeigt die Vorprüfung seine gearbeiteten Stunden als ausgelassen – solche Mitarbeiter auf Ist stellen. Sind Feiertage und Abwesenheiten höher als das Soll, blockiert die Vorprüfung den Export.
+
+Neue Installationen beginnen mit Soll; war DATEV vor dieser Einstellung schon eingerichtet, bleibt es bei Ist, bis jemand umstellt.
 
 Für **jede** Stundenkategorie eine mit dem Steuerbüro abgestimmte, in LODAS eingerichtete Lohnart (1–4 Ziffern) wählen oder ausdrücklich „Nicht exportieren“ einstellen. Das betrifft Arbeit, Feiertag, Urlaub, Krankheit, Fortbildung, Zeitausgleich, Krankengeld und Wiedereingliederung. Die Schnittstelle bucht ausschließlich **Stunden mit Bearbeitungsschlüssel 01**. Kategorien, die das Steuerbüro als Tage, Beträge oder Fehlzeiten benötigt, deshalb ausschließen und gesondert bearbeiten. Keine Lohnart wird automatisch als betrieblicher Standard angenommen.
 

@@ -11,4 +11,6 @@ public class DatevPersonalnummer {
  @Id private Long mitarbeiterId;
  @Column(nullable = false, length = 5) private String personalnummer;
  @Column(nullable = false, length = 5) private String normalisiert;
+ /** SOLL or IST for this employee; null follows {@link DatevKonfiguration#getStundenart()}. */
+ @Column(length = 4) private String stundenart;
 }

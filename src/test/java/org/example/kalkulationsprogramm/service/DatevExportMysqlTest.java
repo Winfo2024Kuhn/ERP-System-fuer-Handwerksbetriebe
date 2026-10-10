@@ -51,7 +51,7 @@ class DatevExportMysqlTest {
   String mapping=new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(DatevKonfigurationService.KATEGORIEN.stream().map(k->new Zuordnung(k,!k.equals("ARBEIT"),k.equals("ARBEIT")?"200":"")).toList());
   request=tx.execute(status->{
    var m=new Mitarbeiter();m.setVorname("Max");m.setNachname("Mustermann");em.persist(m);
-   var c=new DatevKonfiguration();c.setBeraterNr("1234");c.setMandantenNr("123");c.setZuordnungenJson(mapping);em.persist(c);
+   var c=new DatevKonfiguration();c.setBeraterNr("1234");c.setMandantenNr("123");c.setStundenart("IST");c.setZuordnungenJson(mapping);em.persist(c);
    var n=new DatevPersonalnummer();n.setMitarbeiterId(m.getId());n.setPersonalnummer("14");n.setNormalisiert("14");em.persist(n);
    var s=new MonatsSaldo();s.setMitarbeiter(m);s.setJahr(2026);s.setMonat(1);s.setFestgeschrieben(true);s.setIstStunden(new BigDecimal("100"));em.persist(s);em.flush();saldoId=s.getId();
    return new ExportRequest(List.of(new Stand(m.getId(),2026,1,s.getVersion())),c.getVersion());
@@ -78,7 +78,7 @@ class DatevExportMysqlTest {
     tx.executeWithoutResult(status->{
      if(change.equals("PERSONALNUMMER")) {
       var c=before;
-      configurations.speichern(new Konfiguration(c.version(),c.ziel(),c.beraterNr(),c.mandantenNr(),c.zuordnungen(),List.of(new Personalnummer(request.auswahl().getFirst().mitarbeiterId(),"15"))),null);
+      configurations.speichern(new Konfiguration(c.version(),c.ziel(),c.beraterNr(),c.mandantenNr(),c.stundenart(),c.zuordnungen(),List.of(new Personalnummer(request.auswahl().getFirst().mitarbeiterId(),"15",null))));
      } else if(change.equals("KONFIGURATION")) em.find(DatevKonfiguration.class,1L).setMandantenNr("999");
      else em.find(MonatsSaldo.class,saldoId).setFestgeschrieben(false);
     });

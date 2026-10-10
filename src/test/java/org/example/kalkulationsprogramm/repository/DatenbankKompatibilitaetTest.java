@@ -436,11 +436,16 @@ class DatenbankKompatibilitaetTest {
             em.persist(version);
         });
 
-        var offen = monatsSalden.findOffeneAbschlussMonate(YearMonth.now().atDay(1));
+        var offen = monatsSalden.findOffeneAbschlussMonate(YearMonth.now().atDay(1), null);
 
         assertThat(offen).extracting(m -> YearMonth.of(m.getJahr(), m.getMonat()))
                 .containsExactly(start, start.plusMonths(1), start.plusMonths(2));
         assertThat(offen).allSatisfy(m -> assertThat(m.getAnzahl()).isEqualTo(1));
+
+        // Zeiterfassung erst mitten im zweiten Monat eingefuehrt: davor muss nichts abgeschlossen werden
+        var abStart = monatsSalden.findOffeneAbschlussMonate(YearMonth.now().atDay(1), start.plusMonths(1).atDay(20));
+        assertThat(abStart).extracting(m -> YearMonth.of(m.getJahr(), m.getMonat()))
+                .containsExactly(start.plusMonths(1), start.plusMonths(2));
     }
 
     @Test

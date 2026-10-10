@@ -37,6 +37,7 @@ import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
+import org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService;
 import org.junit.jupiter.api.BeforeEach;
@@ -87,6 +88,7 @@ class NotificationSichtbarkeitTest {
     @MockBean private EmailAbsenderRepository postfachRepository;
     @MockBean private EmailPostfachZuordnungRepository zuordnungRepository;
     @MockBean private FrontendUserProfileService frontendUserProfileService;
+    @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
 
     @BeforeEach
     void daten() {

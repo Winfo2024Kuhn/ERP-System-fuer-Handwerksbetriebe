@@ -6,6 +6,7 @@ const { toast, confirm } = vi.hoisted(() => ({ toast: { error: vi.fn(), success:
 vi.mock('../components/ui/toast', () => ({ useToast: () => toast }));
 vi.mock('../components/ui/confirm-dialog', () => ({ useConfirm: () => confirm }));
 vi.mock('react-chartjs-2', () => ({ Line: () => <div data-testid="line-chart" /> }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ isAdmin: true }) }));
 const fetchMock = vi.fn();
 const kennzahlen = { istStunden: 120.5, sollStunden: 160, abwesenheitsStunden: 16, feiertagsStunden: 8, korrekturStunden: 1, gesamtIst: 145.5, differenz: -14.5, urlaubStunden: 8, krankheitStunden: 6, zeitausgleichStunden: 2, sonstigeAbwesenheitStunden: 0 };
 let sonstige = 0;

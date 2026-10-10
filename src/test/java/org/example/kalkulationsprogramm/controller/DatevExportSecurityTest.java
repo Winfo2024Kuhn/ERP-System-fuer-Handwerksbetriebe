@@ -59,7 +59,8 @@ class DatevExportSecurityTest {
  }
  @Test void downloadNurMitNoStoreUndServerDateiname() throws Exception {
   var auth=principal();when(tm.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
-  var config=new DatevKonfiguration();config.setBeraterNr("1234");config.setMandantenNr("1");
+  // Worked hours (IST): this test is about the download, SOLL selection is covered in DatevExportServiceTest.
+  var config=new DatevKonfiguration();config.setBeraterNr("1234");config.setMandantenNr("1");config.setStundenart("IST");
   config.setZuordnungenJson(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(DatevKonfigurationService.KATEGORIEN.stream().map(k->new Zuordnung(k,!k.equals("ARBEIT"),k.equals("ARBEIT")?"200":"")).toList()));
   when(repo.konfiguration()).thenReturn(config);
   var s=new MonatsSaldo();var m=new Mitarbeiter();m.setId(1L);s.setMitarbeiter(m);s.setJahr(2026);s.setMonat(1);s.setVersion(0L);s.setFestgeschrieben(true);s.setIstStunden(java.math.BigDecimal.ONE);

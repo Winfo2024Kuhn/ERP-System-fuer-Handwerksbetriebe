@@ -152,13 +152,13 @@ class MonatsabschlussMysqlTest {
         employee(from.atDay(1), "MENSCH");
         var system = employee(from.atDay(1), "SYSTEM"); version(system, from.atDay(1), null);
         var current = employee(YearMonth.now().atDay(1), "MENSCH"); version(current, YearMonth.now().atDay(1), null);
-        var result = salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1));
+        var result = salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1), null);
         assertThat(result).hasSize(2); assertThat(result).allSatisfy(r -> assertThat(r.getAnzahl()).isEqualTo(1));
         assertThat(result.getFirst().getMonat()).isEqualTo(from.getMonthValue());
         service.abschliessen(person.getId(), from.getYear(), from.getMonthValue(), null);
-        assertThat(salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1))).hasSize(1);
+        assertThat(salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1), null)).hasSize(1);
         service.saveMonatsSaldoCache(fallback, month.getYear(), month.getMonthValue(), cache("5"));
-        assertThat(salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1))).hasSize(2);
+        assertThat(salden.findOffeneAbschlussMonate(YearMonth.now().atDay(1), null)).hasSize(2);
     }
     long employee(LocalDate entry, String art) {
         return tx.execute(status -> {

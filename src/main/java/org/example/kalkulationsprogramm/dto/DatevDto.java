@@ -8,8 +8,10 @@ public final class DatevDto {
  public record Referenz(Long mitarbeiterId, int jahr, int monat) {}
  public record Stand(Long mitarbeiterId, int jahr, int monat, Long version) {}
  public record Zuordnung(String kategorie, boolean ausgeschlossen, String lohnart) {}
- public record Personalnummer(Long mitarbeiterId, String personalnummer) {}
- public record Konfiguration(Long version, String ziel, String beraterNr, String mandantenNr,
+ /** stundenart: SOLL, IST or null (= wie der Betrieb). */
+ public record Personalnummer(Long mitarbeiterId, String personalnummer, String stundenart) {}
+ /** stundenart: SOLL or IST, the company default for the hours booked as ARBEIT. */
+ public record Konfiguration(Long version, String ziel, String beraterNr, String mandantenNr, String stundenart,
      List<Zuordnung> zuordnungen, List<Personalnummer> personalnummern) {}
  public record ExportRequest(List<Stand> auswahl, Long konfigurationVersion) {}
  public record Hinweis(Referenz referenz, String kategorie, BigDecimal stunden, String meldung) {}

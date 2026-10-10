@@ -2,6 +2,10 @@
 
 Unter **Zeiterfassung → Monatsabschluss** lassen sich die Monatsstunden mehrerer Mitarbeiter gemeinsam prüfen und abschließen. Dafür ist das Recht zum Monatsabschluss erforderlich.
 
+## Ab wann abgeschlossen werden muss
+
+Die Glocke erinnert unter „Zeiten prüfen“ an Monate, die noch nicht abgeschlossen sind. Hat der Betrieb die Zeiterfassung erst später eingeführt, unter **Einstellungen → Zeiterfassung** das Datum „Zeiterfassung eingeführt am“ eintragen. Monate davor müssen dann nicht mehr abgeschlossen werden; der Monat des Einführungstags selbst schon. Ohne Datum gilt das Eintrittsdatum bzw. die erste Buchung jedes Mitarbeiters.
+
 ## Zeiten prüfen und auswählen
 
 1. Monat und Jahr wählen. Beim Öffnen ist der letzte vergangene Monat eingestellt.

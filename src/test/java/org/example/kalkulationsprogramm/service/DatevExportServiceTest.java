@@ -26,7 +26,8 @@ class DatevExportServiceTest {
  @BeforeEach void setup() throws Exception {
   when(tm.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
   service=new DatevExportService(repo,rights,new LodasDateiWriter(),tm);
-  config=new DatevKonfiguration();config.setBeraterNr("1234");config.setMandantenNr("123");mapping(false);
+  // The existing cases check the worked hours; SOLL has its own tests below.
+  config=new DatevKonfiguration();config.setBeraterNr("1234");config.setMandantenNr("123");config.setStundenart("IST");mapping(false);
   saldo=saldo(1);when(repo.konfiguration()).thenReturn(config);
   when(repo.salden(any(),any())).thenAnswer(i->List.of(saldo));
   var n=new DatevPersonalnummer();n.setMitarbeiterId(1L);n.setPersonalnummer("00014");n.setNormalisiert("14");
@@ -113,6 +114,47 @@ class DatevExportServiceTest {
   assertThatThrownBy(()->service.pruefen(new ExportRequest(many,0L),null)).hasMessageContaining("400");
   var months=java.util.stream.IntStream.range(0,13).mapToObj(i->{var m=java.time.YearMonth.of(2024,1).plusMonths(i);return new Stand(1L,m.getYear(),m.getMonthValue(),0L);}).toList();
   assertThatThrownBy(()->service.pruefen(new ExportRequest(months,0L),null)).hasMessageContaining("400");
+ }
+ @Test void sollArbeitIstSollOhneFeiertageUndAbwesenheiten() {
+  // 160 h Soll, 8 h Abwesenheit (setup) → 152 h Arbeit; the worked 100 h do not matter.
+  config.setStundenart("SOLL");saldo.setSollStunden(new BigDecimal("160.00"));
+  assertThat(new String(service.exportieren(request,null).inhalt(),java.nio.charset.StandardCharsets.US_ASCII))
+   .contains(";152,00;01;200;14;").doesNotContain(";100,00;").doesNotContain(";160,00;");
+ }
+ @Test void gemischterBetriebZaehltUrlaubBeiSollNichtDoppelt() throws Exception {
+  // Company IST with vacation exported, this employee SOLL: 168 h Soll, 8 h holiday, 16 h vacation.
+  mapping(true);repo.personalnummern(Set.of(1L)).getFirst().setStundenart("SOLL");
+  saldo.setSollStunden(new BigDecimal("168.00"));saldo.setFeiertagsStunden(new BigDecimal("8.00"));
+  saldo.setAbwesenheitsStunden(new BigDecimal("16.00"));saldo.setUrlaubStunden(new BigDecimal("16.00"));
+  saldo.setKrankheitStunden(BigDecimal.ZERO);saldo.setFortbildungStunden(BigDecimal.ZERO);saldo.setZeitausgleichStunden(BigDecimal.ZERO);
+  saldo.setKrankengeldStunden(BigDecimal.ZERO);saldo.setWiedereingliederungStunden(BigDecimal.ZERO);
+  // ARBEIT 144 h + URLAUB 16 h share wage type 200 in this mapping → 160 h; double counting would give 184 h.
+  assertThat(new String(service.exportieren(request,null).inhalt(),java.nio.charset.StandardCharsets.US_ASCII))
+   .contains(";160,00;01;200;14;").doesNotContain(";184,00;");
+ }
+ @Test void mitarbeiterKannVomBetriebAbweichen() {
+  config.setStundenart("SOLL");saldo.setSollStunden(new BigDecimal("160.00"));
+  repo.personalnummern(Set.of(1L)).getFirst().setStundenart("IST");
+  assertThat(new String(service.exportieren(request,null).inhalt(),java.nio.charset.StandardCharsets.US_ASCII))
+   .contains(";100,00;01;200;14;").doesNotContain(";152,00;");
+ }
+ @Test void ohneSollWerdenGearbeiteteStundenSichtbarAusgelassen() {
+  config.setStundenart("SOLL");saldo.setSollStunden(BigDecimal.ZERO);saldo.setAbwesenheitsStunden(BigDecimal.ZERO);
+  var result=service.pruefen(request,null);
+  assertThat(result.ausschluesse()).filteredOn(h->h.kategorie().equals("ARBEIT")).singleElement()
+   .satisfies(h->assertThat(h.stunden()).isEqualByComparingTo("100.00"));
+ }
+ @Test void ohneSollAberMitAbwesenheitRaetZuIstStunden() {
+  // A temp without contractual hours but with 8 h absence (setup): the advice is IST, not "check the calendar".
+  config.setStundenart("SOLL");saldo.setSollStunden(BigDecimal.ZERO);
+  assertThat(service.pruefen(request,null).fehler()).filteredOn(h->h.kategorie().equals("ARBEIT")).singleElement()
+   .satisfies(h->assertThat(h.meldung()).contains("Ist-Stunden wählen"));
+ }
+ @Test void abwesenheitenUeberDemSollBlockierenStattNegativerStunden() {
+  config.setStundenart("SOLL");saldo.setSollStunden(new BigDecimal("4.00"));
+  var fehler=service.pruefen(request,null).fehler();
+  assertThat(fehler).filteredOn(h->h.kategorie().equals("ARBEIT")).singleElement()
+   .satisfies(h->assertThat(h.stunden()).isEqualByComparingTo("-4.00"));
  }
 
 }

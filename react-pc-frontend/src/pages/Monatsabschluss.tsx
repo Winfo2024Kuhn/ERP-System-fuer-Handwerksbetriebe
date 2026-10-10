@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { useAuth } from '../auth/AuthContext';
 import { DatevBereich } from '../features/monatsabschluss/DatevBereich';
 import { JahresvergleichCharts } from '../features/monatsabschluss/JahresvergleichCharts';
 import { api } from '../features/monatsabschluss/api';
@@ -47,6 +48,8 @@ export default function Monatsabschluss() {
     const [verlaufFehler, setVerlaufFehler] = useState('');
     const toast = useToast(); const toastRef = useRef(toast); toastRef.current = toast;
     const confirm = useConfirm();
+    // DATEV einrichten dürfen nur Admins (Einstellungen → Zeiterfassung).
+    const { isAdmin } = useAuth();
     const vergangen = filter.jahr * 12 + filter.monat < heute.getFullYear() * 12 + heute.getMonth() + 1;
     useEffect(() => {
         const controller = new AbortController();
@@ -163,7 +166,7 @@ export default function Monatsabschluss() {
             </div>
             <Button variant="outline" size="sm" disabled={laedt || busy} onClick={() => { generation.current++; setAuswahl([]); setRevision(v => v + 1); }}><RefreshCw aria-hidden="true" className="w-4 h-4 mr-2" />Aktualisieren</Button>
         </div>
-        <DatevBereich auswahl={laedt || busy || !daten ? [] : auswahl} mitarbeiter={mitarbeiter} />
+        <DatevBereich auswahl={laedt || busy || !daten ? [] : auswahl} mitarbeiter={mitarbeiter} darfEinrichten={isAdmin} />
         {laedt ? <p role="status" className="bg-slate-100 rounded-lg p-8 motion-safe:animate-pulse">Monatsdaten werden geladen …</p> : daten && <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 space-y-4" aria-label="Monatsübersicht">
             <h2 className="font-semibold text-lg">{monate[filter.monat - 1]} {filter.jahr}</h2>
             <p className="text-sm text-slate-600">Alle Angaben in Stunden. Gesamt = {spalten.filter(([id]) => bestandteile.has(id)).map(([, name]) => name.replace('\u00AD', '')).join(' + ')}. Korrektur: von Hand im Büro nachgetragene Stunden.{mitSonstigen && ' Sonstige sind Fortbildungen und ältere Abwesenheiten, die beim Abschluss noch nicht aufgeteilt wurden.'}</p>

@@ -22,18 +22,24 @@ interface SettingsCardProps {
     title: string;
     /** Erklärung in Handwerker-Sprache, direkt unter der Überschrift. */
     description?: React.ReactNode;
+    /** Optionaler Info-Knopf (`InfoButton`) direkt neben der Überschrift. */
+    info?: React.ReactNode;
     children: React.ReactNode;
     className?: string;
 }
 
 /** Karte mit Icon, Überschrift und Erklärtext — der Rahmen jedes Bereichs. */
-export function SettingsCard({ icon, title, description, children, className }: SettingsCardProps) {
+export function SettingsCard({ icon, title, description, info, children, className }: SettingsCardProps) {
+    const ueberschrift = (
+        <h3 className={cn('text-lg font-semibold text-slate-900 flex items-center gap-2', !info && 'mb-2')}>
+            {icon}
+            {title}
+        </h3>
+    );
     return (
         <Card className={cn('p-6', className)}>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
-                {icon}
-                {title}
-            </h3>
+            {/* Der Info-Knopf steht neben, nicht in der Überschrift – sonst hieße die Überschrift für Screenreader „… Mehr zu: …“. */}
+            {info ? <div className="mb-2 flex items-center gap-1.5">{ueberschrift}{info}</div> : ueberschrift}
             {description && <div className="text-sm text-slate-500 mb-5 space-y-2">{description}</div>}
             {children}
         </Card>

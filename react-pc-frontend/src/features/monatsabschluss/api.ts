@@ -32,8 +32,8 @@ export const api = {
     sammelabschluss: (auswahl: Referenz[]) => json<SammelResponse>(`${basis}/sammelabschluss`, schreiben('POST', { auswahl })),
     oeffnen: (referenz: Referenz) => json<unknown>(`${basis}/${referenz.mitarbeiterId}/${referenz.jahr}/${referenz.monat}/oeffnen`, schreiben('POST', {})),
     ladeVerlauf: (referenz: Referenz, signal?: AbortSignal) => json<Verlauf>(`${basis}/${referenz.mitarbeiterId}/${referenz.jahr}/${referenz.monat}`, { signal }),
+    /** Nur lesen: Eingerichtet wird DATEV unter Einstellungen → Zeiterfassung (`/api/settings/datev`). */
     ladeDatevKonfiguration: () => json<Konfiguration>(`${basis}/datev/konfiguration`),
-    speichereDatevKonfiguration: (config: Konfiguration) => json<Konfiguration>(`${basis}/datev/konfiguration`, schreiben('PUT', config)),
     pruefeDatev: (request: ExportRequest) => json<Vorpruefung>(`${basis}/datev/vorpruefung`, schreiben('POST', request)),
     exportiereDatev: async (request: ExportRequest): Promise<{ blob: Blob; dateiname: string }> => {
         const response = await antwort(`${basis}/datev/export`, schreiben('POST', request));

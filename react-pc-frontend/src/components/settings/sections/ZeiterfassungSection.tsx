@@ -5,16 +5,18 @@ import { Card } from '../../ui/card';
 import { Label } from '../../ui/label';
 import { Button } from '../../ui/button';
 import { SettingsCard } from '../settingsUi';
+import { StartDerZeiterfassungKarte } from './zeiterfassung/StartDerZeiterfassungKarte';
+import { DatevEinstellungenKarte } from './zeiterfassung/DatevEinstellungenKarte';
 
 /**
- * Mobile Zeiterfassung: Link zur Web-App, die drei Wege zum Zugriff von
- * unterwegs und der Hinweis auf die QR-Codes der Mitarbeiter.
+ * Reiter Zeiterfassung: oben die Einstellungen (Start der Zeiterfassung,
+ * Stunden ans Steuerbüro und DATEV), darunter unverändert die Infos zur
+ * Handy-App (Link zur Web-App, Zugriff von unterwegs, QR-Codes).
  *
- * <p>Lag vorher direkt in {@code EinstellungenEditor} und machte die Seite
- * unnötig lang. Als eigener Reiter steht sie gleichberechtigt neben E-Mail,
- * Dateien und KI — und niemand scrollt mehr daran vorbei.</p>
+ * <p>Jede Einstellungs-Karte lädt und speichert selbst. Die Infos darunter
+ * sind reine Anleitung und speichern nichts.</p>
  */
-export function ZeiterfassungSection() {
+export function ZeiterfassungSection({ onSaved }: { onSaved?: () => void }) {
     const [copied, setCopied] = useState(false);
     const zeiterfassungUrl = `${window.location.origin}/zeiterfassung`;
 
@@ -26,6 +28,11 @@ export function ZeiterfassungSection() {
 
     return (
         <div className="space-y-6">
+            <StartDerZeiterfassungKarte onSaved={onSaved} />
+            <DatevEinstellungenKarte onSaved={onSaved} />
+
+            <h3 className="pt-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Handy-App für Mitarbeiter</h3>
+
             <SettingsCard
                 icon={<Smartphone className="w-5 h-5 text-rose-600" />}
                 title="Mobile Zeiterfassung"

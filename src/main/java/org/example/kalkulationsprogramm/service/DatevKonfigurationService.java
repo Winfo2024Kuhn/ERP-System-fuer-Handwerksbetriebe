@@ -20,22 +20,30 @@ import java.util.*;
 public class DatevKonfigurationService {
  public static final Set<String> KATEGORIEN = Set.of("ARBEIT", "FEIERTAG", "URLAUB", "KRANKHEIT",
      "FORTBILDUNG", "ZEITAUSGLEICH", "KRANKENGELD", "WIEDEREINGLIEDERUNG");
+ /** Which hours go to the tax office as ARBEIT: contractual (SOLL) or worked (IST). */
+ public static final Set<String> STUNDENARTEN = Set.of("SOLL", "IST");
  private static final ObjectMapper JSON = new ObjectMapper();
  private final DatevKonfigurationRepository configs;
  private final DatevPersonalnummerRepository nummern;
  private final MonatsabschlussBerechtigungService rechte;
 
+ /** Read access for the month-end closing (the export needs the current version). */
  public Konfiguration laden(Authentication auth) {
   rechte.verlangeAkteur(auth);
+  return einstellungenLaden();
+ }
+
+ /** For the admin settings page; access is restricted to admins by /api/settings/** in SecurityConfig. */
+ public Konfiguration einstellungenLaden() {
   var entity = configs.findById(1L).orElseThrow(() -> new IllegalStateException("DATEV-Konfiguration fehlt; Migration prüfen"));
   var personal = nummern.findAll().stream().sorted(Comparator.comparing(DatevPersonalnummer::getMitarbeiterId))
-      .map(n -> new Personalnummer(n.getMitarbeiterId(), n.getPersonalnummer())).toList();
+      .map(n -> new Personalnummer(n.getMitarbeiterId(), n.getPersonalnummer(), n.getStundenart())).toList();
   return dto(entity, personal);
  }
 
+ /** Only reachable through the admin settings page (/api/settings/datev). */
  @Transactional
- public Konfiguration speichern(Konfiguration input, Authentication auth) {
-  rechte.verlangeAkteur(auth);
+ public Konfiguration speichern(Konfiguration input) {
   var clean = validieren(input);
   var entity = configs.sperren().orElseThrow(() -> new IllegalStateException("DATEV-Konfiguration fehlt; Migration prüfen"));
   if (!Objects.equals(entity.getVersion(), clean.version()))
@@ -45,6 +53,7 @@ public class DatevKonfigurationService {
   if (!ids.isEmpty() && !new HashSet<>(nummern.findMenschenIds(ids)).equals(ids))
    throw bad("Eine Mitarbeiterzuordnung ist ungültig. Bitte die Mitarbeiterliste neu laden.");
   entity.setZiel(clean.ziel()); entity.setBeraterNr(clean.beraterNr()); entity.setMandantenNr(clean.mandantenNr());
+  entity.setStundenart(clean.stundenart());
   try { entity.setZuordnungenJson(JSON.writeValueAsString(clean.zuordnungen())); }
   catch (JsonProcessingException ex) { throw new IllegalStateException("DATEV-Zuordnungen konnten nicht gespeichert werden", ex); }
   entity.setAenderungszaehler(entity.getAenderungszaehler() + 1);
@@ -52,7 +61,8 @@ public class DatevKonfigurationService {
   nummern.deleteAllInBatch();
   var rows = clean.personalnummern().stream().filter(n -> !n.personalnummer().isEmpty()).map(n -> {
    var row = new DatevPersonalnummer(); row.setMitarbeiterId(n.mitarbeiterId());
-   row.setPersonalnummer(n.personalnummer()); row.setNormalisiert(normalisieren(n.personalnummer())); return row;
+   row.setPersonalnummer(n.personalnummer()); row.setNormalisiert(normalisieren(n.personalnummer()));
+   row.setStundenart(n.stundenart()); return row;
   }).toList();
   nummern.saveAll(rows);
   configs.saveAndFlush(entity);
@@ -62,7 +72,7 @@ public class DatevKonfigurationService {
 
  private Konfiguration dto(DatevKonfiguration entity, List<Personalnummer> personal) {
   try { return new Konfiguration(entity.getVersion(), entity.getZiel(), entity.getBeraterNr(), entity.getMandantenNr(),
-      JSON.readValue(entity.getZuordnungenJson(), new TypeReference<List<Zuordnung>>() {}), personal); }
+      entity.getStundenart(), JSON.readValue(entity.getZuordnungenJson(), new TypeReference<List<Zuordnung>>() {}), personal); }
   catch (JsonProcessingException ex) { throw new IllegalStateException("Gespeicherte DATEV-Zuordnungen sind ungültig", ex); }
  }
  private Konfiguration validieren(Konfiguration input) {
@@ -72,6 +82,8 @@ public class DatevKonfigurationService {
   // BeraterNr 4–7 Stellen, MandantenNr 1–5 Stellen.
   String berater = nummer(input.beraterNr(), 4, 7, "Beraternummer");
   String mandant = nummer(input.mandantenNr(), 1, 5, "Mandantennummer");
+  // Set.of(...).contains(null) throws, so the null check comes first.
+  if (input.stundenart() == null || !STUNDENARTEN.contains(input.stundenart())) throw bad("Bitte festlegen, ob Soll- oder Ist-Stunden an das Steuerbüro gehen.");
   if (input.zuordnungen() == null || input.zuordnungen().size() > KATEGORIEN.size()) throw bad("Die Lohnartenzuordnungen sind ungültig.");
   if (input.personalnummern() == null || input.personalnummern().size() > 10000) throw bad("Höchstens 10000 Personalnummern sind erlaubt.");
   Set<String> kategorien = new HashSet<>(); List<Zuordnung> mapping = new ArrayList<>();
@@ -86,9 +98,12 @@ public class DatevKonfigurationService {
    if (n == null || n.mitarbeiterId() == null || n.mitarbeiterId() <= 0 || !ids.add(n.mitarbeiterId())) throw bad("Eine Mitarbeiter-ID ist ungültig oder doppelt.");
    String value = nummer(n.personalnummer(), 1, 5, "Personalnummer");
    if (!value.isEmpty() && !vergeben.add(normalisieren(value))) throw bad("Eine Personalnummer ist mehrfach vergeben (auch mit führenden Nullen).");
-   personal.add(new Personalnummer(n.mitarbeiterId(), value));
+   if (n.stundenart() != null && !STUNDENARTEN.contains(n.stundenart())) throw bad("Die Stunden-Auswahl eines Mitarbeiters ist ungültig.");
+   // Rows without a number are not stored, so an override there would silently vanish.
+   if (n.stundenart() != null && value.isEmpty()) throw bad("Eine eigene Stunden-Auswahl braucht eine Personalnummer.");
+   personal.add(new Personalnummer(n.mitarbeiterId(), value, n.stundenart()));
   }
-  return new Konfiguration(input.version(), "LODAS", berater, mandant, List.copyOf(mapping), List.copyOf(personal));
+  return new Konfiguration(input.version(), "LODAS", berater, mandant, input.stundenart(), List.copyOf(mapping), List.copyOf(personal));
  }
  private static String nummer(String raw, int min, int max, String name) {
   if (raw == null || raw.isEmpty()) return "";
