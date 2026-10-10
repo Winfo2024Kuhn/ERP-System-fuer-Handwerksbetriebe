@@ -45,7 +45,9 @@ public class Kunde {
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "kunden_emails", joinColumns = @JoinColumn(name = "kunden_id"))
-    @Column(name = "email", nullable = false, unique = true)
+    // Nicht eindeutig: Dieselbe Adresse darf bei mehreren Kunden stehen, z. B. eine
+    // Hausverwaltung fuer mehrere WEGs (V411).
+    @Column(name = "email", nullable = false)
     private List<String> kundenEmails = new ArrayList<>();
 
     @OneToMany(mappedBy = "kundenId", cascade = CascadeType.ALL, orphanRemoval = true)
