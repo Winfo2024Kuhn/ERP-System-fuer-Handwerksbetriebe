@@ -32,14 +32,21 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRep
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class AnfrageService {
+    private static final Logger log = LoggerFactory.getLogger(AnfrageService.class);
+
     private final AnfrageRepository anfrageRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final AnfrageDokumentRepository anfrageDokumentRepository;
@@ -51,6 +58,7 @@ public class AnfrageService {
     private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
     private final DokumentFreigabeService dokumentFreigabeService;
+    private final TransactionTemplate transaktion;
 
     public AnfrageService(AnfrageRepository anfrageRepository,
             DateiSpeicherService dateiSpeicherService,
@@ -62,7 +70,8 @@ public class AnfrageService {
             @Value("${file.mail-attachment-dir}") String mailAttachmentDir,
             org.springframework.context.ApplicationEventPublisher eventPublisher,
             AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService,
-            DokumentFreigabeService dokumentFreigabeService) {
+            DokumentFreigabeService dokumentFreigabeService,
+            TransactionTemplate transaktion) {
         this.anfrageRepository = anfrageRepository;
         this.dateiSpeicherService = dateiSpeicherService;
         this.anfrageDokumentRepository = anfrageDokumentRepository;
@@ -75,6 +84,7 @@ public class AnfrageService {
         this.eventPublisher = eventPublisher;
         this.ausgangsGeschaeftsDokumentService = ausgangsGeschaeftsDokumentService;
         this.dokumentFreigabeService = dokumentFreigabeService;
+        this.transaktion = transaktion;
     }
 
     public AnfrageResponseDto erstelleAnfrage(AnfrageErstellenDto dto) {
@@ -631,49 +641,69 @@ public class AnfrageService {
      * <p>Wenn {@code cascadeKunde} gesetzt ist und der Kunde nach dem Löschen
      * keine weitere Anfrage und kein Projekt mehr hätte, wird er ebenfalls
      * gelöscht (typisch für Spaß-Funnel-Anfragen mit frischem Phantom-Kunden).
+     *
+     * <p>Bewusst zwei Transaktionen: erst die Anfrage, dann der Kunde. Hängt der
+     * Kunde noch an anderen Daten (Lieferantenrechnung, Kalender ...), scheitert
+     * nur dessen Löschen - die Anfrage bleibt gelöscht. In EINER Transaktion ginge
+     * das nicht: Nach dem Datenbankfehler wäre sie verloren (MySQL: nur noch
+     * Rollback möglich, PostgreSQL: Transaktion abgebrochen).
      */
-    @Transactional
     public LoeschResult loescheMitPruefung(Long id, boolean cascadeKunde) {
+        AnfrageGeloescht geloescht = transaktion.execute(status -> loescheAnfrage(id));
+        if (geloescht == null || !geloescht.ergebnis().ok() || !cascadeKunde || geloescht.kundeId() == null) {
+            return geloescht != null ? geloescht.ergebnis()
+                    : new LoeschResult(LoeschGrund.NICHT_GEFUNDEN, false, "Anfrage existiert nicht (mehr).");
+        }
+        boolean kundeWeg = loescheKundeFallsVerwaist(geloescht.kundeId());
+        return new LoeschResult(LoeschGrund.OK, kundeWeg,
+                kundeWeg ? "Anfrage und verwaister Kunde gelöscht."
+                         : "Anfrage gelöscht.");
+    }
+
+    private record AnfrageGeloescht(LoeschResult ergebnis, Long kundeId) { }
+
+    /** Prüft und löscht die Anfrage (läuft in der Transaktion von {@link #loescheMitPruefung}). */
+    private AnfrageGeloescht loescheAnfrage(Long id) {
         Anfrage anfrage = anfrageRepository.findById(id).orElse(null);
         if (anfrage == null) {
-            return new LoeschResult(LoeschGrund.NICHT_GEFUNDEN, false,
-                    "Anfrage existiert nicht (mehr).");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.NICHT_GEFUNDEN, false,
+                    "Anfrage existiert nicht (mehr)."), null);
         }
         if (anfrage.getProjekt() != null) {
-            return new LoeschResult(LoeschGrund.IN_PROJEKT_UMGEWANDELT, false,
-                    "Anfrage ist bereits in ein Projekt umgewandelt – Löschen nicht möglich.");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.IN_PROJEKT_UMGEWANDELT, false,
+                    "Anfrage ist bereits in ein Projekt umgewandelt – Löschen nicht möglich."), null);
         }
         if (anfrage.getEmailVersandDatum() != null) {
-            return new LoeschResult(LoeschGrund.EMAIL_VERSENDET, false,
-                    "Es wurde bereits eine E-Mail zu dieser Anfrage versendet.");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.EMAIL_VERSENDET, false,
+                    "Es wurde bereits eine E-Mail zu dieser Anfrage versendet."), null);
         }
         if (!emailRepository.findByAnfrageOrderBySentAtDesc(anfrage).isEmpty()) {
-            return new LoeschResult(LoeschGrund.EMAIL_VORHANDEN, false,
-                    "An dieser Anfrage hängen bereits E-Mails – nicht löschbar.");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.EMAIL_VORHANDEN, false,
+                    "An dieser Anfrage hängen bereits E-Mails – nicht löschbar."), null);
         }
 
         List<AnfrageDokument> docs = anfrageDokumentRepository.findByAnfrageId(anfrage.getId());
         boolean hatGeschaeftsdokument = docs.stream()
                 .anyMatch(d -> d instanceof AnfrageGeschaeftsdokument);
         if (hatGeschaeftsdokument) {
-            return new LoeschResult(LoeschGrund.GESCHAEFTSDOKUMENT_VORHANDEN, false,
-                    "An dieser Anfrage hängen Angebote/Auftragsbestätigungen.");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.GESCHAEFTSDOKUMENT_VORHANDEN, false,
+                    "An dieser Anfrage hängen Angebote/Auftragsbestätigungen."), null);
         }
         if (!docs.isEmpty()) {
-            return new LoeschResult(LoeschGrund.DATEI_VORHANDEN, false,
-                    "An dieser Anfrage hängen Dateien – bitte zuerst entfernen.");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.DATEI_VORHANDEN, false,
+                    "An dieser Anfrage hängen Dateien – bitte zuerst entfernen."), null);
         }
         if (!ausgangsGeschaeftsDokumentRepository.findByAnfrageIdOrderByDatumDesc(anfrage.getId()).isEmpty()) {
-            return new LoeschResult(LoeschGrund.GESCHAEFTSDOKUMENT_VORHANDEN, false,
-                    "An dieser Anfrage hängen ausgehende Geschäftsdokumente.");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.GESCHAEFTSDOKUMENT_VORHANDEN, false,
+                    "An dieser Anfrage hängen ausgehende Geschäftsdokumente."), null);
         }
 
         boolean nurFunnelNotizen = anfrage.getNotizen() == null || anfrage.getNotizen().stream()
                 .allMatch(n -> n.getMitarbeiter() != null
                         && AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN.equals(n.getMitarbeiter().getLoginToken()));
         if (!nurFunnelNotizen) {
-            return new LoeschResult(LoeschGrund.BENUTZER_NOTIZ_VORHANDEN, false,
-                    "Es wurden bereits Bautagebuch-Notizen erfasst.");
+            return new AnfrageGeloescht(new LoeschResult(LoeschGrund.BENUTZER_NOTIZ_VORHANDEN, false,
+                    "Es wurden bereits Bautagebuch-Notizen erfasst."), null);
         }
 
         Kunde kunde = anfrage.getKunde();
@@ -701,24 +731,39 @@ public class AnfrageService {
         anfrageRepository.delete(anfrage);
         anfrageRepository.flush();
 
-        boolean kundeWeg = false;
-        if (cascadeKunde && kunde != null) {
-            long andereAnfragen = anfrageRepository.findByKundeId(kunde.getId()).size();
-            long projekteDesKunden = projektRepository.findByKundenId_Id(kunde.getId()).size();
-            if (andereAnfragen == 0 && projekteDesKunden == 0) {
-                try {
-                    kundeRepository.delete(kunde);
-                    kundeWeg = true;
-                } catch (Exception e) {
-                    // Wenn der Kunde noch in anderen FKs hängt (Lieferantenrechnung,
-                    // Kalender etc.), wirft die DB. Anfrage ist trotzdem schon weg.
-                }
-            }
-        }
+        return new AnfrageGeloescht(new LoeschResult(LoeschGrund.OK, false, "Anfrage gelöscht."),
+                kunde != null ? kunde.getId() : null);
+    }
 
-        return new LoeschResult(LoeschGrund.OK, kundeWeg,
-                kundeWeg ? "Anfrage und verwaister Kunde gelöscht."
-                         : "Anfrage gelöscht.");
+    /**
+     * Löscht den Kunden in einer eigenen Transaktion, wenn er weder Anfragen noch
+     * Projekte mehr hat. Hängt er noch an anderen Daten, wirft die Datenbank -
+     * dann bleibt er einfach bestehen.
+     */
+    private boolean loescheKundeFallsVerwaist(Long kundeId) {
+        // Immer eine eigene Transaktion - auch falls jemand die Methode spaeter in
+        // eine aeussere Transaktion einbettet
+        TransactionTemplate eigeneTransaktion = new TransactionTemplate(transaktion.getTransactionManager());
+        eigeneTransaktion.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        try {
+            return Boolean.TRUE.equals(eigeneTransaktion.execute(status -> {
+                if (!anfrageRepository.findByKundeId(kundeId).isEmpty()
+                        || !projektRepository.findByKundenId_Id(kundeId).isEmpty()) {
+                    return false;
+                }
+                Kunde kunde = kundeRepository.findById(kundeId).orElse(null);
+                if (kunde == null) {
+                    return false;
+                }
+                kundeRepository.delete(kunde);
+                // Fremdschluessel-Fehler hier ausloesen, nicht erst beim Commit
+                kundeRepository.flush();
+                return true;
+            }));
+        } catch (DataIntegrityViolationException e) {
+            log.info("Kunde {} bleibt bestehen - er wird noch von anderen Daten verwendet.", kundeId);
+            return false;
+        }
     }
 
     private AnfrageResponseDto mapToDto(Anfrage a) {

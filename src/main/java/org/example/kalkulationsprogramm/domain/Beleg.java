@@ -7,6 +7,8 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Belegerfassung für die Buchhaltung (Kasse, Privatentnahme, Bank etc.).
@@ -195,8 +197,8 @@ public class Beleg {
     @Column(name = "ki_kostenkonto_begruendung", length = 500)
     private String kiKostenkontoBegruendung;
 
-    @Lob
-    @Column(name = "ki_extraktion_json", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "ki_extraktion_json")
     private String kiExtraktionJson;
 
     @Column(name = "ki_fehler_text", length = 1000)
@@ -345,6 +347,7 @@ public class Beleg {
      * das ist, das der Buchhalter geprueft hat. NULL bei Umbuchungen (keine
      * Datei) und bei Altbestand von vor dieser Aenderung.
      */
+    @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "datei_hash", columnDefinition = "CHAR(64)")
     private String dateiHash;
 

@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Getter
 @Setter
@@ -35,8 +37,8 @@ public class OutOfOfficeSchedule {
     @Column(name = "subject_template", length = 300)
     private String subjectTemplate;
 
-    @Lob
-    @Column(name = "body_template", columnDefinition = "longtext")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "body_template")
     private String bodyTemplate;
 
 }

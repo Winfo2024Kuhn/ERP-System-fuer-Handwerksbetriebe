@@ -14,6 +14,8 @@ import lombok.Setter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Tagesschluss-Snapshot der Website-Analytics (bauschlosserei-kuhn.de).
@@ -72,22 +74,28 @@ public class WebsiteAnalyticsSnapshot {
     @Column(name = "conversion", nullable = false)
     private int conversion;
 
-    @Column(name = "funnel_json", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "funnel_json")
     private String funnelJson;
 
-    @Column(name = "top_pages_json", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "top_pages_json")
     private String topPagesJson;
 
-    @Column(name = "devices_json", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "devices_json")
     private String devicesJson;
 
-    @Column(name = "browsers_json", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "browsers_json")
     private String browsersJson;
 
-    @Column(name = "cities_json", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "cities_json")
     private String citiesJson;
 
-    @Column(name = "raw_payload", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "raw_payload")
     private String rawPayload;
 
     @PrePersist

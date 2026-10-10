@@ -129,7 +129,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 JOIN projekt p ON pke.projekt_id = p.id
                 WHERE (LOWER(pke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(pke.email), '>%'))
                 AND (
-                    (DATE(e.sent_at) BETWEEN DATE_SUB(p.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(p.abschlussdatum, p.anlegedatum), INTERVAL 1 MONTH))
+                    (CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH)
                 )
             )
             OR
@@ -139,7 +139,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 JOIN anfrage a ON ake.anfrage_id = a.id
                 WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
                 AND (
-                    DATE(e.sent_at) BETWEEN DATE_SUB(a.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(a.anlegedatum, CURRENT_DATE()), INTERVAL 1 MONTH)
+                    CAST(e.sent_at AS DATE) BETWEEN a.anlegedatum - INTERVAL '1' MONTH AND COALESCE(a.anlegedatum, CURRENT_DATE) + INTERVAL '1' MONTH
                 )
             )
             OR
@@ -150,7 +150,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 JOIN projekt p ON p.kunden_id = k.id
                 WHERE (LOWER(ke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ke.email), '>%'))
                 AND (
-                    (DATE(e.sent_at) BETWEEN DATE_SUB(p.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(p.abschlussdatum, p.anlegedatum), INTERVAL 1 MONTH))
+                    (CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH)
                 )
             )
         )
@@ -179,20 +179,20 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
                 SELECT 1 FROM projekt_kunden_emails pke
                 JOIN projekt p ON pke.projekt_id = p.id
                 WHERE (LOWER(pke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(pke.email), '>%'))
-                AND DATE(e.sent_at) BETWEEN DATE_SUB(p.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(p.abschlussdatum, p.anlegedatum), INTERVAL 1 MONTH)
+                AND CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH
             )
             OR EXISTS (
                 SELECT 1 FROM anfrage_kunden_emails ake
                 JOIN anfrage a ON ake.anfrage_id = a.id
                 WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
-                AND DATE(e.sent_at) BETWEEN DATE_SUB(a.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(a.anlegedatum, CURRENT_DATE()), INTERVAL 1 MONTH)
+                AND CAST(e.sent_at AS DATE) BETWEEN a.anlegedatum - INTERVAL '1' MONTH AND COALESCE(a.anlegedatum, CURRENT_DATE) + INTERVAL '1' MONTH
             )
             OR EXISTS (
                 SELECT 1 FROM kunden_emails ke
                 JOIN kunde k ON ke.kunden_id = k.id
                 JOIN projekt p ON p.kunden_id = k.id
                 WHERE (LOWER(ke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ke.email), '>%'))
-                AND DATE(e.sent_at) BETWEEN DATE_SUB(p.anlegedatum, INTERVAL 1 MONTH) AND DATE_ADD(COALESCE(p.abschlussdatum, p.anlegedatum), INTERVAL 1 MONTH)
+                AND CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH
             )
         )
       """, nativeQuery = true)

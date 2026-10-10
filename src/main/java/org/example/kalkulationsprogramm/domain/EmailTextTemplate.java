@@ -14,6 +14,8 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.OffsetDateTime;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Getter
 @Setter
@@ -47,7 +49,8 @@ public class EmailTextTemplate {
     @Column(name = "subject_template", nullable = false, length = 500)
     private String subjectTemplate;
 
-    @Column(name = "html_body", nullable = false, columnDefinition = "longtext")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "html_body", nullable = false)
     private String htmlBody;
 
     @Column(name = "aktiv", nullable = false)

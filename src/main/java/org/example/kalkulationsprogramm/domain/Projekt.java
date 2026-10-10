@@ -37,7 +37,6 @@ public class Projekt {
     @Column
     private String ort;
 
-    @Lob
     @Column(columnDefinition = "TEXT")
     private String kurzbeschreibung;
 

@@ -10,7 +10,6 @@ import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,45 +91,43 @@ public class OfferPriceService {
                                             preis.neuerPreisstand(finalPrice, PreisQuelle.ANGEBOT_EMAIL);
                                     neuerStand.setPreisAenderungsdatum(mailDate);
                                     artikel.getArtikelpreis().add(neuerStand);
-                                    try {
-                                        artikelRepository.save(artikel);
-                                        savedFlag.set(true);
-                                        if (artikel.getId() != null && lieferant.getId() != null) {
-                                            List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
-                                                    .findByArtikel_IdAndLieferant_IdAndBestelltFalse(artikel.getId(),
-                                                            lieferant.getId());
-                                            for (ArtikelInProjekt aip : projektArtikel) {
-                                                BigDecimal p = finalPrice;
-                                                if (p != null && aip.getArtikel() != null &&
-                                                        aip.getArtikel().getVerrechnungseinheit() != null) {
-                                                    Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
-                                                    switch (ve) {
-                                                        case KILOGRAMM -> {
-                                                            if (aip.getKilogramm() != null) {
-                                                                p = p.multiply(aip.getKilogramm());
-                                                            }
-                                                        }
-                                                        case LAUFENDE_METER, QUADRATMETER -> {
-                                                            if (aip.getMeter() != null) {
-                                                                p = p.multiply(aip.getMeter());
-                                                            }
-                                                        }
-                                                        case STUECK -> {
-                                                            if (aip.getStueckzahl() != null) {
-                                                                p = p.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
-                                                            }
+                                    // Kein try/catch: Ein Datenbankfehler laesst sich in dieser Transaktion
+                                    // nicht "ueberspringen" (MySQL: nur noch Rollback, PostgreSQL: abgebrochen).
+                                    // Seit dem Preisverlauf (V338) gibt es hier ohnehin keine Eindeutigkeit mehr.
+                                    artikelRepository.save(artikel);
+                                    savedFlag.set(true);
+                                    if (artikel.getId() != null && lieferant.getId() != null) {
+                                        List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
+                                                .findByArtikel_IdAndLieferant_IdAndBestelltFalse(artikel.getId(),
+                                                        lieferant.getId());
+                                        for (ArtikelInProjekt aip : projektArtikel) {
+                                            BigDecimal p = finalPrice;
+                                            if (p != null && aip.getArtikel() != null &&
+                                                    aip.getArtikel().getVerrechnungseinheit() != null) {
+                                                Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
+                                                switch (ve) {
+                                                    case KILOGRAMM -> {
+                                                        if (aip.getKilogramm() != null) {
+                                                            p = p.multiply(aip.getKilogramm());
                                                         }
                                                     }
-                                                    aip.setPreisProStueck(p);
+                                                    case LAUFENDE_METER, QUADRATMETER -> {
+                                                        if (aip.getMeter() != null) {
+                                                            p = p.multiply(aip.getMeter());
+                                                        }
+                                                    }
+                                                    case STUECK -> {
+                                                        if (aip.getStueckzahl() != null) {
+                                                            p = p.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
+                                                        }
+                                                    }
                                                 }
-                                            }
-                                            if (!projektArtikel.isEmpty()) {
-                                                artikelInProjektRepository.saveAll(projektArtikel);
+                                                aip.setPreisProStueck(p);
                                             }
                                         }
-                                    } catch (DataIntegrityViolationException e) {
-                                        log.warn("[OfferPriceService] Duplicate article {} for supplier {}", code, lieferant.getLieferantenname());
-                                        unmatched.add(finalItem);
+                                        if (!projektArtikel.isEmpty()) {
+                                            artikelInProjektRepository.saveAll(projektArtikel);
+                                        }
                                     }
                                 }
                             } else {

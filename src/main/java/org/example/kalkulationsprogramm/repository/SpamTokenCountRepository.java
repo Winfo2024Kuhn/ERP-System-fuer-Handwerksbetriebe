@@ -12,19 +12,11 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SpamTokenCountRepository extends JpaRepository<SpamTokenCount, Long> {
+public interface SpamTokenCountRepository extends JpaRepository<SpamTokenCount, Long>, SpamTokenCountRepositoryErweiterung {
 
     Optional<SpamTokenCount> findByToken(String token);
 
     List<SpamTokenCount> findByTokenIn(Collection<String> tokens);
-
-    @Modifying
-    @Query(value = "INSERT INTO spam_token_count (token, spam_count, ham_count) VALUES (:token, :spamInc, :hamInc) "
-            + "ON DUPLICATE KEY UPDATE spam_count = spam_count + :spamInc, ham_count = ham_count + :hamInc",
-            nativeQuery = true)
-    void upsertToken(@Param("token") String token,
-                     @Param("spamInc") int spamIncrement,
-                     @Param("hamInc") int hamIncrement);
 
     /** Dekrementiert Spam- oder Ham-Zähler, klemmt bei 0 (verhindert negative Werte). */
     @Modifying

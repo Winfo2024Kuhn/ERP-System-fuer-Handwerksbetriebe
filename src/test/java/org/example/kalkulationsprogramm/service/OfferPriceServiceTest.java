@@ -504,8 +504,13 @@ class OfferPriceServiceTest {
         assertEquals(1, result.updated().size());
     }
 
+    /**
+     * Frueher wurde ein Datenbankfehler hier gefangen und mit dem naechsten
+     * Artikel weitergemacht. In einer Transaktion geht das nicht (MySQL: nur noch
+     * Rollback, PostgreSQL: abgebrochen) - der Fehler muss sichtbar werden.
+     */
     @Test
-    void continuesWhenDuplicateEntryOccurs() {
+    void datenbankfehlerWirdNichtVerschluckt() {
         ArtikelRepository repo = Mockito.mock(ArtikelRepository.class);
         ArtikelInProjektRepository aipRepo = Mockito.mock(ArtikelInProjektRepository.class);
         OfferPriceService service = new OfferPriceService(repo, aipRepo);
@@ -527,12 +532,10 @@ class OfferPriceServiceTest {
                 .when(repo).save(artikel);
 
         OfferItem item = new OfferItem("DUPX", "ST", new BigDecimal("9.99"), null, "Name");
-        PriceUpdateResult result = service.updatePrices(supplier, new Date(), List.of(item));
+        List<OfferItem> items = List.of(item);
+        Date mailDatum = new Date();
 
-        assertEquals(1, result.unmatched().size());
-        assertEquals("DUPX", result.unmatched().getFirst().code());
-        assertTrue(result.updated().isEmpty());
-        assertTrue(result.skipped().isEmpty());
+        assertThrows(DataIntegrityViolationException.class, () -> service.updatePrices(supplier, mailDatum, items));
     }
 
     @Test

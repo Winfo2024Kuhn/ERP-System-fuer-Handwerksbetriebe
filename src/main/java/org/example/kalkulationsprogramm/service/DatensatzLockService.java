@@ -8,7 +8,6 @@ import org.example.kalkulationsprogramm.domain.DatensatzLock;
 import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.DatensatzLockDto;
 import org.example.kalkulationsprogramm.repository.DatensatzLockRepository;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,26 +58,19 @@ public class DatensatzLockService {
             return lockedByOther(lock);
         }
 
-        DatensatzLock fresh = new DatensatzLock();
-        fresh.setEntitaetTyp(entitaetTyp);
-        fresh.setEntitaetId(entitaetId);
-        fresh.setUserId(userId);
-        fresh.setUserDisplayName(safeDisplayName(userDisplayName));
-        fresh.setAcquiredAt(now);
-        fresh.setLastHeartbeatAt(now);
-        try {
-            DatensatzLock saved = repository.saveAndFlush(fresh);
-            return acquired(saved);
-        } catch (DataIntegrityViolationException race) {
-            // Konkurrierender Insert hat zwischen findBy und save den Lock geschrieben.
-            // Den jetzt sichtbaren Eintrag wieder pruefen.
-            DatensatzLock winner = repository.findByEntitaetTypAndEntitaetId(entitaetTyp, entitaetId)
-                    .orElseThrow(() -> race);
-            if (winner.getUserId().equals(userId)) {
-                return acquired(winner);
-            }
-            return lockedByOther(winner);
+        // Anlegen, falls noch frei. Hat ein anderer User es zwischen findBy und
+        // jetzt angelegt, passiert einfach nichts - kein Dubletten-Fehler, der die
+        // Transaktion unbrauchbar machen wuerde (PostgreSQL: abgebrochen, MySQL:
+        // nur noch Rollback). Danach den tatsaechlichen Stand gesperrt lesen.
+        // Entschieden wird allein nach dem gelesenen Datensatz - unabhaengig davon,
+        // wie der Treiber "eingefuegt / ignoriert" zaehlt.
+        repository.legeAnFallsFrei(entitaetTyp, entitaetId, userId, safeDisplayName(userDisplayName), now);
+        DatensatzLock lock = repository.findGesperrt(entitaetTyp, entitaetId)
+                .orElseThrow(() -> new IllegalStateException("Lock fuer " + entitaetTyp + " " + entitaetId + " fehlt nach dem Anlegen"));
+        if (lock.getUserId().equals(userId)) {
+            return acquired(lock);
         }
+        return lockedByOther(lock);
     }
 
     /**

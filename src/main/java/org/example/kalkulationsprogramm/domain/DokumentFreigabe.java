@@ -6,6 +6,9 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.ColumnDefault;
 
 /**
  * Token-basierte digitale Freigabe eines Geschäftsdokuments durch den Kunden.
@@ -58,7 +61,8 @@ public class DokumentFreigabe
     @Column(name = "kunde_email", length = 255)
     private String kundeEmail;
 
-    @Column(name = "erstellt_am", nullable = false, columnDefinition = "DATETIME(6) DEFAULT CURRENT_TIMESTAMP(6)")
+    @ColumnDefault("CURRENT_TIMESTAMP(6)")
+    @Column(name = "erstellt_am", nullable = false)
     private LocalDateTime erstelltAm = LocalDateTime.now();
 
     @Column(name = "ablauf_datum", nullable = false)
@@ -112,7 +116,8 @@ public class DokumentFreigabe
      * NULL/leer = es wurden keine Alternativen gewählt. Fließt als Teil der Beweissicherung
      * in den {@code hashAcceptance} ein.
      */
-    @Column(name = "akzeptierte_alternativen", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "akzeptierte_alternativen")
     private String akzeptierteAlternativen;
 
     /**
@@ -129,7 +134,8 @@ public class DokumentFreigabe
      * bearbeiteten Live-Dokument. NULL bei Alt-Freigaben (vor V326) und bei Quelltypen
      * ohne Positionen; der Service fällt dann auf das Live-Dokument zurück.
      */
-    @Column(name = "positionen_snapshot", columnDefinition = "LONGTEXT")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "positionen_snapshot")
     private String positionenSnapshot;
 
     /** Netto-Basisbetrag (ohne Alternativen) zum Versand-Zeitpunkt. Siehe {@link #positionenSnapshot}. */

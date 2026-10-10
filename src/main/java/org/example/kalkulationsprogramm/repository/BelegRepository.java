@@ -66,8 +66,8 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
     @Query("SELECT COALESCE(SUM(b.betragBrutto), 0) FROM Beleg b " +
            "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
            "  AND b.belegKategorie = :kategorie " +
-           "  AND (:von IS NULL OR b.belegDatum >= :von) " +
-           "  AND (:bis IS NULL OR b.belegDatum <= :bis)")
+           "  AND (CAST(:von AS LocalDate) IS NULL OR b.belegDatum >= :von) " +
+           "  AND (CAST(:bis AS LocalDate) IS NULL OR b.belegDatum <= :bis)")
     BigDecimal summeBruttoByKategorie(@Param("kategorie") BelegKategorie kategorie,
                                       @Param("von") LocalDate von,
                                       @Param("bis") LocalDate bis);
@@ -134,8 +134,8 @@ public interface BelegRepository extends JpaRepository<Beleg, Long> {
            "LEFT JOIN FETCH b.lieferant " +
            "LEFT JOIN FETCH b.sachkonto " +
            "WHERE b.status = org.example.kalkulationsprogramm.domain.BelegStatus.VALIDIERT " +
-           "  AND (:von IS NULL OR b.belegDatum >= :von) " +
-           "  AND (:bis IS NULL OR b.belegDatum <= :bis) " +
+           "  AND (CAST(:von AS LocalDate) IS NULL OR b.belegDatum >= :von) " +
+           "  AND (CAST(:bis AS LocalDate) IS NULL OR b.belegDatum <= :bis) " +
            "ORDER BY b.belegDatum ASC, b.id ASC")
     List<Beleg> findValidierteImZeitraumFuerExport(@Param("von") LocalDate von,
                                                    @Param("bis") LocalDate bis);

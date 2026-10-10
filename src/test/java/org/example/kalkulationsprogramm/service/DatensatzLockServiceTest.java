@@ -12,11 +12,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -47,14 +47,16 @@ class DatensatzLockServiceTest {
     @EnumSource(SperrbarerTyp.class)
     void acquire_freshLock_returnsAcquiredAndPersistsEntry_fuerJedenTyp(SperrbarerTyp typ) {
         when(repository.findByEntitaetTypAndEntitaetId(typ, ENTITAET_ID)).thenReturn(Optional.empty());
-        when(repository.saveAndFlush(any(DatensatzLock.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.legeAnFallsFrei(eq(typ), eq(ENTITAET_ID), eq(USER_A), eq("Max Mustermann"), any())).thenReturn(true);
+        when(repository.findGesperrt(typ, ENTITAET_ID))
+                .thenReturn(Optional.of(lockHeldBy(USER_A, "Max Mustermann", LocalDateTime.now())));
 
         DatensatzLockDto result = service.acquire(typ, ENTITAET_ID, USER_A, "Max Mustermann");
 
         assertThat(result.status()).isEqualTo(DatensatzLockDto.ACQUIRED);
         assertThat(result.holderUserId()).isEqualTo(USER_A);
         assertThat(result.holderDisplayName()).isEqualTo("Max Mustermann");
-        verify(repository).saveAndFlush(any(DatensatzLock.class));
+        verify(repository).legeAnFallsFrei(eq(typ), eq(ENTITAET_ID), eq(USER_A), eq("Max Mustermann"), any());
     }
 
     @Test
@@ -109,18 +111,17 @@ class DatensatzLockServiceTest {
         assertThat(result.holderDisplayName()).isEqualTo("Erika Mustermann");
         verify(repository, never()).save(any(DatensatzLock.class));
         verify(repository, never()).saveAndFlush(any(DatensatzLock.class));
+        verify(repository, never()).legeAnFallsFrei(any(), any(), any(), any(), any());
     }
 
     @Test
     void acquire_concurrentInsertRace_returnsLockedByOtherForLoser() {
-        // Erster findBy liefert nichts (Race-Setup), saveAndFlush schlaegt am
-        // Unique-Constraint fehl, danach liefert findBy den Gewinner zurueck.
+        // findBy liefert nichts (Race-Setup), das Anlegen findet schon einen
+        // Eintrag (0 Zeilen, keine Exception), gesperrt gelesen wird der Gewinner.
         DatensatzLock winner = lockHeldBy(USER_B, "Erika Mustermann", LocalDateTime.now());
-        when(repository.findByEntitaetTypAndEntitaetId(TYP, ENTITAET_ID))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(winner));
-        when(repository.saveAndFlush(any(DatensatzLock.class)))
-                .thenThrow(new DataIntegrityViolationException("uk_datensatz_lock_target"));
+        when(repository.findByEntitaetTypAndEntitaetId(TYP, ENTITAET_ID)).thenReturn(Optional.empty());
+        when(repository.legeAnFallsFrei(any(), any(), any(), any(), any())).thenReturn(false);
+        when(repository.findGesperrt(TYP, ENTITAET_ID)).thenReturn(Optional.of(winner));
 
         DatensatzLockDto result = service.acquire(TYP, ENTITAET_ID, USER_A, "Max Mustermann");
 
@@ -135,11 +136,9 @@ class DatensatzLockServiceTest {
         // demselben User. Das muss weiterhin ACQUIRED liefern (sameUser-Zweig
         // gilt auch im Race-Fall), nicht LOCKED_BY_OTHER.
         DatensatzLock winner = lockHeldBy(USER_A, "Max Mustermann", LocalDateTime.now());
-        when(repository.findByEntitaetTypAndEntitaetId(TYP, ENTITAET_ID))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(winner));
-        when(repository.saveAndFlush(any(DatensatzLock.class)))
-                .thenThrow(new DataIntegrityViolationException("uk_datensatz_lock_target"));
+        when(repository.findByEntitaetTypAndEntitaetId(TYP, ENTITAET_ID)).thenReturn(Optional.empty());
+        when(repository.legeAnFallsFrei(any(), any(), any(), any(), any())).thenReturn(false);
+        when(repository.findGesperrt(TYP, ENTITAET_ID)).thenReturn(Optional.of(winner));
 
         DatensatzLockDto result = service.acquire(TYP, ENTITAET_ID, USER_A, "Max Mustermann");
 
@@ -186,7 +185,9 @@ class DatensatzLockServiceTest {
     @Test
     void heartbeat_lockMissing_acquiresFresh() {
         when(repository.findByEntitaetTypAndEntitaetId(TYP, ENTITAET_ID)).thenReturn(Optional.empty());
-        when(repository.saveAndFlush(any(DatensatzLock.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.legeAnFallsFrei(any(), any(), any(), any(), any())).thenReturn(true);
+        when(repository.findGesperrt(TYP, ENTITAET_ID))
+                .thenReturn(Optional.of(lockHeldBy(USER_A, "Max Mustermann", LocalDateTime.now())));
 
         DatensatzLockDto result = service.heartbeat(TYP, ENTITAET_ID, USER_A, "Max Mustermann");
 

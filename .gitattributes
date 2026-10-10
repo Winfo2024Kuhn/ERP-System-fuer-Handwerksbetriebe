@@ -1,4 +1,7 @@
 /mvnw text eol=lf
+# Shell-Skripte laufen auf Linux-Servern (z.B. deployment/docker-server/). Mit
+# CRLF aus einem Windows-Checkout bricht bash schon an der ersten Zeile ab.
+*.sh text eol=lf
 *.cmd text eol=crlf
 
 # Vom Vite-Build erzeugt: der Build schreibt LF, Windows-Checkouts machen CRLF

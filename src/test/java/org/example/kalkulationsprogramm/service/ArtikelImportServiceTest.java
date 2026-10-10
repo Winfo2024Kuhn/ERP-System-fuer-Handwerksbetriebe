@@ -398,11 +398,15 @@ class ArtikelImportServiceTest {
         when(lieferantenRepository.findByLieferantenname("TestLieferant")).thenReturn(Optional.of(lieferant));
         when(artikelRepository.findByExterneArtikelnummerAndLieferantId("123", 1L)).thenReturn(Optional.empty());
         when(werkstoffRepository.findByNameIgnoreCase("Edelstahl")).thenReturn(Optional.empty());
-        when(werkstoffRepository.save(any(Werkstoff.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Werkstoff angelegt = new Werkstoff();
+        angelegt.setName("Edelstahl");
+        when(werkstoffRepository.findByNameGesperrt("Edelstahl")).thenReturn(Optional.of(angelegt));
 
         artikelImportService.importiereCsv(file, "TestLieferant", mapping, null, false);
 
-        verify(werkstoffRepository).save(any(Werkstoff.class));
+        // Anlegen ohne Dubletten-Exception (paralleler Import), danach gesperrt lesen
+        verify(werkstoffRepository).legeAnFallsNeu("Edelstahl");
+        verify(werkstoffRepository, never()).save(any(Werkstoff.class));
         verify(artikelRepository).save(artikelCaptor.capture());
         assertNotNull(artikelCaptor.getValue().getWerkstoff());
         assertEquals("Edelstahl", artikelCaptor.getValue().getWerkstoff().getName());

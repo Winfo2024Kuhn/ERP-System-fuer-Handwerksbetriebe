@@ -6,6 +6,8 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Getter
 @Setter
@@ -34,7 +36,8 @@ public class Textbaustein {
     @Column(name = "beschreibung", length = 500)
     private String beschreibung;
 
-    @Column(name = "html", columnDefinition = "longtext")
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "html")
     private String html;
 
     @ElementCollection(fetch = FetchType.EAGER)

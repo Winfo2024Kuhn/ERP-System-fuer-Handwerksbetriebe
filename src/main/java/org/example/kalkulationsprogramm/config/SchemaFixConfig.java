@@ -12,8 +12,11 @@ import javax.sql.DataSource;
 public class SchemaFixConfig {
 
     @Bean
-    public CommandLineRunner schemaFixer(JdbcTemplate jdbcTemplate) {
+    public CommandLineRunner schemaFixer(JdbcTemplate jdbcTemplate, DatenbankArt datenbankArt) {
         return args -> {
+            if (datenbankArt.istPostgres()) {
+                return; // MySQL-Altlast; das PostgreSQL-Schema ist von Anfang an richtig
+            }
             try {
                 // Fix for cost center assignment: Allow projekt_id to be NULL
                 // Check if index/constraint exists involves more logic, but simply trying to alter is safe enough for local dev if it handles existing state

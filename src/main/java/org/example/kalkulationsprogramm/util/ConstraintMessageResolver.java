@@ -33,6 +33,11 @@ public class ConstraintMessageResolver {
     private static final Pattern FK_REFERENCED_TABLE = Pattern.compile("REFERENCES `([^`]+)`", Pattern.CASE_INSENSITIVE);
     private static final Pattern FK_REFERENCED_COLUMN = Pattern.compile("REFERENCES `[^`]+` \\(`([^`]+)`\\)", Pattern.CASE_INSENSITIVE);
     private static final Pattern FK_TABLE = Pattern.compile("fails \\(`[^`]+`\\.`([^`]+)`\\)", Pattern.CASE_INSENSITIVE);
+    // PostgreSQL (Kunden-Installationen) formuliert dieselben Fehler anders
+    private static final Pattern PG_DUPLICATE = Pattern.compile("duplicate key value violates unique constraint \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PG_DUPLICATE_VALUE = Pattern.compile("Key \\([^)]*+\\)=\\((.+?)\\) already exists", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PG_NOT_NULL = Pattern.compile("null value in column \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PG_FOREIGN_KEY = Pattern.compile("violates foreign key constraint \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
 
     private static final int MAX_VALUE_PREVIEW = 120;
 
@@ -67,6 +72,21 @@ public class ConstraintMessageResolver {
         if (duplicateMatcher.find()) {
             return handleDuplicate(duplicateMatcher.group(1), duplicateMatcher.group(2), message);
         }
+        Matcher pgDuplicate = PG_DUPLICATE.matcher(message);
+        if (pgDuplicate.find()) {
+            String wert = extractFirst(PG_DUPLICATE_VALUE, message);
+            return handleDuplicate(wert != null ? wert : "", pgDuplicate.group(1), message);
+        }
+        Matcher pgNotNull = PG_NOT_NULL.matcher(message);
+        if (pgNotNull.find()) {
+            return handleNotNull(pgNotNull.group(1), message);
+        }
+        Matcher pgForeignKey = PG_FOREIGN_KEY.matcher(message);
+        if (pgForeignKey.find()) {
+            // "update or delete on table ..." = Datensatz wird noch gebraucht
+            boolean deleteCase = message.toLowerCase(Locale.ROOT).contains("update or delete on table");
+            return handleForeignKey(message, pgForeignKey.group(1), deleteCase);
+        }
         Matcher notNullMatcher = NOT_NULL_COLUMN.matcher(message);
         if (notNullMatcher.find()) {
             return handleNotNull(notNullMatcher.group(1), message);
@@ -76,7 +96,8 @@ public class ConstraintMessageResolver {
             return handleDataTooLong(tooLongMatcher.group(1), message);
         }
         if (message.toLowerCase(Locale.ROOT).contains("foreign key constraint fails")) {
-            return handleForeignKey(message);
+            return handleForeignKey(message, extractFirst(CONSTRAINT_NAME, message),
+                    message.toLowerCase(Locale.ROOT).contains("cannot delete or update a parent row"));
         }
         return fallback(message);
     }
@@ -166,10 +187,7 @@ public class ConstraintMessageResolver {
      * Analysiert fehlgeschlagene Fremdschlüsselprüfungen und liefert – je nach Situation –
      * Hinweise zum nicht löschbaren Datensatz oder zur ungültigen Referenz.
      */
-    private ConstraintErrorDetail handleForeignKey(String technicalMessage) {
-        String lower = technicalMessage.toLowerCase(Locale.ROOT);
-        boolean deleteCase = lower.contains("cannot delete or update a parent row");
-        String constraintName = extractFirst(CONSTRAINT_NAME, technicalMessage);
+    private ConstraintErrorDetail handleForeignKey(String technicalMessage, String constraintName, boolean deleteCase) {
         DatabaseConstraintMetadataService.ConstraintMetadata metadata = constraintName != null
                 ? metadataService.findConstraint(constraintName).orElse(null)
                 : null;
