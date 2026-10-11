@@ -137,6 +137,9 @@ export async function transkribiere(
 /** So lange gilt eine bekannte Antwort, bevor neu gefragt wird. */
 const VERFUEGBARKEIT_FRISCH_MS = 5 * 60_000
 
+/** So lange darf die Abfrage dauern, bevor sie abgebrochen wird und der Rueckfall greift. */
+const VERFUEGBARKEIT_ZEITLIMIT_MS = 5_000
+
 interface BekannteVerfuegbarkeit {
     verfuegbar: boolean
     abgefragtAm: number
@@ -175,8 +178,15 @@ async function frageVerfuegbarkeitAb(token: string): Promise<boolean> {
     // Klappt die Abfrage nicht, gilt die letzte bekannte Antwort weiter —
     // ein Funkloch soll einen ausgeschalteten Knopf nicht wieder hervorholen.
     const rueckfall = bekannteVerfuegbarkeiten.get(token)?.verfuegbar ?? true
+    // Haengt die Leitung (schwaches Netz auf der Baustelle), wartet der Knopf
+    // nicht ewig unsichtbar: nach kurzer Zeit abbrechen, dann greift der Rueckfall.
+    // Bewusst AbortController + setTimeout statt AbortSignal.timeout (fehlt in jsdom).
+    const abbruch = new AbortController()
+    const uhr = setTimeout(() => abbruch.abort(), VERFUEGBARKEIT_ZEITLIMIT_MS)
     try {
-        const res = await fetch(`/api/spracheingabe/verfuegbar?token=${encodeURIComponent(token)}`)
+        const res = await fetch(`/api/spracheingabe/verfuegbar?token=${encodeURIComponent(token)}`, {
+            signal: abbruch.signal,
+        })
         if (!res.ok) return rueckfall
         const daten = (await res.json()) as { verfuegbar?: unknown } | null
         if (typeof daten?.verfuegbar !== 'boolean') return rueckfall
@@ -184,6 +194,8 @@ async function frageVerfuegbarkeitAb(token: string): Promise<boolean> {
         return daten.verfuegbar
     } catch {
         return rueckfall
+    } finally {
+        clearTimeout(uhr)
     }
 }
 

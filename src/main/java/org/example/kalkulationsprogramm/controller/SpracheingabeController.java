@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
+import org.example.kalkulationsprogramm.dto.SpracheingabeVerfuegbarkeit;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.SpracheingabeService;
 import org.springframework.http.HttpHeaders;
@@ -68,12 +69,12 @@ public class SpracheingabeController {
      * ist die Spracheingabe aus; der Knopf bleibt dann verborgen.
      */
     @GetMapping("/verfuegbar")
-    public ResponseEntity<Map<String, Boolean>> verfuegbar(@RequestParam String token) {
+    public ResponseEntity<SpracheingabeVerfuegbarkeit> verfuegbar(@RequestParam String token) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginToken(token).orElse(null);
         if (mitarbeiter == null || !Boolean.TRUE.equals(mitarbeiter.getAktiv())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        return ResponseEntity.ok(Map.of("verfuegbar", spracheingabeService.istVerfuegbar()));
+        return ResponseEntity.ok(new SpracheingabeVerfuegbarkeit(spracheingabeService.istVerfuegbar()));
     }
 
     @ExceptionHandler(SpracheingabeService.KiNichtEingerichtet.class)

@@ -57,7 +57,7 @@ async function stubbeAdminOhneKi(page: Page, einrichtungOffen = false): Promise<
     await page.route('**/api/**', route => json(route, {}));
 
     await page.route('**/api/auth/me', route => json(route, {
-        id: 1, displayName: 'Erika Admin', username: 'erika', active: true,
+        id: 1, displayName: 'Erika Mustermann', username: 'erika', active: true,
         roles: ['ADMIN'], admin: true,
         requiresInitialSetup: zustand.einrichtungOffen,
         kiAktiv: false,
@@ -98,7 +98,7 @@ test('Admin ohne KI-Schlüssel arbeitet normal – ohne Umleitung und ohne KI-Hi
     await expect(page.getByRole('heading', { name: 'Projektübersicht' })).toBeVisible();
     await expect(page).toHaveURL(/\/projekte$/);
     // Erst wenn der Name in der Leiste steht, ist die Anmeldung geladen.
-    await expect(page.getByText('Erika Admin').first()).toBeVisible();
+    await expect(page.getByText('Erika Mustermann').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'KI-Hilfe' })).toHaveCount(0);
     await designPruefung(page, info, 'ki-optional-projekte-ohne-ki');
 });

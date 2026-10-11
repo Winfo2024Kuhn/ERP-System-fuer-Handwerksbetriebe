@@ -3,6 +3,9 @@ import type { ComponentProps } from 'react';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ZuordnungModal } from './ZuordnungModal';
+import { AuthProvider } from '../auth/AuthContext';
+import { KI_AUS_ERKLAERUNG } from '../features/ki/useKiAktiv';
+import { benutzer } from '../features/ki/kiTestdaten';
 import type { DokumentPosition, PositionsUebersicht } from './zuordnung/positionen';
 
 /**
@@ -328,6 +331,27 @@ describe('ZuordnungModal – Aufteilung nach Positionen', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent('Auf dem Dokument ist kein Text lesbar.');
         expect(toastError).toHaveBeenCalledWith('Auf dem Dokument ist kein Text lesbar.');
         expect(screen.getByRole('button', { name: /Nochmal versuchen/ })).toBeInTheDocument();
+    });
+
+    it('sperrt „Positionen auslesen“ ohne KI-Schlüssel, erklärt warum und nennt den Ausweg', async () => {
+        richteEin({ positionen: uebersicht({ positionen: [], summePositionen: 0 }) });
+        const standard = mockFetch.getMockImplementation()!;
+        mockFetch.mockImplementation((url: string, options?: RequestInit) => (url === '/api/auth/me'
+            ? antwort(benutzer({ kiAktiv: false }))
+            : standard(url, options)));
+        render(<AuthProvider><ZuordnungModal {...props} /></AuthProvider>);
+        fireEvent.click(await screen.findByRole('button', { name: /Nach Positionen/ }));
+        await waitFor(() => expect(mockFetch).toHaveBeenCalledWith('/api/auth/me', expect.anything()));
+
+        const knopf = screen.getByRole('button', { name: /Positionen auslesen/ });
+        expect(knopf).toBeDisabled();
+        expect(knopf).toHaveAccessibleDescription(KI_AUS_ERKLAERUNG);
+        expect(knopf.parentElement).toHaveAttribute('title', KI_AUS_ERKLAERUNG);
+        expect(screen.getByText(/Teilen Sie die Rechnung\s+stattdessen „Prozentual“ oder „Absolut“ auf/)).toBeInTheDocument();
+        expect(screen.queryByText(/Die KI liest Artikel, Mengen und Preise/)).not.toBeInTheDocument();
+
+        fireEvent.click(knopf);
+        expect(mockFetch).not.toHaveBeenCalledWith(expect.stringContaining('/auslesen'), expect.anything());
     });
 
     it('weist auf eine auffällige Differenz zwischen Positionen und Rechnung hin', async () => {

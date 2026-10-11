@@ -42,7 +42,9 @@ describe('KiSettingsSection – Statuskasten', () => {
         expect(within(kasten).getByText(/Das Programm funktioniert trotzdem vollständig/)).toBeInTheDocument();
         expect(within(kasten).getByText('KI-Hilfe in der Menüleiste')).toBeInTheDocument();
         expect(within(kasten).getByText('Spracheingabe in der Handy-App')).toBeInTheDocument();
-        expect(within(kasten).getByText(/von Hand eingetragen/)).toBeInTheDocument();
+        expect(within(kasten).getByText(/von Hand eingetragen/)).toHaveTextContent('E-Rechnungen (ZUGFeRD, XRechnung) liest das Programm weiter selbst.');
+        // Der Spam-Filter läuft über ein eigenes Sprachmodell, nicht über Gemini – er fällt also nicht weg.
+        expect(within(kasten).queryByText(/Spaß-Anfragen/)).not.toBeInTheDocument();
         // Der Schlüssel ist ausdrücklich freiwillig.
         expect(screen.getByText('Freiwillig.')).toBeInTheDocument();
     });
@@ -80,13 +82,13 @@ describe('KiSettingsSection – Speichern', () => {
         await screen.findByRole('heading', { name: 'KI-Funktionen sind aus' });
         await waitFor(() => expect(aufrufe(mock, '/api/auth/me')).toHaveLength(1));
 
-        await user.type(screen.getByLabelText(/API Key/), 'AIza-dummy-schluessel');
-        await user.click(screen.getByRole('button', { name: /Gemini Key speichern/ }));
+        await user.type(screen.getByLabelText(/KI-Schlüssel/), 'AIza-dummy-schluessel');
+        await user.click(screen.getByRole('button', { name: /Schlüssel speichern/ }));
 
         expect(await screen.findByRole('heading', { name: 'KI-Funktionen sind an' })).toBeInTheDocument();
         expect(aufrufe(mock, '/api/settings/gemini', 'PUT')).toHaveLength(1);
         expect(aufrufe(mock, '/api/auth/me')).toHaveLength(2);
-        expect(await screen.findByText('Gemini API Key gespeichert.')).toBeInTheDocument();
+        expect(await screen.findByText('KI-Schlüssel gespeichert.')).toBeInTheDocument();
     });
 
     it('funktioniert auch ohne Anmelde-Rahmen (z. B. in der Einstellungs-Übersicht im Test)', async () => {
@@ -95,10 +97,31 @@ describe('KiSettingsSection – Speichern', () => {
         render(<ToastProvider><KiSettingsSection /></ToastProvider>);
 
         await screen.findByRole('heading', { name: 'KI-Funktionen sind aus' });
-        await user.type(screen.getByLabelText(/API Key/), 'AIza-dummy-schluessel');
-        await user.click(screen.getByRole('button', { name: /Gemini Key speichern/ }));
+        await user.type(screen.getByLabelText(/KI-Schlüssel/), 'AIza-dummy-schluessel');
+        await user.click(screen.getByRole('button', { name: /Schlüssel speichern/ }));
 
         expect(await screen.findByRole('heading', { name: 'KI-Funktionen sind an' })).toBeInTheDocument();
         expect(aufrufe(mock, '/api/auth/me')).toHaveLength(0);
+    });
+});
+
+describe('KiSettingsSection – Wortwahl und Spam-Filter', () => {
+    it('spricht von „KI-Schlüssel“ statt „API Key“', async () => {
+        stubbeServer(false);
+        zeige();
+
+        expect(await screen.findByRole('heading', { name: /KI-Schlüssel \(Google Gemini\)/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Schlüssel testen/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Schlüssel speichern/ })).toBeInTheDocument();
+        expect(screen.queryByText(/API Key|API testen|Gemini Key/)).not.toBeInTheDocument();
+    });
+
+    it('erklärt beim Spam-Filter, dass er ohne Gemini-Schlüssel läuft und bei Ausfall alles durchlässt', async () => {
+        stubbeServer(false);
+        zeige();
+
+        const beschreibung = await screen.findByText(/prüft ein Sprachmodell jede neue Anfrage/);
+        expect(beschreibung).toHaveTextContent('Dafür braucht es keinen Gemini-Schlüssel');
+        expect(beschreibung).toHaveTextContent('gehen alle Anfragen durch');
     });
 });

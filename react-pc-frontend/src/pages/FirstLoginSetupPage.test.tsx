@@ -28,7 +28,7 @@ function stubbe(smtp: object, nachPruefung = false) {
             if (url.pathname !== '/api/auth/me') return undefined;
             meAufrufe += 1;
             // Beim Laden fehlt der Mailserver noch; kein KI-Schlüssel, und das ist in Ordnung.
-            return antwort(admin({ displayName: 'Erika Admin', kiAktiv: false, requiresInitialSetup: meAufrufe === 1 ? true : nachPruefung }));
+            return antwort(admin({ displayName: 'Erika Mustermann', kiAktiv: false, requiresInitialSetup: meAufrufe === 1 ? true : nachPruefung }));
         },
         (url) => (url.pathname === '/api/settings/smtp' ? antwort(smtp) : undefined),
         (url) => (url.pathname === '/api/settings/gemini' ? antwort({ apiKeySet: false }) : undefined),
@@ -48,7 +48,7 @@ async function zeige() {
             </ToastProvider>
         </MemoryRouter>,
     );
-    await screen.findByText(/Hallo Erika Admin/);
+    await screen.findByText(/Hallo Erika Mustermann/);
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -99,7 +99,7 @@ describe('Ersteinrichtung', () => {
 
         await user.click(screen.getByRole('button', { name: /Einrichtung abschließen/ }));
 
-        expect(await screen.findByText('Konfiguration noch nicht vollständig. Bitte den E-Mail-Server vollständig speichern.')).toBeInTheDocument();
+        expect(await screen.findByText('Einrichtung noch nicht fertig. Bitte den E-Mail-Server vollständig speichern.')).toBeInTheDocument();
         expect(screen.queryByText('Projektliste')).not.toBeInTheDocument();
     });
 

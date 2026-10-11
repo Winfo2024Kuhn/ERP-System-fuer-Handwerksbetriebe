@@ -16,16 +16,19 @@ import { parseErrorMessage } from '../settingsApi';
 import type { TestResult } from '../settingsApi';
 
 /**
- * KI-Funktionen: Status (an/aus), der Gemini-Zugang und der Spam-Filter für
- * Anfragen von der Webseite.
+ * KI-Funktionen: Status (an/aus), der KI-Schlüssel (Google Gemini) und der
+ * Spam-Filter für Anfragen von der Webseite.
  *
- * <p>Die KI ist freiwillig. Ohne Gemini-Key bleiben die KI-Funktionen aus,
- * alles andere läuft normal – der Statuskasten oben sagt das klar, statt den
- * fehlenden Key wie einen Fehler aussehen zu lassen.</p>
+ * <p>Die KI ist freiwillig. Ohne Gemini-Schlüssel bleiben die KI-Funktionen
+ * aus, alles andere läuft normal – der Statuskasten oben sagt das klar, statt
+ * den fehlenden Schlüssel wie einen Fehler aussehen zu lassen.</p>
  *
- * <p>Key und Filter stehen bewusst zusammen: Ohne Gemini-Key läuft der
- * Filter nicht, und wer den Filter einschalten will, muss zuerst den Key
- * hinterlegen. Getrennt in zwei Reitern wäre dieser Zusammenhang unsichtbar.</p>
+ * <p>Der Spam-Filter steht hier, weil er ebenfalls mit einem Sprachmodell
+ * arbeitet – er hängt aber <b>nicht</b> am Gemini-Schlüssel: Standardmäßig
+ * fragt er ein lokales Modell auf dem eigenen Server (Ollama), wahlweise einen
+ * eingestellten externen Dienst (`anfrage.funnel.spamfilter.provider`). Ist
+ * kein Modell eingerichtet oder erreichbar, lässt er jede Anfrage durch
+ * (siehe AnfrageFunnelSpamFilterService).</p>
  */
 export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
     const toast = useToast();
@@ -72,7 +75,7 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
 
     const handleSave = async () => {
         if (!apiKey.trim()) {
-            toast.error('Bitte API Key eingeben.');
+            toast.error('Bitte einen KI-Schlüssel eingeben.');
             return;
         }
         setSaving(true);
@@ -83,14 +86,14 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 body: JSON.stringify({ apiKey: apiKey.trim() }),
             });
             if (res.ok) {
-                toast.success('Gemini API Key gespeichert.');
+                toast.success('KI-Schlüssel gespeichert.');
                 setApiKey('');
                 // Anmeldedaten neu holen, damit „kiAktiv“ app-weit sofort stimmt
                 // (KI-Hilfe in der Menüleiste, KI-Knöpfe) – ohne Neuladen der Seite.
                 await Promise.all([loadSettings(), auth?.refreshMe()]);
                 onSaved?.();
             } else {
-                toast.error(await parseErrorMessage(res, 'Gemini API Key konnte nicht gespeichert werden.'));
+                toast.error(await parseErrorMessage(res, 'KI-Schlüssel konnte nicht gespeichert werden.'));
             }
         } catch {
             toast.error('Verbindung zum Server fehlgeschlagen.');
@@ -114,8 +117,8 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 if (data.success) toast.success(data.message);
                 else toast.error(data.message);
             } else {
-                setTestResult({ success: false, message: 'Gemini-Test fehlgeschlagen.' });
-                toast.error('Gemini-Test fehlgeschlagen.');
+                setTestResult({ success: false, message: 'Der KI-Schlüssel konnte nicht geprüft werden.' });
+                toast.error('Der KI-Schlüssel konnte nicht geprüft werden.');
             }
         } catch {
             setTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
@@ -164,7 +167,7 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
 
             <SettingsCard
                 icon={<Brain className="w-5 h-5 text-rose-600" />}
-                title="Gemini API Key"
+                title="KI-Schlüssel (Google Gemini)"
                 description={
                     <p>
                         <span className="font-medium text-slate-700">Freiwillig.</span>{' '}
@@ -177,7 +180,7 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
                     <PasswordField
                         id="geminiApiKey"
-                        label="API Key"
+                        label="KI-Schlüssel"
                         value={apiKey}
                         onChange={setApiKey}
                         isSet={apiKeySet}
@@ -191,14 +194,14 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                         className="border-rose-300 text-rose-700 hover:bg-rose-50"
                     >
                         {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap aria-hidden="true" className="w-4 h-4" />}
-                        {testing ? 'Teste...' : 'API testen'}
+                        {testing ? 'Wird geprüft …' : 'Schlüssel testen'}
                     </Button>
                 </div>
 
                 <TestResultBanner result={testResult} className="mt-3" />
 
                 <SaveButton onClick={handleSave} saving={saving} disabled={!apiKey.trim()}>
-                    Gemini Key speichern
+                    Schlüssel speichern
                 </SaveButton>
             </SettingsCard>
 
@@ -207,10 +210,12 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 title="Anfragen von der Webseite"
                 description={
                     <p>
-                        Wenn aktiv, prüft die KI jede neue Anfrage über das Webseiten-Formular und
-                        blockiert offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen,
-                        kaputte E-Mail-Adressen). Ohne Gemini-API-Key passiert nichts – dann gehen
-                        alle Anfragen durch.
+                        Wenn aktiv, prüft ein Sprachmodell jede neue Anfrage über das Webseiten-Formular
+                        und blockiert offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen,
+                        kaputte E-Mail-Adressen). Dafür braucht es keinen Gemini-Schlüssel: Das Modell
+                        läuft standardmäßig auf dem eigenen Server, die Anfragen verlassen den Betrieb
+                        dabei nicht. Ist es nicht eingerichtet oder gerade nicht erreichbar, gehen alle
+                        Anfragen durch – eine echte Anfrage wird nie wegen eines Fehlers abgewiesen.
                     </p>
                 }
             >
@@ -243,9 +248,8 @@ const OHNE_SCHLUESSEL_FAELLT_WEG = [
     'KI-Hilfe in der Menüleiste',
     'Text-Verbesserung beim E-Mail-Schreiben und in Bestellungen',
     'Vorschläge für Beiträge auf der Webseite',
-    'Automatisches Auslesen von Belegen, Rechnungen und Lieferscheinen – die Angaben werden dann von Hand eingetragen',
+    'Automatisches Auslesen von Belegen, Rechnungen und Lieferscheinen aus PDFs und Fotos – die Angaben werden dann von Hand eingetragen. E-Rechnungen (ZUGFeRD, XRechnung) liest das Programm weiter selbst.',
     'Automatische Zuordnung von E-Mails per KI',
-    'Aussortieren von Spaß-Anfragen über die Webseite',
     'Spracheingabe in der Handy-App',
 ];
 
@@ -300,7 +304,7 @@ function KiStatusKasten({ an }: { an: boolean }) {
                                 {OHNE_SCHLUESSEL_FAELLT_WEG.map((punkt) => <li key={punkt}>{punkt}</li>)}
                             </ul>
                             <p className="mt-3 text-sm text-slate-600">
-                                Zum Einschalten unten einen Gemini-Schlüssel eintragen und speichern.
+                                Zum Einschalten unten einen KI-Schlüssel von Google Gemini eintragen und speichern.
                             </p>
                         </>
                     )}

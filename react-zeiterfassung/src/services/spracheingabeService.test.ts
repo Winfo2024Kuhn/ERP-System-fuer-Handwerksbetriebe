@@ -267,7 +267,10 @@ describe('spracheingabeService', () => {
             expect(bekannteSpracheingabeVerfuegbarkeit('a b&c')).toBeUndefined()
             await expect(pruefeSpracheingabeVerfuegbar('a b&c')).resolves.toBe(false)
 
-            expect(fetchMock).toHaveBeenCalledWith('/api/spracheingabe/verfuegbar?token=a%20b%26c')
+            expect(fetchMock).toHaveBeenCalledWith(
+                '/api/spracheingabe/verfuegbar?token=a%20b%26c',
+                expect.objectContaining({ signal: expect.any(AbortSignal) }),
+            )
             expect(bekannteSpracheingabeVerfuegbarkeit('a b&c')).toBe(false)
         })
 
@@ -348,6 +351,50 @@ describe('spracheingabeService', () => {
             vi.advanceTimersByTime(10 * 60_000)
 
             await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(false)
+        })
+
+        /** fetch wie im Browser: haengt, bis das Signal abbricht, und lehnt dann mit AbortError ab. */
+        function haengendesFetch() {
+            return vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+            }))
+        }
+
+        it('bricht eine haengende Abfrage nach 5 Sekunden ab – dann bleibt der Knopf da', async () => {
+            vi.useFakeTimers()
+            vi.stubGlobal('fetch', haengendesFetch())
+            let ergebnis: boolean | undefined
+            void pruefeSpracheingabeVerfuegbar('token').then(wert => { ergebnis = wert })
+
+            await vi.advanceTimersByTimeAsync(4_999)
+            expect(ergebnis).toBeUndefined()
+
+            await vi.advanceTimersByTimeAsync(1)
+            expect(ergebnis).toBe(true)
+            // Ein Abbruch ist keine Antwort – beim naechsten Mal wird wieder gefragt.
+            expect(bekannteSpracheingabeVerfuegbarkeit('token')).toBeUndefined()
+        })
+
+        it('nach Zeitueberschreitung gilt ein schon bekanntes „aus“ weiter', async () => {
+            vi.useFakeTimers()
+            vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(macheAntwort(200, { verfuegbar: false })))
+            await pruefeSpracheingabeVerfuegbar('token')
+            vi.advanceTimersByTime(10 * 60_000)
+
+            vi.stubGlobal('fetch', haengendesFetch())
+            const abfrage = pruefeSpracheingabeVerfuegbar('token')
+            await vi.advanceTimersByTimeAsync(5_000)
+
+            await expect(abfrage).resolves.toBe(false)
+        })
+
+        it('raeumt die Uhr nach einer schnellen Antwort weg', async () => {
+            vi.useFakeTimers()
+            vi.stubGlobal('fetch', vi.fn().mockResolvedValue(macheAntwort(200, { verfuegbar: true })))
+
+            await pruefeSpracheingabeVerfuegbar('token')
+
+            expect(vi.getTimerCount()).toBe(0)
         })
 
         it('setzeSpracheingabeVerfuegbarkeitZurueck vergisst alles', async () => {

@@ -42,7 +42,7 @@ export default function FirstLoginSetupPage() {
 
             const refreshed = await refreshMe();
             if (refreshed?.requiresInitialSetup) {
-                toast.error('Konfiguration noch nicht vollständig. Bitte den E-Mail-Server vollständig speichern.');
+                toast.error('Einrichtung noch nicht fertig. Bitte den E-Mail-Server vollständig speichern.');
                 return;
             }
             toast.success('Ersteinrichtung abgeschlossen.');

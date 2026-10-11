@@ -21,6 +21,12 @@ CREATE OR REPLACE FUNCTION pg_temp.demo_rechnungsnummer(praefix text, datum date
     RETURNING praefix || '-' || monat_key || '/' || lpad(zaehler::text, 5, '0');
 $f$ LANGUAGE sql;
 
+-- Ältere Demo-Datenbanken bekamen einen unbrauchbaren KI-Schlüssel als Platzhalter.
+-- Er schaltete die KI scheinbar ein, jeder Aufruf scheiterte aber. Nur genau diesen
+-- Platzhalter entfernen (auch in schon gefüllten Demos), echte Schlüssel bleiben.
+DELETE FROM system_setting
+WHERE setting_key = 'ai.gemini.api-key' AND setting_value = 'nur-demo-kein-schluessel';
+
 DO $$
 DECLARE
     abt_buero bigint; abt_werkstatt bigint; abt_montage bigint;

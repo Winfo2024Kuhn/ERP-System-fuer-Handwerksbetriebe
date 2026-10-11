@@ -108,8 +108,7 @@ public class SpracheingabeService {
      * Gemini-Schluessel ist sie aus, und die App blendet den Mikrofon-Knopf aus.
      */
     public boolean istVerfuegbar() {
-        String apiKey = systemSettingsService.getGeminiApiKey();
-        return apiKey != null && !apiKey.isBlank();
+        return systemSettingsService.isGeminiConfigured();
     }
 
     /** Liest den Strom begrenzt in den Speicher, prueft, ruft Gemini, liefert den Text. */
@@ -119,14 +118,15 @@ public class SpracheingabeService {
             throw new IllegalArgumentException("Dieses Audioformat wird nicht unterstuetzt.");
         }
 
-        byte[] audio = leseHoechstens(audioStrom, MAX_AUDIO_BYTES);
-        if (audio.length == 0) {
-            throw new IllegalArgumentException("Die Aufnahme ist leer.");
-        }
-
+        // Vor dem Lesen pruefen: ohne Schluessel muss die Aufnahme gar nicht erst in den Speicher.
         String apiKey = systemSettingsService.getGeminiApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             throw new KiNichtEingerichtet();
+        }
+
+        byte[] audio = leseHoechstens(audioStrom, MAX_AUDIO_BYTES);
+        if (audio.length == 0) {
+            throw new IllegalArgumentException("Die Aufnahme ist leer.");
         }
 
         return sendeUndLies(baueKoerper(audio, normalisiert), apiKey, audio.length, normalisiert);
