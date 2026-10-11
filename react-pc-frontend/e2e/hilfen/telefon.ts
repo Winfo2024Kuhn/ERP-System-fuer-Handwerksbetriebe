@@ -160,8 +160,8 @@ export async function stubbeTelefonApi(page: Page, optionen: {
                     { type: 'VERPASSTE_ANRUFE', label: 'Verpasste Anrufe', count: 1, icon: 'PhoneMissed', link: '/telefon/anrufe?offen=1' },
                 ],
                 recentItems: [
-                    { type: 'SPRACHNACHRICHT', title: 'Nachricht von 0931 2222222', subtitle: 'AB Nacht · 0:03', timestamp: heute('11:40'), link: '/telefon/anrufbeantworter?nachricht=11' },
-                    { type: 'VERPASSTER_ANRUF', title: 'Verpasst: Max Mustermann', subtitle: 'Heute 11:55', timestamp: heute('11:55'), link: '/telefon/anrufe?anruf=1' },
+                    { id: 'SPRACHNACHRICHT:11', type: 'SPRACHNACHRICHT', title: 'Nachricht von 0931 2222222', subtitle: 'AB Nacht · 0:03', timestamp: heute('11:40'), link: '/telefon/anrufbeantworter?nachricht=11' },
+                    { id: 'VERPASSTER_ANRUF:1', type: 'VERPASSTER_ANRUF', title: 'Verpasst: Max Mustermann', subtitle: 'Heute 11:55', timestamp: heute('11:55'), link: '/telefon/anrufe?anruf=1' },
                 ],
             });
         }

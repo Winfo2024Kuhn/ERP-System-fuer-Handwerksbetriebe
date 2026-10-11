@@ -1,8 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildForwardSubject, buildReplyAddressing, buildReplySubject, getDisplayName, groupEmailThreads, hasFurtherRecipients,
+    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, getDisplayName,
+    groupEmailThreads, hasFurtherRecipients, nutztServerFilterUngelesen,
     type EmailItem,
 } from './emailCenterModel';
+
+describe('Ordnerlisten: Filter „Ungelesen" auf dem Server', () => {
+    it('filtert nur bei „Ungelesen" und nur in Ordnern mit Lese-Konzept serverseitig', () => {
+        expect(nutztServerFilterUngelesen('inbox', 'unread')).toBe(true);
+        expect(nutztServerFilterUngelesen('spam', 'unread')).toBe(true);
+        expect(nutztServerFilterUngelesen('tax-advisors', 'unread')).toBe(true);
+        expect(nutztServerFilterUngelesen('inbox', 'all')).toBe(false);
+        expect(nutztServerFilterUngelesen('inbox', 'read')).toBe(false);
+        expect(nutztServerFilterUngelesen('sent', 'unread')).toBe(false);
+        expect(nutztServerFilterUngelesen('drafts', 'unread')).toBe(false);
+    });
+
+    it('hängt nurUngelesen=true nur bei Bedarf an die Ordner-URL', () => {
+        expect(buildEmailListUrl('inbox', 0, 50, false)).toBe('/api/emails/inbox?offset=0&limit=50');
+        expect(buildEmailListUrl('inbox', 50, 50, true)).toBe('/api/emails/inbox?offset=50&limit=50&nurUngelesen=true');
+        expect(buildEmailListUrl('tax-advisors', 0, 120, true)).toBe('/api/emails/tax-advisors?offset=0&limit=120&nurUngelesen=true');
+        expect(buildEmailListUrl('unassigned', 0, 50, false)).toBe('/api/emails/unassigned?offset=0&limit=50');
+    });
+
+    it('fällt für Entwürfe auf den Posteingang zurück wie bisher', () => {
+        expect(buildEmailListUrl('drafts', 0, 50, false)).toBe('/api/emails/inbox?offset=0&limit=50');
+    });
+
+    it('legt gefilterte und volle Liste getrennt im Zwischenspeicher ab', () => {
+        expect(emailListCacheKey('inbox', false)).toBe('inbox');
+        expect(emailListCacheKey('inbox', true)).toBe('inbox|unread');
+        expect(emailListCacheKey('inbox', true)).not.toBe(emailListCacheKey('inbox', false));
+        expect(emailListCacheKey('spam', true)).not.toBe(emailListCacheKey('inbox', true));
+    });
+});
 
 const OWN = ['info@musterbetrieb.example', 'buero@musterbetrieb.example'];
 const isOwn = (address: string) => OWN.includes(address.toLowerCase());

@@ -38,6 +38,8 @@ import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
 import org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService;
+import org.example.kalkulationsprogramm.service.benachrichtigung.BenachrichtigungErledigtService;
+import org.example.kalkulationsprogramm.service.benachrichtigung.BenachrichtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,7 +57,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * Postfächern, die der Benutzer nicht sieht, werden weder gezählt noch mit Betreff/Absender gezeigt.
  */
 @WebMvcTest(controllers = NotificationController.class)
-@Import({ SecurityConfig.class, NotificationSichtbarkeitTest.EchteFilterBeans.class, PostfachSichtbarkeitService.class })
+@Import({ SecurityConfig.class, NotificationSichtbarkeitTest.EchteFilterBeans.class, PostfachSichtbarkeitService.class,
+        BenachrichtigungService.class })
 class NotificationSichtbarkeitTest {
 
     @org.springframework.boot.test.context.TestConfiguration
@@ -89,6 +92,8 @@ class NotificationSichtbarkeitTest {
     @MockBean private EmailPostfachZuordnungRepository zuordnungRepository;
     @MockBean private FrontendUserProfileService frontendUserProfileService;
     @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
+    @MockBean private BenachrichtigungErledigtService erledigtService;
+    @MockBean private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void daten() {
