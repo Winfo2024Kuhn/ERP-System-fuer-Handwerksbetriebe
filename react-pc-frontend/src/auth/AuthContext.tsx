@@ -9,7 +9,13 @@ export interface AuthUser {
     active: boolean;
     roles: string[];
     admin: boolean;
+    /** Admin muss noch die Ersteinrichtung abschließen (Mailserver unvollständig). */
     requiresInitialSetup: boolean;
+    /**
+     * Ein brauchbarer KI-Schlüssel (Gemini) ist hinterlegt. Ohne ihn bleiben
+     * die KI-Funktionen aus, alles andere läuft normal. Gilt für alle Nutzer.
+     */
+    kiAktiv: boolean;
     mitarbeiter?: {
         id: number;
         loginToken?: string;
@@ -202,4 +208,13 @@ export function useAuth() {
         throw new Error('useAuth must be used within an AuthProvider');
     }
     return context;
+}
+
+/**
+ * Wie {@link useAuth}, wirft aber nicht ohne {@link AuthProvider}, sondern
+ * liefert dann `null`. Für gemeinsame Bausteine (z. B. den KI-Knopf), die
+ * auch allein – etwa in Komponententests – funktionieren sollen.
+ */
+export function useOptionalAuth(): AuthContextValue | null {
+    return useContext(AuthContext);
 }

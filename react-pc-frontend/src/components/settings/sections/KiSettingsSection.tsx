@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Brain, Loader2, MessageSquareWarning, PlugZap } from 'lucide-react';
+import { useCallback, useEffect, useId, useState } from 'react';
+import { Brain, CheckCircle2, Loader2, MessageSquareWarning, PlugZap, PowerOff } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { useToast } from '../../ui/toast';
+import { InfoAbschnitt, InfoButton } from '../../ui/info-button';
+import { useOptionalAuth } from '../../../auth/AuthContext';
+import { cn } from '../../../lib/utils';
 import {
     PasswordField,
     SaveButton,
@@ -13,15 +16,25 @@ import { parseErrorMessage } from '../settingsApi';
 import type { TestResult } from '../settingsApi';
 
 /**
- * KI-Funktionen: der Gemini-Zugang und der Spam-Filter für Anfragen von der
- * Webseite.
+ * KI-Funktionen: Status (an/aus), der KI-Schlüssel (Google Gemini) und der
+ * Spam-Filter für Anfragen von der Webseite.
  *
- * <p>Beides steht bewusst zusammen: Ohne Gemini-Key läuft der Filter nicht,
- * und wer den Filter einschalten will, muss zuerst den Key hinterlegen.
- * Getrennt in zwei Reitern wäre dieser Zusammenhang unsichtbar.</p>
+ * <p>Die KI ist freiwillig. Ohne Gemini-Schlüssel bleiben die KI-Funktionen
+ * aus, alles andere läuft normal – der Statuskasten oben sagt das klar, statt
+ * den fehlenden Schlüssel wie einen Fehler aussehen zu lassen.</p>
+ *
+ * <p>Der Spam-Filter steht hier, weil er ebenfalls mit einem Sprachmodell
+ * arbeitet – er hängt aber <b>nicht</b> am Gemini-Schlüssel: Standardmäßig
+ * fragt er ein lokales Modell auf dem eigenen Server (Ollama), wahlweise einen
+ * eingestellten externen Dienst (`anfrage.funnel.spamfilter.provider`). Ist
+ * kein Modell eingerichtet oder erreichbar, lässt er jede Anfrage durch
+ * (siehe AnfrageFunnelSpamFilterService).</p>
  */
 export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
     const toast = useToast();
+    // Nicht-werfende Variante: Die Einstellungen werden in Tests auch ohne
+    // Anmelde-Rahmen gebaut. In der App ist der AuthProvider immer da.
+    const auth = useOptionalAuth();
     const [loading, setLoading] = useState(true);
 
     const [apiKeySet, setApiKeySet] = useState(false);
@@ -62,7 +75,7 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
 
     const handleSave = async () => {
         if (!apiKey.trim()) {
-            toast.error('Bitte API Key eingeben.');
+            toast.error('Bitte einen KI-Schlüssel eingeben.');
             return;
         }
         setSaving(true);
@@ -73,12 +86,14 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 body: JSON.stringify({ apiKey: apiKey.trim() }),
             });
             if (res.ok) {
-                toast.success('Gemini API Key gespeichert.');
+                toast.success('KI-Schlüssel gespeichert.');
                 setApiKey('');
-                await loadSettings();
+                // Anmeldedaten neu holen, damit „kiAktiv“ app-weit sofort stimmt
+                // (KI-Hilfe in der Menüleiste, KI-Knöpfe) – ohne Neuladen der Seite.
+                await Promise.all([loadSettings(), auth?.refreshMe()]);
                 onSaved?.();
             } else {
-                toast.error(await parseErrorMessage(res, 'Gemini API Key konnte nicht gespeichert werden.'));
+                toast.error(await parseErrorMessage(res, 'KI-Schlüssel konnte nicht gespeichert werden.'));
             }
         } catch {
             toast.error('Verbindung zum Server fehlgeschlagen.');
@@ -102,8 +117,8 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 if (data.success) toast.success(data.message);
                 else toast.error(data.message);
             } else {
-                setTestResult({ success: false, message: 'Gemini-Test fehlgeschlagen.' });
-                toast.error('Gemini-Test fehlgeschlagen.');
+                setTestResult({ success: false, message: 'Der KI-Schlüssel konnte nicht geprüft werden.' });
+                toast.error('Der KI-Schlüssel konnte nicht geprüft werden.');
             }
         } catch {
             setTestResult({ success: false, message: 'Verbindung zum Server fehlgeschlagen.' });
@@ -148,19 +163,24 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
 
     return (
         <div className="space-y-6">
+            <KiStatusKasten an={apiKeySet} />
+
             <SettingsCard
                 icon={<Brain className="w-5 h-5 text-rose-600" />}
-                title="Gemini API Key"
+                title="KI-Schlüssel (Google Gemini)"
                 description={
                     <p>
-                        Der Key wird für KI-Funktionen wie Dokumentenanalyse, Scanner und KI-Hilfe benötigt.
+                        <span className="font-medium text-slate-700">Freiwillig.</span>{' '}
+                        Mit einem Schlüssel von Google Gemini schaltet das Programm die KI-Funktionen ein,
+                        z. B. KI-Hilfe, das Auslesen von Belegen und die Text-Verbesserung. Ohne Schlüssel
+                        bleiben sie aus – alles andere funktioniert trotzdem.
                     </p>
                 }
             >
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
                     <PasswordField
                         id="geminiApiKey"
-                        label="API Key"
+                        label="KI-Schlüssel"
                         value={apiKey}
                         onChange={setApiKey}
                         isSet={apiKeySet}
@@ -174,14 +194,14 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                         className="border-rose-300 text-rose-700 hover:bg-rose-50"
                     >
                         {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap aria-hidden="true" className="w-4 h-4" />}
-                        {testing ? 'Teste...' : 'API testen'}
+                        {testing ? 'Wird geprüft …' : 'Schlüssel testen'}
                     </Button>
                 </div>
 
                 <TestResultBanner result={testResult} className="mt-3" />
 
                 <SaveButton onClick={handleSave} saving={saving} disabled={!apiKey.trim()}>
-                    Gemini Key speichern
+                    Schlüssel speichern
                 </SaveButton>
             </SettingsCard>
 
@@ -190,10 +210,12 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 title="Anfragen von der Webseite"
                 description={
                     <p>
-                        Wenn aktiv, prüft die KI jede neue Anfrage über das Webseiten-Formular und
-                        blockiert offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen,
-                        kaputte E-Mail-Adressen). Ohne Gemini-API-Key passiert nichts – dann gehen
-                        alle Anfragen durch.
+                        Wenn aktiv, prüft ein Sprachmodell jede neue Anfrage über das Webseiten-Formular
+                        und blockiert offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen,
+                        kaputte E-Mail-Adressen). Dafür braucht es keinen Gemini-Schlüssel: Das Modell
+                        läuft standardmäßig auf dem eigenen Server, die Anfragen verlassen den Betrieb
+                        dabei nicht. Ist es nicht eingerichtet oder gerade nicht erreichbar, gehen alle
+                        Anfragen durch – eine echte Anfrage wird nie wegen eines Fehlers abgewiesen.
                     </p>
                 }
             >
@@ -218,5 +240,96 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 </label>
             </SettingsCard>
         </div>
+    );
+}
+
+/** Was ohne KI-Schlüssel wegfällt – in Handwerker-Sprache, ohne Fachbegriffe. */
+const OHNE_SCHLUESSEL_FAELLT_WEG = [
+    'KI-Hilfe in der Menüleiste',
+    'Text-Verbesserung beim E-Mail-Schreiben und in Bestellungen',
+    'Vorschläge für Beiträge auf der Webseite',
+    'Automatisches Auslesen von Belegen, Rechnungen und Lieferscheinen aus PDFs und Fotos – die Angaben werden dann von Hand eingetragen. E-Rechnungen (ZUGFeRD, XRechnung) liest das Programm weiter selbst.',
+    'Automatische Zuordnung von E-Mails per KI',
+    'Spracheingabe in der Handy-App',
+];
+
+/**
+ * Statuskasten ganz oben: Sind die KI-Funktionen an oder aus?
+ *
+ * <p>„Aus“ ist kein Fehler, sondern eine freie Entscheidung des Betriebs –
+ * deshalb ruhig in Slate statt in Alarm-Rot. Der Kasten sagt, was trotzdem
+ * geht und was ohne Schlüssel wegfällt.</p>
+ */
+function KiStatusKasten({ an }: { an: boolean }) {
+    const titelId = useId();
+    return (
+        <section
+            aria-labelledby={titelId}
+            className={cn(
+                'rounded-lg border p-4',
+                an ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50',
+            )}
+        >
+            <div className="flex items-start gap-3">
+                <div
+                    className={cn(
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+                        an ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600',
+                    )}
+                >
+                    {an
+                        ? <CheckCircle2 aria-hidden="true" className="h-5 w-5" />
+                        : <PowerOff aria-hidden="true" className="h-5 w-5" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                        <h3 id={titelId} className={cn('font-semibold', an ? 'text-emerald-900' : 'text-slate-900')}>
+                            {an ? 'KI-Funktionen sind an' : 'KI-Funktionen sind aus'}
+                        </h3>
+                        <KiFunktionenInfo />
+                    </div>
+                    {an ? (
+                        <p className="mt-1 text-sm text-emerald-800">
+                            Ein KI-Schlüssel ist hinterlegt. KI-Hilfe, Text-Verbesserung, das Auslesen von Belegen
+                            und die Spracheingabe in der Handy-App stehen zur Verfügung.
+                        </p>
+                    ) : (
+                        <>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Es ist kein KI-Schlüssel hinterlegt. Das Programm funktioniert trotzdem vollständig –
+                                Angebote, Rechnungen, Zeiterfassung und E-Mails laufen wie gewohnt.
+                            </p>
+                            <p className="mt-3 text-sm font-medium text-slate-700">Ohne Schlüssel fällt weg:</p>
+                            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-slate-600">
+                                {OHNE_SCHLUESSEL_FAELLT_WEG.map((punkt) => <li key={punkt}>{punkt}</li>)}
+                            </ul>
+                            <p className="mt-3 text-sm text-slate-600">
+                                Zum Einschalten unten einen KI-Schlüssel von Google Gemini eintragen und speichern.
+                            </p>
+                        </>
+                    )}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function KiFunktionenInfo() {
+    return (
+        <InfoButton titel="KI-Funktionen">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <p>
+                    Mit Schlüssel schickt das Programm Belege, Texte und Sprachaufnahmen zum Lesen und für
+                    Vorschläge an Google Gemini. Ohne Schlüssel verlässt nichts davon den Betrieb.
+                </p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <ul className="list-disc space-y-0.5 pl-4">
+                    <li>Mit Schlüssel stehen die KI-Funktionen allen Benutzern zur Verfügung – am PC und in der Handy-App.</li>
+                    <li>Ohne Schlüssel sind KI-Knöpfe gesperrt oder ausgeblendet. Angebote, Rechnungen, Zeiterfassung und E-Mails funktionieren unverändert.</li>
+                    <li>Schon ausgelesene Belege und gespeicherte Texte bleiben erhalten.</li>
+                </ul>
+            </InfoAbschnitt>
+        </InfoButton>
     );
 }

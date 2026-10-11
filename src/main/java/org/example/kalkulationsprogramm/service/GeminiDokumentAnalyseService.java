@@ -635,6 +635,12 @@ public class GeminiDokumentAnalyseService {
     }
 
     public String rufGeminiApiMitPrompt(byte[] bytes, String mimeType, String customPrompt, boolean useProModel) {
+        // Ohne Schlüssel ist die KI aus: das Dokument verlässt den Betrieb gar nicht erst.
+        String geminiApiKey = systemSettingsService.getGeminiApiKey();
+        if (geminiApiKey == null || geminiApiKey.isBlank()) {
+            log.debug("[Gemini API] Kein Schlüssel hinterlegt – Multi-Doc-Aufruf übersprungen");
+            return null;
+        }
         API_LOCK.lock();
         try {
             // Ensure minimum delay between API calls to prevent rate limiting
@@ -651,8 +657,6 @@ public class GeminiDokumentAnalyseService {
 
             String base64Data = Base64.getEncoder().encodeToString(bytes);
             String modelToUse = useProModel ? geminiProModel : geminiModel;
-            // Key zur Laufzeit aus System-Setup lesen.
-            String geminiApiKey = systemSettingsService.getGeminiApiKey();
             String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelToUse
                     + ":generateContent?key=" + geminiApiKey;
 

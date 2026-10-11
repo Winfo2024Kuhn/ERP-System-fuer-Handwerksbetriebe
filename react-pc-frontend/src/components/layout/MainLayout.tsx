@@ -4,10 +4,12 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { KiHilfeChat } from '../KiHilfeChat';
 import { AnrufFensterHost } from '../../features/telefon/AnrufFensterHost';
 import { useTelefonBerechtigungJeBenutzer } from '../../features/telefon/useTelefonBerechtigungJeBenutzer';
+import { useKiAktiv } from '../../features/ki/useKiAktiv';
 
 export function MainLayout() {
   const { pathname } = useLocation();
   useTelefonBerechtigungJeBenutzer();
+  const kiAktiv = useKiAktiv();
   const isEmailCenter = pathname === '/emails' || pathname.startsWith('/emails/');
   return (
     <div className="h-dvh bg-slate-50 flex flex-col overflow-hidden">
@@ -34,8 +36,12 @@ export function MainLayout() {
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav />
 
-      {/* Global KI-Hilfe Chat */}
-      <KiHilfeChat />
+      {/*
+        Global KI-Hilfe Chat. Ohne KI-Schlüssel gar nicht einhängen: Der Chat
+        stellt seinen Offen-Zustand aus dem localStorage wieder her und ginge
+        sonst von selbst auf, obwohl niemand eine Antwort bekäme.
+      */}
+      {kiAktiv && <KiHilfeChat />}
 
       {/* Großes Anruf-Fenster bei eingehenden Anrufen (nur mit Telefon-Recht) */}
       <AnrufFensterHost />

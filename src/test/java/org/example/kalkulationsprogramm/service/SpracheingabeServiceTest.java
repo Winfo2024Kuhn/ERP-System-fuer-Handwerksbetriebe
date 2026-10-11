@@ -179,6 +179,7 @@ class SpracheingabeServiceTest {
 
     @Test
     void zuGrosseAufnahmeWirdAbgewiesen() {
+        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
         InputStream zuGross = new ByteArrayInputStream(audioBytes(SpracheingabeService.MAX_AUDIO_BYTES + 1));
 
         assertThatThrownBy(() -> service.transkribiere(zuGross, "audio/webm"))
@@ -191,6 +192,7 @@ class SpracheingabeServiceTest {
         // Lesens ab, sondern puffert er (fehlerhaft) erst alles und prueft die
         // Groesse erst danach, liest er weit mehr als MAX_AUDIO_BYTES - genau
         // das soll dieser Test aufdecken.
+        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
         long angebotenGesamt = (long) SpracheingabeService.MAX_AUDIO_BYTES + 5_000_000;
         ZaehlenderStrom strom = new ZaehlenderStrom(angebotenGesamt);
 
@@ -207,12 +209,40 @@ class SpracheingabeServiceTest {
     @Test
     void ohneApiSchluesselFliegtEinEhrlicherFehler() {
         when(systemSettingsService.getGeminiApiKey()).thenReturn("");
-        InputStream audio = new ByteArrayInputStream(audioBytes(10));
+        ZaehlenderStrom audio = new ZaehlenderStrom(10);
 
         assertThatThrownBy(() -> service.transkribiere(audio, "audio/webm"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(SpracheingabeService.KiNichtEingerichtet.class);
+
+        assertThat(audio.geleseneBytes())
+                .as("ohne Schluessel wird die Aufnahme gar nicht erst gelesen")
+                .isZero();
+        Mockito.verifyNoInteractions(httpClient);
+    }
+
+    @Test
+    void leereAufnahmeWirdMitSchluesselAbgewiesen() {
+        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+
+        assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(new byte[0]), "audio/webm"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Die Aufnahme ist leer.");
 
         Mockito.verifyNoInteractions(httpClient);
+    }
+
+    @Test
+    void ohneApiSchluesselIstDieSpracheingabeAus() {
+        when(systemSettingsService.isGeminiConfigured()).thenReturn(false);
+
+        assertThat(service.istVerfuegbar()).isFalse();
+    }
+
+    @Test
+    void mitApiSchluesselIstDieSpracheingabeAn() {
+        when(systemSettingsService.isGeminiConfigured()).thenReturn(true);
+
+        assertThat(service.istVerfuegbar()).isTrue();
     }
 
     @Test

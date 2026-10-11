@@ -5,6 +5,7 @@ import { AlertTriangle } from 'lucide-react';
 import DocumentEditor from '../components/DocumentEditor';
 import type { DocumentEditorHandle } from '../components/document-editor/types';
 import { KiHilfeChat } from '../components/KiHilfeChat';
+import { useKiAktiv } from '../features/ki/useKiAktiv';
 import { useDatensatzLock } from '../components/lock/useDatensatzLock';
 import { GesperrtHinweis } from '../components/lock/GesperrtHinweis';
 import { BearbeitenLeiste } from '../components/lock/BearbeitenLeiste';
@@ -34,6 +35,7 @@ export default function DocumentEditorPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const toast = useToast();
+    const kiAktiv = useKiAktiv();
 
     const projektId = searchParams.get('projektId');
     const anfrageId = searchParams.get('anfrageId');
@@ -296,7 +298,8 @@ export default function DocumentEditorPage() {
                     onLockFreigeben={hatId ? onLockFreigebenFuerSchliessen : undefined}
                 />
             </div>
-            <KiHilfeChat />
+            {/* Ohne KI-Schlüssel kein Chat – sonst ginge er über den gemerkten Offen-Zustand von selbst auf. */}
+            {kiAktiv && <KiHilfeChat />}
         </div>
     );
 }

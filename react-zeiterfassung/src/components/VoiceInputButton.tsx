@@ -8,7 +8,11 @@ import {
     MikrofonNichtErlaubtError,
     type AufnahmeSitzung,
 } from '../services/audioRecorderService'
-import { transkribiere } from '../services/spracheingabeService'
+import {
+    bekannteSpracheingabeVerfuegbarkeit,
+    pruefeSpracheingabeVerfuegbar,
+    transkribiere,
+} from '../services/spracheingabeService'
 
 /**
  * Mikrofon-Knopf fuer die mehrzeiligen Freitextfelder der App.
@@ -26,10 +30,26 @@ import { transkribiere } from '../services/spracheingabeService'
  * <p><b>Datenschutz.</b> Die Aufnahme lebt nur im Arbeitsspeicher, wird nach
  * dem Aufruf verworfen und taucht weder in Logs noch in der Konsole auf.
  * Beim ersten Antippen sieht der Nutzer einen Hinweis darauf.
+ *
+ * <p><b>Ohne KI kein Knopf.</b> Die Spracheingabe braucht den KI-Schluessel
+ * des Betriebs. Ist keiner hinterlegt, erscheint der Knopf gar nicht. Bis die
+ * Antwort da ist, bleibt er weg (kein Aufblitzen und Verschwinden); danach
+ * merkt sich der Dienst die Antwort, und jeder weitere Knopf steht sofort da.
  */
 
 /** Merker im localStorage, damit der Datenschutz-Hinweis nur einmal je Geraet kommt. */
 const HINWEIS_MERKER = 'zeiterfassung_spracheingabe_hinweis'
+
+/** Unter diesem Schluessel legt die App das Login-Token ab. */
+const TOKEN_SCHLUESSEL = 'zeiterfassung_token'
+
+function leseToken(): string | null {
+    try {
+        return localStorage.getItem(TOKEN_SCHLUESSEL)
+    } catch {
+        return null
+    }
+}
 
 /** Nach zwei Minuten wird von selbst gestoppt und das Gesagte verarbeitet. */
 const MAX_AUFNAHME_MS = 120_000
@@ -75,12 +95,34 @@ export default function VoiceInputButton({
     const [zeigtDatenschutzHinweis, setZeigtDatenschutzHinweis] = useState(false)
     const [dauerMs, setDauerMs] = useState(0)
     const [istOnline, setIstOnline] = useState(() => navigator.onLine)
+    // undefined = noch unbekannt. Ohne Token laesst sich nichts fragen —
+    // dann wie bisher anzeigen (verarbeite() meldet die fehlende Anmeldung).
+    const [verfuegbar, setVerfuegbar] = useState<boolean | undefined>(() => {
+        const token = leseToken()
+        return token ? bekannteSpracheingabeVerfuegbarkeit(token) : true
+    })
 
     const sitzungRef = useRef<AufnahmeSitzung | null>(null)
     const stoppUhrRef = useRef<number | null>(null)
     const tickerRef = useRef<number | null>(null)
     const hinweisUhrRef = useRef<number | null>(null)
     const abbruchRef = useRef<AbortController | null>(null)
+
+    // Ist die Spracheingabe im Betrieb eingeschaltet (KI-Schluessel hinterlegt)?
+    useEffect(() => {
+        const token = leseToken()
+        if (!token) return
+        let abgebrochen = false
+        pruefeSpracheingabeVerfuegbar(token)
+            // Der Dienst wirft nie; sicher ist sicher — im Zweifel wie bisher anzeigen.
+            .catch(() => true)
+            .then(ergebnis => {
+                if (!abgebrochen) setVerfuegbar(ergebnis)
+            })
+        return () => {
+            abgebrochen = true
+        }
+    }, [])
 
     // Online-/Offline-Erkennung wie in NetworkStatusBadge.
     useEffect(() => {
@@ -126,7 +168,7 @@ export default function VoiceInputButton({
 
     const verarbeite = useCallback(
         async (aufnahme: Blob) => {
-            const token = localStorage.getItem('zeiterfassung_token')
+            const token = leseToken()
             if (!token) {
                 toast.error('Nicht angemeldet. Bitte den QR-Code neu scannen.')
                 setZustand('bereit')
@@ -253,6 +295,9 @@ export default function VoiceInputButton({
         zustand === 'nimmt-auf' ? formatiereDauer(dauerMs)
             : zustand === 'verarbeitet' ? 'Wird aufgeschrieben…'
                 : grund ?? hinweis
+
+    // Spracheingabe aus (kein KI-Schluessel) oder Antwort noch offen: kein Knopf.
+    if (verfuegbar !== true) return null
 
     return (
         <div className={`flex items-center gap-2 ${className}`}>

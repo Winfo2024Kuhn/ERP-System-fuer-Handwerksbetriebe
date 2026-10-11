@@ -80,6 +80,8 @@ public class AuthController {
 
         boolean isAdmin = profile.hasRole(FrontendUserRole.ADMIN);
         boolean requiresInitialSetup = isAdmin && settingsService.isInitialConfigurationRequired();
+        // Für alle Nutzer: ohne Gemini-Schlüssel blendet die Oberfläche KI-Knöpfe aus oder sperrt sie.
+        boolean kiAktiv = settingsService.isGeminiConfigured();
 
         MitarbeiterInfo mitarbeiter = null;
         if (profile.getMitarbeiter() != null) {
@@ -94,6 +96,7 @@ public class AuthController {
                 profile.getRoles(),
                 isAdmin,
                 requiresInitialSetup,
+                kiAktiv,
                 mitarbeiter
         ));
     }
@@ -152,6 +155,7 @@ public class AuthController {
             List<String> roles,
             boolean admin,
             boolean requiresInitialSetup,
+            boolean kiAktiv,
             MitarbeiterInfo mitarbeiter
     ) {
     }
