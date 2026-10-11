@@ -121,11 +121,15 @@ test('Ziehen am Chip startet kein Verschieben der Mail', async ({ page }) => {
 });
 
 test('Strg/Cmd-Klick öffnet die Lieferantenakte in einem neuen Tab', async ({ page, context }) => {
-    // Zwei komplette App-Starts in einem Test (E-Mail-Center + Lieferantenakte im neuen Tab).
-    // Auf dem CI-Runner mit zwei Workern reichten dafür 30 s Testzeit und 15 s pro Prüfung
-    // nicht immer – der Tab öffnete, war aber noch nicht fertig geladen.
-    test.slow();
-    const tabZeit = { timeout: 30_000 };
+    // Geprüft wird nur, was der Strg/Cmd-Klick verspricht: neuer Tab mit der Adresse der
+    // Lieferantenakte, die E-Mail-Liste bleibt stehen. Die Akte selbst (Direktlink mit
+    // ?lieferantId=) testen die lieferant-*-Specs. Früher startete der neue Tab die ganze App
+    // ein zweites Mal über den Vite-Dev-Server – auf dem CI-Runner blieb er dabei immer wieder
+    // nach dem HTML stehen (der instabilste Test der Suite). Deshalb bekommt er eine Ersatzseite.
+    await page.context().route((url) => url.pathname === '/lieferanten', (route) => route.fulfill({
+        contentType: 'text/html',
+        body: '<!doctype html><title>Lieferantenakte</title><h1>Lieferantenakte (Test)</h1>',
+    }));
     await vorbereiten(page, '/emails/inbox');
     const link = page.getByRole('link', { name: 'Lieferant · Musterhandel GmbH öffnen' });
     await expect(link).toBeVisible();
@@ -133,10 +137,10 @@ test('Strg/Cmd-Klick öffnet die Lieferantenakte in einem neuen Tab', async ({ p
     await link.click({ modifiers: ['ControlOrMeta'] });
     const tab = await neuerTab;
     // Wartend prüfen: der neue Tab steht anfangs noch auf about:blank.
-    await expect(tab).toHaveURL(/\/lieferanten\?lieferantId=7$/, tabZeit);
-    await expect(tab.getByRole('heading', { name: 'LIEFERANTENDETAILS' })).toBeVisible(tabZeit);
-    await expect(tab.getByRole('heading', { level: 1, name: 'Musterhandel GmbH', exact: true })).toBeVisible(tabZeit);
+    await expect(tab).toHaveURL(/\/lieferanten\?lieferantId=7$/);
+    await expect(tab.getByRole('heading', { name: 'Lieferantenakte (Test)' })).toBeVisible();
     await expect(page).toHaveURL(/\/emails\/inbox$/);
+    await expect(link).toBeVisible();
 });
 
 test('Mail-Kopf zeigt „Gehört zu:“ und springt ins Projekt', async ({ page }, info) => {
