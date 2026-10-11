@@ -1138,24 +1138,24 @@ class UnifiedEmailSichtbarkeitSecurityTest {
             org.assertj.core.api.Assertions.assertThat(sicht.getValue().sichtbarePostfachIds()).containsExactlyInAnyOrder(1L, 2L);
         }
 
+        /**
+         * Sehen ja, frei wählen nein: Erika sieht das Rechnungs-Postfach (kein 403), aber eine
+         * Mail aus dem E-Mail-Center darf nicht darüber raus – nur Dokumente aus dem Dokument-Editor.
+         */
         @Test
-        void sendenUeberPostfachIdErlaubt() throws Exception {
-            org.example.email.EmailService dienst = Mockito.mock(org.example.email.EmailService.class);
-            given(dienst.sendEmailWithMultipleAttachments(anyString(), any(), anyString(), any(), any(), any(),
-                    anyList(), any())).willReturn("<neu@example.com>");
+        void sendenUeberPostfachIdAbgelehnt() throws Exception {
             given(postfachService.aktivesPostfach(2L)).willReturn(Optional.of(rechnungen));
-            given(postfachVersandService.postfachFuerNeueMail(eq(2L), eq(7L), eq(false))).willReturn(rechnungen);
-            given(postfachVersandService.versandUeber(rechnungen)).willReturn(
-                    new PostfachVersandService.Versand(dienst, "rechnungen@example.com", rechnungen));
-            Email gespeichert = mail(99L, "Neu", rechnungen);
-            gespeichert.setDirection(EmailDirection.OUT);
-            given(ausgangsmailService.speichere(any())).willReturn(gespeichert);
+            given(postfachVersandService.postfachFuerNeueMail(eq(2L), eq(7L), eq(false))).willThrow(
+                    new IllegalArgumentException("Über das Postfach für Rechnungen & Mahnungen gehen nur Dokumente "
+                            + "aus dem Dokument-Editor raus. Bitte ein anderes Postfach wählen."));
 
             mockMvc.perform(multipart("/api/emails/send").file(dto(
                             "{\"postfachId\":2,\"recipients\":[\"kunde@example.org\"],\"subject\":\"s\",\"body\":\"b\"}"))
                             .with(csrf()))
-                    .andExpect(status().isOk());
-            verify(postfachVersandService).versandUeber(rechnungen);
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(
+                            org.hamcrest.Matchers.containsString("nur Dokumente aus dem Dokument-Editor")));
+            verify(postfachVersandService, Mockito.never()).versandUeber(any());
         }
     }
 }

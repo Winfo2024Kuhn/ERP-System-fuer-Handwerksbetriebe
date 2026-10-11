@@ -9,10 +9,11 @@ export const INFO = { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeige
 export const MAX = { id: 7, emailAdresse: 'max@musterbetrieb.example', anzeigename: 'Max Mustermann' };
 export const RECHNUNGEN = { id: 9, emailAdresse: 'rechnungen@musterbetrieb.example', anzeigename: null };
 
+/** rechnungen@ steht als eigene Adresse mit drin, ist aber nicht wählbar (nur Dokument-Editor). */
 export const ABSENDER_POSTFAECHER = [
-    { ...MAX, eigenes: true, hauptpostfach: false },
-    { ...INFO, eigenes: false, hauptpostfach: true },
-    { ...RECHNUNGEN, eigenes: false, hauptpostfach: false },
+    { ...MAX, eigenes: true, hauptpostfach: false, waehlbar: true },
+    { ...INFO, eigenes: false, hauptpostfach: true, waehlbar: true },
+    { ...RECHNUNGEN, eigenes: false, hauptpostfach: false, waehlbar: false },
 ];
 
 export const EINGANG = {

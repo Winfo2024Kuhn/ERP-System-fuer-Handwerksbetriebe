@@ -22,6 +22,12 @@ export interface AbsenderPostfach extends PostfachKurz {
     /** Das dem angemeldeten Benutzer zugeordnete Postfach. */
     eigenes: boolean;
     hauptpostfach: boolean;
+    /**
+     * Als Absender wählbar? `false` beim Postfach für Rechnungen & Mahnungen – es steht nur
+     * als eigene Adresse in der Liste (wird bei „Allen antworten“ nicht mit angeschrieben),
+     * darüber gehen aber nur Dokumente aus dem Dokument-Editor raus. Fehlt (ältere Antwort) → wählbar.
+     */
+    waehlbar?: boolean;
 }
 
 /** Vollständiges Postfach aus `GET /api/postfaecher` (nur Admin). */
@@ -123,14 +129,20 @@ export function formatPostfach(postfach: PostfachKurz): string {
     return name ? `${name} <${postfach.emailAdresse}>` : postfach.emailAdresse;
 }
 
+/** Postfächer, die in „Senden von“ zur Auswahl stehen (ohne das Postfach für Rechnungen & Mahnungen). */
+export function nurWaehlbareAbsender(postfaecher: AbsenderPostfach[]): AbsenderPostfach[] {
+    return postfaecher.filter(p => p.waehlbar !== false);
+}
+
 /**
  * Vorbelegung für „Senden von“: eigenes Postfach, sonst Hauptpostfach,
- * sonst das erste der Liste. `null` nur bei leerer Liste.
+ * sonst das erste der Liste – jeweils nur unter den wählbaren. `null` nur, wenn keins wählbar ist.
  */
 export function waehleStandardAbsender(postfaecher: AbsenderPostfach[]): AbsenderPostfach | null {
-    return postfaecher.find(p => p.eigenes)
-        ?? postfaecher.find(p => p.hauptpostfach)
-        ?? postfaecher[0]
+    const waehlbar = nurWaehlbareAbsender(postfaecher);
+    return waehlbar.find(p => p.eigenes)
+        ?? waehlbar.find(p => p.hauptpostfach)
+        ?? waehlbar[0]
         ?? null;
 }
 

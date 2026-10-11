@@ -465,6 +465,34 @@ class PostfachServiceTest {
         }
 
         @Test
+        void absenderAuswahlRechnungsPostfachNichtWaehlbar() {
+            EmailAbsender info = postfach(1L, "info@example.com", true);
+            EmailAbsender rechnungen = postfach(2L, "rechnungen@example.com", false);
+            rechnungen.setFuerGeschaeftsdokumente(true);
+            EmailAbsender max = postfach(5L, "max@example.com", false);
+            when(repository.findByAktivTrueOrderBySortierungAscIdAsc()).thenReturn(List.of(rechnungen, info, max));
+
+            // Bleibt in der Liste (eigene Adresse fürs „Allen antworten“), ist aber nicht wählbar.
+            assertThat(service.absenderAuswahl(null, PostfachSichtbarkeit.ALLES))
+                    .extracting(AbsenderPostfachDto::emailAdresse, AbsenderPostfachDto::waehlbar)
+                    .containsExactly(
+                            org.assertj.core.groups.Tuple.tuple("info@example.com", true),
+                            org.assertj.core.groups.Tuple.tuple("rechnungen@example.com", false),
+                            org.assertj.core.groups.Tuple.tuple("max@example.com", true));
+        }
+
+        @Test
+        void absenderAuswahlBehaeltHauptpostfachFuerGeschaeftsdokumente() {
+            EmailAbsender info = postfach(1L, "info@example.com", true);
+            info.setFuerGeschaeftsdokumente(true);
+            when(repository.findByAktivTrueOrderBySortierungAscIdAsc()).thenReturn(List.of(info));
+
+            assertThat(service.absenderAuswahl(null, PostfachSichtbarkeit.ALLES))
+                    .extracting(AbsenderPostfachDto::waehlbar)
+                    .containsExactly(true);
+        }
+
+        @Test
         void aktivesPostfach() {
             EmailAbsender aus = postfach(5L, "max@example.com", false);
             aus.setAktiv(false);

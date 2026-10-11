@@ -85,7 +85,9 @@ public class PostfachService {
     /**
      * Auswahl „Senden von“: alle aktiven Postfächer, die der Benutzer sieht und die nicht
      * auslaufen – eigenes zuerst,
-     * dann das Hauptpostfach, dann nach Sortierung.
+     * dann das Hauptpostfach, dann nach Sortierung. Das Postfach für Rechnungen &amp; Mahnungen
+     * steht mit drin (eigene Adresse fürs „Allen antworten“), ist aber nicht wählbar – darüber
+     * gehen nur Dokumente aus dem Dokument-Editor raus, automatisch.
      */
     @Transactional(readOnly = true)
     public List<AbsenderPostfachDto> absenderAuswahl(Long eigenesPostfachId, PostfachSichtbarkeit sichtbarkeit) {
@@ -95,7 +97,8 @@ public class PostfachService {
                 // Ein auslaufendes Postfach ist für neue Mails nicht mehr wählbar.
                 .filter(p -> !p.isLaeuftAus())
                 .map(p -> new AbsenderPostfachDto(p.getId(), p.getEmailAdresse(), p.getAnzeigename(),
-                        p.getId().equals(eigenesPostfachId), p.isHauptpostfach()))
+                        p.getId().equals(eigenesPostfachId), p.isHauptpostfach(),
+                        PostfachVersandService.istFreiWaehlbar(p)))
                 .toList());
         // Stabile Sortierung: die Sortierung aus der Datenbank bleibt innerhalb der Gruppen erhalten.
         liste.sort(Comparator.comparing((AbsenderPostfachDto a) -> !a.eigenes())

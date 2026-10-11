@@ -1039,15 +1039,18 @@ class UnifiedEmailControllerTest {
             given(frontendUserProfileService.findByUsername("max")).willReturn(Optional.of(max));
             given(postfachVersandService.eigenesPostfach(7L)).willReturn(Optional.of(postfach(3L, "max@example.com")));
             given(postfachService.absenderAuswahl(eq(3L), any())).willReturn(List.of(
-                    new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(3L, "max@example.com", "Max Mustermann", true, false),
-                    new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(1L, "info@example.com", null, false, true)));
+                    new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(3L, "max@example.com", "Max Mustermann", true, false, true),
+                    new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(1L, "info@example.com", null, false, true, true),
+                    new org.example.kalkulationsprogramm.dto.Postfach.AbsenderPostfachDto(2L, "rechnungen@example.com", null, false, false, false)));
 
             mockMvc.perform(get("/api/emails/absender-postfaecher")
                             .principal(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("max", null)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].id").value(3))
                     .andExpect(jsonPath("$[0].eigenes").value(true))
-                    .andExpect(jsonPath("$[1].hauptpostfach").value(true));
+                    .andExpect(jsonPath("$[1].hauptpostfach").value(true))
+                    .andExpect(jsonPath("$[1].waehlbar").value(true))
+                    .andExpect(jsonPath("$[2].waehlbar").value(false));
         }
 
         @Test

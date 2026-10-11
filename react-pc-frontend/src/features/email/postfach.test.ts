@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    beschreibeAbruf, beschreibeSichtbarkeit, formatPostfach, immerFuerAlleSichtbar, formatVorZeit, lokalerTeil, parseAbsenderPostfaecher,
+    beschreibeAbruf, beschreibeSichtbarkeit, formatPostfach, immerFuerAlleSichtbar, formatVorZeit, lokalerTeil, nurWaehlbareAbsender, parseAbsenderPostfaecher,
     parsePostfach, parsePostfaecher, parseSichtbarkeitsAbteilungen, parseSichtbarkeitsBenutzer, passtZurSuche,
     sichtbarkeitAusPostfach, sichtbarkeitGeaendert,
     waehleStandardAbsender, type AbsenderPostfach, type PostfachDto,
@@ -37,6 +37,17 @@ describe('postfach', () => {
         expect(waehleStandardAbsender([absender({ id: 1 }), absender({ id: 2, hauptpostfach: true })])?.id).toBe(2);
         expect(waehleStandardAbsender([absender({ id: 5 }), absender({ id: 6 })])?.id).toBe(5);
         expect(waehleStandardAbsender([])).toBeNull();
+    });
+
+    it('lässt das Postfach für Rechnungen & Mahnungen nicht als Absender wählen', () => {
+        const rechnungen = absender({ id: 2, waehlbar: false, eigenes: true });
+        const liste = [absender({ id: 1, hauptpostfach: true, waehlbar: true }), rechnungen, absender({ id: 3 })];
+
+        // Fehlt das Feld (ältere Antwort), bleibt das Postfach wählbar.
+        expect(nurWaehlbareAbsender(liste).map(p => p.id)).toEqual([1, 3]);
+        // Selbst als eigenes Postfach wird es nicht vorbelegt.
+        expect(waehleStandardAbsender(liste)?.id).toBe(1);
+        expect(waehleStandardAbsender([rechnungen])).toBeNull();
     });
 
     it('liest die Absender-Liste robust ein', () => {

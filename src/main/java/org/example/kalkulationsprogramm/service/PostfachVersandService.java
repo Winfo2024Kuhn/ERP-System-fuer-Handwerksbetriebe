@@ -37,7 +37,8 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>Antwort/Weiterleitung: fest das Postfach, in dem die Original-Mail ankam
  *       ({@link #antwortPostfach(Email)}).</li>
  *   <li>Rechnung, Mahnung, Angebot, AB: das Postfach für Geschäftsdokumente.</li>
- *   <li>Neue Mail: das gewählte Postfach, sonst das eigene, sonst das Hauptpostfach.</li>
+ *   <li>Neue Mail: das gewählte Postfach, sonst das eigene, sonst das Hauptpostfach. Das
+ *       Postfach für Geschäftsdokumente ist dafür nicht wählbar ({@link #istFreiWaehlbar}).</li>
  * </ul>
  */
 @Service
@@ -66,7 +67,8 @@ public class PostfachVersandService {
     /**
      * Postfach für eine neue Mail.
      *
-     * @throws IllegalArgumentException gewähltes Postfach unbekannt oder ausgeschaltet
+     * @throws IllegalArgumentException gewähltes Postfach unbekannt, ausgeschaltet, auslaufend oder
+     *                                  das Postfach für Rechnungen &amp; Mahnungen
      */
     @Transactional(readOnly = true)
     public EmailAbsender postfachFuerNeueMail(Long gewaehltesPostfachId, Long frontendUserId,
@@ -87,6 +89,10 @@ public class PostfachVersandService {
             if (gewaehlt.isLaeuftAus()) {
                 throw new IllegalArgumentException("Dieses Postfach läuft aus. Bitte ein anderes Postfach wählen.");
             }
+            if (!istFreiWaehlbar(gewaehlt)) {
+                throw new IllegalArgumentException("Über das Postfach für Rechnungen & Mahnungen gehen nur Dokumente "
+                        + "aus dem Dokument-Editor raus. Bitte ein anderes Postfach wählen.");
+            }
             return gewaehlt;
         }
         return eigenesPostfach(frontendUserId)
@@ -95,7 +101,19 @@ public class PostfachVersandService {
                 .orElse(null);
     }
 
-    /** Eigenes, aktives Postfach eines Benutzers; ein auslaufendes zählt nicht (dann Hauptpostfach). */
+    /**
+     * Darf man dieses Postfach im E-Mail-Center als Absender wählen? Nicht das Postfach für Rechnungen
+     * &amp; Mahnungen – darüber gehen nur Dokumente aus dem Dokument-Editor raus, automatisch. Außer es
+     * ist zugleich das Hauptpostfach.
+     */
+    static boolean istFreiWaehlbar(EmailAbsender postfach) {
+        return !postfach.isFuerGeschaeftsdokumente() || postfach.isHauptpostfach();
+    }
+
+    /**
+     * Eigenes, aktives Postfach eines Benutzers. Ein auslaufendes zählt nicht (dann Hauptpostfach),
+     * das Postfach für Rechnungen &amp; Mahnungen auch nicht – sonst gingen seine normalen Mails darüber.
+     */
     @Transactional(readOnly = true)
     public Optional<EmailAbsender> eigenesPostfach(Long frontendUserId) {
         if (frontendUserId == null) {
@@ -103,7 +121,7 @@ public class PostfachVersandService {
         }
         return frontendUserProfileRepository.findById(frontendUserId)
                 .map(FrontendUserProfile::getEmailAbsender)
-                .filter(p -> p.isAktiv() && !p.isLaeuftAus());
+                .filter(p -> p.isAktiv() && !p.isLaeuftAus() && istFreiWaehlbar(p));
     }
 
     /**
@@ -162,7 +180,7 @@ public class PostfachVersandService {
         if (herkunft.stream().anyMatch(p -> p.isLaeuftAus() && sicht.siehtPostfach(p))) {
             return hauptpostfach().orElse(null);
         }
-        return Optional.ofNullable(eigenesPostfach).filter(p -> p.isAktiv() && !p.isLaeuftAus())
+        return Optional.ofNullable(eigenesPostfach).filter(p -> p.isAktiv() && !p.isLaeuftAus() && istFreiWaehlbar(p))
                 .or(this::hauptpostfach).orElse(null);
     }
 
@@ -171,7 +189,7 @@ public class PostfachVersandService {
      * (außer es ist zugleich das Hauptpostfach) und nicht über ein auslaufendes Postfach.
      */
     static boolean istAntwortPostfach(EmailAbsender postfach) {
-        return !postfach.isLaeuftAus() && (!postfach.isFuerGeschaeftsdokumente() || postfach.isHauptpostfach());
+        return !postfach.isLaeuftAus() && istFreiWaehlbar(postfach);
     }
 
     /**
