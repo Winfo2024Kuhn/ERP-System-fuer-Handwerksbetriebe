@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Truck, MapPin, Phone, Loader2, Navigation, ChevronRight, Smartphone, FileText, ArrowLeft, Search, X, RefreshCw, AlertTriangle } from 'lucide-react'
 import { OfflineService } from '../services/OfflineService'
+import { anrufbareNummer } from '../lib/telefon'
 
 
 interface Lieferant {
@@ -158,6 +159,10 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
         openExternalMap(address, true)
     }
 
+    // Eine reine Ortsvorwahl (vom Büro beim Adresse-Eingeben vorgeschlagen) ist keine Nummer.
+    const festnetz = anrufbareNummer(selectedLieferant?.telefon)
+    const mobil = anrufbareNummer(selectedLieferant?.mobiltelefon)
+
     const callPhone = (telefon: string) => {
         window.location.href = `tel:${telefon}`
     }
@@ -170,30 +175,34 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
         <div className="h-full flex flex-col bg-slate-50">
             {/* Header */}
             <header className="bg-white border-b border-slate-200 px-4 py-4 safe-area-top">
+                {/* min-w-0 + break-words: Ein langer Lieferantenname bricht im Kopf um, statt ihn
+                    breiter als den Bildschirm zu machen (sonst liess sich die Seite seitlich schieben). */}
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => selectedLieferant ? setSearchParams({}) : navigate('/')}
-                        className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                        aria-label="Zurück"
+                        className="flex-shrink-0 p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </button>
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-rose-50 rounded-lg flex items-center justify-center">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <div className="w-10 h-10 flex-shrink-0 bg-rose-50 rounded-lg flex items-center justify-center">
                             <Truck className="w-5 h-5 text-rose-600" />
                         </div>
-                        <div>
-                            <h1 className="font-bold text-slate-900">
+                        <div className="min-w-0">
+                            <h1 className="font-bold text-slate-900 break-words">
                                 {selectedLieferant ? selectedLieferant.lieferantenname : 'Lieferanten'}
                             </h1>
                             {selectedLieferant?.eigeneKundennummer && (
-                                <p className="text-sm text-slate-500">Kd.-Nr. {selectedLieferant.eigeneKundennummer}</p>
+                                <p className="text-sm text-slate-500 break-words">Kd.-Nr. {selectedLieferant.eigeneKundennummer}</p>
                             )}
                         </div>
                     </div>
                     {!selectedLieferant && (
                         <button
                             onClick={() => onSync && onSync()}
-                            className="ml-auto p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                            aria-label="Lieferanten aktualisieren"
+                            className="ml-auto flex-shrink-0 p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                         >
                             <RefreshCw className={`w-5 h-5 ${loading || syncStatus === 'syncing' ? 'animate-sync-spin text-rose-600' : 'text-slate-500'}`} />
                         </button>
@@ -217,8 +226,8 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                 </div>
             )}
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            {/* Content – break-words: lange Woerter brechen um, statt seitlich ueberzustehen */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden break-words">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="w-8 h-8 animate-spin text-rose-600" />
@@ -299,16 +308,16 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                                 {selectedLieferant.lieferantenname}
                             </p>
 
-                            {(selectedLieferant.telefon || selectedLieferant.mobiltelefon) ? (
-                                selectedLieferant.telefon && selectedLieferant.mobiltelefon ? (
+                            {(festnetz || mobil) ? (
+                                festnetz && mobil ? (
                                     <button
                                         onClick={() => setShowPhoneModal(true)}
                                         className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-green-50 border border-slate-200 hover:border-green-200 rounded-xl transition-all"
                                     >
-                                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                                        <div className="w-10 h-10 flex-shrink-0 bg-green-100 rounded-lg flex items-center justify-center">
                                             <Phone className="w-5 h-5 text-green-600" />
                                         </div>
-                                        <div className="flex-1 text-left">
+                                        <div className="min-w-0 flex-1 text-left">
                                             <p className="text-xs text-slate-500">Telefon</p>
                                             <p className="text-slate-900 font-medium">2 Nummern verfügbar</p>
                                         </div>
@@ -316,36 +325,27 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                                     </button>
                                 ) : (
                                     <button
-                                        onClick={() => callPhone(selectedLieferant.telefon || selectedLieferant.mobiltelefon || '')}
+                                        onClick={() => callPhone(festnetz || mobil || '')}
                                         className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-green-50 border border-slate-200 hover:border-green-200 rounded-xl transition-all"
                                     >
-                                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                                            {selectedLieferant.mobiltelefon ? (
+                                        <div className="w-10 h-10 flex-shrink-0 bg-green-100 rounded-lg flex items-center justify-center">
+                                            {mobil ? (
                                                 <Smartphone className="w-5 h-5 text-green-600" />
                                             ) : (
                                                 <Phone className="w-5 h-5 text-green-600" />
                                             )}
                                         </div>
-                                        <div className="flex-1 text-left">
-                                            <p className="text-xs text-slate-500">{selectedLieferant.telefon ? 'Telefon' : 'Mobil'}</p>
-                                            <p className="text-slate-900 font-medium">{selectedLieferant.telefon || selectedLieferant.mobiltelefon}</p>
+                                        <div className="min-w-0 flex-1 text-left">
+                                            <p className="text-xs text-slate-500">{festnetz ? 'Telefon' : 'Mobil'}</p>
+                                            <p className="text-slate-900 font-medium">{festnetz || mobil}</p>
                                         </div>
                                         <span className="text-green-600 text-sm font-medium">Anrufen</span>
                                     </button>
                                 )
                             ) : (
-                                <button
-                                    disabled
-                                    className="w-full flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl opacity-60 cursor-not-allowed"
-                                >
-                                    <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                                        <Phone className="w-5 h-5 text-slate-400" />
-                                    </div>
-                                    <div className="flex-1 text-left">
-                                        <p className="text-xs text-slate-500">Telefon</p>
-                                        <p className="text-slate-400 font-medium">Keine Nummer</p>
-                                    </div>
-                                </button>
+                                <p className="text-center text-slate-400 text-sm py-2">
+                                    Keine Telefonnummer hinterlegt
+                                </p>
                             )}
 
 
@@ -355,36 +355,43 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                 ) : (
                     /* Lieferanten List */
                     <div className="p-4 space-y-2">
-                        {lieferanten.map(lieferant => (
-                            <button
-                                key={lieferant.id}
-                                onClick={() => setSearchParams({ id: lieferant.id.toString() })}
-                                className="w-full bg-white border border-slate-200 rounded-xl p-4 text-left transition-all hover:border-rose-200 hover:shadow-sm"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-rose-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                                        <Truck className="w-5 h-5 text-rose-600" />
+                        {lieferanten.map(lieferant => {
+                            // Festnetz zuerst, sonst Handy – eine reine Vorwahl zählt nicht als Nummer.
+                            const nummer = anrufbareNummer(lieferant.telefon) ?? anrufbareNummer(lieferant.mobiltelefon)
+                            return (
+                                <button
+                                    key={lieferant.id}
+                                    onClick={() => setSearchParams({ id: lieferant.id.toString() })}
+                                    className="w-full bg-white border border-slate-200 rounded-xl p-4 text-left transition-all hover:border-rose-200 hover:shadow-sm"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 bg-rose-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                                            <Truck className="w-5 h-5 text-rose-600" />
+                                        </div>
+                                        {/* Kürzung gewollt: die Detailseite zeigt den vollen Text. */}
+                                        <div className="flex-1 min-w-0" data-kuerzung-erlaubt>
+                                            <p className="text-slate-900 font-medium truncate">{lieferant.lieferantenname}</p>
+                                            {lieferant.aliasName && (
+                                                <p className="text-slate-600 text-sm truncate">auch: {lieferant.aliasName}</p>
+                                            )}
+                                            {lieferant.ort && (
+                                                <p className="text-slate-500 text-sm flex items-center gap-1">
+                                                    <MapPin className="w-3 h-3 flex-shrink-0" />
+                                                    <span className="truncate">{lieferant.ort}</span>
+                                                </p>
+                                            )}
+                                            {nummer && (
+                                                <p className="text-slate-400 text-xs flex items-center gap-1 mt-1">
+                                                    <Phone className="w-3 h-3 flex-shrink-0" />
+                                                    <span className="truncate">{nummer}</span>
+                                                </p>
+                                            )}
+                                        </div>
+                                        <ChevronRight className="w-4 h-4 flex-shrink-0 text-slate-400" />
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-slate-900 font-medium truncate">{lieferant.lieferantenname}</p>
-                                        {lieferant.aliasName && (
-                                            <p className="text-slate-600 text-sm truncate">auch: {lieferant.aliasName}</p>
-                                        )}
-                                        {lieferant.ort && (
-                                            <p className="text-slate-500 text-sm flex items-center gap-1">
-                                                <MapPin className="w-3 h-3" /> {lieferant.ort}
-                                            </p>
-                                        )}
-                                        {lieferant.telefon && (
-                                            <p className="text-slate-400 text-xs flex items-center gap-1 mt-1">
-                                                <Phone className="w-3 h-3" /> {lieferant.telefon}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                                </div>
-                            </button>
-                        ))}
+                                </button>
+                            )
+                        })}
 
                         {lieferanten.length === 0 && (
                             <div className="text-center py-12 text-slate-500">
@@ -404,6 +411,9 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                     onClick={() => setShowPhoneModal(false)}
                 >
                     <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label="Nummer wählen"
                         className="bg-white rounded-t-2xl w-full max-w-lg p-6 animate-slide-up"
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -412,16 +422,17 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                             {/* Close button similar to ProjectsPage */}
                             <button
                                 onClick={() => setShowPhoneModal(false)}
+                                aria-label="Schließen"
                                 className="p-2 hover:bg-slate-100 rounded-full"
                             >
                                 <X className="w-5 h-5 text-slate-500" />
                             </button>
                         </div>
                         <div className="space-y-3">
-                            {selectedLieferant.telefon && (
+                            {festnetz && (
                                 <button
                                     onClick={() => {
-                                        callPhone(selectedLieferant.telefon!)
+                                        callPhone(festnetz)
                                         setShowPhoneModal(false)
                                     }}
                                     className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors"
@@ -431,14 +442,14 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                                     </div>
                                     <div className="flex-1 text-left">
                                         <p className="font-medium text-slate-900">Festnetz</p>
-                                        <p className="text-slate-500">{selectedLieferant.telefon}</p>
+                                        <p className="text-slate-500">{festnetz}</p>
                                     </div>
                                 </button>
                             )}
-                            {selectedLieferant.mobiltelefon && (
+                            {mobil && (
                                 <button
                                     onClick={() => {
-                                        callPhone(selectedLieferant.mobiltelefon!)
+                                        callPhone(mobil)
                                         setShowPhoneModal(false)
                                     }}
                                     className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors"
@@ -448,7 +459,7 @@ export default function LieferantenPage({ syncStatus, onSync }: LieferantenPageP
                                     </div>
                                     <div className="flex-1 text-left">
                                         <p className="font-medium text-slate-900">Mobil</p>
-                                        <p className="text-slate-500">{selectedLieferant.mobiltelefon}</p>
+                                        <p className="text-slate-500">{mobil}</p>
                                     </div>
                                 </button>
                             )}
