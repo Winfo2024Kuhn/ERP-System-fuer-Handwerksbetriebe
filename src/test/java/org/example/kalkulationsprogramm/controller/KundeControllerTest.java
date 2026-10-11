@@ -37,6 +37,7 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -115,8 +116,8 @@ class KundeControllerTest {
         payload.put("strasse", " Hauptstr. 1 ");
         payload.put("plz", "12345");
         payload.put("ort", "  Berlin ");
-        payload.put("telefon", "030123");
-        payload.put("mobiltelefon", "0170123");
+        payload.put("telefon", " 030 1234567 ");
+        payload.put("mobiltelefon", "0170 1234567");
         payload.put("kundenEmails", List.of(" INFO@example.com ", "info@example.com", ""));
 
         mockMvc.perform(post("/api/kunden")
@@ -132,7 +133,61 @@ class KundeControllerTest {
         assertThat(saved.getName()).isEqualTo("Muster GmbH");
         assertThat(saved.getAnsprechspartner()).isEqualTo("Max Mustermann");
         assertThat(saved.getOrt()).isEqualTo("Berlin");
+        assertThat(saved.getTelefon()).isEqualTo("030 1234567");
+        assertThat(saved.getMobiltelefon()).isEqualTo("0170 1234567");
         assertThat(saved.getKundenEmails()).containsExactly("info@example.com");
+    }
+
+    @Test
+    @DisplayName("Anlegen: eine reine Vorwahl (vom Formular vorgeschlagen) wird nicht als Telefonnummer gespeichert")
+    void createKundeSpeichertKeineReineVorwahl() throws Exception {
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("K-2");
+        given(kundeRepository.save(any(Kunde.class))).willAnswer(invocation -> invocation.getArgument(0));
+        given(kundeMapper.toListItem(any(Kunde.class))).willReturn(new KundeListItemDto());
+
+        var payload = new java.util.HashMap<String, Object>();
+        payload.put("name", "Max Mustermann");
+        payload.put("plz", "97070");
+        payload.put("ort", "Würzburg");
+        payload.put("telefon", "0931 ");
+        payload.put("mobiltelefon", "+49 ");
+
+        mockMvc.perform(post("/api/kunden")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isCreated());
+
+        ArgumentCaptor<Kunde> kundeCaptor = ArgumentCaptor.forClass(Kunde.class);
+        verify(kundeRepository).save(kundeCaptor.capture());
+        assertThat(kundeCaptor.getValue().getTelefon()).isNull();
+        assertThat(kundeCaptor.getValue().getMobiltelefon()).isNull();
+    }
+
+    @Test
+    @DisplayName("Ändern: eine gespeicherte reine Vorwahl wird beim nächsten Speichern geleert")
+    void updateKundeLeertReineVorwahl() throws Exception {
+        Kunde bestehend = new Kunde();
+        bestehend.setId(12L);
+        bestehend.setKundennummer("K-12");
+        bestehend.setName("Max Mustermann");
+        bestehend.setTelefon("0931");
+        given(kundeRepository.findById(12L)).willReturn(Optional.of(bestehend));
+        given(kundeRepository.save(any(Kunde.class))).willAnswer(invocation -> invocation.getArgument(0));
+        given(kundeMapper.toListItem(any(Kunde.class))).willReturn(new KundeListItemDto());
+
+        var payload = new java.util.HashMap<String, Object>();
+        payload.put("kundennummer", "K-12");
+        payload.put("name", "Max Mustermann");
+        payload.put("telefon", "0931 ");
+        payload.put("mobiltelefon", "0170 1234567");
+
+        mockMvc.perform(put("/api/kunden/12")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk());
+
+        assertThat(bestehend.getTelefon()).isNull();
+        assertThat(bestehend.getMobiltelefon()).isEqualTo("0170 1234567");
     }
 
     @Test

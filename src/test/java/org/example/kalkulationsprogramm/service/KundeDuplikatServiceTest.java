@@ -18,28 +18,7 @@ class KundeDuplikatServiceTest {
     private final KundeRepository repo = mock(KundeRepository.class);
     private final KundeDuplikatService service = new KundeDuplikatService(repo);
 
-    @Test
-    @DisplayName("Telefonnummer wird auf Ziffern reduziert; +49 / 0049 → 0")
-    void normalisiereTelefonNormalizesGermanPrefixes() {
-        assertThat(KundeDuplikatService.normalisiereTelefon("+49 30 1234567")).isEqualTo("0301234567");
-        assertThat(KundeDuplikatService.normalisiereTelefon("0049 30 1234567")).isEqualTo("0301234567");
-        assertThat(KundeDuplikatService.normalisiereTelefon("030/123-4567")).isEqualTo("0301234567");
-        assertThat(KundeDuplikatService.normalisiereTelefon("030 123 4567")).isEqualTo("0301234567");
-        assertThat(KundeDuplikatService.normalisiereTelefon("")).isNull();
-        assertThat(KundeDuplikatService.normalisiereTelefon(null)).isNull();
-    }
-
-    @Test
-    @DisplayName("Nur-Vorwahl (< 7 Ziffern) liefert null – verhindert Massen-Duplikate durch auto-befüllte Vorwahl")
-    void nurVorwahlWirdIgnoriert() {
-        // Typischer Fall: Frontend befüllt "0931 " automatisch aus der PLZ
-        assertThat(KundeDuplikatService.normalisiereTelefon("0931 ")).isNull();
-        assertThat(KundeDuplikatService.normalisiereTelefon("0931")).isNull();
-        assertThat(KundeDuplikatService.normalisiereTelefon("030")).isNull();
-        assertThat(KundeDuplikatService.normalisiereTelefon("02")).isNull();
-        // Vollständige Nummer bleibt gültig
-        assertThat(KundeDuplikatService.normalisiereTelefon("0931 12345")).isEqualTo("093112345");
-    }
+    // Die Telefon-Normalisierung selbst testet TelefonnummerTest.
 
     @Test
     @DisplayName("Nur-Vorwahl im Telefon-Feld löst keinen Duplikat-Alarm aus")

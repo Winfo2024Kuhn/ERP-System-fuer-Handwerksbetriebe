@@ -46,17 +46,19 @@ class FlywayMigrationenTest {
      * Installationen behielten den alten Stand, nur Neuinstallationen bekaemen den neuen.
      * Neue Migration: hier mit ihrer Checksumme eintragen (der Test nennt sie).
      */
-    private static final Map<String, Integer> CHECKSUMMEN = Map.of(
-            "V407__email_postfaecher.sql", 1895864666,
-            "V408__email_postfach_sichtbarkeit.sql", 1105542612,
-            "V409__leere_versionen_auffuellen.sql", -113991001,
-            "V410__doppelte_fremdschluessel_entfernen.sql", 357620652,
-            "V411__schutzregeln_und_kunden_emails.sql", 1211966469,
-            "V412__datev_stundenart.sql", -328481948,
-            "V413__abwesenheitsnotiz_postfaecher.sql", -17262563,
-            "V414__benachrichtigung_erledigt.sql", 928601684,
-            "V415__freigabe_email_code.sql", 1251503045,
-            "V416__email_signatur_besitzer.sql", 1467540425);
+    // Map.ofEntries statt Map.of: Map.of nimmt hoechstens zehn Paare.
+    private static final Map<String, Integer> CHECKSUMMEN = Map.ofEntries(
+            Map.entry("V407__email_postfaecher.sql", 1895864666),
+            Map.entry("V408__email_postfach_sichtbarkeit.sql", 1105542612),
+            Map.entry("V409__leere_versionen_auffuellen.sql", -113991001),
+            Map.entry("V410__doppelte_fremdschluessel_entfernen.sql", 357620652),
+            Map.entry("V411__schutzregeln_und_kunden_emails.sql", 1211966469),
+            Map.entry("V412__datev_stundenart.sql", -328481948),
+            Map.entry("V413__abwesenheitsnotiz_postfaecher.sql", -17262563),
+            Map.entry("V414__benachrichtigung_erledigt.sql", 928601684),
+            Map.entry("V415__freigabe_email_code.sql", 1251503045),
+            Map.entry("V416__email_signatur_besitzer.sql", 1467540425),
+            Map.entry("V417__telefon_reine_vorwahl_leeren.sql", -1484567923));
 
     private static final char BOM = 0xFEFF;
 

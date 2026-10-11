@@ -20,6 +20,7 @@ import org.example.kalkulationsprogramm.repository.KundenSuche;
 import org.example.kalkulationsprogramm.service.KundeDuplikatService;
 import org.example.kalkulationsprogramm.service.KundenDetailService;
 import org.example.kalkulationsprogramm.service.KundennummerService;
+import org.example.kalkulationsprogramm.util.Telefonnummer;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -227,8 +228,8 @@ public class KundeController {
         kunde.setStrasse(trimToNull(request.getStrasse()));
         kunde.setPlz(trimToNull(request.getPlz()));
         kunde.setOrt(trimToNull(request.getOrt()));
-        kunde.setTelefon(trimToNull(request.getTelefon()));
-        kunde.setMobiltelefon(trimToNull(request.getMobiltelefon()));
+        kunde.setTelefon(Telefonnummer.ohneReineVorwahl(request.getTelefon()));
+        kunde.setMobiltelefon(Telefonnummer.ohneReineVorwahl(request.getMobiltelefon()));
         kunde.setKundenEmails(new ArrayList<>(normalizeEmails(request.getKundenEmails())));
     }
 
