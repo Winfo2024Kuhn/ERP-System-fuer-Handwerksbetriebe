@@ -69,6 +69,37 @@ export interface EmailItem {
 // Folder Types
 export type FolderType = 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'newsletter' | 'starred' | 'projects' | 'offers' | 'suppliers' | 'tax-advisors' | 'unassigned';
 
+/** Lese-Filter über der E-Mail-Liste. */
+export type ReadFilter = 'all' | 'unread' | 'read';
+
+/**
+ * Filtert die Liste serverseitig auf ungelesene Mails? Nur bei „Ungelesen" und
+ * nur in Ordnern mit Lese-Konzept – Gesendet und Entwürfe haben keins.
+ * „Gelesen" bleibt bewusst ein Filter über die geladenen Mails.
+ */
+export function nutztServerFilterUngelesen(folder: FolderType, readFilter: ReadFilter): boolean {
+    return readFilter === 'unread' && folder !== 'sent' && folder !== 'drafts';
+}
+
+/**
+ * Baut die URL einer Ordnerliste. Bei `nurUngelesen` liefert das Backend nur
+ * ungelesene Mails; offset/limit gelten dann NACH dem Filter.
+ */
+export function buildEmailListUrl(folder: FolderType, offset: number, limit: number, nurUngelesen: boolean): string {
+    // Entwürfe haben eine eigene Liste; fällt hier nur zur Sicherheit auf den Posteingang zurück.
+    const pfad = folder === 'drafts' ? 'inbox' : folder;
+    const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    if (nurUngelesen) params.set('nurUngelesen', 'true');
+    return `/api/emails/${pfad}?${params.toString()}`;
+}
+
+/**
+ * Schlüssel für den Ordner-Zwischenspeicher. Gefilterte und ungefilterte Liste
+ * liegen getrennt, damit nie die eine als die andere angezeigt wird.
+ */
+export function emailListCacheKey(folder: FolderType, nurUngelesen: boolean): string {
+    return nurUngelesen ? `${folder}|unread` : folder;
+}
 
 
 

@@ -234,6 +234,15 @@ public class UnifiedEmailController {
         }
     }
 
+    /**
+     * Filter "Ungelesen" der Ordnerlisten. Läuft hier vor dem Seitenschnitt – im Browser sähe er
+     * nur die geladene Seite, und ältere ungelesene Mails blieben unsichtbar, obwohl der Ordner
+     * sie zählt.
+     */
+    private static java.util.function.Predicate<Email> nurUngelesen(boolean nurUngelesen) {
+        return email -> !nurUngelesen || !email.isRead();
+    }
+
     @GetMapping("/{emailId}/attachments/{attachmentId}")
     public ResponseEntity<org.springframework.core.io.Resource> downloadAttachment(
             @PathVariable Long emailId,
@@ -694,9 +703,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getUnassignedEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return emailRepository.findUnassigned().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -787,6 +798,7 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getInboxEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         // Get IDs of "Nicht zugeordnet" emails to exclude from inbox
         Set<Long> unassignedIds = emailRepository.findUnassigned().stream()
@@ -796,6 +808,7 @@ public class UnifiedEmailController {
         return emailRepository.findInboxFiltered().stream()
                 .filter(e -> !unassignedIds.contains(e.getId())) // Exclude "Nicht zugeordnet"
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -807,9 +820,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getProjectFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return emailRepository.findProjectEmails().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -821,9 +836,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getOfferFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return emailRepository.findAnfrageEmails().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -835,9 +852,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getSupplierFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return emailRepository.findLieferantEmails().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -849,9 +868,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getTaxAdvisorFolderEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return findTaxAdvisorEmails().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -863,10 +884,12 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getSentEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null)
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -878,9 +901,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getTrashEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -892,9 +917,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getSpamEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
-        return emailRepository.findSpam().stream()
+        return emailRepository.findSpamOrdner().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -906,9 +933,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getNewsletterEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
-        return emailRepository.findNewsletter().stream()
+        return emailRepository.findNewsletterOrdner().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -920,9 +949,11 @@ public class UnifiedEmailController {
     public List<UnifiedEmailDto> getStarredEmails(
             @RequestParam(value = "offset", defaultValue = "0") int offset,
             @RequestParam(value = "limit", defaultValue = "100") int limit,
+            @RequestParam(value = "nurUngelesen", defaultValue = "false") boolean nurUngelesen,
             org.springframework.security.core.Authentication authentication) {
         return emailRepository.findStarred().stream()
                 .filter(listenFilter(authentication))
+                .filter(nurUngelesen(nurUngelesen))
                 .skip(Math.max(0, offset))
                 .limit(limit)
                 .map(this::toListDto)
@@ -1206,8 +1237,8 @@ public class UnifiedEmailController {
     public ResponseEntity<Map<String, Integer>> markAllRead(@RequestParam String folder, org.springframework.security.core.Authentication authentication) {
         List<Email> alle = switch (folder) {
             case "inbox"      -> emailRepository.findInboxFiltered();
-            case "spam"       -> emailRepository.findSpam();
-            case "newsletter" -> emailRepository.findNewsletter();
+            case "spam"       -> emailRepository.findSpamOrdner();
+            case "newsletter" -> emailRepository.findNewsletterOrdner();
             case "starred"    -> emailRepository.findStarred();
             case "unassigned" -> emailRepository.findUnassigned();
             case "inquiries"  -> emailRepository.findPotentialInquiries();
@@ -1374,8 +1405,8 @@ public class UnifiedEmailController {
         List<Email> anfragen = filter.anwenden(emailRepository.findAnfrageEmails());
         List<Email> lieferanten = filter.anwenden(emailRepository.findLieferantEmails());
         List<Email> taxAdvisorEmails = filter.anwenden(findTaxAdvisorEmails());
-        List<Email> newsletter = filter.anwenden(emailRepository.findNewsletter());
-        List<Email> spam = filter.anwenden(emailRepository.findSpam());
+        List<Email> newsletter = filter.anwenden(emailRepository.findNewsletterOrdner());
+        List<Email> spam = filter.anwenden(emailRepository.findSpamOrdner());
         List<Email> gesendet = filter.anwenden(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT).stream()
                 .filter(e -> e.getDeletedAt() == null).collect(Collectors.toList()));
         List<Email> papierkorb = filter.anwenden(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc());
@@ -1386,8 +1417,8 @@ public class UnifiedEmailController {
         stats.setOfferCount(filter.aktiv() ? ungelesen(anfragen) : emailRepository.countAnfrageEmailsUnread());
         stats.setSupplierCount(filter.aktiv() ? ungelesen(lieferanten) : emailRepository.countLieferantEmailsUnread());
         stats.setTaxAdvisorCount(ungelesen(taxAdvisorEmails));
-        stats.setNewsletterCount(filter.aktiv() ? ungelesen(newsletter) : emailRepository.countNewsletterUnread());
-        stats.setSpamCount(filter.aktiv() ? ungelesen(spam) : emailRepository.countSpamUnread());
+        stats.setNewsletterCount(filter.aktiv() ? ungelesen(newsletter) : emailRepository.countNewsletterOrdnerUnread());
+        stats.setSpamCount(filter.aktiv() ? ungelesen(spam) : emailRepository.countSpamOrdnerUnread());
 
         // Total Counts (Gesendet, Papierkorb, Nicht zugeordnet, Anfragen)
         // Hinweis: sentCount ist seit V257 strukturell ~0, weil alle OUT-Mails

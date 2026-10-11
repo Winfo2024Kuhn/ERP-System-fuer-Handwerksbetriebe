@@ -1,151 +1,130 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
-    dismissItem,
-    dismissCategory,
-    filterDismissed,
-    __resetDismissStateForTests,
+    enthaeltEmailKategorie,
+    entferneAlteMerker,
+    kategorieFuerEintrag,
+    ohneEintrag,
+    ohneSpalte,
+    ALTE_SPEICHER_SCHLUESSEL,
     type NotificationSummary,
+    type RecentItemDto,
 } from './notification-helpers';
 
 /**
- * Regression: Vor dem Fix blieb der Glocken-Counter z.B. auf "10" stehen,
- * obwohl der User "Alle als gelesen" geklickt und damit alle Items
- * ausgeblendet hatte. Ursache war, dass nur Items lokal entfernt wurden,
- * die Kategorien-Counter aber unverändert weiterliefen.
+ * Was erledigt ist, merkt sich das Backend pro Benutzer. Die Helfer rechnen nur
+ * die optimistische Anzeige bis zur nächsten Server-Antwort aus – sie lesen und
+ * schreiben keinen Browser-Speicher mehr.
  */
-describe('filterDismissed', () => {
-    beforeEach(() => {
-        // Helper hält die internen Storage-Keys privat — bei Key-Rename muss
-        // der Test nicht angefasst werden.
-        __resetDismissStateForTests();
+
+function eintrag(id: string, type: string, link: string, title = id): RecentItemDto {
+    return { id, type, title, subtitle: '', timestamp: '2026-10-11T10:00:00', link };
+}
+
+const basis: NotificationSummary = {
+    totalCount: 9,
+    categories: [
+        { type: 'EMAILS', label: 'Ungelesene E-Mails', count: 5, icon: 'Mail', link: '/emails/inbox' },
+        { type: 'EMAILS_SPAM', label: 'Spam', count: 1, icon: 'ShieldAlert', link: '/emails/spam' },
+        { type: 'TERMINE', label: 'Bevorstehende Termine', count: 2, icon: 'CalendarClock', link: '/kalender' },
+        { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 1, icon: 'Plane', link: '/urlaubsantraege' },
+    ],
+    recentItems: [
+        eintrag('EMAIL:456', 'EMAIL', '/emails/inbox/456', 'Angebot Treppe'),
+        eintrag('EMAIL:789', 'EMAIL', '/emails/spam/789', 'Gewinnspiel'),
+        eintrag('TERMIN:123', 'TERMIN', '/kalender?date=2026-10-11', 'Aufmaß Bad'),
+        eintrag('URLAUBSANTRAG:7', 'URLAUBSANTRAG', '/urlaubsantraege?antragId=7', 'URLAUB: Max Mustermann'),
+    ],
+};
+
+describe('kategorieFuerEintrag', () => {
+    it.each([
+        ['inbox', 'EMAILS'],
+        ['projects', 'EMAILS_PROJECTS'],
+        ['offers', 'EMAILS_OFFERS'],
+        ['suppliers', 'EMAILS_SUPPLIERS'],
+        ['spam', 'EMAILS_SPAM'],
+        ['newsletter', 'EMAILS_NEWSLETTER'],
+    ])('E-Mail im Ordner %s gehört zu %s', (ordner, kategorie) => {
+        expect(kategorieFuerEintrag({ type: 'EMAIL', link: `/emails/${ordner}/42` })).toBe(kategorie);
     });
 
-    const baseSummary: NotificationSummary = {
-        totalCount: 10,
-        categories: [
-            { type: 'EMAILS', label: 'Ungelesene E-Mails', count: 5, icon: 'Mail', link: '/emails' },
-            { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 2, icon: 'Plane', link: '/urlaubsantraege' },
-            { type: 'EINGANG_FAELLIG', label: 'Eingangsrechnungen', count: 3, icon: 'AlertTriangle', link: '/offeneposten' },
-        ],
-        recentItems: [
-            { type: 'EMAIL', title: 'Mail A', subtitle: 'Von: a@example.com', timestamp: '2026-05-07T10:00:00', link: '/emails/inbox/1' },
-            { type: 'URLAUBSANTRAG', title: 'URLAUB: Max Mustermann', subtitle: '01.06.–05.06.', timestamp: '2026-05-07T09:00:00', link: '/urlaubsantraege?status=OFFEN&antragId=1' },
-            { type: 'EINGANG_FAELLIG', title: 'RG-2026-001', subtitle: 'Heute fällig', timestamp: '2026-05-07T08:00:00', link: '/offeneposten?dokumentId=1' },
-        ],
-    };
-
-    it('laesst alles unveraendert, wenn nichts dismissed wurde', () => {
-        const result = filterDismissed(baseSummary);
-        expect(result.totalCount).toBe(10);
-        expect(result.categories).toHaveLength(3);
-        expect(result.recentItems).toHaveLength(3);
+    it('E-Mail ohne erkennbaren Ordner hat keine Kategorie', () => {
+        expect(kategorieFuerEintrag({ type: 'EMAIL', link: '/emails' })).toBeUndefined();
+        expect(kategorieFuerEintrag({ type: 'EMAIL', link: '/emails/unbekannt/1' })).toBeUndefined();
     });
 
-    it('blendet eine dismissed Kategorie aus und reduziert den Total-Count', () => {
-        dismissCategory('EMAILS', 5);
-        const result = filterDismissed(baseSummary);
-        // Total = 2 (URLAUBSANTRAEGE) + 3 (EINGANG_FAELLIG) = 5
-        expect(result.totalCount).toBe(5);
-        expect(result.categories.map(c => c.type)).toEqual(['URLAUBSANTRAEGE', 'EINGANG_FAELLIG']);
+    it('andere Einträge gehören fest zu ihrer Kategorie', () => {
+        expect(kategorieFuerEintrag({ type: 'TERMIN', link: '/kalender' })).toBe('TERMINE');
+        expect(kategorieFuerEintrag({ type: 'MONATSABSCHLUSS', link: '/zeitbuchungen' })).toBe('MONATSABSCHLUSS');
+        expect(kategorieFuerEintrag({ type: 'VERPASSTER_ANRUF', link: '/telefon/anrufe' })).toBe('VERPASSTE_ANRUFE');
+        expect(kategorieFuerEintrag({ type: 'GIBT_ES_NICHT', link: '/' })).toBeUndefined();
+    });
+});
+
+describe('ohneEintrag', () => {
+    it('blendet den Termin aus und senkt nur den Zähler seiner Kategorie', () => {
+        const ergebnis = ohneEintrag(basis, basis.recentItems[2]);
+        expect(ergebnis.recentItems.map(i => i.id)).not.toContain('TERMIN:123');
+        expect(ergebnis.categories.find(c => c.type === 'TERMINE')?.count).toBe(1);
+        expect(ergebnis.categories.find(c => c.type === 'EMAILS')?.count).toBe(5);
+        expect(ergebnis.totalCount).toBe(8);
     });
 
-    it('entfernt verwaiste Items, deren einzige Kategorie dismissed wurde', () => {
-        dismissCategory('EMAILS', 5);
-        const result = filterDismissed(baseSummary);
-        // Das EMAIL-Item darf nicht mehr auftauchen, weil seine Kategorie weg ist
-        expect(result.recentItems.find(i => i.type === 'EMAIL')).toBeUndefined();
-        // Die anderen Items bleiben
-        expect(result.recentItems.find(i => i.type === 'URLAUBSANTRAG')).toBeDefined();
-        expect(result.recentItems.find(i => i.type === 'EINGANG_FAELLIG')).toBeDefined();
+    it('senkt bei E-Mails den Zähler des Ordners aus dem Link', () => {
+        const ergebnis = ohneEintrag(basis, basis.recentItems[0]);
+        expect(ergebnis.categories.find(c => c.type === 'EMAILS')?.count).toBe(4);
+        expect(ergebnis.categories.find(c => c.type === 'EMAILS_SPAM')?.count).toBe(1);
     });
 
-    it('blendet eine Kategorie wieder ein, sobald echte neue Eintraege ueber den Dismiss-Stand hinaus eintreffen', () => {
-        dismissCategory('EMAILS', 5);
-        const neuerStand: NotificationSummary = {
-            ...baseSummary,
-            categories: [
-                { ...baseSummary.categories[0], count: 7 }, // 2 neue Mails dazugekommen
-                ...baseSummary.categories.slice(1),
-            ],
-        };
-        const result = filterDismissed(neuerStand);
-        expect(result.categories.find(c => c.type === 'EMAILS')).toBeDefined();
-        expect(result.totalCount).toBe(7 + 2 + 3); // 12
+    it('lässt eine Kategorie bei 0 wegfallen', () => {
+        const ergebnis = ohneEintrag(basis, basis.recentItems[1]);
+        expect(ergebnis.categories.map(c => c.type)).not.toContain('EMAILS_SPAM');
+        expect(ergebnis.totalCount).toBe(8);
     });
 
-    it('blendet einzelne Items per dismissItem unabhaengig von Kategorien aus', () => {
-        const emailItem = baseSummary.recentItems.find(i => i.type === 'EMAIL')!;
-        dismissItem(emailItem);
-        const result = filterDismissed(baseSummary);
-        expect(result.recentItems.find(i => i.title === 'Mail A')).toBeUndefined();
-        // Kategorie bleibt sichtbar, weil nur ein Item dismissed wurde
-        expect(result.categories.find(c => c.type === 'EMAILS')).toBeDefined();
-        expect(result.totalCount).toBe(10);
+    it('senkt den Zähler bei einem Doppelklick nicht zweimal', () => {
+        const einmal = ohneEintrag(basis, basis.recentItems[2]);
+        expect(ohneEintrag(einmal, basis.recentItems[2])).toBe(einmal);
     });
 
-    it('Bug-Repro: einzeln angeklickte Items lassen die Kategorie verschwinden, wenn alle ihre Items dismissed sind', () => {
-        // Szenario: 2 Urlaubsanträge offen, User klickt beide einzeln im
-        // Notification-Center an. Vorher blieb die "Personal: 2 Einträge"-
-        // Spalte als leerer Counter stehen, weil der Backend-Status der
-        // Anträge weiterhin OFFEN ist. Jetzt: Kategorie verschwindet, weil
-        // alle vom Backend gelieferten Items dismissed sind.
-        const summary: NotificationSummary = {
-            totalCount: 2,
-            categories: [
-                { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 2, icon: 'Plane', link: '/urlaubsantraege' },
-            ],
-            recentItems: [
-                { type: 'URLAUBSANTRAG', title: 'URLAUB: Max Mustermann', subtitle: '01.06.', timestamp: '2026-05-07T10:00', link: '/urlaubsantraege?antragId=1' },
-                { type: 'URLAUBSANTRAG', title: 'URLAUB: Erika Mustermann', subtitle: '03.06.', timestamp: '2026-05-07T09:00', link: '/urlaubsantraege?antragId=2' },
-            ],
-        };
-        summary.recentItems.forEach(item => dismissItem(item));
-        const result = filterDismissed(summary);
-        expect(result.totalCount).toBe(0);
-        expect(result.categories).toHaveLength(0);
-        expect(result.recentItems).toHaveLength(0);
+    it('lässt die Zähler stehen, wenn keine Kategorie bestimmbar ist', () => {
+        const fremd = eintrag('NEU:1', 'NEU', '/irgendwo');
+        const summary = { ...basis, recentItems: [...basis.recentItems, fremd] };
+        const ergebnis = ohneEintrag(summary, fremd);
+        expect(ergebnis.recentItems).toHaveLength(4);
+        expect(ergebnis.totalCount).toBe(basis.totalCount);
+        expect(ergebnis.categories).toEqual(basis.categories);
     });
+});
 
-    it('Halb-erledigt: solange noch ein Item ungedismissed ist, bleibt die Kategorie sichtbar', () => {
-        const summary: NotificationSummary = {
-            totalCount: 2,
-            categories: [
-                { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 2, icon: 'Plane', link: '/urlaubsantraege' },
-            ],
-            recentItems: [
-                { type: 'URLAUBSANTRAG', title: 'URLAUB: Max Mustermann', subtitle: '01.06.', timestamp: '2026-05-07T10:00', link: '/urlaubsantraege?antragId=1' },
-                { type: 'URLAUBSANTRAG', title: 'URLAUB: Erika Mustermann', subtitle: '03.06.', timestamp: '2026-05-07T09:00', link: '/urlaubsantraege?antragId=2' },
-            ],
-        };
-        dismissItem(summary.recentItems[0]);
-        const result = filterDismissed(summary);
-        expect(result.categories).toHaveLength(1);
-        expect(result.recentItems).toHaveLength(1);
-        expect(result.totalCount).toBe(2); // Counter kommt vom Backend, nicht von sichtbaren Items
+describe('ohneSpalte', () => {
+    it('leert alle Kategorien und Einträge der Spalte und rechnet die Summe neu', () => {
+        const ergebnis = ohneSpalte(basis, ['EMAILS', 'EMAILS_SPAM'], ['EMAIL']);
+        expect(ergebnis.categories.map(c => c.type)).toEqual(['TERMINE', 'URLAUBSANTRAEGE']);
+        expect(ergebnis.recentItems.map(i => i.id)).toEqual(['TERMIN:123', 'URLAUBSANTRAG:7']);
+        expect(ergebnis.totalCount).toBe(3);
     });
+});
 
-    it('Kategorie ohne Backend-Items (z.B. RECHNUNGEN) bleibt sichtbar, auch wenn nichts dismissbar ist', () => {
-        const summary: NotificationSummary = {
-            totalCount: 4,
-            categories: [
-                { type: 'RECHNUNGEN', label: 'Neue Lieferantenrechnungen', count: 4, icon: 'Truck', link: '/offeneposten' },
-            ],
-            recentItems: [], // Backend liefert für RECHNUNGEN keine Items
-        };
-        const result = filterDismissed(summary);
-        expect(result.categories).toHaveLength(1);
-        expect(result.totalCount).toBe(4);
+describe('enthaeltEmailKategorie', () => {
+    it('erkennt E-Mail-Ordner', () => {
+        expect(enthaeltEmailKategorie(['TERMINE', 'EMAILS_NEWSLETTER'])).toBe(true);
+        expect(enthaeltEmailKategorie(['TERMINE', 'URLAUBSANTRAEGE'])).toBe(false);
+        expect(enthaeltEmailKategorie([])).toBe(false);
     });
+});
 
-    it('Bug-Repro: nach dismiss aller Kategorien geht der totalCount auf 0', () => {
-        // Vor dem Fix war totalCount weiterhin 10 (Backend-Counter), obwohl alle
-        // Spalten leer waren. Jetzt korrekt: 0.
-        dismissCategory('EMAILS', 5);
-        dismissCategory('URLAUBSANTRAEGE', 2);
-        dismissCategory('EINGANG_FAELLIG', 3);
-        const result = filterDismissed(baseSummary);
-        expect(result.totalCount).toBe(0);
-        expect(result.categories).toHaveLength(0);
-        expect(result.recentItems).toHaveLength(0);
+describe('entferneAlteMerker', () => {
+    it('räumt die alten Browser-Merker weg und lässt anderes stehen', () => {
+        localStorage.setItem(ALTE_SPEICHER_SCHLUESSEL.eintraege, '["EMAIL::/emails/inbox/1"]');
+        sessionStorage.setItem(ALTE_SPEICHER_SCHLUESSEL.kategorien, '{"EMAILS":5}');
+        localStorage.setItem('frontendUserSelection', '{"mitarbeiterId":1}');
+
+        entferneAlteMerker();
+
+        expect(localStorage.getItem(ALTE_SPEICHER_SCHLUESSEL.eintraege)).toBeNull();
+        expect(sessionStorage.getItem(ALTE_SPEICHER_SCHLUESSEL.kategorien)).toBeNull();
+        expect(localStorage.getItem('frontendUserSelection')).toBe('{"mitarbeiterId":1}');
+        localStorage.removeItem('frontendUserSelection');
     });
 });

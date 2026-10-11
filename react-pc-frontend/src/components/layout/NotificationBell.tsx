@@ -7,13 +7,28 @@ import {
     Phone, PhoneMissed, Voicemail
 } from 'lucide-react';
 
+import { useToast } from '../ui/toast';
+import { refreshEmails } from '../../lib/notificationRefresh';
+
 // ── Types & Pure-Logic Helpers ───────────────────────────────────────────
-// Die Pure-Functions (filterDismissed/dismissItem/dismissCategory) liegen in
+// Die Pure-Functions (ohneEintrag/ohneSpalte/...) liegen in
 // notification-helpers.ts, damit Vitest sie ohne Komponenten-Mount testen
 // kann und Vites Fast-Refresh-Regel hier nicht bricht.
 
 import type { CategoryDto, RecentItemDto, NotificationSummary } from './notification-helpers';
-import { dismissItem, dismissCategory, filterDismissed, gcOrphanedDismissals } from './notification-helpers';
+import { enthaeltEmailKategorie, entferneAlteMerker, ohneEintrag, ohneSpalte } from './notification-helpers';
+
+/** Mehr ids nimmt POST /api/notifications/erledigt nicht an. */
+const MAX_IDS_PRO_ANFRAGE = 200;
+
+function postJson(url: string, body: unknown): Promise<Response> {
+    // Den CSRF-Header setzt der globale Interceptor in main.tsx.
+    return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
 
 // ── Icon map ─────────────────────────────────────────────────────────────
 
@@ -158,14 +173,11 @@ const GROUPS: NotificationGroup[] = [
     },
 ];
 
-// Pure Helpers (dismissItem, dismissCategory, filterDismissed) sind nach
-// notification-helpers.ts ausgelagert – siehe Import oben.
-
 // ── Component ────────────────────────────────────────────────────────────
 
 export function NotificationBell() {
-    const [rawData, setRawData] = useState<NotificationSummary | null>(null);
     const [data, setData] = useState<NotificationSummary | null>(null);
+    const toast = useToast();
     const [open, setOpen] = useState(false);
     const [shake, setShake] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -202,19 +214,15 @@ export function NotificationBell() {
             const summary: NotificationSummary = await res.json();
             if (signal.aborted) return;
 
-            setRawData(summary);
-            // Aufräumen vor dem Filter: dismissed Keys, die das Backend nicht
-            // mehr ausliefert, fliegen aus dem localStorage. filterDismissed
-            // selbst bleibt pure.
-            gcOrphanedDismissals(summary.recentItems);
-            const filtered = filterDismissed(summary);
+            // Erledigtes hat das Backend schon herausgefiltert – hier wird
+            // nichts mehr lokal weggelassen.
             // Animate if count increased (but not on the very first load)
-            if (filtered.totalCount > prevCountRef.current && prevCountRef.current > 0) {
+            if (summary.totalCount > prevCountRef.current && prevCountRef.current > 0) {
                 setShake(true);
                 setTimeout(() => setShake(false), 600);
             }
-            prevCountRef.current = filtered.totalCount;
-            setData(filtered);
+            prevCountRef.current = summary.totalCount;
+            setData(summary);
         } catch (err) {
             if ((err as Error).name === 'AbortError') return;
             /* silently ignore other errors */
@@ -222,6 +230,15 @@ export function NotificationBell() {
     }, []); // stable reference – no external deps needed
 
     useEffect(() => {
+        // Altlast: früher merkte sich der Browser selbst, was weggeklickt war.
+        entferneAlteMerker();
+    }, []);
+
+    useEffect(() => {
+        // fetchNotifications setzt den State erst nach dem await (Abruf vom
+        // Server) – der Lint hält den Erstabruf beim Mount fälschlich für ein
+        // synchrones setState im Effect.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchNotifications();
         const interval = setInterval(fetchNotifications, 60_000);
         // Refresh immediately when the browser tab becomes visible again
@@ -295,51 +312,69 @@ export function NotificationBell() {
         return () => document.removeEventListener('mousedown', handler);
     }, [open]);
 
-    const handleNavigate = (link: string, type?: string) => {
-        setOpen(false);
-        // Mark email as read when clicking on any email notification
-        if (type === 'EMAIL' || type?.startsWith('EMAILS_')) {
-            const match = link.match(/\/emails\/\w+\/(\d+)/);
-            if (match) {
-                fetch(`/api/emails/${match[1]}/mark-read`, { method: 'POST' })
-                    .then(() => fetchNotifications())
-                    .catch(() => { /* ignore */ });
-            }
+    /**
+     * Meldet dem Backend, was erledigt ist, und lädt danach in jedem Fall neu:
+     * die Server-Antwort ist die Wahrheit – bei einem Fehler taucht der Eintrag
+     * so wieder auf. Ein laufender Abruf wird vorher abgebrochen, damit er die
+     * optimistische Anzeige nicht mit einem alten Stand überschreibt.
+     */
+    const meldeErledigt = async (url: string, body: unknown, fehlertext: string): Promise<boolean> => {
+        abortRef.current?.abort();
+        let ok = false;
+        try {
+            ok = (await postJson(url, body)).ok;
+        } catch {
+            ok = false;
         }
-        navigate(link);
+        if (!ok) toast.error(fehlertext);
+        await fetchNotifications();
+        return ok;
     };
 
     /**
-     * "Spalte als gelesen markieren": blendet alle aktuell sichtbaren Items dieser
-     * Themengruppe für die laufende Sitzung aus, dismissed zusätzlich die zugehörigen
-     * Kategorien (damit der Glocken-Zähler sofort sinkt) und ruft – falls es sich um
-     * E-Mails handelt – serverseitig mark-read auf.
+     * "Spalte als gelesen markieren": leert die Spalte sofort und lässt das Backend
+     * ALLE aktuellen Einträge ihrer Kategorien als erledigt merken (nicht nur die
+     * sichtbaren). Bei E-Mail-Ordnern liest das Backend die Mails wirklich – das
+     * offene E-Mail-Center bekommt deshalb Bescheid, damit seine Zahlen stimmen.
      */
-    const handleMarkColumnRead = (e: React.MouseEvent, groupItems: RecentItemDto[], groupCats: CategoryDto[]) => {
+    const handleMarkColumnRead = async (
+        e: React.MouseEvent,
+        group: NotificationGroup,
+        groupItems: RecentItemDto[],
+        groupCats: CategoryDto[],
+    ) => {
         e.stopPropagation();
-        groupItems.forEach(item => {
-            dismissItem(item);
-            if (item.type === 'EMAIL') {
-                const match = item.link.match(/\/emails\/\w+\/(\d+)/);
-                if (match) {
-                    fetch(`/api/emails/${match[1]}/mark-read`, { method: 'POST' })
-                        .catch(() => { /* fehler ignorieren – nächstes Polling korrigiert */ });
-                }
-            }
-        });
-        // Kategorien selbst dismissen, damit der Spalten-Counter und der Glocken-
-        // Total-Zähler sofort runtergehen. Sobald wirklich neue Einträge eintrudeln,
-        // wird die Kategorie automatisch wieder sichtbar (filterDismissed-Logik).
-        groupCats.forEach(cat => dismissCategory(cat.type, cat.count));
-        if (rawData) setData(filterDismissed(rawData));
-        window.setTimeout(() => fetchNotifications(), 600);
+        const kategorien = groupCats.map(c => c.type);
+        setData(prev => (prev ? ohneSpalte(prev, kategorien, group.recentTypes) : prev));
+        const fehlertext = 'Die Meldungen konnten nicht als gelesen markiert werden.';
+        const ok = kategorien.length > 0
+            ? await meldeErledigt('/api/notifications/erledigt/kategorien', { kategorien }, fehlertext)
+            : await meldeErledigt(
+                '/api/notifications/erledigt',
+                { ids: groupItems.slice(0, MAX_IDS_PRO_ANFRAGE).map(i => i.id) },
+                fehlertext,
+            );
+        if (ok && (enthaeltEmailKategorie(kategorien) || groupItems.some(i => i.type === 'EMAIL'))) {
+            refreshEmails();
+        }
     };
 
+    /**
+     * Klick auf einen Eintrag: sofort ausblenden (Zähler der Kategorie −1), dem
+     * Backend als erledigt melden und hinspringen. Bei E-Mails setzt das Backend
+     * die Mail dabei selbst auf gelesen.
+     */
     const handleItemClick = (item: RecentItemDto) => {
-        dismissItem(item);
-        // Immediately update local display
-        if (rawData) setData(filterDismissed(rawData));
-        handleNavigate(item.link, item.type);
+        setData(prev => (prev ? ohneEintrag(prev, item) : prev));
+        setOpen(false);
+        void meldeErledigt(
+            '/api/notifications/erledigt',
+            { ids: [item.id] },
+            'Die Meldung konnte nicht als erledigt markiert werden.',
+        ).then(ok => {
+            if (ok && item.type === 'EMAIL') refreshEmails();
+        });
+        navigate(item.link);
     };
 
     const total = data?.totalCount ?? 0;
@@ -426,8 +461,8 @@ export function NotificationBell() {
                                             className="flex flex-col w-[260px] shrink-0 h-full min-h-0"
                                         >
                                             {/* Spalten-Header — nicht klickbar, nur Orientierung;
-                                                rechts ein kleiner Button, um alle Items der Spalte als gelesen
-                                                zu markieren (E-Mails: serverseitig, andere: lokal ausblenden). */}
+                                                rechts ein kleiner Button, um alle Einträge der Spalte als
+                                                erledigt zu markieren (das Backend merkt es sich pro Benutzer). */}
                                             <div className={cn(
                                                 "flex flex-col gap-1 px-4 py-3 border-b border-slate-100 sticky top-0 z-10",
                                                 isLeadGruppe ? "bg-rose-50" : "bg-slate-50/80"
@@ -445,8 +480,9 @@ export function NotificationBell() {
                                                     {(groupItems.length > 0 || groupCats.length > 0) && (
                                                         <button
                                                             type="button"
-                                                            onClick={(e) => handleMarkColumnRead(e, groupItems, groupCats)}
+                                                            onClick={(e) => { void handleMarkColumnRead(e, group, groupItems, groupCats); }}
                                                             title="Alle als gelesen markieren"
+                                                            aria-label={`${group.label}: alle als gelesen markieren`}
                                                             className="shrink-0 p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-white transition-colors"
                                                         >
                                                             <CheckCheck className="w-3.5 h-3.5" />
@@ -465,12 +501,12 @@ export function NotificationBell() {
                                             {/* Items — eigene Scrollbox pro Spalte, sonst werden lange Spalten zur Bremse */}
                                             <div className="overflow-y-auto flex-1">
                                                 {groupItems.length > 0 ? (
-                                                    groupItems.map((item, i) => {
+                                                    groupItems.map((item) => {
                                                         const Icon = RECENT_TYPE_ICONS[item.type] || Bell;
                                                         const iconColor = RECENT_TYPE_COLORS[item.type] || 'text-slate-400';
                                                         return (
                                                             <button
-                                                                key={`${group.id}-${item.type}-${i}`}
+                                                                key={item.id}
                                                                 onClick={() => handleItemClick(item)}
                                                                 className={cn(
                                                                     "w-full flex items-start gap-2.5 px-3 py-2.5 transition-colors text-left group border-b border-slate-50 last:border-b-0",

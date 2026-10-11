@@ -1,9 +1,10 @@
-package org.example.kalkulationsprogramm.controller;
+package org.example.kalkulationsprogramm.service.benachrichtigung;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-import org.example.kalkulationsprogramm.controller.NotificationController.NotificationSummaryDto;
+import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungEintragDto;
+import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungZusammenfassungDto;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
@@ -38,21 +39,21 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
 /**
- * Unit-Tests für die zwei Bugfixes im NotificationController:
+ * Inhalt der Benachrichtigungs-Glocke (früher Tests des NotificationControllers):
  * 1. Selbst gesendete (OUT) E-Mails dürfen nicht in der Glocke gezählt werden,
  *    auch nicht in den Zusatz-Ordnern (Projekte, Angebote, Lieferanten,
  *    Spam, Newsletter), deren Repo-Queries die Direction nicht filtern.
  * 2. Digital angenommene Freigaben sollen 30 Tage lang in der Glocke
  *    erscheinen (vorher nur 7 Tage – Annahmen verschwanden zu schnell).
  *
- * Bewusst kein @SpringBootTest: der Controller hat 12 Repo-Dependencies,
+ * Bewusst kein @SpringBootTest: der Service hat viele Repo-Dependencies,
  * der Spring-Kontext wäre teurer als nötig. Mockito-Lenient-Mode lässt
  * uns nur die zwei jeweils relevanten Repos gezielt stubben; alle anderen
- * Repository-Pfade laufen leer durch (try/catch im Controller).
+ * Repository-Pfade laufen leer durch (try/catch im Service).
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-class NotificationControllerTest {
+class BenachrichtigungServiceTest {
 
     @Mock private EmailRepository emailRepository;
     @Mock private UrlaubsantragRepository urlaubsantragRepository;
@@ -75,8 +76,12 @@ class NotificationControllerTest {
     @Mock org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
     @Mock org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService zeiterfassungEinstellungService;
 
+    @Mock org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
+    @Mock BenachrichtigungErledigtService erledigtService;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     @InjectMocks
-    private NotificationController controller;
+    private BenachrichtigungService service;
 
     @Test
     void abschlussHinweisNurAusSessionUndGebundeltMitKalenderlink() {
@@ -85,7 +90,7 @@ class NotificationControllerTest {
         var month = org.mockito.Mockito.mock(org.example.kalkulationsprogramm.repository.MonatsSaldoRepository.OffenerMonat.class);
         given(month.getJahr()).willReturn(2026); given(month.getMonat()).willReturn(8); given(month.getAnzahl()).willReturn(3);
         given(monatsSaldoRepository.findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1), null)).willReturn(List.of(month));
-        var summary = controller.getSummary(999L, auth);
+        var summary = service.zusammenfassung(999L, auth);
         assertThat(summary.categories()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).singleElement()
                 .satisfies(c -> { assertThat(c.count()).isEqualTo(3); assertThat(c.link()).isEqualTo("/monatsabschluss?jahr=2026&monat=8"); });
         assertThat(summary.recentItems()).filteredOn(c -> c.type().equals("MONATSABSCHLUSS")).hasSize(1);
@@ -101,7 +106,7 @@ class NotificationControllerTest {
         given(zeiterfassungEinstellungService.ersterAbschlussMonat()).willReturn(start);
         given(monatsSaldoRepository.findOffeneAbschlussMonate(any(), any())).willReturn(List.of());
 
-        var summary = controller.getSummary(999L, auth);
+        var summary = service.zusammenfassung(999L, auth);
 
         org.mockito.Mockito.verify(monatsSaldoRepository).findOffeneAbschlussMonate(java.time.LocalDate.now().withDayOfMonth(1), start);
         assertThat(summary.categories()).noneMatch(c -> c.type().equals("MONATSABSCHLUSS"));
@@ -122,11 +127,11 @@ class NotificationControllerTest {
                         "VERPASSTER_ANRUF", "0931 7654321", "Verpasst · heute 08:10", zeit.minusMinutes(4), "/telefon/anrufe?anruf=6")));
 
         given(telefonBerechtigungService.darfTelefonSehen(auth)).willReturn(false);
-        assertThat(controller.getSummary(null, auth).categories())
+        assertThat(service.zusammenfassung(null, auth).categories())
                 .noneMatch(c -> c.type().equals("SPRACHNACHRICHTEN") || c.type().equals("VERPASSTE_ANRUFE"));
 
         given(telefonBerechtigungService.darfTelefonSehen(auth)).willReturn(true);
-        var summary = controller.getSummary(null, auth);
+        var summary = service.zusammenfassung(null, auth);
         assertThat(summary.categories()).filteredOn(c -> c.type().equals("SPRACHNACHRICHTEN")).singleElement()
                 .satisfies(c -> { assertThat(c.count()).isEqualTo(1); assertThat(c.link()).isEqualTo("/telefon/anrufbeantworter"); });
         assertThat(summary.categories()).filteredOn(c -> c.type().equals("VERPASSTE_ANRUFE")).singleElement()
@@ -143,12 +148,12 @@ class NotificationControllerTest {
         var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
         given(telefonBerechtigungService.darfTelefonSehen(auth)).willReturn(true);
         given(telefonBenachrichtigungService.neueSprachnachrichten()).willThrow(new IllegalStateException("DB weg"));
-        assertThat(controller.getSummary(null, auth).categories()).noneMatch(c -> c.type().equals("SPRACHNACHRICHTEN"));
+        assertThat(service.zusammenfassung(null, auth).categories()).noneMatch(c -> c.type().equals("SPRACHNACHRICHTEN"));
     }
 
     @Test
     void freiUebermittelteMitarbeiterIdGibtKeinenAbschlussHinweis() {
-        assertThat(controller.getSummary(9L, null).categories()).noneMatch(c -> c.type().equals("MONATSABSCHLUSS"));
+        assertThat(service.zusammenfassung(9L, null).categories()).noneMatch(c -> c.type().equals("MONATSABSCHLUSS"));
         org.mockito.Mockito.verifyNoInteractions(monatsSaldoRepository);
     }
 
@@ -163,7 +168,7 @@ class NotificationControllerTest {
         given(emailRepository.findProjectEmails())
                 .willReturn(List.of(eingehendUngelesen, selbstGesendet));
 
-        NotificationSummaryDto summary = controller.getSummary(null, null);
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
         // Genau eine Projekt-Email-Kategorie, Counter = 1 (OUT wurde rausgefiltert).
         assertThat(summary.categories())
@@ -174,7 +179,7 @@ class NotificationControllerTest {
         // Im RecentItem-Stream ist nur die IN-Mail; das Subject der OUT-Mail
         // taucht garantiert nicht auf.
         assertThat(summary.recentItems())
-                .extracting(NotificationController.RecentItemDto::title)
+                .extracting(BenachrichtigungEintragDto::title)
                 .doesNotContain("Re: Anfrage Bauvorhaben");
     }
 
@@ -188,10 +193,10 @@ class NotificationControllerTest {
                 EmailDirection.OUT, false, EmailZuordnungTyp.KEINE);
         spamSelbstGesendet.setSpam(true);
 
-        given(emailRepository.findSpam())
+        given(emailRepository.findSpamOrdner())
                 .willReturn(List.of(spamEingehend, spamSelbstGesendet));
 
-        NotificationSummaryDto summary = controller.getSummary(null, null);
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
         assertThat(summary.categories())
                 .filteredOn(c -> "EMAILS_SPAM".equals(c.type()))
@@ -212,7 +217,7 @@ class NotificationControllerTest {
         given(dokumentFreigabeRepository.findKuerzlichAkzeptiert(any(LocalDateTime.class)))
                 .willReturn(List.of(freigabe));
 
-        NotificationSummaryDto summary = controller.getSummary(null, null);
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
         assertThat(summary.categories())
                 .filteredOn(c -> "FREIGABEN_ANGENOMMEN".equals(c.type()))
@@ -250,7 +255,7 @@ class NotificationControllerTest {
                 .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
                 .willReturn(List.of(buchung));
 
-        NotificationSummaryDto summary = controller.getSummary(null, null);
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
         assertThat(summary.categories())
                 .filteredOn(c -> "ZEITEN_AUTO_BEENDET".equals(c.type()))
@@ -280,7 +285,7 @@ class NotificationControllerTest {
                 .findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(any(LocalDateTime.class)))
                 .willReturn(List.of());
 
-        NotificationSummaryDto summary = controller.getSummary(null, null);
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
         assertThat(summary.categories())
                 .noneMatch(c -> "ZEITEN_AUTO_BEENDET".equals(c.type()));
@@ -321,13 +326,13 @@ class NotificationControllerTest {
         geloeschterNewsletter.setDeletedAt(LocalDateTime.now());
         Email newsletter = email("Neu", "news@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
         newsletter.setId(50L);
-        given(emailRepository.findNewsletter()).willReturn(List.of(geloeschterNewsletter, newsletter));
+        given(emailRepository.findNewsletterOrdner()).willReturn(List.of(geloeschterNewsletter, newsletter));
         Email geloeschterSpam = email("Spam alt", "spam@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
         geloeschterSpam.setDeletedAt(LocalDateTime.now());
-        given(emailRepository.findSpam()).willReturn(List.of(geloeschterSpam));
+        given(emailRepository.findSpamOrdner()).willReturn(List.of(geloeschterSpam));
         given(postfachSichtbarkeitService.verborgeneEmailIds(any())).willReturn(java.util.Set.of(20L));
 
-        NotificationSummaryDto summary = controller.getSummary(null, null);
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
         assertThat(summary.categories()).filteredOn(c -> "EMAILS".equals(c.type())).singleElement()
                 .satisfies(c -> assertThat(c.count()).isEqualTo(1));
@@ -339,5 +344,202 @@ class NotificationControllerTest {
         assertThat(summary.categories()).filteredOn(c -> "EMAILS_NEWSLETTER".equals(c.type())).singleElement()
                 .satisfies(c -> assertThat(c.count()).isEqualTo(1));
         assertThat(summary.categories()).noneMatch(c -> "EMAILS_SPAM".equals(c.type()));
+    }
+
+    // ── Erledigt-Speicher ─────────────────────────────────────────────────
+
+    private static final org.springframework.security.core.Authentication MAX =
+            org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                    "max", null, List.of());
+
+    private void maxAngemeldet() {
+        org.example.kalkulationsprogramm.domain.FrontendUserProfile profil =
+                new org.example.kalkulationsprogramm.domain.FrontendUserProfile();
+        profil.setId(7L);
+        given(frontendUserProfileService.findByUsername("max")).willReturn(java.util.Optional.of(profil));
+    }
+
+    private static org.example.kalkulationsprogramm.domain.Urlaubsantrag antrag(long id) {
+        org.example.kalkulationsprogramm.domain.Urlaubsantrag a = new org.example.kalkulationsprogramm.domain.Urlaubsantrag();
+        a.setId(id);
+        a.setTyp(org.example.kalkulationsprogramm.domain.Urlaubsantrag.Typ.URLAUB);
+        a.setStatus(org.example.kalkulationsprogramm.domain.Urlaubsantrag.Status.OFFEN);
+        return a;
+    }
+
+    private static org.example.kalkulationsprogramm.domain.KalenderEintrag termin(long id, String titel) {
+        org.example.kalkulationsprogramm.domain.KalenderEintrag t = new org.example.kalkulationsprogramm.domain.KalenderEintrag();
+        t.setId(id);
+        t.setTitel(titel);
+        t.setDatum(java.time.LocalDate.now().plusDays(1));
+        t.setStartZeit(java.time.LocalTime.of(10, 0));
+        return t;
+    }
+
+    @Test
+    @DisplayName("Erledigte Einträge fehlen in Liste UND Zähler – auch jenseits der angezeigten drei")
+    void erledigteEintraegeZaehlenNicht() {
+        maxAngemeldet();
+        given(urlaubsantragRepository.findByStatus(org.example.kalkulationsprogramm.domain.Urlaubsantrag.Status.OFFEN))
+                .willReturn(List.of(antrag(1), antrag(2), antrag(3), antrag(4)));
+        given(erledigtService.erledigteSchluessel(7L)).willReturn(java.util.Set.of("URLAUBSANTRAG:2"));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, MAX);
+
+        assertThat(summary.categories()).filteredOn(c -> "URLAUBSANTRAEGE".equals(c.type())).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(3));
+        assertThat(summary.recentItems()).filteredOn(i -> "URLAUBSANTRAG".equals(i.type()))
+                .extracting(BenachrichtigungEintragDto::id)
+                .containsExactly("URLAUBSANTRAG:1", "URLAUBSANTRAG:3", "URLAUBSANTRAG:4");
+    }
+
+    @Test
+    @DisplayName("Sind alle Einträge erledigt, verschwindet die Kategorie samt Zähler")
+    void alleErledigtKeineKategorie() {
+        maxAngemeldet();
+        given(urlaubsantragRepository.findByStatus(org.example.kalkulationsprogramm.domain.Urlaubsantrag.Status.OFFEN))
+                .willReturn(List.of(antrag(1)));
+        given(erledigtService.erledigteSchluessel(7L)).willReturn(java.util.Set.of("URLAUBSANTRAG:1"));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, MAX);
+
+        assertThat(summary.categories()).noneMatch(c -> "URLAUBSANTRAEGE".equals(c.type()));
+        assertThat(summary.totalCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("Termine am selben Tag haben eigene Schlüssel – einen wegklicken lässt den anderen stehen")
+    void termineGleichenTagsEigeneIds() {
+        maxAngemeldet();
+        given(kalenderEintragRepository.findByDatumBetween(any(), any()))
+                .willReturn(List.of(termin(1, "Aufmaß Bad"), termin(2, "Abnahme Treppe")));
+        given(erledigtService.erledigteSchluessel(7L)).willReturn(java.util.Set.of("TERMIN:1"));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, MAX);
+
+        assertThat(summary.categories()).filteredOn(c -> "TERMINE".equals(c.type())).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(1));
+        assertThat(summary.recentItems()).filteredOn(i -> "TERMIN".equals(i.type())).singleElement()
+                .satisfies(i -> {
+                    assertThat(i.id()).isEqualTo("TERMIN:2");
+                    assertThat(i.title()).isEqualTo("Abnahme Treppe");
+                });
+    }
+
+    @Test
+    @DisplayName("Ohne Anmeldung wird nichts gefiltert – der Erledigt-Speicher bekommt keinen Benutzer")
+    void ohneAnmeldungKeinBenutzer() {
+        service.zusammenfassung(null, null);
+        org.mockito.Mockito.verify(erledigtService).erledigteSchluessel(null);
+    }
+
+    @Test
+    @DisplayName("Monatsabschluss: erledigter Monat zählt nicht, Link zeigt auf den nächsten offenen")
+    void monatsabschlussErledigterMonat() {
+        maxAngemeldet();
+        given(monatsabschlussBerechtigungService.darfMonatAbschliessen(MAX)).willReturn(true);
+        var august = org.mockito.Mockito.mock(org.example.kalkulationsprogramm.repository.MonatsSaldoRepository.OffenerMonat.class);
+        given(august.getJahr()).willReturn(2026); given(august.getMonat()).willReturn(8); given(august.getAnzahl()).willReturn(3);
+        var september = org.mockito.Mockito.mock(org.example.kalkulationsprogramm.repository.MonatsSaldoRepository.OffenerMonat.class);
+        given(september.getJahr()).willReturn(2026); given(september.getMonat()).willReturn(9); given(september.getAnzahl()).willReturn(2);
+        given(monatsSaldoRepository.findOffeneAbschlussMonate(any(), any())).willReturn(List.of(august, september));
+        given(erledigtService.erledigteSchluessel(7L)).willReturn(java.util.Set.of("MONATSABSCHLUSS:2026-08"));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, MAX);
+
+        assertThat(summary.categories()).filteredOn(c -> "MONATSABSCHLUSS".equals(c.type())).singleElement()
+                .satisfies(c -> {
+                    assertThat(c.count()).isEqualTo(2);
+                    assertThat(c.link()).isEqualTo("/monatsabschluss?jahr=2026&monat=9");
+                });
+        assertThat(summary.recentItems()).filteredOn(i -> "MONATSABSCHLUSS".equals(i.type()))
+                .extracting(BenachrichtigungEintragDto::id).containsExactly("MONATSABSCHLUSS:2026-09");
+    }
+
+    @Test
+    @DisplayName("Ein kaputter Eintrag blockiert die Glocke nicht – die Kategorie bleibt mit Zähler")
+    void kaputterEintragBlockiertNicht() {
+        org.example.kalkulationsprogramm.domain.Urlaubsantrag ohneTyp = antrag(5);
+        ohneTyp.setTyp(null);
+        given(urlaubsantragRepository.findByStatus(org.example.kalkulationsprogramm.domain.Urlaubsantrag.Status.OFFEN))
+                .willReturn(List.of(ohneTyp));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
+
+        assertThat(summary.categories()).filteredOn(c -> "URLAUBSANTRAEGE".equals(c.type())).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(1));
+        assertThat(summary.recentItems()).noneMatch(i -> "URLAUBSANTRAG".equals(i.type()));
+    }
+
+    @Test
+    @DisplayName("Erledigen: sichtbare Mails werden gelesen, fremde nicht; andere Einträge werden gemerkt")
+    void erledigenMarkiertMailsUndMerktRest() {
+        maxAngemeldet();
+        org.example.kalkulationsprogramm.domain.EmailAbsender info = new org.example.kalkulationsprogramm.domain.EmailAbsender();
+        info.setId(1L);
+        org.example.kalkulationsprogramm.domain.EmailAbsender fremd = new org.example.kalkulationsprogramm.domain.EmailAbsender();
+        fremd.setId(3L);
+        Email sichtbar = email("Anfrage Carport", "kunde@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        sichtbar.setId(11L);
+        sichtbar.ordnePostfachZu(info, "INBOX", 11L);
+        Email verborgen = email("Persönlich an Erika", "kunde@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        verborgen.setId(12L);
+        verborgen.ordnePostfachZu(fremd, "INBOX", 12L);
+        given(postfachSichtbarkeitService.fuer(MAX))
+                .willReturn(new org.example.kalkulationsprogramm.service.PostfachSichtbarkeit(false, java.util.Set.of(1L)));
+        given(emailRepository.findAllById(any())).willReturn(List.of(sichtbar, verborgen));
+
+        service.erledigen(List.of("EMAIL:11", "EMAIL:12", "EMAIL:abc", "TERMIN:5"), MAX);
+
+        assertThat(sichtbar.isRead()).isTrue();
+        assertThat(sichtbar.getFirstViewedAt()).isNotNull();
+        assertThat(verborgen.isRead()).isFalse();
+        org.mockito.Mockito.verify(erledigtService).merken(7L, List.of("TERMIN:5"));
+    }
+
+    @Test
+    void erledigenOhneAnmeldungGehtNicht() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.erledigen(List.of("TERMIN:1"), null))
+                .isInstanceOf(BenachrichtigungService.NichtAngemeldetException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.kategorienErledigen(List.of("TERMINE"), MAX))
+                .isInstanceOf(BenachrichtigungService.NichtAngemeldetException.class);
+        org.mockito.Mockito.verifyNoInteractions(erledigtService);
+    }
+
+    @Test
+    @DisplayName("Ganze Spalte: ALLE ungelesenen Mails werden gelesen und alle offenen Termine gemerkt")
+    void kategorienErledigenNimmtAlleEintraege() {
+        maxAngemeldet();
+        List<Email> ungelesen = new java.util.ArrayList<>();
+        for (long i = 1; i <= 5; i++) {
+            Email e = email("Mail " + i, "kunde@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+            e.setId(100 + i);
+            ungelesen.add(e);
+        }
+        given(emailRepository.findInboxFiltered()).willReturn(ungelesen);
+        Email spam = email("Gewinnspiel", "spam@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        spam.setId(200L);
+        given(emailRepository.findSpamOrdner()).willReturn(List.of(spam));
+        given(postfachSichtbarkeitService.verborgeneEmailIds(any())).willReturn(java.util.Set.of());
+        given(kalenderEintragRepository.findByDatumBetween(any(), any()))
+                .willReturn(List.of(termin(1, "A"), termin(2, "B"), termin(3, "C"), termin(4, "D")));
+        given(erledigtService.erledigteSchluessel(7L)).willReturn(java.util.Set.of("TERMIN:4"));
+
+        int anzahl = service.kategorienErledigen(List.of("EMAILS", "TERMINE"), MAX);
+
+        assertThat(anzahl).isEqualTo(8);
+        assertThat(ungelesen).allSatisfy(e -> assertThat(e.isRead()).isTrue());
+        assertThat(spam.isRead()).as("Spam wurde nicht angefordert").isFalse();
+        org.mockito.Mockito.verify(erledigtService).merken(7L, List.of("TERMIN:1", "TERMIN:2", "TERMIN:3"));
+    }
+
+    @Test
+    void telefonSchluesselAusDemLink() {
+        var anruf = new org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService.Eintrag(
+                "VERPASSTER_ANRUF", "0931 1234567", "Verpasst", LocalDateTime.now(), "/telefon/anrufe?anruf=7");
+        var ohneId = new org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService.Eintrag(
+                "SPRACHNACHRICHT", "Max Mustermann", "AB", LocalDateTime.now(), "/telefon/anrufbeantworter");
+        assertThat(BenachrichtigungService.telefonSchluessel(anruf)).isEqualTo("VERPASSTER_ANRUF:7");
+        assertThat(BenachrichtigungService.telefonSchluessel(ohneId)).matches("SPRACHNACHRICHT:[0-9a-f]+");
     }
 }
