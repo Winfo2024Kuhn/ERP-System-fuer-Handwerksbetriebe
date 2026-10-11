@@ -1,4 +1,14 @@
-# Auftrag: Feldmann-Artikel scrapen und für den Datenbank-Direktimport liefern
+# Auftrag: Feldmann-Artikel scrapen und für den Import liefern
+
+> **Achtung, veraltet (Stand 2026-10-11):** Das SQL-Ladeskript für den Datenbank-Direktimport
+> (`scripts/feldmann_db_import.py`) ist entfernt – es lief nur auf MySQL. Eingespielt wird nur
+> noch mit `scripts/feldmann_import.py` über die Anwendung (`POST /api/artikel/import`,
+> Dateien über `POST /api/artikel/{id}/dokumente`). Alles, was unten über das „Ladeskript“, den
+> „Direktweg“ oder einen fehlenden Anwendungs-Importer steht, gilt damit nicht mehr. Außerdem
+> liest `feldmann_import.py` ein anderes Lieferformat als hier beschrieben: Spalten `bild_url`
+> und `datenblatt_url` statt `vorschaubild`/`dokumente`/`dokument_typen`, Dateien in `bilder/`
+> und `datenblaetter/` statt `dateien/`, dazu eine `kategorie_mapping.csv`; „V4A“ wird dort zu
+> `1.4404` statt `1.4571`. **Vor dem nächsten Scraping-Lauf Anleitung und Skript angleichen.**
 
 Du bist ein Scraping-Agent. Du liest die Produktseiten des Lieferanten **Feldmann** aus und
 lieferst **eine CSV-Datei plus einen Ordner** mit den heruntergeladenen Bildern und Unterlagen.
@@ -284,9 +294,15 @@ verworfen hast, Liste der wegen Übergröße (> 10 MB) weggelassenen Dokumente m
 
 ## 9. Hinweis für uns (nicht für den Scraping-Agenten)
 
-Dieser Weg umgeht `ArtikelImportService` vollständig — die Datei landet nicht über den
-Anwendungs-Import, sondern per Ladeskript direkt in den Tabellen. Die frühere
-Preiskorrektur-Falle (`normalizePreis()`, presste Preise auf 0,50 € – 10,00 €) und das
-lieferantenspezifische Artikel-Matching des Imports betreffen diesen Weg deshalb **nicht** —
-beide stecken im Importer-Code, der hier gar nicht läuft. Wird dieser Weg je wieder auf den
-Anwendungs-Import umgestellt, sind beide Punkte erneut zu prüfen.
+Der Direktweg per SQL ist entfernt; `scripts/feldmann_import.py` spielt über den
+Anwendungs-Import ein, also durch `ArtikelImportService`. Damit gelten wieder dessen Regeln:
+
+- **Preiskorrektur** (`normalizePreis()`, presst Preise auf 0,50 € – 10,00 €): läuft nur mit
+  `preiskorrekturAnwenden=true`. Der Endpunkt hat `false` als Vorgabe, und
+  `feldmann_import.py` schickt ausdrücklich `false` – Stückpreise bleiben unverändert.
+- **Artikel-Abgleich:** bekannt ist ein Artikel je Lieferant über die externe Artikelnummer
+  (`findByExterneArtikelnummerAndLieferantId`), nicht global.
+- **Dateien** gehen durch `ArtikelDokumentService` (Upload-Prüfungen der Anwendung) statt per
+  Dateikopie.
+
+Die Abschnitte 1–8 sind noch auf den Direktweg geschrieben (siehe Hinweis ganz oben).
