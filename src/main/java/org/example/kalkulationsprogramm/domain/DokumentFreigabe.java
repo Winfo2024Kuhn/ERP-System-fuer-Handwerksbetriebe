@@ -146,6 +146,61 @@ public class DokumentFreigabe
     @Column(name = "mwst_satz", precision = 5, scale = 4)
     private BigDecimal mwstSatz;
 
+    /**
+     * HMAC-SHA256 über UUID und den zuletzt verschickten Bestätigungscode. Der Code
+     * selbst wird nie gespeichert. NULL = kein gültiger Code offen (nie angefordert,
+     * bereits verbraucht oder nach zu vielen Fehlversuchen gesperrt).
+     * Siehe {@code FreigabeCodeService}.
+     */
+    @Column(name = "code_hash", length = 64)
+    private String codeHash;
+
+    /** Ablauf des aktuell offenen Bestätigungscodes. */
+    @Column(name = "code_gueltig_bis")
+    private LocalDateTime codeGueltigBis;
+
+    /** Falsche Eingaben für den aktuell offenen Code. */
+    @ColumnDefault("0")
+    @Column(name = "code_fehlversuche", nullable = false)
+    private int codeFehlversuche;
+
+    /**
+     * Falsche Eingaben über alle Codes dieser Freigabe. Ab der Gesamtgrenze ist die
+     * Online-Freigabe gesperrt – sonst ließe sich über immer neue Codes beliebig raten.
+     */
+    @ColumnDefault("0")
+    @Column(name = "code_fehlversuche_gesamt", nullable = false)
+    private int codeFehlversucheGesamt;
+
+    /** Letzter Code-Versand – Grundlage der Wartezeit bis zum nächsten Versand. */
+    @Column(name = "code_angefordert_am")
+    private LocalDateTime codeAngefordertAm;
+
+    /** Beginn des Stundenfensters für das Versandlimit. */
+    @Column(name = "code_fenster_start")
+    private LocalDateTime codeFensterStart;
+
+    /** Im aktuellen Stundenfenster verschickte Codes. */
+    @ColumnDefault("0")
+    @Column(name = "code_fenster_anzahl", nullable = false)
+    private int codeFensterAnzahl;
+
+    /** Beweissicherung: Zeitpunkt, zu dem der Bestätigungscode bei der Annahme stimmte. */
+    @Column(name = "code_bestaetigt_am")
+    private LocalDateTime codeBestaetigtAm;
+
+    /** Beweissicherung: Adresse, an die der bestätigte Code ging. */
+    @Column(name = "code_bestaetigt_email", length = 255)
+    private String codeBestaetigtEmail;
+
+    /**
+     * {@code true}, sobald {@link #kundeEmail} aus dem ersten echten Versand der Mail übernommen
+     * wurde (siehe {@code FreigabeEmpfaengerService}). Danach bleibt der Empfänger fest.
+     */
+    @ColumnDefault("false")
+    @Column(name = "kunde_email_aus_versand", nullable = false)
+    private boolean kundeEmailAusVersand;
+
     @PrePersist
     protected void onCreate()
     {

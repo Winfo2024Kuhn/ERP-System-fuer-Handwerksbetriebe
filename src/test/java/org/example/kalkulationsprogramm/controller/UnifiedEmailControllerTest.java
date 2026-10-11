@@ -76,6 +76,8 @@ class UnifiedEmailControllerTest {
     private UnifiedEmailController unifiedEmailController;
 
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
+
+    @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
     @MockBean private EmailRepository emailRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
@@ -1154,7 +1156,7 @@ class UnifiedEmailControllerTest {
                     .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
 
             mockMvc.perform(multipart("/api/emails/send").file(dto(
-                            "{\"einzelversand\":true,\"recipients\":[\"a@example.com\",\"b@example.com\",\"kaputt@example.org\"],\"subject\":\"Betriebsurlaub\",\"body\":\"b\"}")))
+                            "{\"einzelversand\":true,\"geschaeftsdokument\":true,\"recipients\":[\"a@example.com\",\"b@example.com\",\"kaputt@example.org\"],\"subject\":\"Betriebsurlaub\",\"body\":\"b\"}")))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.verschickt").value(2))
                     .andExpect(jsonPath("$.fehlgeschlagen[0].adresse").value("kaputt@example.org"))
@@ -1164,6 +1166,8 @@ class UnifiedEmailControllerTest {
             // Jede Mail geht an genau einen Empfänger, ohne CC.
             verify(unifiedEmailController).sendeSmtpMail(any(), eq("a@example.com"), isNull(), any(), any(), any(), any());
             verify(unifiedEmailController).sendeSmtpMail(any(), eq("b@example.com"), isNull(), any(), any(), any(), any());
+            // Nur wer die Mail wirklich bekam, bekommt auch einen Bestätigungscode.
+            verify(freigabeEmpfaengerService).uebernehmeVersandEmpfaenger("b", List.of("a@example.com", "b@example.com"));
         }
 
         @Test
@@ -1280,6 +1284,55 @@ class UnifiedEmailControllerTest {
             org.junit.jupiter.api.Assertions.assertEquals("chef@example.com", mail.getCc());
             org.junit.jupiter.api.Assertions.assertEquals(1, mail.getAttachments().size());
             org.junit.jupiter.api.Assertions.assertFalse(mail.getAttachments().get(0).getStoredFilename().contains(".."));
+        }
+
+        @Test
+        void sendUebergibtEmpfaengerUndCcAnDieFreigabe() throws Exception {
+            smtpOk();
+            String body = "Angebot: <a href=\\\"https://example.de/freigabe/abc\\\">ansehen</a>";
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"recipients\":[\"kunde@example.com\"],\"cc\":[\"architekt@example.com\"],\"subject\":\"Angebot\",\"body\":\"" + body + "\"}")))
+                    .andExpect(status().isOk());
+
+            verify(freigabeEmpfaengerService).uebernehmeVersandEmpfaenger(
+                    "Angebot: <a href=\"https://example.de/freigabe/abc\">ansehen</a>",
+                    java.util.Arrays.asList("kunde@example.com", "architekt@example.com"));
+        }
+
+        @Test
+        void sendBleibtErfolgreichWennFreigabeEmpfaengerScheitert() throws Exception {
+            smtpOk();
+            org.mockito.Mockito.doThrow(new IllegalStateException("DB weg"))
+                    .when(freigabeEmpfaengerService).uebernehmeVersandEmpfaenger(any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void gewoehnlicheMailMitLink_aendertKeineFreigabe() throws Exception {
+            smtpOk();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"recipients\":[\"kollege@example.com\"],\"subject\":\"zur Info\",\"body\":\"https://example.de/freigabe/abc\"}")))
+                    .andExpect(status().isOk());
+
+            verifyNoInteractions(freigabeEmpfaengerService);
+        }
+
+        @Test
+        void nurDerErstversandDesDokumentsLegtDieCodeEmpfaengerFest() {
+            org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto dokument = new org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto();
+            dokument.setGeschaeftsdokument(true);
+            org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto weiterleitung = new org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto();
+            weiterleitung.setGeschaeftsdokument(true);
+            weiterleitung.setWeitergeleitetVonEmailId(5L);
+
+            org.junit.jupiter.api.Assertions.assertTrue(UnifiedEmailController.istErstversandEinesDokuments(true, dokument));
+            org.junit.jupiter.api.Assertions.assertFalse(UnifiedEmailController.istErstversandEinesDokuments(true, weiterleitung));
+            org.junit.jupiter.api.Assertions.assertFalse(UnifiedEmailController.istErstversandEinesDokuments(false, dokument));
         }
 
         @Test

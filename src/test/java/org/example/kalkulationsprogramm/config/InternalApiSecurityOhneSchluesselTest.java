@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.controller.FreigabeInternalController;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.FreigabeCodeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -35,6 +36,7 @@ class InternalApiSecurityOhneSchluesselTest {
     @MockBean FrontendUserDetailsService users;
     @MockBean MitarbeiterRepository mitarbeiter;
     @MockBean DokumentFreigabeService freigabeService;
+    @MockBean FreigabeCodeService freigabeCodeService;
     @MockBean DateiSpeicherService dateiSpeicherService;
 
     @Test void leererSchluesselLaesstKeinenZu() throws Exception {

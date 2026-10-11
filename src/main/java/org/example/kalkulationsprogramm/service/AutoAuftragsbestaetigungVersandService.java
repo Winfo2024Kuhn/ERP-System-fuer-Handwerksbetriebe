@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Textbaustein;
+import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockDto;
@@ -74,6 +75,7 @@ public class AutoAuftragsbestaetigungVersandService
     private final ProjektEmailArchivService projektEmailArchivService;
     private final DokumentFreigabeRepository dokumentFreigabeRepository;
     private final SentMailArchiver sentMailArchiver;
+    private final FirmeninformationService firmeninformationService;
 
     /**
      * Einstieg fuer den asynchronen Versand NACH dem Commit der
@@ -1183,14 +1185,30 @@ public class AutoAuftragsbestaetigungVersandService
      * linker Akzent-Border in #500010, hellgrauer Hintergrund, Arial. So bleibt das
      * Markenbild über beide Mail-Typen konsistent.
      */
-    private EmailService.EmailContent mitAnnahmeBeleg(EmailService.EmailContent content, DokumentFreigabe freigabe)
+    EmailService.EmailContent mitAnnahmeBeleg(EmailService.EmailContent content, DokumentFreigabe freigabe)
     {
-        String belegHtml = buildAnnahmeBelegHtml(freigabe);
+        String belegHtml = buildAnnahmeBelegHtml(freigabe, firmentelefon());
         String html = content.htmlBody() == null ? belegHtml : content.htmlBody() + belegHtml;
         return new EmailService.EmailContent(content.subject(), html);
     }
 
-    private static String buildAnnahmeBelegHtml(DokumentFreigabe f)
+    /** Telefon aus den Firmendaten – fehlt es oder hakt das Laden, entfällt die Nummer im Beleg. */
+    String firmentelefon()
+    {
+        try
+        {
+            FirmeninformationDto firma = firmeninformationService.getFirmeninformation();
+            String telefon = firma == null ? null : firma.getTelefon();
+            return telefon == null || telefon.isBlank() ? null : telefon.trim();
+        }
+        catch (Exception e)
+        {
+            log.warn("Firmentelefon für den Annahme-Beleg nicht ladbar: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    static String buildAnnahmeBelegHtml(DokumentFreigabe f, String telefon)
     {
         String wann = f.getAkzeptiertAm() != null ? f.getAkzeptiertAm().format(ANNAHME_FORMAT) : "—";
         String hash = kuerzeHash(f.getHashAcceptance());
@@ -1204,6 +1222,18 @@ public class AutoAuftragsbestaetigungVersandService
         String beweisZeile = unterzeichner != null
                 ? "Annahme durch <strong>" + escapeHtml(unterzeichner) + "</strong> am <strong>" + wann + "</strong>"
                 : "Annahme am <strong>" + wann + "</strong>";
+        // Seit V415 bestätigt der Kunde die Annahme mit einem Einmal-Code per Mail.
+        // Alt-Annahmen ohne Code bekommen die Zeile nicht.
+        String codeZeile = f.getCodeBestaetigtAm() != null
+                ? "Bestätigt per Einmal-Code an <strong>" + escapeHtml(nullSafe(f.getCodeBestaetigtEmail()))
+                        + "</strong><br>"
+                : "";
+        // "Waren Sie das nicht?" bewusst in normaler Textfarbe statt im grauen Kleingedruckten:
+        // Diese Mail ist die einzige Stelle, an der der echte Kunde eine fremde Annahme bemerkt.
+        String warnung = telefon != null
+                ? "<strong>Waren Sie das nicht?</strong> Dann rufen Sie uns bitte sofort an: "
+                        + "<strong>" + escapeHtml(telefon) + "</strong>."
+                : "<strong>Waren Sie das nicht?</strong> Dann melden Sie sich bitte sofort bei uns.";
 
         return "<div style=\"margin:24px 0;padding:16px 18px;border-left:3px solid #500010;background:#fafafa;font-family:Arial,Helvetica,sans-serif;\">"
                 + "<p style=\"margin:0 0 6px 0;font-weight:600;color:#1e293b;\">Angebot angenommen — Auftragsbestätigung</p>"
@@ -1214,9 +1244,10 @@ public class AutoAuftragsbestaetigungVersandService
                 + "</p>"
                 + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;line-height:1.5;\">"
                 + "Beweissicherung: " + beweisZeile + "<br>"
-                + "Audit-Hash zur Rechtssicherheit: <code style=\"font-family:monospace;color:#64748b;\">" + hash + "</code><br>"
-                + "Sollten Sie diese Annahme <em>nicht</em> selbst durchgeführt haben, melden Sie sich bitte umgehend bei uns."
+                + codeZeile
+                + "Audit-Hash zur Rechtssicherheit: <code style=\"font-family:monospace;color:#64748b;\">" + hash + "</code>"
                 + "</p>"
+                + "<p style=\"margin:12px 0 0 0;color:#1e293b;line-height:1.45;\">" + warnung + "</p>"
                 + "</div>";
     }
 

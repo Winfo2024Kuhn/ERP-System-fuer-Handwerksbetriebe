@@ -103,6 +103,7 @@ class UnifiedEmailAntwortPostfachTest {
 
     @Autowired private MockMvc mockMvc;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
     @MockBean private EmailDraftService emailDraftService;
     @MockBean private EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;

@@ -2,6 +2,8 @@ package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
+import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
+import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.ContentBlockDto;
 import org.junit.jupiter.api.Test;
@@ -10,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,6 +37,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     @Mock ProjektEmailArchivService projektEmailArchivService;
     @Mock org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository dokumentFreigabeRepository;
     @Mock org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
+    @Mock FirmeninformationService firmeninformationService;
 
     private AutoAuftragsbestaetigungVersandService neuService() {
         return new AutoAuftragsbestaetigungVersandService(
@@ -46,7 +50,8 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 emailSignatureService,
                 projektEmailArchivService,
                 dokumentFreigabeRepository,
-                sentMailArchiver);
+                sentMailArchiver,
+                firmeninformationService);
     }
 
     @Test
@@ -526,5 +531,101 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         ab.setDokumentNummer("AB-2026/05/0042");
         ab.setVorgaenger(angebot);
         return ab;
+    }
+
+    // ============== Annahme-Beleg: "Waren Sie das nicht?" und Code-Bestätigung ==============
+
+    private static DokumentFreigabe angenommeneFreigabe() {
+        DokumentFreigabe f = new DokumentFreigabe();
+        f.setDokumentNummer("AN-2026-0001");
+        f.setAkzeptiertAm(LocalDateTime.of(2026, 10, 11, 14, 5));
+        f.setHashAcceptance("0123456789abcdef0123456789abcdef");
+        f.setUnterzeichnerName("Max Mustermann");
+        f.setCodeBestaetigtAm(LocalDateTime.of(2026, 10, 11, 14, 5));
+        f.setCodeBestaetigtEmail("max@example.de");
+        return f;
+    }
+
+    @Test
+    void annahmeBeleg_mitCodeUndTelefon_nenntBeidesDeutlich() {
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(angenommeneFreigabe(), "09369 / 23 23");
+
+        assertThat(html)
+                .contains("Annahme durch <strong>Max Mustermann</strong> am <strong>11.10.2026 um 14:05 Uhr</strong>")
+                .contains("Bestätigt per Einmal-Code an <strong>max@example.de</strong>")
+                .contains("<strong>Waren Sie das nicht?</strong> Dann rufen Sie uns bitte sofort an: <strong>09369 / 23 23</strong>.")
+                .contains("0123456789abcdef…");
+    }
+
+    @Test
+    void annahmeBeleg_altAnnahmeOhneCodeUndOhneTelefon() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setCodeBestaetigtAm(null);
+        f.setCodeBestaetigtEmail(null);
+        f.setUnterzeichnerName("  ");
+        f.setAkzeptiertAm(null);
+        f.setHashAcceptance(null);
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null);
+
+        assertThat(html)
+                .doesNotContain("Einmal-Code")
+                .contains("Annahme am <strong>—</strong>")
+                .contains("<strong>Waren Sie das nicht?</strong> Dann melden Sie sich bitte sofort bei uns.")
+                .doesNotContain("rufen Sie uns");
+    }
+
+    @Test
+    void annahmeBeleg_codeOhneAdresseUndUnterzeichnerNull_escaptUndBleibtLesbar() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setCodeBestaetigtEmail(null);
+        f.setUnterzeichnerName(null);
+        f.setDokumentNummer("<b>AN</b>");
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, "<i>0800</i>");
+
+        assertThat(html)
+                .contains("Bestätigt per Einmal-Code an <strong></strong>")
+                .contains("Annahme am <strong>11.10.2026 um 14:05 Uhr</strong>")
+                .contains("&lt;b&gt;AN&lt;/b&gt;")
+                .contains("&lt;i&gt;0800&lt;/i&gt;");
+    }
+
+    @Test
+    void firmentelefon_nurWennGepflegtUndLadbar() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+
+        when(firmeninformationService.getFirmeninformation()).thenReturn(null);
+        assertThat(service.firmentelefon()).isNull();
+
+        FirmeninformationDto dto = new FirmeninformationDto();
+        when(firmeninformationService.getFirmeninformation()).thenReturn(dto);
+        assertThat(service.firmentelefon()).isNull();
+
+        dto.setTelefon(" ");
+        assertThat(service.firmentelefon()).isNull();
+
+        dto.setTelefon(" 09369 / 23 23 ");
+        assertThat(service.firmentelefon()).isEqualTo("09369 / 23 23");
+
+        when(firmeninformationService.getFirmeninformation()).thenThrow(new IllegalStateException("DB weg"));
+        assertThat(service.firmentelefon()).isNull();
+    }
+
+    @Test
+    void mitAnnahmeBeleg_haengtBelegAnOderErsetztLeerenText() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        FirmeninformationDto dto = new FirmeninformationDto();
+        dto.setTelefon("09369 / 23 23");
+        when(firmeninformationService.getFirmeninformation()).thenReturn(dto);
+
+        org.example.email.EmailService.EmailContent mitText = service.mitAnnahmeBeleg(
+                new org.example.email.EmailService.EmailContent("Betreff", "<p>Hallo</p>"), angenommeneFreigabe());
+        assertThat(mitText.subject()).isEqualTo("Betreff");
+        assertThat(mitText.htmlBody()).startsWith("<p>Hallo</p><div").contains("09369 / 23 23");
+
+        org.example.email.EmailService.EmailContent ohneText = service.mitAnnahmeBeleg(
+                new org.example.email.EmailService.EmailContent("Betreff", null), angenommeneFreigabe());
+        assertThat(ohneText.htmlBody()).startsWith("<div").contains("Waren Sie das nicht?");
     }
 }

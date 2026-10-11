@@ -8,9 +8,14 @@ import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAkzeptierenRequest;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAkzeptiertResponse;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAnsichtDto;
+import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeCodeVersendetResponse;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.FreigabeCodeAnforderungException;
+import org.example.kalkulationsprogramm.service.FreigabeCodeException;
+import org.example.kalkulationsprogramm.service.FreigabeCodeService;
 import org.springframework.core.io.Resource;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +27,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -38,6 +45,7 @@ import java.util.Optional;
 public class FreigabeInternalController
 {
     private final DokumentFreigabeService freigabeService;
+    private final FreigabeCodeService freigabeCodeService;
     private final DateiSpeicherService dateiSpeicherService;
 
     /**
@@ -108,6 +116,54 @@ public class FreigabeInternalController
     }
 
     /**
+     * Schickt dem Kunden einen 6-stelligen Bestätigungscode an die Adresse, an die das
+     * Dokument ging. Die Website ruft das beim Klick auf "Freigeben" auf; ohne diesen
+     * Code nimmt {@link #akzeptiere} nichts an.
+     */
+    @PostMapping("/{uuid}/code")
+    public ResponseEntity<?> fordereCodeAn(@PathVariable String uuid)
+    {
+        try
+        {
+            FreigabeCodeService.CodeVersendet versendet = freigabeCodeService.fordereCodeAn(uuid);
+            return ResponseEntity.ok(new FreigabeCodeVersendetResponse(
+                    true, versendet.emailMaskiert(), versendet.gueltigBis(), versendet.erneutAnfordernInSekunden()));
+        }
+        catch (IllegalArgumentException e)
+        {
+            return ResponseEntity.notFound().build();
+        }
+        catch (PessimisticLockingFailureException e)
+        {
+            // Für diesen Link wird gerade ein Code verschickt (Doppelklick) – der kommt gleich an.
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("success", false);
+            body.put("message", "Ihr Code wird gerade verschickt. Bitte sehen Sie gleich in Ihr Postfach.");
+            body.put("erneutAnfordernInSekunden", FreigabeCodeService.WARTEZEIT_SEKUNDEN);
+            return ResponseEntity.status(429).body(body);
+        }
+        catch (FreigabeCodeAnforderungException e)
+        {
+            int status = switch (e.getGrund())
+            {
+                case KEINE_EMAIL -> 409;
+                case NICHT_OFFEN -> 410;
+                case ONLINE_GESPERRT -> 423;
+                case ZU_FRUEH -> 429;
+                case VERSAND_FEHLGESCHLAGEN -> 502;
+            };
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("success", false);
+            body.put("message", e.getMessage());
+            if (e.getErneutAnfordernInSekunden() != null)
+            {
+                body.put("erneutAnfordernInSekunden", e.getErneutAnfordernInSekunden());
+            }
+            return ResponseEntity.status(status).body(body);
+        }
+    }
+
+    /**
      * Markiert die Freigabe als digital akzeptiert. IP und User-Agent werden vom Astro-
      * Layer aus den echten Request-Headern (cf-connecting-ip, x-forwarded-for) extrahiert
      * und mitgeschickt – wir können sie hier serverseitig nicht direkt sehen, weil der
@@ -129,7 +185,7 @@ public class FreigabeInternalController
         }
         try
         {
-            DokumentFreigabe freigabe = freigabeService.akzeptiere(
+            DokumentFreigabe freigabe = freigabeService.akzeptiereMitCode(
                     uuid,
                     request.getClientIp(),
                     truncate(request.getUserAgent(), 500),
@@ -137,7 +193,8 @@ public class FreigabeInternalController
                     request.getVorname(),
                     request.getNachname(),
                     request.getUnterzeichnerName(),
-                    request.getAusgewaehlteAlternativen());
+                    request.getAusgewaehlteAlternativen(),
+                    request.getCode());
             return ResponseEntity.ok(FreigabeAkzeptiertResponse.builder()
                     .uuid(freigabe.getUuid())
                     .dokumentNummer(freigabe.getDokumentNummer())
@@ -146,6 +203,23 @@ public class FreigabeInternalController
                     .hashAcceptance(freigabe.getHashAcceptance())
                     .unterzeichnerName(freigabe.getUnterzeichnerName())
                     .build());
+        }
+        catch (FreigabeCodeException e)
+        {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("success", false);
+            body.put("message", e.getMessage());
+            body.put("codeFehler", e.getGrund().name());
+            body.put("verbleibendeVersuche", e.getVerbleibendeVersuche());
+            if (e.getErneutAnfordernInSekunden() != null)
+            {
+                body.put("erneutAnfordernInSekunden", e.getErneutAnfordernInSekunden());
+            }
+            if (e.getEmailMaskiert() != null)
+            {
+                body.put("emailMaskiert", e.getEmailMaskiert());
+            }
+            return ResponseEntity.unprocessableEntity().body(body);
         }
         catch (IllegalArgumentException e)
         {

@@ -54,7 +54,8 @@ class FlywayMigrationenTest {
             "V411__schutzregeln_und_kunden_emails.sql", 1211966469,
             "V412__datev_stundenart.sql", -328481948,
             "V413__abwesenheitsnotiz_postfaecher.sql", -17262563,
-            "V414__benachrichtigung_erledigt.sql", 928601684);
+            "V414__benachrichtigung_erledigt.sql", 928601684,
+            "V415__freigabe_email_code.sql", 1251503045);
 
     private static final char BOM = 0xFEFF;
 

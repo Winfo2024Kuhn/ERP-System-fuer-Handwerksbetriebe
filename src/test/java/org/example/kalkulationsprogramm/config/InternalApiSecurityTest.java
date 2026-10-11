@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.FreigabeCodeService;
 import org.example.kalkulationsprogramm.service.WebsiteAnalyticsSnapshotService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -52,6 +53,7 @@ class InternalApiSecurityTest {
     @MockBean MitarbeiterRepository mitarbeiter;
     @MockBean AnfrageFunnelService anfrageFunnelService;
     @MockBean DokumentFreigabeService freigabeService;
+    @MockBean FreigabeCodeService freigabeCodeService;
     @MockBean DateiSpeicherService dateiSpeicherService;
     @MockBean WebsiteAnalyticsSnapshotService snapshotService;
 
@@ -65,11 +67,13 @@ class InternalApiSecurityTest {
         mvc.perform(delete("/api/internal/freigabe/" + UUID + "/pdf")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/internal/freigabe/" + UUID + "/akzeptieren")
                 .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/internal/freigabe/" + UUID + "/code")
+                .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/internal/anfrage").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
         mvc.perform(post("/api/internal/analytics-snapshot").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
-        Mockito.verifyNoInteractions(anfrageFunnelService, freigabeService, snapshotService);
+        Mockito.verifyNoInteractions(anfrageFunnelService, freigabeService, freigabeCodeService, snapshotService);
     }
 
     @Test void falscherOderLeererSchluesselWirdAbgewiesen() throws Exception {
@@ -91,6 +95,10 @@ class InternalApiSecurityTest {
         Mockito.when(freigabeService.findByUuidUndAktualisiereStatus(UUID)).thenReturn(Optional.empty());
 
         mvc.perform(get("/api/internal/freigabe/" + UUID).header(WebsiteInternalApiKeyFilter.HEADER, KEY))
+                .andExpect(status().isNotFound());
+        Mockito.when(freigabeCodeService.fordereCodeAn(UUID))
+                .thenThrow(new IllegalArgumentException(DokumentFreigabeService.UNBEKANNTE_UUID_MESSAGE));
+        mvc.perform(post("/api/internal/freigabe/" + UUID + "/code").header(WebsiteInternalApiKeyFilter.HEADER, KEY))
                 .andExpect(status().isNotFound());
         mvc.perform(post("/api/internal/anfrage").header(WebsiteInternalApiKeyFilter.HEADER, KEY)
                 .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(NICHT_401);

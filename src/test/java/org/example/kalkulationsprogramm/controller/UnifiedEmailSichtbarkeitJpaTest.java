@@ -69,6 +69,8 @@ class UnifiedEmailSichtbarkeitJpaTest {
     @Autowired private EntityManager entityManager;
 
     @MockBean private EmailDraftService emailDraftService;
+
+    @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
     @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
     @MockBean private EmailImportService emailImportService;
     @MockBean private EmailAttachmentProcessingService emailAttachmentProcessingService;

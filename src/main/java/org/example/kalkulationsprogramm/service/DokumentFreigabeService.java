@@ -97,6 +97,7 @@ public class DokumentFreigabeService
     private final ProjektManagementService projektManagementService;
     private final AnfrageRepository anfrageRepository;
     private final TaskExecutor taskExecutor;
+    private final FreigabeCodeService freigabeCodeService;
 
     @Value("${freigabe.hash.salt:CHANGE_ME_LOCAL_ONLY}")
     private String hashSalt;
@@ -616,12 +617,43 @@ public class DokumentFreigabeService
      * gespeicherte Freigabe ohne Namens-, IP- oder Hash-Felder zu überschreiben —
      * der erste Klick ist beweisrelevant.</p>
      *
+     * <p>Vorher muss der Bestätigungscode stimmen, den der Kunde per E-Mail bekommen hat
+     * (siehe {@link FreigabeCodeService}). Prüfung und Annahme laufen in einer Transaktion
+     * auf der gesperrten Zeile; ein falscher Code rollt nicht zurück, damit der
+     * Fehlversuch gezählt bleibt.</p>
+     *
      * @throws IllegalArgumentException wenn Vor- oder Nachname fehlen
      *         (Service-Check, der die DB-NULLABLE-Spalte zusätzlich absichert).
+     * @throws FreigabeCodeException wenn der Code fehlt, falsch, abgelaufen oder gesperrt ist
+     */
+    @Transactional(noRollbackFor = FreigabeCodeException.class)
+    public DokumentFreigabe akzeptiereMitCode(String uuid, String ip, String userAgent, String email,
+                                              String vorname, String nachname, String unterzeichnerName,
+                                              List<String> ausgewaehlteAlternativen, String code)
+    {
+        // Zeile sperren, bevor irgendetwas geprüft wird: Ein Doppelklick wartet hier auf
+        // den ersten und sieht danach dessen Status (ACCEPTED → idempotent) bzw. dessen
+        // Fehlversuch. findByUuid in akzeptiere liefert anschließend dieselbe Instanz.
+        DokumentFreigabe freigabe = repository.findByUuidZumSperren(uuid)
+                .orElseThrow(() -> new IllegalArgumentException(UNBEKANNTE_UUID_MESSAGE));
+
+        // Nur offene Freigaben brauchen den Code. Eine schon angenommene liefert weiter
+        // idempotent die erste Annahme (der Code ist dann bereits verbraucht), abgelaufene
+        // und zurückgezogene scheitern in akzeptiere mit der gewohnten 410-Meldung.
+        if (freigabe.getStatus() == FreigabeStatus.PENDING && !freigabe.istAbgelaufen())
+        {
+            freigabeCodeService.pruefeUndVerbrauche(freigabe, code);
+        }
+        return akzeptiere(uuid, ip, userAgent, email, vorname, nachname, unterzeichnerName, ausgewaehlteAlternativen);
+    }
+
+    /**
+     * Annahme ohne Code-Prüfung – nur noch für {@link #akzeptiereMitCode} und Tests.
+     * Bewusst nicht öffentlich, damit kein neuer Aufrufer den Bestätigungscode umgeht.
      */
     @Transactional
-    public DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
-                                       String vorname, String nachname, String unterzeichnerName)
+    DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
+                                String vorname, String nachname, String unterzeichnerName)
     {
         return akzeptiere(uuid, ip, userAgent, email, vorname, nachname, unterzeichnerName, null);
     }
@@ -635,11 +667,14 @@ public class DokumentFreigabeService
      * Betrag als Teil der Beweissicherung (fließen in den Acceptance-Hash ein). Die gewählten
      * Alternativen werden anschließend in der automatisch erzeugten Auftragsbestätigung zu
      * festen Positionen.
+     *
+     * <p>Ohne Code-Prüfung, deshalb nicht öffentlich – der Weg von außen ist
+     * {@link #akzeptiereMitCode}.</p>
      */
     @Transactional
-    public DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
-                                       String vorname, String nachname, String unterzeichnerName,
-                                       List<String> ausgewaehlteAlternativen)
+    DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
+                                String vorname, String nachname, String unterzeichnerName,
+                                List<String> ausgewaehlteAlternativen)
     {
         DokumentFreigabe freigabe = repository.findByUuid(uuid)
                 .orElseThrow(() -> new IllegalArgumentException(UNBEKANNTE_UUID_MESSAGE));
@@ -1125,8 +1160,8 @@ public class DokumentFreigabeService
      * Kunden zurück (jedes AusgangsGeschaeftsDokument hat einen, siehe
      * {@link AusgangsGeschaeftsDokument#getKunde()} — "Adresse kommt immer aus Kunde, nicht aus
      * Projekt/Anfrage"), damit die bereits erzeugte AB nicht lautlos ohne Versand liegen bleibt.
-     * Deckt nicht den Fall ab, dass der Anwender den Vorschlag im Dialog manuell auf eine andere
-     * Adresse geändert hat — die landet nirgends in der Freigabe (siehe Warnung im Review).
+     * Hat der Anwender den Vorschlag im Dialog auf eine andere Adresse geändert, steht nach dem
+     * Versand die tatsächlich verwendete in der Freigabe ({@link FreigabeEmpfaengerService}).
      */
     private String ermittleAutoVersandEmpfaenger(DokumentFreigabe freigabe, AusgangsGeschaeftsDokument ab)
     {
@@ -1441,6 +1476,13 @@ public class DokumentFreigabeService
                 freigabe.getAkzeptierterBetrag() == null ? "" : freigabe.getAkzeptierterBetrag().toPlainString(),
                 hashSalt
         );
+        // Bestätigung per E-Mail-Code (seit V415): wann und an welche Adresse. Nur angehängt,
+        // wenn vorhanden – so bleibt der Hash für Annahmen ohne Code unverändert.
+        if (freigabe.getCodeBestaetigtAm() != null)
+        {
+            input = String.join("|", input, freigabe.getCodeBestaetigtAm().toString(),
+                    freigabe.getCodeBestaetigtEmail() == null ? "" : freigabe.getCodeBestaetigtEmail());
+        }
         return sha256Hex(input);
     }
 

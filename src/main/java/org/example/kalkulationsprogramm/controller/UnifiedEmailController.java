@@ -100,6 +100,7 @@ public class UnifiedEmailController {
     private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
     private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
+    private final org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -1895,6 +1896,12 @@ public class UnifiedEmailController {
                 }
                 emailDraftService.deleteAfterSuccessfulSend(dto.getDraftId());
                 ausgangsmailService.vermerkeVersand(projektDokument, anfrageDokument);
+                java.util.Set<String> gescheitert = ergebnis.fehlgeschlagen().stream()
+                        .map(org.example.kalkulationsprogramm.service.PostfachVersandService.Fehlschlag::adresse)
+                        .collect(java.util.stream.Collectors.toSet());
+                if (istErstversandEinesDokuments(istGeschaeftsdokument, dto)) {
+                    merkeFreigabeEmpfaenger(htmlBody, empfaenger.stream().filter(a -> !gescheitert.contains(a)).toList());
+                }
                 return ResponseEntity.ok(new org.example.kalkulationsprogramm.dto.Email.EinzelversandAntwortDto(
                         ergebnis.verschickt().size(), fehlgeschlagen, nichtGespeichert,
                         ergebnis.verschickt().stream().flatMap(java.util.Optional::stream).map(e -> toDto(e, kontext)).toList()));
@@ -1915,6 +1922,9 @@ public class UnifiedEmailController {
             Email email = ausgangsmailService.speichere(ausgangsmail(dto, messageId, versand.absenderAdresse(),
                     versand.postfach(), recipient, cc, htmlBody, null, anhaenge));
             ausgangsmailService.vermerkeVersand(projektDokument, anfrageDokument);
+            if (istErstversandEinesDokuments(istGeschaeftsdokument, dto)) {
+                merkeFreigabeEmpfaenger(htmlBody, java.util.Arrays.asList(recipient, cc));
+            }
 
             return ResponseEntity.ok(toDto(email, kontext));
         } catch (Exception e) {
@@ -1924,6 +1934,27 @@ public class UnifiedEmailController {
     }
 
     /** Daten für das Speichern einer verschickten Mail. */
+    /**
+     * Nur der Versand des Dokuments selbst legt fest, wer den Bestätigungscode bekommt – nicht
+     * eine Weiterleitung und keine gewöhnliche Mail, in die jemand den Link kopiert hat.
+     */
+    static boolean istErstversandEinesDokuments(boolean istGeschaeftsdokument, ProjektEmailDto dto) {
+        return istGeschaeftsdokument && dto.getWeitergeleitetVonEmailId() == null;
+    }
+
+    /**
+     * Steht ein Freigabe-Link in der Mail, gehört der Bestätigungscode an genau diese Empfänger
+     * (siehe {@link org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService}). Die Mail
+     * ist zu diesem Zeitpunkt schon raus – ein Fehler hier wird nur geloggt.
+     */
+    private void merkeFreigabeEmpfaenger(String htmlBody, List<String> empfaenger) {
+        try {
+            freigabeEmpfaengerService.uebernehmeVersandEmpfaenger(htmlBody, empfaenger);
+        } catch (RuntimeException e) {
+            log.warn("Empfänger für Freigabe-Link nicht übernommen: {}", e.getMessage());
+        }
+    }
+
     private static org.example.kalkulationsprogramm.service.AusgangsmailService.Ausgangsmail ausgangsmail(
             ProjektEmailDto dto, String messageId, String absender,
             org.example.kalkulationsprogramm.domain.EmailAbsender postfach, String empfaenger, String cc,
