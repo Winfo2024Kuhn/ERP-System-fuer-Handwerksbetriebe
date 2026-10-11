@@ -158,6 +158,14 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
     await page.goto('/rechnungsuebersicht');
     await page.getByRole('button', { name: /hochladen/i }).click();
     await page.locator('input[type=file]').setInputFiles({ name: 'test.pdf', mimeType: 'application/pdf', buffer: Buffer.from('dummy') });
+    // Lieferant ausdruecklich waehlen statt auf die automatische Zuordnung zu
+    // bauen: die haengt daran, ob die erst mit dem Dialog geladene
+    // Lieferantenliste vor der Analyse da ist, und liess "Speichern" sonst
+    // gesperrt. Um die Zuordnung geht es in diesem Test nicht.
+    const lieferantAuswahl = page.locator('label', { hasText: /^Lieferant \*$/ }).locator('..').getByRole('combobox');
+    await lieferantAuswahl.click();
+    await page.getByRole('option', { name: 'Testlieferant', exact: true }).click();
+    await expect(lieferantAuswahl).toHaveText('Testlieferant');
     const invoice = page.getByRole('textbox', { name: 'Betrag Brutto' });
     await invoice.click();
     await expect(invoice).toHaveValue('');

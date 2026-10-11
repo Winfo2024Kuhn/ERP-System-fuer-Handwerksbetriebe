@@ -65,7 +65,8 @@ nicht. Hinein gehört:
    Baustein: `react-pc-frontend/src/components/ui/info-button.tsx` (Regeln unten).
 7. **Tests:** Vitest + Testing Library, bestehende grün halten, E2E unter
    `react-pc-frontend/e2e/` mit `page.route`-Mocks; `npm run lint`, `npm run test -- --run`,
-   `npm run build`; wenn möglich Skill `playwright-design-pruefung`.
+   `npm run build`; wenn möglich Skill `playwright-design-pruefung`. Den Abschnitt
+   „Schnelle E2E-Tests“ unten wörtlich in den Prompt übernehmen.
 8. **Grenzen:** nur Dateien unter `react-pc-frontend/` (bzw. `react-zeiterfassung/`),
    `src/main/java` nicht anfassen, **nicht committen**.
 9. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
@@ -95,6 +96,41 @@ eine Einstellung verstehen, bevor sie sie ändern – ohne Handbuch.
   `react-pc-frontend/src/components/ui/info-button.tsx` nutzen (Klick öffnet ein
   Popover, Tastatur + Touch, Escape schließt) – nicht pro Seite neu bauen. Fehlt in
   `react-zeiterfassung/` ein Gegenstück, das mit zur Freigabe stellen.
+
+### Schnelle E2E-Tests (Wunsch des Nutzers vom 11.10.2026, gilt für jede neue Spec)
+
+Die PC-Suite hat rund 1000 Testläufe, weil jede Spec in drei Bildschirmgrößen läuft.
+Jede Sekunde in einem Test kostet also drei. Damit sie schnell **und** verlässlich
+bleibt:
+
+- **Richtige Ebene wählen.** Logik, Formatierung, Validierung und die Bedienung
+  einer einzelnen Komponente (Tastatur, ARIA, Pflichtfeld) gehören in Vitest +
+  Testing Library neben die Datei (`*.test.tsx`). Das dauert Millisekunden statt
+  Sekunden. Playwright nur für echte Abläufe über Seiten und Dialoge und für das
+  Layout in den drei Größen.
+- **Gegen den Build testen, nicht gegen Dev-Server-Interna.** Die E2E-Tests laufen
+  gegen den Produktions-Build (`vite preview`). Importe wie
+  `/node_modules/.vite/deps/…` oder `/src/…` per `page.evaluate` gibt es dort nicht.
+  Wer eine Komponente isoliert mounten will, schreibt einen Vitest-Test.
+- **Ein Ablauf pro Test, nicht eine Zusicherung pro Test.** Jeder `page.goto` lädt
+  die App neu. Mehrere Prüfungen am selben Seitenzustand gehören in einen Test.
+- **Auf Zustände warten, nie auf die Uhr.** Kein `page.waitForTimeout(…)` als
+  „gleich fertig“: zu kurz wackelt der Test, zu lang bremst er jeden Lauf. Besser
+  `await expect(…).toBeVisible()`, `expect.poll(…)` oder `page.waitForResponse(…)`.
+- **Erst die Daten, dann die Aktion.** Der Build ist schnell genug, um zu klicken,
+  bevor nachgeladene Daten da sind. Am besten auf etwas Sichtbares warten, das erst
+  mit den Daten erscheint (die Option in der Liste, die Zeile in der Tabelle). Gibt
+  es das nicht, `page.waitForResponse` auf genau diese Anfrage. Und nicht auf
+  Automatiken bauen, um die es im Test gar nicht geht. Beispiel: Der Upload-Dialog
+  ordnet den Lieferanten nur zu, wenn seine Liste schneller lädt als die Analyse,
+  darum wählt `e2e/systemeingaben-task-10.spec.ts` ihn ausdrücklich aus.
+- **Animationen nicht selbst abwarten.** Vor Screenshots und Messungen
+  `designPruefung` bzw. `uebergaengeAusklingenLassen` aus `e2e/hilfen/design.ts`
+  nutzen, keine eigenen Pausen.
+- **Wackel-Probe vor dem Abgeben:** die eigene Spec mit
+  `E2E_PORT=<port> npx playwright test e2e/<spec> --repeat-each=5 --workers=1`.
+  Schnelle Einzelläufe decken Wettläufe auf, die unter Last verborgen bleiben.
+  (PowerShell: `$env:E2E_PORT=<port>; npx playwright test …`)
 
 ## 4. Backend selbst bauen (währenddessen)
 
