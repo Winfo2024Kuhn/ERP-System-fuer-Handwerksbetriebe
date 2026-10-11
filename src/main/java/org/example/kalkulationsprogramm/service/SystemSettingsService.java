@@ -522,6 +522,14 @@ public class SystemSettingsService {
     }
 
     /**
+     * Die KI-Funktionen sind freiwillig: Nur mit einem gespeicherten Gemini-Schlüssel
+     * sind sie an. Platzhalter wie {@code OVERRIDE_IN_LOCAL} zählen nicht als Schlüssel.
+     */
+    public boolean isGeminiConfigured() {
+        return hasConfiguredValue(getGeminiApiKey());
+    }
+
+    /**
      * Schaltet den KI-gestützten Spam-Filter für eingehende Webseiten-Anfragen
      * (Funnel) ein oder aus. Standard: an. Wird im FirmaEditor per Checkbox
      * gesteuert, damit der Betreiber bei Gemini-Kostenproblemen oder
@@ -562,8 +570,13 @@ public class SystemSettingsService {
         log.info("Funnel-Spam-Filter-Backend umgeschaltet: provider={}", value);
     }
 
+    /**
+     * Pflicht der Ersteinrichtung ist nur der Mailserver – ohne ihn gehen weder
+     * Angebote noch Rechnungen raus. Der Gemini-Schlüssel ist freiwillig, siehe
+     * {@link #isGeminiConfigured()}.
+     */
     public boolean isInitialConfigurationRequired() {
-        return !hasConfiguredValue(getGeminiApiKey()) || !isSmtpConfigured();
+        return !isSmtpConfigured();
     }
 
     public boolean isSmtpConfigured() {

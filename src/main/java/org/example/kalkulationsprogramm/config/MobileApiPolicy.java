@@ -40,6 +40,7 @@ public final class MobileApiPolicy {
         route("POST", "/api/buchhaltung/mobile/(?:belege|mwst-rechner)"),
         route("PUT", "/api/buchhaltung/mobile/belege/" + ID + "/positionen"),
         route("POST", "/api/spracheingabe/transkribieren"),
+        route("GET", "/api/spracheingabe/verfuegbar"),
         route("GET", "/api/(?:images|dokumente)/[^/]+(?:/(?:thumbnail|anzeige))?")
     );
     private MobileApiPolicy() {}

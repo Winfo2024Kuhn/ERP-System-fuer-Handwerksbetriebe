@@ -1,5 +1,11 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { transkribiere, SpracheingabeFehler } from './spracheingabeService'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import {
+    bekannteSpracheingabeVerfuegbarkeit,
+    pruefeSpracheingabeVerfuegbar,
+    setzeSpracheingabeVerfuegbarkeitZurueck,
+    transkribiere,
+    SpracheingabeFehler,
+} from './spracheingabeService'
 
 /** Winziger Fake-Blob mit echtem `.type`, wie ihn `audioRecorderService.stoppe()` liefert. */
 function macheAufnahme(type = 'audio/webm;codecs=opus'): Blob {
@@ -144,6 +150,17 @@ describe('spracheingabeService', () => {
             })
         })
 
+        it('503 (kein KI-Schluessel) reicht die Servermeldung unveraendert weiter', async () => {
+            vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+                macheAntwort(503, { success: false, message: 'Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist.' }),
+            ))
+
+            await expect(transkribiere(macheAufnahme(), 'token')).rejects.toMatchObject({
+                message: 'Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist.',
+                status: 503,
+            })
+        })
+
         it('502 ohne Servermeldung faellt auf den Standardtext zurueck', async () => {
             vi.stubGlobal('fetch', vi.fn().mockResolvedValue(macheAntwort(502, {})))
 
@@ -232,6 +249,114 @@ describe('spracheingabeService', () => {
             logSpy.mockRestore()
             warnSpy.mockRestore()
             errorSpy.mockRestore()
+        })
+    })
+
+    describe('Verfuegbarkeit (KI-Schluessel hinterlegt?)', () => {
+        beforeEach(() => {
+            setzeSpracheingabeVerfuegbarkeitZurueck()
+        })
+        afterEach(() => {
+            vi.useRealTimers()
+        })
+
+        it('fragt mit kodiertem Token und merkt sich ein ausdrueckliches "aus"', async () => {
+            const fetchMock = vi.fn().mockResolvedValue(macheAntwort(200, { verfuegbar: false }))
+            vi.stubGlobal('fetch', fetchMock)
+
+            expect(bekannteSpracheingabeVerfuegbarkeit('a b&c')).toBeUndefined()
+            await expect(pruefeSpracheingabeVerfuegbar('a b&c')).resolves.toBe(false)
+
+            expect(fetchMock).toHaveBeenCalledWith('/api/spracheingabe/verfuegbar?token=a%20b%26c')
+            expect(bekannteSpracheingabeVerfuegbarkeit('a b&c')).toBe(false)
+        })
+
+        it('liefert "an" bei {verfuegbar: true}', async () => {
+            vi.stubGlobal('fetch', vi.fn().mockResolvedValue(macheAntwort(200, { verfuegbar: true })))
+
+            await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(true)
+            expect(bekannteSpracheingabeVerfuegbarkeit('token')).toBe(true)
+        })
+
+        it('mehrere Knoepfe gleichzeitig loesen nur EINE Abfrage aus', async () => {
+            const fetchMock = vi.fn().mockResolvedValue(macheAntwort(200, { verfuegbar: true }))
+            vi.stubGlobal('fetch', fetchMock)
+
+            const ergebnisse = await Promise.all([
+                pruefeSpracheingabeVerfuegbar('token'),
+                pruefeSpracheingabeVerfuegbar('token'),
+                pruefeSpracheingabeVerfuegbar('token'),
+            ])
+            await pruefeSpracheingabeVerfuegbar('token')
+
+            expect(ergebnisse).toEqual([true, true, true])
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+        })
+
+        it('merkt sich die Antwort je Token getrennt', async () => {
+            const fetchMock = vi.fn()
+                .mockResolvedValueOnce(macheAntwort(200, { verfuegbar: false }))
+                .mockResolvedValueOnce(macheAntwort(200, { verfuegbar: true }))
+            vi.stubGlobal('fetch', fetchMock)
+
+            await expect(pruefeSpracheingabeVerfuegbar('token-1')).resolves.toBe(false)
+            await expect(pruefeSpracheingabeVerfuegbar('token-2')).resolves.toBe(true)
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+        })
+
+        it('fragt nach ein paar Minuten neu, damit ein neuer Schluessel ankommt', async () => {
+            vi.useFakeTimers()
+            const fetchMock = vi.fn()
+                .mockResolvedValueOnce(macheAntwort(200, { verfuegbar: false }))
+                .mockResolvedValueOnce(macheAntwort(200, { verfuegbar: true }))
+            vi.stubGlobal('fetch', fetchMock)
+
+            await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(false)
+            vi.advanceTimersByTime(60_000)
+            await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(false)
+            expect(fetchMock).toHaveBeenCalledTimes(1)
+
+            vi.advanceTimersByTime(5 * 60_000)
+            await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(true)
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+        })
+
+        it.each([
+            ['Netzwerkfehler (offline)', () => Promise.reject(new TypeError('Failed to fetch'))],
+            ['401 ohne Body', () => Promise.resolve({ ok: false, status: 401, json: async () => { throw new SyntaxError('leer') } })],
+            ['500', () => Promise.resolve(macheAntwort(500, { message: 'kaputt' }))],
+            ['unerwartete Antwort', () => Promise.resolve(macheAntwort(200, { irgendwas: 1 }))],
+        ])('%s zaehlt als "an" und wird nicht gemerkt', async (_name, antwort) => {
+            const fetchMock = vi.fn(antwort)
+            vi.stubGlobal('fetch', fetchMock)
+
+            await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(true)
+            expect(bekannteSpracheingabeVerfuegbarkeit('token')).toBeUndefined()
+
+            await pruefeSpracheingabeVerfuegbar('token')
+            expect(fetchMock).toHaveBeenCalledTimes(2)
+        })
+
+        it('ein Funkloch beim Nachfragen holt einen ausgeschalteten Knopf nicht zurueck', async () => {
+            vi.useFakeTimers()
+            const fetchMock = vi.fn()
+                .mockResolvedValueOnce(macheAntwort(200, { verfuegbar: false }))
+                .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+            vi.stubGlobal('fetch', fetchMock)
+
+            await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(false)
+            vi.advanceTimersByTime(10 * 60_000)
+
+            await expect(pruefeSpracheingabeVerfuegbar('token')).resolves.toBe(false)
+        })
+
+        it('setzeSpracheingabeVerfuegbarkeitZurueck vergisst alles', async () => {
+            vi.stubGlobal('fetch', vi.fn().mockResolvedValue(macheAntwort(200, { verfuegbar: false })))
+            await pruefeSpracheingabeVerfuegbar('token')
+
+            setzeSpracheingabeVerfuegbarkeitZurueck()
+
+            expect(bekannteSpracheingabeVerfuegbarkeit('token')).toBeUndefined()
         })
     })
 })

@@ -62,9 +62,10 @@ async function baueFehlerAusAntwort(res: Response): Promise<SpracheingabeFehler>
         case 415:
             return new SpracheingabeFehler('Dieses Aufnahmeformat versteht das Programm nicht.', res.status)
         default: {
-            // 502 und alles Sonstige: die Servermeldung ist bereits deutscher
-            // Klartext (siehe SpracheingabeController) — nur bei leerem/fehlendem
-            // Text auf den Standardtext zurueckfallen.
+            // 502, 503 (kein KI-Schluessel hinterlegt) und alles Sonstige: die
+            // Servermeldung ist bereits deutscher Klartext (siehe
+            // SpracheingabeController) — nur bei leerem/fehlendem Text auf den
+            // Standardtext zurueckfallen.
             const serverMeldung = await leseServerMeldung(res)
             return new SpracheingabeFehler(serverMeldung || STANDARD_FEHLERTEXT, res.status)
         }
@@ -115,4 +116,79 @@ export async function transkribiere(
         throw new SpracheingabeFehler('Es wurde nichts verstanden. Bitte noch einmal diktieren.')
     }
     return text
+}
+
+/*
+ * Ist die Spracheingabe im Betrieb eingeschaltet?
+ *
+ * Die KI ist freiwillig: Ohne hinterlegten KI-Schluessel kann das Backend
+ * nichts aufschreiben, und der Mikrofon-Knopf soll dann gar nicht erst
+ * erscheinen. Nur ein ausdrueckliches `{ "verfuegbar": false }` heisst "aus".
+ * Netzwerkfehler, Offline, 401 oder eine unerwartete Antwort zaehlen als
+ * "an" — dann bleibt der Knopf wie bisher sichtbar, und die vorhandene
+ * Offline- bzw. Fehlerbehandlung des Knopfes greift.
+ *
+ * Mehrere Mikrofon-Knoepfe auf einer Seite sollen nur EINE Abfrage ausloesen:
+ * Die Antwort wird pro Token im Modul gemerkt, eine laufende Abfrage geteilt.
+ * Nach ein paar Minuten wird neu gefragt, damit ein spaeter eingetragener
+ * Schluessel auch in einer lange offenen App ankommt.
+ */
+
+/** So lange gilt eine bekannte Antwort, bevor neu gefragt wird. */
+const VERFUEGBARKEIT_FRISCH_MS = 5 * 60_000
+
+interface BekannteVerfuegbarkeit {
+    verfuegbar: boolean
+    abgefragtAm: number
+}
+
+const bekannteVerfuegbarkeiten = new Map<string, BekannteVerfuegbarkeit>()
+const laufendeAbfragen = new Map<string, Promise<boolean>>()
+
+/**
+ * Die zuletzt bekannte Antwort fuer dieses Token, ohne Netzwerk. `undefined`,
+ * solange noch nie gefragt wurde. So zeigt ein neu eingehaengter Knopf sofort
+ * den richtigen Zustand, statt kurz zu flackern.
+ */
+export function bekannteSpracheingabeVerfuegbarkeit(token: string): boolean | undefined {
+    return bekannteVerfuegbarkeiten.get(token)?.verfuegbar
+}
+
+/**
+ * Fragt `GET /api/spracheingabe/verfuegbar` — hoechstens einmal gleichzeitig
+ * und nicht oefter als alle paar Minuten pro Token. Wirft nie.
+ */
+export function pruefeSpracheingabeVerfuegbar(token: string): Promise<boolean> {
+    const bekannt = bekannteVerfuegbarkeiten.get(token)
+    if (bekannt && Date.now() - bekannt.abgefragtAm < VERFUEGBARKEIT_FRISCH_MS) {
+        return Promise.resolve(bekannt.verfuegbar)
+    }
+    const laufend = laufendeAbfragen.get(token)
+    if (laufend) return laufend
+
+    const abfrage = frageVerfuegbarkeitAb(token).finally(() => laufendeAbfragen.delete(token))
+    laufendeAbfragen.set(token, abfrage)
+    return abfrage
+}
+
+async function frageVerfuegbarkeitAb(token: string): Promise<boolean> {
+    // Klappt die Abfrage nicht, gilt die letzte bekannte Antwort weiter —
+    // ein Funkloch soll einen ausgeschalteten Knopf nicht wieder hervorholen.
+    const rueckfall = bekannteVerfuegbarkeiten.get(token)?.verfuegbar ?? true
+    try {
+        const res = await fetch(`/api/spracheingabe/verfuegbar?token=${encodeURIComponent(token)}`)
+        if (!res.ok) return rueckfall
+        const daten = (await res.json()) as { verfuegbar?: unknown } | null
+        if (typeof daten?.verfuegbar !== 'boolean') return rueckfall
+        bekannteVerfuegbarkeiten.set(token, { verfuegbar: daten.verfuegbar, abgefragtAm: Date.now() })
+        return daten.verfuegbar
+    } catch {
+        return rueckfall
+    }
+}
+
+/** Vergisst alle gemerkten Antworten. Fuer Tests. */
+export function setzeSpracheingabeVerfuegbarkeitZurueck(): void {
+    bekannteVerfuegbarkeiten.clear()
+    laufendeAbfragen.clear()
 }

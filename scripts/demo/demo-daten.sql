@@ -58,15 +58,14 @@ BEGIN
             (SELECT id FROM gewerk WHERE name LIKE 'Metallbau%' ORDER BY id LIMIT 1), '#e11d48')
     ON CONFLICT (id) DO NOTHING;
 
-    -- Platzhalter für die Ersteinrichtung (Mailserver und KI-Schlüssel), damit die
-    -- Demo ohne diesen Schritt startet. Mails gehen an eine ungültige Adresse. Die KI
-    -- gilt als eingerichtet, ihre Aufrufe scheitern aber am ungültigen Schlüssel.
+    -- Platzhalter für die Ersteinrichtung (Mailserver), damit die Demo ohne diesen
+    -- Schritt startet. Mails gehen an eine ungültige Adresse. Ein KI-Schlüssel ist
+    -- freiwillig und fehlt hier bewusst: Die KI-Funktionen bleiben in der Demo aus.
     -- Vorhandene Werte bleiben unverändert.
     INSERT INTO system_setting (setting_key, setting_value, beschreibung)
     VALUES ('smtp.host', 'smtp.demo.invalid', 'Demo'), ('smtp.port', '587', 'Demo'),
            ('smtp.username', 'demo@mustermann-metallbau.example', 'Demo'),
-           ('smtp.password', 'nur-demo-kein-passwort', 'Demo'),
-           ('ai.gemini.api-key', 'nur-demo-kein-schluessel', 'Demo')
+           ('smtp.password', 'nur-demo-kein-passwort', 'Demo')
     ON CONFLICT (setting_key) DO UPDATE SET setting_value = excluded.setting_value
     WHERE system_setting.setting_value IS NULL OR system_setting.setting_value = '';
 

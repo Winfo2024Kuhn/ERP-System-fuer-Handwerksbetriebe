@@ -149,7 +149,7 @@ export async function stubbeTelefonApi(page: Page, optionen: {
         const url = new URL(route.request().url());
         const pfad = url.pathname;
         if (pfad === '/api/auth/me') {
-            return json(route, { id: 1, displayName: 'Max Mustermann', username: 'max', active: true, roles: admin ? ['ADMIN'] : [], admin, requiresInitialSetup: false });
+            return json(route, { id: 1, displayName: 'Max Mustermann', username: 'max', active: true, roles: admin ? ['ADMIN'] : [], admin, requiresInitialSetup: false, kiAktiv: true });
         }
         if (pfad === '/api/notifications/summary') {
             if (!darf) return json(route, { totalCount: 0, categories: [], recentItems: [] });

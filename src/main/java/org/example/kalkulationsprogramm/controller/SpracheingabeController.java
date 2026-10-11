@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -60,6 +61,26 @@ public class SpracheingabeController {
         }
 
         return ResponseEntity.ok(spracheingabeService.transkribiere(anfrage.getInputStream(), inhaltstyp));
+    }
+
+    /**
+     * Sagt der App, ob sie den Mikrofon-Knopf zeigen soll. Ohne KI-Schluessel
+     * ist die Spracheingabe aus; der Knopf bleibt dann verborgen.
+     */
+    @GetMapping("/verfuegbar")
+    public ResponseEntity<Map<String, Boolean>> verfuegbar(@RequestParam String token) {
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginToken(token).orElse(null);
+        if (mitarbeiter == null || !Boolean.TRUE.equals(mitarbeiter.getAktiv())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        return ResponseEntity.ok(Map.of("verfuegbar", spracheingabeService.istVerfuegbar()));
+    }
+
+    @ExceptionHandler(SpracheingabeService.KiNichtEingerichtet.class)
+    public ResponseEntity<Map<String, Object>> handleKiAus(SpracheingabeService.KiNichtEingerichtet ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                "success", false,
+                "message", "Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist."));
     }
 
     @ExceptionHandler(SpracheingabeService.AufnahmeZuGross.class)

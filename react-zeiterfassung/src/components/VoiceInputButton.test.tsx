@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import VoiceInputButton from './VoiceInputButton'
 import { ToastProvider } from './ui/toast'
 import { MikrofonNichtErlaubtError } from '../services/audioRecorderService'
 import { starteAufnahme, mikrofonWirdUnterstuetzt } from '../services/audioRecorderService'
-import { transkribiere } from '../services/spracheingabeService'
+import {
+    bekannteSpracheingabeVerfuegbarkeit,
+    pruefeSpracheingabeVerfuegbar,
+    transkribiere,
+} from '../services/spracheingabeService'
 
 vi.mock('../services/audioRecorderService', async () => {
     const echt = await vi.importActual<typeof import('../services/audioRecorderService')>('../services/audioRecorderService')
@@ -17,12 +21,23 @@ vi.mock('../services/audioRecorderService', async () => {
 })
 vi.mock('../services/spracheingabeService', () => ({
     transkribiere: vi.fn(),
+    bekannteSpracheingabeVerfuegbarkeit: vi.fn(() => true),
+    pruefeSpracheingabeVerfuegbar: vi.fn(async () => true),
     SpracheingabeFehler: class extends Error {},
 }))
 
 const starteAufnahmeMock = vi.mocked(starteAufnahme)
 const unterstuetztMock = vi.mocked(mikrofonWirdUnterstuetzt)
 const transkribiereMock = vi.mocked(transkribiere)
+const bekanntMock = vi.mocked(bekannteSpracheingabeVerfuegbarkeit)
+const pruefeMock = vi.mocked(pruefeSpracheingabeVerfuegbar)
+
+/** Ein Versprechen, das der Test selbst einlöst – so lässt sich „Antwort noch offen“ prüfen. */
+function offeneAntwort<T>() {
+    let einloesen!: (wert: T) => void
+    const versprechen = new Promise<T>(resolve => { einloesen = resolve })
+    return { versprechen, einloesen }
+}
 
 /**
  * `navigator.onLine` umschalten. `writable` statt `configurable` wie in
@@ -61,6 +76,9 @@ beforeEach(() => {
     unterstuetztMock.mockReturnValue(true)
     starteAufnahmeMock.mockResolvedValue(fakeSitzung())
     transkribiereMock.mockResolvedValue('Neuer Text')
+    // Standard: Spracheingabe ist an und die Antwort schon bekannt.
+    bekanntMock.mockReturnValue(true)
+    pruefeMock.mockResolvedValue(true)
     setzeOnline(true)
 })
 
@@ -241,5 +259,77 @@ describe('VoiceInputButton', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(/QR-Code/)
         expect(transkribiereMock).not.toHaveBeenCalled()
         expect(onErgebnis).not.toHaveBeenCalled()
+    })
+
+    it('meldet „Spracheingabe ist aus“ vom Server als Toast', async () => {
+        transkribiereMock.mockRejectedValue(new Error('Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist.'))
+        const user = userEvent.setup()
+        const { onErgebnis } = zeige({ wert: 'Alter Text' })
+
+        await user.click(screen.getByRole('button', { name: 'Eintrag diktieren' }))
+        await user.click(await screen.findByRole('button', { name: 'Aufnahme beenden' }))
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist.')
+        expect(onErgebnis).not.toHaveBeenCalled()
+    })
+})
+
+describe('VoiceInputButton – ohne KI-Schlüssel', () => {
+    it('fragt mit dem Login-Token, ob die Spracheingabe an ist', async () => {
+        zeige()
+
+        await waitFor(() => expect(pruefeMock).toHaveBeenCalledWith('test-token'))
+        expect(bekanntMock).toHaveBeenCalledWith('test-token')
+    })
+
+    it('zeigt gar keinen Knopf, wenn die Spracheingabe aus ist', async () => {
+        bekanntMock.mockReturnValue(undefined)
+        const antwort = offeneAntwort<boolean>()
+        pruefeMock.mockReturnValue(antwort.versprechen)
+        zeige()
+
+        await act(async () => { antwort.einloesen(false); await antwort.versprechen })
+
+        expect(screen.queryByRole('button', { name: 'Eintrag diktieren' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
+
+    it('zeigt nichts, solange die Antwort offen ist, und dann den Knopf, wenn sie an ist', async () => {
+        bekanntMock.mockReturnValue(undefined)
+        const antwort = offeneAntwort<boolean>()
+        pruefeMock.mockReturnValue(antwort.versprechen)
+        zeige()
+
+        // Kein Aufblitzen: vor der Antwort steht noch kein Knopf da.
+        expect(screen.queryByRole('button', { name: 'Eintrag diktieren' })).not.toBeInTheDocument()
+
+        await act(async () => { antwort.einloesen(true); await antwort.versprechen })
+
+        expect(screen.getByRole('button', { name: 'Eintrag diktieren' })).toBeEnabled()
+    })
+
+    it('blendet einen gemerkten „aus“-Zustand sofort aus, ohne Aufblitzen', () => {
+        bekanntMock.mockReturnValue(false)
+        pruefeMock.mockResolvedValue(false)
+        zeige()
+
+        expect(screen.queryByRole('button', { name: 'Eintrag diktieren' })).not.toBeInTheDocument()
+    })
+
+    it('zeigt den Knopf, wenn die Abfrage scheitert', async () => {
+        bekanntMock.mockReturnValue(undefined)
+        pruefeMock.mockRejectedValue(new TypeError('Failed to fetch'))
+        zeige()
+
+        expect(await screen.findByRole('button', { name: 'Eintrag diktieren' })).toBeInTheDocument()
+    })
+
+    it('zeigt den Knopf ohne Login-Token wie bisher und fragt nicht nach', () => {
+        localStorage.removeItem('zeiterfassung_token')
+        bekanntMock.mockReturnValue(undefined)
+        zeige()
+
+        expect(screen.getByRole('button', { name: 'Eintrag diktieren' })).toBeInTheDocument()
+        expect(pruefeMock).not.toHaveBeenCalled()
     })
 })

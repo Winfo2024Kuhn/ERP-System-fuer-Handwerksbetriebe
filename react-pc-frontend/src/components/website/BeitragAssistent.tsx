@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, PenLine, Sparkles, X } from 'lucide-react';
+import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../../features/ki/useKiAktiv';
 import { Button } from '../ui/button';
 import { ProjektSearchModal } from '../ProjektSearchModal';
 import { SchrittBilder, type GewaehltesBild } from './schritte/SchrittBilder';
@@ -33,6 +34,9 @@ const LEERER_STAND: TextStand = { titel: '', kurzbeschreibung: '', textHtml: '' 
  * ein Beitrag existieren muss, bevor Bilder angehaengt werden koennen.
  */
 export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssistentProps) {
+    // Ohne KI-Schlüssel bleibt der KI-Weg sichtbar, aber gesperrt (mit Grund).
+    const kiAktiv = useKiAktiv();
+    const kiAusId = useId();
     const [schritt, setSchritt] = useState<Schritt>('projekt');
     const [projekt, setProjekt] = useState<Projekt | null>(null);
     const [auswahl, setAuswahl] = useState<GewaehltesBild[]>([]);
@@ -251,19 +255,31 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                             <PenLine className="w-6 h-6 text-slate-500 mb-3" />
                             <p className="font-semibold text-slate-900">Selbst schreiben</p>
                             <p className="text-sm text-slate-500 mt-1">
-                                Du schreibst den Text. Die KI kannst du danach trotzdem noch fragen.
+                                {kiAktiv
+                                    ? 'Du schreibst den Text. Die KI kannst du danach trotzdem noch fragen.'
+                                    : 'Du schreibst den Text und siehst daneben gleich, wie er auf der Website aussieht.'}
                             </p>
                         </button>
                         <button
                             onClick={() => { setMitKi(true); setSchritt('text'); }}
+                            disabled={!kiAktiv}
                             aria-label="Von der KI vorschlagen lassen"
-                            className="p-6 border-2 border-rose-200 bg-rose-50 rounded-xl text-left hover:border-rose-400 transition-colors"
+                            aria-describedby={kiAktiv ? undefined : kiAusId}
+                            className={kiAktiv
+                                ? 'p-6 border-2 border-rose-200 bg-rose-50 rounded-xl text-left hover:border-rose-400 transition-colors'
+                                : 'p-6 border-2 border-slate-200 bg-slate-50 rounded-xl text-left cursor-not-allowed'}
                         >
-                            <Sparkles className="w-6 h-6 text-rose-600 mb-3" />
-                            <p className="font-semibold text-slate-900">Von der KI vorschlagen lassen</p>
-                            <p className="text-sm text-slate-500 mt-1">
-                                Die KI schaut sich die Bilder und die Leistungen an und schreibt einen Vorschlag.
+                            <Sparkles aria-hidden="true" className={kiAktiv ? 'w-6 h-6 text-rose-600 mb-3' : 'w-6 h-6 text-slate-400 mb-3'} />
+                            <p className={kiAktiv ? 'font-semibold text-slate-900' : 'font-semibold text-slate-500'}>
+                                Von der KI vorschlagen lassen
                             </p>
+                            {kiAktiv ? (
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Die KI schaut sich die Bilder und die Leistungen an und schreibt einen Vorschlag.
+                                </p>
+                            ) : (
+                                <p id={kiAusId} className="text-sm text-slate-600 mt-1">{KI_AUS_ERKLAERUNG}</p>
+                            )}
                         </button>
                     </div>
                 )}
@@ -318,7 +334,11 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                         {schritt === 'bilder' && (
                             <Button
                                 size="sm"
-                                onClick={() => { void bereiteKiBilderVor(auswahl); setSchritt('weg'); }}
+                                onClick={() => {
+                                    // Ohne KI braucht niemand die kleinen KI-Fassungen der Bilder.
+                                    if (kiAktiv) void bereiteKiBilderVor(auswahl);
+                                    setSchritt('weg');
+                                }}
                             >
                                 Weiter
                                 <ArrowRight className="w-4 h-4" />

@@ -6,6 +6,7 @@ import { BeitragVorschau } from '../BeitragVorschau';
 import { erzeugeBeitragsvorschlag } from '../api';
 import { htmlZuKlartext, klartextZuHtml, leiteKurzbeschreibungAb } from '../textumwandlung';
 import type { ChatNachricht } from '../typen';
+import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../../../features/ki/useKiAktiv';
 
 export interface TextStand {
     titel: string;
@@ -32,10 +33,15 @@ export interface SchrittTextProps {
  * Beim Nachprompten geht der AKTUELLE Stand aus den Feldern mit in die
  * Anfrage, nicht der zuletzt von der KI erzeugte. Nur so ueberlebt
  * Handarbeit ein "mach den zweiten Absatz kuerzer".
+ *
+ * Ohne KI-Schluessel faellt die Chat-Spalte weg: Felder und Vorschau teilen
+ * sich dann die Breite, und ueber den Feldern steht ein ruhiger Hinweis,
+ * warum es keine KI-Hilfe gibt.
  */
 export function SchrittText({
     projektId, kiBilder, vorschauBilder, stand, onStandAendern, mitKi,
 }: SchrittTextProps) {
+    const kiAktiv = useKiAktiv();
     const [verlauf, setVerlauf] = useState<ChatNachricht[]>([]);
     const [eingabe, setEingabe] = useState('');
     const [laeuft, setLaeuft] = useState(false);
@@ -84,11 +90,11 @@ export function SchrittText({
 
     // Beim KI-Weg genau einmal von selbst starten.
     useEffect(() => {
-        if (mitKi && !ersterLaufGestartet.current) {
+        if (mitKi && kiAktiv && !ersterLaufGestartet.current) {
             ersterLaufGestartet.current = true;
             void frage('', []);
         }
-    }, [mitKi, frage]);
+    }, [mitKi, kiAktiv, frage]);
 
     const senden = async () => {
         const nachricht = eingabe.trim();
@@ -98,75 +104,85 @@ export function SchrittText({
     };
 
     return (
-        <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr_1fr] gap-4">
-            <div className="bg-white border border-slate-200 rounded-xl flex flex-col max-h-[70vh]">
-                <div className="flex items-center gap-2 p-3 border-b border-slate-200">
-                    <Sparkles className="w-4 h-4 text-rose-600" />
-                    <h3 className="font-semibold text-slate-900">KI-Hilfe</h3>
-                </div>
+        <div className={kiAktiv
+            ? 'grid grid-cols-1 xl:grid-cols-[320px_1fr_1fr] gap-4'
+            : 'grid grid-cols-1 xl:grid-cols-2 gap-4'}>
+            {kiAktiv && (
+                <div className="bg-white border border-slate-200 rounded-xl flex flex-col max-h-[70vh]">
+                    <div className="flex items-center gap-2 p-3 border-b border-slate-200">
+                        <Sparkles className="w-4 h-4 text-rose-600" />
+                        <h3 className="font-semibold text-slate-900">KI-Hilfe</h3>
+                    </div>
 
-                <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                    {verlauf.length === 0 && !laeuft && (
-                        <p className="text-sm text-slate-400">
-                            Schreibe hier, was geändert werden soll. Zum Beispiel
-                            „kürzer" oder „erwähne die Feuerverzinkung".
-                        </p>
-                    )}
-                    {verlauf.map((nachricht, i) => (
-                        <div
-                            key={i}
-                            className={`text-sm rounded-lg px-3 py-2 ${nachricht.rolle === 'user'
-                                ? 'bg-rose-50 text-rose-900 ml-4'
-                                : 'bg-slate-100 text-slate-700 mr-4'}`}
-                        >
-                            {nachricht.text}
-                        </div>
-                    ))}
-                    {laeuft && (
-                        <div className="flex items-center gap-2 text-sm text-slate-400">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Die KI schreibt...
-                        </div>
-                    )}
-                    {fehler && <p className="text-sm text-rose-700">{fehler}</p>}
-                </div>
+                    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                        {verlauf.length === 0 && !laeuft && (
+                            <p className="text-sm text-slate-400">
+                                Schreibe hier, was geändert werden soll. Zum Beispiel
+                                „kürzer" oder „erwähne die Feuerverzinkung".
+                            </p>
+                        )}
+                        {verlauf.map((nachricht, i) => (
+                            <div
+                                key={i}
+                                className={`text-sm rounded-lg px-3 py-2 ${nachricht.rolle === 'user'
+                                    ? 'bg-rose-50 text-rose-900 ml-4'
+                                    : 'bg-slate-100 text-slate-700 mr-4'}`}
+                            >
+                                {nachricht.text}
+                            </div>
+                        ))}
+                        {laeuft && (
+                            <div className="flex items-center gap-2 text-sm text-slate-400">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Die KI schreibt...
+                            </div>
+                        )}
+                        {fehler && <p className="text-sm text-rose-700">{fehler}</p>}
+                    </div>
 
-                <div className="p-3 border-t border-slate-200 space-y-2">
-                    {vorherigerStand && !laeuft && (
-                        <Button
-                            size="sm"
-                            onClick={() => { onStandAendern(vorherigerStand); setVorherigerStand(null); }}
-                            variant="secondary"
-                            className="w-full"
-                        >
-                            <Undo2 className="w-4 h-4" />
-                            Rückgängig
-                        </Button>
-                    )}
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={eingabe}
-                            disabled={laeuft}
-                            onChange={e => setEingabe(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') void senden(); }}
-                            placeholder="Was soll geändert werden?"
-                            aria-label="Was soll geändert werden?"
-                            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                        <Button
-                            size="sm"
-                            disabled={laeuft}
-                            onClick={() => void senden()}
-                        >
-                            <Send className="w-4 h-4" />
-                            Senden
-                        </Button>
+                    <div className="p-3 border-t border-slate-200 space-y-2">
+                        {vorherigerStand && !laeuft && (
+                            <Button
+                                size="sm"
+                                onClick={() => { onStandAendern(vorherigerStand); setVorherigerStand(null); }}
+                                variant="secondary"
+                                className="w-full"
+                            >
+                                <Undo2 className="w-4 h-4" />
+                                Rückgängig
+                            </Button>
+                        )}
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={eingabe}
+                                disabled={laeuft}
+                                onChange={e => setEingabe(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') void senden(); }}
+                                placeholder="Was soll geändert werden?"
+                                aria-label="Was soll geändert werden?"
+                                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                            />
+                            <Button
+                                size="sm"
+                                disabled={laeuft}
+                                onClick={() => void senden()}
+                            >
+                                <Send className="w-4 h-4" />
+                                Senden
+                            </Button>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             <div className="space-y-3">
+                {!kiAktiv && (
+                    <p className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                        <Sparkles aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        {KI_AUS_ERKLAERUNG}
+                    </p>
+                )}
                 <div>
                     <label htmlFor="assistent-titel" className="block text-sm font-medium text-slate-700 mb-1">
                         Titel

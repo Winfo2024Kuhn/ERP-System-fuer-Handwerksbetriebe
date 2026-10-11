@@ -103,6 +103,15 @@ public class SpracheingabeService {
         this.modell = modell;
     }
 
+    /**
+     * Die Spracheingabe gehoert zu den freiwilligen KI-Funktionen: ohne
+     * Gemini-Schluessel ist sie aus, und die App blendet den Mikrofon-Knopf aus.
+     */
+    public boolean istVerfuegbar() {
+        String apiKey = systemSettingsService.getGeminiApiKey();
+        return apiKey != null && !apiKey.isBlank();
+    }
+
     /** Liest den Strom begrenzt in den Speicher, prueft, ruft Gemini, liefert den Text. */
     public SpracheingabeErgebnis transkribiere(InputStream audioStrom, String inhaltstyp) {
         String normalisiert = normalisiereInhaltstyp(inhaltstyp);
@@ -117,7 +126,7 @@ public class SpracheingabeService {
 
         String apiKey = systemSettingsService.getGeminiApiKey();
         if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("Kein Gemini-Schluessel hinterlegt.");
+            throw new KiNichtEingerichtet();
         }
 
         return sendeUndLies(baueKoerper(audio, normalisiert), apiKey, audio.length, normalisiert);
@@ -220,6 +229,13 @@ public class SpracheingabeService {
         int trennzeichen = rohwert.indexOf(';');
         String ohneParameter = trennzeichen < 0 ? rohwert : rohwert.substring(0, trennzeichen);
         return ohneParameter.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** 503 statt 502: kein Ausfall, sondern bewusst ausgeschaltet (kein KI-Schluessel). */
+    public static class KiNichtEingerichtet extends IllegalStateException {
+        public KiNichtEingerichtet() {
+            super("Kein Gemini-Schluessel hinterlegt.");
+        }
     }
 
     /** 413 statt 400: eigene Unterklasse, damit der Controller sie trennen kann. */

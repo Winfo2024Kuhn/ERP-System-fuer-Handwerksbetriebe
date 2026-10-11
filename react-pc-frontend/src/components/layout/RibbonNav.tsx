@@ -13,6 +13,7 @@ import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../../auth/AuthContext';
 import { useTelefonBerechtigung } from '../../features/telefon/useTelefonBerechtigung';
 import { useNeueSprachnachrichten } from '../../features/telefon/useNeueSprachnachrichten';
+import { useKiAktiv } from '../../features/ki/useKiAktiv';
 
 // Navigation structure with subgroups for better organization
 interface NavItem {
@@ -191,6 +192,7 @@ export function RibbonNavigation() {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, isAdmin, logout } = useAuth();
+    const kiAktiv = useKiAktiv();
     const darfTelefon = useTelefonBerechtigung() === true;
     // Zähler neuer Nachrichten am Menüpunkt "Anrufbeantworter".
     const neueSprachnachrichten = useNeueSprachnachrichten(darfTelefon);
@@ -300,15 +302,17 @@ export function RibbonNavigation() {
                     ))}
                 </div>
 
-                {/* KI-Hilfe Button */}
-                <button
-                    onClick={() => window.dispatchEvent(new CustomEvent('ki-hilfe-open'))}
-                    className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
-                    title="KI-Hilfe öffnen"
-                >
-                    <Gem className="w-4 h-4" />
-                    <span className="text-sm font-medium hidden lg:inline">KI-Hilfe</span>
-                </button>
+                {/* KI-Hilfe Button – ohne KI-Schlüssel gar nicht da (Erklärung steht in Einstellungen → KI-Funktionen) */}
+                {kiAktiv && (
+                    <button
+                        onClick={() => window.dispatchEvent(new CustomEvent('ki-hilfe-open'))}
+                        className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"
+                        title="KI-Hilfe öffnen"
+                    >
+                        <Gem className="w-4 h-4" />
+                        <span className="text-sm font-medium hidden lg:inline">KI-Hilfe</span>
+                    </button>
+                )}
 
                 {/* Notification Bell */}
                 <div className="flex items-center">

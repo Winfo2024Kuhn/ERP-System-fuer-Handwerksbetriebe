@@ -210,9 +210,23 @@ class SpracheingabeServiceTest {
         InputStream audio = new ByteArrayInputStream(audioBytes(10));
 
         assertThatThrownBy(() -> service.transkribiere(audio, "audio/webm"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(SpracheingabeService.KiNichtEingerichtet.class);
 
         Mockito.verifyNoInteractions(httpClient);
+    }
+
+    @Test
+    void ohneApiSchluesselIstDieSpracheingabeAus() {
+        when(systemSettingsService.getGeminiApiKey()).thenReturn("");
+
+        assertThat(service.istVerfuegbar()).isFalse();
+    }
+
+    @Test
+    void mitApiSchluesselIstDieSpracheingabeAn() {
+        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+
+        assertThat(service.istVerfuegbar()).isTrue();
     }
 
     @Test
