@@ -111,11 +111,29 @@ export function mailtoHref(email: string | null | undefined): string {
     return `mailto:${wert}`;
 }
 
+/**
+ * Führt der Link wirklich zu WhatsApp? Geprüft wird der Host (wa.me, whatsapp.com und
+ * Unterdomains) – nicht nur, ob „wa.me“ irgendwo im Text steht („evil.de/wa.me“).
+ */
+function istWhatsappLink(url: string): boolean {
+    try {
+        const host = new URL(url).hostname.toLowerCase();
+        return host === 'wa.me' || host === 'whatsapp.com' || host.endsWith('.whatsapp.com');
+    } catch {
+        return false;
+    }
+}
+
 /** WhatsApp-Link aus Nummer oder Link. Deutsche Nummern mit führender 0 bekommen +49. */
 export function whatsappUrl(eingabe: string | null | undefined): string {
     const wert = (eingabe ?? '').trim();
     if (!wert) return '';
-    if (HAT_SCHEMA.test(wert) || wert.includes('wa.me') || wert.includes('whatsapp.com')) return sichereLinkUrl(wert);
+    if (HAT_SCHEMA.test(wert)) return sichereLinkUrl(wert);
+    if (/[a-z]/i.test(wert)) {
+        // Link ohne „https://“ (z. B. „wa.me/49171…“) – nur, wenn er wirklich zu WhatsApp führt.
+        const link = sichereLinkUrl(wert);
+        return link && istWhatsappLink(link) ? link : '';
+    }
     let ziffern = wert.replace(/\D/g, '');
     if (!ziffern) return '';
     if (wert.startsWith('00')) ziffern = ziffern.slice(2);

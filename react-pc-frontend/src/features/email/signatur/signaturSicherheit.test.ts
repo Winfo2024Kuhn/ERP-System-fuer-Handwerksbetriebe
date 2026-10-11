@@ -124,6 +124,12 @@ describe('Telefon, E-Mail, WhatsApp, soziale Netzwerke', () => {
         expect(whatsappUrl('https://wa.me/491711234567')).toBe('https://wa.me/491711234567');
         expect(whatsappUrl('javascript:alert(1)')).toBe('');
         expect(whatsappUrl('abc')).toBe('');
+        // Link ohne https:// nur, wenn der Host wirklich WhatsApp ist
+        expect(whatsappUrl('wa.me/491711234567')).toBe('https://wa.me/491711234567');
+        expect(whatsappUrl('api.whatsapp.com/send?phone=491711234567')).toBe('https://api.whatsapp.com/send?phone=491711234567');
+        expect(whatsappUrl('example.com/wa.me/491711234567')).toBe('');
+        expect(whatsappUrl('whatsapp.com.example.com/x')).toBe('');
+        expect(whatsappUrl('evilwhatsapp.com/x')).toBe('');
         expect(whatsappUrl('')).toBe('');
     });
     it('sozialUrl nimmt Links oder Profilnamen', () => {
