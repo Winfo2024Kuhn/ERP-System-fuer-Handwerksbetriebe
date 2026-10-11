@@ -333,21 +333,23 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
         <div className="h-full flex flex-col bg-slate-50">
             {/* Header */}
             <header className="bg-white border-b border-slate-200 px-4 py-4 safe-area-top">
+                {/* min-w-0 + break-words: Ein langes Bauvorhaben bricht im Kopf um, statt ihn
+                    breiter als den Bildschirm zu machen (sonst liess sich die Seite seitlich schieben). */}
                 <div className="flex items-center gap-3">
                     <button
                         onClick={handleBack}
                         aria-label="Zurück"
                         title="Zurück"
-                        className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                        className="flex-shrink-0 p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </button>
-                    <div className="flex items-center gap-3">
-                        {getStepIcon()}
-                        <div>
+                    <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex-shrink-0">{getStepIcon()}</span>
+                        <div className="min-w-0">
                             <h1 className="font-bold text-slate-900">{getStepTitle()}</h1>
                             {selectedProjekt && step !== 'projekt' && (
-                                <p className="text-slate-500 text-sm">{selectedProjekt.name}</p>
+                                <p className="text-slate-500 text-sm break-words">{selectedProjekt.name}</p>
                             )}
                         </div>
                     </div>
@@ -355,7 +357,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                         onClick={handleSync}
                         aria-label="Jetzt synchronisieren"
                         title="Jetzt synchronisieren"
-                        className="ml-auto p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                        className="ml-auto flex-shrink-0 p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <RefreshCw className={`w-5 h-5 ${loading || isSyncing ? 'animate-sync-spin text-rose-600' : 'text-slate-500'}`} />
                     </button>
@@ -397,7 +399,8 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
             )}
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+            {/* break-words: lange Woerter (Bauvorhaben, Arbeitsgang) brechen um, statt seitlich ueberzustehen */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden break-words">
                 {/* Step 1: Project Selection */}
                 {step === 'projekt' && (
                     <div className="p-4 space-y-3">
@@ -428,11 +431,11 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                                         }}
                                         className="w-full bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-rose-200 hover:shadow-sm transition-all text-left"
                                     >
-                                        <div>
+                                        <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2">
-                                                <p className="font-medium text-slate-900">{projekt.name}</p>
+                                                <p className="min-w-0 font-medium text-slate-900">{projekt.name}</p>
                                                 {projekt.projektArt && (
-                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                                    <span className={`inline-flex flex-shrink-0 items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                                                         projekt.projektArt === 'PAUSCHAL' ? 'bg-blue-100 text-blue-700' :
                                                         projekt.projektArt === 'REGIE' ? 'bg-emerald-100 text-emerald-700' :
                                                         projekt.projektArt === 'INTERN' ? 'bg-slate-100 text-slate-600' :
@@ -448,7 +451,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                                                 <p className="text-xs text-slate-400 mt-1">#{projekt.projektNummer}</p>
                                             )}
                                         </div>
-                                        <ChevronRight className="w-5 h-5 text-slate-400" />
+                                        <ChevronRight className="w-5 h-5 flex-shrink-0 text-slate-400" />
                                     </button>
                                 ))}
                             </div>
@@ -487,13 +490,13 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                                             }}
                                             className="w-full bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-rose-200 hover:shadow-sm transition-all text-left"
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 bg-rose-50 rounded-lg flex items-center justify-center">
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <div className="w-10 h-10 flex-shrink-0 bg-rose-50 rounded-lg flex items-center justify-center">
                                                     <Layers className="w-5 h-5 text-rose-600" />
                                                 </div>
-                                                <span className="font-medium text-slate-900">{kategorie.name}</span>
+                                                <span className="min-w-0 font-medium text-slate-900">{kategorie.name}</span>
                                             </div>
-                                            <ChevronRight className="w-5 h-5 text-slate-400" />
+                                            <ChevronRight className="w-5 h-5 flex-shrink-0 text-slate-400" />
                                         </button>
                                     ))}
                                 </div>
@@ -536,16 +539,16 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                                                 : 'border-slate-200 hover:border-rose-200 hover:shadow-sm'
                                                 }`}
                                         >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${selectedArbeitsgang?.id === ag.id ? 'bg-rose-600' : 'bg-slate-100'
+                                            <div className="flex min-w-0 items-center gap-3">
+                                                <div className={`w-10 h-10 flex-shrink-0 rounded-lg flex items-center justify-center ${selectedArbeitsgang?.id === ag.id ? 'bg-rose-600' : 'bg-slate-100'
                                                     }`}>
                                                     <Wrench className={`w-5 h-5 ${selectedArbeitsgang?.id === ag.id ? 'text-white' : 'text-slate-500'
                                                         }`} />
                                                 </div>
-                                                <span className="font-medium text-slate-900">{ag.beschreibung}</span>
+                                                <span className="min-w-0 font-medium text-slate-900">{ag.beschreibung}</span>
                                             </div>
                                             {selectedArbeitsgang?.id === ag.id && (
-                                                <div className="w-5 h-5 bg-rose-600 rounded-full flex items-center justify-center">
+                                                <div className="w-5 h-5 flex-shrink-0 bg-rose-600 rounded-full flex items-center justify-center">
                                                     <span className="text-white text-xs">✓</span>
                                                 </div>
                                             )}
