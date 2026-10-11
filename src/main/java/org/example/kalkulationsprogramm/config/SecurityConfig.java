@@ -46,6 +46,17 @@ public class SecurityConfig {
     }
 
     /**
+     * CORS für /api/**: nur ausdrücklich eingetragene fremde Webseiten, Standard keine
+     * (siehe {@link ApiCorsConfigurationSource}). Wird in den Ketten ausdrücklich gesetzt;
+     * die Kette für /api/internal/** schaltet CORS ab.
+     */
+    @Bean
+    ApiCorsConfigurationSource apiCorsConfigurationSource(
+            @Value("${app.cors.allowed-origins:}") String erlaubteOrigins) {
+        return new ApiCorsConfigurationSource(erlaubteOrigins);
+    }
+
+    /**
      * S2S-Eingang für Anfrage-Funnel, Freigabe-Seite und Analytics-Snapshot der Firmen-Website.
      * Jeder Request braucht den gemeinsamen Schlüssel im Header {@code X-ERP-Website-Key}
      * ({@link WebsiteInternalApiKeyFilter}, fail-closed ohne konfigurierten Schlüssel). Ist
@@ -65,8 +76,8 @@ public class SecurityConfig {
      *       die Cloudflare-Edge NUR fuer Requests mit gueltigem Access Service Token
      *       setzt. Browser senden beides nie automatisch mit; die Geheimnisse liegen
      *       im Backend der Marketing-Seite.</li>
-     *   <li>Es ist KEIN CORS konfiguriert — cross-origin POSTs aus dem
-     *       Browser scheitern bereits am fehlenden CORS-Header.</li>
+     *   <li>CORS ist hier ausdrücklich aus — cross-origin Anfragen aus dem
+     *       Browser bekommen nie einen CORS-Header.</li>
      * </ul>
      * Damit ist keine Angriffsflaeche fuer Cross-Site-Request-Forgery
      * vorhanden; ein CSRF-Token waere reiner Ballast ohne Schutzwirkung.
@@ -77,6 +88,8 @@ public class SecurityConfig {
             @Value("${website.internal-api.key:}") String websiteKey) throws Exception {
         http
                 .securityMatcher("/api/internal/**")
+                // Nur Server-zu-Server, kein Browser: keine fremde Webseite darf hier mitlesen.
+                .cors(AbstractHttpConfigurer::disable)
                 // CSRF ignored: stateless key/JWT-authed S2S endpoint, see Javadoc above for full threat model.
                 .csrf(csrf -> csrf.ignoringRequestMatchers("/api/internal/**"))
                 .addFilterBefore(cloudflareAccessJwtFilter, UsernamePasswordAuthenticationFilter.class)
@@ -110,12 +123,13 @@ public class SecurityConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain zeiterfassungFilterChain(HttpSecurity http,
-            ObjectProvider<MitarbeiterRepository> mitarbeiter,
+            ObjectProvider<MitarbeiterRepository> mitarbeiter, ApiCorsConfigurationSource apiCors,
             @Value("${zeiterfassung.security.trusted-proxies:}") String trustedProxies) throws Exception {
         var mobileFilter = new MobileTokenAuthenticationFilter(
                 token -> mitarbeiter.getObject().findByLoginTokenAndAktivTrue(token),
                 new TokenAttemptLimiter(), new ClientIpResolver(trustedProxies), objectMapper);
         http.securityMatcher(ZEITERFASSUNG_PATHS)
+                .cors(cors -> cors.configurationSource(apiCors))
                 .addFilterBefore(mobileFilter, CsrfFilter.class)
                 .csrf(csrf -> csrf
                     .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
@@ -183,9 +197,10 @@ public class SecurityConfig {
      */
     @Bean
     @Order(3)
-    public SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain apiFilterChain(HttpSecurity http, ApiCorsConfigurationSource apiCors) throws Exception {
         http
                 .securityMatcher("/api/**")
+                .cors(cors -> cors.configurationSource(apiCors))
                 .csrf(csrf -> {
                     // Use CsrfTokenRequestAttributeHandler (instead of XorCsrfTokenRequestAttributeHandler)
                     // so the raw cookie value is accepted as-is without XOR-masking
