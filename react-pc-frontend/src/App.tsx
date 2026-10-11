@@ -24,6 +24,7 @@ import FormularwesenEditor from './pages/FormularwesenEditor';
 import OffenePostenEditor from './pages/OffenePostenEditor';
 import EmailCenter from './pages/EmailCenter';
 import EmailTextvorlagenEditor from './pages/EmailTextvorlagenEditor';
+import EmailEinstellungenPage from './pages/EmailEinstellungenPage';
 
 import MietabrechnungEditor from './pages/MietabrechnungEditor';
 import BenutzerEditor from './pages/BenutzerEditor';
@@ -96,6 +97,7 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/emails/:folder" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
                 <Route path="/emails/:folder/:emailId" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
                 <Route path="/email-textvorlagen" element={<ErrorBoundary><EmailTextvorlagenEditor /></ErrorBoundary>} />
+                <Route path="/email-einstellungen" element={<ErrorBoundary><EmailEinstellungenPage /></ErrorBoundary>} />
                 <Route path="/telefon" element={<Navigate to="/telefon/anrufe" replace />} />
                 <Route path="/telefon/:reiter" element={<ErrorBoundary><TelefonPage /></ErrorBoundary>} />
 

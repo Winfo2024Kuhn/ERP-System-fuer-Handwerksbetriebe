@@ -45,6 +45,7 @@ class EmailImportServiceTest {
     @Mock private org.example.kalkulationsprogramm.repository.EmailPostfachZuordnungRepository emailPostfachZuordnungRepository;
     @Mock private org.example.kalkulationsprogramm.service.mail.PostfachZugangService postfachZugangService;
     @Mock private PostfachService postfachService;
+    @Mock private OutOfOfficeResponder outOfOfficeResponder;
 
     @InjectMocks
     private EmailImportService service;
@@ -408,6 +409,27 @@ class EmailImportServiceTest {
 
             assertThat(imported).isTrue();
             verify(emailRepository, atLeastOnce()).save(any(Email.class));
+        }
+
+        @Test
+        void abwesenheitsnotizBekommtDasPostfachDerMail() throws Exception {
+            org.example.kalkulationsprogramm.domain.EmailAbsender info =
+                    new org.example.kalkulationsprogramm.domain.EmailAbsender();
+            info.setId(5L);
+            when(emailAbsenderRepository.getReferenceById(5L)).thenReturn(info);
+
+            service.importMessage(mockMessage, mockFolder, EmailDirection.IN, 5L);
+
+            verify(outOfOfficeResponder).handleIncomingEmail(org.mockito.ArgumentMatchers.argThat(m ->
+                    Long.valueOf(5L).equals(m.postfachId())
+                            && "rechnungen@bluesolution.software".equals(m.fromAddress())));
+        }
+
+        @Test
+        void gesendeteMailLoestKeineAbwesenheitsnotizAus() throws Exception {
+            service.importMessage(mockMessage, mockFolder, EmailDirection.OUT);
+
+            verify(outOfOfficeResponder, never()).handleIncomingEmail(any());
         }
 
         @Test

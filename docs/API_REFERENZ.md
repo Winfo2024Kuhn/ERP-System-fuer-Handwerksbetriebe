@@ -443,7 +443,7 @@ Basis-URL: `http://localhost:8082`
 | 33 | MitarbeiterController | `/api/mitarbeiter` |
 | 34 | NotificationController | `/api/notifications` |
 | 35 | OffenePostenController | `/api/offene-posten` |
-| 36 | OutOfOfficeController | `/api/out-of-office` |
+| 36 | OutOfOfficeController | `/api/email/outofoffice` |
 | 37 | ProduktkategorieController | `/api/produktkategorien` |
 | 38 | ProjektController | `/api/projekte` |
 | 39 | RaumVerbrauchController | `/api/miete/raumverbrauch` |

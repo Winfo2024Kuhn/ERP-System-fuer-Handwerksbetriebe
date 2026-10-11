@@ -23,16 +23,21 @@ import {
     Underline,
     List,
     ListOrdered,
-    Eraser
+    Eraser,
+    Inbox,
+    AlertTriangle
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { DatePicker } from './ui/datepicker';
+import { InfoAbschnitt, InfoButton } from './ui/info-button';
 import { cn } from '../lib/utils';
+import { stripHtmlTags, unescapeHtmlEntities } from '../lib/htmlSanitizer';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
+import { formatPostfach, type PostfachKurz } from '../features/email/postfach';
 
 // Types
 interface EmailSignature {
@@ -59,6 +64,8 @@ interface OutOfOfficeEntry {
     message: string;
     signatureId: number | null;
     active: boolean;
+    /** Postfächer, für die die Notiz gilt – nur auf Mails dorthin wird automatisch geantwortet. */
+    postfaecher: PostfachKurz[];
 }
 
 // Backend response type (different field names)
@@ -67,11 +74,39 @@ interface OutOfOfficeBackend {
     title: string;
     startAt: string;
     endAt: string;
-    subjectTemplate: string;
-    bodyTemplate: string;
+    subjectTemplate: string | null;
+    bodyTemplate: string | null;
     signature: { id: number } | null;
     active: boolean;
+    postfaecher?: PostfachKurz[] | null;
 }
+
+/** Eintrag aus `GET /api/email/outofoffice/postfaecher` – was der Benutzer ankreuzen darf. */
+interface WaehlbaresPostfach extends PostfachKurz {
+    /** Das Postfach des angemeldeten Benutzers selbst. */
+    eigenes: boolean;
+}
+
+/** Notiz im Formular: angehakte Postfächer als Ids. */
+type OooEntwurf = Partial<OutOfOfficeEntry> & { postfachIds: number[] };
+
+type PostfachLadeStatus = 'laden' | 'fertig' | 'fehler';
+
+const istPostfach = (eintrag: unknown): eintrag is PostfachKurz =>
+    !!eintrag && typeof eintrag === 'object'
+    && typeof (eintrag as PostfachKurz).id === 'number'
+    && typeof (eintrag as PostfachKurz).emailAdresse === 'string';
+
+/** Meldung des Servers (`message`) – sonst der Standardtext. */
+const fehlerTextAus = async (res: Response, standard: string): Promise<string> => {
+    try {
+        const body = await res.json() as { message?: unknown };
+        if (typeof body?.message === 'string' && body.message.trim()) return body.message;
+    } catch {
+        // Antwort ohne Inhalt: es bleibt beim Standardtext
+    }
+    return standard;
+};
 
 // Aktuelles Frontend-Profil aus localStorage holen
 const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
@@ -131,8 +166,10 @@ export default function EmailSettings() {
     // OOO state
     const [oooEntries, setOooEntries] = useState<OutOfOfficeEntry[]>([]);
     const [loadingOoo, setLoadingOoo] = useState(false);
-    const [editingOoo, setEditingOoo] = useState<Partial<OutOfOfficeEntry> | null>(null);
+    const [editingOoo, setEditingOoo] = useState<OooEntwurf | null>(null);
     const [savingOoo, setSavingOoo] = useState(false);
+    const [waehlbarePostfaecher, setWaehlbarePostfaecher] = useState<WaehlbaresPostfach[]>([]);
+    const [postfachStatus, setPostfachStatus] = useState<PostfachLadeStatus>('laden');
 
     // Cursor tracking for placeholder insertion
     const subjectInputRef = useRef<HTMLInputElement>(null);
@@ -167,32 +204,61 @@ export default function EmailSettings() {
         setLoadingOoo(true);
         try {
             const res = await fetch('/api/email/outofoffice');
-            if (res.ok) {
-                const data: OutOfOfficeBackend[] = await res.json();
-                // Map backend field names to frontend
-                const mapped: OutOfOfficeEntry[] = data.map((item) => ({
-                    id: item.id,
-                    title: item.title,
-                    startDate: item.startAt,
-                    endDate: item.endAt,
-                    subject: item.subjectTemplate || '',
-                    message: item.bodyTemplate || '',
-                    signatureId: item.signature?.id || null,
-                    active: item.active
-                }));
-                setOooEntries(mapped);
+            if (!res.ok) {
+                toast.error(await fehlerTextAus(res, 'Abwesenheitsnotizen konnten nicht geladen werden.'));
+                return;
             }
+            const data: OutOfOfficeBackend[] = await res.json();
+            // Map backend field names to frontend
+            const mapped: OutOfOfficeEntry[] = (Array.isArray(data) ? data : []).map((item) => ({
+                id: item.id,
+                title: item.title,
+                startDate: item.startAt,
+                endDate: item.endAt,
+                subject: item.subjectTemplate || '',
+                message: item.bodyTemplate || '',
+                signatureId: item.signature?.id || null,
+                active: item.active,
+                postfaecher: Array.isArray(item.postfaecher) ? item.postfaecher.filter(istPostfach) : []
+            }));
+            setOooEntries(mapped);
         } catch (err) {
             console.error('Failed to load OOO entries', err);
+            toast.error('Abwesenheitsnotizen konnten nicht geladen werden.');
         } finally {
             setLoadingOoo(false);
         }
-    }, []);
+    }, [toast]);
+
+    // Postfächer, die der angemeldete Benutzer für Abwesenheitsnotizen ankreuzen darf.
+    // Welche das sind, entscheidet allein das Backend (eigenes + allgemeine, Admins alle).
+    const loadWaehlbarePostfaecher = useCallback(async () => {
+        setPostfachStatus('laden');
+        try {
+            const res = await fetch('/api/email/outofoffice/postfaecher');
+            if (!res.ok) {
+                setPostfachStatus('fehler');
+                toast.error(await fehlerTextAus(res, 'Postfächer für die Abwesenheitsnotiz konnten nicht geladen werden.'));
+                return;
+            }
+            const data: unknown = await res.json();
+            const liste = Array.isArray(data)
+                ? data.filter(istPostfach).map((p) => ({ ...p, eigenes: (p as WaehlbaresPostfach).eigenes === true }))
+                : [];
+            setWaehlbarePostfaecher(liste);
+            setPostfachStatus('fertig');
+        } catch (err) {
+            console.error('Failed to load mailboxes for OOO', err);
+            setPostfachStatus('fehler');
+            toast.error('Postfächer für die Abwesenheitsnotiz konnten nicht geladen werden.');
+        }
+    }, [toast]);
 
     useEffect(() => {
         loadSignatures();
         loadOooEntries();
-    }, [loadSignatures, loadOooEntries]);
+        loadWaehlbarePostfaecher();
+    }, [loadSignatures, loadOooEntries, loadWaehlbarePostfaecher]);
 
     // Initialize the contentEditable editor's HTML only when the entry changes,
     // not on every state update. Without this, dangerouslySetInnerHTML would
@@ -316,6 +382,10 @@ export default function EmailSettings() {
             toast.warning('Bitte Titel und Zeitraum angeben.');
             return;
         }
+        if (editingOoo.postfachIds.length === 0) {
+            toast.warning('Bitte mindestens ein Postfach auswählen.');
+            return;
+        }
 
         setSavingOoo(true);
         try {
@@ -330,7 +400,9 @@ export default function EmailSettings() {
                 // active=true heisst "Eintrag scharf geschaltet". Ob aktuell geantwortet wird,
                 // entscheidet zusaetzlich der Datums-Filter im OutOfOfficeResponder. Abgelaufene
                 // Eintraege werden vom taeglichen deactivateExpiredSchedules-Job auf false gesetzt.
-                active: true
+                active: true,
+                // Nur Postfächer, die noch wählbar sind – alte, inzwischen gesperrte fallen beim Speichern weg.
+                postfachIds: editingOoo.postfachIds
             };
 
             const res = await fetch('/api/email/outofoffice', {
@@ -342,9 +414,18 @@ export default function EmailSettings() {
             if (res.ok) {
                 setEditingOoo(null);
                 loadOooEntries();
+                return;
             }
+            if (res.status === 404) {
+                toast.error(await fehlerTextAus(res, 'Diese Abwesenheitsnotiz gibt es nicht mehr.'));
+                setEditingOoo(null);
+                loadOooEntries();
+                return;
+            }
+            toast.error(await fehlerTextAus(res, 'Abwesenheitsnotiz konnte nicht gespeichert werden.'));
         } catch (err) {
             console.error('Failed to save OOO', err);
+            toast.error('Abwesenheitsnotiz konnte nicht gespeichert werden. Bitte Verbindung prüfen.');
         } finally {
             setSavingOoo(false);
         }
@@ -358,11 +439,80 @@ export default function EmailSettings() {
             const res = await fetch(`/api/email/outofoffice/${id}`, { method: 'DELETE' });
             if (res.ok) {
                 loadOooEntries();
+                return;
             }
+            if (res.status === 404) {
+                toast.error(await fehlerTextAus(res, 'Diese Abwesenheitsnotiz gibt es nicht mehr.'));
+                loadOooEntries();
+                return;
+            }
+            toast.error(await fehlerTextAus(res, 'Abwesenheitsnotiz konnte nicht gelöscht werden.'));
         } catch (err) {
             console.error('Failed to delete OOO', err);
+            toast.error('Abwesenheitsnotiz konnte nicht gelöscht werden. Bitte Verbindung prüfen.');
         }
     };
+
+    const eigenePostfachIds = waehlbarePostfaecher.filter((p) => p.eigenes).map((p) => p.id);
+    const keinPostfachWaehlbar = postfachStatus === 'fertig' && waehlbarePostfaecher.length === 0;
+    const neueNotizGesperrtGrund = postfachStatus === 'laden'
+        ? 'Postfächer werden noch geladen …'
+        : postfachStatus === 'fehler'
+            ? 'Postfächer konnten nicht geladen werden. Bitte Seite neu laden.'
+            : keinPostfachWaehlbar
+                ? 'Für Sie ist kein Postfach eingerichtet. Bitte den Admin fragen.'
+                : null;
+
+    // Neue Notiz: Vorlage-Text mit Signatur, eigenes Postfach schon angehakt.
+    const startNewOoo = async () => {
+        if (neueNotizGesperrtGrund) return;
+        const userSignatureHtml = await fetchUserDefaultSignatureHtml();
+        const fallbackHtml = userSignatureHtml
+            || signatures.find(s => s.defaultSignature)?.html
+            || (signatures.length > 0 ? signatures[0].html : '');
+        const signatureHtml = fallbackHtml
+            ? `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${fallbackHtml}</div>`
+            : '';
+        const message = `<p>Vielen Dank für Ihre Nachricht.</p>
+<p>Ich bin vom {{start}} bis {{ende}} nicht erreichbar.</p>
+<p>Mit freundlichen Grüßen</p>
+${signatureHtml}`;
+        setEditingOoo({
+            title: '',
+            startDate: '',
+            endDate: '',
+            subject: 'Automatische Antwort: {{subject}}',
+            message: message,
+            signatureId: null,
+            postfachIds: eigenePostfachIds
+        });
+    };
+
+    // Bestehende Notiz: gespeicherte Postfächer angehakt – soweit sie noch wählbar sind.
+    const startEditOoo = (entry: OutOfOfficeEntry) => {
+        const waehlbar = new Set(waehlbarePostfaecher.map((p) => p.id));
+        setEditingOoo({
+            ...entry,
+            postfachIds: entry.postfaecher.map((p) => p.id).filter((id) => waehlbar.has(id))
+        });
+    };
+
+    const togglePostfach = (id: number) => {
+        if (!editingOoo) return;
+        const an = editingOoo.postfachIds.includes(id);
+        setEditingOoo({
+            ...editingOoo,
+            postfachIds: an
+                ? editingOoo.postfachIds.filter((x) => x !== id)
+                : [...editingOoo.postfachIds, id]
+        });
+    };
+
+    // Gespeicherte Postfächer der bearbeiteten Notiz, die nicht mehr angeboten werden.
+    const nichtMehrWaehlbar = editingOoo?.id
+        ? (oooEntries.find((e) => e.id === editingOoo.id)?.postfaecher ?? [])
+            .filter((p) => !waehlbarePostfaecher.some((w) => w.id === p.id))
+        : [];
 
     // Format date for display
     const formatDate = (dateStr: string) => {
@@ -453,11 +603,11 @@ export default function EmailSettings() {
         };
     };
 
+    // Reiner Text für die Vorschau – bewusst ohne innerHTML, damit gespeichertes HTML
+    // (z. B. <img onerror=…>) beim Anzeigen nie ausgeführt wird.
     const stripHtml = (html: string): string => {
         if (!html) return '';
-        const tmp = document.createElement('div');
-        tmp.innerHTML = html;
-        return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+        return unescapeHtmlEntities(stripHtmlTags(html, ' ')).replace(/\s+/g, ' ').trim();
     };
 
     // Inserts a placeholder string into the subject input at the last known cursor position.
@@ -822,34 +972,28 @@ export default function EmailSettings() {
                             </p>
                         </div>
                         {!editingOoo && oooEntries.length > 0 && (
-                            <Button
-                                onClick={async () => {
-                                    const userSignatureHtml = await fetchUserDefaultSignatureHtml();
-                                    const fallbackHtml = userSignatureHtml
-                                        || signatures.find(s => s.defaultSignature)?.html
-                                        || (signatures.length > 0 ? signatures[0].html : '');
-                                    const signatureHtml = fallbackHtml
-                                        ? `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${fallbackHtml}</div>`
-                                        : '';
-                                    const message = `<p>Vielen Dank für Ihre Nachricht.</p>
-<p>Ich bin vom {{start}} bis {{ende}} nicht erreichbar.</p>
-<p>Mit freundlichen Grüßen</p>
-${signatureHtml}`;
-                                    setEditingOoo({
-                                        title: '',
-                                        startDate: '',
-                                        endDate: '',
-                                        subject: 'Automatische Antwort: {{subject}}',
-                                        message: message,
-                                        signatureId: null
-                                    });
-                                }}
-                                className="bg-rose-600 text-white hover:bg-rose-700 shadow-sm"
-                            >
-                                <Plus className="w-4 h-4 mr-2" /> Neue Abwesenheit
-                            </Button>
+                            // span trägt den Tooltip, weil ein deaktivierter Knopf keinen eigenen zeigt
+                            <span title={neueNotizGesperrtGrund ?? undefined} className="inline-flex">
+                                <Button
+                                    onClick={startNewOoo}
+                                    disabled={!!neueNotizGesperrtGrund}
+                                    className="bg-rose-600 text-white hover:bg-rose-700 shadow-sm"
+                                >
+                                    <Plus className="w-4 h-4 mr-2" /> Neue Abwesenheit
+                                </Button>
+                            </span>
                         )}
                     </div>
+
+                    {keinPostfachWaehlbar && !editingOoo && (
+                        <div
+                            role="status"
+                            className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+                        >
+                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                            <span>Für Sie ist kein Postfach eingerichtet. Bitte den Admin fragen.</span>
+                        </div>
+                    )}
 
                     {/* OOO Edit Form */}
                     {editingOoo !== null && (
@@ -914,6 +1058,7 @@ ${signatureHtml}`;
                                                 value={editingOoo.startDate || ''}
                                                 onChange={(v) => setEditingOoo({ ...editingOoo, startDate: v })}
                                                 placeholder="Startdatum"
+                                                aria-label="Startdatum"
                                                 className="mt-1"
                                             />
                                         </div>
@@ -923,10 +1068,117 @@ ${signatureHtml}`;
                                                 value={editingOoo.endDate || ''}
                                                 onChange={(v) => setEditingOoo({ ...editingOoo, endDate: v })}
                                                 placeholder="Enddatum"
+                                                aria-label="Enddatum"
                                                 className="mt-1"
                                             />
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* Postfach-Block: für welche Postfächer gilt die Notiz? */}
+                                <div
+                                    role="group"
+                                    aria-labelledby="ooo-postfaecher-titel"
+                                    className="rounded-xl border border-rose-100 bg-white p-4 shadow-sm"
+                                >
+                                    <div className="flex items-center gap-1 mb-1">
+                                        <p id="ooo-postfaecher-titel" className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                                            <Inbox className="w-3.5 h-3.5 text-rose-500" />
+                                            Gilt für diese Postfächer
+                                        </p>
+                                        <InfoButton titel="Für welche Postfächer?">
+                                            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                                <p>
+                                                    Kommt im gewählten Zeitraum eine E-Mail in einem der angehakten
+                                                    Postfächer an, schickt das Programm automatisch diese Abwesenheitsnotiz
+                                                    zurück – und zwar aus genau diesem Postfach.
+                                                </p>
+                                            </InfoAbschnitt>
+                                            <InfoAbschnitt titel="Was bewirkt das?">
+                                                <p>
+                                                    E-Mails an nicht angehakte Postfächer bekommen keine automatische Antwort.
+                                                    Wählbar sind Ihr eigenes Postfach und die allgemeinen Postfächer des
+                                                    Betriebs (z. B. info@) – Admins können alle Postfächer wählen.
+                                                </p>
+                                                <p>
+                                                    Jeder Absender bekommt pro Abwesenheitsnotiz nur einmal eine automatische
+                                                    Antwort. E-Mails aus den eigenen Postfächern des Betriebs bekommen keine.
+                                                    Die E-Mails selbst bleiben unverändert im Posteingang.
+                                                </p>
+                                            </InfoAbschnitt>
+                                        </InfoButton>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mb-3">
+                                        Die automatische Antwort geht nur auf E-Mails an die gewählten Postfächer – und kommt auch von dort.
+                                    </p>
+
+                                    {postfachStatus === 'laden' ? (
+                                        <div className="space-y-2" role="status" aria-label="Postfächer werden geladen">
+                                            <div className="h-9 rounded-lg bg-slate-100 motion-safe:animate-pulse" />
+                                            <div className="h-9 rounded-lg bg-slate-100 motion-safe:animate-pulse" />
+                                        </div>
+                                    ) : postfachStatus === 'fehler' ? (
+                                        <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            <span className="flex-1">Postfächer konnten nicht geladen werden.</span>
+                                            <Button size="sm" variant="outline" onClick={loadWaehlbarePostfaecher}>
+                                                Erneut laden
+                                            </Button>
+                                        </div>
+                                    ) : waehlbarePostfaecher.length === 0 ? (
+                                        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                                            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                                            <span>Für Sie ist kein Postfach eingerichtet. Bitte den Admin fragen.</span>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1.5">
+                                            {waehlbarePostfaecher.map((postfach) => {
+                                                const an = editingOoo.postfachIds.includes(postfach.id);
+                                                const name = postfach.anzeigename?.trim();
+                                                return (
+                                                    <label
+                                                        key={postfach.id}
+                                                        className={cn(
+                                                            'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-colors',
+                                                            an
+                                                                ? 'border-rose-300 bg-rose-50/60 text-slate-900'
+                                                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                                        )}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={an}
+                                                            onChange={() => togglePostfach(postfach.id)}
+                                                            className="h-4 w-4 shrink-0 rounded border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1"
+                                                        />
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="font-medium break-all">{postfach.emailAdresse}</span>
+                                                            {postfach.eigenes && (
+                                                                <span className="ml-2 inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                                                                    Ihr Postfach
+                                                                </span>
+                                                            )}
+                                                            {name && (
+                                                                <span className="block text-xs text-slate-500">{name}</span>
+                                                            )}
+                                                        </span>
+                                                    </label>
+                                                );
+                                            })}
+                                            {editingOoo.postfachIds.length === 0 && (
+                                                <p className="flex items-center gap-1.5 pt-1 text-xs font-medium text-rose-700">
+                                                    <AlertTriangle className="w-3.5 h-3.5" />
+                                                    Bitte mindestens ein Postfach auswählen.
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                    {nichtMehrWaehlbar.length > 0 && (
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Nicht mehr wählbar und wird beim Speichern entfernt:{' '}
+                                            {nichtMehrWaehlbar.map((p) => p.emailAdresse).join(', ')}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {/* Betreff-Block */}
@@ -1104,32 +1356,15 @@ ${signatureHtml}`;
                                 Plane jetzt deinen Urlaub oder Betriebsferien. Während der Abwesenheit
                                 bekommen Kunden automatisch eine freundliche Antwort.
                             </p>
-                            <Button
-                                onClick={async () => {
-                                    const userSignatureHtml = await fetchUserDefaultSignatureHtml();
-                                    const fallbackHtml = userSignatureHtml
-                                        || signatures.find(s => s.defaultSignature)?.html
-                                        || (signatures.length > 0 ? signatures[0].html : '');
-                                    const signatureHtml = fallbackHtml
-                                        ? `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${fallbackHtml}</div>`
-                                        : '';
-                                    const message = `<p>Vielen Dank für Ihre Nachricht.</p>
-<p>Ich bin vom {{start}} bis {{ende}} nicht erreichbar.</p>
-<p>Mit freundlichen Grüßen</p>
-${signatureHtml}`;
-                                    setEditingOoo({
-                                        title: '',
-                                        startDate: '',
-                                        endDate: '',
-                                        subject: 'Automatische Antwort: {{subject}}',
-                                        message: message,
-                                        signatureId: null
-                                    });
-                                }}
-                                className="bg-rose-600 text-white hover:bg-rose-700 shadow-sm"
-                            >
-                                <Plus className="w-4 h-4 mr-2" /> Erste Abwesenheit planen
-                            </Button>
+                            <span title={neueNotizGesperrtGrund ?? undefined} className="inline-flex">
+                                <Button
+                                    onClick={startNewOoo}
+                                    disabled={!!neueNotizGesperrtGrund}
+                                    className="bg-rose-600 text-white hover:bg-rose-700 shadow-sm"
+                                >
+                                    <Plus className="w-4 h-4 mr-2" /> Erste Abwesenheit planen
+                                </Button>
+                            </span>
                         </Card>
                     ) : oooEntries.length > 0 ? (
                         <div className="space-y-3">
@@ -1202,6 +1437,34 @@ ${signatureHtml}`;
                                                                 )}
                                                             </div>
 
+                                                            {/* Postfächer, für die die Notiz gilt */}
+                                                            {entry.postfaecher.length === 0 ? (
+                                                                // Alte Notiz ohne Postfach oder Postfach gelöscht – sieht nur der Admin.
+                                                                <p
+                                                                    role="status"
+                                                                    className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+                                                                >
+                                                                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                                                    Gilt für kein Postfach – antwortet nicht. Bitte bearbeiten und Postfach wählen.
+                                                                </p>
+                                                            ) : (
+                                                                <ul
+                                                                    aria-label="Gilt für diese Postfächer"
+                                                                    className="mt-2 flex flex-wrap gap-1.5"
+                                                                >
+                                                                    {entry.postfaecher.map((postfach) => (
+                                                                        <li
+                                                                            key={postfach.id}
+                                                                            title={formatPostfach(postfach)}
+                                                                            className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600"
+                                                                        >
+                                                                            <Inbox className="w-3 h-3 shrink-0 text-slate-400" />
+                                                                            <span className="truncate">{postfach.emailAdresse}</span>
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            )}
+
                                                             {/* Message preview */}
                                                             {messagePreview && (
                                                                 <p className="mt-2 text-sm text-slate-500 line-clamp-2">
@@ -1215,7 +1478,8 @@ ${signatureHtml}`;
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                onClick={() => setEditingOoo(entry)}
+                                                                onClick={() => startEditOoo(entry)}
+                                                                aria-label={`${entry.title || 'Abwesenheit'} bearbeiten`}
                                                                 className="text-slate-500 hover:text-rose-700 hover:bg-rose-100"
                                                                 title="Bearbeiten"
                                                             >
@@ -1225,6 +1489,7 @@ ${signatureHtml}`;
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 onClick={() => handleDeleteOoo(entry.id)}
+                                                                aria-label={`${entry.title || 'Abwesenheit'} löschen`}
                                                                 className="text-slate-500 hover:text-red-600 hover:bg-red-50"
                                                                 title="Löschen"
                                                             >

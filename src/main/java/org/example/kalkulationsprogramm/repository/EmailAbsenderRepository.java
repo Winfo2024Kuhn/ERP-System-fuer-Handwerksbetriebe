@@ -19,6 +19,9 @@ public interface EmailAbsenderRepository extends JpaRepository<EmailAbsender, Lo
 
     Optional<EmailAbsender> findByEmailAdresseIgnoreCase(String emailAdresse);
 
+    /** Wie {@link #findByEmailAdresseIgnoreCase}, aber robust gegen Adressen, die sich nur in Groß-/Kleinschreibung unterscheiden. */
+    boolean existsByEmailAdresseIgnoreCase(String emailAdresse);
+
     Optional<EmailAbsender> findFirstByHauptpostfachTrueOrderByIdAsc();
 
     Optional<EmailAbsender> findFirstByFuerGeschaeftsdokumenteTrueAndAktivTrueOrderByIdAsc();

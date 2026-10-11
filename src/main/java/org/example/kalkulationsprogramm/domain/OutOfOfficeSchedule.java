@@ -5,9 +5,18 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+/**
+ * Abwesenheitsnotiz: Zwischen {@link #startAt} und {@link #endAt} beantwortet das ERP
+ * eingehende Mails in den gewählten {@link #postfaecher Postfächern} automatisch – aus dem
+ * Postfach, in dem die Mail ankam.
+ */
 @Getter
 @Setter
 @Entity
@@ -41,4 +50,14 @@ public class OutOfOfficeSchedule {
     @Column(name = "body_template")
     private String bodyTemplate;
 
+    /**
+     * Postfächer, für die die Notiz gilt. Leer nur bei alten Notizen aus Betrieben ganz ohne
+     * Postfach – die beantworten weiter Mails des Standard-Kontos aus den Einstellungen.
+     */
+    @ManyToMany
+    @BatchSize(size = 50)
+    @JoinTable(name = "out_of_office_schedule_postfach",
+            joinColumns = @JoinColumn(name = "schedule_id"),
+            inverseJoinColumns = @JoinColumn(name = "postfach_id"))
+    private Set<EmailAbsender> postfaecher = new LinkedHashSet<>();
 }

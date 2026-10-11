@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { ComponentProps } from 'react';
+import { useLayoutEffect, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui/toast';
 import { AnrufFenster } from './AnrufFenster';
@@ -125,6 +125,27 @@ describe('AnrufFenster', () => {
         expect(onSchliessen).toHaveBeenCalledTimes(1);
         fireEvent.click(screen.getByTestId('anruf-fenster-hintergrund'));
         expect(onSchliessen).toHaveBeenCalledTimes(2);
+    });
+
+    it('Escape wirkt schon im selben Moment, in dem das Fenster erscheint', () => {
+        // Drückt Escape im selben Commit, in dem das Fenster ins DOM kommt – noch bevor
+        // gewöhnliche Effekte laufen. Mit useEffect wäre der Tastendruck verpufft (so auf
+        // dem langsamen CI-Rechner im E2E-Test geschehen).
+        function EscapeSofort() {
+            useLayoutEffect(() => {
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            }, []);
+            return null;
+        }
+        const onSchliessen = vi.fn();
+        render(
+            <ToastProvider>
+                <AnrufFenster anruf={live()} weitere={0} onSchliessen={onSchliessen} onKontaktOeffnen={vi.fn()}
+                    ueberblick={LAEDT} onOeffnen={vi.fn()} />
+                <EscapeSofort />
+            </ToastProvider>,
+        );
+        expect(onSchliessen).toHaveBeenCalledTimes(1);
     });
 
     describe('Zurückrufen', () => {

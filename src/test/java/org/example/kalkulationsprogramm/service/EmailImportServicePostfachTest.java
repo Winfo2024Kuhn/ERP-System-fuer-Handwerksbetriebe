@@ -45,6 +45,7 @@ class EmailImportServicePostfachTest {
     @Mock private PostfachService postfachService;
     @Mock private EmailAbsenderRepository emailAbsenderRepository;
     @Mock private EmailPostfachZuordnungRepository emailPostfachZuordnungRepository;
+    @Mock private OutOfOfficeResponder outOfOfficeResponder;
 
     @InjectMocks private EmailImportService service;
 
@@ -152,6 +153,60 @@ class EmailImportServicePostfachTest {
             verify(emailRepository).save(vorhanden);
         }
 
+        /** Bekannte Eingangsmail taucht in Postfach 5 auf – Ordner-Richtung wie angegeben. */
+        private Email zweitesPostfach(EmailDirection ordnerRichtung, java.util.function.Consumer<Email> vorbereiten)
+                throws Exception {
+            Message msg = nachricht("<doppelt@example.org>", "kunde@kundenfirma.example", "Anfrage");
+            IMAPFolder folder = mock(IMAPFolder.class);
+            Email vorhanden = new Email();
+            vorhanden.setId(11L);
+            vorhanden.setDirection(EmailDirection.IN);
+            vorhanden.setFromAddress("kunde@kundenfirma.example");
+            vorhanden.setSubject("Anfrage");
+            vorbereiten.accept(vorhanden);
+            EmailAbsender max = new EmailAbsender();
+            max.setId(5L);
+            when(emailRepository.existsByMessageId("<doppelt@example.org>")).thenReturn(true);
+            when(emailRepository.findByMessageId("<doppelt@example.org>")).thenReturn(Optional.of(vorhanden));
+            when(emailAbsenderRepository.getReferenceById(5L)).thenReturn(max);
+            service.importMessage(msg, folder, ordnerRichtung, 5L);
+            return vorhanden;
+        }
+
+        @Test
+        void zweitesPostfachImPosteingang_abwesenheitsnotizDiesesPostfachsGreift() throws Exception {
+            zweitesPostfach(EmailDirection.IN, e -> { });
+
+            verify(outOfOfficeResponder).handleIncomingEmail(org.mockito.ArgumentMatchers.argThat(m ->
+                    Long.valueOf(5L).equals(m.postfachId()) && "kunde@kundenfirma.example".equals(m.fromAddress())));
+        }
+
+        @Test
+        void zweitesPostfachImGesendetOrdner_keineAbwesenheitsnotiz() throws Exception {
+            zweitesPostfach(EmailDirection.OUT, e -> { });
+
+            verify(outOfOfficeResponder, never()).handleIncomingEmail(any());
+        }
+
+        @Test
+        void eigeneGesendeteMailImZweitenPostfach_keineAbwesenheitsnotiz() throws Exception {
+            zweitesPostfach(EmailDirection.IN, e -> e.setDirection(EmailDirection.OUT));
+
+            verify(outOfOfficeResponder, never()).handleIncomingEmail(any());
+        }
+
+        @Test
+        void spamOderNewsletterImZweitenPostfach_keineAbwesenheitsnotiz() throws Exception {
+            zweitesPostfach(EmailDirection.IN, e -> e.setSpam(true));
+            verify(outOfOfficeResponder, never()).handleIncomingEmail(any());
+        }
+
+        @Test
+        void newsletterImZweitenPostfach_keineAbwesenheitsnotiz() throws Exception {
+            zweitesPostfach(EmailDirection.IN, e -> e.setNewsletter(true));
+            verify(outOfOfficeResponder, never()).handleIncomingEmail(any());
+        }
+
         @Test
         void schonZugeordnetWirdNichtNochmalGespeichert() throws Exception {
             Message msg = nachricht("<doppelt@example.org>");
@@ -167,6 +222,7 @@ class EmailImportServicePostfachTest {
             service.importMessage(msg, folder, EmailDirection.IN, 5L);
 
             verify(emailRepository, never()).save(any());
+            verify(outOfOfficeResponder, never()).handleIncomingEmail(any());
         }
 
         @Test
