@@ -12,6 +12,7 @@ import { Input } from './ui/input';
 import { Select } from './ui/select-custom';
 import { DatePicker } from './ui/datepicker';
 import type { LieferantDokument } from '../types';
+import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../features/ki/useKiAktiv';
 
 interface LieferantDokumentImportModalProps {
     isOpen: boolean;
@@ -76,6 +77,9 @@ export function LieferantDokumentImportModal({
     onSuccess,
     lieferantId
 }: LieferantDokumentImportModalProps) {
+    // Ohne KI liest das Backend nur E-Rechnungen (ZUGFeRD-PDF, XRechnung-XML) selbst aus;
+    // alles andere kommt leer zurück und wird von Hand eingetragen.
+    const kiAktiv = useKiAktiv();
     const [step, setStep] = useState<Step>('upload');
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
@@ -412,7 +416,9 @@ export function LieferantDokumentImportModal({
                             {step === 'upload' && (
                                 <div className="space-y-4">
                                     <p className="text-sm text-slate-500">
-                                        Laden Sie ein PDF oder XML-Dokument hoch. Die Daten werden automatisch per KI analysiert.
+                                        {kiAktiv
+                                            ? 'Laden Sie ein PDF oder XML-Dokument hoch. Die Daten werden automatisch per KI analysiert.'
+                                            : 'Laden Sie ein PDF oder XML-Dokument hoch. E-Rechnungen werden automatisch gelesen, bei allen anderen Dokumenten tragen Sie die Angaben von Hand ein.'}
                                     </p>
                                     <div
                                         className="border-2 border-dashed border-slate-200 rounded-xl p-10 flex flex-col items-center justify-center text-center hover:bg-slate-50 transition-colors cursor-pointer"
@@ -430,7 +436,7 @@ export function LieferantDokumentImportModal({
                                         {loading ? (
                                             <>
                                                 <RefreshCw className="w-10 h-10 text-rose-500 mb-4 animate-spin" />
-                                                <p className="font-medium text-slate-900">Analysiere Datei mit KI...</p>
+                                                <p className="font-medium text-slate-900">{kiAktiv ? 'Analysiere Datei mit KI...' : 'Datei wird gelesen …'}</p>
                                                 <p className="text-xs text-slate-500 mt-1">Dies kann einige Sekunden dauern</p>
                                             </>
                                         ) : (
@@ -453,7 +459,8 @@ export function LieferantDokumentImportModal({
                                             <p className="font-medium text-slate-900 truncate">{file?.name}</p>
                                             <div className="flex items-center gap-2 text-xs text-slate-500">
                                                 <span>{(file!.size / 1024).toFixed(1)} KB</span>
-                                                {analyseQuelle && (
+                                                {/* „KEINE“ heißt: nichts gelesen – das erklärt der Hinweis unten in Alltagssprache. */}
+                                                {analyseQuelle && analyseQuelle !== 'KEINE' && (
                                                     <span className="bg-slate-200 px-1.5 py-0.5 rounded">
                                                         Quelle: {analyseQuelle}
                                                     </span>
@@ -483,6 +490,16 @@ export function LieferantDokumentImportModal({
                                             </Button>
                                         )}
                                     </div>
+
+                                    {!kiAktiv && analyseQuelle === 'KEINE' && (
+                                        <div role="note" className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                                            <p>
+                                                Ohne KI liest das Programm nur E-Rechnungen automatisch – aus dieser Datei konnte
+                                                nichts gelesen werden. Bitte die Angaben von Hand eintragen. {KI_AUS_ERKLAERUNG}
+                                            </p>
+                                        </div>
+                                    )}
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {/* Dokumenttyp */}

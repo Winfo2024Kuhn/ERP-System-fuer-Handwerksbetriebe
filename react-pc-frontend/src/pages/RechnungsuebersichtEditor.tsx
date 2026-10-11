@@ -79,6 +79,26 @@ interface LieferantOption {
     name: string;
 }
 
+/**
+ * Sucht den von der Analyse erkannten Lieferanten in der Liste: erst der genaue
+ * Name, sonst ein Teilname in beide Richtungen, bei mehreren der längste
+ * ("Müller Stahlbau" vor "Müller"). Teilnamen erst ab drei Zeichen, sonst träfe
+ * ein kurzer Name wie "AB" fast jeden Lieferanten.
+ */
+function findeErkanntenLieferanten(erkannterName: string | null | undefined, optionen: LieferantOption[]): string {
+    const gesucht = (erkannterName ?? '').trim().toLowerCase();
+    if (!gesucht) return '';
+    const mitNamen = optionen
+        .map(opt => ({ id: opt.id, name: (opt.name ?? '').trim().toLowerCase() }))
+        .filter(opt => opt.name !== '');
+    const teiltreffer = mitNamen
+        .filter(opt => (gesucht.length >= 3 && opt.name.includes(gesucht))
+            || (opt.name.length >= 3 && gesucht.includes(opt.name)))
+        .sort((a, b) => b.name.length - a.name.length);
+    const treffer = mitNamen.find(opt => opt.name === gesucht) ?? teiltreffer[0];
+    return treffer ? String(treffer.id) : '';
+}
+
 const ZAHLUNGSART_OPTIONS = [
     { value: '', label: 'Nicht erkannt' },
     { value: 'VORAUSKASSE', label: 'Vorauskasse' },
@@ -156,8 +176,18 @@ export default function RechnungsuebersichtEditor() {
     const [betragDraft, setBetragDraft] = useState('');
     const [analyzedData, setAnalyzedData] = useState<AnalyzeResponse | null>(null);
     const [lieferantOptions, setLieferantOptions] = useState<LieferantOption[]>([]);
-    const [selectedLieferantId, setSelectedLieferantId] = useState<string>('');
+    // null = noch nicht von Hand gewählt, dann gilt der aus der Analyse erkannte Lieferant.
+    const [lieferantVonHand, setLieferantVonHand] = useState<string | null>(null);
     const [formErrors, setFormErrors] = useState<string[]>([]);
+
+    // Abgeleitet statt einmalig nach der Analyse gesetzt: Die Lieferantenliste lädt
+    // erst mit dem Dialog. Kam die Analyse vorher zurück, blieb die Zuordnung früher
+    // aus und "Speichern" gesperrt. So passt sie, egal was zuerst ankommt.
+    const erkannterLieferantId = useMemo(
+        () => findeErkanntenLieferanten(analyzedData?.lieferantName, lieferantOptions),
+        [analyzedData?.lieferantName, lieferantOptions],
+    );
+    const selectedLieferantId = lieferantVonHand ?? erkannterLieferantId;
 
     // Load data
     const loadData = useCallback(async () => {
@@ -188,21 +218,28 @@ export default function RechnungsuebersichtEditor() {
         }
     }, [selectedYear, selectedMonth, searchQuery]);
 
-    // Load lieferanten for dropdown
+    // Lieferanten für die Auswahl im Upload-Dialog. Der Endpunkt liefert eine Seite
+    // ({ lieferanten: [...] }, ohne Angabe nur 50 Einträge), darum die Höchstgröße.
+    // Früher wurde die Antwort als nackte Liste gelesen: Die Auswahl blieb leer und
+    // "Speichern" gesperrt, der Fehler landete still in der Konsole.
     useEffect(() => {
-        if (showUploadModal) {
-            fetch('/api/lieferanten') // Uses existing endpoint
-                .then(res => res.json())
-                .then(data => {
-                    const opts = data.map((l: { id: number; firmenname?: string; lieferantenname?: string }) => ({
-                        id: l.id,
-                        name: l.firmenname || l.lieferantenname
-                    })).sort((a: { id: number; name: string | undefined }, b: { id: number; name: string | undefined }) => (a.name ?? '').localeCompare(b.name ?? ''));
-                    setLieferantOptions(opts);
-                })
-                .catch(err => console.error("Could not load suppliers", err));
-        }
-    }, [showUploadModal]);
+        if (!showUploadModal) return;
+        fetch('/api/lieferanten?size=1000')
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.json();
+            })
+            .then((data: { lieferanten?: { id: number; lieferantenname?: string | null }[] }) => {
+                const opts = (Array.isArray(data?.lieferanten) ? data.lieferanten : [])
+                    .map(l => ({ id: l.id, name: l.lieferantenname ?? '' }))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+                setLieferantOptions(opts);
+            })
+            .catch(err => {
+                console.error('Lieferanten konnten nicht geladen werden', err);
+                toast.error('Lieferanten konnten nicht geladen werden.');
+            });
+    }, [showUploadModal, toast]);
 
     // Debounce search and reload on filter change
     useEffect(() => {
@@ -331,6 +368,7 @@ export default function RechnungsuebersichtEditor() {
             setUploadFile(file);
             setAnalyzing(true);
             setAnalyzedData(null);
+            setLieferantVonHand(null);
             setBetragDraft('');
             setFormErrors([]);
 
@@ -349,17 +387,6 @@ export default function RechnungsuebersichtEditor() {
                         const result = data[0].analyzeResponse;
                         setAnalyzedData(result);
                         setBetragDraft(result.betragBrutto == null ? '' : formatDecimalInput(result.betragBrutto));
-
-                        // Try to auto-match supplier if name was found
-                        if (result.lieferantName && lieferantOptions.length > 0) {
-                            const found = lieferantOptions.find(opt =>
-                                opt.name.toLowerCase().includes(result.lieferantName.toLowerCase()) ||
-                                result.lieferantName.toLowerCase().includes(opt.name.toLowerCase())
-                            );
-                            if (found) {
-                                setSelectedLieferantId(String(found.id));
-                            }
-                        }
                     }
                 } else {
                     console.error("Analysis failed");
@@ -886,11 +913,12 @@ export default function RechnungsuebersichtEditor() {
                                         <div className="md:col-span-2">
                                             <label className="block text-sm font-medium text-slate-700 mb-1">Lieferant *</label>
                                             <Select
+                                                aria-label="Lieferant"
                                                 value={selectedLieferantId}
-                                                onChange={setSelectedLieferantId}
+                                                onChange={setLieferantVonHand}
                                                 options={[
                                                     { value: '', label: 'Bitte wählen...' },
-                                                    ...lieferantOptions.map(l => ({ value: String(l.id), label: l.name }))
+                                                    ...lieferantOptions.map(l => ({ value: String(l.id), label: l.name || `Ohne Namen (Nr. ${l.id})` }))
                                                 ]}
                                                 className="w-full"
                                                 placeholder="Lieferant auswählen"

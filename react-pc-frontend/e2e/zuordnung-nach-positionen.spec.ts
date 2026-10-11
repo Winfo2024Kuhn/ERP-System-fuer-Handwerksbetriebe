@@ -107,7 +107,8 @@ async function stubApi(page: Page, optionen: Optionen, mitschrift: { pfad: strin
         const request = route.request();
         const pfad = new URL(request.url()).pathname;
         if (pfad === '/api/auth/me') {
-            return json(route, { id: 1, username: 'anna.buero', displayName: 'Anna Büro', active: true, roles: ['USER'], admin: false, requiresInitialSetup: false });
+            // kiAktiv: „Positionen auslesen“ ist ohne KI-Schlüssel gesperrt
+            return json(route, { id: 1, username: 'anna.buero', displayName: 'Anna Büro', active: true, roles: ['USER'], admin: false, requiresInitialSetup: false, kiAktiv: true });
         }
         if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
         if (pfad.startsWith('/api/test-pdf/')) {

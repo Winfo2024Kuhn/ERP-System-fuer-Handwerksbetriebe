@@ -137,6 +137,10 @@ EMAIL_FEATURES_ENABLED='true'
 
 Nach einer Änderung: `docker compose up -d app`.
 
+Wird das ERP im Büronetz über eine eigene Domain aufgerufen (nicht IP, Rechnername, `*.fritz.box`
+oder `*.ts.net`), gehört sie hier hinein: `APP_SECURITY_ALLOWEDHOSTS='erp.firma.de'`. Details:
+[Erlaubte Adressen](../../docs/MOBILE_TOKEN_SECURITY.md#erlaubte-adressen-schutz-vor-dns-rebinding).
+
 ### Uploads in einem vorhandenen Ordner
 
 Standardmäßig liegen Uploads im Docker-Volume `app_uploads`. Soll ein vorhandener Ordner

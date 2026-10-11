@@ -145,6 +145,8 @@ http://[SERVER-IP]:8080
 ```
 Unter Windows findest du die IP mit `ipconfig`. Gib Port 8080 in der Firewall nur für die vorgesehenen Geräte im Firmennetz frei, nicht für das öffentliche Internet.
 
+Statt der IP gehen auch der Rechnername (`http://erp-pc:8080`), `*.fritz.box` und die Tailscale-Adresse (`*.ts.net`). Eine eigene Domain im Büronetz muss einmal freigegeben werden, sonst weist das ERP sie zum Schutz vor DNS-Rebinding ab: [Erlaubte Adressen](MOBILE_TOKEN_SECURITY.md#erlaubte-adressen-schutz-vor-dns-rebinding).
+
 ---
 
 ## Deployment & Betrieb

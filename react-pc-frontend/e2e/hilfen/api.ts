@@ -133,6 +133,8 @@ export async function stubbeWebsiteApi(page: Page, optionen: {
         id: 1, username: 'admin', email: 'admin@example.invalid',
         vorname: 'Max', nachname: 'Mustermann',
         admin: true, roles: ['ADMIN'], requiresInitialSetup: false,
+        // KI-Schluessel hinterlegt: der Beitrags-Assistent bietet den KI-Weg an.
+        kiAktiv: true,
     }));
 
     // Projektsuche im ersten Schritt des Assistenten.

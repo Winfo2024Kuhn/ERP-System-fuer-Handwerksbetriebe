@@ -104,7 +104,7 @@ Die Datenbank-Zugangsdaten kommen in die `application-local.properties` (nicht v
 | Handy | React-PWA mit IndexedDB für den Offline-Betrieb, Web-Push |
 | Dokumente | OpenPDF, PDFBox, Mustang (ZUGFeRD/XRechnung) |
 | E-Mail | Jakarta Mail (IMAP und SMTP) |
-| KI | Google Gemini für Belegerkennung, Hilfe-Chat und Textvorschläge |
+| KI | Google Gemini (freiwillig) für Belegerkennung, Hilfe-Chat, Textvorschläge und Spracheingabe |
 | Betrieb | Ein Docker-Image mit Backend und beiden Oberflächen, nächtliches Update mit Sicherung und Rollback |
 
 Backend und beide Oberflächen laufen als eine Anwendung: Die Frontends werden nach `src/main/resources/static` gebaut und von Spring Boot ausgeliefert.
@@ -122,8 +122,8 @@ docs/                                     Fachliche und technische Dokumentation
 ## Datenschutz und KI
 
 - Das System läuft im eigenen Netz. Kunden-, Mitarbeiter- und Zeitdaten bleiben im Betrieb.
-- Die KI-Funktionen schicken Belege und Texte an die Google-Gemini-API. Für personenbezogene Daten die kostenpflichtige API mit Auftragsverarbeitungsvertrag nutzen, dort werden Anfragen nicht zum Training verwendet.
-- Die Ersteinrichtung verlangt derzeit einen Gemini-Schlüssel und einen Mailserver. Die übrigen Abläufe hängen nicht an der KI.
+- Die KI-Funktionen sind freiwillig. Mit hinterlegtem Gemini-Schlüssel schicken sie Belege, Texte und Sprachaufnahmen an die Google-Gemini-API. Für personenbezogene Daten die kostenpflichtige API mit Auftragsverarbeitungsvertrag nutzen, dort werden Anfragen nicht zum Training verwendet.
+- Ohne Schlüssel bleiben die KI-Funktionen aus: KI-Knöpfe sind gesperrt oder ausgeblendet, und es gehen keine Belege oder Texte an Google. Alle übrigen Abläufe funktionieren ohne KI. Pflicht in der Ersteinrichtung ist nur der Mailserver; den Schlüssel trägt ein Admin bei Bedarf später unter Einstellungen → KI-Funktionen ein.
 - Für die Zeitdaten der Mitarbeiter gelten die üblichen DSGVO-Pflichten. Details: [GOBD_COMPLIANCE.md](docs/GOBD_COMPLIANCE.md), [SECURITY.md](SECURITY.md).
 
 ## Dokumentation

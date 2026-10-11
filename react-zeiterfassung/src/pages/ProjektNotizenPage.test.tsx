@@ -50,6 +50,9 @@ vi.mock('../services/audioRecorderService', async () => {
 })
 vi.mock('../services/spracheingabeService', () => ({
     transkribiere: vi.fn(async () => 'Geländer montiert.'),
+    // Spracheingabe ist an (KI-Schlüssel hinterlegt) – sonst gäbe es keinen Knopf.
+    bekannteSpracheingabeVerfuegbarkeit: () => true,
+    pruefeSpracheingabeVerfuegbar: async () => true,
     SpracheingabeFehler: class extends Error {},
 }))
 

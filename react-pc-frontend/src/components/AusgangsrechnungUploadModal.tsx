@@ -10,6 +10,11 @@ import {
 import { FileText, Upload, AlertCircle, RefreshCw, Hash, Euro, Eye, EyeOff, Search, X, CheckCircle } from 'lucide-react';
 import { Input } from './ui/input';
 import { DatePicker } from './ui/datepicker';
+import { useKiAktiv } from '../features/ki/useKiAktiv';
+
+/** Ohne KI-Schlüssel liest das Backend nur E-Rechnungen (ZUGFeRD) selbst aus. */
+const OHNE_KI_NICHTS_GELESEN =
+    'Ohne KI liest das Programm nur E-Rechnungen automatisch – aus dieser Datei konnte nichts gelesen werden. Bitte die Angaben von Hand eintragen.';
 
 interface AusgangsrechnungUploadModalProps {
     isOpen: boolean;
@@ -54,6 +59,7 @@ export function AusgangsrechnungUploadModal({
     onClose,
     onSuccess,
 }: AusgangsrechnungUploadModalProps) {
+    const kiAktiv = useKiAktiv();
     const [step, setStep] = useState<Step>('upload');
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
@@ -174,8 +180,9 @@ export function AusgangsrechnungUploadModal({
             const data: AnalyzeResponse = await res.json();
 
             if (data.error) {
-                // Analysis failed but we can still let user fill in manually
-                setError(data.error);
+                // Analysis failed but we can still let user fill in manually.
+                // Ohne KI ist das kein Fehler, sondern erwartet: dann ruhig erklären, warum nichts gelesen wurde.
+                setError(kiAktiv ? data.error : OHNE_KI_NICHTS_GELESEN);
                 setStep('edit');
                 return;
             }
@@ -292,6 +299,11 @@ export function AusgangsrechnungUploadModal({
                                     Rechnung hier ablegen oder klicken
                                 </p>
                                 <p className="text-xs text-slate-400 mt-1">PDF, JPG oder PNG</p>
+                                {!kiAktiv && (
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        E-Rechnungen werden automatisch gelesen, bei allen anderen Rechnungen tragen Sie die Angaben von Hand ein.
+                                    </p>
+                                )}
                                 <input
                                     ref={fileInputRef}
                                     type="file"
@@ -309,7 +321,7 @@ export function AusgangsrechnungUploadModal({
                         {step === 'upload' && file && loading && (
                             <div className="flex flex-col items-center justify-center py-12">
                                 <RefreshCw className="w-8 h-8 text-rose-500 animate-spin mb-3" />
-                                <p className="text-sm font-medium text-slate-700">KI analysiert Dokument...</p>
+                                <p className="text-sm font-medium text-slate-700">{kiAktiv ? 'KI analysiert Dokument...' : 'Dokument wird gelesen …'}</p>
                                 <p className="text-xs text-slate-400 mt-1">{file.name}</p>
                             </div>
                         )}

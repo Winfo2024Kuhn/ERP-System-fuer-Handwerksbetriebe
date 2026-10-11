@@ -26,13 +26,14 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Prueft den Endpunkt-Vertrag aus dem Plan (Statuscodes 200/401/413/400/502)
+ * Prueft den Endpunkt-Vertrag aus dem Plan (Statuscodes 200/401/413/400/502/503)
  * und die Sicherheits-Pflichtcheckliste aus TESTING_SECURITY.md fuer den
  * Token-Parameter. {@code SpracheingabeService} bleibt gemockt - die
  * fachliche Umwandlung ist bereits durch {@code SpracheingabeServiceTest}
@@ -192,6 +193,24 @@ class SpracheingabeControllerTest {
         }
 
         @Test
+        @DisplayName("Kein KI-Schluessel -> 503 mit ehrlicher Meldung statt 502")
+        void ohneKiSchluesselGibt503() throws Exception {
+            given(mitarbeiterRepository.findByLoginToken("valid-token"))
+                    .willReturn(Optional.of(aktiverMitarbeiter()));
+            given(spracheingabeService.transkribiere(any(InputStream.class), any()))
+                    .willThrow(new SpracheingabeService.KiNichtEingerichtet());
+
+            mockMvc.perform(post("/api/spracheingabe/transkribieren")
+                            .param("token", "valid-token")
+                            .contentType("audio/webm")
+                            .content(AUFNAHME))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.message")
+                            .value("Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist."));
+        }
+
+        @Test
         @DisplayName("Sicherheitscheckliste: SQL-Injection im Token -> 401 statt 500, Repository bekommt den String unveraendert")
         void sqlInjectionImTokenGibt401() throws Exception {
             String payload = "'; DROP TABLE x; --";
@@ -237,6 +256,80 @@ class SpracheingabeControllerTest {
                     .andExpect(status().isBadRequest());
 
             verify(spracheingabeService).transkribiere(any(InputStream.class), isNull());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/spracheingabe/verfuegbar")
+    class Verfuegbar {
+
+        @Test
+        @DisplayName("Mit KI-Schluessel: verfuegbar = true")
+        void mitSchluesselVerfuegbar() throws Exception {
+            given(mitarbeiterRepository.findByLoginToken("valid-token"))
+                    .willReturn(Optional.of(aktiverMitarbeiter()));
+            given(spracheingabeService.istVerfuegbar()).willReturn(true);
+
+            mockMvc.perform(get("/api/spracheingabe/verfuegbar").param("token", "valid-token"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.verfuegbar").value(true));
+        }
+
+        @Test
+        @DisplayName("Ohne KI-Schluessel: verfuegbar = false")
+        void ohneSchluesselNichtVerfuegbar() throws Exception {
+            given(mitarbeiterRepository.findByLoginToken("valid-token"))
+                    .willReturn(Optional.of(aktiverMitarbeiter()));
+            given(spracheingabeService.istVerfuegbar()).willReturn(false);
+
+            mockMvc.perform(get("/api/spracheingabe/verfuegbar").param("token", "valid-token"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.verfuegbar").value(false));
+        }
+
+        @Test
+        @DisplayName("Unbekannter Token gibt 401, Service bleibt unberuehrt")
+        void unbekannterTokenGibt401() throws Exception {
+            given(mitarbeiterRepository.findByLoginToken("unknown-token")).willReturn(Optional.empty());
+
+            mockMvc.perform(get("/api/spracheingabe/verfuegbar").param("token", "unknown-token"))
+                    .andExpect(status().isUnauthorized());
+
+            verifyNoInteractions(spracheingabeService);
+        }
+
+        @Test
+        @DisplayName("Inaktiver Mitarbeiter gibt 401")
+        void inaktiverMitarbeiterGibt401() throws Exception {
+            Mitarbeiter inaktiv = aktiverMitarbeiter();
+            inaktiv.setAktiv(false);
+            given(mitarbeiterRepository.findByLoginToken("valid-token")).willReturn(Optional.of(inaktiv));
+
+            mockMvc.perform(get("/api/spracheingabe/verfuegbar").param("token", "valid-token"))
+                    .andExpect(status().isUnauthorized());
+
+            verifyNoInteractions(spracheingabeService);
+        }
+
+        @Test
+        @DisplayName("Sicherheitscheckliste: SQL-Injection und XSS im Token -> 401")
+        void boesartigeTokensGeben401() throws Exception {
+            for (String payload : new String[] {"'; DROP TABLE x; --", "<script>alert(1)</script>"}) {
+                given(mitarbeiterRepository.findByLoginToken(payload)).willReturn(Optional.empty());
+
+                mockMvc.perform(get("/api/spracheingabe/verfuegbar").param("token", payload))
+                        .andExpect(status().isUnauthorized());
+            }
+            verifyNoInteractions(spracheingabeService);
+        }
+
+        @Test
+        @DisplayName("Ohne Token-Parameter: 400")
+        void ohneTokenGibt400() throws Exception {
+            mockMvc.perform(get("/api/spracheingabe/verfuegbar"))
+                    .andExpect(status().isBadRequest());
+
+            verifyNoInteractions(spracheingabeService);
         }
     }
 }

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
     DndContext,
@@ -16,6 +16,7 @@ import { Button } from '../ui/button';
 import { Select } from '../ui/select-custom';
 import { useToast } from '../ui/toast';
 import { cn } from '../../lib/utils';
+import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../../features/ki/useKiAktiv';
 import {
     formatEuro,
     formatMenge,
@@ -64,6 +65,9 @@ interface ZiehDaten {
  */
 export function PositionsAufteilung({ aufteilung, ziele, zielKarten, onProjektHinzufuegen }: PositionsAufteilungProps) {
     const toast = useToast();
+    // Positionen liest nur die KI aus. Ohne KI-Schlüssel bleibt der Knopf sichtbar, aber gesperrt (mit Grund).
+    const kiAktiv = useKiAktiv();
+    const kiAusId = useId();
     const { uebersicht, positionen, zuweisungen, weiseZu, weiseOffeneZu, anzahlOffen, anzahlWare } = aufteilung;
     const [ausgewaehlt, setAusgewaehlt] = useState<Set<number>>(() => new Set());
     const [nurOffene, setNurOffene] = useState(false);
@@ -215,18 +219,45 @@ export function PositionsAufteilung({ aufteilung, ziele, zielKarten, onProjektHi
                             <>
                                 <ListChecks className="mx-auto mb-3 h-8 w-8 text-slate-400" aria-hidden="true" />
                                 <p className="font-medium text-slate-700">Für diese Rechnung sind noch keine Positionen ausgelesen.</p>
-                                <p className="mt-1 text-sm text-slate-500">
-                                    Die KI liest Artikel, Mengen und Preise aus dem Dokument. Danach ordnen Sie jede Position einem Projekt zu.
-                                </p>
+                                {kiAktiv ? (
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Die KI liest Artikel, Mengen und Preise aus dem Dokument. Danach ordnen Sie jede Position einem Projekt zu.
+                                    </p>
+                                ) : (
+                                    <>
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            Ohne KI liest das Programm keine Positionen aus. Teilen Sie die Rechnung
+                                            stattdessen „Prozentual“ oder „Absolut“ auf.
+                                        </p>
+                                        <p id={kiAusId} className="mx-auto mt-2 max-w-md text-xs text-slate-500">{KI_AUS_ERKLAERUNG}</p>
+                                    </>
+                                )}
                                 {aufteilung.auslesenFehler && (
                                     <p role="alert" className="mx-auto mt-3 max-w-md rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                                         {aufteilung.auslesenFehler}
                                     </p>
                                 )}
-                                <Button variant="outline" size="sm" className="mt-4" onClick={auslesen}>
-                                    <Sparkles className="h-4 w-4" aria-hidden="true" />
-                                    {aufteilung.auslesenFehler ? 'Nochmal versuchen' : 'Positionen auslesen'}
-                                </Button>
+                                {kiAktiv ? (
+                                    <Button variant="outline" size="sm" className="mt-4" onClick={auslesen}>
+                                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                                        {aufteilung.auslesenFehler ? 'Nochmal versuchen' : 'Positionen auslesen'}
+                                    </Button>
+                                ) : (
+                                    // Gesperrte Knöpfe bekommen nicht in jedem Browser ein Hover –
+                                    // deshalb hängt der Tooltip an der Hülle (wie im AiButton).
+                                    <span className="mt-4 inline-flex cursor-not-allowed" title={KI_AUS_ERKLAERUNG}>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            disabled
+                                            aria-describedby={kiAusId}
+                                            className="pointer-events-none border-slate-200 text-slate-500"
+                                        >
+                                            <Sparkles className="h-4 w-4" aria-hidden="true" />
+                                            Positionen auslesen
+                                        </Button>
+                                    </span>
+                                )}
                             </>
                         )}
                     </section>

@@ -1311,6 +1311,18 @@ class GeminiDokumentAnalyseServiceTest {
             verifyNoInteractions(positionService, httpClientMock);
         }
 
+        @Test
+        @org.junit.jupiter.api.DisplayName("Ohne KI-Schlüssel verlässt kein Dokument den Betrieb")
+        void ohneSchluesselKeinAufrufAnGemini() {
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("");
+
+            String antwort = serviceMitEchtemMapper.rufGeminiApiMitPrompt(
+                    new byte[] {1, 2, 3}, "application/pdf", "Wie viele Dokumente?");
+
+            org.assertj.core.api.Assertions.assertThat(antwort).isNull();
+            verifyNoInteractions(httpClientMock);
+        }
+
         @SuppressWarnings("unchecked")
         @Test
         @org.junit.jupiter.api.DisplayName("Duplikat: KI-Analyse ersetzt keine ZUGFeRD-Positionen")

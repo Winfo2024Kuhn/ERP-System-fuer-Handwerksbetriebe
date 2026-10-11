@@ -3,6 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BeitragAssistent } from './BeitragAssistent';
+import { AuthProvider, useAuth } from '../../auth/AuthContext';
+import { KI_AUS_ERKLAERUNG } from '../../features/ki/useKiAktiv';
+import { benutzer } from '../../features/ki/kiTestdaten';
+import { rendereBlob } from './bildRendern';
 
 // Praefix "mock" ist hier Pflicht: vi.mock-Fabriken werden vor die Imports
 // gehoben, nur "mock"-praefigierte Variablen duerfen darin referenziert werden.
@@ -338,5 +342,56 @@ describe('BeitragAssistent', () => {
         // versteckt, sonst haette der automatische KI-Lauf ein zweites Mal
         // gefeuert und von Hand geschriebenen Text ueberschrieben.
         expect(mockSchrittTextMounts).toHaveBeenCalledTimes(1);
+    });
+});
+
+/** Zeigt den Namen, sobald die Anmeldung geladen ist – so wartet der Test auf den echten Stand. */
+function Angemeldet() {
+    return <span>{useAuth().user?.displayName}</span>;
+}
+
+describe('BeitragAssistent – ohne KI-Schlüssel', () => {
+    beforeEach(() => {
+        vi.mocked(rendereBlob).mockClear();
+        const beitraege = server();
+        vi.stubGlobal('fetch', vi.fn((url: string, opt?: RequestInit) => (url === '/api/auth/me'
+            ? Promise.resolve(new Response(JSON.stringify(benutzer({ kiAktiv: false })), { status: 200 }))
+            : beitraege(url, opt))));
+    });
+
+    async function bisZumWeg(user: ReturnType<typeof userEvent.setup>) {
+        render(
+            <AuthProvider>
+                <Angemeldet />
+                <BeitragAssistent offen onAbbrechen={vi.fn()} onFertig={vi.fn()} />
+            </AuthProvider>,
+        );
+        await screen.findByText('Max Mustermann');
+        await user.click(screen.getByRole('button', { name: 'Projekt wählen' }));
+        await user.click(await screen.findByRole('button', { name: 'Bild wählen' }));
+        await user.click(screen.getByRole('button', { name: 'Weiter' }));
+    }
+
+    it('sperrt den KI-Weg und erklärt in der Karte, warum', async () => {
+        const user = userEvent.setup();
+        await bisZumWeg(user);
+
+        const kiWeg = await screen.findByRole('button', { name: 'Von der KI vorschlagen lassen' });
+        expect(kiWeg).toBeDisabled();
+        expect(kiWeg).toHaveAccessibleDescription(KI_AUS_ERKLAERUNG);
+        expect(screen.getByText(KI_AUS_ERKLAERUNG)).toBeVisible();
+    });
+
+    it('verspricht beim Selbst-Schreiben keine KI mehr und bereitet keine KI-Bilder vor', async () => {
+        const user = userEvent.setup();
+        await bisZumWeg(user);
+
+        const selbst = await screen.findByRole('button', { name: 'Selbst schreiben' });
+        expect(selbst).toBeEnabled();
+        expect(selbst).not.toHaveTextContent('Die KI kannst du danach trotzdem noch fragen.');
+        expect(vi.mocked(rendereBlob)).not.toHaveBeenCalled();
+
+        await user.click(selbst);
+        expect(await screen.findByRole('button', { name: 'Text setzen' })).toBeInTheDocument();
     });
 });

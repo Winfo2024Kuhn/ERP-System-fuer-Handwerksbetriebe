@@ -103,6 +103,14 @@ public class SpracheingabeService {
         this.modell = modell;
     }
 
+    /**
+     * Die Spracheingabe gehoert zu den freiwilligen KI-Funktionen: ohne
+     * Gemini-Schluessel ist sie aus, und die App blendet den Mikrofon-Knopf aus.
+     */
+    public boolean istVerfuegbar() {
+        return systemSettingsService.isGeminiConfigured();
+    }
+
     /** Liest den Strom begrenzt in den Speicher, prueft, ruft Gemini, liefert den Text. */
     public SpracheingabeErgebnis transkribiere(InputStream audioStrom, String inhaltstyp) {
         String normalisiert = normalisiereInhaltstyp(inhaltstyp);
@@ -110,14 +118,15 @@ public class SpracheingabeService {
             throw new IllegalArgumentException("Dieses Audioformat wird nicht unterstuetzt.");
         }
 
+        // Vor dem Lesen pruefen: ohne Schluessel muss die Aufnahme gar nicht erst in den Speicher.
+        String apiKey = systemSettingsService.getGeminiApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new KiNichtEingerichtet();
+        }
+
         byte[] audio = leseHoechstens(audioStrom, MAX_AUDIO_BYTES);
         if (audio.length == 0) {
             throw new IllegalArgumentException("Die Aufnahme ist leer.");
-        }
-
-        String apiKey = systemSettingsService.getGeminiApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("Kein Gemini-Schluessel hinterlegt.");
         }
 
         return sendeUndLies(baueKoerper(audio, normalisiert), apiKey, audio.length, normalisiert);
@@ -220,6 +229,13 @@ public class SpracheingabeService {
         int trennzeichen = rohwert.indexOf(';');
         String ohneParameter = trennzeichen < 0 ? rohwert : rohwert.substring(0, trennzeichen);
         return ohneParameter.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** 503 statt 502: kein Ausfall, sondern bewusst ausgeschaltet (kein KI-Schluessel). */
+    public static class KiNichtEingerichtet extends IllegalStateException {
+        public KiNichtEingerichtet() {
+            super("Kein Gemini-Schluessel hinterlegt.");
+        }
     }
 
     /** 413 statt 400: eigene Unterklasse, damit der Controller sie trennen kann. */

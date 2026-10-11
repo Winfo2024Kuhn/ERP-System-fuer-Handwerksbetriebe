@@ -95,7 +95,7 @@ export async function stubbeDokumentEditorApi(
 
     await page.route('**/api/auth/me', route => json(route, {
         id: 1, displayName: 'Max Mustermann', username: 'max.mustermann',
-        active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+        active: true, roles: ['USER'], admin: false, requiresInitialSetup: false, kiAktiv: true,
     }));
 
     await page.route('**/api/firma', route => json(route, {}));

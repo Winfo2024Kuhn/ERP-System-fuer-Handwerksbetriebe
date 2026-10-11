@@ -76,6 +76,7 @@ class MobileApiPolicyTest {
                 new Endpoint("/api/buchhaltung/mobile/belege/42/positionen", "PUT"),
                 new Endpoint("/api/buchhaltung/mobile/mwst-rechner", "POST"),
                 new Endpoint("/api/spracheingabe/transkribieren", "POST"),
+                new Endpoint("/api/spracheingabe/verfuegbar", "GET,HEAD"),
                 new Endpoint("/api/images/notiz.jpg", "GET,HEAD"),
                 new Endpoint("/api/dokumente/notiz.jpg", "GET,HEAD"),
                 new Endpoint("/api/dokumente/notiz.jpg/thumbnail", "GET,HEAD"),

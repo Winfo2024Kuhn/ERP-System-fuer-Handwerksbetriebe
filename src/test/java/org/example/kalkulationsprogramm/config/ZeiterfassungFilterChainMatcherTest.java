@@ -34,6 +34,7 @@ class ZeiterfassungFilterChainMatcherTest {
         assertThat(nutztMobileFilterkette("/api/push/subscribe")).isTrue();
         assertThat(nutztMobileFilterkette("/api/buchhaltung/mobile/belege")).isTrue();
         assertThat(nutztMobileFilterkette("/api/spracheingabe/transkribieren")).isTrue();
+        assertThat(nutztMobileFilterkette("/api/spracheingabe/verfuegbar")).isTrue();
     }
 
     @Test

@@ -2,6 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SchrittText } from './SchrittText';
+import { AuthProvider, useAuth } from '../../../auth/AuthContext';
+import { KI_AUS_ERKLAERUNG } from '../../../features/ki/useKiAktiv';
+import { benutzer } from '../../../features/ki/kiTestdaten';
 
 vi.mock('../BeitragRichtextEditor', () => ({
     BeitragRichtextEditor: ({ html, onChange, editable = true }: {
@@ -181,5 +184,49 @@ describe('SchrittText', () => {
         await waitFor(() => {
             expect(screen.getByDisplayValue('Stand')).not.toBeDisabled();
         });
+    });
+});
+
+function Angemeldet() {
+    return <span>{useAuth().user?.displayName}</span>;
+}
+
+describe('SchrittText – ohne KI-Schlüssel', () => {
+    async function zeigeOhneKi(mitKi: boolean) {
+        fetchMock.mockImplementation((url: string) => Promise.resolve(url === '/api/auth/me'
+            ? new Response(JSON.stringify(benutzer({ kiAktiv: false })), { status: 200 })
+            : { ok: true, status: 200, json: () => Promise.resolve(entwurf) }));
+        render(
+            <AuthProvider>
+                <Angemeldet />
+                <SchrittText
+                    projektId={1}
+                    kiBilder={[]}
+                    vorschauBilder={[]}
+                    stand={leererStand}
+                    onStandAendern={vi.fn()}
+                    mitKi={mitKi}
+                />
+            </AuthProvider>,
+        );
+        await screen.findByText('Max Mustermann');
+    }
+
+    it('ersetzt den KI-Chat durch einen ruhigen Hinweis', async () => {
+        await zeigeOhneKi(false);
+
+        expect(screen.queryByRole('heading', { name: 'KI-Hilfe' })).not.toBeInTheDocument();
+        expect(screen.queryByPlaceholderText(/Was soll geändert werden/)).not.toBeInTheDocument();
+        expect(screen.getByText(KI_AUS_ERKLAERUNG)).toBeInTheDocument();
+        // Felder bleiben voll nutzbar.
+        expect(screen.getByLabelText('Titel')).toBeEnabled();
+        expect(screen.getByLabelText('Text')).toBeEnabled();
+    });
+
+    it('startet auch auf dem KI-Weg keinen Lauf', async () => {
+        await zeigeOhneKi(true);
+
+        const kiAufrufe = fetchMock.mock.calls.filter(([url]) => url !== '/api/auth/me');
+        expect(kiAufrufe).toHaveLength(0);
     });
 });

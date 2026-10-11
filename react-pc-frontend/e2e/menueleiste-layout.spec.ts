@@ -104,6 +104,8 @@ async function stubbeMenueleisteApi(page: Page, displayName: string = LANGER_NUT
         roles: ['ADMIN'],
         admin: true,
         requiresInitialSetup: false,
+        // Mit KI-Hilfe-Knopf: die engste Menueleiste ist der strengere Fall.
+        kiAktiv: true,
     }));
 
     await page.route('**/api/notifications/summary**', route => json(route, {
