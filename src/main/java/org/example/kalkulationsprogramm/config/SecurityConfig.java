@@ -153,13 +153,25 @@ public class SecurityConfig {
      * Statische Ressourcen + Health: erlaubt ohne Auth.
      * Wichtig: /error muss hier stehen, sonst gibt Spring Boot
      * nach einem internen Fehler (z.B. 404) wieder 401 zurück.
+     *
+     * <p><b>CSRF (CodeQL java/spring-disabled-csrf-protection):</b> bleibt aktiv, nimmt aber
+     * genau die Pfade dieser Kette aus. Session-Cookies kommen hier zwar mit, es gibt aber
+     * keine schreibenden Endpoints (nur Dateien, Health und die Fehlerseite) – ein Token
+     * hätte nichts zu schützen. Deshalb gilt:
+     * <ul>
+     *   <li>Neue Mappings unter diesen Pfaden nur lesend (GET/HEAD); schreibende gehören unter
+     *       {@code /api/**}. {@code OeffentlichePfadeCsrfTest} schlägt sonst fehl.</li>
+     *   <li>Von hier nie per Forward in eine geschützte Kette springen: Der CsrfFilter
+     *       dieser Kette markiert den Request als geprüft, der Filter der Zielkette
+     *       würde dann übersprungen.</li>
+     * </ul>
      */
     @Bean
     @Order(2)
     public SecurityFilterChain staticResourcesFilterChain(HttpSecurity http) throws Exception {
         http
                 .securityMatcher(OEFFENTLICHE_PFADE)
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf.ignoringRequestMatchers(OEFFENTLICHE_PFADE))
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
         return http.build();
     }
