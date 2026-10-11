@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,24 +19,23 @@ import java.util.regex.Pattern;
  * Übersetzt Datenbank-Constraint-Verletzungen in strukturierte, deutschsprachige
  * Fehlermeldungen, die sowohl für Nutzer:innen verständlich als auch für Entwickler:innen
  * nachvollziehbar bleiben.
+ *
+ * <p>Gelesen werden die (englischen) Fehlertexte von PostgreSQL, der einzigen Datenbank:
+ * 23505 (Wert doppelt), 23502 (Pflichtfeld leer), 23503 (Verweis), 22001 (Text zu lang,
+ * zusätzlich am SQLState erkannt). Alles andere, etwa 23514 (CHECK), bekommt die
+ * allgemeine Meldung.
  */
 @Component
 public class ConstraintMessageResolver {
     private static final Logger LOG = LoggerFactory.getLogger(ConstraintMessageResolver.class);
 
-    private static final Pattern DUPLICATE_ENTRY = Pattern.compile("Duplicate entry '(.+?)' for key '([^']+)'", Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_NULL_COLUMN = Pattern.compile("Column '([^']+)' cannot be null", Pattern.CASE_INSENSITIVE);
-    private static final Pattern DATA_TOO_LONG = Pattern.compile("Data too long for column '([^']+)'", Pattern.CASE_INSENSITIVE);
-    private static final Pattern CONSTRAINT_NAME = Pattern.compile("CONSTRAINT '([^']+)'", Pattern.CASE_INSENSITIVE);
-    private static final Pattern FK_COLUMN = Pattern.compile("FOREIGN KEY \\(`([^`]+)`\\)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern FK_REFERENCED_TABLE = Pattern.compile("REFERENCES `([^`]+)`", Pattern.CASE_INSENSITIVE);
-    private static final Pattern FK_REFERENCED_COLUMN = Pattern.compile("REFERENCES `[^`]+` \\(`([^`]+)`\\)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern FK_TABLE = Pattern.compile("fails \\(`[^`]+`\\.`([^`]+)`\\)", Pattern.CASE_INSENSITIVE);
-    // PostgreSQL (Kunden-Installationen) formuliert dieselben Fehler anders
     private static final Pattern PG_DUPLICATE = Pattern.compile("duplicate key value violates unique constraint \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
     private static final Pattern PG_DUPLICATE_VALUE = Pattern.compile("Key \\([^)]*+\\)=\\((.+?)\\) already exists", Pattern.CASE_INSENSITIVE);
     private static final Pattern PG_NOT_NULL = Pattern.compile("null value in column \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
     private static final Pattern PG_FOREIGN_KEY = Pattern.compile("violates foreign key constraint \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
+    // Tabellennamen aus dem PostgreSQL-Text - Rueckfall, wenn die Metadaten sie nicht kennen
+    private static final Pattern PG_FK_TABELLE_LOESCHEN = Pattern.compile("violates foreign key constraint \"[^\"]++\" on table \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PG_FK_ZIELTABELLE = Pattern.compile("is not present in table \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
     // PostgreSQL nennt bei zu langen Texten nur den Typ, nicht die Spalte
     private static final Pattern PG_ZU_LANG = Pattern.compile("value too long for type character(?: varying)?\\((\\d++)\\)", Pattern.CASE_INSENSITIVE);
 
@@ -55,8 +53,9 @@ public class ConstraintMessageResolver {
 
     /**
      * Zerlegt eine {@link DataIntegrityViolationException} in einen erklärenden
-     * {@link ConstraintErrorDetail}. Dabei wird zuerst der konkrete Fehler-Typ erkannt
-     * (z. B. Duplicate Key, NOT NULL) und anschließend eine passgenaue Meldung erzeugt.
+     * {@link ConstraintErrorDetail}. Dabei wird zuerst der konkrete Fehler-Typ am
+     * PostgreSQL-Fehlertext erkannt (z. B. doppelter Wert, NOT NULL) und anschließend eine
+     * passgenaue Meldung erzeugt.
      */
     public ConstraintErrorDetail resolve(DataIntegrityViolationException exception) {
         Throwable root = exception.getMostSpecificCause();
@@ -64,15 +63,11 @@ public class ConstraintMessageResolver {
             return handlePropertyValue(propertyValueException);
         }
         if (root instanceof SQLException sqlException) {
-            LOG.debug("SQL integrity error: state={}, code={}, message={}", sqlException.getSQLState(), sqlException.getErrorCode(), sqlException.getMessage());
+            LOG.debug("SQL integrity error: state={}, message={}", sqlException.getSQLState(), sqlException.getMessage());
         }
         String message = root != null && root.getMessage() != null ? root.getMessage() : exception.getMessage();
         if (message == null) {
             message = "";
-        }
-        Matcher duplicateMatcher = DUPLICATE_ENTRY.matcher(message);
-        if (duplicateMatcher.find()) {
-            return handleDuplicate(duplicateMatcher.group(1), duplicateMatcher.group(2), message);
         }
         Matcher pgDuplicate = PG_DUPLICATE.matcher(message);
         if (pgDuplicate.find()) {
@@ -89,14 +84,6 @@ public class ConstraintMessageResolver {
             boolean deleteCase = message.toLowerCase(Locale.ROOT).contains("update or delete on table");
             return handleForeignKey(message, pgForeignKey.group(1), deleteCase);
         }
-        Matcher notNullMatcher = NOT_NULL_COLUMN.matcher(message);
-        if (notNullMatcher.find()) {
-            return handleNotNull(notNullMatcher.group(1), message);
-        }
-        Matcher tooLongMatcher = DATA_TOO_LONG.matcher(message);
-        if (tooLongMatcher.find()) {
-            return handleDataTooLong(tooLongMatcher.group(1), message);
-        }
         // 22001 = Wert zu lang - erkannt am SQLState, damit es auch mit uebersetzten
         // Servermeldungen greift; die Hoechstlaenge nur, wenn der (englische) Text sie nennt
         Matcher pgZuLang = PG_ZU_LANG.matcher(message);
@@ -105,10 +92,6 @@ public class ConstraintMessageResolver {
             String userMessage = "Ein eingegebener Text ist zu lang."
                     + (zuLang ? " Maximal erlaubt: " + pgZuLang.group(1) + " Zeichen." : "");
             return new ConstraintErrorDetail(HttpStatus.BAD_REQUEST, userMessage, message, null, Collections.emptyList());
-        }
-        if (message.toLowerCase(Locale.ROOT).contains("foreign key constraint fails")) {
-            return handleForeignKey(message, extractFirst(CONSTRAINT_NAME, message),
-                    message.toLowerCase(Locale.ROOT).contains("cannot delete or update a parent row"));
         }
         return fallback(message);
     }
@@ -134,11 +117,7 @@ public class ConstraintMessageResolver {
      */
     private ConstraintErrorDetail handleDuplicate(String rawValue, String constraintKey, String technicalMessage) {
         String value = truncate(rawValue);
-        Optional<DatabaseConstraintMetadataService.ConstraintMetadata> metadataOptional = metadataService.findConstraint(constraintKey);
-        DatabaseConstraintMetadataService.ConstraintMetadata metadata = metadataOptional.orElse(null);
-        if (metadata == null && constraintKey.contains(".")) {
-            metadata = metadataService.findConstraint(constraintKey.substring(constraintKey.lastIndexOf('.') + 1)).orElse(null);
-        }
+        DatabaseConstraintMetadataService.ConstraintMetadata metadata = metadataService.findConstraint(constraintKey).orElse(null);
         List<FieldErrorDetail> fieldErrors = new ArrayList<>();
         String effectiveConstraint = metadata != null ? metadata.name() : constraintKey;
         if (metadata != null && !metadata.columnNames().isEmpty()) {
@@ -180,36 +159,19 @@ public class ConstraintMessageResolver {
     }
 
     /**
-     * Baut eine Nutzerfehlermeldung für überlange Werte inklusive maximal zulässiger Länge auf.
-     */
-    private ConstraintErrorDetail handleDataTooLong(String columnName, String technicalMessage) {
-        DatabaseConstraintMetadataService.ColumnMetadata column = metadataService.findColumnByName(columnName).orElse(null);
-        String label = column != null && !column.label().isBlank() ? column.label() : humanize(columnName);
-        Integer maxLength = column != null ? column.maxLength() : null;
-        StringBuilder userMessage = new StringBuilder("Der Wert für '").append(label).append("' ist zu lang.");
-        if (maxLength != null) {
-            userMessage.append(" Maximal erlaubt: ").append(maxLength).append(" Zeichen.");
-        }
-        FieldErrorDetail field = new FieldErrorDetail(columnName, label, "Wert ist zu lang" + (maxLength != null ? " (max. " + maxLength + ")" : ""));
-        return new ConstraintErrorDetail(HttpStatus.BAD_REQUEST, userMessage.toString(), technicalMessage, null, List.of(field));
-    }
-
-    /**
      * Analysiert fehlgeschlagene Fremdschlüsselprüfungen und liefert – je nach Situation –
-     * Hinweise zum nicht löschbaren Datensatz oder zur ungültigen Referenz.
+     * Hinweise zum nicht löschbaren Datensatz oder zur ungültigen Referenz. Tabellen und
+     * Spalten kommen aus den Metadaten; kennen sie eine Tabelle nicht, wird sie aus dem
+     * PostgreSQL-Text gelesen. Beim Löschen zählt die Tabelle, deren Einträge noch
+     * verweisen, beim Einfügen die, in der der Eintrag fehlt.
      */
     private ConstraintErrorDetail handleForeignKey(String technicalMessage, String constraintName, boolean deleteCase) {
-        DatabaseConstraintMetadataService.ConstraintMetadata metadata = constraintName != null
-                ? metadataService.findConstraint(constraintName).orElse(null)
-                : null;
-        String tableName = metadata != null ? metadata.tableName() : extractFirst(FK_TABLE, technicalMessage);
-        String referencedTable = metadata != null ? metadata.referencedTableName() : extractFirst(FK_REFERENCED_TABLE, technicalMessage);
-        List<String> columnNames = metadata != null && !metadata.columnNames().isEmpty()
-                ? metadata.columnNames()
-                : optionalList(extractFirst(FK_COLUMN, technicalMessage));
-        List<String> referencedColumns = metadata != null && !metadata.referencedColumnNames().isEmpty()
-                ? metadata.referencedColumnNames()
-                : optionalList(extractFirst(FK_REFERENCED_COLUMN, technicalMessage));
+        DatabaseConstraintMetadataService.ConstraintMetadata metadata = metadataService.findConstraint(constraintName).orElse(null);
+        String tableName = metadata != null ? metadata.tableName()
+                : (deleteCase ? extractFirst(PG_FK_TABELLE_LOESCHEN, technicalMessage) : null);
+        String referencedTable = metadata != null && metadata.referencedTableName() != null ? metadata.referencedTableName()
+                : extractFirst(PG_FK_ZIELTABELLE, technicalMessage);
+        List<String> columnNames = metadata != null ? metadata.columnNames() : List.of();
         String tableLabel = metadataService.findTable(tableName)
                 .map(DatabaseConstraintMetadataService.TableMetadata::label)
                 .filter(label -> !label.isBlank())
@@ -232,11 +194,11 @@ public class ConstraintMessageResolver {
         }
         String message;
         if (deleteCase) {
-            message = "Der Datensatz kann nicht gelöscht werden, da noch Einträge in '" + referencedTableLabel + "' darauf verweisen.";
+            message = "Der Datensatz kann nicht gelöscht werden, da noch Einträge" + inTabelle(tableLabel) + " darauf verweisen.";
         } else if (!columnLabels.isEmpty()) {
-            message = "Der angegebene Wert für " + joinLabels(columnLabels) + " ist ungültig – es existiert kein passender Eintrag in '" + referencedTableLabel + "'.";
+            message = "Der angegebene Wert für " + joinLabels(columnLabels) + " ist ungültig – es existiert kein passender Eintrag" + inTabelle(referencedTableLabel) + ".";
         } else {
-            message = "Die ausgewählte Referenz ist ungültig – es existiert kein passender Eintrag in '" + referencedTableLabel + "'.";
+            message = "Die ausgewählte Referenz ist ungültig – es existiert kein passender Eintrag" + inTabelle(referencedTableLabel) + ".";
         }
         return new ConstraintErrorDetail(HttpStatus.CONFLICT, message, technicalMessage, constraintName, fieldErrors);
     }
@@ -248,6 +210,11 @@ public class ConstraintMessageResolver {
     private ConstraintErrorDetail fallback(String technicalMessage) {
         String message = "Der Vorgang konnte nicht abgeschlossen werden, weil eine Datenbankvorgabe verletzt wurde.";
         return new ConstraintErrorDetail(HttpStatus.BAD_REQUEST, message, technicalMessage, null, Collections.emptyList());
+    }
+
+    /** " in 'Projekt'" - oder nichts, wenn die Tabelle unbekannt ist (statt " in ''"). */
+    private static String inTabelle(String label) {
+        return label.isBlank() ? "" : " in '" + label + "'";
     }
 
     /** Kürzt einen angezeigten Wert auf eine sinnvolle Vorschau-Länge ab. */
@@ -306,13 +273,5 @@ public class ConstraintMessageResolver {
         }
         Matcher matcher = pattern.matcher(input);
         return matcher.find() ? matcher.group(1) : null;
-    }
-
-    /** Erzeugt eine optional gefüllte Liste aus einem einzelnen String-Wert. */
-    private static List<String> optionalList(String value) {
-        if (value == null || value.isBlank()) {
-            return List.of();
-        }
-        return List.of(value);
     }
 }

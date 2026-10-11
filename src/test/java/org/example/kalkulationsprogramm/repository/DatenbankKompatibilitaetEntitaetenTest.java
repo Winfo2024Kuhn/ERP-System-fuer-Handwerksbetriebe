@@ -41,8 +41,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.example.kalkulationsprogramm.config.FlywayStartSetupConfig;
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.util.ConstraintErrorDetail;
 import org.example.kalkulationsprogramm.util.ConstraintMessageResolver;
 import org.example.kalkulationsprogramm.util.DatabaseConstraintMetadataService;
+import org.example.kalkulationsprogramm.util.FieldErrorDetail;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
@@ -69,6 +71,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -239,6 +242,47 @@ class DatenbankKompatibilitaetEntitaetenTest {
         assertThat(fehler).as("zu langer Name muss als DataIntegrityViolationException ankommen").isNotNull();
         // PostgreSQL: "Ein eingegebener Text ist zu lang. ..."
         assertThat(meldungen.resolve(fehler).userMessage()).contains("zu lang");
+    }
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    @Test
+    @DisplayName("Verweis: echte Metadaten nennen beim Loeschen die verweisende, beim Einfuegen die Zieltabelle")
+    void verweisMeldungMitEchtenMetadaten() {
+        // Eigene kleine Tabellen statt kunde/projekt: die haben zu viele Pflichtspalten
+        jdbc.execute("DROP TABLE IF EXISTS kompat_fk_projekt, kompat_fk_kunde");
+        jdbc.execute("CREATE TABLE kompat_fk_kunde (id BIGINT PRIMARY KEY)");
+        jdbc.execute("CREATE TABLE kompat_fk_projekt (id BIGINT PRIMARY KEY, kunde_id BIGINT, "
+                + "CONSTRAINT fk_kompat_fk_projekt_kunde FOREIGN KEY (kunde_id) REFERENCES kompat_fk_kunde (id))");
+        try {
+            jdbc.update("INSERT INTO kompat_fk_kunde (id) VALUES (7)");
+            jdbc.update("INSERT INTO kompat_fk_projekt (id, kunde_id) VALUES (1, 7)");
+            DatabaseConstraintMetadataService metadaten = new DatabaseConstraintMetadataService(jdbc);
+            ConstraintMessageResolver meldungen = new ConstraintMessageResolver(metadaten);
+
+            DataIntegrityViolationException loeschen = catchThrowableOfType(
+                    () -> jdbc.update("DELETE FROM kompat_fk_kunde WHERE id = 7"), DataIntegrityViolationException.class);
+            DataIntegrityViolationException einfuegen = catchThrowableOfType(
+                    () -> jdbc.update("INSERT INTO kompat_fk_projekt (id, kunde_id) VALUES (2, 99)"),
+                    DataIntegrityViolationException.class);
+
+            assertThat(metadaten.findConstraint("fk_kompat_fk_projekt_kunde")).get()
+                    .satisfies(fk -> {
+                        assertThat(fk.tableName()).as("verweisende Tabelle").isEqualTo("kompat_fk_projekt");
+                        assertThat(fk.referencedTableName()).as("Zieltabelle").isEqualTo("kompat_fk_kunde");
+                    });
+            assertThat(loeschen).as("Loeschen des noch gebrauchten Kunden").isNotNull();
+            assertThat(meldungen.resolve(loeschen).userMessage()).isEqualTo(
+                    "Der Datensatz kann nicht gelöscht werden, da noch Einträge in 'Kompat Fk Projekt' darauf verweisen.");
+            assertThat(einfuegen).as("Verweis auf einen nicht vorhandenen Kunden").isNotNull();
+            ConstraintErrorDetail ungueltig = meldungen.resolve(einfuegen);
+            assertThat(ungueltig.userMessage()).isEqualTo(
+                    "Der angegebene Wert für Kunde Id ist ungültig – es existiert kein passender Eintrag in 'Kompat Fk Kunde'.");
+            assertThat(ungueltig.fieldErrors()).extracting(FieldErrorDetail::field).containsExactly("kunde_id");
+        } finally {
+            jdbc.execute("DROP TABLE IF EXISTS kompat_fk_projekt, kompat_fk_kunde");
+        }
     }
 
     // ------------------------------------------------------------------
