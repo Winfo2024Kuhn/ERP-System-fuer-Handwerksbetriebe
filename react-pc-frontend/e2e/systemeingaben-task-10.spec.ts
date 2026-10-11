@@ -29,7 +29,7 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
         if (path.includes('/zaehlungen'))
             body = { rechnerischerBestand: 400 };
         if (path === '/api/lieferanten')
-            body = [{ id: 1, firmenname: 'Testlieferant' }];
+            body = { lieferanten: [{ id: 1, lieferantenname: 'Testlieferant' }], gesamt: 1, seite: 0, seitenGroesse: 1000 };
         if (route.request().method() === 'PUT' || route.request().method() === 'POST') {
             if (path.endsWith('/analyze-upload'))
                 body = [{ analyzeResponse: { betragBrutto: 0, dokumentTyp: 'RECHNUNG', dokumentDatum: '2026-09-09', lieferantName: 'Testlieferant' } }];
