@@ -7,7 +7,9 @@ import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.util.ReflectionTestUtils;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -249,6 +251,25 @@ class ZeiterfassungNetworkBoundaryTest {
         enabledFilter().doFilter(buero, new MockHttpServletResponse(), (req, res) -> bueroPassed.set(true));
         assertThat(bueroPassed).isTrue();
     }
+    @Test void eingetrageneAdresseGiltOhneNeustartDerNetzgrenze() throws Exception {
+        // DNS-Rebinding-Schutz: fremder Name aus dem Büro erst nach Eintrag in app.security.allowed-hosts.
+        var filter = enabledFilter();
+        var gesperrt = new MockHttpServletRequest("GET", "/api/auth/bootstrap-status");
+        gesperrt.setRemoteAddr("192.168.1.20");
+        gesperrt.setServerName("erp.example.test");
+        var antwort = new MockHttpServletResponse();
+        filter.doFilter(gesperrt, antwort, (req, res) -> { throw new AssertionError("fremde Adresse durchgelassen"); });
+        assertThat(antwort.getStatus()).isEqualTo(403);
+        assertThat(antwort.getHeader("Cache-Control")).isEqualTo("no-store");
+
+        ReflectionTestUtils.setField(filter, "erlaubteHosts", "erp.example.test");
+        var erlaubt = new MockHttpServletRequest("GET", "/api/auth/bootstrap-status");
+        erlaubt.setRemoteAddr("192.168.1.20");
+        erlaubt.setServerName("erp.example.test");
+        var passed = new AtomicBoolean();
+        filter.doFilter(erlaubt, new MockHttpServletResponse(), (req, res) -> passed.set(true));
+        assertThat(passed).isTrue();
+    }
     private static MockHttpServletRequest ausDemInternet(String method, String path, long laenge) {
         var request = new MockHttpServletRequest(method, path) {
             @Override public long getContentLengthLong() { return laenge; }
@@ -285,6 +306,9 @@ class ZeiterfassungNetworkBoundaryTest {
     private static ZeiterfassungSecurityFilter enabledFilter() {
         var filter = new ZeiterfassungSecurityFilter();
         ReflectionTestUtils.setField(filter, "securityEnabled", true);
+        // Kein Rechnername: Das Ergebnis darf nicht vom Testrechner abhängen.
+        Supplier<Set<String>> keinRechnername = Set::of;
+        ReflectionTestUtils.setField(filter, "rechnernamen", keinRechnername);
         return filter;
     }
 }

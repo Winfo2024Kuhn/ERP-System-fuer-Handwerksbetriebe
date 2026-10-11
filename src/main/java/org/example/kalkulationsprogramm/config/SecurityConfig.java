@@ -194,6 +194,8 @@ public class SecurityConfig {
      * Alle API-Endpoints: Session-basierte Authentifizierung via formLogin + CSRF-Schutz.
      * CSRF wird über CookieCsrfTokenRepository aktiviert, damit der Browser-Client
      * das XSRF-TOKEN-Cookie lesen und als X-XSRF-TOKEN-Header mitsenden kann.
+     * Anmelden und Abmelden gehen ohne Token nur von der eigenen Oberfläche
+     * ({@link AnmeldungVonEigenerSeite}, Schutz vor Login-CSRF).
      */
     @Bean
     @Order(3)
@@ -208,7 +210,7 @@ public class SecurityConfig {
                     csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(requestHandler)
-                        .ignoringRequestMatchers("/api/auth/login", "/api/auth/logout");
+                        .ignoringRequestMatchers(new AnmeldungVonEigenerSeite());
                 })
             // Force the CSRF cookie to be set on every response (Spring Security 6 deferred token fix)
             .addFilterAfter(new CsrfCookieFilter(), org.springframework.security.web.csrf.CsrfFilter.class)
