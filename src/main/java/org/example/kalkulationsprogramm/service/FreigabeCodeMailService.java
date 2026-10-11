@@ -16,8 +16,9 @@ import java.time.format.DateTimeFormatter;
 /**
  * Verschickt den Bestätigungscode für die digitale Freigabe.
  *
- * <p>Läuft über dasselbe Konto wie die Ausgangsgeschäftsdokumente – der Kunde bekommt
- * den Code also vom selben Absender wie sein Angebot. Bewusst ohne Kopie im
+ * <p>Läuft über das Hauptpostfach – wie die Antwort auf eine Website-Anfrage
+ * ({@link AnfrageBestaetigungVersandService}), nicht über das Postfach für Rechnungen und
+ * Geschäftsdokumente: Der Code ist eine Rückmeldung an den Kunden, kein Beleg. Bewusst ohne Kopie im
  * "Gesendet"-Ordner und ohne Ablage im E-Mail-Center: Ein Einmal-Code gehört nirgends
  * dauerhaft hin.</p>
  *
@@ -54,7 +55,7 @@ public class FreigabeCodeMailService
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void sendeCode(DokumentFreigabe freigabe, String code, LocalDateTime gueltigBis) throws Exception
     {
-        SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
+        SystemSettingsService.MailKonto konto = systemSettingsService.getStandardMailKonto();
         EmailService emailService = new EmailService(konto.host(), konto.port(), konto.username(), konto.password())
                 .mitAbsenderName(konto.fromName())
                 .mitZeitlimit(ZEITLIMIT);

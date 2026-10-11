@@ -145,7 +145,7 @@ public class AbwesenheitsnotizService {
     static boolean antwortetAutomatisch(EmailAbsender postfach) {
         return postfach.isAktiv()
                 && !postfach.isLaeuftAus()
-                && (!postfach.isFuerGeschaeftsdokumente() || postfach.isHauptpostfach());
+                && PostfachVersandService.istFreiWaehlbar(postfach);
     }
 
     /** Alle Postfächer der Notiz wählbar? Notizen ohne Postfach (Altbestand) bleiben Admins vorbehalten. */

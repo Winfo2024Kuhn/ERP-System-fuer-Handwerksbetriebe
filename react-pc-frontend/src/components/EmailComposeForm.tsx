@@ -22,7 +22,7 @@ import { loadEmailDraft } from '../features/email/emailDraftPersistence';
 import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 import { AbsenderPostfachAuswahl } from '../features/email/AbsenderPostfachAuswahl';
 import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
-import { waehleStandardAbsender, type PostfachKurz } from '../features/email/postfach';
+import { nurWaehlbareAbsender, waehleStandardAbsender, type PostfachKurz } from '../features/email/postfach';
 import {
     EINZELVERSAND_MAX_EMPFAENGER, EINZELVERSAND_ZU_VIELE, einzelneEmpfaenger, formatEinzelversandErgebnis,
     parseEinzelversandErgebnis, brauchtAufmerksamkeit, type EinzelversandErgebnis,
@@ -471,7 +471,12 @@ export function EmailComposeForm({
     const absenderFest = !!replyEmailId || !!weitergeleitetVonEmailId;
     const originalEmailId = replyEmailId ?? weitergeleitetVonEmailId;
     const absenderModus: 'auswahl' | 'fest' = absenderFest || geschaeftsdokument ? 'fest' : 'auswahl';
-    const gewaehltesPostfach = absenderPostfaecher.postfaecher.find(p => p.id === postfachId) ?? null;
+    /** „Senden von“ ohne das Postfach für Rechnungen & Mahnungen – das nutzt nur der Dokument-Editor. */
+    const waehlbarePostfaecher = useMemo(
+        () => nurWaehlbareAbsender(absenderPostfaecher.postfaecher),
+        [absenderPostfaecher.postfaecher],
+    );
+    const gewaehltesPostfach = waehlbarePostfaecher.find(p => p.id === postfachId) ?? null;
     const hauptpostfach = absenderPostfaecher.postfaecher.find(p => p.hauptpostfach) ?? null;
 
     // Einzelversand gibt es nicht bei Antworten – die gehen an genau den Verlauf.
@@ -635,10 +640,10 @@ export function EmailComposeForm({
     // Ein gespeicherter Entwurf behält sein Postfach, solange es noch wählbar ist.
     useEffect(() => {
         if (absenderPostfaecher.laedt) return;
-        if (postfachId != null && absenderPostfaecher.postfaecher.some(p => p.id === postfachId)) return;
-        const standard = waehleStandardAbsender(absenderPostfaecher.postfaecher)?.id ?? null;
+        if (postfachId != null && waehlbarePostfaecher.some(p => p.id === postfachId)) return;
+        const standard = waehleStandardAbsender(waehlbarePostfaecher)?.id ?? null;
         if (standard !== postfachId) setPostfachId(standard);
-    }, [absenderPostfaecher.laedt, absenderPostfaecher.postfaecher, postfachId]);
+    }, [absenderPostfaecher.laedt, waehlbarePostfaecher, postfachId]);
 
     // Antwort/Weiterleitung: Postfach der Original-Mail holen, falls der Aufrufer es nicht mitgibt
     // (z. B. beim Wiederöffnen eines Antwort-Entwurfs).
@@ -1305,7 +1310,7 @@ export function EmailComposeForm({
                                         id="email-absender"
                                         modus="auswahl"
                                         inline={inline}
-                                        postfaecher={absenderPostfaecher.postfaecher}
+                                        postfaecher={waehlbarePostfaecher}
                                         value={postfachId}
                                         onChange={(id) => { markDirty(); setPostfachId(id); }}
                                         laedt={absenderPostfaecher.laedt}

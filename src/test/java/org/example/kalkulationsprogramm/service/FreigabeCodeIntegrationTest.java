@@ -80,7 +80,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class FreigabeCodeIntegrationTest
 {
     private static final String KUNDE = "max.mustermann@example.de";
-    private static final String ABSENDER = "angebote@example.com";
+    /** Hauptpostfach – von dort kommt der Code, wie die Antwort auf eine Website-Anfrage. */
+    private static final String ABSENDER = "info@example.com";
     private static final Pattern CODE_IN_MAIL = Pattern.compile("(\\d{3}) (\\d{3})");
 
     @RegisterExtension
@@ -157,8 +158,12 @@ class FreigabeCodeIntegrationTest
     @BeforeEach
     void vorbereiten()
     {
-        MAILSERVER.setUser(ABSENDER, ABSENDER, "pw-angebote");
-        when(systemSettingsService.getDokumentMailKonto()).thenReturn(mailKonto(ServerSetupTest.SMTPS.getPort()));
+        MAILSERVER.setUser(ABSENDER, ABSENDER, "pw-hauptpostfach");
+        when(systemSettingsService.getStandardMailKonto()).thenReturn(mailKonto(ServerSetupTest.SMTPS.getPort()));
+        // Das Postfach für Rechnungen und Geschäftsdokumente ist für die Code-Mail tabu: Auf
+        // Port 1 lauscht nichts – nähme der Versand dieses Konto, scheiterte er.
+        when(systemSettingsService.getDokumentMailKonto()).thenReturn(new SystemSettingsService.MailKonto(
+                "127.0.0.1", 1, "rechnungen@example.com", "pw-rechnungen", "rechnungen@example.com", "Musterbetrieb"));
         FirmeninformationDto firma = new FirmeninformationDto();
         firma.setTelefon("09369 / 23 23");
         when(firmeninformationService.getFirmeninformation()).thenReturn(firma);
@@ -196,7 +201,7 @@ class FreigabeCodeIntegrationTest
 
     private static SystemSettingsService.MailKonto mailKonto(int port)
     {
-        return new SystemSettingsService.MailKonto("127.0.0.1", port, ABSENDER, "pw-angebote", ABSENDER, "Musterbetrieb");
+        return new SystemSettingsService.MailKonto("127.0.0.1", port, ABSENDER, "pw-hauptpostfach", ABSENDER, "Musterbetrieb");
     }
 
     private DokumentFreigabe ausDb()
@@ -453,7 +458,7 @@ class FreigabeCodeIntegrationTest
     void gescheiterterVersand_hinterlaesstNichts() throws Exception
     {
         // Port, auf dem kein Mailserver lauscht → Versand scheitert → alles zurückgerollt.
-        when(systemSettingsService.getDokumentMailKonto()).thenReturn(mailKonto(1));
+        when(systemSettingsService.getStandardMailKonto()).thenReturn(mailKonto(1));
 
         MvcResult antwort = fordereCodeAn();
 
@@ -464,7 +469,7 @@ class FreigabeCodeIntegrationTest
         assertThat(f.getCodeFensterAnzahl()).isZero();
 
         // Keine Wartezeit verbraucht: sofort neu anfordern geht, sobald der Server da ist.
-        when(systemSettingsService.getDokumentMailKonto()).thenReturn(mailKonto(ServerSetupTest.SMTPS.getPort()));
+        when(systemSettingsService.getStandardMailKonto()).thenReturn(mailKonto(ServerSetupTest.SMTPS.getPort()));
         assertThat(fordereCodeAn().getResponse().getStatus()).isEqualTo(200);
     }
 

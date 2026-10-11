@@ -103,6 +103,35 @@ class PostfachVersandServiceTest {
         }
 
         @Test
+        void rechnungsPostfachIstNichtWaehlbar() {
+            rechnungen.setFuerGeschaeftsdokumente(true);
+            when(postfachRepository.findById(2L)).thenReturn(Optional.of(rechnungen));
+
+            assertThatThrownBy(() -> service.postfachFuerNeueMail(2L, 7L, false))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("nur Dokumente aus dem Dokument-Editor");
+        }
+
+        @Test
+        void hauptpostfachFuerGeschaeftsdokumenteBleibtWaehlbar() {
+            info.setFuerGeschaeftsdokumente(true);
+            when(postfachRepository.findById(1L)).thenReturn(Optional.of(info));
+
+            assertThat(service.postfachFuerNeueMail(1L, 7L, false)).isSameAs(info);
+        }
+
+        @Test
+        void eigenesRechnungsPostfachZaehltNichtDannHauptpostfach() {
+            rechnungen.setFuerGeschaeftsdokumente(true);
+            FrontendUserProfile benutzer = new FrontendUserProfile();
+            benutzer.setEmailAbsender(rechnungen);
+            when(frontendUserProfileRepository.findById(7L)).thenReturn(Optional.of(benutzer));
+
+            assertThat(service.eigenesPostfach(7L)).isEmpty();
+            assertThat(service.postfachFuerNeueMail(null, 7L, false)).isSameAs(info);
+        }
+
+        @Test
         void ausgeschaltetesPostfachWirdAbgelehnt() {
             rechnungen.setAktiv(false);
             when(postfachRepository.findById(2L)).thenReturn(Optional.of(rechnungen));
@@ -485,6 +514,13 @@ class PostfachVersandServiceTest {
 
             assertThat(service.antwortPostfachFuer(mail, nurInfoUndRechnungen, eigenes)).isSameAs(eigenes);
             assertThat(service.antwortPostfachFuer(mail, nurInfoUndRechnungen, null)).isSameAs(info);
+        }
+
+        @Test
+        void rechnungsPostfachAlsEigenesIstKeinRueckfall() {
+            Email mail = eingang("rechnungen@example.com", null, rechnungen);
+
+            assertThat(service.antwortPostfachFuer(mail, nurInfoUndRechnungen, rechnungen)).isSameAs(info);
         }
 
         @Test

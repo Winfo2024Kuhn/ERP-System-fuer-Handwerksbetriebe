@@ -26,8 +26,10 @@ test('Neue Mail: „Senden von“ ist mit dem eigenen Postfach vorbelegt und sch
     await designPruefung(page, info, 'absender-postfach-neue-mail', { primaerAktion: page.getByRole('button', { name: 'E-Mail senden' }) });
 
     await absender.click();
-    await page.getByRole('option', { name: 'rechnungen@musterbetrieb.example' }).click();
-    await expect(absender).toContainText('rechnungen@musterbetrieb.example');
+    // Das Postfach für Rechnungen & Mahnungen nutzt nur der Dokument-Editor – hier nicht wählbar.
+    await expect(page.getByRole('option', { name: /rechnungen@musterbetrieb\.example/ })).toHaveCount(0);
+    await page.getByRole('option', { name: 'Musterbetrieb <info@musterbetrieb.example> – Hauptpostfach' }).click();
+    await expect(absender).toContainText('info@musterbetrieb.example');
 
     await page.getByPlaceholder('Name, Firma oder E-Mail eingeben').fill('kunde@example.org');
     await page.getByLabel('Betreff').fill('Angebot Balkongeländer');
@@ -35,7 +37,7 @@ test('Neue Mail: „Senden von“ ist mit dem eigenen Postfach vorbelegt und sch
 
     await expect.poll(() => stub.gesendet.length).toBe(1);
     expect(stub.gesendet[0].pfad).toBe('/api/emails/send');
-    expect(stub.gesendet[0].dto).toMatchObject({ postfachId: 9, einzelversand: false, weitergeleitetVonEmailId: null });
+    expect(stub.gesendet[0].dto).toMatchObject({ postfachId: 3, einzelversand: false, weitergeleitetVonEmailId: null });
     expect(stub.gesendet[0].dto).not.toHaveProperty('sender');
 });
 
