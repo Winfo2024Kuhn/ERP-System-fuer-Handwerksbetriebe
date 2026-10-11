@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
-# Startpunkt des Updater-Containers.
+# Startpunkt des Updater-Containers (liegt im Projektordner, nicht im Image).
 #  1. Nach einem Neustart des Rechners: einen unterbrochenen Rollback zu Ende
 #     bringen (Stromausfall, Windows-Update mitten in der Nacht ...).
-#  2. Danach wartet crond auf die naechste Update-Zeit (Standard 03:00 Ortszeit).
+#  2. Gibt es noch kein Ergebnis der taeglichen Sicherung, festhalten, dass
+#     ab jetzt gesichert wird - laeuft binnen eines Tages keine, meldet das ERP es.
+#  3. Danach wartet crond auf die naechste Sicherung (Standard 02:00) und das
+#     naechste Nachtupdate (Standard 03:00 Ortszeit).
 set -euo pipefail
 
 bash /erp/nachtupdate.sh --nach-neustart || true
+bash /erp/sicherung.sh --status-anlegen || true
 
-zeitplan="${UPDATE_ZEITPLAN:-0 3 * * *}"
 # Genau 5 cron-Felder aus Ziffern, * / , - (kein Platz fuer weitere Befehle)
-if [[ ! "$zeitplan" =~ ^[0-9*/,-]+( [0-9*/,-]+){4}$ ]]; then
-    echo "UPDATE_ZEITPLAN='$zeitplan' ist ungueltig - nehme 0 3 * * *" >&2
-    zeitplan="0 3 * * *"
-fi
+zeitplan_pruefen() {  # zeitplan_pruefen <Name> <Wert> <Standard>
+    if [[ "$2" =~ ^[0-9*/,-]+( [0-9*/,-]+){4}$ ]]; then
+        printf '%s' "$2"
+    else
+        echo "$1='$2' ist ungueltig - nehme $3" >&2
+        printf '%s' "$3"
+    fi
+}
+update_zeit="$(zeitplan_pruefen UPDATE_ZEITPLAN "${UPDATE_ZEITPLAN:-0 3 * * *}" "0 3 * * *")"
+sicherung_zeit="$(zeitplan_pruefen SICHERUNG_ZEITPLAN "${SICHERUNG_ZEITPLAN:-0 2 * * *}" "0 2 * * *")"
+
 mkdir -p /etc/crontabs
-echo "$zeitplan bash /erp/nachtupdate.sh >/dev/null 2>&1" > /etc/crontabs/root
-echo "Nachtupdate eingeplant: '$zeitplan' (Zeitzone ${TZ:-UTC})"
+{
+    echo "$update_zeit bash /erp/nachtupdate.sh >/dev/null 2>&1"
+    echo "$sicherung_zeit bash /erp/sicherung.sh >/dev/null 2>&1"
+} > /etc/crontabs/root
+echo "Nachtupdate eingeplant: '$update_zeit', Sicherung: '$sicherung_zeit' (Zeitzone ${TZ:-UTC})"
 exec crond -f -l 8

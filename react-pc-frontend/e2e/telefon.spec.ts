@@ -351,23 +351,18 @@ test.describe('Telefon – Einstellungen und Rechte', () => {
         expect(gespeichert.anrufbeantworter).toEqual([{ index: 0, name: 'AB Tag' }, { index: 1, name: 'AB Nacht' }]);
     });
 
-    test('Glocke zeigt die Spalte "Telefon" und das Menü die Einträge mit Zähler', async ({ page }, info) => {
+    test('Benachrichtigungen zeigen das Thema "Telefon" und das Menü die Einträge mit Zähler', async ({ page }, info) => {
         await stubbeTelefonApi(page);
         await page.goto('/telefon/anrufbeantworter');
         await expect(page.getByRole('link', { name: /Anrufbeantworter/ })).toContainText('1');
-        await page.getByTitle('Benachrichtigungen').click();
-        await expect(page.getByText('Telefon', { exact: true }).first()).toBeVisible();
-        await expect(page.getByText('Verpasst: Max Mustermann')).toBeVisible();
-        // Die Glocke ist ein aufgeklapptes Menü -- es liegt gewollt über dem
-        // Seiteninhalt (auch über "Jetzt abholen"). Deshalb hier nur Screenshot
-        // und Überlauf-Prüfung statt der Überschneidungs-Prüfung.
-        await uebergaengeAusklingenLassen(page);
-        const bild = path.join(info.project.outputDir, 'design', `telefon-glocke--${info.project.name}.png`);
-        fs.mkdirSync(path.dirname(bild), { recursive: true });
-        await page.screenshot({ path: bild });
-        await info.attach('design: telefon-glocke', { path: bild, contentType: 'image/png' });
-        await keinHorizontalerUeberlauf(page);
-        await page.getByText('Verpasst: Max Mustermann').click();
+        // Die Glocke führt auf die eigene Seite „Benachrichtigungen“.
+        await page.getByRole('button', { name: /^Benachrichtigungen/ }).click();
+        await expect(page).toHaveURL(/\/benachrichtigungen$/);
+        const telefon = inhalt(page).getByRole('region', { name: 'Telefon' });
+        await expect(telefon).toBeVisible();
+        await expect(telefon.getByText('Verpasst: Max Mustermann')).toBeVisible();
+        await designPruefung(page, info, 'telefon-benachrichtigungen');
+        await telefon.getByRole('button', { name: 'Öffnen: Verpasst: Max Mustermann' }).click();
         await expect(page).toHaveURL(/\/telefon\/anrufe\?anruf=1/);
         await expect(inhalt(page).getByRole('row').filter({ hasText: '0931 1234567' })).toHaveAttribute('data-hervorgehoben', 'true');
     });

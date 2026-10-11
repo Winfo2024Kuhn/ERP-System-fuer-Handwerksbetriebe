@@ -31,10 +31,14 @@ public class NotificationController {
 
     private final BenachrichtigungService benachrichtigungService;
 
+    /**
+     * @param alle {@code true} für die Seite „Benachrichtigungen“ (viele Einträge je Kategorie),
+     *             sonst die Kurzfassung für die Glocke
+     */
     @GetMapping("/summary")
     public BenachrichtigungZusammenfassungDto getSummary(@RequestParam(required = false) Long mitarbeiterId,
-            Authentication authentication) {
-        return benachrichtigungService.zusammenfassung(mitarbeiterId, authentication);
+            @RequestParam(defaultValue = "false") boolean alle, Authentication authentication) {
+        return benachrichtigungService.zusammenfassung(mitarbeiterId, authentication, alle);
     }
 
     /** Einzelne Einträge erledigen; Mails werden dabei als gelesen markiert. */

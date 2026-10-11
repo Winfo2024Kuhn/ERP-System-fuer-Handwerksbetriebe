@@ -9,8 +9,11 @@
 #   postgres   Die Datenbank (PostgreSQL 16). Eine leere Datenbank richtet die
 #              App beim ersten Start selbst ein (Basis-Schema + Stammdaten).
 #   app        Das ERP. Kommt als fertiges Image aus der GitHub Container Registry.
-#   updater    Spielt jede Nacht um 3 Uhr neue Versionen ein - mit Sicherung,
-#              Health-Check und automatischem Rollback (nachtupdate.sh).
+#   updater    Sichert jede Nacht um 2 Uhr Datenbank und Uploads - auf diesen
+#              Rechner, die externe Festplatte und den Cloud-Ordner (sicherung.sh).
+#              Spielt um 3 Uhr neue Versionen ein - mit Sicherung, Health-Check
+#              und automatischem Rollback (nachtupdate.sh). Was schiefgeht, sehen
+#              Admins im ERP unter "Benachrichtigungen" (Volume betriebsstatus).
 #   netzsperre Trennt das ERP vom Firmennetz (netzsperre/sperre.sh).
 #
 # Abschottung (README, Abschnitt "Sicherheit"):
@@ -114,6 +117,10 @@ services:
       # z. B. wenn er im Firmennetz freigegeben ist (CAD-Zeichnungen).
       - ${UPLOADS_ORDNER:-app_uploads}:/app/uploads
       - app_logs:/app/logs
+      # Ergebnis von Sicherung und Nachtupdate - nur lesen (Benachrichtigungen).
+      # Volume statt ./Ordner: Der Updater erstellt die App selbst neu, ein
+      # relativer Pfad zeigte dann ins Leere (siehe UPLOADS_ORDNER).
+      - betriebsstatus:/app/betriebsstatus:ro
     networks: [intern, extern]
     # Schreibgeschuetzt: Wer eine Luecke findet, kann weder das ERP noch das
     # System im Container veraendern. Beschreibbar sind nur die Volumes oben und
@@ -145,14 +152,29 @@ services:
       # auf eingebundenen Windows-Ordnern nicht zuverlaessig
       LOCK_DATEI: /run/erp-nachtupdate.lock
       UPDATE_ZEITPLAN: ${UPDATE_ZEITPLAN:-0 3 * * *}
+      SICHERUNG_ZEITPLAN: ${SICHERUNG_ZEITPLAN:-0 2 * * *}
+      BETRIEBSSTATUS_DIR: /betriebsstatus
+      # Welche Sicherungsziele beim Erstellen dieses Containers eingebunden
+      # wurden. Steht in der .env inzwischen etwas anderes, meldet sicherung.sh
+      # "noch nicht eingebunden" statt in den leeren Platzhalter zu sichern.
+      SICHERUNG_PLATTE_EINGEBUNDEN: ${SICHERUNG_PLATTE:-}
+      SICHERUNG_CLOUD_EINGEBUNDEN: ${SICHERUNG_CLOUD:-}
     volumes:
       # Steuert die Container dieses Projekts. Wer den Socket hat, hat volle
       # Kontrolle ueber Docker - deshalb tut der Updater nur, was in
-      # nachtupdate.sh steht, hat keinen Port und ist von aussen nicht
-      # erreichbar. Die App selbst bekommt den Socket nie.
+      # nachtupdate.sh und sicherung.sh steht, hat keinen Port und ist von
+      # aussen nicht erreichbar. Die App selbst bekommt den Socket nie.
       - /var/run/docker.sock:/var/run/docker.sock
       # Projektordner: Skripte, .env, sicherungen/, logs/
       - .:/erp
+      # Ergebnis fuer die Benachrichtigungen im ERP (die App liest es nur)
+      - betriebsstatus:/betriebsstatus
+      # Fuer die taegliche Sicherung: hochgeladene Dateien (nur lesen) und die
+      # Ziele aus der .env. Nicht eingetragen = leerer Platzhalter, den
+      # sicherung.sh nicht benutzt.
+      - ${UPLOADS_ORDNER:-app_uploads}:/uploads:ro
+      - ${SICHERUNG_PLATTE:-./.status/kein-sicherungsziel}:/sicherungsziele/platte
+      - ${SICHERUNG_CLOUD:-./.status/kein-sicherungsziel}:/sicherungsziele/cloud
     networks: [extern]
     security_opt: [no-new-privileges:true]
     restart: always
@@ -191,3 +213,4 @@ volumes:
   postgres_data:
   app_uploads:
   app_logs:
+  betriebsstatus:

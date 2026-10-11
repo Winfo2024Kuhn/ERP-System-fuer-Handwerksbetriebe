@@ -145,7 +145,8 @@ Docker-Desktop-VM sieht. Dann versteht ihn auch der Updater:
 UPLOADS_ORDNER=/run/desktop/mnt/host/c/Kalkulationsprogramm/uploads
 ```
 
-Solche Ordner sichert das Nachtupdate nicht mit. Das bleibt Aufgabe der täglichen Sicherung.
+Das Nachtupdate sichert Uploads nie mit. Die [tägliche Sicherung](#tägliche-sicherung)
+spiegelt sie – egal ob Volume oder eigener Ordner.
 
 ### Hinter `tailscale serve` (nur über Tailscale erreichbar)
 
@@ -178,7 +179,7 @@ Findet jemand eine Lücke im ERP, soll er weder an den Rechner noch an das Firme
 | Eigener Benutzer `erp` (uid 10001) | `Dockerfile`, `deployment/docker-image/app-start.sh` | Java läuft nie als root. Das Startskript gibt nur noch alte Upload-/Log-Ordner an `erp` und wechselt dann den Benutzer. Dabei verliert der Prozess alle Berechtigungen. |
 | Schreibgeschütztes Dateisystem | `read_only: true` | Das ERP kann weder sich selbst noch das System im Container verändern. Beschreibbar: Uploads, Logs, `/tmp`. |
 | Keine Linux-Berechtigungen | `cap_drop: [ALL]`, `no-new-privileges` | Kein Zugriff auf Kernel-Funktionen, kein Weg zurück zu root. |
-| Kein Docker-Socket für die App | `docker-compose.yml` | Den Socket hat nur der Updater. Er hat keinen Port und führt nur `nachtupdate.sh` aus. |
+| Kein Docker-Socket für die App | `docker-compose.yml` | Den Socket hat nur der Updater. Er hat keinen Port und führt nur `nachtupdate.sh` und `sicherung.sh` aus. Die App liest deren Ergebnis nur (Volume `betriebsstatus`, schreibgeschützt eingebunden). |
 | Datenbank ohne Netz nach außen | Netz `intern` (`internal: true`) | PostgreSQL erreicht nur die App, keinen Port und kein Internet. |
 | Netzsperre | Dienst `netzsperre` | Die App darf ins Internet (Mail, KI, Website), aber nicht ins Firmennetz: keine PCs, keine Buchhaltung, keine Dateifreigaben, auch nicht der Rechner selbst. Ausnahmen in `NETZSPERRE_AUSNAHMEN`, Standard `fritz.box:49000` (Anrufliste und Anrufbeantworter). |
 | Nur ein Port | `APP_ADRESSE`, `APP_PORT` | Der Browser-Zugang, sonst nichts. Hinter `tailscale serve` nur auf `127.0.0.1`. |
@@ -198,6 +199,76 @@ Ausschalten (nicht empfohlen): `NETZSPERRE=nein` in der `.env`, dann
 
 Am sichersten ist ein eigener kleiner Rechner nur für das ERP, in einem eigenen Netz (VLAN
 oder Gastnetz). Dann bleibt auch beim schlimmsten Vorfall der Rest der Firma unberührt.
+
+## Tägliche Sicherung
+
+Jede Nacht um 2 Uhr (`SICHERUNG_ZEITPLAN`) sichert der Updater mit `sicherung.sh`:
+
+| Was | Wohin |
+| --- | --- |
+| Komplette Datenbank (`pg_dump`, das ERP läuft dabei weiter) | `sicherungen/taeglich-<zeit>.sql.gz` auf diesem Rechner |
+| dieselbe Datenbank-Sicherung | `<ziel>/db/kalkulationsprogramm_db_<zeit>.sql.gz` auf der externen Festplatte und im Cloud-Ordner |
+| Hochgeladene Dateien | `<ziel>/uploads/` – nur Neues und Geändertes wird kopiert, **gelöscht wird dort nie etwas** (auch nicht, was im ERP gelöscht wurde) |
+
+Sicherungen, die älter als `SICHERUNG_TAGE` (Standard 30) sind, werden gelöscht – hier und in
+den Zielen. Im Hauptordner eines Ziels betrifft das auch alte `kalkulationsprogramm_db_*.sql.gz`
+der früheren Windows-Sicherung. Eine Kopie auf demselben Rechner schützt nicht vor einem
+Plattenausfall. Deshalb **mindestens ein Ziel eintragen**. Sonst meldet das ERP Admins jeden
+Tag „Sicherung nur auf diesem Rechner“.
+
+> **Datenschutz (DSGVO):** Die Sicherung enthält alle Kunden-, Mitarbeiter- und Lohndaten –
+> unverschlüsselt. Ein Cloud-Ordner ist damit **Auftragsverarbeitung** (Art. 28): nur ein
+> geschäftliches Konto mit Vertrag zur Auftragsverarbeitung nehmen (z. B. OneDrive for
+> Business / Microsoft 365), kein privates Konto. Die externe Festplatte verschlüsseln
+> (BitLocker To Go unter Windows, LUKS unter Linux), damit ein Diebstahl keine Datenpanne wird.
+> Unter Linux sind die Dateien im Ziel nur für root lesbar – zum Zurückspielen an einem
+> anderen Rechner also root bzw. `sudo` benutzen.
+
+**Ziele eintragen** (`.env`, Windows-Laufwerke so geschrieben, wie Docker Desktop sie sieht):
+
+```ini
+SICHERUNG_PLATTE=/run/desktop/mnt/host/f/Kalkulationsprogramm-Backup
+SICHERUNG_CLOUD=/run/desktop/mnt/host/c/Users/<name>/OneDrive/backup_handwerkerprogramm
+```
+
+Danach – **mit angeschlossener Festplatte**:
+
+```bash
+docker compose up -d updater
+docker compose exec updater bash /erp/sicherung.sh --ziele-einrichten
+docker compose exec updater bash /erp/sicherung.sh
+```
+
+`--ziele-einrichten` legt in jedes Ziel die Datei `ERP-SICHERUNGSZIEL.txt`. Die Sicherung
+schreibt nur in Ordner, in denen diese Datei liegt. Grund: Fehlt die Festplatte beim Start
+von Docker, bindet Docker an ihrer Stelle einen leeren Ordner ein, und die Sicherung landete
+unbemerkt im Nirgendwo. Stattdessen kommt die Meldung „Externe Festplatte nicht gefunden“.
+Nach dem Anschließen den Rechner neu starten (oder `docker compose up -d --force-recreate updater`).
+
+Eingebunden werden die Ziele beim **Erstellen** des Updaters. Wer `SICHERUNG_PLATTE` oder
+`SICHERUNG_CLOUD` ändert und `docker compose up -d updater` vergisst, bekommt deshalb die
+Meldung „… ist eingetragen, aber noch nicht eingebunden“ – gesichert wird dann nicht dorthin.
+
+**Zurückspielen:** Die gewünschte `.sql.gz` in den ERP-Ordner legen und
+`docker compose exec updater bash /erp/nachtupdate.sh --importieren <datei>` (siehe
+[Umzug](#umzug-von-einem-bestehenden-server)). Hochgeladene Dateien einfach aus `<ziel>/uploads/`
+zurückkopieren.
+
+## Meldungen im ERP
+
+Sicherung und Nachtupdate schreiben nach jedem Lauf ihr Ergebnis nach `sicherung.json` bzw.
+`nachtupdate.json` im Docker-Volume `betriebsstatus` (ohne Kundendaten; Fehlerzeilen aus dem
+App-Log gehen nur aufs Handy, nie hierher). Ansehen: `docker compose exec updater cat
+/betriebsstatus/sicherung.json`. Das ERP liest das Volume nur und zeigt Admins unter
+**Benachrichtigungen** (Glocke oben rechts), Thema „Sicherung & Updates“:
+
+- Sicherung fehlgeschlagen oder nur teilweise (z. B. Festplatte fehlt, Cloud-Ordner voll),
+- **seit über 26 Stunden keine Sicherung** – fängt auch einen Rechner ab, der nachts aus
+  war, oder einen gestoppten Updater,
+- Update fehlgeschlagen (alte Version läuft wieder) und NOTFALL.
+
+Klappt der nächste Lauf, verschwindet die Meldung von selbst. Weggeklickt kommt sie nach einer
+Woche wieder, wenn das Problem noch besteht. Handy-Nachrichten (unten) gibt es zusätzlich.
 
 ## Was nachts passiert
 
@@ -261,19 +332,23 @@ WEBHOOK_MIT_FEHLERAUSZUG=nein
 | Update sofort testen | `docker compose exec updater bash /erp/nachtupdate.sh` |
 | Gescheiterte Version trotzdem einspielen | `docker compose exec updater bash /erp/nachtupdate.sh --erzwingen` |
 | Bestimmte Version festhalten | in `.env`: `ERP_IMAGE=ghcr.io/…:sha-abc1234`, dann **`docker compose exec updater bash /erp/nachtupdate.sh --erzwingen`** (nicht `compose up`, das würde ohne Sicherung wechseln) |
-| Andere Update-Zeit | in `.env`: `UPDATE_ZEITPLAN=30 2 * * *`, dann `docker compose up -d updater` |
-| Logs des Nachtupdates | Ordner `logs/` |
+| Andere Update-Zeit | in `.env`: `UPDATE_ZEITPLAN=30 3 * * *`, dann `docker compose up -d updater` |
+| Sicherung sofort ausführen | `docker compose exec updater bash /erp/sicherung.sh` |
+| Andere Sicherungszeit | in `.env`: `SICHERUNG_ZEITPLAN=30 1 * * *`, dann `docker compose up -d updater` |
+| Logs von Nachtupdate und Sicherung | Ordner `logs/` (`nachtupdate-*.log`, `sicherung-*.log`) |
 | App-Log live | `docker compose logs -f app` |
 | Updater selbst erneuern (selten) | `docker compose build --pull updater && docker compose up -d updater` |
 
-`sicherungen/` hält die letzten 14 Sicherungen von vor den Updates
-(`SICHERUNGEN_BEHALTEN`). Sie sind **kein Ersatz** für eine tägliche Sicherung außer
-Haus. Die hochgeladenen Dateien (Volume `app_uploads`) sichern sie zum Beispiel nicht.
+`sicherungen/` hält außer den täglichen Sicherungen die letzten 14 Sicherungen von vor den
+Updates (`SICHERUNGEN_BEHALTEN`). Die sind nur für den Rollback da und kein Ersatz für die
+[tägliche Sicherung](#tägliche-sicherung) außer Haus.
 
 **Die Dateien in diesem Ordner** (Skripte, `docker-compose.yml`) aktualisiert das
 Nachtupdate nicht, sondern nur das ERP selbst. Änderungen daran müssen einmal von Hand
-auf die Rechner der Kunden kopiert werden. `.env`, `sicherungen/` und `logs/` dabei
-nicht überschreiben.
+auf die Rechner der Kunden kopiert werden. `.env`, `app.env`, `sicherungen/`, `logs/` und
+`.status/` dabei nicht überschreiben. Danach
+`docker compose build updater && docker compose up -d` – das baut den Updater neu, wenn sich
+`updater/Dockerfile` geändert hat, und bindet geänderte Ordner ein.
 
 ## Offene Punkte
 
@@ -337,5 +412,8 @@ dann mit Rollback.
 | `Einrichten.cmd`, `einrichten-windows.ps1` | Einrichtung auf einem Windows-PC |
 | `einrichten.sh` | Einrichtung auf einem Linux-Server, optional mit `--import` |
 | `nachtupdate.sh` | Nachtupdate, Rollback, Wiederaufnahme nach Neustart, Import |
-| `updater/` | Image des Updater-Containers (Zeitplan per crond) |
+| `sicherung.sh` | Tägliche Sicherung auf diesen Rechner, externe Festplatte und Cloud-Ordner |
+| `gemeinsam.sh` | Bausteine beider Skripte: `.env` lesen, Datenbank sichern, Handy-Nachricht, Ergebnis fürs ERP |
+| `updater/` | Image des Updater-Containers und sein Startskript (Zeitplan per crond) |
+| Volume `betriebsstatus` | Ergebnis der letzten Sicherung bzw. des letzten Updates – liest das ERP für die Benachrichtigungen |
 | `starttest.sh` | Starttest für die GitHub Action |

@@ -5,5 +5,8 @@
 sicherungen/
 logs/
 .status/
+# Ergebnis der letzten Sicherung/des letzten Updates - im Betrieb ein Docker-
+# Volume, als Ordner nur, wenn die Skripte ausserhalb des Updaters laufen
+betriebsstatus/
 # Weitere ERP-Einstellungen (API-Schluessel, Verschluesselungs-Schluessel ...)
 app.env

@@ -1,10 +1,11 @@
 /**
- * Pure-Logic-Helpers für die NotificationBell.
+ * Pure-Logic-Helpers für die Glocke (NotificationBell) und die Seite
+ * „Benachrichtigungen“ (pages/BenachrichtigungenPage.tsx).
  *
  * Bewusst in einer eigenen Datei (kein React, keine Komponenten), damit
  * - Vitest die Funktionen direkt testen kann (siehe NotificationBell.test.ts)
  * - Vites Fast-Refresh-Regel react-refresh/only-export-components beim
- *   Komponenten-Export der Bell-TSX nicht bricht.
+ *   Komponenten-Export der TSX-Dateien nicht bricht.
  *
  * Was erledigt ist, merkt sich das Backend pro Benutzer
  * (POST /api/notifications/erledigt bzw. /erledigt/kategorien) und lässt es
@@ -80,7 +81,41 @@ const ITEM_ZU_KATEGORIE: Record<string, string> = {
     MONATSABSCHLUSS: 'MONATSABSCHLUSS',
     SPRACHNACHRICHT: 'SPRACHNACHRICHTEN',
     VERPASSTER_ANRUF: 'VERPASSTE_ANRUFE',
+    SICHERUNG: 'SICHERUNG',
+    UPDATE: 'UPDATE',
 };
+
+/** Adresse der Seite mit allen Meldungen – Ziel der Glocke. */
+export const BENACHRICHTIGUNGEN_PFAD = '/benachrichtigungen';
+
+/** Mehr ids nimmt POST /api/notifications/erledigt pro Anfrage nicht an. */
+export const MAX_IDS_PRO_ANFRAGE = 200;
+
+/**
+ * Adresse für den Abruf der Benachrichtigungen. Die Glocke braucht nur die
+ * Gesamtzahl (`alle = false`, das Backend kürzt dann die Listen), die Seite
+ * „Benachrichtigungen“ alle Einträge (`alle = true`). Der im Browser gewählte
+ * Mitarbeiter geht wie bisher mit.
+ */
+export function summaryUrl(alle: boolean): string {
+    const params = new URLSearchParams();
+    let mitarbeiterId: unknown = null;
+    try {
+        const gespeichert = localStorage.getItem('frontendUserSelection');
+        if (gespeichert) mitarbeiterId = (JSON.parse(gespeichert) as { mitarbeiterId?: unknown })?.mitarbeiterId ?? null;
+    } catch { /* kaputter Eintrag – ohne Mitarbeiter abrufen */ }
+    const id = typeof mitarbeiterId === 'number' || typeof mitarbeiterId === 'string' ? Number(mitarbeiterId) : NaN;
+    if (Number.isSafeInteger(id) && id > 0) params.set('mitarbeiterId', String(id));
+    if (alle) params.set('alle', 'true');
+    const query = params.toString();
+    return `/api/notifications/summary${query ? `?${query}` : ''}`;
+}
+
+/** Nur Ziele innerhalb der Anwendung öffnen; leere Links (Sicherung, Update) haben kein Ziel. */
+export function hatZiel(link: string | null | undefined): link is string {
+    const ziel = (link ?? '').trim();
+    return ziel.startsWith('/') && !ziel.startsWith('//');
+}
 
 /**
  * Zu welcher Kategorie gehört ein Eintrag? Bei E-Mails entscheidet der Ordner

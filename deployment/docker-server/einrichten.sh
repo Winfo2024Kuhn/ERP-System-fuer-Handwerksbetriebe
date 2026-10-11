@@ -114,6 +114,7 @@ for _ in $(seq 1 900); do
     if [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:$app_port/actuator/health" || true)" == "200" ]]; then
         echo "ERP laeuft: http://$(hostname -I 2>/dev/null | awk '{print $1}'):$app_port"
         echo "Nachtupdate: taeglich 03:00 (Updater-Container). Testlauf: docker compose exec updater bash /erp/nachtupdate.sh"
+        echo "Sicherung: taeglich 02:00. Externe Festplatte/Cloud-Ordner eintragen: README, Abschnitt Taegliche Sicherung."
         exit 0
     fi
     sleep 1

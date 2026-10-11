@@ -115,4 +115,12 @@ class BenachrichtigungErledigtServiceTest {
         assertThat(BenachrichtigungErledigtService.istDauerHinweis("REKLAMATION")).isFalse();
         assertThat(BenachrichtigungErledigtService.istDauerHinweis(null)).isFalse();
     }
+
+    @Test
+    @DisplayName("Sicherung & Update erinnern nach einer Woche erneut – auch „seit über einem Tag keine Sicherung“")
+    void sicherungUndUpdateSindDauerHinweise() {
+        assertThat(BenachrichtigungErledigtService.istDauerHinweis("SICHERUNG:20261011-020017")).isTrue();
+        assertThat(BenachrichtigungErledigtService.istDauerHinweis("SICHERUNG:ALT-20261009-020000")).isTrue();
+        assertThat(BenachrichtigungErledigtService.istDauerHinweis("UPDATE:20261011-030119")).isTrue();
+    }
 }
