@@ -1352,66 +1352,15 @@ public class DateiSpeicherService {
         if (dokument instanceof ProjektGeschaeftsdokument geschaeftsdokument) {
             geschaeftsdokument.setBezahlt(bezahlt);
             dokumentRepository.save(geschaeftsdokument);
+            // Ob das Projekt damit bezahlt und beendet ist, entscheidet allein die
+            // zentrale Regel in AusgangsGeschaeftsDokumentService – sonst laufen zwei
+            // Regeln auseinander und das Projekt springt zwischen offen und beendet.
             if (geschaeftsdokument.getProjekt() != null) {
-                Long projektId = geschaeftsdokument.getProjekt().getId();
-                pruefeProjektAbschluss(projektId);
+                aktualisiereProjektFinanzstatus(geschaeftsdokument.getProjekt().getId());
             }
         } else {
             throw new RuntimeException("Dokument ist kein Geschäftsdokument.");
         }
-    }
-
-    /**
-     * Prüft ob ein Projekt als bezahlt gesetzt werden kann.
-     * Bedingungen (beide müssen erfüllt sein):
-     * <ul>
-     *   <li>Keine offenen Posten mehr (alle Rechnungen sind als bezahlt markiert), und</li>
-     *   <li>die Summe der bezahlten Rechnungen erreicht den kompletten Brutto-Preis
-     *       des Projekts. Ein einzelner bezahlter Abschlag schließt das Projekt also
-     *       NICHT – erst wenn die komplette Auftragssumme beglichen ist.</li>
-     * </ul>
-     * Wenn erfüllt → projekt.bezahlt = true, projekt.abgeschlossen = true.
-     * Wenn nicht → projekt.bezahlt = false (abgeschlossen bleibt unverändert, solange
-     * keine offenen Posten existieren – damit ein manuell geschlossenes Projekt offen bleibt).
-     * <p>
-     * Hat der Benutzer den Haken "Beendet" selbst angefasst
-     * ({@code projekt.abgeschlossenManuell}), bleibt {@code abgeschlossen} komplett
-     * unangetastet – seine Entscheidung hat Vorrang.
-     */
-    private void pruefeProjektAbschluss(Long projektId) {
-        Projekt projekt = projektRepository.findById(projektId).orElse(null);
-        if (projekt == null) return;
-
-        boolean keineOffenenPosten = !dokumentRepository.existsOffenePostenByProjektId(projektId);
-
-        // Komplette Auftragssumme muss beglichen sein, nicht nur ein Abschlag.
-        BigDecimal projektPreis = projekt.getBruttoPreis();
-        boolean kompletteSummeBezahlt;
-        if (projektPreis == null || projektPreis.compareTo(BigDecimal.ZERO) <= 0) {
-            // Kein dokumentbasierter Auftragspreis bekannt (rein manuelles Projekt) →
-            // wie bisher: bezahlt, sobald keine offenen Rechnungen mehr existieren.
-            kompletteSummeBezahlt = true;
-        } else {
-            BigDecimal bezahlteSumme = dokumentRepository.sumBezahlteRechnungenByProjektId(projektId);
-            if (bezahlteSumme == null) bezahlteSumme = BigDecimal.ZERO;
-            // 1-Cent-Toleranz für Rundungsdifferenzen.
-            kompletteSummeBezahlt =
-                    bezahlteSumme.compareTo(projektPreis.subtract(new BigDecimal("0.01"))) >= 0;
-        }
-
-        boolean automatikDarfBeenden = !projekt.isAbgeschlossenManuell();
-        if (keineOffenenPosten && kompletteSummeBezahlt) {
-            projekt.setBezahlt(true);
-            if (automatikDarfBeenden) {
-                projekt.setAbgeschlossen(true);
-            }
-        } else {
-            projekt.setBezahlt(false);
-            if (!keineOffenenPosten && automatikDarfBeenden) {
-                projekt.setAbgeschlossen(false);
-            }
-        }
-        projektRepository.save(projekt);
     }
 
     @Transactional

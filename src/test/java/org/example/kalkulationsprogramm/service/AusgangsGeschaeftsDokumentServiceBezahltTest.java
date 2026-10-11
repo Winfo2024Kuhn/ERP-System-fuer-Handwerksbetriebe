@@ -97,7 +97,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
     class AktualisiereProjektPreisAusDokumenten {
 
         @Test
-        void setztBezahltUndAbgeschlossenWennRechnungssummeAusreichtUndKeineOffenenPosten() {
+        void setztBezahltUndAbgeschlossenWennAlleRechnungenGeschriebenUndBezahltSind() {
             Projekt projekt = new Projekt();
             projekt.setId(1L);
             projekt.setBruttoPreis(BigDecimal.ZERO);
@@ -109,21 +109,157 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             anfrage.setBetragBrutto(new BigDecimal("1000.00"));
             anfrage.setStorniert(false);
 
-            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
-            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
-            rechnung.setBetragBrutto(new BigDecimal("1000.00"));
-            rechnung.setStorniert(false);
+            AusgangsGeschaeftsDokument rechnung = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.RECHNUNG, "1000.00");
 
             when(projektRepository.findById(1L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(1L))
                     .thenReturn(List.of(anfrage, rechnung));
             when(projektDokumentRepository.existsOffenePostenByProjektId(1L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(1L))
+                    .thenReturn(new BigDecimal("1000.00"));
 
             service.aktualisiereProjektPreisAusDokumenten(1L);
 
             assertThat(projekt.isBezahlt()).isTrue();
             assertThat(projekt.isAbgeschlossen()).isTrue();
             verify(projektRepository).save(projekt);
+        }
+
+        @Test
+        void beendetProjektNichtSobaldEineRechnungGeschriebenWird() {
+            // Fehlerfall: Die Rechnung ist gerade erst erstellt (noch nicht gebucht),
+            // es gibt also noch keinen Offenen Posten und keine Zahlung. Früher wurde
+            // das Projekt trotzdem sofort als bezahlt und beendet markiert.
+            Projekt projekt = new Projekt();
+            projekt.setId(30L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+            projekt.setAbgeschlossen(false);
+
+            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            angebot.setBetragBrutto(new BigDecimal("1000.00"));
+            angebot.setStorniert(false);
+
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setBetragBrutto(new BigDecimal("1000.00"));
+            rechnung.setStorniert(false);
+            rechnung.setGebucht(false);
+
+            when(projektRepository.findById(30L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(30L))
+                    .thenReturn(List.of(angebot, rechnung));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(30L)).thenReturn(false);
+            // Selbst wenn die bezahlte Summe passt, verhindert schon der Entwurf das Beenden.
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(30L))
+                    .thenReturn(new BigDecimal("1000.00"));
+
+            service.aktualisiereProjektPreisAusDokumenten(30L);
+
+            assertThat(projekt.isBezahlt()).isFalse();
+            assertThat(projekt.isAbgeschlossen()).isFalse();
+            verify(projektRepository).save(projekt);
+        }
+
+        @Test
+        void oeffnetFaelschlichBeendetesProjektWiederWennRechnungNurEntwurfIst() {
+            // Projekte, die der alte Fehler schon beim Schreiben der Rechnung beendet
+            // hat, gehen bei der nächsten Neuberechnung wieder auf.
+            Projekt projekt = new Projekt();
+            projekt.setId(31L);
+            projekt.setBruttoPreis(new BigDecimal("1000.00"));
+            projekt.setBezahlt(true);
+            projekt.setAbgeschlossen(true);
+
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG);
+            rechnung.setBetragBrutto(new BigDecimal("1000.00"));
+            rechnung.setStorniert(false);
+            rechnung.setGebucht(false);
+
+            when(projektRepository.findById(31L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(31L)).thenReturn(List.of(rechnung));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(31L)).thenReturn(false);
+
+            service.aktualisiereProjektPreisAusDokumenten(31L);
+
+            assertThat(projekt.isBezahlt()).isFalse();
+            assertThat(projekt.isAbgeschlossen()).isFalse();
+        }
+
+        @Test
+        void beendetProjektNichtSolangeDerNachtragNochNichtBezahltIst() {
+            // AB (8000) + Nachtragsangebot (2000) = 10000. Die bezahlte Rechnung deckt
+            // nur die AB ab – der Nachtrag ist weder berechnet noch bezahlt.
+            Projekt projekt = new Projekt();
+            projekt.setId(32L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+            projekt.setAbgeschlossen(false);
+
+            AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+            ab.setId(320L);
+            ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            ab.setBetragBrutto(new BigDecimal("8000.00"));
+            ab.setStorniert(false);
+
+            AusgangsGeschaeftsDokument nachtrag = new AusgangsGeschaeftsDokument();
+            nachtrag.setId(321L);
+            nachtrag.setTyp(AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT);
+            nachtrag.setBetragBrutto(new BigDecimal("2000.00"));
+            nachtrag.setStorniert(false);
+
+            AusgangsGeschaeftsDokument rechnung = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.RECHNUNG, "8000.00");
+
+            when(projektRepository.findById(32L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(32L))
+                    .thenReturn(List.of(ab, nachtrag, rechnung));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(32L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(32L))
+                    .thenReturn(new BigDecimal("8000.00"));
+
+            service.aktualisiereProjektPreisAusDokumenten(32L);
+
+            assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("10000.00");
+            assertThat(projekt.isBezahlt()).isFalse();
+            assertThat(projekt.isAbgeschlossen()).isFalse();
+        }
+
+        @Test
+        void beendetProjektNichtWennRechnungenGebuchtAberNochNichtVollBezahltSind() {
+            // Alle Rechnungen geschrieben und gebucht, kein Offener Posten mehr unbezahlt,
+            // aber die bezahlte Summe reicht nicht – etwa weil ein Offener Posten fehlt
+            // oder sein Betrag vom Rechnungsbetrag abweicht. Dann bleibt das Projekt offen.
+            Projekt projekt = new Projekt();
+            projekt.setId(33L);
+            projekt.setBruttoPreis(BigDecimal.ZERO);
+            projekt.setBezahlt(false);
+            projekt.setAbgeschlossen(false);
+
+            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            angebot.setBetragBrutto(new BigDecimal("5000.00"));
+            angebot.setStorniert(false);
+
+            AusgangsGeschaeftsDokument teil = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG, "2000.00");
+            AusgangsGeschaeftsDokument schluss = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, "3000.00");
+
+            when(projektRepository.findById(33L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(33L))
+                    .thenReturn(List.of(angebot, teil, schluss));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(33L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(33L))
+                    .thenReturn(new BigDecimal("2000.00"));
+
+            service.aktualisiereProjektPreisAusDokumenten(33L);
+
+            assertThat(projekt.isBezahlt()).isFalse();
+            assertThat(projekt.isAbgeschlossen()).isFalse();
         }
 
         @Test
@@ -141,15 +277,15 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             angebot.setBetragBrutto(new BigDecimal("1000.00"));
             angebot.setStorniert(false);
 
-            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
-            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
-            rechnung.setBetragBrutto(new BigDecimal("1000.00"));
-            rechnung.setStorniert(false);
+            AusgangsGeschaeftsDokument rechnung = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.RECHNUNG, "1000.00");
 
             when(projektRepository.findById(10L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(10L))
                     .thenReturn(List.of(angebot, rechnung));
             when(projektDokumentRepository.existsOffenePostenByProjektId(10L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(10L))
+                    .thenReturn(new BigDecimal("1000.00"));
 
             service.aktualisiereProjektPreisAusDokumenten(10L);
 
@@ -296,15 +432,15 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             ab.setStorniert(false);
             ab.setVorgaenger(anfrage);
 
-            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
-            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
-            rechnung.setBetragBrutto(new BigDecimal("8000.00"));
-            rechnung.setStorniert(false);
+            AusgangsGeschaeftsDokument rechnung = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.RECHNUNG, "8000.00");
 
             when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(5L))
                     .thenReturn(List.of(anfrage, ab, rechnung));
             when(projektDokumentRepository.existsOffenePostenByProjektId(5L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(5L))
+                    .thenReturn(new BigDecimal("8000.00"));
 
             service.aktualisiereProjektPreisAusDokumenten(5L);
 
@@ -381,20 +517,18 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             nachtrag.setBetragBrutto(new BigDecimal("2000.00"));
             nachtrag.setStorniert(false);
 
-            AusgangsGeschaeftsDokument abschlag = new AusgangsGeschaeftsDokument();
-            abschlag.setTyp(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG);
-            abschlag.setBetragBrutto(new BigDecimal("4000.00"));
-            abschlag.setStorniert(false);
-
-            AusgangsGeschaeftsDokument schluss = new AusgangsGeschaeftsDokument();
-            schluss.setTyp(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG);
-            schluss.setBetragBrutto(new BigDecimal("6000.00"));
-            schluss.setStorniert(false);
+            AusgangsGeschaeftsDokument abschlag = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG, "4000.00");
+            AusgangsGeschaeftsDokument schluss = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, "6000.00");
 
             when(projektRepository.findById(7L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(7L))
                     .thenReturn(List.of(angebot, ab, nachtrag, abschlag, schluss));
             when(projektDokumentRepository.existsOffenePostenByProjektId(7L)).thenReturn(false);
+            // Abschlag und Schlussrechnung sind beide bezahlt – inklusive Nachtrag.
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(7L))
+                    .thenReturn(new BigDecimal("10000.00"));
 
             service.aktualisiereProjektPreisAusDokumenten(7L);
 
@@ -413,15 +547,15 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             projekt.setBruttoPreis(BigDecimal.ZERO);
             projekt.setBezahlt(false);
 
-            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
-            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            AusgangsGeschaeftsDokument rechnung = gebuchteRechnung(
+                    AusgangsGeschaeftsDokumentTyp.RECHNUNG, "1190.00");
             rechnung.setDokumentNummer("2026/07/00001");
-            rechnung.setBetragBrutto(new BigDecimal("1190.00"));
-            rechnung.setStorniert(false);
 
             when(projektRepository.findById(20L)).thenReturn(Optional.of(projekt));
             when(dokumentRepository.findByProjektIdOrderByDatumDesc(20L)).thenReturn(List.of(rechnung));
             when(projektDokumentRepository.existsOffenePostenByProjektId(20L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(20L))
+                    .thenReturn(new BigDecimal("1190.00"));
 
             service.aktualisiereProjektPreisAusDokumenten(20L);
 
@@ -569,11 +703,22 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             when(projektDokumentRepository.findRechnungenFuerPreisberechnung(26L)).thenReturn(List.of(
                     nacherfassteRechnung("RE-2026-008", "2000.00")));
             when(projektDokumentRepository.existsOffenePostenByProjektId(26L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(26L))
+                    .thenReturn(new BigDecimal("2000.00"));
 
             service.aktualisiereProjektPreisAusDokumenten(26L);
 
             assertThat(projekt.getBruttoPreis()).isEqualByComparingTo("2000.00");
             assertThat(projekt.isBezahlt()).isTrue();
+        }
+
+        private AusgangsGeschaeftsDokument gebuchteRechnung(AusgangsGeschaeftsDokumentTyp typ, String betrag) {
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(typ);
+            rechnung.setBetragBrutto(new BigDecimal(betrag));
+            rechnung.setStorniert(false);
+            rechnung.setGebucht(true);
+            return rechnung;
         }
 
         private ProjektGeschaeftsdokument nacherfassteRechnung(String nummer, String betrag) {
