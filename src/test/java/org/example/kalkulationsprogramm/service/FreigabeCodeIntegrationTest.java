@@ -33,10 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.InputStream;
+import java.security.KeyStore;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -129,18 +128,24 @@ class FreigabeCodeIntegrationTest
         VerstellbareUhr clock() { return new VerstellbareUhr(); }
     }
 
-    /** GreenMail nutzt ein selbstsigniertes Zertifikat – nur in diesem Test wird ihm vertraut. */
+    /**
+     * GreenMail nutzt ein selbstsigniertes Zertifikat aus seinem eigenen Keystore. Diesem einen
+     * Zertifikat wird für die Dauer des Tests vertraut – kein "alles akzeptieren".
+     */
     @BeforeAll
     static void vertraueTestserver() throws Exception
     {
         vorherigerKontext = SSLContext.getDefault();
-        SSLContext alles = SSLContext.getInstance("TLS");
-        alles.init(null, new TrustManager[] { new X509TrustManager() {
-            @Override public void checkClientTrusted(X509Certificate[] chain, String authType) { }
-            @Override public void checkServerTrusted(X509Certificate[] chain, String authType) { }
-            @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-        } }, new SecureRandom());
-        SSLContext.setDefault(alles);
+        KeyStore greenmail = KeyStore.getInstance("PKCS12");
+        try (InputStream in = GreenMailExtension.class.getClassLoader().getResourceAsStream("greenmail.p12"))
+        {
+            greenmail.load(in, "changeit".toCharArray());
+        }
+        TrustManagerFactory vertrauen = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        vertrauen.init(greenmail);
+        SSLContext nurGreenMail = SSLContext.getInstance("TLS");
+        nurGreenMail.init(null, vertrauen.getTrustManagers(), null);
+        SSLContext.setDefault(nurGreenMail);
     }
 
     @AfterAll
