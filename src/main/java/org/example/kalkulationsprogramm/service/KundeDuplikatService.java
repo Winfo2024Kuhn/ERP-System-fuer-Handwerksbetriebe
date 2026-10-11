@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatGrund;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatResponseDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatTrefferDto;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
+import org.example.kalkulationsprogramm.util.Telefonnummer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -43,8 +44,8 @@ public class KundeDuplikatService {
                                                    String plz,
                                                    String strasse) {
         String emailNorm = normalisiereEmail(email);
-        String telDigits = normalisiereTelefon(telefon);
-        String mobilDigits = normalisiereTelefon(mobiltelefon);
+        String telDigits = Telefonnummer.vergleichsziffern(telefon);
+        String mobilDigits = Telefonnummer.vergleichsziffern(mobiltelefon);
         String nameNorm = normalisiereName(name);
         String plzNorm = StringUtils.hasText(plz) ? plz.trim() : null;
         String strasseNorm = normalisiereStrasse(strasse);
@@ -96,10 +97,10 @@ public class KundeDuplikatService {
                 }
             }
         }
-        if (telDigits != null && telDigits.equals(normalisiereTelefon(k.getTelefon()))) {
+        if (telDigits != null && telDigits.equals(Telefonnummer.vergleichsziffern(k.getTelefon()))) {
             gruende.add(KundeDuplikatGrund.TELEFON_GLEICH);
         }
-        if (mobilDigits != null && mobilDigits.equals(normalisiereTelefon(k.getMobiltelefon()))) {
+        if (mobilDigits != null && mobilDigits.equals(Telefonnummer.vergleichsziffern(k.getMobiltelefon()))) {
             gruende.add(KundeDuplikatGrund.MOBILTELEFON_GLEICH);
         }
         if (nameNorm != null && nameNorm.equals(normalisiereName(k.getName()))) {
@@ -137,31 +138,6 @@ public class KundeDuplikatService {
             return null;
         }
         return email.trim().toLowerCase(Locale.GERMAN);
-    }
-
-    /**
-     * Reduziert eine Telefonnummer auf die reinen Ziffern. Internationale Präfixe
-     * (+49 / 0049) werden durch eine führende 0 ersetzt, so dass "+49 30 1234"
-     * und "030 1234" denselben Schlüssel ergeben.
-     */
-    static String normalisiereTelefon(String telefon) {
-        if (!StringUtils.hasText(telefon)) {
-            return null;
-        }
-        String t = telefon.trim();
-        // +49 / 0049 → 0 (deutsche Nummern unifizieren)
-        if (t.startsWith("+49")) {
-            t = "0" + t.substring(3);
-        } else if (t.startsWith("0049")) {
-            t = "0" + t.substring(4);
-        }
-        String digits = t.replaceAll("\\D", "");
-        // Nur reine Ortsvorwahl (< 7 Ziffern) → nicht für Duplikat-Prüfung nutzen.
-        // Z.B. "0931 " (auto-befüllt) würde sonst alle Würzburger Kunden matchen.
-        if (digits.length() < 7) {
-            return null;
-        }
-        return digits;
     }
 
     /**

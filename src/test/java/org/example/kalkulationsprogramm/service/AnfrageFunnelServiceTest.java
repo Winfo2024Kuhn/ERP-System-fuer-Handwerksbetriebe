@@ -152,6 +152,55 @@ class AnfrageFunnelServiceTest {
     }
 
     @Test
+    void speichertReineVorwahlNichtAlsTelefonnummerDesNeuenKunden() {
+        given(kundeRepository.findByKundenEmailIgnoreCase("max@example.de")).willReturn(List.of());
+        given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
+
+        AnfrageFunnelRequestDto dto = baseDto();
+        dto.setTelefon("0931 ");
+
+        service.verarbeiteFunnelAnfrage(dto, List.of());
+
+        ArgumentCaptor<Kunde> kundeCaptor = ArgumentCaptor.forClass(Kunde.class);
+        verify(kundeRepository).save(kundeCaptor.capture());
+        assertThat(kundeCaptor.getValue().getTelefon()).isNull();
+    }
+
+    @Test
+    void ersetztReineVorwahlImBestandDurchDieNeueNummer() {
+        Kunde bestehend = new Kunde();
+        bestehend.setId(7L);
+        bestehend.setName("Max Mustermann");
+        bestehend.setTelefon("0931");
+        bestehend.setKundenEmails(new java.util.ArrayList<>(List.of("max@example.de")));
+        given(kundeRepository.findByKundenEmailIgnoreCase("max@example.de")).willReturn(List.of(bestehend));
+
+        AnfrageFunnelRequestDto dto = baseDto();
+        dto.setTelefon(" 0931 7654321 ");
+
+        service.verarbeiteFunnelAnfrage(dto, List.of());
+
+        assertThat(bestehend.getTelefon()).isEqualTo("0931 7654321");
+    }
+
+    @Test
+    void behaeltVollstaendigeNummerImBestand() {
+        Kunde bestehend = new Kunde();
+        bestehend.setId(7L);
+        bestehend.setName("Max Mustermann");
+        bestehend.setTelefon("0931 1234567");
+        bestehend.setKundenEmails(new java.util.ArrayList<>(List.of("max@example.de")));
+        given(kundeRepository.findByKundenEmailIgnoreCase("max@example.de")).willReturn(List.of(bestehend));
+
+        AnfrageFunnelRequestDto dto = baseDto();
+        dto.setTelefon("0931 7654321");
+
+        service.verarbeiteFunnelAnfrage(dto, List.of());
+
+        assertThat(bestehend.getTelefon()).isEqualTo("0931 1234567");
+    }
+
+    @Test
     void formattiertBauvorhabenAusServiceUndProjektarten() {
         given(kundeRepository.findByKundenEmailIgnoreCase(any())).willReturn(List.of());
         given(kundennummerService.reserviereNaechsteKundennummer()).willReturn("1042");
@@ -356,7 +405,7 @@ class AnfrageFunnelServiceTest {
         dto.setVorname("Max");
         dto.setNachname("Mustermann");
         dto.setEmail("max@example.de");
-        dto.setTelefon("093692323");
+        dto.setTelefon("09317654321");
         dto.setProjektAnschrift("Kleistraße 11, 97072 Würzburg");
         dto.setRechnungsAnschriftGleichProjekt(true);
         dto.setDatenschutzAkzeptiert(true);

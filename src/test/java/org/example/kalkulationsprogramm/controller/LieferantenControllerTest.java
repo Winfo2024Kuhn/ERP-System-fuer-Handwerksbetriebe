@@ -49,6 +49,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -234,6 +235,62 @@ class LieferantenControllerTest {
         .content(payload))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.lieferantenname").value("Neu"));
+  }
+
+  @Test
+  @DisplayName("Anlegen: eine reine Vorwahl (vom Formular vorgeschlagen) wird nicht als Telefonnummer gespeichert")
+  void createLieferantSpeichertKeineReineVorwahl() throws Exception {
+    when(lieferantenRepository.findByLieferantennameIgnoreCase("Stahlbau Mustermann")).thenReturn(Optional.empty());
+    when(lieferantenRepository.save(any(Lieferanten.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    String payload = """
+        {
+          "lieferantenname": "Stahlbau Mustermann",
+          "plz": "97070",
+          "ort": "Würzburg",
+          "telefon": "0931 ",
+          "mobiltelefon": " 0170 1234567 ",
+          "kundenEmails": []
+        }
+        """;
+
+    mockMvc.perform(post("/api/lieferanten")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(payload))
+        .andExpect(status().isCreated());
+
+    ArgumentCaptor<Lieferanten> captor = ArgumentCaptor.forClass(Lieferanten.class);
+    verify(lieferantenRepository).save(captor.capture());
+    org.junit.jupiter.api.Assertions.assertNull(captor.getValue().getTelefon());
+    org.junit.jupiter.api.Assertions.assertEquals("0170 1234567", captor.getValue().getMobiltelefon());
+  }
+
+  @Test
+  @DisplayName("Ändern: eine gespeicherte reine Vorwahl wird beim nächsten Speichern geleert")
+  void updateLieferantLeertReineVorwahl() throws Exception {
+    Lieferanten entity = new Lieferanten();
+    entity.setId(5L);
+    entity.setLieferantenname("Stahlbau Mustermann");
+    entity.setTelefon("0931");
+    when(lieferantenRepository.findById(5L)).thenReturn(Optional.of(entity));
+    when(lieferantenDetailService.loadDetails(5L)).thenReturn(new LieferantDetailDto());
+
+    String payload = """
+        {
+          "lieferantenname": "Stahlbau Mustermann",
+          "telefon": "0931 ",
+          "mobiltelefon": "+49 ",
+          "kundenEmails": []
+        }
+        """;
+
+    mockMvc.perform(put("/api/lieferanten/5")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(payload))
+        .andExpect(status().isOk());
+
+    org.junit.jupiter.api.Assertions.assertNull(entity.getTelefon());
+    org.junit.jupiter.api.Assertions.assertNull(entity.getMobiltelefon());
   }
 
   @Test
