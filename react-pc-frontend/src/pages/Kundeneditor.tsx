@@ -31,6 +31,7 @@ import { type KundeDetail, type KundeProjektKurz, type KundeAnfrageKurz, type Au
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
 import { AddressAutocomplete } from '../components/AddressAutocomplete';
 import { PhoneInput } from '../components/PhoneInput';
+import { ohneReineVorwahl } from '../lib/phoneUtils';
 import { EmailsTab } from '../components/EmailsTab';
 import { KundeNotizenTab } from '../components/KundeNotizenTab';
 import { DetailLayout } from '../components/DetailLayout';
@@ -665,6 +666,9 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
         const payload = {
             ...formData,
             kundennummer: (isCreating && autoKundennummer) ? '' : formData.kundennummer.trim(),
+            // Die vorgeschlagene Ortsvorwahl allein ist keine Telefonnummer.
+            telefon: ohneReineVorwahl(formData.telefon),
+            mobiltelefon: ohneReineVorwahl(formData.mobiltelefon),
             kundenEmails: uniqueEmails,
             zahlungsziel: formData.zahlungsziel || 8
         };

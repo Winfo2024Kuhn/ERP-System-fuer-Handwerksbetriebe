@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Select } from './ui/select-custom';
 import { AddressAutocomplete } from './AddressAutocomplete';
 import { PhoneInput } from './PhoneInput';
+import { ohneReineVorwahl } from '../lib/phoneUtils';
 import { KundeDuplikatHinweis, type KundeDuplikatTreffer } from './KundeDuplikatHinweis';
 import { KundeDuplikatBestaetigungModal } from './KundeDuplikatBestaetigungModal';
 import type { Kunde } from '../types';
@@ -86,8 +87,8 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
                 strasse: formData.strasse.trim() || null,
                 plz: formData.plz.trim() || null,
                 ort: formData.ort.trim() || null,
-                telefon: formData.telefon.trim() || null,
-                mobiltelefon: formData.mobiltelefon.trim() || null,
+                telefon: ohneReineVorwahl(formData.telefon) || null,
+                mobiltelefon: ohneReineVorwahl(formData.mobiltelefon) || null,
                 zahlungsziel: formData.zahlungsziel || 8,
                 kundenEmails: formData.email.trim() ? [formData.email.trim()] : [],
             };

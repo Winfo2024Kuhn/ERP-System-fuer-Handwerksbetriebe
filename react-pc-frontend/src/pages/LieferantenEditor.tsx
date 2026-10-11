@@ -21,6 +21,7 @@ import { useToast } from '../components/ui/toast';
 import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { PhoneInput } from "../components/PhoneInput";
+import { ohneReineVorwahl } from "../lib/phoneUtils";
 import { LIEFERANT_ROLLEN, type LieferantRolle } from "../types";
 import { KontaktAnrufeTab } from "../features/telefon/KontaktAnrufeTab";
 import { WeitereRufnummern } from "../features/telefon/WeitereRufnummern";
@@ -1259,7 +1260,12 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                     <Button variant="ghost" onClick={onClose}>Abbrechen</Button>
                     <Button onClick={() => {
                         // Wenn noch Text im E-Mail-Feld steht, diesen automatisch hinzufügen
-                        const finalData = { ...formData };
+                        const finalData = {
+                            ...formData,
+                            // Die vorgeschlagene Ortsvorwahl allein ist keine Telefonnummer.
+                            telefon: ohneReineVorwahl(formData.telefon),
+                            mobiltelefon: ohneReineVorwahl(formData.mobiltelefon),
+                        };
                         if (newEmail.trim()) {
                             finalData.kundenEmails = mitInfoAdresse(finalData.kundenEmails, newEmail);
                         }

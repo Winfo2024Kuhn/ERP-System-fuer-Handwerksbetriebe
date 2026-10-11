@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.util.Telefonnummer;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -176,11 +177,13 @@ public class AnfrageFunnelService {
     }
 
     private Kunde findeOderErstelleKunde(AnfrageFunnelRequestDto dto, String email) {
+        String telefon = Telefonnummer.ohneReineVorwahl(dto.getTelefon());
         List<Kunde> bestand = kundeRepository.findByKundenEmailIgnoreCase(email);
         if (!bestand.isEmpty()) {
             Kunde existing = bestand.get(0);
-            if (!StringUtils.hasText(existing.getTelefon()) && StringUtils.hasText(dto.getTelefon())) {
-                existing.setTelefon(dto.getTelefon().trim());
+            // Eine reine Vorwahl im Bestand zählt als leer und darf überschrieben werden.
+            if (Telefonnummer.ohneReineVorwahl(existing.getTelefon()) == null && telefon != null) {
+                existing.setTelefon(telefon);
             }
             return kundeRepository.save(existing);
         }
@@ -189,9 +192,7 @@ public class AnfrageFunnelService {
         neu.setKundennummer(kundennummerService.reserviereNaechsteKundennummer());
         neu.setName((dto.getVorname().trim() + " " + dto.getNachname().trim()).trim());
         neu.setAnsprechspartner(dto.getVorname().trim() + " " + dto.getNachname().trim());
-        if (StringUtils.hasText(dto.getTelefon())) {
-            neu.setTelefon(dto.getTelefon().trim());
-        }
+        neu.setTelefon(telefon);
         AdressTeile rechnungsadresse = AdressTeile.parse(rechnungsAnschriftRoh(dto));
         neu.setStrasse(rechnungsadresse.strasse);
         neu.setPlz(rechnungsadresse.plz);

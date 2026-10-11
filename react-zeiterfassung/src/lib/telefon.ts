@@ -1,7 +1,8 @@
 /**
  * Unter dieser Ziffernzahl steht keine vollständige Rufnummer im Feld, sondern nur die
  * Ortsvorwahl, die das Büro beim Eingeben der Adresse vorschlägt (z. B. „0931 “).
- * Gleiche Grenze wie `KundeDuplikatService.normalisiereTelefon` im Backend.
+ * Gleiche Grenze wie `Telefonnummer.MINDEST_ZIFFERN` im Backend. Anders als beim Speichern
+ * zählt hier auch eine Ortsnummer ohne Vorwahl („12345“) nicht – vom Handy ist sie nicht wählbar.
  */
 const MINDEST_ZIFFERN = 7
 
