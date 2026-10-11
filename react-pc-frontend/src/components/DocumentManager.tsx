@@ -103,11 +103,6 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
     const [uploadingGroups, setUploadingGroups] = useState<Set<string>>(new Set());
     const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
     const [previewDoc, setPreviewDoc] = useState<ProjektDokument | null>(null);
-    
-    // Lieferant selection for document uploads
-    const [lieferanten, setLieferanten] = useState<{ id: number; firmenname: string }[]>([]);
-    const [pendingUpload, setPendingUpload] = useState<{ files: File[]; gruppe: DokumentGruppe } | null>(null);
-    const [selectedLieferantId, setSelectedLieferantId] = useState<number | null>(null);
 
     // Determine API base path based on context
     const isAnfrageContext = !!anfrageId;
@@ -143,14 +138,6 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
     useEffect(() => {
         loadDocuments();
     }, [loadDocuments]);
-    
-    // Load Lieferanten for document assignment
-    useEffect(() => {
-        fetch('/api/lieferanten')
-            .then(res => res.ok ? res.json() : [])
-            .then((data: { id: number; firmenname: string }[]) => setLieferanten(data))
-            .catch(() => setLieferanten([]));
-    }, []);
 
     // Dokumente nach Gruppe gruppieren
     const groupedDocuments: GroupedDocuments = documents.reduce((acc, doc) => {
@@ -185,8 +172,8 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
         return null;
     };
 
-    // Upload Handler - with optional Lieferant selection for DIVERSE_DOKUMENTE
-    const handleUpload = async (files: File[], gruppe: DokumentGruppe, lieferantId?: number | null) => {
+    // Upload Handler
+    const handleUpload = async (files: File[], gruppe: DokumentGruppe) => {
         if (files.length === 0) return;
 
         setUploadingGroups(prev => new Set(prev).add(gruppe));
@@ -200,10 +187,6 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
             const headers: Record<string, string> = {};
             if (userProfileId) {
                 headers['X-User-Profile-Id'] = String(userProfileId);
-            }
-            // Add Lieferant ID if selected
-            if (lieferantId) {
-                headers['X-Lieferant-Id'] = String(lieferantId);
             }
 
             const res = await fetch(`${apiBasePath}?gruppe=${gruppe}`, {
@@ -226,26 +209,6 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
                 newSet.delete(gruppe);
                 return newSet;
             });
-        }
-    };
-    
-    // Handler for initiating upload - shows Lieferant selection for DIVERSE_DOKUMENTE
-    const initiateUpload = (files: File[], gruppe: DokumentGruppe) => {
-        if (gruppe === 'DIVERSE_DOKUMENTE' && !isAnfrageContext) {
-            // Show modal for Lieferant selection
-            setPendingUpload({ files, gruppe });
-            setSelectedLieferantId(null);
-        } else {
-            // Direct upload without Lieferant selection
-            handleUpload(files, gruppe);
-        }
-    };
-    
-    // Confirm upload with selected Lieferant
-    const confirmUpload = () => {
-        if (pendingUpload) {
-            handleUpload(pendingUpload.files, pendingUpload.gruppe, selectedLieferantId);
-            setPendingUpload(null);
         }
     };
 
@@ -351,64 +314,12 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
                     isUploading={uploadingGroups.has(gruppe)}
                     deletingIds={deletingIds}
                     onToggle={() => toggleGroup(gruppe)}
-                    onUpload={(files) => initiateUpload(files, gruppe)}
+                    onUpload={(files) => handleUpload(files, gruppe)}
                     onDelete={handleDelete}
                     onOpen={handleOpen}
                     onDownload={handleDownload}
                 />
             ))}
-
-            {/* Lieferant Selection Modal for DIVERSE_DOKUMENTE uploads */}
-            {pendingUpload && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md mx-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-slate-900">Dokument hochladen</h3>
-                            <button 
-                                onClick={() => setPendingUpload(null)}
-                                className="p-1 hover:bg-slate-100 rounded"
-                            >
-                                <X className="w-5 h-5 text-slate-500" />
-                            </button>
-                        </div>
-                        
-                        <p className="text-sm text-slate-600 mb-4">
-                            {pendingUpload.files.length} Datei(en) ausgewählt
-                        </p>
-                        
-                        <div className="mb-6">
-                            <label className="block text-sm font-medium text-slate-700 mb-2">
-                                Lieferant zuweisen (optional)
-                            </label>
-                            <select
-                                value={selectedLieferantId ?? ''}
-                                onChange={(e) => setSelectedLieferantId(e.target.value ? Number(e.target.value) : null)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-                            >
-                                <option value="">Kein Lieferant</option>
-                                {lieferanten.map(l => (
-                                    <option key={l.id} value={l.id}>{l.firmenname}</option>
-                                ))}
-                            </select>
-                        </div>
-                        
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setPendingUpload(null)}
-                                className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
-                            >
-                                Abbrechen
-                            </button>
-                            <button
-                                onClick={confirmUpload}
-                                className="flex-1 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700"
-                            >
-                                Hochladen
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Preview Modal */}
             {previewDoc && (
@@ -684,10 +595,11 @@ function DocumentCard({ doc, isDeleting, onDelete, onOpen, onDownload }: Documen
                 )}
             </div>
 
-            {/* Dateiname darunter */}
+            {/* Dateiname darunter – in der schmalen Kachel gewollt gekürzt, voller Name per Tooltip und in der Vorschau */}
             <p
                 className="mt-2 text-xs text-slate-700 text-center truncate px-1"
                 title={doc.originalDateiname}
+                data-kuerzung-erlaubt=""
             >
                 {doc.originalDateiname}
             </p>
