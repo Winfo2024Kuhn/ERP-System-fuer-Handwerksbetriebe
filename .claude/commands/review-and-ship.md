@@ -211,6 +211,14 @@ Nur wenn Phase 3 durch ist (Commit gepusht).
 
 Ziel ist `main`, es sei denn der User nennt einen anderen Basis-Branch.
 
+> ⚠️ **Ein bereiter PR wird automatisch gemergt.** Die PR-Automatik
+> (`.github/workflows/pr-automatik.yml`) mergt jeden PR dieses Kontos, sobald
+> „PR Quality Gate“ grün ist – ohne auf die Reviewer-Ampel zu schauen. Öffnest du
+> einen PR, **bevor** der Reviewer 🟢 gemeldet hat (z. B. damit die CI schon läuft),
+> dann **immer als Entwurf**: `gh pr create --draft …`. Erst bei 🟢 (oder 🟡 mit
+> User-Freigabe) `gh pr ready <nr>`. Entwürfe und PRs mit dem Label `kein-automerge`
+> fasst die Automatik nicht an.
+
 ```bash
 gh pr create --base main --head "$(git branch --show-current)" \
   --title "<gleiche Zeile wie der Commit-Titel>" \
@@ -265,7 +273,10 @@ Warte, bis **kein** Check mehr `pending` ist.
 
 ### 4c. Mergen
 
-Merge automatisch, sobald **alle** Bedingungen erfüllt sind:
+Den Merge übernimmt die **PR-Automatik**: Sie mergt einen bereiten PR (kein Entwurf,
+kein Label `kein-automerge`), sobald er grün und auf dem Stand von `main` ist, und
+bringt veraltete PRs danach selbst auf den neuen Stand. Deshalb darf ein PR erst
+„bereit“ sein, wenn **alle** Bedingungen erfüllt sind:
 
 - ✅ Jeder Check auf dem PR ist `pass` (kein `fail`, kein `pending`)
 - ✅ Reviewer-Ampel 🟢 (oder 🟡 mit User-Freigabe)
@@ -273,7 +284,9 @@ Merge automatisch, sobald **alle** Bedingungen erfüllt sind:
 - ✅ `gh pr view <nr> --json mergeable -q .mergeable` liefert `MERGEABLE`
 
 ```bash
-# --auto: GitHub führt zusammen, sobald „PR Quality Gate“ grün ist – kein Warten nötig
+# Entwurf freigeben – ab jetzt mergt die PR-Automatik, sobald alles grün ist
+gh pr ready <nr>
+# optional zusätzlich GitHubs Auto-Merge (mergt in deinem Namen, gleiches Ergebnis)
 gh pr merge <nr> --squash --auto --delete-branch
 ```
 

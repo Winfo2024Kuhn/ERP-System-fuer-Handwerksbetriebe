@@ -83,7 +83,6 @@ jobs:
           fi
 
           starte_tests() { gh workflow run pr-ci.yml --ref="$1"; }
-          gemergt=0
 
           # Eigener Kanal (3): gh in der Schleife darf die Liste nicht von stdin wegessen.
           # Fehler bei einem PR brechen nicht alles ab - die anderen kommen trotzdem dran.
@@ -142,16 +141,20 @@ jobs:
             # loescht GitHub selbst (Repo-Einstellung "Branches nach Merge loeschen").
             if gh pr merge "$nummer" --squash --match-head-commit "$kopf"; then
               echo "PR #$nummer gemergt."
-              gemergt=1
+              # Sofort, nicht erst nach der Schleife: Ein Merge mit dem GITHUB_TOKEN
+              # loest den Push-Ausloeser von docker-image.yml nicht aus, und bricht
+              # dieser Lauf spaeter ab, holt kein anderer Lauf das Image nach.
+              if gh workflow run docker-image.yml --ref=main; then
+                echo "Kunden-Image fuer den neuen Stand von main gestartet."
+              else
+                echo "::error::PR #$nummer gemergt, aber das Kunden-Image liess sich nicht starten - bitte docker-image.yml von Hand starten."
+              fi
               # Ab jetzt sind alle anderen veraltet - die Schleife aktualisiert sie.
+            elif [ "$(gh pr view "$nummer" --json state --jq .state 2>/dev/null || true)" = "MERGED" ]; then
+              # GitHubs eigenes Auto-Merge war schneller (mergt im Namen des Users,
+              # dann startet docker-image.yml ueber den Push von selbst).
+              echo "PR #$nummer wurde inzwischen schon gemergt."
             else
               echo "::warning::PR #$nummer: Merge abgelehnt (Ruleset?) - bitte ansehen."
             fi
           done 3<<< "$prs"
-
-          # Ein Merge mit dem GITHUB_TOKEN loest den Push-Ausloeser von
-          # docker-image.yml nicht aus - das Kunden-Image hier selbst starten.
-          if [ "$gemergt" = "1" ]; then
-            gh workflow run docker-image.yml --ref=main
-            echo "Kunden-Image fuer den neuen Stand von main gestartet."
-          fi

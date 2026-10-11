@@ -102,7 +102,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 
 ### 🔒 `main` nur über Pull Requests (dauerhafte Nutzervorgabe vom 11.10.2026)
 - **`main` ist Produktion:** Jeder grüne Stand auf `main` wird als `:stable` veröffentlicht und läuft nach dem Nachtupdate (03:00) auf dem eigenen Server und bei den Kunden.
-- **Nie direkt auf `main` pushen** – ein Ruleset lehnt es ab. Immer: eigener Branch von `origin/main` → Pull Request → `gh pr merge <nr> --squash --auto --delete-branch`. Pflicht-Check ist „PR Quality Gate“ (alle Tests aus `pr-ci.yml`).
+- **Nie direkt auf `main` pushen** – ein Ruleset lehnt es ab. Immer: eigener Branch von `origin/main` → Pull Request (vor dem finalen 🟢 des Reviewers **als Entwurf**, `gh pr create --draft`) → bei 🟢 `gh pr ready <nr>`; mergen übernimmt die PR-Automatik. Pflicht-Check ist „PR Quality Gate“ (alle Tests aus `pr-ci.yml`).
 - Kein Bypass, kein `--admin`. Scheitert ein Check nur zufällig, den Lauf wiederholen (`gh run rerun <id> --failed`), nicht umgehen.
 - **PR-Automatik:** `.github/workflows/pr-automatik.yml` mergt jeden PR dieses Kontos (eigene und Agenten, nie Forks, nie Drafts), sobald „PR Quality Gate“ grün und der Branch aktuell ist, und bringt danach die übrigen PRs selbst auf den Stand von `main` (inkl. neuem Testlauf). Anhalten: Label `kein-automerge` am PR. Bei Merge-Konflikt bleibt es Handarbeit.
 
