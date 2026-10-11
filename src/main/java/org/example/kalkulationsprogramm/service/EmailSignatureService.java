@@ -8,12 +8,14 @@ import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.repository.EmailSignatureImageRepository;
 import org.example.kalkulationsprogramm.repository.EmailSignatureRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
+import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -76,9 +78,14 @@ public class EmailSignatureService {
      * "befuellt".
      */
     public static boolean isPlatzhalter(EmailSignature sig) {
-        if (sig == null || sig.getHtml() == null) return true;
-        return sig.getHtml().contains("data-system-placeholder=\"1\"")
-                || sig.getHtml().contains("data-system-placeholder='1'");
+        return isPlatzhalterHtml(sig == null ? null : sig.getHtml());
+    }
+
+    /** Wie {@link #isPlatzhalter(EmailSignature)}, nur auf dem HTML. */
+    public static boolean isPlatzhalterHtml(String html) {
+        if (html == null) return true;
+        return html.contains("data-system-placeholder=\"1\"")
+                || html.contains("data-system-placeholder='1'");
     }
 
     /**
@@ -116,6 +123,47 @@ public class EmailSignatureService {
         return sig;
     }
 
+    /**
+     * Signatur für eine Mail, die gerade verschickt wird. Benutzer bekommen immer ihre eigene
+     * Standard-Signatur – egal, welchen Benutzer der Client mitschickt. Nur Admins dürfen mit der
+     * Standard-Signatur eines anderen Benutzers versenden.
+     */
+    @Transactional(readOnly = true)
+    public Optional<EmailSignature> getVersandSignatur(Long frontendUserId, String frontendUserDisplayName) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (istAdmin(authentication)) {
+            return getDefaultForFrontendUser(frontendUserId, frontendUserDisplayName);
+        }
+        return angemeldeteProfilId(authentication).flatMap(id -> getDefaultForFrontendUser(id, null));
+    }
+
+    /** Angemeldet und mit der Rolle {@code ADMIN}. */
+    public static boolean istAdmin(Authentication authentication) {
+        return istAngemeldet(authentication) && authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    }
+
+    /** Benutzerprofil der Anmeldung – nie aus Angaben des Clients. */
+    @Transactional(readOnly = true)
+    public Optional<Long> angemeldeteProfilId(Authentication authentication) {
+        if (!istAngemeldet(authentication)) {
+            return Optional.empty();
+        }
+        if (authentication.getPrincipal() instanceof FrontendUserPrincipal principal) {
+            return Optional.ofNullable(principal.getId());
+        }
+        String name = authentication.getName();
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        return frontendUserProfileRepository.findByUsernameIgnoreCase(name.trim()).map(FrontendUserProfile::getId);
+    }
+
+    private static boolean istAngemeldet(Authentication authentication) {
+        return authentication != null && !(authentication instanceof AnonymousAuthenticationToken)
+                && authentication.isAuthenticated();
+    }
+
     @Transactional(readOnly = true)
     public Optional<EmailSignature> getDefaultForFrontendUser(Long profileId, String frontendUserDisplayName) {
         Optional<FrontendUserProfile> profileOpt = Optional.empty();
@@ -136,52 +184,19 @@ public class EmailSignatureService {
                 });
     }
 
-    @Transactional
-    public EmailSignature saveOrUpdate(EmailSignature sig) {
-        EmailSignature target;
-        if (sig.getId() != null) {
-            target = signatureRepository.findById(sig.getId()).orElseThrow();
-            target.setName(sig.getName());
-            target.setHtml(sig.getHtml());
-        } else {
-            target = sig;
-        }
-        EmailSignature saved = signatureRepository.save(target);
-        saved.setDefaultSignature(sig.isDefaultSignature());
-        return saved;
-    }
-
-    @Transactional
-    public EmailSignatureImage addImage(Long signatureId, MultipartFile file) throws IOException {
-        EmailSignature sig = signatureRepository.findById(signatureId).orElseThrow();
-        Path baseDir = Path.of(imageUploadDir).toAbsolutePath().normalize().resolve("signatures").resolve(String.valueOf(signatureId));
-        Files.createDirectories(baseDir);
-        String original = Path.of(Objects.requireNonNullElse(file.getOriginalFilename(), "image")).getFileName().toString();
-        String stored = UUID.randomUUID() + "_" + original;
-        Path dst = baseDir.resolve(stored).normalize();
-        if (!dst.startsWith(baseDir)) {
-            throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
-        }
-        file.transferTo(dst);
-        EmailSignatureImage img = new EmailSignatureImage();
-        img.setSignature(sig);
-        img.setCid("sig-" + UUID.randomUUID());
-        img.setOriginalFilename(original);
-        img.setStoredFilename(stored);
-        img.setContentType(Objects.requireNonNullElse(file.getContentType(), Files.probeContentType(dst)));
-        img.setSizeBytes(Files.size(dst));
-        img.setSortOrder(Optional.ofNullable(sig.getImages()).map(List::size).orElse(0));
-        img = imageRepository.save(img);
-        sig.getImages().add(img);
-        signatureRepository.save(sig);
-        return img;
-    }
-
     public Optional<Path> resolveImagePath(EmailSignatureImage img) {
         if (img == null) return Optional.empty();
         Path baseDir = Path.of(imageUploadDir).toAbsolutePath().normalize().resolve("signatures").resolve(String.valueOf(img.getSignature().getId()));
         Path p = baseDir.resolve(img.getStoredFilename());
         return Files.exists(p) ? Optional.of(p) : Optional.empty();
+    }
+
+    /** Bild einer Signatur; leer, wenn es das Bild nicht gibt oder es zu einer anderen Signatur gehört. */
+    @Transactional(readOnly = true)
+    public Optional<EmailSignatureImage> findImage(Long signatureId, Long imageId) {
+        if (signatureId == null || imageId == null) return Optional.empty();
+        return imageRepository.findById(imageId)
+                .filter(img -> img.getSignature() != null && Objects.equals(img.getSignature().getId(), signatureId));
     }
 
     public Optional<EmailSignature> findById(Long id) {

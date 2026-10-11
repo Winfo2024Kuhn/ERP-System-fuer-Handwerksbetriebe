@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import EmailSettings from './EmailSettings';
 import { ToastProvider } from './ui/toast';
 import { ConfirmProvider } from './ui/confirm-dialog';
+import { AuthProvider } from '../auth/AuthContext';
 
 /**
  * Abwesenheitsnotizen pro Postfach: Auswahl der Postfächer, Vorauswahl,
@@ -76,7 +77,7 @@ function aufrufe(mock: ReturnType<typeof stubbe>, pfad: string, methode: string)
 
 async function zeigeAbwesenheiten() {
     const user = userEvent.setup();
-    render(<ToastProvider><ConfirmProvider><EmailSettings /></ConfirmProvider></ToastProvider>);
+    render(<ToastProvider><ConfirmProvider><AuthProvider><EmailSettings /></AuthProvider></ConfirmProvider></ToastProvider>);
     await user.click(screen.getByRole('button', { name: /Abwesenheitsnotizen/ }));
     return user;
 }

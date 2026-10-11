@@ -41,7 +41,6 @@ const NAVIGATION: NavCategory[] = [
                     { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
                     { name: 'Leistungen', href: '/leistungen', icon: List },
                     { name: 'Stundensätze', href: '/arbeitszeitarten', icon: Clock },
-                    { name: 'Formularwesen', href: '/formulare', icon: FileJson },
                 ]
             },
             {
@@ -64,6 +63,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Administration',
                 items: [
                     { name: 'Firma', href: '/firma', icon: Building2 },
+                    { name: 'Formularwesen', href: '/formulare', icon: FileJson },
                     { name: 'Einstellungen', href: '/einstellungen', icon: Settings },
                 ]
             }
@@ -182,7 +182,7 @@ const NAVIGATION: NavCategory[] = [
     }
 ];
 
-const ADMIN_ONLY_PATHS = new Set(['/firma', '/einstellungen', '/benutzer', '/website']);
+const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/benutzer', '/website']);
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
 const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 

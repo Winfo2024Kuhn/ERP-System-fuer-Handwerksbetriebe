@@ -18,7 +18,6 @@ import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsPostfa
 import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsnotizDto;
 import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsnotizSpeichernRequest;
 import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
-import org.example.kalkulationsprogramm.repository.EmailSignatureRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
@@ -58,7 +57,7 @@ public class AbwesenheitsnotizService {
 
     private final OutOfOfficeScheduleRepository notizRepository;
     private final EmailAbsenderRepository postfachRepository;
-    private final EmailSignatureRepository signaturRepository;
+    private final EmailSignaturVerwaltungService signaturVerwaltung;
     private final FrontendUserProfileRepository benutzerRepository;
     private final FrontendUserProfileService benutzerService;
     private final PostfachSichtbarkeitService sichtbarkeitService;
@@ -118,7 +117,7 @@ public class AbwesenheitsnotizService {
         notiz.setActive(Boolean.TRUE.equals(request.active()));
         notiz.setSubjectTemplate(StringUtils.hasText(request.subject()) ? request.subject().trim() : STANDARD_BETREFF);
         notiz.setBodyTemplate(bereinigt(request.message()));
-        notiz.setSignature(signatur(request.signatureId()));
+        notiz.setSignature(signatur(request.signatureId(), notiz.getSignature(), authentication));
         notiz.getPostfaecher().clear();
         notiz.getPostfaecher().addAll(postfaecher);
         return AbwesenheitsnotizDto.von(notizRepository.save(notiz));
@@ -230,11 +229,19 @@ public class AbwesenheitsnotizService {
         return EmailHtmlSanitizer.sanitizeDetailHtml(nachricht);
     }
 
-    private EmailSignature signatur(Long signaturId) {
+    /**
+     * Gewählte Signatur. Erlaubt sind die eigenen (Admins: alle) und die, die schon an der Notiz
+     * hängt – sonst könnte niemand außer dem Admin eine Notiz eines allgemeinen Postfachs ändern.
+     * Fremde Signaturen gelten als „gibt es nicht“.
+     */
+    private EmailSignature signatur(Long signaturId, EmailSignature bisher, Authentication authentication) {
         if (signaturId == null) {
             return null;
         }
-        return signaturRepository.findById(signaturId)
+        if (bisher != null && signaturId.equals(bisher.getId())) {
+            return bisher;
+        }
+        return signaturVerwaltung.sichtbare(signaturId, signaturVerwaltung.benutzer(authentication))
                 .orElseThrow(() -> new IllegalArgumentException("Die gewählte Signatur gibt es nicht mehr."));
     }
 

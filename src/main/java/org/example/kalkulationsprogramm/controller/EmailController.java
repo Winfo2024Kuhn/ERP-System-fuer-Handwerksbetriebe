@@ -662,7 +662,8 @@ public class EmailController {
 
     private Optional<EmailSignature> getSignatureForFrontendUser(Long frontendUserId, String displayName) {
         try {
-            return emailSignatureService.getDefaultForFrontendUser(frontendUserId, displayName);
+            // Benutzer immer mit der eigenen Signatur, nur Admins mit der eines Kollegen.
+            return emailSignatureService.getVersandSignatur(frontendUserId, displayName);
         } catch (Exception ignored) {
             return Optional.empty();
         }
