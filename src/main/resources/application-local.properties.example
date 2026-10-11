@@ -65,6 +65,15 @@ spring.datasource.password=DEIN_DB_PASSWORT
 # Website-Server in deren .env unter ERP_INTERNAL_API_KEY.
 #website.internal-api.key=DEIN_GEMEINSAMES_PASSWORT
 
+# ========== Zugriff fremder Webseiten auf das ERP (CORS) ==========
+# Normalerweise leer lassen: Die eigene Oberflaeche, die Handy-App, der Vite-Dev-Server
+# und die Website (Server zu Server) brauchen keinen Eintrag. Nur wenn eine ANDERE
+# Webseite im Browser direkt Daten aus dem ERP lesen soll, ihre genaue Adresse eintragen
+# (mehrere mit Komma). Kein "*" - das wird ignoriert. Aendern darf sie nichts, und die
+# Anmeldung geht nur mit, wenn sie unter derselben Domain laeuft wie das ERP. Sie muss
+# einfache GETs ohne eigene Header schicken.
+#app.cors.allowed-origins=https://intranet.deine-firma.de
+
 # ========== Digitale Annahme von Angeboten (Freigabe-Links) ==========
 # Oeffentliche Adresse, unter der Kunden Angebote und Auftragsbestaetigungen
 # digital annehmen (Freigabe-Seite, z.B. auf der Firmen-Website). Ohne Eintrag
