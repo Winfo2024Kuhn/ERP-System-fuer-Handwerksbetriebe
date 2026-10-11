@@ -33,6 +33,9 @@ public class ConstraintMessageResolver {
     private static final Pattern PG_DUPLICATE_VALUE = Pattern.compile("Key \\([^)]*+\\)=\\((.+?)\\) already exists", Pattern.CASE_INSENSITIVE);
     private static final Pattern PG_NOT_NULL = Pattern.compile("null value in column \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
     private static final Pattern PG_FOREIGN_KEY = Pattern.compile("violates foreign key constraint \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
+    // Tabellennamen aus dem PostgreSQL-Text - Rueckfall, wenn die Metadaten sie nicht kennen
+    private static final Pattern PG_FK_TABELLE_LOESCHEN = Pattern.compile("violates foreign key constraint \"[^\"]++\" on table \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PG_FK_ZIELTABELLE = Pattern.compile("is not present in table \"([^\"]++)\"", Pattern.CASE_INSENSITIVE);
     // PostgreSQL nennt bei zu langen Texten nur den Typ, nicht die Spalte
     private static final Pattern PG_ZU_LANG = Pattern.compile("value too long for type character(?: varying)?\\((\\d++)\\)", Pattern.CASE_INSENSITIVE);
 
@@ -158,12 +161,16 @@ public class ConstraintMessageResolver {
     /**
      * Analysiert fehlgeschlagene Fremdschlüsselprüfungen und liefert – je nach Situation –
      * Hinweise zum nicht löschbaren Datensatz oder zur ungültigen Referenz. Tabellen und
-     * Spalten kommen aus den Metadaten; ohne sie bleibt die Meldung allgemein.
+     * Spalten kommen aus den Metadaten; kennen sie eine Tabelle nicht, wird sie aus dem
+     * PostgreSQL-Text gelesen. Beim Löschen zählt die Tabelle, deren Einträge noch
+     * verweisen, beim Einfügen die, in der der Eintrag fehlt.
      */
     private ConstraintErrorDetail handleForeignKey(String technicalMessage, String constraintName, boolean deleteCase) {
         DatabaseConstraintMetadataService.ConstraintMetadata metadata = metadataService.findConstraint(constraintName).orElse(null);
-        String tableName = metadata != null ? metadata.tableName() : null;
-        String referencedTable = metadata != null ? metadata.referencedTableName() : null;
+        String tableName = metadata != null ? metadata.tableName()
+                : (deleteCase ? extractFirst(PG_FK_TABELLE_LOESCHEN, technicalMessage) : null);
+        String referencedTable = metadata != null && metadata.referencedTableName() != null ? metadata.referencedTableName()
+                : extractFirst(PG_FK_ZIELTABELLE, technicalMessage);
         List<String> columnNames = metadata != null ? metadata.columnNames() : List.of();
         String tableLabel = metadataService.findTable(tableName)
                 .map(DatabaseConstraintMetadataService.TableMetadata::label)
@@ -187,11 +194,11 @@ public class ConstraintMessageResolver {
         }
         String message;
         if (deleteCase) {
-            message = "Der Datensatz kann nicht gelöscht werden, da noch Einträge in '" + referencedTableLabel + "' darauf verweisen.";
+            message = "Der Datensatz kann nicht gelöscht werden, da noch Einträge" + inTabelle(tableLabel) + " darauf verweisen.";
         } else if (!columnLabels.isEmpty()) {
-            message = "Der angegebene Wert für " + joinLabels(columnLabels) + " ist ungültig – es existiert kein passender Eintrag in '" + referencedTableLabel + "'.";
+            message = "Der angegebene Wert für " + joinLabels(columnLabels) + " ist ungültig – es existiert kein passender Eintrag" + inTabelle(referencedTableLabel) + ".";
         } else {
-            message = "Die ausgewählte Referenz ist ungültig – es existiert kein passender Eintrag in '" + referencedTableLabel + "'.";
+            message = "Die ausgewählte Referenz ist ungültig – es existiert kein passender Eintrag" + inTabelle(referencedTableLabel) + ".";
         }
         return new ConstraintErrorDetail(HttpStatus.CONFLICT, message, technicalMessage, constraintName, fieldErrors);
     }
@@ -203,6 +210,11 @@ public class ConstraintMessageResolver {
     private ConstraintErrorDetail fallback(String technicalMessage) {
         String message = "Der Vorgang konnte nicht abgeschlossen werden, weil eine Datenbankvorgabe verletzt wurde.";
         return new ConstraintErrorDetail(HttpStatus.BAD_REQUEST, message, technicalMessage, null, Collections.emptyList());
+    }
+
+    /** " in 'Projekt'" - oder nichts, wenn die Tabelle unbekannt ist (statt " in ''"). */
+    private static String inTabelle(String label) {
+        return label.isBlank() ? "" : " in '" + label + "'";
     }
 
     /** Kürzt einen angezeigten Wert auf eine sinnvolle Vorschau-Länge ab. */

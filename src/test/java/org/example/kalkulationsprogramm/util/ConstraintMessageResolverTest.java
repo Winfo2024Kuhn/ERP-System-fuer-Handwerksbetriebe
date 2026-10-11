@@ -195,7 +195,7 @@ class ConstraintMessageResolverTest {
     // ---------------------------------------------------------------- 23503
 
     @Test
-    @DisplayName("Loeschen eines noch gebrauchten Datensatzes wird als solches erkannt")
+    @DisplayName("Loeschen eines noch gebrauchten Kunden: genannt wird die Tabelle, die noch auf ihn verweist")
     void loeschenBlockiert() {
         constraint("fk_projekt_kunde", "projekt", ConstraintType.FOREIGN_KEY, List.of("kunden_id"), "kunde");
 
@@ -204,12 +204,24 @@ class ConstraintMessageResolverTest {
                         + "  Detail: Key (id)=(7) is still referenced from table \"projekt\".", "23503"));
 
         assertThat(ergebnis.status()).isEqualTo(HttpStatus.CONFLICT);
-        // Wortlaut ist Altbestand und hier bewusst unveraendert: genannt wird die Tabelle, auf die
-        // verwiesen wird ('Kunde'), nicht die verweisende ('Projekt'). Korrektur ist eine eigene Aufgabe.
         assertThat(ergebnis.userMessage())
-                .isEqualTo("Der Datensatz kann nicht gelöscht werden, da noch Einträge in 'Kunde' darauf verweisen.");
+                .isEqualTo("Der Datensatz kann nicht gelöscht werden, da noch Einträge in 'Projekt' darauf verweisen.");
         assertThat(ergebnis.constraintName()).isEqualTo("fk_projekt_kunde");
         assertThat(ergebnis.fieldErrors()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Loeschen blockiert: Beschriftung der verweisenden Tabelle kommt aus den Metadaten")
+    void loeschenBlockiertMitBeschriftung() {
+        constraint("fk_projekt_kunde", "projekt", ConstraintType.FOREIGN_KEY, List.of("kunden_id"), "kunde");
+        given(metadaten.findTable("projekt")).willReturn(Optional.of(new TableMetadata("projekt", "Projekte")));
+
+        ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
+                "ERROR: update or delete on table \"kunde\" violates foreign key constraint \"fk_projekt_kunde\" on table \"projekt\"",
+                "23503"));
+
+        assertThat(ergebnis.userMessage())
+                .isEqualTo("Der Datensatz kann nicht gelöscht werden, da noch Einträge in 'Projekte' darauf verweisen.");
     }
 
     @Test
@@ -230,25 +242,48 @@ class ConstraintMessageResolverTest {
     }
 
     @Test
-    @DisplayName("Verweis ohne Metadaten: Meldung ohne Tabellennamen und ohne Felder")
+    @DisplayName("Verweis ohne Metadaten: Tabellen kommen aus dem PostgreSQL-Text")
     void verweisOhneMetadaten() {
         ConstraintErrorDetail einfuegen = resolver.resolve(fehler(
-                "ERROR: insert or update on table \"projekt\" violates foreign key constraint \"fk_unbekannt\"", "23503"));
+                "ERROR: insert or update on table \"projekt\" violates foreign key constraint \"fk_unbekannt\"\n"
+                        + "  Detail: Key (kunden_id)=(99) is not present in table \"kunde\".", "23503"));
         ConstraintErrorDetail loeschen = resolver.resolve(fehler(
-                "ERROR: update or delete on table \"kunde\" violates foreign key constraint \"fk_unbekannt\" on table \"projekt\"",
-                "23503"));
+                "ERROR: update or delete on table \"kunde\" violates foreign key constraint \"fk_unbekannt\" on table \"projekt\"\n"
+                        + "  Detail: Key (id)=(7) is still referenced from table \"projekt\".", "23503"));
 
-        // Wortlaut ist Altbestand und hier bewusst unveraendert: ohne Metadaten bleibt der
-        // Tabellenname leer (''), obwohl ihn der PostgreSQL-Text nennt. Korrektur ist eine eigene Aufgabe.
         assertThat(einfuegen.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(einfuegen.userMessage())
-                .isEqualTo("Die ausgewählte Referenz ist ungültig – es existiert kein passender Eintrag in ''.");
+                .isEqualTo("Die ausgewählte Referenz ist ungültig – es existiert kein passender Eintrag in 'Kunde'.");
         assertThat(einfuegen.constraintName()).isEqualTo("fk_unbekannt");
         assertThat(einfuegen.fieldErrors()).isEmpty();
         assertThat(loeschen.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(loeschen.userMessage())
-                .isEqualTo("Der Datensatz kann nicht gelöscht werden, da noch Einträge in '' darauf verweisen.");
+                .isEqualTo("Der Datensatz kann nicht gelöscht werden, da noch Einträge in 'Projekt' darauf verweisen.");
         assertThat(loeschen.fieldErrors()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Verweis: Metadaten kennen die Zieltabelle nicht - sie kommt aus dem PostgreSQL-Text")
+    void verweisZieltabelleNurImText() {
+        constraint("fk_projekt_kunde", "projekt", ConstraintType.FOREIGN_KEY, List.of("kunden_id"), null);
+
+        ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
+                "ERROR: insert or update on table \"projekt\" violates foreign key constraint \"fk_projekt_kunde\"\n"
+                        + "  Detail: Key (kunden_id)=(99) is not present in table \"kunde\".", "23503"));
+
+        assertThat(ergebnis.userMessage()).isEqualTo(
+                "Der angegebene Wert für Kunden Id ist ungültig – es existiert kein passender Eintrag in 'Kunde'.");
+        assertThat(ergebnis.fieldErrors()).extracting(FieldErrorDetail::field).containsExactly("kunden_id");
+    }
+
+    @Test
+    @DisplayName("Verweis, Tabelle nirgends genannt: Satz ohne leere Anfuehrungszeichen")
+    void verweisOhneTabellenname() {
+        ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
+                "ERROR: insert or update on table \"projekt\" violates foreign key constraint \"fk_unbekannt\"", "23503"));
+
+        assertThat(ergebnis.userMessage())
+                .isEqualTo("Die ausgewählte Referenz ist ungültig – es existiert kein passender Eintrag.");
     }
 
     // ---------------------------------------------------------------- 22001
