@@ -121,14 +121,21 @@ test('Ziehen am Chip startet kein Verschieben der Mail', async ({ page }) => {
 });
 
 test('Strg/Cmd-Klick öffnet die Lieferantenakte in einem neuen Tab', async ({ page, context }) => {
+    // Zwei komplette App-Starts in einem Test (E-Mail-Center + Lieferantenakte im neuen Tab).
+    // Auf dem CI-Runner mit zwei Workern reichten dafür 30 s Testzeit und 15 s pro Prüfung
+    // nicht immer – der Tab öffnete, war aber noch nicht fertig geladen.
+    test.slow();
+    const tabZeit = { timeout: 30_000 };
     await vorbereiten(page, '/emails/inbox');
+    const link = page.getByRole('link', { name: 'Lieferant · Musterhandel GmbH öffnen' });
+    await expect(link).toBeVisible();
     const neuerTab = context.waitForEvent('page');
-    await page.getByRole('link', { name: 'Lieferant · Musterhandel GmbH öffnen' }).click({ modifiers: ['ControlOrMeta'] });
+    await link.click({ modifiers: ['ControlOrMeta'] });
     const tab = await neuerTab;
     // Wartend prüfen: der neue Tab steht anfangs noch auf about:blank.
-    await expect(tab).toHaveURL(/\/lieferanten\?lieferantId=7$/);
-    await expect(tab.getByRole('heading', { name: 'LIEFERANTENDETAILS' })).toBeVisible();
-    await expect(tab.getByRole('heading', { level: 1, name: 'Musterhandel GmbH', exact: true })).toBeVisible();
+    await expect(tab).toHaveURL(/\/lieferanten\?lieferantId=7$/, tabZeit);
+    await expect(tab.getByRole('heading', { name: 'LIEFERANTENDETAILS' })).toBeVisible(tabZeit);
+    await expect(tab.getByRole('heading', { level: 1, name: 'Musterhandel GmbH', exact: true })).toBeVisible(tabZeit);
     await expect(page).toHaveURL(/\/emails\/inbox$/);
 });
 

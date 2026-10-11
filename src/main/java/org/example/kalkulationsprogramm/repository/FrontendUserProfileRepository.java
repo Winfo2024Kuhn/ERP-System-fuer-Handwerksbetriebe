@@ -21,6 +21,10 @@ public interface FrontendUserProfileRepository extends JpaRepository<FrontendUse
 
     List<FrontendUserProfile> findByEmailAbsenderIsNotNull();
 
+    /** Postfächer, die einem Benutzer als eigenes gehören – alle anderen sind allgemeine (info@, buero@). */
+    @Query("SELECT DISTINCT p.emailAbsender.id FROM FrontendUserProfile p WHERE p.emailAbsender IS NOT NULL")
+    List<Long> findEmailAbsenderIdsMitBesitzer();
+
     boolean existsByUsernameIgnoreCase(String username);
 
     long countByUsernameIsNotNull();

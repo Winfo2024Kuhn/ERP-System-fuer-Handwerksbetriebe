@@ -74,7 +74,9 @@ for (const art of ['projekte', 'anfragen'] as const) {
         // Das zweite Foto hängt: das erste ist schon angekommen und nicht mehr in der Auswahl
         await expect(modal.getByRole('status')).toContainText('Foto 2 von 3 wird hochgeladen')
         await expect(modal.getByText('2 Bilder bereit')).toBeVisible()
-        expect(gesendet).toEqual(['dach-1.jpg', 'dach-2.jpg'])
+        // Wartend: Die App zeigt „Foto 2 von 3“, sobald sie das Foto losschickt – beim Stub
+        // kommt die Anfrage auf einem langsamen Rechner erst einen Moment später an.
+        await expect.poll(() => gesendet).toEqual(['dach-1.jpg', 'dach-2.jpg'])
         await expect(modal.getByRole('button', { name: 'Schließen' })).toBeDisabled()
         await designPruefung(page, testInfo, `foto-upload-${art}-fortschritt`, {
             primaerAktion: modal.getByRole('button', { name: 'Abbrechen' }),
