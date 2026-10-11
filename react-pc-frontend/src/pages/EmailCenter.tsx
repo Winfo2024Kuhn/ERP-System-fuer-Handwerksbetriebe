@@ -59,7 +59,6 @@ import { extractDisplayName, extractEmailAddress, escapeHtml, parseRecipientList
 import { refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { EmailComposeForm } from '../components/EmailComposeForm';
-import EmailSettings from '../components/EmailSettings';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
@@ -302,7 +301,6 @@ export default function EmailCenter() {
     const [previewAttachment, setPreviewAttachment] = useState<{ url: string, type: 'image' | 'pdf', name: string } | null>(null);
     // Sentinel fuer Infinite Scroll am Ende der Email-Liste
     const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
-    const [showSettings, setShowSettings] = useState(false);
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
     const [readFilter, setReadFilter] = useState<'all' | 'unread' | 'read'>('all');
     const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
@@ -1489,29 +1487,6 @@ export default function EmailCenter() {
 
     // Right Pane Content Logic
     const renderRightPane = () => {
-        // Settings View
-        if (showSettings) {
-            return (
-                <div className="flex-1 overflow-auto p-6 bg-white">
-                    <div className="flex items-center justify-between mb-6">
-                        <div>
-                            <h2 className="text-xl font-bold text-slate-900">E-Mail-Einstellungen</h2>
-                            <p className="text-sm text-slate-500">Signaturen und Abwesenheitsnotizen verwalten</p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setShowSettings(false)}
-                            className="text-slate-600"
-                        >
-                            Schließen
-                        </Button>
-                    </div>
-                    <EmailSettings />
-                </div>
-            );
-        }
-
         if (isComposing) {
             let initialRecipient = activeDraft?.recipient || '';
             let initialCc: string[] | undefined;
@@ -1876,14 +1851,9 @@ export default function EmailCenter() {
                 activeFolder={activeFolder}
                 counts={folderCounts}
                 dragActive={dragActiveEmail !== null}
-                showSettings={showSettings}
                 onToggle={toggleSidebar}
                 onCompose={handleComposeNew}
                 onSelect={setActiveFolder}
-                onSettings={async () => {
-                    if (!await persistComposer()) return;
-                    setShowSettings(true); setSelectedEmail(null);
-                }}
             />
 
             {/* Splitter 1: Sidebar Resizer */}

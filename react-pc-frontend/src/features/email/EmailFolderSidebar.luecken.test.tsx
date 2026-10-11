@@ -11,11 +11,11 @@ const counts = {
 function renderSidebar(overrides: Record<string, unknown> = {}) {
     const props = {
         width: 240, collapsed: false, resizing: false, activeFolder: 'inbox', counts, dragActive: false,
-        showSettings: false, onToggle: vi.fn(), onCompose: vi.fn(), onSelect: vi.fn(), onSettings: vi.fn(),
+        onToggle: vi.fn(), onCompose: vi.fn(), onSelect: vi.fn(),
         ...overrides,
     };
     render(<EmailFolderSidebar {...(props as never)} />);
-    return props as unknown as Record<'onToggle' | 'onCompose' | 'onSelect' | 'onSettings', ReturnType<typeof vi.fn>>;
+    return props as unknown as Record<'onToggle' | 'onCompose' | 'onSelect', ReturnType<typeof vi.fn>>;
 }
 
 describe('EmailFolderSidebar', () => {
@@ -33,15 +33,16 @@ describe('EmailFolderSidebar', () => {
         expect(within(screen.getByRole('button', { name: 'Gesendet' })).queryByText('0')).toBeNull();
     });
 
-    it('markiert nur den aktiven Ordner mit aria-current, nicht bei geoeffneten Einstellungen', () => {
+    it('markiert nur den aktiven Ordner mit aria-current', () => {
         renderSidebar({ activeFolder: 'spam' });
         expect(screen.getByRole('button', { name: 'Spam' })).toHaveAttribute('aria-current', 'page');
         expect(screen.getByRole('button', { name: 'Posteingang' })).not.toHaveAttribute('aria-current');
     });
 
-    it('ohne Aktiv-Markierung, wenn die Einstellungen offen sind', () => {
-        renderSidebar({ showSettings: true });
-        expect(screen.getByRole('button', { name: 'Posteingang' })).not.toHaveAttribute('aria-current');
+    it('hat keinen Einstellungen-Knopf mehr – die E-Mail-Einstellungen sind eine eigene Seite', () => {
+        renderSidebar();
+        expect(screen.queryByRole('button', { name: 'Einstellungen' })).toBeNull();
+        expect(screen.queryByText('Einstellungen')).toBeNull();
     });
 
     it('Klicks loesen die passenden Callbacks aus (tax-advisors als Ordner-ID)', async () => {
@@ -51,8 +52,6 @@ describe('EmailFolderSidebar', () => {
         expect(p.onSelect).toHaveBeenCalledWith('tax-advisors');
         await user.click(screen.getByRole('button', { name: 'Neue E-Mail' }));
         expect(p.onCompose).toHaveBeenCalledTimes(1);
-        await user.click(screen.getByRole('button', { name: 'Einstellungen' }));
-        expect(p.onSettings).toHaveBeenCalledTimes(1);
         await user.click(screen.getByRole('button', { name: 'Ordnerleiste einklappen' }));
         expect(p.onToggle).toHaveBeenCalledTimes(1);
     });

@@ -55,7 +55,7 @@ test('Eingeklappte Ordner behalten alle Ziele als erreichbare Symbole', async ({
     await prepare(page);
     await page.getByTitle('Ordnerleiste einklappen').click();
     const sidebar = page.getByRole('navigation', { name: 'E-Mail-Ordner' });
-    for (const name of ['Projekte', 'Anfragen', 'Lieferanten', 'Steuerberater', 'Einstellungen']) {
+    for (const name of ['Projekte', 'Anfragen', 'Lieferanten', 'Steuerberater']) {
         await insideViewport(page, sidebar.getByRole('button', { name, exact: true }));
     }
     expect(await sidebar.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
@@ -79,7 +79,8 @@ test('Auch bei niedriger Fensterhöhe bleiben Ordner und Aktionen erreichbar', a
     await prepare(page);
     await insideViewport(page, page.getByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
     const sidebar = page.getByRole('navigation', { name: 'E-Mail-Ordner' });
-    await insideViewport(page, sidebar.getByRole('button', { name: 'Einstellungen', exact: true }));
+    // Die E-Mail-Einstellungen sind eine eigene Seite – in der Ordnerleiste gibt es keinen Knopf mehr dafür.
+    await expect(sidebar.getByRole('button', { name: 'Einstellungen', exact: true })).toHaveCount(0);
     await sidebar.getByRole('button', { name: 'Steuerberater', exact: true }).scrollIntoViewIfNeeded();
     await insideViewport(page, sidebar.getByRole('button', { name: 'Steuerberater', exact: true }));
     await page.screenshot({ path: info.outputPath('mail-1440x800.png') });

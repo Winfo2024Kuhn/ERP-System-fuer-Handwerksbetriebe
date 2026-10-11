@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { Inbox, Send, FileEdit, Star, Trash2, ShieldAlert, Newspaper, Briefcase, FileText,
-    Package, Calculator, AlertCircle, Settings, PanelLeftClose, PanelLeftOpen, PenSquare, ChevronDown,
+    Package, Calculator, AlertCircle, PanelLeftClose, PanelLeftOpen, PenSquare, ChevronDown,
     type LucideIcon } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
@@ -51,16 +51,16 @@ function FolderButton({ folder, count, active, collapsed, dragActive, onSelect }
 }
 
 export function EmailFolderSidebar({ width, collapsed, resizing, activeFolder, counts, dragActive,
-    showSettings, onToggle, onCompose, onSelect, onSettings }: {
+    onToggle, onCompose, onSelect }: {
     width: number; collapsed: boolean; resizing: boolean; activeFolder: FolderType; counts: Counts;
-    dragActive: boolean; showSettings: boolean; onToggle: () => void; onCompose: () => void;
-    onSelect: (folder: FolderType) => void; onSettings: () => void;
+    dragActive: boolean; onToggle: () => void; onCompose: () => void;
+    onSelect: (folder: FolderType) => void;
 }) {
     const [expanded, setExpanded] = useState(true);
     const toggleLabel = collapsed ? 'Ordnerleiste ausklappen' : 'Ordnerleiste einklappen';
     const renderFolder = (folder: Folder) => <FolderButton key={folder.id} folder={folder}
         count={counts[folder.id === 'tax-advisors' ? 'taxAdvisors' : folder.id]}
-        active={activeFolder === folder.id && !showSettings} collapsed={collapsed}
+        active={activeFolder === folder.id} collapsed={collapsed}
         dragActive={dragActive} onSelect={onSelect} />;
     return <nav aria-label="E-Mail-Ordner" style={{ width }}
         className={cn('flex min-h-0 shrink-0 flex-col border-r border-slate-200 bg-slate-50', !resizing && 'motion-safe:transition-[width]')}>
@@ -86,10 +86,5 @@ export function EmailFolderSidebar({ width, collapsed, resizing, activeFolder, c
             </button>}
             {(expanded || collapsed) && assignedFolders.map(renderFolder)}
         </div>
-        <button type="button" onClick={onSettings} title="Einstellungen" aria-label="Einstellungen"
-            className={cn('flex shrink-0 items-center gap-2.5 border-t border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500',
-                collapsed && 'justify-center px-0', showSettings && 'bg-rose-50 text-rose-700')}>
-            <Settings className="h-4 w-4 shrink-0" />{!collapsed && 'Einstellungen'}
-        </button>
     </nav>;
 }

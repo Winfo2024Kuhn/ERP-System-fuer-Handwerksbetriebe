@@ -64,8 +64,7 @@ org.example.kalkulationsprogramm/
 └── config/                  # Spring-Konfiguration
 
 org.example.email/
-├── EmailService.java        # E-Mail-Versand und -Empfang
-├── ImapAppendService.java   # IMAP-Operationen
+├── EmailService.java        # E-Mail-Versand und -Empfang (inkl. Gesendet-Kopie)
 └── ListFolders.java         # IMAP-Ordner-Auflistung
 ```
 
@@ -182,7 +181,7 @@ Beide Frontends kommunizieren über **REST-API** mit dem Spring Boot Backend auf
 ### 5.2 IMAP E-Mail-Import
 
 - **Zweck:** Automatischer E-Mail-Import alle 60 Sekunden
-- **Service:** `EmailService`, `ImapAppendService`
+- **Service:** `EmailImportService`, `EmailService`
 - **Features:**
   - Spam-Filter und Thread-Erkennung
   - Automatische Zuordnung zu Kunden/Lieferanten/Projekten

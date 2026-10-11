@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
-    FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings,
+    FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings, Settings2,
     ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
     Calendar, CalendarDays, Plane, Receipt, Wallet, Stethoscope,
     Phone, Voicemail
@@ -141,6 +141,7 @@ const NAVIGATION: NavCategory[] = [
                 items: [
                     { name: 'E-Mail Center', href: '/emails/inbox', icon: Mail },
                     { name: 'E-Mail Vorlagen', href: '/email-textvorlagen', icon: MailPlus },
+                    { name: 'E-Mail-Einstellungen', href: '/email-einstellungen', icon: Settings2 },
                 ]
             },
             {

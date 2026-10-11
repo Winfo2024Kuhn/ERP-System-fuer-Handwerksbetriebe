@@ -1,71 +1,80 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
-import org.example.kalkulationsprogramm.domain.EmailSignature;
-import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
-import org.example.kalkulationsprogramm.repository.EmailSignatureRepository;
-import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
 
+import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsPostfachDto;
+import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsnotizDto;
+import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsnotizSpeichernRequest;
+import org.example.kalkulationsprogramm.service.AbwesenheitsnotizService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import lombok.RequiredArgsConstructor;
+
+/**
+ * E-Mail-Einstellungen → Abwesenheitsnotizen. Für jeden angemeldeten Benutzer; welche
+ * Postfächer und Notizen er sieht, regelt der {@link AbwesenheitsnotizService}.
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/email/outofoffice")
 public class OutOfOfficeController {
 
-    private final OutOfOfficeScheduleRepository repo;
-    private final EmailSignatureRepository signatureRepo;
+    private final AbwesenheitsnotizService service;
 
     @GetMapping
-    public List<OutOfOfficeSchedule> list() {
-        return repo.findAll();
+    public List<AbwesenheitsnotizDto> liste(Authentication authentication) {
+        return service.liste(authentication);
     }
 
-    @GetMapping("/active")
-    public ResponseEntity<OutOfOfficeSchedule> active() {
-        LocalDate now = LocalDate.now();
-        return repo.findFirstByActiveTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByStartAtDesc(now, now)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.noContent().build());
+    /** Postfächer, die der Benutzer für eine Notiz auswählen darf. */
+    @GetMapping("/postfaecher")
+    public List<AbwesenheitsPostfachDto> postfaecher(Authentication authentication) {
+        return service.waehlbarePostfaecher(authentication);
     }
 
     @PostMapping
-    public ResponseEntity<OutOfOfficeSchedule> save(@RequestBody SaveOooRequest req) {
-        EmailSignature sig = null;
-        if (req.signatureId != null) {
-            sig = signatureRepo.findById(req.signatureId).orElse(null);
-        }
-        OutOfOfficeSchedule s = req.id == null ? new OutOfOfficeSchedule()
-                : repo.findById(req.id).orElse(new OutOfOfficeSchedule());
-        s.setTitle(req.title);
-        s.setStartAt(req.startDate);
-        s.setEndAt(req.endDate);
-        s.setActive(Boolean.TRUE.equals(req.active));
-        s.setSubjectTemplate(req.subject);
-        s.setBodyTemplate(req.message);
-        s.setSignature(sig);
-        return ResponseEntity.ok(repo.save(s));
+    public AbwesenheitsnotizDto speichern(@RequestBody AbwesenheitsnotizSpeichernRequest request,
+            Authentication authentication) {
+        return service.speichern(request, authentication);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-        repo.deleteById(id);
+    public ResponseEntity<Void> loeschen(@PathVariable Long id, Authentication authentication) {
+        service.loeschen(id, authentication);
         return ResponseEntity.ok().build();
     }
 
-    @Data
-    public static class SaveOooRequest {
-        public Long id;
-        public String title;
-        public LocalDate startDate;
-        public LocalDate endDate;
-        public Long signatureId;
-        public Boolean active;
-        public String subject;
-        public String message;
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> ungueltig(IllegalArgumentException e) {
+        return ResponseEntity.badRequest().body(meldung(e, "Die Angaben sind unvollständig."));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, String>> nichtErlaubt(AccessDeniedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(meldung(e, "Das dürfen Sie nicht."));
+    }
+
+    @ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<Map<String, String>> nichtGefunden(NoSuchElementException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(meldung(e, "Diese Abwesenheitsnotiz gibt es nicht mehr."));
+    }
+
+    private static Map<String, String> meldung(RuntimeException e, String ersatz) {
+        return Map.of("message", Objects.requireNonNullElse(e.getMessage(), ersatz));
     }
 }

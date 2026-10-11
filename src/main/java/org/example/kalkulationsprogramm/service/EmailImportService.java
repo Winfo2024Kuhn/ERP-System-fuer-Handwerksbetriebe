@@ -417,7 +417,7 @@ public class EmailImportService {
 
         // Bereits importiert? Dann höchstens dieses Postfach ergänzen.
         if (emailRepository.existsByMessageId(messageId)) {
-            ergaenzePostfach(messageId, postfachId, folder, msg);
+            ergaenzePostfach(messageId, postfachId, folder, msg, direction);
             return false;
         }
 
@@ -630,14 +630,15 @@ public class EmailImportService {
         }
 
         // Abwesenheitsnotiz (OOO) – nur für eingehende Mails, die nach
-        // Klassifikation NICHT als Spam/Newsletter markiert wurden und vom
-        // einem Kunden stammen. Greift in allen IMAP-Ordnern. Dedup pro
-        // Absender + Plan erfolgt im Responder selbst.
+        // Klassifikation NICHT als Spam/Newsletter markiert wurden. Gilt die
+        // Notiz für das Postfach dieser Mail, antwortet sie aus diesem Postfach.
+        // Dedup pro Absender + Plan erfolgt im Responder selbst.
         if (direction == EmailDirection.IN
                 && !email.isSpam()
                 && !email.isNewsletter()) {
             try {
                 outOfOfficeResponder.handleIncomingEmail(new OutOfOfficeResponder.IncomingMail(
+                        postfachId,
                         email.getFromAddress(),
                         email.getSubject(),
                         email.getSentAt(),
@@ -1288,7 +1289,8 @@ public class EmailImportService {
      * Message-ID an ein anderes Postfach schicken und die Original-Mail dort sichtbar machen.
      * Ergänzt wird nur, wenn Absender-Adresse und Betreff zur gespeicherten Mail passen.</p>
      */
-    private void ergaenzePostfach(String messageId, Long postfachId, IMAPFolder folder, Message msg)
+    private void ergaenzePostfach(String messageId, Long postfachId, IMAPFolder folder, Message msg,
+            EmailDirection direction)
             throws MessagingException {
         if (postfachId == null) {
             return;
@@ -1307,6 +1309,36 @@ public class EmailImportService {
         if (email.ordnePostfachZu(emailAbsenderRepository.getReferenceById(postfachId),
                 folder.getFullName(), folder.getUID(msg))) {
             emailRepository.save(email);
+            if (direction == EmailDirection.IN) {
+                // Nur ein Fund im Posteingang – nicht z. B. eine umgeleitete Kopie im Gesendet-Ordner.
+                beantworteAbwesenheit(email, postfachId, msg);
+            }
+        }
+    }
+
+    /**
+     * Dieselbe Mail ging auch an ein weiteres Postfach (z. B. an info@ und max@): Gilt dort eine
+     * Abwesenheitsnotiz, antwortet sie ebenfalls – der Responder schreibt jedem Absender pro Notiz
+     * nur einmal.
+     */
+    private void beantworteAbwesenheit(Email email, Long postfachId, Message msg) {
+        if (email.getDirection() != EmailDirection.IN || email.isSpam() || email.isNewsletter()) {
+            return;
+        }
+        try {
+            outOfOfficeResponder.handleIncomingEmail(new OutOfOfficeResponder.IncomingMail(
+                    postfachId,
+                    email.getFromAddress(),
+                    email.getSubject(),
+                    email.getSentAt(),
+                    email.isSpam(),
+                    email.isNewsletter(),
+                    firstHeader(msg, "Auto-Submitted"),
+                    firstHeader(msg, "Precedence"),
+                    firstHeader(msg, "List-Id")));
+        } catch (Exception ex) {
+            log.warn("[EmailImport] OOO-Auto-Reply für Email {} fehlgeschlagen: {}",
+                    email.getId(), ex.getMessage());
         }
     }
 
