@@ -177,7 +177,7 @@ public class BelegService {
 
         String originalFilename = StringUtils.cleanPath(
                 Objects.requireNonNullElse(datei.getOriginalFilename(), "beleg"));
-        // Pfad-Traversal blocken (analog zu RechnungsuebersichtController)
+        // Pfad-Traversal blocken: Namen mit "..", "/" oder "\" werden abgelehnt
         if (originalFilename.contains("..") || originalFilename.contains("/")
                 || originalFilename.contains("\\")) {
             throw new IllegalArgumentException("Ungueltiger Dateiname");
