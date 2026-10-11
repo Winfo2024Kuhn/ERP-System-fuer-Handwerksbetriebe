@@ -286,6 +286,8 @@ bringt veraltete PRs danach selbst auf den neuen Stand. Deshalb darf ein PR erst
 ```bash
 # Entwurf freigeben – ab jetzt mergt die PR-Automatik, sobald alles grün ist
 gh pr ready <nr>
+# Automatik gleich anstoßen statt bis zu 15 Minuten auf ihren Takt zu warten
+gh workflow run pr-automatik.yml
 # optional zusätzlich GitHubs Auto-Merge (mergt in deinem Namen, gleiches Ergebnis)
 gh pr merge <nr> --squash --auto --delete-branch
 ```
@@ -305,7 +307,18 @@ Bleibt ein Check rot: **nicht mergen**, sondern nach dem Muster unten berichten.
 ### 4d. Issue schließen und nachprüfen
 
 Eine Aufgabe ist erst sauber abgeschlossen, wenn das zugehörige Issue zu ist.
-Verlass dich **nicht** darauf, dass der Merge das erledigt hat — prüf es nach:
+Zuerst warten, bis die PR-Automatik wirklich gemergt hat (sonst schließt du das Issue
+für einen PR, der noch an einem Konflikt hängt) – höchstens ~30 Minuten, danach berichten:
+
+```bash
+for i in $(seq 1 30); do
+  [ "$(gh pr view <nr> --json state -q .state)" = MERGED ] && break
+  sleep 60
+done
+gh pr view <nr> --json state -q .state   # muss MERGED sein, sonst nicht schließen
+```
+
+Verlass dich **nicht** darauf, dass der Merge das Issue geschlossen hat — prüf es nach:
 
 ```bash
 gh issue view <nr> --json state -q .state
