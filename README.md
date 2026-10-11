@@ -1,513 +1,139 @@
 <p align="center">
-  <img src="assets/app_logo.png" alt="Handwerkerprogramm Logo" width="120" />
+  <img src="assets/app_logo.png" alt="Handwerkerprogramm" width="96" />
 </p>
 
 <h1 align="center">Handwerkerprogramm</h1>
 
 <p align="center">
-  <strong>Das Open-Source-ERP, das für Handwerksbetriebe gebaut wurde – nicht an sie angepasst.</strong><br/>
-  Angebote kalkulieren. Zeiten erfassen. Rechnungen stellen. Projekte nachkalkulieren. Alles in einer Anwendung.
+  Open-Source-ERP für Handwerksbetriebe: Angebote, Projekte, Zeiterfassung, Einkauf und Rechnungen in einer Anwendung.
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-AGPL_v3-blue" alt="AGPL v3" /></a>
   <img src="https://img.shields.io/badge/Java-23-orange?logo=openjdk" alt="Java 23" />
-  <img src="https://img.shields.io/badge/Spring_Boot-3.2.5-6DB33F?logo=spring-boot" alt="Spring Boot" />
-  <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react" alt="React" />
-  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
-  <img src="https://img.shields.io/badge/KI--Assistent-Gemini-4285F4?logo=google&logoColor=white" alt="KI" />
-  <img src="https://img.shields.io/badge/Lizenz-AGPL_v3-blue" alt="Lizenz AGPL v3" />
+  <img src="https://img.shields.io/badge/Spring_Boot-3.2-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot 3.2" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 16" />
 </p>
-
-<div align="center">
-
-| Metric | Value |
-|--------|-------|
-| ⭐ Stars | ![Stars](https://img.shields.io/github/stars/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=f59e0b) |
-| 🍴 Forks | ![Forks](https://img.shields.io/github/forks/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe?style=flat&color=6366f1) |
-
-</div>
 
 <p align="center">
-  ⭐ <strong>Gefällt dir das Projekt? Ein Stern hilft dabei, dass mehr Handwerksbetriebe dieses Tool finden!</strong>
+  <a href="assets/video/rundgang-desktop.mp4">
+    <img src="assets/video/rundgang-desktop.gif" alt="Rundgang durch die Desktop-Oberfläche" width="100%" />
+  </a>
+  <br />
+  <sub>Rundgang mit Demo-Daten: Projekt mit Nachkalkulation, Zeitanalyse je Produktkategorie, Angebot im Dokumenteditor, Erfolgsanalyse. <a href="assets/video/rundgang-desktop.mp4">Als MP4</a></sub>
 </p>
 
-<br/>
+## Worum es geht
 
-<p align="center">
-  <strong>🖥️ Desktop-Frontend</strong>
-</p>
-<p align="center">
-  <img src="assets/pc_frontend.png" alt="Desktop Frontend – Projektkalkulation & Controlling" width="90%" />
-</p>
+Entstanden ist das Programm im Metallbaubetrieb meines Vaters. Es deckt den Ablauf eines Handwerksbetriebs von der Kundenanfrage bis zur bezahlten Schlussrechnung ab und rechnet dabei laufend nach, ob ein Auftrag Geld verdient. Die Oberfläche spricht die Sprache der Werkstatt, nicht die der Buchhaltung.
 
-<br/>
+Es läuft selbst gehostet im Firmennetz, die Daten bleiben im Betrieb. Die Mitarbeiter stempeln über eine Web-App auf dem Handy, die auch ohne Netz funktioniert.
 
-<p align="center">
-  <strong> Automatische Zeitkalkulation per Linearer Regression</strong>
-</p>
-<p align="center">
-  <img src="assets/Produktkategorie_Nachkalkulation.png" alt="Produktkategorie Nachkalkulation – Lineare Regression" width="90%" />
-</p>
+## Ausprobieren
 
-<br/>
-
-<p align="center">
-  <strong>📱 Mobile App (PWA)</strong>
-</p>
-<p align="center">
-  <img src="assets/mobild_frontend.png" alt="Mobile Zeiterfassung – PWA für die Baustelle" width="35%" />
-</p>
-
-<br/>
-
-<p align="center">
-  <strong>📝 Dokumenteditor – Block-basierte Angebots- & Rechnungserstellung</strong>
-</p>
-<p align="center">
-  <img src="assets/Dokumenteditor.png" alt="Dokumenteditor – Block-basierter Editor mit Live-PDF-Vorschau" width="90%" />
-</p>
-
----
-
-## 🙋 Über dieses Projekt
-
-Ich habe dieses Programm entwickelt, um meinem Vater in seinem Handwerksbetrieb zu helfen. Was als kleines Tool zur Projektkalkulation begann, ist über die Zeit zu einem vollständigen ERP-System gewachsen – mit eingebautem KI-Assistenten, automatischer Zeitkalkulation, Echtzeit-Nachkalkulation, E-Mail-Integration und vielem mehr.
-
-Ich studiere **Wirtschaftsinformatik im 4. Semester** und habe das Projekt durch **Pair-Programming mit Claude (AI)** entwickelt. Jetzt möchte ich es als Open Source verfügbar machen, damit auch andere Handwerksbetriebe davon profitieren können.
-
----
-
-## 🔗 Lead-to-Cash in einem System
-
-Vom Website-Besucher bis zur Schlussrechnung – alles in einem geschlossenen Loop:
-
-```text
-Website-Besucher
-   ↓ Anfrage-Formular (Cloudflare-Tunnel + Spam-Filter VOR Persistenz)
-   ↓ Auto-Push an zuständige Mitarbeiter, Auto-Bestätigungsmail an Lead
-Sammel-Container für Eingangs-Mails & Fotos zur Anfrage
-   ↓ Konvertierung zum Projekt – Notizen & Bilder wandern automatisch ins Bautagebuch
-ProjektEditor mit Live-Vor- & Nachkalkulation aus 4 Quellen
-   (Zeit + Material + Artikel + Eingangsrechnung)
-   ↓ Angebot → Digitale Freigabe per Snapshot-Hash
-ZUGFeRD/XRechnung-Versand (EN 16931) direkt aus dem Dokumenteditor
-   ↓ Multi-Kostenstellen-Split & Verrechnungslohn-BAB
-Lineare Regression lernt aus echter Zeit → kalibriert die nächste Kalkulation
-```
-
-Das ist kein „ERP mit netten Features" – es ist ein **integriertes Business-Betriebssystem für Handwerksbetriebe**.
-
-### 19 Highlights auf einen Blick
-
-| # | Feature |
-| --- | --- |
-| 1 | **KI-Assistent mit RAG auf dem eigenen Code** – kontextbewusst, kennt jede Seite, jede Funktion, jeden Workflow |
-| 2 | **KI-Eingangsrechnungs-Analyse** – ZUGFeRD-XML zuerst, dann Gemini-OCR-Fallback, automatische Lieferanten-Zuordnung |
-| 3 | **Google Search Grounding** – DIN-Normen, Materialdaten, Wetter für Baustellen direkt im KI-Chat |
-| 4 | **E-Mail-Auto-Import** – IMAP-Polling 60 s, Anhänge werden direkt analysiert und an offene Bestellungen angedockt |
-| 5 | **ZUGFeRD/XRechnung-Versand** (EN 16931) direkt aus dem Dokumenteditor |
-| 6 | **Multi-Quellen-Materialkosten** – manuell + Artikel + Eingangsrechnung fließen automatisch in dasselbe Projekt |
-| 7 | **4-Stufen-Bestellkette** – Anfrage → Bestellung → Rechnung eingegangen → Zugeordnet, durchgehend verfolgt |
-| 8 | **Lineare Regression auf echten Zeiten** – Programm lernt mit jedem Projekt mit, nach Kategorie + Arbeitsgang aufgelöst |
-| 9 | **Controlling-Dashboard mit PLZ-Heatmap & Umsatz-Vorjahresvergleich** – Echtzeit-KPIs |
-| 10 | **Offline-First-Mobile-PWA** inkl. Bautagebuch, Reklamation, Lieferschein-Scan mit Perspektivkorrektur |
-| 11 | **Sammel-Container für Anfragen** – Eingangs-Mails und Fotos zur Anfrage sammeln, bevor sie zum Projekt werden |
-| 12 | **Block-basierter Dokumenteditor** mit Live-PDF, GAEB-Import, 7 Dokumenttypen aus einem Editor |
-| 13 | **Digitale Angebots-Freigabe per Snapshot-Hash** – revisionssicher, GoBD-konform |
-| 14 | **Eingangsrechnung → Multi-Projekt/Kostenstellen-Split** prozentual oder absolut, mit Auto-Restbetrag |
-| 15 | **Live-Nachkalkulation aus 4 Quellen** – Gewinn wird rot, sobald er negativ wird |
-| 16 | **Bautagebuch + Anfrage-Tagebuch** – durchgehend ab der Anfrage, Auto-Transfer ins Projekt |
-| 17 | **Website-Anfrage-Funnel End-to-End** – Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Push → Auto-Mail |
-
----
-
-## 🚀 Was dieses ERP besonders macht
-
-> Die meisten ERP-Systeme sind für Konzerne gebaut und kosten tausende Euro. Dieses hier ist speziell für Handwerksbetriebe entwickelt – mit Features, die echte Probleme aus dem Arbeitsalltag lösen.
-
-### 🧠 KI-Assistent, der das Programm kennt (RAG-basiert)
-
-Kein dummer Chatbot – der eingebaute KI-Assistent **versteht die gesamte Anwendung**:
-
-- **Kontextbewusst:** Die KI sieht, auf welcher Seite du gerade bist, welche Felder sichtbar sind, welche Fehler angezeigt werden und welche Buttons deaktiviert sind – und hilft dir gezielt weiter
-- **Retrieval-Augmented Generation (RAG):** Beim Start wird der gesamte Quellcode (Frontend, Backend, Docs) in semantische Chunks aufgeteilt, als Vektoren embedded (Gemini text-embedding-004) und in einem lokalen Vektorindex gespeichert. Bei jeder Nutzerfrage werden die relevantesten Code-Stellen per Cosine-Similarity gefunden und als Kontext an die KI übergeben
-- **Google Search Grounding:** Neben Programm-Hilfe beantwortet die KI auch fachliche Fragen – DIN-Normen, Materialeigenschaften, Vorschriften, aktuelle Wetterdaten für Baustellen
-- **Überall verfügbar:** Schwebendes Chat-Widget auf jeder Seite, Gesprächsverlauf bleibt erhalten
-
-> Beispiel: „Wie erstelle ich eine Schlussrechnung?" → Die KI findet den relevanten Code, versteht den Workflow und erklärt dir Schritt für Schritt, was zu tun ist.
-
-### ⏱️ Automatische Zeitkalkulation per Lineare Regression
-
-Das System **lernt aus deinen abgeschlossenen Projekten**, wie lange Arbeiten dauern:
-
-- **Datengetriebene Kalkulation:** Für jede Produktkategorie (z. B. „Fenster einbauen", „Flachdach abdichten") werden alle vergangenen Projekte mit Zeitbuchungen analysiert
-- **Lineare Regression:** Berechnet automatisch `Fixzeit + Variable Zeit × Menge` – also z. B. „0,5 h Rüstzeit + 1,2 h pro Fenster"
-- **Aufschlüsselung nach Arbeitsgang:** Zeigt für jeden Arbeitsgang (Montage, Nacharbeit, Transport) die durchschnittlichen Stunden pro Einheit
-- **Interaktives Diagramm:** Scatter-Plot mit Regressionslinie – sofort sichtbar, welche Projekte Ausreißer waren
-- **Jahresfilter:** Analysiere nur aktuelle Jahre oder vergleiche die Entwicklung
-
-> Kein manuelles Schätzen mehr – das Programm sagt dir auf Basis echter Daten, wie lange ein Auftrag dauern wird.
-
-### 📊 Echtzeit-Nachkalkulation im Projekt
-
-Jedes Projekt zeigt dir **live**, ob du Geld verdienst oder verlierst:
-
-- **Arbeitskosten:** Die Zeiterfassung der Mitarbeiter (Stunden × Stundensatz) wird automatisch pro Projekt summiert – aufgeschlüsselt nach Kategorie → Arbeitsgang → Mitarbeiter
-- **Materialkosten aus 3 Quellen:** Manuelle Einträge + Artikel aus dem Lager + zugeordnete Eingangsrechnungen – alles fließt automatisch zusammen
-- **Gewinn-Berechnung:** `Netto-Preis − Arbeitskosten − Materialkosten = Gewinn` – wird rot, wenn negativ
-- **8-Tab-Übersicht:** Zeiten, Materialkosten, E-Mails, Geschäftsdokumente, Dateien, Beschreibung, Bautagebuch – alles an einem Ort
-
-> Du siehst sofort: „Bei diesem Projekt sind wir 800 € im Minus, weil der Monteur 12 Stunden länger gebraucht hat als kalkuliert."
-
-### 🛒 Eingangsrechnungen → Projekte & Kostenstellen zuordnen
-
-Lieferantenrechnungen verschwinden nicht in einem Ordner – sie werden **aktiv den richtigen Projekten zugeordnet**:
-
-- **4-Stufen-Bestellkette:** Anfrage → Bestellung → Rechnung eingegangen → Zugeordnet
-- **Flexible Aufteilung:** Eine Rechnung kann prozentual oder als absoluter Betrag auf mehrere Projekte und Kostenstellen (Lager, Büro, Versicherung) verteilt werden
-- **Automatischer Rest:** Das letzte Projekt bekommt automatisch den Restbetrag – keine Rundungsfehler
-- **Sofortige Nachkalkulation:** Die zugeordneten Beträge erscheinen sofort im ProjektEditor unter Materialkosten und aktualisieren die Gewinnberechnung
-- **PDF-Verknüpfung:** Die Originalrechnung wird automatisch im Projekt als Eingangsrechnung hinterlegt
-
-> Beispiel: 10.000 € Lieferantenrechnung → 60 % auf „Hausbau Meyer" (6.000 €) + 40 % auf Kostenstelle „Lager" (4.000 €). Sofort sichtbar im Projekt.
-
-### 📬 Eingangsrechnungen automatisch aus dem E-Mail-Postfach
-
-Keine manuelle Ablage mehr – das System **holt sich Lieferantenrechnungen selbstständig**:
-
-- **IMAP-Polling alle 60 Sekunden:** Das System überwacht automatisch das E-Mail-Postfach und erkennt neue Nachrichten
-- **Automatische Lieferanten-Zuordnung:** Anhand der Absender-Domain wird die E-Mail dem richtigen Lieferanten zugeordnet
-- **KI-Analyse der Anhänge:** PDF-Anhänge werden automatisch analysiert – erst per ZUGFeRD-XML, dann per Gemini AI (OCR-Fallback). Die KI erkennt Dokumenttyp (Rechnung, Lieferschein, Gutschrift), Rechnungsnummer, Beträge und Zahlungsbedingungen
-- **Automatische Bestellungs-Verknüpfung:** Erkannte Bestellnummern werden mit offenen Bestellungen abgeglichen – die Rechnung dockt automatisch an die richtige Bestellkette an
-- **Direkt verfügbar:** Nach der Analyse erscheint die Rechnung in der Bestellungsübersicht und kann sofort Projekten zugeordnet werden
-
-> Du bestellst Material, der Lieferant schickt die Rechnung per Mail – und das Programm hat sie schon analysiert, dem Lieferanten zugeordnet und an die Bestellung gehängt, bevor du die Mail überhaupt gelesen hast.
-
-### 📱 Mobile App – das Werkzeug für die Baustelle
-
-Die mobile PWA läuft auf **jedem Smartphone im Browser** – kein App Store nötig:
-
-- **Zeiterfassung:** 3-Schritt-Wizard (Projekt → Kategorie → Arbeitsgang), Start/Stop, Projekt-Wechsel mit automatischer Umbuchung
-- **Bautagebuch mit Fotos:** Direkt auf der Baustelle Fotos schießen, mit Zeitstempel und Mitarbeitername ins Projekt-Tagebuch laden
-- **Kunden- & Lieferanten-Adressen:** Komplettes Adressbuch mit **Click-to-Call**, **SMS**, **E-Mail** und **Google-Maps-Navigation** direkt zur Baustelle oder zum Lieferanten
-- **Lieferscheine scannen:** Kamera öffnen, Lieferschein fotografieren, **Perspektivkorrektur** mit Eckpunkten justieren, KI analysiert automatisch Nummer, Datum und Bestellreferenz
-- **Reklamation erstellen:** Problem beschreiben, Beweisfotos schießen, mit Lieferschein verknüpfen – alles vom Handy aus
-- **Angebote einsehen:** Angebots-Details, Fotos und Bautagebuch auch für Angebote verfügbar
-- **Teamkalender:** Wer ist im Urlaub? Wer ist krank? Farbcodierte Übersicht für Woche/Monat
-- **Urlaub & Abwesenheiten:** Antrag stellen (Urlaub, Krankheit, Fortbildung, Zeitausgleich), Feiertag-Check, Genehmigungsworkflow
-- **Salden-Übersicht:** Soll/Ist-Stunden, Überstunden, Resturlaub, Krankheitstage – alles auf einen Blick
-- **Offline-First:** Alle Daten werden in IndexedDB gecacht. Zeitbuchungen, Fotos und Reklamationen werden lokal gespeichert und bei Verbindung automatisch synchronisiert
-
-> Auf der Baustelle kein Internet? Kein Problem. Die App arbeitet offline weiter und synchronisiert alles, sobald wieder Empfang da ist.
-
-### 📝 Dokumenteditor – vom Angebot zur Nachkalkulation in einer Kette
-
-Der Dokumenteditor ist das Herzstück des Rechnungswesens. Hier entsteht alles – vom ersten Angebot bis zur Schlussrechnung:
-
-**Der Workflow:** Du legst einmalig deine **Leistungen** an (z. B. „Fenster einbauen", „Putz auftragen") und ordnest jede Leistung einer **Produktkategorie** zu (z. B. „Fensterbau", „Putzarbeiten"). Im Dokumenteditor ziehst du diese Leistungen als Blöcke in dein Angebot – mit Menge, Einheit und Preis. Sobald das Angebot zum Projekt wird, weiß das System automatisch, welche Produktkategorien betroffen sind. Deine Mitarbeiter buchen ihre Zeiten auf genau diese Kategorien. Das Ergebnis: **Die Nachkalkulation läuft vollautomatisch** – geplante Stunden aus dem Angebot vs. tatsächlich gebuchte Stunden, aufgeschlüsselt nach Kategorie und Arbeitsgang.
-
-- **Block-basierter Aufbau mit Drag & Drop:** Leistungspositionen, Textbausteine, Abschnittsüberschriften, Trennlinien – frei kombinierbar und per Drag & Drop sortierbar
-- **Leistungskatalog → Produktkategorien → Zeiterfassung:** Jede Leistung ist an eine Produktkategorie gebunden. Wenn der Mitarbeiter auf der Baustelle Zeit bucht, wählt er dieselbe Kategorie – das System verbindet beides automatisch
-- **Live-PDF-Vorschau:** Rechts neben dem Editor siehst du in Echtzeit das fertige PDF mit Firmenbriefkopf, Positionsnummern und Summenblock
-- **7 Dokumenttypen:** Angebot, Rechnung, Teilrechnung, Abschlagsrechnung, Schlussrechnung, Gutschrift, Storno – alle aus einem Editor
-- **Abschnitte mit Zwischensummen:** Positionen in Bauabschnitte gruppieren (z. B. „Erdgeschoss", „Dacharbeiten") – Zwischensumme wird automatisch berechnet
-- **GAEB-Import:** Leistungsverzeichnisse im GAEB-XML-Format importieren – Positionen werden direkt als Blöcke angelegt
-- **E-Mail-Versand mit ZUGFeRD:** Dokument direkt per E-Mail versenden – wahlweise als Standard-PDF oder ZUGFeRD/XRechnung (EN 16931)
-- **GoBD-konforme Sperrung:** Gebuchte Rechnungen werden automatisch gesperrt – nur noch Storno möglich
-
-> Du legst einmal deine Leistungen und Kategorien an – danach stellt sich das Programm von selbst ein: Angebote kalkulieren, Zeiten erfassen, Nachkalkulation auswerten. Alles hängt zusammen.
-
-### 📂 CAD- & Excel-Dateien direkt aus dem Browser öffnen – wie ein gemeinsamer Cloudspeicher
-
-Alle CAD-Zeichnungen und Excel-Dateien werden zentral auf dem Server gespeichert und sind **für alle Mitarbeiter sofort aufrufbar** – egal ob HiCAD, Tenado oder Excel:
-
-- **Zentraler Netzwerkspeicher:** Alle Zeichnungen und Tabellen liegen auf einem gemeinsamen Netzlaufwerk (z. B. `\\Server\CADdrawings`). Jeder PC im Büro kann darauf zugreifen – kein manuelles Kopieren, keine veralteten Versionen
-- **1-Klick-Öffnen aus dem ERP:** Ein Klick auf „Öffnen" im Projekt öffnet die Datei direkt im richtigen Programm – HiCAD, Tenado oder Excel starten automatisch mit der richtigen Datei. Kein Suchen im Datei-Explorer
-- **openfile://-Protokoll:** Das ERP nutzt ein eigenes Protokoll, das der mitgelieferte **OpenFileLauncher** auf jedem PC registriert. Er mappt das Netzlaufwerk automatisch auf den richtigen Laufwerksbuchstaben (z. B. Z:) und übergibt den Pfad dem passenden Programm
-- **Einmal installieren, überall nutzen:** Der Launcher wird einmalig per `INSTALL.bat` auf jedem Arbeits-PC eingerichtet (< 1 Minute). Danach funktioniert das Öffnen auf Knopfdruck – für alle Mitarbeiter gleichzeitig
-- **Automatisches Laufwerk-Mapping:** Ist das Netzlaufwerk bereits verbunden, erkennt der Launcher es automatisch. Ist es noch nicht gemappt, verbindet er es selbstständig im Hintergrund
-
-> Beispiel: Der Projektleiter im Büro klickt in der Projektansicht auf eine Zeichnung – HiCAD öffnet sie direkt. Der Kollege am Nebenschreibtisch sieht dieselbe Datei, weil beide auf denselben zentralen Speicher zugreifen. Wie Google Drive – nur lokal, schnell und ohne Cloud-Abhängigkeit.
-
-### 🎨 Formular-Designer – eigene Vorlagen wie in Canva
-
-Jede Firma hat ihren eigenen Stil. Im Formular-Designer gestaltest du deine **Dokumentvorlagen pixelgenau** auf einer DIN-A4-Arbeitsfläche:
-
-- **Canva-ähnlicher Editor:** Elemente frei auf der Seite platzieren – per Drag & Drop verschieben, an Kanten und Hilfslinien einrasten lassen, Größe per Anfasser ändern
-- **12 Elementtypen:** Logo, Überschriften, Freitext, Adressfeld, Kundennummer, Dokumentnummer, Datum, Projektnummer, Leistungstabelle, Seitenzahl und mehr
-- **Platzhalter mit Live-Vorschau:** `{{KUNDENNAME}}`, `{{BAUVORHABEN}}`, `{{DATUM}}` etc. – werden in der Vorschau mit echten Daten aus der Datenbank gefüllt
-- **Mehrseitige Vorlagen:** Seite 1 mit Briefkopf und Logo, Folgeseiten nur mit Tabelle und Seitenzahl – unabhängig gestaltbar
-- **Vorlagen-Bibliothek:** Templates speichern, duplizieren und verschiedenen Dokumenttypen zuweisen (ein Template für Angebote, ein anderes für Rechnungen)
-- **Magnetische Hilfslinien:** Automatisches Einrasten an Kanten, Mitten und Nachbar-Elementen für saubere Ausrichtung
-- **Undo/Redo:** Bis zu 50 Schritte rückgängig machen (Strg+Z)
-
-> Einmal das Firmen-Layout gestalten – danach werden alle Angebote, Rechnungen und Lieferscheine automatisch in deinem Corporate Design erzeugt.
-
-### 📓 Bautagebuch & Anfrage-Tagebuch – durchgehend dokumentieren, von der ersten Anfrage bis zur Abnahme
-
-Das Bautagebuch beginnt **schon ab der Anfrage** – lückenlos vom ersten Vor-Ort-Termin bis zur Abnahme:
-
-- **Strukturierte Einträge:** Mitarbeiter + Freitext (bis 4 000 Zeichen) + Multi-Bild-Upload + Zeitstempel – pro Eintrag sauber zugeordnet
-- **Private Notizen:** Mit dem `nurFuerErsteller`-Flag bleiben sensible Beobachtungen nur für den Verfasser sichtbar
-- **Sichtbarkeits-Steuerung Mobile vs. PC:** Das `mobileSichtbar`-Flag steuert pro Eintrag, ob er auch auf der Baustelle angezeigt wird – Bürotinternes bleibt am Schreibtisch
-- **Anfrage-Tagebuch (AnfrageNotiz):** Schon in der Anfrage-Phase Notizen + Fotos sammeln – z. B. Vor-Ort-Aufmaßbilder oder Telefonate mit dem Interessenten
-- **Automatischer Transfer bei Konvertierung:** Wird die Anfrage zum Projekt, **wandern alle Notizen und Bilder automatisch ins Bautagebuch** – kein doppeltes Tippen, keine verlorenen Infos
-- **Durchgehende Dokumentation:** Von der ersten Anfrage bis zur Schlussrechnung – alles in einem Tagebuch
-
-> Beispiel: Du fotografierst beim Vor-Ort-Termin den maroden Dachstuhl und schreibst „Sparrenabstand 70 cm, drei Sparren angefault". Drei Wochen später wird daraus ein Projekt – und das Foto + die Notiz sind sofort im Bautagebuch des Projekts, ohne dass du sie umkopieren musst.
-
-### 🌐 Website-Anfrage-Funnel End-to-End – kein Zapier, keine Bastelei
-
-Eine geschlossene Lead-Pipeline: vom Klick auf der Website bis zur Push-Nachricht beim zuständigen Mitarbeiter ist alles verkabelt:
-
-- **Sichere S2S-Übermittlung:** Webseite spricht über einen **Cloudflare-Tunnel** mit dem ERP – kein Browser-API, kein Key-Leak, keine offenen Ports am Firmenrouter. Authentifizierung per Access-Token
-- **Spam-Filter VOR Persistenz:** Der `AnfrageFunnelSpamFilterService` prüft Honeypot-Felder, Rate-Limits und Heuristiken **bevor** überhaupt etwas in die Datenbank geschrieben wird – keine Müll-Anfragen, kein DB-Bloat
-- **System-Identität als Audit-Subjekt:** Anlegender Mitarbeiter ist „Webseite" (eigener System-Mitarbeiter aus Flyway V221) – damit bleibt der Audit-Trail GoBD-konform, ohne dass ein echter Mitarbeiter die Aktion „signiert"
-- **Smart-Dedup per E-Mail-Match:** Kommt eine Anfrage von einer bekannten Kunden-E-Mail rein, wird sie automatisch dem bestehenden Kunden zugeordnet – keine Karteileichen-Dubletten
-- **Multi-Bild-Upload → Auto-Notiz:** Die Bilder aus dem Webformular landen automatisch als `AnfrageNotizBild` an einer neu erzeugten `AnfrageNotiz` – fertig sortiert, ohne Klick
-- **Auto-Bestätigungsmail an den Lead:** Vorlage liegt in der DB, ist im PC-Frontend editierbar – jede Anfrage bekommt sofort eine professionelle Eingangsbestätigung
-- **Web-Push an die richtigen Mitarbeiter:** Filterung über Abteilungs-Zuordnung (Flyway V311), Click auf die Push öffnet direkt die Mobile-PWA an der richtigen Stelle
-- **Auto-Transfer bei Konvertierung:** Wird die Anfrage zum Projekt, übernehmen `Notiz` + `Bilder` das Bautagebuch – die End-to-End-Kette schließt sich von selbst
-
-> Cloudflare-Tunnel → Spam-Filter → Kunden-Dedup → Notiz → Bilder → Push → Mail → Auto-Transfer ins Projekt. **Das ist der Lead-to-Cash-Loop in einer Pipeline.**
-
----
-
-## 📋 Weitere Module
-
-| Modul | Highlights |
-|-------|-----------|
-| **🛒 Bestellwesen** | 4-Stufen-Kette (Anfrage → Rechnung), Kilogramm-Berechnung für Profile, Rechnungssplitting auf Projekte & Kostenstellen |
-| **🏠 Mietverwaltung** | Jahres-Nebenkostenabrechnung, Zählerstanderfassung (Wasser, Strom, Gas), PDF für Mieter |
-| **📊 Controlling-Dashboard** | Echtzeit-KPIs, monatlicher Umsatzverlauf mit Vorjahresvergleich, Projekt-Heatmap nach PLZ |
-
----
-
-## 🔒 Datenschutz & KI-Hinweis
-
-> **Wichtig:** Dieses ERP verarbeitet sensible Geschäftsdaten (Rechnungen, Kundendaten, Mitarbeiterzeiten). Bitte beachte:
-
-- **Lokaler Betrieb empfohlen:** Für maximalen Datenschutz das System im eigenen Netzwerk betreiben – alle Daten bleiben auf deinem Server
-- **Google Gemini API:** Die KI-Features (Chat-Assistent, Dokumentenanalyse, E-Mail-Polishing) senden Daten an die Google Gemini API. Stelle sicher, dass du die **EU-Region** verwendest und das **KI-Training auf deinen Daten deaktivierst** (Opt-out in der Google Cloud Console). Gemini-Anfragen über die kostenpflichtige API werden laut Google standardmäßig **nicht** für das Modelltraining verwendet – prüfe dennoch deine Vertragsbedingungen
-- **Ohne KI nutzbar:** Alle Kernfunktionen (Rechnungswesen, Zeiterfassung, Bestellwesen) funktionieren **vollständig ohne KI**. Der Gemini-API-Key ist optional – ohne ihn werden die KI-Features einfach deaktiviert
-- **DSGVO:** Bei personenbezogenen Daten (Mitarbeiterzeiten, Kundenadressen) gelten die üblichen DSGVO-Pflichten. Da das System Self-Hosted ist, behältst du die volle Kontrolle über deine Daten
-
----
-
-## 🏗️ Architektur
-
-```mermaid
-graph TB
-    subgraph Frontend
-        PC["🖥️ Desktop-Frontend<br/>(React + Vite + Tailwind)"]
-        Mobile["📱 Mobile PWA<br/>(React Zeiterfassung)"]
-        KI["🧠 KI-Hilfe Chat<br/>(schwebendes Widget)"]
-    end
-
-    subgraph Backend["Spring Boot Backend"]
-        API["REST API<br/>(73 Controller)"]
-        Services["Business Logic<br/>(113 Services)"]
-        Domain["Domain Model<br/>(104 Entities)"]
-        RAG["🔍 Local RAG Service<br/>(Vektor-Index im RAM)"]
-    end
-
-    subgraph Extern["Externe Dienste"]
-        AI["🤖 Google Gemini AI<br/>(Chat, OCR, Embedding)"]
-        Search["🌐 Google Search<br/>(Grounding)"]
-        IMAP["📧 IMAP E-Mail-Server"]
-    end
-
-    subgraph Daten["Datenspeicher"]
-        PostgreSQL["🐘 PostgreSQL"]
-        FS["📁 Dateisystem (uploads/)"]
-        Cache["📦 RAG-Cache (.json)"]
-    end
-
-    PC --> API
-    Mobile --> API
-    KI --> API
-    API --> Services
-    Services --> Domain
-    Domain --> PostgreSQL
-    Services --> FS
-    Services --> AI
-    Services --> IMAP
-    RAG --> AI
-    RAG --> Cache
-    Services --> RAG
-    AI --> Search
-```
-
----
-
-## 🛠️ Tech-Stack
-
-| Schicht | Technologie |
-|---------|-------------|
-| **Backend** | Java 23, Spring Boot 3.2.5, JPA/Hibernate, Flyway |
-| **Datenbank** | PostgreSQL 16 |
-| **Desktop-Frontend** | React 18 + TypeScript + Vite + Tailwind CSS |
-| **Mobile App** | React PWA (Offline-fähig via IndexedDB) |
-| **KI-Assistent** | Google Gemini API (Chat, Vision, Embedding), Google Search Grounding |
-| **RAG / Vektorsuche** | Lokaler In-Memory-Vektorindex mit Cosine-Similarity (kein externer Service nötig) |
-| **PDF-Generierung** | OpenPDF, Apache PDFBox, Mustang (ZUGFeRD) |
-| **E-Mail** | Jakarta Mail (IMAP/SMTP) |
-| **Build** | Maven (Backend), Vite (Frontend) |
-| **Deployment** | Docker (ein Image mit Backend + beiden Oberflächen, nächtliche Updates mit Rollback) |
-
----
-
-## 🚀 Schnellstart
-
-### 💿 Für Betriebe: Einrichten mit Docker (Windows-PC oder Linux-Server)
-
-**Ein Doppelklick bzw. ein Befehl. Datenbank, ERP und automatische Updates kommen mit.**
-
-1. Den Ordner [`deployment/docker-server`](deployment/docker-server) auf den Rechner kopieren
-2. Windows: **`Einrichten.cmd` doppelklicken** – Linux: `sudo ./einrichten.sh`
-3. Im Browser öffnet sich das ERP. Wer sich zuerst registriert, wird Admin ✅
-
-> Danach läuft das ERP von selbst: Es startet nach jedem Neustart, holt sich nachts neue Versionen, sichert vorher die Datenbank (PostgreSQL) und rollt bei Problemen automatisch zurück. Details: [docker-server/README.md](deployment/docker-server/README.md)
-
-### 🐳 Für Entwickler: Docker
+Voraussetzung ist [Docker](https://www.docker.com/products/docker-desktop/), unter Windows zusätzlich Git Bash oder WSL. Das Skript baut das Image, startet Datenbank und App als eigenes Compose-Projekt `erp-demo` und füllt sie mit einem erfundenen Metallbaubetrieb (24 Projekte, Zeitbuchungen, Rechnungen, Zeitkonten).
 
 ```bash
 git clone https://github.com/Winfo2024Kuhn/ERP-System-fuer-Handwerksbetriebe.git
 cd ERP-System-fuer-Handwerksbetriebe
-docker compose up -d --build
+scripts/demo/demo-starten.sh
 ```
 
-### 🔧 Weitere Optionen
+Danach `http://localhost:8080` öffnen und gleich registrieren: Der erste Benutzer wird Admin, und die App ist im lokalen Netz erreichbar. Die Handy-App liegt unter `/zeiterfassung`, angemeldet wird per QR-Code aus der Mitarbeiterverwaltung. Damit ein echtes Handy ihn öffnen kann, beim Start die Netzwerkadresse des Rechners mitgeben: `ZEITERFASSUNG_URL=http://192.168.1.20:8080 scripts/demo/demo-starten.sh`. Ohne HTTPS laufen Stempeln und Ansehen, Offline-Modus und Push-Nachrichten aber nicht. Alles wieder entfernen: `docker compose -p erp-demo down -v`.
 
-Detaillierte Anleitungen (Docker beim Kunden, Entwicklung mit lokalem PostgreSQL, Zugriff von unterwegs):
+## Funktionen
 
-📖 **[Vollständige Installationsanleitung →](docs/INSTALLATION.md)**
+| Bereich | Was das Programm macht |
+| --- | --- |
+| **Anfragen** | Anfragen aus dem Website-Formular mit Spamfilter, Fotos und Notizen. Wird daraus ein Auftrag, wandern Notizen und Bilder ins Bautagebuch. |
+| **Angebote und Rechnungen** | Dokumenteditor aus Bausteinen mit Live-PDF. Angebot, Auftragsbestätigung, Abschlags-, Teil- und Schlussrechnung, Gutschrift, Storno. GAEB-Import, ZUGFeRD/XRechnung nach EN 16931, digitale Angebotsannahme mit Bestätigungscode per E-Mail. Gebuchte Rechnungen sind GoBD-konform gesperrt. |
+| **Projekte** | Laufende Nachkalkulation aus Arbeitszeit, Material, Lagerartikeln und zugeordneten Eingangsrechnungen. Bautagebuch, Dateien, E-Mails und Dokumente je Projekt. CAD- und Excel-Dateien öffnen per Klick im passenden Programm. |
+| **Kalkulation** | Leistungskatalog mit Produktkategorien. Aus abgeschlossenen Projekten berechnet eine lineare Regression Fixzeit und Zeit pro Einheit, aufgeteilt nach Arbeitsgang. |
+| **Zeiterfassung** | Web-App fürs Handy: stempeln auf Projekt, Kategorie und Arbeitsgang, offline mit späterem Abgleich. Zeitkonten, Urlaub und Abwesenheit, Feiertage, Monatsabschluss, Export für die Lohnabrechnung (DATEV LODAS). |
+| **Einkauf** | Bedarf, Bestellanfragen und Bestellungen. Lieferantenrechnungen und Lieferscheine kommen aus dem Postfach, werden erkannt (ZUGFeRD-XML, sonst KI) und auf Projekte und Kostenstellen verteilt. |
+| **Kommunikation** | E-Mail-Zentrale mit mehreren Postfächern und Sichtbarkeit nach Abteilung, Textvorlagen, Abwesenheitsnotiz, FRITZ!Box-Anrufliste. |
+| **Finanzen** | Erfolgsanalyse mit Vorjahresvergleich, offene Posten und Mahnwesen, Kasse und Belege, Kostenstellen, Nebenkostenabrechnung für vermietete Objekte. |
 
----
+## Oberfläche
 
-## 🏗️ Deployment & Betrieb
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/projekt-nachkalkulation.png" alt="Projekt mit Nachkalkulation" /><br /><sub>Projekt mit Nachkalkulation: Stunden nach Arbeitsgang und Mitarbeiter, Gewinn laufend gerechnet</sub></td>
+    <td width="50%"><img src="assets/screenshots/kategorie-analyse.png" alt="Zeitanalyse je Produktkategorie" /><br /><sub>Zeitanalyse je Produktkategorie: Fixzeit und Stunden pro Meter aus abgeschlossenen Projekten</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/dokumenteditor.png" alt="Dokumenteditor" /><br /><sub>Dokumenteditor: Leistungen aus dem Katalog, PDF-Vorschau daneben</sub></td>
+    <td><img src="assets/screenshots/erfolgsanalyse.png" alt="Erfolgsanalyse" /><br /><sub>Erfolgsanalyse: Umsatz, Kosten und Gewinn je Jahr und Kunde</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshots/projekte.png" alt="Projektübersicht" /><br /><sub>Projektübersicht mit Status, Auftragsnummer und Auftragswert</sub></td>
+    <td><img src="assets/screenshots/zeiterfassung-kalender.png" alt="Zeiterfassung im Büro" /><br /><sub>Zeiterfassung im Büro: Soll, Ist und Stundenkonto je Mitarbeiter</sub></td>
+  </tr>
+</table>
 
-Das Handwerkerprogramm kann **lokal im Firmennetzwerk** oder auf einem **Cloud-Server** betrieben werden.
-
-📖 **[Vollständige Deployment-Anleitung → (LAN, Tailscale VPN, Caddy HTTPS, Cloudflare Tunnel)](docs/INSTALLATION.md#deployment--betrieb)**
-
----
-
-## �📁 Projektstruktur
-
-```
-Handwerkerprogramm/
-├── src/main/java/.../kalkulationsprogramm/
-│   ├── controller/          # 56 REST-Controller
-│   ├── service/             # 84 Business-Services
-│   │   ├── KiHilfeService         # KI-Chat mit RAG + Google Search
-│   │   ├── LocalRagService        # Vektor-Embedding & Similarity Search
-│   │   ├── GeminiDokumentAnalyseService  # KI-Rechnungserkennung
-│   │   ├── ProduktkategorieService       # Zeitkalkulation (Regression)
-│   │   └── EmailAiService         # KI-E-Mail-Polishing
-│   ├── repository/          # Spring Data Repositories
-│   ├── domain/              # 90 JPA-Entities
-│   ├── dto/                 # API-Datenmodelle
-│   ├── config/              # Spring-Konfiguration
-│   └── mapper/              # DTO ↔ Entity Mapper
-│
-├── react-pc-frontend/       # 🖥️ Desktop-UI (31 Seiten)
-│   └── src/
-│       ├── pages/           # Editoren, Dashboards, Tools
-│       └── components/
-│           └── KiHilfeChat  # 🧠 Schwebendes KI-Widget
-│
-├── react-zeiterfassung/     # 📱 Mobile PWA (18 Seiten)
-│   └── src/pages/           # Stempeluhr, Urlaub, Salden
-│
-├── docs/                    # 📚 Dokumentation
-│   ├── GOBD_COMPLIANCE.md   # GoBD-Konformität
-│   ├── RECHNUNGSWESEN.md    # Rechnungsprozesse
-│   ├── DOKUMENTEN_LIFECYCLE.md
-│   └── ...
-│
-├── deployment/              # 🚀 Deployment-Scripts
-│   └── scripts/             # Backup, Autostart, Restart
-│
-└── docker-compose.yml       # Qdrant Vector DB (optional)
-```
-
----
-
-## 📚 Dokumentation
-
-Die vollständige Dokumentation befindet sich im [`docs/`](docs/) Verzeichnis:
-
-| Dokument | Beschreibung |
-|----------|--------------|
-| [BUSINESS_CASES.md](docs/BUSINESS_CASES.md) | Geschäftsnutzen aller Module |
-| [GOBD_COMPLIANCE.md](docs/GOBD_COMPLIANCE.md) | GoBD-Konformität & Audit-Trail |
-| [RECHNUNGSWESEN.md](docs/RECHNUNGSWESEN.md) | Kompletter Rechnungsprozess |
-| [DOKUMENTEN_LIFECYCLE.md](docs/DOKUMENTEN_LIFECYCLE.md) | Lebenszyklus aller Dokumente |
-| [ZEITERFASSUNG_WORKFLOWS.md](docs/ZEITERFASSUNG_WORKFLOWS.md) | Zeiterfassung Online & Offline |
-| [DOKUMENTATIONSPLAN.md](docs/DOKUMENTATIONSPLAN.md) | Übersicht & Roadmap der Docs |
-
-Architektur-Diagramme (draw.io) liegen in [`docs/Dokumentation/`](docs/Dokumentation/).
-
----
-
-## 📊 Projekt in Zahlen
-
-| Metrik | Wert |
-|--------|------|
-| REST-Controller | 73 |
-| Business-Services | 113 |
-| Domain-Entities | 104 |
-| Repositories | 97 |
-| Flyway-Migrationen | 63 |
-| Desktop-Seiten (PC) | 38 |
-| Mobile-Seiten (PWA) | 22 |
-| Dokumentationen | 7 |
-| Architektur-Diagramme | 7 |
-
----
-
-## 🤝 Beitragen
-
-Beiträge sind willkommen! Dieses Projekt lebt davon, dass Handwerksbetriebe und Entwickler zusammenarbeiten.
-
-1. Fork erstellen
-2. Feature-Branch anlegen (`git checkout -b feature/mein-feature`)
-3. Änderungen committen (`git commit -m 'Neues Feature hinzugefügt'`)
-4. Branch pushen (`git push origin feature/mein-feature`)
-5. Pull Request erstellen
-
-### Entwicklungsrichtlinien
-
-- **Backend:** Java-Konventionen, Constructor Injection, Tests sind Pflicht
-- **Frontend:** React + TypeScript, Rose/Rot-Farbschema, deutsche UI-Texte
-- **Tests:** JUnit 5 + Mockito (Backend), Vitest + Testing Library (Frontend)
-- **Sicherheit:** OWASP Top 10, parametrisierte Queries, Input-Validierung
-
----
-
-## 📜 Lizenz
-
-Dieses Projekt steht unter der **[GNU Affero General Public License v3 (AGPL v3)](LICENSE)**.
-
-Was das bedeutet:
-
-- ✅ **Du darfst es kostenlos nutzen** – auch im kommerziellen Handwerksbetrieb
-- ✅ **Du darfst es modifizieren** und an deine Bedürfnisse anpassen
-- ✅ **Du darfst es weiterverteilen** – inklusive deiner Änderungen
-- 📤 **Du musst Modifikationen offenlegen**, auch wenn du es als SaaS / Webdienst betreibst (das ist der „Affero"-Teil)
-
-Diese Lizenz schützt das Projekt davor, dass kommerzielle Anbieter es einfach in ihre Closed-Source-SaaS-Plattform übernehmen, ohne ihre Modifikationen zurück an die Community zu geben.
-
-Für proprietäre Nutzung (z. B. Einbettung in ein Closed-Source-Produkt ohne AGPL-Verpflichtung): Kommerzielle Lizenz auf Anfrage.
-
-Eine vollständige Auflistung aller verwendeten Drittanbieter-Bibliotheken und deren Lizenzen
-findet sich in [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
-
----
+### Zeiterfassung auf dem Handy
 
 <p align="center">
-  Gebaut mit ❤️, ☕ und KI-Unterstützung<br/>
-  <sub>Von einem Wirtschaftsinformatik-Studenten für den Handwerksbetrieb seines Vaters – jetzt Open Source für alle.</sub>
+  <img src="assets/screenshots/mobil.png" alt="Startseite, Projektauswahl und Salden der Handy-App" width="76%" />
+  &nbsp;
+  <a href="assets/video/rundgang-mobil.mp4"><img src="assets/video/rundgang-mobil.gif" alt="Stempeln in der Handy-App" width="21%" /></a>
 </p>
+
+## Installation
+
+**Im Betrieb (Windows-PC oder Linux-Server):** Ordner [`deployment/docker-server`](deployment/docker-server) auf den Rechner kopieren, unter Windows `Einrichten.cmd` doppelklicken, unter Linux `sudo ./einrichten.sh` ausführen. Das richtet PostgreSQL, das ERP und einen Updater ein, der nachts neue Versionen einspielt, vorher sichert und bei Fehlern zurückrollt. Anleitung: [EINRICHTEN.md](deployment/docker-server/EINRICHTEN.md).
+
+**Zur Entwicklung:** Java 23, Node.js 20.19 oder neuer und Docker für die Datenbank.
+
+```bash
+docker compose up -d postgres
+cp src/main/resources/application-local.properties.example src/main/resources/application-local.properties
+./mvnw spring-boot:run
+```
+
+Die Datenbank-Zugangsdaten kommen in die `application-local.properties` (nicht versioniert). Die Oberflächen laufen mit Hot Reload über `npm ci && npm run dev` in `react-pc-frontend` und `react-zeiterfassung`. Details, Zugriff von unterwegs (Tailscale, Cloudflare Tunnel) und Betrieb: [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
+## Technik
+
+| Schicht | Umsetzung |
+| --- | --- |
+| Backend | Java 23, Spring Boot 3.2, Spring Security, JPA/Hibernate, Flyway |
+| Datenbank | PostgreSQL 16 |
+| Desktop | React 19, TypeScript, Vite, Tailwind CSS |
+| Handy | React-PWA mit IndexedDB für den Offline-Betrieb, Web-Push |
+| Dokumente | OpenPDF, PDFBox, Mustang (ZUGFeRD/XRechnung) |
+| E-Mail | Jakarta Mail (IMAP und SMTP) |
+| KI | Google Gemini für Belegerkennung, Hilfe-Chat und Textvorschläge |
+| Betrieb | Ein Docker-Image mit Backend und beiden Oberflächen, nächtliches Update mit Sicherung und Rollback |
+
+Backend und beide Oberflächen laufen als eine Anwendung: Die Frontends werden nach `src/main/resources/static` gebaut und von Spring Boot ausgeliefert.
+
+```text
+src/main/java/.../kalkulationsprogramm/   REST-Controller, Services, Domain, Repositories
+src/main/resources/db/postgresql/         Basis-Schema und Flyway-Migrationen
+react-pc-frontend/                        Desktop-Oberfläche
+react-zeiterfassung/                      Handy-App (PWA)
+deployment/docker-server/                 Einrichtung und Updater für den Betrieb
+scripts/demo/                             Demo-Start und Demo-Daten
+docs/                                     Fachliche und technische Dokumentation
+```
+
+## Datenschutz und KI
+
+- Das System läuft im eigenen Netz. Kunden-, Mitarbeiter- und Zeitdaten bleiben im Betrieb.
+- Die KI-Funktionen schicken Belege und Texte an die Google-Gemini-API. Für personenbezogene Daten die kostenpflichtige API mit Auftragsverarbeitungsvertrag nutzen, dort werden Anfragen nicht zum Training verwendet.
+- Die Ersteinrichtung verlangt derzeit einen Gemini-Schlüssel und einen Mailserver. Die übrigen Abläufe hängen nicht an der KI.
+- Für die Zeitdaten der Mitarbeiter gelten die üblichen DSGVO-Pflichten. Details: [GOBD_COMPLIANCE.md](docs/GOBD_COMPLIANCE.md), [SECURITY.md](SECURITY.md).
+
+## Dokumentation
+
+[Installation](docs/INSTALLATION.md) · [Architektur](docs/ARCHITEKTUR_UEBERSICHT.md) · [API](docs/API_REFERENZ.md) · [Angebote](docs/ANGEBOTSWESEN.md) · [Rechnungen](docs/RECHNUNGSWESEN.md) · [E-Rechnung](docs/ZUGFERD_E_INVOICING.md) · [Einkauf](docs/BESTELLWESEN.md) · [Zeiterfassung](docs/ZEITERFASSUNG_WORKFLOWS.md) · [GoBD](docs/GOBD_COMPLIANCE.md)
+
+## Mitmachen
+
+Issues und Pull Requests sind willkommen. Backend-Änderungen brauchen Tests (JUnit 5, Mockito), Texte in der Oberfläche sind deutsch und in Alltagssprache. Pull Requests gegen `main` laufen durch die CI.
+
+## Lizenz
+
+[AGPL v3](LICENSE). Nutzen, ändern und weitergeben ist erlaubt, auch im eigenen Betrieb. Wer eine geänderte Version als Dienst für andere anbietet, muss den Quellcode offenlegen. Eine kommerzielle Lizenz ohne diese Pflicht gibt es auf Anfrage. Verwendete Bibliotheken: [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
