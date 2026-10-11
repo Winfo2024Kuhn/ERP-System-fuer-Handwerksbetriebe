@@ -101,7 +101,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 - **Review & Ship Pflicht:** Am Ende jeder Aufgabe immer `/review-and-ship` ausführen.
 
 ### 🔒 `main` nur über Pull Requests (dauerhafte Nutzervorgabe vom 11.10.2026)
-- **`main` ist Produktion:** Jeder grüne Stand auf `main` wird als `:stable` veröffentlicht und läuft nach dem Nachtupdate (03:00) auf dem eigenen Server und bei den Kunden.
+- **`main` ist Produktion:** Jeder Merge auf `main` wird nach dem Starttest als `:stable` veröffentlicht und läuft nach dem Nachtupdate (03:00) auf dem eigenen Server und bei den Kunden. Getestet wird **nur im PR** – auf `main` läuft „PR Quality Checks“ nicht noch einmal. Das ist sicher, weil das Ruleset PR-Pflicht, den Check „PR Quality Gate“ und „Branch muss vor dem Merge aktuell sein“ verlangt – und abgesichert durch den Prüfschritt in `docker-image.yml`: Ein Merge am Ruleset vorbei (ohne grünes Gate oder mit veraltetem Branch) bekommt kein Image.
 - **Nie direkt auf `main` pushen** – ein Ruleset lehnt es ab. Immer: eigener Branch von `origin/main` → Pull Request → `gh pr merge <nr> --squash --auto --delete-branch`. Pflicht-Check ist „PR Quality Gate“ (alle Tests aus `pr-ci.yml`).
 - Kein Bypass, kein `--admin`. Scheitert ein Check nur zufällig, den Lauf wiederholen (`gh run rerun <id> --failed`), nicht umgehen.
 
