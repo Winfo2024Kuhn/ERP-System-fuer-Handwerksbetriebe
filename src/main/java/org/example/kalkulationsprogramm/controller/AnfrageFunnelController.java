@@ -1,7 +1,9 @@
 package org.example.kalkulationsprogramm.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Valid;
+import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Anfrage;
@@ -20,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * S2S-Endpoint für den Anfrage-Funnel der Marketing-Webseite. Geschützt durch den
@@ -34,10 +37,13 @@ public class AnfrageFunnelController {
 
     private final AnfrageFunnelService anfrageFunnelService;
     private final ObjectMapper objectMapper;
+    private final Validator validator;
 
     /**
      * Multipart-Eingang: JSON-Payload als Part {@code anfrage}, Bilder als Parts
-     * {@code bilder} (optional, mehrfach).
+     * {@code bilder} (optional, mehrfach). Der Payload kommt als Text und wird hier
+     * von Hand gelesen, darum greift {@code @Valid} nicht – die Pflichtfelder werden
+     * explizit geprüft (sonst endet eine unvollständige Anfrage als 500).
      */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> empfangeFunnelAnfrage(
@@ -49,6 +55,25 @@ public class AnfrageFunnelController {
         } catch (IOException e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "message", "Anfrage-Payload ist kein gültiges JSON."));
+        }
+        if (dto == null) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Anfrage-Payload fehlt."));
+        }
+        Set<ConstraintViolation<AnfrageFunnelRequestDto>> verstoesse = validator.validate(dto);
+        if (!verstoesse.isEmpty()) {
+            // Nur Feldnamen loggen, nie die eingegebenen Werte (personenbezogen)
+            List<String> felder = verstoesse.stream()
+                    .map(v -> v.getPropertyPath().toString())
+                    .distinct()
+                    .sorted()
+                    .toList();
+            log.warn("Funnel-Anfrage abgelehnt, ungültige Felder: {}", felder);
+            String meldung = felder.contains("datenschutzAkzeptiert")
+                    ? "Datenschutz muss akzeptiert werden."
+                    : "Die Anfrage ist unvollständig oder ungültig.";
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", meldung, "felder", felder));
         }
         return verarbeite(dto, bilder);
     }
