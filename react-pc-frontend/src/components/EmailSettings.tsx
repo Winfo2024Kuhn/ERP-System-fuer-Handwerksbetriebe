@@ -38,23 +38,11 @@ import { stripHtmlTags, unescapeHtmlEntities } from '../lib/htmlSanitizer';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import { formatPostfach, type PostfachKurz } from '../features/email/postfach';
+import { ladeSignaturen } from '../features/email/signatur/signaturApi';
+import type { SignaturDto } from '../features/email/signatur/signaturTypen';
+import { SignaturVerwaltung } from '../features/email/signatur/SignaturVerwaltung';
 
 // Types
-interface EmailSignature {
-    id: number;
-    name: string;
-    html: string;
-    defaultSignature: boolean;
-    /**
-     * true = diese Signatur wird automatisch an alle vom System versendeten
-     * E-Mails (Auto-AB nach Annahme, Mahnungen, ...) angehaengt. Gesteuert
-     * ueber PUT /api/email/signatures/{id}/system-default.
-     */
-    isSystemDefault?: boolean;
-    createdAt: string;
-    updatedAt: string;
-}
-
 interface OutOfOfficeEntry {
     id: number;
     title: string;
@@ -156,12 +144,9 @@ export default function EmailSettings() {
     const toast = useToast();
     const confirmDialog = useConfirm();
     // Signatures state
-    const [signatures, setSignatures] = useState<EmailSignature[]>([]);
-    const [loadingSignatures, setLoadingSignatures] = useState(false);
-    const [editingSignature, setEditingSignature] = useState<EmailSignature | null>(null);
-    const [newSignatureName, setNewSignatureName] = useState('');
-    const [newSignatureHtml, setNewSignatureHtml] = useState('');
-    const [savingSignature, setSavingSignature] = useState(false);
+    const [signatures, setSignatures] = useState<SignaturDto[]>([]);
+    const [loadingSignatures, setLoadingSignatures] = useState(true);
+    const [signaturLadeFehler, setSignaturLadeFehler] = useState(false);
 
     // OOO state
     const [oooEntries, setOooEntries] = useState<OutOfOfficeEntry[]>([]);
@@ -184,20 +169,19 @@ export default function EmailSettings() {
     // Active tab within settings
     const [activeSection, setActiveSection] = useState<'signatures' | 'ooo'>('signatures');
 
-    // Load signatures
+    // Signaturen laden (Benutzer: eigene, Admins: alle – das filtert das Backend)
     const loadSignatures = useCallback(async () => {
         setLoadingSignatures(true);
         try {
-            const res = await fetch('/api/email/signatures');
-            if (res.ok) {
-                setSignatures(await res.json());
-            }
+            setSignatures(await ladeSignaturen());
+            setSignaturLadeFehler(false);
         } catch (err) {
-            console.error('Failed to load signatures', err);
+            setSignaturLadeFehler(true);
+            toast.error(err instanceof Error ? err.message : 'Signaturen konnten nicht geladen werden.');
         } finally {
             setLoadingSignatures(false);
         }
-    }, []);
+    }, [toast]);
 
     // Load OOO entries - map backend field names to frontend
     const loadOooEntries = useCallback(async () => {
@@ -278,103 +262,6 @@ export default function EmailSettings() {
             ADD_TAGS: ['table', 'tbody', 'thead', 'tr', 'td', 'th']
         });
     }, [editingOoo]);
-
-    // Save signature
-    const handleSaveSignature = async () => {
-        if (!newSignatureName.trim()) return;
-
-        setSavingSignature(true);
-        try {
-            const payload = {
-                id: editingSignature?.id || null,
-                name: newSignatureName,
-                html: newSignatureHtml,
-                defaultSignature: false
-            };
-
-            const res = await fetch('/api/email/signatures', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-                setEditingSignature(null);
-                setNewSignatureName('');
-                setNewSignatureHtml('');
-                loadSignatures();
-            }
-        } catch (err) {
-            console.error('Failed to save signature', err);
-        } finally {
-            setSavingSignature(false);
-        }
-    };
-
-    // Delete signature
-    const handleDeleteSignature = async (id: number) => {
-        if (!await confirmDialog({ title: 'Signatur löschen', message: 'Signatur wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-
-        try {
-            const res = await fetch(`/api/email/signatures/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                loadSignatures();
-            }
-        } catch (err) {
-            console.error('Failed to delete signature', err);
-        }
-    };
-
-    // Edit signature
-    const handleEditSignature = (sig: EmailSignature) => {
-        setEditingSignature(sig);
-        setNewSignatureName(sig.name);
-        setNewSignatureHtml(sig.html);
-    };
-
-    // New signature
-    const handleNewSignature = () => {
-        setEditingSignature({ id: 0, name: '', html: '', defaultSignature: false, createdAt: '', updatedAt: '' });
-        setNewSignatureName('');
-        setNewSignatureHtml('');
-    };
-
-    // Cancel signature edit
-    const handleCancelSignature = () => {
-        setEditingSignature(null);
-        setNewSignatureName('');
-        setNewSignatureHtml('');
-    };
-
-    // Markiert eine Signatur als System-Default fuer automatische E-Mails.
-    // Andere Signaturen verlieren das Flag automatisch (Backend stellt das sicher).
-    const handleSetSystemDefault = async (id: number) => {
-        try {
-            const res = await fetch(`/api/email/signatures/${id}/system-default`, {
-                method: 'PUT',
-            });
-            if (res.ok) {
-                toast.success('System-Signatur aktualisiert.');
-                loadSignatures();
-            } else {
-                toast.warning('System-Signatur konnte nicht gesetzt werden.');
-            }
-        } catch (err) {
-            console.error('Failed to set system default signature', err);
-        }
-    };
-
-    // Erkennt die unveraenderte Seed-Signatur aus V256 — solange dieser
-    // Marker im HTML steht, wird KEINE Signatur an Auto-Mails angehaengt.
-    // (Symmetrisch zu EmailSignatureService.isPlatzhalter im Backend.)
-    const isSystemPlaceholder = (sig: EmailSignature) =>
-        !!sig.html && (sig.html.includes('data-system-placeholder="1"')
-                    || sig.html.includes("data-system-placeholder='1'"));
-
-    const systemSignature = signatures.find(s => s.isSystemDefault);
-    const systemSignatureNeedsSetup = systemSignature
-        ? isSystemPlaceholder(systemSignature)
-        : false;
 
     // Save OOO
     const handleSaveOoo = async () => {
@@ -759,203 +646,15 @@ ${signatureHtml}`;
                 </button>
             </div>
 
-            {/* Signatures Section */}
-            {activeSection === 'signatures' && (
-                <div className="space-y-6">
-                    {/* Hinweis-Banner: System-Signatur fuer automatische E-Mails.
-                        Erklaert dem Inhaber sichtbar, dass eine seiner Signaturen
-                        die "System-Signatur" sein muss — sonst werden Auto-Mahnungen
-                        und Auto-Auftragsbestaetigungen ohne Signatur versendet. */}
-                    <Card className={cn(
-                        "p-4 border",
-                        systemSignatureNeedsSetup
-                            ? "border-amber-300 bg-amber-50"
-                            : systemSignature
-                                ? "border-emerald-200 bg-emerald-50/40"
-                                : "border-rose-300 bg-rose-50"
-                    )}>
-                        <div className="flex items-start gap-3">
-                            <div className={cn(
-                                "shrink-0 rounded-full p-2",
-                                systemSignatureNeedsSetup
-                                    ? "bg-amber-100 text-amber-700"
-                                    : systemSignature
-                                        ? "bg-emerald-100 text-emerald-700"
-                                        : "bg-rose-100 text-rose-700"
-                            )}>
-                                <Mail className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <h3 className="font-semibold text-slate-900">
-                                    System-Signatur für automatische E-Mails
-                                </h3>
-                                <p className="text-sm text-slate-600 mt-1">
-                                    Diese Signatur wird automatisch an alle E-Mails angehängt, die
-                                    das ERP selbst versendet — also automatische
-                                    Auftragsbestätigungen nach digitaler Annahme und Mahnungen
-                                    aus dem automatischen Mahnverfahren.
-                                </p>
-                                {systemSignature && !systemSignatureNeedsSetup && (
-                                    <p className="text-sm text-emerald-700 mt-2 font-medium">
-                                        Aktiv: <span className="font-semibold">{systemSignature.name}</span>
-                                    </p>
-                                )}
-                                {systemSignatureNeedsSetup && (
-                                    <p className="text-sm text-amber-800 mt-2">
-                                        <strong>Bitte einrichten:</strong> Die System-Signatur enthält
-                                        noch den Platzhalter-Text. Solange dieser nicht ersetzt wird,
-                                        gehen automatische Mails ohne Signatur raus. Klick auf
-                                        „Bearbeiten" bei der Signatur „{systemSignature?.name}".
-                                    </p>
-                                )}
-                                {!systemSignature && (
-                                    <p className="text-sm text-rose-800 mt-2">
-                                        <strong>Keine System-Signatur gesetzt.</strong> Lege eine Signatur
-                                        an und klicke unten auf „Als System-Signatur setzen".
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    </Card>
-
-                    {/* Signature Editor */}
-                    {editingSignature !== null ? (
-                        <Card className="p-6 border-rose-200 bg-rose-50/30">
-                            <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                                {editingSignature.id ? 'Signatur bearbeiten' : 'Neue Signatur'}
-                            </h3>
-                            <div className="space-y-4">
-                                <div>
-                                    <Label>Name</Label>
-                                    <Input
-                                        value={newSignatureName}
-                                        onChange={(e) => setNewSignatureName(e.target.value)}
-                                        placeholder="z.B. Standard-Signatur"
-                                        className="mt-1"
-                                    />
-                                </div>
-                                <div>
-                                    <Label>HTML-Inhalt (Vorschau rechts)</Label>
-                                    <div className="mt-1 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                        {/* Raw HTML Editor */}
-                                        <div>
-                                            <p className="text-xs text-slate-500 mb-1">HTML-Code:</p>
-                                            <textarea
-                                                value={newSignatureHtml}
-                                                onChange={(e) => setNewSignatureHtml(e.target.value)}
-                                                rows={12}
-                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white focus:border-rose-300 focus:ring-1 focus:ring-rose-200 outline-none resize-none font-mono text-sm"
-                                                placeholder="<table>...</table> oder HTML-Code hier einfügen"
-                                            />
-                                        </div>
-                                        {/* Live Preview */}
-                                        <div>
-                                            <p className="text-xs text-slate-500 mb-1">Vorschau:</p>
-                                            <div
-                                                className="border border-slate-200 rounded-lg p-4 bg-white min-h-[200px] overflow-auto prose prose-sm max-w-none"
-                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(newSignatureHtml || '<em class="text-slate-400">Vorschau erscheint hier...</em>') }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button
-                                        onClick={handleSaveSignature}
-                                        disabled={savingSignature || !newSignatureName.trim()}
-                                        className="bg-rose-600 text-white hover:bg-rose-700"
-                                    >
-                                        <Save className="w-4 h-4 mr-2" />
-                                        {savingSignature ? 'Speichern...' : 'Speichern'}
-                                    </Button>
-                                    <Button variant="outline" onClick={handleCancelSignature}>
-                                        <X className="w-4 h-4 mr-2" /> Abbrechen
-                                    </Button>
-                                </div>
-                            </div>
-                        </Card>
-                    ) : (
-                        <Button onClick={handleNewSignature} className="bg-rose-600 text-white hover:bg-rose-700">
-                            <Plus className="w-4 h-4 mr-2" /> Neue Signatur
-                        </Button>
-                    )}
-
-                    {/* Signature List */}
-                    {loadingSignatures ? (
-                        <p className="text-slate-500 text-center py-8">Lade Signaturen...</p>
-                    ) : signatures.length === 0 ? (
-                        <Card className="p-8 text-center text-slate-500">
-                            <Mail className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-                            <p>Keine Signaturen vorhanden.</p>
-                        </Card>
-                    ) : (
-                        <div className="space-y-3">
-                            {signatures.map((sig) => (
-                                <Card
-                                    key={sig.id}
-                                    className={cn(
-                                        "p-4 hover:shadow-md transition-shadow group",
-                                        sig.isSystemDefault && "border-emerald-300 ring-1 ring-emerald-200"
-                                    )}
-                                >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <h4 className="font-medium text-slate-900">{sig.name}</h4>
-                                                {sig.isSystemDefault && (
-                                                    <span
-                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold border border-emerald-200"
-                                                        title="Wird automatisch an Auto-Auftragsbestätigungen und Mahnungen angehängt"
-                                                    >
-                                                        <Mail className="w-3 h-3" />
-                                                        System (automatische E-Mails)
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div
-                                                className="mt-2 text-sm text-slate-600 prose prose-sm max-w-none line-clamp-3"
-                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(sig.html || '<em>Kein Inhalt</em>') }}
-                                            />
-                                        </div>
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {!sig.isSystemDefault && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleSetSystemDefault(sig.id)}
-                                                    className="text-slate-500 hover:text-emerald-700"
-                                                    title="Als System-Signatur für automatische E-Mails setzen"
-                                                >
-                                                    <Mail className="w-4 h-4" />
-                                                </Button>
-                                            )}
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleEditSignature(sig)}
-                                                className="text-slate-500 hover:text-rose-600"
-                                            >
-                                                <Edit2 className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleDeleteSignature(sig.id)}
-                                                className="text-slate-500 hover:text-red-600"
-                                                disabled={sig.isSystemDefault}
-                                                title={sig.isSystemDefault
-                                                    ? "System-Signatur kann nicht gelöscht werden — erst eine andere als System-Signatur setzen."
-                                                    : "Signatur löschen"}
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </Card>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
+            {/* Signatures Section – bleibt beim Reiterwechsel erhalten, damit ein offenes Studio nichts verliert */}
+            <div hidden={activeSection !== 'signatures'}>
+                <SignaturVerwaltung
+                    signaturen={signatures}
+                    laedt={loadingSignatures}
+                    ladeFehler={signaturLadeFehler}
+                    neuLaden={loadSignatures}
+                />
+            </div>
 
             {/* Out of Office Section */}
             {activeSection === 'ooo' && (

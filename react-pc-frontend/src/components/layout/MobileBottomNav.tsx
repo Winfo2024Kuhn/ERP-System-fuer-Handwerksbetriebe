@@ -64,7 +64,6 @@ const MORE_SECTIONS: NavSection[] = [
         items: [
             { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
             { name: 'Leistungen', href: '/leistungen', icon: List },
-            { name: 'Formularwesen', href: '/formulare', icon: FileJson },
         ]
     },
     {
@@ -86,12 +85,13 @@ const MORE_SECTIONS: NavSection[] = [
         label: 'Einstellungen',
         items: [
             { name: 'Feiertage', href: '/feiertage', icon: CalendarDays },
+            { name: 'Formularwesen', href: '/formulare', icon: FileJson },
             { name: 'Benutzer', href: '/benutzer', icon: User },
         ]
     },
 ];
 
-const ADMIN_ONLY_PATHS = new Set(['/firma', '/einstellungen', '/benutzer']);
+const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/benutzer']);
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
 const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 

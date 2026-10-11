@@ -202,6 +202,13 @@ public class SecurityConfig {
                 // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
                 // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.
                 .requestMatchers(HttpMethod.PUT, "/api/email/signatures/*/system-default").hasRole("ADMIN")
+                // Formularwesen (Briefpapier/Dokumentvorlagen) pflegt nur der Admin. Lesen bleibt für alle,
+                // weil der Dokument-Editor die Vorlagen beim Erstellen von Angeboten und Rechnungen lädt.
+                // Die Dokumentnummer vergibt das System beim Erstellen eines Dokuments – bleibt offen.
+                .requestMatchers(HttpMethod.POST, "/api/formulare/dokumentnummer").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/formulare/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/formulare/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/formulare/**").hasRole("ADMIN")
                 // Verrechnungslohn-Uebernahme schreibt Stundensaetze fuer alle Arbeitsgaenge
                 // eines Jahres - kalkulatorische Massenmutation, nur Admin.
                 .requestMatchers(HttpMethod.POST, "/api/verrechnungslohn/uebernehmen").hasRole("ADMIN")

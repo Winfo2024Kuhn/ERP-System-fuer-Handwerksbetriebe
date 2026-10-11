@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import EmailEinstellungenPage from './EmailEinstellungenPage';
 import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
+import { AuthProvider } from '../auth/AuthContext';
 
 /** Eigene Seite für Signaturen und Abwesenheitsnotizen. Nur Dummy-Daten (DSGVO). */
 describe('EmailEinstellungenPage', () => {
@@ -18,7 +19,7 @@ describe('EmailEinstellungenPage', () => {
             return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }));
         const user = userEvent.setup();
-        render(<ToastProvider><ConfirmProvider><EmailEinstellungenPage /></ConfirmProvider></ToastProvider>);
+        render(<ToastProvider><ConfirmProvider><AuthProvider><EmailEinstellungenPage /></AuthProvider></ConfirmProvider></ToastProvider>);
 
         expect(screen.getByRole('heading', { level: 1, name: 'E-Mail-Einstellungen' })).toBeInTheDocument();
         expect(screen.getByText('Kommunikation')).toBeInTheDocument();

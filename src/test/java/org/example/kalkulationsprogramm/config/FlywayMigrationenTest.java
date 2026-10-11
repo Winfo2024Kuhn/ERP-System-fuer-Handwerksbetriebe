@@ -57,6 +57,7 @@ class FlywayMigrationenTest {
             Map.entry("V413__abwesenheitsnotiz_postfaecher.sql", -17262563),
             Map.entry("V414__benachrichtigung_erledigt.sql", 928601684),
             Map.entry("V415__freigabe_email_code.sql", 1251503045),
+            Map.entry("V416__email_signatur_besitzer.sql", 1467540425),
             Map.entry("V417__telefon_reine_vorwahl_leeren.sql", -1484567923));
 
     private static final char BOM = 0xFEFF;

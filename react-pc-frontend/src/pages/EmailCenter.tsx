@@ -263,6 +263,13 @@ export default function EmailCenter() {
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const lastSelectedIdRef = useRef<number | null>(null);
     const selectionVersionRef = useRef(0);
+    /**
+     * Auswahlstand, zu dem ein Klick eine Mail in die URL geschrieben hat. Der URL-Effekt läuft
+     * erst nach dem nächsten Rendern – unter Last kann bis dahin schon ein Strg-Klick die Auswahl
+     * erweitert haben. Mit dem hier gemerkten Stand erkennt der Effekt das und überschreibt die
+     * Mehrfachauswahl nicht mit der verspäteten Detailantwort.
+     */
+    const klickAuswahlRef = useRef<{ emailId: number; version: number } | null>(null);
 
     // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background.
     // Schlüssel über emailListCacheKey: die „Ungelesen"-Liste liegt getrennt von der vollen Liste.
@@ -711,7 +718,10 @@ export default function EmailCenter() {
         const emailId = Number(emailIdParam);
         if (!Number.isSafeInteger(emailId) || emailId <= 0 || pendingRemovalsRef.current.has(emailId)) return;
         const controller = new AbortController();
-        const selectionVersion = selectionVersionRef.current;
+        // Per Klick geöffnet: der Stand des Klicks. Direktlink oder Zurück: der aktuelle Stand.
+        const ausKlick = klickAuswahlRef.current?.emailId === emailId ? klickAuswahlRef.current : null;
+        klickAuswahlRef.current = null;
+        const selectionVersion = ausKlick ? ausKlick.version : selectionVersionRef.current;
         fetch(`/api/emails/${emailId}`, { signal: controller.signal })
             .then(res => { if (res.ok) return res.json(); throw new Error('not found'); })
             .then((email: EmailItem) => {
@@ -797,6 +807,8 @@ export default function EmailCenter() {
             setSelectedEmail(email);
             // Update URL to reflect selected email (single-select only)
             if (newSelected.size === 1) {
+                // Nur wenn sich die URL ändert – sonst läuft der Effekt nicht und der Stand bliebe liegen.
+                if (emailIdParam !== String(id)) klickAuswahlRef.current = { emailId: id, version: selectionVersionRef.current };
                 navigate(`/emails/${activeFolder}/${id}`, { replace: true });
             }
             // Fetch full email detail (list DTO has truncated body/no htmlBody)
