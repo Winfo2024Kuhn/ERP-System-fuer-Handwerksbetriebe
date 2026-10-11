@@ -14,6 +14,7 @@ import org.example.kalkulationsprogramm.controller.FreigabeInternalController;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.FreigabeCodeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,7 @@ class InternalApiSecurityCloudflareTest {
     @MockBean FrontendUserDetailsService users;
     @MockBean MitarbeiterRepository mitarbeiter;
     @MockBean DokumentFreigabeService freigabeService;
+    @MockBean FreigabeCodeService freigabeCodeService;
     @MockBean DateiSpeicherService dateiSpeicherService;
 
     @BeforeEach void jwtPruefungErsetzen() throws Exception {

@@ -34,6 +34,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -64,6 +66,8 @@ class DokumentFreigabeServiceTest {
     private AnfrageRepository anfrageRepository;
     @Mock
     private org.springframework.core.task.TaskExecutor taskExecutor;
+    @Mock
+    private FreigabeCodeService freigabeCodeService;
 
     @InjectMocks
     private DokumentFreigabeService service;
@@ -964,5 +968,117 @@ class DokumentFreigabeServiceTest {
         // hashSalt ist @Value-injiziert → für Tests via Reflection setzen.
         ReflectionTestUtils.setField(service, "hashSalt", "TEST_SALT");
         return f;
+    }
+
+    // ============== Annahme nur mit Bestätigungscode ==============
+
+    @Test
+    void akzeptiereMitCode_unbekannteUuid_wirft404Marker() {
+        when(repository.findByUuidZumSperren("uuid-unbekannt")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.akzeptiereMitCode("uuid-unbekannt", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, "123456"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(DokumentFreigabeService.UNBEKANNTE_UUID_MESSAGE);
+    }
+
+    @Test
+    void akzeptiereMitCode_offeneFreigabe_prueftCodeVorDerAnnahme() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-code-ok");
+        when(repository.findByUuidZumSperren("uuid-code-ok")).thenReturn(Optional.of(pending));
+        when(repository.findByUuid("uuid-code-ok")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(any())).thenReturn(Optional.empty());
+
+        DokumentFreigabe result = service.akzeptiereMitCode("uuid-code-ok", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, "123456");
+
+        verify(freigabeCodeService).pruefeUndVerbrauche(pending, "123456");
+        assertThat(result.getStatus()).isEqualTo(FreigabeStatus.ACCEPTED);
+    }
+
+    @Test
+    void akzeptiereMitCode_falscherCode_nimmtNichtAn() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-code-falsch");
+        when(repository.findByUuidZumSperren("uuid-code-falsch")).thenReturn(Optional.of(pending));
+        doThrow(new FreigabeCodeException(FreigabeCodeException.Grund.FALSCH, "Der Code stimmt nicht.", 4))
+                .when(freigabeCodeService).pruefeUndVerbrauche(pending, "000000");
+
+        assertThatThrownBy(() -> service.akzeptiereMitCode("uuid-code-falsch", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, "000000"))
+                .isInstanceOf(FreigabeCodeException.class);
+
+        assertThat(pending.getStatus()).isEqualTo(FreigabeStatus.PENDING);
+        verify(repository, never()).findByUuid(any());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void akzeptiereMitCode_bereitsAngenommen_bleibtIdempotentOhneCodepruefung() {
+        DokumentFreigabe angenommen = pendingFreigabe("uuid-code-doppelklick");
+        angenommen.setStatus(FreigabeStatus.ACCEPTED);
+        angenommen.setUnterzeichnerName("Erika Musterfrau");
+        when(repository.findByUuidZumSperren("uuid-code-doppelklick")).thenReturn(Optional.of(angenommen));
+        when(repository.findByUuid("uuid-code-doppelklick")).thenReturn(Optional.of(angenommen));
+
+        DokumentFreigabe result = service.akzeptiereMitCode("uuid-code-doppelklick", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, "999999");
+
+        assertThat(result.getUnterzeichnerName()).isEqualTo("Erika Musterfrau");
+        verify(freigabeCodeService, never()).pruefeUndVerbrauche(any(), any());
+    }
+
+    @Test
+    void akzeptiereMitCode_abgelaufen_scheitertOhneCodepruefung() {
+        DokumentFreigabe abgelaufen = pendingFreigabe("uuid-code-abgelaufen");
+        abgelaufen.setAblaufDatum(LocalDateTime.now().minusDays(1));
+        when(repository.findByUuidZumSperren("uuid-code-abgelaufen")).thenReturn(Optional.of(abgelaufen));
+        when(repository.findByUuid("uuid-code-abgelaufen")).thenReturn(Optional.of(abgelaufen));
+
+        assertThatThrownBy(() -> service.akzeptiereMitCode("uuid-code-abgelaufen", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, "123456"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("abgelaufen");
+        verify(freigabeCodeService, never()).pruefeUndVerbrauche(any(), any());
+    }
+
+    @Test
+    void akzeptiereMitCode_zurueckgezogen_scheitertOhneCodepruefung() {
+        DokumentFreigabe zurueck = pendingFreigabe("uuid-code-revoked");
+        zurueck.setStatus(FreigabeStatus.REVOKED);
+        when(repository.findByUuidZumSperren("uuid-code-revoked")).thenReturn(Optional.of(zurueck));
+        when(repository.findByUuid("uuid-code-revoked")).thenReturn(Optional.of(zurueck));
+
+        assertThatThrownBy(() -> service.akzeptiereMitCode("uuid-code-revoked", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, "123456"))
+                .isInstanceOf(IllegalStateException.class);
+        verify(freigabeCodeService, never()).pruefeUndVerbrauche(any(), any());
+    }
+
+    @Test
+    void akzeptiere_codeBestaetigungFliesstInDenHashEin_ohneCodeBleibtErGleich() {
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(any())).thenReturn(Optional.empty());
+        LocalDateTime zeit = LocalDateTime.of(2026, 10, 11, 14, 5);
+
+        DokumentFreigabe ohneCode = pendingFreigabe("uuid-hash");
+        when(repository.findByUuid("uuid-hash")).thenReturn(Optional.of(ohneCode));
+        String hashOhne = service.akzeptiere("uuid-hash", "1.2.3.4", "UA", null, "Max", "Mustermann", "Max Mustermann")
+                .getHashAcceptance();
+
+        DokumentFreigabe mitCode = pendingFreigabe("uuid-hash");
+        mitCode.setCodeBestaetigtAm(zeit);
+        mitCode.setCodeBestaetigtEmail("max@example.de");
+        when(repository.findByUuid("uuid-hash")).thenReturn(Optional.of(mitCode));
+        String hashMit = service.akzeptiere("uuid-hash", "1.2.3.4", "UA", null, "Max", "Mustermann", "Max Mustermann")
+                .getHashAcceptance();
+
+        DokumentFreigabe mitCodeOhneAdresse = pendingFreigabe("uuid-hash");
+        mitCodeOhneAdresse.setCodeBestaetigtAm(zeit);
+        when(repository.findByUuid("uuid-hash")).thenReturn(Optional.of(mitCodeOhneAdresse));
+        String hashOhneAdresse = service.akzeptiere("uuid-hash", "1.2.3.4", "UA", null, "Max", "Mustermann", "Max Mustermann")
+                .getHashAcceptance();
+
+        assertThat(hashMit).hasSize(64).isNotEqualTo(hashOhne).isNotEqualTo(hashOhneAdresse);
     }
 }

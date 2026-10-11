@@ -152,6 +152,12 @@ public class EmailService {
     private String absenderAnzeigename;
 
     /**
+     * Zeitlimit in Millisekunden für Verbindungsaufbau, Lesen und Schreiben beim SMTP-Versand.
+     * {@code null} = wie bisher ohne Limit (JavaMail wartet dann unbegrenzt).
+     */
+    private Integer zeitlimitMillis;
+
+    /**
      * Creates a new {@code EmailService} configured for the given SMTP server.
      *
      * @param host     SMTP host name
@@ -182,6 +188,27 @@ public class EmailService {
     public EmailService mitAbsenderName(String anzeigename) {
         this.absenderAnzeigename = anzeigename;
         return this;
+    }
+
+    /**
+     * Begrenzt, wie lange der Versand auf den Mailserver warten darf. Gedacht für kurze
+     * System-Mails, die in einer Transaktion mit gesperrter Zeile laufen (Bestätigungscode):
+     * Ein hängender Server soll dort nach Sekunden abbrechen, statt die Sperre und eine
+     * Datenbankverbindung unbegrenzt zu halten. Große Mails mit Anhängen bleiben ohne Limit.
+     */
+    public EmailService mitZeitlimit(java.time.Duration zeitlimit) {
+        this.zeitlimitMillis = (int) zeitlimit.toMillis();
+        return this;
+    }
+
+    private void setzeZeitlimit(Properties props) {
+        if (zeitlimitMillis == null) {
+            return;
+        }
+        String wert = String.valueOf(zeitlimitMillis);
+        props.put("mail.smtp.connectiontimeout", wert);
+        props.put("mail.smtp.timeout", wert);
+        props.put("mail.smtp.writetimeout", wert);
     }
 
     /**
@@ -249,6 +276,7 @@ public class EmailService {
         props.put("mail.smtp.ssl.enable", "true");
         props.put("mail.smtp.socketFactory.port", String.valueOf(port));
         props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+        setzeZeitlimit(props);
 
         Session session = Session.getInstance(props, new Authenticator() {
             @Override
@@ -329,6 +357,7 @@ public class EmailService {
         props.put("mail.smtp.ssl.enable", "true");
         props.put("mail.smtp.socketFactory.port", String.valueOf(port));
         props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+        setzeZeitlimit(props);
 
         Session session = Session.getInstance(props, new Authenticator() {
             @Override
@@ -438,6 +467,7 @@ public class EmailService {
         props.put("mail.smtp.ssl.enable", "true");
         props.put("mail.smtp.socketFactory.port", String.valueOf(port));
         props.put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory");
+        setzeZeitlimit(props);
 
         Session session = Session.getInstance(props, new Authenticator() {
             @Override

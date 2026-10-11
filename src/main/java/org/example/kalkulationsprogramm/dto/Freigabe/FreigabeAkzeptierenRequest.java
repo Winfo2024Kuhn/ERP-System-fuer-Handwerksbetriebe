@@ -40,6 +40,14 @@ public class FreigabeAkzeptierenRequest
     @Size(min = 2, max = 160, message = "Unterzeichnername muss zwischen 2 und 160 Zeichen lang sein.")
     private String unterzeichnerName;
 
+    /**
+     * 6-stelliger Bestätigungscode aus der E-Mail (siehe POST …/code). Leerzeichen und
+     * Bindestriche entfernt der Service; ob er stimmt, entscheidet {@code FreigabeCodeService}.
+     */
+    @NotBlank(message = "Bitte geben Sie den Bestätigungscode aus der E-Mail ein.")
+    @Size(max = 20, message = "Der Bestätigungscode ist zu lang.")
+    private String code;
+
     /** Pflicht-Bestätigung "Ich habe das Dokument geprüft und nehme es verbindlich an". */
     private boolean bestaetigung;
     /** Vom Astro-Layer aus Request-Headern extrahierte echte Client-IP. */
