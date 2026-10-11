@@ -4,6 +4,7 @@ import { ArrowLeft, Search, FileText, MapPin, User, Loader2, Image, ChevronRight
 import { ImageViewer } from '../components/ui/image-viewer'
 import { useToast } from '../components/ui/toast'
 import { fotoFehlerText, ladeFotosEinzelnHoch, sendeFoto, fotoErgebnisMeldung, fortschrittText } from '../lib/fotoUpload'
+import { anrufbareNummer } from '../lib/telefon'
 
 interface Anfrage {
     id: number
@@ -318,19 +319,22 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
         setViewerIndex(null)
     }
 
+    // Eine reine Ortsvorwahl (vom Büro beim Adresse-Eingeben vorgeschlagen) ist keine Nummer.
+    const festnetz = anrufbareNummer(selectedAnfrage?.kundenTelefon)
+    const mobil = anrufbareNummer(selectedAnfrage?.kundenMobil)
+
     const handleCall = (number: string) => {
         window.location.href = `tel:${number}`
         setShowPhoneModal(false)
     }
 
     const openPhoneModal = () => {
-        if (selectedAnfrage?.kundenTelefon && !selectedAnfrage?.kundenMobil) {
-            handleCall(selectedAnfrage.kundenTelefon)
-        } else if (selectedAnfrage?.kundenMobil && !selectedAnfrage?.kundenTelefon) {
-            handleCall(selectedAnfrage.kundenMobil)
-        } else if (selectedAnfrage?.kundenTelefon || selectedAnfrage?.kundenMobil) {
+        if (festnetz && mobil) {
             setShowPhoneModal(true)
+            return
         }
+        const nummer = festnetz || mobil
+        if (nummer) handleCall(nummer)
     }
 
     const handleFilesPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -401,7 +405,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
         }
     }
 
-    const hasPhoneNumber = selectedAnfrage?.kundenTelefon || selectedAnfrage?.kundenMobil
+    const hasPhoneNumber = Boolean(festnetz || mobil)
     const hasAddress = selectedAnfrage?.projektStrasse || selectedAnfrage?.kundenStrasse
 
 
@@ -409,30 +413,34 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
         <div className="h-full flex flex-col bg-slate-50">
             {/* Header */}
             <header className="bg-white border-b border-slate-200 px-4 py-4 safe-area-top">
+                {/* Siehe ProjektePage: min-w-0 + break-words halten ein langes Bauvorhaben
+                    in der Bildschirmbreite. */}
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => selectedAnfrage ? setSearchParams({}) : navigate('/')}
-                        className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                        aria-label="Zurück"
+                        className="flex-shrink-0 p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                     >
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
                     </button>
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-rose-50 rounded-lg flex items-center justify-center">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <div className="w-10 h-10 flex-shrink-0 bg-rose-50 rounded-lg flex items-center justify-center">
                             <FileText className="w-5 h-5 text-rose-600" />
                         </div>
-                        <div>
-                            <h1 className="font-bold text-slate-900">
+                        <div className="min-w-0">
+                            <h1 className="font-bold text-slate-900 break-words">
                                 {selectedAnfrage ? selectedAnfrage.bauvorhaben : 'Anfragen'}
                             </h1>
                             {selectedAnfrage && (
-                                <p className="text-sm text-slate-500">{selectedAnfrage.kundenName}</p>
+                                <p className="text-sm text-slate-500 break-words">{selectedAnfrage.kundenName}</p>
                             )}
                         </div>
                     </div>
                     {!selectedAnfrage && (
                         <button
                             onClick={() => onSync && onSync()}
-                            className="ml-auto p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                            aria-label="Anfragen aktualisieren"
+                            className="ml-auto flex-shrink-0 p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
                         >
                             <RefreshCw className={`w-5 h-5 ${loading || syncStatus === 'syncing' ? 'animate-sync-spin text-rose-600' : 'text-slate-500'}`} />
                         </button>
@@ -458,8 +466,8 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
 
             {/* Content */}
             {/* Siehe ProjektePage: overflow-auto gab beide Achsen frei und liess die
-                Seite seitlich wegschieben. */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+                Seite seitlich wegschieben; break-words bricht lange Woerter um. */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden break-words">
                 {loading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="w-8 h-8 animate-spin text-rose-600" />
@@ -634,15 +642,15 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                             onClick={openPhoneModal}
                                             className="w-full flex items-center gap-3 p-3 bg-slate-50 hover:bg-green-50 border border-slate-200 hover:border-green-200 rounded-xl transition-all"
                                         >
-                                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                                            <div className="w-10 h-10 flex-shrink-0 bg-green-100 rounded-lg flex items-center justify-center">
                                                 <Phone className="w-5 h-5 text-green-600" />
                                             </div>
-                                            <div className="flex-1 text-left">
+                                            <div className="min-w-0 flex-1 text-left">
                                                 <p className="text-xs text-slate-500">Telefon</p>
                                                 <p className="text-slate-900 font-medium">
-                                                    {selectedAnfrage.kundenTelefon && selectedAnfrage.kundenMobil
+                                                    {festnetz && mobil
                                                         ? '2 Nummern verfügbar'
-                                                        : (selectedAnfrage.kundenTelefon || selectedAnfrage.kundenMobil)}
+                                                        : (festnetz || mobil)}
                                                 </p>
                                             </div>
                                             <span className="text-green-600 text-sm font-medium">Anrufen</span>
@@ -671,17 +679,18 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                     <div className="w-12 h-12 bg-rose-50 rounded-xl flex items-center justify-center flex-shrink-0">
                                         <FileText className="w-5 h-5 text-rose-600" />
                                     </div>
-                                    <div className="flex-1 min-w-0">
+                                    {/* Kürzung gewollt: die Detailseite zeigt den vollen Text. */}
+                                    <div className="flex-1 min-w-0" data-kuerzung-erlaubt>
                                         <p className="text-slate-900 font-medium truncate">{anfrage.bauvorhaben}</p>
                                         <p className="text-slate-500 text-sm truncate">{anfrage.kundenName}</p>
                                         {(anfrage.projektOrt || anfrage.kundenOrt) && (
                                             <p className="text-slate-400 text-xs flex items-center gap-1 mt-1">
-                                                <MapPin className="w-3 h-3" />
-                                                {anfrage.projektOrt || anfrage.kundenOrt}
+                                                <MapPin className="w-3 h-3 flex-shrink-0" />
+                                                <span className="truncate">{anfrage.projektOrt || anfrage.kundenOrt}</span>
                                             </p>
                                         )}
                                     </div>
-                                    <div className="flex flex-col items-end gap-1">
+                                    <div className="flex flex-shrink-0 flex-col items-end gap-1">
                                         <ChevronRight className="w-4 h-4 text-slate-400" />
                                     </div>
                                 </div>
@@ -825,12 +834,13 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
             {/* Phone Selection Modal */}
             {
                 showPhoneModal && selectedAnfrage && (
-                    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+                    <div role="dialog" aria-modal="true" aria-label="Nummer wählen" className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
                         <div className="bg-white w-full max-w-md rounded-t-2xl p-6 pb-8 animate-slide-up">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-bold text-slate-900">Nummer wählen</h3>
                                 <button
                                     onClick={() => setShowPhoneModal(false)}
+                                    aria-label="Schließen"
                                     className="p-2 hover:bg-slate-100 rounded-full"
                                 >
                                     <X className="w-5 h-5 text-slate-500" />
@@ -838,9 +848,9 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                             </div>
 
                             <div className="space-y-3">
-                                {selectedAnfrage.kundenTelefon && (
+                                {festnetz && (
                                     <button
-                                        onClick={() => handleCall(selectedAnfrage.kundenTelefon!)}
+                                        onClick={() => handleCall(festnetz)}
                                         className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors"
                                     >
                                         <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
@@ -848,14 +858,14 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                         </div>
                                         <div className="flex-1 text-left">
                                             <p className="font-medium text-slate-900">Festnetz</p>
-                                            <p className="text-slate-500">{selectedAnfrage.kundenTelefon}</p>
+                                            <p className="text-slate-500">{festnetz}</p>
                                         </div>
                                     </button>
                                 )}
 
-                                {selectedAnfrage.kundenMobil && (
+                                {mobil && (
                                     <button
-                                        onClick={() => handleCall(selectedAnfrage.kundenMobil!)}
+                                        onClick={() => handleCall(mobil)}
                                         className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 transition-colors"
                                     >
                                         <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
@@ -863,7 +873,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
                                         </div>
                                         <div className="flex-1 text-left">
                                             <p className="font-medium text-slate-900">Mobil</p>
-                                            <p className="text-slate-500">{selectedAnfrage.kundenMobil}</p>
+                                            <p className="text-slate-500">{mobil}</p>
                                         </div>
                                     </button>
                                 )}
