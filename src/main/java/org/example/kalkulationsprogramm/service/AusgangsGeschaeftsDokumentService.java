@@ -1860,8 +1860,10 @@ public class AusgangsGeschaeftsDokumentService {
      * - Gibt es keines davon (z.B. Reparatur, die direkt berechnet wird, oder eine
      *   extern geschriebene und hier nur nacherfasste Rechnung), ist die Summe aller
      *   eindeutigen Rechnungen der Auftragspreis.
-     * - bezahlt = true wenn Summe der (nicht-stornierten) Rechnungen >= Projekt-Preis UND alle Offene-Posten-Rechnungen bezahlt.
-     * - abgeschlossen = true wenn bezahlt = true.
+     * - bezahlt = true erst, wenn die (nicht-stornierten) Rechnungen den Projekt-Preis
+     *   inkl. Nachträgen abdecken, keine davon mehr ein ungebuchter Entwurf ist, kein
+     *   Offener Posten mehr unbezahlt ist und die bezahlten Rechnungen den Preis erreichen.
+     * - abgeschlossen = true wenn bezahlt = true (außer der Haken wurde von Hand gesetzt).
      */
     @Transactional
     public void aktualisiereProjektPreisAusDokumenten(Long projektId) {
@@ -1935,22 +1937,41 @@ public class AusgangsGeschaeftsDokumentService {
                 ? projekt.getBruttoPreis()
                 : BigDecimal.ZERO;
 
-        // bezahlt = Rechnungssumme >= Projektpreis UND alle Offene-Posten-Rechnungen bezahlt
-        boolean rechnungssummeAusreichend = massgeblicherPreis.compareTo(BigDecimal.ZERO) > 0
-                && summeRechnungen.compareTo(massgeblicherPreis.subtract(new BigDecimal("0.01"))) >= 0;
+        // Bezahlt (und damit automatisch beendet) ist ein Projekt erst, wenn
+        //  1. die Rechnungen den kompletten Auftragspreis inkl. Nachträgen abdecken
+        //     (alle Teil-/Schlussrechnungen sind geschrieben),
+        //  2. keine Rechnung mehr ein ungebuchter Entwurf ist – der Offene-Posten-Eintrag
+        //     entsteht erst beim Buchen, vorher würde die Prüfung unten sie übersehen,
+        //  3. kein Offener Posten mehr unbezahlt ist und
+        //  4. die bezahlten Rechnungen den kompletten Auftragspreis erreichen.
+        // Das bloße Schreiben einer Rechnung beendet ein Projekt also nicht.
+        BigDecimal preisMitToleranz = massgeblicherPreis.subtract(new BigDecimal("0.01"));
+        boolean alleRechnungenGeschrieben = massgeblicherPreis.compareTo(BigDecimal.ZERO) > 0
+                && summeRechnungen.compareTo(preisMitToleranz) >= 0;
+        boolean ungebuchteRechnungVorhanden = aktive.stream()
+                .anyMatch(d -> RECHNUNGSTYPEN.contains(d.getTyp()) && !d.isGebucht());
         boolean keineOffenenPosten = !projektDokumentRepository.existsOffenePostenByProjektId(projektId);
+        BigDecimal bezahlteSumme = projektDokumentRepository.sumBezahlteRechnungenByProjektId(projektId);
+        boolean vollstaendigBezahlt = alleRechnungenGeschrieben
+                && !ungebuchteRechnungVorhanden
+                && keineOffenenPosten
+                && bezahlteSumme != null
+                && bezahlteSumme.compareTo(preisMitToleranz) >= 0;
 
         // Haken "Beendet" von Hand gesetzt/entfernt? Dann hat der Benutzer Vorrang
         // und die Automatik fasst "abgeschlossen" nicht mehr an.
         boolean automatikDarfBeenden = !projekt.isAbgeschlossenManuell();
-        if (rechnungssummeAusreichend && keineOffenenPosten) {
+        if (vollstaendigBezahlt) {
             projekt.setBezahlt(true);
             if (automatikDarfBeenden) {
                 projekt.setAbgeschlossen(true);
             }
         } else {
             projekt.setBezahlt(false);
-            if (!keineOffenenPosten && automatikDarfBeenden) {
+            // Nur bei konkret offenen Rechnungen wieder öffnen – Altprojekte ohne
+            // Dokumente sollen durch einen beliebigen Datei-Upload nicht aufgehen.
+            boolean offeneRechnungVorhanden = !keineOffenenPosten || ungebuchteRechnungVorhanden;
+            if (offeneRechnungVorhanden && automatikDarfBeenden) {
                 projekt.setAbgeschlossen(false);
             }
         }

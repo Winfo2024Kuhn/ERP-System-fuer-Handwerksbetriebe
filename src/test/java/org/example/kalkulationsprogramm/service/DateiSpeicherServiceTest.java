@@ -110,13 +110,16 @@ class DateiSpeicherServiceTest {
         final DateiSpeicherService service;
         final ProjektDokumentRepository dokumentRepository;
         final ProjektRepository projektRepository;
+        final AusgangsGeschaeftsDokumentService preisAutomatik;
 
         ServiceSetup(DateiSpeicherService service,
                 ProjektDokumentRepository dokumentRepository,
-                ProjektRepository projektRepository) {
+                ProjektRepository projektRepository,
+                AusgangsGeschaeftsDokumentService preisAutomatik) {
             this.service = service;
             this.dokumentRepository = dokumentRepository;
             this.projektRepository = projektRepository;
+            this.preisAutomatik = preisAutomatik;
         }
     }
 
@@ -135,13 +138,14 @@ class DateiSpeicherServiceTest {
         KundeRepository kundeRepo = mock(KundeRepository.class);
         ZugferdExtractorService zugferd = mock(ZugferdExtractorService.class);
         ProduktkategorieMapper mapper = mock(ProduktkategorieMapper.class);
+        AusgangsGeschaeftsDokumentService preisAutomatik = mock(AusgangsGeschaeftsDokumentService.class);
 
         DateiSpeicherService service = new DateiSpeicherService(
                 docRoot.toString(), offerRoot.toString(), iconRoot.toString(),
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
-                settingsMock(hicadRoot.toString(), networkUrl), mock(AusgangsGeschaeftsDokumentService.class));
-        return new ServiceSetup(service, dokRepo, projRepo);
+                settingsMock(hicadRoot.toString(), networkUrl), preisAutomatik);
+        return new ServiceSetup(service, dokRepo, projRepo, preisAutomatik);
     }
 
     @Test
@@ -819,16 +823,16 @@ class DateiSpeicherServiceTest {
                 () -> setup.service.speichereZugferdDatei(tmp, "mahnung.pdf", 6L, daten));
     }
 
-    // --- Tests: setzeGeschaeftsdokumentBezahlt + pruefeProjektAbschluss ---
+    // --- Tests: setzeGeschaeftsdokumentBezahlt ---
+    // Ob das Projekt danach bezahlt/beendet ist, entscheidet die zentrale Regel in
+    // AusgangsGeschaeftsDokumentService (getestet in AusgangsGeschaeftsDokumentServiceBezahltTest).
 
     @Test
-    void setzeGeschaeftsdokumentBezahltSetztProjektBezahltWennAllePostenBezahlt() throws IOException {
+    void setzeGeschaeftsdokumentBezahltLaesstProjektStatusZentralNeuBerechnen() throws IOException {
         ServiceSetup setup = createMahnungService();
 
         Projekt projekt = new Projekt();
         projekt.setId(10L);
-        projekt.setBezahlt(false);
-        projekt.setAbgeschlossen(false);
 
         ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
         rechnung.setId(100L);
@@ -836,28 +840,22 @@ class DateiSpeicherServiceTest {
         rechnung.setBezahlt(false);
 
         when(setup.dokumentRepository.findById(100L)).thenReturn(Optional.of(rechnung));
-        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-        when(setup.projektRepository.findById(10L)).thenReturn(Optional.of(projekt));
-        // Keine offenen Posten mehr nach dem Bezahlen
-        when(setup.dokumentRepository.existsOffenePostenByProjektId(10L)).thenReturn(false);
 
         setup.service.setzeGeschaeftsdokumentBezahlt(100L, true);
 
         assertTrue(rechnung.isBezahlt());
-        assertTrue(projekt.isBezahlt());
-        assertTrue(projekt.isAbgeschlossen());
-        verify(setup.projektRepository).save(projekt);
+        verify(setup.dokumentRepository).save(rechnung);
+        verify(setup.preisAutomatik).aktualisiereProjektPreisAusDokumenten(10L);
+        // Keine zweite, eigene Abschluss-Regel mehr – das Projekt fasst nur die Zentrale an.
+        org.mockito.Mockito.verifyNoInteractions(setup.projektRepository);
     }
 
     @Test
-    void setzeGeschaeftsdokumentBezahltSetztProjektNichtBezahltWennNochOffenePosten() throws IOException {
+    void setzeGeschaeftsdokumentUnbezahltLaesstProjektStatusZentralNeuBerechnen() throws IOException {
         ServiceSetup setup = createMahnungService();
 
         Projekt projekt = new Projekt();
         projekt.setId(11L);
-        projekt.setBezahlt(true);
-        projekt.setAbgeschlossen(true);
 
         ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
         rechnung.setId(101L);
@@ -865,101 +863,27 @@ class DateiSpeicherServiceTest {
         rechnung.setBezahlt(true);
 
         when(setup.dokumentRepository.findById(101L)).thenReturn(Optional.of(rechnung));
-        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-        when(setup.projektRepository.findById(11L)).thenReturn(Optional.of(projekt));
-        // Es gibt noch offene Posten
-        when(setup.dokumentRepository.existsOffenePostenByProjektId(11L)).thenReturn(true);
 
         setup.service.setzeGeschaeftsdokumentBezahlt(101L, false);
 
         assertFalse(rechnung.isBezahlt());
-        assertFalse(projekt.isBezahlt());
-        assertFalse(projekt.isAbgeschlossen());
-        verify(setup.projektRepository).save(projekt);
+        verify(setup.preisAutomatik).aktualisiereProjektPreisAusDokumenten(11L);
     }
 
     @Test
-    void setzeGeschaeftsdokumentBezahltOeffnetProjektWennPostenWiederOffen() throws IOException {
+    void setzeGeschaeftsdokumentBezahltOhneProjektBerechnetNichtsNeu() throws IOException {
         ServiceSetup setup = createMahnungService();
-
-        Projekt projekt = new Projekt();
-        projekt.setId(12L);
-        projekt.setBezahlt(true);
-        projekt.setAbgeschlossen(true);
 
         ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
         rechnung.setId(102L);
-        rechnung.setProjekt(projekt);
-        rechnung.setBezahlt(true);
-
-        when(setup.dokumentRepository.findById(102L)).thenReturn(Optional.of(rechnung));
-        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-        when(setup.projektRepository.findById(12L)).thenReturn(Optional.of(projekt));
-        // Rechnung wurde als unbezahlt markiert → es gibt offene Posten
-        when(setup.dokumentRepository.existsOffenePostenByProjektId(12L)).thenReturn(true);
-
-        setup.service.setzeGeschaeftsdokumentBezahlt(102L, false);
-
-        assertFalse(projekt.isBezahlt());
-        assertFalse(projekt.isAbgeschlossen());
-    }
-
-    @Test
-    void setzeGeschaeftsdokumentBezahltBeendetProjektNichtWennBenutzerHakenSelbstEntferntHat() throws IOException {
-        ServiceSetup setup = createMahnungService();
-
-        Projekt projekt = new Projekt();
-        projekt.setId(13L);
-        projekt.setBezahlt(false);
-        projekt.setAbgeschlossen(false);
-        // Benutzer hat den Haken "Beendet" von Hand entfernt → er behält die Oberhand.
-        projekt.setAbgeschlossenManuell(true);
-
-        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
-        rechnung.setId(103L);
-        rechnung.setProjekt(projekt);
         rechnung.setBezahlt(false);
 
-        when(setup.dokumentRepository.findById(103L)).thenReturn(Optional.of(rechnung));
-        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-        when(setup.projektRepository.findById(13L)).thenReturn(Optional.of(projekt));
-        when(setup.dokumentRepository.existsOffenePostenByProjektId(13L)).thenReturn(false);
+        when(setup.dokumentRepository.findById(102L)).thenReturn(Optional.of(rechnung));
 
-        setup.service.setzeGeschaeftsdokumentBezahlt(103L, true);
+        setup.service.setzeGeschaeftsdokumentBezahlt(102L, true);
 
-        assertTrue(projekt.isBezahlt());
-        assertFalse(projekt.isAbgeschlossen());
-    }
-
-    @Test
-    void setzeGeschaeftsdokumentBezahltOeffnetManuellBeendetesProjektNichtWieder() throws IOException {
-        ServiceSetup setup = createMahnungService();
-
-        Projekt projekt = new Projekt();
-        projekt.setId(14L);
-        projekt.setBezahlt(true);
-        // Benutzer hat den Haken "Beendet" von Hand gesetzt.
-        projekt.setAbgeschlossen(true);
-        projekt.setAbgeschlossenManuell(true);
-
-        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
-        rechnung.setId(104L);
-        rechnung.setProjekt(projekt);
-        rechnung.setBezahlt(true);
-
-        when(setup.dokumentRepository.findById(104L)).thenReturn(Optional.of(rechnung));
-        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-        when(setup.projektRepository.findById(14L)).thenReturn(Optional.of(projekt));
-        when(setup.dokumentRepository.existsOffenePostenByProjektId(14L)).thenReturn(true);
-
-        setup.service.setzeGeschaeftsdokumentBezahlt(104L, false);
-
-        assertFalse(projekt.isBezahlt());
-        assertTrue(projekt.isAbgeschlossen());
+        assertTrue(rechnung.isBezahlt());
+        org.mockito.Mockito.verifyNoInteractions(setup.preisAutomatik);
     }
 
     @Test
@@ -983,71 +907,6 @@ class DateiSpeicherServiceTest {
 
         assertThrows(RuntimeException.class,
                 () -> setup.service.setzeGeschaeftsdokumentBezahlt(999L, true));
-    }
-
-    @Test
-    void setzeGeschaeftsdokumentBezahltSchliesstProjektNichtWennNurAbschlagBezahlt() throws IOException {
-        ServiceSetup setup = createMahnungService();
-
-        // Auftragssumme 10.000, aber nur ein Abschlag über 3.000 ist bezahlt.
-        Projekt projekt = new Projekt();
-        projekt.setId(20L);
-        projekt.setBruttoPreis(new BigDecimal("10000.00"));
-        projekt.setBezahlt(false);
-        projekt.setAbgeschlossen(false);
-
-        ProjektGeschaeftsdokument abschlag = new ProjektGeschaeftsdokument();
-        abschlag.setId(300L);
-        abschlag.setProjekt(projekt);
-        abschlag.setBezahlt(false);
-
-        when(setup.dokumentRepository.findById(300L)).thenReturn(Optional.of(abschlag));
-        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-        when(setup.projektRepository.findById(20L)).thenReturn(Optional.of(projekt));
-        // Keine offenen Posten mehr (der Abschlag wurde bezahlt) ...
-        when(setup.dokumentRepository.existsOffenePostenByProjektId(20L)).thenReturn(false);
-        // ... aber die bezahlte Summe deckt die Auftragssumme noch nicht.
-        when(setup.dokumentRepository.sumBezahlteRechnungenByProjektId(20L))
-                .thenReturn(new BigDecimal("3000.00"));
-
-        setup.service.setzeGeschaeftsdokumentBezahlt(300L, true);
-
-        assertTrue(abschlag.isBezahlt());
-        assertFalse(projekt.isBezahlt());
-        assertFalse(projekt.isAbgeschlossen());
-        verify(setup.projektRepository).save(projekt);
-    }
-
-    @Test
-    void setzeGeschaeftsdokumentBezahltSchliesstProjektWennKompletteSummeBezahlt() throws IOException {
-        ServiceSetup setup = createMahnungService();
-
-        Projekt projekt = new Projekt();
-        projekt.setId(21L);
-        projekt.setBruttoPreis(new BigDecimal("10000.00"));
-        projekt.setBezahlt(false);
-        projekt.setAbgeschlossen(false);
-
-        ProjektGeschaeftsdokument schlussrechnung = new ProjektGeschaeftsdokument();
-        schlussrechnung.setId(301L);
-        schlussrechnung.setProjekt(projekt);
-        schlussrechnung.setBezahlt(false);
-
-        when(setup.dokumentRepository.findById(301L)).thenReturn(Optional.of(schlussrechnung));
-        when(setup.dokumentRepository.save(any(ProjektDokument.class)))
-                .thenAnswer(inv -> inv.getArgument(0));
-        when(setup.projektRepository.findById(21L)).thenReturn(Optional.of(projekt));
-        when(setup.dokumentRepository.existsOffenePostenByProjektId(21L)).thenReturn(false);
-        // Komplette Auftragssumme ist beglichen.
-        when(setup.dokumentRepository.sumBezahlteRechnungenByProjektId(21L))
-                .thenReturn(new BigDecimal("10000.00"));
-
-        setup.service.setzeGeschaeftsdokumentBezahlt(301L, true);
-
-        assertTrue(projekt.isBezahlt());
-        assertTrue(projekt.isAbgeschlossen());
-        verify(setup.projektRepository).save(projekt);
     }
 
     /** Baut eine bezahlte Rechnung samt Projekt und Kunde für die Top-Kunden-Auswertung. */
