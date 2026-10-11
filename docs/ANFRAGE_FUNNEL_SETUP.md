@@ -189,8 +189,13 @@ Content-Type: multipart/form-data
 
 **Antwort bei Validierungsfehler (HTTP 400):**
 ```json
-{ "success": false, "message": "<Fehlerbeschreibung>" }
+{ "success": false, "message": "<Fehlerbeschreibung>", "felder": ["email", "vorname"] }
 ```
+
+`felder` steht bei jedem Prüffehler (Pflichtfeld, Länge, E-Mail-Format,
+Datenschutz), nicht bei kaputtem oder leerem JSON. Bei fehlender
+Datenschutz-Zustimmung lautet `message` „Datenschutz muss akzeptiert werden.“.
+Das ERP loggt abgelehnte Anfragen mit den Feldnamen, nie mit den Werten.
 
 ---
 
