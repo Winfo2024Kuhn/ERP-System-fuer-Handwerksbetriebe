@@ -53,7 +53,8 @@ class FlywayMigrationenTest {
             "V410__doppelte_fremdschluessel_entfernen.sql", 357620652,
             "V411__schutzregeln_und_kunden_emails.sql", 1211966469,
             "V412__datev_stundenart.sql", -328481948,
-            "V413__abwesenheitsnotiz_postfaecher.sql", -17262563);
+            "V413__abwesenheitsnotiz_postfaecher.sql", -17262563,
+            "V414__benachrichtigung_erledigt.sql", 928601684);
 
     private static final char BOM = 0xFEFF;
 

@@ -401,6 +401,32 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   @Query("SELECT COUNT(e) FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL")
   long countNewsletter();
 
+  // ═══════════════════════════════════════════════════════════════
+  // ORDNER SPAM / NEWSLETTER (E-Mail-Center und Glocke)
+  // Zugeordnete Mails (Projekt, Anfrage, Lieferant) gehören in deren Ordner, nie in Spam
+  // oder Newsletter – Liste und Zähler müssen dieselben Mails meinen, sonst steht eine Zahl
+  // am Ordner, zu der es keine Mail gibt. Die Bereinigung nutzt weiter findSpam/findNewsletter.
+  // ═══════════════════════════════════════════════════════════════
+
+  @Query("SELECT e FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL "
+      + "AND e.zuordnungTyp = 'KEINE' AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL "
+      + "ORDER BY e.sentAt DESC NULLS LAST")
+  List<Email> findSpamOrdner();
+
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL AND e.isRead = false "
+      + "AND e.zuordnungTyp = 'KEINE' AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL")
+  long countSpamOrdnerUnread();
+
+  @Query("SELECT e FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL "
+      + "AND e.zuordnungTyp = 'KEINE' AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL "
+      + "ORDER BY e.sentAt DESC NULLS LAST")
+  List<Email> findNewsletterOrdner();
+
+  @Query("SELECT COUNT(e) FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL "
+      + "AND e.isRead = false "
+      + "AND e.zuordnungTyp = 'KEINE' AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL")
+  long countNewsletterOrdnerUnread();
+
   /**
    * Findet alle Emails die noch nicht auf Spam geprüft wurden.
    * Nur nicht-zugeordnete, nicht-gelöschte eingehende Emails.

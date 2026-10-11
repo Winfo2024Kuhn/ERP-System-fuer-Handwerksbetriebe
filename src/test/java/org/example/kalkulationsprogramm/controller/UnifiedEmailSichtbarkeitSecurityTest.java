@@ -611,8 +611,8 @@ class UnifiedEmailSichtbarkeitSecurityTest {
             given(emailRepository.findLieferantEmails()).willReturn(gemischt);
             given(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT)).willReturn(gemischt);
             given(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc()).willReturn(gemischt);
-            given(emailRepository.findSpam()).willReturn(gemischt);
-            given(emailRepository.findNewsletter()).willReturn(gemischt);
+            given(emailRepository.findSpamOrdner()).willReturn(gemischt);
+            given(emailRepository.findNewsletterOrdner()).willReturn(gemischt);
             given(emailRepository.findStarred()).willReturn(gemischt);
 
             for (String ordner : List.of("unassigned", "inquiries", "new/projekt", "new/anfrage", "new/lieferant",
@@ -622,6 +622,38 @@ class UnifiedEmailSichtbarkeitSecurityTest {
                         .andExpect(jsonPath("$", hasSize(1)))
                         .andExpect(jsonPath("$[0].id").value(INFO_MAIL));
             }
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.ValueSource(strings = { "inbox", "projects", "offers", "suppliers", "sent",
+                "trash", "spam", "newsletter", "starred", "unassigned" })
+        void nurUngelesenFiltertVorDemSeitenschnitt(String ordner) throws Exception {
+            // Gelesene Mail steht vorn: ohne Filter auf dem Server zeigte Seite 1 (limit=1) nur sie,
+            // und die ungelesene bliebe unsichtbar, obwohl der Ordner sie zählt.
+            Email schonGelesen = mail(11L, "Schon gelesen", info);
+            schonGelesen.setRead(true);
+            List<Email> gemischt = List.of(schonGelesen, infoMail);
+            given(emailRepository.findInboxFiltered()).willReturn(gemischt);
+            given(emailRepository.findUnassigned()).willReturn(gemischt);
+            given(emailRepository.findProjectEmails()).willReturn(gemischt);
+            given(emailRepository.findAnfrageEmails()).willReturn(gemischt);
+            given(emailRepository.findLieferantEmails()).willReturn(gemischt);
+            given(emailRepository.findByDirectionOrderBySentAtDesc(EmailDirection.OUT)).willReturn(gemischt);
+            given(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc()).willReturn(gemischt);
+            given(emailRepository.findSpamOrdner()).willReturn(gemischt);
+            given(emailRepository.findNewsletterOrdner()).willReturn(gemischt);
+            given(emailRepository.findStarred()).willReturn(gemischt);
+            if (ordner.equals("inbox")) {
+                given(emailRepository.findUnassigned()).willReturn(List.of());
+            }
+
+            mockMvc.perform(get("/api/emails/" + ordner).param("limit", "1").param("nurUngelesen", "true"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$", hasSize(1)))
+                    .andExpect(jsonPath("$[0].id").value(INFO_MAIL));
+            mockMvc.perform(get("/api/emails/" + ordner).param("limit", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].id").value(11));
         }
 
         @Test
@@ -640,8 +672,8 @@ class UnifiedEmailSichtbarkeitSecurityTest {
             infoMail.setFirstViewedAt(LocalDateTime.of(2026, 10, 9, 8, 0));
             List<Email> gemischt = List.of(infoMail, fremdeMail, schonGelesen);
             given(emailRepository.findInboxFiltered()).willReturn(gemischt);
-            given(emailRepository.findSpam()).willReturn(gemischt);
-            given(emailRepository.findNewsletter()).willReturn(gemischt);
+            given(emailRepository.findSpamOrdner()).willReturn(gemischt);
+            given(emailRepository.findNewsletterOrdner()).willReturn(gemischt);
             given(emailRepository.findStarred()).willReturn(gemischt);
             given(emailRepository.findUnassigned()).willReturn(gemischt);
             given(emailRepository.findPotentialInquiries()).willReturn(gemischt);

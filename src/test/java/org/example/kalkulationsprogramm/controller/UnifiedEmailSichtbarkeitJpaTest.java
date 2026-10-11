@@ -150,10 +150,10 @@ class UnifiedEmailSichtbarkeitJpaTest {
         mail("Sichtbar 3");
         speichern();
 
-        assertThat(betreffe(controller.getInboxEmails(0, 2, ERIKA))).containsExactly("Sichtbar 1", "Sichtbar 2");
-        assertThat(betreffe(controller.getInboxEmails(2, 2, ERIKA))).containsExactly("Sichtbar 3");
-        assertThat(betreffe(controller.getInboxEmails(0, 100, ADMIN))).hasSize(6);
-        assertThat(betreffe(controller.getInboxEmails(1, 2, ADMIN))).containsExactly("Fremd 1", "Fremd 2");
+        assertThat(betreffe(controller.getInboxEmails(0, 2, false, ERIKA))).containsExactly("Sichtbar 1", "Sichtbar 2");
+        assertThat(betreffe(controller.getInboxEmails(2, 2, false, ERIKA))).containsExactly("Sichtbar 3");
+        assertThat(betreffe(controller.getInboxEmails(0, 100, false, ADMIN))).hasSize(6);
+        assertThat(betreffe(controller.getInboxEmails(1, 2, false, ADMIN))).containsExactly("Fremd 1", "Fremd 2");
     }
 
     @Test
@@ -177,7 +177,7 @@ class UnifiedEmailSichtbarkeitJpaTest {
         postfachRepository.save(max);
         speichern();
 
-        assertThat(betreffe(controller.getInboxEmails(0, 100, ERIKA))).containsExactly("Fremd");
+        assertThat(betreffe(controller.getInboxEmails(0, 100, false, ERIKA))).containsExactly("Fremd");
     }
 
     @Test
@@ -193,7 +193,7 @@ class UnifiedEmailSichtbarkeitJpaTest {
         mitarbeiter.getAbteilungen().add(werkstatt);
         erika.setMitarbeiter(mitarbeiter);
 
-        assertThat(betreffe(controller.getInboxEmails(0, 100, ERIKA))).containsExactly("Werkstatt-Post");
+        assertThat(betreffe(controller.getInboxEmails(0, 100, false, ERIKA))).containsExactly("Werkstatt-Post");
     }
 
     @Test
@@ -202,7 +202,7 @@ class UnifiedEmailSichtbarkeitJpaTest {
         speichern();
         erika.setEmailAbsender(max);
 
-        assertThat(betreffe(controller.getInboxEmails(0, 100, ERIKA))).containsExactly("Meine Post");
+        assertThat(betreffe(controller.getInboxEmails(0, 100, false, ERIKA))).containsExactly("Meine Post");
     }
 
     @Test
@@ -211,7 +211,7 @@ class UnifiedEmailSichtbarkeitJpaTest {
         mail("Fremd", max);
         speichern();
 
-        assertThat(betreffe(controller.getInboxEmails(0, 100, null))).containsExactly("Info-Post");
+        assertThat(betreffe(controller.getInboxEmails(0, 100, false, null))).containsExactly("Info-Post");
     }
 
     @Test

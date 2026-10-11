@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../auth/AuthContext';
+import { ToastProvider } from '../ui/toast';
 import { RibbonNavigation } from './RibbonNav';
 import { antwort, stubbeFetch } from '../../features/telefon/telefonTestdaten';
 import { setzeTelefonBerechtigungZurueck } from '../../features/telefon/useTelefonBerechtigung';
@@ -20,7 +21,7 @@ function stubbe(darf: boolean) {
 function zeige() {
     return render(
         <MemoryRouter initialEntries={['/emails/inbox']}>
-            <AuthProvider><RibbonNavigation /></AuthProvider>
+            <ToastProvider><AuthProvider><RibbonNavigation /></AuthProvider></ToastProvider>
         </MemoryRouter>,
     );
 }

@@ -15,7 +15,7 @@ async function stub(page: Page, options: { allowed?: boolean; error?: boolean; c
         if (path === '/api/auth/me') return json({ id: 70, username: 'test@example.com', displayName: 'Max Mustermann', active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false });
         if (path === '/api/notifications/summary') return json({ totalCount: closed ? 0 : 1,
             categories: closed ? [] : [{ type: 'MONATSABSCHLUSS', label: 'Monate abschließen', count: 1, icon: 'CalendarCheck', link: '/monatsabschluss?jahr=2025&monat=8' }],
-            recentItems: closed ? [] : [{ type: 'MONATSABSCHLUSS', title: 'August 2025 abschließen', subtitle: '1 Mitarbeiter noch zu prüfen', timestamp: '2025-08-01T00:00:00', link: '/monatsabschluss?jahr=2025&monat=8' }] });
+            recentItems: closed ? [] : [{ id: 'MONATSABSCHLUSS:2025-08', type: 'MONATSABSCHLUSS', title: 'August 2025 abschließen', subtitle: '1 Mitarbeiter noch zu prüfen', timestamp: '2025-08-01T00:00:00', link: '/monatsabschluss?jahr=2025&monat=8' }] });
         if (path === '/api/mitarbeiter') return json([{ id: 1, vorname: 'Max', nachname: 'Mustermann' }]);
         if (path === '/api/mitarbeiter/1') return json({ id: 1 });
         if (path === '/api/abteilungen') return json([]);
