@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.repository;
 
 import org.example.kalkulationsprogramm.domain.OutOfOfficeSchedule;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -27,4 +28,9 @@ public interface OutOfOfficeScheduleRepository extends JpaRepository<OutOfOffice
             + "WHERE s.postfaecher IS EMPTY AND s.active = true AND s.startAt <= :tag AND s.endAt >= :tag "
             + "ORDER BY s.startAt DESC, s.id DESC")
     List<OutOfOfficeSchedule> findAktiveOhnePostfach(@Param("tag") LocalDate tag);
+
+    /** Löst eine Signatur von allen Abwesenheitsnotizen, bevor sie gelöscht wird. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE OutOfOfficeSchedule s SET s.signature = null WHERE s.signature.id = :signaturId")
+    int entferneSignatur(@Param("signaturId") Long signaturId);
 }

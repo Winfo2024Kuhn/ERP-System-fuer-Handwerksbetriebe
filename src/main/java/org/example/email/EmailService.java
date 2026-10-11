@@ -299,9 +299,8 @@ public class EmailService {
         relatedHolder.setContent(related);
         mixed.addBodyPart(relatedHolder);
 
-        MimeBodyPart htmlPart = new MimeBodyPart();
-        htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-        related.addBodyPart(htmlPart);
+        // Eingebettete data:-Bilder (z. B. aus der Signatur) als Inline-Anhang mitschicken.
+        EingebetteteBilder.fuegeHtmlHinzu(related, htmlBody);
 
         if (htmlBody != null && htmlBody.contains("cid:Firmenlogo")) {
             try (InputStream is = EmailService.class.getResourceAsStream("/static/firmenlogo.png")) {
@@ -380,9 +379,8 @@ public class EmailService {
         relatedHolder.setContent(related);
         mixed.addBodyPart(relatedHolder);
 
-        MimeBodyPart htmlPart = new MimeBodyPart();
-        htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-        related.addBodyPart(htmlPart);
+        // Eingebettete data:-Bilder (z. B. aus der Signatur) als Inline-Anhang mitschicken.
+        EingebetteteBilder.fuegeHtmlHinzu(related, htmlBody);
 
         // Add inline images provided via CID map
         if (inlineCidToFile != null) {
@@ -493,9 +491,8 @@ public class EmailService {
         relatedHolder.setContent(related);
         mixed.addBodyPart(relatedHolder);
 
-        MimeBodyPart htmlPart = new MimeBodyPart();
-        htmlPart.setContent(htmlBody, "text/html; charset=utf-8");
-        related.addBodyPart(htmlPart);
+        // Eingebettete data:-Bilder (z. B. aus der Signatur) als Inline-Anhang mitschicken.
+        EingebetteteBilder.fuegeHtmlHinzu(related, htmlBody);
 
         // Add inline images provided via CID map
         if (inlineCidToFile != null) {

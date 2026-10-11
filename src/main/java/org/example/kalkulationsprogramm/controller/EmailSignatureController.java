@@ -1,38 +1,57 @@
 package org.example.kalkulationsprogramm.controller;
 
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.EmailSignatureImage;
+import org.example.kalkulationsprogramm.dto.Email.EmailSignaturDto;
+import org.example.kalkulationsprogramm.dto.Email.EmailSignaturSpeichernRequest;
 import org.example.kalkulationsprogramm.service.EmailSignatureService;
+import org.example.kalkulationsprogramm.service.EmailSignaturVerwaltungService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Files;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 
+/**
+ * E-Mail-Signaturen. Benutzer sehen und bearbeiten nur ihre eigenen Signaturen, Admins alle
+ * (siehe {@link EmailSignaturVerwaltungService}). Fremde Signaturen beantwortet jeder Endpoint
+ * mit 404.
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/email/signatures")
 public class EmailSignatureController {
 
+    /** Bildtypen, die als Bild ausgeliefert werden (kein SVG – das kann Skripte enthalten). */
+    private static final Set<String> ERLAUBTE_BILDTYPEN = Set.of("image/png", "image/jpeg", "image/gif", "image/webp");
+
     private final EmailSignatureService service;
+    private final EmailSignaturVerwaltungService verwaltung;
 
     @GetMapping
-    public List<EmailSignature> list() {
-        return service.list();
+    public List<EmailSignaturDto> list(Authentication authentication) {
+        return verwaltung.liste(verwaltung.benutzer(authentication));
     }
 
+    /**
+     * Standard-Signatur zum Vorbelegen beim Schreiben einer Mail. Benutzer bekommen immer ihre
+     * eigene; nur Admins dürfen per Parameter nach der eines anderen Benutzers fragen.
+     */
     @GetMapping("/default")
-    public ResponseEntity<EmailSignature> getDefault(@RequestParam(name = "frontendUserId", required = false) Long frontendUserId,
-                                                     @RequestParam(name = "frontendUserName", required = false) String frontendUserName) {
-        return service.getDefaultForFrontendUser(frontendUserId, frontendUserName)
+    public ResponseEntity<EmailSignaturDto> getDefault(@RequestParam(name = "frontendUserId", required = false) Long frontendUserId,
+                                                       @RequestParam(name = "frontendUserName", required = false) String frontendUserName,
+                                                       Authentication authentication) {
+        return verwaltung.standardSignatur(verwaltung.benutzer(authentication), frontendUserId, frontendUserName)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
     }
@@ -43,100 +62,121 @@ public class EmailSignatureController {
      * wird — und ob der Inhaber noch den Platzhalter editieren muss.
      */
     @GetMapping("/system-default")
-    public ResponseEntity<Map<String, Object>> getSystemDefaultRaw() {
-        return service.list().stream()
-                .filter(EmailSignature::isSystemDefault)
-                .findFirst()
-                .map(sig -> ResponseEntity.ok(Map.of(
-                        "signature", (Object) sig,
-                        "isPlatzhalter", EmailSignatureService.isPlatzhalter(sig)
+    public ResponseEntity<Map<String, Object>> getSystemDefaultRaw(Authentication authentication) {
+        return verwaltung.systemSignatur(verwaltung.benutzer(authentication))
+                .map(sig -> ResponseEntity.ok(Map.<String, Object>of(
+                        "signature", sig,
+                        "isPlatzhalter", EmailSignatureService.isPlatzhalterHtml(sig.html())
                 )))
                 .orElse(ResponseEntity.noContent().build());
     }
 
     /**
      * Markiert die angegebene Signatur als System-Default. Andere Signaturen
-     * verlieren das Flag automatisch (siehe Service).
+     * verlieren das Flag automatisch (siehe Service). Nur Admin (SecurityConfig).
      */
     @PutMapping("/{id}/system-default")
-    public ResponseEntity<EmailSignature> setSystemDefault(@PathVariable Long id) {
+    public ResponseEntity<EmailSignaturDto> setSystemDefault(@PathVariable Long id, Authentication authentication) {
         try {
-            return ResponseEntity.ok(service.setSystemDefault(id));
-        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.ok(verwaltung.alsSystemSignatur(id, verwaltung.benutzer(authentication)));
+        } catch (NoSuchElementException | IllegalArgumentException ex) {
             return ResponseEntity.notFound().build();
         }
     }
 
-    @PostMapping
-    public ResponseEntity<EmailSignature> save(@RequestBody SaveSignatureRequest req) {
-        EmailSignature sig = new EmailSignature();
-        if (req.id != null) sig.setId(req.id);
-        sig.setName(Optional.ofNullable(req.name).orElse("Signatur"));
-        sig.setHtml(Optional.ofNullable(req.html).orElse(""));
-        boolean defaultRequested = Boolean.TRUE.equals(req.defaultSignature);
-        sig.setDefaultSignature(defaultRequested);
-        EmailSignature saved = service.saveOrUpdate(sig);
-        saved.setDefaultSignature(defaultRequested);
-        return ResponseEntity.ok(saved);
+    /** Macht die Signatur zur Standard-Signatur des angemeldeten Benutzers. */
+    @PutMapping("/{id}/standard")
+    public ResponseEntity<?> alsStandard(@PathVariable Long id, Authentication authentication) {
+        try {
+            return ResponseEntity.ok(verwaltung.alsStandard(id, verwaltung.benutzer(authentication)));
+        } catch (NoSuchElementException ex) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
     }
 
-    @PostMapping(path = "/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<List<EmailSignatureImage>> upload(@PathVariable Long id,
-                                                            @RequestPart("files") List<MultipartFile> files) {
+    /** Der angemeldete Benutzer hat danach keine Standard-Signatur mehr. */
+    @DeleteMapping("/standard")
+    public ResponseEntity<Void> standardEntfernen(Authentication authentication) {
+        verwaltung.standardEntfernen(verwaltung.benutzer(authentication));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping
+    public ResponseEntity<?> save(@RequestBody EmailSignaturSpeichernRequest req, Authentication authentication) {
         try {
-            List<EmailSignatureImage> out = new java.util.ArrayList<>();
-            for (MultipartFile f : files) {
-                out.add(service.addImage(id, f));
-            }
-            return ResponseEntity.ok(out);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            return ResponseEntity.ok(verwaltung.speichern(req, verwaltung.benutzer(authentication)));
+        } catch (NoSuchElementException ex) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
     }
 
     @GetMapping("/{id}/preview")
-    public ResponseEntity<Map<String, String>> preview(@PathVariable Long id, @RequestParam(name = "user", required = false) String user) {
-        return service.list().stream().filter(s -> s.getId().equals(id)).findFirst()
+    public ResponseEntity<Map<String, String>> preview(@PathVariable Long id,
+                                                       @RequestParam(name = "user", required = false) String user,
+                                                       Authentication authentication) {
+        return verwaltung.sichtbare(id, verwaltung.benutzer(authentication))
                 .map(s -> ResponseEntity.ok(Map.of("html", service.renderSignatureHtmlForPreview(s, user))))
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<EmailSignature> get(@PathVariable Long id) {
-        return service.findById(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<EmailSignaturDto> get(@PathVariable Long id, Authentication authentication) {
+        return verwaltung.laden(id, verwaltung.benutzer(authentication))
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
+    /**
+     * Bild einer alten Signatur (Datei-Upload aus der Zeit vor dem Signatur-Studio). Nur echte
+     * Bildtypen werden als Bild ausgeliefert, alles andere als Download – und nie als Seite, die
+     * im ERP Skripte ausführen könnte.
+     */
     @GetMapping("/{id}/images/{imageId}")
-    public ResponseEntity<byte[]> image(@PathVariable Long id, @PathVariable Long imageId) {
-        Optional<EmailSignature> sig = service.list().stream().filter(s -> s.getId().equals(id)).findFirst();
+    public ResponseEntity<byte[]> image(@PathVariable Long id, @PathVariable Long imageId, Authentication authentication) {
+        Optional<EmailSignature> sig = verwaltung.sichtbare(id, verwaltung.benutzer(authentication));
         if (sig.isEmpty()) return ResponseEntity.notFound().build();
-        Optional<EmailSignatureImage> img = sig.get().getImages().stream().filter(i -> i.getId().equals(imageId)).findFirst();
+        Optional<EmailSignatureImage> img = service.findImage(id, imageId);
         if (img.isEmpty()) return ResponseEntity.notFound().build();
         var pathOpt = service.resolveImagePath(img.get());
         if (pathOpt.isEmpty()) return ResponseEntity.notFound().build();
         try {
             byte[] bytes = Files.readAllBytes(pathOpt.get());
-            String ctype = Optional.ofNullable(img.get().getContentType()).orElse("application/octet-stream");
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_TYPE, ctype)
-                    .body(bytes);
+            String typ = Optional.ofNullable(img.get().getContentType()).orElse("").trim().toLowerCase(Locale.ROOT);
+            boolean bild = ERLAUBTE_BILDTYPEN.contains(typ);
+            ResponseEntity.BodyBuilder antwort = ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, bild ? typ : MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                    .header("X-Content-Type-Options", "nosniff")
+                    .header("Content-Security-Policy", "sandbox; default-src 'none'");
+            if (!bild) {
+                antwort.header(HttpHeaders.CONTENT_DISPOSITION, "attachment");
+            }
+            return antwort.body(bytes);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<?> delete(@PathVariable Long id, Authentication authentication) {
         try {
-            service.delete(id);
+            verwaltung.loeschen(id, verwaltung.benutzer(authentication));
             return ResponseEntity.noContent().build();
-        } catch (Exception e) {
+        } catch (NoSuchElementException e) {
             return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
 
     @DeleteMapping("/{id}/images/{imageId}")
-    public ResponseEntity<Void> deleteImage(@PathVariable Long id, @PathVariable Long imageId) {
+    public ResponseEntity<Void> deleteImage(@PathVariable Long id, @PathVariable Long imageId, Authentication authentication) {
+        if (verwaltung.sichtbare(id, verwaltung.benutzer(authentication)).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             service.deleteImage(id, imageId);
             return ResponseEntity.noContent().build();
@@ -145,13 +185,5 @@ public class EmailSignatureController {
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }
-    }
-
-    @Data
-    public static class SaveSignatureRequest {
-        public Long id;
-        public String name;
-        public String html;
-        public Boolean defaultSignature;
     }
 }

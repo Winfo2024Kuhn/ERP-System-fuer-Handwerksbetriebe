@@ -1,6 +1,10 @@
 package org.example.kalkulationsprogramm.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +31,18 @@ public class EmailSignature {
 
     @Column(name = "is_system_default", nullable = false)
     private boolean isSystemDefault = false;
+
+    /** Benutzer, dem die Signatur gehoert; {@code null} = ohne Besitzer, nur Admins sehen sie. */
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "besitzer_id")
+    private FrontendUserProfile besitzer;
+
+    /** Formularzustand des Signatur-Studios als JSON; {@code null} = von Hand geschriebenes HTML. */
+    @JsonIgnore
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "vorlage_daten")
+    private String vorlageDaten;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -60,6 +76,10 @@ public class EmailSignature {
     public void setDefaultSignature(boolean defaultSignature) { this.defaultSignature = defaultSignature; }
     public boolean isSystemDefault() { return isSystemDefault; }
     public void setSystemDefault(boolean systemDefault) { this.isSystemDefault = systemDefault; }
+    public FrontendUserProfile getBesitzer() { return besitzer; }
+    public void setBesitzer(FrontendUserProfile besitzer) { this.besitzer = besitzer; }
+    public String getVorlageDaten() { return vorlageDaten; }
+    public void setVorlageDaten(String vorlageDaten) { this.vorlageDaten = vorlageDaten; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

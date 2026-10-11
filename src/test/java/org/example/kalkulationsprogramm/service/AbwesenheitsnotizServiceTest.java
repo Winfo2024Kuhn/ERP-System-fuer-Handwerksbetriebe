@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -25,7 +26,6 @@ import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsnotizD
 import org.example.kalkulationsprogramm.dto.Abwesenheitsnotiz.AbwesenheitsnotizSpeichernRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachRefDto;
 import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
-import org.example.kalkulationsprogramm.repository.EmailSignatureRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.repository.OutOfOfficeScheduleRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +49,7 @@ class AbwesenheitsnotizServiceTest {
 
     @Mock private OutOfOfficeScheduleRepository notizRepository;
     @Mock private EmailAbsenderRepository postfachRepository;
-    @Mock private EmailSignatureRepository signaturRepository;
+    @Mock private EmailSignaturVerwaltungService signaturVerwaltung;
     @Mock private FrontendUserProfileRepository benutzerRepository;
     @Mock private FrontendUserProfileService benutzerService;
     @Mock private PostfachSichtbarkeitService sichtbarkeitService;
@@ -198,7 +198,9 @@ class AbwesenheitsnotizServiceTest {
             EmailSignature signatur = new EmailSignature();
             signatur.setId(11L);
             signatur.setName("Max Mustermann");
-            when(signaturRepository.findById(11L)).thenReturn(Optional.of(signatur));
+            EmailSignaturVerwaltungService.Benutzer benutzer = new EmailSignaturVerwaltungService.Benutzer(5L, false);
+            when(signaturVerwaltung.benutzer(MAX)).thenReturn(benutzer);
+            when(signaturVerwaltung.sichtbare(11L, benutzer)).thenReturn(Optional.of(signatur));
             AbwesenheitsnotizSpeichernRequest anfrage = new AbwesenheitsnotizSpeichernRequest(null, "  Urlaub ",
                     LocalDate.of(2026, 12, 21), LocalDate.of(2027, 1, 6), 11L, true, "  ", "<p>Bin weg</p>",
                     List.of(3L, 1L, 3L));
@@ -281,7 +283,8 @@ class AbwesenheitsnotizServiceTest {
 
         @Test
         void unbekannteSignatur400() {
-            when(signaturRepository.findById(77L)).thenReturn(Optional.empty());
+            // Unbekannt oder fremd – beides sieht für den Benutzer gleich aus.
+            when(signaturVerwaltung.sichtbare(eq(77L), any())).thenReturn(Optional.empty());
             AbwesenheitsnotizSpeichernRequest r = new AbwesenheitsnotizSpeichernRequest(null, "Urlaub",
                     LocalDate.of(2026, 12, 21), LocalDate.of(2027, 1, 6), 77L, true, null, null, List.of(3L));
 
@@ -297,6 +300,28 @@ class AbwesenheitsnotizServiceTest {
 
             assertThat(dto.id()).isEqualTo(10L);
             assertThat(bestehend.getPostfaecher()).containsExactly(buero);
+        }
+
+        @Test
+        void bisherigeSignaturDerNotizBleibtErlaubtFremdeNicht() {
+            EmailSignature firma = new EmailSignature();
+            firma.setId(30L);
+            firma.setName("Mustermann Metallbau");
+            OutOfOfficeSchedule bestehend = notiz(10, max, info);
+            bestehend.setSignature(firma);
+            when(notizRepository.findById(10L)).thenReturn(Optional.of(bestehend));
+
+            AbwesenheitsnotizSpeichernRequest gleich = new AbwesenheitsnotizSpeichernRequest(10L, "Urlaub",
+                    LocalDate.of(2026, 12, 21), LocalDate.of(2027, 1, 6), 30L, true, null, null, List.of(3L));
+            assertThat(service.speichern(gleich, MAX).signature().name()).isEqualTo("Mustermann Metallbau");
+            verify(signaturVerwaltung, never()).sichtbare(eq(30L), any());
+
+            when(signaturVerwaltung.sichtbare(eq(31L), any())).thenReturn(Optional.empty());
+            AbwesenheitsnotizSpeichernRequest fremd = new AbwesenheitsnotizSpeichernRequest(10L, "Urlaub",
+                    LocalDate.of(2026, 12, 21), LocalDate.of(2027, 1, 6), 31L, true, null, null, List.of(3L));
+            assertThatThrownBy(() -> service.speichern(fremd, MAX))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("gibt es nicht");
         }
 
         @Test

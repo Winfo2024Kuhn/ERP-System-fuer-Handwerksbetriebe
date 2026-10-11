@@ -227,4 +227,95 @@ class EmailSignatureServiceTest {
         sig.setHtml(html);
         return sig;
     }
+
+    // --------------------- findImage ---------------------
+
+    @Test
+    void findImage_nurBildDerEigenenSignatur() {
+        EmailSignature sig = signaturMit("<p>x</p>");
+        sig.setId(1L);
+        org.example.kalkulationsprogramm.domain.EmailSignatureImage bild = new org.example.kalkulationsprogramm.domain.EmailSignatureImage();
+        bild.setId(9L);
+        bild.setSignature(sig);
+        when(imageRepository.findById(9L)).thenReturn(Optional.of(bild));
+
+        assertThat(service.findImage(1L, 9L)).containsSame(bild);
+        assertThat(service.findImage(2L, 9L)).isEmpty();
+        assertThat(service.findImage(null, 9L)).isEmpty();
+        assertThat(service.findImage(1L, null)).isEmpty();
+    }
+
+    @Test
+    void isPlatzhalter_aufHtml() {
+        assertThat(EmailSignatureService.isPlatzhalterHtml(null)).isTrue();
+        assertThat(EmailSignatureService.isPlatzhalterHtml("<p>Max Mustermann</p>")).isFalse();
+    }
+
+    // --------------------- Versand-Signatur & Anmeldung ---------------------
+
+    private static org.springframework.security.core.Authentication anmeldung(Object principal, String... rollen) {
+        return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal, null,
+                org.springframework.security.core.authority.AuthorityUtils.createAuthorityList(rollen));
+    }
+
+    private org.example.kalkulationsprogramm.domain.FrontendUserProfile profilMitSignatur(Long id, Long signaturId) {
+        org.example.kalkulationsprogramm.domain.FrontendUserProfile p = new org.example.kalkulationsprogramm.domain.FrontendUserProfile();
+        p.setId(id);
+        EmailSignature sig = signaturMit("<p>x</p>");
+        sig.setId(signaturId);
+        p.setDefaultSignature(sig);
+        return p;
+    }
+
+    @Test
+    void angemeldeteProfilId_ausPrincipalOderBenutzername() {
+        var principal = new org.example.kalkulationsprogramm.config.FrontendUserPrincipal(5L, "max", "Max Mustermann", "x", true,
+                java.util.Set.of(org.example.kalkulationsprogramm.domain.FrontendUserRole.USER));
+        assertThat(service.angemeldeteProfilId(anmeldung(principal, "ROLE_USER"))).contains(5L);
+
+        org.example.kalkulationsprogramm.domain.FrontendUserProfile erika = profilMitSignatur(6L, 1L);
+        when(profileRepository.findByUsernameIgnoreCase("erika")).thenReturn(Optional.of(erika));
+        assertThat(service.angemeldeteProfilId(anmeldung(" erika ", "ROLE_USER"))).contains(6L);
+        assertThat(service.angemeldeteProfilId(anmeldung(" ", "ROLE_USER"))).isEmpty();
+        assertThat(service.angemeldeteProfilId(null)).isEmpty();
+        assertThat(service.angemeldeteProfilId(new org.springframework.security.authentication.AnonymousAuthenticationToken(
+                "k", "anonymousUser", org.springframework.security.core.authority.AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS"))))
+                .isEmpty();
+        assertThat(service.angemeldeteProfilId(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("max", null))).isEmpty();
+    }
+
+    @Test
+    void istAdmin_nurMitAdminRolle() {
+        assertThat(EmailSignatureService.istAdmin(anmeldung("chef", "ROLE_ADMIN"))).isTrue();
+        assertThat(EmailSignatureService.istAdmin(anmeldung("max", "ROLE_USER"))).isFalse();
+        assertThat(EmailSignatureService.istAdmin(null)).isFalse();
+    }
+
+    @Test
+    void getVersandSignatur_benutzerBekommtImmerDieEigene() {
+        when(profileRepository.findByUsernameIgnoreCase("max")).thenReturn(Optional.of(profilMitSignatur(5L, 10L)));
+        when(profileRepository.findById(5L)).thenReturn(Optional.of(profilMitSignatur(5L, 10L)));
+        when(profileRepository.findById(6L)).thenReturn(Optional.of(profilMitSignatur(6L, 20L)));
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(anmeldung("max", "ROLE_USER"));
+        try {
+            assertThat(service.getVersandSignatur(6L, "Erika Musterfrau")).map(EmailSignature::getId).contains(10L);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void getVersandSignatur_adminDarfFremde_ohneAnmeldungKeine() {
+        when(profileRepository.findById(6L)).thenReturn(Optional.of(profilMitSignatur(6L, 20L)));
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(anmeldung("chef", "ROLE_ADMIN"));
+        try {
+            assertThat(service.getVersandSignatur(6L, null)).map(EmailSignature::getId).contains(20L);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+        assertThat(service.getVersandSignatur(6L, null)).isEmpty();
+    }
 }

@@ -8,6 +8,7 @@ import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
 import lombok.RequiredArgsConstructor;
+import org.example.email.EingebetteteBilder;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.springframework.stereotype.Component;
 
@@ -65,9 +66,8 @@ public class SmtpHtmlMailSender implements HtmlMailSender {
         relatedHolder.setContent(related);
         mixed.addBodyPart(relatedHolder);
 
-        MimeBodyPart htmlPart = new MimeBodyPart();
-        htmlPart.setContent(htmlBody != null ? htmlBody : "", "text/html; charset=utf-8");
-        related.addBodyPart(htmlPart);
+        // Eingebettete data:-Bilder (z. B. aus der Signatur) als Inline-Anhang mitschicken.
+        EingebetteteBilder.fuegeHtmlHinzu(related, htmlBody);
 
         if (inlineAttachments != null) {
             for (Map.Entry<String, File> entry : inlineAttachments.entrySet()) {
