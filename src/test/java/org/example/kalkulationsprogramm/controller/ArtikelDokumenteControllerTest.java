@@ -228,8 +228,8 @@ class ArtikelDokumenteControllerTest {
 
         @Test
         @DisplayName("Alles ausser Bild/PDF liefert der Service als attachment - nicht inline mit "
-                + "eigenem Content-Type. Deckt den Direktweg ab (siehe SCRAPING_ARTIKEL_CSV.md), bei dem "
-                + "eine .html oder .svg an der Upload-Whitelist vorbei ins Verzeichnis gelangen koennte")
+                + "eigenem Content-Type. Deckt Dateien ab, die an der Anwendung vorbei (Kopie von Hand, "
+                + "Sicherung) als .html oder .svg ins Verzeichnis gelangen koennten")
         void nichtBildOderPdf_wirdAlsAttachmentAusgeliefert() throws Exception {
             var datei = new ArtikelDokumentService.ArtikelDokumentDatei(
                     new ByteArrayResource("<script>alert(1)</script>".getBytes()),
