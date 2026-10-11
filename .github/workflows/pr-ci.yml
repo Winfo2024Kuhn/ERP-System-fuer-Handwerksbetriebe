@@ -189,10 +189,19 @@ jobs:
       - name: Production build
         run: npm run build
 
+  # Rund 1000 Testlaeufe (alle Specs x drei Bildschirmgroessen) auf drei
+  # parallele Jobs verteilt. Jeder Job faehrt weiter 2 Worker wie zuvor der
+  # eine -- gleiche Last pro Maschine, ein Drittel der Wartezeit. Mehr Teile
+  # lohnen kaum: dann bremst die feste Vorlaufzeit (Installation, Build) und
+  # die Backend-Tests sind ohnehin ~4,5 Minuten unterwegs.
   pc_e2e:
-    name: PC Frontend E2E
+    name: PC Frontend E2E (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     defaults:
       run:
         working-directory: react-pc-frontend
@@ -217,13 +226,13 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Playwright E2E tests
-        run: npm run test:e2e
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pc-playwright-report
+          name: pc-playwright-report-${{ matrix.shard }}
           path: react-pc-frontend/playwright-report
           if-no-files-found: ignore
           retention-days: 7

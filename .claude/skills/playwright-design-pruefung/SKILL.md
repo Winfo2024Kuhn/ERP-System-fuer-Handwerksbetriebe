@@ -109,9 +109,15 @@ npx playwright test e2e/meine.spec.ts          # nur eine Spec, beide Desktop-Gr
 npx playwright test --project=pc-14zoll        # nur die kleine Größe
 ```
 
-Die Konfiguration liest `E2E_PORT` (Standard 5173) und startet den Vite-Dev-Server
-selbst auf genau diesem Port (`--strictPort`). Zwei Agenten auf demselben Port würden
-sich gegenseitig den falschen Code testen — deshalb je Agent ein eigener Port.
+Die Konfiguration liest `E2E_PORT` (Standard 4173), baut die App bei **jedem** Lauf
+frisch (`vite build` in einen Temp-Ordner je Checkout und Port, ein paar Sekunden vor
+dem ersten Test – kein Hänger) und liefert den Build mit `vite preview` auf genau
+diesem Port aus (`--strictPort`). Das ist knapp dreimal so schnell wie der
+Dev-Server, weil eine Seite eine Handvoll gebündelter Dateien statt rund 400
+Einzelmodulen lädt. Zwei Agenten auf demselben Port würden sich gegenseitig den
+falschen Code testen — deshalb je Agent ein eigener Port. `npm run test:e2e:ui` nimmt
+automatisch den Dev-Server (Hot-Reload), sonst schaltet `E2E_DEVSERVER=1` dorthin um.
+Unter PowerShell setzt man Variablen mit `$env:E2E_PORT=5174; npx playwright test …`.
 
 **Zeiterfassung.** Hat `playwright.config.ts` mit dem Projekt `handy` (`devices['iPhone 15']`,
 https per `@vitejs/plugin-basic-ssl`, `ignoreHTTPSErrors: true`) und `e2e/hilfen/test.ts`
