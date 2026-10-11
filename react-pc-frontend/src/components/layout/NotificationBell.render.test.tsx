@@ -1,8 +1,7 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { NotificationBell } from './NotificationBell';
-import { ToastProvider } from '../ui/toast';
 import { ALTE_SPEICHER_SCHLUESSEL, type NotificationSummary } from './notification-helpers';
 
 const navigateMock = vi.fn();
@@ -17,14 +16,10 @@ vi.mock('react-router-dom', async () => {
 const mockFetch = vi.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
-/** Antwortet auf GET /summary mit den übergebenen Ständen (der letzte bleibt stehen), auf POSTs mit `postStatus`. */
-function stubbeApi(staende: NotificationSummary[], postStatus = 204) {
+/** Antwortet auf GET /summary mit den übergebenen Ständen (der letzte bleibt stehen). */
+function stubbeApi(staende: NotificationSummary[]) {
     let abruf = 0;
-    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
-        if (init?.method === 'POST') {
-            const body = postStatus === 200 ? JSON.stringify({ erledigt: 3 }) : null;
-            return Promise.resolve(new Response(body, { status: postStatus }));
-        }
+    mockFetch.mockImplementation((url: string) => {
         if (String(url).startsWith('/api/notifications/summary')) {
             const stand = staende[Math.min(abruf, staende.length - 1)];
             abruf += 1;
@@ -34,41 +29,29 @@ function stubbeApi(staende: NotificationSummary[], postStatus = 204) {
     });
 }
 
-function postAufrufe() {
-    return mockFetch.mock.calls
-        .filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST')
-        .map(([url, init]) => ({ url: String(url), body: JSON.parse(String((init as RequestInit).body)) }));
+function summaryAbrufe(): string[] {
+    return mockFetch.mock.calls.map(([u]) => String(u)).filter(u => u.startsWith('/api/notifications/summary'));
 }
 
-function renderBell() {
+function renderBell(pfad = '/projekte') {
     return render(
-        <MemoryRouter>
-            <ToastProvider>
-                <NotificationBell />
-            </ToastProvider>
+        <MemoryRouter initialEntries={[pfad]}>
+            <NotificationBell />
         </MemoryRouter>
     );
 }
 
-async function oeffneGlocke() {
-    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
-    fireEvent.click(screen.getByTitle('Benachrichtigungen'));
+function glocke() {
+    return screen.getByRole('button', { name: /^Benachrichtigungen/ });
 }
 
-const LEER: NotificationSummary = { totalCount: 0, categories: [], recentItems: [] };
-
-const MIT_TERMIN_UND_MAILS: NotificationSummary = {
-    totalCount: 4,
-    categories: [
-        { type: 'TERMINE', label: 'Bevorstehende Termine', count: 1, icon: 'CalendarClock', link: '/kalender' },
-        { type: 'EMAILS', label: 'Ungelesene E-Mails', count: 2, icon: 'Mail', link: '/emails/inbox' },
-        { type: 'EMAILS_SPAM', label: 'Spam', count: 1, icon: 'ShieldAlert', link: '/emails/spam' },
-    ],
-    recentItems: [
-        { id: 'TERMIN:123', type: 'TERMIN', title: 'Aufmaß Bad', subtitle: 'Heute 10:00', timestamp: '2026-10-11', link: '/kalender?date=2026-10-11' },
-        { id: 'EMAIL:456', type: 'EMAIL', title: 'Anfrage Treppe', subtitle: 'Von: Max Mustermann', timestamp: '2026-10-11T09:00:00', link: '/emails/inbox/456' },
-    ],
-};
+function stand(totalCount: number): NotificationSummary {
+    return {
+        totalCount,
+        categories: totalCount > 0 ? [{ type: 'TERMINE', label: 'Bevorstehende Termine', count: totalCount, icon: 'CalendarClock', link: '/kalender' }] : [],
+        recentItems: [],
+    };
+}
 
 beforeEach(() => {
     sessionStorage.clear();
@@ -81,11 +64,11 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-describe('NotificationBell – Erledigt merkt sich der Server', () => {
+describe('NotificationBell – nur noch Zahl und Weg zur Seite', () => {
     it('räumt beim Start die alten Browser-Merker weg', async () => {
         localStorage.setItem(ALTE_SPEICHER_SCHLUESSEL.eintraege, '["TERMIN::/kalender"]');
         sessionStorage.setItem(ALTE_SPEICHER_SCHLUESSEL.kategorien, '{"TERMINE":1}');
-        stubbeApi([LEER]);
+        stubbeApi([stand(0)]);
 
         renderBell();
         await waitFor(() => expect(mockFetch).toHaveBeenCalled());
@@ -94,205 +77,118 @@ describe('NotificationBell – Erledigt merkt sich der Server', () => {
         expect(sessionStorage.getItem(ALTE_SPEICHER_SCHLUESSEL.kategorien)).toBeNull();
     });
 
-    it('Klick auf den Termin meldet seine id als erledigt, blendet ihn aus und lädt danach neu', async () => {
-        const nachher: NotificationSummary = {
-            ...MIT_TERMIN_UND_MAILS,
-            totalCount: 3,
-            categories: MIT_TERMIN_UND_MAILS.categories.slice(1),
-            recentItems: MIT_TERMIN_UND_MAILS.recentItems.slice(1),
-        };
-        stubbeApi([MIT_TERMIN_UND_MAILS, nachher]);
+    it('fragt nur die Kurzfassung ab (ohne alle=true) und zeigt die Zahl im Knopf und im Namen', async () => {
+        stubbeApi([stand(4)]);
         renderBell();
-        await oeffneGlocke();
 
-        fireEvent.click(await screen.findByText('Aufmaß Bad'));
-
-        expect(navigateMock).toHaveBeenCalledWith('/kalender?date=2026-10-11');
-        await waitFor(() => expect(postAufrufe()).toEqual([
-            { url: '/api/notifications/erledigt', body: { ids: ['TERMIN:123'] } },
-        ]));
-        // Nach dem POST holt die Glocke den Stand vom Server.
-        await waitFor(() => expect(mockFetch.mock.calls.filter(([u]) => String(u).startsWith('/api/notifications/summary'))).toHaveLength(2));
-        // Glocken-Zähler sinkt sofort von 4 auf 3.
-        expect(screen.getByTitle('Benachrichtigungen')).toHaveTextContent('3');
-
-        // Auch nach erneutem Öffnen ist der Termin weg.
-        fireEvent.click(screen.getByTitle('Benachrichtigungen'));
-        expect(await screen.findByText('Anfrage Treppe')).toBeInTheDocument();
-        expect(screen.queryByText('Aufmaß Bad')).toBeNull();
-        // Kein eigener Browser-Merker mehr.
-        expect(localStorage.getItem(ALTE_SPEICHER_SCHLUESSEL.eintraege)).toBeNull();
+        await waitFor(() => expect(glocke()).toHaveTextContent('4'));
+        expect(glocke()).toHaveAccessibleName('Benachrichtigungen (4 neu)');
+        expect(glocke()).toHaveAttribute('title', 'Benachrichtigungen (4 neu)');
+        expect(summaryAbrufe()).toEqual(['/api/notifications/summary']);
     });
 
-    it('Klick auf eine E-Mail ruft mark-read nicht mehr selbst auf', async () => {
-        stubbeApi([MIT_TERMIN_UND_MAILS]);
+    it('schickt den gewählten Mitarbeiter mit', async () => {
+        localStorage.setItem('frontendUserSelection', JSON.stringify({ mitarbeiterId: 7 }));
+        stubbeApi([stand(0)]);
         renderBell();
-        await oeffneGlocke();
 
-        fireEvent.click(await screen.findByText('Anfrage Treppe'));
-
-        expect(navigateMock).toHaveBeenCalledWith('/emails/inbox/456');
-        await waitFor(() => expect(postAufrufe()).toEqual([
-            { url: '/api/notifications/erledigt', body: { ids: ['EMAIL:456'] } },
-        ]));
-        expect(mockFetch.mock.calls.some(([u]) => String(u).includes('mark-read'))).toBe(false);
+        await waitFor(() => expect(summaryAbrufe()).toEqual(['/api/notifications/summary?mitarbeiterId=7']));
     });
 
-    it('zeigt bei einem Fehler eine Meldung und holt den Stand vom Server zurück', async () => {
-        stubbeApi([MIT_TERMIN_UND_MAILS], 500);
+    it('zeigt ab 100 Meldungen „99+“', async () => {
+        stubbeApi([stand(1234)]);
         renderBell();
-        await oeffneGlocke();
 
-        fireEvent.click(await screen.findByText('Aufmaß Bad'));
-
-        expect(await screen.findByText('Die Meldung konnte nicht als erledigt markiert werden.')).toBeInTheDocument();
-        // Server ist die Wahrheit: der Termin ist wieder da, Zähler wieder 4.
-        await waitFor(() => expect(screen.getByTitle('Benachrichtigungen')).toHaveTextContent('4'));
+        await waitFor(() => expect(glocke()).toHaveTextContent('99+'));
+        expect(glocke()).toHaveAccessibleName('Benachrichtigungen (1234 neu)');
     });
 
-    it('„Alle als gelesen" der Posteingänge schickt alle Mail-Kategorien der Spalte und meldet es dem E-Mail-Center', async () => {
-        const emailsRefresh = vi.fn();
-        window.addEventListener('emails:refresh', emailsRefresh);
-        stubbeApi([MIT_TERMIN_UND_MAILS], 200);
+    it('ohne Meldungen: kein Zähler, schlichter Name', async () => {
+        stubbeApi([stand(0)]);
         renderBell();
-        await oeffneGlocke();
 
-        fireEvent.click(await screen.findByRole('button', { name: 'Posteingänge: alle als gelesen markieren' }));
-
-        // Spalte ist sofort leer, der Termin bleibt.
-        expect(screen.queryByText('Anfrage Treppe')).toBeNull();
-        expect(screen.getByText('Aufmaß Bad')).toBeInTheDocument();
-        await waitFor(() => expect(postAufrufe()).toEqual([
-            { url: '/api/notifications/erledigt/kategorien', body: { kategorien: ['EMAILS', 'EMAILS_SPAM'] } },
-        ]));
-        await waitFor(() => expect(emailsRefresh).toHaveBeenCalledTimes(1));
-        window.removeEventListener('emails:refresh', emailsRefresh);
+        await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+        expect(glocke()).toHaveAccessibleName('Benachrichtigungen');
+        expect(glocke().textContent).toBe('');
     });
 
-    it('„Alle als gelesen" bei Terminen löst kein Neuladen des E-Mail-Centers aus', async () => {
-        const emailsRefresh = vi.fn();
-        window.addEventListener('emails:refresh', emailsRefresh);
-        stubbeApi([MIT_TERMIN_UND_MAILS], 200);
+    it('Klick öffnet die Seite „Benachrichtigungen“ statt eines Aufklapp-Fensters', async () => {
+        stubbeApi([stand(2)]);
         renderBell();
-        await oeffneGlocke();
+        await waitFor(() => expect(glocke()).toHaveTextContent('2'));
 
-        fireEvent.click(await screen.findByRole('button', { name: 'Termine: alle als gelesen markieren' }));
+        fireEvent.click(glocke());
 
-        await waitFor(() => expect(postAufrufe()).toEqual([
-            { url: '/api/notifications/erledigt/kategorien', body: { kategorien: ['TERMINE'] } },
-        ]));
-        await waitFor(() => expect(mockFetch.mock.calls.filter(([u]) => String(u).startsWith('/api/notifications/summary'))).toHaveLength(2));
-        expect(emailsRefresh).not.toHaveBeenCalled();
-        window.removeEventListener('emails:refresh', emailsRefresh);
-    });
-});
-
-/**
- * Regression: Im Screenshot vom 2026-05-07 zeigte das Notification-Center vier
- * Spalten mit Counts (Geschäft 2, Finanzen 5, Personal 2, Lieferanten 1), aber
- * keine einzelnen Eintraege – nur die tote Textzeile "X Eintraege – in der
- * Uebersicht oeffnen.". Ursache: Backend liefert eine Kategorie ohne
- * passende recentItems (z.B. RECHNUNGEN), und das Frontend rendert in dem
- * Fall einen unklickbaren Platzhalter. Fix: Wenn keine Items da sind, werden
- * stattdessen die Kategorien als klickbare Buttons gerendert.
- */
-describe('NotificationBell – Spalten ohne recentItems bleiben klickbar', () => {
-    it('rendert Kategorie-Button als Fallback, wenn Backend Counter aber keine Items liefert', async () => {
-        stubbeApi([{
-            totalCount: 4,
-            categories: [
-                {
-                    type: 'RECHNUNGEN',
-                    label: 'Neue Lieferantenrechnungen',
-                    count: 4,
-                    icon: 'Truck',
-                    link: '/offeneposten?tab=eingang',
-                },
-            ],
-            recentItems: [],
-        }]);
-
-        renderBell();
-        await oeffneGlocke();
-
-        // Statt der toten Textzeile darf ein klickbarer Button mit dem
-        // Kategorie-Label sichtbar sein, der per Klick navigiert.
-        const fallbackButton = await screen.findByTitle('Übersicht öffnen');
-        expect(fallbackButton).toHaveTextContent('Neue Lieferantenrechnungen');
-        expect(fallbackButton).toHaveTextContent('4');
-
-        fireEvent.click(fallbackButton);
-        expect(navigateMock).toHaveBeenCalledWith('/offeneposten?tab=eingang');
-
-        // Der alte Platzhaltertext darf nirgends mehr auftauchen.
-        expect(screen.queryByText(/in der Übersicht öffnen\./)).toBeNull();
+        expect(navigateMock).toHaveBeenCalledWith('/benachrichtigungen');
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(screen.queryByText('Bevorstehende Termine')).toBeNull();
     });
 
-    it('rendert weiterhin echte Item-Buttons, wenn Backend recentItems liefert', async () => {
-        stubbeApi([{
-            totalCount: 1,
-            categories: [
-                {
-                    type: 'URLAUBSANTRAEGE',
-                    label: 'Offene Anträge',
-                    count: 1,
-                    icon: 'Plane',
-                    link: '/urlaubsantraege',
-                },
-            ],
-            recentItems: [
-                {
-                    id: 'URLAUBSANTRAG:1',
-                    type: 'URLAUBSANTRAG',
-                    title: 'URLAUB: Max Mustermann',
-                    subtitle: '01.06. – 05.06.',
-                    timestamp: '2026-05-07T10:00:00',
-                    link: '/urlaubsantraege?antragId=1',
-                },
-            ],
-        }]);
+    it('ist auf der Seite „Benachrichtigungen“ als aktiv markiert', async () => {
+        stubbeApi([stand(1)]);
+        renderBell('/benachrichtigungen');
 
-        renderBell();
-        await oeffneGlocke();
-
-        const itemButton = await screen.findByTitle('Direkt zu diesem Eintrag öffnen');
-        expect(itemButton).toHaveTextContent('URLAUB: Max Mustermann');
-
-        // Beim Klick auf das Item wird die Detail-URL angefahren, nicht die Listen-URL
-        fireEvent.click(itemButton);
-        expect(navigateMock).toHaveBeenCalledWith('/urlaubsantraege?antragId=1');
+        await waitFor(() => expect(glocke()).toHaveTextContent('1'));
+        expect(glocke()).toHaveAttribute('aria-current', 'page');
+        expect(glocke().className).toContain('bg-rose-50');
     });
-});
 
-it('öffnet MONATSABSCHLUSS als Kalender-Deep-Link auch ohne recentItems', async () => {
-    stubbeApi([{ totalCount: 3,
-        categories: [{ type: 'MONATSABSCHLUSS', label: 'Monate abschließen', count: 3, icon: 'CalendarCheck', link: '/zeitbuchungen?jahr=2025&monat=8' }], recentItems: [] }]);
-    renderBell();
-    await oeffneGlocke();
-    fireEvent.click(await screen.findByText('Monate abschließen'));
-    expect(navigateMock).toHaveBeenCalledWith('/zeitbuchungen?jahr=2025&monat=8');
-});
+    it('ist auf anderen Seiten nicht aktiv markiert', async () => {
+        stubbeApi([stand(1)]);
+        renderBell('/projekte');
 
-it('zeigt eine Spalte "Telefon" direkt nach der Webseite mit Nachrichten und verpassten Anrufen', async () => {
-    stubbeApi([{ totalCount: 4,
-        categories: [
-            { type: 'ANFRAGEN_WEBSEITE', label: 'Neue Anfragen', count: 1, icon: 'Globe', link: '/anfragen' },
-            { type: 'SPRACHNACHRICHTEN', label: 'Neue Nachrichten', count: 1, icon: 'Voicemail', link: '/telefon/anrufbeantworter' },
-            { type: 'VERPASSTE_ANRUFE', label: 'Verpasste Anrufe', count: 1, icon: 'PhoneMissed', link: '/telefon/anrufe?offen=1' },
-            { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 1, icon: 'Plane', link: '/urlaubsantraege' },
-        ],
-        recentItems: [
-            { id: 'ANFRAGE_WEBSEITE:1', type: 'ANFRAGE_WEBSEITE', title: 'Anfrage: Max Mustermann', subtitle: 'Balkon', timestamp: '2026-09-29T10:00:00', link: '/anfragen?anfrageId=1' },
-            { id: 'SPRACHNACHRICHT:11', type: 'SPRACHNACHRICHT', title: 'Nachricht von Max Mustermann', subtitle: 'AB Tag · 0:42', timestamp: '2026-09-29T11:57:00', link: '/telefon/anrufbeantworter?nachricht=11' },
-            { id: 'VERPASSTER_ANRUF:4', type: 'VERPASSTER_ANRUF', title: 'Verpasst: 0931 1234567', subtitle: 'Heute 11:55', timestamp: '2026-09-29T11:55:00', link: '/telefon/anrufe?anruf=4' },
-            { id: 'URLAUBSANTRAG:2', type: 'URLAUBSANTRAG', title: 'URLAUB: Erika Mustermann', subtitle: '01.10.', timestamp: '2026-09-29T09:00:00', link: '/urlaubsantraege?antragId=2' },
-        ] }]);
-    renderBell();
-    await oeffneGlocke();
+        await waitFor(() => expect(glocke()).toHaveTextContent('1'));
+        expect(glocke()).not.toHaveAttribute('aria-current');
+    });
 
-    const ueberschriften = (await screen.findAllByText(/^(Neu von der Webseite|Telefon|Personal)$/)).map(e => e.textContent);
-    expect(ueberschriften).toEqual(['Neu von der Webseite', 'Telefon', 'Personal']);
+    it('lädt bei „notifications:refresh“ sofort neu und wackelt, wenn die Zahl steigt', async () => {
+        stubbeApi([stand(2), stand(5)]);
+        renderBell();
+        await waitFor(() => expect(glocke()).toHaveTextContent('2'));
+        expect(glocke().className).not.toContain('animate-bell-shake');
 
-    fireEvent.click(screen.getByText('Nachricht von Max Mustermann'));
-    expect(navigateMock).toHaveBeenCalledWith('/telefon/anrufbeantworter?nachricht=11');
+        act(() => { window.dispatchEvent(new Event('notifications:refresh')); });
+
+        await waitFor(() => expect(glocke()).toHaveTextContent('5'));
+        expect(glocke().className).toContain('animate-bell-shake');
+        expect(summaryAbrufe()).toHaveLength(2);
+    });
+
+    it('wackelt nicht, wenn die Zahl sinkt', async () => {
+        stubbeApi([stand(5), stand(3)]);
+        renderBell();
+        await waitFor(() => expect(glocke()).toHaveTextContent('5'));
+
+        act(() => { window.dispatchEvent(new Event('notifications:refresh')); });
+
+        await waitFor(() => expect(glocke()).toHaveTextContent('3'));
+        expect(glocke().className).not.toContain('animate-bell-shake');
+    });
+
+    it('lädt neu, sobald der Browser-Tab wieder sichtbar wird', async () => {
+        stubbeApi([stand(1), stand(2)]);
+        renderBell();
+        await waitFor(() => expect(glocke()).toHaveTextContent('1'));
+
+        act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+
+        await waitFor(() => expect(glocke()).toHaveTextContent('2'));
+    });
+
+    it('bleibt bei einem Serverfehler still und zeigt den letzten Stand', async () => {
+        let abruf = 0;
+        mockFetch.mockImplementation(() => {
+            abruf += 1;
+            return Promise.resolve(abruf === 1
+                ? new Response(JSON.stringify(stand(3)), { status: 200 })
+                : new Response('kaputt', { status: 500 }));
+        });
+        renderBell();
+        await waitFor(() => expect(glocke()).toHaveTextContent('3'));
+
+        act(() => { window.dispatchEvent(new Event('notifications:refresh')); });
+
+        await waitFor(() => expect(abruf).toBe(2));
+        expect(glocke()).toHaveTextContent('3');
+    });
 });

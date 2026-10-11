@@ -40,6 +40,7 @@ import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
 import org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService;
 import org.example.kalkulationsprogramm.service.benachrichtigung.BenachrichtigungErledigtService;
 import org.example.kalkulationsprogramm.service.benachrichtigung.BenachrichtigungService;
+import org.example.kalkulationsprogramm.service.benachrichtigung.BetriebsstatusService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,6 +94,7 @@ class NotificationSichtbarkeitTest {
     @MockBean private FrontendUserProfileService frontendUserProfileService;
     @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
     @MockBean private BenachrichtigungErledigtService erledigtService;
+    @MockBean private BetriebsstatusService betriebsstatusService;
     @MockBean private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @BeforeEach

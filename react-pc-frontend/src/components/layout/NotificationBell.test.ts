@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
     enthaeltEmailKategorie,
     entferneAlteMerker,
+    hatZiel,
     kategorieFuerEintrag,
+    summaryUrl,
     ohneEintrag,
     ohneSpalte,
     ALTE_SPEICHER_SCHLUESSEL,
@@ -58,6 +60,69 @@ describe('kategorieFuerEintrag', () => {
         expect(kategorieFuerEintrag({ type: 'MONATSABSCHLUSS', link: '/zeitbuchungen' })).toBe('MONATSABSCHLUSS');
         expect(kategorieFuerEintrag({ type: 'VERPASSTER_ANRUF', link: '/telefon/anrufe' })).toBe('VERPASSTE_ANRUFE');
         expect(kategorieFuerEintrag({ type: 'GIBT_ES_NICHT', link: '/' })).toBeUndefined();
+    });
+
+    it('Sicherung und Update gehören zu ihren eigenen Kategorien – auch ohne Link', () => {
+        expect(kategorieFuerEintrag({ type: 'SICHERUNG', link: '' })).toBe('SICHERUNG');
+        expect(kategorieFuerEintrag({ type: 'UPDATE', link: '' })).toBe('UPDATE');
+    });
+});
+
+describe('ohneEintrag bei Sicherungs-Meldungen', () => {
+    it('senkt den Zähler der Kategorie SICHERUNG und lässt sie bei 0 wegfallen', () => {
+        const sicherung = eintrag('SICHERUNG:20261011-020017', 'SICHERUNG', '', 'Sicherung nur teilweise');
+        const summary: NotificationSummary = {
+            totalCount: 2,
+            categories: [
+                { type: 'SICHERUNG', label: 'Sicherung', count: 1, icon: 'HardDrive', link: '' },
+                { type: 'UPDATE', label: 'Update', count: 1, icon: 'RefreshCw', link: '' },
+            ],
+            recentItems: [sicherung, eintrag('UPDATE:20261011-030000', 'UPDATE', '')],
+        };
+        const ergebnis = ohneEintrag(summary, sicherung);
+        expect(ergebnis.categories.map(c => c.type)).toEqual(['UPDATE']);
+        expect(ergebnis.recentItems.map(i => i.id)).toEqual(['UPDATE:20261011-030000']);
+        expect(ergebnis.totalCount).toBe(1);
+    });
+});
+
+describe('summaryUrl', () => {
+    afterEach(() => localStorage.removeItem('frontendUserSelection'));
+
+    it('Glocke: ohne alle, ohne Mitarbeiter', () => {
+        expect(summaryUrl(false)).toBe('/api/notifications/summary');
+    });
+
+    it('Seite: mit alle=true', () => {
+        expect(summaryUrl(true)).toBe('/api/notifications/summary?alle=true');
+    });
+
+    it('nimmt den gewählten Mitarbeiter mit', () => {
+        localStorage.setItem('frontendUserSelection', JSON.stringify({ mitarbeiterId: 12 }));
+        expect(summaryUrl(true)).toBe('/api/notifications/summary?mitarbeiterId=12&alle=true');
+        localStorage.setItem('frontendUserSelection', JSON.stringify({ mitarbeiterId: '5' }));
+        expect(summaryUrl(false)).toBe('/api/notifications/summary?mitarbeiterId=5');
+    });
+
+    it('übergeht kaputte oder unsinnige Mitarbeiter-Angaben', () => {
+        for (const wert of ['{kaputt', JSON.stringify({ mitarbeiterId: 0 }), JSON.stringify({ mitarbeiterId: -3 }),
+            JSON.stringify({ mitarbeiterId: '1&alle=false' }), JSON.stringify({ mitarbeiterId: true }), 'null']) {
+            localStorage.setItem('frontendUserSelection', wert);
+            expect(summaryUrl(false)).toBe('/api/notifications/summary');
+        }
+    });
+});
+
+describe('hatZiel', () => {
+    it('nur Wege innerhalb der Anwendung', () => {
+        expect(hatZiel('/kalender?date=2026-10-11')).toBe(true);
+        expect(hatZiel('')).toBe(false);
+        expect(hatZiel('   ')).toBe(false);
+        expect(hatZiel(null)).toBe(false);
+        expect(hatZiel(undefined)).toBe(false);
+        expect(hatZiel('//fremde-seite.example')).toBe(false);
+        expect(hatZiel('https://fremde-seite.example')).toBe(false);
+        expect(hatZiel('javascript:alert(1)')).toBe(false);
     });
 });
 

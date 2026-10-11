@@ -83,6 +83,7 @@ class BenachrichtigungTransaktionTest {
     @MockBean private PostfachSichtbarkeitService postfachSichtbarkeitService;
     @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
     @MockBean private FrontendUserProfileService frontendUserProfileService;
+    @MockBean private BetriebsstatusService betriebsstatusService;
 
     private final Authentication max = UsernamePasswordAuthenticationToken.authenticated("max", null, List.of());
 

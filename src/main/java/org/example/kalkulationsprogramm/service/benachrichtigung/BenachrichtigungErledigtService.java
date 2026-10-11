@@ -40,10 +40,14 @@ public class BenachrichtigungErledigtService {
     /** Länger als jedes Zeitfenster der Glocke (max. 30 Tage) – danach kann ein Eintrag nicht mehr auftauchen. */
     static final int AUFBEWAHREN_TAGE = 45;
 
-    /** Arten, die offen bleiben, bis jemand sie bearbeitet – sie erinnern nach einer Woche erneut. */
+    /**
+     * Arten, die offen bleiben, bis jemand sie bearbeitet – sie erinnern nach einer Woche erneut.
+     * SICHERUNG/UPDATE: Eine weggeklickte Meldung „seit über einem Tag keine Sicherung“ darf nicht
+     * für immer verschwinden, solange die Sicherung weiter ausfällt.
+     */
     static final Set<String> DAUER_HINWEISE = Set.of(
             "ANFRAGE_WEBSEITE", "URLAUBSANTRAG", "EINGANG_FAELLIG", "AUSGANG_UEBERFAELLIG",
-            "REKLAMATION", "MONATSABSCHLUSS", "SPRACHNACHRICHT", "VERPASSTER_ANRUF");
+            "REKLAMATION", "MONATSABSCHLUSS", "SPRACHNACHRICHT", "VERPASSTER_ANRUF", "SICHERUNG", "UPDATE");
 
     private final BenachrichtigungErledigtRepository repository;
     private final FrontendUserProfileRepository benutzerRepository;

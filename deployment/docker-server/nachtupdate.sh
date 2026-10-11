@@ -20,6 +20,9 @@
 # Eine Version, die schon einmal gescheitert ist, wird nicht jede Nacht neu
 # versucht, sondern erst wieder, wenn eine neuere kommt (oder mit --erzwingen).
 #
+# Das Ergebnis steht danach in betriebsstatus/nachtupdate.json - das ERP zeigt
+# gescheiterte Updates Admins unter "Benachrichtigungen" an.
+#
 # Welche Version laeuft, steht im lokalen Tag ERP_IMAGE (z.B. ...:stable).
 # Nach dem Pull wird es sofort wieder auf die laufende Version gesetzt und erst
 # beim Wechsel auf die neue - so startet auch ein zwischenzeitlicher Neustart
@@ -50,10 +53,11 @@ umask 077
 SKRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SKRIPT_DIR"
 
-ENV_DATEI="$SKRIPT_DIR/.env"
-SICHERUNGS_DIR="$SKRIPT_DIR/sicherungen"
-LOG_DIR="$SKRIPT_DIR/logs"
-STATUS_DIR="$SKRIPT_DIR/.status"
+# Pfade, .env lesen, Handy-Nachricht, Datenbank sichern
+# shellcheck source=gemeinsam.sh
+source "$SKRIPT_DIR/gemeinsam.sh"
+STATUS_BEREICH=nachtupdate
+
 # Hier merkt sich das Skript die Image-ID einer gescheiterten Version
 GESCHEITERT_DATEI="$STATUS_DIR/gescheiterte-version"
 
@@ -71,9 +75,8 @@ LAUF_DATEI="$STATUS_DIR/update-laeuft"
 # diese Datei existiert, veraendert das Skript nichts und erinnert nur. Ein
 # Mensch prueft und loescht sie danach.
 NOTFALL_DATEI="$STATUS_DIR/notfall"
-NOTFALL_HINWEIS="Die Automatik ist angehalten, bis jemand nachgesehen und die Datei .status/notfall geloescht hat."
+NOTFALL_HINWEIS="Die Automatik ist angehalten, bis jemand nachgesehen und die Datei .status/notfall gelöscht hat."
 GESCHEITERT_TAG="erp-app:gescheitert"
-COMPOSE=(docker compose --project-directory "$SKRIPT_DIR" -f "$SKRIPT_DIR/docker-compose.yml")
 
 ERZWINGEN=nein
 MODUS=update
@@ -91,55 +94,20 @@ mkdir -p "$SICHERUNGS_DIR" "$LOG_DIR" "$STATUS_DIR"
 LOG_DATEI="$LOG_DIR/nachtupdate-$ZEITSTEMPEL.log"
 exec > >(tee -a "$LOG_DATEI") 2>&1
 
-log() {
-    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
-}
-
-# Liest einen Wert aus der .env, ohne sie als Shell-Skript auszufuehren.
-# env_wert KEY [Standardwert]
-env_wert() {
-    local zeile wert
-    zeile="$(grep -E "^$1=" "$ENV_DATEI" 2>/dev/null | tail -n 1 || true)"
-    wert="${zeile#*=}"
-    wert="${wert%$'\r'}"
-    wert="${wert%\"}"
-    wert="${wert#\"}"
-    if [[ -z "$zeile" || -z "$wert" ]]; then
-        wert="${2-}"
-    fi
-    printf '%s' "$wert"
-}
-
 if [[ ! -f "$ENV_DATEI" ]]; then
     log "FEHLER: $ENV_DATEI fehlt - zuerst einrichten.sh ausfuehren."
     exit 3
 fi
 
+einstellungen_lesen
 ERP_IMAGE="$(env_wert ERP_IMAGE)"
-KUNDE_NAME="$(env_wert KUNDE_NAME "$(hostname)")"
 APP_PORT="$(env_wert APP_PORT 8080)"
 # Im Updater-Container setzt docker-compose.yml HEALTH_URL (http://app:8080/...)
 HEALTH_URL="${HEALTH_URL:-$(env_wert HEALTH_URL "http://127.0.0.1:$APP_PORT/actuator/health")}"
 LOCK_DATEI="${LOCK_DATEI:-$STATUS_DIR/lock}"
 WARTEZEIT="$(env_wert HEALTH_WARTEZEIT_SEKUNDEN 300)"
 SICHERUNGEN_BEHALTEN="$(env_wert SICHERUNGEN_BEHALTEN 14)"
-WEBHOOK_URL="$(env_wert WEBHOOK_URL)"
-WEBHOOK_TOKEN="$(env_wert WEBHOOK_TOKEN)"
-WEBHOOK_FORMAT="$(env_wert WEBHOOK_FORMAT ntfy)"
-WEBHOOK_BEI_ERFOLG="$(env_wert WEBHOOK_BEI_ERFOLG nein)"
-WEBHOOK_MIT_FEHLERAUSZUG="$(env_wert WEBHOOK_MIT_FEHLERAUSZUG nein)"
-# Mindestens so viel freier Platz (in MB) muss fuer die Sicherung da sein
-MIN_FREI_MB=1024
 
-# Zahlen pruefen, BEVOR irgendetwas veraendert wird: ein Tippfehler wie
-# "300s" wuerde sonst mitten im Health-Check die Shell-Arithmetik sprengen -
-# und damit ausgerechnet nach dem Versionswechsel Health-Check und Rollback.
-zahl_pruefen() {  # zahl_pruefen <Name> <Wert> <Minimum>
-    if [[ ! "$2" =~ ^[0-9]+$ ]] || (( 10#$2 < $3 )); then
-        log "FEHLER: $1=$2 in .env ist ungueltig (ganze Zahl >= $3 erwartet). Nichts veraendert."
-        exit 3
-    fi
-}
 # Aeltere .env-Dateien enthalten noch COMPOSE_PROFILES. "postgres" ist harmlos;
 # eine Installation, die noch auf MySQL laeuft, darf nicht angefasst werden.
 # Geprueft wird weiter unten (dann mit Handy-Nachricht).
@@ -151,9 +119,10 @@ zahl_pruefen APP_PORT "$APP_PORT" 1
 WARTEZEIT=$((10#$WARTEZEIT))
 SICHERUNGEN_BEHALTEN=$((10#$SICHERUNGEN_BEHALTEN))
 
-if [[ -n "$WEBHOOK_URL" && ! "$WEBHOOK_URL" =~ ^https:// && ! "$WEBHOOK_URL" =~ ^http://(127\.0\.0\.1|localhost)[:/] ]]; then
-    log "WARNUNG: WEBHOOK_URL ist nicht https - Nachrichten gehen unverschluesselt raus."
-fi
+# Netz fuer die Meldung "keine Sicherung": Laeuft dieser Ordner mit einem alten
+# Updater-Image (ohne Sicherungs-Zeitplan), gibt es sonst nie eine Statusdatei
+# - und das ERP schwiege. So meldet es nach einem Tag "noch nie gelaufen".
+bash "$SKRIPT_DIR/sicherung.sh" --status-anlegen >/dev/null 2>&1 || true
 
 PHASE="start"
 SICHERUNG=""
@@ -161,64 +130,6 @@ ALT_ID=""
 NEU_ID=""
 ALT_VERSION="?"
 NEU_VERSION="?"
-
-# -----------------------------------------------------------------------------
-# Handy-Nachricht
-# -----------------------------------------------------------------------------
-
-json_string() {
-    local s="$1"
-    s="$(printf '%s' "$s" | tr -d '\000-\010\013\014\016-\037')"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\t'/\\t}"
-    s="${s//$'\r'/}"
-    s="${s//$'\n'/\\n}"
-    printf '"%s"' "$s"
-}
-
-# benachrichtigen <dringend|hoch|leise> <Titel> <Text>
-benachrichtigen() {
-    local stufe="$1" titel="$2" text="$3"
-    log "Nachricht [$stufe]: $titel"
-    if [[ -z "$WEBHOOK_URL" ]]; then
-        log "(kein WEBHOOK_URL gesetzt - Nachricht steht nur in diesem Log)"
-        return 0
-    fi
-
-    # Token ueber eine Kopfzeilen-Datei (nur fuer root lesbar, s. umask), damit
-    # er nicht in der Prozessliste steht
-    local kopf_datei="$STATUS_DIR/webhook-kopf"
-    : > "$kopf_datei"
-    if [[ -n "$WEBHOOK_TOKEN" ]]; then
-        printf 'Authorization: Bearer %s\n' "$WEBHOOK_TOKEN" > "$kopf_datei"
-    fi
-    local -a kopf=(-H "@$kopf_datei")
-
-    local ok=0
-    if [[ "$WEBHOOK_FORMAT" == "json" ]]; then
-        curl -fsS --max-time 20 -X POST "${kopf[@]}" -H "Content-Type: application/json" \
-            --data-binary "{\"text\": $(json_string "$titel"$'\n'"$text")}" \
-            "$WEBHOOK_URL" >/dev/null || ok=1
-    else
-        local prio tags
-        case "$stufe" in
-            dringend) prio=5; tags="rotating_light" ;;
-            hoch)     prio=4; tags="warning" ;;
-            *)        prio=2; tags="white_check_mark" ;;
-        esac
-        # ntfy versteht Umlaute im Titel nur RFC-2047-kodiert
-        curl -fsS --max-time 20 -X POST "${kopf[@]}" \
-            -H "Title: =?UTF-8?B?$(printf '%s' "$titel" | base64 | tr -d '\n')?=" \
-            -H "Priority: $prio" -H "Tags: $tags" \
-            --data-binary "$text" "$WEBHOOK_URL" >/dev/null || ok=1
-    fi
-    rm -f "$kopf_datei"
-    if [[ $ok -ne 0 ]]; then
-        log "WARNUNG: Nachricht konnte nicht gesendet werden."
-    fi
-    return 0
-}
 
 # Die aussagekraeftigsten Fehlerzeilen aus dem App-Log, ohne Kundendaten:
 # geschwaerzt werden Werte in Anfuehrungszeichen (z.B. "Duplicate entry '...'"),
@@ -317,27 +228,15 @@ laufende_image_id() {
     [[ -n "$container" ]] && docker inspect -f '{{.Image}}' "$container"
 }
 
-# Schreibt die komplette Datenbank als SQL auf stdout. Das Passwort bleibt im
-# Datenbank-Container (dort liegt es schon als Umgebungsvariable) und taucht
-# in keiner Prozessliste auf. PostgreSQL: lokale Verbindung im Container;
-# haelt jemand eine Sperre, gibt pg_dump nach 2 Minuten auf statt ewig zu
-# warten (sonst haengt das Nachtupdate still mit ausgeschaltetem ERP).
-datenbank_ausgeben() {
-    # Die App ist an dieser Stelle gestoppt. Eine Verbindung, die beim harten
-    # Entfernen ihres Containers "idle in transaction" haengen blieb, haelt
-    # aber evtl. noch Sperren - trennen, sonst wartet pg_dump vergeblich.
+# Die App ist vor der Sicherung gestoppt. Eine Verbindung, die beim harten
+# Entfernen ihres Containers "idle in transaction" haengen blieb, haelt aber
+# evtl. noch Sperren - trennen, sonst wartet pg_dump vergeblich (und das
+# Nachtupdate haengt still mit ausgeschaltetem ERP). Nur hier, NICHT in der
+# taeglichen Sicherung: dort laeuft das ERP weiter.
+haengende_verbindungen_trennen() {
     "${COMPOSE[@]}" exec -T postgres sh -c \
         'exec psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()"' \
         >/dev/null || true
-    "${COMPOSE[@]}" exec -T postgres sh -c \
-        'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --lock-wait-timeout=120s'
-}
-
-# pg_dump schreibt zum Schluss eine feste Abschlusszeile (danach evtl. noch
-# "\unrestrict ..."). Fehlt sie, ist die Sicherung abgeschnitten und taugt
-# nicht fuer einen Rollback.
-sicherung_vollstaendig() {
-    gzip -cd "$1" | tail -n 5 | grep -q "PostgreSQL database dump complete"
 }
 
 # Ist die Datei eine PostgreSQL-Sicherung? Alte MySQL-Sicherungen lassen sich
@@ -348,23 +247,13 @@ sicherung_passt() {
     [[ "$kopf" == *"PostgreSQL database dump"* ]]
 }
 
-# Komplette Sicherung der Datenbank.
+# Komplette Sicherung der Datenbank bei gestoppter App.
 # sicherung_erstellen [Praefix]
 sicherung_erstellen() {
     local ziel="$SICHERUNGS_DIR/${1:-vor-update}-$ZEITSTEMPEL.sql.gz"
-    local unfertig="$ziel.unfertig"
-    if ! datenbank_ausgeben | gzip > "$unfertig"; then
-        rm -f "$unfertig"
-        return 1
-    fi
-    if ! sicherung_vollstaendig "$unfertig"; then
-        log "Sicherung ist unvollstaendig."
-        rm -f "$unfertig"
-        return 1
-    fi
-    mv "$unfertig" "$ziel"
+    haengende_verbindungen_trennen
+    datenbank_sichern "$ziel" || return 1
     SICHERUNG="$ziel"
-    log "Sicherung: $ziel ($(du -h "$ziel" | cut -f1))"
 }
 
 # Setzt die Datenbank komplett auf den Stand der Sicherung zurueck.
@@ -452,15 +341,15 @@ zurueckrollen() {
 
     local text
     text="Version $ALT_VERSION -> $NEU_VERSION
-Grund: $grund"
-    if [[ "$WEBHOOK_MIT_FEHLERAUSZUG" == "ja" ]]; then
-        text+="
-Fehler:
-${auszug:-(keine Fehlerzeile im Log gefunden)}"
-    fi
-    text+="
+Grund: $grund
 
 Volles Log auf dem Server: logs/$(basename "$app_log")"
+    # Fehlerzeilen nur aufs Handy, nie ins ERP (melden, 4. Wert)
+    local handy_auszug=""
+    if [[ "$WEBHOOK_MIT_FEHLERAUSZUG" == "ja" ]]; then
+        handy_auszug="Fehler:
+${auszug:-(keine Fehlerzeile im Log gefunden)}"
+    fi
 
     log "Setze Datenbank auf die Sicherung zurueck: $SICHERUNG"
     if datenbank_zuruecksetzen "$SICHERUNG"; then
@@ -470,21 +359,21 @@ Volles Log auf dem Server: logs/$(basename "$app_log")"
         if docker tag "$ALT_ID" "$ERP_IMAGE" && app_starten && warte_auf_gesund "$WARTEZEIT"; then
             rm -f "$LAUF_DATEI"
             log "Rollback erfolgreich - alte Version $ALT_VERSION laeuft wieder."
-            benachrichtigen hoch "ERP-Update fehlgeschlagen - $KUNDE_NAME" \
-                "Alte Version laeuft wieder, Datenbank auf Stand vor dem Update. Der Betrieb merkt nichts.
-$text"
+            melden FEHLER "ERP-Update fehlgeschlagen - $KUNDE_NAME" \
+                "Die alte Version läuft wieder, die Daten sind auf dem Stand vor dem Update. Im Betrieb merkt niemand etwas.
+$text" "$handy_auszug"
             exit 1
         fi
     fi
 
     log "NOTFALL: Rollback fehlgeschlagen!"
     notfall_festhalten
-    benachrichtigen dringend "NOTFALL ERP - $KUNDE_NAME" \
-        "Update UND Rollback fehlgeschlagen - das ERP laeuft vermutlich NICHT.
+    melden NOTFALL "NOTFALL ERP - $KUNDE_NAME" \
+        "Update UND Zurückspielen sind fehlgeschlagen - das ERP läuft vermutlich NICHT.
 Sicherung: sicherungen/$(basename "$SICHERUNG")
 Alte Version: $VORHER_TAG ($ALT_VERSION)
 $NOTFALL_HINWEIS
-$text"
+$text" "$handy_auszug"
     exit 2
 }
 
@@ -511,20 +400,20 @@ bei_fehler() {
         gestoppt|import-vorbereitung)
             docker tag "$ALT_ID" "$ERP_IMAGE"
             app_starten && rm -f "$LAUF_DATEI"
-            benachrichtigen hoch "ERP-Update abgebrochen - $KUNDE_NAME" \
+            melden FEHLER "ERP-Update abgebrochen - $KUNDE_NAME" \
                 "$was vor dem Versionswechsel. Alte Version wurde wieder gestartet. Log: $log_name"
             exit 1
             ;;
         import)
             log "Import abgebrochen - setze den vorherigen Stand zurueck."
             datenbank_zuruecksetzen "$SICHERUNG" && app_starten && rm -f "$LAUF_DATEI"
-            benachrichtigen hoch "ERP: Datenbank-Import abgebrochen - $KUNDE_NAME" \
-                "$was. Vorheriger Stand wurde zurueckgespielt. Log: $log_name"
+            melden FEHLER "ERP: Datenbank-Import abgebrochen - $KUNDE_NAME" \
+                "$was. Vorheriger Stand wurde zurückgespielt. Log: $log_name"
             exit 1
             ;;
         rollback|rollback-db-fertig)
-            benachrichtigen dringend "NOTFALL ERP - $KUNDE_NAME" \
-                "$was MITTEN im Rollback - das ERP laeuft vermutlich NICHT. Beim naechsten Start des Updaters wird der Rollback automatisch zu Ende gebracht. Sicherung: sicherungen/$(basename "$SICHERUNG"). Log: $log_name"
+            melden NOTFALL "NOTFALL ERP - $KUNDE_NAME" \
+                "$was MITTEN beim Zurückspielen - das ERP läuft vermutlich NICHT. Beim nächsten Start des Updaters wird das Zurückspielen automatisch zu Ende gebracht. Sicherung: sicherungen/$(basename "$SICHERUNG"). Log: $log_name"
             exit 2
             ;;
         fertig)
@@ -532,15 +421,15 @@ bei_fehler() {
             exit 0
             ;;
         *)
-            benachrichtigen hoch "ERP-Update abgebrochen - $KUNDE_NAME" \
-                "$was, es wurde nichts veraendert. Log: $log_name"
+            melden FEHLER "ERP-Update abgebrochen - $KUNDE_NAME" \
+                "$was, es wurde nichts verändert. Log: $log_name"
             exit 3
             ;;
     esac
 }
 trap '' PIPE
 trap 'bei_fehler "Skriptfehler in Zeile $LINENO"' ERR
-trap 'bei_fehler "Abbruch von aussen (Signal)"' INT TERM HUP
+trap 'bei_fehler "Abbruch von außen (Signal)"' INT TERM HUP
 
 # -----------------------------------------------------------------------------
 # Wiederaufnahme nach Abbruch (Stromausfall, Neustart, Container gestoppt)
@@ -561,8 +450,8 @@ unterbrochenes_update_beenden() {
             docker tag "$ALT_ID" "$ERP_IMAGE"
             if app_starten && warte_auf_gesund "$WARTEZEIT"; then
                 rm -f "$LAUF_DATEI"
-                benachrichtigen hoch "ERP-Update unterbrochen - $KUNDE_NAME" \
-                    "Das Update $ALT_VERSION -> $NEU_VERSION wurde vor dem Versionswechsel unterbrochen (Neustart?). Die alte Version laeuft, naechste Nacht neuer Versuch."
+                melden FEHLER "ERP-Update unterbrochen - $KUNDE_NAME" \
+                    "Das Update $ALT_VERSION -> $NEU_VERSION wurde vor dem Versionswechsel unterbrochen (Neustart?). Die alte Version läuft, nächste Nacht neuer Versuch."
                 exit 1
             fi
             zurueckrollen "Alte Version startet nach Unterbrechung nicht" nein
@@ -576,9 +465,7 @@ unterbrochenes_update_beenden() {
             if warte_auf_gesund "$WARTEZEIT"; then
                 rm -f "$LAUF_DATEI" "$GESCHEITERT_DATEI"
                 log "Update nach Unterbrechung abgeschlossen: $ALT_VERSION -> $NEU_VERSION"
-                if [[ "$WEBHOOK_BEI_ERFOLG" == "ja" ]]; then
-                    benachrichtigen leise "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION (nach Unterbrechung abgeschlossen)"
-                fi
+                melden OK "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION (nach Unterbrechung abgeschlossen)"
                 exit 0
             fi
             zurueckrollen "Neue Version nach Unterbrechung nicht gesund"
@@ -590,21 +477,21 @@ unterbrochenes_update_beenden() {
             # wieder gearbeitet, und die alte Sicherung darf NICHT zurueck.
             if [[ -n "$(app_container)" ]] && warte_auf_gesund 30 nein; then
                 notfall_festhalten
-                benachrichtigen dringend "NOTFALL ERP - $KUNDE_NAME" \
-                    "Ein unterbrochener Rollback/Import wurde gefunden, das ERP laeuft aber schon wieder (jemand hat es gestartet). Die Datenbank wurde NICHT angefasst - bitte pruefen, ob der Stand stimmt. Sicherung: sicherungen/$(basename "$SICHERUNG"). $NOTFALL_HINWEIS"
+                melden NOTFALL "NOTFALL ERP - $KUNDE_NAME" \
+                    "Ein unterbrochenes Zurückspielen bzw. ein unterbrochener Import wurde gefunden, das ERP läuft aber schon wieder (jemand hat es gestartet). Die Datenbank wurde NICHT angefasst - bitte prüfen, ob der Stand stimmt. Sicherung: sicherungen/$(basename "$SICHERUNG"). $NOTFALL_HINWEIS"
                 exit 2
             fi
             app_anhalten || true
             if datenbank_zuruecksetzen "$SICHERUNG" && docker tag "$ALT_ID" "$ERP_IMAGE" \
                 && app_starten && warte_auf_gesund "$WARTEZEIT"; then
                 rm -f "$LAUF_DATEI"
-                benachrichtigen hoch "ERP: unterbrochener Vorgang beendet - $KUNDE_NAME" \
-                    "Ein Rollback bzw. Datenbank-Import wurde durch einen Neustart unterbrochen und ist jetzt abgeschlossen. Version $ALT_VERSION laeuft, Datenbank auf dem gesicherten Stand."
+                melden FEHLER "ERP: unterbrochener Vorgang beendet - $KUNDE_NAME" \
+                    "Ein Zurückspielen bzw. ein Datenbank-Import wurde durch einen Neustart unterbrochen und ist jetzt abgeschlossen. Version $ALT_VERSION läuft, Datenbank auf dem gesicherten Stand."
                 exit 1
             fi
             notfall_festhalten
-            benachrichtigen dringend "NOTFALL ERP - $KUNDE_NAME" \
-                "Unterbrochener Vorgang konnte nach dem Neustart nicht beendet werden - das ERP laeuft vermutlich NICHT. Sicherung: sicherungen/$(basename "$SICHERUNG"). $NOTFALL_HINWEIS"
+            melden NOTFALL "NOTFALL ERP - $KUNDE_NAME" \
+                "Unterbrochener Vorgang konnte nach dem Neustart nicht beendet werden - das ERP läuft vermutlich NICHT. Sicherung: sicherungen/$(basename "$SICHERUNG"). $NOTFALL_HINWEIS"
             exit 2
             ;;
         rollback-db-fertig)
@@ -615,13 +502,13 @@ unterbrochenes_update_beenden() {
             fi
             if warte_auf_gesund "$WARTEZEIT"; then
                 rm -f "$LAUF_DATEI"
-                benachrichtigen hoch "ERP: unterbrochener Rollback beendet - $KUNDE_NAME" \
-                    "Version $ALT_VERSION laeuft, Datenbank auf Stand vor dem Update."
+                melden FEHLER "ERP: unterbrochenes Zurückspielen beendet - $KUNDE_NAME" \
+                    "Version $ALT_VERSION läuft, Datenbank auf Stand vor dem Update."
                 exit 1
             fi
             notfall_festhalten
-            benachrichtigen dringend "NOTFALL ERP - $KUNDE_NAME" \
-                "Alte Version $ALT_VERSION startet nach dem Rollback nicht - das ERP laeuft vermutlich NICHT. $NOTFALL_HINWEIS"
+            melden NOTFALL "NOTFALL ERP - $KUNDE_NAME" \
+                "Alte Version $ALT_VERSION startet nach dem Zurückspielen nicht - das ERP läuft vermutlich NICHT. $NOTFALL_HINWEIS"
             exit 2
             ;;
         *)
@@ -636,10 +523,11 @@ unterbrochenes_update_beenden() {
 # Hauptablauf
 # -----------------------------------------------------------------------------
 
-# Nie zwei Laeufe gleichzeitig
+# Nie zwei Laeufe gleichzeitig. Die taegliche Sicherung haelt dieselbe Sperre
+# nur waehrend pg_dump (Minuten) - darauf lohnt sich zu warten.
 exec 9>"$LOCK_DATEI"
-if ! flock -n 9; then
-    log "Ein anderes Nachtupdate laeuft gerade - nichts zu tun."
+if ! flock -w 1800 9; then
+    log "Ein anderes Nachtupdate oder die Sicherung laeuft seit ueber 30 Minuten - nichts zu tun."
     # Ein Import, der nicht laufen konnte, ist kein Erfolg
     [[ "$MODUS" == "importieren" ]] && exit 1
     exit 0
@@ -652,16 +540,16 @@ fi
 if [[ "$ALTE_DATENBANKWAHL" == *mysql* ]]; then
     log "FEHLER: COMPOSE_PROFILES=$ALTE_DATENBANKWAHL in .env - diese Installation laeuft noch auf MySQL. Das ERP kennt nur noch PostgreSQL. Nichts veraendert."
     # Sonst hoerten die Nachtupdates still auf
-    benachrichtigen hoch "ERP-Update nicht moeglich - $KUNDE_NAME" \
-        "Die .env verlangt noch MySQL (COMPOSE_PROFILES=$ALTE_DATENBANKWAHL). Das ERP laeuft nur noch mit PostgreSQL - siehe README, Abschnitt Aeltere Einrichtungen. Das ERP laeuft unveraendert weiter."
+    melden FEHLER "ERP-Update nicht möglich - $KUNDE_NAME" \
+        "Die .env verlangt noch MySQL (COMPOSE_PROFILES=$ALTE_DATENBANKWAHL). Das ERP läuft nur noch mit PostgreSQL - siehe README, Abschnitt Ältere Einrichtungen. Das ERP läuft unverändert weiter."
     exit 3
 fi
 
 # --- Offener NOTFALL? Dann nichts anfassen, nur erinnern ---
 if [[ -f "$NOTFALL_DATEI" ]]; then
     log "NOTFALL besteht noch ($NOTFALL_DATEI) - es wird nichts veraendert."
-    benachrichtigen dringend "ERP: NOTFALL noch offen - $KUNDE_NAME" \
-        "Ein frueheres Update/Rollback ist gescheitert. Updates und Importe sind angehalten. $NOTFALL_HINWEIS"
+    melden NOTFALL "ERP: NOTFALL noch offen - $KUNDE_NAME" \
+        "Ein früheres Update bzw. Zurückspielen ist gescheitert. Updates und Importe sind angehalten. $NOTFALL_HINWEIS"
     exit 2
 fi
 
@@ -714,8 +602,8 @@ if [[ "$MODUS" == "importieren" ]]; then
             exit 1
         fi
         notfall_festhalten
-        benachrichtigen dringend "NOTFALL ERP - $KUNDE_NAME" \
-            "Import UND Zurueckspielen des vorherigen Stands fehlgeschlagen. Sicherung: sicherungen/$(basename "$SICHERUNG"). $NOTFALL_HINWEIS"
+        melden NOTFALL "NOTFALL ERP - $KUNDE_NAME" \
+            "Import UND Zurückspielen des vorherigen Stands fehlgeschlagen. Sicherung: sicherungen/$(basename "$SICHERUNG"). $NOTFALL_HINWEIS"
         exit 2
     fi
     rm -f "$STATUS_DIR/import.sql.gz" "$LAUF_DATEI"
@@ -740,8 +628,8 @@ fi
 # --- 1. Neue Version holen ---
 log "Hole $ERP_IMAGE ..."
 if ! docker pull -q "$ERP_IMAGE" >/dev/null; then
-    benachrichtigen hoch "ERP-Update: Download fehlgeschlagen - $KUNDE_NAME" \
-        "Neue Version konnte nicht geladen werden (Internet? Anmeldung an der Registry abgelaufen?). Es wurde nichts veraendert."
+    melden FEHLER "ERP-Update: Download fehlgeschlagen - $KUNDE_NAME" \
+        "Neue Version konnte nicht geladen werden (Internet? Anmeldung an der Registry abgelaufen?). Es wurde nichts verändert."
     exit 1
 fi
 NEU_ID="$(docker image inspect -f '{{.Id}}' "$ERP_IMAGE")"
@@ -753,6 +641,8 @@ NEU_VERSION="$(image_version "$NEU_ID")"
 
 if [[ "$ALT_ID" == "$NEU_ID" ]]; then
     log "Keine neue Version (aktiv: $ALT_VERSION)."
+    # Ohne Handy-Nachricht, aber eine alte Fehlermeldung (z. B. Download) ist damit erledigt
+    status_schreiben OK "Keine neue Version" "Aktive Version: $ALT_VERSION"
     aufraeumen
     exit 0
 fi
@@ -764,16 +654,16 @@ log "Neue Version gefunden: $ALT_VERSION -> $NEU_VERSION"
 
 # --- 2. Laeuft die aktuelle Version gesund? Nur dann gibt es einen sicheren Rueckweg ---
 if [[ "$ERZWINGEN" != "ja" ]] && ! warte_auf_gesund 120 nein; then
-    benachrichtigen hoch "ERP-Update ausgelassen - $KUNDE_NAME" \
-        "Das ERP lief schon VOR dem Update nicht sauber ($HEALTH_URL). Ohne gesunde Ausgangslage gibt es keinen sicheren Rollback - bitte pruefen. Mit --erzwingen trotzdem einspielen."
+    melden FEHLER "ERP-Update ausgelassen - $KUNDE_NAME" \
+        "Das ERP lief schon VOR dem Update nicht sauber ($HEALTH_URL). Ohne gesunde Ausgangslage gibt es keinen sicheren Rückweg - bitte prüfen. Mit --erzwingen trotzdem einspielen."
     exit 1
 fi
 
 # --- 3. Platz pruefen, App stoppen, Datenbank sichern ---
-frei_mb="$(df -Pm "$SICHERUNGS_DIR" | awk 'NR==2 {print $4}')"
-if (( frei_mb < MIN_FREI_MB )); then
-    benachrichtigen hoch "ERP-Update ausgelassen - $KUNDE_NAME" \
-        "Zu wenig Speicherplatz fuer die Sicherung (${frei_mb} MB frei, mindestens ${MIN_FREI_MB} MB noetig). Es wurde nichts veraendert."
+frei="$(frei_mb)"
+if zu_wenig_platz "$frei"; then
+    melden FEHLER "ERP-Update ausgelassen - $KUNDE_NAME" \
+        "Zu wenig Speicherplatz für die Sicherung (${frei} MB frei, mindestens ${MIN_FREI_MB} MB nötig). Es wurde nichts verändert."
     exit 1
 fi
 
@@ -786,8 +676,8 @@ if ! sicherung_erstellen; then
     log "Sicherung fehlgeschlagen - starte alte Version wieder."
     app_starten
     rm -f "$LAUF_DATEI"
-    benachrichtigen hoch "ERP-Update ausgelassen - $KUNDE_NAME" \
-        "Datenbank-Sicherung fehlgeschlagen. Ohne Sicherung kein Update - alte Version laeuft weiter. Log: logs/$(basename "$LOG_DATEI")"
+    melden FEHLER "ERP-Update ausgelassen - $KUNDE_NAME" \
+        "Datenbank-Sicherung fehlgeschlagen. Ohne Sicherung kein Update - alte Version läuft weiter. Log: logs/$(basename "$LOG_DATEI")"
     exit 1
 fi
 
@@ -810,7 +700,5 @@ log "Update erfolgreich: $ALT_VERSION -> $NEU_VERSION"
 rm -f "$GESCHEITERT_DATEI" "$LAUF_DATEI"
 docker rmi "$GESCHEITERT_TAG" "$NEU_TAG" >/dev/null 2>&1 || true
 aufraeumen
-if [[ "$WEBHOOK_BEI_ERFOLG" == "ja" ]]; then
-    benachrichtigen leise "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION"
-fi
+melden OK "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION"
 exit 0

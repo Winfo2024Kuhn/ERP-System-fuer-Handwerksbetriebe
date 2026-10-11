@@ -16,6 +16,8 @@ Für einen Windows-PC oder Linux-Server, auf dem das ERP dauerhaft läuft. Ein D
 
 Bei einer neuen Datenbank ohne vorkonfigurierten Admin legst du im Browser den ersten Benutzer an; dieser wird Administrator. Schließe die Ersteinrichtung im geschützten Netz ab, bevor die Anwendung über eine öffentliche Domain erreichbar wird. Es gibt keine fest eingebauten Standard-Zugangsdaten für diese Einrichtung.
 
+Schritt-für-Schritt-Anleitung für einen neuen Kunden, mit Sicherung auf Festplatte und OneDrive: **[deployment/docker-server/EINRICHTEN.md](../deployment/docker-server/EINRICHTEN.md)**
+
 Alles Weitere (Umzug von einem anderen Server, Handy-Nachrichten, Sicherheit, was nachts passiert): **[deployment/docker-server/README.md](../deployment/docker-server/README.md)**
 
 ### Wo werden meine Daten gespeichert?
@@ -130,8 +132,8 @@ java -jar Kalkulationsprogramm-<Version>.jar --server.port=9090
 
 ### Wie sichere ich meine Daten?
 
-- **Datenbank:** Vor jedem nächtlichen Update legt Variante 1 eine komplette Sicherung in `sicherungen\` ab. Für eine tägliche Sicherung außer Haus: `pg_dump` im Datenbank-Container, z. B. `docker exec erp-postgres pg_dump -U postgres -d kalkulationsprogramm_db --no-owner --no-privileges > sicherung.sql` unter Linux. Unter Windows nicht mit `>` umleiten (Windows PowerShell 5.1 speichert dann UTF-16 und die Sicherung lässt sich nicht einspielen) – dort erledigt das `deployment/scripts/backup-database.ps1`.
-- **Hochgeladene Dateien:** Docker-Volume `app_uploads` bzw. der Ordner aus `UPLOADS_ORDNER` – diese gehören mit in die tägliche Sicherung.
+- **Variante 1 macht das selbst:** Jede Nacht um 2 Uhr sichert der Updater die komplette Datenbank und alle hochgeladenen Dateien – auf den Rechner und zusätzlich auf eine externe Festplatte und/oder in einen Cloud-Ordner wie OneDrive. Die Ziele trägst du einmal in der `.env` ein (`SICHERUNG_PLATTE`, `SICHERUNG_CLOUD`), Anleitung: [deployment/docker-server/README.md, Tägliche Sicherung](../deployment/docker-server/README.md#tägliche-sicherung). Geht etwas schief, sehen Admins das im ERP unter **Benachrichtigungen**.
+- **Von Hand** (andere Varianten): `pg_dump` im Datenbank-Container, z. B. `docker exec erp-postgres pg_dump -U postgres -d kalkulationsprogramm_db --no-owner --no-privileges > sicherung.sql` unter Linux. Unter Windows nicht mit `>` umleiten (Windows PowerShell 5.1 speichert dann UTF-16 und die Sicherung lässt sich nicht einspielen). Die hochgeladenen Dateien (Volume `app_uploads` bzw. `UPLOADS_ORDNER`) gehören mit in die Sicherung.
 
 ### Kann ich das Programm im Netzwerk nutzen?
 

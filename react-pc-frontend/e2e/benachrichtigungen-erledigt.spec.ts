@@ -3,9 +3,10 @@ import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
 
 /**
- * Glocke und E-Mail-Center nach der Umstellung „Erledigt merkt sich der Server":
- * - Ein angeklickter Eintrag geht als id an POST /api/notifications/erledigt und
- *   bleibt weg, weil der Server ihn ab dann nicht mehr ausliefert.
+ * Benachrichtigungen und E-Mail-Center nach der Umstellung „Erledigt merkt sich der Server":
+ * - Die Glocke führt auf die Seite „Benachrichtigungen“. Ein dort geöffneter
+ *   Eintrag geht als id an POST /api/notifications/erledigt und bleibt weg,
+ *   weil der Server ihn ab dann nicht mehr ausliefert.
  * - Der Filter „Ungelesen" im E-Mail-Center fragt den Server mit
  *   nurUngelesen=true – so erscheinen auch ältere ungelesene Mails, die nicht
  *   unter den ersten 50 geladenen stehen.
@@ -114,22 +115,22 @@ async function stubbeApi(page: Page): Promise<Mitschrift> {
     return mitschrift;
 }
 
-test.describe('Glocke: Erledigt merkt sich der Server', () => {
-    test('Klick auf einen Termin meldet seine id als erledigt, danach bleibt er weg', async ({ page }, testInfo) => {
+test.describe('Benachrichtigungen: Erledigt merkt sich der Server', () => {
+    test('„Öffnen“ an einem Termin meldet seine id als erledigt, danach bleibt er weg', async ({ page }, testInfo) => {
         const mitschrift = await stubbeApi(page);
         await page.goto('/emails/inbox');
 
-        const glocke = page.getByTitle('Benachrichtigungen');
+        const glocke = page.getByRole('button', { name: /^Benachrichtigungen/ });
         await expect(glocke).toContainText('2');
         await glocke.click();
-        await expect(page.getByText('Aufmaß Bad')).toBeVisible();
-        await designPruefung(page, testInfo, 'glocke-offen', {
-            primaerAktion: page.getByRole('button', { name: 'Termine: alle als gelesen markieren' }),
-        });
+        await expect(page).toHaveURL(/\/benachrichtigungen$/);
+        const termin = page.getByRole('button', { name: 'Öffnen: Aufmaß Bad' });
+        await expect(termin).toBeVisible();
+        await designPruefung(page, testInfo, 'benachrichtigungen-termin', { primaerAktion: termin });
 
         const erledigtAnfrage = page.waitForRequest(r =>
             r.url().endsWith('/api/notifications/erledigt') && r.method() === 'POST');
-        await page.getByText('Aufmaß Bad').click();
+        await termin.click();
         const anfrage = await erledigtAnfrage;
         expect(anfrage.postDataJSON()).toEqual({ ids: ['TERMIN:123'] });
         expect(mitschrift.erledigt).toEqual([{ ids: ['TERMIN:123'] }]);
@@ -148,8 +149,8 @@ test.describe('Glocke: Erledigt merkt sich der Server', () => {
     });
 });
 
-test.describe('Glocke: ganze Spalte als gelesen markieren', () => {
-    test('meldet die Kategorien der Spalte, leert die Spalte und lädt die Ordnerzahlen neu', async ({ page }) => {
+test.describe('Benachrichtigungen: ganzes Thema erledigt', () => {
+    test('meldet die Kategorien des Themas, leert die Liste und das E-Mail-Center zeigt die neuen Zahlen', async ({ page }) => {
         const MAIL_EINTRAG = {
             id: 'EMAIL:301',
             type: 'EMAIL',
@@ -186,20 +187,24 @@ test.describe('Glocke: ganze Spalte als gelesen markieren', () => {
         });
         await page.goto('/emails/inbox');
 
-        const glocke = page.getByTitle('Benachrichtigungen');
+        const glocke = page.getByRole('button', { name: /^Benachrichtigungen/ });
         await expect(glocke).toContainText('3');
         await glocke.click();
         await expect(page.getByText('Angebot Carport')).toBeVisible();
 
         const anfrage = page.waitForRequest(r =>
             r.url().endsWith('/api/notifications/erledigt/kategorien') && r.method() === 'POST');
-        await page.getByRole('button', { name: 'Posteingänge: alle als gelesen markieren' }).click();
+        await page.getByRole('button', { name: 'Posteingänge: alle erledigt' }).click();
         expect((await anfrage).postDataJSON()).toEqual({ kategorien: ['EMAILS'] });
 
-        // Spalte sofort leer, Zähler weg, und das E-Mail-Center holt seine Ordnerzahlen neu.
+        // Liste sofort leer, Zähler an der Glocke weg.
         await expect(page.getByText('Angebot Carport')).toHaveCount(0);
-        await expect(page.getByText('Keine neuen Benachrichtigungen')).toBeVisible();
+        await expect(page.getByText('Keine neuen Benachrichtigungen – alles erledigt.')).toBeVisible();
         await expect(glocke).not.toContainText('3');
+
+        // Zurück im E-Mail-Center stimmen die Ordnerzahlen (Abruf nach dem Erledigen).
+        await page.goBack();
+        await expect(page).toHaveURL(/\/emails\/inbox/);
         await expect.poll(() => statsAbrufe.some(nachPost => nachPost > 0)).toBe(true);
     });
 });

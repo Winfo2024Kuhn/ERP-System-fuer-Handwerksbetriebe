@@ -78,6 +78,7 @@ class BenachrichtigungServiceTest {
 
     @Mock org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @Mock BenachrichtigungErledigtService erledigtService;
+    @Mock BetriebsstatusService betriebsstatusService;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @InjectMocks
@@ -531,6 +532,131 @@ class BenachrichtigungServiceTest {
         assertThat(ungelesen).allSatisfy(e -> assertThat(e.isRead()).isTrue());
         assertThat(spam.isRead()).as("Spam wurde nicht angefordert").isFalse();
         org.mockito.Mockito.verify(erledigtService).merken(7L, List.of("TERMIN:1", "TERMIN:2", "TERMIN:3"));
+    }
+
+    @Test
+    @DisplayName("Sicherung & Update: Admins sehen gescheiterte Läufe – ohne Link, mit vollem Text")
+    void betriebsmeldungenFuerAdmins() {
+        var admin = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                "admin", null, List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")));
+        var zeit = LocalDateTime.of(2026, 10, 11, 2, 0, 17);
+        given(betriebsstatusService.darfSehen(admin)).willReturn(true);
+        given(betriebsstatusService.sicherung()).willReturn(java.util.Optional.of(new BetriebsstatusService.Meldung(
+                "SICHERUNG:20261011-020017", "Sicherung nur teilweise", "Externe Festplatte nicht gefunden.\nZeile 2", zeit)));
+        given(betriebsstatusService.nachtupdate()).willReturn(java.util.Optional.of(new BetriebsstatusService.Meldung(
+                "UPDATE:20261011-030119", "Update fehlgeschlagen", "Alte Version läuft wieder.", zeit.plusHours(1))));
+
+        var summary = service.zusammenfassung(null, admin);
+
+        assertThat(summary.categories()).filteredOn(c -> c.type().equals("SICHERUNG")).singleElement()
+                .satisfies(c -> {
+                    assertThat(c.count()).isEqualTo(1);
+                    assertThat(c.link()).isEmpty();
+                    assertThat(c.icon()).isEqualTo("HardDrive");
+                });
+        assertThat(summary.categories()).anyMatch(c -> c.type().equals("UPDATE"));
+        assertThat(summary.recentItems()).filteredOn(i -> i.type().equals("SICHERUNG")).singleElement()
+                .satisfies(i -> {
+                    assertThat(i.id()).isEqualTo("SICHERUNG:20261011-020017");
+                    assertThat(i.subtitle()).isEqualTo("Externe Festplatte nicht gefunden.\nZeile 2");
+                    assertThat(i.timestamp()).isEqualTo("2026-10-11T02:00:17");
+                    assertThat(i.link()).isEmpty();
+                });
+    }
+
+    @Test
+    @DisplayName("Sicherung & Update: ohne Admin-Recht weder Zähler noch Text")
+    void betriebsmeldungenNichtFuerMitarbeiter() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        given(betriebsstatusService.darfSehen(auth)).willReturn(false);
+
+        var summary = service.zusammenfassung(null, auth);
+
+        assertThat(summary.categories()).noneMatch(c -> c.type().equals("SICHERUNG") || c.type().equals("UPDATE"));
+        org.mockito.Mockito.verify(betriebsstatusService, org.mockito.Mockito.never()).sicherung();
+        org.mockito.Mockito.verify(betriebsstatusService, org.mockito.Mockito.never()).nachtupdate();
+    }
+
+    @Test
+    @DisplayName("Erledigte Sicherungs-Meldung fällt aus Zähler und Liste")
+    void erledigteBetriebsmeldungFaelltWeg() {
+        maxAngemeldet();
+        given(betriebsstatusService.darfSehen(MAX)).willReturn(true);
+        given(betriebsstatusService.sicherung()).willReturn(java.util.Optional.of(new BetriebsstatusService.Meldung(
+                "SICHERUNG:20261011-020017", "Sicherung fehlgeschlagen", "Text", LocalDateTime.of(2026, 10, 11, 2, 0))));
+        given(betriebsstatusService.nachtupdate()).willReturn(java.util.Optional.empty());
+        given(erledigtService.erledigteSchluessel(7L)).willReturn(java.util.Set.of("SICHERUNG:20261011-020017"));
+
+        var summary = service.zusammenfassung(null, MAX);
+
+        assertThat(summary.categories()).noneMatch(c -> c.type().equals("SICHERUNG"));
+        assertThat(summary.recentItems()).noneMatch(i -> i.type().equals("SICHERUNG"));
+    }
+
+    @Test
+    @DisplayName("Spalte „Sicherung & Updates“ erledigen: Nicht-Admins erledigen nichts und lesen keine Statusdatei")
+    void betriebsmeldungenErledigenNurFuerAdmins() {
+        maxAngemeldet();
+        given(betriebsstatusService.darfSehen(MAX)).willReturn(false);
+
+        assertThat(service.kategorienErledigen(List.of("SICHERUNG", "UPDATE"), MAX)).isZero();
+
+        org.mockito.Mockito.verify(betriebsstatusService, org.mockito.Mockito.never()).sicherung();
+        org.mockito.Mockito.verify(betriebsstatusService, org.mockito.Mockito.never()).nachtupdate();
+        org.mockito.Mockito.verify(erledigtService).merken(7L, List.of());
+    }
+
+    @Test
+    @DisplayName("Spalte „Sicherung & Updates“ erledigen: Admin merkt sich genau die offenen Meldungen")
+    void betriebsmeldungenErledigenFuerAdmins() {
+        maxAngemeldet();
+        given(betriebsstatusService.darfSehen(MAX)).willReturn(true);
+        given(betriebsstatusService.sicherung()).willReturn(java.util.Optional.of(new BetriebsstatusService.Meldung(
+                "SICHERUNG:ALT-20261009-020000", "Seit über einem Tag keine Sicherung", "Text",
+                LocalDateTime.of(2026, 10, 9, 2, 0))));
+        given(betriebsstatusService.nachtupdate()).willReturn(java.util.Optional.empty());
+
+        assertThat(service.kategorienErledigen(List.of("SICHERUNG", "UPDATE"), MAX)).isEqualTo(1);
+
+        org.mockito.Mockito.verify(erledigtService).merken(7L, List.of("SICHERUNG:ALT-20261009-020000"));
+    }
+
+    @Test
+    @DisplayName("Seite (alle=true): alle Einträge je Kategorie statt nur der jüngsten drei")
+    void seiteBekommtAlleEintraege() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        List<org.example.kalkulationsprogramm.domain.KalenderEintrag> termine = new java.util.ArrayList<>();
+        for (long i = 1; i <= 8; i++) {
+            termine.add(termin(i, "Termin " + i));
+        }
+        given(kalenderEintragRepository.findByDatumBetween(any(), any())).willReturn(termine);
+
+        var glocke = service.zusammenfassung(null, auth);
+        var seite = service.zusammenfassung(null, auth, true);
+
+        assertThat(glocke.recentItems()).filteredOn(i -> i.type().equals("TERMIN")).hasSize(3);
+        assertThat(seite.recentItems()).filteredOn(i -> i.type().equals("TERMIN")).hasSize(8);
+        assertThat(seite.categories()).filteredOn(c -> c.type().equals("TERMINE")).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(8));
+    }
+
+    @Test
+    @DisplayName("Seite (alle=true): höchstens 100 Einträge je Kategorie, Zähler nennt trotzdem alle")
+    void seiteBegrenztJeKategorie() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        List<org.example.kalkulationsprogramm.domain.KalenderEintrag> termine = new java.util.ArrayList<>();
+        for (long i = 1; i <= 130; i++) {
+            termine.add(termin(i, "Termin " + i));
+        }
+        given(kalenderEintragRepository.findByDatumBetween(any(), any())).willReturn(termine);
+
+        var seite = service.zusammenfassung(null, auth, true);
+
+        assertThat(seite.recentItems()).filteredOn(i -> i.type().equals("TERMIN"))
+                .hasSize(BenachrichtigungService.SEITE_EINTRAEGE_JE_KATEGORIE);
+        assertThat(seite.categories()).filteredOn(c -> c.type().equals("TERMINE")).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(130));
+        assertThat(service.zusammenfassung(null, auth).recentItems()).hasSizeLessThanOrEqualTo(60);
     }
 
     @Test

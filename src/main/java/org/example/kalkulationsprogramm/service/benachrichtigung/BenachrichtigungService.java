@@ -93,8 +93,10 @@ public class BenachrichtigungService {
     private static final DateTimeFormatter TAG_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
     /** Uhrzeit ohne Sekunden: "20:00". */
     private static final DateTimeFormatter UHRZEIT_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
-    /** So viele Einträge gehen höchstens an die Glocke – sie zeigt sie gruppiert in Spalten. */
+    /** So viele Einträge gehen höchstens an die Glocke (Kurzfassung ohne {@code alle}). */
     private static final int MAX_EINTRAEGE = 60;
+    /** Seite „Benachrichtigungen“: so viele Einträge je Kategorie; der Zähler nennt trotzdem alle. */
+    static final int SEITE_EINTRAEGE_JE_KATEGORIE = 100;
 
     /** Alle Kategorien, die die Glocke kennt (für die Prüfung beim Erledigen ganzer Spalten). */
     public static final Set<String> KATEGORIEN = Set.of(
@@ -102,7 +104,7 @@ public class BenachrichtigungService {
             "EMAILS_SPAM", "EMAILS_NEWSLETTER", "URLAUBSANTRAEGE", "BAUTAGEBUCH", "EINGANG_FAELLIG",
             "AUSGANG_UEBERFAELLIG", "RECHNUNGEN", "TERMINE", "LIEFERSCHEINE", "REKLAMATIONEN",
             "FREIGABEN_ANGENOMMEN", "ZEITEN_AUTO_BEENDET", "MONATSABSCHLUSS", "SPRACHNACHRICHTEN",
-            "VERPASSTE_ANRUFE");
+            "VERPASSTE_ANRUFE", "SICHERUNG", "UPDATE");
 
     private static final String EMAIL_ART = "EMAIL";
 
@@ -127,6 +129,7 @@ public class BenachrichtigungService {
     private final ZeiterfassungEinstellungService zeiterfassungEinstellungService;
     private final FrontendUserProfileService frontendUserProfileService;
     private final BenachrichtigungErledigtService erledigtService;
+    private final BetriebsstatusService betriebsstatusService;
     private final PlatformTransactionManager transactionManager;
 
     /** Der Benutzer ist nicht angemeldet bzw. hat kein Profil – erledigen geht dann nicht. */
@@ -166,12 +169,22 @@ public class BenachrichtigungService {
     // ZUSAMMENFASSUNG
     // ═══════════════════════════════════════════════════════════════
 
+    /** Kurzfassung für die Glocke: je Kategorie nur die jüngsten Einträge. */
     public BenachrichtigungZusammenfassungDto zusammenfassung(Long mitarbeiterId, Authentication authentication) {
+        return zusammenfassung(mitarbeiterId, authentication, false);
+    }
+
+    /**
+     * @param alle {@code true} für die Seite „Benachrichtigungen“: je Kategorie bis zu
+     *             {@value #SEITE_EINTRAEGE_JE_KATEGORIE} Einträge und keine Gesamtgrenze
+     */
+    public BenachrichtigungZusammenfassungDto zusammenfassung(Long mitarbeiterId, Authentication authentication,
+            boolean alle) {
         Set<String> erledigt = erledigtService.erledigteSchluessel(benutzerId(authentication).orElse(null));
         List<BenachrichtigungKategorieDto> categories = new ArrayList<>();
         List<BenachrichtigungEintragDto> recentItems = new ArrayList<>();
         for (QuellenAufruf aufruf : quellen(mitarbeiterId, authentication)) {
-            inEigenerTransaktion(true, () -> teil(aufruf.laden().get(), erledigt)).ifPresent(teil -> {
+            inEigenerTransaktion(true, () -> teil(aufruf.laden().get(), erledigt, alle)).ifPresent(teil -> {
                 categories.add(teil.kategorie());
                 recentItems.addAll(teil.eintraege());
             });
@@ -183,14 +196,14 @@ public class BenachrichtigungService {
         // Limit auf 60 – Items werden im Frontend pro Gruppe gerendert, ein zu kleines Limit
         // würde komplette Gruppen leerfegen (z.B. fielen FREIGABE_ANGENOMMEN-Items raus, wenn
         // 6 Mail-Ordner viele Treffer haben).
-        List<BenachrichtigungEintragDto> begrenzt = recentItems.size() > MAX_EINTRAEGE
+        List<BenachrichtigungEintragDto> begrenzt = !alle && recentItems.size() > MAX_EINTRAEGE
                 ? new ArrayList<>(recentItems.subList(0, MAX_EINTRAEGE))
                 : recentItems;
         return new BenachrichtigungZusammenfassungDto(totalCount, categories, begrenzt);
     }
 
     /** Nicht erledigte Einträge einer Quelle; {@code null}, wenn nichts offen ist. */
-    private static <T> Teil teil(Quelle<T> quelle, Set<String> erledigt) {
+    private static <T> Teil teil(Quelle<T> quelle, Set<String> erledigt, boolean alle) {
         if (quelle == null) {
             return null;
         }
@@ -202,7 +215,8 @@ public class BenachrichtigungService {
             return null;
         }
         List<BenachrichtigungEintragDto> eintraege = new ArrayList<>();
-        offen.stream().limit(quelle.anzeigeLimit()).forEach(e -> {
+        int limit = alle ? Math.max(quelle.anzeigeLimit(), SEITE_EINTRAEGE_JE_KATEGORIE) : quelle.anzeigeLimit();
+        offen.stream().limit(limit).forEach(e -> {
             try {
                 eintraege.add(quelle.anzeige().apply(e));
             } catch (RuntimeException ignored) {
@@ -364,6 +378,13 @@ public class BenachrichtigungService {
     List<QuellenAufruf> quellen(Long mitarbeiterId, Authentication authentication) {
         LocalDate heute = LocalDate.now();
         List<QuellenAufruf> quellen = new ArrayList<>();
+        // Gescheiterte Sicherung / gescheitertes Update – betrifft den ganzen Betrieb, nur für Admins.
+        if (betriebsstatusService.darfSehen(authentication)) {
+            quellen.add(new QuellenAufruf("SICHERUNG", () -> betriebsmeldung("SICHERUNG", "Sicherung", "HardDrive",
+                    betriebsstatusService.sicherung())));
+            quellen.add(new QuellenAufruf("UPDATE", () -> betriebsmeldung("UPDATE", "Update", "RefreshCw",
+                    betriebsstatusService.nachtupdate())));
+        }
         quellen.add(new QuellenAufruf("ANFRAGEN_WEBSEITE", this::webseitenAnfragen));
 
         // Ungelesene E-Mails – nur aus Postfächern, die der Benutzer sieht (Admin: alle). Lässt
@@ -408,6 +429,19 @@ public class BenachrichtigungService {
                     "PhoneMissed", "/telefon/anrufe?offen=1", telefonBenachrichtigungService.offeneVerpassteAnrufe())));
         }
         return quellen;
+    }
+
+    /**
+     * Meldung von Sicherung oder Nachtupdate. Ohne Link: Es gibt keine Seite, auf der man das Problem
+     * beheben kann – der Text sagt, was zu tun ist.
+     */
+    private static Quelle<?> betriebsmeldung(String typ, String label, String icon,
+            Optional<BetriebsstatusService.Meldung> meldung) {
+        return Quelle.von(typ, label, icon, "", meldung.stream().toList(),
+                BetriebsstatusService.Meldung::schluessel,
+                m -> new BenachrichtigungEintragDto(m.schluessel(), typ, m.titel(), m.text(),
+                        m.zeitpunkt().toString(), ""),
+                1);
     }
 
     /** Webseiten-Anfragen (Funnel) – immer zuoberst. Umgewandelte/abgeschlossene fallen raus. */

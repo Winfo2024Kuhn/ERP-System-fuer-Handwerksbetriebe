@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -133,6 +134,46 @@ class NotificationErledigtEndpointTest {
                 .contentType(MediaType.APPLICATION_JSON).content(json))
                 .andExpect(status().isBadRequest());
         verify(benachrichtigungService, never()).kategorienErledigen(any(), any());
+    }
+
+    @Test
+    @WithMockUser(username = "max")
+    void sicherungUndUpdateLassenSichAlsSpalteErledigen() throws Exception {
+        given(benachrichtigungService.kategorienErledigen(eq(List.of("SICHERUNG", "UPDATE")), any())).willReturn(2);
+        mockMvc.perform(post("/api/notifications/erledigt/kategorien").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"kategorien\":[\"SICHERUNG\",\"UPDATE\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.erledigt").value(2));
+        erledigt("{\"ids\":[\"SICHERUNG:20261011-020017\",\"SICHERUNG:ALT-20261009-020000\",\"UPDATE:20261011-030119\"]}")
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    @WithMockUser(username = "max")
+    void seiteHoltAlleEintraege() throws Exception {
+        given(benachrichtigungService.zusammenfassung(any(), any(), eq(true))).willReturn(
+                new org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungZusammenfassungDto(0, List.of(), List.of()));
+        mockMvc.perform(get("/api/notifications/summary").param("alle", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalCount").value(0));
+        verify(benachrichtigungService).zusammenfassung(any(), any(), eq(true));
+
+        mockMvc.perform(get("/api/notifications/summary")).andExpect(status().isOk());
+        verify(benachrichtigungService).zusammenfassung(any(), any(), eq(false));
+    }
+
+    @ParameterizedTest
+    @WithMockUser(username = "max")
+    @ValueSource(strings = { "vielleicht", "'; DROP TABLE x; --", "<script>alert(1)</script>" })
+    void ungueltigesAlle400(String wert) throws Exception {
+        mockMvc.perform(get("/api/notifications/summary").param("alle", wert)).andExpect(status().isBadRequest());
+        verify(benachrichtigungService, never()).zusammenfassung(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    void summaryOhneAnmeldung401() throws Exception {
+        mockMvc.perform(get("/api/notifications/summary").param("alle", "true")).andExpect(status().isUnauthorized());
+        verify(benachrichtigungService, never()).zusammenfassung(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test

@@ -50,6 +50,7 @@ import LoginPage from './pages/LoginPage';
 import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
 import WebsiteEditor from './pages/WebsiteEditor';
 import TelefonPage from './pages/TelefonPage';
+import BenachrichtigungenPage from './pages/BenachrichtigungenPage';
 import { AnrufFensterHost } from './features/telefon/AnrufFensterHost';
 
 // Install the global fetch interceptor once at module load time so that
@@ -100,6 +101,8 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/email-einstellungen" element={<ErrorBoundary><EmailEinstellungenPage /></ErrorBoundary>} />
                 <Route path="/telefon" element={<Navigate to="/telefon/anrufe" replace />} />
                 <Route path="/telefon/:reiter" element={<ErrorBoundary><TelefonPage /></ErrorBoundary>} />
+                {/* Ziel der Glocke – für alle Angemeldeten; was jemand sieht, entscheidet der Server. */}
+                <Route path="/benachrichtigungen" element={<ErrorBoundary><BenachrichtigungenPage /></ErrorBoundary>} />
 
                 <Route path="/miete" element={<ErrorBoundary><MietabrechnungEditor /></ErrorBoundary>} />
                 <Route path="/benutzer" element={<RequireAdmin><ErrorBoundary><BenutzerEditor /></ErrorBoundary></RequireAdmin>} />

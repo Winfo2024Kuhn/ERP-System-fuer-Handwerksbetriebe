@@ -80,8 +80,10 @@ test('Recht speichern, Glockenlink, Abschluss und Wiederöffnung mit Verlauf', a
     await page.getByRole('button', { name: 'Speichern', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Gespeichert', exact: true })).toBeVisible();
     await designPruefung(page, info, 'task9-rechte');
-    await page.getByTitle('Benachrichtigungen', { exact: true }).click();
-    await page.getByText('August 2025 abschließen', { exact: true }).click();
+    // Die Glocke führt auf die Seite „Benachrichtigungen“, dort „Öffnen“ am Eintrag.
+    await page.getByRole('button', { name: /^Benachrichtigungen/ }).click();
+    await expect(page).toHaveURL(/\/benachrichtigungen$/);
+    await page.getByRole('button', { name: 'Öffnen: August 2025 abschließen', exact: true }).click();
     await expect(page).toHaveURL(/monatsabschluss\?jahr=2025&monat=8/);
     await page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true }).check();
     const close = page.getByRole('button', { name: 'Monat jetzt abschließen', exact: true });
