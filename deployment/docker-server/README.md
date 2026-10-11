@@ -6,8 +6,9 @@ Versionen holt sich der Rechner nachts um 3 Uhr selbst ab (Pull-Prinzip).
 GitHub braucht also keinen Zugang ins Firmennetz: keine offenen Ports, kein VPN.
 
 ```
- git push main ─► GitHub Actions                       Rechner beim Kunden (Windows-PC oder Linux-Server)
-                  1. Tests (PR Quality Checks)          ┌─ postgres ─ Datenbank (PostgreSQL 16)
+ Pull Request ──► GitHub Actions                       Rechner beim Kunden (Windows-PC oder Linux-Server)
+  ─► Merge auf    1. Tests im PR (PR Quality Checks),   ┌─ postgres ─ Datenbank (PostgreSQL 16)
+     main            beim Bauen nachgeprueft            │
                   2. Docker-Image (Backend + beide      ├─ app ───── ERP (Backend + PC-Oberflaeche + Zeiterfassung)
                      Frontends in EINEM Image)          └─ updater ─ 03:00: neues Image holen ◄─────┐
                   3. Starttest: Kundenstand + neue          sichern, wechseln, Health-Check,     │
@@ -308,7 +309,8 @@ der laufenden Installationen gültig bleibt.
 
 ## Der Starttest in GitHub
 
-`.github/workflows/docker-image.yml` läuft nach jedem grünen Push auf `main`. Es
+`.github/workflows/docker-image.yml` läuft nach jedem Push auf `main` (also nach jedem
+Merge eines PR – getestet wurde vorher im PR, siehe `pr-ci.yml`). Es
 veröffentlicht nur, wenn `starttest.sh` grün ist. Dabei richtet das aktuelle `:stable`
 (also der Kundenstand) eine leere Datenbank ein, darauf startet die neue Version, und
 `/actuator/health` muss 200 liefern. Neue Migrationen laufen dabei einmal echt durch,
