@@ -16,6 +16,8 @@ Für einen Windows-PC oder Linux-Server, auf dem das ERP dauerhaft läuft. Ein D
 
 Bei einer neuen Datenbank ohne vorkonfigurierten Admin legst du im Browser den ersten Benutzer an; dieser wird Administrator. Schließe die Ersteinrichtung im geschützten Netz ab, bevor die Anwendung über eine öffentliche Domain erreichbar wird. Es gibt keine fest eingebauten Standard-Zugangsdaten für diese Einrichtung.
 
+Schritt-für-Schritt-Anleitung für einen neuen Kunden, mit Sicherung auf Festplatte und OneDrive: **[deployment/docker-server/EINRICHTEN.md](../deployment/docker-server/EINRICHTEN.md)**
+
 Alles Weitere (Umzug von einem anderen Server, Handy-Nachrichten, Sicherheit, was nachts passiert): **[deployment/docker-server/README.md](../deployment/docker-server/README.md)**
 
 ### Wo werden meine Daten gespeichert?

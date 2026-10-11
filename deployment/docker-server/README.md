@@ -23,6 +23,9 @@ Handys lädt die neue Version beim nächsten Öffnen.
 
 ## Einrichten
 
+> **Neuer Kunde?** Die Schritt-für-Schritt-Anleitung zum Abhaken – vom leeren PC bis zur
+> ersten geprüften Sicherung – steht in **[EINRICHTEN.md](EINRICHTEN.md)**.
+
 ### Die Datenbank
 
 Alle Installationen laufen auf **PostgreSQL 16**, auch der eigene Server (seit dem
@@ -404,6 +407,7 @@ dann mit Rollback.
 
 | Datei | Zweck |
 | --- | --- |
+| `EINRICHTEN.md` | Schritt-für-Schritt-Anleitung für einen neuen Kunden (zum Abhaken) |
 | `docker-compose.yml` | postgres, app, updater, netzsperre, alle mit `restart: always` |
 | `postgres-init/` | Legt beim ersten Start die App-Rolle in PostgreSQL an (ohne Superuser-Rechte) |
 | `.env.example` | Vorlage für `.env`. Die `.env` wird beim Einrichten erzeugt und nie committet |
