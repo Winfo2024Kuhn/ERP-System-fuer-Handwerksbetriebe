@@ -25,7 +25,7 @@ import { blockiereFremdeNetzwerkzugriffe } from './api';
  * '@playwright/test', die exportiert dieselben Typen.
  *
  * Bekannte Grenze: `vite.config.ts` proxied `/api` -> `https://localhost:8080`
- * SERVERSEITIG im Vite-Dev-Server-Prozess -- der Browser sieht nach aussen nur
+ * SERVERSEITIG im Vite-Serverprozess (Dev-Server wie `vite preview`) -- der Browser sieht nach aussen nur
  * eine Anfrage an `localhost:<E2E_PORT>/api/...`, nie den eigentlichen Sprung
  * nach `:8080`. Diese Route (und jede andere `page.route('**\/api/**')`, die
  * eine Spec zusaetzlich registriert) bleibt davon unberuehrt -- sie sieht die

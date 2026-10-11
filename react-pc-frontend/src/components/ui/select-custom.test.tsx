@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { Select } from './select-custom';
@@ -178,6 +179,59 @@ describe('Select zusammengeführte Gruppenbedienung', () => {
         await user.click(locked);
         expect(changed).not.toHaveBeenCalled();
         expect(screen.queryByRole('listbox')).toBeTruthy();
+    });
+
+    // Zog aus e2e/dropdown-breite.spec.ts hierher um: Die Spec mountete die
+    // Komponente ueber interne Dev-Server-Pfade (/node_modules/.vite/deps/...),
+    // die es im Produktions-Build der E2E-Tests nicht gibt. Gleicher Ablauf,
+    // gleiche Zusicherungen.
+    it('Gruppe, Sperre und Pflicht zusammen: Fehler, Tastaturauswahl, danach speicherbar', async () => {
+        const user = userEvent.setup();
+        const pflichtOptionen = [
+            { value: 'werkzeug', label: 'Werkzeug', gruppe: 'Ausgaben' },
+            { value: 'auftrag', label: 'Auftrag', gruppe: 'Einnahmen' },
+            { value: 'gesperrt', label: 'Gesperrtes Konto', gruppe: 'Ausgaben', disabled: true },
+            { value: 'material', label: 'Material', gruppe: 'Ausgaben' },
+            { value: '', label: 'Bitte Konto wählen' },
+        ];
+        function Testformular() {
+            const [value, setValue] = useState('');
+            const [saved, setSaved] = useState('');
+            return (
+                <form onSubmit={event => { event.preventDefault(); setSaved(value); }}>
+                    <Select options={pflichtOptionen} value={value} onChange={setValue} required name="konto" aria-label="Testkonto" />
+                    <button type="submit">Auswahl speichern</button>
+                    <p role="status">{saved ? `Gespeichert: ${saved}` : 'Noch nicht gespeichert'}</p>
+                </form>
+            );
+        }
+        render(<Testformular />);
+        const trigger = screen.getByRole('combobox', { name: 'Testkonto' });
+
+        await user.click(screen.getByRole('button', { name: 'Auswahl speichern' }));
+        expect(screen.getByRole('status')).toHaveTextContent(/^Noch nicht gespeichert$/);
+        expect(screen.getByRole('alert')).toHaveTextContent(/^Bitte Testkonto auswählen\.$/);
+        expect(trigger).toHaveAttribute('aria-invalid', 'true');
+        expect(trigger).toHaveFocus();
+
+        await user.keyboard('{ArrowDown}');
+        const listbox = screen.getByRole('listbox', { name: 'Testkonto' });
+        const optionstexte = (el: HTMLElement) => within(el).getAllByRole('option').map(option => option.textContent);
+        expect(optionstexte(within(listbox).getByRole('group', { name: 'Ausgaben' }))).toEqual(['Werkzeug', 'Gesperrtes Konto', 'Material']);
+        expect(optionstexte(within(listbox).getByRole('group', { name: 'Einnahmen' }))).toEqual(['Auftrag']);
+        expect(optionstexte(listbox)).toEqual(['Bitte Konto wählen', 'Werkzeug', 'Gesperrtes Konto', 'Material', 'Auftrag']);
+        expect(within(listbox).getByRole('option', { name: 'Gesperrtes Konto' })).toHaveAttribute('aria-disabled', 'true');
+
+        await user.keyboard('{ArrowDown}{ArrowDown}');
+        expect(trigger).toHaveAttribute('aria-activedescendant', within(listbox).getByRole('option', { name: 'Material' }).id);
+        await user.keyboard('{Enter}');
+        expect(screen.queryByRole('listbox')).toBeNull();
+        expect(trigger).toHaveTextContent(/^Material$/);
+        expect(trigger).toHaveFocus();
+        expect(screen.queryByRole('alert')).toBeNull();
+
+        await user.click(screen.getByRole('button', { name: 'Auswahl speichern' }));
+        expect(screen.getByRole('status')).toHaveTextContent(/^Gespeichert: material$/);
     });
 
     it('unterstützt Home und End über Gruppengrenzen hinweg', async () => {

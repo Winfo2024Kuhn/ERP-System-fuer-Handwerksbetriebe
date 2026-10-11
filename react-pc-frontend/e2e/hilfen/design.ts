@@ -96,18 +96,33 @@ export async function designPruefung(
  * Wartet, bis laufende CSS-Uebergaenge und -Animationen fertig sind (hoechstens
  * `maxMs`). Endlos laufende Animationen (Spinner, animate-pulse) werden nicht
  * abgewartet -- die haben kein Ende.
+ *
+ * Ruhe heisst: drei Blicke in Folge, je 30 ms auseinander (also mindestens
+ * 60 ms, sicher ueber den gut 33 ms eines doppelten Frames), ohne laufende Animation. Ein
+ * einziger Blick reicht nicht -- LivePreviewPanel startet seine
+ * 500-ms-Breitenanimation erst per doppeltem requestAnimationFrame. Kam der
+ * Blick davor, gab es noch nichts abzuwarten, und Screenshot und
+ * Ueberlauf-Pruefung liefen mitten in den Uebergang (128 px "Ueberlauf" eines
+ * halb aufgeklappten Panels). Das fiel erst auf, als die E2E-Tests vom
+ * langsamen Dev-Server auf den Build umzogen und die Seite entsprechend
+ * frueher fertig war.
+ *
+ * Gewartet wird bewusst im Testprozess (echte Zeit), nicht in der Seite: Specs
+ * mit `page.clock.install()`/`pauseAt()` frieren dort setTimeout,
+ * requestAnimationFrame und performance.now() ein -- eine Warteschleife in der
+ * Seite stuende dann still.
  */
 export async function uebergaengeAusklingenLassen(page: Page, maxMs = 1500): Promise<void> {
-    await page.evaluate(async (grenze) => {
-        const endlich = document.getAnimations().filter((a) => {
+    const ende = Date.now() + maxMs;
+    let ruhigeBlicke = 0;
+    while (ruhigeBlicke < 3 && Date.now() < ende) {
+        const laufend = await page.evaluate(() => document.getAnimations().filter((a) => {
             const timing = a.effect?.getComputedTiming();
             return timing != null && Number.isFinite(timing.endTime as number) && a.playState === 'running';
-        });
-        if (endlich.length === 0) return;
-        const alleFertig = Promise.all(endlich.map((a) => a.finished.catch(() => undefined)));
-        const zeitLimit = new Promise((r) => setTimeout(r, grenze));
-        await Promise.race([alleFertig, zeitLimit]);
-    }, maxMs);
+        }).length);
+        ruhigeBlicke = laufend === 0 ? ruhigeBlicke + 1 : 0;
+        if (ruhigeBlicke < 3) await page.waitForTimeout(laufend === 0 ? 30 : 50);
+    }
 }
 
 /**
