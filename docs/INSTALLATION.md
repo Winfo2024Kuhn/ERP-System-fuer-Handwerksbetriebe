@@ -42,6 +42,8 @@ docker compose up -d --build
 
 Oder unter Windows einfach `start-docker.bat` doppelklicken.
 
+Mit Beispieldaten (erfundener Metallbaubetrieb mit Projekten, Zeiten und Rechnungen) startet `scripts/demo/demo-starten.sh`, unter Windows in Git Bash oder WSL. Die Demo läuft als eigenes Compose-Projekt `erp-demo` mit eigenen Volumes, eine mit `docker compose up` gestartete Datenbank bleibt getrennt. Läuft bereits ein Stack aus dieser `docker-compose.yml` oder ist Port 8080 belegt, bricht der Start ab. Eine `APP_DB_URL` aus der `.env` ignoriert das Skript. Die Daten landen nur in einer leeren Datenbank (ohne Kunden, Projekte, Lieferanten, Abteilungen, Zeitbuchungen und Mitarbeiter). Entfernen: `docker compose -p erp-demo down -v`.
+
 **Was passiert automatisch:**
 - PostgreSQL 16 wird heruntergeladen und gestartet
 - Die leere Datenbank bekommt beim ersten Start alle Tabellen und Stammdaten
@@ -62,7 +64,7 @@ Benutzer und Passwort der Datenbank stehen in der `.env` (Vorlage: `.env.example
 |------------|---------|----------|
 | Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
 | Docker Desktop | aktuell | [docker.com](https://www.docker.com/products/docker-desktop/) (für die PostgreSQL-Datenbank) |
-| Node.js | 18+ | [nodejs.org](https://nodejs.org/) (nur für Frontend-Entwicklung) |
+| Node.js | 20.19+ | [nodejs.org](https://nodejs.org/) (nur für Frontend-Entwicklung) |
 
 ### 1. Repository klonen
 
@@ -155,7 +157,7 @@ Das Handwerkerprogramm kann auf zwei Arten betrieben werden: **lokal im Firmenne
 |------------|---------|---------|
 | Java (JDK) | 23+ | [Eclipse Adoptium](https://adoptium.net/) |
 | PostgreSQL | 16 | Datenbank `kalkulationsprogramm_db`, am einfachsten als Docker-Container (siehe Variante 3) |
-| Node.js | 18+ | Nur für Frontend-Build nötig |
+| Node.js | 20.19+ | Nur für Frontend-Build nötig |
 
 > Am einfachsten ist **[Variante 1](#variante-1-docker-beim-kunden-empfohlen-für-betriebe)**: Dort kommen ERP und Datenbank fertig als Docker-Container, mit Updates und Sicherung. Die folgenden Schritte beschreiben den Betrieb als JAR.
 
