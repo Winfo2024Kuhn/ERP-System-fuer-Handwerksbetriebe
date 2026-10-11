@@ -28,6 +28,11 @@ spring.datasource.password=DEIN_DB_PASSWORT
 # Mit Tailscale Funnel (docs/INSTALLATION.md, Variante 1b) z. B.:
 #zeiterfassung.base-url=https://erp-rechner.tail-xxxx.ts.net
 
+# ========== Erlaubte Adressen (optional) ==========
+# Nur nötig, wenn das ERP im Büronetz über eine eigene Domain aufgerufen wird. IP-Adressen,
+# localhost, Rechnernamen, *.ts.net und *.fritz.box gehen immer (docs/MOBILE_TOKEN_SECURITY.md).
+#app.security.allowed-hosts=erp.deine-firma.de
+
 # ========== Vendor Integrations (optional) ==========
 #vendor.microsoft.enabled=true
 #vendor.microsoft.tenant-id=DEIN_TENANT_ID

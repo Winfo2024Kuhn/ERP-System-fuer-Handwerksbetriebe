@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.config;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -15,6 +16,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /** Zusätzliche Netzgrenze. Identität und Rechte prüft immer die Spring-Security-Kette.
@@ -25,6 +28,10 @@ import java.util.stream.Stream;
  * zählen dort nicht. So bleibt das ERP auch ohne vorgeschaltetes Gateway geschützt.
  * Tailscale Funnel zusätzlich nur, wenn er in den Einstellungen freigegeben ist
  * ({@link TailscaleFunnelFreigabe}).</p>
+ *
+ * <p>Aus dem eigenen Netz nur unter einer Adresse, die zum ERP gehören kann
+ * ({@link ErlaubteAdressen}). Sonst könnte eine fremde Webseite per DNS-Rebinding den Browser
+ * eines Mitarbeiters als Brücke ins Büronetz nutzen, etwa für die Erst-Registrierung.</p>
  *
  * <p>Läuft <strong>vor</strong> Spring Security (Order -100): Sonst beantwortet der Login-Filter
  * {@code POST /api/auth/login} selbst, und die Netzgrenze käme für die Anmeldung nie zum Zug.</p>
@@ -50,12 +57,30 @@ public class ZeiterfassungSecurityFilter implements Filter {
     @Value("${zeiterfassung.security.trusted-proxies:}")
     private String trustedProxies = "";
 
+    /** Eigene Domains zusätzlich zu den immer erlaubten Adressen, siehe {@link ErlaubteAdressen}. */
+    @Value("${app.security.allowed-hosts:}")
+    private String erlaubteHosts = "";
+
+    @Value("${zeiterfassung.base-url:}")
+    private String zeiterfassungBaseUrl = "";
+
+    /** Name dieses Rechners; in Tests ersetzbar, damit das Ergebnis nicht vom Testrechner abhängt. */
+    private Supplier<Set<String>> rechnernamen = ErlaubteAdressen::eigeneRechnernamen;
+
     /** Schalter in den Einstellungen, erst bei Bedarf geholt. Fehlt er (Tests), bleibt der Funnel zu. */
     @Autowired
     private ObjectProvider<TailscaleFunnelFreigabe> funnelFreigabe;
 
     private volatile ClientIpResolver resolver;
     private volatile String resolverFuer;
+    private volatile ErlaubteAdressen adressen;
+    private volatile String adressenFuer;
+
+    /** Unlesbare Einträge in app.security.allowed-hosts stehen so schon beim Start im Log. */
+    @PostConstruct
+    void pruefeErlaubteAdressen() {
+        adressen();
+    }
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -73,6 +98,14 @@ public class ZeiterfassungSecurityFilter implements Filter {
         // Fail-closed: Meldet ein Proxy einen Absender, den wir nicht prüfen können, gilt er als extern.
         ClientIpResolver.Absender absender = resolver().ermittle(httpRequest);
         if (isLocalIp(absender.adresse()) && !absender.unbekannt() && httpRequest.getHeader(FUNNEL_HEADER) == null) {
+            // DNS-Rebinding: Der Absender ist ein Büro-PC, der Host-Header aber der Name einer fremden Webseite.
+            // Von außen braucht es das nicht – dort ist ohnehin nur die Handy-App erreichbar.
+            ErlaubteAdressen erlaubt = adressen();
+            if (!erlaubt.erlaubt(httpRequest.getServerName())) {
+                erlaubt.meldeAbgewiesen(httpRequest.getServerName());
+                abweisenMitHinweis(httpRequest, httpResponse, "Adresse nicht freigegeben", FREMDE_ADRESSE);
+                return;
+            }
             chain.doFilter(request, response);
             return;
         }
@@ -86,7 +119,7 @@ public class ZeiterfassungSecurityFilter implements Filter {
                 schalter.anfrageGesehen(!freigegeben);
             }
             if (!freigegeben) {
-                funnelGesperrt(httpRequest, httpResponse);
+                abweisenMitHinweis(httpRequest, httpResponse, "Zeiterfassung", FUNNEL_GESPERRT);
                 return;
             }
         }
@@ -139,21 +172,27 @@ public class ZeiterfassungSecurityFilter implements Filter {
     static final String FUNNEL_GESPERRT =
             "Die Zeiterfassung ist nicht über das Internet freigegeben. Bitte die Tailscale-App einschalten.";
 
-    /** Wer die Adresse im Browser öffnet, sieht einen Satz statt JSON. */
-    private static void funnelGesperrt(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    /** Ohne Adresse aus der Anfrage: Der Host-Header stammt beim DNS-Rebinding vom Angreifer. */
+    static final String FREMDE_ADRESSE =
+            "Unter dieser Adresse ist das ERP nicht freigegeben. Bitte die gewohnte Adresse benutzen. "
+                    + "Gehört die Adresse zum ERP, gibt der Administrator sie frei (Einstellung app.security.allowed-hosts).";
+
+    /** Wer die Adresse im Browser öffnet, sieht einen Satz statt JSON. Nur feste Texte, nichts aus der Anfrage. */
+    private static void abweisenMitHinweis(HttpServletRequest request, HttpServletResponse response,
+            String titel, String meldung) throws IOException {
+        response.setHeader("Cache-Control", "no-store");
         String accept = request.getHeader("Accept");
         if (accept == null || !accept.contains("text/html")) {
-            verweigern(response, HttpServletResponse.SC_FORBIDDEN, FUNNEL_GESPERRT);
+            verweigern(response, HttpServletResponse.SC_FORBIDDEN, meldung);
             return;
         }
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setHeader("Cache-Control", "no-store");
         response.setContentType("text/html");
         response.setCharacterEncoding("UTF-8");
         response.getWriter().write("<!doctype html><html lang=\"de\"><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                + "<title>Zeiterfassung</title><p style=\"font-family:sans-serif;margin:2rem\">"
-                + FUNNEL_GESPERRT + "</p></html>");
+                + "<title>" + titel + "</title><p style=\"font-family:sans-serif;margin:2rem\">"
+                + meldung + "</p></html>");
     }
 
     private static void verweigern(HttpServletResponse response, int status, String meldung) throws IOException {
@@ -171,6 +210,18 @@ public class ZeiterfassungSecurityFilter implements Filter {
             aktuell = new ClientIpResolver(proxies);
             resolver = aktuell;
             resolverFuer = proxies;
+        }
+        return aktuell;
+    }
+
+    /** Wie {@link #resolver()}: neu gebaut, wenn sich die Einstellung ändert. */
+    private ErlaubteAdressen adressen() {
+        String konfiguration = erlaubteHosts + "|" + zeiterfassungBaseUrl;
+        ErlaubteAdressen aktuell = adressen;
+        if (aktuell == null || !konfiguration.equals(adressenFuer)) {
+            aktuell = new ErlaubteAdressen(erlaubteHosts, zeiterfassungBaseUrl, rechnernamen);
+            adressen = aktuell;
+            adressenFuer = konfiguration;
         }
         return aktuell;
     }

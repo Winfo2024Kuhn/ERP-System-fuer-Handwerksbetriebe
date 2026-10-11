@@ -69,6 +69,34 @@ Tailscale-Adressen (`100.64.0.0/10` und IPv6 `fd7a:115c:a1e0::/48` innerhalb von
 
 Der öffentlich erreichbare Proxy muss vom Client angelieferte Weiterleitungs-Header überschreiben und aus der tatsächlichen Verbindung eine geprüfte Kette erstellen. Bei mehreren Proxys muss jede weitere Station ausschließlich eine bereits geprüfte Kette übernehmen und korrekt ergänzen. Die Anwendung darf über Firewall und Netzwerkbindung nur von den vorgesehenen Proxys erreichbar sein; Port 8080 darf nicht zusätzlich öffentlich offenstehen. Auch Container-Portfreigaben gehören zu dieser Prüfung. Vorgelagerte Container-/Framework-Filter dürfen `getRemoteAddr()` nicht unkontrolliert anhand fremder Header umschreiben und dadurch die Vertrauensprüfung umgehen.
 
+## Erlaubte Adressen (Schutz vor DNS-Rebinding)
+
+Beim DNS-Rebinding lässt eine fremde Webseite ihren eigenen Namen nachträglich auf die Adresse des ERP zeigen. Der Browser eines Mitarbeiters im Büro schickt die Anfragen ihres Skripts dann an das ERP, mit dem fremden Namen im Host-Header. Die Anmeldung des Mitarbeiters kann sie so nicht benutzen, wohl aber die ohne Anmeldung erreichbaren Endpunkte: `/api/auth/login` (Passwörter durchprobieren), `/api/auth/register` (bei einer frischen Installation sich selbst als Admin anlegen), `/api/auth/bootstrap-status` und `/actuator/health`.
+
+Die Netzgrenze (`ZeiterfassungSecurityFilter`) nimmt Anfragen aus dem eigenen Netz deshalb nur unter Adressen an, die ein Fremder nicht auf das ERP umbiegen kann. Ohne Einstellung gilt:
+
+| Immer erlaubt | Beispiel |
+|---|---|
+| IP-Adressen | `http://192.168.178.20:8080`, `http://100.101.102.103:8080` |
+| `localhost` und Namen ohne Punkt | `http://localhost:8080`, `http://erp-pc:8080`, `http://app:8080` (Docker-Netz) |
+| Tailscale und Namen, die es nur im eigenen Netz gibt | `*.ts.net`, `*.fritz.box`, `*.local`, `*.localhost`, `*.home.arpa`, `*.internal`, `*.home`, `*.corp`, `*.lan`, `*.localdomain` (z. B. `host.docker.internal`) |
+| Name dieses Rechners | auch mit Domain, z. B. `erp-pc.firma.de` im Windows-Netzwerk (nicht im Docker-Container) |
+| Adresse der Handy-App | Name aus `zeiterfassung.base-url` bzw. `ZEITERFASSUNG_URL` |
+
+Wird das ERP im Büronetz über eine eigene Domain aufgerufen, etwa weil `erp.firma.de` im Router direkt auf den ERP-Rechner zeigt, diese einmal freigeben:
+
+```properties
+app.security.allowed-hosts=erp.firma.de
+```
+
+Mehrere Einträge kommagetrennt, `*.firma.de` für alle Unteradressen. Eine ganze Endung wie `*.de` lehnt das ERP ab; auch öffentliche Endungen aus mehreren Teilen wie `*.co.uk` gehören nicht hinein. Domains mit Umlaut dürfen so eingetragen werden, wie man sie schreibt. Einträge mit `ß` (oder `ς`, unsichtbaren Verbindern) lehnt das ERP ab, weil Java daraus eine andere Domain machen würde (`straße` → `strasse`); dafür die `xn--…`-Form eintragen, die im Log bei der abgewiesenen Adresse steht. Im Docker-Paket steht der Eintrag in der `app.env`: `APP_SECURITY_ALLOWEDHOSTS='erp.firma.de'`. Unlesbare Einträge meldet das ERP beim Start im Log. Abgewiesene Adressen stehen ebenfalls im Log (je Adresse höchstens einmal pro Stunde), der Browser zeigt „Unter dieser Adresse ist das ERP nicht freigegeben“ (`403`). `*` schaltet die Prüfung ab und ist nur als Notlösung gedacht.
+
+Restrisiko der festen Endungen: `.local`, `.localhost`, `.home.arpa` und `.internal` sind reserviert, `.home` und `.corp` vergibt die ICANN dauerhaft nicht, `*.ts.net` vergibt nur Tailscale. `fritz.box` ist dagegen eine gewöhnliche Domain unter der Endung `.box` und gehört AVM; `.lan` und `.localdomain` sind nicht reserviert, aber nicht vergeben. Sollte sich daran etwas ändern, gehört die Endung aus `ErlaubteAdressen.LOKALE_ENDUNGEN` entfernt.
+
+Anfragen von außen (Tailscale Funnel, cloudflared, Gateway) prüft die Netzgrenze nicht auf die Adresse. Dort ist ohnehin nur die Handy-App erreichbar, und die vorgeschalteten Dienste leiten nur ihre eigenen Namen weiter. Eine eigene Domain hinter cloudflared oder dem Gateway braucht also keinen Eintrag.
+
+**Anmelden und Abmelden (Login-CSRF):** Ohne CSRF-Token gehen beide nur von der eigenen Oberfläche. Schickt der Browser einen `Origin`, müssen Name und Port zum Host-Header passen; 80 und 443 zählen als „kein Port“, das Schema zählt nicht, weil das ERP hinter `tailscale serve` und Co. nur `http` sieht. Sonst verlangt Spring Security den CSRF-Token und lehnt mit `403` ab. Eine fremde Webseite kann den Browser eines Mitarbeiters so nicht unbemerkt mit dem Konto des Angreifers anmelden. Die Oberfläche schickt den CSRF-Token bei jedem `POST` ohnehin mit; die Herkunftsprüfung greift nur, wenn er fehlt. Ein Proxy vor dem ERP muss den Host-Header samt Port durchreichen: `tailscale serve`, Caddy und cloudflared tun das von sich aus, nginx mit `proxy_set_header Host $http_host;`. Programme ohne `Origin` (curl) melden sich wie bisher an.
+
 ## Vor einer öffentlichen Domain ohne VPN
 
 HTTPS über einen Reverse Proxy oder Tunnel ist Teil des späteren Betriebs. Eine Konfiguration, die lediglich die gesamte Domain auf Port 8080 weiterleitet, reicht für die Freigabe nicht aus.
@@ -128,6 +156,7 @@ Würde das ERP vor der Website umgestellt, bekäme die Website bis zu deren Umst
 - [Wartezeiten und Speicherkapazität](../src/main/java/org/example/kalkulationsprogramm/config/TokenAttemptLimiter.java)
 - [Client-IP-Ermittlung](../src/main/java/org/example/kalkulationsprogramm/config/ClientIpResolver.java)
 - [Spring-Security-Filterketten](../src/main/java/org/example/kalkulationsprogramm/config/SecurityConfig.java) und [zusätzliche Netzgrenze](../src/main/java/org/example/kalkulationsprogramm/config/ZeiterfassungSecurityFilter.java)
+- [Erlaubte Adressen](../src/main/java/org/example/kalkulationsprogramm/config/ErlaubteAdressen.java) und [Anmelden nur von der eigenen Oberfläche](../src/main/java/org/example/kalkulationsprogramm/config/AnmeldungVonEigenerSeite.java)
 - [Schlüsselprüfung für `/api/internal/**`](../src/main/java/org/example/kalkulationsprogramm/config/WebsiteInternalApiKeyFilter.java)
 
 ## Öffentlicher Gateway-Vertrag
