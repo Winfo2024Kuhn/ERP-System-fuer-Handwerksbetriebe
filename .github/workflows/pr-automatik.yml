@@ -1,0 +1,157 @@
+name: PR-Automatik (aktualisieren und mergen)
+
+# Ziel: Jeder PR von diesem Konto (eigene und die der Agenten), der gruen
+# durchlaeuft, wird gemergt - ohne Zutun. Die anderen offenen PRs werden danach
+# selbst auf den neuen Stand von main gebracht, neu getestet und kommen dann
+# ebenfalls dran. Einer nach dem anderen, bis keiner mehr offen ist.
+#
+# Wer wird automatisch gemergt?
+#   - nur PRs gegen main, die das Konto des Repo-Besitzers angelegt hat
+#   - nie PRs aus Forks (oeffentliches Repo: fremder Code ginge sonst ueber das
+#     Nachtupdate direkt zu den Kunden), nie Entwuerfe (Draft)
+#   - Label "kein-automerge" am PR haelt ihn an
+#
+# Warum ein eigener Bot statt GitHubs Auto-Merge-Haken?
+#   Was ein Workflow mit dem eingebauten GITHUB_TOKEN tut (mergen, Branch
+#   aktualisieren), loest KEINE weiteren Workflows aus - weder die Tests eines
+#   aktualisierten PR noch das Kunden-Image nach einem Merge. Ausgenommen ist
+#   workflow_dispatch. Deshalb startet dieser Workflow danach selbst:
+#     - pr-ci.yml fuer jeden aktualisierten Branch (Check-Runs landen auf dem
+#       neuen Kopf-Commit und zaehlen fuer den PR),
+#     - docker-image.yml nach jedem eigenen Merge.
+#   Merge-Queue waere die eingebaute Loesung, gibt es aber nur fuer Repos von
+#   Organisationen. Ein eigenes Token (PAT) waere die Alternative.
+#
+# Ausloeser:
+#   - ein Testlauf (PR Quality Checks) ist fertig -> gruenen PR mergen
+#   - Push auf main (jemand hat von Hand gemergt) -> die anderen aktualisieren
+#   - alle 15 Minuten als Sicherheitsnetz, falls ein Ereignis verloren geht
+#
+# Sicherheit: Es wird nie Code aus einem PR ausgecheckt oder ausgefuehrt, nur
+# die GitHub-API benutzt. Gemergt wird nur, was das Ruleset ohnehin zulaesst
+# (PR Quality Gate gruen, Branch aktuell).
+
+on:
+  workflow_run:
+    workflows: ["PR Quality Checks"]
+    types: [completed]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# Nicht abbrechen: Ein Abbruch zwischen "Branch aktualisiert" und "Tests
+# gestartet" liesse den PR ohne Tests liegen. Hoechstens ein Lauf aktiv, einer
+# wartend - jeder Lauf schaut sich alle PRs frisch an.
+concurrency:
+  group: pr-automatik
+  cancel-in-progress: false
+
+jobs:
+  automatik:
+    name: Gruene PRs mergen, veraltete aktualisieren
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write        # mergen, main in PR-Branches holen
+      pull-requests: write   # merge- und update-branch-API
+      actions: write         # pr-ci.yml und docker-image.yml starten
+      checks: read           # PR Quality Gate lesen
+    steps:
+      - name: PRs durchgehen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BESITZER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          # Aelteste zuerst, damit kein PR ewig wartet.
+          prs="$(gh pr list --state open --base main --limit 100 \
+            --json number,headRefName,headRefOid,isCrossRepository,isDraft,author,labels \
+            --jq "sort_by(.number) | .[]
+              | select((.isCrossRepository | not) and (.isDraft | not)
+                       and .author.login == \"$BESITZER\"
+                       and ([.labels[].name] | index(\"kein-automerge\") | not))
+              | \"\(.number) \(.headRefOid) \(.headRefName)\"")"
+          if [ -z "$prs" ]; then
+            echo "Keine offenen PRs fuer die Automatik."
+            exit 0
+          fi
+
+          starte_tests() { gh workflow run pr-ci.yml --ref="$1"; }
+          gemergt=0
+
+          # Eigener Kanal (3): gh in der Schleife darf die Liste nicht von stdin wegessen.
+          # Fehler bei einem PR brechen nicht alles ab - die anderen kommen trotzdem dran.
+          while read -r nummer kopf branch <&3; do
+            [ -n "$nummer" ] || continue
+            if ! behind="$(gh api "repos/$GH_REPO/compare/main...$kopf" --jq .behind_by)" \
+                || ! [[ "$behind" =~ ^[0-9]+$ ]]; then
+              echo "::warning::PR #$nummer: Abstand zu main nicht lesbar - uebersprungen."
+              continue
+            fi
+
+            if [ "$behind" -gt 0 ]; then
+              echo "PR #$nummer liegt $behind Commit(s) hinter main - aktualisiere $branch."
+              if ! gh api -X PUT "repos/$GH_REPO/pulls/$nummer/update-branch" \
+                  -f expected_head_sha="$kopf" --silent; then
+                echo "::warning::PR #$nummer liess sich nicht aktualisieren (Konflikt oder inzwischen neuer Push) - bitte ansehen."
+                continue
+              fi
+              # update-branch arbeitet im Hintergrund: warten, bis der neue Kopf da ist.
+              neu="$kopf"
+              for versuch in $(seq 1 30); do
+                neu="$(gh pr view "$nummer" --json headRefOid --jq .headRefOid || echo "$kopf")"
+                [ "$neu" != "$kopf" ] && break
+                sleep 4
+              done
+              if [ "$neu" = "$kopf" ]; then
+                echo "::warning::PR #$nummer: neuer Stand nach 2 Minuten nicht sichtbar - Tests holt der naechste Lauf nach."
+              elif starte_tests "$branch"; then
+                echo "PR #$nummer aktualisiert ($neu), Tests gestartet."
+              else
+                echo "::warning::PR #$nummer aktualisiert, Tests liessen sich nicht starten - der naechste Lauf holt sie nach."
+              fi
+              continue
+            fi
+
+            # Aktuell. Gibt es fuer diesen Stand ueberhaupt einen Testlauf (auch laufend)?
+            laeufe="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$kopf&per_page=100" \
+              --jq '[.workflow_runs[] | select(.path == ".github/workflows/pr-ci.yml")] | length' \
+              2>/dev/null || echo "?")"
+            if [ "$laeufe" = "0" ]; then
+              echo "PR #$nummer ist aktuell, aber ungetestet - starte Tests."
+              starte_tests "$branch" || echo "::warning::PR #$nummer: Tests liessen sich nicht starten."
+              continue
+            fi
+
+            # Gruen? Massgeblich ist der neueste "PR Quality Gate" von GitHub Actions.
+            gate="$(gh api "repos/$GH_REPO/commits/$kopf/check-runs?check_name=PR%20Quality%20Gate&filter=latest" \
+              --jq '[.check_runs[] | select(.app.id == 15368)] | sort_by(.started_at) | last | .conclusion // "offen"' \
+              2>/dev/null || echo "offen")"
+            if [ "$gate" != "success" ]; then
+              echo "PR #$nummer: PR Quality Gate ist \"$gate\" - kein Merge."
+              continue
+            fi
+
+            # --match-head-commit: nur genau den getesteten Stand mergen. Den Branch
+            # loescht GitHub selbst (Repo-Einstellung "Branches nach Merge loeschen").
+            if gh pr merge "$nummer" --squash --match-head-commit "$kopf"; then
+              echo "PR #$nummer gemergt."
+              gemergt=1
+              # Ab jetzt sind alle anderen veraltet - die Schleife aktualisiert sie.
+            else
+              echo "::warning::PR #$nummer: Merge abgelehnt (Ruleset?) - bitte ansehen."
+            fi
+          done 3<<< "$prs"
+
+          # Ein Merge mit dem GITHUB_TOKEN loest den Push-Ausloeser von
+          # docker-image.yml nicht aus - das Kunden-Image hier selbst starten.
+          if [ "$gemergt" = "1" ]; then
+            gh workflow run docker-image.yml --ref=main
+            echo "Kunden-Image fuer den neuen Stand von main gestartet."
+          fi
