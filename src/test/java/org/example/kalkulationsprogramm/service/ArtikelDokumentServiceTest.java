@@ -409,15 +409,15 @@ class ArtikelDokumentServiceTest {
         }
 
         @Test
-        @DisplayName("Eine Datei mit unerlaubter Endung auf der Platte (Direktweg an der Anwendung "
-                + "vorbei, siehe SCRAPING_ARTIKEL_CSV.md) wird nicht ausgeliefert - kein inline mit "
+        @DisplayName("Eine Datei mit unerlaubter Endung auf der Platte (an der Anwendung vorbei, "
+                + "z.B. Kopie von Hand) wird nicht ausgeliefert - kein inline mit "
                 + "eigenem Content-Type wie text/html oder image/svg+xml")
         void lehntUnerlaubteEndungBeiAuslieferungAb(@TempDir Path tempDir) throws IOException {
             ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
 
             // Datei liegt direkt auf der Platte, ohne den Umweg ueber ladeHoch() -
-            // simuliert genau den SQL/Skript-Direktweg, der die Upload-Pruefungen
-            // nie durchlaeuft.
+            // simuliert eine Datei, die an der Anwendung vorbei abgelegt wurde
+            // (Kopie von Hand, Sicherung) und die Upload-Pruefungen nie durchlaeuft.
             Path artikelDir = tempDir.resolve("artikel").resolve("1");
             Files.createDirectories(artikelDir);
             Files.writeString(artikelDir.resolve("uuid_geschmuggelt.html"), "<script>alert(1)</script>");

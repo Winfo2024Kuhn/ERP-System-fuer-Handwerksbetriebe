@@ -168,7 +168,7 @@ public class ArtikelDokumentService {
      *
      * <p>Wiederholt bewusst dieselbe Endungs-Whitelist wie {@link #ladeHoch}: Die
      * Datenbankzeile und die Datei koennen auch an der Anwendung vorbei entstehen
-     * (siehe {@code SCRAPING_ARTIKEL_CSV.md}, Direktweg per SQL/Skript). Ohne diese
+     * (Kopie von Hand, Wiederherstellung aus einer Sicherung, Altdaten). Ohne diese
      * zweite Pruefung wuerde eine so abgelegte {@code .html} oder {@code .svg} ueber
      * {@code Files.probeContentType} als {@code text/html} bzw. {@code image/svg+xml}
      * ausgeliefert - inline und same-origin mit der Oberflaeche, also gespeichertes

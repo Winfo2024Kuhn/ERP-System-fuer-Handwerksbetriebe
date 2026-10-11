@@ -509,8 +509,8 @@ public class ArtikelController {
      *
      * <p>Endungs-Whitelist, Content-Type-Ableitung und Inline/Attachment-
      * Entscheidung uebernimmt {@link ArtikelDokumentService#ladeDatei} - siehe
-     * dessen Javadoc fuer die Begruendung (Direktweg an der Anwendung vorbei,
-     * siehe SCRAPING_ARTIKEL_CSV.md). {@code X-Content-Type-Options: nosniff}
+     * dessen Javadoc fuer die Begruendung (Dateien, die an der Anwendung vorbei
+     * auf die Platte kommen). {@code X-Content-Type-Options: nosniff}
      * verhindert zusaetzlich, dass der Browser den gelieferten Content-Type bei
      * Bedarf selbst "korrigiert" (Content-Sniffing). {@code datei.contentType()}
      * stammt nicht vom Client, sondern aus {@code ArtikelDokumentService.ermittleContentType(endung)},
