@@ -23,13 +23,13 @@ interface DokumentLoeschenDialogProps {
     dokumentNummer: string | undefined;
     dokumentId: number | undefined;
     onDeleted: () => void;
-    userId?: number;
 }
 
 /**
  * GoBD-konformer Lösch-Dialog für Ausgangs-Geschäftsdokumente.
  * Dropdown mit Standard-Gründen + Pflicht-Freitext (mind. 5 Zeichen).
- * Schickt Begründung + UserId an /api/ausgangs-dokumente/{id}.
+ * Schickt die Begründung an /api/ausgangs-dokumente/{id}; den Bearbeiter
+ * fürs Protokoll setzt das Backend aus der Anmeldung.
  */
 export function DokumentLoeschenDialog({
     open,
@@ -37,7 +37,6 @@ export function DokumentLoeschenDialog({
     dokumentNummer,
     dokumentId,
     onDeleted,
-    userId,
 }: DokumentLoeschenDialogProps) {
     const toast = useToast();
     const [grundCode, setGrundCode] = useState<string>('TIPPFEHLER');
@@ -64,7 +63,6 @@ export function DokumentLoeschenDialog({
         try {
             const params = new URLSearchParams();
             params.set('begruendung', begruendungZusammen);
-            if (userId) params.set('userId', userId.toString());
 
             const res = await fetch(
                 `/api/ausgangs-dokumente/${dokumentId}?${params.toString()}`,

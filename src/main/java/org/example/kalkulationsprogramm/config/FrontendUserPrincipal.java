@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -32,6 +33,25 @@ public class FrontendUserPrincipal implements UserDetails {
         this.active = active;
         this.roles = roles == null ? Set.of() : Set.copyOf(roles);
         this.authorities = mapAuthorities(this.roles);
+    }
+
+    /**
+     * Der angemeldete PC-Benutzer aus der Spring-Security-Anmeldung, sonst {@code null}.
+     */
+    public static FrontendUserPrincipal aus(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof FrontendUserPrincipal p) {
+            return p;
+        }
+        return null;
+    }
+
+    /**
+     * ID des angemeldeten Benutzers (FrontendUserProfile) für Audit-Einträge, sonst {@code null}.
+     * Der Bearbeiter im GoBD-Protokoll kommt immer von hier, nie aus einem Request-Parameter.
+     */
+    public static Long idAus(Authentication authentication) {
+        FrontendUserPrincipal p = aus(authentication);
+        return p != null ? p.getId() : null;
     }
 
     private Set<GrantedAuthority> mapAuthorities(Set<FrontendUserRole> roles) {

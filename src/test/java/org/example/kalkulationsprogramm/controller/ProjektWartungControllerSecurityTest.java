@@ -4,6 +4,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.example.kalkulationsprogramm.config.ClientIpConfig;
 import org.example.kalkulationsprogramm.config.CloudflareAccessJwtFilter;
 import org.example.kalkulationsprogramm.config.FrontendUserDetailsService;
 import org.example.kalkulationsprogramm.config.SecurityConfig;
@@ -26,7 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * zurückverschiebt oder die Rollenregel entfernt.</p>
  */
 @WebMvcTest(controllers = ProjektWartungController.class)
-@Import({ SecurityConfig.class, ProjektWartungControllerSecurityTest.EchteFilterBeans.class })
+@Import({ SecurityConfig.class, ClientIpConfig.class, ProjektWartungControllerSecurityTest.EchteFilterBeans.class })
 class ProjektWartungControllerSecurityTest {
 
     /**

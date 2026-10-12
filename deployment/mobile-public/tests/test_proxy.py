@@ -114,6 +114,11 @@ print(json.dumps({'status': response.status, 'body': response.read().decode()}))
                      '/zeiterfassung/../api/auth/me']:
             with self.subTest(path=path):
                 self.assertIn(self.request(path)[0], [400, 404])
+        # Nginx decodes $uri, and a regex '$' also matches before a trailing newline.
+        for path in ['/api/zeiterfassung/projekte%0A', '/api/zeiterfassung/projekte%0d',
+                     '/api/zeiterfassung/projekte%1F', '/api/zeiterfassung/projekte%7f']:
+            with self.subTest(path=path):
+                self.assertEqual(self.request(path)[0], 400)
 
     def test_05_upload_limit(self):
         status, _, _ = self.request('/api/zeiterfassung/start', 'POST', body=b'x' * (25 * 1024 * 1024 + 1))

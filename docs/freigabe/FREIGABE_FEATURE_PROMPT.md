@@ -93,9 +93,11 @@ Alle Pfade liegen unter `<ERP-Adresse>/api/internal/freigabe/...` und verlangen 
 **200:** `Content-Type: application/pdf`, `Content-Disposition: inline; filename="..."`.
 **404:** keine PDF vorhanden. **410:** Freigabe abgelaufen oder zurückgezogen.
 
-### 4.3 `DELETE /{uuid}/pdf` – PDF löschen
+### 4.3 `DELETE /{uuid}/pdf` – PDF vom Link lösen
 
-Löscht die für die Freigabe gespeicherte PDF (gedacht für abgelaufene Links). Antwort 204. Das ERP prüft dabei den Status nicht.
+Für abgelaufene Links: Die PDF wird vom Link gelöst und danach nicht mehr ausgeliefert. Die Datei selbst bleibt im ERP, sie ist die PDF des Dokuments.
+
+**204:** erledigt (Freigabe abgelaufen oder zurückgezogen). **409:** Freigabe ist noch offen oder angenommen, nichts geändert. **404:** unbekannte UUID.
 
 ### 4.4 `POST /{uuid}/code` – Bestätigungscode anfordern
 

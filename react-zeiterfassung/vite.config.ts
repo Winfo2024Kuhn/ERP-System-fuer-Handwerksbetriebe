@@ -19,7 +19,7 @@ export default defineConfig({
         name: 'Zeiterfassung App',
         short_name: 'Zeiterfassung',
         description: 'Mobile Zeiterfassung für Mitarbeiter',
-        theme_color: '#dc2626', // rose-600
+        theme_color: '#dc2626', // red-600 = Logo-/App-Icon-Farbe, nicht die UI-Primärfarbe
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',

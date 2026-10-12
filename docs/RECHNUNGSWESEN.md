@@ -245,7 +245,7 @@ Stornierte Dokumente werden aus der Summe **ausgenommen**. Bei Teilrechnungen me
 - Die Schlussrechnung rechnet **ihre eigenen Positionen** ab und zieht die bereits gestellten Rechnungen ab. Entfallene Leistungen (aus der Schlussrechnung gelöscht) und zusätzlich angefallene Leistungen werden dadurch korrekt berücksichtigt; der Editor weist die Differenz zum Angebot aus.
 - Solange die Schlussrechnung ein Entwurf ist, wird ihr Betrag bei jeder Anzeige neu abgeleitet (z. B. wenn danach noch eine Teilrechnung storniert wird).
 - Ist sie gebucht oder versendet, gilt der gespeicherte Betrag unverändert (GoBD).
-- Wird eine Abschlagsrechnung storniert, werden zugehörige, nicht stornierte Schlussrechnungen am selben Vorgänger **automatisch mitstorniert**.
+- Wird eine Abschlagsrechnung storniert, werden zugehörige, nicht stornierte **gebuchte** Schlussrechnungen am selben Vorgänger **automatisch mitstorniert**. Ein Schlussrechnungs-Entwurf bleibt stehen; sein Betrag wird bei der nächsten Anzeige neu abgeleitet.
 
 Auf Rechnungen kann ein **Abrechnungsstand** (Auftragssumme, bereits gestellte Rechnungen, offener Rest, wahlweise mit Fortschrittsbalken) gedruckt werden.
 
@@ -421,8 +421,8 @@ Ausgewählte Rechnungen (Eingang und/oder Ausgang) können als zusammengefügtes
 | `POST` | `/{id}/buchen` | Dokument buchen (sperrt Rechnungstypen) |
 | `POST` | `/{id}/email-versendet` | Nach E-Mail-Versand buchen + Versanddatum |
 | `POST` | `/{id}/pdf-speichern` | Erzeugtes PDF archivieren und am Offenen Posten hinterlegen |
-| `POST` | `/{id}/storno?grund=…` | Dokument stornieren (erstellt Stornorechnung) |
-| `DELETE` | `/{id}?begruendung=…` | Entwurf löschen (nur ungebucht und unversendet) |
+| `POST` | `/{id}/storno?grund=…` | Gebuchte Rechnung stornieren (erstellt Stornorechnung; nicht für Stornorechnungen und Entwürfe) |
+| `DELETE` | `/{id}?begruendung=…` | Entwurf löschen (nicht wenn gebucht, versandt, digital angenommen oder storniert) |
 | `GET` | `/{id}/abrechnungsverlauf` | Abrechnungsverlauf abrufen |
 | `GET` | `/{id}/historie` | Audit-Verlauf des Dokuments („Verlauf anzeigen“) |
 | `GET` | `/historie/nummer/{dokumentNummer}` | Audit-Verlauf über die Nummer (auch für gelöschte Entwürfe) |

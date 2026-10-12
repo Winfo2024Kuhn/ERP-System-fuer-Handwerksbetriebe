@@ -1063,8 +1063,6 @@ export interface AusgangsGeschaeftsDokumentErstellen {
   anfrageId?: number;
   kundeId?: number;
   vorgaengerId?: number;
-  // Ersteller
-  erstelltVonId?: number;
   // Rechnungsadresse-Override (nur für dieses Dokument)
   rechnungsadresseOverride?: string;
 }
