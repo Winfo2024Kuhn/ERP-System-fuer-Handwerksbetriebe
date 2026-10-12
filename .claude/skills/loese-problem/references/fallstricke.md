@@ -410,11 +410,9 @@ Dann `./mvnw -B spring-boot:run` mit den Zugangsdaten: steht im Worktree keine
 `APP_DB_USER=erp_user` und `APP_DB_PASS=erp_dev` – die Adresse
 `jdbc:postgresql://localhost:5432/kalkulationsprogramm_db` ist Standard. Die
 leere Datenbank bekommt beim ersten Start Basis-Schema und Migrationen.
-Hinterher `docker rm -f erp-dev-pg`. Das Backend spricht **http**,
-der Vite-Proxy in `vite.config.ts` zeigt aber auf `https://localhost:8080`
-und scheitert. Nicht die Datei ändern: ein kleines Node-Skript im Scratchpad
-startet `createServer` aus `node_modules/vite` mit der echten `configFile`
-und überschriebenem Proxy auf eigenem Port. Erstanmeldung über „Konto
+Hinterher `docker rm -f erp-dev-pg`. Das Backend spricht **http** auf 8080,
+dorthin zeigt seit dem 12.10.2026 auch der Vite-Proxy beider Frontends –
+`npm run dev` reicht. Erstanmeldung über „Konto
 anlegen", danach blockt `/onboarding`, bis SMTP und Gemini-Key
 per `PUT /api/settings/...` mit Dummy-Werten gesetzt sind (CSRF-Header
 `X-XSRF-TOKEN` aus dem Cookie). `mwstSatz` ist ein Bruch (0.19).

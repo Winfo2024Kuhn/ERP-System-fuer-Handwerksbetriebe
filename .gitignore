@@ -54,6 +54,12 @@ build_log.txt
 build_error_log.txt
 **/node_modules/
 
+# OpenFile Launcher: config.json nennt den ERP-Rechner (Setup-Freigabe.ps1),
+# die Setups werden aus launcher.ps1 gebaut (BUILD-SETUP.bat, Inno Setup)
+/deployment/openfile-launcher/config.json
+/deployment/openfile-launcher/OpenFileLauncher-Setup.exe
+/deployment/openfile-launcher/Output/
+
 ### Backup Files ###
 *.backup
 

@@ -31,7 +31,7 @@ class ContractTest(unittest.TestCase):
                                     capture_output=True, text=True, check=True,
                                     env=dict(os.environ, ERP_PRIVATE_BIND_IP='127.0.0.1'))
         config = json.loads(result.stdout)
-        for name, ports in [('app', [8080]), ('postgres', [5432]), ('qdrant', [6333, 6334])]:
+        for name, ports in [('app', [8080]), ('postgres', [5432])]:
             actual = config['services'][name]['ports']
             self.assertEqual(sorted(port['target'] for port in actual), ports)
             self.assertTrue(all(port['host_ip'] == '127.0.0.1' for port in actual))

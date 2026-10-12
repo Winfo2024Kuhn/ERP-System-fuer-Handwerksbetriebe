@@ -75,7 +75,7 @@ export default function MeineSeite() {
 - [ ] Datumsfelder: `DatePicker` aus `datepicker.tsx` (kein `<input type="date">`)
 - [ ] Vollbild-Bilder: `ImageViewer` aus `image-viewer.tsx`
 - [ ] Detailansichten: `DetailLayout` verwenden
-- [ ] E-Mail-Listen: `EmailHistory` importieren
+- [ ] E-Mail-Verlauf: `EmailsTab` importieren
 - [ ] Karten: `GoogleMapsEmbed` importieren
 - [ ] Buttons: primär `bg-rose-600`, sekundär `outline`, ghost für Toolbars
 - [ ] Icons: Lucide React, `w-4 h-4`, links vom Text

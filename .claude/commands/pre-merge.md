@@ -77,7 +77,7 @@ npm run test
 
 - [ ] Backend startet: `./mvnw spring-boot:run` ohne Exceptions (lokales PostgreSQL läuft, z. B. Container `erp-dev-pg`)
 - [ ] Flyway-Migrationen laufen durch (kein Fehler beim Start), bei Migrationen oder neuen Abfragen zusätzlich `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat -Dkompat.db.user=kompat -Dkompat.db.pass=kompat` gegen einen Wegwerf-Container `postgres:16`
-- [ ] API antwortet auf `http://localhost:8082/api`
+- [ ] API antwortet auf `http://localhost:8080/api`
 - [ ] Frontend kommuniziert korrekt mit Backend
 
 ---

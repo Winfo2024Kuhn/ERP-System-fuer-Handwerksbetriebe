@@ -21,7 +21,11 @@ Write-Host " OpenFile Launcher - Deinstallation" -ForegroundColor Cyan
 Write-Host "=====================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-$targetDir = "C:\Program Files (x86)\OpenFileLauncher"
+# Aktueller Ort (install-openfile-launcher.ps1) und der Ort frueherer Setups
+$targetDirs = @(
+    "C:\Program Files\OpenFileLauncher",
+    "C:\Program Files (x86)\OpenFileLauncher"
+)
 
 try {
     # Schritt 1: Registry entfernen
@@ -40,11 +44,13 @@ try {
 
     # Schritt 2: Dateien entfernen
     Write-Host "[2/2] Entferne Dateien..." -ForegroundColor Cyan
-    if (Test-Path $targetDir) {
-        Remove-Item -Path $targetDir -Recurse -Force
-        Write-Host "   Verzeichnis entfernt: $targetDir" -ForegroundColor Green
-    } else {
-        Write-Host "   Verzeichnis nicht vorhanden" -ForegroundColor Yellow
+    foreach ($targetDir in $targetDirs) {
+        if (Test-Path $targetDir) {
+            Remove-Item -Path $targetDir -Recurse -Force
+            Write-Host "   Verzeichnis entfernt: $targetDir" -ForegroundColor Green
+        } else {
+            Write-Host "   Verzeichnis nicht vorhanden: $targetDir" -ForegroundColor Yellow
+        }
     }
 
     Write-Host ""
