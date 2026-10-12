@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -73,9 +72,6 @@ public class EmailClassificationGeminiClient {
             throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
         }
 
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
-                .formatted(model, apiKey);
-
         ObjectNode requestBody = objectMapper.createObjectNode();
 
         // System-Instruction
@@ -100,8 +96,7 @@ public class EmailClassificationGeminiClient {
         config.put("responseMimeType", "application/json");
         requestBody.set("generationConfig", config);
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/json")
+        HttpRequest request = GeminiAnfrage.generateContent(model, apiKey)
                 .timeout(Duration.ofSeconds(60))
                 .POST(HttpRequest.BodyPublishers.ofString(
                         objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8))
@@ -110,7 +105,7 @@ public class EmailClassificationGeminiClient {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
         if (response.statusCode() != 200) {
-            log.warn("[Gemini-Classify] HTTP {} – {}", response.statusCode(), response.body());
+            log.warn("[Gemini-Classify] HTTP {} – {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
             throw new IOException("Gemini API Error: " + response.statusCode());
         }
 

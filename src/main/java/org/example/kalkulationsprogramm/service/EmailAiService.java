@@ -12,7 +12,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -98,13 +97,15 @@ public class EmailAiService {
                 }
             } catch (Exception e) {
                 // Falls Parsing des Inner-JSON fehlschlägt, nehmen wir an es ist Plain Text
-                log.warn("Konnte KI-Antwort nicht als JSON parsen, verwende Roh-Antwort: {}", e.getMessage());
+                log.warn("Konnte KI-Antwort nicht als JSON parsen, verwende Roh-Antwort: {}",
+                        e.getClass().getSimpleName());
                 return cleanResult(jsonResponse);
             }
 
         } catch (Exception e) {
-            log.error("Fehler bei Gemini-Aufruf", e);
-            throw new IOException("KI-Verarbeitung fehlgeschlagen: " + e.getMessage(), e);
+            // Nur die Fehlerart: Parse-Fehler zitieren die Antwort (E-Mail-Inhalte).
+            log.error("Fehler bei Gemini-Aufruf: {}", e.getClass().getSimpleName());
+            throw new IOException("KI-Verarbeitung fehlgeschlagen", e);
         }
     }
 
@@ -122,9 +123,6 @@ public class EmailAiService {
             if (geminiApiKey == null || geminiApiKey.isBlank()) {
                 throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
             }
-
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                    model, geminiApiKey);
 
             ObjectNode requestBody = objectMapper.createObjectNode();
 
@@ -152,15 +150,14 @@ public class EmailAiService {
 
             String body = objectMapper.writeValueAsString(requestBody);
 
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .header("Content-Type", "application/json")
+            HttpRequest request = GeminiAnfrage.generateContent(model, geminiApiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (response.statusCode() != 200) {
-                log.error("Gemini API Error {}: {}", response.statusCode(), response.body());
+                log.error("Gemini API Error {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                 throw new IOException("Gemini API Error: " + response.statusCode());
             }
 
@@ -178,7 +175,7 @@ public class EmailAiService {
             return null;
 
         } catch (Exception e) {
-            log.error("Fehler beim Aufruf der Gemini API", e);
+            log.error("Fehler beim Aufruf der Gemini API: {}", e.getClass().getSimpleName());
             throw new RuntimeException(e);
         }
     }

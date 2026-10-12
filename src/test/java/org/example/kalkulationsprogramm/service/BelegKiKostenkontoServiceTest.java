@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -138,7 +139,13 @@ class BelegKiKostenkontoServiceTest {
         assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo(
                 "Die KI konnte sich nicht entscheiden. Bitte von Hand wählen.");
         assertKeineZuordnung(beleg);
-        Mockito.verify(client, Mockito.times(6)).send(Mockito.any(HttpRequest.class), Mockito.any());
+        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
+        Mockito.verify(client, Mockito.times(6)).send(anfragen.capture(), Mockito.any());
+        // Schlüssel im Header, nie in der URL (die steht in Fehlermeldungen)
+        assertThat(anfragen.getAllValues()).allSatisfy(anfrage -> {
+            assertThat(anfrage.uri().toString()).doesNotContain("dummy-test-key");
+            assertThat(anfrage.headers().firstValue("x-goog-api-key")).hasValue("dummy-test-key");
+        });
     }
 
     @Test

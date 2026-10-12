@@ -1,6 +1,5 @@
 package org.example.kalkulationsprogramm.service;
 
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -795,10 +794,11 @@ public class SystemSettingsService {
     /**
      * Testet den Gemini API Key durch einen einfachen API-Aufruf.
      */
-    public TestResult testGeminiApiKey(String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
+    public TestResult testGeminiApiKey(String eingabe) {
+        if (eingabe == null || eingabe.isBlank()) {
             return TestResult.failure("Kein API Key angegeben.");
         }
+        String apiKey = eingabe.strip();
 
         try {
             // Einfacher Model-List-Aufruf um den Key zu verifizieren
@@ -806,8 +806,7 @@ public class SystemSettingsService {
                     .connectTimeout(Duration.ofSeconds(10))
                     .build();
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://generativelanguage.googleapis.com/v1beta/models?key=" + apiKey))
+            HttpRequest request = GeminiAnfrage.modellListe(apiKey)
                     .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();
@@ -821,8 +820,12 @@ public class SystemSettingsService {
             } else {
                 return TestResult.failure("Unerwartete Antwort von Google (HTTP " + response.statusCode() + ").");
             }
+        } catch (IllegalArgumentException e) {
+            // Die JDK-Meldung zitiert den Header-Wert, also den Schlüssel.
+            log.warn("Gemini API Test: Schlüssel enthält ungültige Zeichen");
+            return TestResult.failure("Der API Key enthält ungültige Zeichen. Bitte neu kopieren.");
         } catch (Exception e) {
-            log.warn("Gemini API Test fehlgeschlagen: {}", e.getMessage());
+            log.warn("Gemini API Test fehlgeschlagen: {}", e.getClass().getSimpleName());
             return TestResult.failure("Verbindungsfehler: " + e.getMessage());
         }
     }
