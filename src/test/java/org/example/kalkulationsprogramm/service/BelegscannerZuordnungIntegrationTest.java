@@ -54,7 +54,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Import({ BelegService.class, BelegKiAnalyseService.class, BelegZuordnungService.class,
         GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, SystemSettingsService.class,
         LieferantDokumentPositionService.class, LieferantDokumentPositionLeser.class,
-        BelegscannerZuordnungIntegrationTest.Konfiguration.class })
+        LieferantDokumentDateiService.class, BelegscannerZuordnungIntegrationTest.Konfiguration.class })
 class BelegscannerZuordnungIntegrationTest {
 
     @TestConfiguration

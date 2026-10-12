@@ -27,10 +27,10 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import jakarta.persistence.EntityNotFoundException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -67,12 +67,7 @@ public class LieferantDokumentController {
     private final EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final org.example.kalkulationsprogramm.repository.EmailAttachmentRepository emailAttachmentRepository;
     private final DatensatzLockService dokumentLockService;
-
-    @Value("${file.upload-dir}")
-    private String uploadDir;
-
-    @Value("${file.mail-attachment-dir}")
-    private String mailAttachmentDir;
+    private final LieferantDokumentDateiService dokumentDateiService;
 
     private FrontendUserPrincipal principal(Authentication authentication) {
         if (authentication == null || authentication.getPrincipal() == null) {
@@ -783,9 +778,8 @@ public class LieferantDokumentController {
             return ResponseEntity.notFound().build();
         }
 
-        // Versuche Datei zu finden
-        Path filePath = resolveDokumentPath(dokument);
-        if (filePath == null || !Files.exists(filePath)) {
+        Path filePath = dokumentDateiService.findeDatei(dokument).orElse(null);
+        if (filePath == null) {
             log.warn("Datei nicht gefunden für Dokument {}", dokumentId);
             return ResponseEntity.notFound().build();
         }
@@ -884,85 +878,5 @@ public class LieferantDokumentController {
             // wird als Download ausgeliefert.
             default -> null;
         };
-    }
-
-    private Path resolveDokumentPath(LieferantDokument dokument) {
-        String dateiname = dokument.getEffektiverGespeicherterDateiname();
-        if (dateiname == null && dokument.getAttachment() != null) {
-            dateiname = dokument.getAttachment().getStoredFilename();
-        }
-        if (dateiname == null) {
-            return null;
-        }
-
-        Long lieferantId = dokument.getLieferant() != null ? dokument.getLieferant().getId() : null;
-
-        // 0. Mobile-Beleg (via BelegScanner hochgeladen, dann zu LieferantDokument
-        //    promotet): gespeicherterDateiname enthaelt das Praefix "belege/<file>"
-        //    und liegt physisch unter <uploadDir>/belege/. Ohne diesen Lookup wuerde
-        //    die Datei nirgendwo gefunden, weil die uebrigen Pfade nach
-        //    <uploadDir>/lieferanten/{id}/ suchen.
-        //    Defense-in-Depth: dateiname enthaelt per Design einen Slash, also wird
-        //    der aufgeloeste Pfad gegen die uploadDir-Basis containment-geprueft —
-        //    falls je ein anderer Schreiber den DB-Wert ohne Sanitisierung setzt,
-        //    bleibt LFI ausgeschlossen.
-        {
-            Path uploadBase = Path.of(uploadDir).toAbsolutePath().normalize();
-            Path pfad = uploadBase.resolve(dateiname).normalize();
-            if (pfad.startsWith(uploadBase) && Files.exists(pfad)) {
-                return pfad;
-            }
-        }
-
-        // 1. E-Mail-Attachments im Lieferant-Ordner
-        if (lieferantId != null) {
-            Path pfad = Path.of(mailAttachmentDir)
-                    .resolve("email")
-                    .resolve(lieferantId.toString())
-                    .resolve(dateiname);
-            if (Files.exists(pfad)) {
-                return pfad;
-            }
-        }
-
-        // 2. Manuell hochgeladene Dokumente
-        if (lieferantId != null) {
-            Path pfad = Path.of(uploadDir)
-                    .resolve("lieferanten")
-                    .resolve(lieferantId.toString())
-                    .resolve(dateiname);
-            if (Files.exists(pfad)) {
-                return pfad;
-            }
-        }
-
-        // 3. Attachments im attachments-Ordner
-        if (lieferantId != null) {
-            Path pfad = Path.of(uploadDir)
-                    .resolve("attachments")
-                    .resolve("lieferanten")
-                    .resolve(lieferantId.toString())
-                    .resolve(dateiname);
-            if (Files.exists(pfad)) {
-                return pfad;
-            }
-        }
-
-        // 4. Vendor-Invoices
-        Path pfad = Path.of(uploadDir)
-                .resolve("attachments")
-                .resolve("vendor-invoices")
-                .resolve(dateiname);
-        if (Files.exists(pfad)) {
-            return pfad;
-        }
-
-        // 5. Generischer Mail-Attachment-Ordner
-        pfad = Path.of(mailAttachmentDir).resolve(dateiname);
-        if (Files.exists(pfad)) {
-            return pfad;
-        }
-
-        return null;
     }
 }

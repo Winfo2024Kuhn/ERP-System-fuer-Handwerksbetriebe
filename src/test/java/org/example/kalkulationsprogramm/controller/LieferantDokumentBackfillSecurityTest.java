@@ -67,6 +67,8 @@ class LieferantDokumentBackfillSecurityTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService zugriffService;
     @MockBean
+    private org.example.kalkulationsprogramm.service.LieferantDokumentDateiService dokumentDateiService;
+    @MockBean
     private FrontendUserDetailsService frontendUserDetailsService;
 
     @ParameterizedTest

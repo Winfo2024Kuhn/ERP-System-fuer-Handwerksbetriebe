@@ -93,6 +93,7 @@ public class LieferantenController {
     private final LieferantDokumentService dokumentService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService dokumentZugriffService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
+    private final org.example.kalkulationsprogramm.service.LieferantDokumentDateiService dokumentDateiService;
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     private final org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;
@@ -108,8 +109,6 @@ public class LieferantenController {
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
-    @org.springframework.beans.factory.annotation.Value("${file.upload-dir}")
-    private String uploadDir;
 
     private static final int MAX_PAGE_SIZE = 1000;
     private static final Map<String, String> ARTIKELPREIS_SORT_FIELDS = Map.of(
@@ -888,16 +887,15 @@ public class LieferantenController {
         }
         // Das Dokument muss zu genau diesem Lieferanten gehoeren. Ohne die Pruefung
         // liesse sich jedes Lieferanten-Dokument ueber eine beliebige Lieferanten-ID
-        // abrufen: Die Pfade 3 und 4 in resolveDokumentPath suchen in gemeinsamen
-        // Ordnern und ignorieren die uebergebene ID.
+        // abrufen: Die Dateisuche schaut auch in gemeinsame Ordner und ignoriert die
+        // uebergebene ID.
         if (dokument.getLieferant() == null
                 || !dokument.getLieferant().getId().equals(lieferantId)) {
             return ResponseEntity.notFound().build();
         }
 
-        // Datei finden
-        java.nio.file.Path filePath = resolveDokumentPath(dokument, lieferantId);
-        if (filePath == null || !java.nio.file.Files.exists(filePath)) {
+        java.nio.file.Path filePath = dokumentDateiService.findeDatei(dokument).orElse(null);
+        if (filePath == null) {
             return ResponseEntity.notFound().build();
         }
 
@@ -916,57 +914,6 @@ public class LieferantenController {
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-    }
-
-    private java.nio.file.Path resolveDokumentPath(org.example.kalkulationsprogramm.domain.LieferantDokument dokument,
-            Long lieferantId) {
-        String dateiname = dokument.getEffektiverGespeicherterDateiname();
-        if (dateiname == null) {
-            return null;
-        }
-
-        String basePath = "uploads";
-
-        // 0. Mobile-Beleg (via BelegScanner hochgeladen, dann zu LieferantDokument
-        //    promotet): gespeicherterDateiname enthaelt das Praefix "belege/<file>"
-        //    und liegt physisch unter <uploadDir>/belege/. Ohne diesen Lookup wuerde
-        //    die Datei nirgendwo gefunden, weil die uebrigen Pfade nach
-        //    uploads/lieferanten/{id}/ suchen.
-        //    Defense-in-Depth: dateiname enthaelt per Design einen Slash, also wird
-        //    der aufgeloeste Pfad gegen die uploadDir-Basis containment-geprueft —
-        //    falls je ein anderer Schreiber den DB-Wert ohne Sanitisierung setzt,
-        //    bleibt LFI ausgeschlossen.
-        java.nio.file.Path uploadBase = Path.of(uploadDir).toAbsolutePath().normalize();
-        java.nio.file.Path pfad = uploadBase.resolve(dateiname).normalize();
-        if (pfad.startsWith(uploadBase) && java.nio.file.Files.exists(pfad)) {
-            return pfad;
-        }
-
-        // 1. Manuell hochgeladene Dokumente: uploads/lieferanten/{lieferantId}/
-        pfad = Path.of(basePath, "lieferanten", lieferantId.toString(), dateiname);
-        if (java.nio.file.Files.exists(pfad)) {
-            return pfad;
-        }
-
-        // 2. E-Mail-Attachments: uploads/attachments/lieferanten/{lieferantId}/
-        pfad = Path.of(basePath, "attachments", "lieferanten", lieferantId.toString(), dateiname);
-        if (java.nio.file.Files.exists(pfad)) {
-            return pfad;
-        }
-
-        // 3. Vendor-Invoices: uploads/attachments/vendor-invoices/
-        pfad = Path.of(basePath, "attachments", "vendor-invoices", dateiname);
-        if (java.nio.file.Files.exists(pfad)) {
-            return pfad;
-        }
-
-        // 4. Fallback: uploads/email/ (falls Datei dort liegt)
-        pfad = Path.of(mailAttachmentDir, dateiname);
-        if (java.nio.file.Files.exists(pfad)) {
-            return pfad;
-        }
-
-        return null;
     }
 
     // ==================== NOTIZEN ENDPOINTS ====================
