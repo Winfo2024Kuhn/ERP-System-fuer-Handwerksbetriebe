@@ -11,7 +11,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BestellungEmailModal } from './BestellungEditor';
+import BestellungEditor, { BestellungEmailModal } from './BestellungEditor';
 import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 
@@ -132,5 +132,20 @@ describe('BestellungEmailModal KI-Formulierung', () => {
 
         expect(await screen.findByText('Die KI hat keine andere Formulierung geliefert.')).toBeInTheDocument();
         expect(screen.getByText(/bitte erstellen Sie uns ein Angebot/)).toBeInTheDocument();
+    });
+});
+
+describe('Bedarf-Seite', () => {
+    it('blendet die noch nicht fertige Bestellanfrage per E-Mail aus', async () => {
+        vi.mocked(fetch).mockImplementation(((url: string) => {
+            if (url === '/api/bestellungen/offen') {
+                return antwort([{ id: 1, artikelId: 10, produktname: 'Flachstahl 40x5', stueckzahl: 4, bestellt: false, lieferantId: 7, lieferantName: 'Mustermann Stahlhandel' }]);
+            }
+            return antwort([]);
+        }) as unknown as typeof fetch);
+        render(<ToastProvider><ConfirmProvider><BestellungEditor /></ConfirmProvider></ToastProvider>);
+
+        expect(await screen.findByRole('button', { name: /PDF/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^E-Mail$/ })).not.toBeInTheDocument();
     });
 });

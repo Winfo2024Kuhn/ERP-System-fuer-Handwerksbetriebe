@@ -10,13 +10,13 @@ Im Menü liegen zwei Seiten unter **Projektmanagement › Einkauf**:
 
 | Menüpunkt | Seite (Überschrift) | Wofür |
 |---|---|---|
-| **Bedarf** (`/bestellungen/bedarf`) | „Bestellungen“ – „Offene Bestellungen nach Lieferanten verwalten und versenden.“ | Material, das für Projekte noch bestellt werden muss. Von hier gehen Bestell-PDF und Bestell-E-Mail an den Lieferanten. |
+| **Bedarf** (`/bestellungen/bedarf`) | „Bestellungen“ – „Offene Bestellungen nach Lieferanten verwalten und versenden.“ | Material, das für Projekte noch bestellt werden muss. Von hier kommt das Bestell-PDF für den Lieferanten. |
 | **Bestellungen** (`/bestellungen`) | „BESTELLUNGEN“ – „Angefragt, bestellt, geliefert – und was noch abgerechnet werden muss. Alles an einem Ort.“ | Die Unterlagen der Lieferanten (Angebot, Auftragsbestätigung, Lieferschein, Werkstoffzeugnis, Rechnung) als Kette. Hier werden Rechnungen Projekten oder Kostenstellen zugeordnet (Abschnitt 7). |
 
 ### So geht's (Kurzfassung)
 
 1. **Material ins Projekt eintragen:** Projekt öffnen → Knopf **„Artikel aus Lager“** → im Fenster „Artikel aus Lager hinzufügen“ Artikel suchen, Menge eintragen und je Artikel wählen: **„Lager“** (kommt aus dem eigenen Lager) oder **„Bestellen“** (muss noch bestellt werden).
-2. **Bestellen:** Alles mit „Bestellen“ steht danach unter **Einkauf › Bedarf**, sortiert nach Lieferant. Je Lieferant gibt es die Knöpfe **„PDF“** (Bestell-PDF ansehen) und **„E-Mail“** (Bestellung direkt an den Lieferanten schicken, das PDF hängt automatisch an).
+2. **Bestellen:** Alles mit „Bestellen“ steht danach unter **Einkauf › Bedarf**, sortiert nach Lieferant. Je Lieferant gibt es den Knopf **„PDF“** (Bestell-PDF ansehen). Den Versand an den Lieferanten erledigt man vorerst selbst, die Bestellanfrage per E-Mail aus dem Programm ist noch nicht freigegeben (Abschnitt 4.2).
 3. **Abhaken:** Ist die Ware bestellt, das Häkchen in der Spalte **„Bestellt“** setzen. Die Position verschwindet aus dem Bedarf, ihr Preis wird festgeschrieben.
 4. **Rechnung zuordnen:** Auftragsbestätigung, Lieferschein und Rechnung des Lieferanten kommen meist per E-Mail und erscheinen unter **Einkauf › Bestellungen**. Liegt die Rechnung vor, steht die Bestellung im Reiter „Rechnung zuordnen“ – mit **„Projekten zuordnen“** landen die Kosten im Projekt.
 
@@ -68,7 +68,7 @@ Zwei Sondergruppen:
 - **„Werkstoffe“:** Artikel, deren Hauptkategorie die Werkstoff-Kategorie ist (fest Kategorie-ID 1), landen unabhängig vom Lieferanten in einer gemeinsamen Gruppe „Werkstoffe“. Die Menge steht dort in Metern.
 - **„Ohne Lieferant“:** Positionen ohne Lieferant.
 
-Für beide Sondergruppen sind die Knöpfe „PDF“ und „E-Mail“ ausgegraut, weil kein einzelner Lieferant dahintersteht.
+Für beide Sondergruppen ist der Knopf „PDF“ ausgegraut, weil kein einzelner Lieferant dahintersteht.
 
 ### 2.2 Beispiel
 
@@ -131,7 +131,7 @@ Projekt: „Artikel aus Lager“ → Auswahl „Bestellen“
 Bedarf (bestellt = false)
     │
     ├── „PDF“    → Bestell-PDF für diesen Lieferanten
-    ├── „E-Mail“ → Fenster „Bestellung an <Lieferant> senden“
+    │   („E-Mail“ → „Bestellung an <Lieferant> senden“: noch ausgeblendet, siehe 4.2)
     │
     ▼
 Häkchen „Bestellt“ (PATCH /api/bestellungen/{id}?bestellt=true)
@@ -154,9 +154,9 @@ Beim Abhaken wird der Endpreis in `preisProStueck` **eingefroren** (Einzelpreis 
 - Lagerware (`ausLager`) trägt immer den Preis je Einheit und wird nie umgerechnet.
 - Der Preis-Import aus Lieferanten-Angeboten (`OfferPriceService`) schreibt bei offenen Positionen ebenfalls den Preis je Einheit, nicht die Summe.
 
-### 4.2 Bestellung per E-Mail
+### 4.2 Bestellung per E-Mail (noch nicht freigegeben)
 
-Der Knopf **„E-Mail“** öffnet das Fenster „Bestellung an <Lieferant> senden“:
+Die Bestellanfrage per E-Mail ist fachlich noch nicht fertig. Der Knopf **„E-Mail“** je Lieferant ist deshalb ausgeblendet (`BESTELLANFRAGE_PER_EMAIL_AKTIV = false` in `react-pc-frontend/src/pages/BestellungEditor.tsx`). Das vorbereitete Fenster „Bestellung an <Lieferant> senden“ (`BestellungEmailModal`) sieht so aus:
 
 - **Empfänger:** die beim Lieferanten hinterlegten E-Mail-Adressen; über „Andere E-Mail eingeben...“ auch eine neue Adresse. Nach dem Senden an eine neue Adresse fragt das Programm „E-Mail-Adresse speichern?“ und legt sie auf Wunsch beim Lieferanten ab.
 - **CC**, **Von** (Absender-Adresse), **Betreff** (Vorschlag „Bestellanfrage: <Lieferant>“) und **Nachricht** mit Signatur. Der vorbelegte Text bittet um ein Angebot für die angehängten Positionen – vor dem Senden anpassen, wenn direkt bestellt werden soll.
@@ -257,7 +257,7 @@ Welche Dokumentarten jemand in der Übersicht sieht, richtet sich nach den Recht
 |---|---|---|
 | `GET` | `/api/bestellungen/offen` | Alle offenen (unbestellten) Positionen |
 | `PATCH` | `/api/bestellungen/{id}?bestellt=true\|false` | Position als bestellt/unbestellt markieren |
-| `GET` | `/api/bestellungen/lieferant/{lieferantId}/pdf` | Bestell-PDF für einen Lieferanten (wird von „PDF“ und „E-Mail“ genutzt) |
+| `GET` | `/api/bestellungen/lieferant/{lieferantId}/pdf` | Bestell-PDF für einen Lieferanten (wird von „PDF“ genutzt, später auch vom noch ausgeblendeten E-Mail-Fenster) |
 | `GET` | `/api/bestellungen/projekt/{projektId}/pdf` | Bestell-PDF der offenen Werkstoffe eines Projekts |
 
 ### 8.2 Bestellübersicht (`/api/bestellungen-uebersicht`)
