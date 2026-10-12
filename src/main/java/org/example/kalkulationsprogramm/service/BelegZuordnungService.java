@@ -162,7 +162,7 @@ public class BelegZuordnungService {
         }
 
         // Datei: kein erneutes Kopieren — wir verweisen relativ auf den Beleg-Pfad.
-        // resolveLieferantDokumentPath sucht u.a. uploads/{filename}; mit
+        // Die Dateisuche (Vorschau, Gesamt-PDF) sucht u.a. uploads/{filename}; mit
         // "belege/<gespeicherterName>" klappt der Lookup als uploads/belege/<gespeicherterName>.
         String gespeicherterFuerLD = beleg.getGespeicherterDateiname() != null
                 ? "belege/" + beleg.getGespeicherterDateiname()

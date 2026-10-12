@@ -37,9 +37,9 @@ Basis-URL: `http://localhost:8082`
 |---|---|---|
 | `GET` | `/ausgang` | Ausgangsrechnungen (gefiltert nach Jahr/Monat/Suche) |
 | `GET` | `/eingang` | Eingangsrechnungen (gefiltert nach Jahr/Monat/Suche) |
-| `POST` | `/merge-pdf` | Sammel-PDF aus ausgewählten Rechnungen |
-| `POST` | `/analyze-upload` | Eingangsrechnung per KI analysieren |
-| `POST` | `/import-upload` | Analysierte Eingangsrechnung importieren |
+| `POST` | `/merge-pdf` | Sammel-PDF aus ausgewählten Rechnungen; nur echte PDFs, fehlende Eingangsrechnungen als IDs im Header `X-Nicht-Enthalten` |
+| `POST` | `/analyze-upload` | Eingangsrechnung per KI analysieren (derzeit ohne Oberfläche) |
+| `POST` | `/import-upload` | Analysierte Eingangsrechnung importieren (derzeit ohne Oberfläche) |
 
 ---
 

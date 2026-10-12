@@ -83,6 +83,15 @@ public class RechnungsuebersichtController {
     private static final String MELDUNG_DATEI_NICHT_ERLAUBT =
             "Diese Datei kann hier nicht hochgeladen werden. Erlaubt sind PDF, XML (E-Rechnung), JPG und PNG.";
 
+    /**
+     * Antwort-Header des Gesamt-PDFs: IDs der Eingangsrechnungen (kommagetrennt), die nicht
+     * enthalten sind, weil es zu ihnen keine PDF-Datei gibt. Das Frontend nennt sie dem Nutzer.
+     */
+    static final String HEADER_NICHT_ENTHALTEN = "X-Nicht-Enthalten";
+
+    private static final String MELDUNG_KEINE_PDF =
+            "Zu den ausgewählten Rechnungen gibt es keine PDF-Datei. Das Gesamt-PDF kann nicht erstellt werden.";
+
     private final RechnungsuebersichtService rechnungsuebersichtService;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
@@ -218,7 +227,11 @@ public class RechnungsuebersichtController {
                 }
             }
 
-            // Eingangsrechnungen hinzufügen
+            // Eingangsrechnungen hinzufügen. Eine sichtbare Rechnung ohne PDF-Datei (Datei fehlt,
+            // Foto, XML-E-Rechnung) bleibt draußen und wird dem Browser per Header gemeldet – ein
+            // Foto im Merger würde sonst das ganze Gesamt-PDF scheitern lassen. Unbekannte und
+            // gesperrte IDs bleiben gleichermaßen stumm, damit der Header nichts über sie verrät.
+            List<Long> nichtEnthalten = new ArrayList<>();
             if (request.getEingangIds() != null) {
                 for (Long id : request.getEingangIds()) {
                     log.info("[merge-pdf] Looking up Eingangsrechnung ID={}", id);
@@ -229,14 +242,16 @@ public class RechnungsuebersichtController {
                             // Nicht sichtbarer Typ: wie "nicht gefunden" behandeln, nichts preisgeben.
                             log.warn("[merge-pdf] Eingangsrechnung ID={} nicht sichtbar", id);
                         } else if (gd.getDokument() != null) {
-                            Path pdfPath = resolveLieferantDokumentPath(gd.getDokument());
-                            log.info("[merge-pdf] Resolved path={}, exists={}", pdfPath,
-                                    pdfPath != null && Files.exists(pdfPath));
-                            if (pdfPath != null && Files.exists(pdfPath)) {
+                            Path pdfPath = findeLieferantDokumentPdf(gd.getDokument());
+                            if (pdfPath != null) {
                                 byte[] pdfBytes = Files.readAllBytes(pdfPath);
                                 RandomAccessReadBuffer buffer = new RandomAccessReadBuffer(pdfBytes);
                                 buffers.add(buffer);
                                 merger.addSource(buffer);
+                            } else {
+                                // Nur die ID: der Dateiname kann Namen aus der Rechnung enthalten (DSGVO).
+                                log.warn("[merge-pdf] Eingangsrechnung ID={} liegt nicht als PDF vor", id);
+                                nichtEnthalten.add(id);
                             }
                         } else {
                             log.warn("[merge-pdf] Eingangsrechnung ID={} has no associated dokument", id);
@@ -250,7 +265,7 @@ public class RechnungsuebersichtController {
             log.info("[merge-pdf] Total buffers collected: {}", buffers.size());
             if (buffers.isEmpty()) {
                 log.warn("[merge-pdf] No valid PDFs found, returning 400");
-                return ResponseEntity.badRequest().build();
+                return ResponseEntity.badRequest().body(Map.of("message", MELDUNG_KEINE_PDF));
             }
 
             // Merge to byte array
@@ -261,10 +276,14 @@ public class RechnungsuebersichtController {
             // Generate filename
             String filename = "Rechnungen_" + LocalDate.now() + ".pdf";
 
-            return ResponseEntity.ok()
+            var antwort = ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .body(outputStream.toByteArray());
+                    .contentType(MediaType.APPLICATION_PDF);
+            if (!nichtEnthalten.isEmpty()) {
+                antwort.header(HEADER_NICHT_ENTHALTEN,
+                        nichtEnthalten.stream().map(String::valueOf).collect(Collectors.joining(",")));
+            }
+            return antwort.body(outputStream.toByteArray());
 
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(Map.of("message",
@@ -281,40 +300,95 @@ public class RechnungsuebersichtController {
 
     // ==================== Hilfsmethoden ====================
 
-    private Path resolveLieferantDokumentPath(LieferantDokument dok) {
+    /**
+     * Sucht die PDF-Datei eines Lieferanten-Dokuments an denselben Ablageorten wie die Vorschau
+     * ({@code LieferantDokumentController}), jeweils unter dem Upload-Ordner und in dieser
+     * Reihenfolge:
+     * <ol>
+     * <li>direkt im Upload-Ordner – auch Belege aus „Belege &amp; Kasse“ ({@code belege/<name>})</li>
+     * <li>{@code attachments/email/<lieferantId>/} – E-Mail-Anhänge im Lieferanten-Ordner</li>
+     * <li>{@code lieferanten/<lieferantId>/} – manuell hochgeladene Rechnungen</li>
+     * <li>{@code attachments/lieferanten/<lieferantId>/}</li>
+     * <li>{@code attachments/vendor-invoices/}</li>
+     * <li>{@code attachments/}</li>
+     * <li>{@code attachments/<emailId>/}</li>
+     * </ol>
+     * Gesucht wird nach dem eigenen gespeicherten Namen und danach nach dem des E-Mail-Anhangs.
+     * Nur echte PDFs zählen – liegt unter dem einen Namen eine XML-E-Rechnung und unter dem
+     * anderen die PDF, wird die PDF genommen. Kandidaten außerhalb des Upload-Ordners (z. B. ein
+     * {@code ../} im gespeicherten Namen) werden übersprungen. Gibt {@code null} zurück, wenn es
+     * nirgends eine PDF gibt.
+     */
+    private Path findeLieferantDokumentPdf(LieferantDokument dok) {
+        Path uploadBase = Path.of(uploadPath).toAbsolutePath().normalize();
+        String lieferantId = dok.getLieferant() != null && dok.getLieferant().getId() != null
+                ? dok.getLieferant().getId().toString()
+                : null;
+        String emailId = dok.getAttachment() != null && dok.getAttachment().getEmail() != null
+                ? dok.getAttachment().getEmail().getId().toString()
+                : null;
+
+        List<List<String>> ordner = new ArrayList<>();
+        ordner.add(List.of());
+        if (lieferantId != null) {
+            ordner.add(List.of("attachments", "email", lieferantId));
+            ordner.add(List.of("lieferanten", lieferantId));
+            ordner.add(List.of("attachments", "lieferanten", lieferantId));
+        }
+        ordner.add(List.of("attachments", "vendor-invoices"));
+        ordner.add(List.of("attachments"));
+        if (emailId != null) {
+            ordner.add(List.of("attachments", emailId));
+        }
+
+        List<String> dateinamen = new ArrayList<>();
         if (dok.getGespeicherterDateiname() != null) {
-            // Priority 1: Check root upload path
-            Path rootPath = Path.of(uploadPath, dok.getGespeicherterDateiname());
-            if (Files.exists(rootPath)) {
-                return rootPath;
-            }
-
-            // Priority 2: Check attachments/ (flat)
-            Path attachmentsPath = Path.of(uploadPath, "attachments", dok.getGespeicherterDateiname());
-            if (Files.exists(attachmentsPath)) {
-                return attachmentsPath;
-            }
-
-            // Priority 3: Check attachments/{emailId}/ (if email context exists)
-            if (dok.getAttachment() != null && dok.getAttachment().getEmail() != null) {
-                Path emailPath = Path.of(uploadPath, "attachments",
-                        dok.getAttachment().getEmail().getId().toString(),
-                        dok.getGespeicherterDateiname());
-                if (Files.exists(emailPath)) {
-                    return emailPath;
-                }
-            }
-
-            return rootPath; // Return default
+            dateinamen.add(dok.getGespeicherterDateiname());
+        }
+        if (dok.getAttachment() != null && dok.getAttachment().getStoredFilename() != null
+                && !dateinamen.contains(dok.getAttachment().getStoredFilename())) {
+            dateinamen.add(dok.getAttachment().getStoredFilename());
         }
 
-        // Fallback for documents without gespeicherterDateiname but with attachment
-        // info
-        if (dok.getAttachment() != null && dok.getAttachment().getStoredFilename() != null) {
-            return Path.of(uploadPath, "attachments", dok.getAttachment().getEmail().getId().toString(),
-                    dok.getAttachment().getStoredFilename());
+        return dateinamen.stream()
+                .flatMap(name -> ordner.stream().map(o -> pfadImUploadOrdner(uploadBase, o, name)))
+                .filter(pfad -> pfad != null && Files.isRegularFile(pfad) && istPdfDatei(pfad))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Setzt {@code ordner} und {@code dateiname} unter {@code uploadBase} zusammen und gibt den
+     * Pfad nur zurück, wenn er danach noch im Upload-Ordner liegt. Sonst (oder bei einem
+     * ungültigen Namen) {@code null}.
+     */
+    private static Path pfadImUploadOrdner(Path uploadBase, List<String> ordner, String dateiname) {
+        try {
+            Path pfad = uploadBase;
+            for (String teil : ordner) {
+                pfad = pfad.resolve(teil);
+            }
+            pfad = pfad.resolve(dateiname).normalize();
+            return pfad.startsWith(uploadBase) ? pfad : null;
+        } catch (InvalidPathException e) {
+            return null;
         }
-        return null;
+    }
+
+    /**
+     * {@code true}, wenn die Datei eine PDF ist. Entscheidend ist der Inhalt, nicht die Endung:
+     * Die PDF-Kennung {@code %PDF-} muss in den ersten 1024 Bytes stehen (wie es die
+     * PDF-Spezifikation erlaubt). Fotos und XML-E-Rechnungen fallen so heraus, eine nicht
+     * lesbare Datei ebenso – sie gilt als fehlend statt das Gesamt-PDF abbrechen zu lassen.
+     */
+    private static boolean istPdfDatei(Path datei) {
+        try (var in = Files.newInputStream(datei)) {
+            byte[] anfang = in.readNBytes(1024);
+            return new String(anfang, StandardCharsets.ISO_8859_1).contains("%PDF-");
+        } catch (IOException e) {
+            log.warn("[merge-pdf] Datei konnte nicht gelesen werden: {}", e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     private EingangsrechnungDto toEingangsrechnungDto(LieferantGeschaeftsdokument gd) {
