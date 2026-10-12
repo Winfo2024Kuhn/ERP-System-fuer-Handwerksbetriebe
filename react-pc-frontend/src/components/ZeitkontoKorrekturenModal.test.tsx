@@ -19,7 +19,7 @@ it('verlangt eine Begründung im eigenen Stornierungsdialog und sendet erst nach
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
     await user.type(screen.getByRole('textbox', { name: 'Stornierungsgrund' }), 'Doppelt erfasst');
     await user.click(screen.getByRole('button', { name: 'Stornierung bestätigen' }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/zeitkonto/korrekturen/1', expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ bearbeiterId: 1, stornierungsgrund: 'Doppelt erfasst' }) })));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/zeitkonto/korrekturen/1', expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ stornierungsgrund: 'Doppelt erfasst' }) })));
 });
 it('übernimmt nur vollständige Kommawerte als numerische Stunden', async () => {
     const user = userEvent.setup();
@@ -34,4 +34,19 @@ it('übernimmt nur vollständige Kommawerte als numerische Stunden', async () =>
     await user.type(hours, '5');
     await user.click(screen.getByRole('button', { name: 'Speichern' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST' && JSON.parse(init.body).stunden === 8.5)).toBe(true));
+});
+it('schickt keinen Bearbeiter mit und zeigt die Server-Meldung, wenn der Benutzer keinem Mitarbeiter zugeordnet ist', async () => {
+    const meldung = 'Ihr Benutzer ist keinem Mitarbeiter zugeordnet.';
+    fetchMock.mockImplementation(async (_url, init) => init?.method === 'POST'
+        ? { ok: false, status: 403, json: async () => ({ status: 403, message: meldung }) }
+        : { ok: true, json: async () => [] });
+    const user = userEvent.setup();
+    render(<ZeitkontoKorrekturenModal mitarbeiterId={1} mitarbeiterName="Max Mustermann" onClose={vi.fn()} onUpdate={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Neue Korrektur' }));
+    await user.type(screen.getByRole('textbox', { name: 'Anzahl Stunden' }), '2');
+    await user.type(screen.getByRole('textbox', { name: 'Begründung' }), 'Nachtrag');
+    await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(meldung));
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(JSON.parse(post![1].body)).not.toHaveProperty('erstelltVonId');
 });
