@@ -95,7 +95,7 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 
 ### 2.2 Design-System (Handwerker-Fokus)
 - [ ] **Farben:** ausschließlich `rose-*` und `slate-*` – **keine** `indigo`, `blue`, `sky`, `cyan`, `teal`, `emerald`, `green` für Primäraktionen
-- [ ] Primärfarbe `#dc2626` / `rose-600`
+- [ ] Primärfarbe `rose-600` (= `#e11d48`). `#dc2626` ist `red-600` (Gefahr/Fehler), **nicht** die Primärfarbe – `rose-600`/`#e11d48` ist korrekt und kein Befund; `red-600`/`#dc2626` als Primärfarbe ist einer
 - [ ] Button-Klassen entsprechen dem Schema:
   - Primär: `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700`
   - Sekundär: `border-rose-300 text-rose-700 hover:bg-rose-50`
@@ -108,7 +108,7 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 - [ ] Bilder-Vorschau über `ImageViewer` (`src/components/ui/image-viewer.tsx`)
 - [ ] PDF-Vorschau über `DocumentPreviewModal`, **nicht** `<iframe src={url}>`
 - [ ] Zwei-Spalten-Layouts über `DetailLayout`
-- [ ] E-Mail-Verlauf über `EmailsTab` (`src/components/EmailsTab.tsx`)
+- [ ] E-Mail-Verlauf über `EmailsTab` (`src/components/EmailsTab.tsx`, wie in Kunde, Projekt, Anfrage, Lieferant) – nicht neu bauen
 - [ ] Karten über `GoogleMapsEmbed`
 
 ### 2.4 Page-Header-Pattern (für jede neue Seite zwingend)
@@ -126,7 +126,8 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 ### 2.5 Hierarchie & Wiederverwendung
 - [ ] Atome unter `src/components/ui/`
 - [ ] Domänenlogik unter `src/features/{name}/`
-- [ ] Doppelter Code → Hinweis im Report (nicht ungefragt extrahieren)
+- [ ] Neu eingeführter doppelter Code / kopierte Sonderlösung pro Seite → ⚠️ Warnung mit Vorschlag, wohin ausgelagert wird (Auslagern ist dauerhaft freigegeben, siehe CLAUDE.md; du selbst änderst nichts)
+- [ ] Bestehender doppelter Code in berührten Dateien → 💡 Hinweis
 
 ### 2.6 UX-Wording (Handwerker-Sprache)
 - [ ] Keine SAP-/Buchhalter-Begriffe sichtbar im UI
@@ -156,6 +157,7 @@ git diff main...HEAD | grep -iE "(api_key|password=|token=|secret=|passwd|-----B
 - [ ] Keine hardcodierten Produktions-URLs mit Zugangsdaten
 - [ ] `uploads/` nicht versioniert
 - [ ] Keine `*.key`, `*.pem`, `*.p12` im Diff
+- [ ] Keine DB-Dumps im Diff (Gemini-Key und SMTP/IMAP-Zugänge liegen im Klartext in `system_setting`)
 
 → **Befund kritisch:** Stoppen, Key rotieren (Git-History reicht NICHT), erst dann beheben.
 
