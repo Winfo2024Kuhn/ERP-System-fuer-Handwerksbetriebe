@@ -44,6 +44,14 @@ public class EmailSignature {
     @Column(name = "vorlage_daten")
     private String vorlageDaten;
 
+    /** Firmen-Vorlage: der Admin legt damit das Design fest, alle Benutzer bauen darauf ihre Signatur. */
+    @Column(name = "firmen_vorlage", nullable = false)
+    private boolean firmenVorlage = false;
+
+    /** Firmen-Vorlage, aus der die Signatur gebaut wurde; {@code null} = freies Design. */
+    @Column(name = "firmen_vorlage_id")
+    private Long firmenVorlageId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -80,6 +88,10 @@ public class EmailSignature {
     public void setBesitzer(FrontendUserProfile besitzer) { this.besitzer = besitzer; }
     public String getVorlageDaten() { return vorlageDaten; }
     public void setVorlageDaten(String vorlageDaten) { this.vorlageDaten = vorlageDaten; }
+    public boolean isFirmenVorlage() { return firmenVorlage; }
+    public void setFirmenVorlage(boolean firmenVorlage) { this.firmenVorlage = firmenVorlage; }
+    public Long getFirmenVorlageId() { return firmenVorlageId; }
+    public void setFirmenVorlageId(Long firmenVorlageId) { this.firmenVorlageId = firmenVorlageId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

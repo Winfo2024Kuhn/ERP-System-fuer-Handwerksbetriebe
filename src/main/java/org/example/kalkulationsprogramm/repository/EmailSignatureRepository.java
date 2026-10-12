@@ -23,6 +23,12 @@ public interface EmailSignatureRepository extends JpaRepository<EmailSignature, 
 
     Optional<EmailSignature> findFirstByIsSystemDefaultTrue();
 
+    /** Firmen-Vorlagen, alphabetisch – Ausgangspunkt für die Signaturen der Benutzer. */
+    @EntityGraph(attributePaths = {"besitzer", "images"})
+    List<EmailSignature> findAllByFirmenVorlageTrueOrderByNameAsc();
+
+    boolean existsByFirmenVorlageTrue();
+
     @Modifying
     @Query("UPDATE EmailSignature s SET s.isSystemDefault = false WHERE s.isSystemDefault = true AND s.id <> :keepId")
     int clearSystemDefaultExcept(@Param("keepId") Long keepId);

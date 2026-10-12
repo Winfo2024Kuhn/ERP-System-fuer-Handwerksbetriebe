@@ -1,11 +1,13 @@
-import { useDeferredValue, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
     ArrowLeft,
+    Building2,
     ClipboardCopy,
     Code,
     ImageIcon,
     LayoutTemplate,
     Loader2,
+    Lock,
     Monitor,
     Palette,
     PenLine,
@@ -30,6 +32,7 @@ import { useToast } from '../../../components/ui/toast';
 import { stripHtmlTags } from '../../../lib/htmlSanitizer';
 import { cn } from '../../../lib/utils';
 import { BildFeld } from './BildFeld';
+import { aufFirmenVorlageUmstellen, firmenVorlagenDaten, neuAusFirmenVorlage, mitFirmenVorlage, wechsleFirmenVorlage } from './firmenVorlage';
 import { hatInhalt, renderSignatur } from './signaturVorlagen';
 import { istHexFarbe, sichereFarbe } from './signaturSicherheit';
 import { ladeBenutzer, ladeFirmenDaten, speichereSignatur, type BenutzerKurz } from './signaturApi';
@@ -72,6 +75,10 @@ type Geraet = 'computer' | 'handy';
 interface SignaturStudioProps {
     /** `null` = neue Signatur. */
     signatur: SignaturDto | null;
+    /** Firmen-Vorlagen mit Formulardaten. Mitarbeiter ohne Admin-Rechte bauen neue Signaturen nur daraus. */
+    firmenVorlagen?: SignaturDto[];
+    /** Firmen-Vorlagen konnten nicht geladen werden – dann bleibt die Verbindung der Signatur zur Vorlage unangetastet. */
+    firmenVorlagenFehler?: boolean;
     onGespeichert: (signatur: SignaturDto) => void;
     onAbbrechen: () => void;
 }
@@ -82,18 +89,36 @@ interface Anfang {
     html: string;
     /** Alte Signatur ohne Formulardaten – nur im HTML-Modus bearbeitbar, bis sie neu gestaltet wird. */
     ohneVorlage: boolean;
+    /** Genutzte Firmen-Vorlage: Aussehen und Firmenangaben sind dann gesperrt. */
+    firmenVorlageId: number | null;
 }
 
-function anfangsZustand(signatur: SignaturDto | null, anzeigeName: string): Anfang {
+/**
+ * @param vorlagen Firmen-Vorlagen, an die sich der Benutzer halten muss
+ *   (leer für Admins – die gestalten immer frei).
+ */
+function anfangsZustand(signatur: SignaturDto | null, anzeigeName: string, vorlagen: SignaturDto[]): Anfang {
     if (!signatur) {
-        return { daten: { ...leereSignaturDaten(), name: anzeigeName }, modus: 'formular', html: '', ohneVorlage: false };
+        const erste = vorlagen[0];
+        if (erste) {
+            return { daten: neuAusFirmenVorlage(firmenVorlagenDaten(erste), anzeigeName), modus: 'formular', html: '', ohneVorlage: false, firmenVorlageId: erste.id };
+        }
+        return { daten: { ...leereSignaturDaten(), name: anzeigeName }, modus: 'formular', html: '', ohneVorlage: false, firmenVorlageId: null };
     }
     const gespeichert = leseVorlageDaten(signatur.vorlageDaten);
-    if (gespeichert) return { daten: gespeichert, modus: 'formular', html: signatur.html, ohneVorlage: false };
-    return { daten: { ...leereSignaturDaten(), name: anzeigeName }, modus: 'html', html: signatur.html, ohneVorlage: true };
+    // Aus einer Firmen-Vorlage gebaut: das aktuelle Aussehen der Vorlage übernehmen.
+    const quelle = vorlagen.find((v) => v.id === signatur.firmenVorlageId);
+    if (quelle) {
+        const daten = mitFirmenVorlage(gespeichert ?? { ...leereSignaturDaten(), name: anzeigeName }, firmenVorlagenDaten(quelle));
+        return { daten, modus: 'formular', html: signatur.html, ohneVorlage: false, firmenVorlageId: quelle.id };
+    }
+    if (gespeichert) return { daten: gespeichert, modus: 'formular', html: signatur.html, ohneVorlage: false, firmenVorlageId: null };
+    return { daten: { ...leereSignaturDaten(), name: anzeigeName }, modus: 'html', html: signatur.html, ohneVorlage: true, firmenVorlageId: null };
 }
 
-function Abschnitt({ titel, icon, info, children }: { titel: string; icon: ReactNode; info?: ReactNode; children: ReactNode }) {
+const GESPERRT_HINWEIS = 'Vom Betrieb festgelegt – ändern kann das nur ein Admin in der Firmen-Vorlage.';
+
+function Abschnitt({ titel, icon, info, gesperrt = false, children }: { titel: string; icon: ReactNode; info?: ReactNode; gesperrt?: boolean; children: ReactNode }) {
     const id = useId();
     return (
         <section aria-labelledby={id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -101,13 +126,18 @@ function Abschnitt({ titel, icon, info, children }: { titel: string; icon: React
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-50 text-rose-600" aria-hidden="true">{icon}</span>
                 <h3 id={id} className="text-base font-semibold text-slate-900">{titel}</h3>
                 {info}
+                {gesperrt && (
+                    <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600" title={GESPERRT_HINWEIS}>
+                        <Lock className="h-3 w-3" aria-hidden="true" /> Vom Betrieb festgelegt
+                    </span>
+                )}
             </div>
             {children}
         </section>
     );
 }
 
-function Feld({ label, wert, onChange, placeholder, typ = 'text', breit = false, autoComplete }: {
+function Feld({ label, wert, onChange, placeholder, typ = 'text', breit = false, autoComplete, gesperrt = false }: {
     label: string;
     wert: string;
     onChange: (wert: string) => void;
@@ -115,17 +145,31 @@ function Feld({ label, wert, onChange, placeholder, typ = 'text', breit = false,
     typ?: 'text' | 'email' | 'tel' | 'url';
     breit?: boolean;
     autoComplete?: string;
+    /** Kommt aus der Firmen-Vorlage und lässt sich nicht ändern. */
+    gesperrt?: boolean;
 }) {
     const id = useId();
     return (
-        <div className={cn(breit && 'sm:col-span-2')}>
-            <Label htmlFor={id} className="text-slate-700">{label}</Label>
-            <Input id={id} type={typ} value={wert} placeholder={placeholder} autoComplete={autoComplete ?? 'off'} onChange={(e) => onChange(e.target.value)} />
+        <div className={cn(breit && 'sm:col-span-2')} title={gesperrt ? GESPERRT_HINWEIS : undefined}>
+            <Label htmlFor={id} className="flex items-center gap-1 text-slate-700">
+                {label}
+                {gesperrt && <Lock className="h-3 w-3 text-slate-400" aria-hidden="true" />}
+            </Label>
+            <Input
+                id={id}
+                type={typ}
+                value={wert}
+                placeholder={gesperrt ? undefined : placeholder}
+                autoComplete={autoComplete ?? 'off'}
+                disabled={gesperrt}
+                onChange={(e) => onChange(e.target.value)}
+                className="disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+            />
         </div>
     );
 }
 
-export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: SignaturStudioProps) {
+export function SignaturStudio({ signatur, firmenVorlagen = [], firmenVorlagenFehler = false, onGespeichert, onAbbrechen }: SignaturStudioProps) {
     const { user, isAdmin } = useAuth();
     const toast = useToast();
     const confirm = useConfirm();
@@ -133,9 +177,23 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
     const idBesitzer = useId();
     const idHtml = useId();
     const idSchrift = useId();
+    const idFirmenVorlage = useId();
 
-    const [anfang] = useState(() => anfangsZustand(signatur, user?.displayName ?? ''));
+    // Admins gestalten immer frei; alle anderen halten sich an die Firmen-Vorlagen, sobald es welche gibt.
+    const pflichtVorlagen = isAdmin ? [] : firmenVorlagen;
+    const [anfang] = useState(() => anfangsZustand(signatur, user?.displayName ?? '', pflichtVorlagen));
     const [daten, setDaten] = useState<SignaturDaten>(anfang.daten);
+    const [firmenVorlageId, setFirmenVorlageId] = useState<number | null>(anfang.firmenVorlageId);
+    const firmenVorlage = firmenVorlageId == null ? null : pflichtVorlagen.find((v) => v.id === firmenVorlageId) ?? null;
+    const gesperrt = firmenVorlage !== null;
+    const gesperrtRef = useRef(gesperrt);
+    useEffect(() => { gesperrtRef.current = gesperrt; }, [gesperrt]);
+    // Admins bearbeiten frei, ohne die Verbindung zur Firmen-Vorlage zu kappen (solange es die Vorlage noch gibt).
+    // Ließen sich die Vorlagen nicht laden, wissen wir nicht, ob es sie noch gibt – dann die Verbindung behalten.
+    const behalteneFirmenVorlageId = firmenVorlagenFehler || (isAdmin && firmenVorlagen.some((v) => v.id === signatur?.firmenVorlageId))
+        ? signatur?.firmenVorlageId ?? null
+        : null;
+    const angebotFirmenVorlage = !isAdmin && !gesperrt && pflichtVorlagen.length > 0;
     const [modus, setModus] = useState<Modus>(anfang.modus);
     const [ohneVorlage, setOhneVorlage] = useState(anfang.ohneVorlage);
     const [htmlRoh, setHtmlRoh] = useState(anfang.html);
@@ -156,7 +214,8 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
         ladeFirmenDaten().then((firma) => {
             if (!aktiv || !firma) return;
             if (firma.firmenfarbe && istHexFarbe(firma.firmenfarbe)) setFirmenfarbe(sichereFarbe(firma.firmenfarbe));
-            if (!signatur || anfang.ohneVorlage) setDaten((d) => mitFirmenDaten(d, firma));
+            // Mit Firmen-Vorlage kommen die Firmenangaben aus der Vorlage, nicht aus den Firmendaten.
+            if (!signatur || anfang.ohneVorlage) setDaten((d) => (gesperrtRef.current ? d : mitFirmenDaten(d, firma)));
         });
         return () => { aktiv = false; };
     }, [signatur, anfang.ohneVorlage]);
@@ -220,6 +279,32 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
         setGeaendert(true);
     };
 
+    const firmenVorlageWaehlen = (id: string) => {
+        const neu = pflichtVorlagen.find((v) => String(v.id) === id);
+        if (!neu || !firmenVorlage || neu.id === firmenVorlage.id) return;
+        setDaten((d) => wechsleFirmenVorlage(d, firmenVorlagenDaten(firmenVorlage), firmenVorlagenDaten(neu)));
+        setFirmenVorlageId(neu.id);
+        setGeaendert(true);
+    };
+
+    const mitFirmenVorlageNeuGestalten = async () => {
+        const erste = pflichtVorlagen[0];
+        if (!erste) return;
+        const ok = await confirm({
+            title: 'Mit Firmen-Vorlage neu gestalten?',
+            message: 'Aussehen und Firmenangaben kommen dann aus der Firmen-Vorlage Ihres Betriebs. Ihre persönlichen Angaben bleiben. '
+                + 'Beim Speichern ersetzt das neue Ergebnis die bisherige Signatur.',
+            confirmLabel: 'Neu gestalten',
+            variant: 'info',
+        });
+        if (!ok) return;
+        setDaten((d) => aufFirmenVorlageUmstellen(d, firmenVorlagenDaten(erste)));
+        setFirmenVorlageId(erste.id);
+        setOhneVorlage(false);
+        setModus('formular');
+        setGeaendert(true);
+    };
+
     const neuGestalten = async () => {
         const ok = await confirm({
             title: 'Mit Vorlage neu gestalten?',
@@ -272,6 +357,7 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
             html,
             vorlageDaten: modus === 'formular' ? JSON.stringify(daten) : null,
             alsStandard,
+            firmenVorlageId: gesperrt ? firmenVorlageId : behalteneFirmenVorlageId,
         };
         if (isAdmin) {
             body.besitzerId = besitzer === NIEMAND ? null : Number(besitzer);
@@ -320,7 +406,9 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                     </p>
                     <h2 className="text-2xl font-bold text-slate-900">{signatur ? 'Signatur bearbeiten' : 'Neue Signatur gestalten'}</h2>
                     <p className="mt-1 text-sm text-slate-500">
-                        Vorlage wählen, Angaben eintragen – rechts sehen Sie sofort, wie die Signatur in der E-Mail aussieht.
+                        {gesperrt
+                            ? 'Ihre persönlichen Angaben eintragen – Aussehen und Firmenangaben kommen aus der Firmen-Vorlage. Rechts sehen Sie sofort das Ergebnis.'
+                            : 'Vorlage wählen, Angaben eintragen – rechts sehen Sie sofort, wie die Signatur in der E-Mail aussieht.'}
                     </p>
                 </div>
                 <Button variant="outline" onClick={abbrechen} disabled={beschaeftigt}>
@@ -376,24 +464,87 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                                 Diese Signatur wurde ohne Vorlage angelegt und lässt sich nur als HTML-Code bearbeiten.
                                 Mit einer Vorlage gestalten Sie sie bequem über das Formular neu.
                             </p>
-                            <Button variant="outline" size="sm" onClick={neuGestalten} className="shrink-0">
-                                <Wand2 className="h-4 w-4" aria-hidden="true" /> Mit Vorlage neu gestalten
+                            <div className="flex shrink-0 flex-wrap gap-2">
+                                {angebotFirmenVorlage && (
+                                    <Button variant="outline" size="sm" onClick={mitFirmenVorlageNeuGestalten}>
+                                        <Building2 className="h-4 w-4" aria-hidden="true" /> Mit Firmen-Vorlage neu gestalten
+                                    </Button>
+                                )}
+                                <Button variant="outline" size="sm" onClick={neuGestalten}>
+                                    <Wand2 className="h-4 w-4" aria-hidden="true" /> Mit Vorlage neu gestalten
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {angebotFirmenVorlage && !(ohneVorlage && modus === 'html') && (
+                        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center" role="status">
+                            <p className="flex-1 text-sm text-slate-700">
+                                Ihr Betrieb hat eine Firmen-Vorlage. Diese Signatur ist frei gestaltet und bleibt so, wie sie ist –
+                                auf Wunsch übernehmen Sie das Aussehen der Firmen-Vorlage.
+                            </p>
+                            <Button variant="outline" size="sm" onClick={mitFirmenVorlageNeuGestalten} className="shrink-0">
+                                <Building2 className="h-4 w-4" aria-hidden="true" /> Mit Firmen-Vorlage neu gestalten
                             </Button>
                         </div>
                     )}
 
                     {modus === 'formular' ? (
                         <>
-                            <Abschnitt titel="Vorlage" icon={<LayoutTemplate className="h-4 w-4" />}>
-                                <VorlagenAuswahl wert={daten.vorlage} akzentfarbe={daten.akzentfarbe} onChange={(v) => aendere('vorlage', v)} />
-                            </Abschnitt>
+                            {firmenVorlage ? (
+                                <Abschnitt
+                                    titel="Firmen-Vorlage"
+                                    icon={<Building2 className="h-4 w-4" />}
+                                    info={(
+                                        <InfoButton titel="Was ist die Firmen-Vorlage?">
+                                            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                                <p>
+                                                    Ihr Betrieb hat das Aussehen der Signaturen festgelegt: Aufbau, Farbe, Schrift,
+                                                    Logo, Banner, Firmenangaben, Slogan, Kleingedrucktes und soziale Netzwerke.
+                                                </p>
+                                            </InfoAbschnitt>
+                                            <InfoAbschnitt titel="Was bewirkt das?">
+                                                <p>
+                                                    Sie tragen nur Ihre persönlichen Angaben ein: Name, Position, Abteilung,
+                                                    Telefon, Mobil, E-Mail und Foto. So sehen alle Signaturen im Betrieb gleich aus.
+                                                </p>
+                                                <p>
+                                                    Ändert der Betrieb die Vorlage, bekommt Ihre Signatur das neue Aussehen,
+                                                    sobald Sie sie das nächste Mal öffnen und speichern.
+                                                </p>
+                                            </InfoAbschnitt>
+                                        </InfoButton>
+                                    )}
+                                >
+                                    {pflichtVorlagen.length > 1 ? (
+                                        <div>
+                                            <Label htmlFor={idFirmenVorlage} className="text-slate-700">Welche Firmen-Vorlage?</Label>
+                                            <Select
+                                                id={idFirmenVorlage}
+                                                value={String(firmenVorlage.id)}
+                                                options={pflichtVorlagen.map((v) => ({ value: String(v.id), label: v.name }))}
+                                                onChange={firmenVorlageWaehlen}
+                                            />
+                                            <p className="mt-1 text-xs text-slate-500">Aussehen und Firmenangaben kommen aus der gewählten Vorlage.</p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-slate-700">
+                                            Aussehen und Firmenangaben kommen aus der Vorlage <span className="font-semibold text-slate-900">„{firmenVorlage.name}“</span>.
+                                        </p>
+                                    )}
+                                </Abschnitt>
+                            ) : (
+                                <Abschnitt titel="Vorlage" icon={<LayoutTemplate className="h-4 w-4" />}>
+                                    <VorlagenAuswahl wert={daten.vorlage} akzentfarbe={daten.akzentfarbe} onChange={(v) => aendere('vorlage', v)} />
+                                </Abschnitt>
+                            )}
 
                             <Abschnitt titel="Zur Person" icon={<UserRound className="h-4 w-4" />}>
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <Feld label="Ihr Name" wert={daten.name} onChange={(v) => aendere('name', v)} placeholder="z. B. Max Mustermann" />
                                     <Feld label="Position" wert={daten.position} onChange={(v) => aendere('position', v)} placeholder="z. B. Metallbaumeister" />
                                     <Feld label="Abteilung" wert={daten.abteilung} onChange={(v) => aendere('abteilung', v)} placeholder="z. B. Technische Planung" />
-                                    <Feld label="Firma" wert={daten.firma} onChange={(v) => aendere('firma', v)} placeholder="z. B. Mustermann Metallbau GmbH" />
+                                    <Feld label="Firma" gesperrt={gesperrt} wert={daten.firma} onChange={(v) => aendere('firma', v)} placeholder="z. B. Mustermann Metallbau GmbH" />
                                 </div>
                             </Abschnitt>
 
@@ -401,10 +552,10 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <Feld label="Telefon" typ="tel" wert={daten.telefon} onChange={(v) => aendere('telefon', v)} placeholder="z. B. 0931 123456" />
                                     <Feld label="Mobil" typ="tel" wert={daten.mobil} onChange={(v) => aendere('mobil', v)} placeholder="z. B. 0171 1234567" />
-                                    <Feld label="Fax" typ="tel" wert={daten.fax} onChange={(v) => aendere('fax', v)} placeholder="leer lassen, wenn keins" />
+                                    <Feld label="Fax" typ="tel" gesperrt={gesperrt} wert={daten.fax} onChange={(v) => aendere('fax', v)} placeholder="leer lassen, wenn keins" />
                                     <Feld label="E-Mail" typ="email" wert={daten.email} onChange={(v) => aendere('email', v)} placeholder="z. B. max@example.com" />
-                                    <Feld label="Website" typ="url" wert={daten.website} onChange={(v) => aendere('website', v)} placeholder="z. B. www.mustermann-metallbau.de" />
-                                    <Feld label="Adresse" wert={daten.adresse} onChange={(v) => aendere('adresse', v)} placeholder="z. B. Musterstraße 1, 12345 Musterstadt" />
+                                    <Feld label="Website" typ="url" gesperrt={gesperrt} wert={daten.website} onChange={(v) => aendere('website', v)} placeholder="z. B. www.mustermann-metallbau.de" />
+                                    <Feld label="Adresse" gesperrt={gesperrt} wert={daten.adresse} onChange={(v) => aendere('adresse', v)} placeholder="z. B. Musterstraße 1, 12345 Musterstadt" />
                                 </div>
                             </Abschnitt>
 
@@ -439,12 +590,12 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                                         <BildFeld art="foto" label="Foto von Ihnen" hinweis="Am besten ein quadratisches Porträt." wert={daten.fotoUrl} onChange={(v) => aendere('fotoUrl', v)} />
                                     )}
                                     {info.bilder.logo && (
-                                        <BildFeld art="logo" label="Firmenlogo" hinweis="PNG mit durchsichtigem Hintergrund sieht am besten aus." wert={daten.logoUrl} onChange={(v) => aendere('logoUrl', v)} />
+                                        <BildFeld art="logo" label="Firmenlogo" gesperrt={gesperrt} hinweis="PNG mit durchsichtigem Hintergrund sieht am besten aus." wert={daten.logoUrl} onChange={(v) => aendere('logoUrl', v)} />
                                     )}
                                     {info.bilder.banner && (
                                         <>
-                                            <BildFeld art="banner" label="Banner" hinweis="Breites Bild, z. B. für eine Aktion oder Messe (ideal 600 × 150 Pixel)." wert={daten.bannerUrl} onChange={(v) => aendere('bannerUrl', v)} />
-                                            <Feld label="Banner führt zu (Link, optional)" typ="url" breit wert={daten.bannerLink} onChange={(v) => aendere('bannerLink', v)} placeholder="z. B. https://www.mustermann-metallbau.de/aktion" />
+                                            <BildFeld art="banner" label="Banner" gesperrt={gesperrt} hinweis="Breites Bild, z. B. für eine Aktion oder Messe (ideal 600 × 150 Pixel)." wert={daten.bannerUrl} onChange={(v) => aendere('bannerUrl', v)} />
+                                            <Feld label="Banner führt zu (Link, optional)" typ="url" breit gesperrt={gesperrt} wert={daten.bannerLink} onChange={(v) => aendere('bannerLink', v)} placeholder="z. B. https://www.mustermann-metallbau.de/aktion" />
                                         </>
                                     )}
                                     {((!info.bilder.foto && daten.fotoUrl) || (!info.bilder.logo && daten.logoUrl) || (!info.bilder.banner && daten.bannerUrl)) && (
@@ -453,17 +604,17 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                                 </div>
                             </Abschnitt>
 
-                            <Abschnitt titel="Soziale Netzwerke" icon={<Share2 className="h-4 w-4" />}>
-                                <p className="-mt-2 mb-3 text-xs text-slate-500">Link oder nur der Profilname. Leere Felder erscheinen nicht.</p>
+                            <Abschnitt titel="Soziale Netzwerke" icon={<Share2 className="h-4 w-4" />} gesperrt={gesperrt}>
+                                {!gesperrt && <p className="-mt-2 mb-3 text-xs text-slate-500">Link oder nur der Profilname. Leere Felder erscheinen nicht.</p>}
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    <Feld label="Facebook" wert={daten.social.facebook} onChange={(v) => aendereSozial('facebook', v)} placeholder="z. B. mustermann.metallbau" />
-                                    <Feld label="Instagram" wert={daten.social.instagram} onChange={(v) => aendereSozial('instagram', v)} placeholder="z. B. @mustermann_metallbau" />
-                                    <Feld label="LinkedIn" wert={daten.social.linkedin} onChange={(v) => aendereSozial('linkedin', v)} placeholder="Link zum Profil" />
-                                    <Feld label="WhatsApp" typ="tel" wert={daten.social.whatsapp} onChange={(v) => aendereSozial('whatsapp', v)} placeholder="z. B. 0171 1234567" />
+                                    <Feld label="Facebook" gesperrt={gesperrt} wert={daten.social.facebook} onChange={(v) => aendereSozial('facebook', v)} placeholder="z. B. mustermann.metallbau" />
+                                    <Feld label="Instagram" gesperrt={gesperrt} wert={daten.social.instagram} onChange={(v) => aendereSozial('instagram', v)} placeholder="z. B. @mustermann_metallbau" />
+                                    <Feld label="LinkedIn" gesperrt={gesperrt} wert={daten.social.linkedin} onChange={(v) => aendereSozial('linkedin', v)} placeholder="Link zum Profil" />
+                                    <Feld label="WhatsApp" typ="tel" gesperrt={gesperrt} wert={daten.social.whatsapp} onChange={(v) => aendereSozial('whatsapp', v)} placeholder="z. B. 0171 1234567" />
                                 </div>
                             </Abschnitt>
 
-                            <Abschnitt titel="Aussehen und Zusatztexte" icon={<Palette className="h-4 w-4" />}>
+                            <Abschnitt titel="Aussehen und Zusatztexte" icon={<Palette className="h-4 w-4" />} gesperrt={gesperrt}>
                                 <div className="space-y-4">
                                     <div>
                                         <p className="mb-1.5 text-sm text-slate-700" id={`${idSchrift}-farbe`}>Akzentfarbe</p>
@@ -474,17 +625,18 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                                                     type="button"
                                                     aria-label={`${v.name} (${v.farbe})`}
                                                     aria-pressed={akzent === v.farbe}
-                                                    title={v.name}
+                                                    title={gesperrt ? GESPERRT_HINWEIS : v.name}
+                                                    disabled={gesperrt}
                                                     onClick={() => aendere('akzentfarbe', v.farbe)}
                                                     className={cn(
-                                                        'h-8 w-8 rounded-full border border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2',
+                                                        'h-8 w-8 rounded-full border border-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
                                                         akzent === v.farbe && 'ring-2 ring-slate-900 ring-offset-2',
                                                     )}
                                                     style={{ backgroundColor: v.farbe }}
                                                 />
                                             ))}
                                             <span className="mx-1 h-6 w-px bg-slate-200" aria-hidden="true" />
-                                            <ColorInput aria-label="Eigene Farbe" value={akzent} onChange={(v) => aendere('akzentfarbe', v)} />
+                                            <ColorInput aria-label="Eigene Farbe" value={akzent} disabled={gesperrt} onChange={(v) => aendere('akzentfarbe', v)} />
                                         </div>
                                     </div>
                                     <div className="grid gap-4 sm:grid-cols-2">
@@ -492,24 +644,27 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                                             <Label htmlFor={idSchrift} className="text-slate-700">Schriftart</Label>
                                             <Select
                                                 id={idSchrift}
+                                                disabled={gesperrt}
                                                 value={daten.schriftart}
                                                 options={SCHRIFTARTEN.map((s) => ({ value: s.wert, label: s.wert }))}
                                                 onChange={(v) => aendere('schriftart', v as Schriftart)}
                                             />
                                         </div>
-                                        <Feld label="Slogan (optional)" wert={daten.slogan} onChange={(v) => aendere('slogan', v)} placeholder="z. B. Ihr Partner für Metallbau seit 1980" />
+                                        <Feld label="Slogan (optional)" gesperrt={gesperrt} wert={daten.slogan} onChange={(v) => aendere('slogan', v)} placeholder="z. B. Ihr Partner für Metallbau seit 1980" />
                                     </div>
                                     <div>
                                         <Label htmlFor={`${idSchrift}-zusatz`} className="text-slate-700">Kleingedrucktes (optional)</Label>
                                         <textarea
                                             id={`${idSchrift}-zusatz`}
                                             rows={3}
+                                            disabled={gesperrt}
+                                            title={gesperrt ? GESPERRT_HINWEIS : undefined}
                                             value={daten.zusatz}
                                             onChange={(e) => aendere('zusatz', e.target.value)}
-                                            placeholder={'z. B. Amtsgericht Musterstadt HRB 12345\nGeschäftsführer: Max Mustermann'}
-                                            className="w-full resize-y rounded border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                            placeholder={gesperrt ? undefined : 'z. B. Amtsgericht Musterstadt HRB 12345\nGeschäftsführer: Max Mustermann'}
+                                            className="w-full resize-y rounded border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
                                         />
-                                        <p className="mt-1 text-xs text-slate-500">Für Pflichtangaben wie Handelsregister oder Geschäftsführer. Jede Zeile wird eine eigene Zeile.</p>
+                                        {!gesperrt && <p className="mt-1 text-xs text-slate-500">Für Pflichtangaben wie Handelsregister oder Geschäftsführer. Jede Zeile wird eine eigene Zeile.</p>}
                                     </div>
                                 </div>
                             </Abschnitt>
@@ -535,7 +690,7 @@ export function SignaturStudio({ signatur, onGespeichert, onAbbrechen }: Signatu
                         </Abschnitt>
                     )}
 
-                    {!ohneVorlage && (
+                    {!ohneVorlage && !gesperrt && (
                         <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 px-4 py-3">
                             <div>
                                 <p className="text-sm font-medium text-slate-800">Für Profis: HTML direkt bearbeiten</p>

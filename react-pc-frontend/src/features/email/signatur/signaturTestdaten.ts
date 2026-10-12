@@ -32,6 +32,9 @@ export function signatur(teil: Partial<SignaturDto> = {}): SignaturDto {
         besitzerId: 7,
         besitzerName: 'Max Mustermann',
         eigene: true,
+        firmenVorlage: false,
+        firmenVorlageId: null,
+        nurLesen: false,
         createdAt: '2026-10-01T10:00:00',
         updatedAt: '2026-10-01T10:00:00',
         images: [],
@@ -49,6 +52,8 @@ export interface StubOptionen {
     admin?: boolean;
     signaturen?: SignaturDto[];
     speichern?: { status: number; body: unknown };
+    /** Antwort von `GET /api/email/signatures/firmen-vorlagen` (mit Formulardaten). */
+    firmenVorlagen?: SignaturDto[];
     extra?: Handler;
 }
 
@@ -64,6 +69,13 @@ export function stubbeSignaturApi(optionen: StubOptionen = {}) {
         if (url.pathname === '/api/frontend-users') return optionen.admin ? antwort(BENUTZER) : antwort({ message: 'Kein Recht' }, 403);
         // Wie das Backend: die Liste ohne Formulardaten, erst die Einzelabfrage liefert sie.
         if (url.pathname === '/api/email/signatures' && methode === 'GET') return antwort(liste.map((s) => ({ ...s, vorlageDaten: null })));
+        if (url.pathname === '/api/email/signatures/firmen-vorlagen' && methode === 'GET') return antwort(optionen.firmenVorlagen ?? []);
+        const firmenVorlage = /^\/api\/email\/signatures\/(\d+)\/firmen-vorlage$/.exec(url.pathname);
+        if (firmenVorlage && (methode === 'PUT' || methode === 'DELETE')) {
+            if (!optionen.admin) return antwort({ message: 'Kein Recht' }, 403);
+            const treffer = liste.find((s) => s.id === Number(firmenVorlage[1]));
+            return treffer ? antwort({ ...treffer, firmenVorlage: methode === 'PUT' }) : antwort({ message: 'Nicht gefunden' }, 404);
+        }
         const einzeln = /^\/api\/email\/signatures\/(\d+)$/.exec(url.pathname);
         if (einzeln && methode === 'GET') {
             const treffer = liste.find((s) => s.id === Number(einzeln[1]));
@@ -72,7 +84,10 @@ export function stubbeSignaturApi(optionen: StubOptionen = {}) {
         if (url.pathname === '/api/email/signatures' && methode === 'POST') {
             if (optionen.speichern) return antwort(optionen.speichern.body, optionen.speichern.status);
             const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-            return antwort(signatur({ id: (body.id as number | null) ?? 99, name: body.name as string, html: body.html as string, vorlageDaten: body.vorlageDaten as string | null }));
+            return antwort(signatur({
+                id: (body.id as number | null) ?? 99, name: body.name as string, html: body.html as string,
+                vorlageDaten: body.vorlageDaten as string | null, firmenVorlageId: (body.firmenVorlageId as number | null) ?? null,
+            }));
         }
         if (/^\/api\/email\/signatures\/\d+\/preview$/.test(url.pathname)) return antwort({ html: '<p>Vorschau mit Bild</p>' });
         if (/^\/api\/email\/signatures\/\d+$/.test(url.pathname) && methode === 'DELETE') return new Response(null, { status: 204 });

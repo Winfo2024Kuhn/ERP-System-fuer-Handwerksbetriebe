@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { ImageOff, Link2, Loader2, Trash2, Upload } from 'lucide-react';
+import { ImageOff, Link2, Loader2, Lock, Trash2, Upload } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { useToast } from '../../../components/ui/toast';
@@ -19,6 +19,8 @@ interface BildFeldProps {
     hinweis?: string;
     wert: string;
     onChange: (wert: string) => void;
+    /** Vom Betrieb in der Firmen-Vorlage festgelegt: nur ansehen, nicht ändern. */
+    gesperrt?: boolean;
 }
 
 type LadeStand = 'laedt' | 'fertig' | 'fehler';
@@ -48,7 +50,7 @@ function BildMiniatur({ src, alt }: { src: string; alt: string }) {
     );
 }
 
-export function BildFeld({ art, label, hinweis, wert, onChange }: BildFeldProps) {
+export function BildFeld({ art, label, hinweis, wert, onChange, gesperrt = false }: BildFeldProps) {
     const id = useId();
     const toast = useToast();
     const dateiRef = useRef<HTMLInputElement>(null);
@@ -84,10 +86,14 @@ export function BildFeld({ art, label, hinweis, wert, onChange }: BildFeldProps)
                 <div className="min-w-0 flex-1 space-y-2">
                     <div>
                         <p id={`${id}-titel`} className="text-sm font-medium text-slate-800">{label}</p>
-                        {hinweis && <p className="text-xs text-slate-500">{hinweis}</p>}
+                        {gesperrt
+                            ? <p className="flex items-center gap-1 text-xs text-slate-500"><Lock className="h-3 w-3" aria-hidden="true" /> Vom Betrieb festgelegt</p>
+                            : hinweis && <p className="text-xs text-slate-500">{hinweis}</p>}
                     </div>
 
-                    {hochgeladen ? (
+                    {gesperrt ? (
+                        !wert && <p className="text-sm text-slate-500">Kein Bild</p>
+                    ) : hochgeladen ? (
                         <p className="text-sm text-slate-600">
                             Hochgeladenes Bild <span className="text-slate-400">·</span> {formatBytes(dataUriBytes(wert))}
                         </p>
@@ -112,13 +118,13 @@ export function BildFeld({ art, label, hinweis, wert, onChange }: BildFeldProps)
                             />
                         </div>
                     )}
-                    {ungueltig && (
+                    {ungueltig && !gesperrt && (
                         <p id={`${id}-fehler`} className="text-xs font-medium text-rose-700">
                             Nur Links, die mit https:// oder http:// beginnen, sind möglich.
                         </p>
                     )}
 
-                    <div className="flex flex-wrap items-center gap-2">
+                    {!gesperrt && <div className="flex flex-wrap items-center gap-2">
                         <input
                             ref={dateiRef}
                             type="file"
@@ -145,7 +151,7 @@ export function BildFeld({ art, label, hinweis, wert, onChange }: BildFeldProps)
                                 <Trash2 className="h-4 w-4" aria-hidden="true" /> Entfernen
                             </Button>
                         )}
-                    </div>
+                    </div>}
                 </div>
             </div>
         </div>

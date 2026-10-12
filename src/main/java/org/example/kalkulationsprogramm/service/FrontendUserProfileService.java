@@ -7,12 +7,10 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.EmailAbsender;
-import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
-import org.example.kalkulationsprogramm.repository.EmailSignatureRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,7 +24,6 @@ import lombok.RequiredArgsConstructor;
 public class FrontendUserProfileService {
 
     private final FrontendUserProfileRepository repository;
-    private final EmailSignatureRepository emailSignatureRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final EmailAbsenderRepository emailAbsenderRepository;
     private final PasswordEncoder passwordEncoder;
@@ -65,28 +62,13 @@ public class FrontendUserProfileService {
         return repository.findByUsernameIgnoreCase(normalized);
     }
 
-    @Transactional
-    public FrontendUserProfile saveOrUpdate(FrontendUserProfile profile, Long defaultSignatureId, Long mitarbeiterId) {
-        return saveOrUpdate(profile, defaultSignatureId, mitarbeiterId, profile.getUsername(), null, profile.getRoleSet(), null, null);
-    }
-
-    @Transactional
-    public FrontendUserProfile saveOrUpdate(
-            FrontendUserProfile profile,
-            Long defaultSignatureId,
-            Long mitarbeiterId,
-            String username,
-            String rawPassword,
-            Set<FrontendUserRole> roles,
-            Boolean active
-    ) {
-        return saveOrUpdate(profile, defaultSignatureId, mitarbeiterId, username, rawPassword, roles, active, null);
-    }
-
+    /**
+     * Legt einen Benutzer an oder ändert ihn. Die Standard-Signatur wählt jeder Benutzer selbst
+     * (Signatur-Studio) – sie bleibt hier unberührt.
+     */
     @Transactional
     public FrontendUserProfile saveOrUpdate(
             FrontendUserProfile profile,
-            Long defaultSignatureId,
             Long mitarbeiterId,
             String username,
             String rawPassword,
@@ -94,10 +76,6 @@ public class FrontendUserProfileService {
             Boolean active,
             Long emailAbsenderId
     ) {
-        EmailSignature signature = null;
-        if (defaultSignatureId != null) {
-            signature = emailSignatureRepository.findById(defaultSignatureId).orElseThrow();
-        }
         Mitarbeiter mitarbeiter = null;
         if (mitarbeiterId != null) {
             mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
@@ -144,7 +122,6 @@ public class FrontendUserProfileService {
             throw new IllegalArgumentException("Für neue Benutzer mit Login ist ein Passwort erforderlich.");
         }
 
-        target.setDefaultSignature(signature);
         target.setMitarbeiter(mitarbeiter);
         target.setEmailAbsender(emailAbsender);
 
@@ -201,17 +178,6 @@ public class FrontendUserProfileService {
             profile.setPasswordHash(passwordEncoder.encode(rawPassword));
         }
 
-        return repository.save(profile);
-    }
-
-    @Transactional
-    public FrontendUserProfile setDefaultSignature(Long profileId, Long signatureId) {
-        FrontendUserProfile profile = repository.findById(profileId).orElseThrow();
-        EmailSignature signature = null;
-        if (signatureId != null) {
-            signature = emailSignatureRepository.findById(signatureId).orElseThrow();
-        }
-        profile.setDefaultSignature(signature);
         return repository.save(profile);
     }
 

@@ -25,7 +25,8 @@ import java.util.Set;
 /**
  * E-Mail-Signaturen. Benutzer sehen und bearbeiten nur ihre eigenen Signaturen, Admins alle
  * (siehe {@link EmailSignaturVerwaltungService}). Fremde Signaturen beantwortet jeder Endpoint
- * mit 404.
+ * mit 404. Die eigene Standard-Signatur sieht ein Benutzer immer; gehört sie ihm nicht, lehnen
+ * Ändern und Löschen mit 400 ab. Firmen-Vorlagen sehen alle, festlegen dürfen sie nur Admins.
  */
 @RestController
 @RequiredArgsConstructor
@@ -54,6 +55,34 @@ public class EmailSignatureController {
         return verwaltung.standardSignatur(verwaltung.benutzer(authentication), frontendUserId, frontendUserName)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.noContent().build());
+    }
+
+    /** Firmen-Vorlagen mit Formulardaten – Ausgangspunkt für die Signaturen aller Benutzer. */
+    @GetMapping("/firmen-vorlagen")
+    public List<EmailSignaturDto> firmenVorlagen(Authentication authentication) {
+        return verwaltung.firmenVorlagen(verwaltung.benutzer(authentication));
+    }
+
+    /** Macht die Signatur zur Firmen-Vorlage. Nur Admin (SecurityConfig). */
+    @PutMapping("/{id}/firmen-vorlage")
+    public ResponseEntity<?> alsFirmenVorlage(@PathVariable Long id, Authentication authentication) {
+        return firmenVorlageSetzen(id, true, authentication);
+    }
+
+    /** Die Signatur ist danach keine Firmen-Vorlage mehr. Nur Admin (SecurityConfig). */
+    @DeleteMapping("/{id}/firmen-vorlage")
+    public ResponseEntity<?> keineFirmenVorlage(@PathVariable Long id, Authentication authentication) {
+        return firmenVorlageSetzen(id, false, authentication);
+    }
+
+    private ResponseEntity<?> firmenVorlageSetzen(Long id, boolean firmenVorlage, Authentication authentication) {
+        try {
+            return ResponseEntity.ok(verwaltung.alsFirmenVorlage(id, firmenVorlage, verwaltung.benutzer(authentication)));
+        } catch (NoSuchElementException ex) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
     }
 
     /**
@@ -173,9 +202,13 @@ public class EmailSignatureController {
     }
 
     @DeleteMapping("/{id}/images/{imageId}")
-    public ResponseEntity<Void> deleteImage(@PathVariable Long id, @PathVariable Long imageId, Authentication authentication) {
-        if (verwaltung.sichtbare(id, verwaltung.benutzer(authentication)).isEmpty()) {
+    public ResponseEntity<?> deleteImage(@PathVariable Long id, @PathVariable Long imageId, Authentication authentication) {
+        try {
+            verwaltung.bearbeitbare(id, verwaltung.benutzer(authentication));
+        } catch (NoSuchElementException ex) {
             return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
         try {
             service.deleteImage(id, imageId);
