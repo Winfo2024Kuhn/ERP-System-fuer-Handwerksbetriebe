@@ -79,6 +79,7 @@ public class GeminiDokumentAnalyseService {
     private final LieferantDokumentPositionService positionService;
     private final LieferantDokumentPositionLeser positionLeser;
     private final TransactionTemplate transactionTemplate;
+    private final LieferantDokumentDateiService dokumentDateiService;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -101,9 +102,6 @@ public class GeminiDokumentAnalyseService {
 
     @Value("${ai.gemini.model.pro:gemini-3.1-pro-preview}")
     private String geminiProModel;
-
-    @Value("${upload.path:uploads}")
-    private String uploadPath;
 
     /** Ausgabelimit je Gemini-Aufruf; Flash-Modelle erlauben bis 65.536. */
     @Value("${ai.gemini.dokument-analyse.max-output-tokens:65536}")
@@ -1094,7 +1092,8 @@ public class GeminiDokumentAnalyseService {
                 return null;
             }
 
-            Path dateiPfad = explicitPath != null ? explicitPath : getDateiPfad(freshDokument);
+            Path dateiPfad = explicitPath != null ? explicitPath
+                    : dokumentDateiService.findeDatei(freshDokument).orElse(null);
             if (dateiPfad == null) {
                 log.warn("Konnte Datei nicht finden für Dokument {}", freshDokument.getId());
                 return null;
@@ -1975,7 +1974,7 @@ public class GeminiDokumentAnalyseService {
         LieferantDokument dokument = dokumentRepository.findById(dokumentId)
                 .orElseThrow(() -> new NoSuchElementException("Dokument nicht gefunden"));
         pruefeNachlesbar(dokument);
-        Path dateiPfad = getDateiPfad(dokument);
+        Path dateiPfad = dokumentDateiService.findeDatei(dokument).orElse(null);
         if (dateiPfad == null) {
             throw new PositionenNichtLesbarException("Datei zum Dokument nicht gefunden");
         }
@@ -2130,54 +2129,6 @@ public class GeminiDokumentAnalyseService {
         }
     }
 
-    private Path getDateiPfad(LieferantDokument dokument) {
-        String dateiname = dokument.getEffektiverGespeicherterDateiname();
-        if (dateiname == null)
-            return null;
-
-        Long lieferantId = dokument.getLieferant().getId();
-
-        // 1. E-Mail-Attachments: uploads/attachments/ (flat structure - most common)
-        Path pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 2. E-Mail-Attachments: uploads/attachments/lieferanten/{lieferantId}/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", "lieferanten", lieferantId.toString(), dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 3. Manuell hochgeladene Dokumente: uploads/lieferanten/{lieferantId}/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "lieferanten", lieferantId.toString(), dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 4. Vendor-Invoices: uploads/attachments/vendor-invoices/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", "vendor-invoices", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 5. Fallback: uploads/lieferant-emails/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "lieferant-emails", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 6. Fallback: uploads/email/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "email", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        log.warn("Datei nicht gefunden: {} (geprüft: attachments/, attachments/lieferanten/{}, lieferanten/{})",
-                dateiname, lieferantId, lieferantId);
-        return null;
-    }
-
     private String leseXmlDateiSicher(Path dateiPfad, boolean tempDateienErlaubt) throws java.io.IOException {
         Path sichererPfad = validiereAnalyseDateiPfad(dateiPfad, tempDateienErlaubt);
         // Zeichensatz aus BOM bzw. XML-Deklaration – XRechnungen kommen auch als ISO-8859-1.
@@ -2186,9 +2137,8 @@ public class GeminiDokumentAnalyseService {
 
     private Path validiereAnalyseDateiPfad(Path dateiPfad, boolean tempDateienErlaubt) {
         Path normalizedPath = dateiPfad.toAbsolutePath().normalize();
-        Path uploadRoot = getUploadRootPath();
 
-        boolean erlaubterPfad = normalizedPath.startsWith(uploadRoot);
+        boolean erlaubterPfad = dokumentDateiService.liegtInAblage(normalizedPath);
         if (!erlaubterPfad && tempDateienErlaubt) {
             Path tempRoot = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
             erlaubterPfad = normalizedPath.startsWith(tempRoot);
@@ -2204,25 +2154,6 @@ public class GeminiDokumentAnalyseService {
         }
 
         return normalizedPath;
-    }
-
-    private Path pruefeUploadDateiPfad(Path pfad) {
-        Path normalizedPath = pfad.toAbsolutePath().normalize();
-        Path uploadRoot = getUploadRootPath();
-        if (!normalizedPath.startsWith(uploadRoot)) {
-            log.warn("Verwerfe ungültigen Upload-Pfad außerhalb von {}: {}", uploadRoot, normalizedPath);
-            return null;
-        }
-        if (!Files.isRegularFile(normalizedPath)) {
-            return null;
-        }
-        log.debug("Datei gefunden unter: {}", normalizedPath);
-        return normalizedPath;
-    }
-
-    private Path getUploadRootPath() {
-        String configuredUploadPath = (uploadPath == null || uploadPath.isBlank()) ? "uploads" : uploadPath;
-        return Path.of(configuredUploadPath).toAbsolutePath().normalize();
     }
 
     /**

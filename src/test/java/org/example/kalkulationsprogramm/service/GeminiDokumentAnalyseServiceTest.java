@@ -59,6 +59,10 @@ class GeminiDokumentAnalyseServiceTest {
 
     private GeminiDokumentAnalyseService service;
 
+    /** Ablage der Dateisuche – nie das echte uploads/ im Arbeitsverzeichnis. */
+    @org.junit.jupiter.api.io.TempDir
+    Path ablage;
+
     @BeforeEach
     void setUp() {
         service = new GeminiDokumentAnalyseService(
@@ -74,7 +78,10 @@ class GeminiDokumentAnalyseServiceTest {
                 positionService,
                 new LieferantDokumentPositionLeser(new ObjectMapper()),
                 new org.springframework.transaction.support.TransactionTemplate(
-                        mock(org.springframework.transaction.PlatformTransactionManager.class))
+                        mock(org.springframework.transaction.PlatformTransactionManager.class)),
+                new LieferantDokumentDateiService(ablage.toString(), ablage.toString(),
+                        ablage.resolve("attachments").toString(),
+                        ablage.resolve("attachments").resolve("lieferanten").toString())
         );
     }
 
@@ -1018,7 +1025,22 @@ class GeminiDokumentAnalyseServiceTest {
 
         @BeforeEach
         void baueServiceMitGemocktemHttpClientAuf() throws Exception {
-            serviceMitEchtemMapper = new GeminiDokumentAnalyseService(
+            // Eigenes Upload-Verzeichnis pro Test, damit nichts im echten
+            // uploads/-Ordner landet (Sperrzone fuer Commits, siehe CLAUDE.md).
+            tempUploadRoot = Files.createTempDirectory("gemini-analyse-test-uploads");
+            Files.createDirectories(tempUploadRoot.resolve("attachments"));
+            Files.write(tempUploadRoot.resolve("attachments").resolve(DATEINAME),
+                    "%PDF-1.4 Dummy-Inhalt fuer den Test".getBytes());
+
+            serviceMitEchtemMapper = baueService(new LieferantDokumentDateiService(tempUploadRoot.toString(),
+                    tempUploadRoot.toString(), tempUploadRoot.resolve("attachments").toString(),
+                    tempUploadRoot.resolve("attachments").resolve("lieferanten").toString()));
+        }
+
+        /** Service mit echtem Mapper, gemocktem {@code httpClient} und der übergebenen Dateisuche. */
+        private GeminiDokumentAnalyseService baueService(LieferantDokumentDateiService dateiService)
+                throws Exception {
+            GeminiDokumentAnalyseService neu = new GeminiDokumentAnalyseService(
                     new ObjectMapper(),
                     lieferantenRepository,
                     dokumentRepository,
@@ -1031,18 +1053,11 @@ class GeminiDokumentAnalyseServiceTest {
                     positionService,
                     new LieferantDokumentPositionLeser(new ObjectMapper()),
                     new org.springframework.transaction.support.TransactionTemplate(
-                            mock(org.springframework.transaction.PlatformTransactionManager.class)));
-
+                            mock(org.springframework.transaction.PlatformTransactionManager.class)),
+                    dateiService);
             httpClientMock = mock(HttpClient.class);
-            setField(serviceMitEchtemMapper, "httpClient", httpClientMock);
-
-            // Eigenes Upload-Verzeichnis pro Test, damit nichts im echten
-            // uploads/-Ordner landet (Sperrzone fuer Commits, siehe CLAUDE.md).
-            tempUploadRoot = Files.createTempDirectory("gemini-analyse-test-uploads");
-            Files.createDirectories(tempUploadRoot.resolve("attachments"));
-            Files.write(tempUploadRoot.resolve("attachments").resolve(DATEINAME),
-                    "%PDF-1.4 Dummy-Inhalt fuer den Test".getBytes());
-            setField(serviceMitEchtemMapper, "uploadPath", tempUploadRoot.toString());
+            setField(neu, "httpClient", httpClientMock);
+            return neu;
         }
 
         @AfterEach
@@ -1285,6 +1300,37 @@ class GeminiDokumentAnalyseServiceTest {
                     org.mockito.ArgumentMatchers.eq(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG), any());
             assertThat(gd.getAiRawJson()).contains("Glasklemme V2A").contains("AB-1");
             verify(lieferantGeschaeftsdokumentRepository).save(gd);
+        }
+
+        /**
+         * Der Mail-Anhang-Ordner darf außerhalb von {@code upload.path} liegen. Findet die
+         * Dateisuche die Datei dort, muss die KI-Analyse sie auch lesen dürfen – früher
+         * erlaubte die Pfadprüfung nur {@code upload.path}.
+         */
+        @Test
+        @org.junit.jupiter.api.DisplayName("Positionen nachlesen: Datei im Mail-Ordner außerhalb von upload.path wird gelesen")
+        void positionenNachlesenAusMailOrdnerAusserhalbVonUploadPath() throws Exception {
+            Path uploadPath = Files.createDirectories(tempUploadRoot.resolve("nur-upload"));
+            Path mailOrdner = Files.createDirectories(tempUploadRoot.resolve("mail-ausserhalb"));
+            Files.write(mailOrdner.resolve(DATEINAME), "%PDF-1.4 Dummy-Inhalt fuer den Test".getBytes());
+            serviceMitEchtemMapper = baueService(new LieferantDokumentDateiService(uploadPath.toString(),
+                    uploadPath.toString(), mailOrdner.toString(), mailOrdner.resolve("lieferanten").toString()));
+
+            LieferantDokument dokument = musterDokument(607L);
+            dokument.setTyp(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setId(607L);
+            gd.setAiRawJson("{\"dokumentNummer\":\"AB-2\",\"artikelPositionen\":[]}");
+            dokument.setGeschaeftsdaten(gd);
+            when(dokumentRepository.findById(607L)).thenReturn(Optional.of(dokument));
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            HttpResponse<String> positionen = antwort(
+                    "{\"artikelPositionen\":[{\"bezeichnung\":\"Glasklemme V2A\",\"menge\":4}]}", "STOP");
+            when(httpClientMock.<String>send(any(HttpRequest.class), any())).thenReturn(positionen);
+            when(positionService.ersetzePositionen(any(), any(), any())).thenReturn(1);
+
+            assertThat(serviceMitEchtemMapper.positionenNachlesen(607L)).isEqualTo(1);
+            verify(httpClientMock).send(any(HttpRequest.class), any());
         }
 
         @Test
