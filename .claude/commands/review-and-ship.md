@@ -258,6 +258,13 @@ git rev-list --count origin/main..HEAD   # >1 bei fremder Arbeit im Branch
 
 ### 4b. Checks abwarten
 
+**In der Desktop-App nicht selbst abfragen** (kein `--watch`, kein `/loop`, kein
+`ScheduleWakeup`): `mcp__ccd_pr__get_status`; taucht der PR dort nicht auf,
+`mcp__ccd_pr__bind_pr`, dann `mcp__ccd_pr__set_monitor`. CI-Ergebnisse und
+Review-Kommentare kommen von selbst als `<ci-monitor-event>`.
+
+**Nur im Terminal ohne App:**
+
 ```bash
 gh pr checks <nr> --watch
 ```
