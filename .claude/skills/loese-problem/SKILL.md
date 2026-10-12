@@ -1,6 +1,6 @@
 ---
 name: loese-problem
-description: Startet die komplette Multi-Agent-Pipeline (Brainstorming → Spec → Issue → paralleles Coden → PR → Merge) für GRÖSSERE, mehrteilige Probleme/Features im ERP. NICHT für kleine Bugfixes, Ein-Zeilen-Änderungen oder Aufgaben, bei denen der Weg schon klar ist — dafür reicht die normale Umsetzung oder /bugfix, sonst kostet die Pipeline nur unnötig Zeit. Trigger: der Nutzer beschreibt ein neues, größeres Feature oder ein komplexes, mehrteiliges Problem und will den kompletten Ablauf bis zum fertigen, gemergten Pull Request automatisiert haben. Auch explizit aufrufbar über "/loese-problem".
+description: 'Startet die komplette Multi-Agent-Pipeline (Brainstorming → Spec → Issue → paralleles Coden → PR → Merge) für GRÖSSERE, mehrteilige Probleme/Features im ERP. NICHT für kleine Bugfixes, Ein-Zeilen-Änderungen oder Aufgaben, bei denen der Weg schon klar ist — dafür reicht die normale Umsetzung oder /bugfix, sonst kostet die Pipeline nur unnötig Zeit. Trigger: der Nutzer beschreibt ein neues, größeres Feature oder ein komplexes, mehrteiliges Problem und will den kompletten Ablauf bis zum fertigen, gemergten Pull Request automatisiert haben. Auch explizit aufrufbar über "/loese-problem".'
 ---
 
 # loese-problem — Multi-Agent-Pipeline

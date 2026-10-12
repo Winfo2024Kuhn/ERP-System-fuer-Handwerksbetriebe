@@ -16,6 +16,10 @@ import java.util.List;
  * @param besitzerId       Benutzer, dem die Signatur gehört; {@code null} = ohne Besitzer (nur Admins)
  * @param eigene           gehört dem angemeldeten Benutzer
  * @param images           Bilder alter Datei-Uploads (Altbestand)
+ * @param firmenVorlage    ist eine Firmen-Vorlage – alle Benutzer bauen darauf ihre Signatur
+ * @param firmenVorlageId  Firmen-Vorlage, aus der die Signatur gebaut wurde; {@code null} = freies Design
+ * @param nurLesen         der angemeldete Benutzer darf sie sehen und als Standard nutzen, aber nicht
+ *                         ändern oder löschen (z. B. eine früher vom Admin zugewiesene Standard-Signatur)
  */
 public record EmailSignaturDto(
         Long id,
@@ -29,7 +33,10 @@ public record EmailSignaturDto(
         boolean eigene,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        List<Bild> images) {
+        List<Bild> images,
+        boolean firmenVorlage,
+        Long firmenVorlageId,
+        boolean nurLesen) {
 
     /** Bild aus einem alten Datei-Upload, im HTML per {@code cid:} eingebunden. */
     public record Bild(Long id, String cid, String originalFilename, String contentType, long sizeBytes) {

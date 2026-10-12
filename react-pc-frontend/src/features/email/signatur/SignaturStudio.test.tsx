@@ -16,7 +16,7 @@ function NachAnmeldung({ children }: { children: React.ReactNode }) {
     return loading ? null : <>{children}</>;
 }
 
-function zeige(optionen: StubOptionen & { sig?: SignaturDto | null } = {}) {
+function zeige(optionen: StubOptionen & { sig?: SignaturDto | null; vorlagen?: SignaturDto[]; vorlagenFehler?: boolean } = {}) {
     const mock = stubbeSignaturApi(optionen);
     const onGespeichert = vi.fn();
     const onAbbrechen = vi.fn();
@@ -24,7 +24,7 @@ function zeige(optionen: StubOptionen & { sig?: SignaturDto | null } = {}) {
     render(
         <ToastProvider><ConfirmProvider><AuthProvider>
             <NachAnmeldung>
-                <SignaturStudio signatur={optionen.sig ?? null} onGespeichert={onGespeichert} onAbbrechen={onAbbrechen} />
+                <SignaturStudio signatur={optionen.sig ?? null} firmenVorlagen={optionen.vorlagen} firmenVorlagenFehler={optionen.vorlagenFehler} onGespeichert={onGespeichert} onAbbrechen={onAbbrechen} />
             </NachAnmeldung>
         </AuthProvider></ConfirmProvider></ToastProvider>,
     );
@@ -303,5 +303,230 @@ describe('SignaturStudio – HTML-Modus', () => {
         const body = gesendeterBody(mock);
         expect(body.vorlageDaten).toBeNull();
         expect(body.html).toContain('<p>Extra</p>');
+    });
+});
+
+/** Firmen-Vorlage „Hauptsitz“: legt Aussehen und Firmenangaben fest. Persönliches der Vorlage darf nicht übernommen werden. */
+const VORLAGEN_DATEN = {
+    ...leereSignaturDaten(),
+    vorlage: 'kompakt' as const,
+    akzentfarbe: '#1e3a8a',
+    schriftart: 'Georgia' as const,
+    firma: 'Mustermann Metallbau GmbH – Hauptsitz',
+    website: 'www.hauptsitz.example',
+    adresse: 'Hauptstraße 5, 12345 Musterstadt',
+    slogan: 'Metallbau mit Herz',
+    zusatz: 'Amtsgericht Musterstadt HRB 12345',
+    social: { facebook: 'mustermann.metallbau', instagram: '', linkedin: '', whatsapp: '' },
+    name: 'Erika Musterfrau',
+    position: 'Geschäftsführerin',
+    telefon: '0931 555000',
+    email: 'erika@example.com',
+};
+const HAUPTSITZ = signatur({
+    id: 20, name: 'Hauptsitz', firmenVorlage: true, besitzerId: null, besitzerName: null, eigene: false, nurLesen: true,
+    vorlageDaten: JSON.stringify(VORLAGEN_DATEN),
+});
+const FILIALE = signatur({
+    id: 21, name: 'Filiale Nord', firmenVorlage: true, besitzerId: null, besitzerName: null, eigene: false, nurLesen: true,
+    vorlageDaten: JSON.stringify({ ...VORLAGEN_DATEN, vorlage: 'schlicht', firma: 'Mustermann Metallbau GmbH – Filiale Nord', telefon: '040 777000' }),
+});
+
+const istGesperrt = (name: string) => expect(feld(name)).toBeDisabled();
+
+describe('SignaturStudio – Mitarbeiter mit Firmen-Vorlage', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('neue Signatur: Aussehen aus der Vorlage gesperrt, persönliche Angaben frei; firmenVorlageId wird mitgeschickt', async () => {
+        const { mock, user, onGespeichert } = zeige({ vorlagen: [HAUPTSITZ] });
+        await studioDa();
+        expect(screen.getByRole('heading', { name: 'Firmen-Vorlage' })).toBeInTheDocument();
+        expect(screen.getByText('„Hauptsitz“')).toBeInTheDocument();
+        // Keine freie Gestaltung: weder Vorlagen-Auswahl noch HTML-Modus
+        expect(screen.queryByRole('radio', { name: /Schlicht/ })).toBeNull();
+        expect(screen.queryByRole('switch', { name: 'HTML direkt bearbeiten' })).toBeNull();
+
+        // Vorbelegt: eigener Name und Telefon der Vorlage – keine anderen persönlichen Angaben der Vorlage
+        expect(feld('Ihr Name').value).toBe('Max Mustermann');
+        expect(feld('Telefon').value).toBe('0931 555000');
+        expect(feld('Position').value).toBe('');
+        expect(feld('E-Mail').value).toBe('');
+        // Firmenangaben aus der Vorlage, nicht aus den Firmendaten
+        await waitFor(() => expect(aufrufe(mock, '/api/firma')).toHaveLength(1));
+        expect(feld('Firma').value).toBe('Mustermann Metallbau GmbH – Hauptsitz');
+        expect(feld('Website').value).toBe('www.hauptsitz.example');
+
+        for (const name of ['Firma', 'Fax', 'Website', 'Adresse', 'Facebook', 'Instagram', 'LinkedIn', 'WhatsApp', 'Slogan (optional)', 'Kleingedrucktes (optional)']) {
+            istGesperrt(name);
+        }
+        expect(screen.getByRole('combobox', { name: 'Schriftart' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Eigene Farbe' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Weinrot (#500010)' })).toBeDisabled();
+        // Logo kommt aus der Vorlage: kein Hochladen, kein Link-Feld
+        const logo = screen.getByRole('group', { name: 'Firmenlogo' });
+        expect(within(logo).getByText('Vom Betrieb festgelegt')).toBeInTheDocument();
+        expect(within(logo).queryByRole('button', { name: 'Bild hochladen' })).toBeNull();
+        expect(screen.queryByLabelText('Firmenlogo: Link zum Bild')).toBeNull();
+        for (const name of ['Ihr Name', 'Position', 'Abteilung', 'Telefon', 'Mobil', 'E-Mail']) expect(feld(name)).toBeEnabled();
+
+        await user.type(feld('Position'), 'Metallbaumeister');
+        await user.clear(feld('Telefon'));
+        await user.type(feld('Telefon'), '0931 555000-12');
+        await waitFor(() => expect(vorschau()).toContain('Metallbaumeister'));
+        expect(vorschau()).toContain('Mustermann Metallbau GmbH – Hauptsitz');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+
+        await waitFor(() => expect(onGespeichert).toHaveBeenCalledTimes(1));
+        const body = gesendeterBody(mock);
+        expect(body).toMatchObject({ id: null, firmenVorlageId: 20, alsStandard: false });
+        expect(body).not.toHaveProperty('besitzerId');
+        const daten = JSON.parse(String(body.vorlageDaten));
+        expect(daten).toMatchObject({
+            vorlage: 'kompakt', akzentfarbe: '#1e3a8a', schriftart: 'Georgia', firma: 'Mustermann Metallbau GmbH – Hauptsitz',
+            name: 'Max Mustermann', position: 'Metallbaumeister', telefon: '0931 555000-12', email: '',
+        });
+    });
+
+    it('mehrere Firmen-Vorlagen: Auswahl oben, Wechsel übernimmt Aussehen und unveränderte Telefonnummer', async () => {
+        const { mock, user } = zeige({ vorlagen: [FILIALE, HAUPTSITZ] });
+        await studioDa();
+        const auswahl = screen.getByRole('combobox', { name: 'Welche Firmen-Vorlage?' });
+        expect(auswahl).toHaveTextContent('Filiale Nord');
+        expect(feld('Firma').value).toBe('Mustermann Metallbau GmbH – Filiale Nord');
+        expect(feld('Telefon').value).toBe('040 777000');
+
+        await user.click(auswahl);
+        await user.click(within(await screen.findByRole('listbox')).getByRole('option', { name: 'Hauptsitz' }));
+        expect(feld('Firma').value).toBe('Mustermann Metallbau GmbH – Hauptsitz');
+        expect(feld('Telefon').value).toBe('0931 555000');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock).firmenVorlageId).toBe(20);
+        expect(JSON.parse(String(gesendeterBody(mock).vorlageDaten)).vorlage).toBe('kompakt');
+    });
+
+    it('eigene Signatur aus einer Firmen-Vorlage: gesperrte Felder kommen aus der aktuellen Vorlage', async () => {
+        const gespeichert = {
+            ...VORLAGEN_DATEN, firma: 'Alter Firmenname', slogan: 'Alter Slogan', vorlage: 'banner' as const,
+            name: 'Max Mustermann', position: 'Monteur', telefon: '0931 555000-12', email: 'max@example.com',
+        };
+        const sig = signatur({ id: 30, name: 'Meine', firmenVorlageId: 20, vorlageDaten: JSON.stringify(gespeichert) });
+        const { mock, user } = zeige({ sig, vorlagen: [HAUPTSITZ] });
+        await studioDa();
+        expect(feld('Firma').value).toBe('Mustermann Metallbau GmbH – Hauptsitz');
+        expect(feld('Slogan (optional)').value).toBe('Metallbau mit Herz');
+        expect(feld('Position').value).toBe('Monteur');
+        expect(feld('Telefon').value).toBe('0931 555000-12');
+        expect(feld('E-Mail').value).toBe('max@example.com');
+        istGesperrt('Firma');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock)).toMatchObject({ id: 30, firmenVorlageId: 20 });
+        expect(JSON.parse(String(gesendeterBody(mock).vorlageDaten))).toMatchObject({ vorlage: 'kompakt', firma: 'Mustermann Metallbau GmbH – Hauptsitz' });
+    });
+
+    it('alte frei gestaltete Signatur bleibt frei; „Mit Firmen-Vorlage neu gestalten“ ist nur ein Angebot', async () => {
+        const daten = { ...leereSignaturDaten(), name: 'Max Mustermann', position: 'Monteur', firma: 'Eigene Firma', vorlage: 'schlicht' as const };
+        const sig = signatur({ id: 31, vorlageDaten: JSON.stringify(daten) });
+        const { mock, user } = zeige({ sig, vorlagen: [HAUPTSITZ] });
+        await studioDa();
+        expect(screen.getByText(/Diese Signatur ist frei gestaltet und bleibt so, wie sie ist/)).toBeInTheDocument();
+        expect(feld('Firma')).toBeEnabled();
+        expect(screen.getByRole('radio', { name: /Schlicht/ })).toHaveAttribute('aria-checked', 'true');
+        expect(screen.getByRole('switch', { name: 'HTML direkt bearbeiten' })).toBeInTheDocument();
+
+        // Ohne Umstellung speichern geht – frei, ohne Firmen-Vorlage
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock)).toMatchObject({ id: 31, firmenVorlageId: null });
+    });
+
+    it('Umstellen auf die Firmen-Vorlage nach Rückfrage: persönliche Angaben bleiben, Aussehen wird gesperrt', async () => {
+        const daten = { ...leereSignaturDaten(), name: 'Max Mustermann', position: 'Monteur', firma: 'Eigene Firma', vorlage: 'schlicht' as const };
+        const { mock, user } = zeige({ sig: signatur({ id: 31, vorlageDaten: JSON.stringify(daten) }), vorlagen: [HAUPTSITZ] });
+        await studioDa();
+        await user.click(screen.getByRole('button', { name: /Mit Firmen-Vorlage neu gestalten/ }));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('button', { name: 'Neu gestalten' }));
+        await waitFor(() => istGesperrt('Firma'));
+        expect(feld('Firma').value).toBe('Mustermann Metallbau GmbH – Hauptsitz');
+        expect(feld('Position').value).toBe('Monteur');
+        expect(feld('Telefon').value).toBe('0931 555000');
+        expect(screen.queryByText(/Diese Signatur ist frei gestaltet/)).toBeNull();
+        expect(screen.queryByRole('switch', { name: 'HTML direkt bearbeiten' })).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock).firmenVorlageId).toBe(20);
+    });
+
+    it('alte Signatur nur als HTML: beide Angebote, HTML bleibt bearbeitbar', async () => {
+        const { user } = zeige({ sig: signatur({ html: '<p>Alte Signatur</p>' }), vorlagen: [HAUPTSITZ] });
+        await studioDa();
+        expect(screen.getByRole('button', { name: /Mit Vorlage neu gestalten/ })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /Mit Firmen-Vorlage neu gestalten/ }));
+        await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Neu gestalten' }));
+        await waitFor(() => expect(feld('Firma').value).toBe('Mustermann Metallbau GmbH – Hauptsitz'));
+        expect(feld('Ihr Name').value).toBe('Max Mustermann');
+        expect(screen.queryByLabelText('HTML der Signatur')).toBeNull();
+    });
+
+    it('Vorlage gibt es nicht mehr, andere schon: wie eine frei gestaltete Signatur', async () => {
+        const daten = { ...leereSignaturDaten(), name: 'Max Mustermann', firma: 'Eigene Firma' };
+        const { mock, user } = zeige({ sig: signatur({ id: 32, firmenVorlageId: 99, vorlageDaten: JSON.stringify(daten) }), vorlagen: [HAUPTSITZ] });
+        await studioDa();
+        expect(feld('Firma')).toBeEnabled();
+        expect(feld('Firma').value).toBe('Eigene Firma');
+        expect(screen.getByRole('button', { name: /Mit Firmen-Vorlage neu gestalten/ })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock).firmenVorlageId).toBeNull();
+    });
+
+    it('Firmen-Vorlagen nicht ladbar: bestehende Verbindung zur Vorlage bleibt beim Speichern erhalten', async () => {
+        const daten = { ...leereSignaturDaten(), name: 'Max Mustermann', firma: 'Mustermann Metallbau GmbH – Hauptsitz' };
+        const { mock, user } = zeige({ sig: signatur({ id: 34, firmenVorlageId: 20, vorlageDaten: JSON.stringify(daten) }), vorlagen: [], vorlagenFehler: true });
+        await studioDa();
+        expect(feld('Firma')).toBeEnabled();
+        await user.type(feld('Position'), 'Monteur');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock)).toMatchObject({ id: 34, firmenVorlageId: 20 });
+    });
+
+    it('ohne Firmen-Vorlage alles wie bisher: firmenVorlageId null', async () => {
+        const { mock, user } = zeige({ vorlagen: [] });
+        await studioDa();
+        await waitFor(() => expect(feld('Firma').value).toBe('Mustermann Metallbau GmbH'));
+        expect(feld('Firma')).toBeEnabled();
+        expect(screen.queryByText(/Firmen-Vorlage/)).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock).firmenVorlageId).toBeNull();
+    });
+});
+
+describe('SignaturStudio – Admin mit Firmen-Vorlagen', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('gestaltet frei und behält die Verbindung zur Firmen-Vorlage', async () => {
+        const daten = { ...leereSignaturDaten(), name: 'Max Mustermann', firma: 'Mustermann Metallbau GmbH – Hauptsitz' };
+        const sig = signatur({ id: 33, firmenVorlageId: 20, eigene: false, vorlageDaten: JSON.stringify(daten) });
+        const { mock, user } = zeige({ admin: true, sig, vorlagen: [{ ...HAUPTSITZ, nurLesen: false }] });
+        await studioDa();
+        expect(feld('Firma')).toBeEnabled();
+        expect(screen.getByRole('radio', { name: /Klassisch mit Foto/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Mit Firmen-Vorlage neu gestalten/ })).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock)).toMatchObject({ id: 33, firmenVorlageId: 20, besitzerFestlegen: true });
+    });
+
+    it('neue Signatur eines Admins: frei, ohne Firmen-Vorlage', async () => {
+        const { mock, user } = zeige({ admin: true, vorlagen: [HAUPTSITZ] });
+        await studioDa();
+        expect(screen.getByRole('radio', { name: /Klassisch mit Foto/ })).toHaveAttribute('aria-checked', 'true');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        expect(gesendeterBody(mock).firmenVorlageId).toBeNull();
     });
 });

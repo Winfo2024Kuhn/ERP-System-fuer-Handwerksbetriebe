@@ -55,6 +55,12 @@ export interface SignaturDto {
     besitzerId: number | null;
     besitzerName: string | null;
     eigene: boolean;
+    /** Diese Signatur ist eine Firmen-Vorlage, aus der Mitarbeiter ihre eigene Signatur bauen. */
+    firmenVorlage: boolean;
+    /** Aus welcher Firmen-Vorlage die Signatur gebaut wurde (`null` = frei gestaltet). */
+    firmenVorlageId: number | null;
+    /** Der angemeldete Benutzer darf sie nutzen, aber nicht ändern oder löschen (vom Betrieb festgelegt). */
+    nurLesen: boolean;
     createdAt: string;
     updatedAt: string;
     images?: { id: number; cid: string; originalFilename: string; contentType: string; sizeBytes: number }[];
@@ -70,6 +76,8 @@ export interface SignaturSpeichernBody {
     /** Nur Admins: `besitzerId` übernehmen (sonst bleibt der Besitzer, wie er ist). */
     besitzerFestlegen?: boolean;
     alsStandard: boolean;
+    /** Id der genutzten Firmen-Vorlage, sonst `null` (frei gestaltet). */
+    firmenVorlageId: number | null;
 }
 
 export const STANDARD_AKZENTFARBE = '#500010';

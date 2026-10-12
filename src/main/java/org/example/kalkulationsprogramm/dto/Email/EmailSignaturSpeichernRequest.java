@@ -10,6 +10,8 @@ package org.example.kalkulationsprogramm.dto.Email;
  *                          bleibt der Besitzer unverändert (neue Signaturen: der Admin selbst) – so löscht
  *                          ein Request ohne {@code besitzerId} den Besitzer nicht versehentlich.
  * @param alsStandard       {@code true} = danach Standard-Signatur des angemeldeten Benutzers
+ * @param firmenVorlageId   Firmen-Vorlage, aus der die Signatur gebaut wurde; {@code null} = freies Design.
+ *                          Neue Signaturen von Benutzern brauchen eine, sobald es Firmen-Vorlagen gibt.
  */
 public record EmailSignaturSpeichernRequest(
         Long id,
@@ -18,5 +20,6 @@ public record EmailSignaturSpeichernRequest(
         String vorlageDaten,
         Long besitzerId,
         Boolean besitzerFestlegen,
-        Boolean alsStandard) {
+        Boolean alsStandard,
+        Long firmenVorlageId) {
 }

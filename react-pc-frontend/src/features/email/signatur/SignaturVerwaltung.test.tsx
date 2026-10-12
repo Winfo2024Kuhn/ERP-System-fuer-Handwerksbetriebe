@@ -6,6 +6,7 @@ import EmailSettings from '../../../components/EmailSettings';
 import { ConfirmProvider } from '../../../components/ui/confirm-dialog';
 import { ToastProvider } from '../../../components/ui/toast';
 import { antwort, aufrufe, signatur, stubbeSignaturApi, type StubOptionen } from './signaturTestdaten';
+import { leereSignaturDaten } from './signaturTypen';
 
 /** Signatur-Liste in den E-Mail-Einstellungen: Badges, Admin vs. Benutzer, Aktionen. Nur Dummy-Daten. */
 
@@ -190,5 +191,139 @@ describe('Signatur-Liste – Admin', () => {
         expect(screen.getByText(/Sie haben noch keine eigene Signatur/)).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Jetzt eine erstellen' }));
         expect(await screen.findByRole('heading', { name: 'Neue Signatur gestalten' })).toBeInTheDocument();
+    });
+});
+
+const VORLAGEN_DATEN = { ...leereSignaturDaten(), vorlage: 'kompakt' as const, firma: 'Mustermann Metallbau GmbH', telefon: '0931 555000' };
+const FIRMEN_VORLAGE = signatur({
+    id: 20, name: 'Hauptsitz', firmenVorlage: true, besitzerId: null, besitzerName: null, eigene: false, vorlageDaten: JSON.stringify(VORLAGEN_DATEN),
+});
+/** Früher vom Admin zugewiesen: gehört dem Mitarbeiter nicht, bleibt aber seine Standard-Signatur. */
+const ZUGEWIESEN = signatur({
+    id: 6, name: 'Vom Büro', defaultSignature: true, besitzerId: 1, besitzerName: null, eigene: false, nurLesen: true,
+});
+
+describe('Signatur-Liste – Firmen-Vorlagen (Mitarbeiter)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('vom Betrieb festgelegte Standard-Signatur: Vorschau, kein Bearbeiten, kein Löschen, „Nicht mehr Standard“ bleibt', async () => {
+        const { mock, user } = await zeige({ signaturen: [ZUGEWIESEN, EIGENE_KURZ], firmenVorlagen: [{ ...FIRMEN_VORLAGE, nurLesen: true }] });
+        const k = karte('Vom Büro');
+        expect(within(k).getByText('Vom Betrieb festgelegt')).toBeInTheDocument();
+        expect(within(k).getByText('Meine Standard-Signatur')).toBeInTheDocument();
+        expect(within(k).getByTitle('Vorschau der Signatur Vom Büro')).toBeInTheDocument();
+        await waitFor(() => expect(within(k).getByText(/Diese Signatur hat der Betrieb für Sie festgelegt\. Erstellen Sie Ihre eigene aus der Firmen-Vorlage\./)).toBeInTheDocument());
+        expect(within(k).queryByRole('button', { name: 'Bearbeiten' })).toBeNull();
+        expect(within(k).queryByRole('button', { name: /löschen/ })).toBeNull();
+        // Eigene Signaturen bleiben normal bedienbar
+        expect(within(karte('Kurz für Antworten')).getByRole('button', { name: 'Bearbeiten' })).toBeInTheDocument();
+        expect(screen.getByText(/Neue Signaturen erstellen Sie aus der Firmen-Vorlage Ihres Betriebs/)).toBeInTheDocument();
+        // Keine Admin-Knöpfe für Firmen-Vorlagen
+        expect(screen.queryByRole('button', { name: /Als Firmen-Vorlage/ })).toBeNull();
+        expect(screen.queryByText('Firmen-Vorlagen für Mitarbeiter')).toBeNull();
+
+        // Abwählen nur nach Rückfrage – danach ist die festgelegte Signatur aus der Liste verschwunden
+        await user.click(within(k).getByRole('button', { name: 'Nicht mehr Standard' }));
+        const dialog = await screen.findByRole('dialog', { name: /Festgelegte Signatur abwählen\?/ });
+        expect(within(dialog).getByText(/sehen Sie sie danach nicht mehr in Ihrer Liste/)).toBeInTheDocument();
+        await user.click(within(dialog).getByRole('button', { name: 'Abwählen' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures/standard', 'DELETE')).toHaveLength(1));
+    });
+
+    it('festgelegte Standard-Signatur: Abbrechen bei der Rückfrage schickt nichts ab', async () => {
+        const { mock, user } = await zeige({ signaturen: [ZUGEWIESEN, EIGENE_KURZ] });
+        await user.click(within(karte('Vom Büro')).getByRole('button', { name: 'Nicht mehr Standard' }));
+        await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Abbrechen' }));
+        await user.click(within(karte('Kurz für Antworten')).getByRole('button', { name: 'Als Standard' }));
+        await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Abbrechen' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(aufrufe(mock, '/api/email/signatures/standard', 'DELETE')).toHaveLength(0);
+        expect(aufrufe(mock, /^\/api\/email\/signatures\/\d+\/standard$/, 'PUT')).toHaveLength(0);
+    });
+
+    it('andere Signatur als Standard, solange die festgelegte Standard ist: erst nach Rückfrage', async () => {
+        const { mock, user } = await zeige({ signaturen: [ZUGEWIESEN, EIGENE_KURZ] });
+        await user.click(within(karte('Kurz für Antworten')).getByRole('button', { name: 'Als Standard' }));
+        const dialog = await screen.findByRole('dialog', { name: /Festgelegte Signatur abwählen\?/ });
+        await user.click(within(dialog).getByRole('button', { name: 'Abwählen' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures/2/standard', 'PUT')).toHaveLength(1));
+        expect(await screen.findByText('„Kurz für Antworten“ ist jetzt Ihre Standard-Signatur.')).toBeInTheDocument();
+    });
+
+    it('ohne Firmen-Vorlage: Hinweis ohne zweiten Satz', async () => {
+        await zeige({ signaturen: [ZUGEWIESEN] });
+        const k = karte('Vom Büro');
+        expect(within(k).getByText('Diese Signatur hat der Betrieb für Sie festgelegt.')).toBeInTheDocument();
+        expect(screen.queryByText(/Neue Signaturen erstellen Sie aus der Firmen-Vorlage/)).toBeNull();
+    });
+
+    it('„Neue Signatur“ öffnet das Studio direkt mit der Firmen-Vorlage', async () => {
+        const { user } = await zeige({ signaturen: [EIGENE_KURZ], firmenVorlagen: [{ ...FIRMEN_VORLAGE, nurLesen: true }] });
+        await user.click(screen.getByRole('button', { name: 'Neue Signatur' }));
+        expect(await screen.findByRole('heading', { name: 'Firmen-Vorlage' })).toBeInTheDocument();
+        expect((screen.getByLabelText('Firma') as HTMLInputElement).value).toBe('Mustermann Metallbau GmbH');
+        expect(screen.getByLabelText('Firma')).toBeDisabled();
+        expect((screen.getByLabelText('Telefon') as HTMLInputElement).value).toBe('0931 555000');
+    });
+
+    it('Firmen-Vorlagen nicht ladbar: Bearbeiten behält die Verbindung zur Vorlage', async () => {
+        const meine = signatur({ id: 12, name: 'Aus Vorlage', firmenVorlageId: 20, vorlageDaten: JSON.stringify({ ...VORLAGEN_DATEN, name: 'Max Mustermann' }) });
+        const { mock, user } = await zeige({
+            signaturen: [meine],
+            extra: (url) => (url.pathname === '/api/email/signatures/firmen-vorlagen' ? antwort({}, 500) : undefined),
+        });
+        await user.click(within(await screen.findByRole('list', { name: 'Signaturen' })).getByRole('button', { name: 'Bearbeiten' }));
+        await screen.findByRole('heading', { name: 'Signatur bearbeiten' });
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures', 'POST')).toHaveLength(1));
+        const [, init] = aufrufe(mock, '/api/email/signatures', 'POST')[0];
+        expect(JSON.parse(String(init?.body))).toMatchObject({ id: 12, firmenVorlageId: 20 });
+    });
+
+    it('Firmen-Vorlagen nicht ladbar: Meldung, Studio öffnet frei', async () => {
+        const { user } = await zeige({
+            signaturen: [EIGENE_KURZ],
+            extra: (url) => (url.pathname === '/api/email/signatures/firmen-vorlagen' ? antwort({}, 500) : undefined),
+        });
+        expect(await screen.findByText('Firmen-Vorlagen konnten nicht geladen werden.')).toBeInTheDocument();
+        await user.click(await screen.findByRole('button', { name: 'Neue Signatur' }));
+        expect(await screen.findByRole('radio', { name: /Klassisch mit Foto/ })).toBeInTheDocument();
+    });
+});
+
+describe('Signatur-Liste – Firmen-Vorlagen (Admin)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('markiert eine Signatur als Firmen-Vorlage und nimmt sie wieder zurück', async () => {
+        const mitFormular = { ...KOLLEGE, vorlageDaten: JSON.stringify(VORLAGEN_DATEN) };
+        const { mock, user } = await zeige({ admin: true, signaturen: [SYSTEM, mitFormular, FIRMEN_VORLAGE], firmenVorlagen: [FIRMEN_VORLAGE] });
+        expect(await screen.findByText('Firmen-Vorlagen für Mitarbeiter')).toBeInTheDocument();
+        expect(screen.getByText('Hauptsitz', { selector: 'span' })).toBeInTheDocument();
+        expect(within(karte('Hauptsitz')).getByText('Firmen-Vorlage')).toBeInTheDocument();
+        expect(within(karte('Moritz')).queryByText('Firmen-Vorlage')).toBeNull();
+
+        await user.click(within(karte('Moritz')).getByRole('button', { name: 'Als Firmen-Vorlage' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures/4/firmen-vorlage', 'PUT')).toHaveLength(1));
+        expect(await screen.findByText('„Moritz“ ist jetzt eine Firmen-Vorlage.')).toBeInTheDocument();
+        expect(aufrufe(mock, '/api/email/signatures/firmen-vorlagen', 'GET').length).toBeGreaterThanOrEqual(2);
+
+        await user.click(within(karte('Hauptsitz')).getByRole('button', { name: 'Keine Firmen-Vorlage mehr' }));
+        await waitFor(() => expect(aufrufe(mock, '/api/email/signatures/20/firmen-vorlage', 'DELETE')).toHaveLength(1));
+        expect(await screen.findByText('„Hauptsitz“ ist keine Firmen-Vorlage mehr.')).toBeInTheDocument();
+    });
+
+    it('Signatur ohne Formular taugt nicht als Firmen-Vorlage', async () => {
+        const { mock, user } = await zeige({ admin: true, signaturen: [SYSTEM, KOLLEGE] });
+        expect(await screen.findByText(/Noch keine Firmen-Vorlage/)).toBeInTheDocument();
+        await user.click(within(karte('Moritz')).getByRole('button', { name: 'Als Firmen-Vorlage' }));
+        expect(await screen.findByText(/eignet sich nicht als Firmen-Vorlage/)).toBeInTheDocument();
+        expect(aufrufe(mock, /firmen-vorlage$/, 'PUT')).toHaveLength(0);
+    });
+
+    it('Löschen einer Firmen-Vorlage warnt vor den Folgen', async () => {
+        const { user } = await zeige({ admin: true, signaturen: [SYSTEM, FIRMEN_VORLAGE], firmenVorlagen: [FIRMEN_VORLAGE] });
+        await user.click(screen.getByRole('button', { name: 'Signatur „Hauptsitz“ löschen' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText(/Mitarbeiter können daraus dann keine neuen Signaturen mehr erstellen/)).toBeInTheDocument();
     });
 });

@@ -50,7 +50,6 @@ public class FrontendUserController {
         try {
             FrontendUserProfile saved = profileService.saveOrUpdate(
                     profile,
-                    request.getDefaultSignatureId(),
                     request.getMitarbeiterId(),
                     request.getUsername(),
                     request.getPassword(),
@@ -61,17 +60,6 @@ public class FrontendUserController {
             return ResponseEntity.ok(saved);
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
-        } catch (NoSuchElementException ex) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-
-    @PostMapping("/{id}/default-signature")
-    public ResponseEntity<FrontendUserProfile> setDefaultSignature(@PathVariable Long id,
-            @RequestBody SetDefaultSignatureRequest request) {
-        try {
-            FrontendUserProfile updated = profileService.setDefaultSignature(id, request.getSignatureId());
-            return ResponseEntity.ok(updated);
         } catch (NoSuchElementException ex) {
             return ResponseEntity.notFound().build();
         }
@@ -98,7 +86,6 @@ public class FrontendUserController {
         private String password;
         private List<String> roles;
         private Boolean active;
-        private Long defaultSignatureId;
         private Long mitarbeiterId;
         private Long emailAbsenderId;
 
@@ -119,10 +106,5 @@ public class FrontendUserController {
             }
             return result;
         }
-    }
-
-    @Data
-    public static class SetDefaultSignatureRequest {
-        private Long signatureId;
     }
 }

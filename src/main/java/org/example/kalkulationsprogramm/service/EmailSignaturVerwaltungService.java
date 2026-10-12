@@ -1,5 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
@@ -13,6 +17,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -25,6 +30,14 @@ import java.util.Optional;
  * Admins ({@code ROLE_ADMIN}) sehen alle – auch die ohne Besitzer – und dürfen den Besitzer
  * festlegen. Fremde Signaturen gelten für Benutzer als nicht vorhanden (404), damit nicht
  * einmal ihre IDs bestätigt werden. Der Benutzer kommt ausschließlich aus der Anmeldung.</p>
+ *
+ * <p>Ausnahme: Die aktuelle Standard-Signatur eines Benutzers sieht er immer – auch wenn sie
+ * ihm nicht gehört (früher hat der Admin sie in der Benutzerverwaltung zugewiesen). Sie hängt
+ * weiter an seinen Mails, ändern oder löschen kann er sie aber nicht ({@code nurLesen}).</p>
+ *
+ * <p>Firmen-Vorlagen legt der Admin fest; jeder Benutzer sieht sie als Ausgangspunkt für seine
+ * eigene Signatur. Neue Signaturen von Benutzern entstehen aus einer Firmen-Vorlage, sobald es
+ * eine gibt. Bestehende Signaturen bleiben, wie sie sind.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -34,6 +47,24 @@ public class EmailSignaturVerwaltungService {
     private final FrontendUserProfileRepository profilRepository;
     private final OutOfOfficeScheduleRepository abwesenheitRepository;
     private final EmailSignatureService signaturService;
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * Angaben zur Person im Formularzustand des Studios. Die Telefonnummer gehört nicht dazu –
+     * sie ist in der Vorlage die Firmennummer, die Mitarbeiter als Vorbelegung übernehmen.
+     */
+    private static final List<String> PERSOENLICHE_FELDER =
+            List.of("name", "position", "abteilung", "mobil", "email", "fotoUrl");
+
+    static final String MELDUNG_NUR_LESEN =
+            "Diese Signatur hat der Betrieb für Sie festgelegt. Ändern kann sie nur ein Admin.";
+    static final String MELDUNG_FIRMEN_VORLAGE_PFLICHT =
+            "Bitte erstellen Sie Ihre Signatur aus der Firmen-Vorlage.";
+    static final String MELDUNG_VORLAGE_OHNE_FORMULAR =
+            "Firmen-Vorlage kann nur eine Signatur werden, die mit dem Formular gestaltet wurde.";
+    static final String MELDUNG_FIRMEN_VORLAGE_FEHLT =
+            "Die gewählte Firmen-Vorlage gibt es nicht mehr.";
 
     /** Angemeldeter Benutzer; {@code profilId == null}, wenn kein Benutzerprofil dahintersteht. */
     public record Benutzer(Long profilId, boolean admin) {
@@ -47,18 +78,24 @@ public class EmailSignaturVerwaltungService {
                 EmailSignatureService.istAdmin(authentication));
     }
 
-    /** Admin: alle Signaturen; Benutzer: nur eigene. Die zuletzt geänderte zuerst. */
+    /**
+     * Admin: alle Signaturen; Benutzer: eigene, die zuletzt geänderte zuerst – davor seine
+     * Standard-Signatur, falls sie ihm nicht gehört.
+     */
     @Transactional(readOnly = true)
     public List<EmailSignaturDto> liste(Benutzer benutzer) {
+        Long standardId = standardId(benutzer);
         List<EmailSignature> signaturen;
         if (benutzer.admin()) {
             signaturen = signaturRepository.findAllMitBesitzer();
         } else if (benutzer.profilId() != null) {
-            signaturen = signaturRepository.findAllByBesitzerIdOrderByUpdatedAtDesc(benutzer.profilId());
+            signaturen = new ArrayList<>(signaturRepository.findAllByBesitzerIdOrderByUpdatedAtDesc(benutzer.profilId()));
+            if (standardId != null && signaturen.stream().noneMatch(s -> standardId.equals(s.getId()))) {
+                signaturRepository.findById(standardId).ifPresent(s -> signaturen.add(0, s));
+            }
         } else {
             signaturen = List.of();
         }
-        Long standardId = standardId(benutzer);
         // Die Formulardaten (mit eingebetteten Bildern bis zu mehreren MB) braucht erst das Studio,
         // das die Signatur einzeln lädt – die Liste bleibt schlank.
         return signaturen.stream().map(s -> zuDto(s, benutzer, standardId, false)).toList();
@@ -70,12 +107,64 @@ public class EmailSignaturVerwaltungService {
         if (id == null) {
             return Optional.empty();
         }
-        return signaturRepository.findById(id).filter(s -> darfSehen(s, benutzer));
+        Long standardId = standardId(benutzer);
+        return signaturRepository.findById(id).filter(s -> darfSehen(s, benutzer, standardId));
+    }
+
+    /**
+     * Signatur, die der Benutzer ändern darf.
+     *
+     * @throws NoSuchElementException   wenn er sie nicht sehen darf
+     * @throws IllegalArgumentException wenn er sie nur sehen, aber nicht ändern darf
+     */
+    @Transactional(readOnly = true)
+    public EmailSignature bearbeitbare(Long id, Benutzer benutzer) {
+        EmailSignature signatur = sichtbare(id, benutzer)
+                .orElseThrow(() -> new NoSuchElementException("Signatur nicht gefunden"));
+        if (!darfAendern(signatur, benutzer)) {
+            throw new IllegalArgumentException(MELDUNG_NUR_LESEN);
+        }
+        return signatur;
     }
 
     @Transactional(readOnly = true)
     public Optional<EmailSignaturDto> laden(Long id, Benutzer benutzer) {
         return sichtbare(id, benutzer).map(s -> zuDto(s, benutzer, standardId(benutzer)));
+    }
+
+    /**
+     * Alle Firmen-Vorlagen mit Formulardaten, alphabetisch. Jeder angemeldete Benutzer sieht sie;
+     * wem eine Vorlage gehört, erfahren nur Admins.
+     */
+    @Transactional(readOnly = true)
+    public List<EmailSignaturDto> firmenVorlagen(Benutzer benutzer) {
+        List<EmailSignature> vorlagen = signaturRepository.findAllByFirmenVorlageTrueOrderByNameAsc();
+        if (benutzer.admin()) {
+            Long standardId = standardId(benutzer);
+            return vorlagen.stream().map(s -> zuDto(s, benutzer, standardId)).toList();
+        }
+        return vorlagen.stream().map(EmailSignaturVerwaltungService::alsVorlageFuerBenutzer).toList();
+    }
+
+    /**
+     * Macht die Signatur zur Firmen-Vorlage oder nimmt sie zurück (nur Admin, siehe SecurityConfig).
+     *
+     * @throws IllegalArgumentException wenn die Signatur keine Formulardaten hat
+     */
+    @Transactional
+    public EmailSignaturDto alsFirmenVorlage(Long id, boolean firmenVorlage, Benutzer benutzer) {
+        EmailSignature signatur = sichtbare(id, benutzer)
+                .orElseThrow(() -> new NoSuchElementException("Signatur nicht gefunden"));
+        if (firmenVorlage && (signatur.getVorlageDaten() == null || signatur.getVorlageDaten().isBlank())) {
+            // Mitarbeiter übernehmen das Design aus den Formulardaten – reines HTML taugt dafür nicht.
+            throw new IllegalArgumentException(MELDUNG_VORLAGE_OHNE_FORMULAR);
+        }
+        signatur.setFirmenVorlage(firmenVorlage);
+        if (firmenVorlage) {
+            // Eine Vorlage stammt selbst aus keiner anderen.
+            signatur.setFirmenVorlageId(null);
+        }
+        return zuDto(signaturRepository.save(signatur), benutzer, standardId(benutzer));
     }
 
     /**
@@ -97,9 +186,10 @@ public class EmailSignaturVerwaltungService {
     /** Die aktuelle System-Signatur, wenn der Benutzer sie sehen darf. */
     @Transactional(readOnly = true)
     public Optional<EmailSignaturDto> systemSignatur(Benutzer benutzer) {
+        Long standardId = standardId(benutzer);
         return signaturRepository.findFirstByIsSystemDefaultTrue()
-                .filter(s -> darfSehen(s, benutzer))
-                .map(s -> zuDto(s, benutzer, standardId(benutzer)));
+                .filter(s -> darfSehen(s, benutzer, standardId))
+                .map(s -> zuDto(s, benutzer, standardId));
     }
 
     /**
@@ -119,8 +209,7 @@ public class EmailSignaturVerwaltungService {
 
         EmailSignature signatur;
         if (request.id() != null) {
-            signatur = sichtbare(request.id(), benutzer)
-                    .orElseThrow(() -> new NoSuchElementException("Signatur nicht gefunden"));
+            signatur = bearbeitbare(request.id(), benutzer);
             if (signatur.isSystemDefault() && !benutzer.admin()) {
                 // Die System-Signatur steht unter allen automatischen Mails an Kunden.
                 throw new IllegalArgumentException("Die System-Signatur kann nur ein Admin ändern.");
@@ -129,9 +218,14 @@ public class EmailSignaturVerwaltungService {
             if (!benutzer.admin() && benutzer.profilId() == null) {
                 throw new IllegalArgumentException("Zu Ihrer Anmeldung gibt es kein Benutzerprofil.");
             }
+            if (!benutzer.admin() && request.firmenVorlageId() == null && signaturRepository.existsByFirmenVorlageTrue()) {
+                // Das Design legt der Betrieb fest; bestehende Signaturen bleiben davon unberührt.
+                throw new IllegalArgumentException(MELDUNG_FIRMEN_VORLAGE_PFLICHT);
+            }
             signatur = new EmailSignature();
             signatur.setBesitzer(benutzer.profilId() == null ? null : profil(benutzer.profilId()));
         }
+        signatur.setFirmenVorlageId(signatur.isFirmenVorlage() ? null : pruefeFirmenVorlage(request.firmenVorlageId(), signatur));
         if (benutzer.admin() && Boolean.TRUE.equals(request.besitzerFestlegen())) {
             FrontendUserProfile neuerBesitzer = request.besitzerId() == null ? null : profil(request.besitzerId());
             if (signatur.getId() != null && !gleicherBenutzer(signatur.getBesitzer(), neuerBesitzer)) {
@@ -171,6 +265,19 @@ public class EmailSignaturVerwaltungService {
         });
     }
 
+    /** ID einer bestehenden Firmen-Vorlage (nicht die Signatur selbst) oder {@code null}. */
+    private Long pruefeFirmenVorlage(Long firmenVorlageId, EmailSignature signatur) {
+        if (firmenVorlageId == null) {
+            return null;
+        }
+        boolean gueltig = !firmenVorlageId.equals(signatur.getId())
+                && signaturRepository.findById(firmenVorlageId).map(EmailSignature::isFirmenVorlage).orElse(false);
+        if (!gueltig) {
+            throw new IllegalArgumentException(MELDUNG_FIRMEN_VORLAGE_FEHLT);
+        }
+        return firmenVorlageId;
+    }
+
     /** Markiert die Signatur als System-Signatur für automatische Mails (nur Admin, siehe SecurityConfig). */
     @Transactional
     public EmailSignaturDto alsSystemSignatur(Long id, Benutzer benutzer) {
@@ -187,8 +294,7 @@ public class EmailSignaturVerwaltungService {
      */
     @Transactional
     public void loeschen(Long id, Benutzer benutzer) {
-        EmailSignature signatur = sichtbare(id, benutzer)
-                .orElseThrow(() -> new NoSuchElementException("Signatur nicht gefunden"));
+        EmailSignature signatur = bearbeitbare(id, benutzer);
         if (signatur.isSystemDefault()) {
             throw new IllegalArgumentException(
                     "Die System-Signatur kann nicht gelöscht werden. Bitte zuerst eine andere Signatur als System-Signatur festlegen.");
@@ -239,12 +345,58 @@ public class EmailSignaturVerwaltungService {
                 .orElse(null);
     }
 
-    static boolean darfSehen(EmailSignature signatur, Benutzer benutzer) {
-        if (benutzer.admin()) {
-            return true;
-        }
+    /** Admins sehen alles, Benutzer ihre eigenen und ihre aktuelle Standard-Signatur. */
+    static boolean darfSehen(EmailSignature signatur, Benutzer benutzer, Long standardId) {
+        return benutzer.admin() || istBesitzer(signatur, benutzer)
+                || (benutzer.profilId() != null && signatur.getId() != null && signatur.getId().equals(standardId));
+    }
+
+    /**
+     * Ändern und löschen dürfen Admins und der Besitzer – eine Firmen-Vorlage aber nur Admins,
+     * denn ihr Design gilt für den ganzen Betrieb.
+     */
+    static boolean darfAendern(EmailSignature signatur, Benutzer benutzer) {
+        return benutzer.admin() || (istBesitzer(signatur, benutzer) && !signatur.isFirmenVorlage());
+    }
+
+    private static boolean istBesitzer(EmailSignature signatur, Benutzer benutzer) {
         return benutzer.profilId() != null && signatur.getBesitzer() != null
                 && Objects.equals(signatur.getBesitzer().getId(), benutzer.profilId());
+    }
+
+    /**
+     * Firmen-Vorlage, wie ein Benutzer ohne Admin-Rechte sie sieht: nur das Design. Besitzer,
+     * fertiges HTML, alte Bilder und die persönlichen Angaben dessen, der sie angelegt hat,
+     * bleiben auf dem Server.
+     */
+    private static EmailSignaturDto alsVorlageFuerBenutzer(EmailSignature s) {
+        return new EmailSignaturDto(s.getId(), s.getName(), "", ohnePersoenlicheAngaben(s.getVorlageDaten()), false,
+                s.isSystemDefault(), null, null, false, s.getCreatedAt(), s.getUpdatedAt(), List.of(),
+                true, null, true);
+    }
+
+    /** Leert die persönlichen Felder im Formularzustand; {@code null}, wenn er kein JSON-Objekt ist. */
+    static String ohnePersoenlicheAngaben(String vorlageDaten) {
+        if (vorlageDaten == null || vorlageDaten.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode knoten = JSON.readTree(vorlageDaten);
+            if (!(knoten instanceof ObjectNode daten)) {
+                return null;
+            }
+            PERSOENLICHE_FELDER.forEach(feld -> daten.put(feld, ""));
+            return JSON.writeValueAsString(daten);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    private static List<EmailSignaturDto.Bild> bilder(EmailSignature s) {
+        return Optional.ofNullable(s.getImages()).orElse(List.of()).stream()
+                .map(i -> new EmailSignaturDto.Bild(i.getId(), i.getCid(), i.getOriginalFilename(),
+                        i.getContentType(), i.getSizeBytes()))
+                .toList();
     }
 
     private EmailSignaturDto zuDto(EmailSignature s, Benutzer benutzer, Long standardId) {
@@ -254,10 +406,6 @@ public class EmailSignaturVerwaltungService {
     private EmailSignaturDto zuDto(EmailSignature s, Benutzer benutzer, Long standardId, boolean mitVorlageDaten) {
         FrontendUserProfile besitzer = s.getBesitzer();
         Long besitzerId = besitzer == null ? null : besitzer.getId();
-        List<EmailSignaturDto.Bild> bilder = Optional.ofNullable(s.getImages()).orElse(List.of()).stream()
-                .map(i -> new EmailSignaturDto.Bild(i.getId(), i.getCid(), i.getOriginalFilename(),
-                        i.getContentType(), i.getSizeBytes()))
-                .toList();
         return new EmailSignaturDto(
                 s.getId(),
                 s.getName(),
@@ -270,6 +418,9 @@ public class EmailSignaturVerwaltungService {
                 besitzerId != null && Objects.equals(besitzerId, benutzer.profilId()),
                 s.getCreatedAt(),
                 s.getUpdatedAt(),
-                bilder);
+                bilder(s),
+                s.isFirmenVorlage(),
+                s.getFirmenVorlageId(),
+                !darfAendern(s, benutzer));
     }
 }
