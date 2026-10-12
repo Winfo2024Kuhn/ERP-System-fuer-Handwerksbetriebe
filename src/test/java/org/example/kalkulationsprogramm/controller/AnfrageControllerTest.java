@@ -10,12 +10,11 @@ import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService;
 import org.example.kalkulationsprogramm.service.AnfrageService;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
-import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
@@ -45,14 +44,12 @@ class AnfrageControllerTest {
         KundeRepository kundeRepository = mock(KundeRepository.class);
         AnfrageNotizRepository anfrageNotizRepository = mock(AnfrageNotizRepository.class);
         AnfrageNotizBildRepository anfrageNotizBildRepository = mock(AnfrageNotizBildRepository.class);
-        MitarbeiterRepository mitarbeiterRepository = mock(MitarbeiterRepository.class);
-        FrontendUserProfileService frontendUserProfileService = mock(FrontendUserProfileService.class);
         DokumentFreigabeService dokumentFreigabeService = mock(DokumentFreigabeService.class);
 
         AnfrageController controller = new AnfrageController(anfrageService, ausgangsGeschaeftsDokumentService,
                 dateiSpeicherService, zugferdErstellService, zugferdExtractorService, pdfAiExtractorService,
                 kundeRepository, anfrageNotizRepository, anfrageNotizBildRepository,
-                mitarbeiterRepository, frontendUserProfileService, dokumentFreigabeService);
+                mock(AngemeldeterMitarbeiterService.class), dokumentFreigabeService);
 
         Anfrage anfrage = new Anfrage();
         anfrage.setId(42L);
@@ -82,14 +79,12 @@ class AnfrageControllerTest {
         KundeRepository kundeRepository = mock(KundeRepository.class);
         AnfrageNotizRepository anfrageNotizRepository = mock(AnfrageNotizRepository.class);
         AnfrageNotizBildRepository anfrageNotizBildRepository = mock(AnfrageNotizBildRepository.class);
-        MitarbeiterRepository mitarbeiterRepository = mock(MitarbeiterRepository.class);
-        FrontendUserProfileService frontendUserProfileService = mock(FrontendUserProfileService.class);
         DokumentFreigabeService dokumentFreigabeService = mock(DokumentFreigabeService.class);
 
         AnfrageController controller = new AnfrageController(anfrageService, ausgangsGeschaeftsDokumentService,
                 dateiSpeicherService, zugferdErstellService, zugferdExtractorService, pdfAiExtractorService,
                 kundeRepository, anfrageNotizRepository, anfrageNotizBildRepository,
-                mitarbeiterRepository, frontendUserProfileService, dokumentFreigabeService);
+                mock(AngemeldeterMitarbeiterService.class), dokumentFreigabeService);
 
         KategorieVorschlagDto dto = new KategorieVorschlagDto();
         dto.setKategorieId(7L);
@@ -116,8 +111,7 @@ class AnfrageControllerTest {
                 mock(KundeRepository.class),
                 mock(AnfrageNotizRepository.class),
                 mock(AnfrageNotizBildRepository.class),
-                mock(MitarbeiterRepository.class),
-                mock(FrontendUserProfileService.class),
+                mock(AngemeldeterMitarbeiterService.class),
                 mock(DokumentFreigabeService.class));
     }
 
@@ -193,8 +187,7 @@ class AnfrageControllerTest {
                 mock(KundeRepository.class),
                 mock(AnfrageNotizRepository.class),
                 mock(AnfrageNotizBildRepository.class),
-                mock(MitarbeiterRepository.class),
-                mock(FrontendUserProfileService.class),
+                mock(AngemeldeterMitarbeiterService.class),
                 mock(DokumentFreigabeService.class));
         when(zugferdErstellService.erzeuge(anyString(), any()))
                 .thenThrow(new FirmenstammdatenUnvollstaendigException("die E-Rechnung", List.of("Ort")));
@@ -217,8 +210,7 @@ class AnfrageControllerTest {
                 mock(KundeRepository.class),
                 mock(AnfrageNotizRepository.class),
                 mock(AnfrageNotizBildRepository.class),
-                mock(MitarbeiterRepository.class),
-                mock(FrontendUserProfileService.class),
+                mock(AngemeldeterMitarbeiterService.class),
                 mock(DokumentFreigabeService.class));
         when(zugferdErstellService.erzeuge(anyString(), any()))
                 .thenThrow(new RuntimeException("ZUGFeRD Erstellung fehlgeschlagen"));
@@ -228,5 +220,165 @@ class AnfrageControllerTest {
 
         assertEquals(400, response.getStatusCode().value());
         assertEquals(java.util.Map.of("message", "Die E-Rechnung konnte nicht erstellt werden."), response.getBody());
+    }
+
+    // ==================== Notiz-Verfasser kommt aus der Anmeldung ====================
+
+    private static org.example.kalkulationsprogramm.domain.Mitarbeiter mitarbeiter(long id) {
+        var m = new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+        m.setId(id);
+        m.setVorname(id == 7L ? "Max" : "Erika");
+        m.setNachname("Mustermann");
+        return m;
+    }
+
+    private static org.example.kalkulationsprogramm.domain.AnfrageNotiz notiz(long id,
+            org.example.kalkulationsprogramm.domain.Mitarbeiter verfasser, boolean privat) {
+        var n = new org.example.kalkulationsprogramm.domain.AnfrageNotiz();
+        var anfrage = new Anfrage();
+        anfrage.setId(1L);
+        n.setId(id);
+        n.setAnfrage(anfrage);
+        n.setMitarbeiter(verfasser);
+        n.setNotiz("Notiz " + id);
+        n.setMobileSichtbar(true);
+        n.setNurFuerErsteller(privat);
+        n.setErstelltAm(java.time.LocalDateTime.of(2026, 9, 1, 8, 0));
+        return n;
+    }
+
+    @Test
+    void notizenZeigenNurEigenePrivateNotizenDesAngemeldetenMitarbeiters() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        AnfrageNotizRepository notizen = mock(AnfrageNotizRepository.class);
+        AnfrageController controller = new AnfrageController(mock(AnfrageService.class),
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DateiSpeicherService.class),
+                mock(ZugferdErstellService.class), mock(ZugferdExtractorService.class),
+                mock(PdfAiExtractorService.class), mock(KundeRepository.class), notizen,
+                mock(AnfrageNotizBildRepository.class), angemeldet, mock(DokumentFreigabeService.class));
+        var max = mitarbeiter(7L);
+        var erika = mitarbeiter(3L);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.of(max));
+        when(notizen.findByAnfrageIdOrderByErstelltAmDesc(1L))
+                .thenReturn(List.of(notiz(1L, max, true), notiz(2L, erika, true), notiz(3L, erika, false)));
+
+        var antwort = controller.getNotizen(1L, auth).getBody();
+
+        assertEquals(List.of(1L, 3L), antwort.stream().map(AnfrageController.AnfrageNotizDto::getId).toList());
+    }
+
+    @Test
+    void notizAnlegenSchreibtAngemeldetenMitarbeiterAlsVerfasser() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        AnfrageNotizRepository notizen = mock(AnfrageNotizRepository.class);
+        AnfrageService anfrageService = mock(AnfrageService.class);
+        AnfrageController controller = new AnfrageController(anfrageService,
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DateiSpeicherService.class),
+                mock(ZugferdErstellService.class), mock(ZugferdExtractorService.class),
+                mock(PdfAiExtractorService.class), mock(KundeRepository.class), notizen,
+                mock(AnfrageNotizBildRepository.class), angemeldet, mock(DokumentFreigabeService.class));
+        var max = mitarbeiter(7L);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.of(max));
+        when(anfrageService.finde(1L)).thenReturn(new Anfrage());
+        when(notizen.save(any())).thenAnswer(inv -> {
+            org.example.kalkulationsprogramm.domain.AnfrageNotiz n = inv.getArgument(0);
+            n.setId(9L);
+            n.setErstelltAm(java.time.LocalDateTime.of(2026, 9, 1, 8, 0));
+            return n;
+        });
+        var dto = new AnfrageController.AnfrageNotizDto();
+        dto.setNotiz("'; DROP TABLE anfrage_notiz; --");
+
+        var antwort = controller.addNotiz(1L, dto, auth);
+
+        assertEquals(200, antwort.getStatusCode().value());
+        assertEquals(7L, antwort.getBody().getMitarbeiterId());
+        assertEquals("'; DROP TABLE anfrage_notiz; --", antwort.getBody().getNotiz());
+    }
+
+    @Test
+    void notizAnlegenOhneZugeordnetenMitarbeiterGibt403MitHinweis() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        AnfrageNotizRepository notizen = mock(AnfrageNotizRepository.class);
+        AnfrageService anfrageService = mock(AnfrageService.class);
+        AnfrageController controller = new AnfrageController(anfrageService,
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DateiSpeicherService.class),
+                mock(ZugferdErstellService.class), mock(ZugferdExtractorService.class),
+                mock(PdfAiExtractorService.class), mock(KundeRepository.class), notizen,
+                mock(AnfrageNotizBildRepository.class), angemeldet, mock(DokumentFreigabeService.class));
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.empty());
+        when(anfrageService.finde(1L)).thenReturn(new Anfrage());
+
+        var fehler = assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> controller.addNotiz(1L, new AnfrageController.AnfrageNotizDto(), auth));
+        assertEquals(403, fehler.getStatusCode().value());
+        assertEquals(AngemeldeterMitarbeiterService.KEIN_MITARBEITER, fehler.getReason());
+        verify(notizen, never()).save(any());
+    }
+
+    private AnfrageController notizController(AngemeldeterMitarbeiterService angemeldet, AnfrageNotizRepository notizen) {
+        return new AnfrageController(mock(AnfrageService.class),
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DateiSpeicherService.class),
+                mock(ZugferdErstellService.class), mock(ZugferdExtractorService.class),
+                mock(PdfAiExtractorService.class), mock(KundeRepository.class), notizen,
+                mock(AnfrageNotizBildRepository.class), angemeldet, mock(DokumentFreigabeService.class));
+    }
+
+    @Test
+    void notizenOhneZugeordnetenMitarbeiterSindNichtBearbeitbar() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        AnfrageNotizRepository notizen = mock(AnfrageNotizRepository.class);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.empty());
+        when(notizen.findByAnfrageIdOrderByErstelltAmDesc(1L))
+                .thenReturn(List.of(notiz(1L, mitarbeiter(3L), false), notiz(2L, mitarbeiter(3L), true)));
+
+        var antwort = notizController(angemeldet, notizen).getNotizen(1L, auth).getBody();
+
+        assertEquals(List.of(1L), antwort.stream().map(AnfrageController.AnfrageNotizDto::getId).toList());
+        assertFalse(antwort.get(0).isCanEdit());
+    }
+
+    @Test
+    void fremdePrivateNotizDarfAmPcNichtGeaendertWerden() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        AnfrageNotizRepository notizen = mock(AnfrageNotizRepository.class);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.of(mitarbeiter(7L)));
+        var fremd = notiz(5L, mitarbeiter(3L), true);
+        when(notizen.findById(5L)).thenReturn(Optional.of(fremd));
+
+        var antwort = notizController(angemeldet, notizen).updateNotiz(1L, 5L, new AnfrageController.AnfrageNotizDto(), auth);
+
+        assertEquals(403, antwort.getStatusCode().value());
+        assertNull(antwort.getBody());
+        assertTrue(fremd.isNurFuerErsteller());
+        verify(notizen, never()).save(any());
+    }
+
+    @Test
+    void fremdePrivateNotizDarfAmPcNichtGeloeschtWerden() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        AnfrageNotizRepository notizen = mock(AnfrageNotizRepository.class);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.of(mitarbeiter(7L)));
+        when(notizen.findById(5L)).thenReturn(Optional.of(notiz(5L, mitarbeiter(3L), true)));
+
+        assertEquals(403, notizController(angemeldet, notizen).deleteNotiz(1L, 5L, auth).getStatusCode().value());
+        verify(notizen, never()).delete(any());
+    }
+
+    @Test
+    void notizAusAndererAnfrageGibtAmPc404() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        AnfrageNotizRepository notizen = mock(AnfrageNotizRepository.class);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(notizen.findById(5L)).thenReturn(Optional.of(notiz(5L, mitarbeiter(7L), false)));
+
+        assertEquals(404, notizController(angemeldet, notizen).deleteNotiz(2L, 5L, auth).getStatusCode().value());
+        verify(notizen, never()).delete(any());
     }
 }

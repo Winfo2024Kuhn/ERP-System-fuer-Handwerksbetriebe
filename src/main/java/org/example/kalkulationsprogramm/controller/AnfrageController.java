@@ -27,20 +27,21 @@ import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendig
 import org.example.kalkulationsprogramm.repository.AnfrageNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
+import org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService;
 import org.example.kalkulationsprogramm.service.AnfrageService;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
-import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -63,8 +64,7 @@ public class AnfrageController {
     private final KundeRepository kundeRepository;
     private final AnfrageNotizRepository anfrageNotizRepository;
     private final AnfrageNotizBildRepository anfrageNotizBildRepository;
-    private final MitarbeiterRepository mitarbeiterRepository;
-    private final FrontendUserProfileService frontendUserProfileService;
+    private final AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
     private final DokumentFreigabeService dokumentFreigabeService;
 
     /**
@@ -547,42 +547,37 @@ public class AnfrageController {
         private String erstelltAm;
     }
 
-    // Hilfsmethode analog zu ProjektController
-    private Mitarbeiter resolveMitarbeiter(Long userProfileId, Long mitarbeiterId, String token) {
-        if (mitarbeiterId != null) {
-            return mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
-        }
-        if (token != null && !token.isBlank()) {
-            return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
-        }
-        if (userProfileId != null) {
-            return frontendUserProfileService.findById(userProfileId)
-                    .map(profile -> profile.getMitarbeiter())
-                    .orElse(null);
-        }
-        return null;
+    /** Wer gerade handelt (PC: zugeordneter Mitarbeiter, Handy: Token) – nie ein Request-Wert. */
+    private Mitarbeiter handelnderMitarbeiter(Authentication authentication) {
+        return angemeldeterMitarbeiter.handelnderMitarbeiter(authentication).orElse(null);
     }
 
+    /**
+     * Verfasser für Notiz-Aktionen. Ohne zugeordneten Mitarbeiter 403 mit Hinweis – bewusst
+     * nicht 401, das würde im PC-Frontend als abgelaufene Sitzung gelten und abmelden.
+     */
+    private Mitarbeiter verfasserOderAblehnen(Authentication authentication) {
+        Mitarbeiter mitarbeiter = handelnderMitarbeiter(authentication);
+        if (mitarbeiter == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, AngemeldeterMitarbeiterService.KEIN_MITARBEITER);
+        }
+        return mitarbeiter;
+    }
+
+    /**
+     * Wer eine Notiz (samt Bildern) bearbeiten oder löschen darf: in der Handy-App nur
+     * der Verfasser, am PC jeder – außer bei privaten Notizen („Nur für mich sichtbar“),
+     * die bleiben auch am PC allein beim Verfasser.
+     */
     private boolean hasEditPermission(AnfrageNotiz notiz, Mitarbeiter requester, boolean isMobile) {
         var mobile = MobilePrincipal.current();
         if (mobile != null && !MobileObjectAccessService.canReadAnfrageNotiz(notiz, mobile.mitarbeiterId())) return false;
         if (requester == null)
             return false;
-        if (!isMobile)
-            return true; // PC User dürfen alles
-
-        // Private Notizen dürfen nur vom Ersteller bearbeitet werden (auch am PC
-        // theoretisch, aber hier prüfen wir erst mal permission allgemein)
-        // Aber warten: Die Anforderung war "nur für Ersteller sichtbar". Bearbeiten
-        // darf man wahrscheinlich auch nur eigene private Notizen.
-        // Im ProjektController Logik war:
-        // PC User sehen alles (außer evtl. private? Nein, Anforderung war generell "nur
-        // für Ersteller sichtbar").
-        // Prüfen wir mal die Projekt-Logik. Im ProjektController wurde beim GET
-        // gefiltert.
-        // Beim Update/Delete wurde "canEdit" geprüft.
-
-        return notiz.getMitarbeiter() != null && notiz.getMitarbeiter().getId().equals(requester.getId());
+        boolean eigene = notiz.getMitarbeiter() != null && notiz.getMitarbeiter().getId().equals(requester.getId());
+        if (isMobile || notiz.isNurFuerErsteller())
+            return eigene;
+        return true;
     }
 
     private AnfrageNotizDto mapNotizToDto(AnfrageNotiz notiz, Mitarbeiter currentMitarbeiter, boolean isMobile) {
@@ -623,22 +618,20 @@ public class AnfrageController {
 
     @GetMapping("/{anfrageId}/notizen")
     public ResponseEntity<List<AnfrageNotizDto>> getNotizen(@PathVariable Long anfrageId,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
-            @RequestParam(required = false) String token) {
+            Authentication authentication) {
 
         List<AnfrageNotiz> notizen = anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(anfrageId);
 
-        Mitarbeiter requestingUser = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
-        boolean isMobile = token != null && !token.isBlank();
-        final Mitarbeiter finalUser = requestingUser != null ? requestingUser : new Mitarbeiter();
+        // Darf null sein: ohne zugeordneten Mitarbeiter keine privaten Notizen und kein Bearbeiten
+        final Mitarbeiter finalUser = handelnderMitarbeiter(authentication);
+        boolean isMobile = MobilePrincipal.current() != null;
 
         List<AnfrageNotizDto> dtos = notizen.stream()
                 .filter(n -> {
                     if (MobilePrincipal.current() != null && !MobileObjectAccessService.canReadAnfrageNotiz(n, MobilePrincipal.current().mitarbeiterId())) return false;
                     // Privacy Check (nurFuerErsteller)
                     if (n.isNurFuerErsteller()) {
-                        if (finalUser.getId() == null)
+                        if (finalUser == null)
                             return false;
                         return n.getMitarbeiter() != null && n.getMitarbeiter().getId().equals(finalUser.getId());
                     }
@@ -678,17 +671,13 @@ public class AnfrageController {
 
     @PostMapping("/{anfrageId}/notizen")
     public ResponseEntity<AnfrageNotizDto> addNotiz(@PathVariable Long anfrageId, @RequestBody AnfrageNotizDto dto,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
-            @RequestParam(required = false) String token) {
+            Authentication authentication) {
 
         Anfrage anfrage = anfrageService.finde(anfrageId);
         if (anfrage == null)
             return ResponseEntity.notFound().build();
 
-        Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
-        if (mitarbeiter == null)
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
 
         AnfrageNotiz notiz = new AnfrageNotiz();
         notiz.setAnfrage(anfrage);
@@ -698,26 +687,24 @@ public class AnfrageController {
         notiz.setNurFuerErsteller(dto.isNurFuerErsteller());
         AnfrageNotiz saved = anfrageNotizRepository.save(notiz);
 
-        boolean isMobile = token != null && !token.isBlank();
+        boolean isMobile = MobilePrincipal.current() != null;
         return ResponseEntity.ok(mapNotizToDto(saved, mitarbeiter, isMobile));
     }
 
     @PatchMapping("/{anfrageId}/notizen/{notizId}")
     public ResponseEntity<AnfrageNotizDto> updateNotiz(@PathVariable Long anfrageId, @PathVariable Long notizId,
             @RequestBody AnfrageNotizDto dto,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
-            @RequestParam(required = false) String token) {
+            Authentication authentication) {
 
         AnfrageNotiz notiz = anfrageNotizRepository.findById(notizId)
                 .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null
-                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) {
+            if (notiz.getAnfrage() == null
+                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId)) {
                 return ResponseEntity.notFound().build();
             }
 
-        Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
-        boolean isMobile = token != null && !token.isBlank();
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
+        boolean isMobile = MobilePrincipal.current() != null;
 
         if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
@@ -733,19 +720,17 @@ public class AnfrageController {
 
     @DeleteMapping("/{anfrageId}/notizen/{notizId}")
     public ResponseEntity<Void> deleteNotiz(@PathVariable Long anfrageId, @PathVariable Long notizId,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
-            @RequestParam(required = false) String token) {
+            Authentication authentication) {
 
         AnfrageNotiz notiz = anfrageNotizRepository.findById(notizId)
                 .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null
-                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) {
+            if (notiz.getAnfrage() == null
+                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId)) {
                 return ResponseEntity.notFound().build();
             }
 
-        Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
-        boolean isMobile = token != null && !token.isBlank();
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
+        boolean isMobile = MobilePrincipal.current() != null;
 
         if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
@@ -766,19 +751,17 @@ public class AnfrageController {
     @PostMapping(value = "/{anfrageId}/notizen/{notizId}/bilder", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<AnfrageNotizBildDto> uploadNotizBild(@PathVariable Long anfrageId, @PathVariable Long notizId,
             @RequestParam("datei") MultipartFile file,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
-            @RequestParam(required = false) String token) {
+            Authentication authentication) {
 
         AnfrageNotiz notiz = anfrageNotizRepository.findById(notizId)
                 .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null
-                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) {
+            if (notiz.getAnfrage() == null
+                    || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId)) {
                 return ResponseEntity.notFound().build();
             }
 
-        Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
-        boolean isMobile = token != null && !token.isBlank();
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
+        boolean isMobile = MobilePrincipal.current() != null;
 
         if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
@@ -806,9 +789,7 @@ public class AnfrageController {
     @DeleteMapping("/{anfrageId}/notizen/{notizId}/bilder/{bildId}")
     public ResponseEntity<Void> deleteNotizBild(@PathVariable Long anfrageId, @PathVariable Long notizId,
             @PathVariable Long bildId,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
-            @RequestParam(required = false) String token) {
+            Authentication authentication) {
 
         AnfrageNotizBild bild = anfrageNotizBildRepository.findById(bildId)
                 .orElseThrow(() -> new RuntimeException("Bild nicht gefunden"));
@@ -818,9 +799,9 @@ public class AnfrageController {
         }
 
         AnfrageNotiz notiz = bild.getNotiz();
-        if (MobilePrincipal.current() != null && (notiz.getAnfrage() == null || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId))) return ResponseEntity.notFound().build();
-        Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, mitarbeiterId, token);
-        boolean isMobile = token != null && !token.isBlank();
+        if (notiz.getAnfrage() == null || !java.util.Objects.equals(notiz.getAnfrage().getId(), anfrageId)) return ResponseEntity.notFound().build();
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
+        boolean isMobile = MobilePrincipal.current() != null;
 
         if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();

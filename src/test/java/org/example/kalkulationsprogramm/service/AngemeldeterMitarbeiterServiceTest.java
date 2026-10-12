@@ -28,6 +28,9 @@ class AngemeldeterMitarbeiterServiceTest {
     @Mock
     private FrontendUserProfileRepository profilRepository;
 
+    @Mock
+    private org.example.kalkulationsprogramm.repository.MitarbeiterRepository mitarbeiterRepository;
+
     @InjectMocks
     private AngemeldeterMitarbeiterService service;
 
@@ -77,5 +80,43 @@ class AngemeldeterMitarbeiterServiceTest {
         assertThatThrownBy(() -> service.bearbeiter(anmeldung(42L)))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED));
+    }
+
+    // ==================== handelnderMitarbeiter (Hochlader, Notiz-Verfasser) ====================
+
+    @Test
+    void handelnd_PcLiefertZugeordnetenMitarbeiter() {
+        Mitarbeiter max = new Mitarbeiter();
+        max.setId(7L);
+        FrontendUserProfile profil = new FrontendUserProfile();
+        profil.setMitarbeiter(max);
+        when(profilRepository.findById(42L)).thenReturn(Optional.of(profil));
+
+        assertThat(service.handelnderMitarbeiter(anmeldung(42L))).containsSame(max);
+    }
+
+    @Test
+    void handelnd_PcOhneZuordnungIstLeerStattFehler() {
+        when(profilRepository.findById(42L)).thenReturn(Optional.of(new FrontendUserProfile()));
+
+        assertThat(service.handelnderMitarbeiter(anmeldung(42L))).isEmpty();
+    }
+
+    @Test
+    void handelnd_HandyLiefertMitarbeiterZumToken() {
+        Mitarbeiter max = new Mitarbeiter();
+        max.setId(7L);
+        when(mitarbeiterRepository.findById(7L)).thenReturn(Optional.of(max));
+        var handy = new UsernamePasswordAuthenticationToken(
+                new org.example.kalkulationsprogramm.config.MobilePrincipal(7L), null, java.util.List.of());
+
+        assertThat(service.handelnderMitarbeiter(handy)).containsSame(max);
+        verifyNoInteractions(profilRepository);
+    }
+
+    @Test
+    void handelnd_OhneAnmeldungLeer() {
+        assertThat(service.handelnderMitarbeiter(null)).isEmpty();
+        verifyNoInteractions(profilRepository, mitarbeiterRepository);
     }
 }

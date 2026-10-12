@@ -49,6 +49,7 @@ import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
+import { leseFehlermeldung } from '../lib/apiFehler';
 
 type AnfrageDetailTab = 'emails' | 'geschaeftsdokumente' | 'dokumente' | 'beschreibung' | 'notizen';
 const ALLOWED_ANFRAGE_TABS: ReadonlyArray<AnfrageDetailTab> =
@@ -822,9 +823,6 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
         if (!neueNotiz.trim()) return;
         setSavingNotiz(true);
         try {
-            const userProfileId = localStorage.getItem('frontendUserSelection');
-            const profileData = userProfileId ? JSON.parse(userProfileId) : null;
-
             const url = editingNotiz
                 ? `/api/anfragen/${anfrage.id}/notizen/${editingNotiz.id}`
                 : `/api/anfragen/${anfrage.id}/notizen`;
@@ -834,8 +832,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
             const res = await fetch(url, {
                 method: method,
                 headers: {
-                    'Content-Type': 'application/json',
-                    ...(profileData?.id ? { 'X-User-Profile-Id': profileData.id.toString() } : {})
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     notiz: neueNotiz.trim(),
@@ -850,9 +847,12 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 setEditingNotiz(null);
                 setShowNotizModal(false);
                 loadNotizen();
+            } else {
+                toast.error(await leseFehlermeldung(res, 'Notiz konnte nicht gespeichert werden.'));
             }
         } catch (e) {
             console.error('Notiz speichern fehlgeschlagen', e);
+            toast.error('Notiz konnte nicht gespeichert werden.');
         } finally {
             setSavingNotiz(false);
         }
@@ -861,20 +861,14 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const handleDeleteNotiz = async (notizId: number) => {
         if (!await confirmDialog({ title: 'Notiz löschen', message: 'Möchten Sie diese Notiz wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
-            const userProfileId = localStorage.getItem('frontendUserSelection');
-            const profileData = userProfileId ? JSON.parse(userProfileId) : null;
-
             const res = await fetch(`/api/anfragen/${anfrage.id}/notizen/${notizId}`, {
                 method: 'DELETE',
-                headers: {
-                    ...(profileData?.id ? { 'X-User-Profile-Id': profileData.id.toString() } : {})
-                }
             });
 
             if (res.ok) {
                 loadNotizen();
             } else {
-                toast.error('Fehler beim Löschen der Notiz');
+                toast.error(await leseFehlermeldung(res, 'Fehler beim Löschen der Notiz'));
             }
         } catch (e) {
             console.error('Fehler beim Löschen:', e);
@@ -902,17 +896,11 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const handleNotizBildUpload = async (notizId: number, file: File) => {
         setUploadingNotizBildId(notizId);
         try {
-            const userProfileId = localStorage.getItem('frontendUserSelection');
-            const profileData = userProfileId ? JSON.parse(userProfileId) : null;
-
             const formData = new FormData();
             formData.append('datei', file);
 
             const res = await fetch(`/api/anfragen/${anfrage.id}/notizen/${notizId}/bilder`, {
                 method: 'POST',
-                headers: {
-                    ...(profileData?.id ? { 'X-User-Profile-Id': profileData.id.toString() } : {})
-                },
                 body: formData
             });
             if (res.ok) {
@@ -920,7 +908,7 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 setNotizen(prev => appendBildToNotiz(prev, notizId, bild));
                 void loadNotizen();
             } else {
-                toast.error('Fehler beim Hochladen des Bildes');
+                toast.error(await leseFehlermeldung(res, 'Fehler beim Hochladen des Bildes'));
             }
         } catch (e) {
             console.error('Bild-Upload fehlgeschlagen:', e);
@@ -934,20 +922,14 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const handleNotizBildDelete = async (notizId: number, bildId: number) => {
         if (!await confirmDialog({ title: 'Bild löschen', message: 'Bild wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
         try {
-            const userProfileId = localStorage.getItem('frontendUserSelection');
-            const profileData = userProfileId ? JSON.parse(userProfileId) : null;
-
             const res = await fetch(`/api/anfragen/${anfrage.id}/notizen/${notizId}/bilder/${bildId}`, {
                 method: 'DELETE',
-                headers: {
-                    ...(profileData?.id ? { 'X-User-Profile-Id': profileData.id.toString() } : {})
-                }
             });
             if (res.ok) {
                 setNotizen(prev => removeBildFromNotiz(prev, notizId, bildId));
                 void loadNotizen();
             } else {
-                toast.error('Fehler beim Löschen des Bildes');
+                toast.error(await leseFehlermeldung(res, 'Fehler beim Löschen des Bildes'));
             }
         } catch (e) {
             console.error('Bild-Löschen fehlgeschlagen:', e);
