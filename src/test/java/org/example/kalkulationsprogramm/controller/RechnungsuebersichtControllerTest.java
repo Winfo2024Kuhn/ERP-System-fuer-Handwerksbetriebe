@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,12 +30,20 @@ class RechnungsuebersichtControllerTest {
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
-        controller = new RechnungsuebersichtController(
-                new org.example.kalkulationsprogramm.service.RechnungsuebersichtService(ausgangsRepository, projektDokumentRepository, uploads.toString()),
-                lieferantGeschaeftsdokumentRepository, mitarbeiterRepository, lieferantenRepository, geminiService, lieferantDokumentRepository, zugriffService);
+        controller = controllerMitAblage(uploads);
         // Angemeldeter Nutzer mit Zugriff auf alle Dokumenttypen (z. B. Admin)
         lenient().when(zugriffService.sichtbareTypen(any(), any()))
                 .thenReturn(java.util.Optional.of(java.util.EnumSet.allOf(LieferantDokumentTyp.class)));
+    }
+
+    /** Controller mit echter Dateisuche; die Ordner liegen unter {@code ablage} wie im Standard-Setup. */
+    private RechnungsuebersichtController controllerMitAblage(java.nio.file.Path ablage) {
+        var dateiService = new LieferantDokumentDateiService(ablage.toString(), ablage.toString(),
+                ablage.resolve("attachments").toString(), ablage.resolve("attachments").resolve("lieferanten").toString());
+        return new RechnungsuebersichtController(
+                new org.example.kalkulationsprogramm.service.RechnungsuebersichtService(ausgangsRepository, projektDokumentRepository, uploads.toString()),
+                lieferantGeschaeftsdokumentRepository, mitarbeiterRepository, lieferantenRepository, geminiService,
+                lieferantDokumentRepository, zugriffService, dateiService);
     }
 
     @Test
@@ -247,7 +256,6 @@ class RechnungsuebersichtControllerTest {
                 pdf.save(uploads.resolve(name).toFile());
             }
         }
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         when(lieferantGeschaeftsdokumentRepository.findById(1L)).thenReturn(java.util.Optional.of(erlaubt));
         when(lieferantGeschaeftsdokumentRepository.findById(2L)).thenReturn(java.util.Optional.of(gesperrt));
 
@@ -278,7 +286,6 @@ class RechnungsuebersichtControllerTest {
         rechnung.getDokument().setGespeicherterDateiname("0b6f-uuid_Rechnung_Muster.pdf");
         // Liegt nur dort, wo import-upload und der Lieferanten-Import speichern.
         leeresPdf(uploads.resolve("lieferanten").resolve("7").resolve("0b6f-uuid_Rechnung_Muster.pdf"));
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         when(lieferantGeschaeftsdokumentRepository.findById(1L)).thenReturn(java.util.Optional.of(rechnung));
 
         var result = controller.mergePdfs(
@@ -301,7 +308,7 @@ class RechnungsuebersichtControllerTest {
         var ablage = uploads.resolve("ablage");
         java.nio.file.Files.createDirectories(ablage.resolve("lieferanten").resolve("7"));
         leeresPdf(uploads.resolve("draussen.pdf"));
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", ablage.toString());
+        controller = controllerMitAblage(ablage);
         when(lieferantGeschaeftsdokumentRepository.findById(1L)).thenReturn(java.util.Optional.of(rechnung));
 
         var result = controller.mergePdfs(
@@ -328,7 +335,6 @@ class RechnungsuebersichtControllerTest {
 
     @Test
     void mergeLaesstFotoUndFehlendeDateiAusUndMeldetSieImHeader() throws Exception {
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         var ordner = uploads.resolve("lieferanten").resolve("7");
         rechnungVonLieferant7(1L, "rechnung.pdf");
         rechnungVonLieferant7(2L, "foto.jpg");
@@ -350,7 +356,6 @@ class RechnungsuebersichtControllerTest {
     @Test
     void mergeBehandeltGesperrteUndUnbekannteIdsGleichUndNenntSieNicht() throws Exception {
         sichtbar(LieferantDokumentTyp.RECHNUNG);
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         rechnungVonLieferant7(1L, "rechnung.pdf");
         leeresPdf(uploads.resolve("lieferanten").resolve("7").resolve("rechnung.pdf"));
         var gesperrt = eingang(2L, LieferantDokumentTyp.GUTSCHRIFT);
@@ -367,7 +372,6 @@ class RechnungsuebersichtControllerTest {
 
     @Test
     void mergeNimmtDiePdfWennUnterDemAnderenNamenNurDieXmlLiegt() throws Exception {
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         var rechnung = rechnungVonLieferant7(1L, "e-rechnung.xml");
         var anhang = new EmailAttachment();
         anhang.setStoredFilename("e-rechnung.pdf");
@@ -387,7 +391,6 @@ class RechnungsuebersichtControllerTest {
 
     @Test
     void mergeOhneEinzigePdfGibt400MitVerstaendlicherMeldung() throws Exception {
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         rechnungVonLieferant7(1L, "e-rechnung.xml");
         var xml = uploads.resolve("lieferanten").resolve("7").resolve("e-rechnung.xml");
         java.nio.file.Files.createDirectories(xml.getParent());
@@ -403,7 +406,6 @@ class RechnungsuebersichtControllerTest {
 
     @Test
     void mergeFindetRechnungAusEmailEingangWieDieVorschau() throws Exception {
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         rechnungVonLieferant7(1L, "vendor.pdf");
         rechnungVonLieferant7(2L, "lieferanten-anhang.pdf");
         rechnungVonLieferant7(3L, "email-ordner.pdf");
@@ -421,7 +423,6 @@ class RechnungsuebersichtControllerTest {
 
     @Test
     void mergeFindetAnhangOhneEigenenDateinamenAuchFlachUndImMailOrdner() throws Exception {
-        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
         var email = new Email();
         email.setId(55L);
         var flach = rechnungVonLieferant7(1L, null);
