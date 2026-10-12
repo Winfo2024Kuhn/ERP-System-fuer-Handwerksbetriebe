@@ -325,9 +325,9 @@ Die Rechnungsübersicht (`/rechnungsuebersicht`) zeigt alle Eingangs- und Ausgan
 |---|---|
 | `GET /api/rechnungsuebersicht/ausgang` | Ausgangsrechnungen (gefiltert nach Jahr/Monat/Suche) |
 | `GET /api/rechnungsuebersicht/eingang` | Eingangsrechnungen (gefiltert nach Jahr/Monat/Suche) |
-| `POST /api/rechnungsuebersicht/merge-pdf` | Sammel-PDF aus ausgewählten Rechnungen erstellen |
-| `POST /api/rechnungsuebersicht/analyze-upload` | Eingangsrechnung per KI analysieren |
-| `POST /api/rechnungsuebersicht/import-upload` | Analysierte Eingangsrechnung importieren |
+| `POST /api/rechnungsuebersicht/merge-pdf` | Sammel-PDF aus ausgewählten Rechnungen erstellen. Nimmt nur echte PDFs auf; Eingangsrechnungen ohne PDF-Datei (Foto, XML, Datei fehlt) bleiben draußen, ihre IDs stehen im Antwort-Header `X-Nicht-Enthalten` |
+| `POST /api/rechnungsuebersicht/analyze-upload` | Eingangsrechnung per KI analysieren (derzeit ohne Oberfläche – Rechnungen kommen über „Belege & Kasse“) |
+| `POST /api/rechnungsuebersicht/import-upload` | Analysierte Eingangsrechnung importieren (derzeit ohne Oberfläche) |
 
 ### 11.3 Filter
 
