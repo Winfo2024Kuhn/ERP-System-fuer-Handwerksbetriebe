@@ -87,6 +87,14 @@ Alle Pfade liegen unter `${ERP_BASE_URL}/api/internal/freigabe/...`. Cloudflare-
 **Antwort 404:** PDF-Datei nicht auffindbar.
 **Antwort 410:** Freigabe ist abgelaufen oder widerrufen → kein PDF mehr.
 
+### 3.2a DELETE `/api/internal/freigabe/{uuid}/pdf`
+
+**Zweck:** Die Website meldet einen abgelaufenen Link; die PDF wird vom Link gelöst und danach nicht mehr ausgeliefert. Die Datei selbst bleibt im ERP (sie ist die PDF des Dokuments).
+
+**Antwort 204:** Erledigt (Freigabe abgelaufen oder zurückgezogen).
+**Antwort 409:** Freigabe ist noch offen oder angenommen → nichts geändert.
+**Antwort 404:** Unbekannte UUID.
+
 ### 3.3 POST `/api/internal/freigabe/{uuid}/akzeptieren`
 
 **Body — `FreigabeAkzeptierenRequest` (JSON):**

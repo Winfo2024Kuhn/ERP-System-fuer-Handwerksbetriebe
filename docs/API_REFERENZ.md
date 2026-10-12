@@ -22,8 +22,8 @@ Basis-URL: `http://localhost:8082`
 | `PUT` | `/{id}` | Dokument aktualisieren |
 | `POST` | `/{id}/buchen` | Dokument buchen (sperrt Rechnungstypen) |
 | `POST` | `/{id}/email-versendet` | Nach E-Mail-Versand buchen + Versanddatum |
-| `POST` | `/{id}/storno` | Dokument stornieren |
-| `DELETE` | `/{id}?begruendung=...` | Entwurf löschen (mit Begründung) |
+| `POST` | `/{id}/storno` | Gebuchte Rechnung stornieren, legt eine Stornorechnung an (nicht für Stornorechnungen und Entwürfe) |
+| `DELETE` | `/{id}?begruendung=...` | Entwurf löschen (mit Begründung; nicht wenn gebucht, versandt, digital angenommen oder storniert) |
 | `GET` | `/{id}/abrechnungsverlauf` | Abrechnungsverlauf abrufen |
 
 ---
@@ -97,6 +97,7 @@ Basis-URL: `http://localhost:8082`
 | `GET` | `/mitarbeiter/{id}/monat` | Monatssaldo eines Mitarbeiters |
 | `GET` | `/mitarbeiter/{id}/salden` | Saldenübersicht |
 | `GET` | `/team/monat` | Team-Monatssalden |
+| `POST` | `/saldo-cache/warmup` | Monatssalden aller aktiven Mitarbeiter neu in den Zwischenspeicher rechnen *(nur Admin)* |
 
 **Controller:** `ZeitkontoKorrekturController`  
 **Basis-URL:** `/api/zeitkonto-korrektur`
@@ -154,11 +155,18 @@ Basis-URL: `http://localhost:8082`
 | `POST` | `/` | Neue Signatur erstellen |
 
 **Controller:** `UnifiedEmailController`  
-**Basis-URL:** `/api/unified-email`
+**Basis-URL:** `/api/emails`
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | (diverse) | (diverse) | Einheitliche E-Mail-Integration |
+| `POST` | `/{id}/mark-read` | Mail als gelesen markieren (ein `GET /{id}/mark-viewed` gibt es nicht mehr) |
+| `POST` | `/import` | Postfach sofort abrufen *(nur Admin)* |
+| `POST` | `/scan-spam`, `/scan-inquiries`, `/scan-assignments`, `/scan-steuerberater` | Mail-Scans über den ganzen Bestand *(nur Admin)* |
+| `POST` | `/backfill-parents` | Antworten mit ihrer Ursprungsmail verknüpfen *(nur Admin)* |
+| `POST` | `/spam-model/rescore`, `/spam-model/bootstrap` | Spam-Modell neu bewerten bzw. aus CSV anlernen *(nur Admin)* |
+
+Aufrufe ohne Knopf: siehe [ADMIN_ENDPUNKTE.md](ADMIN_ENDPUNKTE.md).
 
 ---
 
@@ -169,14 +177,14 @@ Basis-URL: `http://localhost:8082`
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| `POST` | `/lieferant/{lieferantId}/reanalyze` | KI-Reanalyse für Lieferant |
+| `POST` | `/lieferant/{lieferantId}/reanalyze` | KI-Reanalyse für Lieferant *(nur Admin)* |
 | `POST` | `/{dokumentId}/reanalyze` | KI-Reanalyse eines Dokuments |
-| `POST` | `/relink-all` | Alle E-Mail-Anhänge neu verknüpfen |
-| `POST` | `/lieferant/{lieferantId}/relink` | Anhänge für Lieferant neu verknüpfen |
-| `POST` | `/process-assigned-emails` | Zugewiesene E-Mails verarbeiten |
-| `POST` | `/process-email/{emailId}` | Einzelne E-Mail verarbeiten |
-| `POST` | `/lieferant/{lieferantId}/process-emails` | E-Mails eines Lieferanten verarbeiten |
-| `GET` | `/duplicates` | Duplikate finden |
+| `POST` | `/relink-all` | Alle E-Mail-Anhänge neu verknüpfen *(nur Admin)* |
+| `POST` | `/lieferant/{lieferantId}/relink` | Anhänge für Lieferant neu verknüpfen *(nur Admin)* |
+| `POST` | `/process-assigned-emails` | Zugewiesene E-Mails verarbeiten *(nur Admin)* |
+| `POST` | `/process-email/{emailId}` | Einzelne E-Mail verarbeiten *(nur Admin)* |
+| `POST` | `/lieferant/{lieferantId}/process-emails` | E-Mails eines Lieferanten verarbeiten *(nur Admin)* |
+| `GET` | `/duplicates` | Duplikate finden *(nur Admin)* |
 | `GET` | `/{dokumentId}/download` | Dokument herunterladen |
 
 ---
@@ -217,11 +225,17 @@ Basis-URL: `http://localhost:8082`
 | `POST` | `/` | Neuen Lieferanten erstellen |
 
 **Controller:** `LieferantReklamationController`  
-**Basis-URL:** `/api/lieferant-reklamationen`
+**Basis-URL:** `/api/reklamationen`
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| (diverse) | (diverse) | Lieferanten-Reklamationsverwaltung |
+| `GET` | `/lieferant/{lieferantId}` | Reklamationen eines Lieferanten (auch Handy-App) |
+| `GET` | `/{id}` | Eine Reklamation mit Bildern (Detailseite der Handy-App) |
+| `POST` | `/lieferant/{lieferantId}` | Reklamation anlegen (auch Handy-App) |
+| `POST` | `/{id}/bilder` | Foto hochladen, nur Bilder (auch Handy-App) |
+| `PATCH` | `/{id}/status` | Status ändern (nur PC) |
+| `DELETE` | `/{id}` | Reklamation löschen (nur PC) |
+| `GET` | `/lieferscheine/search` | Lieferscheine eines Lieferanten suchen |
 
 ---
 
@@ -335,7 +349,8 @@ Basis-URL: `http://localhost:8082`
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| (diverse) | (diverse) | Firmenstammdaten-Verwaltung |
+| `GET` | `/`, `/logo`, `/steuerberater`, `/steuerberater/{id}` | Firmendaten, Firmenlogo und Steuerberater lesen (alle Angemeldeten) |
+| (diverse) | (diverse) | Alles Übrige, auch Logo hochladen/löschen: *nur Admin* |
 
 **Controller:** `BwaController`  
 **Basis-URL:** `/api/bwa`
@@ -374,6 +389,23 @@ Basis-URL: `http://localhost:8082`
 | `GET` | `/api/images/{dateiname:.+}` | Bild herunterladen |
 | `GET` | `/api/dokumente/{dateiname:.+}` | Dokument herunterladen |
 | `GET` | `/api/dokumente/{dateiname:.+}/thumbnail` | Dokument-Thumbnail |
+
+**Controller:** `KalenderController`  
+**Basis-URL:** `/api/kalender`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/mobile`, `/mobile/tag` | Termine des Mitarbeiters (Handy-App, Token) |
+| (diverse) | `/`, `/{id}` | Termine anlegen, ändern, löschen (nur PC; einen Anlege-Weg für die Handy-App gibt es nicht) |
+
+**Controller:** `FreigabeInternalController` (Website-Schnittstelle, Schlüssel `X-ERP-Website-Key` statt Anmeldung)  
+**Basis-URL:** `/api/internal/freigabe`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/{uuid}`, `/{uuid}/pdf` | Freigabe und PDF für die Annahme-Seite |
+| `POST` | `/{uuid}/code`, `/{uuid}/akzeptieren` | Bestätigungscode schicken, Angebot annehmen |
+| `DELETE` | `/{uuid}/pdf` | PDF vom abgelaufenen/zurückgezogenen Link lösen (`204`); die Datei bleibt im ERP. Offen oder angenommen: `409`, unbekannt: `404` |
 
 ---
 

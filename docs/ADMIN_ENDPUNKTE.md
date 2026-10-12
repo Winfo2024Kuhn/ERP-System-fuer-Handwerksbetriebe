@@ -2,7 +2,7 @@
 
 Diese Endpunkte gibt es nur im Backend. Es gibt im PC-Frontend und in der
 Zeiterfassungs-App keinen Knopf dafür, man ruft sie direkt im Browser auf.
-Stand: 09.10.2026.
+Stand: 12.10.2026.
 
 ## So geht's
 
@@ -20,6 +20,12 @@ Platzhalter in `{...}` (z. B. `{lieferantId}`) durch die echte ID ersetzen.
 > **Vorsicht:** Fast alle POST-Aufrufe schreiben über den ganzen Bestand
 > oder kosten KI-Aufrufe. Vorher ein Backup ziehen und möglichst
 > außerhalb der Arbeitszeit starten.
+
+Läufe mit „nur Admin“ bekommen normale Benutzer mit `403` abgewiesen. Seit
+12.10.2026 gilt das auch für den Mail-Abruf, alle Mail-Scans, das Spam-Modell
+(neu bewerten, anlernen), das Verknüpfen von Antworten, die Anhang-Verarbeitung
+zu Lieferanten-Dokumenten und den Zeitkonten-Zwischenspeicher. Ohne Vermerk
+dürfen alle Angemeldeten den Aufruf machen.
 
 ---
 
@@ -106,42 +112,42 @@ bekommen die PDF aus derselben Mail. Wiederholbar.
 await fetch('/api/emails/admin/backfill-xml-to-pdf',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Antworten mit ihrer Ursprungsmail verknüpfen
+### Antworten mit ihrer Ursprungsmail verknüpfen (nur Admin)
 Verknüpft bestehende Mails nachträglich mit der Mail, auf die sie antworten,
 und übernimmt deren Zuordnung (Projekt/Anfrage/Lieferant).
 ```js
 await fetch('/api/emails/backfill-parents',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Postfach sofort abrufen
+### Postfach sofort abrufen (nur Admin)
 Startet den Mail-Import jetzt statt beim nächsten Zeitplan.
 ```js
 await fetch('/api/emails/import',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.text())
 ```
 
-### Nicht zugeordnete Mails neu zuordnen
+### Nicht zugeordnete Mails neu zuordnen (nur Admin)
 Prüft Spam/Newsletter neu und versucht alle Posteingangs-Mails ohne
 Zuordnung automatisch zuzuordnen.
 ```js
 await fetch('/api/emails/scan-assignments',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Spam-Prüfung für noch nicht geprüfte Mails
+### Spam-Prüfung für noch nicht geprüfte Mails (nur Admin)
 ```js
 await fetch('/api/emails/scan-spam',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Anfrage-Erkennung für noch nicht geprüfte Mails
+### Anfrage-Erkennung für noch nicht geprüfte Mails (nur Admin)
 ```js
 await fetch('/api/emails/scan-inquiries',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Steuerberater-Mails nachträglich verarbeiten (Lohnabrechnungen, BWA)
+### Steuerberater-Mails nachträglich verarbeiten (Lohnabrechnungen, BWA) (nur Admin)
 ```js
 await fetch('/api/emails/scan-steuerberater',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Alle Mails mit dem Spam-Modell neu bewerten
+### Alle Mails mit dem Spam-Modell neu bewerten (nur Admin)
 Geht durch **alle** Mails. Antwortet mit `400`, solange das Modell nicht
 trainiert ist (siehe `spam-model/stats`).
 ```js
@@ -158,7 +164,7 @@ Einordnen und direkt zuordnen (ab 60 % Sicherheit):
 await fetch('/api/email-ki/classify-and-assign/{emailId}',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-> `POST /api/emails/spam-model/bootstrap` (Spam-Modell aus CSV anlernen)
+> `POST /api/emails/spam-model/bootstrap` (Spam-Modell aus CSV anlernen, nur Admin)
 > braucht einen Datei-Upload und passt deshalb nicht in eine Konsolenzeile.
 
 ---
@@ -196,7 +202,7 @@ Ein einzelnes Dokument:
 await fetch('/api/lieferant-dokumente/{dokumentId}/reanalyze',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Mail-Anhänge zu Lieferanten-Dokumenten machen
+### Mail-Anhänge zu Lieferanten-Dokumenten machen (nur Admin)
 Legt aus PDF-/XML-Anhängen von Lieferanten-Mails Dokumente an und lässt sie
 von der KI lesen.
 
@@ -244,7 +250,7 @@ tägliche Lauf. Läuft schon einer, kommt `409`.
 await fetch('/api/mahnwesen/lauf',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Zeitkonten-Zwischenspeicher neu füllen
+### Zeitkonten-Zwischenspeicher neu füllen (nur Admin)
 Rechnet die Monatssalden aller aktiven Mitarbeiter neu in den Cache.
 ```js
 await fetch('/api/zeitverwaltung/saldo-cache/warmup',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())

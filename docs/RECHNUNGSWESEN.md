@@ -360,8 +360,8 @@ Ausgewählte Rechnungen (Eingang und/oder Ausgang) können als zusammengefügtes
 | `PUT` | `/{id}` | Dokument aktualisieren (nur wenn bearbeitbar) |
 | `POST` | `/{id}/buchen` | Dokument buchen (sperrt Rechnungstypen) |
 | `POST` | `/{id}/email-versendet` | Nach E-Mail-Versand buchen + Versanddatum |
-| `POST` | `/{id}/storno` | Dokument stornieren (erstellt Gegendokument) |
-| `DELETE` | `/{id}?begruendung=...` | Entwurf löschen (nur ungebuchte) |
+| `POST` | `/{id}/storno` | Gebuchte Rechnung stornieren (erstellt Gegendokument; nicht für Stornorechnungen und Entwürfe) |
+| `DELETE` | `/{id}?begruendung=...` | Entwurf löschen (nicht wenn gebucht, versandt, digital angenommen oder storniert) |
 | `GET` | `/{id}/abrechnungsverlauf` | Abrechnungsverlauf abrufen |
 
 ### 12.3 Request/Response-DTOs
