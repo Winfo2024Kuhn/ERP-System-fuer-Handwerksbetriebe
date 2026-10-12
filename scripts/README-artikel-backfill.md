@@ -8,7 +8,8 @@ Es braucht nur Python 3 (Standardbibliothek, keine Pakete).
 
 ## Wann das laufen muss
 
-**Vor der Freigabe des Material-Knopfs im Dokument-Editor.** Der Knopf fuegt
+**Bevor im Dokument-Editor mit dem Material-Knopf gearbeitet wird.** Den Knopf
+gibt es im Editor bereits fuer alle (kein Schalter); er fuegt
 Artikel als Position in Angebote und Rechnungen ein; der Kunde liest dabei die
 `beschreibung` des Artikels. Ist sie leer, hat der Editor nur noch die
 Stammdaten, aus denen er einen Ersatzsatz baut
@@ -16,8 +17,8 @@ Stammdaten, aus denen er einen Ersatzsatz baut
 nicht reicht, geht die Position ganz ohne Kundentext raus und der Bediener muss
 ihn von Hand schreiben.
 
-Das gilt genauso beim Aufsetzen einer neuen Instanz wie heute: erst Artikel
-importieren, dann diesen Backfill fahren, dann den Material-Knopf freigeben.
+Das gilt genauso beim Aufsetzen einer neuen Instanz: erst Artikel
+importieren, dann diesen Backfill fahren, dann mit dem Material-Knopf arbeiten.
 
 ## Anmeldung
 
@@ -39,7 +40,8 @@ sich direkt in Excel oeffnen) mit einer Zeile je Artikel:
 
 | Spalte | Inhalt |
 | --- | --- |
-| `aktion` | `geplant`, `uebersprungen: schon gepflegt`, `uebersprungen: zu wenig Daten` oder `fehler: ...` |
+| `id` / `artikelnummer` / `produktname` / `profilform` | Zum Wiederfinden des Artikels |
+| `aktion` | `geplant` (Trockenlauf), `geschrieben` (mit `--apply`), `uebersprungen: schon gepflegt`, `uebersprungen: zu wenig Daten` oder `fehler: ...` |
 | `alte_kurzbeschreibung` / `alte_beschreibung` | Was aktuell am Artikel steht. Bei `schon gepflegt` sieht man so, OB da echter Text steht oder nur ein Rest wie `<p></p>`. Werte ueber 300 Zeichen werden erkennbar gekuerzt (`... [gekuerzt]`). |
 | `neue_kurzbeschreibung` | Innensicht, z.B. `Rundrohr 42.4x2 1.4301` |
 | `neue_beschreibung` | Kundentext als HTML, z.B. `<p>Rundrohr 42,4 x 2 mm aus Edelstahl 1.4301</p>` |
@@ -75,7 +77,8 @@ ausdruecklich, damit er nicht fuer einen vollstaendigen gehalten wird.
 - Kundentext-Regelfall (Halbzeug mit Profilform und Abmessung):
   `Rundrohr 42,4 x 2 mm aus Edelstahl 1.4301, nahtlos`. Werkstoffcodes
   werden in Handwerker-Sprache uebersetzt - angelehnt an die Anzeigenamen
-  aus Migration V337, aber fuers Kundendokument vereinfacht (Zusaetze wie
+  aus Migration V337 (heute Teil des Basis-Schemas
+  `db/postgresql/basis/V1__basis_schema.sql`), aber fuers Kundendokument vereinfacht (Zusaetze wie
   `(hochfest)` gekuerzt); unbekannte Codes behalten den technischen Namen.
   Normkuerzel wie `EN 10219-2` bleiben weg. `nahtlos`, `kaltgezogen` und
   `geschliffen` stehen dabei, weil sie sonst gleiche Positionen ununterscheidbar

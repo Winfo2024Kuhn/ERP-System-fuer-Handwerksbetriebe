@@ -2,7 +2,7 @@
 
 ## Übersicht
 
-Dieses Dokument beschreibt den vollständigen Lebenszyklus aller Geschäftsdokumente im System – sowohl ausgehende Dokumente (Rechnungen, Angebote etc.) als auch eingehende Dokumente (Lieferantenrechnungen, Lieferscheine etc.).
+Dieses Dokument beschreibt den vollständigen Lebenszyklus aller Geschäftsdokumente im System – sowohl ausgehende Dokumente (Angebote, Auftragsbestätigungen, Rechnungen etc.) als auch eingehende Dokumente (Lieferantenrechnungen, Lieferscheine etc.).
 
 ---
 
@@ -11,75 +11,123 @@ Dieses Dokument beschreibt den vollständigen Lebenszyklus aller Geschäftsdokum
 ### 1.1 Vollständiger Lifecycle
 
 ```
-                          ┌─────────────────────────────────────────────┐
-                          │            ENTWURF (Draft)                  │
-                          │  gebucht=false, versandDatum=null           │
-                          │  → Bearbeitbar, löschbar (mit Begründung)  │
-                          └──────────────┬──────────────────────────────┘
-                                         │
-                    ┌────────────────────┼────────────────────┐
-                    ▼                    ▼                    ▼
-            ┌──────────────┐   ┌──────────────────┐   ┌────────────────┐
-            │   ANGEBOT    │   │      direkte      │   │   aus Vorlage  │
-            │              │   │    Erstellung      │   │   erstellt     │
-            └──────┬───────┘   └────────┬─────────┘   └───────┬────────┘
-                   │                    │                      │
-                   ▼                    │                      │
-            ┌──────────────┐            │                      │
-            │     AB       │◄───────────┘                      │
-            │ (Auftrags-   │◄──────────────────────────────────┘
-            │ bestätigung) │
-            └──────┬───────┘
-                   │
-          ┌────────┼────────┬───────────────────┐
-          ▼        ▼        ▼                   ▼
-    ┌──────────┐ ┌──────────┐ ┌──────────┐  ┌──────────────┐
-    │Abschlags-│ │Abschlags-│ │Abschlags-│  │   RECHNUNG   │
-    │rechnung 1│ │rechnung 2│ │rechnung 3│  │  (Einzel)    │
-    └──────────┘ └──────────┘ └──────────┘  └──────────────┘
-          │            │            │
-          └────────────┼────────────┘
-                       ▼
-                ┌──────────────┐
-                │SCHLUSSRECHNUNG│
-                │(verrechnet   │
-                │ alle Abschläge)│
-                └──────────────┘
+                 ┌──────────────────────────────────────────────┐
+                 │               ENTWURF                        │
+                 │  gebucht=false, versandDatum=null            │
+                 │  → bearbeitbar, löschbar (mit Begründung)    │
+                 └──────────────────────┬───────────────────────┘
+                                        │
+             ┌──────────────────────────┼─────────────────────────────┐
+             ▼                          ▼                             ▼
+     ┌──────────────┐        ┌────────────────────┐        ┌────────────────────┐
+     │   ANGEBOT    │        │  NACHTRAGSANGEBOT  │        │ eigenständige AB   │
+     │ (max. 1 pro  │        │ (nur im Projekt,   │        │ oder Rechnung –    │
+     │  Vorgang)    │        │  beliebig viele)   │        │ nur als erstes Dok.│
+     └──────┬───────┘        └─────────┬──────────┘        └────────────────────┘
+            │                          │
+            ▼                          ▼
+     ┌──────────────┐           ┌──────────────┐
+     │     AB       │           │     AB       │      ← höchstens eine aktive AB
+     │ (Auftrags-   │           │              │        je Angebot/Nachtragsangebot
+     │ bestätigung) │           └──────────────┘
+     └──────┬───────┘
+            │   Rechnungen hängen am untersten Dokument des Vorgangs
+   ┌────────┼────────┬─────────────┬───────────────────┐
+   ▼        ▼        ▼             ▼                   ▼
+┌──────────┐┌──────────┐┌──────────────┐ ┌──────────────┐
+│Abschlags-││Abschlags-││ Teilrechnung │ │   RECHNUNG   │
+│rechnung 1││rechnung 2││              │ │ ("Einfache   │
+└──────────┘└──────────┘└──────────────┘ │  Rechnung")  │
+      │           │            │          └──────────────┘
+      └───────────┼────────────┘
+                  ▼
+          ┌────────────────┐
+          │ SCHLUSSRECHNUNG│
+          │ (zieht alle    │
+          │  vorherigen    │
+          │  Rechnungen ab)│
+          └────────────────┘
 ```
 
 ### 1.2 Status-Übergänge
 
+**Rechnungstypen** (Rechnung, Teil-, Abschlags-, Schlussrechnung, Gutschrift):
+
 ```
-ENTWURF ──[Buchen]──────► GEBUCHT
-   │                         │
-   │                    [E-Mail senden]
-   │                         │
-   │                         ▼
-   │                     VERSENDET
-   │                    (gebucht + versandDatum)
-   │                         │
-   │                    [Stornieren]
-   │                         │
-   ├──[Löschen]              ▼
-   │  (nur Entwürfe)     STORNIERT
-   ▼                    (storniert=true)
-GELÖSCHT                     │
-(aus DB entfernt)            └──► STORNO-Dokument erstellt
-                                  (gebucht=true, eigene Nummer)
+ENTWURF ──[Drucken & Buchen / PDF / E-Mail]──► GEBUCHT (gesperrt)
+   │                                              │
+   │                                         [E-Mail]
+   │                                              ▼
+   │                                          VERSENDET
+   │                                     (gebucht + versandDatum)
+   │                                              │
+   ├──[Löschen]                              [Stornieren]
+   │  (nur Entwürfe, mit Begründung)              │
+   ▼                                              ▼
+GELÖSCHT                                      STORNIERT (storniert=true)
+(aus DB entfernt, Audit-Eintrag bleibt)           │
+                                                  └──► STORNO-Dokument erstellt
+                                                       (gebucht=true, eigene Nummer)
+```
+
+**Angebot, Nachtragsangebot, Auftragsbestätigung:** Diese Dokumente werden **nie gebucht**. Sie bleiben auch nach dem Versand bearbeitbar, bis der Kunde das Angebot **digital annimmt** – dann sind Angebot und die automatisch erzeugte AB **verbindlich** (`digitalAngenommen = true`) und gesperrt.
+
+```
+ENTWURF ──[E-Mail]──► VERSENDET (versandDatum gesetzt, weiter bearbeitbar, nicht mehr löschbar)
+                          │
+                   [digitale Annahme]
+                          ▼
+                     VERBINDLICH (gesperrt)
 ```
 
 ### 1.3 Status-Matrix pro Dokumenttyp
 
-| Typ | Entwurf → Gebucht | Gebucht → Gesperrt? | Stornierbar? | Löschbar (Entwurf)? |
+| Typ | Wird gebucht? | Gesperrt nach … | Stornierbar? | Löschbar? |
 |---|---|---|---|---|
-| `ANGEBOT` | ✅ | ❌ (bleibt bearbeitbar) | ❌ | ✅ |
-| `AUFTRAGSBESTAETIGUNG` | ✅ | ❌ (bleibt bearbeitbar) | ❌ | ✅ |
-| `RECHNUNG` | ✅ | ✅ Gesperrt | ✅ | ✅ |
-| `TEILRECHNUNG` | ✅ | ✅ Gesperrt | ✅ | ✅ |
-| `ABSCHLAGSRECHNUNG` | ✅ | ✅ Gesperrt | ✅ | ✅ |
-| `SCHLUSSRECHNUNG` | ✅ | ✅ Gesperrt | ✅ | ✅ |
-| `GUTSCHRIFT` | ✅ | ✅ Gesperrt | ✅ | ✅ |
-| `STORNO` | – (sofort gebucht) | ✅ Immer gesperrt | ❌ | ❌ Nie löschbar |
+| `ANGEBOT` | ❌ nie | digitaler Annahme | ❌ | ✅ solange nicht versendet |
+| `NACHTRAGSANGEBOT` | ❌ nie | digitaler Annahme | ❌ | ✅ solange nicht versendet |
+| `AUFTRAGSBESTAETIGUNG` | ❌ nie | digitaler Annahme (Auto-AB) | ❌ | ✅ solange nicht versendet |
+| `RECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
+| `TEILRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
+| `ABSCHLAGSRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
+| `SCHLUSSRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
+| `GUTSCHRIFT` | ✅ | Buchung | ❌ | ✅ nur als Entwurf |
+| `STORNO` | sofort gebucht | immer | ❌ | ❌ nie |
+
+Stornierte Dokumente sind immer gesperrt und nie löschbar. Wird eine **Abschlagsrechnung** storniert, werden zugehörige Schlussrechnungen am selben Vorgänger automatisch mitstorniert.
+
+### 1.4 Anzeige in der Oberfläche
+
+Im Reiter **„Geschäftsdokumente“** von Projekt und Anfrage erscheinen die Dokumente als Baum (Basisdokument → Folgedokumente). Jedes Dokument trägt eine Plakette:
+
+| Plakette | Bedeutung |
+|---|---|
+| **Entwurf** | Noch nicht gebucht, nicht verbindlich – bearbeitbar |
+| **Gebucht** | Rechnung ist festgeschrieben (Schloss-Symbol) |
+| **Verbindlich** | Vom Kunden digital angenommen (Schloss-Symbol) |
+| **Storniert** | Durch eine Stornorechnung aufgehoben |
+
+Zusätzlich zeigen Angebote den Freigabe-Status („Angenommen · Datum“, „Wartet auf Kunde“, „Link abgelaufen“, „Link zurückgezogen“).
+
+**Aktionsmenü eines Dokuments (Klick auf das Dokument):**
+- „Öffnen (neuer Tab)“ – öffnet den Dokument-Editor
+- „Auftragsbestätigung“ (bei Angebot/Nachtragsangebot, nur im Projekt)
+- „Rechnung erstellen“ (bei Angebot/Nachtragsangebot/AB, nur im Projekt)
+- „Stornieren“ (bei gebuchten, nicht stornierten Rechnungen) – erzeugt automatisch eine Stornorechnung
+- „Verlauf anzeigen“ – Audit-Verlauf für die Steuerprüfung
+- „Löschen“ (nur Entwürfe) – Dialog „Dokument löschen“ mit Pflicht-Grund: Tippfehler / Erfassungsfehler, Versehentlich doppelt erstellt, Falscher Kunde / Empfänger, Falscher Betrag, Falsche Leistungspositionen, Auftrag wurde storniert (Entwurf), Testdaten / Demo-Eintrag, Sonstiges (dann Freitext mit mindestens 5 Zeichen Pflicht)
+
+### 1.5 Gleichzeitiges Bearbeiten (Datensatz-Sperre)
+
+Damit zwei Personen nicht gleichzeitig dasselbe Dokument überschreiben:
+
+- Wer ein gespeichertes Dokument im Dokument-Editor öffnet, bekommt automatisch die **Bearbeitungssperre** (`DatensatzLock`, Typ `AUSGANG`), sofern sie frei ist. Kollegen sehen dann: „*Name* bearbeitet das gerade — Sie sehen den aktuellen Stand.“ und lesen nur mit.
+- Mit **„Fertig“** geben Sie die Sperre frei, mit **„Bearbeiten“** holen Sie sie wieder. Beim Schließen des Editors (X) wird gespeichert und freigegeben; schließt der Browser den Tab nicht selbst, erscheint ein Hinweis, dass Sie den Tab jetzt schließen können.
+- Nach **5 Minuten ohne Aktivität** wird automatisch gespeichert und freigegeben. 60 Sekunden vorher erscheint: „Wird in 60 Sekunden freigegeben — bewegen Sie die Maus, um weiterzuarbeiten.“
+- Zusätzlich trägt jedes Dokument eine **Versionsnummer**. Hat inzwischen jemand anderes gespeichert, wird der Speicherversuch abgelehnt (HTTP 409): „Jemand anders hat … gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.“
+- Speichern (`PUT /api/ausgangs-dokumente/{id}`) ist nur mit gehaltener Sperre möglich.
+
+Im Editor lassen sich die letzten bis zu **20 Änderungsschritte** rückgängig machen bzw. wiederholen (Strg+Z / Strg+Y). Gesperrte Dokumente bieten das nicht an.
 
 ---
 
@@ -88,19 +136,19 @@ GELÖSCHT                     │
 ### 2.1 Vollständiger Lifecycle
 
 ```
-┌────────────────────────────────────────┐
-│        DOKUMENTQUELLE                  │
-│                                        │
-│  ┌─────────────┐   ┌───────────────┐  │
-│  │ E-Mail-     │   │  Manueller    │  │
-│  │ Anhang      │   │  Upload       │  │
-│  │(EmailAttach-│   │(Datei direkt) │  │
-│  │ ment-FK)    │   │               │  │
-│  └──────┬──────┘   └───────┬───────┘  │
-│         │                  │          │
-└─────────┼──────────────────┼──────────┘
-          │                  │
-          ▼                  ▼
+┌──────────────────────────────────────────────────────┐
+│                DOKUMENTQUELLE                        │
+│                                                      │
+│  ┌─────────────┐   ┌───────────────┐  ┌───────────┐  │
+│  │ E-Mail-     │   │  Manueller    │  │ Handy-    │  │
+│  │ Anhang      │   │  Upload       │  │ Scan      │  │
+│  │(EmailAttach-│   │(Datei direkt) │  │ (Beleg)   │  │
+│  │ ment-FK)    │   │               │  │           │  │
+│  └──────┬──────┘   └───────┬───────┘  └─────┬─────┘  │
+│         │                  │                │        │
+└─────────┼──────────────────┼────────────────┼────────┘
+          │                  │                │
+          ▼                  ▼                ▼
    ┌──────────────────────────────┐
    │     LieferantDokument        │
    │  (Dateicontainer)            │
@@ -112,32 +160,33 @@ GELÖSCHT                     │
    │  ● Upload-Datum & -Person    │
    └──────────────┬───────────────┘
                   │
-                  │ [KI-Analyse / ZUGFeRD-Extraktion]
+                  │ [ZUGFeRD / XML / KI-Analyse]
                   ▼
    ┌──────────────────────────────┐
    │  LieferantGeschaeftsdokument │
    │  (extrahierte Metadaten)     │
    │                              │
    │  ● Dokumentnummer, Datum     │
-   │  ● Beträge (Netto/Brutto)   │
-   │  ● MwSt-Satz                │
+   │  ● Beträge (Netto/Brutto)    │
+   │  ● MwSt-Satz                 │
    │  ● Bestellnummer, Referenz   │
    │  ● Liefertermin              │
    │  ● Zahlungsbedingungen       │
    │  ● KI-Confidence-Score       │
-   │  ● Datenquelle (ZUGFERD/     │
-   │    XML/AI)                   │
+   │  ● Datenquelle               │
    │  ● Verifizierungs-Flag       │
    └──────────────┬───────────────┘
                   │
-                  │ [Genehmigung durch Büro]
+                  │ [Genehmigung]
                   ▼
    ┌──────────────────────────────┐
    │  Genehmigt (genehmigt=true)  │
-   │  → Sichtbar für Buchhaltung  │
+   │  → sichtbar für alle mit     │
+   │    "Genehmigte Rechnungen    │
+   │     sehen"                   │
    └──────────────┬───────────────┘
                   │
-                  │ [Zahlungseingang]
+                  │ [Häkchen "Bezahlt"]
                   ▼
    ┌──────────────────────────────┐
    │  Bezahlt (bezahlt=true)      │
@@ -156,35 +205,43 @@ GELÖSCHT                     │
 | `RECHNUNG` | Eingangsrechnung des Lieferanten |
 | `GUTSCHRIFT` | Gutschrift vom Lieferanten |
 | `SONSTIG` | Nicht-Geschäftsdokumente (Katalog, Info etc.) |
+| `BELEG` | Buchhaltungs-Belege (Kasse, Privatentnahme, Bank, Einmalbelege) – steuert die Rechte für das Beleg-Modul |
+| `WERKSTOFFZEUGNIS` | Abnahmeprüfzeugnis/Werkszeugnis zum Lieferschein (Werkstoff, Charge) |
+
+Welche Abteilung welche Typen sehen bzw. scannen darf, wird unter Einstellungen → **Berechtigungen** festgelegt.
 
 ### 2.3 Datenextraktions-Kette
 
 ```
-PDF-Eingang
+Datei-Eingang
     │
-    ├─[1] ZUGFeRD-XML vorhanden? ──► ZugferdExtractorService
-    │                                 datenquelle = "ZUGFERD"
-    │                                 verifiziert = true
+    ├─[1] PDF mit ZUGFeRD-XML? ──► ZugferdExtractorService
+    │                              datenquelle = "ZUGFERD"
+    │                              verifiziert = true, aiConfidence = 1.0
     │
-    ├─[2] XML-Metadaten vorhanden? ──► XML-Parsing
-    │                                  datenquelle = "XML"
-    │                                  verifiziert = true
+    ├─[2] XML-Datei (XRechnung/ZUGFeRD-XML)? ──► XML-Parsing
+    │                              datenquelle = "XML", aiConfidence = 1.0
     │
-    ├─[3] Dateiname-Parsing ──────► Regex auf Dateinamen
-    │
-    └─[4] KI-Analyse (Gemini AI) ──► AI-OCR + Extraktion
-                                      datenquelle = "AI"
-                                      verifiziert = false
-                                      aiConfidence = 0.0–1.0
-                                      manuellePruefungErforderlich = true/false
+    └─[3] KI-Analyse (Google Gemini) ──► OCR + Extraktion (PDF, JPG, PNG)
+                                   verifiziert = false
+                                   aiConfidence = 0.0–1.0 (von der KI geliefert)
+                                   manuellePruefungErforderlich = true,
+                                     wenn Pflichtfelder fehlen (vorher ein
+                                     zweiter Versuch mit dem Pro-Modell, falls
+                                     konfiguriert)
+                                   bei Fehlern: datenquelle = "AI_FAILED" /
+                                     "AI_PARSE_FAILED" / "AI_ERROR"
 ```
+
+Der Dateiname dient nur als Hinweis auf den Dokumenttyp (z. B. „Lieferschein“ im Namen), nicht als eigene Extraktionsstufe.
 
 ### 2.4 Datei-Handling
 
 **Kernprinzip: Keine Datei-Duplikation.**
 
 - E-Mail-Anhänge: `LieferantDokument` referenziert `EmailAttachment` über FK (`attachment_id`) – die Datei wird **nicht** kopiert
-- Manuelle Uploads: Dateien werden im `uploads/`-Verzeichnis mit UUID-basiertem Namen gespeichert (`gespeicherterDateiname`)
+- Handy-Scans: `LieferantDokument` verweist auf den zugrunde liegenden `Beleg` (`beleg_id`); Datei und Vorschau kommen aus dem Beleg
+- Manuelle Uploads: Dateien werden im Upload-Verzeichnis mit UUID-basiertem Namen gespeichert (`gespeicherterDateiname`)
 - Effektiver Dateiname: `getEffektiverDateiname()` priorisiert Attachment, dann Fallback auf `originalDateiname`
 
 ---
@@ -200,23 +257,24 @@ Lieferantenrechnung (Brutto: 10.000 €)
    │
    ├── Projekt A: 60% → 6.000 €
    ├── Projekt B: 30% → 3.000 €
-   └── Kostenstelle "Lager": 10% → 1.000 €
+   └── Kostenstelle "Lager": 10% → Anteil vom Nettobetrag
 ```
 
 ### 3.2 Zuordnungsmethoden
 
 | Methode | Feld | Beschreibung |
 |---|---|---|
-| **Prozentual** | `prozent` | Prozentsatz (0–100) vom Gesamtbetrag |
-| **Absolutbetrag** | `absoluterBetrag` | Fester Betrag (überschreibt Prozent) |
+| **Prozentual** | `prozent` | Prozentsatz (0–100) |
+| **Absolutbetrag** | `absoluterBetrag` | Fester Betrag (hat Vorrang vor Prozent) |
 
-Die Berechnung erfolgt in `berechneAnteil()`:
+Die Berechnung erfolgt in `berechneAnteil(netto, brutto)` und wird in `berechneterBetrag` gespeichert:
 - Wenn `absoluterBetrag` gesetzt → direkt verwenden
-- Sonst: `gesamtBetrag × prozent / 100`
+- Projekt-Zuordnung: `Brutto × prozent / 100`
+- Kostenstellen-Zuordnung: `Netto × prozent / 100` (fehlt der Nettobetrag, wird Brutto genommen)
 
 ### 3.3 Kostenstreckung
 
-Für periodische Kosten (z.B. Zertifizierung alle 4 Jahre) unterstützt die Entity eine **Kostenstreckung**:
+Für periodische Kosten (z. B. Zertifizierung alle 4 Jahre) unterstützt die Entity eine **Kostenstreckung**:
 
 | Feld | Beschreibung |
 |---|---|
@@ -262,14 +320,11 @@ Beispiel:
 Lieferanten-Rechnung ←──► Lieferschein ←──► Auftragsbestätigung ←──► Angebot
 ```
 
-### 4.3 Eingangs-Dokumente: Geschaeftsdokument-Kette
+Details zur Bestellkette: `BESTELLWESEN.md` und `LIEFERANTEN_DOKUMENTEN.md`.
 
-Die Entity `Geschaeftsdokument` (im Projekt-Kontext) nutzt ebenfalls eine lineare FK-Kette:
+### 4.3 Mahnungen: Verweis auf die Rechnung
 
-```java
-@ManyToOne vorgaengerDokument
-@OneToMany nachfolgerDokumente
-```
+Mahnungen (`ProjektGeschaeftsdokument` mit `mahnstufe`) verweisen über `referenzDokument` auf die Original-Rechnung; die Rechnung kennt ihre Mahnungen über `mahnungen`. Im Reiter „Geschäftsdokumente“ werden sie als virtuelle Einträge (Typ `ZAHLUNGSERINNERUNG`, `ERSTE_MAHNUNG`, `ZWEITE_MAHNUNG`) unter der Rechnung angezeigt.
 
 ---
 
@@ -277,7 +332,7 @@ Die Entity `Geschaeftsdokument` (im Projekt-Kontext) nutzt ebenfalls eine linear
 
 ### 5.1 Ausgangs-Dokumente (Offene Posten)
 
-Gebuchte Ausgangsrechnungen erzeugen automatisch einen `ProjektGeschaeftsdokument`-Eintrag:
+Gebuchte Ausgangsrechnungen (Rechnung, Teil-, Abschlags-, Schlussrechnung) eines Projekts erzeugen automatisch einen `ProjektGeschaeftsdokument`-Eintrag:
 
 ```
 Rechnung gebucht
@@ -286,18 +341,21 @@ Rechnung gebucht
        ├── bruttoBetrag = Bruttobetrag
        ├── bezahlt = false
        ├── rechnungsdatum = Dokumentdatum
-       └── faelligkeitsdatum = datum + zahlungszielTage
+       ├── faelligkeitsdatum = datum + zahlungszielTage
+       └── systemGeneriert = true
 ```
 
 **Status-Übergänge:**
 ```
-Offen (bezahlt=false) ──[Zahlung]──► Bezahlt (bezahlt=true)
+Offen (bezahlt=false) ──[Häkchen "Bezahlt" in Offene Posten]──► Bezahlt (bezahlt=true)
         │
    [Stornierung]
         │
         ▼
 Bezahlt (automatisch bei Storno des Ausgangsdokuments)
 ```
+
+Es gibt **keine Teilzahlungen** für Ausgangsrechnungen: Der Status ist nur „bezahlt“ oder „nicht bezahlt“.
 
 ### 5.2 Eingangs-Dokumente (Lieferantenrechnungen)
 
@@ -309,7 +367,8 @@ Lieferantenrechnungen (`LieferantGeschaeftsdokument`) verwalten den Zahlungsstat
 | `bezahltAm` | Datum der Zahlung |
 | `tatsaechlichGezahlt` | Gezahlter Betrag (nach Skonto-Abzug) |
 | `mitSkonto` | `true` wenn Skonto genutzt wurde |
-| `bereitsGezahlt` | Von KI erkannt (z.B. Vorauskasse) |
+| `bereitsGezahlt` | Laut Rechnung bereits bezahlt (von KI oder ZUGFeRD erkannt, z. B. Vorauskasse) |
+| `zahlungsart` | Z. B. Vorauskasse, SEPA-Lastschrift, Kreditkarte |
 
 ### 5.3 Zahlungsbedingungen
 
@@ -317,59 +376,46 @@ Lieferantenrechnungen (`LieferantGeschaeftsdokument`) verwalten den Zahlungsstat
 |---|---|
 | `zahlungsziel` | Fälligkeitsdatum |
 | `skontoTage` | Tage für Skonto-Abzug |
-| `skontoProzent` | Skonto-Prozentsatz (z.B. 2.00%) |
-| `nettoTage` | Zahlungsziel in Tagen (z.B. 30) |
+| `skontoProzent` | Skonto-Prozentsatz (z. B. 2.00 %) |
+| `nettoTage` | Zahlungsziel in Tagen (z. B. 30) |
 
-### 5.4 Geschaeftsdokument: Zahlungen und offener Betrag
-
-Die Entity `Geschaeftsdokument` unterstützt **Teilzahlungen** über die `Zahlung`-Entity:
-
-```java
-List<Zahlung> zahlungen;
-
-BigDecimal getSummeZahlungen()   // Summe aller Zahlungen
-BigDecimal getOffenerBetrag()    // betragBrutto - Summe(Zahlungen)
-boolean istBezahlt()             // offenerBetrag <= 0
-```
-
-Jede `Zahlung` enthält:
-- `zahlungsdatum` – Datum der Zahlung
-- `betrag` – Gezahlter Betrag
-- `zahlungsart` – Art (Überweisung, Bar, PayPal etc.)
-- `verwendungszweck` – Verwendungszweck
-- `notiz` – Optionale Notiz
+Details zu Skonto und Mahnwesen: `ZAHLUNGSVERKEHR.md`.
 
 ---
 
 ## 6. Genehmigungsprozess (Eingangs-Dokumente)
 
-### 6.1 Abteilungs-basiert
+### 6.1 Rechte pro Abteilung
 
-| Abteilung | Rechte |
+Die Rechte werden unter Einstellungen → **Berechtigungen** pro Abteilung vergeben:
+
+| Recht | Wirkung |
 |---|---|
-| **Abt. 3 (Büro)** | Sieht alle Dokumente, kann genehmigen (`genehmigt = true`) |
-| **Abt. 2 (Buchhaltung)** | Sieht nur genehmigte Dokumente |
+| **Rechnungen genehmigen** (`darfRechnungenGenehmigen`) | Sieht alle Eingangsrechnungen und kann sie genehmigen (`genehmigt = true`) |
+| **Genehmigte Rechnungen sehen** (`darfRechnungenSehen`) | Sieht nur bereits genehmigte Eingangsrechnungen |
+| keines von beiden | Sieht keine Eingangsrechnungen in den Offenen Posten |
+
+Typische Aufteilung: Büro genehmigt, Buchhaltung sieht nur Genehmigtes. Noch nicht genehmigte Rechnungen lassen sich im vollwertigen Bearbeitungsdialog öffnen, genehmigte nur noch in der PDF-Vorschau.
 
 ### 6.2 Verifizierungs- und Genehmigungsflags
 
 ```
 Dokument hochgeladen
    │
-   ▼
-KI-Analyse (verifiziert=false, datenquelle="AI")
+   ├─[ZUGFeRD-Daten]──► verifiziert=true, datenquelle="ZUGFERD"
    │
-   ├─[Daten korrekt]──► Verifiziert (verifiziert=true)
+   ├─[XML-Daten]──► datenquelle="XML"
    │
-   ├─[Daten unvollständig]──► manuellePruefungErforderlich=true
-   │                            → User muss nachbearbeiten
-   │
-   └─[ZUGFeRD-Daten]──► Automatisch verifiziert (verifiziert=true, datenquelle="ZUGFERD")
-   
-Verifiziert
-   │
-   └─[Büro-Genehmigung]──► Genehmigt (genehmigt=true)
-                              → Sichtbar für Buchhaltung
-                              → Zahlungsverfolgung aktiv
+   └─[KI-Analyse]──► verifiziert=false
+         │
+         ├─[Pflichtfelder vollständig]──► manuellePruefungErforderlich=false
+         │
+         └─[Daten unvollständig]──► manuellePruefungErforderlich=true
+                                      → Mitarbeiter muss nachbearbeiten
+
+Unabhängig davon:
+   └─[Genehmigung durch berechtigte Abteilung]──► genehmigt=true
+                              → sichtbar für "Genehmigte Rechnungen sehen"
 ```
 
 ---
@@ -381,9 +427,12 @@ Verifiziert
 | Entity | Zweck |
 |---|---|
 | `AusgangsGeschaeftsDokument` | Zentrale Entity für alle ausgehenden Geschäftsdokumente |
-| `AusgangsGeschaeftsDokumentTyp` | Enum der Dokumenttypen (8 Typen) |
-| `AusgangsGeschaeftsDokumentCounter` | Counter-Tabelle für Nummernvergabe |
-| `ProjektGeschaeftsdokument` | Offene-Posten-Eintrag (extends ProjektDokument) |
+| `AusgangsGeschaeftsDokumentTyp` | Enum der Dokumenttypen (9 echte Typen + 3 virtuelle Mahn-Typen) |
+| `AusgangsGeschaeftsDokumentCounter` | Counter-Tabelle für Nummernvergabe (ein Zähler pro Monat) |
+| `AusgangsGeschaeftsDokumentAudit` | Unveränderlicher Audit-Trail mit Hash-Kette |
+| `DokumentFreigabe` | Digitale Annahme von Angeboten |
+| `DatensatzLock` | Bearbeitungssperre (Typ `AUSGANG` bzw. `EINGANG`) |
+| `ProjektGeschaeftsdokument` | Offene-Posten-Eintrag und Mahnungen (extends ProjektDokument) |
 | `Mahnstufe` | Enum für Mahnwesen (3 Stufen) |
 
 ### 7.2 Eingangs-Dokumente
@@ -393,20 +442,24 @@ Verifiziert
 | `LieferantDokument` | Dateicontainer für Lieferanten-Dokumente |
 | `LieferantGeschaeftsdokument` | Extrahierte Metadaten (1:1 mit LieferantDokument) |
 | `LieferantDokumentProjektAnteil` | Prozentuale Projekt-/Kostenstellen-Zuordnung |
-| `LieferantDokumentTyp` | Enum der Dokumenttypen (6 Typen) |
+| `LieferantDokumentTyp` | Enum der Dokumenttypen (8 Typen) |
 
 ### 7.3 Projekt-Kontext
 
 | Entity | Zweck |
 |---|---|
-| `Dokumenttyp` | Enum mit Labels (10 Typen inkl. Mahnungen) |
+| `Dokumenttyp` | Enum mit Labels (12 Typen inkl. Nachtragsangebot, Mahnungen und Stornorechnung), u. a. für die Zuordnung von Textbausteinen |
 
 ### 7.4 Services
 
 | Service | Verantwortung |
 |---|---|
-| `AusgangsGeschaeftsDokumentService` | CRUD, Buchung, Stornierung, Löschung |
-| `RechnungPdfService` | PDF-Generierung mit iText |
+| `AusgangsGeschaeftsDokumentService` | Anlegen, Speichern, Buchung, Stornierung, Löschung, Abrechnungsverlauf, Preise |
+| `AusgangsGeschaeftsDokumentAuditService` | Audit-Einträge mit Hash-Kette |
+| `DokumentFreigabeService` | Digitale Annahme, Auto-Projekt, Auto-Auftragsbestätigung |
+| `RechnungPdfService` | PDF-Generierung mit OpenPDF |
 | `ZugferdErstellService` | ZUGFeRD-PDF erstellen |
 | `ZugferdExtractorService` | ZUGFeRD-Daten aus PDFs extrahieren |
-| `ZugferdConverterService` | Daten nach ZugferdDaten konvertieren |
+| `GeminiDokumentAnalyseService` | Analyse von Lieferanten-Dokumenten (ZUGFeRD → XML → KI) |
+| `AutoMahnVersandService` | Automatische Zahlungserinnerungen und Mahnungen |
+| `ZugferdConverterService` | Baut `ZugferdDaten` aus einem Projekt-Offenen-Posten (derzeit ohne Aufrufer) |

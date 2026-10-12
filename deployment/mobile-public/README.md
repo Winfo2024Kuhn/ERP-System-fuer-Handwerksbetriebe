@@ -9,6 +9,8 @@ Zwei Wege stehen bereit:
 
 Vercel ist für diese bestehende PWA nicht erforderlich. Die Anwendung und ihre Dateien bleiben auf dem vorhandenen ERP-Rechner.
 
+**Gilt nur für den Docker-Stack aus dem Repository-Stamm** (`docker-compose.yml` dort, Container `kalkulationsprogramm-app`). Mit Installationen aus [`deployment/docker-server`](../docker-server/README.md) (Container `erp-app`) arbeitet dieses Paket nicht zusammen. Dort kommen die Handys über Tailscale ins ERP: mit der Tailscale-App oder ohne App über Tailscale Funnel, siehe [docker-server/README.md, Abschnitt „Hinter `tailscale serve`“](../docker-server/README.md#hinter-tailscale-serve-nur-über-tailscale-erreichbar).
+
 ## Aufbau und feste Vertrauensgrenzen
 
 ```text
@@ -38,7 +40,7 @@ Nginx überschreibt immer `X-ERP-Public-Mobile: 1`. Es entfernt Desktop-Sitzungs
 - Windows mit Docker Desktop und **Linux-Containern**, PowerShell 5.1 oder neuer.
 - Docker Compose **ab 2.24.4**. Das Overlay nutzt `!override`, damit alte öffentliche Portbindungen ersetzt werden und nicht zusätzlich erhalten bleiben. [Docker-Referenz](https://docs.docker.com/reference/compose-file/merge/#replace-value)
 - Die neue, geprüfte ERP-Version als Docker-Image und ein gesichertes Datenbank-Backup. Die Startskripte bauen die Java-Anwendung nicht automatisch.
-- Der bisherige Compose-Projektname und die bisherigen Daten-Volumes bleiben erhalten. Bei einem bestehenden Standardcontainer erkennt das Skript den Projektnamen aus dessen Label. Bei einer neuen Installation muss `-ErpProjectName` ausdrücklich angegeben werden.
+- Der bisherige Compose-Projektname und die bisherigen Daten-Volumes bleiben erhalten. Bei einem bestehenden Standardcontainer (`kalkulationsprogramm-app`) erkennt das Skript den Projektnamen aus dessen Label. Bei einer neuen Installation muss `-ErpProjectName` ausdrücklich angegeben werden.
 - Keine zusätzliche Router-Portweiterleitung auf 8080, 5432, 6333 oder 6334. Windows-Firewall und Docker-Portbindungen gemeinsam prüfen.
 - Die Datenbank ist PostgreSQL (Dienst `postgres` der `docker-compose.yml` im Repository-Stamm). Eine ältere Installation mit dem früheren MySQL-Container `kalkulationsprogramm-mysql` muss ihre Daten zuerst nach PostgreSQL übertragen. Sonst startet das ERP mit einer leeren Datenbank, und das Startskript gibt den öffentlichen Zugang nicht frei, weil die Ersteinrichtung fehlt.
 
@@ -111,7 +113,7 @@ Der Start des Containers bestätigt noch keine von außen funktionierende Domain
 
 - Die Methoden-/Routenliste in `mobile-routes.conf` wird aus `MobileApiPolicy.java` erzeugt. Nur `GET`/`HEAD` auf `/zeiterfassung` und dessen Ressourcen kommen hinzu; `/` führt zur mobilen Startseite. Desktop-Pfade, Login-Endpunkte und andere Methoden enden am Gateway mit `404`.
 - Jeder Request-Body ist auf **25 MiB insgesamt** begrenzt, einschließlich Multipart-Daten. Größere Anfragen erhalten `413`. [Nginx-Bodylimit](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size), [Caddy-Bodylimit](https://caddyserver.com/docs/caddyfile/directives/request_body)
-- Pro Client-IP: insgesamt 60 Anfragen/s mit zusätzlichem Burst 100; API 10/s mit Burst 30; Token-Anmeldung 1/s mit Burst 5; höchstens 16 gleichzeitig bearbeitete Verbindungen. Überlast erhält `429` und `Retry-After: 1`. Die Anwendung kann längere Token-Wartezeiten zurückgeben. Diese Regeln nutzen [Nginx-Limits](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html); geteilte NAT-Adressen teilen sich die Limits, Neustarts setzen die Proxy-Zähler zurück.
+- Pro Client-IP: insgesamt 60 Anfragen/s mit zusätzlichem Burst 100; API 10/s mit Burst 30; Bilder und Dokumente (`GET` auf `/api/images/`, `/api/dokumente/`, `/api/lieferanten/bilder/file/`) statt der API-Grenze 30/s mit Burst 120; Token-Anmeldung 1/s mit Burst 5; höchstens 16 gleichzeitig bearbeitete Verbindungen. Überlast erhält `429` und `Retry-After: 1`. Die Anwendung kann längere Token-Wartezeiten zurückgeben. Diese Regeln nutzen [Nginx-Limits](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html); geteilte NAT-Adressen teilen sich die Limits, Neustarts setzen die Proxy-Zähler zurück.
 - API-Antworten erhalten `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` und `Content-Security-Policy: sandbox; default-src 'none'`. Die CSP verhindert aktive Inhalte in über API ausgelieferten HTML-/SVG-Dateien, ohne diese Richtlinie auf die PWA-Oberfläche anzuwenden. PDF-Vorschauen müssen mit den tatsächlich eingesetzten Browsern geprüft werden.
 - Access- und HTTP-Fehlerlogs der Proxys sind abgeschaltet, weil auch Fehlerlogs Token-Pfade enthalten können. Der Tunnel-Wrapper verwirft alle cloudflared-Ausgaben außer dem bloßen Testhostnamen. Dadurch fehlen ausführliche Laufzeitdiagnosen; Containerstatus, Konfigurationsprüfung und statusbasierte Funktionsprüfungen dienen zur Fehlersuche. Backend-Logs und externe Plattformprotokolle sind davon nicht automatisch bereinigt.
 

@@ -20,6 +20,12 @@
 # Eine Version, die schon einmal gescheitert ist, wird nicht jede Nacht neu
 # versucht, sondern erst wieder, wenn eine neuere kommt (oder mit --erzwingen).
 #
+# Die KI-Hilfe lernt dabei mit: Ihr Wissen (die RAG-Datei aus Doku und
+# Quellcode) steckt im Image unter /app/ki-hilfe/. Mit der neuen Version kommt
+# das passende Wissen, mit einem Rollback wieder das alte - hier ist dafuer
+# nichts zu tun (erzeugt beim Image-Bau, siehe RAG_INDEXING.md). Im Log und in
+# der Erfolgsmeldung steht, wie viele Abschnitte die KI-Hilfe jetzt kennt.
+#
 # Das Ergebnis steht danach in betriebsstatus/nachtupdate.json - das ERP zeigt
 # gescheiterte Updates Admins unter "Benachrichtigungen" an.
 #
@@ -154,6 +160,31 @@ image_version() {
         rev="$(docker image inspect -f '{{.Id}}' "$1" 2>/dev/null | sed 's/^sha256://' || true)"
     fi
     printf '%s' "${rev:0:7}"
+}
+
+# Abschnitte in der RAG-Datei der KI-Hilfe (Label vom Image-Bau, docker-image.yml).
+# Leer = Image ohne (brauchbare) RAG-Datei. Gibt immer 0 zurueck (set -e, ERR-Trap).
+ki_hilfe_abschnitte() {
+    local n
+    n="$(docker image inspect -f '{{index .Config.Labels "de.erp-handwerk.ki-hilfe.abschnitte"}}' "$1" 2>/dev/null || true)"
+    if [[ "$n" =~ ^[1-9][0-9]*$ ]]; then
+        printf '%s' "$n"
+    fi
+}
+
+# Schreibt ins Log, was die KI-Hilfe mit der neuen Version weiss, und setzt
+# KI_HILFE_TEXT fuer die Erfolgsmeldung. Nie in $(...) aufrufen (sonst landet
+# die Log-Zeile im Text).
+ki_hilfe_melden() {
+    local n
+    n="$(ki_hilfe_abschnitte "$1")"
+    if [[ -n "$n" ]]; then
+        log "KI-Hilfe: Wissen mit der neuen Version aktualisiert ($n Abschnitte)."
+        KI_HILFE_TEXT=", KI-Hilfe kennt $n Abschnitte"
+    else
+        log "KI-Hilfe: Die neue Version bringt keine RAG-Datei mit - sie antwortet ohne Programmwissen."
+        KI_HILFE_TEXT=""
+    fi
 }
 
 app_container() {
@@ -465,7 +496,8 @@ unterbrochenes_update_beenden() {
             if warte_auf_gesund "$WARTEZEIT"; then
                 rm -f "$LAUF_DATEI" "$GESCHEITERT_DATEI"
                 log "Update nach Unterbrechung abgeschlossen: $ALT_VERSION -> $NEU_VERSION"
-                melden OK "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION (nach Unterbrechung abgeschlossen)"
+                ki_hilfe_melden "$NEU_ID"
+                melden OK "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION (nach Unterbrechung abgeschlossen)$KI_HILFE_TEXT"
                 exit 0
             fi
             zurueckrollen "Neue Version nach Unterbrechung nicht gesund"
@@ -700,5 +732,6 @@ log "Update erfolgreich: $ALT_VERSION -> $NEU_VERSION"
 rm -f "$GESCHEITERT_DATEI" "$LAUF_DATEI"
 docker rmi "$GESCHEITERT_TAG" "$NEU_TAG" >/dev/null 2>&1 || true
 aufraeumen
-melden OK "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION"
+ki_hilfe_melden "$NEU_ID"
+melden OK "ERP-Update erfolgreich - $KUNDE_NAME" "Version $ALT_VERSION -> $NEU_VERSION$KI_HILFE_TEXT"
 exit 0
