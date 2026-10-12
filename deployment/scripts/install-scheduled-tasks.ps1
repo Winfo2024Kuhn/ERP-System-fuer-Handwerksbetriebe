@@ -12,8 +12,16 @@
 
 param(
     [switch]$EnableWeeklyRestart = $false,
-    [string]$DeploymentPath = "C:\Kalkulationsprogramm"
+    [string]$DeploymentPath = "C:\Kalkulationsprogramm",
+    # Optional: OneDrive-Ordner fuer die dritte Sicherungskopie, z. B.
+    # "C:\Users\<Benutzer>\OneDrive\backup_handwerkerprogramm". Die Aufgabe laeuft
+    # als SYSTEM und findet den OneDrive-Ordner nicht selbst. Leer = keine OneDrive-Kopie.
+    [string]$OneDriveBackupDir = ""
 )
+
+# Ohne abschliessenden Backslash: "...\" vor dem Anfuehrungszeichen wuerde die
+# Kommandozeile der Aufgabe zerlegen (\" gilt dort als maskiertes Anfuehrungszeichen)
+$OneDriveBackupDir = $OneDriveBackupDir.TrimEnd('\')
 
 # Pruefe Administrator-Rechte
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -88,8 +96,11 @@ function Create-BackupTask {
     
     # Task-Action
     $backupScript = Join-Path $deploymentScriptDir "backup-database.ps1"
-    $action = New-ScheduledTaskAction -Execute "PowerShell.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$backupScript`""
+    $backupArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$backupScript`""
+    if ($OneDriveBackupDir) {
+        $backupArguments += " -OneDriveBackupDir `"$OneDriveBackupDir`""
+    }
+    $action = New-ScheduledTaskAction -Execute "PowerShell.exe" -Argument $backupArguments
     
     # Task-Trigger: Taeglich um 02:00 Uhr
     $trigger = New-ScheduledTaskTrigger -Daily -At "02:00"
@@ -256,15 +267,22 @@ function Show-Summary {
     Write-Host "  $deploymentScriptDir" -ForegroundColor Gray
     Write-Host ""
     
-    Write-Host "Backup-Speicherort:" -ForegroundColor White
-    Write-Host "  E:\Kalkulationsprogramm\Backups\" -ForegroundColor Gray
+    # Pfade wie in backup-database.ps1 (Standardwerte, die Aufgabe uebergibt nur -OneDriveBackupDir)
+    Write-Host "Backup-Speicherorte:" -ForegroundColor White
+    Write-Host "  1. Lokal:            C:\Kalkulationsprogramm\backups\db\" -ForegroundColor Gray
+    Write-Host "  2. Externe Platte:   <Laufwerk>:\Kalkulationsprogramm-Backup\ (Platte mit Namen INTENSO, sonst E:)" -ForegroundColor Gray
+    if ($OneDriveBackupDir) {
+        Write-Host "  3. OneDrive:         $OneDriveBackupDir\" -ForegroundColor Gray
+    }
+    else {
+        Write-Host "  3. OneDrive:         nicht eingerichtet (Parameter -OneDriveBackupDir)" -ForegroundColor Yellow
+    }
     Write-Host ""
-    
+
     Write-Host "Naechste Schritte:" -ForegroundColor White
-    Write-Host "  1. Kopieren Sie die JAR-Datei nach: $DeploymentPath\" -ForegroundColor Gray
-    Write-Host "  2. Benennen Sie sie um zu: Kalkulationsprogramm.jar" -ForegroundColor Gray
-    Write-Host "  3. Stellen Sie sicher, dass die externe Festplatte E:\ verfuegbar ist" -ForegroundColor Gray
-    Write-Host "  4. Die Datenbank (PostgreSQL) laeuft im Docker-Container erp-postgres - die Sicherung braucht keine weiteren Programme" -ForegroundColor Gray
+    Write-Host "  1. Programm einspielen: UPDATE.bat kopiert die JAR-Datei nach $DeploymentPath\" -ForegroundColor Gray
+    Write-Host "  2. Externe Festplatte anschliessen (fehlt sie, ueberspringt die Sicherung nur diese Kopie)" -ForegroundColor Gray
+    Write-Host "  3. Die Datenbank (PostgreSQL) laeuft im Docker-Container erp-postgres - die Sicherung braucht keine weiteren Programme" -ForegroundColor Gray
     Write-Host ""
     
     Write-Host "Tasks manuell verwalten:" -ForegroundColor White

@@ -7,7 +7,11 @@
 # DREI Orten:
 #   1. Lokal (immer verfuegbar)
 #   2. Externe Festplatte (falls angeschlossen, siehe unten)
-#   3. OneDrive (Cloud-Sync)
+#   3. OneDrive (Cloud-Sync) - nur wenn -OneDriveBackupDir gesetzt ist,
+#      z. B. "C:\Users\<Benutzer>\OneDrive\backup_handwerkerprogramm".
+#      Die geplante Aufgabe laeuft als SYSTEM und kennt den OneDrive-Ordner
+#      des angemeldeten Benutzers nicht; install-scheduled-tasks.ps1 gibt
+#      den Pfad deshalb mit -OneDriveBackupDir an die Aufgabe weiter.
 #
 # Uploads: KEIN taegliches Voll-ZIP mehr. Frueher wurde jede Nacht
 # der komplette uploads-Ordner (~8 GB) gezippt und 30 Tage lang
@@ -39,7 +43,8 @@ param(
     [string]$ExternalVolumeLabel = "INTENSO",
     [string]$ExternalFallbackDrive = "E",
     [string]$ExternalBackupSubDir = "Kalkulationsprogramm-Backup",
-    [string]$OneDriveBackupDir = "C:\Users\bausc\OneDrive\backup_handwerkerprogramm",
+    # Leer = keine OneDrive-Kopie (siehe Kopf)
+    [string]$OneDriveBackupDir = "",
     [string]$LogDir = "C:\Kalkulationsprogramm\logs\backups",
     [int]$RetentionDays = 30,
     [string]$UploadsDir = "C:\Kalkulationsprogramm\uploads",
@@ -336,14 +341,22 @@ else {
     Write-Log "Externe Festplatte nicht angeschlossen - uebersprungen (lokales Backup bleibt gueltig)." "WARN"
 }
 
-# Schritt 6: OneDrive (best effort)
+# Schritt 6: OneDrive (best effort, nur wenn eingerichtet)
 #   DB-Dumps direkt im OneDrive-Ordner (wie bisher), uploads im Unterordner "uploads"
-Write-Log "Kopiere Backups auf OneDrive: $OneDriveBackupDir"
-$oneDriveDbSuccess = Copy-ToDestination -Label "OneDrive" -DestinationDir $OneDriveBackupDir -Files $filesToCopy
-if ($oneDriveDbSuccess) {
-    Remove-OldBackups -BackupDirectory $OneDriveBackupDir -Days $RetentionDays
+$oneDriveConfigured = -not [string]::IsNullOrWhiteSpace($OneDriveBackupDir)
+$oneDriveDbSuccess = $false
+$oneDriveUploadsSuccess = $false
+if ($oneDriveConfigured) {
+    Write-Log "Kopiere Backups auf OneDrive: $OneDriveBackupDir"
+    $oneDriveDbSuccess = Copy-ToDestination -Label "OneDrive" -DestinationDir $OneDriveBackupDir -Files $filesToCopy
+    if ($oneDriveDbSuccess) {
+        Remove-OldBackups -BackupDirectory $OneDriveBackupDir -Days $RetentionDays
+    }
+    $oneDriveUploadsSuccess = Sync-UploadsDirectory -Label "OneDrive" -SourceDir $UploadsDir -DestinationDir (Join-Path $OneDriveBackupDir "uploads")
 }
-$oneDriveUploadsSuccess = Sync-UploadsDirectory -Label "OneDrive" -SourceDir $UploadsDir -DestinationDir (Join-Path $OneDriveBackupDir "uploads")
+else {
+    Write-Log "OneDrive nicht eingerichtet (-OneDriveBackupDir leer) - uebersprungen."
+}
 
 # Schritt 7: Alte lokale Backups loeschen
 Write-Log "Pruefe alte lokale Backups..."
@@ -358,7 +371,12 @@ Write-Log "Backup abgeschlossen!"
 Write-Log "Datenbank-Backup: $(Split-Path $localCompressedFilePath -Leaf)"
 Write-Log "Speicherort 1 (Lokal, nur DB):  $LocalStagingDir - OK"
 Write-Log "Speicherort 2 (Extern): $(if ($externalRoot) { $externalRoot } else { '-' }) - DB $(Format-Status $externalDbSuccess 'UEBERSPRUNGEN'), uploads $(Format-Status $externalUploadsSuccess 'UEBERSPRUNGEN')" $(if ($externalOk) { "INFO" } else { "WARN" })
-Write-Log "Speicherort 3 (OneDrive): $OneDriveBackupDir - DB $(Format-Status $oneDriveDbSuccess 'FEHLGESCHLAGEN'), uploads $(Format-Status $oneDriveUploadsSuccess 'FEHLGESCHLAGEN')" $(if ($oneDriveOk) { "INFO" } else { "WARN" })
+if ($oneDriveConfigured) {
+    Write-Log "Speicherort 3 (OneDrive): $OneDriveBackupDir - DB $(Format-Status $oneDriveDbSuccess 'FEHLGESCHLAGEN'), uploads $(Format-Status $oneDriveUploadsSuccess 'FEHLGESCHLAGEN')" $(if ($oneDriveOk) { "INFO" } else { "WARN" })
+}
+else {
+    Write-Log "Speicherort 3 (OneDrive): nicht eingerichtet"
+}
 Write-Log "========================================"
 
 # Exit-Code: Nur die eigentliche DB-Sicherung ist kritisch. Fehlende externe
