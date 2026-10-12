@@ -2041,7 +2041,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
          * Datenbank. Ohne sie in der Liste zöge der Abrechnungsverlauf ihren eigenen
          * Betrag nicht ab, und der Rückfallweg käme auf einen zu hohen Wert.
          */
-        private void vorgangMitSchlussrechnung(BigDecimal srBetragNetto, String srPositionenJson) {
+        private AusgangsGeschaeftsDokument vorgangMitSchlussrechnung(BigDecimal srBetragNetto, String srPositionenJson) {
             AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
             basis.setId(1L);
             basis.setDokumentNummer("2026/01/00007");
@@ -2067,6 +2067,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             lenient().when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L))
                     .thenReturn(List.of(teilrechnung, sr));
             when(dokumentRepository.findById(3L)).thenReturn(Optional.of(sr));
+            return sr;
         }
 
         @Test
@@ -2172,6 +2173,32 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(dto.getBetragNetto()).isEqualByComparingTo(new BigDecimal("6000.00"));
         }
 
+        @Test
+        void zeigt_bei_einer_gebuchten_altrechnung_ohne_positionen_den_gebuchten_betrag() {
+            // GoBD: Gebucht ist gebucht. Abgeleitet waeren 6.000 € (10.000 € minus 4.000 €
+            // Teilrechnung) – angezeigt wird aber, was im Beleg und in den Offenen Posten steht.
+            AusgangsGeschaeftsDokument sr = vorgangMitSchlussrechnung(new BigDecimal("1234.00"), null);
+            sr.setGebucht(true);
+
+            var dto = service.findById(3L);
+
+            assertThat(dto.getBetragNetto()).isEqualByComparingTo("1234.00");
+            assertThat(dto.getBetragBrutto()).isEqualByComparingTo("1468.46");
+            verify(dokumentRepository, never()).findByVorgaengerIdOrderByErstelltAmAsc(any());
+        }
+
+        @Test
+        void zeigt_bei_einer_gebuchten_altrechnung_ohne_gespeicherten_betrag_weiter_den_abgeleiteten() {
+            // Ganz ohne gespeicherten Betrag bliebe die Anzeige leer – dann lieber der Rest
+            // aus der Auftragssumme wie bisher.
+            AusgangsGeschaeftsDokument sr = vorgangMitSchlussrechnung(null, null);
+            sr.setGebucht(true);
+
+            var dto = service.findById(3L);
+
+            assertThat(dto.getBetragNetto()).isEqualByComparingTo("6000.00");
+        }
+
         /**
          * Vorgang wie in {@link #zieht_nachtraeglich_stornierte_teilrechnung_nach()}: Die
          * Schlussrechnung steht mit 4.000 € gespeichert, angezeigt werden aber 8.000 €,
@@ -2209,32 +2236,58 @@ class AusgangsGeschaeftsDokumentServiceTest {
             return sr;
         }
 
+        /** Angemeldeter Bearbeiter (Dummy-Daten), der im Prüfprotokoll stehen muss. */
+        private FrontendUserProfile bearbeiterMax() {
+            FrontendUserProfile max = new FrontendUserProfile();
+            max.setId(42L);
+            max.setDisplayName("Max Mustermann");
+            when(frontendUserProfileRepository.findById(42L)).thenReturn(Optional.of(max));
+            return max;
+        }
+
         @Test
         void buchen_schreibt_den_angezeigten_betrag_fest_und_protokolliert_die_anpassung() {
             AusgangsGeschaeftsDokument sr = veralteteSchlussrechnung();
+            FrontendUserProfile max = bearbeiterMax();
 
-            AusgangsGeschaeftsDokument gebucht = service.buchen(3L, null, "203.0.113.8");
+            AusgangsGeschaeftsDokument gebucht = service.buchen(3L, 42L, "203.0.113.8");
 
             assertThat(gebucht.isGebucht()).isTrue();
             assertThat(gebucht.getBetragNetto()).isEqualByComparingTo("8000.00");
             assertThat(gebucht.getBetragBrutto()).isEqualByComparingTo("9520.00");
+            // GoBD: Wer den Betrag angepasst und gebucht hat, steht in beiden Einträgen.
             var reihenfolge = inOrder(auditService);
-            reihenfolge.verify(auditService).protokolliereAenderung(eq(sr), isNull(),
+            reihenfolge.verify(auditService).protokolliereAenderung(eq(sr), eq(max),
                     org.mockito.ArgumentMatchers.contains("4000.00 -> 8000.00"), eq("203.0.113.8"));
-            reihenfolge.verify(auditService).protokolliereBuchung(eq(sr), isNull(), eq("203.0.113.8"));
+            reihenfolge.verify(auditService).protokolliereBuchung(eq(sr), eq(max), eq("203.0.113.8"));
         }
 
         @Test
         void buchen_nach_email_versand_schreibt_ebenfalls_den_angezeigten_betrag_fest() {
-            veralteteSchlussrechnung();
+            AusgangsGeschaeftsDokument sr = veralteteSchlussrechnung();
+            FrontendUserProfile max = bearbeiterMax();
+            // Zustand im Moment des GEAENDERT-Eintrags: noch nicht gebucht, noch nicht versendet.
+            Object[] zustandBeiAenderung = new Object[2];
+            doAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                zustandBeiAenderung[0] = d.isGebucht();
+                zustandBeiAenderung[1] = d.getVersandDatum();
+                return null;
+            }).when(auditService).protokolliereAenderung(any(), any(), any(), any());
 
-            AusgangsGeschaeftsDokument gebucht = service.buchenNachEmailVersand(3L, null, null);
+            AusgangsGeschaeftsDokument gebucht = service.buchenNachEmailVersand(3L, 42L, "203.0.113.8");
 
             assertThat(gebucht.isGebucht()).isTrue();
             assertThat(gebucht.getVersandDatum()).isEqualTo(LocalDate.now());
             assertThat(gebucht.getBetragNetto()).isEqualByComparingTo("8000.00");
             assertThat(gebucht.getBetragBrutto()).isEqualByComparingTo("9520.00");
-            verify(auditService).protokolliereAenderung(any(), any(), any(), any());
+            assertThat(zustandBeiAenderung[0]).isEqualTo(false);
+            assertThat(zustandBeiAenderung[1]).isNull();
+            var reihenfolge = inOrder(auditService);
+            reihenfolge.verify(auditService).protokolliereAenderung(eq(sr), eq(max),
+                    org.mockito.ArgumentMatchers.contains("4000.00 -> 8000.00"), eq("203.0.113.8"));
+            reihenfolge.verify(auditService).protokolliereBuchung(eq(sr), eq(max), eq("203.0.113.8"));
+            reihenfolge.verify(auditService).protokolliereVersand(eq(sr), eq(max), eq("203.0.113.8"));
         }
 
         @Test
@@ -2262,6 +2315,23 @@ class AusgangsGeschaeftsDokumentServiceTest {
             service.buchen(3L);
 
             verify(projektRepository).findById(5L);
+        }
+
+        @Test
+        void buchen_traegt_den_angepassten_betrag_in_die_offenen_posten_ein() {
+            // Der eigentliche Fehler: Offene Posten bekamen den alten Bruttobetrag (4.760 €).
+            AusgangsGeschaeftsDokument sr = veralteteSchlussrechnung();
+            Projekt projekt = new Projekt();
+            projekt.setId(5L);
+            sr.setProjekt(projekt);
+            when(projektRepository.findById(5L)).thenReturn(Optional.empty());
+
+            service.buchen(3L);
+
+            ArgumentCaptor<ProjektGeschaeftsdokument> posten = ArgumentCaptor.forClass(ProjektGeschaeftsdokument.class);
+            verify(projektDokumentRepository).save(posten.capture());
+            assertThat(posten.getValue().getDokumentid()).isEqualTo("2026/06/00030");
+            assertThat(posten.getValue().getBruttoBetrag()).isEqualByComparingTo("9520.00");
         }
 
         @Test
@@ -2293,11 +2363,11 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(gebucht.getBetragNetto()).isEqualByComparingTo("4000.00");
             assertThat(gebucht.getBetragBrutto()).isEqualByComparingTo("4760.00");
             verify(auditService).protokolliereAenderung(any(), any(),
-                    org.mockito.ArgumentMatchers.contains("null -> 4000.00"), any());
+                    org.mockito.ArgumentMatchers.contains("(kein Betrag gespeichert) -> 4000.00"), any());
         }
 
-        @Test
-        void buchen_bricht_ab_wenn_der_betrag_nicht_berechnet_werden_kann() {
+        /** Schlussrechnungs-Entwurf, dessen Basisdokument fehlt: Der Betrag ist nicht berechenbar. */
+        private AusgangsGeschaeftsDokument schlussrechnungOhneBasisdokument() {
             AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
             basis.setId(1L);
             AusgangsGeschaeftsDokument sr = new AusgangsGeschaeftsDokument();
@@ -2309,12 +2379,31 @@ class AusgangsGeschaeftsDokumentServiceTest {
             sr.setPositionenJson("{\"blocks\":[]}");
             when(dokumentRepository.findById(3L)).thenReturn(Optional.of(sr));
             when(dokumentRepository.findById(1L)).thenReturn(Optional.empty());
+            return sr;
+        }
+
+        @Test
+        void buchen_bricht_ab_wenn_der_betrag_nicht_berechnet_werden_kann() {
+            AusgangsGeschaeftsDokument sr = schlussrechnungOhneBasisdokument();
 
             assertThatThrownBy(() -> service.buchen(3L))
                     .hasMessageContaining("2026/06/00030")
                     .hasMessageContaining("nicht geprüft werden");
             assertThat(sr.isGebucht()).isFalse();
             verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void buchen_nach_email_versand_bricht_ab_wenn_der_betrag_nicht_berechnet_werden_kann() {
+            AusgangsGeschaeftsDokument sr = schlussrechnungOhneBasisdokument();
+
+            assertThatThrownBy(() -> service.buchenNachEmailVersand(3L, null, "203.0.113.8"))
+                    .hasMessageContaining("2026/06/00030")
+                    .hasMessageContaining("nicht geprüft werden");
+            assertThat(sr.isGebucht()).isFalse();
+            assertThat(sr.getVersandDatum()).isNull();
+            verify(dokumentRepository, never()).save(any());
+            verifyNoInteractions(auditService);
         }
 
         @Test

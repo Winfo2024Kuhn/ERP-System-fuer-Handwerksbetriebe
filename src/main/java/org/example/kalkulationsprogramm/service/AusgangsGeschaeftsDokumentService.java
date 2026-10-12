@@ -571,8 +571,10 @@ public class AusgangsGeschaeftsDokumentService {
      * frisch abgeleitet an ({@link #abgeleiteterSchlussrechnungsNetto}), gespeichert kann aber
      * noch ein älterer stehen – etwa wenn nach dem letzten Speichern eine Abschlagsrechnung
      * storniert wurde. Gebucht wird der Betrag, den Editor und PDF in diesem Moment zeigen; die
-     * Anpassung steht mit altem und neuem Betrag im Prüfprotokoll. Lässt er sich nicht
-     * berechnen, wird nicht gebucht – sonst stünde still der alte Betrag fest.
+     * Anpassung steht mit altem und neuem Betrag im Prüfprotokoll. Scheitert die Berechnung
+     * (z. B. weil das Basisdokument fehlt), wird nicht gebucht – sonst stünde still der alte
+     * Betrag fest. Sind nur die Positionen unlesbar, zeigen Anzeige und Buchung beide den
+     * gespeicherten Betrag.
      */
     private void uebernehmeAktuellenSchlussrechnungsbetrag(AusgangsGeschaeftsDokument dokument,
                                                            FrontendUserProfile bearbeiter, String ipAdresse) {
@@ -580,11 +582,11 @@ public class AusgangsGeschaeftsDokumentService {
         try {
             abgeleitet = berechneSchlussrechnungsNetto(dokument);
         } catch (RuntimeException e) {
-            log.warn("Schlussrechnung {}: Betrag vor dem Buchen nicht berechenbar: {}",
-                    dokument.getDokumentNummer(), e.getMessage());
+            log.warn("Schlussrechnung {}: Betrag vor dem Buchen nicht berechenbar",
+                    dokument.getDokumentNummer(), e);
             throw new RuntimeException("Der Betrag der Schlussrechnung " + dokument.getDokumentNummer()
-                    + " konnte vor dem Buchen nicht geprüft werden. Sie wurde nicht gebucht. Bitte versuchen"
-                    + " Sie es erneut; klappt es weiterhin nicht, wenden Sie sich an Ihren Administrator.", e);
+                    + " konnte vor dem Buchen nicht geprüft werden. Sie wurde nicht gebucht."
+                    + " Bitte wenden Sie sich an Ihren Administrator.", e);
         }
         if (abgeleitet == null) {
             return;
@@ -598,11 +600,12 @@ public class AusgangsGeschaeftsDokumentService {
         dokument.setBetragNetto(neuNetto);
         dokument.setBetragBrutto(bruttoAusNetto(neuNetto, dokument.getMwstSatz()));
         dokumentRepository.save(dokument);
+        String alterBetrag = altNetto != null ? altNetto.toPlainString() : "(kein Betrag gespeichert)";
         log.info("Schlussrechnung {}: Betrag vor dem Buchen angepasst, netto {} -> {}",
-                dokument.getDokumentNummer(), altNetto, neuNetto);
+                dokument.getDokumentNummer(), alterBetrag, neuNetto);
         auditService.protokolliereAenderung(dokument, bearbeiter,
                 "Betrag vor dem Buchen an die übrigen Rechnungen angepasst: Nettobetrag "
-                        + altNetto + " -> " + neuNetto
+                        + alterBetrag + " -> " + neuNetto
                         + " (z. B. weil eine Abschlags- oder Teilrechnung inzwischen storniert ist)",
                 ipAdresse);
         if (dokument.getProjekt() != null) {
@@ -1735,14 +1738,15 @@ public class AusgangsGeschaeftsDokumentService {
      * eine nicht benoetigte Geruststellung) wieder hinein und ignorierte Zusatzpositionen.
      *
      * <ul>
+     *   <li>Festgeschrieben (gebucht oder digital angenommen): {@code null} – der gespeicherte
+     *       Betrag ist der Beleg und steht so auch in den Offenen Posten (GoBD, §147 AO). Gilt
+     *       auch für Altdokumente ohne positionenJson; nur wenn dort gar kein Betrag gespeichert
+     *       ist, greift die Ableitung darunter, damit die Anzeige nicht leer bleibt.</li>
      *   <li>Altdokument ohne positionenJson: Auftragssumme minus die anderen Rechnungen (es gibt
-     *       keine Positionen, aus denen sich der Betrag ableiten liesse). Gilt auch, wenn es
-     *       schon gebucht ist – so war es immer, Buchen fasst ein gebuchtes Dokument nicht an.</li>
+     *       keine Positionen, aus denen sich der Betrag ableiten liesse).</li>
      *   <li>Entwurf: aus den eigenen Positionen neu ableiten. Wird nach dem Anlegen noch eine
      *       Teil- oder Abschlagsrechnung storniert oder gestellt, zieht der Betrag mit.
      *       Deckungsgleich mit dem, was der Editor in handleSave berechnet.</li>
-     *   <li>Sonst (gebucht/digital angenommen): {@code null} – der gespeicherte Betrag ist der
-     *       Beleg und bleibt unangetastet (GoBD, §147 AO).</li>
      * </ul>
      *
      * <p>Für die Anzeige: Kann der Betrag nicht abgeleitet werden, gilt der gespeicherte.
@@ -1761,6 +1765,9 @@ public class AusgangsGeschaeftsDokumentService {
         if (dokument.getTyp() != AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
                 || dokument.getVorgaenger() == null
                 || dokument.isStorniert()) {
+            return null;
+        }
+        if (!dokument.istBearbeitbar() && dokument.getBetragNetto() != null) {
             return null;
         }
         AbrechnungsverlaufDto verlauf = getAbrechnungsverlauf(dokument.getVorgaenger().getId());
