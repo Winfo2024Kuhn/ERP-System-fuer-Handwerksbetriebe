@@ -74,8 +74,8 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - Hierarchie: `src/components/ui/` (Atome), `src/features/{name}/` (Domänenlogik).
 
 ## Design-System (Handwerker-Fokus: Schlicht & Klar)
-- **Farbschema:** Rose/Rot (ZWINGEND – kein indigo/blue).
-- **Primärfarbe:** `#dc2626` (rose-600) | Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`.
+- **Farbschema:** Rose (ZWINGEND – kein indigo/blue, kein `red-*` als Primärfarbe).
+- **Primärfarbe:** `rose-600` = `#e11d48` | Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`. `tailwind.config.js` überschreibt keine Farben; in der Zeiterfassung (Tailwind v4) ist `rose-600` ein OKLCH-Wert, die Klasse bleibt dieselbe. `#dc2626` ist `red-600` (Gefahr/Fehler), nicht die Primärfarbe.
 
 ### Button-Klassen
 - **Primär:** `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700`
@@ -88,7 +88,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 - `<DatePicker>` -> `src/components/ui/datepicker.tsx`
 - `<ImageViewer>` -> `src/components/ui/image-viewer.tsx`
 - `<DetailLayout>` -> `src/components/DetailLayout.tsx` (2-Spalten-Layout)
-- `<EmailHistory>` -> `src/components/EmailHistory.tsx`
+- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant; `EmailHistory.tsx` ist ungenutzter Altbestand)
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 - `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)

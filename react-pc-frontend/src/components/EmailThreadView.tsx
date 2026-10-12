@@ -3,6 +3,7 @@ import { AlertTriangle, Paperclip, File, ChevronDown, ChevronUp, Reply, ReplyAll
 import { klartextGrund } from '../lib/zustellGrund';
 import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { cn } from '../lib/utils';
+import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
 import { getThreadPreview } from '../features/email/threadQuotes';
 import type { ReplyMode } from '../features/email/emailCenterModel';
 import { EmailContentFrame } from './EmailContentFrame';
@@ -247,13 +248,10 @@ function EmailThreadBubble({ entry, isFocused, showAvatar, showSenderName, onPre
     const preview = useMemo(() => getThreadPreview(entry.htmlBody || entry.snippet || '', { keepForwardedContent: entry.forwarded }),
         [entry.htmlBody, entry.snippet, entry.forwarded]);
 
+    // Fokussierte Nachricht mittig in den Verlauf holen – ohne das Seitenlayout mitzuschieben
+    // (scrollIntoView schob sonst das ganze E-Mail-Center unter die Menüleiste).
     useEffect(() => {
-        if (isFocused && bubbleRef.current) {
-            const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            if (typeof bubbleRef.current.scrollIntoView === 'function') {
-                bubbleRef.current.scrollIntoView({ block: 'center', behavior: prefersReduced ? 'auto' : 'smooth' });
-            }
-        }
+        if (isFocused && bubbleRef.current) scrolleMittigInDenBlick(bubbleRef.current);
     }, [isFocused]);
 
     const visibleAttachments = entry.attachments.filter(a => !a.inline);
@@ -607,7 +605,7 @@ export function EmailThreadView({ thread, loading, onPreview, onReply, canReplyA
     }
 
     return (
-        <div className="flex-1 min-h-0 overflow-auto bg-slate-50 px-3 py-3">
+        <div data-testid="email-verlauf" className="flex-1 min-h-0 overflow-auto bg-slate-50 px-3 py-3">
             {regularEmails.map((entry, idx) => {
                 const prev = idx > 0 ? regularEmails[idx - 1] : null;
                 const showDaySeparator = !prev || getDayString(entry.sentAt) !== getDayString(prev.sentAt);

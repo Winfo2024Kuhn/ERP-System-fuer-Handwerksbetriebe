@@ -21,7 +21,9 @@ export function PostfachSchild({ postfaecher, className }: PostfachSchildProps) 
                     title={formatPostfach(postfach)}
                     // Volle Adresse steht im Tooltip – Kürzen sehr langer lokaler Teile ist gewollt.
                     data-kuerzung-erlaubt=""
-                    className="max-w-[10rem] truncate rounded border border-slate-200 bg-white px-1.5 py-px text-[11px] font-medium leading-4 text-slate-500"
+                    // relative: hält den absolut positionierten sr-only-Text im Schild. Sonst hängt
+                    // er an <main> und gibt dem E-Mail-Center einen unsichtbaren Überhang nach unten.
+                    className="relative max-w-[10rem] truncate rounded border border-slate-200 bg-white px-1.5 py-px text-[11px] font-medium leading-4 text-slate-500"
                 >
                     <span className="sr-only">Postfach {postfach.emailAdresse}</span>
                     <span aria-hidden="true">{lokalerTeil(postfach.emailAdresse)}</span>
