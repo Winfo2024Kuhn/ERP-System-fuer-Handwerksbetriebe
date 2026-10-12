@@ -5,7 +5,6 @@ import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.PreisQuelle;
-import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.slf4j.Logger;
@@ -100,30 +99,12 @@ public class OfferPriceService {
                                         List<ArtikelInProjekt> projektArtikel = artikelInProjektRepository
                                                 .findByArtikel_IdAndLieferant_IdAndBestelltFalse(artikel.getId(),
                                                         lieferant.getId());
-                                        for (ArtikelInProjekt aip : projektArtikel) {
-                                            BigDecimal p = finalPrice;
-                                            if (p != null && aip.getArtikel() != null &&
-                                                    aip.getArtikel().getVerrechnungseinheit() != null) {
-                                                Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
-                                                switch (ve) {
-                                                    case KILOGRAMM -> {
-                                                        if (aip.getKilogramm() != null) {
-                                                            p = p.multiply(aip.getKilogramm());
-                                                        }
-                                                    }
-                                                    case LAUFENDE_METER, QUADRATMETER -> {
-                                                        if (aip.getMeter() != null) {
-                                                            p = p.multiply(aip.getMeter());
-                                                        }
-                                                    }
-                                                    case STUECK -> {
-                                                        if (aip.getStueckzahl() != null) {
-                                                            p = p.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
-                                                        }
-                                                    }
-                                                }
-                                                aip.setPreisProStueck(p);
-                                            }
+                                        // Offene Positionen tragen den Preis je Einheit (siehe
+                                        // ProjektMapper). Die Summe friert erst
+                                        // BestellungService.setBestellt beim Abhaken ein - sonst
+                                        // wuerde sie dort ein zweites Mal mit der Menge multipliziert.
+                                        if (finalPrice != null) {
+                                            projektArtikel.forEach(aip -> aip.setPreisProStueck(finalPrice));
                                         }
                                         if (!projektArtikel.isEmpty()) {
                                             artikelInProjektRepository.saveAll(projektArtikel);

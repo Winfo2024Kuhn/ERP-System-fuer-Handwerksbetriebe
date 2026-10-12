@@ -232,7 +232,8 @@ public class ZeitkontoService {
     /**
      * Berechnung: Sollstunden für einen Zeitraum.
      * Feiertage zählen weiter als bezahlte Arbeitstage mit den vollen
-     * Sollstunden, halbe Feiertage (z.B. Heiligabend, Silvester) mit 50%.
+     * Sollstunden - auch halbe Feiertage (z.B. Heiligabend, Silvester); die
+     * gutgeschriebene Hälfte steht auf der Ist-Seite.
      * Zusätzlich richtet sich das Soll jetzt nach einer laufenden
      * Wiedereingliederung, falls für den Mitarbeiter eine läuft.
      * Die eigentliche Rechenregel steckt in {@link TagesSollService#periodenSollSumme}.

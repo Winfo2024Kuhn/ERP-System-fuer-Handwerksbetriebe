@@ -50,6 +50,40 @@ interface ProjektSummary {
     id: number
     name: string
     beschreibung?: string | null
+    projektNummer?: string | null
+    kundenName?: string | null
+}
+
+// Auf welchem Projekt läuft die Buchung nach einem Tätigkeitswechsel weiter?
+// Im Fenster "Tätigkeit wählen" kann der Handwerker über "Ändern" ein anderes
+// Projekt wählen – dann zählt dieses. Die Kategorie wandert dabei nicht mit:
+// Kategorien hängen am Projekt, die alte gibt es im neuen womöglich gar nicht.
+const projektFuerTaetigkeitswechsel = (
+    session: Session,
+    projekte: ProjektSummary[],
+    gewaehlteProjektId: number | null,
+) => {
+    const neuesProjekt = gewaehlteProjektId !== null && gewaehlteProjektId !== session.projektId
+        ? projekte.find(p => p.id === gewaehlteProjektId)
+        : undefined
+    if (!neuesProjekt) {
+        return {
+            projektId: session.projektId,
+            projektName: session.projektName,
+            kundenName: session.kundenName,
+            auftragsnummer: session.auftragsnummer,
+            produktkategorieId: session.produktkategorieId ?? null,
+            produktkategorieName: session.produktkategorieName ?? null,
+        }
+    }
+    return {
+        projektId: neuesProjekt.id,
+        projektName: neuesProjekt.name,
+        kundenName: neuesProjekt.kundenName ?? null,
+        auftragsnummer: neuesProjekt.projektNummer ?? null,
+        produktkategorieId: null,
+        produktkategorieName: null,
+    }
 }
 
 interface Mitarbeiter {
@@ -842,7 +876,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         loadHeuteGearbeitet()
     }
 
-    // Switch to new Arbeitsgang (stop old, start new) - only activity changes!
+    // Switch to new Arbeitsgang (stop old, start new) - optional auf einem über "Ändern" gewählten Projekt
     const handleSwitchArbeitsgang = async (newArbeitsgang: Arbeitsgang) => {
         if (!activeSession) return
         setSwitching(true)
@@ -859,6 +893,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         const stopOperationId = createOperationId()
         const startOperationTime = new Date().toISOString()
         const startOperationId = createOperationId()
+        const ziel = projektFuerTaetigkeitswechsel(activeSession, projekte, selectedProjektId)
 
         // stopRes vor try deklarieren, damit im catch geprüft werden kann
         // ob der Stop online bereits erfolgreich war (Race-Condition-Fix)
@@ -878,7 +913,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             })
             clearTimeout(stopTimeout)
 
-            // 2. Start with same project and category, only new activity
+            // 2. Start mit neuer Tätigkeit – auf dem gewählten Projekt
             const startController = new AbortController()
             const startTimeout = setTimeout(() => startController.abort(), 3000)
 
@@ -887,9 +922,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(buildBookingRequestPayload({
                     token,
-                    projektId: activeSession.projektId,
+                    projektId: ziel.projektId,
                     arbeitsgangId: newArbeitsgang.id,
-                    produktkategorieId: activeSession.produktkategorieId ?? null
+                    produktkategorieId: ziel.produktkategorieId
                 }, startOperationTime, startOperationId)),
                 signal: startController.signal
             })
@@ -899,14 +934,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                 const data = await res.json()
                 const newSession = {
                     id: data.id,
-                    projektId: activeSession.projektId,
-                    projektName: activeSession.projektName,
-                    kundenName: activeSession.kundenName,
-                    auftragsnummer: activeSession.auftragsnummer,
+                    ...ziel,
                     arbeitsgangId: newArbeitsgang.id,
                     arbeitsgangName: newArbeitsgang.beschreibung,
-                    produktkategorieId: activeSession.produktkategorieId ?? null,
-                    produktkategorieName: activeSession.produktkategorieName ?? null,
                     startTime: new Date().toISOString(),
                     typ: null,
                 }
@@ -952,22 +982,17 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             }
             await OfflineService.addPendingEntryWithOperationId('start', {
                 token,
-                projektId: activeSession.projektId,
+                projektId: ziel.projektId,
                 arbeitsgangId: newArbeitsgang.id,
-                produktkategorieId: activeSession.produktkategorieId ?? null
+                produktkategorieId: ziel.produktkategorieId
             }, startOperationTime, startOperationId)
 
             // Update UI with "Fake" Session (IMMEDIATE optimistic update)
             const newSession = {
                 id: 'offline-' + Date.now(),
-                projektId: activeSession.projektId,
-                projektName: activeSession.projektName,
-                kundenName: activeSession.kundenName,
-                auftragsnummer: activeSession.auftragsnummer,
+                ...ziel,
                 arbeitsgangId: newArbeitsgang.id,
                 arbeitsgangName: newArbeitsgang.beschreibung,
-                produktkategorieId: activeSession.produktkategorieId ?? null,
-                produktkategorieName: activeSession.produktkategorieName ?? null,
                 startTime: new Date().toISOString(),
                 typ: null,
             }
