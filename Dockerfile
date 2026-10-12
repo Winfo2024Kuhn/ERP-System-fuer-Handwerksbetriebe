@@ -47,6 +47,14 @@ COPY --from=frontend /build/src/main/resources/static src/main/resources/static
 RUN ./mvnw clean package -DskipTests -B \
  && cp target/Kalkulationsprogramm-*.jar /app/app.jar
 
+# ===== Wissen der KI-Hilfe (RAG-Datei) =====
+# Lokal gebaut bleibt das leer - die KI-Hilfe antwortet dann ohne Programmwissen.
+# Der Image-Bau in GitHub (.github/workflows/docker-image.yml) erzeugt die RAG-Datei aus
+# Doku und Quellcode dieses Stands und reicht sie als Build-Kontext herein:
+#   docker buildx build --build-context ki-hilfe=<ordner mit rag-cache.json> .
+# Kein Quellcode im Image: Der Server laedt nur diese Datei (application-docker.properties).
+FROM scratch AS ki-hilfe
+
 # ===== Stage 3: Runtime image =====
 FROM eclipse-temurin:23-jre
 
@@ -79,6 +87,9 @@ RUN mkdir -p /app/uploads/attachments \
 
 # Copy the built JAR from builder stage
 COPY --from=builder /app/app.jar app.jar
+# RAG-Datei der KI-Hilfe (siehe oben). Gehoert root, das ERP liest sie nur. Als letzte grosse
+# Schicht nach dem JAR: Aendert sich nur die Doku, laedt das Nachtupdate nur diese Schicht neu.
+COPY --from=ki-hilfe / /app/ki-hilfe/
 COPY --chmod=0755 deployment/docker-image/app-start.sh /usr/local/bin/erp-start
 
 # Expose server port
