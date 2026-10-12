@@ -107,6 +107,7 @@ class UnifiedEmailSichtbarkeitSecurityTest {
     @MockBean private EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private EmailAbsenderRepository postfachRepository;
     @MockBean private EmailPostfachZuordnungRepository zuordnungRepository;
     @MockBean private ProjektRepository projektRepository;
@@ -131,6 +132,11 @@ class UnifiedEmailSichtbarkeitSecurityTest {
     @MockBean private AusgangsmailService ausgangsmailService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
     @MockBean private LieferantDokumentZugriffService lieferantDokumentZugriffService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void gelesenWieBisher() {
+        org.example.kalkulationsprogramm.service.GelesenTestHilfe.wieGemeinsam(emailGelesenService);
+    }
 
     private static final long INFO_MAIL = 10L;
     private static final long FREMDE_MAIL = 20L;
@@ -369,8 +375,6 @@ class UnifiedEmailSichtbarkeitSecurityTest {
                     .andExpect(jsonPath("$.inboxCount").value(1))
                     .andExpect(jsonPath("$.projectTotal").value(0))
                     .andExpect(jsonPath("$.projectCount").value(0));
-            // Mit Filter wird aus den Listen gezählt, nicht über die ungefilterten Zähl-Abfragen.
-            verify(emailRepository, never()).countProjectEmailsUnread();
         }
 
         @Test
@@ -773,7 +777,8 @@ class UnifiedEmailSichtbarkeitSecurityTest {
         void gelesenUndStern() throws Exception {
             mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/mark-read").with(csrf())).andExpect(status().isOk());
             mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/mark-read").with(csrf())).andExpect(status().isOk());
-            verify(emailRepository, Mockito.times(1)).save(infoMail);
+            // Beide Male geht die sichtbare Mail an den Baustein „gelesen pro Person“.
+            verify(emailGelesenService, Mockito.times(2)).alsGelesenMarkieren(any(), Mockito.eq(List.of(infoMail)));
 
             mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/toggle-star").with(csrf()))
                     .andExpect(status().isOk())

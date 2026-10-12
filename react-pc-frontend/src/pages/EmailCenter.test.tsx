@@ -184,6 +184,19 @@ describe('EmailCenter', () => {
             });
         });
 
+        it('zeigt im Ordner-Kopf neben „Alle gelesen“ ein (i), das „gelesen pro Benutzer“ erklärt', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            renderEmailCenter();
+            const kopf = await screen.findByTestId('email-ungelesen-kopfzeile');
+            expect(within(kopf).getByText('1 ungelesen')).toBeInTheDocument();
+            const alleGelesen = within(kopf).getByRole('button', { name: 'Alle gelesen' });
+            const info = within(kopf).getByRole('button', { name: 'Mehr zu: Gelesen gilt nur für dich' });
+            expect(alleGelesen.nextElementSibling).toBe(info);
+            await user.click(info);
+            expect(await screen.findByRole('dialog', { name: 'Gelesen gilt nur für dich' })).toBeVisible();
+            expect(screen.getByText(/Für deine Kollegen bleibt sie fett/)).toBeVisible();
+        });
+
         it('ruft inbox und stats Endpoints auf', async () => {
             renderEmailCenter();
             await waitFor(() => {

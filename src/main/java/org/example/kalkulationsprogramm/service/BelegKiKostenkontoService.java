@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -290,7 +289,7 @@ public class BelegKiKostenkontoService {
                     optionalBigDecimal(root, "confidence"),
                     optionalString(root, "begruendung"));
         } catch (Exception e) {
-            log.debug("Konnte freien Text der KI nicht parsen: {}", e.getMessage());
+            log.debug("Konnte freien Text der KI nicht parsen: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -397,9 +396,6 @@ public class BelegKiKostenkontoService {
     // ---------------------------------------------------------------------
 
     private JsonNode callGemini(String apiKey, ArrayNode contents) {
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/" + geminiModel
-                + ":generateContent?key=" + apiKey;
-
         String requestBody;
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -410,13 +406,11 @@ public class BelegKiKostenkontoService {
             sysParts.addObject().put("text", SYSTEM_INSTRUCTION);
             requestBody = objectMapper.writeValueAsString(body);
         } catch (Exception e) {
-            log.warn("KI-Agent Gemini-Call: Request konnte nicht serialisiert werden: {}", e.getMessage());
+            log.warn("KI-Agent Gemini-Call: Request konnte nicht serialisiert werden: {}", e.getClass().getSimpleName());
             return null;
         }
 
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
+        HttpRequest req = GeminiAnfrage.generateContent(geminiModel, apiKey)
                 .timeout(Duration.ofSeconds(45))
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
@@ -432,10 +426,7 @@ public class BelegKiKostenkontoService {
                     return objectMapper.readTree(resp.body());
                 }
 
-                String errBody = resp.body();
-                if (errBody != null && errBody.length() > 500) {
-                    errBody = errBody.substring(0, 500) + "...";
-                }
+                String errBody = GeminiAnfrage.fuerLog(resp.body());
 
                 if (isRetryableStatus(status) && attempt < MAX_GEMINI_ATTEMPTS) {
                     long backoff = RETRY_BACKOFF_MS[attempt - 1];
@@ -454,19 +445,19 @@ public class BelegKiKostenkontoService {
                 if (attempt < MAX_GEMINI_ATTEMPTS) {
                     long backoff = RETRY_BACKOFF_MS[attempt - 1];
                     log.warn("KI-Agent Gemini-Call Versuch {}/{}: IO-Fehler ({}) — retry in {} ms",
-                            attempt, MAX_GEMINI_ATTEMPTS, ioe.getMessage(), backoff);
+                            attempt, MAX_GEMINI_ATTEMPTS, ioe.getClass().getSimpleName(), backoff);
                     sleepQuiet(backoff);
                     continue;
                 }
                 log.warn("KI-Agent Gemini-Call fehlgeschlagen nach {} Versuchen: {}",
-                        MAX_GEMINI_ATTEMPTS, ioe.getMessage());
+                        MAX_GEMINI_ATTEMPTS, ioe.getClass().getSimpleName());
                 return null;
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                log.warn("KI-Agent Gemini-Call unterbrochen: {}", ie.getMessage());
+                log.warn("KI-Agent Gemini-Call unterbrochen");
                 return null;
             } catch (Exception e) {
-                log.warn("KI-Agent Gemini-Call fehlgeschlagen: {}", e.getMessage());
+                log.warn("KI-Agent Gemini-Call fehlgeschlagen: {}", e.getClass().getSimpleName());
                 return null;
             }
         }

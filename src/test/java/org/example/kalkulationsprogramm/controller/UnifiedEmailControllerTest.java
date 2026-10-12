@@ -79,6 +79,7 @@ class UnifiedEmailControllerTest {
 
     @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
     @MockBean private ProjektRepository projektRepository;
@@ -106,6 +107,11 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void gelesenWieBisher() {
+        org.example.kalkulationsprogramm.service.GelesenTestHilfe.wieGemeinsam(emailGelesenService);
+    }
 
     @org.junit.jupiter.api.BeforeEach
     void threadKennzahlenWieEinzelmail() {
@@ -651,7 +657,8 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(post("/api/emails/1/mark-read"))
                     .andExpect(status().isOk());
 
-            verify(emailRepository).save(email);
+            // „Gelesen“ gilt pro Person: der Controller reicht die Mail an den gemeinsamen Baustein.
+            verify(emailGelesenService).alsGelesenMarkieren(any(), eq(List.of(email)));
         }
     }
 

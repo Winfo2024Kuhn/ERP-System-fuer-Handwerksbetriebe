@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import DOMPurify from 'dompurify';
 import {
   Check,
   Copy,
@@ -20,6 +19,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
 import { cn } from '../lib/utils';
+import { htmlToText, sanitizeHtml } from '../lib/htmlSanitizer';
 import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { useToast } from '../components/ui/toast';
@@ -125,16 +125,10 @@ function renderPreview(html: string, useSampleData: boolean) {
     }
     return highlightPlaceholder(match);
   });
-  // DOMPurify behaelt Tabellen, bgcolor, style und data-*-Attribute (Button-
-  // Darstellung) und entfernt target - ein Klick in der Vorschau oeffnet so
-  // keinen neuen Tab mit der ERP-Seite.
-  return DOMPurify.sanitize(ersetzt);
-}
-
-function stripHtml(html: string) {
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  return div.textContent || '';
+  // sanitizeHtml (DOMPurify) behaelt Tabellen, bgcolor, style und data-*-
+  // Attribute (Button-Darstellung) und entfernt target - ein Klick in der
+  // Vorschau oeffnet so keinen neuen Tab mit der ERP-Seite.
+  return sanitizeHtml(ersetzt);
 }
 
 function emptyTemplate(dokumentTyp = 'RECHNUNG'): EmailTemplate {
@@ -163,7 +157,7 @@ function TemplateCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const preview = stripHtml(template.htmlBody).trim();
+  const preview = htmlToText(template.htmlBody).trim();
   return (
     <div
       className={cn(
@@ -587,7 +581,7 @@ function TemplateView({
               variant="outline"
               size="sm"
               className="h-7 text-xs"
-              onClick={() => onCopy('text', stripHtml(rawPreview || ''))}
+              onClick={() => onCopy('text', htmlToText(rawPreview || ''))}
             >
               {copied === 'text' ? (
                 <Check className="w-3.5 h-3.5 text-green-600" />
@@ -790,7 +784,7 @@ export default function EmailTextvorlagenEditor() {
       return (
         tpl.name.toLowerCase().includes(q) ||
         label.includes(q) ||
-        stripHtml(tpl.htmlBody).toLowerCase().includes(q)
+        htmlToText(tpl.htmlBody).toLowerCase().includes(q)
       );
     });
   }, [templates, searchQuery, dokumenttypLabel]);

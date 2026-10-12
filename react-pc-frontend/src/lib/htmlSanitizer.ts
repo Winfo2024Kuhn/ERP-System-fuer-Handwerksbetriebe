@@ -1,11 +1,67 @@
+import DOMPurify from 'dompurify';
+
 /**
- * Zentrale Hilfsfunktionen für sicheres HTML-Stripping, Entity-Decoding und URL-Validierung.
+ * Zentrale Hilfsfunktionen für sicheres HTML-Rendern, HTML-Parsen, Stripping,
+ * Entity-Decoding und URL-Validierung.
  *
  * Verhindert gängige Sicherheitslücken wie:
+ * - Stored/DOM-XSS über dangerouslySetInnerHTML (onerror, <script>, javascript:-Links)
+ * - XSS beim bloßen Auslesen von HTML über ein losgelöstes div (img onerror feuert dort trotzdem)
  * - Unvollständige Multicharacter-Sanitization (CWE-20/80/116, z. B. <<script>script>)
  * - Double-Unescaping (&amp;lt; -> < statt &lt;)
  * - DOM-XSS über ungeprüfte URLs (javascript:, data:text/html)
  */
+
+/**
+ * Bereinigt HTML, bevor es per `dangerouslySetInnerHTML` angezeigt wird.
+ * Pflicht für jedes HTML aus Datenbank, API, KI oder Nutzereingabe.
+ *
+ * Nutzt die DOMPurify-Standardregeln: Skripte, Event-Handler (onerror, onclick …),
+ * javascript:-URLs und iframes fliegen raus; Formatierung, Tabellen, Bilder,
+ * `class`, `style` und `data-*` bleiben erhalten. Die Darstellung von Richtext
+ * aus Tiptap, Textbausteinen und Signaturen ändert sich dadurch praktisch
+ * nicht; entfernt werden u. a. auch `target`, `contenteditable`, `<meta>`,
+ * `<link>` und `blob:`-Bilder.
+ * Zusätzlich fallen weg:
+ * - `<form>` (Inhalt bleibt): ein eingeschleustes Formular könnte sonst
+ *   Eingaben an eine fremde Adresse schicken.
+ * - `<style>`-Blöcke: sie gelten für die ganze ERP-Seite, könnten Knöpfe
+ *   verdecken oder über `url()` Daten nach außen laden. Inline-`style` bleibt.
+ */
+export function sanitizeHtml(html?: string | null): string {
+    if (!html) return '';
+    return DOMPurify.sanitize(html, { FORBID_TAGS: ['form', 'style'] });
+}
+
+/**
+ * Parst HTML nur zum Auslesen oder Umbauen, ohne es auszuführen.
+ *
+ * Ersatz für `document.createElement('div').innerHTML = html`: Ein solches div
+ * gehört zum laufenden Dokument, Bilder darin werden geladen und
+ * `<img src=x onerror=…>` führt Code aus, auch wenn das div nie angezeigt wird.
+ * Das Dokument aus `createHTMLDocument` hat kein Fenster: dort lädt nichts und
+ * kein Handler läuft. Das zurückgegebene div verhält sich sonst wie ein
+ * normales (querySelector, dataset, innerHTML).
+ *
+ * Ausnahme `<noscript>`: Ohne Fenster gelten Skripte als abgeschaltet, sein
+ * Inhalt würde hier als HTML statt wie in der Seite als Text geparst. Über
+ * diesen Unterschied lassen sich Bereinigungen aushebeln (mXSS), deshalb
+ * fliegt `<noscript>` samt Inhalt raus. Wer das Ergebnis wieder in die Seite
+ * schreibt, bereinigt es trotzdem vorher mit `sanitizeHtml()`.
+ */
+export function parseHtmlInert(html?: string | null): HTMLDivElement {
+    const inertesDokument = document.implementation.createHTMLDocument('');
+    const wrapper = inertesDokument.createElement('div');
+    wrapper.innerHTML = html || '';
+    wrapper.querySelectorAll('noscript').forEach(n => n.remove());
+    return wrapper;
+}
+
+/** Liefert den reinen Text eines HTML-Schnipsels, ohne das HTML auszuführen. */
+export function htmlToText(html?: string | null): string {
+    if (!html) return '';
+    return parseHtmlInert(html).textContent || '';
+}
 
 /**
  * Entfernt alle HTML-Tags vollständig per Fixpunktschleife.

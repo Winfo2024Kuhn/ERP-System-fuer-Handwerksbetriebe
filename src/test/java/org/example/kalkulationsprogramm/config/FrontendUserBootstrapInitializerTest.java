@@ -1,6 +1,8 @@
 package org.example.kalkulationsprogramm.config;
 
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.repository.EmailGelesenRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,6 +33,8 @@ class FrontendUserBootstrapInitializerTest {
 
     @Mock
     private FrontendUserProfileRepository repository;
+    @Mock
+    private EmailGelesenRepository emailGelesenRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
     @InjectMocks
@@ -61,12 +66,19 @@ class FrontendUserBootstrapInitializerTest {
         ReflectionTestUtils.setField(initializer, "adminPassword", "sicheres-passwort");
         when(repository.countByUsernameIsNotNull()).thenReturn(0L);
         when(passwordEncoder.encode(anyString())).thenReturn("hash");
+        when(repository.save(any(FrontendUserProfile.class))).thenAnswer(inv -> {
+            FrontendUserProfile p = inv.getArgument(0);
+            p.setId(1L);
+            return p;
+        });
 
         initializer.run(null);
 
         ArgumentCaptor<FrontendUserProfile> captor = ArgumentCaptor.forClass(FrontendUserProfile.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getUsername()).isEqualTo("max.mustermann");
+        // „Gelesen“ gilt pro Person: vorhandene Mails gelten für den neuen Admin als gelesen.
+        verify(emailGelesenRepository).alleMailsAlsGelesen(eq(1L), eq(EmailDirection.IN), any());
     }
 
     @Test

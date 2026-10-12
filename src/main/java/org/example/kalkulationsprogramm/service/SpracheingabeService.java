@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -157,14 +156,10 @@ public class SpracheingabeService {
     }
 
     private SpracheingabeErgebnis sendeUndLies(ObjectNode koerper, String apiKey, int audioBytes, String inhaltstyp) {
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/"
-                + modell + ":generateContent?key=" + apiKey;
-
         HttpRequest request;
         try {
-            request = HttpRequest.newBuilder(URI.create(url))
+            request = GeminiAnfrage.generateContent(modell, apiKey)
                     .timeout(READ_TIMEOUT)
-                    .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(
                             objectMapper.writeValueAsString(koerper), StandardCharsets.UTF_8))
                     .build();

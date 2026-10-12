@@ -23,6 +23,7 @@ import { TiptapEditor } from '../components/TiptapEditor';
 import { KategorieAnalyseModal } from '../components/KategorieAnalyseModal';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { cn } from '../lib/utils';
+import { sanitizeHtml } from '../lib/htmlSanitizer';
 import {
     type Produktkategorie,
     type VerrechnungseinheitName,
@@ -466,7 +467,7 @@ export default function ProduktkategorieEditor() {
                                     <p className="text-xs text-slate-500 mb-2">Beschreibung:</p>
                                     <div
                                         className="prose prose-sm max-w-none text-slate-700 rich-text-einheitlich"
-                                        dangerouslySetInnerHTML={{ __html: selectedKategorie.beschreibung }}
+                                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedKategorie.beschreibung) }}
                                     />
                                 </div>
                             )}

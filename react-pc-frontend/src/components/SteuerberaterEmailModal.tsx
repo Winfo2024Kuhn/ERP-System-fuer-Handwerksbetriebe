@@ -4,6 +4,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
+import { htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { escapeHtml } from '../lib/emailAddress';
 
 interface MitarbeiterStunden {
     mitarbeiterId: number;
@@ -66,29 +68,12 @@ const getCurrentFrontendUser = (): FrontendUserSelection | null => {
     return null;
 };
 
-const wrapSignatureHtml = (rawHtml: string): string => {
-    const trimmed = (rawHtml || '').trim();
-    if (!trimmed) return '';
-    if (/email-signature/i.test(trimmed)) {
-        return trimmed;
-    }
-    return `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${trimmed}</div>`;
-};
-
-const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = rawHtml || '';
-    wrapper.querySelectorAll('script, style').forEach(n => n.remove());
-    wrapper.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
-    return wrapper.innerHTML.trim();
-};
-
 /**
  * Baut die Anrede-Zeile aus Anrede + Nachname.
  * Bei DAMEN_HERREN entfällt der Nachname; bei FAMILIE wird der Nachname angehängt.
  */
 const buildAnredeZeile = (anrede: string | null | undefined, nachname: string | undefined): string => {
-    const safeNachname = (nachname || '').trim();
+    const safeNachname = escapeHtml((nachname || '').trim());
     switch (anrede) {
         case 'HERR':
             return safeNachname ? `Sehr geehrter Herr ${safeNachname},` : 'Sehr geehrter Herr,';
@@ -178,7 +163,7 @@ export function SteuerberaterEmailModal({
             tableHtml += `
         <tr>
             <td style="border: 1px solid #dee2e6; padding: 8px;">${index + 1}</td>
-            <td style="border: 1px solid #dee2e6; padding: 8px;">${m.mitarbeiterName}</td>
+            <td style="border: 1px solid #dee2e6; padding: 8px;">${escapeHtml(m.mitarbeiterName)}</td>
             <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${m.tagessollWoche}</td>
             <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${adjustedArbeitsstunden}</td>
             <td style="border: 1px solid #dee2e6; padding: 8px; text-align: center;">${m.urlaub}</td>
@@ -213,29 +198,7 @@ ${sig}
     }, [mitarbeiterDaten, monat]);
 
     // Load signature once
-    const loadSignature = useCallback(async () => {
-        try {
-            const currentUser = getCurrentFrontendUser();
-            const params = new URLSearchParams();
-            if (currentUser?.id) {
-                params.set('frontendUserId', String(currentUser.id));
-            }
-            const signatureUrl = params.toString()
-                ? `/api/email/signatures/default?${params.toString()}`
-                : '/api/email/signatures/default';
-
-            const res = await fetch(signatureUrl);
-            if (res.ok && res.status !== 204) {
-                const data = await res.json();
-                if (data.html) {
-                    return wrapSignatureHtml(data.html);
-                }
-            }
-        } catch (err) {
-            console.error('Signatur konnte nicht geladen werden:', err);
-        }
-        return '';
-    }, []);
+    const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
 
     // Open: load Steuerberater + signature
     useEffect(() => {
@@ -325,9 +288,7 @@ ${sig}
             : 'Sehr geehrte Damen und Herren,';
 
         const body = generateEmailBody(signatureRef.current, anredeZeile);
-        if (editorRef.current) {
-            editorRef.current.innerHTML = body;
-        }
+        setzeEditorHtml(editorRef.current, body);
         lastRenderedKeyRef.current = key;
     }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, mitarbeiterDaten.length, generateEmailBody]);
 
@@ -356,7 +317,7 @@ ${sig}
                 recipients: [recipient.trim()],
                 cc: [],
                 subject: subject.trim(),
-                body: prepareHtmlForSending(editorRef.current?.innerHTML || ''),
+                body: htmlFuerVersand(editorRef.current?.innerHTML),
                 direction: 'OUT',
                 benutzer: currentUser?.displayName || '',
                 frontendUserId: currentUser?.id || null,

@@ -54,7 +54,9 @@ import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
+import org.example.kalkulationsprogramm.service.EmailGelesenService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.GelesenStand;
 import org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeit;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
@@ -78,8 +80,9 @@ import lombok.RequiredArgsConstructor;
  * gezählt wird – Zähler und Liste meinen so immer dieselben Einträge. Angezeigt werden je
  * Kategorie nur die jüngsten paar.
  *
- * <p>Erledigen heißt bei Mails: wirklich als gelesen markieren (das E-Mail-Center zeigt dann
- * dasselbe). Alles andere merkt sich {@link BenachrichtigungErledigtService} pro Benutzer.
+ * <p>Erledigen heißt bei Mails: für diesen Benutzer als gelesen markieren (das E-Mail-Center zeigt
+ * dann dasselbe; „gelesen“ gilt pro Person, siehe {@link EmailGelesenService}). Alles andere merkt
+ * sich {@link BenachrichtigungErledigtService} pro Benutzer.
  *
  * <p>Jede Quelle läuft in einer eigenen Transaktion: Wirft eine (auch tief in einem anderen
  * transaktionalen Service), rollt nur sie zurück – eine gemeinsame Transaktion würde sonst als
@@ -126,6 +129,7 @@ public class BenachrichtigungService {
     private final TelefonBerechtigungService telefonBerechtigungService;
     private final TelefonBenachrichtigungService telefonBenachrichtigungService;
     private final PostfachSichtbarkeitService postfachSichtbarkeitService;
+    private final EmailGelesenService emailGelesenService;
     private final ZeiterfassungEinstellungService zeiterfassungEinstellungService;
     private final FrontendUserProfileService frontendUserProfileService;
     private final BenachrichtigungErledigtService erledigtService;
@@ -257,8 +261,8 @@ public class BenachrichtigungService {
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Einzelne Einträge erledigen. Mails werden als gelesen markiert (nur, wenn der Benutzer sie
-     * sieht), alles andere wird für den Benutzer gemerkt. Bewusst ohne gemeinsame Transaktion:
+     * Einzelne Einträge erledigen. Mails werden für den Benutzer als gelesen markiert (nur, wenn er
+     * sie sieht), alles andere wird für ihn gemerkt. Bewusst ohne gemeinsame Transaktion:
      * Mails und Merker speichern je für sich, ein Konflikt beim Merken rollt das Lesen nicht zurück.
      */
     public void erledigen(Collection<String> schluessel, Authentication authentication) {
@@ -279,7 +283,8 @@ public class BenachrichtigungService {
             // Transaktion – sonst sind die Mails losgelöst und das Speichern überschriebe parallele
             // Änderungen (IMAP-Abgleich, Spam-Erkennung) an derselben Zeile.
             PostfachSichtbarkeit sicht = postfachSichtbarkeitService.fuer(authentication);
-            schreibTransaktion().executeWithoutResult(status -> alsGelesenMarkieren(
+            schreibTransaktion().executeWithoutResult(status -> emailGelesenService.alsGelesenMarkieren(
+                    authentication,
                     emailRepository.findAllById(mailIds).stream().filter(sicht::siehtEmail).toList()));
         }
         erledigtService.merken(benutzerId, merken);
@@ -287,7 +292,7 @@ public class BenachrichtigungService {
 
     /**
      * Ganze Kategorien erledigen – alle ihre Einträge, nicht nur die angezeigten. Mail-Kategorien:
-     * alle ungelesenen Mails des Ordners werden gelesen.
+     * alle für den Benutzer ungelesenen Mails des Ordners werden für ihn gelesen.
      *
      * @return wie viele Einträge erledigt wurden
      */
@@ -311,7 +316,8 @@ public class BenachrichtigungService {
                 }
                 if (quelle.mails()) {
                     // Gezählt wird, was wirklich gelesen wurde – eine Mail in zwei Ordnern nur einmal.
-                    return alsGelesenMarkieren(quelle.eintraege().stream().map(Email.class::cast).toList())
+                    return emailGelesenService.alsGelesenMarkieren(authentication,
+                            quelle.eintraege().stream().map(Email.class::cast).toList())
                             .stream().map(e -> EMAIL_ART + ":" + e.getId()).toList();
                 }
                 return offeneSchluessel(quelle, erledigt);
@@ -328,22 +334,6 @@ public class BenachrichtigungService {
                 .map(quelle.schluessel())
                 .filter(s -> !erledigt.contains(s))
                 .toList();
-    }
-
-    /** Setzt ungelesene Mails auf gelesen; liefert die tatsächlich geänderten. */
-    private List<Email> alsGelesenMarkieren(List<Email> mails) {
-        LocalDateTime jetzt = LocalDateTime.now();
-        List<Email> geaendert = mails.stream().filter(e -> !e.isRead()).toList();
-        geaendert.forEach(e -> {
-            e.setRead(true);
-            if (e.getFirstViewedAt() == null) {
-                e.setFirstViewedAt(jetzt);
-            }
-        });
-        if (!geaendert.isEmpty()) {
-            emailRepository.saveAll(geaendert);
-        }
-        return geaendert;
     }
 
     private static Long mailId(String schluessel) {
@@ -387,22 +377,22 @@ public class BenachrichtigungService {
         }
         quellen.add(new QuellenAufruf("ANFRAGEN_WEBSEITE", this::webseitenAnfragen));
 
-        // Ungelesene E-Mails – nur aus Postfächern, die der Benutzer sieht (Admin: alle). Lässt
-        // sich die Sichtbarkeit nicht ermitteln, gibt es keine Mail-Hinweise (lieber nichts
-        // zeigen als Betreff und Absender aus fremden Postfächern).
-        Predicate<Email> sichtbar = sichtbareMails(authentication);
-        if (sichtbar != null) {
-            quellen.add(new QuellenAufruf("EMAILS", () -> posteingang(sichtbar)));
+        // Für diesen Benutzer ungelesene E-Mails – nur aus Postfächern, die er sieht (Admin: alle).
+        // Lässt sich das nicht ermitteln, gibt es keine Mail-Hinweise (lieber nichts zeigen als
+        // Betreff und Absender aus fremden Postfächern).
+        Predicate<Email> ungelesen = ungeleseneSichtbareMails(authentication);
+        if (ungelesen != null) {
+            quellen.add(new QuellenAufruf("EMAILS", () -> posteingang(ungelesen)));
             quellen.add(new QuellenAufruf("EMAILS_PROJECTS", () -> mailOrdner(emailRepository.findProjectEmails(),
-                    sichtbar, "EMAILS_PROJECTS", "Ungelesene Projekt-E-Mails", "projects")));
+                    ungelesen, "EMAILS_PROJECTS", "Ungelesene Projekt-E-Mails", "projects")));
             quellen.add(new QuellenAufruf("EMAILS_OFFERS", () -> mailOrdner(emailRepository.findAnfrageEmails(),
-                    sichtbar, "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers")));
+                    ungelesen, "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers")));
             quellen.add(new QuellenAufruf("EMAILS_SUPPLIERS", () -> mailOrdner(emailRepository.findLieferantEmails(),
-                    sichtbar, "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers")));
+                    ungelesen, "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers")));
             quellen.add(new QuellenAufruf("EMAILS_SPAM", () -> mailOrdner(emailRepository.findSpamOrdner(),
-                    sichtbar, "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam")));
+                    ungelesen, "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam")));
             quellen.add(new QuellenAufruf("EMAILS_NEWSLETTER", () -> mailOrdner(emailRepository.findNewsletterOrdner(),
-                    sichtbar, "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter")));
+                    ungelesen, "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter")));
         }
 
         quellen.add(new QuellenAufruf("URLAUBSANTRAEGE", this::urlaubsantraege));
@@ -461,17 +451,16 @@ public class BenachrichtigungService {
                 }, 5);
     }
 
-    private Quelle<?> posteingang(Predicate<Email> sichtbar) {
+    private Quelle<?> posteingang(Predicate<Email> ungelesen) {
         Set<Long> nichtZugeordnet = emailRepository.findUnassigned().stream()
                 .map(Email::getId)
                 .collect(Collectors.toSet());
-        List<Email> ungelesen = emailRepository.findInboxFiltered().stream()
+        List<Email> offen = emailRepository.findInboxFiltered().stream()
                 .filter(e -> !nichtZugeordnet.contains(e.getId()))
-                .filter(e -> !e.isRead())
-                .filter(sichtbar)
+                .filter(ungelesen)
                 .sorted(Comparator.comparing(Email::getSentAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
-        return mailQuelle("EMAILS", "Ungelesene E-Mails", "inbox", ungelesen);
+        return mailQuelle("EMAILS", "Ungelesene E-Mails", "inbox", offen);
     }
 
     /**
@@ -479,16 +468,15 @@ public class BenachrichtigungService {
      * Spam/Newsletter mit auf, weil die Repo-Queries dort nicht nach Direction filtern. Für die
      * Glocke zählen nur eingehende, ungelesene Mails – sonst klingelt es bei jeder eigenen Antwort.
      */
-    private Quelle<?> mailOrdner(List<Email> mails, Predicate<Email> sichtbar, String typ, String label,
+    private Quelle<?> mailOrdner(List<Email> mails, Predicate<Email> ungelesen, String typ, String label,
             String ordner) {
-        List<Email> ungelesen = mails.stream()
+        List<Email> offen = mails.stream()
                 .filter(e -> e.getDirection() == EmailDirection.IN)
-                .filter(e -> !e.isRead())
                 .filter(e -> e.getDeletedAt() == null)
-                .filter(sichtbar)
+                .filter(ungelesen)
                 .sorted(Comparator.comparing(Email::getSentAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
-        return mailQuelle(typ, label, ordner, ungelesen);
+        return mailQuelle(typ, label, ordner, offen);
     }
 
     private static Quelle<Email> mailQuelle(String typ, String label, String ordner, List<Email> ungelesen) {
@@ -859,14 +847,15 @@ public class BenachrichtigungService {
     }
 
     /**
-     * Filter auf Mails aus Postfächern, die der Benutzer sieht; {@code null}, wenn sich das nicht
-     * ermitteln lässt (dann keine Mail-Hinweise).
+     * Filter auf Mails, die der Benutzer sieht und selbst noch nicht gelesen hat; {@code null},
+     * wenn sich das nicht ermitteln lässt (dann keine Mail-Hinweise).
      */
-    private Predicate<Email> sichtbareMails(Authentication authentication) {
+    private Predicate<Email> ungeleseneSichtbareMails(Authentication authentication) {
         try {
             Set<Long> verborgen = postfachSichtbarkeitService
                     .verborgeneEmailIds(postfachSichtbarkeitService.fuer(authentication));
-            return e -> !verborgen.contains(e.getId());
+            GelesenStand gelesen = emailGelesenService.fuer(authentication);
+            return e -> !verborgen.contains(e.getId()) && gelesen.istUngelesen(e);
         } catch (RuntimeException e) {
             return null;
         }

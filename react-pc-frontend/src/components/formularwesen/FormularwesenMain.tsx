@@ -10,6 +10,7 @@ import PropertiesSidebar from './PropertiesSidebar';
 import EditorCanvas from './EditorCanvas';
 import PreviewModal from './PreviewModal';
 import TextbausteinDefaultsModal from './TextbausteinDefaultsModal';
+import { parseHtmlInert } from '../../lib/htmlSanitizer';
 import {
     uid, DEFAULT_ITEMS, SIZE_DEFAULTS, STYLE_DEFAULTS, SAMPLE_DATA
 } from './constants';
@@ -168,8 +169,7 @@ export default function FormularwesenMain() {
     }, [items, backgroundImage, backgroundImagePage2]);
 
     const deserialize = useCallback((html: string): FormBlock[] => {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = html || '';
+        const wrapper = parseHtmlInert(html || '');
         const found = wrapper.querySelectorAll('[data-block-type]');
         if (!found.length && !html.includes('<div class="page">')) return DEFAULT_ITEMS.map(i => ({ ...i, id: uid() }));
         if (!found.length) return [];
@@ -196,8 +196,7 @@ export default function FormularwesenMain() {
     }, []);
 
     const parseMetadata = useCallback((html: string) => {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = html || '';
+        const wrapper = parseHtmlInert(html || '');
         const result: { backgroundImage?: string | null; backgroundImagePage2?: string | null } = {};
         const bgMeta = wrapper.querySelector('meta[name="background-image"]');
         const bg2Meta = wrapper.querySelector('meta[name="background-image-page2"]');

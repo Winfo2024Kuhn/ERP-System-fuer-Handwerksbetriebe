@@ -73,7 +73,7 @@ Für jede geänderte Java-Datei prüfen:
 
 ### 2b. Frontend-Qualität
 Für jede geänderte TSX/TS-Datei prüfen:
-- `dangerouslySetInnerHTML` ohne Sanitizer?
+- `dangerouslySetInnerHTML` oder `innerHTML` an angezeigten Elementen ohne `sanitizeHtml()` aus `lib/htmlSanitizer.ts`? HTML über `div.innerHTML` statt `parseHtmlInert()`/`htmlToText()` geparst?
 - URL-Parameter ohne `encodeURIComponent()`?
 - Farben: indigo/blue statt rose/slate?
 - HTML `<select>` statt `Select`-Komponente?

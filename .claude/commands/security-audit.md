@@ -52,11 +52,13 @@ List<Artikel> findByName(@Param("name") String name);
 ## 3. Cross-Site Scripting / XSS (A03:2021)
 
 Backend:
-- [ ] HTML-Ausgaben über `EmailHtmlSanitizer` sanitisiert?
+- [ ] E-Mail-HTML über `EmailHtmlSanitizer`, anderes gespeichertes HTML per jsoup-`Safelist` bereinigt (Vorbild `SignaturHtmlPruefung`)?
 - [ ] Nutzereingaben in E-Mails/Dokumenten bereinigt?
 
 Frontend:
-- [ ] Kein `dangerouslySetInnerHTML` ohne serverseitig sanitisierte Daten?
+- [ ] Kein `dangerouslySetInnerHTML` ohne `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (oder eine strengere eigene DOMPurify-Instanz mit Positivliste, Vorbild `bereinigeBeitragsHtml`; nie lockerer) – auch bei serverseitig bereinigten Daten?
+- [ ] Kein `element.innerHTML = …` / `insertAdjacentHTML` an angezeigten Elementen ohne `sanitizeHtml()`?
+- [ ] HTML nur über `parseHtmlInert()`/`htmlToText()` ausgelesen, nicht über `document.createElement('div').innerHTML`?
 - [ ] URL-Parameter mit `encodeURIComponent()` kodiert?
 - [ ] React-eigenes Escaping genutzt (normale JSX-Ausgabe `{variable}`)?
 

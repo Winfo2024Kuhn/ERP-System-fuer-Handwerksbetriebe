@@ -66,10 +66,11 @@ function bereinigeStyleAttribut(element: Element): void {
 /**
  * Eigene DOMPurify-Instanz nur fuer Beitrags-HTML, bewusst nicht der
  * geteilte Standard-Import. DOMPurify.addHook wirkt auf die Instanz, an der
- * er haengt - `components/EmailSettings.tsx` sanitisiert E-Mail-Signaturen
- * ueber genau denselben Standard-Import (`import DOMPurify from 'dompurify'`
- * liefert ueberall dasselbe Singleton-Objekt). Ein Hook auf diesem Singleton
- * wuerde dort also die Signaturen mitbeschneiden. `createDOMPurify(window)`
+ * er haengt - `sanitizeHtml()` in `lib/htmlSanitizer.ts` bereinigt alle
+ * uebrigen HTML-Anzeigen ueber genau denselben Standard-Import (`import
+ * DOMPurify from 'dompurify'` liefert ueberall dasselbe Singleton-Objekt).
+ * Ein Hook auf diesem Singleton wuerde dort also z. B. Signaturen und
+ * Positionstexte mitbeschneiden. `createDOMPurify(window)`
  * (der Default-Export ist zugleich die Factory) erzeugt dagegen eine frische,
  * isolierte Instanz mit eigenem Hook-Zustand.
  */

@@ -87,7 +87,8 @@ public class KiHilfeController {
                     .reduce((a, b) -> b)
                     .map(ChatMessage::text)
                     .orElse("");
-            log.info("| Frage:   {}", lastUserMsg.length() > 100 ? lastUserMsg.substring(0, 100) + "..." : lastUserMsg);
+            // Nur die Länge: Fragen können Namen von Kunden oder Mitarbeitern enthalten.
+            log.info("| Frage:   {} Zeichen", lastUserMsg.length());
 
             var result = kiHilfeService.chat(messages, pageContext);
 
@@ -102,7 +103,8 @@ public class KiHilfeController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            log.error("KI-Hilfe Fehler", e);
+            // Nur die Fehlerart: Parse-Fehler zitieren die Antwort.
+            log.error("KI-Hilfe Fehler: {}", e.getClass().getSimpleName());
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "KI-Hilfe ist gerade nicht verfügbar. Bitte versuche es später erneut."));
         }

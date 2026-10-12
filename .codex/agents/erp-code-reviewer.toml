@@ -83,7 +83,9 @@ Für jede geänderte `*.java`-Datei prüfen:
 Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-zeiterfassung/` prüfen:
 
 ### 2.1 Sicherheit
-- [ ] **Kein** `dangerouslySetInnerHTML` ohne `EmailHtmlSanitizer`
+- [ ] **Kein** `dangerouslySetInnerHTML` ohne `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (DOMPurify), an der Stelle oder sichtbar davor in derselben Datei – auch bei Daten, die das Backend schon bereinigt hat. Erlaubt ist sonst nur eine strengere eigene DOMPurify-Instanz mit Positivliste (z. B. `bereinigeBeitragsHtml`). `EmailHtmlSanitizer` ist Backend-Java und zählt im Frontend **nicht** als Bereinigung.
+- [ ] **Kein** `element.innerHTML = …` / `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren) ohne `sanitizeHtml()`
+- [ ] HTML, das nur ausgelesen oder umgebaut wird, über `parseHtmlInert()`/`htmlToText()` parsen – **nie** `document.createElement('div').innerHTML = …` (dort führt `<img onerror>` Code aus)
 - [ ] URL-Parameter immer mit `encodeURIComponent(...)`
 - [ ] Keine hardcodierten Tokens / API-Keys
 
@@ -163,8 +165,8 @@ git diff main...HEAD | grep -iE "(api_key|password=|token=|secret=|passwd|-----B
 
 ### 3.3 OWASP Top 10
 - [ ] **A01 Broken Access Control:** neue Endpoints prüfen Authentifizierung/Rolle; Path-Traversal auf Datei-Endpoints abgefangen (`Paths.get(name).getFileName()`, `.startsWith(uploadDir)`)
-- [ ] **A03 Injection:** parametrisierte Queries; React-eigenes Escaping genutzt; `EmailHtmlSanitizer` für HTML-Ausgaben
-- [ ] **A03 XSS:** kein `dangerouslySetInnerHTML` ohne Sanitizer; URL-Params encoded
+- [ ] **A03 Injection:** parametrisierte Queries; React-eigenes Escaping genutzt; Backend: E-Mail-HTML über `EmailHtmlSanitizer`; Frontend: `sanitizeHtml()` vor jedem `dangerouslySetInnerHTML`
+- [ ] **A03 XSS:** kein `dangerouslySetInnerHTML` und kein `innerHTML` an angezeigten Elementen ohne `sanitizeHtml()`; kein HTML-Parsen über `div.innerHTML`; URL-Params encoded
 - [ ] **A04 Insecure Design:** Eingaben validiert (`@NotNull`, `@NotBlank`, `@Size`, `@Min`, `@Max`)
 - [ ] **A05 Misconfiguration:** keine Debug-/Stacktrace-Ausgabe in Prod; CORS-Config nicht zu offen
 - [ ] **A08 Software & Data Integrity / Mass Assignment:** Request-DTOs schützen vor ungewollten Feldern (Rollen, Admin-Flags), Jackson `FAIL_ON_UNKNOWN_PROPERTIES` aktiv

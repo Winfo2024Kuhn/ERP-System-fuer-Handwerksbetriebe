@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.math.BigDecimal;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -656,9 +655,6 @@ public class GeminiDokumentAnalyseService {
 
             String base64Data = Base64.getEncoder().encodeToString(bytes);
             String modelToUse = useProModel ? geminiProModel : geminiModel;
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelToUse
-                    + ":generateContent?key=" + geminiApiKey;
-
             ObjectNode requestBody = objectMapper.createObjectNode();
             ArrayNode contents = requestBody.putArray("contents");
             ObjectNode content = contents.addObject();
@@ -672,9 +668,7 @@ public class GeminiDokumentAnalyseService {
             // Custom Prompt Teil
             parts.addObject().put("text", customPrompt);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Content-Type", "application/json")
+            HttpRequest request = GeminiAnfrage.generateContent(modelToUse, geminiApiKey)
                     .timeout(Duration.ofSeconds(120))
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
                     .build();
@@ -683,7 +677,7 @@ public class GeminiDokumentAnalyseService {
             lastApiCallTime = System.currentTimeMillis();
 
             if (response.statusCode() != 200) {
-                log.error("Gemini API Fehler: {} - {}", response.statusCode(), response.body());
+                log.error("Gemini API Fehler: {} - {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                 return null;
             }
 
@@ -714,7 +708,7 @@ public class GeminiDokumentAnalyseService {
             return text.trim();
 
         } catch (Exception e) {
-            log.error("Gemini Multi-Doc API-Aufruf fehlgeschlagen: {}", e.getMessage(), e);
+            log.error("Gemini Multi-Doc API-Aufruf fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         } finally {
             API_LOCK.unlock();
@@ -818,7 +812,7 @@ public class GeminiDokumentAnalyseService {
                     .build();
 
         } catch (Exception e) {
-            log.debug("ZUGFeRD-Preview fehlgeschlagen: {}", e.getMessage());
+            log.debug("ZUGFeRD-Preview fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -870,7 +864,7 @@ public class GeminiDokumentAnalyseService {
                     .build();
 
         } catch (Exception e) {
-            log.debug("XML-Preview fehlgeschlagen: {}", e.getMessage());
+            log.debug("XML-Preview fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1034,7 +1028,8 @@ public class GeminiDokumentAnalyseService {
             return builder.build();
 
         } catch (Exception e) {
-            log.warn("Fehler beim Parsen der KI-Antwort (wird als manuelle Prüfung markiert): {}", e.getMessage());
+            log.warn("Fehler beim Parsen der KI-Antwort (wird als manuelle Prüfung markiert): {}",
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1114,8 +1109,7 @@ public class GeminiDokumentAnalyseService {
                     // Versuche XML-Extraktion (XRechnung, ZUGFeRD-XML)
                     geschaeftsdaten = versucheXmlExtraktion(
                             leseXmlDateiSicher(dateiPfad, explicitPath != null),
-                            freshDokument,
-                            dateiPfad.getFileName().toString());
+                            freshDokument);
                 }
             }
 
@@ -1138,7 +1132,7 @@ public class GeminiDokumentAnalyseService {
                                 geschaeftsdaten.getDokumentNummer());
                     } catch (Exception e) {
                         log.warn("Preisuebernahme aus KI-Analyse fehlgeschlagen für Dokument {}: {}",
-                                freshDokument.getId(), e.getMessage());
+                                freshDokument.getId(), e.getClass().getSimpleName());
                     }
                 }
             }
@@ -1387,12 +1381,12 @@ public class GeminiDokumentAnalyseService {
 
             // Prüfe ob relevante Daten extrahiert wurden
             if (zugferd.getRechnungsnummer() == null && zugferd.getBetrag() == null) {
-                log.debug("Keine ZUGFeRD-Daten in PDF gefunden: {}", dateiname);
+                log.debug("Keine ZUGFeRD-Daten in PDF von Dokument {}", dokumentFuerLog(dokument));
                 return null;
             }
 
-            log.info("ZUGFeRD-Daten gefunden in {}: Nr={}, Betrag={}",
-                    dateiname, zugferd.getRechnungsnummer(), zugferd.getBetrag());
+            log.info("ZUGFeRD-Daten gefunden für Dokument {}: Nr={}, Betrag={}",
+                    dokumentFuerLog(dokument), zugferd.getRechnungsnummer(), zugferd.getBetrag());
 
             // Existierendes Geschaeftsdokument wiederverwenden oder neues erstellen
             LieferantGeschaeftsdokument gd = null;
@@ -1489,7 +1483,8 @@ public class GeminiDokumentAnalyseService {
             return gd;
 
         } catch (Exception e) {
-            log.debug("ZUGFeRD-Extraktion fehlgeschlagen für {}: {}", dateiname, e.getMessage());
+            log.debug("ZUGFeRD-Extraktion fehlgeschlagen für Dokument {}: {}", dokumentFuerLog(dokument),
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1497,30 +1492,15 @@ public class GeminiDokumentAnalyseService {
     /**
      * Versucht XML-Rechnung zu parsen (z.B. XRechnung, ZUGFeRD-XML).
      */
-    private LieferantGeschaeftsdokument versucheXmlExtraktion(Path dateiPfad, LieferantDokument dokument) {
-        try {
-            return versucheXmlExtraktion(
-                    leseXmlDateiSicher(dateiPfad, true),
-                    dokument,
-                    dateiPfad != null ? dateiPfad.getFileName().toString() : "unbekannt");
-        } catch (Exception e) {
-            log.debug("XML-Extraktion fehlgeschlagen für {}: {}",
-                    dateiPfad != null ? dateiPfad.getFileName() : "unbekannt",
-                    e.getMessage());
-            return null;
-        }
-    }
-
-    private LieferantGeschaeftsdokument versucheXmlExtraktion(String xmlContent, LieferantDokument dokument,
-            String dateinameFuerLog) {
+    private LieferantGeschaeftsdokument versucheXmlExtraktion(String xmlContent, LieferantDokument dokument) {
         try {
             // Einfache Prüfung ob es eine Rechnungs-XML ist
             if (!xmlContent.contains("Invoice") && !xmlContent.contains("CrossIndustryInvoice")) {
-                log.debug("XML ist keine Rechnung: {}", dateinameFuerLog);
+                log.debug("XML von Dokument {} ist keine Rechnung", dokumentFuerLog(dokument));
                 return null;
             }
 
-            log.info("XML-Rechnung gefunden: {}", dateinameFuerLog);
+            log.info("XML-Rechnung gefunden für Dokument {}", dokumentFuerLog(dokument));
 
             // Existierendes Geschaeftsdokument wiederverwenden oder neues erstellen
             LieferantGeschaeftsdokument gd = null;
@@ -1624,7 +1604,8 @@ public class GeminiDokumentAnalyseService {
             return gd;
 
         } catch (Exception e) {
-            log.debug("XML-Extraktion fehlgeschlagen: {}", e.getMessage());
+            log.debug("XML-Extraktion fehlgeschlagen für Dokument {}: {}", dokumentFuerLog(dokument),
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1714,8 +1695,7 @@ public class GeminiDokumentAnalyseService {
             if (lower.endsWith(".xml")) {
                 LieferantGeschaeftsdokument xmlResult = versucheXmlExtraktion(
                         leseXmlDateiSicher(dateiPfad, true),
-                        null,
-                        dateiPfad.getFileName().toString());
+                        null);
                 if (xmlResult != null)
                     return xmlResult;
             }
@@ -2157,6 +2137,11 @@ public class GeminiDokumentAnalyseService {
         return normalizedPath;
     }
 
+    /** Kennung eines Dokuments fürs Log, nie der Dateiname: der trägt Namen aus den Rechnungen (DSGVO). */
+    private static Object dokumentFuerLog(LieferantDokument dokument) {
+        return dokument != null && dokument.getId() != null ? dokument.getId() : "ohne ID";
+    }
+
     /**
      * Prüft ob eine E-Mail-Domain zu einem bekannten Lieferanten gehört.
      * Extrahiert die Domain aus der E-Mail-Adresse und sucht passende Lieferanten.
@@ -2505,11 +2490,7 @@ public class GeminiDokumentAnalyseService {
                         modelToUse = useProModel ? geminiProModel : geminiModel;
                     }
 
-                    String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                            modelToUse, geminiApiKey);
-
-                    HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
-                            .header("Content-Type", "application/json")
+                    HttpRequest request = GeminiAnfrage.generateContent(modelToUse, geminiApiKey)
                             .timeout(Duration.ofSeconds(180))
                             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                             .build();
@@ -2550,14 +2531,14 @@ public class GeminiDokumentAnalyseService {
                         long delay = INITIAL_RETRY_DELAY_MS * (1L << attempt); // Exponential backoff
                         log.warn("[Gemini API] Fehler {} bei Attempt {}/{} - Retry in {}ms. Body: {}",
                                 response.statusCode(), attempt + 1, MAX_RETRIES, delay,
-                                response.body().substring(0, Math.min(200, response.body().length())));
+                                GeminiAnfrage.fuerLog(response.body()));
                         Thread.sleep(delay);
                         continue;
                     }
 
                     // Client-Fehler (4xx außer 429) - Nicht retryable
                     log.error("[Gemini API] Client-Fehler {} - kein Retry. Body: {}",
-                            response.statusCode(), response.body());
+                            response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                     return null;
 
                 } catch (java.net.http.HttpTimeoutException timeoutEx) {
@@ -2577,8 +2558,9 @@ public class GeminiDokumentAnalyseService {
                     break;
                 } catch (Exception e) {
                     lastException = e;
+                    // Nur die Fehlerart: Parse-Fehler zitieren die Antwort (Rechnungsdaten).
                     log.error("[Gemini API] Exception bei Attempt {}/{}: {}",
-                            attempt + 1, MAX_RETRIES, e.getMessage());
+                            attempt + 1, MAX_RETRIES, e.getClass().getSimpleName());
                     // Nur bei bestimmten Exceptions retry
                     if (e instanceof java.io.IOException) {
                         long delay = INITIAL_RETRY_DELAY_MS * (1L << attempt);
@@ -2596,11 +2578,11 @@ public class GeminiDokumentAnalyseService {
 
             // Alle Retries erschöpft
             log.error("[Gemini API] Alle {} Retries fehlgeschlagen. Letzte Exception: {}",
-                    MAX_RETRIES, lastException != null ? lastException.getMessage() : "keine");
+                    MAX_RETRIES, lastException != null ? lastException.getClass().getSimpleName() : "keine");
             return null;
 
         } catch (Exception e) {
-            log.error("Fehler beim Aufruf der Gemini API", e);
+            log.error("Fehler beim Aufruf der Gemini API: {}", e.getClass().getSimpleName());
             return null;
         } finally {
             API_LOCK.unlock();
@@ -2792,7 +2774,9 @@ public class GeminiDokumentAnalyseService {
             return gd;
 
         } catch (Exception e) {
-            log.error("Fehler beim Parsen der KI-Response: {}", jsonString, e);
+            // Nie die Antwort selbst: sie enthält die Rechnungsdaten.
+            log.error("Fehler beim Parsen der KI-Response ({} Zeichen): {}",
+                    jsonString != null ? jsonString.length() : 0, e.getClass().getSimpleName());
             return null;
         }
     }

@@ -11,7 +11,7 @@ import { designPruefung } from './hilfen/design';
  */
 const KEIN_MITARBEITER = 'Ihr Benutzer ist keinem Mitarbeiter zugeordnet. '
     + 'Bitte einen Admin bitten, das oben rechts unter „Benutzer verwalten“ nachzuholen – '
-    + 'sonst kann die Änderung nicht mit Ihrem Namen protokolliert werden.';
+    + 'sonst kann das nicht mit Ihrem Namen gespeichert werden.';
 
 type Aufruf = { method: string; path: string; body: unknown };
 
