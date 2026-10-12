@@ -2,7 +2,7 @@
 
 ## 🧠 KI-Skill-Pflicht (UI/UX) — HOOK-ERZWUNGEN
 
-**Vor JEDER Frontend-Änderung** musst du einen der folgenden Skills per `Skill`-Tool aufrufen. Das ist keine Empfehlung: Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange in dieser Session keiner davon lief.
+**Vor JEDER Frontend-Änderung** musst du einen der folgenden Skills per `Skill`-Tool aufrufen. Das ist keine Empfehlung: Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange in dieser Session keiner davon lief.
 
 | Skill | Wofür |
 | --- | --- |
@@ -23,7 +23,7 @@ Jede UI-Entscheidung wird an diesen zwei Fragen gemessen. Beide MÜSSEN mit Ja b
 - Pro Screen genau **eine** klar erkennbare Primär-Aktion (gefüllter `bg-rose-600`-Button). Sekundäre und destruktive Aktionen sind visuell klar abgesetzt (siehe Button-Klassen unten).
 - Icon-only-Buttons **immer** mit sichtbarem Tooltip/`aria-label` — nie ein Icon ohne Erklärung raten lassen.
 - Deaktivierte Buttons/Felder erklären per Tooltip **warum** sie deaktiviert sind, statt einfach grau und stumm zu sein.
-- Destruktive Aktionen (Löschen, Stornieren, unwiderrufliches Versenden) verlangen eine Bestätigung per Dialog — nie ein einzelner Klick, der sofort unwiderruflich ausführt.
+- Destruktive Aktionen (Löschen, Stornieren, unwiderrufliches Versenden) verlangen eine Bestätigung per Dialog (`useConfirm` aus `components/ui/confirm-dialog.tsx`, `variant: 'danger'`) — nie ein einzelner Klick, der sofort unwiderruflich ausführt.
 - Formulare zeigen Pflichtfelder, Format-Hinweise (z. B. Datumsformat, Mengeneinheit) und Platzhalter **bevor** der Nutzer den Fehler macht, nicht erst danach in einer Fehlermeldung.
 
 ### Gulf of Evaluation — "Sieht der Nutzer sofort, WAS passiert ist?"
@@ -68,30 +68,60 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 **Farbpaletten-Pflicht:** `ui-ux-pro-max`, `frontend-design` & Co. schlagen von sich aus oft fremde Paletten vor (blue/indigo/violet als Default-Theme). Diese Vorschläge sind nur Ausgangspunkt für Struktur, Spacing und Komponenten-Auswahl — Farben werden **immer** auf unser Schema unten (rose/slate) umgestellt, bevor Code committet wird. Kein Fallback auf Skill- oder MCP-Default-Farben, auch nicht "nur vorübergehend" oder in Mockups/Prototypen.
 
 ## Build & Coding-Regeln
-- Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!).
-- Kein `dangerouslySetInnerHTML` ohne `EmailHtmlSanitizer`.
+- Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!). Der Build schreibt nach `src/main/resources/static/` (PC) bzw. `static/zeiterfassung/` (Handy-App). Diese Dateien sind eingecheckt und werden mitcommittet (siehe `review-and-ship`). Die CI (`.github/workflows/pr-ci.yml`) prüft je Frontend außerdem `npm run lint`, `npm test` und `npm run test:e2e`.
+- Kein `dangerouslySetInnerHTML` mit ungeprüftem HTML:
+  - E-Mail-HTML bereinigt das Backend (`EmailHtmlSanitizer`). Angezeigt wird es in `EmailContentFrame` (iframe mit `sandbox`).
+  - HTML, das im Frontend entsteht oder von Nutzern kommt, vorher mit `DOMPurify.sanitize()` bereinigen (Vorbild `pages/EmailTextvorlagenEditor.tsx`).
+  - Tags entfernen, Entities entpacken, URLs prüfen: nur über `react-pc-frontend/src/lib/htmlSanitizer.ts` (siehe `TESTING_SECURITY.md`).
 - URL-Parameter immer mit `encodeURIComponent()`.
-- Hierarchie: `src/components/ui/` (Atome), `src/features/{name}/` (Domänenlogik).
+- CSS-Klassen bedingt zusammensetzen mit `cn()` aus `src/lib/utils.ts`.
+- Hierarchie:
+  - `src/components/ui/`: Atome
+  - `src/components/`: geteilte Fach-Bausteine
+  - `src/features/{name}/`: Domänenlogik
+  - `src/pages/`: Seiten
+  - `src/lib/`: reine Hilfsfunktionen
 
 ## Design-System (Handwerker-Fokus: Schlicht & Klar)
 - **Farbschema:** Rose/Rot (ZWINGEND – kein indigo/blue).
-- **Primärfarbe:** `#dc2626` (rose-600) | Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`.
+- **Primärfarbe:** `rose-600` = `#e11d48` (Tailwind-Standardwert; `react-pc-frontend/tailwind.config.js` überschreibt keine Farben, die Handy-App nutzt Tailwind 4 ohne eigene Palette). Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`. Die Variable `--rose-primary: #dc2626` in `react-zeiterfassung/src/index.css` ist `red-600`, ein unbenutzter Altwert, und nicht die Markenfarbe.
+- **Status-Farben:** nur für Zustände, nie als Markenfarbe. Erfolg `emerald`/`green`, Warnung `amber`, Gefahr/Löschen `red-600`. So machen es `toast.tsx` und `confirm-dialog.tsx` (`variant: 'danger'`).
 
 ### Button-Klassen
-- **Primär:** `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700`
-- **Sekundär:** `border-rose-300 text-rose-700 hover:bg-rose-50`
-- **Ghost:** `variant="ghost" text-rose-700 hover:bg-rose-100`
-- **Größe:** Standard `size="sm"`. Icons (`w-4 h-4`) links vom Text (Lucide React).
+Immer `<Button>` aus `src/components/ui/button.tsx` (PC) verwenden; die Varianten bringen die Klassen mit:
+- **Primär:** `<Button>` (Standard-Variante) = `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700`
+- **Sekundär:** `<Button variant="outline">` = `bg-white text-rose-700 border border-rose-200 hover:bg-rose-50`. Für einen kräftigeren Rand ist `className="border-rose-300 text-rose-700 hover:bg-rose-50"` verbreitet.
+- **Ghost:** `variant="ghost"` = `text-rose-700 hover:bg-rose-100`
+- **Neutral:** `variant="secondary"` = `bg-slate-100 text-slate-800`
+- **Größe:** `size="sm"` setzen; die Komponente selbst hat `size="default"` als Vorgabe. Icons (`w-4 h-4`) links vom Text (Lucide React).
 
 ### Pflicht-Komponenten (NIE neu erfinden!)
+PC-Frontend (`react-pc-frontend/src`):
+- `<Button>`, `<Input>`, `<Label>`, `<Card>` -> `src/components/ui/button.tsx`, `input.tsx`, `label.tsx`, `card.tsx` (Grundbausteine)
+- `<PageLayout>` -> `src/components/layout/PageLayout.tsx` (Seitenrahmen + Seitenkopf, siehe Page Header Pattern)
 - `<Select>` -> `src/components/ui/select-custom.tsx`
 - `<DatePicker>` -> `src/components/ui/datepicker.tsx`
+- `<DecimalInput>` -> `src/components/ui/decimal-input.tsx` (Mengen/Beträge mit Dezimalkomma)
+- `<TimeInput>` -> `src/components/ui/time-input.tsx` (Uhrzeit `HH:mm`)
+- `<ColorInput>` -> `src/components/ui/color-input.tsx` (statt nativem Farbpicker)
+- `Dialog`, `DialogContent`, `DialogHeader`, `DialogFooter`, `DialogTitle`, `DialogDescription` -> `src/components/ui/dialog.tsx`
+- `useConfirm()` -> `src/components/ui/confirm-dialog.tsx` (Bestätigungsdialog statt `window.confirm`)
+- `useToast()` -> `src/components/ui/toast.tsx` (siehe Toast-Pflicht)
 - `<ImageViewer>` -> `src/components/ui/image-viewer.tsx`
 - `<DetailLayout>` -> `src/components/DetailLayout.tsx` (2-Spalten-Layout)
-- `<EmailHistory>` -> `src/components/EmailHistory.tsx`
+- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant)
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 - `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)
+
+Handy-App (`react-zeiterfassung/src`):
+- `<Select>` -> `components/ui/select-custom.tsx`
+- `<MobileDatePicker>` -> `components/MobileDatePicker.tsx`
+- `<DecimalInput>` -> `components/ui/decimal-input.tsx`
+- `useConfirm()` -> `components/ui/confirm-dialog.tsx`
+- `useToast()` -> `components/ui/toast.tsx`
+- `Drawer` (Bottom-Sheet) -> `components/ui/drawer.tsx`
+- `<ImageViewer>` -> `components/ui/image-viewer.tsx`
 
 ### Verbindliche Eingaben und Meldungen (Nutzervorgabe 09.09.2026)
 
@@ -132,6 +162,7 @@ Der Nutzer möchte bei komplexeren Dingen **immer** einen Info-Button, der erkl�
 - Im Playwright-Durchlauf den geöffneten Info-Button mit prüfen: nichts abgeschnitten, nichts überdeckt, auch am Bildschirmrand.
 
 ### Page Header Pattern (Zwingend für alle Seiten)
+Im PC-Frontend erzeugt `<PageLayout ribbonCategory="Kategorie" title="Seitentitel" subtitle="Beschreibung" actions={…}>` aus `src/components/layout/PageLayout.tsx` genau diesen Kopf. Der Titel wird dabei automatisch großgeschrieben. Dazu kommt der Standard-Seitenrahmen (`max-w-[1600px]`, Innenabstände). Neue Seiten nutzen `PageLayout`. Nur wo das nicht passt, das Muster von Hand:
 ```tsx
 <div className="flex flex-col md:flex-row justify-between gap-4 md:items-end mb-8">
   <div>

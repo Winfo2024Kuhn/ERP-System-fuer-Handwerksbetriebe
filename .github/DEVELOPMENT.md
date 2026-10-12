@@ -2,17 +2,22 @@
 
 ## Project Structure & Modules
 - `src/main/java/org/example/kalkulationsprogramm/` – Application code
-    - `controller/` (REST endpoints), `service/` (business logic), `repository/` (Spring Data), `domain/` (JPA entities), `dto/` (API models)
-- `src/main/resources/` – Configuration (e.g., `application.yml/properties`), templates, static assets
+    - `controller/` (REST endpoints), `service/` (business logic), `repository/` (Spring Data), `domain/` (JPA entities), `dto/` (API models), `mapper/`, `config/` (Spring Security, filters, startup runners)
+- `src/main/java/org/example/email/` – Mail sending (`EmailService`)
+- `src/main/resources/` – Configuration (`application.properties`, `application-docker.properties`, `application-local.properties.example`), `db/postgresql/` (base schema + Flyway migrations), `fonts/`, `static/` (checked-in build of both frontends)
 - `src/test/java/org/example/kalkulationsprogramm/` – JUnit tests
+- `react-pc-frontend/` – Desktop UI (React 19, Vite 7, Tailwind 3), `react-zeiterfassung/` – mobile PWA (React 19, Vite 7, Tailwind 4)
+- `deployment/docker-server/` – Docker setup for customer servers (postgres, app, updater, netzsperre)
 - `uploads/` – Runtime file storage (ignored by Git)
 
 ## Build, Test, and Run
 - Build JAR: `./mvnw clean package` – compiles, tests, packages
 - Database: PostgreSQL 16 is the only database. Start one locally before running the app, e.g. `docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 -e POSTGRES_DB=kalkulationsprogramm_db -e POSTGRES_USER=erp_user -e POSTGRES_PASSWORD=erp_dev postgres:16`, and put the credentials into `application-local.properties` (never committed). An empty database gets the base schema and all migrations on first start.
-- Run locally: `./mvnw spring-boot:run` – starts the API on the configured port
-- Run tests: `./mvnw test` – executes unit/integration tests (H2 in memory, no database needed)
+- Run locally: `./mvnw spring-boot:run` – starts the API on port 8080 (`server.port`), profile `local` (reads `application-local.properties`)
+- Run tests: `./mvnw test` – executes unit/integration tests (H2 in memory, no database needed); JaCoCo writes a coverage report to `target/site/jacoco`
+- Note: Surefire runs only its default patterns (`*Test.java`, `*Tests.java`, `Test*.java`, `*TestCase.java`); no Failsafe plugin is configured. Classes named `*IT.java` (e.g. `ProjektManagementServiceIT`) do **not** run with `./mvnw test` and therefore not in CI either.
 - Database tests against real PostgreSQL: `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat -Dkompat.db.user=kompat -Dkompat.db.pass=kompat` (throwaway `postgres:16` container)
+- Frontends: `npm run dev` / `npm run build` / `npm run lint` / `npm test` / `npm run test:e2e` in `react-pc-frontend/` and `react-zeiterfassung/`. `npm run build` writes into `src/main/resources/static/` – the build output is committed.
 - Requires Java 23; Maven wrapper included (no global install needed)
 
 ## Coding Style & Naming
@@ -44,11 +49,13 @@
 | **AssertJ** | Fluent Assertions (`.isEqualTo()`, `.containsExactly()`, `.isNotNull()`) |
 | **H2** | In-Memory-Datenbank für Repository-Tests (`@DataJpaTest`) – nur in Tests; die Anwendung selbst läuft immer auf PostgreSQL |
 | **Awaitility** | Asynchrone Assertions für zeitbasierte Logik |
+| **GreenMail** | Test-Mailserver (SMTP/IMAP) für E-Mail-Tests |
+| **PostgreSQL 16** | Nur für die `DatenbankKompatibilitaet*Test`-Klassen (laufen nur mit `-Dkompat.db.url`, in der CI im Job „Datenbank-Kompatibilitaet (PostgreSQL)“) |
 
 #### Dateistruktur & Namenskonventionen
 - **Ort:** Spiegelpakete unter `src/test/java/org/example/kalkulationsprogramm/`
-- **Unit-Tests:** `{ClassName}Test.java` (z.B. `AngebotServiceTest.java`)
-- **Integrationstests:** `{ClassName}IT.java` (z.B. `ProjektManagementServiceIT.java`)
+- **Unit-Tests:** `{ClassName}Test.java` (z.B. `AbwesenheitServiceTest.java`)
+- **Integrationstests:** `{ClassName}IT.java` (z.B. `ProjektManagementServiceIT.java`) – Achtung: Diese Klassen laufen mit `./mvnw test` und in der CI derzeit **nicht** mit (siehe oben). Integrationstests, die mitlaufen sollen, wie Unit-Tests auf `Test` enden lassen (z.B. die `DatenbankKompatibilitaet*Test`-Klassen).
 - **Test-Methoden:** Beschreibend auf Deutsch oder Englisch, z.B. `gibtLeereListeZurueckWennKeineArtikelVorhanden()`
 
 #### Service-Tests (Unit-Tests)
@@ -213,6 +220,11 @@ describe('useMeinHook', () => {
 | **Utility-Funktionen** | Formatierung, Berechnungen, Parser |
 | **Modale/Dialoge** | Öffnen/Schließen, Bestätigungsfluss |
 
+#### End-to-End-Tests (Playwright)
+- **Ort und Start:** `react-pc-frontend/e2e/` und `react-zeiterfassung/e2e/`, jeweils `npm run test:e2e`. In der CI Teil des „PR Quality Gate“.
+- **PC-Frontend:** läuft gegen einen frischen Produktions-Build (`vite preview`, Port `E2E_PORT`, Standard 4173) – ohne Spring Boot und ohne Datenbank: Jeder Test stubbt seine `/api`-Routen selbst (`e2e/hilfen/api.ts`), nur mit Dummy-Daten. Jede Spec läuft in drei Fenstergrößen (1440×900, 1536×960, 1920×1080). Mit `E2E_DEVSERVER=1` oder `npm run test:e2e:ui` läuft stattdessen der Dev-Server.
+- **Zeiterfassung:** läuft gegen den Vite-Dev-Server mit HTTPS (Port `E2E_PORT`, Standard 5175) im Handy-Format (iPhone 15, Chromium).
+
 #### Test-Abdeckungsziele
 - **Service-Klassen (Backend):** ≥ 80% Line Coverage
 - **Controller (Backend):** Alle Endpoints mit Happy-Path + Fehlerfall
@@ -222,6 +234,8 @@ describe('useMeinHook', () => {
 ### Sicherheitstests (OWASP Top 10)
 
 Jede neue Funktionalität, die User-Input entgegennimmt, MUSS mit Sicherheitstests abgedeckt werden. Die Tests basieren auf dem **OWASP Top 10** Standard.
+
+Die Pfade in den Beispielen (z.B. `/api/dateien/upload`, `/api/angebote`) sind Platzhalter – die echten Endpunkte stehen im jeweiligen Controller.
 
 #### 1. SQL Injection (A03:2021 – Injection)
 Spring Data JPA mit parametrisierten Queries schützt vor SQL Injection. **Trotzdem testen:**
@@ -409,13 +423,14 @@ const url = `/api/search?q=${suchbegriff}`;
 - Commits: clear, imperative subject; concise body with rationale; group related changes
 - PRs: include summary, linked issues, reproduction/verification steps, and screenshots for UI changes
 - Expect `./mvnw test` to pass; update/add tests when changing behavior
+- `main` only via pull request (a ruleset rejects direct pushes). Required check: "PR Quality Gate" from `.github/workflows/pr-ci.yml` (backend tests, PostgreSQL compatibility, lint, unit tests, build and E2E for both frontends). Green PRs from the owner account are merged by `.github/workflows/pr-automatik.yml` (label `kein-automerge` stops it); every merge to `main` is built by `.github/workflows/docker-image.yml`, start-tested and published as `:stable`, which customer servers install in the nightly update.
 
 ## Security & Configuration
 
 ### Allgemeine Regeln
 - **Keine Secrets im Code:** Passwörter, API-Keys, Tokens NIEMALS committen. Lokale Overrides in `application-local.properties` (in `.gitignore`).
-- `uploads/` ist nicht versioniert – ephemere, nicht-sensitive Dateien.
-- App-Konfiguration in `src/main/resources/`; pro Umgebung über Properties-Overrides.
+- `uploads/` ist nicht versioniert – Laufzeit-Ablage für Dokumente, Bilder und E-Mail-Anhänge. Enthält Kunden- und Mitarbeiterdaten, daher nie committen.
+- App-Konfiguration in `src/main/resources/`; pro Umgebung über Properties-Overrides (Profil `local` → `application-local.properties`, Profil `docker` → `application-docker.properties`). E-Mail-Zugang, KI-Schlüssel und Datei-Ordner werden in der App unter Einstellungen gepflegt und in der Tabelle `system_setting` gespeichert.
 
 ### OWASP Top 10 – Pflicht-Maßnahmen
 
@@ -425,10 +440,10 @@ const url = `/api/search?q=${suchbegriff}`;
 | A02 | **Cryptographic Failures** | Keine Secrets im Code, HTTPS in Produktion, sichere Passwort-Hashing |
 | A03 | **Injection** | Spring Data parametrisierte Queries, kein String-Concat in JPQL/SQL, HTML-Sanitisierung |
 | A04 | **Insecure Design** | DTOs verwenden (nie Entities direkt exponieren), Input-Validierung an Systemgrenzen |
-| A05 | **Security Misconfiguration** | CORS restriktiv konfigurieren, keine Stack-Traces in Produktion |
+| A05 | **Security Misconfiguration** | CORS restriktiv konfigurieren (`app.cors.allowed-origins`, Standard leer), erlaubte Hosts (`app.security.allowed-hosts`), keine Stack-Traces in Produktion |
 | A06 | **Vulnerable Components** | Dependencies regelmäßig updaten, `./mvnw versions:display-dependency-updates` |
-| A07 | **Auth Failures** | (Aktuell Intranet-App) – bei externem Zugang Spring Security einsetzen |
-| A08 | **Data Integrity Failures** | DTOs gegen Mass-Assignment, Jackson `FAIL_ON_UNKNOWN_PROPERTIES` |
+| A07 | **Auth Failures** | Spring Security (`config/SecurityConfig.java`): Login mit Sitzung und CSRF-Cookie, Passwörter mit BCrypt; Handy-App mit Mitarbeiter-Token und Fehlversuchs-Begrenzung (`docs/MOBILE_TOKEN_SECURITY.md`); `/api/internal` nur mit Website-Schlüssel (`X-ERP-Website-Key`) |
+| A08 | **Data Integrity Failures** | DTOs gegen Mass-Assignment – unbekannte JSON-Felder ignoriert Jackson (Spring-Boot-Standard `FAIL_ON_UNKNOWN_PROPERTIES=false`), sie dürfen also nie in Entities durchrutschen |
 | A09 | **Logging Failures** | Sicherheitsrelevante Aktionen loggen (Dateiupload, Löschvorgänge) |
 | A10 | **SSRF** | Keine User-gesteuerten URLs für Server-Requests – wenn nötig, Allowlist verwenden |
 
@@ -438,22 +453,21 @@ const url = `/api/search?q=${suchbegriff}`;
 
 ## Button Design Guidelines
 
-Buttons sollen im gesamten Programm einheitlich gestaltet werden, um eine konsistente Benutzererfahrung zu gewährleisten.
+Buttons sollen im gesamten Programm einheitlich gestaltet werden, um eine konsistente Benutzererfahrung zu gewährleisten. Dafür gibt es die Komponente `Button` aus `src/components/ui/button.tsx` mit den Varianten `default`, `outline`, `ghost` und `secondary` und den Größen `default` und `sm`.
 
 ### Primärer Button (Hauptaktionen)
-- **CSS-Klassen:** `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700`
-- **Verwendung:** Hauptaktionen wie "Neu", "Speichern", "Beschreibung anlegen"
+- **CSS-Klassen:** `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700` (= `variant="default"`)
+- **Verwendung:** Hauptaktionen wie "Neu", "Speichern"
 - **Beispiele:**
-    - Leistungseditor → "+ Neu" Button für neue Leistung (`src/pages/Leistungseditor.tsx`)
-    - Leistungseditor → "+ Beschreibung anlegen" Button (`src/pages/Leistungseditor.tsx`)
-    - Textvorlagen-Editor → "Speichern" Button (`src/App.tsx`)
+    - Leistungseditor → "+ Neue Leistung" (`src/pages/Leistungseditor.tsx`)
+    - E-Mail-Textvorlagen → "Speichern" (`src/pages/EmailTextvorlagenEditor.tsx`)
 
 ### Sekundärer Button (Outline)
-- **CSS-Klassen:** `variant="outline"` oder `border-rose-300 text-rose-700 hover:bg-rose-50`
+- **CSS-Klassen:** `variant="outline"` (= `bg-white text-rose-700 border border-rose-200 hover:bg-rose-50`)
 - **Verwendung:** Abbrechen, Zurück, sekundäre Aktionen
 - **Beispiele:**
     - "Abbrechen" Button in allen Formularen
-    - "Vorlage laden" Button im Formularwesen
+    - "Ordner prüfen" in den Einstellungen → Dateien
 
 ### Ghost Button (Minimal)
 - **CSS-Klassen:** `variant="ghost"` mit `text-rose-700 hover:bg-rose-100`
@@ -507,9 +521,10 @@ import { Select } from '../components/ui/select-custom';
 **Props:**
 - `value`: Der aktuell ausgewählte Wert (string)
 - `onChange`: Callback-Funktion, die den ausgewählten Wert direkt empfängt (NICHT ein Event-Objekt!)
-- `options`: Array von `{ value: string; label: string; }` Objekten
-- `placeholder`: Optionaler Platzhaltertext
+- `options`: Array von `{ value: string; label: string; disabled?: boolean; gruppe?: string }` Objekten (`gruppe` setzt eine nicht anklickbare Überschrift über die Optionen dieser Gruppe)
+- `placeholder`: Optionaler Platzhaltertext (Standard: "Bitte wählen...")
 - `className`: Optionale zusätzliche CSS-Klassen
+- `disabled`, `required`, `error`, `id`, `name`: Optional, wie bei normalen Formularfeldern (`error` zeigt eine Fehlermeldung unter dem Feld)
 
 ### DatePicker Design
 
@@ -517,7 +532,7 @@ Für alle Datumsfelder im Projekt MUSS die projekt-eigene React-Komponente `Date
 
 - **Import:** `import { DatePicker } from '../components/ui/datepicker';` (Pfad je nach Dateiort anpassen)
 - **Verwendung:** Anstelle von nativem HTML `<input type="date">`.
-- **Features:** Kalender-Popup, Monats-/Jahresnavigation, "Heute"/"Löschen"-Schnellaktionen, deutsche Lokalisierung.
+- **Features:** Kalender-Popup mit Eingabefeld (TT.MM.JJJJ), Monats-/Jahresansicht, "Heute"/"Löschen"/"Schließen", deutsche Lokalisierung.
 
 #### DatePicker-Komponenten-API
 
@@ -539,13 +554,16 @@ import { DatePicker } from '../components/ui/datepicker';
 - `placeholder`: Optionaler Platzhaltertext (Standard: "Datum wählen")
 - `disabled`: Optionales Deaktivieren der Eingabe
 - `className`: Optionale zusätzliche CSS-Klassen
+- `min` / `max`: Optional, frühestes/spätestes erlaubtes Datum (`YYYY-MM-DD`); Tage außerhalb sind gesperrt
+- `required`, `error`, `id`, `name`: Optional, wie bei normalen Formularfeldern
 
 **Besondere Features:**
-- `<<` / `>>` Buttons für schnelle Jahresnavigation
-- `<` / `>` Buttons für Monatsnavigation
-- Klick auf Monats-/Jahres-Titel springt zum aktuellen Monat
+- Feld "Datum eingeben" oben im Popup: Datum tippen (TT.MM.JJJJ), mit Enter oder "Übernehmen" übernehmen – schnellster Weg zu weit entfernten Daten (z.B. Geburtsdatum)
+- `<` / `>` Buttons blättern je nach Ansicht Monate, Jahre oder Jahresseiten
+- Klick auf den Titel wechselt von der Tagesansicht in die Monats- und weiter in die Jahresansicht
 - "Heute"-Button setzt das aktuelle Datum
 - "Löschen"-Button entfernt das Datum
+- Tastaturbedienung (Pfeiltasten, Escape)
 
 ## Page Header Design Guidelines
 
@@ -558,7 +576,24 @@ Jede Seite muss folgende Elemente im Header aufweisen:
 3. **Beschreibung** – Subtile Beschreibung der Seite
 4. **Action Buttons** – Rechts ausgerichtet (optional)
 
-### CSS-Klassen
+### Umsetzung: `PageLayout`
+
+Das Header-Pattern nicht von Hand nachbauen, sondern `PageLayout` aus `src/components/layout/PageLayout.tsx` verwenden. Es setzt Seitenbreite, Abstände und den Header (Titel automatisch in Uppercase):
+
+```tsx
+<PageLayout
+    ribbonCategory="Stammdaten"
+    title="Lieferanten"
+    subtitle="Beschreibungstext"
+    actions={<Button size="sm">...</Button>}
+>
+    {/* Seiteninhalt */}
+</PageLayout>
+```
+
+Nur für einen Header ohne Seitenrahmen gibt es `PageHeader` aus `src/components/PageHeader.tsx` (Props `category`, `title`, `description`, `actions`).
+
+### CSS-Klassen (zur Referenz, so rendert `PageLayout` den Header)
 
 ```tsx
 {/* Standard Page Header */}
@@ -567,8 +602,8 @@ Jede Seite muss folgende Elemente im Header aufweisen:
         <p className="text-sm font-semibold text-rose-600 uppercase tracking-wide">
             {/* Kategorie-Label, z.B. "Stammdaten", "Buchhaltung", "Controlling" */}
         </p>
-        <h1 className="text-3xl font-bold text-slate-900">
-            {/* SEITENTITEL IN UPPERCASE */}
+        <h1 className="text-3xl font-bold text-slate-900 uppercase">
+            {/* Seitentitel – wird per CSS in Uppercase angezeigt */}
         </h1>
         <p className="text-slate-500 mt-1">
             {/* Beschreibungstext */}
@@ -588,16 +623,17 @@ Jede Seite muss folgende Elemente im Header aufweisen:
 | ArtikelEditor        | Katalog             |
 | OffenePostenEditor   | Buchhaltung         |
 | ErfolgsanalyseEditor | Controlling         |
-| FormularwesenEditor  | Vorlagen-Center     |
+| FormularwesenMain (Formularwesen) | Vorlagen-Center |
 | BestellungEditor     | Einkauf             |
 | Leistungseditor      | Textverwaltung      |
 | ArbeitsgangEditor    | Arbeitsplanung      |
-| AngebotEditor        | Angebotsmanagement  |
+| AnfrageEditor        | Anfragemanagement   |
 | ProduktkategorieEditor | Artikelverwaltung  |
-| EmailCenter          | Kommunikation      |
+| TelefonPage, EmailEinstellungenPage | Kommunikation |
+| MietabrechnungEditor | Finanzen & Controlling |
 
 ### Anwendung
-- Neue Seiten MÜSSEN dieses Header-Pattern verwenden
+- Neue Seiten MÜSSEN dieses Header-Pattern verwenden (über `PageLayout`)
 - Die Kategorie-Label Farbe ist immer `text-rose-600`
 - Der Titel ist immer in `UPPERCASE` geschrieben
 - Die Beschreibung verwendet `text-slate-500`
@@ -623,6 +659,10 @@ Für alle Vollbild-Anzeigen von Bildern MUSS die projekt-eigene React-Komponente
 - `src`: Die URL des Bildes (wenn `null`, wird nichts angezeigt)
 - `onClose`: Callback zum Schließen (Setzt State auf null)
 - `alt`: Alt-Text für das Bild
+- `images`: Optional, Liste `{ url: string; name?: string }[]` zum Durchblättern mehrerer Bilder (Galerie)
+- `startIndex`: Optional, mit welchem Bild aus `images` die Anzeige startet
+
+Zoomen per Mausrad, Doppelklick oder Knopf; vergrößerte Bilder lassen sich verschieben.
 
 
 ## React Templates & DRY Principles
@@ -631,23 +671,23 @@ Um das **DRY (Don't Repeat Yourself)** Prinzip zu wahren und ein konsistentes UI
 
 ### DetailLayout
 - **Pfad:** `src/components/DetailLayout.tsx`
-- **Verwendung:** Für alle Detailansichten (Kunde, Lieferant, etc.).
+- **Verwendung:** Für alle Detailansichten (Kunde, Lieferant, Projekt, Anfrage, Mitarbeiter).
 - **Props:**
     - `header`: Bento-Stats Header und Navigations-Buttons.
-    - `mainContent`: Hauptinhalt links (z.B. `EmailHistory`).
+    - `mainContent`: Hauptinhalt links (z.B. Reiter mit `EmailsTab`).
     - `sideContent`: Seitenleiste rechts (z.B. Kontaktdaten, Map).
 
-### EmailHistory
-- **Pfad:** `src/components/EmailHistory.tsx`
-- **Verwendung:** Einheitliche Darstellung von E-Mail-Verläufen in Detailansichten.
-- **Features:** Suchfunktion, Expandable Items, Anhang-Anzeige, HTML-Vorschau.
+### EmailsTab
+- **Pfad:** `src/components/EmailsTab.tsx`
+- **Verwendung:** Einheitliche Darstellung von E-Mail-Verläufen in Detailansichten (Projekt, Anfrage, Kunde, Lieferant) – genau eine der Props `projektId`, `anfrageId`, `kundeId` oder `lieferantId` setzen.
+- **Features:** Verläufe mit Antworten, Anhänge, Zustellstatus, Antworten/Verfassen direkt aus der Detailseite.
 
 ### GoogleMapsEmbed
 - **Pfad:** `src/components/GoogleMapsEmbed.tsx`
 - **Verwendung:** Standardisierte Kartenanzeige für Adressen.
 
 ### Anwendung
-Neue Detailseiten sollten immer `DetailLayout` verwenden, um das zweispaltige Layout (2/3 Main, 1/3 Side) konsistent zu halten. E-Mail-Listen und Karten sollten niemals inline neu implementiert, sondern importiert werden.
+Neue Detailseiten sollten immer `DetailLayout` verwenden, um das zweispaltige Layout (ab `xl` 3/4 Main, 1/4 Side) konsistent zu halten. E-Mail-Listen und Karten sollten niemals inline neu implementiert, sondern importiert werden.
 
 ---
 
@@ -657,7 +697,8 @@ Neue Detailseiten sollten immer `DetailLayout` verwenden, um das zweispaltige La
 - **Componentization:** Break down the UI into small, reusable React components. Avoid monolithic files.
 - **Structure:**
     - `src/components/ui/`: Generic, reusable atoms (e.g., Inputs, Cards, Modals) that are style-agnostic regarding business logic.
-    - `src/features/{featureName}/`: Domain-specific components, hooks, and logic (e.g., `src/features/calculation/`).
+    - `src/features/{featureName}/`: Domain-specific components, hooks, and logic (e.g., `src/features/monatsabschluss/`, `src/features/email/`).
+    - `src/pages/`: page components (routes in `src/App.tsx`); `src/lib/`: shared helpers (e.g. `htmlSanitizer.ts`, `numberInput.ts`).
 - **Separation of Concerns:** Keep business logic (custom hooks, services) separate from presentational code (JSX, Tailwind).
 
 ### Documentation-First Protocol (Strict)
@@ -666,6 +707,7 @@ Neue Detailseiten sollten immer `DetailLayout` verwenden, um das zweispaltige La
     1. **YOU MUST UPDATE `.github/DEVELOPMENT.md` FIRST.** Create a new section (e.g., "Input Design Guidelines") listing the specific Tailwind classes and usage rules.
     2. **THEN** implement the code.
 - **Rationale:** This ensures that future context windows know exactly which styles belong to this project without analyzing the entire codebase.
+- **Related docs:** The rules for AI agents live in `docs/agent instructions/docs/` (`BACKEND_ARCH.md`, `FRONTEND_UI.md`, `TESTING_SECURITY.md`); colours, icons, wording and UI kits are in the design-system skill `.claude/skills/handwerkerprogramm-design/`. Keep them consistent with this file.
 
 ### Build & Verification Loop
 - **Continuous Validation:** Do not wait until the entire task is finished. Run `npm run build` **frequently** (e.g., immediately after creating a new component or refactoring a file).
@@ -692,6 +734,17 @@ Browser klickt Datei
 ```
 
 ### 1. Serverrechner einrichten (einmalig, pro Installation)
+
+#### Ablageort in der App (Einstellungen → Reiter „Dateien“)
+
+Ablageort und Netzwerk-Adresse stellt ein Admin heute direkt in der App ein (Einstellungen → „Dateien“):
+- **Ordner auf diesem Rechner** – wohin Excel-, HiCAD- und Tenado-Dateien (`.xls`, `.xlsx`, `.xlsm`, `.sza`, `.tcd`) gespeichert werden („Ordner prüfen“ testet ihn).
+- **Netzwerk-Adresse für Kollegen** – UNC-Pfad, unter dem andere Rechner denselben Ordner erreichen. Daraus baut das ERP die `openfile://`-Links.
+- **„Oder: Ordner automatisch freigeben“** legt die Windows-Freigabe `ERP-Dateien` für den gespeicherten Ordner an (Windows fragt nach Administrator-Rechten).
+
+Die Werte liegen in der Tabelle `system_setting` und wirken ohne Neustart. Solange dort nichts eingetragen ist, gelten `hicad.local-path` (Standard `uploads/CADdrawings`) und `hicad.network-url` aus den Properties.
+
+Der klassische Weg mit Skript und `application-local.properties` (a–c) funktioniert weiterhin und wird für die `config.json` des Launchers gebraucht (Abschnitt 3).
 
 #### a) Netzwerkfreigabe erstellen
 
@@ -720,19 +773,21 @@ hicad.network-url=\\\\<RECHNERNAME>\\ERP-Uploads\\CADdrawings
 
 `<RECHNERNAME>` = Windows-Computername (`hostname` in CMD ausführen).
 
-Excel- und HiCAD-Dateien werden automatisch in `uploads/CADdrawings/` gespeichert. Der UNC-Pfad muss genau auf diesen Unterordner zeigen.
+Ohne anderen Ordner in den Einstellungen werden Excel- und HiCAD-Dateien in `uploads/CADdrawings/` gespeichert (`hicad.local-path`). Der UNC-Pfad muss genau auf diesen Unterordner zeigen.
 
 #### c) Backend neu starten
 
-Nach Änderung der `application-local.properties` muss das Backend neu gestartet werden.
+Nach Änderung der `application-local.properties` muss das Backend neu gestartet werden (Änderungen in Einstellungen → „Dateien“ brauchen keinen Neustart).
 
 ### 2. Client-PCs einrichten (einmalig, pro Arbeitsplatz)
 
 Auf jedem PC, der Dateien direkt öffnen soll:
 
-1. OpenFileLauncher-Setup herunterladen (in der App unter Einstellungen → OpenFile Launcher)
-2. `OpenFileLauncher-Install.bat` als Administrator ausführen
+1. Den Ordner `deployment/openfile-launcher/` auf den PC kopieren (Details in der dortigen `README.md`)
+2. `INSTALL.bat` (oder `OpenFileLauncher-Install.bat`) per Rechtsklick als Administrator ausführen
 3. Registriert das `openfile://`-Protokoll in der Windows-Registry
+
+Hinweis: Eine Download-Kachel dafür (`src/components/OpenFileLauncherSetup.tsx`, Endpunkt `/api/system/openfile-launcher-setup`) gibt es im Code, sie ist in den Einstellungen aber derzeit nicht eingebunden.
 
 Kein Neustart nötig. Ab sofort öffnen sich Excel- und HiCAD-Dateien per Klick direkt im Programm.
 
@@ -747,13 +802,13 @@ Der Launcher liest die erlaubten UNC-Roots **dynamisch** aus `C:\Program Files\O
 }
 ```
 
-**Pfad ändern:** Nur `hicad.network-url` in `application-local.properties` anpassen, dann `Setup-Freigabe.ps1` als Admin ausführen — `config.json` wird neu generiert und der Launcher automatisch aktualisiert.
+**Pfad ändern:** `hicad.network-url` in `application-local.properties` anpassen, dann `Setup-Freigabe.ps1` als Admin ausführen — `config.json` wird neu generiert und der Launcher automatisch aktualisiert. Ist in Einstellungen → „Dateien“ eine Netzwerk-Adresse eingetragen, hat sie Vorrang; dort denselben Wert eintragen, sonst lehnt der Launcher die Links ab.
 
 ### Troubleshooting
 
 | Problem | Ursache | Lösung |
 |---------|---------|--------|
-| Datei wird heruntergeladen statt geöffnet | `hicad.network-url` nicht gesetzt oder kein UNC-Pfad | `application-local.properties` prüfen (Java-Escaping: `\\\\SERVER\\Share`), Backend neu starten |
+| Datei wird heruntergeladen statt geöffnet | Keine Netzwerk-Adresse gesetzt oder kein UNC-Pfad | Einstellungen → „Dateien“ → „Netzwerk-Adresse für Kollegen“ prüfen; ohne Eintrag dort `hicad.network-url` in `application-local.properties` (Java-Escaping: `\\\\SERVER\\Share`, danach Backend neu starten) |
 | Launcher öffnet sich nicht | `openfile://`-Protokoll nicht registriert | OpenFileLauncher auf dem Client neu installieren (`INSTALL.bat` als Admin) |
 | „Pfad nicht gefunden" im Launcher | `config.json` fehlt oder falsche `allowedRoots` | `Setup-Freigabe.ps1` als Admin auf dem Serverrechner ausführen, dann `config.json` auf Client-PCs verteilen |
 | Freigabe nicht erreichbar | Windows-Firewall blockiert SMB | Firewall-Regel für Port 445 prüfen oder Freigabe auf dem Server kontrollieren |
