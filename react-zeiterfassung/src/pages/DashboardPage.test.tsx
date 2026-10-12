@@ -627,3 +627,129 @@ describe('DashboardPage – Zahnrad zu den Einstellungen', () => {
         expect(zahnrad).toHaveAttribute('aria-label', 'Einstellungen')
     })
 })
+
+describe('DashboardPage – Tätigkeit wählen mit Projektwechsel', () => {
+    const projekte = [
+        { id: 77, name: 'Bauvorhaben Mustermann', projektNummer: 'A-1', kundenName: 'Max Mustermann' },
+        { id: 88, name: 'Carport Musterweg', projektNummer: 'A-2', kundenName: 'Erika Musterfrau' },
+    ]
+
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', createMemoryStorage())
+        localStorage.setItem('zeiterfassung_token', 'tok-test')
+        localStorage.setItem(
+            'zeiterfassung_active_session',
+            JSON.stringify({ ...buildActiveWorkSession(), produktkategorieId: 5, produktkategorieName: 'Geländer' }),
+        )
+
+        mockedOfflineService.getFailedEntries.mockResolvedValue([])
+        mockedOfflineService.getHeuteGearbeitet.mockResolvedValue({ stunden: 0, minuten: 0, fromCache: false })
+        mockedOfflineService.getPendingCount.mockResolvedValue(1)
+        mockedOfflineService.getUnsyncedStopMinutes.mockResolvedValue(0)
+        mockedOfflineService.getProjekte.mockResolvedValue(projekte)
+        mockedOfflineService.getArbeitsgaenge.mockResolvedValue([
+            { id: 11, beschreibung: 'Montage' },
+            { id: 12, beschreibung: 'Schweißen' },
+        ])
+        mockedOfflineService.addPendingEntryWithOperationId.mockResolvedValue(undefined)
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+        localStorage.clear()
+        vi.unstubAllGlobals()
+    })
+
+    const startBodies = (fetchMock: ReturnType<typeof vi.fn>) =>
+        fetchMock.mock.calls
+            .filter(([input]) => String(input).includes('/api/zeiterfassung/start'))
+            .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+
+    const wechsleProjektUndTaetigkeit = async () => {
+        const user = userEvent.setup()
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: /tätigkeit/i }))
+        await user.click(await screen.findByRole('button', { name: 'Ändern' }))
+        await user.click(await screen.findByRole('button', { name: /Carport Musterweg/ }))
+        await user.click(await screen.findByRole('button', { name: 'Schweißen' }))
+    }
+
+    it('startet die neue Buchung auf dem über „Ändern“ gewählten Projekt', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input)
+            if (url.includes('/api/zeiterfassung/stop')) {
+                return new Response(JSON.stringify({ status: 'gestoppt' }), { status: 200 })
+            }
+            if (url.includes('/api/zeiterfassung/start')) {
+                return new Response(JSON.stringify({ id: 999 }), { status: 200 })
+            }
+            return antwortMitZeitkontoStatus(input)
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        await wechsleProjektUndTaetigkeit()
+
+        await waitFor(() => expect(startBodies(fetchMock)).toHaveLength(1))
+        const body = startBodies(fetchMock)[0]
+        expect(body.projektId).toBe(88)
+        expect(body.arbeitsgangId).toBe(12)
+        // Kategorien hängen am Projekt – die alte darf nicht mitwandern
+        expect(body.produktkategorieId).toBeNull()
+
+        await waitFor(() => {
+            const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
+            expect(stored.projektId).toBe(88)
+            expect(stored.projektName).toBe('Carport Musterweg')
+            expect(stored.kundenName).toBe('Erika Musterfrau')
+            expect(stored.auftragsnummer).toBe('A-2')
+            expect(stored.produktkategorieId).toBeNull()
+        })
+    })
+
+    it('reiht offline die neue Buchung ebenfalls auf dem gewählten Projekt ein', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input)
+            if (url.includes('/api/zeiterfassung/stop') || url.includes('/api/zeiterfassung/start')) {
+                throw new TypeError('Failed to fetch')
+            }
+            return antwortMitZeitkontoStatus(input)
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        await wechsleProjektUndTaetigkeit()
+
+        await waitFor(() =>
+            expect(mockedOfflineService.addPendingEntryWithOperationId).toHaveBeenCalledWith(
+                'start',
+                expect.objectContaining({ projektId: 88, arbeitsgangId: 12, produktkategorieId: null }),
+                expect.any(String),
+                expect.any(String),
+            ),
+        )
+        const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
+        expect(stored.projektId).toBe(88)
+        expect(stored.projektName).toBe('Carport Musterweg')
+    })
+
+    it('behält Projekt und Kategorie, wenn nur die Tätigkeit gewechselt wird', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input)
+            if (url.includes('/api/zeiterfassung/stop')) {
+                return new Response(JSON.stringify({ status: 'gestoppt' }), { status: 200 })
+            }
+            if (url.includes('/api/zeiterfassung/start')) {
+                return new Response(JSON.stringify({ id: 999 }), { status: 200 })
+            }
+            return antwortMitZeitkontoStatus(input)
+        })
+        vi.stubGlobal('fetch', fetchMock)
+
+        const user = userEvent.setup()
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: /tätigkeit/i }))
+        await user.click(await screen.findByRole('button', { name: 'Schweißen' }))
+
+        await waitFor(() => expect(startBodies(fetchMock)).toHaveLength(1))
+        expect(startBodies(fetchMock)[0]).toMatchObject({ projektId: 77, arbeitsgangId: 12, produktkategorieId: 5 })
+    })
+})

@@ -573,7 +573,9 @@ class OfferPriceServiceTest {
         OfferItem item = new OfferItem("PX1", "ST", new BigDecimal("2.00"), null, "Name");
         service.updatePrices(supplier, new Date(), List.of(item));
 
-        assertEquals(0, aip.getPreisProStueck().compareTo(new BigDecimal("6.00")));
+        // Offene Positionen tragen den Preis je Einheit (siehe ProjektMapper) -
+        // die Summe friert erst BestellungService.setBestellt beim Abhaken ein.
+        assertEquals(0, aip.getPreisProStueck().compareTo(new BigDecimal("2.00")));
         assertSame(price, aip.getLieferantenArtikelPreis());
     }
 }
