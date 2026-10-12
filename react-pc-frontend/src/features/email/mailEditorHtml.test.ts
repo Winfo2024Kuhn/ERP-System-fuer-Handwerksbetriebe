@@ -155,7 +155,7 @@ describe('formuliereMitKi', () => {
         fetchMock.mockReturnValue(antwort({ body: 'Guten Tag,\n\nwir bitten um ein Angebot.' }));
         const ergebnis = await formuliereMitKi(
             `<p>hallo</p><p>angebot bitte</p>${SIGNATUR}<div class="email-quote">Alte Nachricht</div>`,
-            { kontext: 'Preisanfrage' },
+            { kontext: 'Bestellung' },
         );
 
         const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -169,8 +169,8 @@ describe('formuliereMitKi', () => {
 
     it('nutzt ohne Zitat den Kontext und ohne Signatur im Editor die Ersatz-Signatur', async () => {
         fetchMock.mockReturnValue(antwort({ body: 'Neu.' }));
-        const ergebnis = await formuliereMitKi('<p>alt</p>', { kontext: 'Preisanfrage', ersatzSignaturHtml: SIGNATUR });
-        expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)).context).toBe('Preisanfrage');
+        const ergebnis = await formuliereMitKi('<p>alt</p>', { kontext: 'Bestellung', ersatzSignaturHtml: SIGNATUR });
+        expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)).context).toBe('Bestellung');
         expect(ergebnis).toEqual({ status: 'ok', html: `<p>Neu.</p>${SIGNATUR}` });
     });
 

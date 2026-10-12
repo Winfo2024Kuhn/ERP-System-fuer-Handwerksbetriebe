@@ -2,7 +2,7 @@ import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 
 /**
- * Preisanfrage an einen Lieferanten (Bestellungen → Bedarf → „E-Mail“):
+ * Bestellung per E-Mail an einen Lieferanten (Bestellungen → Bedarf → „E-Mail“):
  * „KI Formulierung“ schreibt den eigenen Text neu, die Signatur bleibt stehen,
  * ein Fehler der KI wird als Meldung gezeigt. Früher schickte der Dialog ein
  * falsches Feld an /api/email/beautify, und der Knopf blieb wirkungslos.
@@ -41,7 +41,7 @@ async function stubApi(page: Page, mitschrift: Mitschrift, beautify: { status?: 
     });
 }
 
-async function oeffnePreisanfrage(page: Page) {
+async function oeffneBestellungsMail(page: Page) {
     await page.goto('/bestellungen/bedarf');
     await page.getByRole('button', { name: /^E-Mail$/ }).click();
     const dialog = page.locator('[contenteditable]');
@@ -50,11 +50,11 @@ async function oeffnePreisanfrage(page: Page) {
     return dialog;
 }
 
-test.describe('Preisanfrage – KI Formulierung', () => {
+test.describe('Bestellung per E-Mail – KI Formulierung', () => {
     test('formuliert den eigenen Text neu, die Signatur bleibt stehen', async ({ page }, testInfo) => {
         const mitschrift: Mitschrift = { beautify: [] };
         await stubApi(page, mitschrift, { body: { body: 'Guten Tag,\n\nwir bitten um ein Angebot für die angehängten Positionen bis Freitag.' } });
-        const editor = await oeffnePreisanfrage(page);
+        const editor = await oeffneBestellungsMail(page);
 
         await page.getByRole('button', { name: /KI Formulierung/ }).click();
 
@@ -63,17 +63,17 @@ test.describe('Preisanfrage – KI Formulierung', () => {
         await expect(editor.locator('.email-signature')).toContainText('Max Mustermann');
         expect(mitschrift.beautify).toEqual([{
             body: 'Sehr geehrte Damen und Herren,\n\nbitte erstellen Sie uns ein Angebot für die angehängten Positionen.',
-            context: 'Preisanfrage an den Lieferanten Mustermann Stahlhandel',
+            context: 'Bestellung beim Lieferanten Mustermann Stahlhandel',
         }]);
 
         // Nur Screenshot statt designPruefung: der Dialog ist ein eigenes fixed-Overlay
         // ohne den gemeinsamen Dialog, die Seite dahinter zaehlt sonst als bedienbar.
-        await testInfo.attach('preisanfrage-ki-formuliert', { body: await page.screenshot(), contentType: 'image/png' });
+        await testInfo.attach('bestellung-email-ki-formuliert', { body: await page.screenshot(), contentType: 'image/png' });
     });
 
     test('zeigt eine Meldung, wenn die KI nicht antwortet, und lässt den Text stehen', async ({ page }) => {
         await stubApi(page, { beautify: [] }, { status: 502 });
-        const editor = await oeffnePreisanfrage(page);
+        const editor = await oeffneBestellungsMail(page);
 
         await page.getByRole('button', { name: /KI Formulierung/ }).click();
 

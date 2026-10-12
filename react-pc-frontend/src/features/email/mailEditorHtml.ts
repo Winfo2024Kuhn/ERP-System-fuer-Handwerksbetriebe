@@ -2,7 +2,7 @@ import { escapeHtml } from '../../lib/emailAddress';
 import { parseHtmlInert, sanitizeHtml } from '../../lib/htmlSanitizer';
 
 /**
- * Gemeinsame HTML-Bausteine der Mail-Editoren (E-Mail-Formular, Preisanfrage,
+ * Gemeinsame HTML-Bausteine der Mail-Editoren (E-Mail-Formular, Bestellung,
  * Steuerberater-Mails): Signatur laden, Editor befüllen, KI-Formulierung,
  * Versand vorbereiten.
  *

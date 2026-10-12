@@ -1,5 +1,5 @@
 /**
- * Vitest-Suite fuer den Mail-Dialog der Preisanfrage (BestellungEmailModal) –
+ * Vitest-Suite fuer den Mail-Dialog der Bestellung (BestellungEmailModal) –
  * Schwerpunkt: Nachrichtentext (XSS).
  *
  * Die Signatur kommt als HTML vom Server und landet im contentEditable-Feld.
@@ -89,7 +89,7 @@ describe('BestellungEmailModal KI-Formulierung', () => {
         const anfrage = fetchMock.mock.calls.find(([url]) => url === '/api/email/beautify')!;
         expect(JSON.parse(String((anfrage[1] as RequestInit).body))).toEqual({
             body: 'Sehr geehrte Damen und Herren,\n\nbitte erstellen Sie uns ein Angebot für die angehängten Positionen.',
-            context: 'Preisanfrage an den Lieferanten Mustermann Stahlhandel',
+            context: 'Bestellung beim Lieferanten Mustermann Stahlhandel',
         });
     });
 

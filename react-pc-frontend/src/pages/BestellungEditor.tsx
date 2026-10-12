@@ -283,7 +283,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         setBeautifying(true);
         try {
             const ergebnis = await formuliereMitKi(editorRef.current?.innerHTML || body, {
-                kontext: `Preisanfrage an den Lieferanten ${lieferantName}`,
+                kontext: `Bestellung beim Lieferanten ${lieferantName}`,
                 ersatzSignaturHtml: signature,
             });
             if (ergebnis.status === 'kein-text') {
