@@ -166,7 +166,8 @@ public class AnfrageController {
     @PostMapping(value = "/{anfrageID}/dokumente", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<List<AnfrageDokumentResponseDto>> uploadDokument(@PathVariable Long anfrageID,
             @RequestParam("datei") List<MultipartFile> dateien,
-            @RequestParam(value = "gruppe", required = false) DokumentGruppe gruppe) {
+            @RequestParam(value = "gruppe", required = false) DokumentGruppe gruppe,
+            Authentication authentication) {
         try {
             if (MobilePrincipal.current() != null && gruppe != DokumentGruppe.BILDER) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
@@ -176,9 +177,10 @@ public class AnfrageController {
                 return ResponseEntity.badRequest().build();
             }
             DokumentGruppe verwendeteGruppe = gruppe != null ? gruppe : DokumentGruppe.DIVERSE_DOKUMENTE;
+            Mitarbeiter uploadedBy = handelnderMitarbeiter(authentication);
             List<AnfrageDokumentResponseDto> dtos = dateien.stream().map(datei -> {
                 AnfrageDokument dokument = dateiSpeicherService.speichereAnfragesDatei(datei, anfrageID,
-                        verwendeteGruppe);
+                        verwendeteGruppe, uploadedBy);
                 return mappeDokumentZuDto(dokument);
             }).toList();
             return ResponseEntity.ok(dtos);

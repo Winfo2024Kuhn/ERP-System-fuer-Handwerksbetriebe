@@ -35,4 +35,9 @@ public class AnfrageDokument implements Dokument
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "anfrage_id")
     private Anfrage anfrage;
+
+    // Wer die Datei hochgeladen hat (leer bei alten Dokumenten oder Benutzern ohne Mitarbeiter)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "uploaded_by_id")
+    private Mitarbeiter uploadedBy;
 }

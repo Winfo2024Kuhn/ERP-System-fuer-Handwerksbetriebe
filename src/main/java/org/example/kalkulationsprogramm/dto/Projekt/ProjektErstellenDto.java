@@ -6,7 +6,6 @@ import java.util.List;
 
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfassenDto;
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieErfassenDto;
-import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -51,7 +50,6 @@ public class ProjektErstellenDto {
     // Fremdschlüssel
     private List<Long> anfrageIds;
     private List<Long> angebotIds;
-    private List<ZeitErfassenDto> zeitPositionen;
     private List<ProjektProduktkategorieErfassenDto> produktkategorien;
 
 }

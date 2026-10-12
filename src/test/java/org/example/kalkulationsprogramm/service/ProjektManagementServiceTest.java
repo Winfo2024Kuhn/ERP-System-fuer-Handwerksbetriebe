@@ -28,7 +28,6 @@ import org.example.kalkulationsprogramm.dto.Artikel.ArtikelMengeDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektErstellenDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
 import org.example.kalkulationsprogramm.dto.Projekt.MaterialKilogrammDto;
-import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
 import org.example.kalkulationsprogramm.mapper.ProjektMapper;
 import org.example.kalkulationsprogramm.repository.AbteilungRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
@@ -82,8 +81,6 @@ class ProjektManagementServiceTest {
     @Mock
     private ProduktkategorieRepository produktkategorieRepository;
     @Mock
-    private ArbeitsgangRepository arbeitsgangRepository;
-    @Mock
     private KundeRepository kundeRepository;
     @Mock
     private DateiSpeicherService dateiSpeicherService;
@@ -95,8 +92,6 @@ class ProjektManagementServiceTest {
     private AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
     @Mock
     private ZeitbuchungRepository ZeitbuchungRepository;
-    @Mock
-    private ArbeitsgangStundensatzRepository stundensatzRepository;
     @Mock
     private ArtikelRepository artikelRepository;
     @Mock
@@ -124,8 +119,8 @@ class ProjektManagementServiceTest {
                 anfrageNotizRepository,
                 projektNotizRepository,
                 produktkategorieRepository,
-                arbeitsgangRepository, kundeRepository, dateiSpeicherService, projektMapper,
-                anfrageRepository, ausgangsGeschaeftsDokumentRepository, ZeitbuchungRepository, stundensatzRepository,
+                kundeRepository, dateiSpeicherService, projektMapper,
+                anfrageRepository, ausgangsGeschaeftsDokumentRepository, ZeitbuchungRepository,
                 artikelRepository, artikelInProjektRepository, projektPersistenceService,
                 lieferantenRepository, emailRepository, kalenderEintragRepository, eventPublisher);
         service.setAusgangsGeschaeftsDokumentService(ausgangsGeschaeftsDokumentService);
@@ -287,78 +282,6 @@ class ProjektManagementServiceTest {
     }
 
     @Test
-    void cleansUpDuplicateZeitEntriesBeforeSaving() throws Exception {
-        Projekt projekt = new Projekt();
-        projekt.setId(1L);
-        projekt.setAnlegedatum(LocalDate.of(2024, 1, 1));
-        projekt.setKundenId(new Kunde());
-
-        Produktkategorie produktkategorie = new Produktkategorie();
-        produktkategorie.setId(10L);
-
-        ProjektProduktkategorie projektProduktkategorie = new ProjektProduktkategorie();
-        projektProduktkategorie.setId(20L);
-        projektProduktkategorie.setProjekt(projekt);
-        projektProduktkategorie.setProduktkategorie(produktkategorie);
-        projekt.getProjektProduktkategorien().add(projektProduktkategorie);
-
-        Arbeitsgang arbeitsgang = new Arbeitsgang();
-        arbeitsgang.setId(30L);
-
-        ArbeitsgangStundensatz stundensatz = new ArbeitsgangStundensatz();
-        stundensatz.setId(40L);
-
-        Zeitbuchung ersterEintrag = new Zeitbuchung();
-        ersterEintrag.setProjekt(projekt);
-        ersterEintrag.setProjektProduktkategorie(projektProduktkategorie);
-        ersterEintrag.setArbeitsgang(arbeitsgang);
-        ersterEintrag.setAnzahlInStunden(new BigDecimal("1.50"));
-        ersterEintrag.setArbeitsgangStundensatz(stundensatz);
-        ersterEintrag.setId(100L);
-
-        Zeitbuchung doppelterEintrag = new Zeitbuchung();
-        doppelterEintrag.setProjekt(projekt);
-        doppelterEintrag.setProjektProduktkategorie(projektProduktkategorie);
-        doppelterEintrag.setArbeitsgang(arbeitsgang);
-        doppelterEintrag.setAnzahlInStunden(new BigDecimal("2.25"));
-        doppelterEintrag.setArbeitsgangStundensatz(stundensatz);
-        doppelterEintrag.setId(101L);
-
-        projekt.getZeitbuchungen().add(ersterEintrag);
-        projekt.getZeitbuchungen().add(doppelterEintrag);
-
-        when(projektRepository.findById(1L)).thenReturn(Optional.of(projekt));
-        when(projektPersistenceService.saveProjektWithRetry(any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
-        when(arbeitsgangRepository.findById(arbeitsgang.getId())).thenReturn(Optional.of(arbeitsgang));
-        when(stundensatzRepository.findTopByArbeitsgangIdAndJahrOrderByIdDesc(eq(arbeitsgang.getId()), anyInt()))
-                .thenReturn(Optional.of(stundensatz));
-
-        ProjektErstellenDto dto = new ProjektErstellenDto();
-        ZeitErfassenDto zeitDto = new ZeitErfassenDto();
-        zeitDto.setArbeitsgangID(arbeitsgang.getId());
-        zeitDto.setProduktkategorieID(produktkategorie.getId());
-        zeitDto.setAnzahlInStunden(new BigDecimal("4.75"));
-        dto.setZeitPositionen(List.of(zeitDto));
-
-        ProjektResponseDto response = service.aktualisiereProjekt(1L, dto, "Teststrasse", "12345", "Testort", null,
-                null);
-
-        assertNotNull(response);
-        ArgumentCaptor<Projekt> projektCaptor = ArgumentCaptor.forClass(Projekt.class);
-        verify(projektPersistenceService).saveProjektWithRetry(projektCaptor.capture());
-        Projekt gespeichertesProjekt = projektCaptor.getValue();
-        assertEquals(1, gespeichertesProjekt.getZeitbuchungen().size());
-        Zeitbuchung gespeicherteZeit = gespeichertesProjekt.getZeitbuchungen().getFirst();
-        assertSame(ersterEintrag, gespeicherteZeit);
-        assertEquals(0, gespeicherteZeit.getAnzahlInStunden().compareTo(new BigDecimal("4.75")));
-
-        assertFalse(gespeichertesProjekt.getZeitbuchungen().contains(doppelterEintrag));
-
-    }
-
-    @Test
     void setzeAbgeschlossenMerktSichDieEntscheidungDesBenutzers() {
         Projekt projekt = new Projekt();
         projekt.setId(5L);
@@ -429,123 +352,6 @@ class ProjektManagementServiceTest {
         // Wert wird übernommen, gilt aber NICHT als bewusste Entscheidung –
         // die Automatik bleibt für dieses Projekt zuständig.
         assertFalse(captor.getValue().isAbgeschlossenManuell());
-    }
-
-    @Test
-    void reusesPersistedZeitEntryIfNotLoadedInProjekt() throws Exception {
-        Projekt projekt = new Projekt();
-        projekt.setId(3L);
-        projekt.setAnlegedatum(LocalDate.of(2024, 1, 1));
-        projekt.setKundenId(new Kunde());
-
-        Produktkategorie produktkategorie = new Produktkategorie();
-        produktkategorie.setId(66L);
-
-        ProjektProduktkategorie projektProduktkategorie = new ProjektProduktkategorie();
-        projektProduktkategorie.setId(77L);
-        projektProduktkategorie.setProjekt(projekt);
-        projektProduktkategorie.setProduktkategorie(produktkategorie);
-        projekt.getProjektProduktkategorien().add(projektProduktkategorie);
-
-        Arbeitsgang arbeitsgang = new Arbeitsgang();
-        arbeitsgang.setId(88L);
-
-        ArbeitsgangStundensatz stundensatz = new ArbeitsgangStundensatz();
-        stundensatz.setId(99L);
-
-        Zeitbuchung vorhandeneZeit = new Zeitbuchung();
-        vorhandeneZeit.setId(123L);
-        vorhandeneZeit.setProjekt(projekt);
-        vorhandeneZeit.setProjektProduktkategorie(projektProduktkategorie);
-        vorhandeneZeit.setArbeitsgang(arbeitsgang);
-        vorhandeneZeit.setAnzahlInStunden(new BigDecimal("2.00"));
-        vorhandeneZeit.setArbeitsgangStundensatz(stundensatz);
-
-        when(projektRepository.findById(3L)).thenReturn(Optional.of(projekt));
-        when(projektPersistenceService.saveProjektWithRetry(any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
-        when(arbeitsgangRepository.findById(arbeitsgang.getId())).thenReturn(Optional.of(arbeitsgang));
-        when(stundensatzRepository.findTopByArbeitsgangIdAndJahrOrderByIdDesc(eq(arbeitsgang.getId()), anyInt()))
-                .thenReturn(Optional.of(stundensatz));
-        when(ZeitbuchungRepository.findByProjektIdAndArbeitsgangIdAndProjektProduktkategorieId(
-                projekt.getId(), arbeitsgang.getId(), projektProduktkategorie.getId()))
-                .thenReturn(Optional.of(vorhandeneZeit));
-
-        ProjektErstellenDto dto = new ProjektErstellenDto();
-        ZeitErfassenDto zeitDto = new ZeitErfassenDto();
-        zeitDto.setArbeitsgangID(arbeitsgang.getId());
-        zeitDto.setProduktkategorieID(produktkategorie.getId());
-        zeitDto.setAnzahlInStunden(new BigDecimal("5.00"));
-        dto.setZeitPositionen(List.of(zeitDto));
-
-        ProjektResponseDto response = service.aktualisiereProjekt(3L, dto, null, null, null, null, null);
-
-        assertNotNull(response);
-        verify(ZeitbuchungRepository).findByProjektIdAndArbeitsgangIdAndProjektProduktkategorieId(
-                projekt.getId(), arbeitsgang.getId(), projektProduktkategorie.getId());
-
-        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
-        verify(projektPersistenceService).saveProjektWithRetry(captor.capture());
-        Projekt gespeichertesProjekt = captor.getValue();
-        assertEquals(1, gespeichertesProjekt.getZeitbuchungen().size());
-        Zeitbuchung gespeicherteZeit = gespeichertesProjekt.getZeitbuchungen().getFirst();
-        assertSame(vorhandeneZeit, gespeicherteZeit);
-        assertEquals(0, gespeicherteZeit.getAnzahlInStunden().compareTo(new BigDecimal("5.00")));
-    }
-
-    @Test
-    void mergesDuplicateZeitDtosIntoSingleEntry() throws Exception {
-        Projekt projekt = new Projekt();
-        projekt.setId(2L);
-        projekt.setAnlegedatum(LocalDate.of(2024, 1, 1));
-        projekt.setKundenId(new Kunde());
-
-        Produktkategorie produktkategorie = new Produktkategorie();
-        produktkategorie.setId(11L);
-
-        ProjektProduktkategorie projektProduktkategorie = new ProjektProduktkategorie();
-        projektProduktkategorie.setId(21L);
-        projektProduktkategorie.setProjekt(projekt);
-        projektProduktkategorie.setProduktkategorie(produktkategorie);
-        projekt.getProjektProduktkategorien().add(projektProduktkategorie);
-
-        Arbeitsgang arbeitsgang = new Arbeitsgang();
-        arbeitsgang.setId(31L);
-
-        ArbeitsgangStundensatz stundensatz = new ArbeitsgangStundensatz();
-        stundensatz.setId(41L);
-
-        when(projektRepository.findById(2L)).thenReturn(Optional.of(projekt));
-        when(projektPersistenceService.saveProjektWithRetry(any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
-        when(arbeitsgangRepository.findById(arbeitsgang.getId())).thenReturn(Optional.of(arbeitsgang));
-        when(stundensatzRepository.findTopByArbeitsgangIdAndJahrOrderByIdDesc(eq(arbeitsgang.getId()), anyInt()))
-                .thenReturn(Optional.of(stundensatz));
-
-        ProjektErstellenDto dto = new ProjektErstellenDto();
-        ZeitErfassenDto erster = new ZeitErfassenDto();
-        erster.setArbeitsgangID(arbeitsgang.getId());
-        erster.setProduktkategorieID(produktkategorie.getId());
-        erster.setAnzahlInStunden(new BigDecimal("1.25"));
-
-        ZeitErfassenDto zweiter = new ZeitErfassenDto();
-        zweiter.setArbeitsgangID(arbeitsgang.getId());
-        zweiter.setProduktkategorieID(produktkategorie.getId());
-        zweiter.setAnzahlInStunden(new BigDecimal("0.75"));
-
-        dto.setZeitPositionen(List.of(erster, zweiter));
-
-        ProjektResponseDto response = service.aktualisiereProjekt(2L, dto, null, null, null, null, null);
-
-        assertNotNull(response);
-        ArgumentCaptor<Projekt> projektCaptor = ArgumentCaptor.forClass(Projekt.class);
-        verify(projektPersistenceService).saveProjektWithRetry(projektCaptor.capture());
-        Projekt gespeichertesProjekt = projektCaptor.getValue();
-        assertEquals(1, gespeichertesProjekt.getZeitbuchungen().size());
-        Zeitbuchung gespeicherteZeit = gespeichertesProjekt.getZeitbuchungen().getFirst();
-        assertEquals(0, gespeicherteZeit.getAnzahlInStunden().compareTo(new BigDecimal("2.00")));
     }
 
     @Test
@@ -1222,74 +1028,6 @@ class ProjektManagementServiceIntegrationTest {
         assertEquals(1, geladen.getProduktkategorien().size());
         assertEquals(1, geladen.getZeiten().size());
         assertEquals(1, geladen.getMaterialkosten().size());
-    }
-
-    @Test
-    void removingZeitEntryReliesOnOrphanRemoval() throws Exception {
-        Produktkategorie pk = new Produktkategorie();
-        pk.setBezeichnung("Kategorie");
-        pk.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
-        produktkategorieRepository.save(pk);
-
-        Kunde kunde = createIntegrationKunde("KNR-2");
-
-        Projekt projekt = new Projekt();
-        projekt.setBauvorhaben("Bau");
-        projekt.setAuftragsnummer("A-2");
-        projekt.setAnlegedatum(java.time.LocalDate.now());
-        projekt.setBruttoPreis(java.math.BigDecimal.TEN);
-        projekt.setBezahlt(false);
-        projekt.setKundenId(kunde);
-
-        ProjektProduktkategorie ppk = new ProjektProduktkategorie();
-        ppk.setProjekt(projekt);
-        ppk.setProduktkategorie(pk);
-        ppk.setMenge(java.math.BigDecimal.ONE);
-        projekt.getProjektProduktkategorien().add(ppk);
-
-        Arbeitsgang arbeitsgang = new Arbeitsgang();
-        arbeitsgang.setBeschreibung("Arbeitsgang");
-        Abteilung abteilung = new Abteilung();
-        abteilung.setName("Test Abteilung 2");
-        abteilungRepository.save(abteilung);
-        arbeitsgang.setAbteilung(abteilung);
-        arbeitsgangRepository.save(arbeitsgang);
-
-        ArbeitsgangStundensatz stundensatz = new ArbeitsgangStundensatz();
-        stundensatz.setArbeitsgang(arbeitsgang);
-        stundensatz.setJahr(projekt.getAnlegedatum().getYear());
-        stundensatz.setSatz(new java.math.BigDecimal("75"));
-        stundensatzRepository.save(stundensatz);
-
-        Mitarbeiter mitarbeiter = new Mitarbeiter();
-        mitarbeiter.setVorname("Test2");
-        mitarbeiter.setNachname("User2");
-        mitarbeiterRepository.save(mitarbeiter);
-
-        Zeitbuchung zeit = new Zeitbuchung();
-        zeit.setProjekt(projekt);
-        zeit.setMitarbeiter(mitarbeiter);
-        zeit.setStartZeit(java.time.LocalDateTime.now());
-        zeit.setArbeitsgang(arbeitsgang);
-        zeit.setProjektProduktkategorie(ppk);
-        zeit.setArbeitsgangStundensatz(stundensatz);
-        zeit.setAnzahlInStunden(new java.math.BigDecimal("2"));
-        projekt.getZeitbuchungen().add(zeit);
-
-        Projekt gespeichertesProjekt = projektRepository.save(projekt);
-
-        ProjektErstellenDto dto = new ProjektErstellenDto();
-        dto.setZeitPositionen(Collections.emptyList());
-        dto.setKundenId(kunde.getId());
-
-        ProjektResponseDto response = service.aktualisiereProjekt(gespeichertesProjekt.getId(), dto, null, null, null,
-                null, null);
-
-        assertNotNull(response);
-        Projekt nachUpdate = projektRepository.findWithZeitenInProjektById(gespeichertesProjekt.getId())
-                .orElseThrow();
-        assertTrue(nachUpdate.getZeitbuchungen().isEmpty());
-        assertEquals(0, ZeitbuchungRepository.count());
     }
 
     private Kunde createIntegrationKunde(String kundennummer) {

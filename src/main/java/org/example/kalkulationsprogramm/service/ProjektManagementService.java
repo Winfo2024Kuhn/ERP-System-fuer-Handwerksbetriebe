@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -14,8 +13,6 @@ import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.AnfrageNotiz;
 import org.example.kalkulationsprogramm.domain.AnfrageNotizBild;
-import org.example.kalkulationsprogramm.domain.Arbeitsgang;
-import org.example.kalkulationsprogramm.domain.ArbeitsgangStundensatz;
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
@@ -34,7 +31,6 @@ import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ProjektNotizBild;
 import org.example.kalkulationsprogramm.domain.ProjektProduktkategorie;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
-import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelMengeDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfassenDto;
 import org.example.kalkulationsprogramm.dto.Projekt.MaterialKilogrammDto;
@@ -49,8 +45,6 @@ import org.example.kalkulationsprogramm.mapper.ProjektMapper;
 import org.example.kalkulationsprogramm.repository.AnfrageNotizRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
-import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
-import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
@@ -86,14 +80,12 @@ ProjektManagementService {
     private final AnfrageNotizRepository anfrageNotizRepository;
     private final ProjektNotizRepository projektNotizRepository;
     private final ProduktkategorieRepository produktkategorieRepository;
-    private final ArbeitsgangRepository arbeitsgangRepository;
     private final KundeRepository kundeRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final ProjektMapper projektMapper;
     private final AnfrageRepository anfrageRepository;
     private final AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
     private final ZeitbuchungRepository ZeitbuchungRepository;
-    private final ArbeitsgangStundensatzRepository stundensatzRepository;
     private final ArtikelRepository artikelRepository;
     private final ArtikelInProjektRepository artikelInProjektRepository;
     private final ProjektPersistenceService projektPersistenceService;
@@ -112,14 +104,12 @@ ProjektManagementService {
             AnfrageNotizRepository anfrageNotizRepository,
             ProjektNotizRepository projektNotizRepository,
             ProduktkategorieRepository produktkategorieRepository,
-            ArbeitsgangRepository arbeitsgangRepository,
             KundeRepository kundeRepository,
             DateiSpeicherService dateiSpeicherService,
             ProjektMapper projektMapper,
             AnfrageRepository anfrageRepository,
             AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository,
             ZeitbuchungRepository ZeitbuchungRepository,
-            ArbeitsgangStundensatzRepository stundensatzRepository,
             ArtikelRepository artikelRepository,
             ArtikelInProjektRepository artikelInProjektRepository,
             ProjektPersistenceService projektPersistenceService,
@@ -131,14 +121,12 @@ ProjektManagementService {
         this.anfrageNotizRepository = anfrageNotizRepository;
         this.projektNotizRepository = projektNotizRepository;
         this.produktkategorieRepository = produktkategorieRepository;
-        this.arbeitsgangRepository = arbeitsgangRepository;
         this.kundeRepository = kundeRepository;
         this.dateiSpeicherService = dateiSpeicherService;
         this.projektMapper = projektMapper;
         this.anfrageRepository = anfrageRepository;
         this.ausgangsGeschaeftsDokumentRepository = ausgangsGeschaeftsDokumentRepository;
         this.ZeitbuchungRepository = ZeitbuchungRepository;
-        this.stundensatzRepository = stundensatzRepository;
         this.artikelRepository = artikelRepository;
         this.artikelInProjektRepository = artikelInProjektRepository;
         this.projektPersistenceService = projektPersistenceService;
@@ -368,7 +356,6 @@ ProjektManagementService {
 
         // Produktkategorien
         List<ProjektProduktkategorie> kategorien = new ArrayList<>();
-        java.util.Map<Long, ProjektProduktkategorie> kategorieMap;
         if (dto.getProduktkategorien() != null) {
             kategorien = dto.getProduktkategorien().stream()
                     .map(kDto -> {
@@ -385,10 +372,6 @@ ProjektManagementService {
                         ppk.setMenge(kDto.getMenge());
                         return ppk;
                     }).collect(Collectors.toCollection(ArrayList::new));
-            kategorieMap = kategorien.stream()
-                    .collect(Collectors.toMap(ppk -> ppk.getProduktkategorie().getId(), ppk -> ppk));
-        } else {
-            kategorieMap = Collections.emptyMap();
         }
         neuesProjekt.setProjektProduktkategorien(new ArrayList<>(kategorien));
 
@@ -405,42 +388,6 @@ ProjektManagementService {
                     }).collect(Collectors.toCollection(ArrayList::new));
             neuesProjekt.setMaterialkosten(materialKosten);
         }
-
-        // Sicherstellen, dass die Liste nicht null ist
-        List<Zeitbuchung> zeitPositionen = new ArrayList<>();
-        if (dto.getZeitPositionen() != null) {
-            java.util.Set<String> ids = new java.util.HashSet<>();
-            dto.getZeitPositionen().forEach(z -> {
-                String key = z.getArbeitsgangID() + "_" + z.getProduktkategorieID();
-                if (!ids.add(key)) {
-                    throw new IllegalArgumentException(
-                            "Ein Arbeitsgang darf pro Produktkategorie nur einmal gewählt werden.");
-                }
-            });
-            zeitPositionen = dto.getZeitPositionen().stream()
-                    .map(zeitDto -> {
-                        Arbeitsgang arbeitsgang = arbeitsgangRepository.findById(zeitDto.getArbeitsgangID())
-                                .orElseThrow(() -> new RuntimeException("Zeitart konnte nicht gefunden werden."));
-                        ProjektProduktkategorie ppk = kategorieMap.get(zeitDto.getProduktkategorieID());
-                        if (ppk == null) {
-                            throw new RuntimeException("Produktkategorie ist nicht dem Projekt zugeordnet.");
-                        }
-                        Zeitbuchung Zeitbuchung = new Zeitbuchung();
-                        Zeitbuchung.setProjekt(neuesProjekt);
-                        Zeitbuchung.setArbeitsgang(arbeitsgang);
-                        Zeitbuchung.setProjektProduktkategorie(ppk);
-                        Zeitbuchung.setAnzahlInStunden(zeitDto.getAnzahlInStunden());
-                        ArbeitsgangStundensatz satz = stundensatzRepository
-                                .findTopByArbeitsgangIdAndJahrOrderByIdDesc(arbeitsgang.getId(),
-                                        neuesProjekt.getAnlegedatum().getYear())
-                                .or(() -> stundensatzRepository
-                                        .findTopByArbeitsgangIdOrderByJahrDesc(arbeitsgang.getId()))
-                                .orElseThrow(() -> new RuntimeException("Kein Stundensatz für Arbeitsgang"));
-                        Zeitbuchung.setArbeitsgangStundensatz(satz);
-                        return Zeitbuchung;
-                    }).collect(Collectors.toCollection(ArrayList::new));
-        }
-        neuesProjekt.setZeitbuchungen(new ArrayList<>(zeitPositionen));
 
         // Projekt-spezifische E-Mail-Adressen persistieren
         if (dto.getKundenEmails() != null && !dto.getKundenEmails().isEmpty()) {
@@ -646,7 +593,7 @@ ProjektManagementService {
             projekt.getKundenEmails().addAll(dto.getKundenEmails());
         }
 
-        // Map für Zeitbuchungen: produktkategorie.id -> ProjektProduktkategorie
+        // Vorhandene Projekt-Produktkategorien: produktkategorie.id -> ProjektProduktkategorie
         java.util.Map<Long, ProjektProduktkategorie> kategorieMap = projekt.getProjektProduktkategorien().stream()
                 .collect(Collectors.toMap(ppk -> ppk.getProduktkategorie().getId(), ppk -> ppk));
 
@@ -712,8 +659,6 @@ ProjektManagementService {
                     projekt.getProjektProduktkategorien().add(geschuetzt);
                 }
             }
-            kategorieMap = projekt.getProjektProduktkategorien().stream()
-                    .collect(Collectors.toMap(ppk -> ppk.getProduktkategorie().getId(), ppk -> ppk));
         }
         // Bei leerer Liste (dto.getProduktkategorien() == []) werden bestehende
         // Kategorien beibehalten
@@ -750,94 +695,6 @@ ProjektManagementService {
                     .removeIf(mk -> !dtoKeys.contains((mk.getBeschreibung() == null ? "" : mk.getBeschreibung()) + "|" +
                             (mk.getExterneArtikelnummer() == null ? "" : mk.getExterneArtikelnummer()) + "|" +
                             (mk.getMonat() == null ? "" : mk.getMonat())));
-        }
-
-        if (dto.getZeitPositionen() != null) {
-            java.util.Map<String, Zeitbuchung> existierend = new java.util.LinkedHashMap<>();
-            java.util.Iterator<Zeitbuchung> iterator = projekt.getZeitbuchungen().iterator();
-            while (iterator.hasNext()) {
-                Zeitbuchung zip = iterator.next();
-                String key = zip.getArbeitsgang().getId() + "_"
-                        + zip.getProjektProduktkategorie().getProduktkategorie().getId();
-                Zeitbuchung bereitsVorhanden = existierend.get(key);
-                if (bereitsVorhanden == null) {
-                    existierend.put(key, zip);
-                } else {
-                    java.math.BigDecimal stunden = zip.getAnzahlInStunden();
-                    if (stunden != null) {
-                        java.math.BigDecimal vorhandeneStunden = bereitsVorhanden.getAnzahlInStunden();
-                        bereitsVorhanden.setAnzahlInStunden(
-                                vorhandeneStunden == null ? stunden : vorhandeneStunden.add(stunden));
-                    }
-                    iterator.remove();
-                }
-            }
-            java.util.Map<String, org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto> aggregierteDtos = new java.util.LinkedHashMap<>();
-            for (org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto zeitDtoOriginal : dto
-                    .getZeitPositionen()) {
-                String key = zeitDtoOriginal.getArbeitsgangID() + "_" + zeitDtoOriginal.getProduktkategorieID();
-                org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto aggregiert = aggregierteDtos.get(key);
-                java.math.BigDecimal aktuelleStunden = zeitDtoOriginal.getAnzahlInStunden() != null
-                        ? zeitDtoOriginal.getAnzahlInStunden()
-                        : java.math.BigDecimal.ZERO;
-                if (aggregiert == null) {
-                    org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto neu = new org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto();
-                    neu.setArbeitsgangID(zeitDtoOriginal.getArbeitsgangID());
-                    neu.setProduktkategorieID(zeitDtoOriginal.getProduktkategorieID());
-                    neu.setAnzahlInStunden(aktuelleStunden);
-                    aggregierteDtos.put(key, neu);
-                } else {
-                    java.math.BigDecimal vorhandeneStunden = aggregiert.getAnzahlInStunden();
-                    if (vorhandeneStunden == null) {
-                        aggregiert.setAnzahlInStunden(aktuelleStunden);
-                    } else {
-                        aggregiert.setAnzahlInStunden(vorhandeneStunden.add(aktuelleStunden));
-                    }
-                }
-            }
-
-            java.util.Map<String, Zeitbuchung> vorhandeneZeiten = projekt.getZeitbuchungen().stream()
-                    .collect(
-                            Collectors.toMap(
-                                    zip -> zip.getArbeitsgang().getId() + "_"
-                                            + zip.getProjektProduktkategorie().getProduktkategorie().getId(),
-                                    zip -> zip));
-            java.util.List<Zeitbuchung> aktualisierteZeiten = new java.util.ArrayList<>();
-            for (org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto zeitDto : aggregierteDtos.values()) {
-                String key = zeitDto.getArbeitsgangID() + "_" + zeitDto.getProduktkategorieID();
-                Zeitbuchung zip = vorhandeneZeiten.get(key);
-                Arbeitsgang arbeitsgang = arbeitsgangRepository.findById(zeitDto.getArbeitsgangID())
-                        .orElseThrow(() -> new RuntimeException("Zeitart konnte nicht gefunden werden."));
-                ProjektProduktkategorie ppk = kategorieMap.get(zeitDto.getProduktkategorieID());
-                if (ppk == null) {
-                    throw new RuntimeException("Produktkategorie ist nicht dem Projekt zugeordnet.");
-                }
-                if (zip == null && projekt.getId() != null) {
-                    zip = ZeitbuchungRepository
-                            .findByProjektIdAndArbeitsgangIdAndProjektProduktkategorieId(
-                                    projekt.getId(), arbeitsgang.getId(), ppk.getId())
-                            .orElse(null);
-                }
-                if (zip == null) {
-                    zip = new Zeitbuchung();
-                    zip.setProjekt(projekt);
-                }
-                ArbeitsgangStundensatz satz = stundensatzRepository
-                        .findTopByArbeitsgangIdAndJahrOrderByIdDesc(arbeitsgang.getId(),
-                                projekt.getAnlegedatum().getYear())
-                        .or(() -> stundensatzRepository.findTopByArbeitsgangIdOrderByJahrDesc(arbeitsgang.getId()))
-                        .orElseThrow(() -> new RuntimeException("Kein Stundensatz für Arbeitsgang"));
-                java.math.BigDecimal stundenwert = zeitDto.getAnzahlInStunden() != null
-                        ? zeitDto.getAnzahlInStunden()
-                        : java.math.BigDecimal.ZERO;
-                zip.setArbeitsgang(arbeitsgang);
-                zip.setProjektProduktkategorie(ppk);
-                zip.setAnzahlInStunden(stundenwert);
-                zip.setArbeitsgangStundensatz(satz);
-                aktualisierteZeiten.add(zip);
-            }
-            projekt.getZeitbuchungen().clear();
-            projekt.getZeitbuchungen().addAll(aktualisierteZeiten);
         }
 
         Projekt gespeichertesProjekt = this.projektPersistenceService.saveProjektWithRetry(projekt);
@@ -1565,48 +1422,6 @@ ProjektManagementService {
         } else {
             runnable.run();
         }
-    }
-
-    @Transactional
-    public ProjektResponseDto fuegeZeitenHinzu(Long projektId,
-            List<org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto> zeitenDtos) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new NotFoundException("Projekt mit ID " + projektId + " nicht gefunden."));
-
-        java.util.Map<Long, ProjektProduktkategorie> kategorieMap = projekt.getProjektProduktkategorien().stream()
-                .collect(Collectors.toMap(ppk -> ppk.getProduktkategorie().getId(), ppk -> ppk));
-
-        List<Zeitbuchung> neueZeiten = new ArrayList<>();
-        for (org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto zeitDto : zeitenDtos) {
-            Arbeitsgang arbeitsgang = arbeitsgangRepository.findById(zeitDto.getArbeitsgangID())
-                    .orElseThrow(() -> new NotFoundException(
-                            "Arbeitsgang mit ID " + zeitDto.getArbeitsgangID() + " nicht gefunden."));
-
-            ProjektProduktkategorie ppk = kategorieMap.get(zeitDto.getProduktkategorieID());
-            if (ppk == null) {
-                throw new IllegalArgumentException("Produktkategorie mit ID " + zeitDto.getProduktkategorieID()
-                        + " ist dem Projekt nicht zugeordnet.");
-            }
-
-            Zeitbuchung Zeitbuchung = new Zeitbuchung();
-            Zeitbuchung.setProjekt(projekt);
-            Zeitbuchung.setArbeitsgang(arbeitsgang);
-            Zeitbuchung.setProjektProduktkategorie(ppk);
-            Zeitbuchung.setAnzahlInStunden(zeitDto.getAnzahlInStunden());
-
-            ArbeitsgangStundensatz satz = stundensatzRepository
-                    .findTopByArbeitsgangIdAndJahrOrderByIdDesc(arbeitsgang.getId(), projekt.getAnlegedatum().getYear())
-                    .or(() -> stundensatzRepository.findTopByArbeitsgangIdOrderByJahrDesc(arbeitsgang.getId()))
-                    .orElseThrow(() -> new RuntimeException(
-                            "Kein Stundensatz für Arbeitsgang " + arbeitsgang.getBeschreibung() + " gefunden."));
-            Zeitbuchung.setArbeitsgangStundensatz(satz);
-
-            neueZeiten.add(Zeitbuchung);
-        }
-
-        projekt.getZeitbuchungen().addAll(neueZeiten);
-        Projekt gespeichert = projektRepository.save(projekt);
-        return mappeMitKilogramm(gespeichert);
     }
 
     /**
