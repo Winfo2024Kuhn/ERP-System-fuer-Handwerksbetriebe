@@ -154,11 +154,15 @@ class TagesSollServiceTest {
     }
 
     @Test
-    void halberFeiertag_ohnePhase_periodenSollUndGutschriftHalbiert() {
+    void halberFeiertag_ohnePhase_halberTagFrei_halbeGutschriftUndHalbesArbeitsSoll() {
+        // Fachentscheidung 12.10.2026: Am halben Feiertag ist der halbe Tag
+        // bezahlt frei. Wie beim vollen Feiertag bleibt das Soll stehen, nur
+        // die Gutschrift ist halb - wer 4 h arbeitet, steht auf 0. Vorher
+        // wurden Soll UND Gutschrift halbiert, der Tag wirkte wie ganz frei.
         stubOhnePhase(HALBER_FEIERTAG);
         stubFeiertag(HALBER_FEIERTAG, true, true);
 
-        assertWerte(HALBER_FEIERTAG, "4.00", "4.00", "0.00");
+        assertWerte(HALBER_FEIERTAG, "8.00", "4.00", "4.00");
     }
 
     @Test
@@ -193,7 +197,7 @@ class TagesSollServiceTest {
         stubMitPhase(HALBER_FEIERTAG, wiedereingliederungsPhase(new BigDecimal("2.00"), HALBER_FEIERTAG));
         stubFeiertag(HALBER_FEIERTAG, true, true);
 
-        assertWerte(HALBER_FEIERTAG, "1.00", "1.00", "0");
+        assertWerte(HALBER_FEIERTAG, "2.00", "1.00", "1.00");
     }
 
     @Test
@@ -513,16 +517,16 @@ class TagesSollServiceTest {
         Feiertag fremd = new Feiertag(); fremd.setDatum(von); fremd.setBundesland("HE");
         Feiertag wochenende = new Feiertag(); wochenende.setDatum(bis); wochenende.setBundesland("BY");
         when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(List.of(halb, voll, fremd, wochenende));
-        assertEquals(0, new BigDecimal("15.75").compareTo(tagesSollService.periodenSollSumme(1L, von, bis)));
+        assertEquals(0, new BigDecimal("17.50").compareTo(tagesSollService.periodenSollSumme(1L, von, bis)));
         assertEquals(0, new BigDecimal("5.25").compareTo(tagesSollService.feiertagsGutschriftSumme(1L, von, bis)));
-        assertEquals(0, new BigDecimal("10.50").compareTo(tagesSollService.arbeitsSollSumme(1L, von, bis)));
+        assertEquals(0, new BigDecimal("12.25").compareTo(tagesSollService.arbeitsSollSumme(1L, von, bis)));
         when(versionRepository.findImZeitraum(1L, halb.getDatum(), halb.getDatum())).thenReturn(List.of(v));
         when(phaseRepository.findImZeitraum(1L, halb.getDatum(), halb.getDatum()))
                 .thenReturn(List.of(wiedereingliederungsPhase(new BigDecimal("3.5"), von)));
         when(feiertagService.getFeiertageZwischen(halb.getDatum(), halb.getDatum())).thenReturn(List.of(halb));
-        assertEquals(0, new BigDecimal("1.75").compareTo(tagesSollService.periodenSoll(1L, halb.getDatum())));
+        assertEquals(0, new BigDecimal("3.5").compareTo(tagesSollService.periodenSoll(1L, halb.getDatum())));
         assertEquals(0, new BigDecimal("1.75").compareTo(tagesSollService.feiertagsGutschrift(1L, halb.getDatum())));
-        assertEquals(0, BigDecimal.ZERO.compareTo(tagesSollService.arbeitsSoll(1L, halb.getDatum())));
+        assertEquals(0, new BigDecimal("1.75").compareTo(tagesSollService.arbeitsSoll(1L, halb.getDatum())));
     }
 
     @Test
@@ -551,7 +555,7 @@ class TagesSollServiceTest {
         var ergebnis = tagesSollService.vorschau(MITARBEITER_ID, arbeitszeit,
                 HALBER_FEIERTAG, HALBER_FEIERTAG);
 
-        assertEquals(0, new BigDecimal("1.00").compareTo(ergebnis.periodenSoll()));
+        assertEquals(0, new BigDecimal("2.00").compareTo(ergebnis.periodenSoll()));
         assertEquals(0, new BigDecimal("1.00").compareTo(ergebnis.feiertagsGutschrift()));
         verify(versionRepository, never()).findImZeitraum(any(), any(), any());
         verify(versionRepository, never()).save(any());

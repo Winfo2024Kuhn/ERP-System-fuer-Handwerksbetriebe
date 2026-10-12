@@ -28,10 +28,11 @@ import java.util.stream.Collectors;
  *
  * <ul>
  *   <li>{@code periodenSoll} - was der Mitarbeiter laut Vertrag/Stufenplan
- *       schuldet. Feiertag zaehlt als bezahlter Arbeitstag, halber Feiertag
- *       50 %.</li>
+ *       schuldet. Feiertag zaehlt als bezahlter Arbeitstag - auch der
+ *       halbe Feiertag behaelt das volle Tagessoll.</li>
  *   <li>{@code feiertagsGutschrift} - bezahlte Feiertagsstunden auf der
- *       Ist-Seite. 0, wenn kein Feiertag oder kein Arbeitstag.</li>
+ *       Ist-Seite: voller Feiertag das ganze Tagessoll, halber Feiertag die
+ *       Haelfte. 0, wenn kein Feiertag oder kein Arbeitstag.</li>
  *   <li>{@code arbeitsSoll} - was tatsaechlich zu leisten ist:
  *       {@code periodenSoll - feiertagsGutschrift}.</li>
  * </ul>
@@ -159,11 +160,17 @@ public class TagesSollService {
         return werte(basis, istFeiertag, istHalberFeiertag);
     }
 
+    /**
+     * Feiertage mindern nur ueber die Gutschrift, das Soll bleibt stehen: Der
+     * volle Feiertag schreibt das ganze Tagessoll gut, der halbe die Haelfte -
+     * am halben Feiertag bleibt also der halbe Tag zu arbeiten
+     * (Fachentscheidung 12.10.2026; vorher wurden Soll und Gutschrift
+     * halbiert, der halbe Feiertag wirkte wie ein ganzer).
+     */
     private TagesWerte werte(BigDecimal tagesBasis, boolean istFeiertag, boolean istHalberFeiertag) {
-        BigDecimal periodenSoll = istHalberFeiertag ? halbieren(tagesBasis) : tagesBasis;
         BigDecimal feiertagsGutschrift = !istFeiertag ? BigDecimal.ZERO
                 : (istHalberFeiertag ? halbieren(tagesBasis) : tagesBasis);
-        return new TagesWerte(periodenSoll, feiertagsGutschrift);
+        return new TagesWerte(tagesBasis, feiertagsGutschrift);
     }
 
     /**

@@ -143,7 +143,16 @@ Häkchen „Bestellt“ (PATCH /api/bestellungen/{id}?bestellt=true)
 Position verschwindet aus dem Bedarf
 ```
 
-In der Oberfläche verschwindet die Position nach dem Abhaken sofort aus der Liste. Zurücknehmen geht nur über die API (`bestellt=false`): Die Position steht dann wieder im Bedarf, `bestelltAm` wird geleert, der eingefrorene Preis bleibt aber stehen.
+In der Oberfläche verschwindet die Position nach dem Abhaken sofort aus der Liste. Zurücknehmen geht nur über die API (`bestellt=false`): Die Position steht dann wieder im Bedarf, `bestelltAm` wird geleert und der Preis auf den Preis je Einheit zurückgerechnet (siehe unten).
+
+Beim Abhaken wird der Endpreis in `preisProStueck` **eingefroren** (Einzelpreis × Menge) und der Preisbezug (`lieferantenArtikelPreis`) gelöst. Grundlage ist der hängende Preisstand, sonst der festgehaltene Einzelpreis.
+
+**„Bestellt“ zurücknehmen:** Der eingefrorene Endpreis wird wieder auf den Preis je Einheit zurückgerechnet (Endpreis ÷ Menge, 4 Nachkommastellen). Sonst würde die Projektansicht die Summe ein zweites Mal mit der Menge multiplizieren. Bei Menge 0 bleibt der Wert stehen. Lässt sich die Summe nicht glatt teilen (z. B. 100 € ÷ 3), entsteht beim erneuten Abhaken ein Rundungsrest im Cent-Bruchteil (33,3333 × 3 = 99,9999).
+
+**Sonderfälle:**
+- Wiederholtes Abhaken bzw. Zurücknehmen (Doppelklick) ändert nichts mehr.
+- Lagerware (`ausLager`) trägt immer den Preis je Einheit und wird nie umgerechnet.
+- Der Preis-Import aus Lieferanten-Angeboten (`OfferPriceService`) schreibt bei offenen Positionen ebenfalls den Preis je Einheit, nicht die Summe.
 
 ### 4.2 Bestellung per E-Mail
 

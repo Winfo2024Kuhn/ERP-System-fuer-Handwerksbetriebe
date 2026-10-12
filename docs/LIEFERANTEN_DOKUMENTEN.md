@@ -236,7 +236,7 @@ Die Rechte hängen nicht an festen Abteilungsnummern, sondern an Haken je Abteil
 | **„Genehmigte Rechnungen sehen“** | „Sieht nur schon genehmigte Eingangsrechnungen (Buchhaltung).“ |
 | keins von beiden | sieht unter Offene Posten keine Eingangsrechnungen |
 
-Zusätzlich legt die Tabelle „Dokumente & Belege“ je Abteilung und Dokumentart fest, was jemand **„Sehen“** und **„Scannen“** darf. Administratoren sehen alle Dokumentarten, brauchen zum Genehmigen aber ebenfalls das Abteilungsrecht. Ohne Recht zeigt die Spalte „Genehmigt“ den Hinweis „Nur Büro/Berechtigte“.
+Zusätzlich legt die Tabelle „Dokumente & Belege“ je Abteilung und Dokumentart fest, was jemand **„Sehen“** und **„Scannen“** darf. Administratoren sehen alle Dokumentarten, brauchen zum Genehmigen aber ebenfalls das Abteilungsrecht. Ohne Recht zeigt die Spalte „Genehmigt“ den Hinweis „Nur mit dem Abteilungsrecht „Rechnungen genehmigen““. Lehnt der Server das Genehmigen trotzdem ab (Recht inzwischen entzogen), erklärt eine Meldung, dass das Recht je Abteilung unter Einstellungen → Berechtigungen vergeben wird.
 
 ---
 
