@@ -111,7 +111,7 @@ Der Start des Containers bestätigt noch keine von außen funktionierende Domain
 
 ## Konkrete Schutzregeln
 
-- Die Methoden-/Routenliste in `mobile-routes.conf` wird aus `MobileApiPolicy.java` erzeugt. Nur `GET`/`HEAD` auf `/zeiterfassung` und dessen Ressourcen kommen hinzu; `/` führt zur mobilen Startseite. Desktop-Pfade, Login-Endpunkte und andere Methoden enden am Gateway mit `404`.
+- Die Methoden-/Routenliste in `mobile-routes.conf` wird aus `MobileApiPolicy.java` erzeugt. Nur `GET`/`HEAD` auf `/zeiterfassung` und dessen Ressourcen kommen hinzu; `/` führt zur mobilen Startseite. Desktop-Pfade, Login-Endpunkte und andere Methoden enden am Gateway mit `404`. Mehrdeutig kodierte Pfade (`%2F`, `%5C`, `;`, `..` und kodierte Steuerzeichen wie `%0A`) enden mit `400`.
 - Jeder Request-Body ist auf **25 MiB insgesamt** begrenzt, einschließlich Multipart-Daten. Größere Anfragen erhalten `413`. [Nginx-Bodylimit](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size), [Caddy-Bodylimit](https://caddyserver.com/docs/caddyfile/directives/request_body)
 - Pro Client-IP: insgesamt 60 Anfragen/s mit zusätzlichem Burst 100; API 10/s mit Burst 30; Bilder und Dokumente (`GET` auf `/api/images/`, `/api/dokumente/`, `/api/lieferanten/bilder/file/`) statt der API-Grenze 30/s mit Burst 120; Token-Anmeldung 1/s mit Burst 5; höchstens 16 gleichzeitig bearbeitete Verbindungen. Überlast erhält `429` und `Retry-After: 1`. Die Anwendung kann längere Token-Wartezeiten zurückgeben. Diese Regeln nutzen [Nginx-Limits](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html); geteilte NAT-Adressen teilen sich die Limits, Neustarts setzen die Proxy-Zähler zurück.
 - API-Antworten erhalten `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` und `Content-Security-Policy: sandbox; default-src 'none'`. Die CSP verhindert aktive Inhalte in über API ausgelieferten HTML-/SVG-Dateien, ohne diese Richtlinie auf die PWA-Oberfläche anzuwenden. PDF-Vorschauen müssen mit den tatsächlich eingesetzten Browsern geprüft werden.
@@ -119,7 +119,7 @@ Der Start des Containers bestätigt noch keine von außen funktionierende Domain
 
 ## Prüfen, aktualisieren und stoppen
 
-Entwickler prüfen Routenänderungen mit Python 3:
+Entwickler prüfen Routenänderungen mit Python 3. Vergessen sie das Neuerzeugen, scheitert `MobileGatewayRoutenTest` in den Backend-Tests (`./mvnw test`, auch in der PR-CI). Derselbe Test prüft, dass die Nginx-Vorlage alles außerhalb der Liste sperrt:
 
 ```powershell
 python .\sync_routes.py --check
