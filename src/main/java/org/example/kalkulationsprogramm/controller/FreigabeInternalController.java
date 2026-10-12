@@ -105,14 +105,19 @@ public class FreigabeInternalController
     }
 
     /**
-     * Löscht die temporär gespeicherte PDF einer abgelaufenen Freigabe.
-     * Wird von der Internetseite aufgerufen, wenn der Freigabe-Link abgelaufen ist.
+     * Nimmt einer abgelaufenen oder zurückgezogenen Freigabe ihre PDF weg (die Datei bleibt
+     * im ERP). Wird von der Internetseite aufgerufen, wenn der Freigabe-Link abgelaufen ist.
+     * Bei offenen und angenommenen Freigaben kommt 409 und nichts ändert sich.
      */
     @DeleteMapping("/{uuid}/pdf")
     public ResponseEntity<Void> loeschePdf(@PathVariable String uuid)
     {
-        freigabeService.loeschePdfFuerFreigabe(uuid);
-        return ResponseEntity.noContent().build();
+        return switch (freigabeService.entfernePdfAusFreigabe(uuid))
+        {
+            case ENTFERNT -> ResponseEntity.noContent().build();
+            case UNBEKANNT -> ResponseEntity.notFound().build();
+            case NOCH_GUELTIG -> ResponseEntity.status(409).build();
+        };
     }
 
     /**
