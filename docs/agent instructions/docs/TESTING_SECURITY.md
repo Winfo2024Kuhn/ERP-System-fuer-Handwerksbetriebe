@@ -1,12 +1,18 @@
 # 🧪 Testing & Endpoint-Security
 
 ## Test-Anforderungen
-- **Service-Schicht:** JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`). Ziel: ≥ 80% Coverage.
-- **Controller-Schicht:** MockMvc (`@WebMvcTest`). Ziel: Alle Endpoints (Happy-Path + Fehlerfall).
-- **Repository-Schicht:** H2 In-Memory (`@DataJpaTest`).
-- **Frontend Unit/Komponenten-Tests:** Vitest + Testing Library (neben Quell-Datei als `*.test.tsx`).
+- **Service-Schicht:** JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`). Ziel: ≥ 80 % Branch-Coverage je neuer Klasse. `./mvnw test` schreibt den JaCoCo-Bericht nach `target/site/jacoco/`. Eine projektweite Schwelle gibt es bewusst nicht.
+- **Controller-Schicht:** MockMvc (`@WebMvcTest`), Abhängigkeiten per `@MockBean`. Das Projekt läuft auf Spring Boot 3.2, dort gibt es `@MockitoBean` noch nicht. Ziel: Alle Endpoints (Happy-Path + Fehlerfall).
+- **Repository-Schicht:** H2 In-Memory (`@DataJpaTest`, Konfiguration `src/test/resources/application.properties`, Flyway aus).
+- **Gegen echtes PostgreSQL:** Das prüfen `repository/DatenbankKompatibilitaet*Test` und `service/*PostgresTest`. Sie laufen nur mit System-Properties (`-Dkompat.db.url=…`, Befehl siehe `BACKEND_ARCH.md`), sonst werden sie übersprungen. Testcontainers gibt es nicht; lokal einen Wegwerf-Container `postgres:16` starten. In der CI laufen sie im Job „Datenbank-Kompatibilitaet (PostgreSQL)“, der auch prüft, dass sie wirklich liefen.
+- **Frontend Unit/Komponenten-Tests:** Vitest + Testing Library + jsdom (neben Quell-Datei als `*.test.tsx`/`*.test.ts`). Befehle: `npm test`, Coverage mit `npm run test:coverage`.
 - **End-to-End-Tests (Playwright - Pflicht whenever missing):** Immer wenn End-to-End-Tests fehlen, müssen für neue Features, Abläufe, Seiten und Dialoge Playwright-E2E-Tests geschrieben bzw. ergänzt werden (`react-pc-frontend/e2e/` und `react-zeiterfassung/e2e/`).
-- **Daten:** Immer Dummy-Daten nutzen (DSGVO!). Utils erfordern 100% Coverage.
+  - Start mit `npm run test:e2e`. Laufen mehrere Agenten parallel, bekommt jeder einen eigenen Port über `E2E_PORT`.
+  - Es läuft kein Backend: Jede Spec stubbt ihre `/api`-Routen selbst (PC: Hilfen in `e2e/hilfen/api.ts`).
+  - `test`/`expect` immer aus `./hilfen/test` importieren, nicht aus `@playwright/test`. Diese Datei sperrt fremde Netzwerkzugriffe, auch in Popups.
+  - Die PC-Specs laufen in drei Größen: `pc-14zoll` 1440×900, `pc-uebergang` 1536×960 und `pc-monitor` 1920×1080. Die Handy-App läuft im Projekt `handy` (iPhone 15). PC zusätzlich: `npm run typecheck:e2e`.
+- **Daten:** Immer Dummy-Daten nutzen (DSGVO!, z. B. `Max Mustermann`). Utils erfordern 100% Coverage.
+- **CI:** `.github/workflows/pr-ci.yml` muss vor dem Merge grün sein („PR Quality Gate“). Geprüft werden Backend-Tests, Datenbank-Kompatibilität sowie Lint, Unit-Tests, Build und E2E beider Frontends.
 
 ## Sicherheits-Pflichtcheckliste (Für JEDEN neuen Endpoint)
 Bevor ein Endpoint als "fertig" markiert wird, müssen folgende Angriffsvektoren im Code/Test abgedeckt sein:
@@ -22,4 +28,6 @@ Bevor ein Endpoint als "fertig" markiert wird, müssen folgende Angriffsvektoren
 3. **Spring CSRF:** Niemals `.csrf(csrf -> csrf.disable())` aufrufen. Wenn Endpoints (z. B. S2S / JWT / Machine-to-Machine) ausgenommen werden müssen, immer `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))` verwenden.
 4. **HTML Tag-Stripping & Multi-Character Sanitization:** Niemals ein simples `.replace(/<[^>]*>/g, '')` für Sanitization verwenden (CodeQL schlägt `incomplete-multi-character-sanitization` an). Immer die zentrale Hilfsfunktion `stripHtmlTags()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Fixpunktschleife) verwenden.
 5. **Entity-Unescaping & Double Escaping:** HTML-Entitäten niemals sequentiell mit mehreren `.replace()` entpacken. Immer die zentrale Hilfsfunktion `unescapeHtmlEntities()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Single-Pass Regex) verwenden.
-6. **DOM-XSS in Vorschauen (iframes & img):** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` validieren (erlaubt nur `blob:`, `http:`, `https:` und relative Pfade `/`; blockiert `javascript:` und `data:`).
+6. **DOM-XSS in Vorschauen (iframes & img):** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` validieren (erlaubt nur `blob:`, `http:`, `https:` und relative Pfade `/`; blockiert `javascript:`, `data:` und protokoll-relative `//…`).
+
+`htmlSanitizer.ts` gibt es nur im PC-Frontend. `react-zeiterfassung` hat kein Gegenstück. Braucht die Handy-App diese Funktionen, das vor dem Bau zur Freigabe stellen (Auslagerung, siehe `.claude/CLAUDE.md`).

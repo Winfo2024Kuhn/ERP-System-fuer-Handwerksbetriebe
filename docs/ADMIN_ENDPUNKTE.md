@@ -2,7 +2,8 @@
 
 Diese Endpunkte gibt es nur im Backend. Es gibt im PC-Frontend und in der
 Zeiterfassungs-App keinen Knopf dafür, man ruft sie direkt im Browser auf.
-Stand: 12.10.2026.
+Stand: 12.10.2026, abgeglichen mit Controllern und `SecurityConfig`.
+Alle übrigen Endpunkte stehen in der [API-Referenz](API_REFERENZ.md).
 
 ## So geht's
 
@@ -21,12 +22,6 @@ Platzhalter in `{...}` (z. B. `{lieferantId}`) durch die echte ID ersetzen.
 > oder kosten KI-Aufrufe. Vorher ein Backup ziehen und möglichst
 > außerhalb der Arbeitszeit starten.
 
-Läufe mit „nur Admin“ bekommen normale Benutzer mit `403` abgewiesen. Seit
-12.10.2026 gilt das auch für den Mail-Abruf, alle Mail-Scans, das Spam-Modell
-(neu bewerten, anlernen), das Verknüpfen von Antworten, die Anhang-Verarbeitung
-zu Lieferanten-Dokumenten und den Zeitkonten-Zwischenspeicher. Ohne Vermerk
-dürfen alle Angemeldeten den Aufruf machen.
-
 ---
 
 ## 1. Nur lesen (GET, Adresszeile)
@@ -37,9 +32,8 @@ dürfen alle Angemeldeten den Aufruf machen.
 | Doppelte Lieferanten-Dokumente anzeigen (zeigt, was die Bereinigung löschen würde) | `http://localhost:8080/api/lieferant-dokumente/duplicates` | nur Admin |
 | Stand des Spam-Lernmodells | `http://localhost:8080/api/emails/spam-model/stats` | angemeldet |
 | Ist die KI-Mailzuordnung (Gemini) an? | `http://localhost:8080/api/email-ki/status` | angemeldet |
-| KI-Prompt für eine E-Mail ansehen (Fehlersuche) | `http://localhost:8080/api/email-ki/debug-prompt/{emailId}` | angemeldet |
-| Kassenbuch-Protokoll auf Veränderungen prüfen | `http://localhost:8080/api/buchhaltung/kassenbuch/pruefung` | Belege sehen |
-| GoBD-Verfahrensdokumentation herunterladen (.txt) | `http://localhost:8080/api/buchhaltung/kassenbuch/verfahrensdokumentation` | Belege sehen |
+| Kassenbuch-Protokoll auf Veränderungen prüfen | `http://localhost:8080/api/buchhaltung/kassenbuch/pruefung` | Abteilungsrecht „Belege sehen“ |
+| GoBD-Verfahrensdokumentation herunterladen (.txt) | `http://localhost:8080/api/buchhaltung/kassenbuch/verfahrensdokumentation` | Abteilungsrecht „Belege sehen“ |
 
 ---
 
@@ -142,7 +136,7 @@ await fetch('/api/emails/scan-spam',{method:'POST',headers:{'X-XSRF-TOKEN':docum
 await fetch('/api/emails/scan-inquiries',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Steuerberater-Mails nachträglich verarbeiten (Lohnabrechnungen, BWA) (nur Admin)
+### Steuerberater-Mails (Lohnabrechnungen, BWA) nachträglich verarbeiten (nur Admin)
 ```js
 await fetch('/api/emails/scan-steuerberater',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
@@ -154,7 +148,8 @@ trainiert ist (siehe `spam-model/stats`).
 await fetch('/api/emails/spam-model/rescore',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Eine Mail per KI einordnen
+### Eine Mail per KI einordnen (angemeldet)
+Geht nur für Mails, die man selbst sehen darf, sonst kommt `404`.
 Nur ansehen, was die KI vorschlägt:
 ```js
 await fetch('/api/email-ki/classify/{emailId}',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
@@ -197,7 +192,8 @@ Daten, kostet KI-Aufrufe):
 ```js
 await fetch('/api/lieferant-dokumente/lieferant/{lieferantId}/reanalyze',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
-Ein einzelnes Dokument:
+Ein einzelnes Dokument (angemeldet; nur Dokumenttypen, die die eigene Abteilung
+sehen darf, sonst `404`):
 ```js
 await fetch('/api/lieferant-dokumente/{dokumentId}/reanalyze',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
@@ -258,11 +254,44 @@ await fetch('/api/zeitverwaltung/saldo-cache/warmup',{method:'POST',headers:{'X-
 
 ---
 
+## Wer darf was? (So ist es abgesichert)
+
+- **„nur Admin“** prüft die `SecurityConfig` über Pfad-Regeln mit
+  `hasRole("ADMIN")`. `@PreAuthorize` gibt es im Projekt nicht. Von den
+  Endpunkten oben betrifft das:
+  - alles unter `/api/admin/**` (Projekte, Werkstoffzeugnisse,
+    Händler-Rechnungen, `reprocess-attachments`)
+  - `POST /api/emails/admin/**` (Verläufe bereinigen, Dateinamen, XML durch PDF)
+  - `GET /api/lieferant-dokumente/duplicates` und jedes
+    `DELETE /api/lieferant-dokumente/**`
+  - `POST /api/lieferant-dokumente/relink-all`,
+    `POST /api/lieferant-dokumente/lieferant/{lieferantId}/relink` und
+    `POST /api/lieferant-dokumente/lieferant/{lieferantId}/reanalyze`
+  - `POST /api/mahnwesen/lauf`
+  - die Massenläufe (`SecurityConfig.ADMIN_MASSENLAEUFE`, jede Methode):
+    Postfach-Abruf `POST /api/emails/import`, `scan-*`, `backfill-parents`,
+    das Spam-Modell (`rescore`, `bootstrap`), die `process-*`-Läufe der
+    Lieferanten-Dokumente und `POST /api/zeitverwaltung/saldo-cache/warmup`
+- **„angemeldet“** heißt: jede angemeldete Person darf es, eine Rolle wird
+  nicht geprüft. Das gilt für den Stand des Spam-Modells (`stats`), die
+  KI-Einordnung und das Neu-Lesen eines einzelnen Dokuments. Eingeschränkt
+  wird nur, *was* man sieht:
+  bei der KI-Einordnung die Mails aus freigegebenen Postfächern, beim
+  einzelnen Dokument die Dokumenttypen der eigenen Abteilung.
+- **Kassenbuch-Prüfung und Verfahrensdokumentation** brauchen das
+  Abteilungsrecht „Belege sehen“, sonst kommt `403`.
+- Mit dem Handy-Token der Zeiterfassungs-App geht keiner dieser Aufrufe;
+  sie laufen nur mit einer PC-Anmeldung.
+
+---
+
 ## Antworten verstehen
 
 | Code | Bedeutung |
 | --- | --- |
 | `200` | Hat geklappt, Ergebnis steht in der Antwort |
+| `400` | Aufruf passt nicht, z. B. Spam-Modell noch nicht angelernt (`rescore`) |
 | `401` | Nicht angemeldet: erst im ERP einloggen |
-| `403` | Angemeldet, aber kein Admin, oder CSRF-Token fehlt (Seite neu laden und nochmal) |
+| `403` | Angemeldet, aber kein Admin bzw. Recht fehlt, oder CSRF-Token fehlt (Seite neu laden und nochmal) |
+| `404` | Gibt es nicht, oder man darf es nicht sehen (Mail, Dokument, Lieferant) |
 | `409` | Derselbe Lauf läuft gerade schon |

@@ -24,14 +24,16 @@ Dieses ERP ist **ein Vorsystem für Ausgangsbelege im Lead-to-Cash-Prozess** mit
 
 | Bereich | GoBD-Umsetzung im System |
 |---|---|
-| **Angebote** | Versionierung, Vorgänger-Nachfolger-Kette, Audit-Trail mit Hash-Kette |
-| **Auftragsbestätigungen** | Audit-Trail mit Hash-Kette, Vorgänger-Referenz |
-| **Lieferscheine** | Vorgänger-Kette zu Projekt/AB, Versanddatum-Sperre |
-| **Ausgangsrechnungen** (alle Typen) | Lückenlose Nummerierung, Buchungssperre, Storno-Verfahren, Hash-Kette, Z3-Export |
-| **Mahnungen** | Audit-Trail mit Hash-Kette |
+| **Angebote / Nachtragsangebote** | Fortlaufende Nummer, Vorgänger-Nachfolger-Kette, Sperre nach digitaler Annahme, Annahme-Nachweis mit Hash (`DokumentFreigabe`), Audit-Eintrag bei digitaler Annahme und bei Löschung |
+| **Auftragsbestätigungen** | Vorgänger-Referenz, Sperre nach digitaler Annahme, Audit-Eintrag bei digitaler Annahme und bei Löschung |
+| **Ausgangsrechnungen** (Rechnung, Teil-, Abschlags-, Schlussrechnung, Gutschrift, Storno) | Fortlaufende Nummerierung, Buchungssperre, Storno-Verfahren, Audit-Trail mit Hash-Kette, archiviertes PDF, Z3-Export |
+| **Mahnungen** | Archiviertes PDF, Versanddatum, Verweis auf die Rechnung (nicht Teil der Hash-Kette) |
 | **Zeitbuchungen & Zeitkonto-Korrekturen** | Versionierte Audit-Snapshots, Begründungspflicht, Erfassungsquelle |
-| **Eingangsbelege (Lieferantenrechnungen, Quittungen)** | Belegfoto-Pflicht, KI-gestützte Vorerfassung als **Vorsortierung für den Steuerberater** |
-| **Projekt-/Auftragsdaten** | Lückenlose Kette Angebot → AB → Lieferschein → Rechnung |
+| **Eingangsbelege (Lieferantenrechnungen, Lieferscheine, Quittungen)** | Ablage der Originaldatei, Belegfoto-Pflicht im Kassenbuch, KI-gestützte Vorerfassung als **Vorsortierung für den Steuerberater** |
+| **Kassenbuch** | Eigene Hash-Kette, Festschreibung per Monatsabschluss (siehe `KASSE_BUCHHALTUNG.md`) |
+| **Projekt-/Auftragsdaten** | Lückenlose Kette Angebot → AB → Rechnung → Storno |
+
+Ausgehende Lieferscheine erstellt das System nicht; Lieferscheine kommen nur als Lieferanten-Dokumente herein.
 
 ### 0.2 Was dieses System bewusst NICHT abdeckt
 
@@ -91,30 +93,31 @@ Gebuchte Dokumente werden durch das `gebucht`-Flag in der Entity `AusgangsGescha
 | `GUTSCHRIFT` | Gutschrift |
 | `STORNO` | Stornorechnung |
 
-**Nicht-sperrbare Dokumenttypen** (bleiben auch nach Buchung bearbeitbar):
-| Typ | Beschreibung |
-|---|---|
-| `ANGEBOT` | Angebot |
-| `AUFTRAGSBESTAETIGUNG` | Auftragsbestätigung |
+**Nie gebuchte Dokumenttypen** (`ANGEBOT`, `NACHTRAGSANGEBOT`, `AUFTRAGSBESTAETIGUNG`): Ein Buchungsaufruf bleibt bei ihnen ohne Wirkung. Sie sind Geschäftsbriefe und bleiben bearbeitbar (Verhandlungsspielraum) – bis der Kunde das Angebot **digital annimmt**. Dann werden Angebot und automatisch erzeugte Auftragsbestätigung mit `digitalAngenommen = true` gesperrt („Verbindlich“), damit der Beweis der Annahme erhalten bleibt.
 
 ### 1.2 Bearbeitbarkeits-Prüfung
 
 Die Methode `istBearbeitbar()` auf der Entity prüft:
 
 ```
-Stornierte Dokumente  →  IMMER gesperrt (Korrekturnachweis)
-Gebuchte Rechnungen   →  GESPERRT (GoBD-Unveränderbarkeit)
-Gebuchte Angebote/ABs →  BEARBEITBAR (kein Rechnungstyp)
-Nicht gebuchte Docs   →  BEARBEITBAR
+Stornierte Dokumente           →  IMMER gesperrt (Korrekturnachweis)
+Digital angenommene Dokumente  →  GESPERRT (Beweis der Annahme)
+Gebuchte Rechnungen/Gutschrift/
+Storno                         →  GESPERRT (GoBD-Unveränderbarkeit)
+Sonst (Entwürfe, Angebote, ABs)→  BEARBEITBAR
 ```
+
+Der Server lehnt Änderungen an gesperrten Dokumenten ab („Dokument ist gesperrt und kann nicht mehr bearbeitet werden.“).
 
 ### 1.3 Buchungszeitpunkte
 
-Ein Dokument wird gebucht (`gebucht = true`, `gebuchtAm = heute`) in folgenden Fällen:
+Ein Rechnungsdokument wird gebucht (`gebucht = true`, `gebuchtAm = heute`) in folgenden Fällen:
 
-1. **Manuelles Buchen** – Über den Endpoint `POST /api/ausgangs-dokumente/{id}/buchen`
-2. **E-Mail-Versand** – Über `POST /api/ausgangs-dokumente/{id}/email-versendet`; setzt zusätzlich `versandDatum`
+1. **Drucken** („Drucken & Buchen“) oder **PDF-Export** im Dokument-Editor – der Editor ruft `POST /api/ausgangs-dokumente/{id}/buchen` auf; das Dokumentdatum wird vorher auf heute gesetzt
+2. **E-Mail-Versand** – der Editor bucht vor dem Versand; danach setzt `POST /api/ausgangs-dokumente/{id}/email-versendet` zusätzlich `versandDatum`
 3. **Stornierung** – Das Storno-Gegendokument wird sofort als gebucht erstellt
+
+Ein **Entwurfsversand** (Knopf „Entwurf“, PDF mit Wasserzeichen „ENTWURF“) bucht nicht. Das beim Buchen erzeugte PDF wird auf dem Server archiviert (`pdf-speichern`).
 
 ---
 
@@ -132,13 +135,18 @@ Die Methode `loeschen()` im `AusgangsGeschaeftsDokumentService` erzwingt folgend
 |---|---|---|
 | `gebucht = true` | **NEIN** | Grundsatz der Unveränderbarkeit |
 | `versandDatum != null` | **NEIN** | In den Geschäftsverkehr gebracht |
+| `digitalAngenommen = true` | **NEIN** | Vom Kunden verbindlich angenommen (auch wenn der automatische AB-Versand gescheitert ist) |
 | `storniert = true` | **NEIN** | Korrekturnachweis muss erhalten bleiben |
 | `typ = STORNO` | **NEIN** | Storno-Dokumente sind Korrekturbuchungen |
 | Entwurf (alles false) | **JA** | Nur mit Pflicht-Begründung |
 
 ### 2.3 Pflicht-Begründung bei Löschung
 
-Jede Löschung eines Entwurfs erfordert eine textuelle Begründung (`begruendung`). Ohne Begründung wird die Löschung abgelehnt. Die Begründung wird im Server-Log protokolliert.
+Jede Löschung eines Entwurfs erfordert eine textuelle Begründung (`begruendung`). Ohne Begründung wird die Löschung abgelehnt („Eine Begründung für das Löschen ist erforderlich.“).
+
+In der Oberfläche (Aktionsmenü → „Löschen“, Dialog „Dokument löschen“) wählt der Benutzer einen Grund aus – Tippfehler / Erfassungsfehler, Versehentlich doppelt erstellt, Falscher Kunde / Empfänger, Falscher Betrag, Falsche Leistungspositionen, Auftrag wurde storniert (Entwurf), Testdaten / Demo-Eintrag oder Sonstiges (dann Freitext Pflicht).
+
+Vor dem endgültigen Löschen schreibt das System einen unveränderlichen Audit-Eintrag `GELOESCHT` mit Snapshot (Nummer, Typ, Beträge), Begründung, Bearbeiter und IP-Adresse in die Hash-Kette – für **alle** Dokumenttypen. Die Nummer des gelöschten Entwurfs bleibt dadurch nachweisbar (`GET /api/ausgangs-dokumente/historie/nummer/{dokumentNummer}`).
 
 ### 2.4 Fehlermeldungen
 
@@ -162,8 +170,10 @@ Jede Löschung eines Entwurfs erfordert eine textuelle Begründung (`begruendung
 
 ### 3.1 Ablauf
 
+In der Oberfläche: Projekt → Reiter „Geschäftsdokumente“ → gebuchte Rechnung anklicken → **„Stornieren“** → Bestätigung „Rechnung stornieren“. Der Vorgang kann nicht rückgängig gemacht werden.
+
 ```
-Original-Rechnung (z.B. RECHNUNG, Nr. 2026/03/00001)
+Original-Rechnung (z.B. RECHNUNG, Nr. RE-2026/03/00001)
        │
        ▼
   [Stornierung auslösen]
@@ -171,11 +181,11 @@ Original-Rechnung (z.B. RECHNUNG, Nr. 2026/03/00001)
        ├── Original markiert: storniert = true, storniertAm = heute
        │
        └── Neues STORNO-Dokument erstellt:
-           ├── Eigene Dokumentnummer (z.B. 2026/03/00002)
-           ├── Betreff: "Stornorechnung 2026/03/00002 (zu Rechnung 2026/03/00001)"
-           ├── Beträge: Netto und Brutto NEGIERT
+           ├── Eigene Dokumentnummer (z.B. ST-2026/03/00002)
+           ├── Betreff: "Stornorechnung ST-2026/03/00002 (zu Rechnung RE-2026/03/00001)"
+           ├── Beträge: Netto und Brutto als Minderung (negativ)
            ├── Vorgänger-Referenz auf Original (vorgaenger_id)
-           ├── Projekt, Angebot, Kunde vom Original übernommen
+           ├── Projekt, Anfrage, Kunde und Rechnungsanschrift vom Original übernommen
            ├── HTML-Inhalt und Positionen-JSON vom Original übernommen
            ├── Sofort gebucht: gebucht = true, gebuchtAm = heute
            └── Offener-Posten-Eintrag des Originals wird als bezahlt markiert
@@ -183,22 +193,24 @@ Original-Rechnung (z.B. RECHNUNG, Nr. 2026/03/00001)
 
 ### 3.2 Stornierbare Dokumenttypen
 
-Nur Rechnungstypen können storniert werden:
+Nur gebuchte Rechnungstypen können storniert werden (Oberfläche und Schnittstelle):
 - `RECHNUNG`
 - `TEILRECHNUNG`
 - `ABSCHLAGSRECHNUNG`
 - `SCHLUSSRECHNUNG`
 
-Angebote und Auftragsbestätigungen können **nicht** storniert werden (sie bleiben bearbeitbar).
+Angebote, Nachtragsangebote, Auftragsbestätigungen und Gutschriften können **nicht** storniert werden („Nur Rechnungen können storniert werden.“). Ein bereits storniertes Dokument lässt sich nicht erneut stornieren, eine Stornorechnung selbst nicht stornieren (sonst sänke der Umsatz doppelt). Nur **gebuchte** Rechnungen sind stornierbar; ein Entwurf wird gelöscht („Nur gebuchte Rechnungen können storniert werden. Einen Entwurf bitte löschen.“).
 
 ### 3.3 Auswirkungen der Stornierung
 
 1. **Original-Dokument**: `storniert = true`, `storniertAm` gesetzt → dauerhaft gesperrt
 2. **Storno-Dokument**: Sofort gebucht und gesperrt → kann nie gelöscht werden
 3. **Offene Posten**: Zugehöriger Eintrag wird als bezahlt markiert
-4. **Projekt-Preis**: Wird automatisch aus verbleibenden Dokumenten neuberechnet
-5. **Angebot-Preis**: Wird automatisch aktualisiert (falls Angebot verknüpft)
-6. **Beide Dokumente bleiben erhalten** → lückenloser Audit-Trail
+4. **Kaskade**: Wird eine Abschlagsrechnung storniert, werden nicht stornierte, gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen
+5. **Projekt-Preis**: Wird automatisch aus verbleibenden Dokumenten neu berechnet
+6. **Anfrage-Betrag**: Wird automatisch aktualisiert (falls das Dokument noch an einer Anfrage hängt)
+7. **Audit**: `STORNIERT` für das Original (mit Grund; ohne Angabe „Stornierung des Originaldokuments“) und `ERSTELLT` für die Stornorechnung
+8. **Beide Dokumente bleiben erhalten** → lückenloser Audit-Trail
 
 ---
 
@@ -255,6 +267,7 @@ Jeder Snapshot speichert eine **vollständige Kopie** des Datensatzes zum Zeitpu
 | `DESKTOP` | Erfassung/Korrektur über das PC-Frontend im Büro |
 | `ADMIN_KORREKTUR` | Administrative Korrektur durch Chef/Buchhaltung |
 | `IMPORT` | Import aus externem System |
+| `SYSTEM` | Automatische Systemverarbeitung (z. B. automatisches Beenden bei überschrittenem Zeitfenster) |
 
 ### 4.6 Rekonstruierbarkeit
 
@@ -303,28 +316,32 @@ Jede Zeitbuchung enthält einen `idempotencyKey` (UUID). Vor dem Speichern wird 
 
 ---
 
-## 7. Lückenlose Nummerierung
+## 7. Fortlaufende Nummerierung
 
 ### 7.1 Format
 
-Dokumentnummern folgen dem Format: **`YYYY/MM/NNNNN`**
+Dokumentnummern folgen dem Format: **`{KÜRZEL}-JJJJ/MM/NNNNN`**
 
-Beispiel: `2026/03/00001`
+Kürzel: `AG` Angebot, `NA` Nachtragsangebot, `AB` Auftragsbestätigung, `RE` Rechnung, `TR` Teilrechnung, `AR` Abschlagsrechnung, `SR` Schlussrechnung, `GU` Gutschrift, `ST` Stornorechnung.
+
+Beispiel: `RE-2026/03/00001`
 
 ### 7.2 Implementierung
 
-- Separate Counter-Tabelle `ausgangs_geschaeftsdokument_counter` mit Key `YYYY/MM`
+- Separate Counter-Tabelle `ausgangs_geschaeftsdokument_counter` mit Key `JJJJ/MM`
 - Thread-sichere Nummernvergabe durch **pessimistisches Locking** (`findByMonatKeyForUpdate`)
-- Zähler wird pro Monat hochgezählt
-- Innerhalb eines Monats entstehen keine Lücken
+- **Ein gemeinsamer Zähler pro Monat für alle Dokumenttypen** – das Kürzel unterscheidet nur den Typ
+- Die Nummer wird beim Anlegen vergeben und nie wiederverwendet; die Dokumentnummer ist in der Datenbank eindeutig
+
+**Lücken und ihre Erklärung:** Weil alle Typen einen Zähler teilen, sind z. B. Rechnungsnummern allein nicht lückenlos aufeinanderfolgend (dazwischen liegen Angebote, ABs usw.). Wird ein Entwurf gelöscht, fehlt seine Nummer ebenfalls. Jede Nummer lässt sich aber über den Audit-Trail erklären: `dokumente.csv` und `audit.csv` im Z3-Paket enthalten alle Dokumente und alle Löschungen, und `GET /api/ausgangs-dokumente/historie/nummer/{dokumentNummer}` zeigt den Verlauf auch für gelöschte Entwürfe.
 
 ### 7.3 Monatliche Zähler-Einheit
 
-| Monat-Key | Zähler | Nächste Nummer |
+| Monat-Key | Zähler | Nächstes Dokument (z. B. Rechnung) |
 |---|---|---|
-| `2026/01` | 12 | `2026/01/00013` |
-| `2026/02` | 5 | `2026/02/00006` |
-| `2026/03` | 0 | `2026/03/00001` |
+| `2026/01` | 12 | `RE-2026/01/00013` |
+| `2026/02` | 5 | `RE-2026/02/00006` |
+| `2026/03` | 0 | `RE-2026/03/00001` |
 
 ---
 
@@ -335,11 +352,11 @@ Beispiel: `2026/03/00001`
 Jedes `AusgangsGeschaeftsDokument` kann auf einen Vorgänger verweisen (`vorgaenger_id` FK). Dies sichert die lückenlose Dokumentenkette:
 
 ```
-Angebot (2026/01/00001)
-   └→ AB (2026/01/00002) [vorgaenger_id → Angebot]
-       └→ Abschlagsrechnung 1 (2026/02/00001) [vorgaenger_id → AB]
-       └→ Abschlagsrechnung 2 (2026/02/00003) [vorgaenger_id → AB]
-       └→ Schlussrechnung (2026/03/00001) [vorgaenger_id → AB]
+Angebot (AG-2026/01/00001)
+   └→ AB (AB-2026/01/00002) [vorgaenger_id → Angebot]
+       └→ Abschlagsrechnung 1 (AR-2026/02/00001) [vorgaenger_id → AB]
+       └→ Abschlagsrechnung 2 (AR-2026/02/00003) [vorgaenger_id → AB]
+       └→ Schlussrechnung (SR-2026/03/00001) [vorgaenger_id → AB]
 ```
 
 ### 8.2 Storno-Kette
@@ -347,8 +364,8 @@ Angebot (2026/01/00001)
 Bei Stornierung verweist das Storno-Dokument auf das Original:
 
 ```
-Rechnung (2026/02/00001) [storniert = true]
-   └→ STORNO (2026/02/00002) [vorgaenger_id → Rechnung, gebucht = true]
+Rechnung (RE-2026/02/00001) [storniert = true]
+   └→ STORNO (ST-2026/02/00002) [vorgaenger_id → Rechnung, gebucht = true]
 ```
 
 ---
@@ -359,11 +376,13 @@ Rechnung (2026/02/00001) [storniert = true]
 
 | Dokumentart | Frist | Rechtsgrundlage |
 |---|---|---|
-| Rechnungen (Eingang & Ausgang) | **10 Jahre** | § 147 Abs. 1 Nr. 1 AO |
-| Buchungsbelege | **10 Jahre** | § 147 Abs. 1 Nr. 4 AO |
-| Geschäftsbriefe (empfangen & gesendet) | **6 Jahre** | § 147 Abs. 1 Nr. 2 AO |
-| Angebote (angenommene) | **6 Jahre** | § 147 Abs. 1 Nr. 2 AO |
-| Auftragsbestätigungen | **6 Jahre** | § 147 Abs. 1 Nr. 2 AO |
+| Bücher, Aufzeichnungen, Inventare, Jahresabschlüsse | **10 Jahre** | § 147 Abs. 1 Nr. 1, Abs. 3 AO |
+| Buchungsbelege, darunter Rechnungen (Eingang & Ausgang) | **8 Jahre** (seit 01.01.2025, vorher 10 Jahre) | § 147 Abs. 1 Nr. 4, Abs. 3 AO; § 14b UStG |
+| Geschäftsbriefe (empfangen & gesendet) | **6 Jahre** | § 147 Abs. 1 Nr. 2/3 AO |
+| Angebote (angenommene) | **6 Jahre** | § 147 Abs. 1 Nr. 2/3 AO |
+| Auftragsbestätigungen | **6 Jahre** | § 147 Abs. 1 Nr. 2/3 AO |
+
+Die Verkürzung auf 8 Jahre stammt aus dem Vierten Bürokratieentlastungsgesetz. Fristen im Einzelfall mit dem Steuerberater abstimmen.
 
 ### 9.2 Empfehlung
 
@@ -387,25 +406,32 @@ Jeder Eintrag in `ausgangs_geschaeftsdokument_audit` erhält drei zusätzliche F
 | `previous_hash` | CHAR(64) | SHA-256 des unmittelbaren Vorgänger-Eintrags (`NULL` bei erstem Eintrag) |
 | `entry_hash` | CHAR(64) | SHA-256 über alle relevanten Felder **plus** `previous_hash` |
 
-Der **entry_hash** wird über folgende Felder gebildet (kanonische Reihenfolge, `|`-separiert):
+Der **entry_hash** ist `SHA-256(kanonische Form | previous_hash)`. Die kanonische Form (`canonicalForm()`) verbindet die Felder in fester Reihenfolge mit `|` (leere Werte als Leerstring, Zeitstempel ISO-8601):
 
 ```
-chain_index | previous_hash | dokumentId | dokumentNummer | typ | aktion |
-betragNetto | betragBrutto | gebucht | storniert | digitalAngenommen |
-geaendertAm (ISO) | geaendertVon (Id) | inhaltHash
+chain_index | dokumentId | aktion | dokumentNummer | typ | datum | betreff |
+betragNetto | betragBrutto | mwstSatz | abschlagsNummer | projektId | anfrageId |
+kundeId | vorgaengerId | versandDatum | gebucht | gebuchtAm | storniert |
+storniertAm | digitalAngenommen | inhaltHash | geaendertVon (Id) |
+geaendertAm | aenderungsgrund | ipAdresse
 ```
+
+`inhaltHash` ist der SHA-256 des HTML-Inhalts (`htmlInhalt`) zum Zeitpunkt der Aktion. Der Hash wird über die **gespeicherte** Form des Eintrags berechnet, damit er beim Prüfen exakt reproduzierbar ist.
 
 ### 10.3 Atomares Anhängen
 
-Der Kettenkopf liegt in der Singleton-Tabelle `audit_chain_state` (Zeile id=1). Beim Anhängen eines neuen Eintrags wird diese Zeile mit `SELECT … FOR UPDATE` **pessimistisch gelockt**, sodass zwei parallele Aktionen niemals denselben `previous_hash` erhalten.
+Der Kettenkopf liegt in der Singleton-Tabelle `audit_chain_state` (Zeile id=1). Beim Anhängen eines neuen Eintrags wird diese Zeile **pessimistisch gelockt** (`SELECT … FOR UPDATE`), sodass zwei parallele Aktionen niemals denselben `previous_hash` erhalten.
 
-### 10.4 Backfill
+### 10.4 Backfill und Reparatur
 
-Beim ersten Start nach der V255-Migration führt der `AuditChainBackfillRunner` (Spring `ApplicationRunner`) alle bereits vorhandenen Audit-Einträge in chronologischer Reihenfolge in die Kette ein. Bestehende Einträge ohne `chain_index` werden nachträglich verkettet.
+- **Backfill:** Beim Start verkettet der `AuditChainBackfillRunner` (Spring `ApplicationRunner`) alle Audit-Einträge, die noch keinen `chain_index` haben, in chronologischer Reihenfolge. Ist die Kette vollständig, tut er nichts.
+- **Einmalige Reparatur:** Nur mit dem Start-Schalter `audit.chain.rebuild-on-start=true` baut der `AuditChainRebuildRunner` die Kette über die gespeicherten Werte neu auf (gedacht für Altbestände nach einem früheren Hash-Fehler). Vorher den Audit-CSV-Export sichern und den Schalter danach **wieder entfernen** – sonst würde jede Manipulation beim nächsten Start „geheilt“. Einen HTTP-Endpoint dafür gibt es bewusst nicht.
 
 ### 10.5 Selbstverifikation
 
-Der Endpoint `GET /api/ausgangs-dokumente/audit/verify` prüft die gesamte Kette und liefert einen Bericht:
+In der Oberfläche: Vorlagen & Stammdaten → Administration → **Firma** → Reiter **„Steuerprüfung“** → Abschnitt „Hash-Kette verifizieren“ → **„Kette prüfen“**. Ergebnis: „Hash-Kette intakt – … Einträge geprüft“ oder „Hash-Kette gebrochen – Manipulation nachweisbar“.
+
+Technisch prüft der Endpoint `GET /api/ausgangs-dokumente/audit/verify` die gesamte Kette (lückenloser `chain_index` ab 0, `previous_hash`, `entry_hash`) und liefert einen Bericht:
 
 ```json
 {
@@ -417,11 +443,13 @@ Der Endpoint `GET /api/ausgangs-dokumente/audit/verify` prüft die gesamte Kette
 }
 ```
 
-Bei Manipulation enthält `fehler` die erste Bruchstelle mit `chainIndex`, `dokumentNummer` und Beschreibung.
+Bei Manipulation enthält `fehler` die gefundene(n) Bruchstelle(n) mit `auditId`, `chainIndex`, `dokumentNummer`, Fehlerart (`typ`) und Beschreibung.
 
 ### 10.6 GoBD-Z3-Paket (Datenträgerüberlassung)
 
-Der Endpoint `GET /api/ausgangs-dokumente/audit/z3-paket?von=YYYY-MM-DD&bis=YYYY-MM-DD` erzeugt ein ZIP-Paket für die **Datenträgerüberlassung (Z3)** nach GoBD:
+In der Oberfläche: Firma → Reiter **„Steuerprüfung“** → „Audit-Trail für Steuerprüfung“: Zeitraum wählen (Schnellauswahl aktuelles Jahr und die zwei Vorjahre oder Von/Bis), dann **„Z3-Prüfungs-Paket (ZIP)“** oder **„Nur CSV“**. Die Dateien enthalten personenbezogene Daten (Bearbeiter-IDs, IP-Adressen) – nur an autorisierte Prüfer weitergeben.
+
+Der Endpoint `GET /api/ausgangs-dokumente/audit/z3-paket?von=JJJJ-MM-TT&bis=JJJJ-MM-TT` erzeugt ein ZIP-Paket für die **Datenträgerüberlassung (Z3)** nach GoBD:
 
 | Datei im ZIP | Inhalt |
 |---|---|
@@ -430,21 +458,39 @@ Der Endpoint `GET /api/ausgangs-dokumente/audit/z3-paket?von=YYYY-MM-DD&bis=YYYY
 | `INFO.txt` | Erklärung des Formats, Prüfanleitung für Steuerprüfer |
 | `manifest.sha256` | SHA-256-Prüfsummen aller Dateien im Paket |
 
+Weitere Endpunkte: `GET /api/ausgangs-dokumente/audit/export?von=…&bis=…` (nur CSV) und `GET /api/ausgangs-dokumente/audit/anzahl?von=…&bis=…` (Anzahl der Einträge für die Vorschau).
+
+### 10.7 Welche Aktionen protokolliert werden
+
+| Aktion (`AusgangsGeschaeftsDokumentAuditAktion`) | Wann | Für welche Typen |
+|---|---|---|
+| `ERSTELLT` | Anlegen (auch Stornorechnung) | Rechnungstypen, Gutschrift, Storno |
+| `GEBUCHT` | Festschreibung beim Drucken/Export/E-Mail | Rechnungstypen, Gutschrift, Storno |
+| `VERSENDET` | E-Mail-Versand | Rechnungstypen, Gutschrift, Storno |
+| `STORNIERT` | Stornierung des Originals | Rechnungstypen |
+| `GELOESCHT` | Löschen eines Entwurfs (mit Begründung) | alle Typen |
+| `DIGITAL_ANGENOMMEN` | Digitale Annahme durch den Kunden | Angebot, Nachtragsangebot, Auto-Auftragsbestätigung |
+| `GEAENDERT` | Nachträgliche Korrektur mit Begründung (derzeit nur durch den Admin-Wartungslauf `POST /api/admin/projekte/rabatt-betraege-korrigieren`, der Altbeträge mit Pauschalrabatt nachrechnet – auch bei gebuchten Rechnungen) | betroffene Dokumente |
+
+Bearbeitungen von Entwürfen vor der Buchung werden nicht einzeln protokolliert – sie sind noch nicht festgeschrieben. Den Verlauf eines Dokuments zeigt das Aktionsmenü → **„Verlauf anzeigen“** (`GET /api/ausgangs-dokumente/{id}/historie`).
+
 ---
 
 ## 11. Eingangsbelege & Lieferantendokumente
 
 ### 11.1 Erfassung mit Belegfoto-Pflicht
 
-Eingangsbelege (Lieferantenrechnungen, Quittungen, Bons) werden in der Entity `Beleg` geführt. Eine **harte DB-Invariante** stellt sicher, dass jeder Beleg eine Bildkopie hat:
+Belege für Kasse und Buchhaltung (Quittungen, Bons, per Handy gescannte Rechnungen) werden in der Entity `Beleg` geführt. Eine **harte DB-Invariante** (Check-Constraint `chk_beleg_datei_oder_umbuchung`) stellt sicher, dass jeder Beleg eine Bildkopie hat:
 
-- `gespeicherterDateiname` ist **NOT NULL** für alle echten Belege
+- `gespeicherterDateiname` muss für alle echten Belege gesetzt sein
 - Nur reine Umbuchungen (`istUmbuchung = true`) dürfen ohne Bilddatei existieren
 - Original-Dateien werden im konfigurierten Upload-Verzeichnis archiviert
 
+Lieferantenrechnungen, Lieferscheine usw., die per E-Mail oder Upload eingehen, liegen als `LieferantDokument` mit der Originaldatei vor (siehe `DOKUMENTEN_LIFECYCLE.md`, Abschnitt 2). Wird eine Rechnung am Handy gescannt, verweist das Lieferanten-Dokument auf den zugehörigen `Beleg`.
+
 ### 11.2 KI-gestützte Vorerfassung (Status: Vorsortierung, nicht Buchung)
 
-Eingangsbelege durchlaufen einen KI-Analyse-Workflow (`BelegKiAnalyseStatus`), der Vorschläge für Lieferant, Kategorie und Aufteilung auf Kostenstellen liefert. **Wichtige Einordnung im Sinne der GoBD:**
+Belege durchlaufen nach dem Upload einen KI-Analyse-Workflow (`BelegKiAnalyseStatus`: PENDING, LAEUFT, DONE, FAILED), der Vorschläge für Lieferant, Kategorie und Aufteilung auf Kostenstellen liefert. Lieferanten-Dokumente werden ebenso vorausgelesen (ZUGFeRD → XML → KI). **Wichtige Einordnung im Sinne der GoBD:**
 
 - Die KI-Klassifizierung ist eine **Vorsortierung als Komfort-Feature**, keine steuerliche Buchung.
 - Die endgültige Kontierung erfolgt beim Steuerberater in zertifizierter Buchhaltungssoftware.
@@ -452,7 +498,11 @@ Eingangsbelege durchlaufen einen KI-Analyse-Workflow (`BelegKiAnalyseStatus`), d
 
 ### 11.3 Monatsexport für den Steuerberater
 
-Der `BelegeKasseExportPdfService` erzeugt einen Monatsexport aller Eingangsbelege als PDF-Bündel, das an den Steuerberater übergeben wird. Dies entspricht dem Lieferweg „Vorsystem → Buchhaltung" und ist die GoBD-relevante Übergabestelle.
+Der `BelegeKasseExportPdfService` erzeugt das **Monats-Kassenbuch als PDF** (Briefkopf, Festschreibungsstand, fortlaufendes Journal mit laufendem Kassenbestand, Kassenstürze und die Belegbilder – ein Beleg pro Seite mit Nummer und Fingerabdruck der Datei), das an den Steuerberater übergeben wird. Zusammen mit dem DATEV-Export entspricht das dem Lieferweg „Vorsystem → Buchhaltung“ und ist die GoBD-relevante Übergabestelle.
+
+### 11.4 Hash-Kette des Kassenbuchs
+
+Das Kassenbuch hat eine **eigene** Hash-Kette (`BelegAudit`, Kettenkopf `beleg_audit_chain_state`), baugleich zu der der Ausgangsrechnungen, aber bewusst getrennt. Protokolliert werden u. a. Erfassen, Ändern, Prüfen, Verwerfen, Festschreiben, Stornieren, Kassensturz und Monatsabschluss. Details: `KASSE_BUCHHALTUNG.md`.
 
 ---
 
@@ -476,7 +526,7 @@ Dieser Abschnitt dokumentiert offene Punkte transparent, weil GoBD-Compliance nu
 
 ### 12.2 Automatisierte Aufbewahrungsverwaltung
 
-**Aktueller Stand:** Alle Dokumente bleiben dauerhaft erhalten; es gibt keinen Automatismus, der nach Ablauf der 10-Jahres-Frist Belege archiviert oder zur Löschung freigibt. Manuelle Bereinigung nur in Abstimmung mit dem Steuerberater.
+**Aktueller Stand:** Alle Dokumente bleiben dauerhaft erhalten; es gibt keinen Automatismus, der nach Ablauf der Aufbewahrungsfristen Belege archiviert oder zur Löschung freigibt. Manuelle Bereinigung nur in Abstimmung mit dem Steuerberater.
 
 **Bewertung:** Dauerhaftes Aufbewahren ist GoBD-konform und in der Praxis bei einem Datenvolumen, wie es ein Handwerksbetrieb erzeugt, unkritisch. Eine Automatisierung ist daher nicht priorisiert.
 
@@ -493,11 +543,11 @@ Dieser Abschnitt dokumentiert offene Punkte transparent, weil GoBD-Compliance nu
 
 Diese betriebliche Verfahrensdokumentation ist nicht Teil der Software, sondern ein organisatorisches Dokument des Betriebs.
 
-### 12.4 Manuelle Backup-Strategie
+### 12.4 Backup-Strategie
 
-**Aktueller Stand:** Datenbank-Backups und Belegarchiv liegen in der Verantwortung des Betreibers (siehe `INSTALLATION.md`). Das System protokolliert keine Backup-Läufe.
+**Aktueller Stand:** Bei der empfohlenen Docker-Installation beim Kunden sichert der Updater jede Nacht (Standard 2 Uhr) die PostgreSQL-Datenbank und spiegelt das Upload-Verzeichnis auf eine externe Festplatte und/oder in einen Cloud-Ordner (siehe `INSTALLATION.md`). Das Ergebnis jedes Laufs meldet er an das ERP: Admins sehen fehlgeschlagene oder nur teilweise gelungene Sicherungen – und den Fall „seit über einem Tag keine Sicherung“ – unter **Benachrichtigungen** (Thema „Sicherung & Updates“). Bei anderen Installationsarten (eigene Docker-Umgebung, JAR) liegt die Sicherung weiterhin beim Betreiber.
 
-**Empfehlung:** Tägliches Backup der PostgreSQL-Datenbank **und** des Upload-Verzeichnisses an einen externen Ort. Ohne Backup verlieren die hier beschriebenen GoBD-Maßnahmen ihre Schutzwirkung bei Hardware-Defekt.
+**Empfehlung:** Sicherungsziel außer Haus einrichten und die Benachrichtigungen im Blick behalten. Ohne Backup der Datenbank **und** des Upload-Verzeichnisses verlieren die hier beschriebenen GoBD-Maßnahmen ihre Schutzwirkung bei Hardware-Defekt.
 
 ---
 
@@ -505,10 +555,12 @@ Diese betriebliche Verfahrensdokumentation ist nicht Teil der Software, sondern 
 
 | GoBD-Anforderung | Technische Umsetzung | Entity/Service |
 |---|---|---|
-| Unveränderbarkeit | `gebucht`-Flag + `istBearbeitbar()` | `AusgangsGeschaeftsDokument` |
-| Löschverbot | Validierung in `loeschen()` | `AusgangsGeschaeftsDokumentService` |
+| Unveränderbarkeit | `gebucht`-/`digitalAngenommen`-Flag + `istBearbeitbar()` | `AusgangsGeschaeftsDokument` |
+| Löschverbot | Validierung in `loeschen()`, Audit-Eintrag `GELOESCHT` vor jeder Löschung | `AusgangsGeschaeftsDokumentService` |
 | Storno statt Löschung | `stornieren()` erstellt Gegendokument | `AusgangsGeschaeftsDokumentService` |
-| Lückenlose Nummerierung | Counter-Tabelle mit pessimistischem Lock | `AusgangsGeschaeftsDokumentCounter` |
+| Fortlaufende Nummerierung | Gemeinsamer Monatszähler mit pessimistischem Lock, Kürzel je Typ | `AusgangsGeschaeftsDokumentCounter` |
+| Beweis der Kundenannahme | Snapshot + Hash beim Versand und bei der Annahme, Bestätigungscode | `DokumentFreigabe` |
+| Schutz vor gleichzeitigem Überschreiben | Bearbeitungssperre + Versionsnummer (HTTP 409) | `DatensatzLock`, `@Version` |
 | Audit-Trail Zeitbuchungen | Immutable Snapshots pro Version | `ZeitbuchungAudit` |
 | Audit-Trail Korrekturen | Immutable Snapshots pro Version | `ZeitkontoKorrekturAudit` |
 | Nachvollziehbarkeit | `geaendertVon`, `geaendertAm`, `geaendertVia` | Audit-Entities |
@@ -516,5 +568,6 @@ Diese betriebliche Verfahrensdokumentation ist nicht Teil der Software, sondern 
 | Dokumentenkette | `vorgaenger_id` FK + `nachfolger`-Liste | `AusgangsGeschaeftsDokument` |
 | Doppelerfassungsschutz | `idempotencyKey` (UUID) | `Zeitbuchung` |
 | Offene Posten-Tracking | Automatischer Eintrag bei Buchung | `ProjektGeschaeftsdokument` |
-| **Manipulationsschutz Audit** | **SHA-256 Hash-Kette** (entry_hash + previous_hash) | **`AusgangsGeschaeftsDokumentAudit`** |
-| **Maschinenlesbare Prüfung** | **Verify-Endpoint + Z3-ZIP-Export** | **`AuditChainVerifier` / `SteuerpruefungZ3ExportService`** |
+| **Manipulationsschutz Audit** | **SHA-256 Hash-Kette** (entry_hash + previous_hash) | **`AusgangsGeschaeftsDokumentAudit`**, **`BelegAudit`** (Kassenbuch) |
+| **Maschinenlesbare Prüfung** | **Verify-Endpoint + Z3-ZIP-Export** (Firma → Steuerprüfung) | **`AuditChainVerifier` / `SteuerpruefungZ3ExportService`** |
+| Datensicherung | Nächtliche Sicherung mit Statusmeldung (Docker-Installation) | `BetriebsstatusService` |

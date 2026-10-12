@@ -1,73 +1,46 @@
-# React + TypeScript + Vite
+# Handy-App Zeiterfassung (react-zeiterfassung)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Die Web-App für die Mitarbeiter auf dem Handy: stempeln auf Projekt, Kategorie und Arbeitsgang, Tagesbuchungen, Salden, Urlaub und Abwesenheiten, Kalender, Notizen und Fotos zu Projekten und Anfragen, Lieferscheine und Reklamationen bei Lieferanten, Belegscanner und MwSt-Rechner. Im Betrieb liefert Spring Boot sie unter `/zeiterfassung` aus. Angemeldet wird per QR-Code aus der Mitarbeiterverwaltung der Desktop-Oberfläche.
 
-Currently, two official plugins are available:
+Technik: React 19, TypeScript, Vite 7, Tailwind CSS 4 (`@tailwindcss/vite`), React Router 7 (`basename="/zeiterfassung"`), `vite-plugin-pwa` mit eigenem Service Worker (`src/sw.ts`), IndexedDB (`idb`) für Buchungen ohne Netz und Web-Push. Voraussetzung: Node.js 20.19 oder neuer (Vite 7), die CI nutzt Node 24.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Befehle
 
-## React Compiler
+| Befehl | Zweck |
+| --- | --- |
+| `npm ci` | Abhängigkeiten installieren |
+| `npm run dev` | Dev-Server mit Hot Reload, per HTTPS (selbst signiertes Zertifikat) und im lokalen Netz erreichbar |
+| `npm run build` | Typprüfung (`tsc -b`) und Produktions-Build nach `../src/main/resources/static/zeiterfassung/` |
+| `npm run lint` | ESLint |
+| `npm test` | Unit-Tests (Vitest, Testing Library, jsdom) |
+| `npm run test:coverage` | Unit-Tests mit Abdeckungsbericht |
+| `npm run test:e2e` | End-to-End-Tests (Playwright) |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Backend beim Entwickeln
 
-## Expanding the ESLint configuration
+Der Dev-Server leitet `/api` an das Backend weiter. Das Ziel steht in `vite.config.ts` unter `server.proxy` (derzeit `http://localhost:8082`). Das Backend selbst startet lokal mit `./mvnw spring-boot:run` auf Port 8080, siehe [README im Hauptordner](../README.md).
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+HTTPS braucht es, weil Kamera, Mikrofon, Service Worker (Offline-Modus) und Push-Nachrichten im Browser nur in einer sicheren Umgebung laufen. Ein echtes Handy erreicht den Dev-Server über die Netzwerkadresse des Rechners.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Build-Ausgabe
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+`npm run build` leert `src/main/resources/static/zeiterfassung/` im Hauptordner und baut neu. Diese Dateien sind eingecheckt: Nach Änderungen bauen und den Build mitcommitten. Das Docker-Image baut beide Oberflächen beim Bauen selbst neu.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+OpenCV.js und jscanify für die Ecken-Erkennung im Belegscanner liegen in `public/scanner/` und kommen bewusst mit in den Offline-Speicher der App (rund 9 MB beim ersten Laden), damit der Scanner auch bei schlechtem Netz sofort bereit ist.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Aufbau
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Ordner | Inhalt |
+| --- | --- |
+| `src/pages/` | Seiten, die Routen stehen in `src/App.tsx` |
+| `src/components/` | Bausteine, z. B. Kamera, Scanner, Spracheingabe, Sync-Anzeige; Grundbausteine in `src/components/ui/` |
+| `src/services/` | Offline-Speicher und Abgleich (`OfflineService`), Benachrichtigungen, Kamera, Spracheingabe, Ecken-Erkennung |
+| `src/auth/` | Übertragung des Mitarbeiter-Tokens an die API (`mobileTransport.ts`) |
+| `src/sw.ts` | Service Worker (Offline, Push) |
+| `e2e/` | Playwright-Tests |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Die Sicherheitsregeln für den Mitarbeiter-Token stehen in [`docs/MOBILE_TOKEN_SECURITY.md`](../docs/MOBILE_TOKEN_SECURITY.md), die Abläufe in [`docs/ZEITERFASSUNG_WORKFLOWS.md`](../docs/ZEITERFASSUNG_WORKFLOWS.md). Texte in der App sind deutsch und in einfacher Handwerker-Sprache.
+
+## End-to-End-Tests
+
+`npm run test:e2e` startet den Vite-Dev-Server per HTTPS auf `127.0.0.1` (Port `E2E_PORT`, Standard 5175) und testet im Handy-Format (iPhone 15, Chromium).

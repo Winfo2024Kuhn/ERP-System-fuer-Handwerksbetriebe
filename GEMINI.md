@@ -6,7 +6,7 @@
 
 Das ist die zentrale Wissensbasis der Codebase (AST-Graph mit 32+ MB Daten, Symbolen, Abhängigkeiten und Komponenten):
 
-**Aufruf:** graphify ist projektlokal in `.graphify-venv/` installiert. Nutze den versionierten Wrapper (funktioniert auch in Git-Worktrees):
+**Aufruf:** graphify ist projektlokal im gitignorten `.graphify-venv/` des Haupt-Checkouts installiert. Nutze den versionierten Wrapper (funktioniert auch in Git-Worktrees und nutzt dort das venv des Haupt-Checkouts):
 `scripts/graphify …` (Bash/Zsh auf macOS/Linux) bzw. `scripts\graphify.cmd …` (PowerShell auf Windows).
 
 | Frage-Typ | Befehl |
@@ -15,17 +15,19 @@ Das ist die zentrale Wissensbasis der Codebase (AST-Graph mit 32+ MB Daten, Symb
 | "Wie hängen A und B zusammen?" | `scripts/graphify path "A" "B"` |
 | "Was ist Konzept Y?" | `scripts/graphify explain "Y"` |
 | "Was bricht, wenn ich X ändere?" | `scripts/graphify affected "X"` |
-| Breiter Architektur-Überblick / sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
+| Breiter Architektur-Überblick / sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen (ein `graphify-out/wiki/` wird derzeit nicht erzeugt) |
 
 Hängt graphify selbst einen `## graphify`-Block an (blankes `graphify`, Update nach jeder Änderung, `wiki/index.md`), gilt er nicht – wieder entfernen.
 
-**Ausnahmen (Grep/Read direkt erlaubt):**
-- Du kennst den exakten Dateipfad → Datei direkt öffnen/lesen.
-- Du suchst nach einem konkreten String-Literal (z.B. Property-Keys, Textbausteine), das der Graph nicht als AST-Symbol führt.
-- graphify hat die Frage bereits beantwortet und du benötigst nur die Zeilennummer.
+**Grep/Read direkt ist meist besser, wenn:**
+- du den exakten Dateipfad kennst → Datei direkt öffnen/lesen.
+- du einen Klassen-, Methoden- oder Begriffsnamen suchst (die deutschen Namen im Code sind sehr treffsicher).
+- du nach einem konkreten String-Literal suchst (z.B. Property-Keys, Textbausteine), das der Graph nicht als AST-Symbol führt.
+- graphify die Frage bereits beantwortet hat und du nur die Zeilennummer brauchst.
 
 **Nach Code-Änderungen:**
-- `scripts/graphify update .` einmalig am Ende der Aufgabe ausführen (AST-only, schnell, hält den Graphen synchron).
+- `scripts/graphify update .` höchstens einmal am Ende der Aufgabe ausführen, nie nach jedem Edit: AST-only (keine API-Kosten), schreibt aber jedes Mal den ganzen Graphen (`graphify-out/graph.json`, über 40 MB) neu.
+- In Git-Worktrees darf `update` laufen, `graphify-out/` dort aber **nicht committen** (große Datei, kollidiert mit parallelen Sitzungen). Vor einem Rebase `git checkout -- graphify-out`.
 
 ---
 
@@ -76,7 +78,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 - **Constructor Injection:** `@RequiredArgsConstructor` oder expliziter Konstruktor. Keine Field Injection mit `@Autowired`.
 - **SQL:** Ausschließlich parametrisierte Queries (`@Query` mit `:param`), niemals String-Konkatenation.
 - **Datenbank:** Nur PostgreSQL 16 (H2 nur im Speicher in den Unit-Tests). Kein MySQL/MariaDB mehr.
-- **Flyway:** Eine neue Migration ist eine Datei unter `src/main/resources/db/postgresql/migration/V{N}__{beschreibung}.sql` (N = höchste vorhandene + 1, idempotent). Bestehende Migrationen NIEMALS ändern! In `db/migration/` nichts mehr ablegen (`FlywayMigrationenTest` bricht sonst den Build).
+- **Flyway:** Eine neue Migration ist eine Datei unter `src/main/resources/db/postgresql/migration/V{N}__{beschreibung}.sql` (N = höchste vorhandene + 1, idempotent). Bestehende Migrationen NIEMALS ändern! Neue Migration in `FlywayMigrationenTest.CHECKSUMMEN` eintragen (der Test schlägt fehl und nennt die Zeile). In `db/migration/` nichts mehr ablegen (`FlywayMigrationenTest` bricht sonst den Build). Details: `src/main/resources/db/postgresql/migration/README.md`.
 - **Java-Enums = `VARCHAR(n)`-Spalte ohne `CHECK` mit Werteliste:** `@Enumerated(EnumType.STRING)` liegt in PostgreSQL als `VARCHAR`; neue Enum-Werte sollen keine Migration brauchen. Werte exakt wie die Java-Konstanten (UPPERCASE).
 - **DTOs:** Entities niemals direkt über Controller exponieren. Immer DTOs verwenden.
 
@@ -99,6 +101,12 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 - Niemals fehlschlagende Tests oder Linter-Fehler überspringen, ignorieren, auskommentieren oder ungelöst lassen. Vor jedem Commit, Push oder PR muss alles vollständig grün sein.
 - **Review & Ship Pflicht:** Am Ende jeder Aufgabe immer `/review-and-ship` ausführen.
 
+### 🔒 `main` nur über Pull Requests (dauerhafte Nutzervorgabe vom 11.10.2026)
+- **`main` ist Produktion:** Jeder Merge auf `main` wird nach dem Starttest als `:stable` veröffentlicht und läuft nach dem Nachtupdate (03:00) auf dem eigenen Server und bei den Kunden. Getestet wird **nur im PR** – auf `main` läuft „PR Quality Checks“ nicht noch einmal. Das Ruleset verlangt PR-Pflicht, den Check „PR Quality Gate“ und „Branch muss vor dem Merge aktuell sein“; zusätzlich prüft `docker-image.yml` vor dem Bauen, dass genau dieser Stand im PR grün war – sonst gibt es kein Image.
+- **Nie direkt auf `main` pushen** – ein Ruleset lehnt es ab. Immer: eigener Branch von `origin/main` → Pull Request (vor dem finalen 🟢 des Reviewers **als Entwurf**, `gh pr create --draft`) → bei 🟢 `gh pr ready <nr>`; mergen übernimmt die PR-Automatik. Pflicht-Check ist „PR Quality Gate“ (alle Tests aus `pr-ci.yml`).
+- Kein Bypass, kein `--admin`. Scheitert ein Check nur zufällig, den Lauf wiederholen (`gh run rerun <id> --failed`), nicht umgehen.
+- **PR-Automatik:** `.github/workflows/pr-automatik.yml` mergt jeden PR dieses Kontos (nie Forks, nie Drafts), sobald „PR Quality Gate“ grün und der Branch aktuell ist, und bringt danach die übrigen PRs selbst auf den Stand von `main` (inkl. neuem Testlauf). Anhalten: Label `kein-automerge` am PR.
+
 ---
 
 ## 🚀 Build & Run (Quickstart)
@@ -120,9 +128,11 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   cd react-zeiterfassung
   npm run dev
   npm run build
+  npm run lint
   npm test
   npm run test:e2e  # Playwright E2E-Tests
   ```
+- **Build-Ausgabe ist eingecheckt:** `npm run build` schreibt nach `src/main/resources/static/` (Zeiterfassung nach `static/zeiterfassung/`). Nach Frontend-Änderungen bauen und diese Dateien mitcommitten.
 
 ---
 
@@ -141,5 +151,5 @@ Am Ende jeder Aufgabe:
    - Nur Dateien stagen, die für diese Aufgabe geändert wurden (keine Fremdänderungen).
    - `git diff --staged` auf versehentlich committete Secrets oder Logs prüfen.
 5. Graphify synchronisieren:
-   - `scripts/graphify update .`
+   - `scripts/graphify update .` (in Worktrees `graphify-out/` nicht mitcommitten)
 

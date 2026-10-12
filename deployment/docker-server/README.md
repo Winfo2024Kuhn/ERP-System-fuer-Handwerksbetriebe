@@ -1,19 +1,21 @@
 # ERP Handwerk beim Kunden: einrichten mit Docker, automatische Updates nachts
 
-Ein Ordner, ein Befehl: Datenbank, ERP und ein kleiner **Updater** laufen als
-Docker-Container. Sie starten nach jedem Neustart des Rechners von selbst. Neue
-Versionen holt sich der Rechner nachts um 3 Uhr selbst ab (Pull-Prinzip).
-GitHub braucht also keinen Zugang ins Firmennetz: keine offenen Ports, kein VPN.
+Ein Ordner, ein Befehl: Datenbank, ERP, ein kleiner **Updater** und die **Netzsperre** laufen
+als Docker-Container. Sie starten nach jedem Neustart des Rechners von selbst. Jede Nacht um
+2 Uhr sichert der Updater Datenbank und hochgeladene Dateien, um 3 Uhr holt er neue Versionen
+selbst ab (Pull-Prinzip). GitHub braucht also keinen Zugang ins Firmennetz: keine offenen
+Ports, kein VPN.
 
 ```
- Pull Request ──► GitHub Actions                       Rechner beim Kunden (Windows-PC oder Linux-Server)
-  ─► Merge auf    1. Tests im PR (PR Quality Checks),   ┌─ postgres ─ Datenbank (PostgreSQL 16)
-     main            beim Bauen nachgeprueft            │
-                  2. Docker-Image (Backend + beide      ├─ app ───── ERP (Backend + PC-Oberflaeche + Zeiterfassung)
-                     Frontends in EINEM Image)          └─ updater ─ 03:00: neues Image holen ◄─────┐
-                  3. Starttest: Kundenstand + neue          sichern, wechseln, Health-Check,     │
-                     Migrationen auf PostgreSQL             bei Fehler Rollback + Handy-Nachricht│
-                  4. nur wenn gruen: ghcr.io :stable ───────────────────────────────────────────┘
+ Pull Request ──► GitHub Actions                        Rechner beim Kunden (Windows-PC oder Linux-Server)
+  ─► Merge auf    1. Tests im PR (PR Quality Checks),   ┌─ postgres ─── Datenbank (PostgreSQL 16)
+     main            beim Bauen nachgeprueft            ├─ app ──────── ERP (Backend + PC-Oberflaeche + Zeiterfassung)
+                  2. Docker-Image (Backend + beide      ├─ netzsperre ─ haelt das ERP aus dem Firmennetz heraus
+                     Frontends in EINEM Image)          └─ updater ──── 02:00: Sicherung (Rechner, Platte, Cloud)
+                  3. Starttest: Kundenstand + neue                      03:00: neues Image holen ◄─────────────┐
+                     Migrationen auf PostgreSQL                         sichern, wechseln, Health-Check,       │
+                  4. nur wenn gruen: ghcr.io :stable ──┐                bei Fehler Rollback + Nachricht        │
+                                                       └───────────────────────────────────────────────────────┘
 ```
 
 **Backend und Frontend kommen immer zusammen.** Das Image enthält das Spring-Boot-Backend
@@ -45,7 +47,9 @@ angelegt von `postgres-init/01-app-rolle.sh` beim ersten Start). Der Superuser `
   ERP kennt nur noch PostgreSQL. Die Einrichtung bricht deshalb ab, das Nachtupdate
   verändert nichts und meldet sich per Nachricht. Die Daten müssen erst nach PostgreSQL umziehen, wie beim
   eigenen Server am 10.10.2026. Danach die Zeile löschen. Dasselbe gilt für eine `.env`
-  mit `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD` … aus einer sehr frühen Einrichtung.
+  mit `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD` … aus einer sehr frühen Einrichtung. Dort
+  fehlen `DB_ROOT_PASSWORD` und `DB_PASSWORD`, und Docker Compose bricht mit „… fehlt in .env“
+  ab.
 - **Alter Container `erp-mysql`:** Mit dieser `docker-compose.yml` startet er nicht mehr.
   Docker nennt ihn dann „orphan“ (verwaist). Seine Daten im Volume
   `erp-handwerk_mysql_data` bleiben liegen, bis man sie bewusst löscht
@@ -59,8 +63,8 @@ angelegt von `postgres-init/01-app-rolle.sh` beim ersten Start). Der Superuser `
    - Es prüft Docker Desktop und bietet die Installation an, falls es fehlt.
    - Docker Desktop startet ab jetzt beim Anmelden automatisch.
    - Der PC geht am Netzstrom nicht mehr in Standby oder Ruhezustand.
-   - Der Ordner wird nur für Administratoren und den aktuellen Benutzer freigegeben. Darin
-     liegen Passwörter (`.env`) und Sicherungen mit allen Kundendaten.
+   - Der Ordner wird nur für Administratoren, das Systemkonto und den aktuellen Benutzer
+     freigegeben. Darin liegen Passwörter (`.env`) und Sicherungen mit allen Kundendaten.
    - Es legt die `.env` mit zufälligen Passwörtern an und fragt nach dem Namen des Betriebs.
    - Es startet alles, wartet, bis das ERP läuft, und legt die Verknüpfung „ERP Handwerk“ auf den Desktop.
 3. Im Browser öffnet sich das ERP. **Wer sich als Erster registriert, wird Admin.** Das
@@ -89,8 +93,11 @@ sudo mkdir -p /opt/erp && sudo cp -r deployment/docker-server/. /opt/erp/ && cd 
 sudo KUNDE_NAME="Schreinerei Muster" ./einrichten.sh
 ```
 
-Das Skript lässt Docker beim Systemstart mitstarten, legt die `.env` mit zufälligen
-Passwörtern an und startet alles. Danach genügt jederzeit `docker compose up -d`.
+Voraussetzung sind Docker mit dem Compose-Plugin (`docker compose`) und `curl`. Das Skript
+lässt Docker beim Systemstart mitstarten, legt die `.env` mit zufälligen Passwörtern an und
+startet alles. Einen Cronjob `/etc/cron.d/erp-nachtupdate` aus einer früheren Einrichtung
+entfernt es, denn das Nachtupdate läuft jetzt im Updater. Danach genügt jederzeit
+`docker compose up -d`.
 
 ### Umzug von einem bestehenden Server
 
@@ -121,6 +128,24 @@ echo <TOKEN> | docker login ghcr.io -u <github-benutzer> --password-stdin
 
 Für ein Open-Source-ERP ist es einfacher, das Paket öffentlich zu stellen
 (GitHub → Packages → Package settings → Change visibility).
+
+### Die `.env` im Überblick
+
+Jede Einstellung ist in `.env.example` erklärt. Wann eine Änderung wirkt, hängt davon ab, wer
+sie liest:
+
+| Einstellungen | Wirkt nach |
+| --- | --- |
+| `APP_PORT`, `APP_ADRESSE`, `LOKALER_PROXY`, `ZEITERFASSUNG_URL` (Adresse in den QR-Codes), `FREIGABE_PUBLIC_BASE_URL` (Link zur digitalen Annahme von Angeboten), `APP_ADMIN_USER`/`APP_ADMIN_PASS` | `docker compose up -d app` |
+| `UPLOADS_ORDNER` | `docker compose up -d` (App und Updater) |
+| `NETZSPERRE`, `NETZSPERRE_AUSNAHMEN` | `docker compose up -d netzsperre` |
+| `UPDATE_ZEITPLAN`, `SICHERUNG_ZEITPLAN`, `SICHERUNG_PLATTE`, `SICHERUNG_CLOUD` | `docker compose up -d updater` |
+| `KUNDE_NAME`, `SICHERUNG_TAGE`, `HEALTH_WARTEZEIT_SEKUNDEN`, `SICHERUNGEN_BEHALTEN`, `WEBHOOK_…` | dem nächsten Lauf von Sicherung bzw. Nachtupdate, ohne Neustart |
+| `ERP_IMAGE` | siehe [Alltag](#alltag), Zeile „Bestimmte Version festhalten“ |
+| `DB_USER`, `DB_PASSWORD`, `DB_ROOT_PASSWORD` | nur beim allerersten Start (Anlegen der Datenbank). **Später nicht ändern:** Die Datenbank behält Benutzer und Passwörter, ein geändertes `DB_USER` oder `DB_PASSWORD` sperrt das ERP aus. |
+
+Werte ohne Anführungszeichen und ohne Leerzeichen um das `=` schreiben, Kommentare immer in
+eine eigene Zeile.
 
 ### Weitere Einstellungen: `app.env`
 
@@ -185,7 +210,7 @@ Findet jemand eine Lücke im ERP, soll er weder an den Rechner noch an das Firme
 | --- | --- | --- |
 | Eigener Benutzer `erp` (uid 10001) | `Dockerfile`, `deployment/docker-image/app-start.sh` | Java läuft nie als root. Das Startskript gibt nur noch alte Upload-/Log-Ordner an `erp` und wechselt dann den Benutzer. Dabei verliert der Prozess alle Berechtigungen. |
 | Schreibgeschütztes Dateisystem | `read_only: true` | Das ERP kann weder sich selbst noch das System im Container verändern. Beschreibbar: Uploads, Logs, `/tmp`. |
-| Keine Linux-Berechtigungen | `cap_drop: [ALL]`, `no-new-privileges` | Kein Zugriff auf Kernel-Funktionen, kein Weg zurück zu root. |
+| Keine Linux-Berechtigungen | `cap_drop: [ALL]`, `no-new-privileges` | Kein Zugriff auf Kernel-Funktionen, kein Weg zurück zu root. Nur das Startskript bekommt kurz `CHOWN`, `SETUID`, `SETGID`, die mit dem Benutzerwechsel wegfallen. |
 | Kein Docker-Socket für die App | `docker-compose.yml` | Den Socket hat nur der Updater. Er hat keinen Port und führt nur `nachtupdate.sh` und `sicherung.sh` aus. Die App liest deren Ergebnis nur (Volume `betriebsstatus`, schreibgeschützt eingebunden). |
 | Datenbank ohne Netz nach außen | Netz `intern` (`internal: true`) | PostgreSQL erreicht nur die App, keinen Port und kein Internet. |
 | Netzsperre | Dienst `netzsperre` | Die App darf ins Internet (Mail, KI, Website), aber nicht ins Firmennetz: keine PCs, keine Buchhaltung, keine Dateifreigaben, auch nicht der Rechner selbst. Ausnahmen in `NETZSPERRE_AUSNAHMEN`, Standard `fritz.box:49000` (Anrufliste und Anrufbeantworter). |
@@ -194,7 +219,9 @@ Findet jemand eine Lücke im ERP, soll er weder an den Rechner noch an das Firme
 Die Netzsperre setzt Regeln in Dockers eigene Firewall-Kette `DOCKER-USER`, nur für die
 Bridge `erp-extern`. Das geht auf Linux-Servern und in der Docker-Desktop-VM unter Windows
 gleich. Docker löscht die Regeln bei jedem Neustart, deshalb läuft der Dienst dauerhaft, setzt
-sie beim Start und prüft sie jede Minute. Beim Stoppen entfernt er sie. Prüfen:
+sie beim Start und prüft sie jede Minute (Namen in den Ausnahmen werden dabei neu aufgelöst,
+Ausnahmen gelten nur für TCP). Gesperrt sind private Netze, Link-Local, der Adressbereich von
+Tailscale und Multicast. Beim Stoppen entfernt er die Regeln. Prüfen:
 `docker compose logs netzsperre` (dort steht „Sperre aktiv“ mit den erlaubten Zielen).
 Ausschalten (nicht empfohlen): `NETZSPERRE=nein` in der `.env`, dann
 `docker compose up -d netzsperre`.
@@ -217,6 +244,10 @@ Jede Nacht um 2 Uhr (`SICHERUNG_ZEITPLAN`) sichert der Updater mit `sicherung.sh
 | dieselbe Datenbank-Sicherung | `<ziel>/db/kalkulationsprogramm_db_<zeit>.sql.gz` auf der externen Festplatte und im Cloud-Ordner |
 | Hochgeladene Dateien | `<ziel>/uploads/` – nur Neues und Geändertes wird kopiert, **gelöscht wird dort nie etwas** (auch nicht, was im ERP gelöscht wurde) |
 
+Läuft gerade ein Nachtupdate, wartet die Sicherung (höchstens zwei Stunden), denn es stoppt die
+App und spielt bei einem Rollback die Datenbank zurück. Sind auf diesem Rechner weniger als
+1 GB frei, bricht sie mit einer Meldung ab.
+
 Sicherungen, die älter als `SICHERUNG_TAGE` (Standard 30) sind, werden gelöscht – hier und in
 den Zielen. Im Hauptordner eines Ziels betrifft das auch alte `kalkulationsprogramm_db_*.sql.gz`
 der früheren Windows-Sicherung. Eine Kopie auf demselben Rechner schützt nicht vor einem
@@ -238,6 +269,8 @@ SICHERUNG_PLATTE=/run/desktop/mnt/host/f/Kalkulationsprogramm-Backup
 SICHERUNG_CLOUD=/run/desktop/mnt/host/c/Users/<name>/OneDrive/backup_handwerkerprogramm
 ```
 
+Unter Linux einfach den Pfad, z. B. `/media/sicherung/erp` oder ein eingebundenes Netzlaufwerk.
+
 Danach – **mit angeschlossener Festplatte**:
 
 ```bash
@@ -258,8 +291,9 @@ Meldung „… ist eingetragen, aber noch nicht eingebunden“ – gesichert wir
 
 **Zurückspielen:** Die gewünschte `.sql.gz` in den ERP-Ordner legen und
 `docker compose exec updater bash /erp/nachtupdate.sh --importieren <datei>` (siehe
-[Umzug](#umzug-von-einem-bestehenden-server)). Hochgeladene Dateien einfach aus `<ziel>/uploads/`
-zurückkopieren.
+[Umzug](#umzug-von-einem-bestehenden-server)). Eine Sicherung aus `sicherungen/` geht direkt:
+`--importieren sicherungen/taeglich-<zeit>.sql.gz`. Hochgeladene Dateien einfach aus
+`<ziel>/uploads/` zurückkopieren.
 
 ## Meldungen im ERP
 
@@ -295,6 +329,12 @@ Scheitert das Einspielen, bleibt sie, wie sie war.
   jemand buchen, und der Rollback würde diese Buchung verschlucken.
 - **Gescheiterte Versionen** werden nicht jede Nacht neu versucht, sondern erst, wenn
   eine neuere kommt.
+- **KI-Hilfe:** Ihr Wissen über das Programm (die RAG-Datei aus Doku und Quellcode) steckt
+  im Image unter `/app/ki-hilfe/`. Mit jeder neuen Version kommt das passende Wissen mit,
+  beim Rollback das alte. Log und Erfolgsmeldung nennen, wie viele Abschnitte die KI-Hilfe
+  jetzt kennt. Beim Kunden ist dafür nichts einzurichten; die Fragen stellt das ERP mit dem
+  Gemini-Schlüssel aus *System-Einstellungen → KI-Funktionen*. Abschalten:
+  `AI_RAG_ENABLED='false'` in der `app.env`. Details: [RAG_INDEXING.md](../../RAG_INDEXING.md).
 - **Stromausfall oder Neustart mitten im Update:** Der Updater bringt einen
   unterbrochenen Rollback beim nächsten Start selbst zu Ende und meldet sich.
 - **NOTFALL:** Scheitert auch der Rollback, oder läuft das ERP nach einer Unterbrechung
@@ -342,20 +382,23 @@ WEBHOOK_MIT_FEHLERAUSZUG=nein
 | Andere Update-Zeit | in `.env`: `UPDATE_ZEITPLAN=30 3 * * *`, dann `docker compose up -d updater` |
 | Sicherung sofort ausführen | `docker compose exec updater bash /erp/sicherung.sh` |
 | Andere Sicherungszeit | in `.env`: `SICHERUNG_ZEITPLAN=30 1 * * *`, dann `docker compose up -d updater` |
-| Logs von Nachtupdate und Sicherung | Ordner `logs/` (`nachtupdate-*.log`, `sicherung-*.log`) |
+| Logs von Nachtupdate und Sicherung | Ordner `logs/` (`nachtupdate-*.log`, `sicherung-*.log`, nach einem Rollback `gescheitert-*-app.log`) |
 | App-Log live | `docker compose logs -f app` |
 | Updater selbst erneuern (selten) | `docker compose build --pull updater && docker compose up -d updater` |
 
 `sicherungen/` hält außer den täglichen Sicherungen die letzten 14 Sicherungen von vor den
 Updates (`SICHERUNGEN_BEHALTEN`). Die sind nur für den Rollback da und kein Ersatz für die
-[tägliche Sicherung](#tägliche-sicherung) außer Haus.
+[tägliche Sicherung](#tägliche-sicherung) außer Haus. Sicherungen von vor einem Import
+(`vor-import-…`) bleiben liegen, bis man sie selbst löscht. Logs, die älter als 90 Tage sind,
+räumt das Nachtupdate weg.
 
 **Die Dateien in diesem Ordner** (Skripte, `docker-compose.yml`) aktualisiert das
 Nachtupdate nicht, sondern nur das ERP selbst. Änderungen daran müssen einmal von Hand
 auf die Rechner der Kunden kopiert werden. `.env`, `app.env`, `sicherungen/`, `logs/` und
 `.status/` dabei nicht überschreiben. Danach
-`docker compose build updater && docker compose up -d` – das baut den Updater neu, wenn sich
-`updater/Dockerfile` geändert hat, und bindet geänderte Ordner ein.
+`docker compose build updater netzsperre && docker compose up -d` – das baut den Updater neu,
+wenn sich `updater/Dockerfile` geändert hat, und die Netzsperre, deren Skript `sperre.sh` im
+Image steckt. Außerdem bindet es geänderte Ordner ein.
 
 ## Offene Punkte
 
@@ -392,16 +435,29 @@ der laufenden Installationen gültig bleibt.
 ## Der Starttest in GitHub
 
 `.github/workflows/docker-image.yml` läuft nach jedem Push auf `main` (also nach jedem
-Merge eines PR – getestet wurde vorher im PR, siehe `pr-ci.yml`). Es
-veröffentlicht nur, wenn `starttest.sh` grün ist. Dabei richtet das aktuelle `:stable`
+Merge eines PR – getestet wurde vorher im PR, siehe `pr-ci.yml`). Zuerst prüft es, dass
+genau dieser Stand aus einem gemergten PR mit grünem „PR Quality Gate“ stammt; sonst gibt es
+kein Image. Es veröffentlicht nur, wenn `starttest.sh` grün ist. Dabei richtet das aktuelle `:stable`
 (also der Kundenstand) eine leere Datenbank ein, darauf startet die neue Version, und
 `/actuator/health` muss 200 liefern. Neue Migrationen laufen dabei einmal echt durch,
 auch solche mit kleinerer Nummer (out-of-order). Die Testdatenbank ist ein frisches
-PostgreSQL 16, eingerichtet wie beim Kunden. Lokal geht es genauso:
+PostgreSQL 16, eingerichtet wie beim Kunden (App-Rolle ohne Superuser-Rechte), und die App
+läuft so abgeschottet wie dort (schreibgeschützt, ohne Linux-Berechtigungen).
+
+Vor dem Starttest bekommt das Image die RAG-Datei der KI-Hilfe: Vorlage ist die Datei aus
+dem aktuellen `:stable`, eingebettet wird nur, was sich seitdem an Doku und Quellcode geändert
+hat (Secret `GEMINI_API_KEY`, Zeitlimit 12 Minuten). Scheitert das, bekommt das Image den
+bisherigen Stand – ein Release hängt nie an der KI-Hilfe. Details: [RAG_INDEXING.md](../../RAG_INDEXING.md).
+
+Veröffentlicht wird immer `:sha-<commit>` (7 Zeichen) und `:stable` nur, wenn der Commit noch
+der Stand von `main` ist. So rollt ein erneut gestarteter alter Lauf keine ältere Version aus.
+Lokal geht es genauso:
 
 ```bash
 deployment/docker-server/starttest.sh <neues-image> [<image-der-kunden>]
 ```
+
+Ohne zweites Image prüft der Test nur eine Neuinstallation mit dem neuen Image.
 
 Grenze: Die Testdatenbank enthält nur Stammdaten. Migrationen, die nur an echten Daten
 scheitern (z. B. Dubletten bei einem neuen UNIQUE), fängt erst das Nachtupdate ab,

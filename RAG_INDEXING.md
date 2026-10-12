@@ -1,286 +1,250 @@
-# RAG-Indexierung manuell (ohne Server)
+# Wissen der KI-Hilfe (RAG-Datei)
 
-Dieses Projekt enthält zwei Wege, um die RAG-Indizierung durchzuführen:
+Die KI-Hilfe (Knopf „KI-Hilfe“ in der oberen Menüleiste, Chatfenster unten rechts)
+beantwortet Fragen zur Bedienung nur dann richtig, wenn sie das Programm kennt: Doku, Seiten, Knöpfe, Abläufe. Dieses
+Wissen steckt in der **RAG-Datei** – Doku und Quellcode, zerlegt in Abschnitte, jeder
+mit einem Embedding-Vektor von Gemini. Bei jeder Frage sucht das ERP die passendsten
+Abschnitte heraus und gibt sie der KI mit (Retrieval-Augmented Generation).
 
-## 1. **StandaloneRagIndexer** (Empfohlen für schnelle CLI-Läufe)
+Stand: Oktober 2026
 
-### Standalone Jar kompilieren
+---
+
+## Kurz: Wer erzeugt die RAG-Datei wann?
+
+| Wo | Wer | Wann | Gemini-Schlüssel |
+| --- | --- | --- | --- |
+| **Kundenserver (Docker)** | GitHub beim Image-Bau | nach jedem Merge auf `main` | Repo-Secret `GEMINI_API_KEY` |
+| **Entwicklung** | das ERP selbst beim Start | bei jedem Start, nur Geändertes | aus Einstellungen → KI-Funktionen |
+| **Von Hand** | `rag-index.sh` / `rag-index.cmd` | wenn du willst | Umgebungsvariable `GEMINI_API_KEY` |
+
+Alle drei Wege nutzen dieselbe Klasse (`service/kihilfe/RagIndexer`). Ein Abschnitt,
+dessen Inhalt sich nicht geändert hat, wird nie neu eingebettet.
+
+---
+
+## Kundenserver: die RAG-Datei kommt mit dem Nachtupdate
+
+Im Docker-Image liegt kein Quellcode. Die fertige RAG-Datei liegt dort unter
+`/app/ki-hilfe/rag-cache.json` (`ai.rag.datei` in `application-docker.properties`).
+
+1. **Image-Bau** (`.github/workflows/docker-image.yml`, Schritt „KI-Hilfe – RAG-Datei
+   aktualisieren“): Die RAG-Datei des aktuellen `:stable` dient als Vorlage. Der
+   `StandaloneRagIndexer` läuft im gerade gebauten Image, zerlegt Doku und Quellcode
+   dieses Stands und bettet nur neue oder geänderte Abschnitte ein.
+2. **Image fertigstellen:** Die Datei kommt über den Build-Kontext `ki-hilfe` ins Image
+   (`Dockerfile`, Stufe `ki-hilfe`). Das Label `de.erp-handwerk.ki-hilfe.abschnitte`
+   hält die Anzahl der Abschnitte fest. Danach läuft der Starttest mit genau diesem Image.
+3. **Nachtupdate** (`deployment/docker-server/nachtupdate.sh`): holt das neue Image – und
+   damit die passende RAG-Datei. Bei einem Rollback kommt mit der alten Version auch das
+   alte Wissen zurück. In Log und Erfolgsmeldung steht „KI-Hilfe kennt … Abschnitte“.
+4. **Start der App:** `LocalRagService` lädt die Datei im Hintergrund. Der Server bettet
+   selbst nichts ein, nur die Fragen der Nutzer – mit dem Gemini-Schlüssel des Betriebs
+   (Einstellungen → KI-Funktionen). Klappt das nicht gleich, gibt es genau einen zweiten
+   Versuch nach einer Sekunde; danach antwortet die KI-Hilfe ohne die Suche, statt den
+   Nutzer warten zu lassen.
+
+Das ERP liest die Datei nur. Sie gehört `root`, das Dateisystem des Containers ist
+schreibgeschützt.
+
+### Sicherheitsnetze
+
+- **Secret `GEMINI_API_KEY` fehlt:** Das Image bekommt die RAG-Datei des letzten `:stable`
+  unverändert (Warnung im Workflow). Gibt es auch die nicht, antwortet die KI-Hilfe ohne
+  Programmwissen.
+- **Gemini überlastet oder Fehler:** Der Indexer hört nach 12 Minuten auf, neue Stapel zu
+  beginnen; ein laufender Stapel darf mit Wiederholungen noch etwas brauchen, der ganze
+  Schritt höchstens 26 Minuten. Was dann fehlt, folgt beim nächsten Image.
+- **Ein Release hängt nie an der KI-Hilfe:** Der Schritt „einbetten“ darf scheitern
+  (`continue-on-error`), ebenso der zweite Bau mit der Datei – dann geht das Image mit der
+  Vorlage aus `:stable` bzw. ohne RAG-Datei raus. Ist `:stable` wegen eines Netzfehlers
+  nicht ladbar, wird nichts eingebettet (ohne Vorlage käme sonst nur Teilwissen heraus).
+- **Halbe Dateien:** Geschrieben wird erst nach `….neu`, dann umbenannt; übrig gebliebene
+  `.neu`-Dateien löscht der Workflow vor dem Bau. Die Datei bekommt die Rechte `0644`, damit
+  der ERP-Benutzer im Container sie lesen kann.
+- **Kleiner Rechner beim Kunden:** Die Datei wird Abschnitt für Abschnitt gelesen, nicht
+  als ganzer JSON-Baum. Im Speicher belegt sie etwa so viel, wie sie groß ist.
+
+### Einmalig einrichten
+
+Repo-Einstellungen → *Secrets and variables* → *Actions* → *New repository secret*:
+Name `GEMINI_API_KEY`, Wert ein Gemini-API-Schlüssel (Google AI Studio). Der erste Lauf
+bettet alles ein (rund 3.000 Abschnitte, gut 11 Mio. Zeichen – mit bezahltem Schlüssel
+etwa 0,50 $). Danach kostet ein Release nur noch Cent-Beträge. Mit einem Gratis-Schlüssel
+reichen die 12 Minuten pro Lauf nicht für alles; dann füllt sich die Datei über mehrere
+Releases.
+
+**Alles neu einbetten** (z. B. nach einem Wechsel des Embedding-Modells): Actions →
+„Docker-Image fuer Kundenserver“ → *Run workflow* → Häkchen „RAG-Datei komplett neu
+einbetten“. Achtung: Auch dieser Lauf veröffentlicht `:stable`. Reichen die 12 Minuten
+nicht für alle Abschnitte, haben die Kunden bis zum nächsten Image nur Teilwissen (vorne
+die Doku, hinten fehlt Backend-Code). Ein Wechsel des Modells (`RagIndexer.MODELL`)
+verwirft die alte Datei ohnehin von selbst.
+
+---
+
+## Entwicklung: das ERP baut die Datei selbst
+
+Mit `./mvnw spring-boot:run` liegt der Quellcode im Projektordner. Beim Start zerlegt
+`LocalRagService` ihn, bettet Neues mit dem Gemini-Schlüssel aus
+Einstellungen → KI-Funktionen ein und speichert alles in `.rag-cache.json` (gitignored).
+
+- Ohne Schlüssel bleibt RAG aus (Meldung im Log). Nach dem Eintragen: Neustart.
+- Im Log: `RAG-Index FERTIG: N Abschnitte (… aus der RAG-Datei, … neu)`.
+- Bei einer Frage: `Lokale Vektor-Suche: N Treffer …`.
+
+---
+
+## Von Hand: `rag-index.sh` / `rag-index.cmd`
+
+Baut das ERP (ohne Tests) und startet den `StandaloneRagIndexer` aus dem fertigen Jar.
+Den Schlüssel nur als Umgebungsvariable übergeben, nie als Argument.
 
 ```bash
-# Kompiliere das Projekt
-mvn clean compile assembly:single -DskipTests
-
-# Das erzeugt einen Fat-Jar mit allen Dependencies
-ls target/kalkulationsprogramm-*-jar-with-dependencies.jar
+GEMINI_API_KEY=... ./rag-index.sh                  # -> .rag-cache.json
+GEMINI_API_KEY=... ./rag-index.sh pfad/datei.json
+./rag-index.sh --nur-zaehlen                        # ohne Schlüssel, ohne Kosten
 ```
 
-### Indexierung starten
+Windows: `set GEMINI_API_KEY=...`, dann `rag-index.cmd` mit denselben Argumenten.
+
+Der Altweg unter Windows ohne Docker (`deployment/scripts/update-production.ps1`) kopiert
+die `.rag-cache.json` aus dem Repo auf den Server – aber nur im aktuellen Format.
+Eine Datei von vor Oktober 2026 meldet er und lässt sie liegen; dann einmal `rag-index.cmd`.
+
+`--nur-zaehlen` zeigt je Bereich, wie viele Abschnitte und Zeichen es gibt und wie viele
+neu eingebettet werden müssten. Weitere Option: `--max-minuten N` (Zeitlimit).
+Exit-Code: 0 = fertig (auch bei erreichtem Zeitlimit), 1 = Einbetten fehlgeschlagen
+(Teilstand gespeichert), 2 = falscher Aufruf oder kein Schlüssel.
+
+Direkt mit dem Jar (so läuft es in GitHub):
 
 ```bash
-# Setze deinen Gemini API Key
-export GEMINI_API_KEY="sk-dein-api-key-hier"
-
-# Starte die Indexierung von der Projektroot aus
-java -cp target/kalkulationsprogramm-*-jar-with-dependencies.jar \
-  org.example.kalkulationsprogramm.cli.StandaloneRagIndexer "$GEMINI_API_KEY" .
-
-# Oder unter Windows (PowerShell)
-$env:GEMINI_API_KEY = "sk-dein-api-key-hier"
-java -cp "target/kalkulationsprogramm-*-jar-with-dependencies.jar" `
-  org.example.kalkulationsprogramm.cli.StandaloneRagIndexer "$env:GEMINI_API_KEY" .
-```
-
-**Was passiert:**
-- ✂️ Extrahiert Chunks aus Quellcode (.java, .tsx, .ts, .md)
-- 🧠 Embeddet neue/geänderte Chunks via Gemini API
-- 💾 Speichert Cache in `.rag-cache.json` (wiederverwendbar)
-- ⏳ ~2-5 Minuten für komplette Indexierung (abhängig von Codebase)
-
-**Ausgabe Beispiel:**
-```
-╔════════════════════════════════════════════════════════════╗
-║  STANDALONE RAG INDEXER (keine Server nötig)              ║
-╚════════════════════════════════════════════════════════════╝
-📂 Projekt-Root: .
-🔑 API Key: sk-1234...
-
-📚 Lade Cache...
-   ✓ 42 Einträge geladen
-✂️  Chunke Quellcode...
-   ✓ 156 Chunks extrahiert
-🔍 Vergleiche mit Cache...
-   ✓ 40 aus Cache, 116 neu zu embedden
-🧠 Embedde neue Chunks...
-   Batch 1/6 (20 Chunks)...
-   Batch 2/6 (20 Chunks)...
-   ...
-   ✓ 116 Chunks embedded
-💾 Speichere Cache...
-   ✓ 156 Einträge gespeichert in .rag-cache.json
-
-✅ Indexierung erfolgreich abgeschlossen!
-   Cache: .rag-cache.json
+java -cp target/Kalkulationsprogramm-<version>.jar \
+  -Dloader.main=org.example.kalkulationsprogramm.cli.StandaloneRagIndexer \
+  org.springframework.boot.loader.launch.PropertiesLauncher [projekt-ordner] [rag-datei] [--max-minuten N]
 ```
 
 ---
 
-## 2. **RagIndexingRunner** (Spring Boot ApplicationRunner)
+## Was in die RAG-Datei kommt
 
-Falls du trotzdem Spring Boot starten möchtest, mit Beendigung nach Indexierung:
+In dieser Reihenfolge – was vorne steht, wird zuerst eingebettet:
 
-```bash
-# Starte nur die Indexierung und beende dann
-mvn spring-boot:run \
-  -Dspring-boot.run.arguments="--rag-index" \
-  -Dspring.profiles.active=local \
-  -Dai.rag.enabled=true \
-  -Dai.rag.gemini-api-key="sk-dein-key"
-```
+| Bereich | Quelle |
+| --- | --- |
+| Doku | `docs/benutzer/`, `docs/*.md` (nur die oberste Ebene), `deployment/docker-server/*.md` |
+| Routen | `react-pc-frontend/src/App.tsx` |
+| Seiten | `react-pc-frontend/src/pages/`, `react-zeiterfassung/src/pages/` |
+| Komponenten | `react-pc-frontend/src/components/`, `react-zeiterfassung/src/components/` |
+| Typen | `react-pc-frontend/src/types.ts` |
+| Backend | `controller/`, `service/`, `domain/`, `dto/` unter `src/main/java/org/example/kalkulationsprogramm/` |
+
+**Nicht** hinein: Tests (`*Test.java`, `*.test.tsx`, `*.spec.ts` …) sowie `docs/superpowers/`,
+`docs/reviews/` und `docs/agent instructions/`. Pläne und Reviews beschreiben auch, was es
+(noch) nicht gibt – die KI würde es sonst als vorhanden erklären. Symlinks werden nicht
+verfolgt. Werte hinter `password`, `secret`, `api-key`, `token` und `credentials` werden
+geschwärzt, auch in Anführungszeichen (`"password": "…"`, `apiKey = "…"`). Das ist ein
+einfaches Muster, kein vollständiger Secret-Scanner – Schlüssel gehören ohnehin nie ins
+Repository.
+
+Darum lohnt sich gute Doku doppelt: Was in `docs/` steht, erzählt die KI-Hilfe den
+Handwerkern weiter.
+
+### Zerlegen
+
+- **Markdown:** an `## `-Überschriften.
+- **TSX/TS:** an `export`-Grenzen; **Java:** an Methoden/Feldern (gegen ReDoS gehärteter
+  Ausdruck). Kleine Methoden bzw. Exporte werden zu Abschnitten bis 6.000 Zeichen
+  zusammengepackt.
+- **Zu Langes** wird an Zeilengrenzen in Teile zerlegt („Teil 1/3“) – nichts wird
+  abgeschnitten.
+- Eingebettet wird jeder Abschnitt mit seinem Dateipfad davor
+  (`Datei: react-pc-frontend/src/pages/ProjektEditor.tsx | …`); das hilft der Suche.
+
+### Suchen
+
+- Der Code der Seite, auf der der Nutzer gerade ist, kommt immer mit (bis zu einem
+  Drittel der Plätze). Große Seiten bestehen aus vielen Teilen – genommen werden die, die
+  am besten zur Frage passen, nicht der Dateianfang. Welche Datei zu welcher Route gehört, steht in `LocalRagService`
+  (`ROUTE_TO_FILE_KEYWORDS`); `/emails/inbox/42` findet über `/emails` das E-Mail-Center.
+  **Neue Seite im ERP → dort eintragen.**
+- Der Rest nach Ähnlichkeit (Kosinus), mindestens 30 % Frontend.
+- `ai.rag.top-k` (Standard 15) Abschnitte, Mindestähnlichkeit `ai.rag.score-threshold` (0,3).
 
 ---
 
-## Cache-Datei (`.rag-cache.json`)
+## Einstellungen
 
-Der Cache wird automatisch geladen und wiederverwendet:
+| Schlüssel | Standard | Docker-Profil |
+| --- | --- | --- |
+| `ai.rag.enabled` | `true` | `true` |
+| `ai.rag.datei` | leer = `.rag-cache.json` im Projektordner | `/app/ki-hilfe/rag-cache.json` |
+| `ai.rag.projekt-ordner` | Startordner (`user.dir`) | – (dort liegt kein Quellcode) |
+| `ai.rag.top-k` | `15` | |
+| `ai.rag.score-threshold` | `0.3` | |
+
+Abschalten beim Kunden: `AI_RAG_ENABLED=false` in `deployment/docker-server/app.env`.
+
+---
+
+## Die Datei
 
 ```json
-[
-  {
-    "content": "public class ProjektController { ... }",
-    "filePath": "src/main/java/org/example/kalkulationsprogramm/controller/ProjektController.java",
-    "category": "backend-controller",
-    "chunkType": "class",
-    "name": "ProjektController",
-    "contentHash": "a1b2c3d4e5f6g7h8",
-    "vector": [0.123, -0.456, ...]
-  },
-  ...
-]
+{
+  "format": 2,
+  "modell": "gemini-embedding-001",
+  "dimensionen": 768,
+  "abschnitte": [
+    {
+      "filePath": "docs/RECHNUNGSWESEN.md",
+      "name": "Rechnung stornieren",
+      "category": "documentation",
+      "chunkType": "section",
+      "contentHash": "1f0c9a…",
+      "content": "## Rechnung stornieren …",
+      "vector": "<768 float32, Base64>"
+    }
+  ]
+}
 ```
 
-### Cache leeren
+- Wiedererkannt wird ein Abschnitt an **Pfad + Prüfsumme** (`contentHash` über Pfad und
+  Inhalt). Gleicher Text = gleicher Vektor, egal wie er heißt.
+- Anderes `format`, `modell` oder andere `dimensionen` → die Datei gilt als leer, alles
+  wird neu eingebettet. Wer das Modell wechselt, ändert `RagIndexer.MODELL`.
+- Geschrieben wird erst in `….neu`, dann umbenannt – nie eine halbe Datei.
+- Größe: rund 25 MB. Nicht committen (`.gitignore`).
 
-Willst du eine komplette Neu-Indexierung ohne Cache:
-
-```bash
-rm .rag-cache.json
-java -cp target/kalkulationsprogramm-*-jar-with-dependencies.jar \
-  org.example.kalkulationsprogramm.cli.StandaloneRagIndexer "sk-api-key" .
-```
-
----
-
-## Debugging & Tipps
-
-### 1. **Gemini API Key prüfen**
-
-```bash
-# Teste die Gemini API
-curl -X POST https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=sk-dein-key \
-  -H "Content-Type: application/json" \
-  -d '{
-    "content": {
-      "parts": [{"text": "test"}]
-    },
-    "taskType": "RETRIEVAL_QUERY",
-    "outputDimensionality": 768
-  }'
-```
-
-### 2. **Nur bestimmte Chunks re-indexieren**
-
-Willst du nur bestimmte Dateien neu embedden, editiere `.rag-cache.json`:
-- Lösche die `vector` für diese Einträge oder
-- Ändere `contentHash` auf etwas Ungültiges
-- Beim nächsten Lauf werden diese neu embedded
-
-### 3. **Chunking optimieren**
-
-Im `StandaloneRagIndexer`:
-- `MAX_CHUNK_CHARS = 6000` — Chunk-Größe (kleiner = mehr Chunks, längere Embedding)
-- `BATCH_SIZE = 20` — Wie viele Chunks pro Gemini-Batch-API-Call
-- `SECRET_PATTERN` — Welche Secrets redacted werden
+Alles neu einbetten lassen: Datei löschen (lokal) bzw. im Workflow *Run workflow* mit
+„RAG-Datei komplett neu einbetten“ (siehe oben).
 
 ---
 
-## Projekt-Struktur (relevant für RAG)
+## Fehlersuche
 
-```
-src/
-├── main/
-│   ├── java/org/example/kalkulationsprogramm/
-│   │   ├── cli/
-│   │   │   ├── RagIndexingRunner.java    ← Spring Boot Runner
-│   │   │   └── StandaloneRagIndexer.java ← Standalone Main (EMPFOHLEN)
-│   │   └── service/
-│   │       ├── LocalRagService.java      ← In-Memory Vector Store
-│   │       └── QdrantRagService.java     ← Externe Vector DB
-│   └── resources/
-│       └── application.properties        ← Config
-│
-└── .rag-cache.json                       ← Cache (auto-created)
-```
+| Meldung / Problem | Ursache, Lösung |
+| --- | --- |
+| `KI-Hilfe: keine RAG-Datei unter /app/ki-hilfe/rag-cache.json` | Image ohne RAG-Datei (Secret fehlte beim ersten Bau). Secret anlegen, nächstes Image abwarten |
+| `Lokales RAG: Gemini API Key fehlt` | Entwicklung ohne Schlüssel: unter Einstellungen → KI-Funktionen eintragen, neu starten |
+| `Gemini Embedding Fehler 400/403` | Schlüssel ungültig oder für die Embedding-API nicht freigeschaltet |
+| `HTTP 429 … neuer Versuch in 20 s` | Beim Image-Bau: Kontingent je Minute erschöpft (Gratis-Schlüssel) – wartet und macht weiter |
+| `RAG-Cache hat ein altes Format` (update-production.ps1) | Altweg unter Windows: `.rag-cache.json` im Repo stammt von einer älteren Version. `GEMINI_API_KEY` setzen, `rag-index.cmd` ausführen, Update erneut starten |
+| `RAG-Datei … hat ein altes Format oder Modell` | Datei von einer älteren Version – wird neu aufgebaut |
+| KI-Hilfe kennt eine neue Seite nicht | Route in `ROUTE_TO_FILE_KEYWORDS` eintragen; Doku in `docs/` ergänzen |
 
 ---
 
-## Configuration (application.properties)
+## Dateien
 
-```properties
-# Globale RAG-Einstellungen
-ai.rag.enabled=true
-ai.rag.top-k=10                    # Wie viele Chunks zurückgeben
-ai.rag.score-threshold=0.3         # Minimum Cosine-Similarity
+| Datei | Zweck |
+| --- | --- |
+| `service/kihilfe/RagIndexer.java` | Zerlegen, Einbetten (nur Geändertes), RAG-Datei lesen/schreiben |
+| `service/kihilfe/GeminiEinbetter.java` | Embeddings über die Gemini-API, Wiederholen bei Überlastung |
+| `service/LocalRagService.java` | Laden beim Start, Suche für die KI-Hilfe |
+| `service/KiHilfeService.java` | Chat; nutzt die Suche, sonst den Fallback `CodebaseIndexService` |
+| `cli/StandaloneRagIndexer.java` | Kommandozeile (Image-Bau, `rag-index.sh`) |
+| `cli/RagIndexingRunner.java` | `--rag-index`: ERP starten, warten bis der Index fertig ist, beenden |
 
-# Gemini API
-ai.gemini.api-key=sk-your-key      # ODER via SystemSettingsService lesen
-
-# Falls Qdrant genutzt wird (optional)
-ai.rag.qdrant.host=localhost
-ai.rag.qdrant.port=6333
-ai.rag.qdrant.collection=codebase
-```
-
----
-
-## Was wird indexiert?
-
-Der Indexer chunked automatisch:
-
-- ✅ **Frontend** — `react-pc-frontend/src/pages`, `react-pc-frontend/src/components`, `App.tsx`, `types.ts`
-- ✅ **Mobile** — `react-zeiterfassung/src/pages`, `react-zeiterfassung/src/components`
-- ✅ **Backend** — `src/main/java/.../controller`, `service`, `domain`, `dto`
-- ✅ **Docs** — `docs/*.md`
-- ❌ **Test-Dateien** — Werden ignoriert
-
----
-
-## Troubleshooting
-
-| Problem | Lösung |
-|---------|--------|
-| `java: command not found` | Java-Path nicht gesetzt, `java -version` prüfen |
-| `Gemini 401/403 Unauthorized` | API Key ungültig oder abgelaufen |
-| `Timeout bei Embedding` | Gemini-Server überlastet, mit Retry automatisch gelöst |
-| `.rag-cache.json` wird nicht gelesen | Format-Fehler → lösche und neu erstellen |
-| Sehr viele Chunks = sehr lange Indexierung | Reduziere `MAX_CHUNK_CHARS` oder chunke selektiv |
-
----
-
-## Performance
-
-**Typische Zeiten für das ERP-System:**
-
-- **Chunking** (Dateien lesen + splitten): ~5 Sekunden
-- **Embedding** (neue Chunks via Gemini): ~2-3 Minuten (abhängig von Chunk-Anzahl)
-  - 1 Batch (~20 Chunks) = ~3-5 Sekunden + Rate-Limit (150ms)
-- **Cache speichern** (~200 Einträge als JSON): <1 Sekunde
-
-**Gesamt für komplette Neu-Indexierung:** ~5 Minuten
-
-Bei Wiederholungen (Cache-Hit): ~10-20 Sekunden
-
----
-
-## Was passiert mit den Embeddings?
-
-1. **LocalRagService** (Default):
-   - Vektor-Index im Memory (`CopyOnWriteArrayList<ChunkEntry>`)
-   - Persistiert zu `.rag-cache.json`
-   - Bei Server-Neustart: Cache geladen + wieder im Memory
-
-2. **QdrantRagService** (Optional):
-   - Externe Vector DB (Docker-Container nötig)
-   - Höherer Durchsatz, skalierbarer
-   - Braucht separate `docker run ...` oder k8s Deployment
-
----
-
-## Integrierung in Git Workflow
-
-Empfehlung: `.rag-cache.json` committen!
-
-```bash
-# In .gitignore NICHT eintragen (!)
-# Das ermöglicht schnellere Startups nach git clone
-
-# Optional: Nur bei großen Änderungen neu-indexieren
-git add .rag-cache.json
-git commit -m "chore: RAG cache update nach Feature-Erweiterung"
-```
-
-Falls Cache zu groß wird (>10 MB):
-
-```bash
-# Periodisch komprimieren
-git rm --cached .rag-cache.json
-echo ".rag-cache.json" >> .gitignore
-git commit -m "chore: Remove large RAG cache from git"
-```
-
----
-
-## Nächste Schritte
-
-1. **Indexierung durchführen:**
-   ```bash
-   mvn clean compile assembly:single -DskipTests
-   java -cp target/kalkulationsprogramm-*-jar-with-dependencies.jar \
-     org.example.kalkulationsprogramm.cli.StandaloneRagIndexer "sk-your-key" .
-   ```
-
-2. **Cache validieren:**
-   ```bash
-   cat .rag-cache.json | jq 'length'  # sollte > 0
-   ```
-
-3. **Server starten (optional):**
-   ```bash
-   mvn spring-boot:run
-   # RAG wird automatisch mit LocalRagService initialisiert
-   # Logs zeigen: "RAG-Index FERTIG: X Chunks geladen"
-   ```
-
-4. **Im Browser testen:**
-   - Öffne die App
-   - Nutze KI-Features, die RAG-Suche triggen (z.B. KI-Hilfe)
-   - Logs sollten zeigen: "Lokale Vektor-Suche: X Treffer..."
+`QdrantRagService` und der Qdrant-Container in der Root-`docker-compose.yml` werden vom
+ERP nicht genutzt.
