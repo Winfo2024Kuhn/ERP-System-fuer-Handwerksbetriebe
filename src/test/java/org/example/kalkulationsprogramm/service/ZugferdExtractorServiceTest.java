@@ -16,6 +16,33 @@ class ZugferdExtractorServiceTest {
         service = new ZugferdExtractorService();
     }
 
+    /**
+     * Erzeugt eine Basis-PDF mit Text-Inhalt (Seite besitzt /Resources,
+     * sonst scheitert Mustangs A3-Exporter mit "res is null").
+     */
+    @org.junit.jupiter.api.io.TempDir
+    static java.nio.file.Path tempDir;
+
+    private static java.nio.file.Path erzeugeBasisPdf() throws Exception {
+        java.nio.file.Path basis = java.nio.file.Files.createTempFile(tempDir, "basis-", ".pdf");
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument()) {
+            org.apache.pdfbox.pdmodel.PDPage page = new org.apache.pdfbox.pdmodel.PDPage(
+                    org.apache.pdfbox.pdmodel.common.PDRectangle.A4);
+            doc.addPage(page);
+            try (org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(
+                    doc, page)) {
+                cs.beginText();
+                cs.setFont(new org.apache.pdfbox.pdmodel.font.PDType1Font(
+                        org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName.HELVETICA), 12);
+                cs.newLineAtOffset(50, 750);
+                cs.showText("Rechnung Max Mustermann");
+                cs.endText();
+            }
+            doc.save(basis.toFile());
+        }
+        return basis;
+    }
+
     @Nested
     class Zeichensatz {
 
@@ -214,30 +241,6 @@ class ZugferdExtractorServiceTest {
         }
 
         /**
-         * Erzeugt eine Basis-PDF mit Text-Inhalt (Seite besitzt /Resources,
-         * sonst scheitert Mustangs A3-Exporter mit "res is null").
-         */
-        private java.nio.file.Path erzeugeBasisPdf() throws Exception {
-            java.nio.file.Path basis = java.nio.file.Files.createTempFile("basis-", ".pdf");
-            try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument()) {
-                org.apache.pdfbox.pdmodel.PDPage page = new org.apache.pdfbox.pdmodel.PDPage(
-                        org.apache.pdfbox.pdmodel.common.PDRectangle.A4);
-                doc.addPage(page);
-                try (org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(
-                        doc, page)) {
-                    cs.beginText();
-                    cs.setFont(new org.apache.pdfbox.pdmodel.font.PDType1Font(
-                            org.apache.pdfbox.pdmodel.font.Standard14Fonts.FontName.HELVETICA), 12);
-                    cs.newLineAtOffset(50, 750);
-                    cs.showText("Rechnung Max Mustermann");
-                    cs.endText();
-                }
-                doc.save(basis.toFile());
-            }
-            return basis;
-        }
-
-        /**
          * Erzeugt eine vorausbezahlte ZUGFeRD-PDF (TotalPrepaidAmount = Bruttobetrag),
          * wie sie Amazon ausstellt. Baut die Mustang-Rechnung direkt, um den
          * Prepaid-Betrag setzen zu können (der ErstellService kann das nicht).
@@ -303,6 +306,106 @@ class ZugferdExtractorServiceTest {
             // soll nicht mehr in den Offenen Posten erscheinen.
             assertThat(result.getBetrag()).isNotNull();
             assertThat(result.getBereitsGezahlt()).isTrue();
+        }
+    }
+
+    /**
+     * Netto und Steuersatz kommen aus der Rechnung selbst – früher wurde fest mit 19 %
+     * zurückgerechnet. Rundreise: eigene E-Rechnung erzeugen und wieder einlesen.
+     * Nur Dummy-Daten (Max Mustermann).
+     */
+    @Nested
+    class NettoUndSteuersatz {
+
+        private java.nio.file.Path erzeuge(java.util.List<org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition> positionen)
+                throws Exception {
+            ZugferdDaten daten = new ZugferdDaten();
+            daten.setRechnungsnummer("RE-2026-0042");
+            daten.setRechnungsdatum(java.time.LocalDate.of(2026, 10, 12));
+            daten.setFaelligkeitsdatum(java.time.LocalDate.of(2026, 10, 26));
+            daten.setKundenName("Max Mustermann");
+            daten.getArtikelPositionen().addAll(positionen);
+
+            var firma = new org.example.kalkulationsprogramm.dto.FirmeninformationDto();
+            firma.setFirmenname("Musterbetrieb GmbH");
+            firma.setStrasse("Musterstraße 1");
+            firma.setPlz("12345");
+            firma.setOrt("Musterstadt");
+            firma.setUstIdNr("DE123456789");
+            var firmaService = org.mockito.Mockito.mock(FirmeninformationService.class);
+            org.mockito.Mockito.when(firmaService.getFirmeninformation()).thenReturn(firma);
+            return new ZugferdErstellService(firmaService).erzeuge(
+                    erzeugeBasisPdf().toString(), daten);
+        }
+
+        private org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition position(String preis, String satz) {
+            var position = new org.example.kalkulationsprogramm.dto.Zugferd.ZugferdArtikelPosition(
+                    null, "Fachbuch", java.math.BigDecimal.ONE, "Stk", new java.math.BigDecimal(preis), null, null);
+            position.setMwstSatz(new java.math.BigDecimal(satz));
+            return position;
+        }
+
+        @Test
+        void siebenProzentRechnungBehaeltIhrenSatzUndIhrNetto() throws Exception {
+            java.nio.file.Path pdf = erzeuge(java.util.List.of(position("100.00", "7")));
+            try {
+                ZugferdDaten result = service.extract(pdf.toString(), "rechnung.pdf");
+
+                assertThat(result.getBetrag()).isEqualByComparingTo("107.00");
+                assertThat(result.getBetragNetto()).isEqualByComparingTo("100.00");
+                assertThat(result.getMwstSatz()).isEqualByComparingTo("0.07");
+            } finally {
+                java.nio.file.Files.deleteIfExists(pdf);
+            }
+        }
+
+        @Test
+        void gemischteSaetzeLiefernDasNetto_aberKeinenEinzelnenSatz() throws Exception {
+            java.nio.file.Path pdf = erzeuge(java.util.List.of(position("100.00", "19"), position("100.00", "7")));
+            try {
+                ZugferdDaten result = service.extract(pdf.toString(), "rechnung.pdf");
+
+                assertThat(result.getBetrag()).isEqualByComparingTo("226.00");
+                assertThat(result.getBetragNetto()).isEqualByComparingTo("200.00");
+                assertThat(result.getMwstSatz()).isNull();
+            } finally {
+                java.nio.file.Files.deleteIfExists(pdf);
+            }
+        }
+
+        @Test
+        void einzigerSteuersatzAusDemXml() {
+            String zweimalNeunzehn = "<ram:RateApplicablePercent>19.00</ram:RateApplicablePercent>"
+                    + "<ram:RateApplicablePercent> 19 </ram:RateApplicablePercent>";
+            assertThat(ZugferdExtractorService.einzigerSteuersatz(zweimalNeunzehn)).isEqualByComparingTo("0.19");
+            assertThat(ZugferdExtractorService.einzigerSteuersatz("<RateApplicablePercent>7,0</RateApplicablePercent>"))
+                    .isEqualByComparingTo("0.07");
+            assertThat(ZugferdExtractorService.einzigerSteuersatz("<ram:GrandTotalAmount>119.00</ram:GrandTotalAmount>"))
+                    .isNull();
+            assertThat(ZugferdExtractorService.einzigerSteuersatz("<RateApplicablePercent unit=\"P1\">7</RateApplicablePercent>"))
+                    .isEqualByComparingTo("0.07");
+            assertThat(ZugferdExtractorService.einzigerSteuersatz("<RateApplicablePercentX>7</RateApplicablePercentX>"))
+                    .isNull();
+        }
+
+        @Test
+        void negativeMengeAusDemEigenenExportBleibtErhalten() {
+            String xml = """
+                    <rsm:CrossIndustryInvoice>
+                      <ram:IncludedSupplyChainTradeLineItem>
+                        <ram:SpecifiedTradeProduct><ram:Name>Material vom Kunden gestellt</ram:Name></ram:SpecifiedTradeProduct>
+                        <ram:SpecifiedLineTradeAgreement>
+                          <ram:NetPriceProductTradePrice><ram:ChargeAmount>50.0000</ram:ChargeAmount></ram:NetPriceProductTradePrice>
+                        </ram:SpecifiedLineTradeAgreement>
+                        <ram:SpecifiedLineTradeDelivery>
+                          <ram:BilledQuantity unitCode="LS">-1.0000</ram:BilledQuantity>
+                        </ram:SpecifiedLineTradeDelivery>
+                      </ram:IncludedSupplyChainTradeLineItem>
+                    </rsm:CrossIndustryInvoice>
+                    """;
+
+            assertThat(service.extractLineItems(xml)).singleElement()
+                    .satisfies(position -> assertThat(position.getMenge()).isEqualByComparingTo("-1"));
         }
     }
 
