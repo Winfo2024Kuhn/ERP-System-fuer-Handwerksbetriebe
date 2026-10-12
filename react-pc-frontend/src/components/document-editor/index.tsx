@@ -162,6 +162,7 @@ import { useToast } from '../ui/toast';
 import { useConfirm } from '../ui/confirm-dialog';
 import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
 import { useKonfliktMeldung } from '../lock/useKonfliktMeldung';
+import { scrolleMittigInDenBlick } from '../../lib/scrollInDenBlick';
 
 interface ImportedGaebBlock {
     type: string;
@@ -1913,10 +1914,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             ?? (ziel.sectionId ? karten.find(el => el.dataset.blockId === ziel.sectionId) : undefined);
         if (!karte) return; // Stelle existiert nicht mehr (z.B. Einfuegen zurueckgenommen) -- nicht scrollen.
 
-        const reduziert = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (typeof karte.scrollIntoView === 'function') {
-            karte.scrollIntoView({ block: 'center', behavior: reduziert ? 'auto' : 'smooth' });
-        }
+        scrolleMittigInDenBlick(karte);
         karte.classList.add('verlauf-hervorgehoben');
         const timer = window.setTimeout(() => karte.classList.remove('verlauf-hervorgehoben'), 1200);
 
