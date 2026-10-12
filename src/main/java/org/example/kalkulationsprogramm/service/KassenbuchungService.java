@@ -64,6 +64,7 @@ public class KassenbuchungService {
     private final BelegAuditService auditService;
     private final BelegPdfService belegPdfService;
     private final KasseEinstellungRepository kasseEinstellungRepository;
+    private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
@@ -194,8 +195,7 @@ public class KassenbuchungService {
                 belegKostenstellenAnteilRepository.save(anteil);
             }
             if (rechnung != null) {
-                rechnung.setBezahlt(true);
-                projektDokumentRepository.save(rechnung);
+                ausgangsGeschaeftsDokumentService.setzeOffenenPostenBezahlt(rechnung, true);
             }
             auditService.protokolliereErfassung(gespeichert, ersteller, null);
             return gespeichert;

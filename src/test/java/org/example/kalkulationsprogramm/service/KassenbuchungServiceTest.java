@@ -41,13 +41,14 @@ class KassenbuchungServiceTest {
     @Mock BelegAuditService audit;
     @Mock BelegPdfService pdf;
     @Mock KasseEinstellungRepository einstellungen;
+    @Mock AusgangsGeschaeftsDokumentService ausgangsDokumente;
     @TempDir Path upload;
     KassenbuchungService service;
     Mitarbeiter ersteller;
 
     @BeforeEach void setup() {
         service = new KassenbuchungService(belege, konten, kostenstellen, anteile, dokumente,
-                saldo, schutz, audit, pdf, einstellungen);
+                saldo, schutz, audit, pdf, einstellungen, ausgangsDokumente);
         ReflectionTestUtils.setField(service, "uploadPath", upload.toString());
         ersteller = new Mitarbeiter();
         ersteller.setId(42L);
@@ -216,8 +217,8 @@ class KassenbuchungServiceTest {
         speichern();
         Beleg b = service.buche(req, null, ersteller);
         assertThat(b.getAusgangsrechnungId()).isEqualTo(7L);
-        assertThat(rechnung.isBezahlt()).isTrue();
-        verify(dokumente).save(rechnung);
+        // Über den gemeinsamen Weg, damit das Projekt sofort "Bezahlt" zeigt.
+        verify(ausgangsDokumente).setzeOffenenPostenBezahlt(rechnung, true);
         assertThat(b.getKostenstelle()).isSameAs(ks);
         var split = ArgumentCaptor.forClass(BelegKostenstellenAnteil.class);
         verify(anteile).save(split.capture());
@@ -238,7 +239,7 @@ class KassenbuchungServiceTest {
         lenient().when(konten.findByNummer("8400")).thenReturn(Optional.of(konto("8400")));
         assertThatThrownBy(() -> service.buche(req, null, ersteller)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("bereits bezahlt");
-        verifyNoInteractions(pdf, belege, audit);
+        verifyNoInteractions(pdf, belege, audit, ausgangsDokumente);
     }
 
     @ParameterizedTest @ValueSource(strings = {"../../beleg.pdf", "a\\b.pdf", "x.exe", "x.svg", "x.js"})

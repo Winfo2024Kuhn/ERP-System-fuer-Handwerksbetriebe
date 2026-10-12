@@ -62,6 +62,7 @@ class KassenbuchAbschlussServiceTest {
     @Mock private BelegAuditService auditService;
     @Mock private KasseSaldoService kasseSaldoService;
     @Mock private ProjektDokumentRepository projektDokumentRepository;
+    @Mock private AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
 
     @InjectMocks private KassenbuchAbschlussService service;
 
@@ -419,8 +420,8 @@ class KassenbuchAbschlussServiceTest {
 
         assertThat(storno.getAusgangsrechnungId()).isEqualTo(61L);
         assertThat(original.getAusgangsrechnungId()).isEqualTo(61L);
-        assertThat(rechnung.isBezahlt()).isFalse();
-        verify(projektDokumentRepository).save(rechnung);
+        // Über den gemeinsamen Weg, damit auch das Projekt nicht weiter "Bezahlt" zeigt.
+        verify(ausgangsGeschaeftsDokumentService).setzeOffenenPostenBezahlt(rechnung, false);
         ArgumentCaptor<String> grund = ArgumentCaptor.forClass(String.class);
         verify(auditService).protokolliereStornierung(eq(original), eq(maxMustermann), grund.capture(), isNull());
         assertThat(grund.getValue()).contains("Zahlung falsch erfasst", "Kundenrechnung ID 61", "bezahlt", "nein");
@@ -469,6 +470,7 @@ class KassenbuchAbschlussServiceTest {
 
         assertThat(rechnung.isBezahlt()).isFalse();
         verify(projektDokumentRepository, never()).save(any());
+        org.mockito.Mockito.verifyNoInteractions(ausgangsGeschaeftsDokumentService);
         verify(auditService).protokolliereStornierung(original, maxMustermann, "Doppelt erfasst", null);
     }
 
