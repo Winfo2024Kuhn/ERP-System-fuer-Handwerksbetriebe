@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Mail, PenLine, Pencil, Plus, ShieldCheck, Star, StarOff, Trash2, UserRound, Users } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    AlertTriangle, Building2, Loader2, Lock, Mail, PenLine, Pencil, Plus, ShieldCheck, Star, StarOff, Trash2, UserRound, Users,
+} from 'lucide-react';
 import { useAuth } from '../../../auth/AuthContext';
 import { Button } from '../../../components/ui/button';
 import { useConfirm } from '../../../components/ui/confirm-dialog';
@@ -7,21 +9,25 @@ import { InfoAbschnitt, InfoButton } from '../../../components/ui/info-button';
 import { useToast } from '../../../components/ui/toast';
 import { cn } from '../../../lib/utils';
 import {
+    entferneFirmenVorlage,
     entferneStandardSignatur,
+    ladeFirmenVorlagen,
     ladeSignatur,
     ladeSignaturVorschau,
     loescheSignatur,
+    setzeFirmenVorlage,
     setzeStandardSignatur,
     setzeSystemSignatur,
 } from './signaturApi';
-import type { SignaturDto } from './signaturTypen';
+import { leseVorlageDaten, type SignaturDto } from './signaturTypen';
 import { SignaturStudio } from './SignaturStudio';
 import { SignaturVorschau } from './SignaturVorschau';
 
 /**
  * Bereich „Signaturen“ in den E-Mail-Einstellungen: Kartenliste aller
- * sichtbaren Signaturen (Benutzer: nur eigene, Admins: alle) und das
- * Signatur-Studio zum Anlegen und Bearbeiten.
+ * sichtbaren Signaturen (Benutzer: eigene plus die vom Betrieb festgelegte
+ * Standard-Signatur, Admins: alle) und das Signatur-Studio zum Anlegen und
+ * Bearbeiten. Admins legen hier auch die Firmen-Vorlagen fest.
  */
 
 interface SignaturVerwaltungProps {
@@ -32,6 +38,12 @@ interface SignaturVerwaltungProps {
 }
 
 type Filter = 'alle' | 'meine';
+
+/** Geladene Firmen-Vorlagen; `fehler` unterscheidet „konnte nicht laden“ von „es gibt keine“. */
+interface VorlagenStand {
+    liste: SignaturDto[];
+    fehler: boolean;
+}
 
 /** Die unveränderte Platzhalter-Signatur aus der Ersteinrichtung – an Auto-Mails hängt dann nichts. */
 const istSystemPlatzhalter = (sig: SignaturDto) =>
@@ -75,7 +87,10 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
     const { isAdmin } = useAuth();
     const toast = useToast();
     const confirm = useConfirm();
-    const [studio, setStudio] = useState<{ signatur: SignaturDto | null } | null>(null);
+    const [studio, setStudio] = useState<{ signatur: SignaturDto | null; vorlagen: VorlagenStand } | null>(null);
+    /** `null`, solange die Firmen-Vorlagen noch laden. */
+    const [firmenVorlagen, setFirmenVorlagen] = useState<SignaturDto[] | null>(null);
+    const vorlagenLaden = useRef<Promise<VorlagenStand> | null>(null);
     const [filter, setFilter] = useState<Filter>('alle');
     const [aktion, setAktion] = useState<string | null>(null);
     const wurzelRef = useRef<HTMLDivElement>(null);
@@ -92,7 +107,28 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
         if (scroller && typeof scroller.scrollTo === 'function') scroller.scrollTo({ top: 0 });
     }, [studioOffen]);
 
+    // Fehler sind hier nicht schlimm: ohne Firmen-Vorlagen geht es wie bisher weiter, die Meldung sagt Bescheid.
+    const ladeVorlagen = useCallback(() => {
+        const laden = ladeFirmenVorlagen()
+            .then((liste): VorlagenStand => ({ liste, fehler: false }))
+            .catch((err: unknown): VorlagenStand => {
+                toast.error(err instanceof Error ? err.message : 'Firmen-Vorlagen konnten nicht geladen werden.');
+                return { liste: [], fehler: true };
+            })
+            .then((stand) => {
+                setFirmenVorlagen(stand.liste);
+                return stand;
+            });
+        vorlagenLaden.current = laden;
+        return laden;
+    }, [toast]);
+
+    useEffect(() => {
+        void ladeVorlagen();
+    }, [ladeVorlagen]);
+
     const systemSignatur = signaturen.find((s) => s.isSystemDefault);
+    const hatFirmenVorlagen = (firmenVorlagen?.length ?? 0) > 0;
     const systemBrauchtEinrichtung = systemSignatur ? istSystemPlatzhalter(systemSignatur) : false;
     const eigeneAnzahl = signaturen.filter((s) => s.eigene).length;
 
@@ -106,7 +142,7 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
         try {
             await aufgabe();
             toast.success(erfolg);
-            await neuLaden();
+            await Promise.all([neuLaden(), ladeVorlagen()]);
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Das hat leider nicht geklappt.');
         } finally {
@@ -115,9 +151,11 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
     };
 
     const loeschen = async (sig: SignaturDto) => {
-        const zusatz = sig.defaultSignature
+        const zusatz = (sig.defaultSignature
             ? ' Sie ist Ihre Standard-Signatur – neue E-Mails bekommen dann nicht mehr automatisch eine Signatur.'
-            : '';
+            : '') + (sig.firmenVorlage
+            ? ' Sie ist eine Firmen-Vorlage – Mitarbeiter können daraus dann keine neuen Signaturen mehr erstellen.'
+            : '');
         const ok = await confirm({
             title: 'Signatur löschen',
             message: `Signatur „${sig.name}“ wirklich löschen?${zusatz}`,
@@ -128,30 +166,76 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
         await fuehreAus(`${sig.id}:loeschen`, () => loescheSignatur(sig.id), 'Signatur gelöscht.');
     };
 
+    // Eine vom Betrieb festgelegte Standard-Signatur verschwindet nach dem Abwählen aus der Liste – vorher nachfragen.
+    const festgelegteStandard = signaturen.find((s) => s.defaultSignature && s.nurLesen);
+    const abwahlBestaetigt = async (): Promise<boolean> => {
+        if (!festgelegteStandard) return true;
+        return confirm({
+            title: 'Festgelegte Signatur abwählen?',
+            message: `„${festgelegteStandard.name}“ hat der Betrieb für Sie festgelegt. Wenn Sie sie abwählen, sehen Sie sie danach nicht mehr in Ihrer Liste.`,
+            confirmLabel: 'Abwählen',
+            variant: 'warning',
+        });
+    };
+
+    const keinStandardMehr = async (sig: SignaturDto) => {
+        if (!(await abwahlBestaetigt())) return;
+        await fuehreAus(`${sig.id}:standard`, entferneStandardSignatur, 'Sie haben jetzt keine Standard-Signatur mehr.');
+    };
+
+    const alsStandard = async (sig: SignaturDto) => {
+        if (!(await abwahlBestaetigt())) return;
+        await fuehreAus(`${sig.id}:standard`, () => setzeStandardSignatur(sig.id), `„${sig.name}“ ist jetzt Ihre Standard-Signatur.`);
+    };
+
+    // Als Vorlage taugt nur eine Signatur mit Formulardaten – sonst wüsste das Studio nicht, was gesperrt ist.
+    const alsFirmenVorlage = (sig: SignaturDto) => fuehreAus(`${sig.id}:firmenvorlage`, async () => {
+        const voll = await ladeSignatur(sig.id);
+        if (!leseVorlageDaten(voll.vorlageDaten)) {
+            throw new Error(`„${sig.name}“ wurde ohne Vorlage angelegt und eignet sich nicht als Firmen-Vorlage. `
+                + 'Bitte zuerst bearbeiten und „Mit Vorlage neu gestalten“.');
+        }
+        await setzeFirmenVorlage(sig.id);
+    }, `„${sig.name}“ ist jetzt eine Firmen-Vorlage.`);
+
     if (studio) {
         return (
             <div ref={wurzelRef}>
                 <SignaturStudio
                     key={studio.signatur?.id ?? 'neu'}
                     signatur={studio.signatur}
+                    firmenVorlagen={studio.vorlagen.liste}
+                    firmenVorlagenFehler={studio.vorlagen.fehler}
                     onAbbrechen={() => setStudio(null)}
                     onGespeichert={() => {
                         setStudio(null);
                         void neuLaden();
+                        void ladeVorlagen();
                     }}
                 />
             </div>
         );
     }
 
-    const neueSignatur = () => setStudio({ signatur: null });
+    // Das Studio braucht die Firmen-Vorlagen schon beim Öffnen – notfalls kurz auf sie warten.
+    const aktuelleVorlagen = () => vorlagenLaden.current ?? ladeVorlagen();
+
+    const neueSignatur = async () => {
+        setAktion('neu');
+        try {
+            setStudio({ signatur: null, vorlagen: await aktuelleVorlagen() });
+        } finally {
+            setAktion(null);
+        }
+    };
 
     // Die Liste kommt ohne Formulardaten (eingebettete Bilder machen sie groß) – das Studio
     // braucht sie, deshalb die Signatur vor dem Öffnen einzeln laden.
     const bearbeiten = async (sig: SignaturDto) => {
         setAktion(`${sig.id}:bearbeiten`);
         try {
-            setStudio({ signatur: await ladeSignatur(sig.id) });
+            const [signatur, vorlagen] = await Promise.all([ladeSignatur(sig.id), aktuelleVorlagen()]);
+            setStudio({ signatur, vorlagen });
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Signatur konnte nicht geladen werden.');
         } finally {
@@ -171,11 +255,15 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                         {isAdmin
                             ? 'Alle Signaturen im Betrieb. Jeder Benutzer sieht nur seine eigenen.'
                             : 'Ihre Signaturen. Die Standard-Signatur kommt automatisch unter jede neue E-Mail.'}
+                        {!isAdmin && hatFirmenVorlagen && ' Neue Signaturen erstellen Sie aus der Firmen-Vorlage Ihres Betriebs.'}
                     </p>
                 </div>
                 {signaturen.length > 0 && (
-                    <Button onClick={neueSignatur}>
-                        <Plus className="h-4 w-4" aria-hidden="true" /> Neue Signatur
+                    <Button onClick={() => void neueSignatur()} disabled={aktion === 'neu'}>
+                        {aktion === 'neu'
+                            ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+                            : <Plus className="h-4 w-4" aria-hidden="true" />}
+                        Neue Signatur
                     </Button>
                 )}
             </div>
@@ -234,6 +322,45 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                 </div>
             )}
 
+            {isAdmin && firmenVorlagen !== null && (
+                <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-4" role="status">
+                    <div className="shrink-0 rounded-full bg-slate-100 p-2 text-slate-600">
+                        <Building2 className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1">
+                            <h3 className="font-semibold text-slate-900">Firmen-Vorlagen für Mitarbeiter</h3>
+                            <InfoButton titel="Was ist eine Firmen-Vorlage?">
+                                <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                    <p>
+                                        Mitarbeiter ohne Admin-Rechte erstellen neue Signaturen dann nur noch aus einer
+                                        Firmen-Vorlage. Aufbau, Farbe, Schrift, Logo, Banner, Firmenangaben, Slogan,
+                                        Kleingedrucktes und soziale Netzwerke kommen aus der Vorlage. Name, Position,
+                                        Abteilung, Telefon, Mobil, E-Mail und Foto trägt jeder selbst ein.
+                                    </p>
+                                </InfoAbschnitt>
+                                <InfoAbschnitt titel="Was bewirkt das?">
+                                    <p>
+                                        Alle Signaturen im Betrieb sehen gleich aus. Ändern Sie eine Firmen-Vorlage, bekommen
+                                        die Mitarbeiter das neue Aussehen, sobald sie ihre Signatur das nächste Mal öffnen
+                                        und speichern.
+                                    </p>
+                                    <p>
+                                        Schon vorhandene, frei gestaltete Signaturen bleiben bestehen. Admins gestalten
+                                        weiterhin frei. Gibt es mehrere Firmen-Vorlagen, wählt der Mitarbeiter eine davon aus.
+                                    </p>
+                                </InfoAbschnitt>
+                            </InfoButton>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600">
+                            {hatFirmenVorlagen
+                                ? <>Aktiv: <span className="font-semibold text-slate-900">{firmenVorlagen.map((v) => v.name).join(', ')}</span></>
+                                : 'Noch keine Firmen-Vorlage – Mitarbeiter gestalten ihre Signatur frei. Klicken Sie bei einer Signatur auf „Als Firmen-Vorlage“.'}
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {isAdmin && signaturen.length > 0 && (
                 <div role="group" aria-label="Signaturen filtern" className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
                     {([['alle', 'Alle', Users, signaturen.length], ['meine', 'Meine', UserRound, eigeneAnzahl]] as const).map(([wert, text, Icon, anzahl]) => (
@@ -274,14 +401,17 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                         Mit dem Signatur-Studio gestalten Sie in wenigen Minuten eine professionelle E-Mail-Signatur –
                         Vorlage wählen, Angaben eintragen, fertig. Ganz ohne HTML-Kenntnisse.
                     </p>
-                    <Button onClick={neueSignatur}>
-                        <Plus className="h-4 w-4" aria-hidden="true" /> Signatur erstellen
+                    <Button onClick={() => void neueSignatur()} disabled={aktion === 'neu'}>
+                        {aktion === 'neu'
+                            ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+                            : <Plus className="h-4 w-4" aria-hidden="true" />}
+                        Signatur erstellen
                     </Button>
                 </div>
             ) : sichtbar.length === 0 ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
                     Sie haben noch keine eigene Signatur.{' '}
-                    <button type="button" onClick={neueSignatur} className="font-medium text-rose-700 underline-offset-2 hover:underline">
+                    <button type="button" onClick={() => void neueSignatur()} disabled={aktion === 'neu'} className="font-medium text-rose-700 underline-offset-2 hover:underline">
                         Jetzt eine erstellen
                     </button>
                 </div>
@@ -309,6 +439,16 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                                             <ShieldCheck className="h-3 w-3" aria-hidden="true" /> System-Signatur
                                         </Badge>
                                     )}
+                                    {sig.firmenVorlage && (
+                                        <Badge className="border-slate-300 bg-slate-100 text-slate-700" title="Mitarbeiter erstellen ihre Signatur aus dieser Vorlage">
+                                            <Building2 className="h-3 w-3" aria-hidden="true" /> Firmen-Vorlage
+                                        </Badge>
+                                    )}
+                                    {sig.nurLesen && (
+                                        <Badge className="border-slate-300 bg-slate-100 text-slate-700" title="Ändern kann sie nur ein Admin">
+                                            <Lock className="h-3 w-3" aria-hidden="true" /> Vom Betrieb festgelegt
+                                        </Badge>
+                                    )}
                                     {isAdmin && (
                                         <Badge className="border-slate-200 bg-slate-50 text-slate-600">
                                             <UserRound className="h-3 w-3" aria-hidden="true" />
@@ -321,16 +461,24 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                                         <KartenVorschau signatur={sig} />
                                     </div>
                                 </div>
+                                {sig.nurLesen && (
+                                    <p className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-600">
+                                        Diese Signatur hat der Betrieb für Sie festgelegt.
+                                        {hatFirmenVorlagen && ' Erstellen Sie Ihre eigene aus der Firmen-Vorlage.'}
+                                    </p>
+                                )}
                                 <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
-                                    <Button size="sm" variant="outline" onClick={() => void bearbeiten(sig)} disabled={beschaeftigt}>
-                                        <Pencil className="h-4 w-4" aria-hidden="true" /> Bearbeiten
-                                    </Button>
+                                    {!sig.nurLesen && (
+                                        <Button size="sm" variant="outline" onClick={() => void bearbeiten(sig)} disabled={beschaeftigt}>
+                                            <Pencil className="h-4 w-4" aria-hidden="true" /> Bearbeiten
+                                        </Button>
+                                    )}
                                     {sig.defaultSignature ? (
                                         <Button
                                             size="sm"
                                             variant="ghost"
                                             disabled={beschaeftigt}
-                                            onClick={() => fuehreAus(`${sig.id}:standard`, entferneStandardSignatur, 'Sie haben jetzt keine Standard-Signatur mehr.')}
+                                            onClick={() => void keinStandardMehr(sig)}
                                         >
                                             <StarOff className="h-4 w-4" aria-hidden="true" /> Nicht mehr Standard
                                         </Button>
@@ -339,7 +487,7 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                                             size="sm"
                                             variant="ghost"
                                             disabled={beschaeftigt}
-                                            onClick={() => fuehreAus(`${sig.id}:standard`, () => setzeStandardSignatur(sig.id), `„${sig.name}“ ist jetzt Ihre Standard-Signatur.`)}
+                                            onClick={() => void alsStandard(sig)}
                                         >
                                             <Star className="h-4 w-4" aria-hidden="true" /> Als Standard
                                         </Button>
@@ -354,7 +502,21 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                                             <ShieldCheck className="h-4 w-4" aria-hidden="true" /> Als System-Signatur
                                         </Button>
                                     )}
-                                    <span
+                                    {isAdmin && (sig.firmenVorlage ? (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={beschaeftigt}
+                                            onClick={() => fuehreAus(`${sig.id}:firmenvorlage`, () => entferneFirmenVorlage(sig.id), `„${sig.name}“ ist keine Firmen-Vorlage mehr.`)}
+                                        >
+                                            <Building2 className="h-4 w-4" aria-hidden="true" /> Keine Firmen-Vorlage mehr
+                                        </Button>
+                                    ) : (
+                                        <Button size="sm" variant="ghost" disabled={beschaeftigt} onClick={() => void alsFirmenVorlage(sig)}>
+                                            <Building2 className="h-4 w-4" aria-hidden="true" /> Als Firmen-Vorlage
+                                        </Button>
+                                    ))}
+                                    {!sig.nurLesen && <span
                                         className="ml-auto inline-flex"
                                         title={sig.isSystemDefault ? 'Die System-Signatur kann nicht gelöscht werden – erst eine andere als System-Signatur setzen.' : undefined}
                                     >
@@ -369,7 +531,7 @@ export function SignaturVerwaltung({ signaturen, laedt, ladeFehler, neuLaden }: 
                                         >
                                             <Trash2 className="h-4 w-4" aria-hidden="true" />
                                         </Button>
-                                    </span>
+                                    </span>}
                                 </div>
                             </li>
                         );

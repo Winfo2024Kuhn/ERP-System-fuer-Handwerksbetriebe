@@ -53,15 +53,35 @@ export function normalisiereSignatur(roh: unknown): SignaturDto | null {
         besitzerId: typeof s.besitzerId === 'number' ? s.besitzerId : null,
         besitzerName: typeof s.besitzerName === 'string' ? s.besitzerName : null,
         eigene: s.eigene === true,
+        firmenVorlage: s.firmenVorlage === true,
+        firmenVorlageId: typeof s.firmenVorlageId === 'number' ? s.firmenVorlageId : null,
+        nurLesen: s.nurLesen === true,
         createdAt: typeof s.createdAt === 'string' ? s.createdAt : '',
         updatedAt: typeof s.updatedAt === 'string' ? s.updatedAt : '',
         images: Array.isArray(s.images) ? s.images as SignaturDto['images'] : [],
     };
 }
 
+const alsListe = (daten: unknown): SignaturDto[] =>
+    (Array.isArray(daten) ? daten.map(normalisiereSignatur).filter((s): s is SignaturDto => s !== null) : []);
+
 export async function ladeSignaturen(): Promise<SignaturDto[]> {
-    const daten = await anfrage<unknown>(BASIS, undefined, 'Signaturen konnten nicht geladen werden.');
-    return Array.isArray(daten) ? daten.map(normalisiereSignatur).filter((s): s is SignaturDto => s !== null) : [];
+    return alsListe(await anfrage<unknown>(BASIS, undefined, 'Signaturen konnten nicht geladen werden.'));
+}
+
+/** Alle Firmen-Vorlagen mit Formulardaten, nach Name sortiert. Für alle angemeldeten Benutzer. */
+export async function ladeFirmenVorlagen(): Promise<SignaturDto[]> {
+    return alsListe(await anfrage<unknown>(`${BASIS}/firmen-vorlagen`, undefined, 'Firmen-Vorlagen konnten nicht geladen werden.'));
+}
+
+/** Nur Admins: Signatur als Firmen-Vorlage markieren. */
+export async function setzeFirmenVorlage(id: number): Promise<void> {
+    await anfrage(`${BASIS}/${id}/firmen-vorlage`, { method: 'PUT' }, 'Firmen-Vorlage konnte nicht festgelegt werden.');
+}
+
+/** Nur Admins: Markierung als Firmen-Vorlage wieder entfernen. */
+export async function entferneFirmenVorlage(id: number): Promise<void> {
+    await anfrage(`${BASIS}/${id}/firmen-vorlage`, { method: 'DELETE' }, 'Firmen-Vorlage konnte nicht entfernt werden.');
 }
 
 /** Eine Signatur komplett – mit den Formulardaten, die die Liste aus Platzgründen weglässt. */

@@ -9,7 +9,7 @@ import { ConfirmProvider } from '../components/ui/confirm-dialog';
 /** Dummy-Daten (DSGVO). */
 const benutzer = {
     id: 7, displayName: 'Max Mustermann', username: 'max', shortCode: 'MM', roles: ['USER'], active: true,
-    defaultSignature: null, mitarbeiter: null,
+    mitarbeiter: null,
     emailAbsender: { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' },
 };
 const postfach = (id: number, emailAdresse: string, anzeigename: string | null, aktiv = true) => ({
@@ -25,7 +25,6 @@ function stubFetch(postfaecherOk = true, speichernOk = true) {
         if (url === '/api/frontend-users' && !init?.method) return json([benutzer, { ...benutzer, id: 8, displayName: 'Erika Musterfrau', username: null, shortCode: null, roles: ['ADMIN'], active: false, emailAbsender: null }]);
         if (url === '/api/frontend-users') return json(benutzer, speichernOk ? 200 : 400);
         if (url.startsWith('/api/frontend-users/')) return json({}, speichernOk ? 200 : 500);
-        if (url === '/api/email/signatures') return json([{ id: 1, name: 'Standard' }]);
         if (url === '/api/mitarbeiter') return json([{ id: 2, vorname: 'Max', nachname: 'Mustermann' }]);
         if (url === '/api/postfaecher') {
             return postfaecherOk
@@ -62,6 +61,19 @@ describe('BenutzerEditor – Eigenes Postfach', () => {
         const call = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/frontend-users' && init?.method === 'POST')!;
         expect(JSON.parse(String(call[1]?.body))).toMatchObject({ id: 7, emailAbsenderId: 9 });
         expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/firma/email-absender'))).toBe(false);
+    });
+
+    it('hat kein Feld für die Standard-Signatur mehr – die legt jeder Benutzer selbst fest', async () => {
+        const user = userEvent.setup();
+        const fetchMock = stubFetch();
+        renderEditor();
+        await user.click(await screen.findByText('Max Mustermann'));
+        expect(screen.queryByText('Standard-Signatur (optional)')).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/frontend-users' && init?.method === 'POST')).toBe(true));
+        const call = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/frontend-users' && init?.method === 'POST')!;
+        expect(JSON.parse(String(call[1]?.body))).not.toHaveProperty('defaultSignatureId');
+        expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/email/signatures'))).toBe(false);
     });
 
     it('meldet, wenn die Postfächer nicht geladen werden können', async () => {

@@ -26,14 +26,8 @@ interface FrontendUser {
     shortCode: string | null;
     roles: string[];
     active: boolean;
-    defaultSignature: { id: number; name: string } | null;
     mitarbeiter: { id: number; vorname: string; nachname: string } | null;
     emailAbsender: { id: number; emailAdresse: string; anzeigename: string | null } | null;
-}
-
-interface EmailSignature {
-    id: number;
-    name: string;
 }
 
 interface Mitarbeiter {
@@ -129,7 +123,6 @@ export default function BenutzerEditor() {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [users, setUsers] = useState<FrontendUser[]>([]);
-    const [signatures, setSignatures] = useState<EmailSignature[]>([]);
     const [mitarbeiterList, setMitarbeiterList] = useState<Mitarbeiter[]>([]);
     const [postfaecher, setPostfaecher] = useState<PostfachDto[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -145,7 +138,6 @@ export default function BenutzerEditor() {
         role: 'USER' as 'ADMIN' | 'USER',
         active: true,
         shortCode: '',
-        defaultSignatureId: null as number | null,
         mitarbeiterId: null as number | null,
         emailAbsenderId: null as number | null,
     });
@@ -156,19 +148,14 @@ export default function BenutzerEditor() {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [usersRes, signaturesRes, mitarbeiterRes, postfaecherRes] = await Promise.all([
+            const [usersRes, mitarbeiterRes, postfaecherRes] = await Promise.all([
                 fetch('/api/frontend-users'),
-                fetch('/api/email/signatures'),
                 fetch('/api/mitarbeiter'),
                 fetch('/api/postfaecher'),
             ]);
             if (usersRes.ok) {
                 const data = await usersRes.json();
                 setUsers(Array.isArray(data) ? data : []);
-            }
-            if (signaturesRes.ok) {
-                const data = await signaturesRes.json();
-                setSignatures(Array.isArray(data) ? data : []);
             }
             if (mitarbeiterRes.ok) {
                 const data = await mitarbeiterRes.json();
@@ -203,7 +190,6 @@ export default function BenutzerEditor() {
                 role: selectedUser.roles?.includes('ADMIN') ? 'ADMIN' : 'USER',
                 active: selectedUser.active !== false,
                 shortCode: selectedUser.shortCode || '',
-                defaultSignatureId: selectedUser.defaultSignature?.id || null,
                 mitarbeiterId: selectedUser.mitarbeiter?.id || null,
                 emailAbsenderId: selectedUser.emailAbsender?.id || null,
             });
@@ -221,7 +207,6 @@ export default function BenutzerEditor() {
             role: 'USER',
             active: true,
             shortCode: '',
-            defaultSignatureId: null,
             mitarbeiterId: null,
             emailAbsenderId: null,
         });
@@ -247,7 +232,6 @@ export default function BenutzerEditor() {
                     roles: [formData.role],
                     active: formData.active,
                     shortCode: formData.shortCode.trim() || null,
-                    defaultSignatureId: formData.defaultSignatureId,
                     mitarbeiterId: formData.mitarbeiterId,
                     emailAbsenderId: formData.emailAbsenderId,
                 }),
@@ -432,26 +416,6 @@ export default function BenutzerEditor() {
                             />
                             <p className="text-xs text-slate-500">
                                 Wird als Initialen im Avatar angezeigt.
-                            </p>
-                        </div>
-
-                        {/* Default Signature */}
-                        <div className="space-y-2">
-                            <Label htmlFor="signature">Standard-Signatur (optional)</Label>
-                            <Select
-                                value={formData.defaultSignatureId?.toString() || ''}
-                                onChange={(value) => setFormData(prev => ({
-                                    ...prev,
-                                    defaultSignatureId: value ? Number(value) : null
-                                }))}
-                                options={[
-                                    { value: '', label: 'Keine Signatur' },
-                                    ...signatures.map((sig) => ({ value: sig.id.toString(), label: sig.name }))
-                                ]}
-                                placeholder="Signatur wählen"
-                            />
-                            <p className="text-xs text-slate-500">
-                                Wird automatisch für E-Mails dieses Benutzers verwendet.
                             </p>
                         </div>
 

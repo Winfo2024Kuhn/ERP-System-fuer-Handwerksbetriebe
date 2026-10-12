@@ -231,6 +231,9 @@ public class SecurityConfig {
                 // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
                 // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.
                 .requestMatchers(HttpMethod.PUT, "/api/email/signatures/*/system-default").hasRole("ADMIN")
+                // Firmen-Vorlagen legen das Signatur-Design fuer alle Mitarbeiter fest - nur Admins.
+                .requestMatchers(HttpMethod.PUT, "/api/email/signatures/*/firmen-vorlage").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/email/signatures/*/firmen-vorlage").hasRole("ADMIN")
                 // Formularwesen (Briefpapier/Dokumentvorlagen) pflegt nur der Admin. Lesen bleibt für alle,
                 // weil der Dokument-Editor die Vorlagen beim Erstellen von Angeboten und Rechnungen lädt.
                 // Die Dokumentnummer vergibt das System beim Erstellen eines Dokuments – bleibt offen.

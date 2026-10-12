@@ -72,7 +72,7 @@ class EmailSignatureControllerTest {
 
     private static EmailSignaturDto dto(Long id, String name, boolean systemDefault) {
         return new EmailSignaturDto(id, name, "<p>Max Mustermann</p>", null, false, systemDefault,
-                5L, "Max Mustermann", true, null, null, List.of());
+                5L, "Max Mustermann", true, null, null, List.of(), false, null, false);
     }
 
     // ---------- Anmeldung, CSRF, Rechte ----------
@@ -149,6 +149,7 @@ class EmailSignatureControllerTest {
     void fremdeSignatur404() throws Exception {
         given(verwaltung.laden(eq(7L), any())).willReturn(Optional.empty());
         given(verwaltung.sichtbare(anyLong(), any())).willReturn(Optional.empty());
+        given(verwaltung.bearbeitbare(anyLong(), any())).willThrow(new NoSuchElementException());
 
         mockMvc.perform(get("/api/email/signatures/7")).andExpect(status().isNotFound());
         mockMvc.perform(get("/api/email/signatures/7/preview")).andExpect(status().isNotFound());
@@ -181,7 +182,7 @@ class EmailSignatureControllerTest {
 
         mockMvc.perform(post("/api/email/signatures").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Neu\",\"html\":\"<table></table>\",\"vorlageDaten\":\"{\\\"vorlage\\\":\\\"klassisch\\\"}\","
-                                + "\"besitzerId\":9,\"besitzerFestlegen\":true,\"alsStandard\":true}"))
+                                + "\"besitzerId\":9,\"besitzerFestlegen\":true,\"alsStandard\":true,\"firmenVorlageId\":4}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(3));
 
@@ -192,6 +193,7 @@ class EmailSignatureControllerTest {
         assertThat(captor.getValue().besitzerId()).isEqualTo(9L);
         assertThat(captor.getValue().besitzerFestlegen()).isTrue();
         assertThat(captor.getValue().alsStandard()).isTrue();
+        assertThat(captor.getValue().firmenVorlageId()).isEqualTo(4L);
     }
 
     @Test
@@ -224,7 +226,7 @@ class EmailSignatureControllerTest {
     @DisplayName("Eigene Standard-Signatur setzen und entfernen")
     void standardSetzenUndEntfernen() throws Exception {
         EmailSignaturDto standard = new EmailSignaturDto(3L, "Meine", "<p>x</p>", null, true, false,
-                5L, "Max Mustermann", true, null, null, List.of());
+                5L, "Max Mustermann", true, null, null, List.of(), false, null, false);
         given(verwaltung.alsStandard(3L, MAX)).willReturn(standard);
 
         mockMvc.perform(put("/api/email/signatures/3/standard").with(csrf()))
@@ -311,6 +313,86 @@ class EmailSignatureControllerTest {
         verify(verwaltung).loeschen(3L, MAX);
     }
 
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Vom Betrieb festgelegte Signatur: Löschen und Bild entfernen 400 mit Meldung")
+    void nurLesenNichtAenderbar() throws Exception {
+        String meldung = "Diese Signatur hat der Betrieb für Sie festgelegt. Ändern kann sie nur ein Admin.";
+        org.mockito.Mockito.doThrow(new IllegalArgumentException(meldung)).when(verwaltung).loeschen(8L, MAX);
+        given(verwaltung.bearbeitbare(8L, MAX)).willThrow(new IllegalArgumentException(meldung));
+
+        mockMvc.perform(delete("/api/email/signatures/8").with(csrf()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(meldung));
+        mockMvc.perform(delete("/api/email/signatures/8/images/1").with(csrf()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(meldung));
+        verify(service, never()).deleteImage(anyLong(), anyLong());
+    }
+
+    // ---------- Firmen-Vorlagen ----------
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("GET /firmen-vorlagen: jeder angemeldete Benutzer sieht die Vorlagen")
+    void firmenVorlagenFuerBenutzer() throws Exception {
+        EmailSignaturDto vorlage = new EmailSignaturDto(4L, "Firmen-Design", "<table></table>", "{\"vorlage\":\"kompakt\"}",
+                false, false, null, null, false, null, null, List.of(), true, null, true);
+        given(verwaltung.firmenVorlagen(MAX)).willReturn(List.of(vorlage));
+
+        mockMvc.perform(get("/api/email/signatures/firmen-vorlagen"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(4))
+                .andExpect(jsonPath("$[0].firmenVorlage").value(true))
+                .andExpect(jsonPath("$[0].nurLesen").value(true))
+                .andExpect(jsonPath("$[0].vorlageDaten").value("{\"vorlage\":\"kompakt\"}"))
+                .andExpect(jsonPath("$[0].besitzerId").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    @DisplayName("GET /firmen-vorlagen ohne Anmeldung: 401")
+    void firmenVorlagenAnonym() throws Exception {
+        mockMvc.perform(get("/api/email/signatures/firmen-vorlagen")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(verwaltung);
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Benutzer darf keine Firmen-Vorlage festlegen oder zurücknehmen")
+    void firmenVorlageNurAdmin() throws Exception {
+        mockMvc.perform(put("/api/email/signatures/4/firmen-vorlage").with(csrf())).andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/email/signatures/4/firmen-vorlage").with(csrf())).andExpect(status().isForbidden());
+        verify(verwaltung, never()).alsFirmenVorlage(anyLong(), org.mockito.ArgumentMatchers.anyBoolean(), any());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("Admin legt Firmen-Vorlage fest und nimmt sie zurück; ohne CSRF 403, unbekannt 404")
+    void firmenVorlageAdmin() throws Exception {
+        given(verwaltung.benutzer(any())).willReturn(CHEF);
+        EmailSignaturDto alsVorlage = new EmailSignaturDto(4L, "Firmen-Design", "<p>x</p>", null, false, false,
+                1L, "Chef Mustermann", true, null, null, List.of(), true, null, false);
+        given(verwaltung.alsFirmenVorlage(4L, true, CHEF)).willReturn(alsVorlage);
+        given(verwaltung.alsFirmenVorlage(4L, false, CHEF)).willReturn(dto(4L, "Firmen-Design", false));
+        given(verwaltung.alsFirmenVorlage(eq(404L), org.mockito.ArgumentMatchers.anyBoolean(), eq(CHEF)))
+                .willThrow(new NoSuchElementException());
+
+        mockMvc.perform(put("/api/email/signatures/4/firmen-vorlage").with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.firmenVorlage").value(true));
+        mockMvc.perform(delete("/api/email/signatures/4/firmen-vorlage").with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.firmenVorlage").value(false));
+        mockMvc.perform(put("/api/email/signatures/404/firmen-vorlage").with(csrf())).andExpect(status().isNotFound());
+        given(verwaltung.alsFirmenVorlage(5L, true, CHEF))
+                .willThrow(new IllegalArgumentException("Firmen-Vorlage kann nur eine Signatur werden, die mit dem Formular gestaltet wurde."));
+        mockMvc.perform(put("/api/email/signatures/5/firmen-vorlage").with(csrf()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Firmen-Vorlage kann nur eine Signatur werden, die mit dem Formular gestaltet wurde."));
+        mockMvc.perform(put("/api/email/signatures/4/firmen-vorlage")).andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/email/signatures/abc/firmen-vorlage").with(csrf())).andExpect(status().isBadRequest());
+    }
+
     // ---------- Standard zum Vorbelegen, System-Signatur ----------
 
     @Test
@@ -341,7 +423,7 @@ class EmailSignatureControllerTest {
     void systemDefaultMitPlatzhalter() throws Exception {
         given(verwaltung.benutzer(any())).willReturn(CHEF);
         EmailSignaturDto platzhalter = new EmailSignaturDto(99L, "System", "<div data-system-placeholder=\"1\">Bitte eintragen</div>",
-                null, false, true, null, null, false, null, null, List.of());
+                null, false, true, null, null, false, null, null, List.of(), false, null, false);
         given(verwaltung.systemSignatur(CHEF)).willReturn(Optional.of(platzhalter));
 
         mockMvc.perform(get("/api/email/signatures/system-default"))
