@@ -4,7 +4,8 @@
  *
  * Hintergrund: Wird eine Abschlagsrechnung storniert, betrifft das die
  * Schlussrechnung. Eine gebuchte Schlussrechnung storniert der Server mit,
- * ein Entwurf bleibt stehen und zieht den stornierten Abschlag noch ab.
+ * ein Entwurf bleibt stehen: Er zeigt den Abschlag schon nicht mehr an, sein
+ * gespeicherter Betrag ist aber veraltet, bis jemand ihn öffnet und speichert.
  * Beides soll der Nutzer sofort sehen, nicht nur im Server-Log.
  */
 export type StornoHinweisArt = 'MITSTORNIERT' | 'ENTWURF_PRUEFEN';
@@ -25,14 +26,11 @@ export function stornoHinweiseAus(antwort: unknown): StornoHinweis[] {
     if (!antwort || typeof antwort !== 'object') return [];
     const hinweise = (antwort as { hinweise?: unknown }).hinweise;
     if (!Array.isArray(hinweise)) return [];
-    return hinweise.filter(
-        (h): h is StornoHinweis =>
-            !!h &&
-            typeof h === 'object' &&
-            ((h as StornoHinweis).art === 'MITSTORNIERT' || (h as StornoHinweis).art === 'ENTWURF_PRUEFEN') &&
-            typeof (h as StornoHinweis).text === 'string' &&
-            (h as StornoHinweis).text.trim() !== '',
-    );
+    return hinweise.filter((h): h is StornoHinweis => {
+        if (!h || typeof h !== 'object') return false;
+        const { art, text } = h as Partial<StornoHinweis>;
+        return (art === 'MITSTORNIERT' || art === 'ENTWURF_PRUEFEN') && typeof text === 'string' && text.trim() !== '';
+    });
 }
 
 /**

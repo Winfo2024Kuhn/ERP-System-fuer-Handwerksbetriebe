@@ -1742,7 +1742,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
                     .contains("RE-2026-002", "mitstorniert", "RE-2026-001")
                     .containsPattern("Stornorechnung ST-\\d{4}/\\d{2}/\\d{5}");
             assertThat(ergebnis.hinweise().get(1).text())
-                    .contains("RE-2026-003", "Entwurf", "RE-2026-001", "prüfen");
+                    .contains("RE-2026-003", "Entwurf", "RE-2026-001", "nicht mehr abgezogen", "speichern");
         }
 
         @Test

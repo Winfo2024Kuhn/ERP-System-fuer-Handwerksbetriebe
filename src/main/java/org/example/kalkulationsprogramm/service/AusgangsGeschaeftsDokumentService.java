@@ -784,8 +784,9 @@ public class AusgangsGeschaeftsDokumentService {
                             geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
                     hinweise.add(new StornoHinweisDto(StornoHinweisDto.Art.ENTWURF_PRUEFEN,
                             "Die Schlussrechnung " + geschwisterDok.getDokumentNummer()
-                                    + " ist noch ein Entwurf und zieht die stornierte Abschlagsrechnung "
-                                    + original.getDokumentNummer() + " noch ab. Bitte Beträge prüfen, bevor Sie sie buchen."));
+                                    + " ist noch ein Entwurf. Die Abschlagsrechnung " + original.getDokumentNummer()
+                                    + " wird dort nicht mehr abgezogen. Bitte öffnen Sie die Schlussrechnung,"
+                                    + " prüfen Sie die Beträge und speichern Sie sie, bevor Sie sie buchen."));
                     continue;
                 }
                 log.info("Kaskadierende Stornierung: Schlussrechnung {} wird mitstorniert (Abschlagsrechnung {} storniert)",

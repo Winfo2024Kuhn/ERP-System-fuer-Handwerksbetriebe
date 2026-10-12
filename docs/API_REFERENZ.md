@@ -349,7 +349,7 @@ Angebote, Auftragsbestätigungen, Rechnungen, Mahnungen usw. als Ausgangsdokumen
 | `POST` | `/{id}/email-versendet` | Nach dem Mail-Versand buchen und Versanddatum setzen |
 | `POST` | `/{id}/pdf-speichern` | PDF zu einem gebuchten Dokument ablegen |
 | `GET` | `/{id}/pdf` | Gespeicherte PDF (`404`, wenn keine da ist) |
-| `POST` | `/{id}/storno` | Gebuchte Rechnung stornieren, legt ein Storno-Gegendokument an (nicht für Stornorechnungen und Entwürfe) |
+| `POST` | `/{id}/storno` | Gebuchte Rechnung stornieren, legt ein Storno-Gegendokument an (nicht für Stornorechnungen und Entwürfe). Antwort: die Felder der Stornorechnung plus `hinweise` (Liste aus `{art, text}`, `art` = `MITSTORNIERT` oder `ENTWURF_PRUEFEN`) zu betroffenen Schlussrechnungen |
 | `DELETE` | `/{id}` | Entwurf mit Begründung (`begruendung`) löschen, Eintrag im Prüfprotokoll (nicht wenn gebucht, versandt, digital angenommen oder storniert) |
 | `GET` | `/{id}/historie` | Änderungsverlauf (Prüfprotokoll) eines Dokuments |
 | `GET` | `/historie/nummer/{dokumentNummer}` | Verlauf über die Dokumentnummer, auch für gelöschte Dokumente |
