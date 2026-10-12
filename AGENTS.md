@@ -61,6 +61,7 @@ Das ERP ermöglicht Handwerksbetrieben den einfachen Sprung ins digitale Zeitalt
    - **HTML Tag-Stripping:** Niemals einfaches `.replace(/<[^>]*>/g, '')` nutzen. Immer die Fixpunktschleife `stripHtmlTags()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` verwenden.
    - **Entity Unescaping:** Niemals sequentiell mit mehreren `.replace()` entpacken. Immer `unescapeHtmlEntities()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Single-Pass) verwenden.
    - **DOM-XSS:** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` absichern.
+   - **HTML-Anzeige:** `dangerouslySetInnerHTML` nur mit `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (DOMPurify) (oder eine strengere eigene DOMPurify-Instanz mit Positivliste, Vorbild `bereinigeBeitragsHtml`; nie lockerer), auch bei serverseitig bereinigten Daten. Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren). `EmailHtmlSanitizer` ist Backend-Java und gilt nur für E-Mails. HTML nur zum Auslesen über `parseHtmlInert()`/`htmlToText()` parsen, nie über `document.createElement('div').innerHTML`.
 
 ---
 
@@ -90,7 +91,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
   - `<DatePicker>` → `src/components/ui/datepicker.tsx`
   - `<ImageViewer>` → `src/components/ui/image-viewer.tsx`
   - `<DetailLayout>` → `src/components/DetailLayout.tsx`
-- **Sicherheit:** Kein `dangerouslySetInnerHTML` ohne Sanitizing.
+- **Sicherheit:** Kein `dangerouslySetInnerHTML` ohne `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (DOMPurify) (oder eine strengere eigene DOMPurify-Instanz mit Positivliste, Vorbild `bereinigeBeitragsHtml`; nie lockerer), auch bei serverseitig bereinigten Daten; gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren); HTML nur zum Auslesen über `parseHtmlInert()`/`htmlToText()` parsen.
 - **Systemeigene Eingaben und Meldungen:** Vorhandene gestaltete UI-Komponenten und Toast-/Bestätigungsdialoge verwenden. Keine sichtbaren Browser-Standard-Picker für Datum/Uhrzeit, Number-Spinner, nativen Select-Popups oder `window.alert`/`window.confirm`. Auch geöffnete Auswahlen und fokussierte Felder müssen dem eigenen Design-System entsprechen.
 
 ### Zahlenfelder (dauerhafte Nutzervorgabe vom 09.09.2026)

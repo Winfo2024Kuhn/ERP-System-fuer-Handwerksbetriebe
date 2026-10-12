@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import DOMPurify from 'dompurify';
 import {
     Plus,
     Trash2,
@@ -34,7 +33,7 @@ import { Label } from './ui/label';
 import { DatePicker } from './ui/datepicker';
 import { InfoAbschnitt, InfoButton } from './ui/info-button';
 import { cn } from '../lib/utils';
-import { stripHtmlTags, unescapeHtmlEntities } from '../lib/htmlSanitizer';
+import { sanitizeHtml, stripHtmlTags, unescapeHtmlEntities } from '../lib/htmlSanitizer';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import { formatPostfach, type PostfachKurz } from '../features/email/postfach';
@@ -257,10 +256,7 @@ export default function EmailSettings() {
         const key = editingOoo.id ?? 'new';
         if (editorInitForRef.current === key) return;
         editorInitForRef.current = key;
-        editor.innerHTML = DOMPurify.sanitize(editingOoo.message || '', {
-            ADD_ATTR: ['target', 'style'],
-            ADD_TAGS: ['table', 'tbody', 'thead', 'tr', 'td', 'th']
-        });
+        editor.innerHTML = sanitizeHtml(editingOoo.message);
     }, [editingOoo]);
 
     // Save OOO

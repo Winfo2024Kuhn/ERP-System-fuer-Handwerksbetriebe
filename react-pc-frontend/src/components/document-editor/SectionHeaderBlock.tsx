@@ -3,6 +3,7 @@ import { Trash2, FolderOpen, ChevronDown, ChevronUp, ArrowUpFromLine, FileText, 
 import { useDroppable } from '@dnd-kit/core';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
+import { sanitizeHtml } from '../../lib/htmlSanitizer';
 import { ServiceBlock } from './ServiceBlock';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { calculateSectionSubtotal, formatCurrency, gruppiereFuerAnzeige } from './helpers';
@@ -106,7 +107,7 @@ export function SectionHeaderBlock({
                     </div>
                     <div
                         className="text-xs text-slate-600 leading-relaxed prose prose-xs max-w-none rich-text-einheitlich"
-                        dangerouslySetInnerHTML={{ __html: child.content || '' }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(child.content) }}
                     />
                 </div>
                 {!isLocked && onAddBelow && (
