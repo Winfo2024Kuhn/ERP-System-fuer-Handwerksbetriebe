@@ -746,6 +746,101 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
         }
     }
 
+    /**
+     * Gemeinsamer Weg für jeden Bezahlt-Haken (Offene-Posten-Center, Barzahlung,
+     * Storno einer Barzahlung): Der Projektstatus muss sofort nachziehen.
+     */
+    @Nested
+    class SetzeOffenenPostenBezahlt {
+
+        @Test
+        void abhakenDerLetztenRechnungSetztProjektAufBezahltUndBeendet() {
+            Projekt projekt = projektMitAngebot(40L, false, false);
+            ProjektGeschaeftsdokument posten = offenerPosten(projekt, false);
+
+            when(projektRepository.findById(40L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(40L))
+                    .thenReturn(List.of(angebot("1500.00"), gebuchteRechnung("1500.00")));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(40L)).thenReturn(false);
+            when(projektDokumentRepository.sumBezahlteRechnungenByProjektId(40L))
+                    .thenReturn(new BigDecimal("1500.00"));
+
+            service.setzeOffenenPostenBezahlt(posten, true);
+
+            assertThat(posten.isBezahlt()).isTrue();
+            verify(projektDokumentRepository).save(posten);
+            assertThat(projekt.isBezahlt()).isTrue();
+            assertThat(projekt.isAbgeschlossen()).isTrue();
+            verify(projektRepository).save(projekt);
+        }
+
+        @Test
+        void zuruecksetzenNimmtBezahltSofortWiederWeg() {
+            // z.B. Storno einer Barzahlung: Die Rechnung ist wieder offen, das Projekt
+            // darf nicht weiter "Bezahlt" zeigen.
+            Projekt projekt = projektMitAngebot(41L, true, true);
+            ProjektGeschaeftsdokument posten = offenerPosten(projekt, true);
+
+            when(projektRepository.findById(41L)).thenReturn(Optional.of(projekt));
+            when(dokumentRepository.findByProjektIdOrderByDatumDesc(41L))
+                    .thenReturn(List.of(angebot("1500.00"), gebuchteRechnung("1500.00")));
+            when(projektDokumentRepository.existsOffenePostenByProjektId(41L)).thenReturn(true);
+
+            service.setzeOffenenPostenBezahlt(posten, false);
+
+            assertThat(posten.isBezahlt()).isFalse();
+            verify(projektDokumentRepository).save(posten);
+            assertThat(projekt.isBezahlt()).isFalse();
+            assertThat(projekt.isAbgeschlossen()).isFalse();
+        }
+
+        @Test
+        void postenOhneProjektWirdNurGespeichert() {
+            ProjektGeschaeftsdokument posten = offenerPosten(null, false);
+
+            service.setzeOffenenPostenBezahlt(posten, true);
+
+            assertThat(posten.isBezahlt()).isTrue();
+            verify(projektDokumentRepository).save(posten);
+            verifyNoInteractions(projektRepository, dokumentRepository);
+        }
+
+        private Projekt projektMitAngebot(Long id, boolean bezahlt, boolean abgeschlossen) {
+            Projekt projekt = new Projekt();
+            projekt.setId(id);
+            projekt.setBruttoPreis(new BigDecimal("1500.00"));
+            projekt.setBezahlt(bezahlt);
+            projekt.setAbgeschlossen(abgeschlossen);
+            return projekt;
+        }
+
+        private ProjektGeschaeftsdokument offenerPosten(Projekt projekt, boolean bezahlt) {
+            ProjektGeschaeftsdokument posten = new ProjektGeschaeftsdokument();
+            posten.setProjekt(projekt);
+            posten.setGeschaeftsdokumentart("Rechnung");
+            posten.setBruttoBetrag(new BigDecimal("1500.00"));
+            posten.setBezahlt(bezahlt);
+            return posten;
+        }
+
+        private AusgangsGeschaeftsDokument angebot(String betrag) {
+            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            angebot.setBetragBrutto(new BigDecimal(betrag));
+            angebot.setStorniert(false);
+            return angebot;
+        }
+
+        private AusgangsGeschaeftsDokument gebuchteRechnung(String betrag) {
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setBetragBrutto(new BigDecimal(betrag));
+            rechnung.setStorniert(false);
+            rechnung.setGebucht(true);
+            return rechnung;
+        }
+    }
+
     @Nested
     class TrageFehlendePreiseNach {
 

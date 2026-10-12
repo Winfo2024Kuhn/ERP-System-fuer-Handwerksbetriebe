@@ -934,6 +934,23 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
+     * Setzt den Bezahlt-Haken eines Offenen Postens und zieht den Projektstatus
+     * ("Bezahlt", automatisch "Beendet") sofort nach.
+     *
+     * <p>Jede Stelle, die den Haken ändert – Offene-Posten-Center, Barzahlung im
+     * Kassenbuch, Storno einer Barzahlung –, geht hier durch. Sonst bliebe am Projekt
+     * ein veralteter Status stehen, bis jemand das Projekt öffnet.</p>
+     */
+    @Transactional
+    public void setzeOffenenPostenBezahlt(ProjektGeschaeftsdokument offenerPosten, boolean bezahlt) {
+        offenerPosten.setBezahlt(bezahlt);
+        projektDokumentRepository.save(offenerPosten);
+        if (offenerPosten.getProjekt() != null) {
+            berechneProjektPreisUndStatus(offenerPosten.getProjekt().getId());
+        }
+    }
+
+    /**
      * Markiert den zugehörigen Offene-Posten-Eintrag als bezahlt (z.B. bei Stornierung).
      */
     private void markiereOffenenPostenAlsBezahlt(AusgangsGeschaeftsDokument dokument) {
