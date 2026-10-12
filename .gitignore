@@ -64,7 +64,9 @@ build_error_log.txt
 *.backup
 
 ### AI Indexer Cache ###
-.rag-cache.json
+.rag-cache.json*
+# RAG-Datei beim Image-Bau (docker-image.yml)
+/ki-hilfe/
 
 ### Local Overrides (Secrets, Credentials) ###
 .env

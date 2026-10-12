@@ -1,112 +1,151 @@
-# Deployment Scripts
+# Deployment Scripts (Altweg: JAR unter Windows)
 
-Dieses Verzeichnis enthält Skripte für das Deployment und Update des Kalkulationsprogramms.
+Dieses Verzeichnis enthält Skripte für Start, Sicherung und Update des Kalkulationsprogramms,
+wenn es als JAR auf einem Windows-Rechner läuft (`C:\Kalkulationsprogramm`).
+
+> **Altweg.** Die Skripte stammen aus der Zeit vor `deployment/docker-server` und wurden
+> zuletzt am 11.10.2026 auf PostgreSQL umgestellt. Für Neuinstallationen ist
+> [`deployment/docker-server`](../docker-server/README.md) der Weg – dort erledigt der
+> Updater-Container Sicherung, Update und Rollback. Installation und geplante Aufgaben:
+> [DEPLOYMENT_README.md](../DEPLOYMENT_README.md).
+
+## Übersicht
+
+| Skript | Zweck |
+| --- | --- |
+| `UPDATE.bat` | Startet `update-production.ps1` per Doppelklick |
+| `update-production.ps1` | Neuen Stand von `main` holen, bauen und nach `C:\Kalkulationsprogramm` kopieren (siehe unten) |
+| `backup-database.ps1` | Datenbank sichern (lokal, externe Platte, OneDrive) und Uploads spiegeln |
+| `install-scheduled-tasks.ps1` | Kopiert Backup-, Start- und Neustart-Skript nach `C:\Kalkulationsprogramm\scripts` und richtet die Windows-Aufgaben ein |
+| `SETUP-AUTOSTART.bat`, `setup-autostart.ps1` | Richtet nur die Aufgabe „Kalkulationsprogramm - Auto Start“ ein (Skripte müssen schon in `C:\Kalkulationsprogramm\scripts` liegen) |
+| `start-kalkulationsprogramm.ps1` | Startet den Server im Hintergrund und wartet, bis der Port antwortet |
+| `restart-kalkulationsprogramm.ps1` | Beendet den Server auf dem Port und ruft das Startskript auf |
+| `start-server.bat` | Startet die neueste JAR aus `C:\Kalkulationsprogramm` (sonst aus `target\`) in einem Fenster und öffnet den Browser |
 
 ## 📦 update-production.ps1
 
-Automatisches Update-Skript für das Produktionssystem in `C:\Kalkulationsprogramm`.
+Update-Skript für das Produktionssystem in `C:\Kalkulationsprogramm`. Es startet sich bei
+Bedarf selbst mit Administrator-Rechten neu.
 
 ### Was macht das Skript?
 
-1. ✅ Wechselt zum main branch (falls nicht bereits aktiv)
-2. ✅ Pullt die neuesten Änderungen vom Repository
-3. ✅ Führt Maven Build aus (`mvn clean package -DskipTests`)
-4. ✅ Erstellt automatisch ein Backup der alten JAR
-5. ✅ Kopiert die neue JAR nach `C:\Kalkulationsprogramm`
-6. ✅ Optional: Neustart des Services
+1. ✅ Prüft auf nicht committete Änderungen und ob `main` aktiv ist (fragt nach, ob es
+   wechseln soll)
+2. ✅ Setzt die eingecheckte Frontend-Build-Ausgabe (`src/main/resources/static`) zurück und
+   pullt `main`
+3. ✅ Sichert die Datenbank per `pg_dump` im Container nach
+   `C:\Kalkulationsprogramm\backups\db\` (die letzten 10 bleiben). **Ohne gelungene
+   Sicherung bricht das Update ab**, bevor etwas verändert wurde.
+4. ✅ Baut beide Frontends (`npm ci` nur wenn nötig, dann `npm run build`)
+5. ✅ Baut die JAR (`mvnw.cmd clean package -DskipTests`, sonst `mvn`)
+6. ✅ Beendet den Prozess, der auf Port 8080 lauscht
+7. ✅ Sichert die alten JAR-Dateien nach `C:\Kalkulationsprogramm\backups\` (die letzten 5
+   bleiben) und kopiert die neue JAR nach `C:\Kalkulationsprogramm`
+8. ✅ Kopiert `application.properties` und `application-local.properties` aus
+   `src\main\resources` sowie `config\logback-spring.xml` nach `C:\Kalkulationsprogramm\config`
+9. ✅ Kopiert das OpenFile-Launcher-Setup (`OpenFileLauncher-Setup.ps1`,
+   `OpenFileLauncher-Install.bat`) nach `C:\Kalkulationsprogramm\downloads` – von dort bietet
+   das ERP es zum Herunterladen an
+10. ✅ Startet die Anwendung wieder, wenn sie vorher lief (sonst Rückfrage)
 
 ### Verwendung
 
 #### Standard-Update (empfohlen)
 ```powershell
+.\UPDATE.bat
+# oder
 .\update-production.ps1
 ```
 
 #### Mit Optionen
 ```powershell
-# Build überspringen (nur wenn bereits gebaut)
+# Gar nicht bauen (nur wenn bereits gebaut)
 .\update-production.ps1 -SkipBuild
 
-# Kein Backup erstellen
+# Nur die Frontends nicht bauen (eingecheckte Dateien aus src\main\resources\static nehmen)
+.\update-production.ps1 -SkipFrontendBuild
+
+# Keine Sicherung (weder Datenbank noch alte JAR) - nur bewusst!
 .\update-production.ps1 -SkipBackup
 
-# Alle Warnungen ignorieren
+# Keine Rückfragen zu nicht committeten Änderungen und Branch
 .\update-production.ps1 -Force
 
-# Kombiniert
-.\update-production.ps1 -SkipBackup -Force
+# Anderer Datenbank-Container (z. B. eigener Container für das JAR)
+.\update-production.ps1 -DbContainer <name> -DbUser erp_user
 ```
+
+`-Force` wechselt **nicht** auf `main`: Steht das Repository auf einem anderen Branch, wird
+dieser gebaut und eingespielt.
+
+Standard für die Datenbank ist `-DbContainer erp-postgres -DbUser postgres` (der Container
+von `deployment/docker-server`). Ein JAR erreicht diese Datenbank aber nicht – siehe
+[DEPLOYMENT_README.md](../DEPLOYMENT_README.md), Abschnitt Voraussetzungen.
 
 ### Voraussetzungen
 
-- ✅ Git muss installiert sein
-- ✅ Maven muss installiert und im PATH sein
-- ✅ Java JDK muss installiert sein
-- ✅ Schreibrechte auf `C:\Kalkulationsprogramm`
+- ✅ Git
+- ✅ Node.js mit npm (für den Frontend-Build; sonst `-SkipFrontendBuild`)
+- ✅ Java JDK 23 (Maven kommt über `mvnw.cmd` aus dem Repository)
+- ✅ Docker Desktop mit dem Datenbank-Container (für die Sicherung)
+- ✅ Das Repository unter `C:\Github\ERP-System-fuer-Handwerksbetriebe` (fest im Skript)
+- ✅ Administrator-Rechte (fragt das Skript selbst an)
 
 ### Backups
 
-Das Skript erstellt automatisch Backups der alten JAR-Dateien in:
-```
-C:\Kalkulationsprogramm\backups\
-```
-
-Es werden die letzten 5 Backups aufbewahrt, ältere werden automatisch gelöscht.
-
-Format: `handwerkerprogramm-0.0.1-SNAPSHOT.jar.YYYY-MM-DD_HH-mm-ss.bak`
-
-### Sicherheitshinweise
-
-⚠️ **WICHTIG:** Nach dem Update muss die Anwendung/der Service neu gestartet werden!
-
-Das Skript prüft:
-- Ob uncommitted changes vorhanden sind
-- Ob du auf dem main branch bist
-- Ob die JAR-Datei erfolgreich erstellt wurde
+| Was | Wohin | Aufbewahrt |
+| --- | --- | --- |
+| Datenbank | `C:\Kalkulationsprogramm\backups\db\kalkulationsprogramm_db_<yyyy-MM-dd_HH-mm-ss>.sql` | die letzten 10 |
+| Alte JAR | `C:\Kalkulationsprogramm\backups\<jar-name>.<yyyy-MM-dd_HH-mm-ss>.bak` | die letzten 5 |
 
 ### Fehlerbehandlung
 
 Wenn etwas schief geht:
 1. Prüfe die Fehlermeldung im Terminal
-2. Falls der Build fehlschlägt: Prüfe Maven-Logs
-3. Falls das Kopieren fehlschlägt: Prüfe Schreibrechte
-4. Im Notfall: Restore ein Backup aus `C:\Kalkulationsprogramm\backups\`
+2. Datenbank-Sicherung fehlgeschlagen: Läuft Docker Desktop? Stimmen `-DbContainer` und
+   `-DbUser`? Es wurde noch nichts verändert.
+3. Falls der Build fehlschlägt: Prüfe npm- bzw. Maven-Ausgabe. Die laufende Anwendung ist
+   bis dahin unverändert.
+4. Falls das Kopieren fehlschlägt: Prüfe Schreibrechte
+5. Im Notfall: Restore ein Backup aus `C:\Kalkulationsprogramm\backups\`
 
 ### Restore von Backup
 
-Falls du ein Backup wiederherstellen musst:
+Falls du die alte JAR wiederherstellen musst:
 ```powershell
 # Finde das gewünschte Backup
 ls C:\Kalkulationsprogramm\backups\
 
-# Restore (Beispiel)
-Copy-Item "C:\Kalkulationsprogramm\backups\handwerkerprogramm-0.0.1-SNAPSHOT.jar.2024-12-04_15-30-00.bak" `
-          "C:\Kalkulationsprogramm\handwerkerprogramm-0.0.1-SNAPSHOT.jar" -Force
+# Neue JAR entfernen und alte zurückkopieren (Beispiel)
+Remove-Item "C:\Kalkulationsprogramm\*.jar"
+Copy-Item "C:\Kalkulationsprogramm\backups\Kalkulationsprogramm-<Version>.jar.<Zeitstempel>.bak" `
+          "C:\Kalkulationsprogramm\Kalkulationsprogramm-<Version>.jar"
 
-# Service neu starten
-Restart-Service HandwerkerProgramm
+# Server neu starten
+C:\Kalkulationsprogramm\scripts\restart-kalkulationsprogramm.ps1 -ServerPort 8080
 ```
+
+Hat die neue Version schon Datenbank-Migrationen ausgeführt, gehört auch die
+Datenbank-Sicherung von vor dem Update zurück – sonst passt die alte JAR womöglich nicht zur
+Datenbank.
 
 ## 🔄 Typischer Update-Workflow
 
-1. **Entwicklung abgeschlossen** im Repository
-2. **Commit und Push** zu main branch
-3. **Update-Skript ausführen:**
+1. **Änderung über einen Pull Request** nach `main` bringen
+2. **Update-Skript ausführen** (im Repository unter `deployment\scripts`):
    ```powershell
-   cd C:\Users\bausc\OneDrive\Dokumente\GitHub\Handwerkerprogramm\deployment\scripts
-   .\update-production.ps1
+   .\UPDATE.bat
    ```
-4. **Service neu starten** (wird vom Skript gefragt)
-5. **Testen** der neuen Version
+3. **Testen** der neuen Version
 
 ## 📝 Anpassungen
 
-Falls du den Service-Namen ändern musst, bearbeite die Zeile im Skript:
+Repository- und Produktionspfad stehen fest am Anfang von `update-production.ps1`:
 ```powershell
-$serviceName = "HandwerkerProgramm"  # Hier deinen Service-Namen eintragen
+$REPO_PATH = "C:\Github\ERP-System-fuer-Handwerksbetriebe"
+$PRODUCTION_PATH = "C:\Kalkulationsprogramm"
 ```
 
-Falls sich der JAR-Name ändert, bearbeite:
-```powershell
-$JAR_NAME = "handwerkerprogramm-0.0.1-SNAPSHOT.jar"
-```
+Der JAR-Name wird nicht mehr eingetragen: Das Skript nimmt die neueste lauffähige JAR aus
+`target\`. Einen Windows-Dienst gibt es nicht – der Server läuft als `java -jar`-Prozess, das
+Skript erkennt ihn am Port 8080.

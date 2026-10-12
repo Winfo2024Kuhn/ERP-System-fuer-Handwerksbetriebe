@@ -97,6 +97,8 @@ Anfragen von außen (Tailscale Funnel, cloudflared, Gateway) prüft die Netzgren
 
 **Anmelden und Abmelden (Login-CSRF):** Ohne CSRF-Token gehen beide nur von der eigenen Oberfläche. Schickt der Browser einen `Origin`, müssen Name und Port zum Host-Header passen; 80 und 443 zählen als „kein Port“, das Schema zählt nicht, weil das ERP hinter `tailscale serve` und Co. nur `http` sieht. Sonst verlangt Spring Security den CSRF-Token und lehnt mit `403` ab. Eine fremde Webseite kann den Browser eines Mitarbeiters so nicht unbemerkt mit dem Konto des Angreifers anmelden. Die Oberfläche schickt den CSRF-Token bei jedem `POST` ohnehin mit; die Herkunftsprüfung greift nur, wenn er fehlt. Ein Proxy vor dem ERP muss den Host-Header samt Port durchreichen: `tailscale serve`, Caddy und cloudflared tun das von sich aus, nginx mit `proxy_set_header Host $http_host;`. Programme ohne `Origin` (curl) melden sich wie bisher an.
 
+**Fremde Webseiten (CORS) und Sitzungs-Cookie:** Eine fremde Webseite darf Antworten aus `/api/**` im Browser nur lesen (`GET`/`HEAD`), wenn ihre genaue Adresse in `app.cors.allowed-origins` (Umgebungsvariable `APP_CORS_ALLOWED_ORIGINS`) steht. Standard ist leer, also keine fremde Webseite; `*` und Platzhalter werden ignoriert. Schreiben und eigene Header bleiben auch eingetragenen Seiten verwehrt (`ApiCorsConfigurationSource`). Die eigene Oberfläche, die Handy-App und die Website (`/api/internal/**`, Server zu Server) brauchen keinen Eintrag. Das Sitzungs-Cookie trägt `SameSite=Lax`: Der Browser schickt es nur bei Aufrufen aus dem ERP und bei angeklickten Links ins ERP mit, nicht bei Hintergrund-Anfragen fremder Webseiten.
+
 ## Vor einer öffentlichen Domain ohne VPN
 
 HTTPS über einen Reverse Proxy oder Tunnel ist Teil des späteren Betriebs. Eine Konfiguration, die lediglich die gesamte Domain auf Port 8080 weiterleitet, reicht für die Freigabe nicht aus.
@@ -150,7 +152,7 @@ Würde das ERP vor der Website umgestellt, bekäme die Website bis zu deren Umst
 
 ## Quellen im Repository
 
-- [Entwurf und vereinbarter Umfang](superpowers/specs/2026-10-09-mobile-token-security-design.md)
+- [Entwurf und vereinbarter Umfang](superpowers/specs/2026-10-09-mobile-token-security-design.md), [Umsetzungsplan](superpowers/plans/2026-10-09-mobile-token-security.md)
 - [Token-Prüfung](../src/main/java/org/example/kalkulationsprogramm/config/MobileTokenAuthenticationFilter.java)
 - [Erlaubte mobile Methoden und Routen](../src/main/java/org/example/kalkulationsprogramm/config/MobileApiPolicy.java)
 - [Wartezeiten und Speicherkapazität](../src/main/java/org/example/kalkulationsprogramm/config/TokenAttemptLimiter.java)
@@ -158,6 +160,7 @@ Würde das ERP vor der Website umgestellt, bekäme die Website bis zu deren Umst
 - [Spring-Security-Filterketten](../src/main/java/org/example/kalkulationsprogramm/config/SecurityConfig.java) und [zusätzliche Netzgrenze](../src/main/java/org/example/kalkulationsprogramm/config/ZeiterfassungSecurityFilter.java)
 - [Erlaubte Adressen](../src/main/java/org/example/kalkulationsprogramm/config/ErlaubteAdressen.java) und [Anmelden nur von der eigenen Oberfläche](../src/main/java/org/example/kalkulationsprogramm/config/AnmeldungVonEigenerSeite.java)
 - [Schlüsselprüfung für `/api/internal/**`](../src/main/java/org/example/kalkulationsprogramm/config/WebsiteInternalApiKeyFilter.java)
+- [Markierung durch das Gateway](../src/main/java/org/example/kalkulationsprogramm/config/PublicMobileIngressFilter.java) und [Lesezugriff fremder Webseiten (CORS)](../src/main/java/org/example/kalkulationsprogramm/config/ApiCorsConfigurationSource.java)
 
 ## Öffentlicher Gateway-Vertrag
 
