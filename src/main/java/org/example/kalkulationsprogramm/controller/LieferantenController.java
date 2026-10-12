@@ -94,6 +94,7 @@ public class LieferantenController {
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService dokumentZugriffService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentDateiService dokumentDateiService;
+    private final org.example.kalkulationsprogramm.service.LieferantDateiablage dateiablage;
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     private final org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;
@@ -730,22 +731,15 @@ public class LieferantenController {
 
         try {
             // 1. Datei speichern
-            String originalFilename = Path.of(java.util.Objects.requireNonNull(datei.getOriginalFilename())).getFileName().toString()
-                    .replaceAll("[\\\\/:*?\"<>|]", "_");
-            String storedFilename = java.util.UUID.randomUUID() + "_" + originalFilename;
-
-            java.nio.file.Path lieferantDir = Path.of("uploads", "lieferanten", id.toString());
-            java.nio.file.Files.createDirectories(lieferantDir);
-            java.nio.file.Path targetPath = lieferantDir.resolve(storedFilename);
-            datei.transferTo(targetPath);
+            var gespeichert = dateiablage.speichereDokument(id, datei);
 
             // 2. LieferantDokument erstellen
             var dokument = new org.example.kalkulationsprogramm.domain.LieferantDokument();
             dokument.setLieferant(lieferant);
             dokument.setTyp(
                     request.getDokumentTyp() != null ? request.getDokumentTyp() : LieferantDokumentTyp.RECHNUNG);
-            dokument.setOriginalDateiname(originalFilename);
-            dokument.setGespeicherterDateiname(storedFilename);
+            dokument.setOriginalDateiname(gespeichert.originalDateiname());
+            dokument.setGespeicherterDateiname(gespeichert.gespeicherterDateiname());
             dokument.setUploadDatum(java.time.LocalDateTime.now());
 
             // Uploader setzen falls Token vorhanden
@@ -798,7 +792,8 @@ public class LieferantenController {
             return ResponseEntity.ok(dokumentService.getDokumentById(dokument.getId()));
 
         } catch (Exception e) {
-            log.warn("Import des Lieferanten-Dokuments fehlgeschlagen: {}", e.getMessage());
+            // Nur die Fehlerart: Die Meldung kann Pfad und Originalnamen vom Gerät enthalten (DSGVO).
+            log.warn("Import des Lieferanten-Dokuments fehlgeschlagen: {}", e.getClass().getSimpleName());
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -1025,8 +1020,8 @@ public class LieferantenController {
             return ResponseEntity.notFound().build();
         }
         try {
-            Path path = loeseBildPfadAuf(bild);
-            if (path == null || !java.nio.file.Files.exists(path)) {
+            Path path = dateiablage.findeBild(bild).orElse(null);
+            if (path == null) {
                 return ResponseEntity.notFound().build();
             }
 
@@ -1075,8 +1070,8 @@ public class LieferantenController {
             return vorschauAntwort(cached, dateiname);
         }
 
-        Path path = loeseBildPfadAuf(bild);
-        if (path == null || !java.nio.file.Files.exists(path)) {
+        Path path = dateiablage.findeBild(bild).orElse(null);
+        if (path == null) {
             return ResponseEntity.notFound().build();
         }
 
@@ -1104,32 +1099,6 @@ public class LieferantenController {
     static String bildPfadSegment(String gespeicherterDateiname) {
         return org.springframework.web.util.UriUtils.encodePathSegment(
                 gespeicherterDateiname, java.nio.charset.StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Bestimmt den Speicherort eines Lieferantenbildes und stellt sicher, dass er
-     * im Bilder-Ordner des Lieferanten liegt.
-     *
-     * <p>Der Dateiname stammt aus der Datenbank, ist damit aber nicht automatisch
-     * harmlos: Beim Upload wird der vom Gerät gemeldete Name nur bereinigt, und
-     * {@code StringUtils.cleanPath} behält führende {@code ../}-Elemente. Ohne diese
-     * Prüfung könnte ein so benanntes Bild Dateien außerhalb des Ordners ausliefern.</p>
-     *
-     * @return der geprüfte Pfad oder {@code null}, wenn er aus dem Ordner herausführt
-     */
-    private Path loeseBildPfadAuf(org.example.kalkulationsprogramm.domain.LieferantBild bild) {
-        Path ordner = Path.of("uploads", "lieferanten",
-                bild.getLieferant().getId().toString(), "bilder")
-                .toAbsolutePath().normalize();
-
-        // Nur den reinen Dateinamen verwenden – etwaige Pfadanteile fallen damit weg
-        Path dateiname = Path.of(bild.getGespeicherterDateiname()).getFileName();
-        if (dateiname == null) {
-            return null;
-        }
-
-        Path pfad = ordner.resolve(dateiname).normalize();
-        return pfad.startsWith(ordner) ? pfad : null;
     }
 
     private ResponseEntity<byte[]> vorschauAntwort(byte[] jpeg, String dateiname) {
@@ -1217,22 +1186,13 @@ public class LieferantenController {
         }
 
         try {
-            // Datei speichern
-            String originalFilename = Path.of(java.util.Objects.requireNonNull(datei.getOriginalFilename())).getFileName().toString()
-                    .replaceAll("[\\\\/:*?\"<>|]", "_");
-            String storedFilename = java.util.UUID.randomUUID() + "_" + originalFilename;
-
-            java.nio.file.Path lieferantDir = Path.of("uploads", "lieferanten", id.toString(),
-                    "bilder");
-            java.nio.file.Files.createDirectories(lieferantDir);
-            java.nio.file.Path targetPath = lieferantDir.resolve(storedFilename);
-            datei.transferTo(targetPath);
+            var gespeichert = dateiablage.speichereBild(id, datei);
 
             // Bild-Entity erstellen
             var bild = new org.example.kalkulationsprogramm.domain.LieferantBild();
             bild.setLieferant(lieferant);
-            bild.setOriginalDateiname(originalFilename);
-            bild.setGespeicherterDateiname(storedFilename);
+            bild.setOriginalDateiname(gespeichert.originalDateiname());
+            bild.setGespeicherterDateiname(gespeichert.gespeicherterDateiname());
             bild.setBeschreibung(beschreibung);
             bild.setErstelltAm(java.time.LocalDateTime.now());
             bild.setHochgeladenVon(mitarbeiter);
@@ -1268,14 +1228,7 @@ public class LieferantenController {
         if (bild == null || !bild.getLieferant().getId().equals(id)) {
             return ResponseEntity.notFound().build();
         }
-        try {
-            // Datei löschen
-            java.nio.file.Path filePath = java.nio.file.Paths.get("uploads", "lieferanten", id.toString(), "bilder",
-                    bild.getGespeicherterDateiname());
-            java.nio.file.Files.deleteIfExists(filePath);
-        } catch (IOException ignored) {
-        }
-
+        dateiablage.loescheBild(bild);
         bildRepository.delete(bild);
         return ResponseEntity.noContent().build();
     }

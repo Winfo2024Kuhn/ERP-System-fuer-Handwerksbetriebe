@@ -23,7 +23,8 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>Das ist derselbe Ordner, in den {@link LieferantDokumentService} beim Upload speichert und
  * in dem {@link LieferantDokumentDateiService} Dokumente sucht. Wird {@code upload.path}
- * umgestellt, ziehen Speichern und Suchen gemeinsam um.
+ * umgestellt, ziehen Speichern und Suchen gemeinsam um – die vorhandenen Ordner
+ * {@code lieferanten/} müssen dann mit umziehen, sonst fehlen ältere Bilder.
  *
  * <p>Path Traversal: Namen von außen werden auf den reinen Dateinamen gekürzt und bereinigt.
  * Jeder Pfad wird normalisiert und muss danach noch in seinem Ordner liegen – auch ein Name aus

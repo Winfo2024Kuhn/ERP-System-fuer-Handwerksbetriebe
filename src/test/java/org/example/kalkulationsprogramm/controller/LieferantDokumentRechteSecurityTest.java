@@ -139,6 +139,8 @@ class LieferantDokumentRechteSecurityTest {
     private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
     @MockBean
     private LieferantDokumentDateiService dokumentDateiService;
+    @MockBean
+    private org.example.kalkulationsprogramm.service.LieferantDateiablage dateiablage;
 
     // ---------------------------------------------------------------- Helfer
 

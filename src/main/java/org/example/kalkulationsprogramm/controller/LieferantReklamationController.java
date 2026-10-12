@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.CreateReklamationRequest;
 import org.example.kalkulationsprogramm.dto.LieferantReklamationDto;
 import org.example.kalkulationsprogramm.repository.*;
+import org.example.kalkulationsprogramm.service.LieferantDateiablage;
 import org.example.kalkulationsprogramm.controller.LieferantenController.LieferantBildDto;
 import static org.example.kalkulationsprogramm.controller.LieferantenController.bildPfadSegment;
 import org.springframework.http.HttpStatus;
@@ -16,12 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
@@ -34,6 +30,7 @@ public class LieferantReklamationController {
     private final LieferantDokumentRepository dokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final LieferantBildRepository bildRepository;
+    private final LieferantDateiablage dateiablage;
 
     @GetMapping("/lieferant/{lieferantId}")
     public ResponseEntity<List<LieferantReklamationDto>> getByLieferant(@PathVariable Long lieferantId) {
@@ -126,26 +123,17 @@ public class LieferantReklamationController {
         var mitarbeiter = mitarbeiterByToken(token);
 
         try {
-            String originalFilename = Path.of(Objects.requireNonNullElse(datei.getOriginalFilename(), "foto"))
-                    .getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_");
             // Die Endung kommt aus dem geprüften Bildtyp, nicht aus dem Namen des Absenders.
             String endung = org.example.kalkulationsprogramm.service.MobileObjectAccessService
                     .endungFuerBild(datei.getContentType());
-            String storedFilename = UUID.randomUUID() + "_" + originalFilename
-                    + (originalFilename.toLowerCase(java.util.Locale.ROOT).endsWith(endung) ? "" : endung);
-
-            // Reuse the existing supplier images folder structure
-            Path lieferantDir = Paths.get("uploads", "lieferanten",
-                    reklamation.getLieferant().getId().toString(), "bilder");
-            Files.createDirectories(lieferantDir);
-            Path targetPath = lieferantDir.resolve(storedFilename);
-            datei.transferTo(targetPath);
+            // Derselbe Bilder-Ordner wie bei den übrigen Lieferantenbildern
+            var gespeichert = dateiablage.speichereBild(reklamation.getLieferant().getId(), datei, endung);
 
             LieferantBild bild = new LieferantBild();
             bild.setLieferant(reklamation.getLieferant());
             bild.setReklamation(reklamation); // Link to reclamation
-            bild.setOriginalDateiname(originalFilename);
-            bild.setGespeicherterDateiname(storedFilename);
+            bild.setOriginalDateiname(gespeichert.originalDateiname());
+            bild.setGespeicherterDateiname(gespeichert.gespeicherterDateiname());
             bild.setErstelltAm(java.time.LocalDateTime.now());
             bild.setHochgeladenVon(mitarbeiter);
 
