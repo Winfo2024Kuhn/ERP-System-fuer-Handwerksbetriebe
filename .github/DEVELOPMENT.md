@@ -683,7 +683,6 @@ Um das **DRY (Don't Repeat Yourself)** Prinzip zu wahren und ein konsistentes UI
 - **Pfad:** `src/components/EmailsTab.tsx`
 - **Verwendung:** Einheitliche Darstellung von E-Mail-Verläufen in Detailansichten (Kunde, Projekt, Anfrage, Lieferant). Genau einen Bezug übergeben: `kundeId`, `projektId`, `anfrageId` oder `lieferantId`.
 - **Features:** Suche, Verläufe mit Antworten, Anhang-Vorschau, Zustellstatus (unzustellbar), „Neue E-Mail“ und „Antworten“ (abschaltbar über `showComposeButton`/`showReplyButton`).
-- `EmailHistory.tsx` ist ungenutzter Altbestand – nicht verwenden.
 
 ### GoogleMapsEmbed
 - **Pfad:** `src/components/GoogleMapsEmbed.tsx`
