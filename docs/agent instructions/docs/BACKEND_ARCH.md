@@ -38,7 +38,7 @@
   4. `/api/**` mit Session + CSRF-Cookie
   5. ein Catch-all
 
-  Neue Desktop-Endpunkte gehören unter `/api/**`. Ist ein Endpunkt nur für Admins, braucht er dort eine eigene Zeile `requestMatchers(…).hasRole("ADMIN")`. Method-Security (`@PreAuthorize`) ist nicht aktiv. Ein Endpunkt für die Handy-App muss zusätzlich in `ZEITERFASSUNG_PATHS` **und** in der abschließenden Liste `MobileApiPolicy` stehen (Test: `MobileApiPolicyTest`).
+  Neue Desktop-Endpunkte gehören unter `/api/**`. Ist ein Endpunkt nur für Admins, braucht er dort eine eigene Zeile `requestMatchers(…).hasRole("ADMIN")`. Method-Security (`@PreAuthorize`) ist nicht aktiv. Ein Endpunkt für die Handy-App muss zusätzlich in `ZEITERFASSUNG_PATHS` **und** in der abschließenden Liste `MobileApiPolicy` stehen (Test: `MobileApiPolicyTest`). Danach `python3 deployment/mobile-public/sync_routes.py` ausführen (unter Windows `python`), damit das öffentliche Handy-Gateway die Route auch durchlässt (`MobileGatewayRoutenTest` scheitert sonst).
 
 ## ML Spam-Filter (Naive Bayes)
 Supervised Multinomial Naive Bayes in reinem Java.
