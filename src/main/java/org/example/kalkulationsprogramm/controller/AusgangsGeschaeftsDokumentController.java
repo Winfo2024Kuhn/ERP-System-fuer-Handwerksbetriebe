@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsG
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
 import org.example.kalkulationsprogramm.domain.Mahnstufe;
+import org.example.kalkulationsprogramm.config.ClientIpResolver;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditService;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
@@ -42,6 +43,11 @@ import lombok.RequiredArgsConstructor;
 /**
  * REST Controller für Ausgangs-Geschäftsdokumente.
  * Unterstützt: Erstellen, Aktualisieren, Buchen, Stornieren, Export.
+ *
+ * <p>Der Bearbeiter im GoBD-Audit (Erstellen, Buchen, Versand, Storno, Löschen)
+ * kommt immer aus der Anmeldung ({@link FrontendUserPrincipal#idAus}), nie vom
+ * Client — sonst könnte jeder einen fremden Namen ins Protokoll schreiben.
+ * Die IP-Adresse liefert aus demselben Grund der {@link ClientIpResolver}.</p>
  */
 @RestController
 @RequestMapping("/api/ausgangs-dokumente")
@@ -55,6 +61,7 @@ public class AusgangsGeschaeftsDokumentController {
     private final AusgangsGeschaeftsDokumentAuditService auditService;
     private final AutoMahnVersandService autoMahnVersandService;
     private final DatensatzLockService dokumentLockService;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * Reine Vorschau: rendert die Mahn-PDF einer beliebigen Stufe ohne irgendetwas
@@ -175,14 +182,15 @@ public class AusgangsGeschaeftsDokumentController {
             jakarta.servlet.http.HttpServletRequest request) {
         AusgangsGeschaeftsDokument created;
         try {
-            created = service.erstellen(dto, clientIp(request));
+            // Ersteller kommt aus der Anmeldung, nie aus dem Request (GoBD-Audit).
+            created = service.erstellen(dto, FrontendUserPrincipal.idAus(authentication), clientIp(request));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
         // Lock-Vergabe in eigenem try/catch: wenn das schiefgeht, bleibt das
         // bereits persistierte Dokument trotzdem als 200 sichtbar — das naechste
         // PUT scheitert dann sauber mit 409 statt einem irrefuehrenden 400.
-        FrontendUserPrincipal principal = principal(authentication);
+        FrontendUserPrincipal principal = FrontendUserPrincipal.aus(authentication);
         if (principal != null) {
             try {
                 var lockResult = dokumentLockService.acquire(
@@ -213,7 +221,7 @@ public class AusgangsGeschaeftsDokumentController {
             @PathVariable Long id,
             @RequestBody AusgangsGeschaeftsDokumentUpdateDto dto,
             Authentication authentication) {
-        FrontendUserPrincipal principal = principal(authentication);
+        FrontendUserPrincipal principal = FrontendUserPrincipal.aus(authentication);
         if (principal == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
@@ -235,26 +243,17 @@ public class AusgangsGeschaeftsDokumentController {
         }
     }
 
-    private FrontendUserPrincipal principal(Authentication authentication) {
-        if (authentication == null || authentication.getPrincipal() == null) {
-            return null;
-        }
-        if (authentication.getPrincipal() instanceof FrontendUserPrincipal p) {
-            return p;
-        }
-        return null;
-    }
-
     /**
      * Dokument buchen (sperrt für Bearbeitung).
      * Wird normalerweise beim PDF-Export aufgerufen.
      */
     @PostMapping("/{id}/buchen")
     public ResponseEntity<?> buchen(@PathVariable Long id,
-                                    @RequestParam(required = false) Long userId,
+                                    Authentication authentication,
                                     jakarta.servlet.http.HttpServletRequest request) {
         try {
-            AusgangsGeschaeftsDokument result = service.buchen(id, userId, clientIp(request));
+            AusgangsGeschaeftsDokument result = service.buchen(
+                    id, FrontendUserPrincipal.idAus(authentication), clientIp(request));
             return ResponseEntity.ok(service.findById(result.getId()));
         } catch (ObjectOptimisticLockingFailureException e) {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
@@ -272,10 +271,10 @@ public class AusgangsGeschaeftsDokumentController {
      */
     @PostMapping("/{id}/email-versendet")
     public ResponseEntity<?> emailVersendet(@PathVariable Long id,
-                                            @RequestParam(required = false) Long userId,
+                                            Authentication authentication,
                                             jakarta.servlet.http.HttpServletRequest request) {
         try {
-            service.buchenNachEmailVersand(id, userId, clientIp(request));
+            service.buchenNachEmailVersand(id, FrontendUserPrincipal.idAus(authentication), clientIp(request));
             return ResponseEntity.ok(service.findById(id));
         } catch (ObjectOptimisticLockingFailureException e) {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
@@ -326,11 +325,12 @@ public class AusgangsGeschaeftsDokumentController {
      */
     @PostMapping("/{id}/storno")
     public ResponseEntity<?> stornieren(@PathVariable Long id,
-                                        @RequestParam(required = false) Long userId,
                                         @RequestParam(required = false) String grund,
+                                        Authentication authentication,
                                         jakarta.servlet.http.HttpServletRequest request) {
         try {
-            AusgangsGeschaeftsDokument storno = service.stornieren(id, userId, clientIp(request), grund);
+            AusgangsGeschaeftsDokument storno = service.stornieren(
+                    id, FrontendUserPrincipal.idAus(authentication), clientIp(request), grund);
             return ResponseEntity.ok(service.findById(storno.getId()));
         } catch (ObjectOptimisticLockingFailureException e) {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
@@ -352,7 +352,7 @@ public class AusgangsGeschaeftsDokumentController {
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable Long id,
                                     @RequestParam String begruendung,
-                                    @RequestParam(required = false) Long userId,
+                                    Authentication authentication,
                                     jakarta.servlet.http.HttpServletRequest request) {
         try {
             AusgangsGeschaeftsDokumentResponseDto dto = service.findById(id);
@@ -361,7 +361,7 @@ public class AusgangsGeschaeftsDokumentController {
             }
 
             String ip = clientIp(request);
-            service.loeschen(id, begruendung, userId, ip);
+            service.loeschen(id, begruendung, FrontendUserPrincipal.idAus(authentication), ip);
             return ResponseEntity.ok().build();
         } catch (ObjectOptimisticLockingFailureException e) {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
@@ -394,14 +394,12 @@ public class AusgangsGeschaeftsDokumentController {
         return ResponseEntity.ok(auditService.getHistorieByNummer(dokumentNummer));
     }
 
+    /**
+     * Absender-IP fürs GoBD-Audit. {@code X-Forwarded-For} zählt nur, wenn ein
+     * freigegebener Proxy ihn gesetzt hat — sonst könnte der Client die IP fälschen.
+     */
     private String clientIp(jakarta.servlet.http.HttpServletRequest request) {
-        if (request == null) return null;
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            int comma = xff.indexOf(',');
-            return (comma > 0 ? xff.substring(0, comma) : xff).trim();
-        }
-        return request.getRemoteAddr();
+        return request == null ? null : clientIpResolver.resolve(request);
     }
 
     // --- Abrechnungsverlauf ---
