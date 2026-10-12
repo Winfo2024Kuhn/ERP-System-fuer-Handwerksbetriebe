@@ -73,7 +73,7 @@ class TagesSollCharakterisierungKalenderTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.ZeitbuchungAuditService auditService;
     @MockBean
-    private org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
+    private org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
     @MockBean
     private org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
     @MockBean

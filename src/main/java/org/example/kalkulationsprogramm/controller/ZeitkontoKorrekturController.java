@@ -3,9 +3,11 @@ package org.example.kalkulationsprogramm.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.ErfassungsQuelle;
 import org.example.kalkulationsprogramm.domain.ZeitkontoKorrektur;
+import org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService;
 import org.example.kalkulationsprogramm.service.ZeitkontoKorrekturService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -19,7 +21,9 @@ import java.util.stream.Collectors;
  * REST Controller für Zeitkonto-Korrekturen.
  * Ermöglicht manuelle Ausgleichsbuchungen ohne Projektzuordnung.
  * 
- * GoBD-konform: Alle Änderungen werden unveränderlich protokolliert.
+ * GoBD-konform: Alle Änderungen werden unveränderlich protokolliert. Der Bearbeiter
+ * im Protokoll ist immer der Mitarbeiter des angemeldeten Benutzers, nie ein Wert
+ * aus dem Request ({@link AngemeldeterMitarbeiterService}).
  */
 @RestController
 @RequestMapping("/api/zeitkonto/korrekturen")
@@ -27,6 +31,7 @@ import java.util.stream.Collectors;
 public class ZeitkontoKorrekturController {
 
     private final ZeitkontoKorrekturService korrekturService;
+    private final AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
 
     /**
      * Erstellt eine neue Zeitkonto-Korrektur.
@@ -36,18 +41,19 @@ public class ZeitkontoKorrekturController {
      * "stunden": 8.5, // Positiv = Gutschrift, Negativ = Abzug
      * "datum": "2025-12-21",
      * "grund": "Überstundenausgleich Q4 2025",
-     * "erstelltVonId": 1,
      * "typ": "STUNDEN" // oder "URLAUB"
      * }
      */
     @PostMapping
-    public ResponseEntity<?> erstelleKorrektur(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> erstelleKorrektur(@RequestBody Map<String, Object> body,
+            Authentication authentication) {
+        // Vor dem try: 401/403 sollen nicht im allgemeinen 500er-Fang landen.
+        Long erstelltVonId = angemeldeterMitarbeiter.bearbeiter(authentication).getId();
         try {
             Long mitarbeiterId = getLong(body, "mitarbeiterId");
             BigDecimal stunden = getBigDecimal(body, "stunden");
             LocalDate datum = LocalDate.parse((String) body.get("datum"));
             String grund = (String) body.get("grund");
-            Long erstelltVonId = getLong(body, "erstelltVonId");
 
             // Typ parsen (optional, default STUNDEN)
             String typStr = (String) body.get("typ");
@@ -73,16 +79,16 @@ public class ZeitkontoKorrekturController {
      * Body: {
      * "stunden": 10.0,
      * "grund": "Korrigierter Wert",
-     * "bearbeiterId": 1,
      * "aenderungsgrund": "Tippfehler korrigiert"
      * }
      */
     @PutMapping("/{id}")
-    public ResponseEntity<?> aendereKorrektur(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> aendereKorrektur(@PathVariable Long id, @RequestBody Map<String, Object> body,
+            Authentication authentication) {
+        Long bearbeiterId = angemeldeterMitarbeiter.bearbeiter(authentication).getId();
         try {
             BigDecimal stunden = body.get("stunden") != null ? getBigDecimal(body, "stunden") : null;
             String grund = (String) body.get("grund");
-            Long bearbeiterId = getLong(body, "bearbeiterId");
             String aenderungsgrund = (String) body.get("aenderungsgrund");
 
             ZeitkontoKorrektur korrektur = korrekturService.aendereKorrektur(
@@ -98,14 +104,14 @@ public class ZeitkontoKorrekturController {
      * Storniert eine Korrektur (GoBD: keine physische Löschung!).
      * 
      * Body: {
-     * "bearbeiterId": 1,
      * "stornierungsgrund": "Fehlerhafte Buchung"
      * }
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> storniereKorrektur(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> storniereKorrektur(@PathVariable Long id, @RequestBody Map<String, Object> body,
+            Authentication authentication) {
+        Long bearbeiterId = angemeldeterMitarbeiter.bearbeiter(authentication).getId();
         try {
-            Long bearbeiterId = getLong(body, "bearbeiterId");
             String stornierungsgrund = (String) body.get("stornierungsgrund");
 
             korrekturService.storniereKorrektur(id, bearbeiterId, stornierungsgrund, ErfassungsQuelle.DESKTOP);
