@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { Check, X, Calendar, User, FileText, Plane, Stethoscope, Clock, AlertTriangle } from 'lucide-react';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
 
 interface Urlaubsantrag {
     id: number;
@@ -62,7 +63,7 @@ export default function Urlaubsantraege() {
         const t = window.setTimeout(() => {
             const el = document.querySelector(`[data-antrag-id="${fokusId}"]`) as HTMLElement | null;
             if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                scrolleMittigInDenBlick(el);
                 el.classList.add('ring-2', 'ring-rose-400', 'ring-offset-2');
                 window.setTimeout(() => {
                     el.classList.remove('ring-2', 'ring-rose-400', 'ring-offset-2');

@@ -9,7 +9,11 @@ import { ToastProvider } from '../ui/toast';
 import { ConfirmProvider } from '../ui/confirm-dialog';
 import { useDatensatzLock } from '../lock/useDatensatzLock';
 import DocumentEditor from './index';
+import { scrolleMittigInDenBlick } from '../../lib/scrollInDenBlick';
 import type { DocumentEditorHandle } from './types';
+
+// Die Scroll-Rechnung selbst ist in lib/scrollInDenBlick.test.ts geprüft.
+vi.mock('../../lib/scrollInDenBlick', () => ({ scrolleMittigInDenBlick: vi.fn() }));
 
 // DSGVO: ausschliesslich Dummy-Daten.
 const ALTE_ADRESSE = 'Max Mustermann\nMusterweg 1\n12345 Musterstadt';
@@ -1414,7 +1418,7 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
         global.fetch = fetchMock as unknown as typeof fetch;
         global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
         global.URL.revokeObjectURL = vi.fn();
-        // jsdom kennt scrollIntoView nicht (Vorbild EmailThreadView.test.tsx:14-16).
+        // jsdom kennt scrollIntoView nicht (Vorbild EmailThreadView.test.tsx).
         window.HTMLElement.prototype.scrollIntoView = vi.fn();
     });
 
@@ -1764,7 +1768,7 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
             expect(karte).not.toBeNull();
             expect(karte).toHaveClass('verlauf-hervorgehoben');
         });
-        expect(window.HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
+        expect(scrolleMittigInDenBlick).toHaveBeenCalledWith(container.querySelector('[data-block-id="s1"]'));
     });
 });
 
