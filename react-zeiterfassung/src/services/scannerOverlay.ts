@@ -51,8 +51,8 @@ export function drawOverlayQuad(
     // Farbschema gemäß FRONTEND_UI.md: nur rose + slate. Locking = rose-600
     // (Primärfarbe, Aktion bestätigt), Tracking = neutrales Hellgrau, damit
     // der "Halte still"-Zustand klar vom Auslöser unterscheidbar bleibt.
-    const stroke = locking ? '#dc2626' : '#e2e8f0'
-    const fill = locking ? 'rgba(220,38,38,0.20)' : 'rgba(226,232,240,0.14)'
+    const stroke = locking ? '#e11d48' : '#e2e8f0'
+    const fill = locking ? 'rgba(225,29,72,0.20)' : 'rgba(226,232,240,0.14)'
 
     ctx.beginPath()
     ctx.moveTo(quad[0].x, quad[0].y)
