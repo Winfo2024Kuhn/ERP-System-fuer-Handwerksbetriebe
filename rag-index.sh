@@ -1,46 +1,31 @@
-#!/bin/bash
-# RAG Indexierung starten (Linux/Mac)
+#!/usr/bin/env bash
+# =============================================================================
+# RAG-Datei der KI-Hilfe lokal erzeugen bzw. aktualisieren (Linux/Mac)
+# =============================================================================
+# Dieselbe Logik wie beim Image-Bau in GitHub und im Server (RAG_INDEXING.md):
+# Was sich seit der vorhandenen Datei nicht geaendert hat, wird nicht neu
+# eingebettet. Fuer die Kundenserver ist das nicht noetig - deren RAG-Datei
+# kommt fertig mit dem Docker-Image.
+#
+#   GEMINI_API_KEY=... ./rag-index.sh                 -> .rag-cache.json
+#   GEMINI_API_KEY=... ./rag-index.sh pfad/datei.json
+#   ./rag-index.sh --nur-zaehlen                      (ohne Schluessel, ohne Kosten)
+#
+# Den Schluessel nur als Umgebungsvariable, nie als Argument (Prozessliste,
+# Shell-Verlauf).
+# =============================================================================
+set -euo pipefail
+cd "$(dirname "$0")"
 
-set -e
+echo "Baue das ERP (ohne Tests) ..."
+./mvnw -q -DskipTests package
 
-if [ -z "$1" ]; then
-  echo "❌ Gemini API Key erforderlich"
-  echo "Verwendung: ./rag-index.sh <gemini-api-key> [project-root]"
-  echo ""
-  echo "Beispiel:"
-  echo "  ./rag-index.sh sk-1234567890 ."
-  echo ""
-  echo "Oder mit Env-Variable:"
-  echo "  export GEMINI_API_KEY='sk-1234567890'"
-  echo "  ./rag-index.sh"
-  exit 1
+# Nur der Spring-Boot-Jar - ein alter "...-jar-with-dependencies.jar" sortiert davor
+JAR="$(ls target/Kalkulationsprogramm-*.jar | grep -vE -- '-(sources|javadoc|jar-with-dependencies)\.jar$' | head -1 || true)"
+if [[ -z "$JAR" ]]; then
+    echo "Kein Kalkulationsprogramm-*.jar in target/ - Build fehlgeschlagen?" >&2
+    exit 1
 fi
-
-API_KEY="${1:-$GEMINI_API_KEY}"
-PROJECT_ROOT="${2:-.}"
-
-if [ -z "$API_KEY" ]; then
-  echo "❌ Gemini API Key nicht gesetzt"
-  exit 1
-fi
-
-echo "📦 Kompiliere Projekt..."
-mvn clean compile assembly:single -DskipTests -q
-
-JAR=$(find target -name "*-jar-with-dependencies.jar" | head -1)
-
-if [ -z "$JAR" ]; then
-  echo "❌ JAR nicht gefunden nach Kompilierung"
-  exit 1
-fi
-
-echo "🚀 Starte RAG-Indexierung..."
-echo "   JAR: $JAR"
-echo "   Root: $PROJECT_ROOT"
-echo ""
-
-java -cp "$JAR" \
-  org.example.kalkulationsprogramm.cli.StandaloneRagIndexer "$API_KEY" "$PROJECT_ROOT"
-
-echo ""
-echo "✅ Fertig! Cache gespeichert in: $PROJECT_ROOT/.rag-cache.json"
+exec java -cp "$JAR" \
+    -Dloader.main=org.example.kalkulationsprogramm.cli.StandaloneRagIndexer \
+    org.springframework.boot.loader.launch.PropertiesLauncher . "$@"

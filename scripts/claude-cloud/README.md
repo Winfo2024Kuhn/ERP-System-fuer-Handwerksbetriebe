@@ -1,8 +1,9 @@
 # Claude Code in der Cloud einrichten
 
 Ziel: Eine Cloud-Sitzung auf claude.ai/code verhält sich wie die lokale
-Windows-Umgebung – graphify samt Hook-Guard, Doc-Read- und Design-Skill-Hooks,
-Java 23, die MCP-Server aus `.mcp.json` und die Frontend-Abhängigkeiten.
+Umgebung (Windows oder macOS) – graphify samt Hook-Guard, Doc-Read- und
+Design-Skill-Hooks, Java 23, die MCP-Server aus `.mcp.json` und die
+Frontend-Abhängigkeiten.
 
 ## Was automatisch passiert (im Repo)
 
@@ -11,7 +12,10 @@ Java 23, die MCP-Server aus `.mcp.json` und die Frontend-Abhängigkeiten.
   Aufruf über `scripts/graphify`), setzt `JAVA_HOME` auf JDK 23 und holt fehlende Teile nach.
   Lokal (ohne `CLAUDE_CODE_REMOTE=true`) beendet es sich sofort.
 - Alle Hooks nutzen `${CLAUDE_PROJECT_DIR}` statt fester Windows-Pfade und
-  laufen dadurch in jedem Checkout – lokal wie in der Cloud.
+  laufen dadurch in jedem Checkout – lokal wie in der Cloud. Die Doc-Read- und
+  Design-Skill-Hooks startet `.claude/hooks/run-hook.sh`: mit PowerShell die
+  `.ps1`-Fassung (so in der Cloud, weil das Skript `pwsh` installiert), ohne
+  PowerShell die gleichwertige Bash-Fassung `.sh` (braucht `jq`).
 - **npm**: `registry.npmmirror.com` ist in der Cloud gesperrt. Die Lockfiles
   zeigen deshalb nur noch auf `registry.npmjs.org`, und die `.npmrc` in beiden
   Frontends legt diese Registry fest. Für ältere Branches, die noch
@@ -33,8 +37,10 @@ dann aber länger und `magic`/`shadcn` bleiben ohne Netz.
 claude.ai/code → Umgebungsmenü in der Titelleiste der Sitzung → **Bearbeiten**:
 
 1. **Setup script**: den kompletten Inhalt von `scripts/claude-cloud/setup.sh`
-   einfügen. Installiert PowerShell, graphify, JDK 23, lädt die MCP-Server
-   vor und wird danach als Snapshot gecacht (neue Sitzungen starten schnell).
+   einfügen. Installiert PowerShell, graphify, JDK 23 und die
+   Frontend-Abhängigkeiten, lädt die MCP-Server (shadcn, magic, playwright)
+   und die Maven-Abhängigkeiten vor und wird danach als Snapshot gecacht (neue
+   Sitzungen starten schnell).
 2. **Network access**: `Custom` wählen, Haken bei *Also include default list of
    common package managers* setzen und diese Domains eintragen:
    ```

@@ -1,103 +1,53 @@
-# Deployment Scripts - Handwerkerprogramm
+# Deployment - Handwerkerprogramm
 
-Dieses Verzeichnis enthält alle Scripts und Dokumentation für das Deployment des Kalkulationsprogramms.
+Dieses Verzeichnis enthält alles, was das ERP beim Kunden zum Laufen bringt. Diese Seite ist
+nur der Wegweiser – die Einzelheiten stehen in den verlinkten Anleitungen.
 
-## Docker beim Kunden (Windows-PC oder Linux-Server) mit automatischen Updates – empfohlen
+## Docker beim Kunden (Windows-PC oder Linux-Server) – empfohlen
 
 Ein Doppelklick (Windows) bzw. ein Befehl (Linux) richtet alles ein: Datenbank
-(PostgreSQL), ERP und Updater. Das ERP startet nach jedem Neustart von selbst, holt
-sich neue Versionen nachts um 3 Uhr, sichert vorher die Datenbank und rollt bei
-Problemen automatisch zurück – mit Handy-Nachricht.
+(PostgreSQL 16), ERP, Updater und Netzsperre. Das ERP startet nach jedem Neustart von selbst.
+Jede Nacht um 2 Uhr sichert der Updater Datenbank und hochgeladene Dateien (auf den Rechner,
+eine externe Festplatte und einen Cloud-Ordner). Um 3 Uhr holt er neue Versionen, sichert
+vorher die Datenbank und rollt bei Problemen automatisch zurück. Was schiefgeht, sehen Admins
+im ERP unter **Benachrichtigungen**, auf Wunsch zusätzlich per Handy-Nachricht.
 
-→ **[docker-server/README.md](./docker-server/README.md)**
+- **[docker-server/README.md](./docker-server/README.md)** – Aufbau, alle Einstellungen,
+  Sicherung, Nachtupdate, Rollback, Sicherheit
+- **[docker-server/EINRICHTEN.md](./docker-server/EINRICHTEN.md)** – Schritt-für-Schritt-Anleitung
+  zum Abhaken für einen neuen Kunden
 
----
+Das Docker-Image baut GitHub nach jedem Merge auf `main` und gibt es erst nach einem
+Starttest als `:stable` frei (Details: [docker-server/README.md, Abschnitt „Der Starttest in
+GitHub“](./docker-server/README.md#der-starttest-in-github)).
 
-## Windows-Skripte (Sicherung, Start als JAR)
+## Handys von unterwegs
 
-Ältere Skripte aus der Zeit vor `docker-server/`. Weiter sinnvoll ist vor allem
-`backup-database.ps1`: Es sichert die Datenbank des docker-server (Container `erp-postgres`)
-per `pg_dump` direkt im Container.
+- **Mit `deployment/docker-server`:** über Tailscale – entweder die Tailscale-App auf jedem
+  Handy oder Tailscale Funnel ohne App. Siehe
+  [docker-server/README.md, Abschnitt „Hinter `tailscale serve`“](./docker-server/README.md#hinter-tailscale-serve-nur-über-tailscale-erreichbar).
+- **[mobile-public/](./mobile-public/README.md):** öffentlicher HTTPS-Zugang nur für die
+  Zeiterfassung (Testadresse über Cloudflare oder eigene Domain mit Caddy). Baut auf der
+  `docker-compose.yml` im Repository-Stamm auf, nicht auf `deployment/docker-server`.
 
-**Achtung beim Start als JAR:** Die Datenbank des docker-server ist bewusst nicht von außen
-erreichbar (kein freigegebener Port, nur das interne Docker-Netz). Ein JAR auf dem Rechner
-kommt an sie nicht heran – für diesen Weg braucht es ein eigenes PostgreSQL, z. B. einen
-Container mit `-p 127.0.0.1:5432:5432` (siehe `docs/INSTALLATION.md`, Variante 3). Sicherung
-und Update dann auf diesen Container zeigen lassen: `update-production.ps1 -DbContainer <name>
--DbUser erp_user` bzw. `backup-database.ps1 -DockerPostgresContainer <name> -DockerPostgresUser
-erp_user`. Ohne gelungene Sicherung bricht das Update ab (bewusst ohne: `-SkipBackup`).
+## Dateien direkt aus dem ERP öffnen (Windows-Arbeitsplätze)
 
-### Scripts (`scripts/`)
+**[openfile-launcher/](./openfile-launcher/README.md)** – registriert `openfile://` auf den
+Büro-PCs, damit CAD-Zeichnungen und Excel-Dateien aus der Netzwerkfreigabe direkt im
+passenden Programm aufgehen.
 
-| Script | Beschreibung |
-|--------|--------------|
-| `backup-database.ps1` | Erstellt automatische Datenbank-Backups auf externe Festplatte E:\ |
-| `start-kalkulationsprogramm.ps1` | Startet den Server mit Health-Check |
-| `restart-kalkulationsprogramm.ps1` | Führt sauberen Server-Neustart durch |
-| `install-scheduled-tasks.ps1` | Installiert alle Windows Scheduled Tasks |
-| `start-server.bat` | Windows Batch-Skript zum schnellen Start des Servers (Kurzform) |
+## Altweg: Start als JAR unter Windows
 
-### Dokumentation
+Bevor es `docker-server/` gab, lief das ERP als JAR auf einem Windows-Rechner, mit
+Windows-Aufgaben für Start und Sicherung. Die Skripte liegen weiter in `scripts/` und wurden
+zuletzt am 11.10.2026 auf PostgreSQL umgestellt. **Für Neuinstallationen ist
+`docker-server/` der Weg.**
 
-- **[DEPLOYMENT_README.md](./DEPLOYMENT_README.md)** - Vollständige Installations- und Konfigurationsanleitung
+- **[DEPLOYMENT_README.md](./DEPLOYMENT_README.md)** – Installation, geplante Aufgaben,
+  Sicherung, Fehlersuche
+- **[scripts/README.md](./scripts/README.md)** – die einzelnen Skripte, vor allem das
+  Update-Skript `update-production.ps1`
 
-## Schnellstart
-
-### 1. Repository auf Produktions-Server klonen/kopieren
-
-```powershell
-# Falls Git verfügbar
-git clone <repository-url> C:\Temp\Handwerkerprogramm
-
-# Oder: Dateien manuell kopieren
-```
-
-### 2. Installation ausführen
-
-```powershell
-# PowerShell als Administrator öffnen
-cd C:\Temp\Handwerkerprogramm
-
-# Scheduled Tasks installieren
-.\deployment\scripts\install-scheduled-tasks.ps1
-
-# Optional: Mit wöchentlichem Neustart
-.\deployment\scripts\install-scheduled-tasks.ps1 -EnableWeeklyRestart
-```
-
-### 3. JAR-Datei deployen
-
-```powershell
-# Kompilierte JAR nach C:\Kalkulationsprogramm kopieren
-Copy-Item "target\Kalkulationsprogramm-<Version>.jar" "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar"
-```
-
-### 4. Server manuell starten (Test)
-
-```powershell
-cd C:\Kalkulationsprogramm\scripts
-.\start-kalkulationsprogramm.ps1
-```
-
-## Voraussetzungen
-
-- Windows Server oder Windows 10/11
-- Java 23+
-- Docker Desktop mit PostgreSQL: für die Sicherung der Container `erp-postgres` (aus `docker-server/`), für den Start als JAR ein eigenes PostgreSQL mit Port auf 127.0.0.1 (siehe oben)
-- Externe Festplatte E:\ für Backups
-- Administrator-Rechte für Installation
-
-## Automatische Prozesse nach Installation
-
-✓ **Datenbank-Backup**: Täglich um 02:00 Uhr  
-✓ **Server-Autostart**: Bei jedem System-Neustart  
-✓ **Backup-Rotation**: Alte Backups > 30 Tage werden automatisch gelöscht
-
-## Weitere Informationen
-
-Siehe [DEPLOYMENT_README.md](./DEPLOYMENT_README.md) für:
-- Detaillierte Installationsanleitung
-- Konfigurationsoptionen
-- Troubleshooting
-- Backup-Wiederherstellung
-- Monitoring und Wartung
+Auf einem Rechner mit `docker-server/` braucht es diese Skripte nicht: Sicherung und Update
+erledigt dort der Updater. Eine noch eingerichtete Windows-Aufgabe
+„Kalkulationsprogramm - Database Backup“ sichert dann dieselbe Datenbank ein zweites Mal.

@@ -1,321 +1,162 @@
-# KI-Prompt: Digitale Freigabe-Seite für Angebote / Auftragsbestätigungen
+# Digitale Freigabe: Schnittstelle zwischen Webseite und ERP
 
-> **Kontext für die KI:** Diese Datei beschreibt **rein die technische Anbindung** an das ERP-Backend der Bauschlosserei Kuhn. Das **Design (Layout, Farben, Animationen, Fonts, Texte, Rechtshinweise)** wird von einem separaten Design-Agenten geliefert – diese Datei macht **keine** Design-Vorgaben. Bau das Datenmodell, die Routen und die Server-Calls; das Aussehen kommt später drauf.
-
-> Diese Datei liegt zur Referenz auch im ERP-Repo unter `docs/freigabe/FREIGABE_FEATURE_PROMPT.md`. Die produktive Kopie für die KI-Sitzung sollte ins Astro-Repo (`C:\dev\Internetseite\molecular-mercury\FREIGABE_FEATURE_PROMPT.md`) übernommen werden.
+> **Stand:** Oktober 2026. Diese Datei war ursprünglich ein Umsetzungs-Auftrag für die Freigabe-Seite der Firmen-Webseite. Das Feature ist im ERP fertig umgesetzt; die Datei beschreibt jetzt den **Ist-Stand der Schnittstelle**, die die Webseite nutzt. Wie der Ablauf im ERP aussieht (Versand, Plaketten, Beweissicherung), steht in [ANGEBOTSWESEN.md](../ANGEBOTSWESEN.md), Abschnitt 4.
 
 ---
 
-## 1 · Aufgabe
+## 1 · Worum es geht
 
-Lege im Astro-Projekt unter `molecular-mercury/` eine **dynamische SSR-Seite** an:
-
-```
-src/pages/freigabe/[uuid].astro
-```
-
-Auf dieser Seite kann der Empfänger einer E-Mail (Kunde) ein Angebot oder eine Auftragsbestätigung digital prüfen und verbindlich annehmen. Außerdem brauchen wir einen **PDF-Proxy** und eine **POST-Route**, weil das ERP nicht öffentlich erreichbar ist und nur über Cloudflare-Access-Service-Token spricht.
+Kunden nehmen ein **Angebot**, **Nachtragsangebot** oder eine **Auftragsbestätigung** digital an. Das ERP ist nicht öffentlich erreichbar; deshalb zeigt die Firmen-Webseite die Freigabe-Seite an und holt sich alle Daten serverseitig beim ERP.
 
 ```
-src/pages/api/freigabe/[uuid]/pdf.ts          (GET-Proxy, streamt das PDF)
-src/pages/api/freigabe/[uuid]/akzeptieren.ts  (POST: nimmt Bestätigung an, leitet ans ERP weiter)
+Kunde (Browser)
+   │  https://<eure-domain>/freigabe/<uuid>
+   ▼
+Webseiten-Server  ── Server-zu-Server, Header X-ERP-Website-Key ──►  ERP  /api/internal/freigabe/...
 ```
 
-Alle drei Dateien müssen `export const prerender = false;` setzen – die Daten kommen erst zur Request-Zeit aus dem ERP.
+**Grundregeln für die Webseite:**
+- Der Browser ruft **nie** das ERP direkt auf. Browser → Webseite → ERP, immer.
+- Die PDF wird über eine eigene Route der Webseite durchgereicht, nicht über `pdfPfad`.
+- Keine Caching-Header auf der Freigabe-Seite und der PDF – der Status kann sich jederzeit ändern.
+- IP-Adresse und User-Agent ermittelt der Webseiten-Server aus den Request-Headern und schickt sie mit; im Browser wird davon nichts gespeichert.
 
 ---
 
-## 2 · ENV-Variablen (sind bereits gesetzt)
+## 2 · Verbindung und Konfiguration
 
-Genau dieselben wie für `src/pages/api/anfrage.ts`:
+**Webseite → ERP:** Server-zu-Server über das Tailscale-Netz. Jeder Aufruf trägt den Header `X-ERP-Website-Key` mit dem gemeinsamen Schlüssel (Webseite: `ERP_INTERNAL_API_KEY`, ERP: `website.internal-api.key` bzw. `WEBSITE_INTERNAL_API_KEY`). Ohne gültigen Schlüssel antwortet das ERP mit 401. Aufrufe aus dem Internet (auch über Tailscale Funnel) weist die Netzgrenze des ERP ab. Cloudflare Access ist nur noch ein Sonderfall und derzeit nicht nutzbar. Einrichtung: [ANFRAGE_FUNNEL_SETUP.md](../ANFRAGE_FUNNEL_SETUP.md), Details: [MOBILE_TOKEN_SECURITY.md](../MOBILE_TOKEN_SECURITY.md#website-schnittstelle-apiinternal).
 
-```
-ERP_BASE_URL              = z.B. https://erp.internal.example  (Tunnel-URL des ERP)
-CF_ACCESS_CLIENT_ID       = Cloudflare-Service-Token-ID
-CF_ACCESS_CLIENT_SECRET   = Cloudflare-Service-Token-Secret
-```
+Wenn die Konfiguration auf der Webseite unvollständig ist, antwortet sie selbst mit 500 und loggt nur den Hinweis, nie die Werte.
 
-Diese drei MÜSSEN bei jedem ERP-Call als Header mitgeschickt werden:
+**ERP-Einstellungen:**
 
-```ts
-const erpHeaders = {
-  'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID!,
-  'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET!,
-};
-```
-
-Wenn eine der Variablen fehlt: **immer 500 zurückgeben** und konsolelogge `[freigabe] ENV-Konfiguration unvollständig`. Niemals den Wert selbst loggen.
+| Property | Zweck |
+|---|---|
+| `freigabe.public-base-url` | Öffentliche Adresse der Webseite. Der Link in der E-Mail lautet `<public-base-url>/freigabe/<uuid>`. **Ohne Eintrag gehen Angebote und Auftragsbestätigungen ohne Annahme-Link hinaus** (Warnung beim Start). |
+| `freigabe.hash.salt` | Geheimer Wert für die Prüf-Hashes und den Code-HMAC. In jeder Installation einen eigenen Wert setzen (nur in `application-local.properties` bzw. der Umgebung). |
 
 ---
 
-## 3 · Backend-Endpoints (im ERP, fertig implementiert)
+## 3 · Ablauf auf der Freigabe-Seite
 
-Alle Pfade liegen unter `${ERP_BASE_URL}/api/internal/freigabe/...`. Cloudflare-Access-Header sind Pflicht.
+1. Kunde öffnet den Link → Webseite holt `GET /api/internal/freigabe/{uuid}` und zeigt je nach `status` die passende Ansicht.
+2. Bei `PENDING`: Dokument anzeigen (PDF über den Proxy der Webseite, dazu die Positionen), Alternativen zur Auswahl anbieten, Vor- und Nachname abfragen, Bestätigungs-Checkbox.
+3. Klick auf „Freigeben“ → `POST /api/internal/freigabe/{uuid}/code`: Das ERP schickt einen **6-stelligen Bestätigungscode** an die Adresse, an die das Dokument ging, und meldet die maskierte Adresse zurück.
+4. Kunde gibt den Code ein → `POST /api/internal/freigabe/{uuid}/akzeptieren`.
+5. Erfolg → Quittung mit `akzeptiertAm`, `unterzeichnerName` und `hashAcceptance` anzeigen.
 
-### 3.1 GET `/api/internal/freigabe/{uuid}`
+Nach der Annahme eines Angebots oder Nachtragsangebots sperrt das ERP das Dokument, legt automatisch eine Auftragsbestätigung an (bei einer Anfrage vorher ein Projekt) und schickt sie dem Kunden.
 
-**Zweck:** Daten für die Seitenanzeige holen.
+**Schutzregeln für den Code:** 15 Minuten gültig; ein neuer Code macht den alten ungültig; neuer Code frühestens nach 30 Sekunden, höchstens 5 Codes pro Stunde; nach 5 Fehlversuchen geht automatisch ein neuer Code raus; nach insgesamt 15 Fehlversuchen ist die Online-Freigabe gesperrt, das Büro bekommt eine Push-Nachricht. Gespeichert wird nur ein HMAC des Codes.
 
-**Antwort 200 — `FreigabeAnsichtDto`:**
+---
 
-```ts
-{
-  uuid: string;                     // = der UUID-Path-Parameter
-  status: "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
-  dokumentNummer: string;           // z.B. "ANG-2026-0123"
-  dokumentArt: string;              // "Angebot" | "Auftragsbestätigung"
-  dokumentBetrag: number | null;    // Brutto in EUR, kann null sein
-  bauvorhaben: string | null;       // Beschreibung des Vorhabens
-  kundeName: string | null;
-  kundeEmail: string | null;        // E-Mail an die der Link gemailt wurde
-  erstelltAm: string;               // ISO-LocalDateTime, "2026-05-05T12:00:00"
-  ablaufDatum: string;              // ISO-LocalDateTime
-  akzeptiertAm: string | null;      // nur gesetzt wenn status === "ACCEPTED"
-  abgelaufen: boolean;              // Convenience-Flag (entspricht status === "EXPIRED")
-  pdfPfad: string;                  // "/api/internal/freigabe/{uuid}/pdf" – nicht im Browser nutzen
-}
-```
+## 4 · Endpunkte im ERP
 
-**Antwort 404:** UUID ist unbekannt → Astro zeigt eine "Link nicht gefunden"-Seite.
+Alle Pfade liegen unter `<ERP-Adresse>/api/internal/freigabe/...` und verlangen `X-ERP-Website-Key`.
 
-### 3.2 GET `/api/internal/freigabe/{uuid}/pdf`
+### 4.1 `GET /{uuid}` – Daten für die Seite
 
-**Zweck:** Liefert das PDF als binären Stream.
-
-**Antwort 200:** `Content-Type: application/pdf`, `Content-Disposition: inline; filename="..."`. Der Body ist die rohe PDF-Datei.
-
-**Antwort 404:** PDF-Datei nicht auffindbar.
-**Antwort 410:** Freigabe ist abgelaufen oder widerrufen → kein PDF mehr.
-
-### 3.3 POST `/api/internal/freigabe/{uuid}/akzeptieren`
-
-**Body — `FreigabeAkzeptierenRequest` (JSON):**
-
-```ts
-{
-  email: string;             // optionale Bestätigungs-E-Mail vom Kunden
-  bestaetigung: boolean;     // MUSS true sein, sonst 400
-  clientIp: string;          // echte Client-IP, vom Astro-Layer extrahiert
-  userAgent: string;         // User-Agent des Browsers
-}
-```
-
-**Antwort 200 — `FreigabeAkzeptiertResponse`:**
+**200 — `FreigabeAnsichtDto`:**
 
 ```ts
 {
   uuid: string;
+  status: "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
   dokumentNummer: string;
-  dokumentArt: string;
-  akzeptiertAm: string;      // ISO-LocalDateTime
-  hashAcceptance: string;    // 64-Zeichen-Hex-String (SHA-256)
+  dokumentArt: string;              // z. B. "Angebot", "Auftragsbestätigung"
+  dokumentBetrag: number | null;    // Brutto in EUR
+  bauvorhaben: string | null;
+  kundeName: string | null;
+  kundeEmail: string | null;        // Adresse, an die der Link ging
+  erstelltAm: string;               // ISO-LocalDateTime
+  ablaufDatum: string;              // ISO-LocalDateTime
+  akzeptiertAm: string | null;      // nur bei ACCEPTED
+  abgelaufen: boolean;
+  pdfPfad: string;                  // "/api/internal/freigabe/{uuid}/pdf" – nicht im Browser nutzen
+  positionen: FreigabePositionDto[] | null;  // null bei Alt-Freigaben ohne Positionen
+  basisNetto: number | null;        // Summe ohne Alternativen (nach Rabatt)
+  basisBrutto: number | null;
+  mwstProzent: number | null;       // für die Live-Berechnung der Endsumme
+  hatAlternativen: boolean;
+  globalRabattProzent: number | null;
 }
 ```
 
-**Antwort 400:** `bestaetigung !== true` oder ungültiger Body.
-**Antwort 404:** UUID unbekannt.
-**Antwort 410:** Abgelaufen / widerrufen / bereits in einem nicht-akzeptierbaren Zustand.
+`FreigabePositionDto`: `blockId` (für die Auswahl zurückschicken), `typ` (`SERVICE`, `SECTION_HEADER`, `TEXT`, `SUBTOTAL`, `SEPARATOR`, `CLOSURE`), `pos`, `bezeichnung`, `beschreibungHtml` (HTML – sicher rendern), `menge`, `einheit`, `einzelpreisNetto`, `rabattProzent`, `gesamtpreisNetto`, `optional` (Alternative), `alternativGruppe` (gesetzt = genau eine Variante der Gruppe wählen; leer = frei dazubuchbar), `sectionLabel`, `children`.
 
-> Das Backend erzeugt den `hashAcceptance` aus IP, E-Mail, Zeitstempel, originalem Dokumenten-Hash und einem **serverseitigen Salt**. Der Kunde sieht den Hash als unveränderbare Quittung – Astro muss ihn nur durchreichen.
+**404:** UUID unbekannt → „Link nicht gefunden“. Abgelaufene Links stellt das ERP beim Abruf selbst auf `EXPIRED`.
 
----
+### 4.2 `GET /{uuid}/pdf` – PDF
 
-## 4 · Astro-Routen-Implementierung
+**200:** `Content-Type: application/pdf`, `Content-Disposition: inline; filename="..."`.
+**404:** keine PDF vorhanden. **410:** Freigabe abgelaufen oder zurückgezogen.
 
-### 4.1 `src/pages/freigabe/[uuid].astro`
+### 4.3 `DELETE /{uuid}/pdf` – PDF löschen
 
-```astro
----
-export const prerender = false;
+Löscht die für die Freigabe gespeicherte PDF (gedacht für abgelaufene Links). Antwort 204. Das ERP prüft dabei den Status nicht.
 
-import Layout from '../../layouts/Layout.astro';
+### 4.4 `POST /{uuid}/code` – Bestätigungscode anfordern
 
-const { uuid } = Astro.params;
+**200:** `{ success: true, emailMaskiert: string, gueltigBis: string, erneutAnfordernInSekunden: number }`
 
-const erpBaseUrl = process.env.ERP_BASE_URL;
-const cfClientId = process.env.CF_ACCESS_CLIENT_ID;
-const cfClientSecret = process.env.CF_ACCESS_CLIENT_SECRET;
+| Status | Bedeutung |
+|---|---|
+| 404 | UUID unbekannt |
+| 409 | keine E-Mail-Adresse hinterlegt |
+| 410 | Freigabe nicht mehr offen |
+| 423 | Online-Freigabe gesperrt (zu viele Fehlversuche) |
+| 429 | zu früh für einen neuen Code oder Versand läuft gerade (`erneutAnfordernInSekunden`) |
+| 502 | Versand der Mail gescheitert |
 
-if (!uuid || !erpBaseUrl || !cfClientId || !cfClientSecret) {
-  return new Response('Nicht verfügbar.', { status: 500 });
-}
+Fehlerantworten tragen `success: false` und eine `message`, die man dem Kunden zeigen kann. Die Code-Mail geht über das Hauptpostfach raus.
 
-let dto: any = null;
-let httpStatus = 0;
-try {
-  const resp = await fetch(`${erpBaseUrl.replace(/\/$/, '')}/api/internal/freigabe/${encodeURIComponent(uuid)}`, {
-    headers: {
-      'CF-Access-Client-Id': cfClientId,
-      'CF-Access-Client-Secret': cfClientSecret,
-    },
-  });
-  httpStatus = resp.status;
-  if (resp.ok) dto = await resp.json();
-} catch (e) {
-  console.error('[freigabe] ERP-Call fehlgeschlagen:', (e as any)?.message);
-  return new Response('Service vorübergehend nicht erreichbar.', { status: 502 });
-}
+### 4.5 `POST /{uuid}/akzeptieren` – verbindlich annehmen
 
-// Status-Branching für die View:
-//   httpStatus === 404           -> "Link nicht gefunden"
-//   dto?.status === "EXPIRED"    -> "Link ist abgelaufen"  (oder dto.abgelaufen === true)
-//   dto?.status === "ACCEPTED"   -> Bestätigungs-Ansicht (akzeptiertAm anzeigen)
-//   dto?.status === "PENDING"    -> Annahme-Formular (PDF-Anzeige + Bestätigungs-Checkbox + Submit)
-//   dto?.status === "REVOKED"    -> "Link wurde zurückgezogen"
----
-
-<Layout title={`Freigabe ${dto?.dokumentNummer ?? ''}`}>
-  {/* Design wird vom Design-Agenten gefüllt. Felder, die zur Verfügung stehen:
-       dto.dokumentArt, dto.dokumentNummer, dto.dokumentBetrag, dto.bauvorhaben,
-       dto.kundeName, dto.ablaufDatum, dto.akzeptiertAm, dto.status */}
-  {/* PDF-Einbindung später per <iframe src={`/api/freigabe/${uuid}/pdf`} /> */}
-  {/* Submit-Form schickt POST an /api/freigabe/{uuid}/akzeptieren */}
-</Layout>
-```
-
-### 4.2 `src/pages/api/freigabe/[uuid]/pdf.ts` (Proxy)
+**Body — `FreigabeAkzeptierenRequest`:**
 
 ```ts
-import type { APIRoute } from 'astro';
-export const prerender = false;
-
-export const GET: APIRoute = async ({ params }) => {
-  const uuid = params.uuid;
-  const erpBaseUrl = process.env.ERP_BASE_URL;
-  const cfClientId = process.env.CF_ACCESS_CLIENT_ID;
-  const cfClientSecret = process.env.CF_ACCESS_CLIENT_SECRET;
-  if (!uuid || !erpBaseUrl || !cfClientId || !cfClientSecret) {
-    return new Response('not configured', { status: 500 });
-  }
-
-  const upstream = await fetch(
-    `${erpBaseUrl.replace(/\/$/, '')}/api/internal/freigabe/${encodeURIComponent(uuid)}/pdf`,
-    {
-      headers: {
-        'CF-Access-Client-Id': cfClientId,
-        'CF-Access-Client-Secret': cfClientSecret,
-      },
-    },
-  );
-  if (!upstream.ok) {
-    return new Response(null, { status: upstream.status });
-  }
-  return new Response(upstream.body, {
-    status: 200,
-    headers: {
-      'Content-Type': upstream.headers.get('Content-Type') ?? 'application/pdf',
-      'Content-Disposition': upstream.headers.get('Content-Disposition') ?? 'inline',
-      // Kein Cache: Status kann sich jederzeit ändern (Annahme, Ablauf).
-      'Cache-Control': 'no-store',
-    },
-  });
-};
+{
+  vorname: string;                 // Pflicht, 2–80 Zeichen
+  nachname: string;                // Pflicht, 2–80 Zeichen
+  unterzeichnerName: string;       // Pflicht, 2–160 Zeichen ("Vorname Nachname")
+  code: string;                    // Pflicht, Code aus der E-Mail (Leerzeichen/Bindestriche egal)
+  bestaetigung: boolean;           // MUSS true sein
+  email?: string;                  // optional
+  clientIp: string;                // vom Webseiten-Server ermittelt
+  userAgent: string;               // vom Webseiten-Server ermittelt (max. 500 Zeichen)
+  ausgewaehlteAlternativen?: string[];  // blockIds der gewählten Alternativen
+}
 ```
 
-Im Astro-Frontend wird die PDF dann via `/api/freigabe/${uuid}/pdf` (ohne `internal`!) eingebunden – das ist die öffentliche Astro-Route, die im Hintergrund den Proxy-Call macht.
+Den verbindlichen Betrag rechnet das ERP aus der Auswahl selbst neu; Beträge vom Browser werden nicht übernommen.
 
-### 4.3 `src/pages/api/freigabe/[uuid]/akzeptieren.ts`
+**200 — `FreigabeAkzeptiertResponse`:** `{ uuid, dokumentNummer, dokumentArt, akzeptiertAm, hashAcceptance, unterzeichnerName }`
 
-```ts
-import type { APIRoute } from 'astro';
-export const prerender = false;
+| Status | Bedeutung |
+|---|---|
+| 400 | `bestaetigung` nicht `true` („Bitte bestätigen Sie, dass Sie das Dokument geprüft haben.“) oder Pflichtfeld fehlt/zu kurz |
+| 404 | UUID unbekannt |
+| 410 | abgelaufen oder zurückgezogen |
 
-export const POST: APIRoute = async ({ params, request, clientAddress }) => {
-  const uuid = params.uuid;
-  const erpBaseUrl = process.env.ERP_BASE_URL;
-  const cfClientId = process.env.CF_ACCESS_CLIENT_ID;
-  const cfClientSecret = process.env.CF_ACCESS_CLIENT_SECRET;
-  if (!uuid || !erpBaseUrl || !cfClientId || !cfClientSecret) {
-    return new Response(JSON.stringify({ success: false, message: 'Server nicht konfiguriert.' }), { status: 500 });
-  }
+Ist die Freigabe schon angenommen (z. B. Doppelklick), antwortet das ERP mit 200 und den Daten der **ersten** Annahme.
+| 422 | Code-Fehler: `codeFehler` (`FALSCH`, `ABGELAUFEN`, `NEUER_CODE_VERSCHICKT`, `GESPERRT`, …), `verbleibendeVersuche`, ggf. `erneutAnfordernInSekunden`, `emailMaskiert` |
 
-  // Body parsen (FormData oder JSON möglich – das überlässt der Design-Agent dem UI)
-  let body: any = {};
-  try {
-    const ct = request.headers.get('content-type') ?? '';
-    if (ct.includes('application/json')) {
-      body = await request.json();
-    } else {
-      const fd = await request.formData();
-      body = Object.fromEntries(fd.entries());
-      body.bestaetigung = body.bestaetigung === 'on' || body.bestaetigung === 'true' || body.bestaetigung === true;
-    }
-  } catch {
-    return new Response(JSON.stringify({ success: false, message: 'Ungültige Anfrage.' }), { status: 400 });
-  }
-
-  if (body.bestaetigung !== true) {
-    return new Response(
-      JSON.stringify({ success: false, message: 'Bitte bestätigen Sie die Annahme.' }),
-      { status: 400 },
-    );
-  }
-
-  const ip = request.headers.get('cf-connecting-ip')
-    ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    ?? clientAddress
-    ?? '';
-
-  const payload = {
-    email: typeof body.email === 'string' ? body.email : null,
-    bestaetigung: true,
-    clientIp: ip.slice(0, 45),
-    userAgent: (request.headers.get('user-agent') ?? '').slice(0, 500),
-  };
-
-  const resp = await fetch(
-    `${erpBaseUrl.replace(/\/$/, '')}/api/internal/freigabe/${encodeURIComponent(uuid)}/akzeptieren`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'CF-Access-Client-Id': cfClientId,
-        'CF-Access-Client-Secret': cfClientSecret,
-      },
-      body: JSON.stringify(payload),
-    },
-  );
-  const text = await resp.text();
-  return new Response(text, {
-    status: resp.status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
-  });
-};
-```
+`hashAcceptance` ist ein SHA-256 über den Hash des versendeten Dokuments, UUID, IP, E-Mail, Zeitpunkt, Unterzeichner, gewählte Alternativen, verbindlichen Betrag, die Code-Bestätigung und den serverseitigen Salt. Der Kunde sieht ihn als unveränderbare Quittung; die Webseite reicht ihn nur durch.
 
 ---
 
-## 5 · Vorlage zum Anlehnen
+## 5 · Was die Seite dem Kunden zeigen muss
 
-`src/pages/api/anfrage.ts` (bereits im Repo) zeigt **exakt dasselbe Muster** für Cloudflare-Access-Header, IP-Extraktion und Forwarding ans ERP. Wenn du unsicher bist, nimm dir diese Datei als Referenz – sie ist produktiv im Einsatz.
-
----
-
-## 6 · Fachliche Anforderungen die der Design-Agent kommunizieren muss
-
-1. Bestätigungs-Checkbox `bestaetigung` MUSS aktiv angeklickt sein – ohne `true` lehnt das ERP mit 400 ab.
-2. IP, User-Agent und Annahme-Zeitpunkt werden gespeichert. Datenschutz-Hinweis Pflicht.
-3. Annahme ist rechtsverbindlich – Begriff "verbindlich annehmen" oder "kostenpflichtig beauftragen" auf dem Button.
-4. Nach erfolgreicher Annahme `hashAcceptance` und `akzeptiertAm` als Quittung sichtbar machen.
-5. PDF-Anzeige via `/api/freigabe/${uuid}/pdf` (Astro-Proxy), nicht direkt ERP.
+1. Bestätigungs-Checkbox (`bestaetigung`) – ohne aktiven Haken lehnt das ERP mit 400 ab.
+2. Hinweis, dass IP-Adresse, Browser-Kennung, Name und Zeitpunkt gespeichert werden (Datenschutz).
+3. Der Knopf macht klar, dass die Annahme verbindlich ist (z. B. „verbindlich annehmen“).
+4. Nach erfolgreicher Annahme `akzeptiertAm`, `unterzeichnerName` und `hashAcceptance` als Quittung.
+5. Je Status eine eigene Ansicht: `PENDING` (Annahme), `ACCEPTED` (schon angenommen), `EXPIRED` (abgelaufen), `REVOKED` (zurückgezogen), 404 (Link nicht gefunden).
 
 ---
 
-## 7 · Was der Design-Agent NICHT machen soll
+## 6 · Link in der E-Mail
 
-- Keine zusätzlichen Backend-Endpoints anfragen – alles Nötige ist oben dokumentiert.
-- Kein direktes Aufrufen der ERP-URL aus dem Browser. Browser → Astro → ERP, immer.
-- Keine Caching-Header auf `[uuid].astro` oder `pdf.ts`. Status kann sich jederzeit ändern.
-- Kein Speichern von `clientIp` oder `userAgent` clientseitig. Astro-Layer extrahiert und schickt sie.
-
----
-
-## 8 · Test-URL
-
-Wenn das ERP ein Angebot oder eine AB versendet, fügt es automatisch den Link an:
-
-```
-https://bauschlosserei-kuhn.de/freigabe/<uuid>
-```
-
-Solange `[uuid].astro` fehlt, läuft der Link in eine Astro-404. Sobald die Seite steht, ist sie sofort über die echten ERP-Daten testbar.
+Beim Versand eines Angebots, Nachtragsangebots oder einer Auftragsbestätigung aus dem Dokument-Editor fragt das ERP „Wie lange soll der Annahme-Link gültig sein?“ (Schnellwahl 7, 14, 21 oder 30 Tage oder ein Datum; Standard 14 Tage). Der Link `<freigabe.public-base-url>/freigabe/<uuid>` steht als Knopf mit Klartext-Ersatz in der Mail, darunter das Ablaufdatum.

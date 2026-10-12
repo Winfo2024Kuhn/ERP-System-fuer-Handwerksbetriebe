@@ -11,7 +11,7 @@ Hintergründe und alle Einstellungen stehen im [README](README.md).
 | Wann | Was passiert | Was der Kunde merkt |
 | --- | --- | --- |
 | Immer | Datenbank, ERP und Updater laufen als Docker-Container und starten nach jedem Neustart von selbst | ERP über die Verknüpfung „ERP Handwerk“ |
-| Jede Nacht 2 Uhr | **Sicherung:** Datenbank und alle hochgeladenen Dateien auf den PC, die externe Festplatte und in OneDrive | nichts |
+| Jede Nacht 2 Uhr | **Sicherung:** die Datenbank auf den PC, die externe Festplatte und in OneDrive, dazu alle hochgeladenen Dateien auf die Festplatte und in OneDrive | nichts |
 | Jede Nacht 3 Uhr | **Update:** neue Version holen, vorher sichern, bei Problemen automatisch zurück zur alten | nichts |
 | Wenn etwas schiefgeht | Meldung im ERP für Admins (Glocke → Benachrichtigungen → „Sicherung & Updates“), auf Wunsch zusätzlich aufs Handy | Admin sieht die Meldung |
 
@@ -205,6 +205,9 @@ So erfährst du als Betreuer von Problemen, auch wenn beim Kunden niemand ins ER
 
 - [ ] Im Terminal (als Administrator): `tailscale serve --bg 8080`, danach in
       `C:\ERP-Handwerk`: `docker compose up -d app`.
+- [ ] Wichtig: Ab jetzt ist das ERP im Büronetz nicht mehr direkt erreichbar. Andere Büro-PCs
+      brauchen ebenfalls Tailscale und öffnen `https://<rechnername>.<tailnet>.ts.net`. Am
+      ERP-PC selbst funktioniert die Verknüpfung „ERP Handwerk“ weiter.
 - [ ] **Variante A (sicherer):** Die Mitarbeiter installieren die Tailscale-App und melden
       sich im Firmenkonto an.
       **Variante B (ohne App):** `tailscale funnel --bg 8080` und im ERP unter *Einstellungen →
@@ -248,7 +251,11 @@ So erfährst du als Betreuer von Problemen, auch wenn beim Kunden niemand ins ER
 | „Cloud-Ordner nicht gefunden“ | Ist OneDrive angemeldet und der Ordner `ERP-Sicherung` noch da? Danach PC neu starten. |
 | „Seit über einem Tag keine Sicherung“ | War der PC nachts aus? Läuft Docker Desktop? `docker compose ps` prüfen. |
 | „Sicherung nur auf diesem Rechner“ | Schritt 6 fehlt noch. |
+| „Zu wenig Speicherplatz auf diesem Rechner“ | Auf Laufwerk C: Platz schaffen, mindestens 1 GB muss frei sein. |
+| „Der Updater ist veraltet“ | Im ERP-Ordner `docker compose build updater`, danach `docker compose up -d updater`. |
 | „Update fehlgeschlagen – alte Version läuft wieder“ | Der Betrieb merkt nichts. Log steht in `C:\ERP-Handwerk\logs\`. Die nächste neuere Version wird automatisch wieder versucht. |
+| „ERP-Update: Download fehlgeschlagen“ | Es wurde nichts verändert. Hat der PC Internet? Ist das Image privat, siehe README, Abschnitt „Image privat?“. Nächste Nacht kommt ein neuer Versuch. |
+| „ERP-Update ausgelassen“ | Es wurde nichts verändert. Der Text der Meldung sagt, warum: zu wenig Speicherplatz, Sicherung fehlgeschlagen oder das ERP lief schon vorher nicht sauber. |
 | „NOTFALL“ | Sofort hinschauen: README, Abschnitt „Was nachts passiert“. |
 
 ### Eine gelöschte Datei zurückholen

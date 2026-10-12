@@ -1,5 +1,7 @@
 # So funktioniert die Kasse
 
+> Die Kasse findest du unter **Finanzen & Controlling › Buchhaltung › Belege & Kasse**, Reiter **„Kassenbuch“**. Dort stehen die Knöpfe „Neue Buchung“, „Kasse zählen“ und „… abschließen“; das Paket für den Steuerberater gibt es über „Für den Steuerberater“ oben rechts. Die Abschnitte unten sind dieselben wie im Programm unter „So funktioniert die Kasse“ › „Mehr dazu“ (Stand: Oktober 2026).
+
 ## Was gehört ins Kassenbuch
 
 Hier steht jede Bewegung von Bargeld: Geld von Kunden, bar bezahlte Ausgaben, Geld von der Bank und eigenes Geld. Überweisungen und Kartenzahlungen gehören zu den Belegen, verändern aber nicht das Bargeld in der Kasse. Trage Barbewegungen sofort ein, damit der angezeigte Bestand zur Kasse passt.

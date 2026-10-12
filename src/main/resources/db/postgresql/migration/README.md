@@ -69,10 +69,14 @@ bricht sonst ab.
   nie Backticks.
 - Indexnamen gelten in PostgreSQL im ganzen Schema, nicht je Tabelle - also
   eindeutig benennen, z. B. `tabelle__spalte`.
-- Die App verbindet sich **ohne Superuser-Rechte** (Rolle `erp_user`,
-  Eigentuemerin von Datenbank und Schema `public`). Migrationen duerfen Tabellen,
-  Indizes usw. anlegen und aendern, aber z. B. keine nicht vertrauenswuerdigen
-  Erweiterungen (`CREATE EXTENSION`) installieren. Der Starttest prueft genauso.
+- Auf den Servern verbindet sich die App **ohne Superuser-Rechte** (Rolle
+  `erp_user`, Eigentuemerin von Datenbank und Schema `public`, angelegt von
+  `deployment/docker-server/postgres-init/01-app-rolle.sh`). Migrationen duerfen
+  Tabellen, Indizes usw. anlegen und aendern, aber z. B. keine nicht
+  vertrauenswuerdigen Erweiterungen (`CREATE EXTENSION`) installieren. Der
+  Starttest und der CI-Job "Datenbank-Kompatibilitaet" pruefen genauso. Achtung:
+  Im lokalen Dev-Container (`docker run ... -e POSTGRES_USER=erp_user`) ist
+  `erp_user` Superuser - dort faellt so ein Fehler nicht auf.
 - Keine Personendaten in Migrationen (Stammdaten nur mit Dummy-Werten).
 
 ## Pruefen
