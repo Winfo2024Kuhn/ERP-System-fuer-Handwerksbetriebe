@@ -19,7 +19,7 @@ class UnifiedEmailListenFilterTest {
 
     @Test
     void ohneVerborgeneMailsBleibtDieListeUnberuehrt() {
-        UnifiedEmailController.ListenFilter filter = new UnifiedEmailController.ListenFilter(null);
+        UnifiedEmailController.ListenFilter filter = new UnifiedEmailController.ListenFilter(null, null);
         List<Email> liste = List.of(mail(1L), mail(2L));
 
         assertThat(filter.aktiv()).isFalse();
@@ -29,7 +29,7 @@ class UnifiedEmailListenFilterTest {
 
     @Test
     void verborgeneMailsFallenHeraus() {
-        UnifiedEmailController.ListenFilter filter = new UnifiedEmailController.ListenFilter(Set.of(2L));
+        UnifiedEmailController.ListenFilter filter = new UnifiedEmailController.ListenFilter(Set.of(2L), null);
 
         assertThat(filter.aktiv()).isTrue();
         assertThat(filter.anwenden(List.of(mail(1L), mail(2L), mail(3L)))).extracting(Email::getId)

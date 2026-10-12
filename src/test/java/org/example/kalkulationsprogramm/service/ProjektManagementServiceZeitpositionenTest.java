@@ -72,7 +72,8 @@ class ProjektManagementServiceZeitpositionenTest {
 
         Projekt projekt = new Projekt();
         projekt.setBauvorhaben("Bau");
-        projekt.setAuftragsnummer("A-1");
+        // Eigene Nummer: ProjektManagementServiceIntegrationTest legt im selben Kontext dauerhaft "A-1" an.
+        projekt.setAuftragsnummer("ZP-1");
         projekt.setAnlegedatum(LocalDate.now());
         projekt.setBruttoPreis(BigDecimal.ONE);
         projekt.setBezahlt(false);
@@ -110,9 +111,19 @@ class ProjektManagementServiceZeitpositionenTest {
         dto.setKundenId(kunde.getId());
 
         projektManagementService.aktualisiereProjekt(projekt.getId(), dto, null, null, null, null, null);
-        Zeitbuchung gespeicherteZeit = ZeitbuchungRepository.findAll().getFirst();
+        Zeitbuchung gespeicherteZeit = zeitbuchungenVon(projekt.getId()).getFirst();
         assertThat(gespeicherteZeit.getProjekt().getId()).isEqualTo(projekt.getId());
         assertThat(gespeicherteZeit.getAnzahlInStunden()).isEqualByComparingTo(new BigDecimal("2.5"));
+    }
+
+    /**
+     * Zeitbuchungen nur dieses Projekts: ProjektManagementServiceIntegrationTest hinterlässt im
+     * selben Spring-Kontext eigene Projekte und Zeitbuchungen.
+     */
+    private List<Zeitbuchung> zeitbuchungenVon(Long projektId) {
+        return ZeitbuchungRepository.findAll().stream()
+                .filter(z -> z.getProjekt() != null && projektId.equals(z.getProjekt().getId()))
+                .toList();
     }
 
     private Kunde erzeugeKunde(String kundennummer) {
@@ -150,7 +161,7 @@ class ProjektManagementServiceZeitpositionenTest {
 
         Projekt projekt = new Projekt();
         projekt.setBauvorhaben("Bauvorhaben");
-        projekt.setAuftragsnummer("A-1");
+        projekt.setAuftragsnummer("ZP-2");
         projekt.setAnlegedatum(LocalDate.now());
         projekt.setBruttoPreis(BigDecimal.ONE);
         projekt.setBezahlt(false);
@@ -188,7 +199,7 @@ class ProjektManagementServiceZeitpositionenTest {
         projekt.getZeitbuchungen().add(zeit);
         projekt = projektRepository.saveAndFlush(projekt);
 
-        assertThat(ZeitbuchungRepository.count()).isEqualTo(1);
+        assertThat(zeitbuchungenVon(projekt.getId())).hasSize(1);
 
         ProjektErstellenDto dto = new ProjektErstellenDto();
         dto.setProduktkategorien(List.of(erzeugeProduktkategorieDto(produktkategorie.getId(), BigDecimal.ONE)));
@@ -205,6 +216,6 @@ class ProjektManagementServiceZeitpositionenTest {
 
         projektManagementService.aktualisiereProjekt(projekt.getId(), dto, null, null, null, null, null);
 
-        assertThat(ZeitbuchungRepository.count()).isZero();
+        assertThat(zeitbuchungenVon(projekt.getId())).isEmpty();
     }
 }

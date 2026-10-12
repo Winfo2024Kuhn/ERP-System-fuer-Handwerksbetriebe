@@ -6,6 +6,7 @@ import { PostfachSchild } from '../features/email/PostfachSchild';
 import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
 import { ermittleEmailZuordnung } from '../features/email/emailZuordnung';
 import { EmailFolderSidebar } from '../features/email/EmailFolderSidebar';
+import { UngelesenKopfzeile } from '../features/email/UngelesenKopfzeile';
 import { AssignModal } from '../features/email/EmailAssignmentDialog';
 import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
 import {
@@ -35,7 +36,6 @@ import {
     Globe,
     X,
     CheckSquare,
-    MailCheck,
     MessagesSquare,
     RotateCcw,
     FolderInput,
@@ -1793,6 +1793,8 @@ export default function EmailCenter() {
         );
     };
 
+    const ungeleseneAnzahl = emails.filter(e => !e.isRead).length;
+
     return (
         <>
         {hasDataRouter && <EmailNavigationGuard active={isComposing} persist={persistComposer} />}
@@ -1830,20 +1832,11 @@ export default function EmailCenter() {
                 className="bg-white border-r border-slate-200 flex flex-col shrink-0 min-w-[280px]"
             >
                 {/* Ordner-Header mit "Alle gelesen"-Button */}
-                {!isGlobalSearch && activeFolder !== 'sent' && emails.some(e => !e.isRead) && (
-                    <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
-                        <span className="text-xs text-slate-500 font-medium">
-                            {emails.filter(e => !e.isRead).length} ungelesen
-                        </span>
-                        <button
-                            onClick={handleMarkAllRead}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
-                            title="Alle als gelesen markieren"
-                        >
-                            <MailCheck className="w-3.5 h-3.5" />
-                            Alle gelesen
-                        </button>
-                    </div>
+                {!isGlobalSearch && activeFolder !== 'sent' && ungeleseneAnzahl > 0 && (
+                    <UngelesenKopfzeile
+                        anzahl={ungeleseneAnzahl}
+                        onAlleGelesen={handleMarkAllRead}
+                    />
                 )}
                 {/* Search */}
                 <div className="p-3 border-b border-slate-200 space-y-2">
