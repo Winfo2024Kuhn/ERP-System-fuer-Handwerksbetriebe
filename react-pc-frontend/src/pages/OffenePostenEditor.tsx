@@ -8,6 +8,10 @@ import type { OffenerPosten, Mahnstufe } from '../types';
 import EingangsrechnungenTab from '../components/EingangsrechnungenTab';
 import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
 import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
+import { useToast } from '../components/ui/toast';
+import { leseFehlermeldung } from '../lib/apiFehler';
+import { cn } from '../lib/utils';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 
 
 // Mahnstufe labels
@@ -55,6 +59,18 @@ const beschreibeFaelligkeit = (isoText: string | undefined | null): {
     return { label: `Überfällig seit ${Math.abs(diffTage)} Tagen`, className: 'text-red-600 font-semibold', diffTage };
 };
 
+/** Erklärt, was der Haken „Bezahlt“ am Projekt auslöst (AusgangsGeschaeftsDokumentService). */
+function BezahltInfo() {
+    return <InfoButton titel="Haken „Bezahlt“">
+        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+            <p>Die Rechnung wird als bezahlt gespeichert und verschwindet aus dieser Liste. Danach prüft das Programm das ganze Projekt: Sind alle Rechnungen geschrieben und gebucht, ist keine mehr offen und deckt das bezahlte Geld den Auftragspreis, gilt das Projekt als bezahlt und wird automatisch beendet.</p>
+        </InfoAbschnitt>
+        <InfoAbschnitt titel="Was bewirkt das?">
+            <p>Die Rechnung selbst (Betrag, PDF) ändert sich nicht, und der Kunde bekommt nichts geschickt. Haben Sie das Projekt von Hand beendet oder wieder geöffnet, bleibt es dabei.</p>
+        </InfoAbschnitt>
+    </InfoButton>;
+}
+
 // Group invoices with their reminders
 interface InvoiceWithReminders {
     invoice: OffenerPosten;
@@ -67,6 +83,8 @@ export default function OffenePostenEditor() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
+    const [bezahltWirdGespeichert, setBezahltWirdGespeichert] = useState<ReadonlySet<number>>(() => new Set());
+    const toast = useToast();
     const [activeTab, setActiveTab] = useState<'ausgang' | 'eingang'>(() => {
         const tabParam = searchParams.get('tab');
         return tabParam === 'eingang' ? 'eingang' : 'ausgang';
@@ -197,11 +215,25 @@ export default function OffenePostenEditor() {
 
     // Toggle bezahlt status
     const toggleBezahlt = async (id: number, currentValue: boolean) => {
+        const bezahlt = !currentValue;
+        const ersatzMeldung = bezahlt
+            ? 'Die Rechnung konnte nicht als bezahlt markiert werden.'
+            : 'Die Rechnung konnte nicht wieder auf offen gesetzt werden.';
+        setBezahltWirdGespeichert(ids => new Set(ids).add(id));
         try {
-            await fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${!currentValue}`, { method: 'PATCH' });
+            const res = await fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${bezahlt}`, { method: 'PATCH' });
+            if (!res.ok) toast.error(await leseFehlermeldung(res, ersatzMeldung));
+            // Auch nach einem Fehler neu laden: Der Haken zeigt dann den Stand, der
+            // wirklich gespeichert ist (z. B. nach einer Änderung von jemand anderem).
             await loadData();
-        } catch (err) {
-            console.error('Status konnte nicht aktualisiert werden:', err);
+        } catch {
+            toast.error(`${ersatzMeldung} Bitte die Verbindung prüfen und es noch einmal versuchen.`);
+        } finally {
+            setBezahltWirdGespeichert(ids => {
+                const rest = new Set(ids);
+                rest.delete(id);
+                return rest;
+            });
         }
     };
 
@@ -282,10 +314,17 @@ export default function OffenePostenEditor() {
                     </td>
                     {/* Bezahlt */}
                     <td className="px-4 py-3 text-center">
-                        <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 cursor-pointer">
+                        <label
+                            title={bezahltWirdGespeichert.has(invoice.id) ? 'Wird gespeichert …' : undefined}
+                            className={cn(
+                                'inline-flex items-center gap-2 text-sm font-medium text-slate-600',
+                                bezahltWirdGespeichert.has(invoice.id) ? 'cursor-wait opacity-60' : 'cursor-pointer'
+                            )}
+                        >
                             <input
                                 type="checkbox"
                                 checked={invoice.bezahlt}
+                                disabled={bezahltWirdGespeichert.has(invoice.id)}
                                 onChange={() => toggleBezahlt(invoice.id, invoice.bezahlt)}
                                 className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                             />
@@ -470,7 +509,12 @@ export default function OffenePostenEditor() {
                                                 <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Tage</th>
                                                 <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Betrag</th>
                                                 <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Dokument</th>
-                                                <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                                                <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                                    <span className="inline-flex items-center gap-1">
+                                                        Status
+                                                        <BezahltInfo />
+                                                    </span>
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">

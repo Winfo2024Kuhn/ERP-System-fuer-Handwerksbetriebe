@@ -17,6 +17,14 @@ describe('leseFehlermeldung', () => {
         await expect(leseFehlermeldung(antwort('{"error":"A","message":"B"}'), 'Ersatz')).resolves.toBe('A');
     });
 
+    it('übergeht den englischen Statustext aus Springs Standard-Fehlerantwort', async () => {
+        const res = antwort(
+            '{"timestamp":"2026-10-12T19:00:00.000+00:00","status":500,"error":"Internal Server Error","path":"/api/projekte/dokumente/7/bezahlt"}',
+            500,
+        );
+        await expect(leseFehlermeldung(res, 'Ersatz')).resolves.toBe('Ersatz');
+    });
+
     it('übergeht leere Meldungen und Nicht-Texte', async () => {
         await expect(leseFehlermeldung(antwort('{"error":"  ","message":42}'), 'Ersatz')).resolves.toBe('Ersatz');
     });

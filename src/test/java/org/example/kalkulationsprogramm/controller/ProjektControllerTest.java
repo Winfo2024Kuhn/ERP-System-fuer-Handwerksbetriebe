@@ -2,6 +2,9 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.util.List;
 
+import jakarta.servlet.ServletException;
+
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
@@ -23,6 +26,8 @@ import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
@@ -36,7 +41,10 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -311,23 +319,51 @@ class ProjektControllerTest {
         }
 
         @Test
-        void setzeDokumentBezahltGibt404WennDokumentNichtGefunden() throws Exception {
-                doThrow(new RuntimeException("Nicht gefunden"))
+        void setzeDokumentBezahltGibt404MitMeldungWennDokumentNichtGefunden() throws Exception {
+                doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Diese Rechnung gibt es nicht mehr."))
                                 .when(dateiSpeicherService).setzeGeschaeftsdokumentBezahlt(999L, true);
 
                 mockMvc.perform(patch("/api/projekte/dokumente/999/bezahlt")
                                 .param("bezahlt", "true"))
-                                .andExpect(status().isNotFound());
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value("Diese Rechnung gibt es nicht mehr."));
         }
 
         @Test
-        void setzeDokumentBezahltGibt404WennKeinGeschaeftsdokument() throws Exception {
-                doThrow(new RuntimeException("Kein Geschäftsdokument"))
+        void setzeDokumentBezahltGibt400WennKeinGeschaeftsdokument() throws Exception {
+                doThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Dieses Dokument ist keine Rechnung."))
                                 .when(dateiSpeicherService).setzeGeschaeftsdokumentBezahlt(50L, true);
 
                 mockMvc.perform(patch("/api/projekte/dokumente/50/bezahlt")
                                 .param("bezahlt", "true"))
-                                .andExpect(status().isNotFound());
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.message").value("Dieses Dokument ist keine Rechnung."));
+        }
+
+        @Test
+        void setzeDokumentBezahltGibt409BeiVersionskonfliktAmProjekt() throws Exception {
+                // Der Haken rechnet den Projektstatus neu – speichert jemand anders das Projekt
+                // gleichzeitig, ist das ein Konflikt und kein "nicht gefunden".
+                doThrow(new ObjectOptimisticLockingFailureException(Projekt.class, 10L))
+                                .when(dateiSpeicherService).setzeGeschaeftsdokumentBezahlt(42L, true);
+
+                mockMvc.perform(patch("/api/projekte/dokumente/42/bezahlt")
+                                .param("bezahlt", "true"))
+                                .andExpect(status().isConflict())
+                                .andExpect(jsonPath("$.message").value(
+                                                "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."));
+        }
+
+        @Test
+        void setzeDokumentBezahltMeldetUnerwarteteFehlerNichtAls404() throws Exception {
+                doThrow(new IllegalStateException("Datenbank nicht erreichbar"))
+                                .when(dateiSpeicherService).setzeGeschaeftsdokumentBezahlt(42L, true);
+
+                // Kein Sammel-Catch mehr im Controller: der Fehler läuft als Serverfehler durch.
+                ServletException fehler = assertThrows(ServletException.class,
+                                () -> mockMvc.perform(patch("/api/projekte/dokumente/42/bezahlt")
+                                                .param("bezahlt", "true")));
+                assertInstanceOf(IllegalStateException.class, fehler.getCause());
         }
 
         // --- Regressionstests: Eingangsrechnungen nur mit Netto-Beträgen ---
