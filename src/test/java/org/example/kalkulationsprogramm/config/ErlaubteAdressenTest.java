@@ -11,12 +11,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import org.example.kalkulationsprogramm.testsupport.LogMitschnitt;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
-
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 
 /** Welche Host-Header die Netzgrenze aus dem eigenen Netz annimmt. Alle Namen sind Dummy-Werte. */
 class ErlaubteAdressenTest {
@@ -232,15 +228,6 @@ class ErlaubteAdressenTest {
 
     /** Was {@link ErlaubteAdressen} beim Ausführen ins Log schreibt. */
     private static List<String> mitLog(Runnable aktion) {
-        Logger logger = (Logger) LoggerFactory.getLogger(ErlaubteAdressen.class);
-        ListAppender<ILoggingEvent> log = new ListAppender<>();
-        log.start();
-        logger.addAppender(log);
-        try {
-            aktion.run();
-        } finally {
-            logger.detachAppender(log);
-        }
-        return log.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        return LogMitschnitt.von(ErlaubteAdressen.class, aktion);
     }
 }
