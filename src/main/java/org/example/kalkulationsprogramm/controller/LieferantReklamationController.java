@@ -44,6 +44,15 @@ public class LieferantReklamationController {
         return ResponseEntity.ok(list.stream().map(this::mapToDto).collect(Collectors.toList()));
     }
 
+    /** Eine Reklamation mit Bildern – Detailseite der Handy-App (nach dem Anlegen und aus der Liste). */
+    @GetMapping("/{id}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<LieferantReklamationDto> getById(@PathVariable Long id) {
+        return reklamationRepository.findById(id)
+                .map(reklamation -> ResponseEntity.ok(mapToDto(reklamation)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     @PatchMapping("/{id}/status")
     @Transactional
     public ResponseEntity<Void> updateStatus(@PathVariable Long id, @RequestParam ReklamationStatus status) {

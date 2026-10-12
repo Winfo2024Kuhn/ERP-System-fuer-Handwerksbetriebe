@@ -35,7 +35,9 @@ class MobileDocumentContractTest {
     @InjectMocks LieferantenController suppliers;
 
     @BeforeEach void mobile() {
-        org.springframework.test.util.ReflectionTestUtils.setField(suppliers, "uploadDir", storage.toString());
+        // Echte Dateisuche: Lieferanten-Dokumente liegen direkt im Upload-Ordner storage.
+        org.springframework.test.util.ReflectionTestUtils.setField(suppliers, "dokumentDateiService",
+            new LieferantDokumentDateiService(storage.toString(), storage.toString(), storage.toString(), storage.toString()));
         org.springframework.test.util.ReflectionTestUtils.setField(suppliers, "mailAttachmentDir", storage.toString());
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new MobilePrincipal(7L), null, List.of()));
         // Echter Service: Der handelnde Mitarbeiter kommt aus dem Token (MobilePrincipal), nicht aus Headern.

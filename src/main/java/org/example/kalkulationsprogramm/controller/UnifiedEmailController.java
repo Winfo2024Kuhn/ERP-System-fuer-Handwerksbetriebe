@@ -1025,21 +1025,6 @@ public class UnifiedEmailController {
         ));
     }
 
-    @GetMapping("/{id}/mark-viewed")
-    @Transactional
-    public ResponseEntity<Void> markAsViewed(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
-        // Gehört zum Öffnen der Mail (z. B. aus dem Projekt-Reiter) – daher wie das Lesen erlaubt.
-        Email email = findeLesbar(id, authentication).orElse(null);
-        if (email == null) {
-            return ResponseEntity.notFound().build();
-        }
-        if (email.getFirstViewedAt() == null) {
-            email.setFirstViewedAt(LocalDateTime.now());
-            emailRepository.save(email);
-        }
-        return ResponseEntity.ok().build();
-    }
-
     // ═══════════════════════════════════════════════════════════════
     // ZUORDNUNG ÄNDERN
     // ═══════════════════════════════════════════════════════════════

@@ -2146,8 +2146,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             Verlauf anzeigen
                                                         </button>
 
-                                                        {/* Löschen - nur Entwürfe (GoBD: nicht gebucht, nicht versandt, nicht storniert, kein STORNO) */}
-                                                        {!dok.gebucht && !dok.versandDatum && !dok.storniert && dok.typ !== 'STORNO' && (
+                                                        {/* Löschen - nur Entwürfe (GoBD: nicht gebucht, nicht versandt, nicht digital angenommen, nicht storniert, kein STORNO) */}
+                                                        {!dok.gebucht && !dok.versandDatum && !dok.digitalAngenommen && !dok.storniert && dok.typ !== 'STORNO' && (
                                                             <>
                                                                 <hr className="my-1 border-slate-100" />
                                                                 <button

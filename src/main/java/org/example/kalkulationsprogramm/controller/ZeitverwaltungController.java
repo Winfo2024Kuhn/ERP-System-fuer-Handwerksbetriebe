@@ -865,8 +865,9 @@ public class ZeitverwaltungController {
 
     /**
      * Befüllt den MonatsSaldo-Cache für alle aktiven Mitarbeiter.
-     * Kann manuell aufgerufen werden um den Cache nachträglich zu füllen.
-     * GET /api/zeitverwaltung/saldo-cache/warmup
+     * Kann manuell aufgerufen werden um den Cache nachträglich zu füllen (nur Admin,
+     * siehe {@code SecurityConfig.ADMIN_MASSENLAEUFE}).
+     * POST /api/zeitverwaltung/saldo-cache/warmup
      */
     @PostMapping("/saldo-cache/warmup")
     public ResponseEntity<Map<String, Object>> warmupSaldoCache() {
