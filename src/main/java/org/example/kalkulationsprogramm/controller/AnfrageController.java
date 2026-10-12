@@ -45,6 +45,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -196,6 +197,11 @@ public class AnfrageController {
             original = Files.createTempFile("zugferd-original-", ".pdf.html");
             Files.copy(pdf.getInputStream(), original, StandardCopyOption.REPLACE_EXISTING);
 
+            // Das hochgeladene PDF zeigt nur einen Betrag: eine Sammelposition daraus. Positionen,
+            // Abzüge und Verweise aus der Anfrage würden das XML vom PDF lösen.
+            daten.setArtikelPositionen(new ArrayList<>());
+            daten.setAbzuege(new ArrayList<>());
+            daten.setVorrechnungen(new ArrayList<>());
             zugferdPfad = zugferdErstellService.erzeuge(original.toString(), daten);
 
             AnfrageGeschaeftsdokument dokument = dateiSpeicherService

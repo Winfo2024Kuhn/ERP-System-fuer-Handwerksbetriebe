@@ -96,4 +96,9 @@ describe('drawOverlayQuad', () => {
         const lockingStroke = ctx.strokeStyle
         expect(trackingStroke).not.toEqual(lockingStroke)
     })
+
+    it('zeichnet den locking-Rahmen in der Primärfarbe rose-600, nicht in red-600', () => {
+        drawOverlayQuad(canvas, 800, 600, baseQuad, true)
+        expect(String(ctx.strokeStyle).toLowerCase()).toBe('#e11d48')
+    })
 })

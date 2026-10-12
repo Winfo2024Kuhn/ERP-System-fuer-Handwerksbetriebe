@@ -840,7 +840,7 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
                                         const ry = h / imageRef.current.naturalHeight;
                                         return `${p.x * rx},${p.y * ry}`;
                                     }).join(' ')}
-                                    fill="rgba(220, 38, 38, 0.2)"
+                                    fill="rgba(225, 29, 72, 0.2)"
                                     stroke="#e11d48"
                                     strokeWidth="2"
                                 />
