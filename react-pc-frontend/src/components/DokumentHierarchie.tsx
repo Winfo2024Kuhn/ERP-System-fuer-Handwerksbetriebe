@@ -561,10 +561,11 @@ export function DokumentHierarchie({
                                 Verlauf anzeigen
                             </button>
 
-                            {/* Löschen — mit GoBD-konformem Begründungs-Dialog (Dropdown + Freitext) */}
+                            {/* Löschen — mit GoBD-konformem Begründungs-Dialog (Dropdown + Freitext).
+                                Nur Entwürfe: nicht gebucht, nicht versandt, nicht digital angenommen, nicht storniert. */}
                             {dok.typ !== 'RECHNUNG' && dok.typ !== 'GUTSCHRIFT' && dok.typ !== 'STORNO'
                                 && dok.typ !== 'TEILRECHNUNG' && dok.typ !== 'ABSCHLAGSRECHNUNG' && dok.typ !== 'SCHLUSSRECHNUNG'
-                                && !dok.gebucht && (
+                                && !dok.gebucht && !dok.versandDatum && !dok.digitalAngenommen && !dok.storniert && (
                                 <>
                                     <hr className="my-1 border-slate-100" />
                                     <button

@@ -26,9 +26,10 @@ http {
         include /etc/nginx/mobile-routes.conf;
     }
     # Refuse ambiguous path encodings before passing the original URI upstream.
+    # Encoded control characters too: $uri is decoded, and a regex '$' matches before a trailing newline.
     map $request_uri $ambiguous_path {
         default 0;
-        "~^[^?]*(?:%2[fF]|%5[cC]|%00|;|\\.\\.)" 1;
+        "~^[^?]*(?:%2[fF]|%5[cC]|%[01][0-9a-fA-F]|%7[fF]|;|\\.\\.)" 1;
     }
     map $cookie_ze_token $mobile_cookie {
         default "";

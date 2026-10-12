@@ -84,9 +84,9 @@ ENTWURF ──[E-Mail]──► VERSENDET (versandDatum gesetzt, weiter bearbeit
 
 | Typ | Wird gebucht? | Gesperrt nach … | Stornierbar? | Löschbar? |
 |---|---|---|---|---|
-| `ANGEBOT` | ❌ nie | digitaler Annahme | ❌ | ✅ solange nicht versendet |
-| `NACHTRAGSANGEBOT` | ❌ nie | digitaler Annahme | ❌ | ✅ solange nicht versendet |
-| `AUFTRAGSBESTAETIGUNG` | ❌ nie | digitaler Annahme (Auto-AB) | ❌ | ✅ solange nicht versendet |
+| `ANGEBOT` | ❌ nie | digitaler Annahme | ❌ | ✅ solange nicht versendet und nicht digital angenommen |
+| `NACHTRAGSANGEBOT` | ❌ nie | digitaler Annahme | ❌ | ✅ solange nicht versendet und nicht digital angenommen |
+| `AUFTRAGSBESTAETIGUNG` | ❌ nie | digitaler Annahme (Auto-AB) | ❌ | ✅ solange nicht versendet und nicht digital angenommen |
 | `RECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
 | `TEILRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
 | `ABSCHLAGSRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
@@ -94,7 +94,7 @@ ENTWURF ──[E-Mail]──► VERSENDET (versandDatum gesetzt, weiter bearbeit
 | `GUTSCHRIFT` | ✅ | Buchung | ❌ | ✅ nur als Entwurf |
 | `STORNO` | sofort gebucht | immer | ❌ | ❌ nie |
 
-Stornierte Dokumente sind immer gesperrt und nie löschbar. Wird eine **Abschlagsrechnung** storniert, werden zugehörige Schlussrechnungen am selben Vorgänger automatisch mitstorniert.
+Stornierte Dokumente sind immer gesperrt und nie löschbar. Wird eine **Abschlagsrechnung** storniert, werden zugehörige gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen.
 
 ### 1.4 Anzeige in der Oberfläche
 

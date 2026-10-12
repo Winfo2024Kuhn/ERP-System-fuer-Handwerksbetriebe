@@ -48,4 +48,9 @@ public final class MobileApiPolicy {
         String effectiveMethod = "HEAD".equals(method) ? "GET" : method;
         return ROUTES.stream().anyMatch(r -> r.method.equals(effectiveMethod) && r.path.matcher(path).matches());
     }
+
+    /** "METHODE:muster" je Route, für den Abgleich mit deployment/mobile-public/mobile-routes.conf. */
+    static List<String> routenFuerGateway() {
+        return ROUTES.stream().map(r -> r.method + ":" + r.path.pattern()).toList();
+    }
 }
