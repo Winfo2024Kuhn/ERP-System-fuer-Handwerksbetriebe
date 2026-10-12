@@ -31,6 +31,7 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.RechnungsuebersichtService;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +76,7 @@ class RechnungsuebersichtUploadTest {
     @MockBean private GeminiDokumentAnalyseService geminiService;
     @MockBean private LieferantDokumentRepository lieferantDokumentRepository;
     @MockBean private LieferantDokumentZugriffService zugriffService;
+    @MockBean private LieferantDokumentDateiService dokumentDateiService;
 
     @TempDir private Path arbeitsordner;
     private Path uploads;

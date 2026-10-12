@@ -39,6 +39,7 @@ import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.DisplayName;
@@ -57,7 +58,6 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -82,9 +82,6 @@ class LieferantDokumentEinzelzugriffSecurityTest {
 
     @Autowired
     private MockMvc mockMvc;
-    @Autowired
-    private LieferantDokumentController controller;
-
     @TempDir
     Path uploadVerzeichnis;
 
@@ -107,9 +104,19 @@ class LieferantDokumentEinzelzugriffSecurityTest {
     @MockBean
     private DatensatzLockService dokumentLockService;
     @MockBean
+    private LieferantDokumentDateiService dokumentDateiService;
+    @MockBean
     private FrontendUserDetailsService frontendUserDetailsService;
 
     // ---------------------------------------------------------------- Helfer
+
+    /** Echte Dateisuche hinter dem Mock; die Ordner liegen unter {@code uploadDir} wie im Standard-Setup. */
+    private void dateisucheUnter(Path uploadDir) {
+        var echt = new LieferantDokumentDateiService(uploadDir.toString(), uploadDir.toString(),
+                uploadDir.resolve("attachments").toString(),
+                uploadDir.resolve("attachments").resolve("lieferanten").toString());
+        given(dokumentDateiService.findeDatei(any())).willAnswer(aufruf -> echt.findeDatei(aufruf.getArgument(0)));
+    }
 
     private static RequestPostProcessor sessionAls(FrontendUserRole rolle) {
         var principal = new FrontendUserPrincipal(1L, "max.mustermann", "Max Mustermann", "hash", true,
@@ -245,7 +252,7 @@ class LieferantDokumentEinzelzugriffSecurityTest {
     @Test
     @DisplayName("Download: Typ ohne Recht -> 404 statt Dateiinhalt")
     void downloadOhneRechtWird404() throws Exception {
-        ReflectionTestUtils.setField(controller, "uploadDir", uploadVerzeichnis.toString());
+        dateisucheUnter(uploadVerzeichnis);
         benutzerDarfSehen(LieferantDokumentTyp.LIEFERSCHEIN);
         dokument(1L, LieferantDokumentTyp.RECHNUNG, "rechnung.pdf");
 
@@ -257,7 +264,7 @@ class LieferantDokumentEinzelzugriffSecurityTest {
     @Test
     @DisplayName("Download: Typ mit Recht liefert die Datei")
     void downloadMitRechtLiefertDatei() throws Exception {
-        ReflectionTestUtils.setField(controller, "uploadDir", uploadVerzeichnis.toString());
+        dateisucheUnter(uploadVerzeichnis);
         benutzerDarfSehen(LieferantDokumentTyp.LIEFERSCHEIN);
         dokument(2L, LieferantDokumentTyp.LIEFERSCHEIN, "lieferschein.pdf");
 
@@ -269,7 +276,7 @@ class LieferantDokumentEinzelzugriffSecurityTest {
     @Test
     @DisplayName("Download: Admin darf jeden Typ laden")
     void downloadAdminDarfAlles() throws Exception {
-        ReflectionTestUtils.setField(controller, "uploadDir", uploadVerzeichnis.toString());
+        dateisucheUnter(uploadVerzeichnis);
         dokument(1L, LieferantDokumentTyp.RECHNUNG, "rechnung.pdf");
 
         mockMvc.perform(get("/api/lieferant-dokumente/1/download").with(sessionAls(FrontendUserRole.ADMIN)))
