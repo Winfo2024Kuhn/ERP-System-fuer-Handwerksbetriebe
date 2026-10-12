@@ -911,14 +911,15 @@ public class ProjektController {
         return ResponseEntity.ok(dtos);
     }
 
+    /**
+     * Bezahlt-Haken im Offene-Posten-Center. Kein eigenes Fehler-Mapping: 404/400
+     * kommen als ResponseStatusException aus dem Service, ein Versionskonflikt am
+     * Projekt wird im RestExceptionHandler zu 409.
+     */
     @PatchMapping("/dokumente/{dokumentID}/bezahlt")
     public ResponseEntity<Void> setzeDokumentBezahlt(@PathVariable Long dokumentID, @RequestParam boolean bezahlt) {
-        try {
-            dateiSpeicherService.setzeGeschaeftsdokumentBezahlt(dokumentID, bezahlt);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        dateiSpeicherService.setzeGeschaeftsdokumentBezahlt(dokumentID, bezahlt);
+        return ResponseEntity.noContent().build();
     }
 
     /**
