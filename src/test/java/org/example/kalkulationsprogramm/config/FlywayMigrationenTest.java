@@ -61,7 +61,8 @@ class FlywayMigrationenTest {
             Map.entry("V417__telefon_reine_vorwahl_leeren.sql", -1484567923),
             Map.entry("V418__email_signatur_firmen_vorlage.sql", -1806692247),
             Map.entry("V419__email_gelesen_pro_benutzer.sql", -529857450),
-            Map.entry("V420__anfrage_dokument_hochlader.sql", -787715335));
+            Map.entry("V420__anfrage_dokument_hochlader.sql", -787715335),
+            Map.entry("V421__projekt_bezahlt_altfaelle_korrigieren.sql", -888475676));
 
     private static final char BOM = 0xFEFF;
 

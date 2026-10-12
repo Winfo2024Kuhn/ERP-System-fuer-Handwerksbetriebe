@@ -113,12 +113,17 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
 
   /**
    * Prüft ob es noch unbezahlte Rechnungen für ein Projekt gibt.
+   *
+   * <p>Mahnungen, die an einer Rechnung hängen, zählen nicht extra: Sie wiederholen
+   * nur deren Forderung und haben im Offene-Posten-Center keinen eigenen
+   * Bezahlt-Haken. Ist die Rechnung abgehakt, ist auch ihre Mahnung erledigt.</p>
    */
   @Query("""
       SELECT CASE WHEN COUNT(g) > 0 THEN true ELSE false END
       FROM ProjektGeschaeftsdokument g
       WHERE g.projekt.id = :projektId
         AND g.bezahlt = false
+        AND g.referenzDokument IS NULL
         AND (
               LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%'
            OR LOWER(g.geschaeftsdokumentart) LIKE '%mahn%'
