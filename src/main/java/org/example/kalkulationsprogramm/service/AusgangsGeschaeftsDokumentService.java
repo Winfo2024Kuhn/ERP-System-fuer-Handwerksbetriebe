@@ -146,15 +146,20 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto) {
-        return erstellen(dto, null);
+        return erstellen(dto, null, null);
     }
 
     /**
-     * Wie {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto)}, schreibt aber
-     * für buchhaltungsrelevante Typen einen Audit-Eintrag mit Aufrufer-IP.
+     * Wie {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto)}, setzt aber den
+     * Ersteller und schreibt für buchhaltungsrelevante Typen einen Audit-Eintrag mit
+     * Ersteller und Aufrufer-IP.
+     *
+     * @param erstelltVonId ID des angemeldeten FrontendUserProfile (aus der Anmeldung,
+     *                      nicht vom Client); {@code null} = "system"
      */
     @Transactional
-    public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto, String ipAdresse) {
+    public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto,
+            Long erstelltVonId, String ipAdresse) {
         // Basisdokument-Regeln (Dokumente ohne Vorgänger = eigene Wurzel-Vorgänge):
         //   - Das ERSTE Basisdokument ist das ANGEBOT (max. eines pro Projekt/Anfrage).
         //   - Jedes WEITERE Basisdokument muss ein NACHTRAGSANGEBOT sein und setzt
@@ -300,8 +305,8 @@ public class AusgangsGeschaeftsDokumentService {
         }
 
         // Ersteller setzen
-        if (dto.getErstelltVonId() != null) {
-            frontendUserProfileRepository.findById(dto.getErstelltVonId())
+        if (erstelltVonId != null) {
+            frontendUserProfileRepository.findById(erstelltVonId)
                     .ifPresent(dokument::setErstelltVon);
         }
 
@@ -684,9 +689,16 @@ public class AusgangsGeschaeftsDokumentService {
             throw new RuntimeException("Dokument ist bereits storniert.");
         }
 
-        // Nur Rechnungstypen dürfen storniert werden
-        if (!RECHNUNGSTYPEN.contains(original.getTyp()) && original.getTyp() != AusgangsGeschaeftsDokumentTyp.STORNO) {
+        // Nur Rechnungstypen dürfen storniert werden. Eine Stornorechnung selbst nicht:
+        // ihr Storno würde den Umsatz ein zweites Mal mindern.
+        if (!RECHNUNGSTYPEN.contains(original.getTyp())) {
             throw new RuntimeException("Nur Rechnungen können storniert werden.");
+        }
+
+        // Ein Entwurf ist noch nicht im Geschäftsverkehr: löschen statt stornieren. Sonst
+        // entstünde eine gebuchte Minderung zu einer Rechnung, die nie gebucht war.
+        if (!original.isGebucht()) {
+            throw new RuntimeException("Nur gebuchte Rechnungen können storniert werden. Einen Entwurf bitte löschen.");
         }
 
         // Original als storniert markieren
@@ -737,18 +749,26 @@ public class AusgangsGeschaeftsDokumentService {
         // Kaskadierende Stornierung: Wenn eine Abschlagsrechnung storniert wird,
         // müssen abhängige Schlussrechnungen (gleicher Vorgänger) ebenfalls storniert werden,
         // da deren Betrag auf Basis der Abschlagsrechnungen berechnet wurde.
+        // Ein Schlussrechnungs-Entwurf bleibt stehen: Er ist nicht gebucht und lässt sich
+        // noch ändern oder löschen.
         if (original.getTyp() == AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG
                 && original.getVorgaenger() != null) {
             List<AusgangsGeschaeftsDokument> geschwister = dokumentRepository
                     .findByVorgaengerIdOrderByErstelltAmAsc(original.getVorgaenger().getId());
             for (AusgangsGeschaeftsDokument geschwisterDok : geschwister) {
-                if (geschwisterDok.getTyp() == AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
-                        && !geschwisterDok.isStorniert()) {
-                    log.info("Kaskadierende Stornierung: Schlussrechnung {} wird mitstorniert (Abschlagsrechnung {} storniert)",
-                            geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
-                    stornieren(geschwisterDok.getId(), bearbeiterId, ipAdresse,
-                            "Kaskadierende Stornierung wegen storniertem Vorgänger " + original.getDokumentNummer());
+                if (geschwisterDok.getTyp() != AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
+                        || geschwisterDok.isStorniert()) {
+                    continue;
                 }
+                if (!geschwisterDok.isGebucht()) {
+                    log.info("Schlussrechnungs-Entwurf {} bleibt stehen (Abschlagsrechnung {} storniert) – Beträge bitte prüfen",
+                            geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
+                    continue;
+                }
+                log.info("Kaskadierende Stornierung: Schlussrechnung {} wird mitstorniert (Abschlagsrechnung {} storniert)",
+                        geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
+                stornieren(geschwisterDok.getId(), bearbeiterId, ipAdresse,
+                        "Kaskadierende Stornierung wegen storniertem Vorgänger " + original.getDokumentNummer());
             }
         }
 
@@ -764,7 +784,7 @@ public class AusgangsGeschaeftsDokumentService {
 
         // GoBD-Audit: Storno + Erstellung des Gegendokuments protokollieren.
         // Ist nur bei AUDIT_RELEVANTE_TYPEN nötig — was hier ohnehin der Fall ist,
-        // da nur Rechnungstypen + STORNO storniert werden dürfen.
+        // da nur gebuchte Rechnungstypen storniert werden dürfen.
         if (AUDIT_RELEVANTE_TYPEN.contains(original.getTyp())) {
             var bearbeiter = bearbeiterId != null
                     ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
@@ -1079,9 +1099,11 @@ public class AusgangsGeschaeftsDokumentService {
      * GoBD-konforme Löschregeln (§147 AO, GoBD Rz. 58-59):
      * - Gebuchte Dokumente sind unveränderbar und dürfen nicht gelöscht werden.
      * - Versandte Dokumente gelten als "in den Geschäftsverkehr gebracht" und dürfen nicht gelöscht werden.
+     * - Digital angenommene Dokumente sind verbindlich und dürfen nicht gelöscht werden.
      * - Stornierte Dokumente müssen als Nachweis der Korrektur erhalten bleiben.
      * - STORNO-Dokumente sind selbst Korrekturbuchungen und dürfen nie gelöscht werden.
-     * - Nur Entwürfe (nicht gebucht, nicht versandt, nicht storniert) dürfen mit Begründung gelöscht werden.
+     * - Nur Entwürfe (nicht gebucht, nicht versandt, nicht angenommen, nicht storniert) dürfen
+     *   mit Begründung gelöscht werden.
      */
     @Transactional
     public void loeschen(Long id, String begruendung) {
@@ -1109,6 +1131,12 @@ public class AusgangsGeschaeftsDokumentService {
         // GoBD: Versandte Dokumente gelten als in den Geschäftsverkehr gebracht
         if (dokument.getVersandDatum() != null) {
             throw new RuntimeException("Bereits versandte Dokumente dürfen gemäß GoBD nicht gelöscht werden. Bitte erstellen Sie stattdessen eine Stornierung.");
+        }
+
+        // Digital angenommen = verbindlich (Angebot und die daraus erzeugte AB), auch wenn
+        // der automatische AB-Versand gescheitert ist und deshalb kein Versanddatum steht.
+        if (dokument.isDigitalAngenommen()) {
+            throw new RuntimeException("Vom Kunden digital angenommene Dokumente sind verbindlich und dürfen nicht gelöscht werden.");
         }
 
         // GoBD: Stornierte Dokumente müssen als Nachweis erhalten bleiben
@@ -1463,12 +1491,8 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Generiert eine neue Dokumentnummer im Format {PREFIX}-YYYY/MM/NNNNN.
-     * Thread-sicher durch pessimistisches Locking. Gemeinsamer Monatszähler für alle Typen.
-     */
-    /**
      * Prüft die Regeln für ein neues Basisdokument (ohne Vorgänger).
-     * Siehe Kommentar in {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto, String)}.
+     * Siehe Kommentar in {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto, Long, String)}.
      */
     private void validiereBasisdokument(AusgangsGeschaeftsDokumentTyp typ, Long projektId, Long anfrageId) {
         if (typ == AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT) {
@@ -1573,6 +1597,10 @@ public class AusgangsGeschaeftsDokumentService {
                         + "Bitte legen Sie die Rechnung dort an.");
     }
 
+    /**
+     * Generiert eine neue Dokumentnummer im Format {PREFIX}-YYYY/MM/NNNNN.
+     * Thread-sicher durch pessimistisches Locking. Gemeinsamer Monatszähler für alle Typen.
+     */
     private String generiereNummer(AusgangsGeschaeftsDokumentTyp typ) {
         YearMonth now = YearMonth.now();
         String monatKey = now.format(DateTimeFormatter.ofPattern("yyyy/MM"));

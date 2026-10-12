@@ -1253,6 +1253,47 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
             assertThat(result.getDatum()).isEqualTo(LocalDate.now());
         }
+
+        @Test
+        void setztErstellerAusAnmeldungUndProtokolliertIhn() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+            FrontendUserProfile max = new FrontendUserProfile();
+            max.setId(42L);
+            when(frontendUserProfileRepository.findById(42L)).thenReturn(Optional.of(max));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto, 42L, "10.0.0.5");
+
+            // GoBD: Der Ersteller im Audit ist der angemeldete Benutzer.
+            assertThat(result.getErstelltVon()).isSameAs(max);
+            verify(auditService).protokolliereErstellung(result, max, "10.0.0.5");
+        }
+
+        @Test
+        void ohneAngemeldetenBenutzerBleibtErstellerLeer() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto, null, "10.0.0.5");
+
+            assertThat(result.getErstelltVon()).isNull();
+            verify(frontendUserProfileRepository, never()).findById(any());
+            verify(auditService).protokolliereErstellung(result, null, "10.0.0.5");
+        }
     }
 
     @Nested
@@ -1567,6 +1608,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             original.setBetragNetto(new BigDecimal("1000.00"));
             original.setBetragBrutto(new BigDecimal("1190.00"));
             original.setMwstSatz(new BigDecimal("0.19"));
+            original.setGebucht(true);
             when(dokumentRepository.findById(1L)).thenReturn(Optional.of(original));
             mockCounterForNummer();
             when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -1594,6 +1636,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             original.setDokumentNummer("RE-2026-001");
             original.setBetragNetto(netto);
             original.setBetragBrutto(brutto);
+            original.setGebucht(true);
             when(dokumentRepository.findById(1L)).thenReturn(Optional.of(original));
             mockCounterForNummer();
             when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -1630,6 +1673,76 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThatThrownBy(() -> service.stornieren(1L))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Nur Rechnungen");
+        }
+
+        @Test
+        void wirftExceptionBeiStornorechnung() {
+            // Ein Storno vom Storno würde den Umsatz ein zweites Mal mindern.
+            AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
+            storno.setId(1L);
+            storno.setTyp(AusgangsGeschaeftsDokumentTyp.STORNO);
+            storno.setGebucht(true);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(storno));
+
+            assertThatThrownBy(() -> service.stornieren(1L))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Nur Rechnungen");
+            assertThat(storno.isStorniert()).isFalse();
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void wirftExceptionBeiUngebuchterRechnung() {
+            AusgangsGeschaeftsDokument entwurf = new AusgangsGeschaeftsDokument();
+            entwurf.setId(1L);
+            entwurf.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(entwurf));
+
+            assertThatThrownBy(() -> service.stornieren(1L))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Nur gebuchte Rechnungen");
+            assertThat(entwurf.isStorniert()).isFalse();
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        void kaskadeStorniertNurGebuchteSchlussrechnungUndLaesstEntwurfStehen() {
+            AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+            ab.setId(10L);
+            ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+
+            AusgangsGeschaeftsDokument abschlag = rechnung(1L, AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG, true);
+            abschlag.setVorgaenger(ab);
+            AusgangsGeschaeftsDokument gebuchteSchluss = rechnung(2L, AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, true);
+            gebuchteSchluss.setVorgaenger(ab);
+            AusgangsGeschaeftsDokument schlussEntwurf = rechnung(3L, AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, false);
+            schlussEntwurf.setVorgaenger(ab);
+
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(abschlag));
+            when(dokumentRepository.findById(2L)).thenReturn(Optional.of(gebuchteSchluss));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(10L))
+                    .thenReturn(List.of(abschlag, gebuchteSchluss, schlussEntwurf));
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
+
+            service.stornieren(1L);
+
+            assertThat(abschlag.isStorniert()).isTrue();
+            assertThat(gebuchteSchluss.isStorniert()).isTrue();
+            assertThat(schlussEntwurf.isStorniert()).isFalse();
+            verify(dokumentRepository, never()).findById(3L);
+        }
+
+        private AusgangsGeschaeftsDokument rechnung(Long id, AusgangsGeschaeftsDokumentTyp typ, boolean gebucht) {
+            AusgangsGeschaeftsDokument dok = new AusgangsGeschaeftsDokument();
+            dok.setId(id);
+            dok.setTyp(typ);
+            dok.setDokumentNummer("RE-2026-00" + id);
+            dok.setBetragNetto(new BigDecimal("1000.00"));
+            dok.setBetragBrutto(new BigDecimal("1190.00"));
+            dok.setGebucht(gebucht);
+            return dok;
         }
     }
 
@@ -1696,6 +1809,22 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThatThrownBy(() -> service.loeschen(1L, "Grund"))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Stornorechnungen");
+        }
+
+        @Test
+        void wirftExceptionBeiDigitalAngenommenerAbOhneVersanddatum() {
+            // Automatischer AB-Versand gescheitert: kein Versanddatum, aber trotzdem verbindlich.
+            AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+            ab.setId(1L);
+            ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            ab.setDigitalAngenommen(true);
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(ab));
+
+            assertThatThrownBy(() -> service.loeschen(1L, "Grund"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("digital angenommene");
+            verify(dokumentRepository, never()).delete(any());
+            verify(auditService, never()).protokolliereLoeschung(any(), any(), any(), any());
         }
     }
 

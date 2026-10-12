@@ -66,7 +66,8 @@ public class SecurityConfig {
      * gesperrt; der Schlüssel schützt vor Geräten im Firmen- und Tailscale-Netz.
      *
      * <p><b>CSRF-Threat-Model (CodeQL java/spring-disabled-csrf-protection):</b>
-     * CSRF wird hier bewusst und sicher deaktiviert:
+     * CSRF bleibt eingeschaltet, nimmt aber alle Pfade dieser Kette per
+     * {@code ignoringRequestMatchers("/api/internal/**")} aus – bewusst und sicher:
      * <ul>
      *   <li>Die Chain ist <i>stateless</i> — kein Session-Cookie, kein
      *       HTTP-Basic, keine vom Browser automatisch mitgesendete
@@ -191,6 +192,26 @@ public class SecurityConfig {
     }
 
     /**
+     * Wartungs- und Massenläufe, die man nur direkt aufruft (siehe docs/ADMIN_ENDPUNKTE.md).
+     * Gesperrt für jede HTTP-Methode, nur Admins kommen durch. Festgeschrieben in
+     * {@code AdminMassenlaeufeSecurityTest}.
+     */
+    static final String[] ADMIN_MASSENLAEUFE = {
+            "/api/emails/import",
+            "/api/emails/scan-spam",
+            "/api/emails/scan-inquiries",
+            "/api/emails/scan-assignments",
+            "/api/emails/scan-steuerberater",
+            "/api/emails/backfill-parents",
+            "/api/emails/spam-model/rescore",
+            "/api/emails/spam-model/bootstrap",
+            "/api/lieferant-dokumente/process-assigned-emails",
+            "/api/lieferant-dokumente/process-email/*",
+            "/api/lieferant-dokumente/lieferant/*/process-emails",
+            "/api/zeitverwaltung/saldo-cache/warmup"
+    };
+
+    /**
      * Alle API-Endpoints: Session-basierte Authentifizierung via formLogin + CSRF-Schutz.
      * CSRF wird über CookieCsrfTokenRepository aktiviert, damit der Browser-Client
      * das XSRF-TOKEN-Cookie lesen und als X-XSRF-TOKEN-Header mitsenden kann.
@@ -222,8 +243,10 @@ public class SecurityConfig {
                 // Stundenaufstellung und beim Belegexport nur gelesen (Ansprechpartner
                 // auswaehlen, Firmenname im Betreff). Das duerfen alle angemeldeten
                 // Benutzer; Anlegen/Aendern/Loeschen bleibt Admin-Sache.
+                // Das Firmenlogo ist kein Geheimnis und darf ebenfalls jeder Angemeldete laden.
                 .requestMatchers(HttpMethod.GET,
                         "/api/firma",
+                        "/api/firma/logo",
                         "/api/firma/steuerberater",
                         "/api/firma/steuerberater/*").authenticated()
                 .requestMatchers(HttpMethod.PUT, "/api/abteilungen/*/berechtigungen").hasRole("ADMIN")
@@ -249,6 +272,9 @@ public class SecurityConfig {
                 // E-Mail-Admin-Backfills sind betriebsweite, schreibende Massenoperationen
                 // auf Belegen/Attachments - nur Admin (VPN ersetzt keine Authentifizierung).
                 .requestMatchers(HttpMethod.POST, "/api/emails/admin/**").hasRole("ADMIN")
+                // Massenläufe ohne Knopf in der Oberfläche: gehen über alle Mails, Lieferanten-
+                // Dokumente oder Zeitkonten und kosten teils KI-Aufrufe - nur Admin.
+                .requestMatchers(ADMIN_MASSENLAEUFE).hasRole("ADMIN")
                 // Lieferantendokumente löschen ist eine irreversible Admin-Aktion
                 .requestMatchers(HttpMethod.DELETE, "/api/lieferant-dokumente/**").hasRole("ADMIN")
                 // Backfill der Dokumentenketten schreibt über den gesamten Lieferanten-Bestand.

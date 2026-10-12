@@ -126,7 +126,7 @@ Raw `.tsx` product source is deliberately **not** vendored here — it only runs
 ### Colors
 - **Brand: rose-600 (`#e11d48`)**, with rose-700 on press, rose-100/50 for backgrounds, rose-200 for soft borders. The brand accent is used sparingly — on primary buttons, active tab indicators, the KI-Hilfe FAB, page eyebrows, and the mobile primary CTA card.
 - **Neutrals: Tailwind slate.** App background is `slate-50 (#f8fafc)`, primary text `slate-900`, secondary text `slate-500`, borders `slate-200`. The desktop chrome is white on slate-50.
-- **Semantic:** `green-600` success (online badge), `amber-500` warn, `red-600` danger (also used as the mobile brand — `--rose-primary: #dc2626`, a half-step darker than desktop's `#e11d48`).
+- **Semantic:** `green-600` success (online badge), `amber-500` warn, `red-600` danger. The UI primary is `rose-600` on desktop and mobile alike; `#dc2626` (`red-600`) is reserved for the logo, the mobile app icon and the PWA `theme-color` — do not use it as a UI accent.
 - **AI accent:** `purple-500` used for KI moments (Gem icons are rose, purple used behind Gemini API notes). Placeholder chips in the document editor are `indigo-100 / indigo-700`.
 - No gradients as page background. One gradient is used: `gradient-text-rose` (rose-600 → rose-400) and the hero glow under KPI cards.
 
@@ -272,7 +272,6 @@ Common icons used across the app (exact names — copy-paste):
 ## Known caveats / open questions
 
 - **No custom typeface.** The product relies on the system stack. If the user wants to mature the brand with a wordmark or display face, that's a design decision still to make.
-- **Two slightly different reds.** Desktop uses `rose-600 (#e11d48)`. Mobile defines `--rose-primary: #dc2626` (Tailwind `red-600`). This system standardizes on **`#e11d48`** as brand; the mobile value is treated as a legacy variable that should converge.
 - **No slide template was attached,** so no `slides/` directory is created.
 - Several in-app illustrations (app_logo) are raster-only — vector versions would help the rebrand.
 - **`AngebotEditor` is gone upstream.** Quotes now flow through `AnfrageEditor` and the new document overview. If a screen still says "Angebote", check which surface it belongs to before building on it.
