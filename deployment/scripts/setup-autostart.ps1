@@ -11,13 +11,25 @@ if (-not $isAdmin) {
 }
 
 $taskName   = "Kalkulationsprogramm - Auto Start"
-$startScript = "C:\Kalkulationsprogramm\scripts\start-kalkulationsprogramm.ps1"
+$scriptDir  = "C:\Kalkulationsprogramm\scripts"
+$startScript = Join-Path $scriptDir "start-kalkulationsprogramm.ps1"
 
-if (-not (Test-Path $startScript)) {
-    Write-Host "[FEHLER] Ziel-Skript nicht gefunden: $startScript" -ForegroundColor Red
-    Write-Host "Bitte zuerst UPDATE.bat ausfuehren, damit die Skripte nach C:\Kalkulationsprogramm kopiert werden." -ForegroundColor Yellow
+# Start-Skript aus diesem Ordner nach C:\Kalkulationsprogramm\scripts kopieren
+# (UPDATE.bat kopiert nur die JAR, keine Skripte). Die Aufgabe startet von dort,
+# damit sie nicht vom Repository-Ordner abhaengt.
+$startScriptSource = Join-Path $PSScriptRoot "start-kalkulationsprogramm.ps1"
+if (-not (Test-Path $startScriptSource)) {
+    Write-Host "[FEHLER] start-kalkulationsprogramm.ps1 nicht gefunden neben diesem Skript: $PSScriptRoot" -ForegroundColor Red
     pause
     exit 1
+}
+if (-not (Test-Path $scriptDir)) {
+    New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
+}
+# Laeuft dieses Skript schon aus C:\Kalkulationsprogramm\scripts, liegt die Datei bereits dort
+if ((Resolve-Path $startScriptSource).Path -ne (Join-Path (Resolve-Path $scriptDir).Path "start-kalkulationsprogramm.ps1")) {
+    Copy-Item -Path $startScriptSource -Destination $startScript -Force -ErrorAction Stop
+    Write-Host "  OK Start-Skript kopiert nach $startScript" -ForegroundColor Green
 }
 
 # Alten Task mit gleichem Namen entfernen (idempotent)

@@ -4,6 +4,9 @@
 
 Die Datei "OpenFileLauncher-Setup.exe" ist fertig!
 
+(Gebaut mit BUILD-SETUP.bat - vorher muss Setup-Freigabe.ps1 auf dem
+ERP-Rechner gelaufen sein, damit config.json mit hineinkommt.)
+
 VERTEILUNG:
 -----------
 
@@ -29,7 +32,9 @@ INSTALLATION BEIM CLIENT:
 WAS PASSIERT BEI DER INSTALLATION:
 ----------------------------------
 
-✅ Kopiert launcher.ps1 nach C:\Program Files (x86)\OpenFileLauncher\
+✅ Kopiert launcher.ps1 und config.json (erlaubte Netzwerkpfade)
+   nach C:\Program Files\OpenFileLauncher\
+✅ Entfernt eine alte Installation unter C:\Program Files (x86)\OpenFileLauncher\
 ✅ Registriert das openfile://-Schema in Windows
 ✅ Erstellt Log-Verzeichnis für Fehlersuche
 

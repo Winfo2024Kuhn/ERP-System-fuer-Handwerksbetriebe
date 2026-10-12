@@ -77,7 +77,7 @@ npm run test
 
 - [ ] Backend startet: `./mvnw spring-boot:run` ohne Exceptions
 - [ ] Flyway-Migrationen laufen durch (kein Fehler beim Start)
-- [ ] API antwortet auf `http://localhost:8082/api`
+- [ ] API antwortet auf `http://localhost:8080/api`
 - [ ] Frontend kommuniziert korrekt mit Backend
 
 ---

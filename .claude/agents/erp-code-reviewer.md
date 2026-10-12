@@ -108,7 +108,7 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 - [ ] Bilder-Vorschau über `ImageViewer` (`src/components/ui/image-viewer.tsx`)
 - [ ] PDF-Vorschau über `DocumentPreviewModal`, **nicht** `<iframe src={url}>`
 - [ ] Zwei-Spalten-Layouts über `DetailLayout`
-- [ ] E-Mail-Verlauf über `EmailsTab` (`src/components/EmailsTab.tsx`, wie in Kunde, Projekt, Anfrage, Lieferant) – nicht neu bauen; `EmailHistory.tsx` ist ungenutzter Altbestand
+- [ ] E-Mail-Verlauf über `EmailsTab` (`src/components/EmailsTab.tsx`, wie in Kunde, Projekt, Anfrage, Lieferant) – nicht neu bauen
 - [ ] Karten über `GoogleMapsEmbed`
 
 ### 2.4 Page-Header-Pattern (für jede neue Seite zwingend)

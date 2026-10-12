@@ -34,6 +34,7 @@ UserQuietInstCmd=
 FILE0="launcher.ps1"
 FILE1="install-openfile-launcher.ps1"
 FILE2="setup-wrapper.bat"
+FILE3="config.json"
 
 [SourceFiles]
 SourceFiles0=.
@@ -41,3 +42,4 @@ SourceFiles0=.
 %FILE0%=
 %FILE1%=
 %FILE2%=
+%FILE3%=

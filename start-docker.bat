@@ -43,7 +43,6 @@ echo   Anwendung gestartet!
 echo.
 echo   Frontend:  http://localhost:8080
 echo   Datenbank: PostgreSQL auf localhost:5432
-echo   Qdrant:    http://localhost:6333
 echo.
 echo   Erster Start: Wer sich zuerst im Browser
 echo   registriert, wird Admin.
