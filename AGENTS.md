@@ -15,8 +15,9 @@ Das ist die zentrale Wissensbasis der Codebase (AST-Graph mit 32+ MB Daten, Symb
 | "Wie hängen A und B zusammen?" | `scripts/graphify path "A" "B"` |
 | "Was ist Konzept Y?" | `scripts/graphify explain "Y"` |
 | "Was bricht, wenn ich X ändere?" | `scripts/graphify affected "X"` |
-| Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
-| Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
+| Breiter Architektur-Überblick / sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
+
+Hängt graphify selbst einen `## graphify`-Block an (blankes `graphify`, Update nach jeder Änderung, `wiki/index.md`), gilt er nicht – wieder entfernen.
 
 **Ausnahmen (Grep/Read direkt erlaubt):**
 - Du kennst den exakten Dateipfad → Datei direkt öffnen/lesen.
@@ -39,21 +40,25 @@ Das ERP ermöglicht Handwerksbetrieben den einfachen Sprung ins digitale Zeitalt
 ## 🧑‍💻 Persona & Engineering Standards
 - Rolle: Erfahrener Senior Full-Stack-Entwickler (Java / Spring Boot + React / TypeScript) und UI-Designer.
 - Qualität vor Hektik: sauberer, wartbarer, testbarer Code mit etablierten Design Patterns.
-- **Auslagern und wiederverwenden (dauerhafte Nutzerfreigabe vom 09.09.2026):** Wiederkehrende UI und Logik in gemeinsame Komponenten, Hooks, Services oder Hilfsfunktionen auslagern und vorhandene Bausteine konsequent wiederverwenden. Keine kopierten Sonderlösungen pro Seite. Das dafür nötige Refactoring ist ausdrücklich autorisiert und benötigt keine erneute Freigabe. Abstraktionen nach gemeinsamer Verantwortung schneiden; fachliche Unterschiede erhalten.
+- **Auslagern und wiederverwenden (dauerhafte Nutzerfreigabe vom 09.09.2026, bestätigt am 12.10.2026):** Wiederkehrende UI und Logik in gemeinsame Komponenten, Hooks, Services oder Hilfsfunktionen auslagern und vorhandene Bausteine konsequent wiederverwenden. Keine kopierten Sonderlösungen pro Seite. Das dafür nötige Refactoring ist ausdrücklich autorisiert und benötigt keine erneute Freigabe. Abstraktionen nach gemeinsamer Verantwortung schneiden; fachliche Unterschiede erhalten.
 
 ---
 
 ## 🛑 Absolute Sicherheitsregeln (Niemals ignorieren)
-1. **API-Keys & Secrets:** NIEMALS in Code oder Commits schreiben. Ausschließlich in `application-local.properties` (gitignored). Vor jedem Commit `git diff --staged` prüfen.
+1. **API-Keys & Secrets:** NIEMALS in Code, Logs oder Commits schreiben. Vor jedem Commit `git diff --staged` prüfen. Bei Leak: Sofort rotieren! Wo sie liegen:
+   - **Grundregel (alle übrigen und neuen Secrets):** nur in `application-local.properties` (gitignored) bzw. im Docker-Betrieb in `app.env` (Umgebungsvariablen). Muss ein Secret in die DB, dann nur verschlüsselt über `MailSecretService` – wie das FRITZ!Box-Passwort. Keine weiteren Klartext-Secrets in `system_setting`.
+   - **Gemini-Key, SMTP/IMAP-Zugänge:** DB-Tabelle `system_setting` (im Klartext), gepflegt unter System-Einstellungen → KI-Funktionen bzw. → E-Mail; Postfach-Passwörter zusätzlich verschlüsselt in `email_absender`. Die Properties `ai.gemini.api-key`, `smtp.*`, `imap.*` sind nur Rückfall (`application-local.properties` bzw. `app.env`).
+   - **FRITZ!Box-Passwort:** `system_setting`, verschlüsselt mit `mail.credentials.encryption-key`.
+   - DB-Dumps enthalten deshalb Klartext-Zugänge: nie committen oder weitergeben.
 2. **Datenschutz (DSGVO):** Nutzer-, Mitarbeiter- und Zeitdaten sind personenbezogen. In Tests NUR Dummy-Daten verwenden (`Max Mustermann`, `test@example.com`). Logs anonymisieren.
-3. **Sperrzone für Commits:** `application-local.properties`, `*.env`, `uploads/`, `*.key/pem/p12`.
+3. **Sperrzone für Commits:** `application-local.properties`, `*.env`, `uploads/`, `*.key/pem/p12`, DB-Dumps.
 4. **CodeQL & Injection-Prävention (dauerhafte Pflicht):**
    - **ReDoS:** Keine verschachtelten Wiederholungen `(\w+.*)*`. In Java possessive Quantifizierer (`*+`, `++`) oder atomare Gruppen `(?>...)` nutzen.
    - **Path Traversal:** Niemals `MultipartFile.getOriginalFilename()` ungeprüft in Pfade/Files einsetzen. Bereinigen mit `Path.of(name).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_")` und prüfen mit `.normalize()` und `dst.startsWith(baseDir)`. E-Mail-Anhänge in `EmailService` als In-Memory-Bytes (`ByteArrayDataSource`) übertragen.
    - **Spring CSRF:** Niemals `.csrf(csrf -> csrf.disable())` aufrufen. Wenn Endpoints ausgenommen werden müssen, immer `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))` verwenden.
-   - **HTML Tag-Stripping:** Niemals einfaches `.replace(/<[^>]*>/g, '')` nutzen. Immer die Fixpunktschleife `stripHtmlTags()` aus `src/lib/htmlSanitizer.ts` verwenden.
-   - **Entity Unescaping:** Niemals sequentiell mit mehreren `.replace()` entpacken. Immer `unescapeHtmlEntities()` aus `src/lib/htmlSanitizer.ts` (Single-Pass) verwenden.
-   - **DOM-XSS:** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `src/lib/htmlSanitizer.ts` absichern.
+   - **HTML Tag-Stripping:** Niemals einfaches `.replace(/<[^>]*>/g, '')` nutzen. Immer die Fixpunktschleife `stripHtmlTags()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` verwenden.
+   - **Entity Unescaping:** Niemals sequentiell mit mehreren `.replace()` entpacken. Immer `unescapeHtmlEntities()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Single-Pass) verwenden.
+   - **DOM-XSS:** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` absichern.
 
 ---
 
@@ -77,7 +82,7 @@ Bevor du Code schreibst oder änderst, lies die entsprechende Architektur-Dokume
 
 ### Wichtigste Frontend-Regeln:
 - **Design-System:** Handwerker-Fokus: Schlicht, modern, klar.
-- **Farben:** Rose/Rot als Primär- und Akzentfarbe (`#dc2626` / `rose-600`, Palette `rose-50`–`rose-900` und `slate-50`–`slate-900`). Kein generisches Indigo oder Blau für Primärelemente!
+- **Farben:** Rose als Primär- und Akzentfarbe (`rose-600` = `#e11d48`, Palette `rose-50`–`rose-900` und `slate-50`–`slate-900`). `#dc2626` ist `red-600` (Gefahr/Fehler), nicht die Primärfarbe. Kein generisches Indigo oder Blau für Primärelemente!
 - **Pflicht-Komponenten (nicht neu erfinden):**
   - `<Select>` → `src/components/ui/select-custom.tsx`
   - `<DatePicker>` → `src/components/ui/datepicker.tsx`
