@@ -51,9 +51,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.transaction.Transactional;
 import lombok.Setter;
@@ -1352,18 +1354,24 @@ public class DateiSpeicherService {
                 .orElseThrow(() -> new RuntimeException("Projektdokument konnte nicht gefunden werden!"));
     }
 
+    /**
+     * Setzt den Bezahlt-Haken eines offenen Postens. Fehler gehen als
+     * {@link ResponseStatusException} mit deutscher Meldung an den Client (404 / 400);
+     * ein Versionskonflikt am Projekt läuft unverändert zum RestExceptionHandler (409).
+     */
     @Transactional
     public void setzeGeschaeftsdokumentBezahlt(Long dokumentID, boolean bezahlt) {
         ProjektDokument dokument = dokumentRepository.findById(dokumentID)
-                .orElseThrow(() -> new RuntimeException("Projektdokument konnte nicht gefunden werden!"));
-        if (dokument instanceof ProjektGeschaeftsdokument geschaeftsdokument) {
-            // Ob das Projekt damit bezahlt und beendet ist, entscheidet allein die
-            // zentrale Regel in AusgangsGeschaeftsDokumentService – sonst laufen zwei
-            // Regeln auseinander und das Projekt springt zwischen offen und beendet.
-            ausgangsGeschaeftsDokumentService.setzeOffenenPostenBezahlt(geschaeftsdokument, bezahlt);
-        } else {
-            throw new RuntimeException("Dokument ist kein Geschäftsdokument.");
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Diese Rechnung gibt es nicht mehr. Vielleicht wurde sie inzwischen gelöscht."));
+        if (!(dokument instanceof ProjektGeschaeftsdokument geschaeftsdokument)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Dieses Dokument ist keine Rechnung und kann nicht als bezahlt markiert werden.");
         }
+        // Ob das Projekt damit bezahlt und beendet ist, entscheidet allein die
+        // zentrale Regel in AusgangsGeschaeftsDokumentService – sonst laufen zwei
+        // Regeln auseinander und das Projekt springt zwischen offen und beendet.
+        ausgangsGeschaeftsDokumentService.setzeOffenenPostenBezahlt(geschaeftsdokument, bezahlt);
     }
 
     @Transactional
