@@ -94,7 +94,7 @@ ENTWURF ──[E-Mail]──► VERSENDET (versandDatum gesetzt, weiter bearbeit
 | `GUTSCHRIFT` | ✅ | Buchung | ❌ | ✅ nur als Entwurf |
 | `STORNO` | sofort gebucht | immer | ❌ | ❌ nie |
 
-Stornierte Dokumente sind immer gesperrt und nie löschbar. Wird eine **Abschlagsrechnung** storniert, werden zugehörige gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen.
+Stornierte Dokumente sind immer gesperrt und nie löschbar. Wird eine **Abschlagsrechnung** storniert, werden zugehörige gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen. Beides meldet die Oberfläche nach dem Stornieren als Hinweis.
 
 ### 1.4 Anzeige in der Oberfläche
 

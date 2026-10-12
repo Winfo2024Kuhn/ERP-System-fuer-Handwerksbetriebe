@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.StornoHinweisDto;
 import org.example.kalkulationsprogramm.dto.DatensatzLockDto;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
@@ -100,6 +101,10 @@ class AusgangsGeschaeftsDokumentControllerTest {
     @AfterEach
     void clearAuth() {
         SecurityContextHolder.clearContext();
+    }
+
+    private static AusgangsGeschaeftsDokumentService.StornoErgebnis ohneHinweise(AusgangsGeschaeftsDokument storno) {
+        return new AusgangsGeschaeftsDokumentService.StornoErgebnis(storno, List.of());
     }
 
     private AusgangsGeschaeftsDokumentResponseDto buildResponseDto(Long id, String nummer) {
@@ -579,7 +584,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void stornoIgnoriertUserIdParameter() throws Exception {
             AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
             storno.setId(2L);
-            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any())).willReturn(ohneHinweise(storno));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/storno")
                             .principal(testAuth())
@@ -587,7 +592,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             .param("grund", "Falscher Betrag"))
                     .andExpect(status().isOk());
 
-            verify(service).stornieren(eq(1L), eq(42L), any(), eq("Falscher Betrag"));
+            verify(service).stornierenMitHinweisen(eq(1L), eq(42L), any(), eq("Falscher Betrag"));
         }
 
         @Test
@@ -611,7 +616,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
             given(service.buchen(eq(1L), any(), any())).willReturn(entity);
-            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(entity);
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any())).willReturn(ohneHinweise(entity));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen").param("userId", FREMDE_ID))
                     .andExpect(status().isOk());
@@ -623,7 +628,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
                     .andExpect(status().isOk());
 
             verify(service).buchen(eq(1L), isNull(), any());
-            verify(service).stornieren(eq(1L), isNull(), any(), any());
+            verify(service).stornierenMitHinweisen(eq(1L), isNull(), any(), any());
             verify(service).loeschen(eq(1L), eq("Tippfehler"), isNull(), any());
         }
 
@@ -632,7 +637,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void gefaelschtesXForwardedForWirdIgnoriert() throws Exception {
             AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
             storno.setId(2L);
-            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any())).willReturn(ohneHinweise(storno));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/storno")
                             .principal(testAuth())
@@ -643,7 +648,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             }))
                     .andExpect(status().isOk());
 
-            verify(service).stornieren(eq(1L), eq(42L), eq("203.0.113.8"), any());
+            verify(service).stornierenMitHinweisen(eq(1L), eq(42L), eq("203.0.113.8"), any());
         }
 
         @Test
@@ -673,7 +678,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
             AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
             storno.setId(1L);
-            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any())).willReturn(ohneHinweise(storno));
 
             mockMvc.perform(delete("/api/ausgangs-dokumente/1")
                             .principal(testAuth())
@@ -685,7 +690,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
                     .andExpect(status().isOk());
 
             verify(service).loeschen(eq(1L), eq(sql), eq(42L), any());
-            verify(service).stornieren(eq(1L), eq(42L), any(), eq(xss));
+            verify(service).stornierenMitHinweisen(eq(1L), eq(42L), any(), eq(xss));
         }
 
         @ParameterizedTest
@@ -694,7 +699,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void ungueltigeIds(long id) throws Exception {
             given(service.buchen(eq(id), any(), any()))
                     .willThrow(new RuntimeException("Dokument nicht gefunden: " + id));
-            given(service.stornieren(eq(id), any(), any(), any()))
+            given(service.stornierenMitHinweisen(eq(id), any(), any(), any()))
                     .willThrow(new RuntimeException("Dokument nicht gefunden: " + id));
             given(service.findById(id)).willReturn(null);
 
@@ -871,7 +876,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void storniertDokumentErfolgreich() throws Exception {
             AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
             storno.setId(2L);
-            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any())).willReturn(ohneHinweise(storno));
             given(service.findById(2L)).willReturn(buildResponseDto(2L, "ST-2026-001"));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
@@ -880,9 +885,41 @@ class AusgangsGeschaeftsDokumentControllerTest {
         }
 
         @Test
+        @DisplayName("Liefert Hinweise zu betroffenen Schlussrechnungen neben der Stornorechnung")
+        void liefertHinweiseZuSchlussrechnungen() throws Exception {
+            AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
+            storno.setId(2L);
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any()))
+                    .willReturn(new AusgangsGeschaeftsDokumentService.StornoErgebnis(storno, List.of(
+                            new StornoHinweisDto(StornoHinweisDto.Art.ENTWURF_PRUEFEN, "Schlussrechnung prüfen"))));
+            given(service.findById(2L)).willReturn(buildResponseDto(2L, "ST-2026-001"));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dokumentNummer").value("ST-2026-001"))
+                    .andExpect(jsonPath("$.storno").doesNotExist())
+                    .andExpect(jsonPath("$.hinweise[0].art").value("ENTWURF_PRUEFEN"))
+                    .andExpect(jsonPath("$.hinweise[0].text").value("Schlussrechnung prüfen"));
+        }
+
+        @Test
+        @DisplayName("Ohne betroffene Schlussrechnung ist die Hinweisliste leer")
+        void ohneSchlussrechnungLeereHinweise() throws Exception {
+            AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
+            storno.setId(2L);
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any())).willReturn(ohneHinweise(storno));
+            given(service.findById(2L)).willReturn(buildResponseDto(2L, "ST-2026-001"));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.hinweise").isArray())
+                    .andExpect(jsonPath("$.hinweise").isEmpty());
+        }
+
+        @Test
         @DisplayName("Stornierung eines bereits stornierten Dokuments gibt 400")
         void doppelteStornierungGibt400() throws Exception {
-            given(service.stornieren(eq(1L), any(), any(), any())).willThrow(new RuntimeException("Bereits storniert"));
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any())).willThrow(new RuntimeException("Bereits storniert"));
 
             mockMvc.perform(post("/api/ausgangs-dokumente/1/storno"))
                     .andExpect(status().isBadRequest());
@@ -891,7 +928,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Versionskonflikt beim Stornieren gibt 409 mit Handwerker-Meldung zurück")
         void versionskonfliktBeimStornierenGibt409() throws Exception {
-            given(service.stornieren(eq(1L), any(), any(), any()))
+            given(service.stornierenMitHinweisen(eq(1L), any(), any(), any()))
                     .willThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
                             AusgangsGeschaeftsDokument.class, 1L));
 

@@ -206,7 +206,7 @@ Angebote, Nachtragsangebote, Auftragsbestätigungen und Gutschriften können **n
 1. **Original-Dokument**: `storniert = true`, `storniertAm` gesetzt → dauerhaft gesperrt
 2. **Storno-Dokument**: Sofort gebucht und gesperrt → kann nie gelöscht werden
 3. **Offene Posten**: Zugehöriger Eintrag wird als bezahlt markiert
-4. **Kaskade**: Wird eine Abschlagsrechnung storniert, werden nicht stornierte, gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen
+4. **Kaskade**: Wird eine Abschlagsrechnung storniert, werden nicht stornierte, gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen. Der Nutzer bekommt zu beidem einen Hinweis (Antwortfeld `hinweise`)
 5. **Projekt-Preis**: Wird automatisch aus verbleibenden Dokumenten neu berechnet
 6. **Anfrage-Betrag**: Wird automatisch aktualisiert (falls das Dokument noch an einer Anfrage hängt)
 7. **Audit**: `STORNIERT` für das Original (mit Grund; ohne Angabe „Stornierung des Originaldokuments“) und `ERSTELLT` für die Stornorechnung

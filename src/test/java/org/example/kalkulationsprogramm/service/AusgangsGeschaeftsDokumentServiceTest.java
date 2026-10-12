@@ -29,6 +29,7 @@ import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.StornoHinweisDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
@@ -1726,12 +1727,69 @@ class AusgangsGeschaeftsDokumentServiceTest {
             when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
 
-            service.stornieren(1L);
+            AusgangsGeschaeftsDokumentService.StornoErgebnis ergebnis =
+                    service.stornierenMitHinweisen(1L, null, null, null);
 
             assertThat(abschlag.isStorniert()).isTrue();
             assertThat(gebuchteSchluss.isStorniert()).isTrue();
             assertThat(schlussEntwurf.isStorniert()).isFalse();
             verify(dokumentRepository, never()).findById(3L);
+
+            assertThat(ergebnis.storno().getVorgaenger()).isSameAs(abschlag);
+            assertThat(ergebnis.hinweise()).extracting(StornoHinweisDto::art)
+                    .containsExactly(StornoHinweisDto.Art.MITSTORNIERT, StornoHinweisDto.Art.ENTWURF_PRUEFEN);
+            assertThat(ergebnis.hinweise().get(0).text())
+                    .contains("RE-2026-002", "mitstorniert", "RE-2026-001")
+                    .containsPattern("Stornorechnung ST-\\d{4}/\\d{2}/\\d{5}");
+            assertThat(ergebnis.hinweise().get(1).text())
+                    .contains("RE-2026-003", "Entwurf", "RE-2026-001", "nicht mehr abgezogen", "speichern");
+        }
+
+        @Test
+        void abschlagOhneSchlussrechnungLiefertKeineHinweise() {
+            AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+            ab.setId(10L);
+            ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            AusgangsGeschaeftsDokument abschlag = rechnung(1L, AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG, true);
+            abschlag.setVorgaenger(ab);
+            AusgangsGeschaeftsDokument stornierteSchluss = rechnung(2L, AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, true);
+            stornierteSchluss.setStorniert(true);
+            stornierteSchluss.setVorgaenger(ab);
+
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(abschlag));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(10L))
+                    .thenReturn(List.of(abschlag, stornierteSchluss));
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
+
+            AusgangsGeschaeftsDokumentService.StornoErgebnis ergebnis =
+                    service.stornierenMitHinweisen(1L, null, null, null);
+
+            assertThat(abschlag.isStorniert()).isTrue();
+            assertThat(ergebnis.hinweise()).isEmpty();
+            verify(dokumentRepository, never()).findById(2L);
+        }
+
+        @Test
+        void normaleRechnungLiefertKeineHinweiseUndFragtKeineGeschwisterAb() {
+            AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+            ab.setId(10L);
+            ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            AusgangsGeschaeftsDokument rechnung = rechnung(1L, AusgangsGeschaeftsDokumentTyp.RECHNUNG, true);
+            rechnung.setVorgaenger(ab);
+
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(rechnung));
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
+
+            AusgangsGeschaeftsDokumentService.StornoErgebnis ergebnis =
+                    service.stornierenMitHinweisen(1L, null, null, null);
+
+            assertThat(ergebnis.storno().getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.STORNO);
+            assertThat(ergebnis.hinweise()).isEmpty();
+            verify(dokumentRepository, never()).findByVorgaengerIdOrderByErstelltAmAsc(any());
         }
 
         private AusgangsGeschaeftsDokument rechnung(Long id, AusgangsGeschaeftsDokumentTyp typ, boolean gebucht) {
