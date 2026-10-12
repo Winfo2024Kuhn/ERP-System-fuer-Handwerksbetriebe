@@ -52,7 +52,7 @@ Danach `http://localhost:8080` öffnen und gleich registrieren: Der erste Benutz
 | **Kalkulation** | Leistungskatalog mit Produktkategorien. Aus abgeschlossenen Projekten berechnet eine lineare Regression Fixzeit und Zeit pro Einheit, aufgeteilt nach Arbeitsgang. |
 | **Zeiterfassung** | Web-App fürs Handy: stempeln auf Projekt, Kategorie und Arbeitsgang, offline mit späterem Abgleich. Zeitkonten, Urlaub und Abwesenheit, Feiertage, Monatsabschluss, Export für die Lohnabrechnung (DATEV LODAS). |
 | **Einkauf** | Bedarf, Bestellanfragen und Bestellungen. Lieferantenrechnungen und Lieferscheine kommen aus dem Postfach, werden erkannt (ZUGFeRD-XML, sonst KI) und auf Projekte und Kostenstellen verteilt. |
-| **Kommunikation** | E-Mail-Zentrale mit mehreren Postfächern und Sichtbarkeit nach Abteilung, Textvorlagen, Abwesenheitsnotiz, FRITZ!Box-Anrufliste. |
+| **Kommunikation** | E-Mail-Zentrale mit mehreren Postfächern und Sichtbarkeit nach Abteilung, Textvorlagen, Signaturen, Abwesenheitsnotiz, FRITZ!Box-Anrufliste. Beiträge für den Bereich „Aktuelles“ auf der Firmen-Website. |
 | **Finanzen** | Erfolgsanalyse mit Vorjahresvergleich, offene Posten und Mahnwesen, Kasse und Belege, Kostenstellen, Nebenkostenabrechnung für vermietete Objekte. |
 
 ## Oberfläche
@@ -82,17 +82,17 @@ Danach `http://localhost:8080` öffnen und gleich registrieren: Der erste Benutz
 
 ## Installation
 
-**Im Betrieb (Windows-PC oder Linux-Server):** Ordner [`deployment/docker-server`](deployment/docker-server) auf den Rechner kopieren, unter Windows `Einrichten.cmd` doppelklicken, unter Linux `sudo ./einrichten.sh` ausführen. Das richtet PostgreSQL, das ERP und einen Updater ein, der nachts neue Versionen einspielt, vorher sichert und bei Fehlern zurückrollt. Anleitung: [EINRICHTEN.md](deployment/docker-server/EINRICHTEN.md).
+**Im Betrieb (Windows-PC oder Linux-Server):** Ordner [`deployment/docker-server`](deployment/docker-server) auf den Rechner kopieren, unter Windows `Einrichten.cmd` doppelklicken, unter Linux `sudo ./einrichten.sh` ausführen. Das richtet PostgreSQL, das ERP, einen Updater und eine Netzsperre ein. Der Updater sichert jede Nacht um 2 Uhr die Datenbank (auf Wunsch zusätzlich mit den Dateien auf eine externe Festplatte oder in einen Cloud-Ordner), spielt um 3 Uhr neue Versionen ein, sichert davor noch einmal und rollt bei Fehlern zurück. Die Netzsperre lässt das ERP ins Internet (Mail, KI, Website), aber nicht ins übrige Firmennetz. Das ERP selbst kommt als fertiges Image aus der GitHub Container Registry. Anleitung: [EINRICHTEN.md](deployment/docker-server/EINRICHTEN.md).
 
-**Zur Entwicklung:** Java 23, Node.js 20.19 oder neuer und Docker für die Datenbank.
+**Zur Entwicklung:** Java 23, Node.js 20.19 oder neuer und Docker für die Datenbank (PostgreSQL 16).
 
 ```bash
-docker compose up -d postgres
+docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 -e POSTGRES_DB=kalkulationsprogramm_db -e POSTGRES_USER=erp_user -e POSTGRES_PASSWORD=erp_dev postgres:16
 cp src/main/resources/application-local.properties.example src/main/resources/application-local.properties
 ./mvnw spring-boot:run
 ```
 
-Die Datenbank-Zugangsdaten kommen in die `application-local.properties` (nicht versioniert). Die Oberflächen laufen mit Hot Reload über `npm ci && npm run dev` in `react-pc-frontend` und `react-zeiterfassung`. Details, Zugriff von unterwegs (Tailscale, Cloudflare Tunnel) und Betrieb: [docs/INSTALLATION.md](docs/INSTALLATION.md).
+Die Datenbank-Zugangsdaten (hier `erp_user` / `erp_dev`) kommen in die `application-local.properties` (nicht versioniert). Eine leere Datenbank bekommt beim ersten Start Basis-Schema und alle Migrationen automatisch, das Backend läuft dann auf Port 8080. Später reicht `docker start erp-dev-pg`. Die Oberflächen laufen mit Hot Reload über `npm ci && npm run dev` in `react-pc-frontend` und `react-zeiterfassung`. Details, Zugriff von unterwegs (Tailscale, Cloudflare Tunnel) und Betrieb: [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Technik
 

@@ -1,16 +1,16 @@
-# Verrechnungslohn-Rechner – Plan
+# Verrechnungslohn-Rechner – Plan (umgesetzt)
 
-Stand: 2026-05-08
+Stand: Oktober 2026 (ursprünglicher Plan vom 2026-05-08)
 Branch: main
-Status: Konzept, Bauabschnitt 1 Backend bereits angefangen.
+Status: **Umgesetzt.** Bauabschnitte 1–3 inklusive „Übernehmen“ mit Aufschlag pro Abteilung sind gebaut und getestet. Dieses Dokument beschreibt den Ist-Stand; Abweichungen vom ursprünglichen Plan stehen am Ende.
 
 ## Ziel
 
-Auf der Seite **Arbeitsplanung > Arbeitsgänge** soll ein Knopf erscheinen:
+Auf der Seite **Arbeitsgänge** (Menü **Vorlagen & Stammdaten → Katalog → Arbeitsgänge**, Seitenkopf „Arbeitsplanung“) gibt es oben rechts – links neben „Aktualisieren“ – den Knopf:
 
 > "Was muss meine Stunde kosten?"
 
-Der öffnet ein Vorschau-Fenster, in dem der Chef sieht:
+Der öffnet ein Fenster, in dem der Chef sieht:
 
 - was er an Löhnen zahlt
 - was die Firma sonst noch kostet (Gemeinkosten)
@@ -18,7 +18,7 @@ Der öffnet ein Vorschau-Fenster, in dem der Chef sieht:
 - daraus ergibt sich automatisch der Mindest-Verrechnungslohn (Selbstkosten)
 - per Schieberegler kann er einen Gewinn-Aufschlag setzen
 - pro Abteilung kann er den Wert nach oben/unten korrigieren
-- ein Knopf überträgt den Satz auf alle Arbeitsgänge des aktuellen Jahres
+- ein Knopf überträgt den Satz auf alle Arbeitsgänge des gewählten Jahres
 
 Sprache: Handwerker-freundlich, kein Buchhalter-Jargon.
 
@@ -26,56 +26,63 @@ Sprache: Handwerker-freundlich, kein Buchhalter-Jargon.
 
 | Was | Quelle |
 |-----|--------|
-| Aktuelle Stundenlöhne (zeitlich gestaffelt) | `MitarbeiterStundenlohn` (gueltigAb) |
-| AG-Anteile SV (KV/PV/RV/AV) | `SvSatz` + `Mitarbeiter.beschaeftigungsart` + `Mitarbeiter.kinderlos` |
-| Zusatzbeitrag Krankenkasse | `Krankenkasse.zusatzbeitragProzent` |
-| BG-Beitrag (Unfallversicherung) | `Gewerk.bgSatzProzent` |
-| Kalkulatorischer Unternehmerlohn (GF) | `Mitarbeiter.kalkulatorischerLohnMonat` (NEU, V300) |
-| Geldwerte Vorteile (Auto/Telefon GF) | `Mitarbeiter.geldwertVorteilMonat` (NEU, V300) |
-| Soll-Stunden | `Zeitkonto` / `MonatsSaldo` |
-| Urlaub | `Mitarbeiter.jahresUrlaub` + `Abwesenheit` (typ=URLAUB) |
-| Krankheit | `Abwesenheit` (typ=KRANKHEIT), Default wenn keine Daten |
-| Feiertage | `Feiertag` (mit Bundesland) |
-| Interne / Gewährleistungs-Stunden | `Zeitbuchung` × `Projekt.projektArt` (INTERN, GARANTIE) |
-| Gemeinkosten | `LieferantDokumentProjektAnteil` × `Kostenstelle.istFixkosten` |
+| Bruttolöhne (abgeschlossenes Jahr) | `Lohnabrechnung.bruttolohn` (Summe des Jahres) |
+| Stundenlöhne (zeitlich gestaffelt, für Schätzung und fehlende Abrechnungen) | `MitarbeiterStundenlohn` (gueltigAb), sonst `Mitarbeiter.stundenlohn` |
+| AG-Anteile SV (KV/PV/RV/AV, U1, U2, Insolvenzgeldumlage, Minijob-Sätze) | `SvSatz` (gültig am 1. Januar des Jahres) + `Mitarbeiter.beschaeftigungsart` |
+| Zusatzbeitrag Krankenkasse | `Krankenkasse.zusatzbeitragProzent` (AG-Hälfte) |
+| BG-Beitrag (Unfallversicherung) | `Firmeninformation.bgSatzOverride`, sonst `Gewerk.bgSatzProzent` des Betriebs |
+| Kalkulatorischer Unternehmerlohn (GF) | `Mitarbeiter.kalkulatorischerLohnMonat` |
+| Geldwerte Vorteile (Auto/Telefon GF) | `Mitarbeiter.geldwertVorteilMonat` |
+| Soll-Stunden | `ZeitkontoVersion` (je Tag die gültige Version) |
+| Urlaub | `Abwesenheit` (typ=URLAUB), sonst `Mitarbeiter.jahresUrlaub` als Default |
+| Krankheit | `Abwesenheit` (typ=KRANKHEIT, ohne Krankengeld-/Wiedereingliederungsphasen), sonst Default |
+| Langzeitkrank (Krankengeld, Wiedereingliederung) | Phasen der `Langzeitkrankmeldung` – diese Tage werden herausgerechnet |
+| Feiertage | `Feiertag` (Bundesland fest „BY“) |
+| Produktive / interne Stunden | `Zeitbuchung` (typ=ARBEIT) × `Projekt.projektArt` (PAUSCHAL/REGIE produktiv, INTERN/GARANTIE intern) |
+| Gemeinkosten | `LieferantDokumentProjektAnteil`, validierte Belege und Beleg-Aufteilungen auf Kostenstellen mit `istFixkosten = true` |
 
 ## Wie der Rechner rechnet
+
+Berücksichtigt werden alle **heute aktiven** Mitarbeiter vom Typ Mensch (auch beim Rechnen eines Vorjahres).
 
 ### Lohn-Block (Jahres-Kosten)
 
 Für jeden aktiven Mitarbeiter:
 
-- **Normal** (kein GF): Brutto/Monat × 12 + AG-Anteile (KV/PV/RV/AV anteilig je nach `beschaeftigungsart`, plus KK-Zusatzbeitrag, plus BG)
-- **Geschäftsführer** (`istGeschaeftsfuehrer = true`): `kalkulatorischerLohnMonat × 12 + geldwertVorteilMonat × 12` – KEINE Sozialversicherung, KEINE Lohnnebenkosten
+- **Normal** (kein GF): Jahresbrutto (siehe Modi) + AG-Anteile SV + BG-Beitrag
+  - Minijob: Minijob-AG-Sätze (KV, RV, Pauschalsteuer) + U1 + U2 + Insolvenzgeldumlage
+  - Sonst: halbe KV/PV/RV/AV-Sätze + halber KK-Zusatzbeitrag + U1 + U2 + Insolvenzgeldumlage
+- **Geschäftsführer** (`istGeschaeftsfuehrer = true`): `kalkulatorischerLohnMonat × 12 + geldwertVorteilMonat × 12`
+  - Beschäftigungsart `GF_SV_FREI`: KEINE Sozialversicherung, KEINE BG
+  - Beschäftigungsart `GF_SV_PFLICHTIG`: AG-SV und BG werden auf Wunschlohn + Vorteil aufgeschlagen
+- Tage mit Krankengeld oder Wiedereingliederung (Langzeitkrankmeldung) senken die Kosten anteilig (Kalendertage-Faktor) – außer das Brutto stammt aus echten Lohnabrechnungen, dort steckt der Ausfall schon drin.
 
 → Summe = "Was kosten mich meine Leute pro Jahr?"
 
 ### Verkäufliche-Stunden-Block
 
-Für **jeden** Mitarbeiter (egal ob GF oder nicht) gilt dieselbe Logik:
+Angezeigt werden pro Mitarbeiter (egal ob GF oder nicht): Soll, Urlaub, Krank, Krankengeld/Wiedereingliederung (Tage), Intern, Verkäuflich.
 
-```
-Sollstunden (aus Zeitkonto)
-  − Urlaubsstunden
-  − Krankheitsstunden
-  − Interne Stunden (Zeitbuchungen auf Projekte mit projektArt = INTERN oder GARANTIE)
-= Verkäufliche Stunden des Mitarbeiters
-```
+- **Soll:** je Tag die Stunden der gültigen Zeitkonto-Version; ganze Feiertage an Werktagen zählen nicht. Tage ohne Zeitkonto-Version werden mit 8 h pro Werktag gerechnet (Hinweis „Keine Arbeitszeiten hinterlegt …“).
+- **Urlaub:** gebuchte Urlaubsstunden; sind keine gebucht, `jahresUrlaub × Stunden pro Tag` (als Default markiert).
+- **Krank:** gebuchte Krankheitsstunden; sind keine gebucht (und keine Langzeitkrank-Tage), 8 Tage × Stunden pro Tag (Default).
+- **Verkäuflich:** hängt vom Modus ab (siehe unten).
 
-Geschäftsführer: Wenn er auch produktiv arbeitet, bucht er produktive Zeit auf reguläre Projekte → fließt 1:1 in die verkäuflichen Stunden ein. Sein "Chef-Quatsch" wird über interne Projekte gebucht und fällt automatisch raus.
+Geschäftsführer: Bucht er produktiv auf reguläre Projekte, zählt das 1:1. Seine Chef-Arbeit bucht er auf interne Projekte – die fällt automatisch raus.
 
-Mitarbeiter ohne Zeitbuchungen (z.B. reine Bürokraft, die nicht in der Zeiterfassung ist): liefert 0 verkäufliche Stunden – sein Lohn erhöht den Verrechnungssatz korrekt.
+Mitarbeiter ohne Zeitbuchungen (z.B. reine Bürokraft): im abgeschlossenen Jahr 0 verkäufliche Stunden – sein Lohn erhöht den Verrechnungssatz korrekt.
 
 → Summe = "Wie viele Stunden kann ich im Jahr verkaufen?"
 
 ### Gemeinkosten-Block
 
-Aus `LieferantDokumentProjektAnteil`:
+Summe pro Kostenstelle (nur Kostenstellen mit `istFixkosten = true`) aus drei Quellen:
 
-- nur Anteile mit `kostenstelle != null` (Projekt-Anteile sind schon im Projekt verbucht)
-- Kostenstelle muss `istFixkosten = true` haben
-- `isStreckungAktivFuerJahr(zielJahr)` muss true sein
-- Summe der `getJahresanteil()`
+1. `LieferantDokumentProjektAnteil` mit `kostenstelle != null`, `isStreckungAktivFuerJahr(zielJahr)` → Summe der `getJahresanteil()`
+2. Validierte Belege auf Fixkosten-Kostenstellen (ohne Umbuchungen, Privateinlagen/-entnahmen und bereits verknüpfte Lieferanten-Dokumente) – nur der betriebliche Netto-Anteil, ohne schon aufgeteilte Beträge
+3. Aufteilungen von Belegen auf Kostenstellen (mit Streckung über mehrere Jahre)
+
+Gestreckte Beträge werden im Fenster mit „gestreckt“ markiert. Es wird nichts hochgerechnet – es zählen die im Jahr gebuchten Werte.
 
 → Summe = "Was kostet die Firma sonst noch im Jahr?"
 
@@ -90,111 +97,98 @@ Pro Abteilung kann der User dann noch +/− € draufschlagen (z.B. Schweißerei
 
 ## Zwei Modi: Rückwirkend (genau) vs. Laufendes Jahr (Schätzung)
 
-Beim Klick auf den Button wählt der User zuerst **welches Jahr** er rechnen will. Daraus ergibt sich der Modus:
+Im Fenster wählt der User unter „Welches Jahr?“ das Vorjahr, das laufende oder das nächste Jahr. Daraus ergibt sich der Modus (Jahr vor dem aktuellen = rückwirkend, sonst Schätzung):
 
-### Modus A – Rückwirkend (abgeschlossenes Jahr, z.B. 2025)
+### Modus A – Rückwirkend (abgeschlossenes Jahr, z.B. 2025) – Anzeige „Echte Zahlen vom Vorjahr“
 
-Hier wird mit **echten Ist-Daten** gerechnet, nichts geschätzt:
+Hier wird mit **echten Ist-Daten** gerechnet:
 
-- **Lohnsumme**: aus den Lohnabrechnungen des Jahres (`Lohnabrechnung.bruttolohn`), GF mit kalkulatorischem Wert × 12.
+- **Lohnsumme**: aus den Lohnabrechnungen des Jahres. Bei 1–11 Abrechnungen wird auf 12 Monate hochgerechnet, ohne Abrechnungen mit Stammstundenlohn × Jahres-Soll. GF mit kalkulatorischem Wert × 12.
 - **Verkäufliche Stunden** pro Mitarbeiter:
-  - SUMME aller Zeitbuchungen, deren Projekt **produktiv** ist (`projektArt = PAUSCHAL` oder `REGIE`).
-  - Soll-Stunden interessieren hier NICHT – es zählt, was wirklich gearbeitet wurde.
-- **Interne / unproduktive Stunden**: SUMME der Zeitbuchungen auf `INTERN` / `GARANTIE` (nur zur Anzeige, nicht zur Rechnung).
-- **Gemeinkosten**: aus `LieferantDokumentProjektAnteil` für genau dieses Jahr.
+  - SUMME aller Arbeits-Zeitbuchungen, deren Projekt **produktiv** ist (`projektArt = PAUSCHAL` oder `REGIE`).
+  - Soll, Urlaub und Krank werden angezeigt, gehen aber NICHT in die Rechnung ein – es zählt, was wirklich gearbeitet wurde.
+- **Interne / unproduktive Stunden**: SUMME der Zeitbuchungen auf `INTERN` / `GARANTIE` (nur zur Anzeige).
+- **Gemeinkosten**: siehe oben, für genau dieses Jahr.
 
-**Daten-Check vor Berechnung:** Bevor der Rechner Werte zeigt, prüft er pro Mitarbeiter:
-- Hat der MA in diesem Jahr Zeitbuchungen über mind. 90 % der Soll-Tage?
-- Sind Lohnabrechnungen für alle 12 Monate vorhanden?
+**Daten-Check:** Fehlen Daten, zeigt der Rechner oben einen Hinweis „Für 2025 fehlen Daten:“ mit einer Liste und dem Satz „Die Berechnung ist deshalb nur bedingt aussagekräftig.“ Geprüft wird:
+- Keine Lohnabrechnungen im Jahr (dann Stammstundenlohn als Default)
+- Nur X von 12 Lohnabrechnungen vorhanden (Brutto wird hochgerechnet)
+- Keine Zeitbuchungen im Jahr (0 verkäufliche Stunden)
+- Keine Arbeitszeiten hinterlegt für Teile des Jahres (8 h pro Werktag)
 
-Fehlen Daten, zeigt der Rechner einen klaren Hinweis:
+### Modus B – Laufendes Jahr (Hochrechnung, z.B. 2026) – Anzeige „Schätzung fürs laufende Jahr“
 
-> ⚠️ Für 2025 fehlen Daten:
-> – Hans Müller: Zeitbuchungen erst ab 03.11.2025 (vorher keine Zeiterfassung)
-> – Petra Schmidt: Lohnabrechnungen Jan–Okt fehlen
-> Die Berechnung wäre nicht aussagekräftig. Lieber das laufende Jahr hochrechnen?
+Hier rechnen wir das Jahr **hoch**:
 
-### Modus B – Laufendes Jahr (Hochrechnung, z.B. 2026)
-
-Hier rechnen wir das aktuelle Jahr **hoch** auf Basis von dem, was bisher ist + Schätzungen vom User:
-
-- **Lohnsumme**: aktuelle Stundenlöhne × Sollstunden + AG-SV (12-Monats-Vollwert).
-- **Verkäufliche Stunden** pro Mitarbeiter: berechnet aus zwei User-Eingaben am Anfang des Dialogs:
-  - "Wie viel Prozent eurer Arbeitszeit verkauft ihr im Schnitt an Kunden? (z.B. 75 %)"
-  - "Wie viel Prozent geht für interne Sachen drauf? (z.B. 20 %)"
-  - Rest = Krankheit/Urlaub.
-  - Diese Prozente werden **auf alle Mitarbeiter angewendet** (außer GF, die haben oft eigene Prozente – ggf. zweites Eingabefeld).
-- **Gemeinkosten**: aus `LieferantDokumentProjektAnteil` Year-To-Date × Faktor (12 ÷ laufende Monate). Streckungs-Anteile bleiben unverändert.
-
-**Hinweis im Dialog (oben):**
-
-> 📊 Du rechnest ein laufendes Jahr (2026). Manche Werte werden hochgerechnet.
-> Sag mir bitte erst, wie viel Prozent eurer Stunden ihr normalerweise verkauft.
-
-### Daten-Voraussetzung für die Auswahl
-
-Im Jahresauswahl-Dropdown nur Jahre anbieten, in denen es überhaupt Zeitbuchungen gab. Erstes mögliches Jahr: 2025 (mit Daten-Lücken-Warnung), normales Arbeitsjahr ab 2026.
+- **Lohnsumme**: Stundenlohn (letzter bis 31.12. des Jahres gültiger Stand) × Jahres-Soll (aus den Zeitkonto-Versionen, sonst 40 h/Woche) + AG-SV + BG.
+- **Verkäufliche Stunden** pro Mitarbeiter: `Soll − Urlaub − Krank − Interne Stunden` (nie unter 0).
+  - Interne Stunden = Soll × Prozentwert aus dem Feld „Interne Stunden?“ (Default 5 %, Knopf „Neu rechnen“). Der Wert gilt für alle Mitarbeiter, auch für GF.
+- **Gemeinkosten**: die bisher gebuchten Werte des Jahres (keine Hochrechnung auf 12 Monate).
 
 ## Bauabschnitte
 
-### 1. Mitarbeiter-Editor (Geschäftsführer-Felder)
+### 1. Mitarbeiter-Editor (Geschäftsführer-Felder) ✅
 
-**Backend** ✅ erledigt:
-- Migration `V300__mitarbeiter_geschaeftsfuehrer.sql` (idempotent)
-- `Mitarbeiter`-Domain um 3 Felder erweitert
-- `MitarbeiterDto` + `MitarbeiterErstellenDto` erweitert
-- `MitarbeiterService.save()` und `mapToDto()` durchgereicht
+**Backend:**
+- Spalten `ist_geschaeftsfuehrer`, `kalkulatorischer_lohn_monat`, `geldwert_vorteil_monat` in `mitarbeiter`. Ursprünglich Migration `V300__mitarbeiter_geschaeftsfuehrer.sql` (MySQL); seit der Umstellung auf PostgreSQL im Basis-Schema `db/postgresql/basis/V1__basis_schema.sql` enthalten.
+- `Mitarbeiter`-Domain, `MitarbeiterDto` + `MitarbeiterErstellenDto` erweitert
+- `MitarbeiterService`: Ist GF angehakt, ist der Wunschlohn Pflicht (≥ 0), der Vorteil optional (≥ 0); ohne Haken werden beide Werte geleert.
 
-**Frontend** offen:
-- Im `MitarbeiterEditor` neuer Abschnitt "Geschäftsführer" mit Checkbox
-- Wenn Checkbox aktiv: zwei Eingabefelder
+**Frontend** (`MitarbeiterEditor`):
+- Abschnitt „Geschäftsführer“ mit Checkbox „Ist diese Person Geschäftsführer/in?“ – Hinweis: „Dann nehmen wir statt einem echten Lohn den Wunschlohn unten für die Kalkulation des Stundensatzes.“
+- Wenn angehakt: zwei Eingabefelder
   - "Was möchtest du dir pro Monat als Lohn rechnen? (€)"
-  - "Auto/Telefon/Privatanteile pro Monat (€)" – optional
+  - "Auto/Telefon/Privatanteile pro Monat (€) – optional"
 - Mehrere GF möglich, einfach mehrere Mitarbeiter mit Haken
-- Wording-Beispiel:
-  > Bist du / ist diese Person Geschäftsführer/in?
-  > [✓] Ja, dann nehmen wir statt einem echten Lohn deinen Wunschlohn für die Kalkulation.
+- Geschäftsführer führen kein Arbeitszeitkonto und haben keinen Monatsabschluss; Arbeitszeit kann optional hinterlegt werden.
 
-### 2. Backend Rechner-Service
+### 2. Backend Rechner-Service ✅
 
-Neu:
 - `service/VerrechnungslohnService.java`
-  - `berechne(int jahr)` → liefert `VerrechnungslohnErgebnisDto`
-  - intern: `berechneLohnsumme()`, `berechneVerkaeuflicheStunden()`, `berechneGemeinkosten()`
+  - `berechne(int jahr, Integer interneQuoteProzent)` → liefert `VerrechnungslohnErgebnisDto`
+  - intern: `berechneLohnZeile()`, `berechneStundenZeile()`, `berechneGemeinkosten()`, `uebernehmen()`
 - `controller/VerrechnungslohnController.java`
-  - `GET /api/verrechnungslohn?jahr=2026` → Vorschau-Daten
-  - `POST /api/verrechnungslohn/uebernehmen` → setzt `ArbeitsgangStundensatz` für alle Arbeitsgänge des Jahres (mit per-Abteilung-Override)
-- `dto/VerrechnungslohnErgebnisDto.java`
-  - alle Detail-Werte (pro Mitarbeiter Brutto, AG-SV, Sollstunden, …)
-  - Lohnsumme, Verkäufliche Stunden, Gemeinkosten gesamt
-  - Default-Flags pro Wert (für UI-Anzeige "ist Default")
+  - `GET /api/verrechnungslohn?jahr=2026&internProzent=5` → Vorschau-Daten (`jahr` 2000–2100, `internProzent` optional 0–100)
+  - `POST /api/verrechnungslohn/uebernehmen` (nur Admins) – Body `{ jahr, basisSatz, abteilungAufschlaege: [{ abteilungId, aufschlagEuro }] }` → setzt `ArbeitsgangStundensatz` für **alle** Arbeitsgänge des Jahres (Basissatz + Aufschlag der Abteilung). Ergibt ein Satz ≤ 0 €, wird alles abgelehnt (HTTP 400). Antwort: `{ aktualisierteArbeitsgaenge, jahr }`.
+- `dto/Verrechnungslohn/VerrechnungslohnErgebnisDto.java` + `VerrechnungslohnUebernehmenRequest.java`
+  - Modus (`RUECKWIRKEND` / `HOCHRECHNUNG`), Lohnzeilen und Stundenzeilen pro MA, Kostenstellen, Abteilungen (Aufschlag-Vorschlag immer 0), Datenlücken
+  - Lohnsumme, Verkäufliche Stunden, Gemeinkosten gesamt, Selbstkosten pro Stunde, interne Quote
+  - Default-Flags pro Wert (`…IstDefault`, für UI-Anzeige „≈“) und Quelle des Bruttos (`LOHNABRECHNUNG`, `KALKULATORISCH`, `STUNDENLOHN_HOCHRECHNUNG`, `STAMMSTUNDENLOHN`)
 
-### 3. Frontend Rechner-Dialog
+### 3. Frontend Rechner-Dialog ✅
 
-Auf `ArbeitsgangEditor` neuer Button "Was muss meine Stunde kosten?". Öffnet Dialog mit:
+`components/VerrechnungslohnRechnerDialog.tsx`, geöffnet über den Knopf „Was muss meine Stunde kosten?“ auf der Seite Arbeitsgänge. Untertitel: „Lohnkosten + Gemeinkosten ÷ verkaufbare Stunden = dein Mindest-Stundensatz.“
 
-- **Block 1 – Meine Leute** (aufklappbar, default zugeklappt): Tabelle pro MA mit Brutto, AG-Anteile, Summe → Überschreibbar
-- **Block 2 – Was kostet die Firma sonst noch**: Tabelle pro Kostenstelle mit Jahres-Wert → Überschreibbar
-- **Block 3 – Verkäufliche Stunden**: Tabelle pro MA mit Soll/Urlaub/Krank/Intern → Überschreibbar, Default-Marker sichtbar
-- **Block 4 – Was muss meine Stunde kosten?**: Selbstkosten, Schieberegler Gewinn, Verkaufspreis
-- **Aufschlag/Abschlag pro Abteilung**: kleine Tabelle
-- **Knopf** "Auf alle Arbeitsgänge für 2026 übernehmen"
+- **Oben:** „Welches Jahr?“, Modus-Anzeige, bei Schätzung das Feld „Interne Stunden?“ mit „Neu rechnen“, ggf. Hinweis auf fehlende Daten
+- **Block 1 – Meine Leute (Lohnkosten pro Jahr)** (aufklappbar, default zugeklappt): Tabelle pro MA mit Brutto/Jahr, AG-SV, BG, Sachbezug, Gesamtkosten → Gesamtkosten überschreibbar
+- **Block 2 – Was kostet die Firma sonst noch?** (aufklappbar): Tabelle pro Kostenstelle mit Jahresanteil → überschreibbar
+- **Block 3 – Wie viele Stunden kann ich verkaufen?** (aufklappbar): Tabelle pro MA mit Soll/Urlaub/Krank/Krankengeld-Wiedereingliederung/Intern/Verkäuflich → Verkäuflich überschreibbar, Default-Werte mit „≈“ markiert
+- **Block 4 – Was muss meine Stunde kosten?** („Selbstkosten + Gewinn = Verkaufspreis“): Lohn, Gemeinkosten, Verkäufliche Stunden, Selbstkosten; Schieberegler „Gewinn-Aufschlag“ (0–100 %, Start 20 %); „Dein Verkaufspreis … pro Stunde“
+- **Aufschlag/Abschlag pro Abteilung**: ein €-Feld je Abteilung (auch negativ) mit Endpreis
+- **Knopf** „Auf alle Arbeitsgänge für 2026 übernehmen“ → Rückfrage „Es werden alle Arbeitsgang-Stundensätze für 2026 überschrieben. Fortfahren?“ mit „Ja, überschreiben“
+
+Überschriebene Werte gelten nur im offenen Fenster und werden nicht gespeichert.
 
 ## Status-Checkliste
 
 - [x] Konzept festgehalten (dieses Dokument)
-- [x] Bauabschnitt 1 Backend (Migration + Domain + DTO + Service)
-- [ ] Bauabschnitt 1 Frontend (Mitarbeiter-Editor: Checkbox + 2 Felder)
-- [ ] Backend-Boot-Test mit V300 gegen lokale DB
-- [ ] Bauabschnitt 2 Backend (VerrechnungslohnService + Controller + DTO)
-- [ ] Bauabschnitt 3 Frontend (Rechner-Dialog auf ArbeitsgangEditor)
-- [ ] Globaler Übernehmen-Endpoint mit Per-Abteilung-Override
-- [ ] Smoke-Test im Browser mit Test-Daten
+- [x] Bauabschnitt 1 Backend (Spalten + Domain + DTO + Service)
+- [x] Bauabschnitt 1 Frontend (Mitarbeiter-Editor: Checkbox + 2 Felder)
+- [x] Bauabschnitt 2 Backend (VerrechnungslohnService + Controller + DTO)
+- [x] Bauabschnitt 3 Frontend (Rechner-Dialog auf der Seite Arbeitsgänge)
+- [x] Globaler Übernehmen-Endpoint mit Per-Abteilung-Override
+- [x] Tests: `VerrechnungslohnServiceTest`, `VerrechnungslohnControllerTest`, `MitarbeiterServiceGeschaeftsfuehrerTest`, `VerrechnungslohnRechnerDialog.test.tsx`, E2E `e2e/verrechnungslohn-langzeitfall.spec.ts`
+- [x] Später ergänzt: Belege als Gemeinkosten, Langzeitkrankmeldung herausrechnen, historische Zeitkonto-Versionen
 
-## Offene Punkte (vor Bau klären)
+## Entscheidungen (früher „Offene Punkte“)
 
-- Krankheitstage-Default: 8 oder 10? → Vorschlag 8.
-- Interne-Stunden-Default: 5 % oder höher? → Vorschlag 5 %, im Dialog leicht änderbar.
-- Bundesland Feiertage: aus `Firmeninformation` ziehen, sonst BY-Default.
-- Sollen die Pro-Abteilung-Aufschläge persistiert werden (für nächstes Jahr) oder jedes Mal frisch eingegeben? → Vorschlag: persistieren auf `Abteilung.verrechnungslohnAufschlag` (späterer Bauabschnitt).
-- "Übernehmen" überschreibt bestehende Sätze für das Jahr – mit Bestätigungs-Dialog. Soll vorher ein Backup/Audit-Eintrag geschrieben werden?
+- Krankheitstage-Default: **8 Tage** – nur wenn keine Krankheitsstunden gebucht sind.
+- Interne-Stunden-Default: **5 %**, im Fenster änderbar (wirkt nur bei der Schätzung).
+- Bundesland Feiertage: fest **Bayern (BY)**; `Firmeninformation` hat kein Bundesland-Feld.
+- Pro-Abteilung-Aufschläge werden **nicht** gespeichert, sondern jedes Mal frisch eingegeben (kein Feld `Abteilung.verrechnungslohnAufschlag`).
+- „Übernehmen“ überschreibt bestehende Sätze für das Jahr – mit Bestätigungs-Dialog, nur für Admins, in einer Transaktion. Ein Backup/Audit-Eintrag wird **nicht** geschrieben.
+
+## Abweichungen vom ursprünglichen Plan
+
+- Nicht gebaut: Prüfung „Zeitbuchungen über mind. 90 % der Soll-Tage“, Jahresauswahl nur mit Jahren mit Zeitbuchungen, Eingabe „% verkauft“ und eigene GF-Prozente, Hochrechnung der Gemeinkosten (Year-To-Date × 12 ÷ Monate), Überschreiben einzelner Soll/Urlaub/Krank/Intern-Werte.
+- Anders gelöst: Lohnsumme bei Schätzung aus Stundenlohn × Jahres-Soll statt Brutto/Monat × 12; GF mit SV-Pflicht bekommen AG-SV und BG; BG-Satz kommt aus dem Gewerk des Betriebs.

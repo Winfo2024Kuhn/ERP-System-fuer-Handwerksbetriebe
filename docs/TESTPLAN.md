@@ -1,43 +1,69 @@
 # Testplan – ERP-System für Handwerksbetriebe
 
-> **Ziel:** Systematische Erhöhung der Testabdeckung vom aktuellen Stand (~7 %) auf ein tragfähiges Niveau (≥ 60 % Backend / ≥ 40 % Frontend).
+> **Ziel:** Systematische Erhöhung der Testabdeckung auf ein tragfähiges Niveau (≥ 60 % Backend / ≥ 40 % Frontend). Ausgangspunkt im März 2026 waren ~7 %.
+>
+> **Stand:** Oktober 2026. Die Phasen 1–5 (März 2026) sind abgeschlossen; seitdem ist die Testbasis stark gewachsen. Die Abdeckung in Prozent wird derzeit nicht automatisch geprüft (siehe Abschnitt 9).
+
+Verbindliche Testregeln stehen in `docs/agent instructions/docs/TESTING_SECURITY.md` und `.github/DEVELOPMENT.md`.
 
 ---
 
-## 1. Ist-Zustand
+## 1. Ist-Zustand (Stand 12.10.2026)
 
-| Kategorie | Quelldateien | Testdateien | Tests | Abdeckung |
-|---|---|---|---|---|
-| **Controller** | ~45 | 28 | 341 | ~62 % |
-| **Service** | ~55 | 34 | 344 | ~62 % |
-| **Repository** | ~80 | 6 | 8 | ~8 % |
-| **Mapper** | 9 | 8 | 77 | ~89 % |
-| **Utility / Helper** | ~10 | 2 | 9 | ~20 % |
-| **Frontend (react-pc-frontend)** | ~50+ Komponenten | 11 | 77 | ~22 % |
-| **Frontend (react-zeiterfassung)** | ~20+ Komponenten | 3 | 23 | ~15 % |
-| **Gesamt** | | **92** | **879** | |
+Gezählt wurden Testdateien und Testmethoden (`@Test` + `@ParameterizedTest`, jeder parametrisierte Test einmal) bzw. `it(`/`test(`-Aufrufe im Frontend.
 
-### Bereits getestete Module ✅
+| Kategorie | Quelldateien | Testdateien | Tests |
+|---|---|---|---|
+| **Controller** | 100 | 101 | 1.280 |
+| **Service** | 246 | 230 | 3.173 |
+| **Repository** | 135 | 41 | 149 |
+| **Mapper** | 8 (+2 in `service/`) | 8 | 75 |
+| **Config / Sicherheit** | 28 | 34 | 228 |
+| **Utility / Helper** | 15 | 15 | 131 |
+| **Domain** | 189 | 13 | 65 |
+| **Sonstige** (event, tools, cli, dto, `org.example.email`) | – | 7 | 51 |
+| **Backend gesamt** | **997** | **449** | **5.152** |
+| **Frontend (react-pc-frontend)** – Unit | ~380 | 234 | ~2.540 |
+| **Frontend (react-pc-frontend)** – E2E (Playwright) | | 74 Specs | ~337 |
+| **Frontend (react-zeiterfassung)** – Unit | ~66 | 39 | ~400 |
+| **Frontend (react-zeiterfassung)** – E2E (Playwright) | | 12 Specs | ~50 |
 
-**Controller:** AngebotController, ArtikelController, AusgangsGeschaeftsDokumentController, DateiController, EmailController, FormularTemplateController, KostenVerteilungController, KundeController, LeistungController, LieferantDokumentController, LieferantenController, MietabrechnungController, MietobjektController, MitarbeiterController, OffenePostenController, ProjektController
+### Testarten im Backend
 
-**Service:** AngebotService, BestellungService (+ Mapping + PDF), ArtikelImportService, ArtikelMatchingService, FeiertagService, EmailAiService, DateiSpeicherService, MonatsSaldoService, InquiryDetectionService, OfferPriceService, OutOfOfficeResponder, RechnungPdfService, StuecklistePdfService, ProjektManagementService (+IT), ZeitkontoService, MietabrechnungService, AusgangsGeschaeftsDokumentService (BezahltTest + vollständig), ZugferdExtractorService, ZugferdErstellService, KostenVerteilungService, ZeitkontoKorrekturService, ZeitbuchungAutoStopService, SpamFilterService, EmailAutoAssignmentService, EmailImportService, EmailAttachmentProcessingService, VendorInvoiceIntegrationService, ArbeitsgangManagementService, BwaService, MietobjektService
+| Art | Umfang | Hinweis |
+|---|---|---|
+| Unit-Tests mit Mockito (`MockitoExtension`) | 147 Dateien | Schwerpunkt Service-Schicht |
+| Controller-Tests (`@WebMvcTest` + MockMvc) | 91 Dateien | inkl. 10 Security-Konfigurations-Tests |
+| Repository-/JPA-Tests (`@DataJpaTest`, H2) | 62 Dateien | auch für Services mit echten Abfragen |
+| `@SpringBootTest` | 5 Dateien | z. B. `ActuatorHealthEndpointTest`, `OeffentlichePfadeCsrfTest` |
+| Sicherheits-Tests (`*SecurityTest`) | 23 Dateien | siehe Abschnitt 4 |
+| Integrationstests (`*IntegrationTest`) | 11 Dateien | laufen mit `./mvnw test` |
+| PostgreSQL-Tests | `DatenbankKompatibilitaet*Test` (6), `MonatsabschlussPostgresTest`, `MonatsabschlussSammelPostgresTest`, `DatevExportPostgresTest` | nur mit System-Property, siehe Abschnitt 6 |
+| Mail-Tests mit GreenMail | `PostfachMailserverIntegrationTest`, `FreigabeCodeIntegrationTest` | |
 
-**Repository:** ArtikelRepository (+Cascade), AngebotRepository (+Search), ProjektDokumentRepository, WerkstoffRepository
+### Bereits getestete Module ✅ (Auswahl)
 
-**Mapper:** ProjektMapper, AngebotMapper, KundeMapper, LieferantMapper, LeistungMapper, ArbeitsgangMapper, MieteMapper, ProduktkategorieMapper
+**Controller:** AnfrageController, ArtikelController, AusgangsGeschaeftsDokumentController, DateiController, EmailController, FormularTemplateController, KostenVerteilungController, KundeController, LeistungController, LieferantDokumentController, LieferantenController, MietabrechnungController, MietobjektController, MitarbeiterController, OffenePostenController, ProjektController, ZeitverwaltungController, UrlaubsantragController, LangzeitkrankmeldungController, VerrechnungslohnController
 
-**Utility:** EmailHtmlSanitizer, EmailAiPostProcessor
+**Service:** AnfrageService, BestellungService (+ Mapping + PDF), ArtikelImportService, ArtikelMatchingService, FeiertagService, DateiSpeicherService, MonatsSaldoService (+ Warmup), InquiryDetectionService, OfferPriceService, OutOfOfficeResponder, RechnungPdfService, StuecklistePdfService, ProjektManagementService, ZeitkontoService, MietabrechnungService, AusgangsGeschaeftsDokumentService, ZugferdExtractorService, ZugferdErstellService, KostenVerteilungService, ZeitkontoKorrekturService, ZeitbuchungAutoStopService, SpamFilterService, EmailAutoAssignmentService, EmailImportService, EmailAttachmentProcessingService, VendorInvoiceIntegrationService, ArbeitsgangManagementService, BwaService, MietobjektService, ZeiterfassungApiService (Zeitkonto, Nebenläufigkeit, verspäteter Stop), TagesSollService, UrlaubsantragService, LangzeitkrankmeldungService, Monatsabschluss-Services, DatevExportService, LodasDateiWriter, VerrechnungslohnService
 
-**Frontend (react-pc-frontend):** Button, Input, Card, Label, SelectCustom, DatePicker, ImageViewer, Dialog, ConfirmDialog, Toast, cn()-Utility
+**Repository:** ArtikelRepository (+ `ArtikelCascadeDeletionTest`), AnfrageRepository (+ Search), ProjektDokumentRepository, WerkstoffRepository, KundeRepository (Max-Kundennummer, `KundenSucheTest`), LieferantenRepository (Name), MitarbeiterRepository (`MitarbeiterMenschenRepositoryTest`)
 
-**Frontend (react-zeiterfassung):** MobileDatePicker, NetworkStatusBadge, ImageViewer
+**Mapper:** ProjektMapper, AnfrageMapper, KundeMapper, LieferantMapper, LeistungMapper, ArbeitsgangMapper, MieteMapper, ProduktkategorieMapper
+
+**Utility:** EmailHtmlSanitizer, EmailAiPostProcessor (jeweils + `…LueckenTest`)
+
+**Frontend (react-pc-frontend):** u. a. Button, Input, Card, Label, SelectCustom, DatePicker, ImageViewer, Dialog, ConfirmDialog, Toast, cn()-Utility, Seiten wie Monatsabschluss, Zeitkonten, Langzeitkrankmeldungen, Urlaubsanträge, Verrechnungslohn-Rechner
+
+**Frontend (react-zeiterfassung):** u. a. MobileDatePicker, NetworkStatusBadge, ImageViewer, OfflineService, Dashboard, Zeiterfassung, Tagesbuchungen, Urlaubsantrag, Spracheingabe (`VoiceInputButton`), Token-Transport (`mobileTransport`)
+
+**Bekannte Lücken:** `EmailAiServiceTest` ist vollständig auskommentiert (0 aktive Tests); `ProjektManagementServiceIntegrationTest.java` ist eine leere Datei; `ProjektManagementServiceIT` (2 Tests) läuft nie, weil Surefire nur `*Test`/`*Tests`/`Test*`/`*TestCase` ausführt.
 
 ---
 
 ## 2. Priorisierung
 
-Die Test-Erstellung erfolgt in **5 Phasen**, geordnet nach Geschäftsrisiko und Komplexität.
+Die Test-Erstellung erfolgte im März 2026 in **5 Phasen**, geordnet nach Geschäftsrisiko und Komplexität. Die Testklassen wurden seitdem erweitert; die Zahlen unten sind der Stand bei Abschluss der Phase.
 
 ### Phase 1 – Kritische Geschäftslogik ✅ (91 Tests)
 
@@ -63,11 +89,13 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 
 ## 3. Detaillierter Testplan nach Phase
 
+Die Tabellen zeigen die im März 2026 geplanten Kernfälle. In Klammern steht die heutige Größe der Klasse und die heutige Zahl der Testmethoden.
+
 ---
 
 ### Phase 1 – Kritische Geschäftslogik ✅ (91 Tests – abgeschlossen 10.03.2026)
 
-#### 1.1 `AusgangsGeschaeftsDokumentService` (~800 Zeilen)
+#### 1.1 `AusgangsGeschaeftsDokumentService` (~2.800 Zeilen, heute 114 Tests)
 
 **Testdatei:** `AusgangsGeschaeftsDokumentServiceTest.java`
 
@@ -83,9 +111,9 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 1.1.8 | Buchung sperrt Dokument gegen weitere Änderungen | `buchen()` | Unit |
 | 1.1.9 | Produktkategorie wird aus Angebot übernommen | `erstellen()` | Unit |
 | 1.1.10 | Vorgänger-/Nachfolger-Verkettung funktioniert | `erstellen()` | Unit |
-| 1.1.11 | `ensureAngebotDokument()` erzeugt Dokument nur einmalig | `ensureAngebotDokument()` | Unit |
+| 1.1.11 | `ensureAnfrageDokument()` erzeugt Dokument nur einmalig (früher `ensureAngebotDokument()`) | `ensureAnfrageDokument()` | Unit |
 
-#### 1.2 `ZugferdExtractorService` (~330 Zeilen)
+#### 1.2 `ZugferdExtractorService` (~600 Zeilen, heute 41 Tests)
 
 **Testdatei:** `ZugferdExtractorServiceTest.java`
 
@@ -98,7 +126,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 1.2.5 | Gibt leere Daten zurück bei Nicht-ZUGFeRD-PDF | `extract()` | Unit |
 | 1.2.6 | Fallback-XML-Parsing greift bei fehlerhaftem Hauptparser | `extract()` | Unit |
 
-#### 1.3 `ZugferdErstellService` (~75 Zeilen)
+#### 1.3 `ZugferdErstellService` (~210 Zeilen, heute 22 Tests)
 
 **Testdatei:** `ZugferdErstellServiceTest.java`
 
@@ -108,9 +136,9 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 1.3.2 | Berechnet MwSt. korrekt (19 %) | `erzeuge()` | Unit |
 | 1.3.3 | Nutzt Fallback-Datum wenn kein Rechnungsdatum gesetzt | `erzeuge()` | Unit |
 
-#### 1.4 `KostenVerteilungService` (Miet-Modul, ~340 Zeilen)
+#### 1.4 `KostenVerteilungService` (Miet-Modul, ~230 Zeilen, heute 14 Tests)
 
-**Testdatei:** `KostenVerteilungServiceTest.java`
+**Testdatei:** `service/miete/KostenVerteilungServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
@@ -121,7 +149,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 1.4.5 | Verteilungsschlüssel validiert Mietpartei-Zuordnung | `saveVerteilungsschluessel()` | Unit |
 | 1.4.6 | Berechnungsmethode BETRAG vs. VERBRAUCHSFAKTOR korrekt | `saveVerteilungsschluessel()` | Unit |
 
-#### 1.5 `ZeitkontoKorrekturService` (~270 Zeilen)
+#### 1.5 `ZeitkontoKorrekturService` (~280 Zeilen, heute 21 Tests)
 
 **Testdatei:** `ZeitkontoKorrekturServiceTest.java`
 
@@ -136,14 +164,14 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 1.5.7 | Audit-Historie enthält alle Einträge chronologisch | `getAuditHistorie()` | Unit |
 | 1.5.8 | Stornierte Korrekturen werden bei Summierung ignoriert | `summiereAktiveKorrekturen()` | Unit |
 
-#### 1.6 `ZeitbuchungAutoStopService` (~110 Zeilen)
+#### 1.6 `ZeitbuchungAutoStopService` (~130 Zeilen, heute 13 Tests + `ZeitbuchungAutoStopRepositoryTest`)
 
 **Testdatei:** `ZeitbuchungAutoStopServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 1.6.1 | Stoppt offene Buchungen nach Mitternacht | `pruefUndStoppeOffeneBuchungen()` | Unit |
-| 1.6.2 | Setzt Endzeit auf 23:59 bei Tagesüberschreitung | `autoStoppeWennNoetig()` | Unit |
+| 1.6.1 | Stoppt offene Buchungen nach Ende des Buchungszeitfensters bzw. nach Mitternacht | `pruefUndStoppeOffeneBuchungen()` | Unit |
+| 1.6.2 | Ohne Zeitfenster: Endzeit 23:59 des Starttags bei Tagesüberschreitung | `autoStoppeWennNoetig()` | Unit |
 | 1.6.3 | Berechnet Stunden korrekt aus Zeitspanne | `autoStoppeWennNoetig()` | Unit |
 | 1.6.4 | Erzeugt Audit-Eintrag mit Quelle SYSTEM | `autoStoppeWennNoetig()` | Unit |
 | 1.6.5 | Invalidiert Monatssaldo-Cache nach Stopp | `autoStoppeWennNoetig()` | Unit |
@@ -152,7 +180,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 
 ### Phase 2 – Email-System & Kommunikation ✅ (62 Tests – abgeschlossen 10.03.2026)
 
-#### 2.1 `SpamFilterService` (~500 Zeilen)
+#### 2.1 `SpamFilterService` (~1.000 Zeilen, heute 59 Tests)
 
 **Testdatei:** `SpamFilterServiceTest.java`
 
@@ -169,7 +197,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 2.1.9 | Gefährliche Dateitypen (.exe, .bat) erhöhen Score | `calculateSpamScore()` | Unit |
 | 2.1.10 | Domain-Blacklist blockiert bekannte Spam-Domains | `calculateSpamScore()` | Unit |
 
-#### 2.2 `EmailAutoAssignmentService` (~300 Zeilen)
+#### 2.2 `EmailAutoAssignmentService` (~340 Zeilen, heute 13 Tests)
 
 **Testdatei:** `EmailAutoAssignmentServiceTest.java`
 
@@ -184,7 +212,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 2.2.7 | `findPossibleAssignments()` gibt alle Kandidaten zurück | `findPossibleAssignments()` | Unit |
 | 2.2.8 | Gibt `false` zurück wenn keine Zuordnung möglich | `tryAutoAssign()` | Unit |
 
-#### 2.3 `EmailImportService` (~500 Zeilen)
+#### 2.3 `EmailImportService` (~1.600 Zeilen, heute 49 Tests)
 
 **Testdatei:** `EmailImportServiceTest.java`
 
@@ -198,7 +226,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 2.3.6 | Setzt Processing-Status korrekt im Lifecycle | `importMessage()` | Unit |
 | 2.3.7 | Behandelt fehlerhafte Messages ohne Abbruch | `doImport()` | Unit |
 
-#### 2.4 `EmailAttachmentProcessingService` (~330 Zeilen)
+#### 2.4 `EmailAttachmentProcessingService` (~690 Zeilen, heute 25 Tests)
 
 **Testdatei:** `EmailAttachmentProcessingServiceTest.java`
 
@@ -210,7 +238,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 2.4.4 | Ignoriert bereits verarbeitete Anhänge | `processLieferantAttachments()` | Unit |
 | 2.4.5 | Erstellt Dokument atomar (erst in-memory, dann DB) | `processLieferantAttachments()` | Unit |
 
-#### 2.5 `VendorInvoiceIntegrationService` (~350 Zeilen)
+#### 2.5 `VendorInvoiceIntegrationService` (~440 Zeilen, heute 6 Tests)
 
 **Testdatei:** `VendorInvoiceIntegrationServiceTest.java`
 
@@ -224,7 +252,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 
 ### Phase 3 – Stammdaten-Services & Mapper ✅ (102 Tests – abgeschlossen 10.03.2026)
 
-#### 3.1 `ArbeitsgangManagementService` (~90 Zeilen)
+#### 3.1 `ArbeitsgangManagementService` (~85 Zeilen, heute 10 Tests)
 
 **Testdatei:** `ArbeitsgangManagementServiceTest.java`
 
@@ -241,7 +269,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 3.1.9 | Stundensatz-Anlage für fehlendes Jahr (GetOrCreate) | `aktualisiereEinzelnenStundensatz()` | Unit |
 | 3.1.10 | Wirft Exception bei unbekanntem Arbeitsgang für Stundensatz | `aktualisiereEinzelnenStundensatz()` | Unit |
 
-#### 3.2 `BwaService` (~110 Zeilen)
+#### 3.2 `BwaService` (~115 Zeilen, heute 12 Tests)
 
 **Testdatei:** `BwaServiceTest.java`
 
@@ -260,9 +288,9 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 3.2.11 | Findet gespeicherten Dateinamen | `findStoredFilename()` | Unit |
 | 3.2.12 | Gibt Optional.empty bei unbekanntem Upload für Dateiname | `findStoredFilename()` | Unit |
 
-#### 3.3 `MietobjektService` (~95 Zeilen)
+#### 3.3 `MietobjektService` (~65 Zeilen, heute 13 Tests)
 
-**Testdatei:** `MietobjektServiceTest.java`
+**Testdatei:** `service/miete/MietobjektServiceTest.java`
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
@@ -280,21 +308,21 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 3.3.12 | Wirft Exception bei Löschen unbekannter Partei | `deletePartei()` | Unit |
 | 3.3.13 | Gibt Parteien eines Mietobjekts zurück | `getParteien()` | Unit |
 
-#### 3.4 `AngebotMapper`
+#### 3.4 `AnfrageMapper` (früher `AngebotMapper`)
 
-**Testdatei:** `AngebotMapperTest.java`
+**Testdatei:** `AnfrageMapperTest.java` (heute 5 Tests)
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 3.4.1 | Mappt alle Felder inkl. Kunde-Daten | `toAngebotResponseDto()` | Unit |
-| 3.4.2 | Gibt null bei null-Angebot zurück | `toAngebotResponseDto()` | Unit |
-| 3.4.3 | Mappt Angebot ohne Kunde | `toAngebotResponseDto()` | Unit |
-| 3.4.4 | Dedupliziert E-Mails aus Kunde und Projekt | `toAngebotResponseDto()` | Unit |
-| 3.4.5 | Behandelt null-Anrede korrekt | `toAngebotResponseDto()` | Unit |
+| 3.4.1 | Mappt alle Felder inkl. Kunde-Daten | `toAnfrageResponseDto()` | Unit |
+| 3.4.2 | Gibt null bei null-Anfrage zurück | `toAnfrageResponseDto()` | Unit |
+| 3.4.3 | Mappt Anfrage ohne Kunde | `toAnfrageResponseDto()` | Unit |
+| 3.4.4 | Dedupliziert E-Mails aus Kunde und Anfrage | `toAnfrageResponseDto()` | Unit |
+| 3.4.5 | Behandelt null-Anrede korrekt | `toAnfrageResponseDto()` | Unit |
 
 #### 3.5 `KundeMapper`
 
-**Testdatei:** `KundeMapperTest.java`
+**Testdatei:** `KundeMapperTest.java` (heute 9 Tests)
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
@@ -310,7 +338,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 
 #### 3.6 `LieferantMapper`
 
-**Testdatei:** `LieferantMapperTest.java`
+**Testdatei:** `LieferantMapperTest.java` (heute 8 Tests)
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
@@ -324,7 +352,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 
 #### 3.7 `LeistungMapper`
 
-**Testdatei:** `LeistungMapperTest.java`
+**Testdatei:** `LeistungMapperTest.java` (heute 9 Tests)
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
@@ -339,7 +367,7 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 
 #### 3.8 `ArbeitsgangMapper`
 
-**Testdatei:** `ArbeitsgangMapperTest.java`
+**Testdatei:** `ArbeitsgangMapperTest.java` (heute 4 Tests)
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
@@ -348,51 +376,53 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 | 3.8.3 | Mappt ohne Abteilung | `toArbeitsgangResponseDto()` | Unit |
 | 3.8.4 | Mappt ohne Stundensatz | `toArbeitsgangResponseDto()` | Unit |
 
-#### 3.9 `MieteMapper` (~400 Zeilen)
+#### 3.9 `MieteMapper` (~380 Zeilen, heute 24 Tests)
 
 **Testdatei:** `MieteMapperTest.java`
 
+Der Mapper bietet überladene `toDto(...)`-Methoden je Typ (Mietobjekt, Mietpartei, Raum, Verbrauchsgegenstand, Zählerstand, Kostenstelle, Verteilungsschlüssel, Kostenposition).
+
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 3.9.1 | Mappt Mietobjekt mit allen Feldern | `toMietobjektDto()` | Unit |
-| 3.9.2 | Gibt null bei null-Mietobjekt | `toMietobjektDto()` | Unit |
-| 3.9.3 | Mappt Mietobjekt ohne Räume | `toMietobjektDto()` | Unit |
-| 3.9.4 | Mappt Mietpartei mit allen Feldern | `toMietparteiDto()` | Unit |
-| 3.9.5 | Gibt null bei null-Mietpartei | `toMietparteiDto()` | Unit |
-| 3.9.6 | Mappt Raum mit allen Feldern | `toRaumDto()` | Unit |
-| 3.9.7 | Gibt null bei null-Raum | `toRaumDto()` | Unit |
-| 3.9.8 | Mappt Verbrauchsgegenstand | `toVerbrauchsgegenstandDto()` | Unit |
-| 3.9.9 | Gibt null bei null-Verbrauchsgegenstand | `toVerbrauchsgegenstandDto()` | Unit |
-| 3.9.10 | Mappt Zählerstand mit allen Feldern | `toZaehlerstandDto()` | Unit |
-| 3.9.11 | Gibt null bei null-Zählerstand | `toZaehlerstandDto()` | Unit |
-| 3.9.12 | Mappt Zählerstand ohne Verbrauchsgegenstand | `toZaehlerstandDto()` | Unit |
-| 3.9.13 | Mappt Kostenstelle mit allen Feldern | `toKostenstelleDto()` | Unit |
-| 3.9.14 | Gibt null bei null-Kostenstelle | `toKostenstelleDto()` | Unit |
-| 3.9.15 | Mappt Kostenstelle ohne Positionen | `toKostenstelleDto()` | Unit |
-| 3.9.16 | Mappt Kostenstelle ohne Schlüssel | `toKostenstelleDto()` | Unit |
-| 3.9.17 | Mappt Verteilungsschlüssel mit Einträgen | `toVerteilungsschluesselDto()` | Unit |
-| 3.9.18 | Gibt null bei null-Schlüssel | `toVerteilungsschluesselDto()` | Unit |
-| 3.9.19 | Mappt Schlüssel ohne Einträge | `toVerteilungsschluesselDto()` | Unit |
-| 3.9.20 | Mappt Kostenposition mit berechnetem Betrag | `toKostenpositionDto()` | Unit |
-| 3.9.21 | Gibt null bei null-Position | `toKostenpositionDto()` | Unit |
-| 3.9.22 | Fängt Berechnungs-Exception ab (Fallback null) | `toKostenpositionDto()` | Unit |
-| 3.9.23 | Manueller Betrags-Override hat Vorrang | `toKostenpositionDto()` | Unit |
-| 3.9.24 | Default-Berechnungsmethode BETRAG | `toKostenpositionDto()` | Unit |
+| 3.9.1 | Mappt Mietobjekt mit allen Feldern | `toDto(Mietobjekt)` | Unit |
+| 3.9.2 | Gibt null bei null-Mietobjekt | `toDto(Mietobjekt)` | Unit |
+| 3.9.3 | Mappt Mietobjekt ohne Räume | `toDto(Mietobjekt)` | Unit |
+| 3.9.4 | Mappt Mietpartei mit allen Feldern | `toDto(Mietpartei)` | Unit |
+| 3.9.5 | Gibt null bei null-Mietpartei | `toDto(Mietpartei)` | Unit |
+| 3.9.6 | Mappt Raum mit allen Feldern | `toDto(Raum)` | Unit |
+| 3.9.7 | Gibt null bei null-Raum | `toDto(Raum)` | Unit |
+| 3.9.8 | Mappt Verbrauchsgegenstand | `toDto(Verbrauchsgegenstand)` | Unit |
+| 3.9.9 | Gibt null bei null-Verbrauchsgegenstand | `toDto(Verbrauchsgegenstand)` | Unit |
+| 3.9.10 | Mappt Zählerstand mit allen Feldern | `toDto(Zaehlerstand)` | Unit |
+| 3.9.11 | Gibt null bei null-Zählerstand | `toDto(Zaehlerstand)` | Unit |
+| 3.9.12 | Mappt Zählerstand ohne Verbrauchsgegenstand | `toDto(Zaehlerstand)` | Unit |
+| 3.9.13 | Mappt Kostenstelle mit allen Feldern | `toDto(Kostenstelle)` | Unit |
+| 3.9.14 | Gibt null bei null-Kostenstelle | `toDto(Kostenstelle)` | Unit |
+| 3.9.15 | Mappt Kostenstelle ohne Positionen | `toDto(Kostenstelle)` | Unit |
+| 3.9.16 | Mappt Kostenstelle ohne Schlüssel | `toDto(Kostenstelle)` | Unit |
+| 3.9.17 | Mappt Verteilungsschlüssel mit Einträgen | `toDto(Verteilungsschluessel)` | Unit |
+| 3.9.18 | Gibt null bei null-Schlüssel | `toDto(Verteilungsschluessel)` | Unit |
+| 3.9.19 | Mappt Schlüssel ohne Einträge | `toDto(Verteilungsschluessel)` | Unit |
+| 3.9.20 | Mappt Kostenposition mit berechnetem Betrag | `toDto(Kostenposition)` | Unit |
+| 3.9.21 | Gibt null bei null-Position | `toDto(Kostenposition)` | Unit |
+| 3.9.22 | Fängt Berechnungs-Exception ab (Fallback null) | `toDto(Kostenposition)` | Unit |
+| 3.9.23 | Manueller Betrags-Override hat Vorrang | `toDto(Kostenposition)` | Unit |
+| 3.9.24 | Default-Berechnungsmethode BETRAG | `toDto(Kostenposition)` | Unit |
 
 #### 3.10 `ProduktkategorieMapper`
 
-**Testdatei:** `ProduktkategorieMapperTest.java`
+**Testdatei:** `ProduktkategorieMapperTest.java` (heute 8 Tests)
 
 | # | Testfall | Methode | Typ |
 |---|---|---|---|
-| 3.10.1 | Mappt alle Felder inkl. isLeaf | `toDto()` | Unit |
-| 3.10.2 | Gibt null bei null-Entity | `toDto()` | Unit |
-| 3.10.3 | Erkennt Blatt-Kategorie korrekt | `toDto()` | Unit |
-| 3.10.4 | Baut hierarchischen Pfad (3 Ebenen) | `toDto()` | Unit |
-| 3.10.5 | Einzelner Pfad ohne Eltern | `toDto()` | Unit |
-| 3.10.6 | BildUrl mit Slash-Prefix | `toDto()` | Unit |
-| 3.10.7 | BildUrl ohne Slash-Prefix | `toDto()` | Unit |
-| 3.10.8 | Null/Blank BildUrl wird behandelt | `toDto()` | Unit |
+| 3.10.1 | Mappt alle Felder inkl. isLeaf | `toProduktkategorieResponseDto()` | Unit |
+| 3.10.2 | Gibt null bei null-Entity | `toProduktkategorieResponseDto()` | Unit |
+| 3.10.3 | Erkennt Blatt-Kategorie korrekt | `toProduktkategorieResponseDto()` | Unit |
+| 3.10.4 | Baut hierarchischen Pfad (3 Ebenen) | `toProduktkategorieResponseDto()` | Unit |
+| 3.10.5 | Einzelner Pfad ohne Eltern | `toProduktkategorieResponseDto()` | Unit |
+| 3.10.6 | BildUrl mit Slash-Prefix | `toProduktkategorieResponseDto()` | Unit |
+| 3.10.7 | BildUrl ohne Slash-Prefix | `toProduktkategorieResponseDto()` | Unit |
+| 3.10.8 | Null/Blank BildUrl wird behandelt | `toProduktkategorieResponseDto()` | Unit |
 
 ---
 
@@ -400,21 +430,22 @@ Abgeschlossen: 14 Testdateien, 100 Tests, alle bestanden.
 
 Für jeden Controller sind sowohl Happy-Path- als auch Sicherheitstests erforderlich.
 
-#### 4.1 Untestete Controller mit hoher Priorität
+#### 4.1 In Phase 4 abgedeckte Controller
 
-| Controller | Testdatei | Kernmethoden |
-|---|---|---|
-| **EmailController** | `EmailControllerTest.java` | GET /api/emails, POST /api/emails/send |
-| **ZeiterfassungController** | `ZeiterfassungControllerTest.java` | POST /api/zeitbuchungen, GET /api/zeitkonto |
-| **AusgangsGeschaeftsDokumentController** | `AusgangsGDControllerTest.java` | Erstellen, Buchen, Aktualisieren |
-| **MietabrechnungController** | `MietabrechnungControllerTest.java` | Abrechnung erstellen/exportieren |
-| **MietobjektController** | `MietobjektControllerTest.java` | CRUD Mietobjekte + Parteien |
-| **KostenVerteilungController** | `KostenVerteilungControllerTest.java` | CRUD + Vorjahres-Kopie |
-| **FormularTemplateController** | `FormularTemplateControllerTest.java` | Template-CRUD |
-| **LeistungController** | `LeistungControllerTest.java` | CRUD + Textbausteine |
-| **MitarbeiterController** | `MitarbeiterControllerTest.java` | CRUD Mitarbeiter |
-| **OffenePostenController** | `OffenePostenControllerTest.java` | Offene Posten Übersicht |
-| **LieferantDokumentController** | `LieferantDokumentControllerTest.java` | Dokument-Upload/-Download |
+| Controller | Testdatei | Kernmethoden | Tests heute |
+|---|---|---|---|
+| **EmailController** | `EmailControllerTest.java` | GET /api/email/from-addresses, POST /api/email/preview, POST /api/email/send | 13 |
+| **AusgangsGeschaeftsDokumentController** | `AusgangsGeschaeftsDokumentControllerTest.java` | Erstellen, Buchen, Aktualisieren | 45 |
+| **MietabrechnungController** | `controller/miete/MietabrechnungControllerTest.java` | Abrechnung erstellen/exportieren | 3 |
+| **MietobjektController** | `controller/miete/MietobjektControllerTest.java` | CRUD Mietobjekte + Parteien | 12 |
+| **KostenVerteilungController** | `controller/miete/KostenVerteilungControllerTest.java` | CRUD + Vorjahres-Kopie | 17 |
+| **FormularTemplateController** | `FormularTemplateControllerTest.java` (+ `…SecurityTest`) | Template-CRUD | 21 |
+| **LeistungController** | `LeistungControllerTest.java` | CRUD + Textbausteine | 12 |
+| **MitarbeiterController** | `MitarbeiterControllerTest.java` | CRUD Mitarbeiter | 23 |
+| **OffenePostenController** | `OffenePostenControllerTest.java` | Offene Posten Übersicht | 23 |
+| **LieferantDokumentController** | `LieferantDokumentControllerTest.java` | Dokument-Upload/-Download | 29 |
+
+Hinweis: Der ursprünglich geplante `ZeiterfassungControllerTest` (POST /api/zeitbuchungen, GET /api/zeitkonto) wurde nie angelegt – diese Endpoints gibt es nicht. `ZeiterfassungController` leitet nur die Seite `/zeiterfassung` an die Mobile-App weiter. Zeitbuchungen und Zeitkonten am PC laufen über `ZeitverwaltungController` (`/api/zeitverwaltung/*`), getestet in `ZeitverwaltungControllerTest` (seit Juni 2026, 8 Tests). Die Handy-API (`/api/zeiterfassung/*`, `ZeiterfassungApiController`) hat keinen eigenen Controller-Test; sie ist über `ZeiterfassungApiService*Test` sowie `MobileApiAuthenticationTest`/`MobileApiPolicyTest` abgedeckt.
 
 #### 4.2 Controller-Testschema (pro Controller)
 
@@ -440,85 +471,129 @@ Jeder Controller-Test muss folgende Fälle abdecken (`@WebMvcTest`):
 
 ### Phase 5 – Frontend-Tests ✅ (100 Tests – abgeschlossen)
 
-#### 5.1 react-pc-frontend (11 Testdateien, 77 Tests)
+#### 5.1 react-pc-frontend (Phase 5: 11 Testdateien, 77 Tests – heute 234 Testdateien)
 
-**Setup:** Vitest 4.0.18, @testing-library/react 16.3.2, jsdom 28.1.0, @vitest/coverage-v8 4.0.18
+**Setup:** Vitest 4.1, @testing-library/react 16.3, @testing-library/jest-dom, @testing-library/user-event, jsdom 28.1, @vitest/coverage-v8 4.1 (`vitest.config.ts`, Setup-Datei `src/setupTests.ts`)
 
-| Testdatei | Komponente | Tests | Schwerpunkte |
+| Testdatei | Komponente | Tests heute | Schwerpunkte |
 |---|---|---|---|
 | `button.test.tsx` | Button | 10 | Varianten (default/outline/ghost/secondary), Größen, onClick, disabled |
 | `input.test.tsx` | Input | 8 | CSS-Klassen, Attribute, Ref-Forwarding, disabled/readonly |
 | `card.test.tsx` | Card | 3 | Children-Rendering, CSS-Klassen, className-Merge |
 | `label.test.tsx` | Label | 4 | Text, CSS, className, htmlFor |
-| `select-custom.test.tsx` | SelectCustom | 9 | Platzhalter, Auswahl, Dropdown öffnen/schließen, onChange, disabled |
-| `datepicker.test.tsx` | DatePicker | 11 | Platzhalter, formatiertes Datum, Kalender, deutsche Monate, Löschen/Heute |
-| `image-viewer.test.tsx` | ImageViewer | 8 | Null-Handling, Bildanzeige, Schließen, Galerie-Navigation |
-| `dialog.test.tsx` | Dialog | 5 | Open/Closed-State, Inhalt, Schließen, onOpenChange, Footer |
-| `confirm-dialog.test.tsx` | ConfirmDialog | 6 | Dialog-Anzeige, Custom Labels, Bestätigung/Abbruch |
-| `toast.test.tsx` | Toast | 6 | Success/Error/Warning/Info, Provider, mehrere gleichzeitig |
+| `select-custom.test.tsx` | SelectCustom | 19 | Platzhalter, Auswahl, Dropdown öffnen/schließen, onChange, disabled |
+| `datepicker.test.tsx` | DatePicker | 18 | Platzhalter, formatiertes Datum, Kalender, deutsche Monate, Löschen/Heute |
+| `image-viewer.test.tsx` | ImageViewer | 14 | Null-Handling, Bildanzeige, Schließen, Galerie-Navigation |
+| `dialog.test.tsx` | Dialog | 15 | Open/Closed-State, Inhalt, Schließen, onOpenChange, Footer |
+| `confirm-dialog.test.tsx` | ConfirmDialog | 9 | Dialog-Anzeige, Custom Labels, Bestätigung/Abbruch |
+| `toast.test.tsx` | Toast | 10 | Success/Error/Warning/Info, Provider, mehrere gleichzeitig |
 | `utils.test.ts` | cn()-Utility | 7 | Klassen-Merge, Konflikte, bedingte Klassen, Tailwind-Merge |
 
-#### 5.2 react-zeiterfassung (3 Testdateien, 23 Tests)
+#### 5.2 react-zeiterfassung (Phase 5: 3 Testdateien, 23 Tests – heute 39 Testdateien)
 
 **Setup:** Identisch zu react-pc-frontend + navigator.onLine Mock
 
-| Testdatei | Komponente | Tests | Schwerpunkte |
+| Testdatei | Komponente | Tests heute | Schwerpunkte |
 |---|---|---|---|
-| `MobileDatePicker.test.tsx` | MobileDatePicker | 10 | Platzhalter, Formatierung, Label, Kalender, deutsche Monate, Heute/Schließen |
+| `MobileDatePicker.test.tsx` | MobileDatePicker | 14 | Platzhalter, Formatierung, Label, Kalender, deutsche Monate, Heute/Schließen |
 | `NetworkStatusBadge.test.tsx` | NetworkStatusBadge | 9 | Online/Offline/Syncing/Error-States, onSync, Compact-Modus |
-| `image-viewer.test.tsx` | ImageViewer | 4 | Null-Rendering, Bildanzeige, Galerie-Zähler, Zoom-Controls |
+| `image-viewer.test.tsx` | ImageViewer | 15 | Null-Rendering, Bildanzeige, Galerie-Zähler, Zoom-Controls |
+
+#### 5.3 E2E-Tests mit Playwright (seit Phase 5 hinzugekommen)
+
+| App | Ort | Umfang | Ausführung |
+|---|---|---|---|
+| react-pc-frontend | `react-pc-frontend/e2e/` | 74 Specs, ~337 Tests | `npm run test:e2e`; drei Bildschirmgrößen (1440×900, 1536×960, 1920×1080); gegen `vite build` + `vite preview`, `/api`-Aufrufe sind gestubbt (kein Backend nötig) |
+| react-zeiterfassung | `react-zeiterfassung/e2e/` | 12 Specs, ~50 Tests | `npm run test:e2e`; Projekt „handy“ (iPhone 15, Chromium) gegen den Vite-Dev-Server |
 
 ---
 
 ## 4. Sicherheitstests (OWASP Top 10)
 
-Gemäß DEVELOPMENT.md müssen alle neuen Endpoints mit Sicherheitstests abgedeckt werden. Diese Tests werden in Phase 4 (Controller) integriert.
+Gemäß `docs/agent instructions/docs/TESTING_SECURITY.md` müssen alle neuen Endpoints mit Sicherheitstests abgedeckt werden (SQL-Injection, XSS, ungültige IDs, leere/überlange Eingaben, Path-Traversal und gefährliche Dateitypen bei Datei-Endpoints).
 
 ### Pflicht-Sicherheitstests pro Endpoint
 
 | OWASP | Testfall | Wo integrieren |
 |---|---|---|
-| **A01 – Broken Access Control** | Path-Traversal bei Datei-Endpoints | DateiController, LieferantDokumentController |
+| **A01 – Broken Access Control** | Path-Traversal bei Datei-Endpoints; Rechte-/Rollenprüfung | DateiController, LieferantDokumentController, `*SecurityTest` |
 | **A03 – Injection (SQL)** | `'; DROP TABLE x; --` in allen Suchparametern | Alle Controller mit Suchfunktion |
 | **A03 – Injection (XSS)** | `<script>alert(1)</script>` in Textfeldern | Alle Controller mit Textfeldern |
 | **A04 – Insecure Design** | Mass-Assignment: unbekannte Felder ignoriert | Alle POST/PUT-Endpoints |
 | **A08 – Data Integrity** | Ungültige Pflichtfelder → 400 | Alle POST/PUT-Endpoints |
 
-### Dedizierte Sicherheits-Testklassen
+### Vorhandene Sicherheits-Testklassen
 
-| Testklasse | Inhalt |
+Die früher geplanten Sammelklassen `DateiUploadSecurityTest`, `InputValidationSecurityTest` und `EmailSanitizationSecurityTest` gibt es nicht. Stattdessen prüfen gezielte Klassen je Bereich:
+
+| Bereich | Testklassen (Auswahl) |
 |---|---|
-| `DateiUploadSecurityTest.java` | Gefährliche Dateitypen, Größenlimits, Path-Traversal |
-| `InputValidationSecurityTest.java` | Überlange Eingaben, SQL-Injection, XSS über alle Endpoints |
-| `EmailSanitizationSecurityTest.java` | HTML-Injection in E-Mail-Inhalten, Anhang-Manipulation |
+| Rechte pro Endpoint (`*SecurityTest`, 23 Klassen) | z. B. `DatevExportSecurityTest`, `DatevKonfigurationSecurityTest`, `MonatsabschlussSecurityTest`, `ZeiterfassungEinstellungenSecurityTest`, `FormularTemplateControllerSecurityTest`, `LieferantDokumentRechteSecurityTest`, `TelefonControllerSecurityTest`, `InternalApiSecurityTest` |
+| Mobile-App / Token | `MobileApiAuthenticationTest`, `MobileApiPolicyTest`, `TokenAttemptLimiterTest`, `MobileBelegSecurityTest`, `MobileDateiObjectSecurityTest`, `MobileUrlaubsantragSecurityTest`, `PublicMobileIngressTest` |
+| CSRF, CORS, Cookies, Netzgrenze | `OeffentlichePfadeCsrfTest`, `LoginCsrfUndDnsRebindingTest`, `CorsSicherheitTest`, `ApiCorsConfigurationSourceTest`, `SessionCookieSameSiteTest`, `NetzgrenzeVorAnmeldungTest`, `ZeiterfassungNetworkBoundaryTest` |
+| HTML-/E-Mail-Bereinigung | `EmailHtmlSanitizerTest` (+ `…LueckenTest`) |
 
 ---
 
 ## 5. Repository-Tests (Ergänzungen)
 
-Repositories mit Custom Queries oder komplexen Finder-Methoden benötigen `@DataJpaTest`-Tests.
+Repositories mit Custom Queries oder komplexen Finder-Methoden benötigen `@DataJpaTest`-Tests (H2). Heute gibt es 41 Testdateien unter `repository/`.
 
-| Repository | Testfälle | Priorität |
-|---|---|---|
-| **EmailRepository** | findByProcessingStatus, Volltextsuche, Zeitraum-Filter | 🔴 Hoch |
-| **ZeitbuchungRepository** | findOffeneBuchungen, Monats-Aggregation | 🔴 Hoch |
-| **KundeRepository** | Suche nach Name, Kundennummer, Freitextsuche | 🟠 Mittel |
-| **LieferantenRepository** | findByDomain, Freitextsuche | 🟠 Mittel |
-| **MitarbeiterRepository** | findByAbteilung, aktive Mitarbeiter | 🟡 Mittel |
-| **ZeitkontoKorrekturRepository** | findAktiveByMitarbeiter, Jahres-Summe | 🟡 Mittel |
+| Repository | Testfälle | Priorität | Stand |
+|---|---|---|---|
+| **EmailRepository** | findByProcessingStatus, Volltextsuche, Zeitraum-Filter | 🔴 Hoch | offen |
+| **ZeitbuchungRepository** | findOffeneBuchungen, Monats-Aggregation | 🔴 Hoch | offen (nur `ZeitbuchungAutoStopRepositoryTest` mit 1 Test) |
+| **KundeRepository** | Suche nach Name, Kundennummer, Freitextsuche | 🟠 Mittel | teilweise (`KundeRepositoryMaxKundennummerTest`, `KundenSucheTest`) |
+| **LieferantenRepository** | findByDomain, Freitextsuche | 🟠 Mittel | teilweise (`LieferantenRepositoryNameTest`) |
+| **MitarbeiterRepository** | findByAbteilung, aktive Mitarbeiter | 🟡 Mittel | teilweise (`MitarbeiterMenschenRepositoryTest`) |
+| **ZeitkontoKorrekturRepository** | findAktiveByMitarbeiter, Jahres-Summe | 🟡 Mittel | offen |
 
 ---
 
 ## 6. Integrationstests
 
-Neben Unit-Tests sind für kritische Workflows Ende-zu-Ende-Integrationstests notwendig.
+Neben Unit-Tests sind für kritische Workflows Integrationstests notwendig. Sie heißen `*IntegrationTest.java` (laufen mit `./mvnw test`). Klassen mit Endung `*IT.java` werden **nicht** ausgeführt, weil kein Failsafe-Plugin konfiguriert ist.
+
+### Geplante Workflow-Tests (noch nicht umgesetzt)
 
 | IT-Klasse | Workflow | Priorität |
 |---|---|---|
-| `RechnungsWorkflowIT.java` | Angebot → Rechnung → Zahlung → Abschluss | 🔴 Hoch |
+| `RechnungsWorkflowIT.java` | Anfrage → Rechnung → Zahlung → Abschluss | 🔴 Hoch |
 | `EmailImportWorkflowIT.java` | Import → Spam-Check → Auto-Assign → Anhang-Verarbeitung | 🟠 Mittel |
 | `ZeiterfassungWorkflowIT.java` | Buchung → Auto-Stop → Korrektur → Monatssaldo | 🟠 Mittel |
 | `MietabrechnungWorkflowIT.java` | Kostenverteilung → Abrechnung → Export | 🟡 Mittel |
+
+Bei der Umsetzung als `*IntegrationTest.java` benennen, sonst laufen sie nicht.
+
+### Vorhandene Integrationstests
+
+`BelegscannerZuordnungIntegrationTest`, `DateiControllerBildIntegrationTest`, `EmailThreadBackfillIntegrationTest`, `FreigabeCodeIntegrationTest`, `FritzBoxTelefonAnlageIntegrationTest`, `PostfachMailserverIntegrationTest` (GreenMail), `RechnungLieferscheinZuordnungIntegrationTest`, `TelefonDatenIntegrationTest`, `ZeitkontoPausenIntegrationTest`, `ZeitkontoWechselIntegrationTest` (`ProjektManagementServiceIntegrationTest.java` ist leer).
+
+### Tests gegen echtes PostgreSQL 16
+
+Standardmäßig laufen alle Tests auf H2 (`src/test/resources/application.properties`, Flyway aus). Gegen ein echtes PostgreSQL laufen nur diese Klassen – und nur, wenn die passende System-Property gesetzt ist (sonst werden sie übersprungen):
+
+| Klassen | Property | Inhalt |
+|---|---|---|
+| `DatenbankKompatibilitaet*Test` (6 Klassen) | `-Dkompat.db.url` (+ `.user`, `.pass`) | Basis-Schema + Flyway-Migrationen, `ddl-auto=validate`, Abfragen und Suche |
+| `MonatsabschlussPostgresTest`, `MonatsabschlussSammelPostgresTest` | `-Dzeitkonto.pg.url` | Monatsabschluss unter konkurrierenden Zugriffen |
+| `DatevExportPostgresTest` | `-Ddatev.pg.url` | DATEV-Export bei konkurrierenden Änderungen |
+
+Beispiel: `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat -Dkompat.db.user=kompat -Dkompat.db.pass=kompat` (Wegwerf-Container `postgres:16`).
+
+### CI (`.github/workflows/pr-ci.yml`, „PR Quality Checks“)
+
+Läuft bei jedem Pull Request auf `main`. Das Merge-Gate „PR Quality Gate“ verlangt, dass alle Jobs grün sind:
+
+| Job | Befehl |
+|---|---|
+| Backend Tests | `./mvnw test` (JDK 23) |
+| Datenbank-Kompatibilitaet (PostgreSQL) | Service `postgres:16`; `DatenbankKompatibilitaet*Test`, danach `MonatsabschlussPostgresTest`, `MonatsabschlussSammelPostgresTest`, `DatevExportPostgresTest`; Prüfschritt: Tests > 0 und nichts übersprungen |
+| PC Frontend Lint / Unit Tests / Build | `npm run lint`, `npm test`, `npm run build` (Node 24) |
+| PC Frontend E2E (3 Shards) | `npm run typecheck:e2e`, `npm run test:e2e -- --shard=N/3` |
+| Zeiterfassung Lint / Unit Tests / Build / E2E | `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` |
+
+`docker-image.yml` baut nach dem Merge das Image und prüft mit `deployment/docker-server/starttest.sh` ein Upgrade von `:stable` (PostgreSQL + Flyway, `/actuator/health`); eigene Tests führt es nicht aus.
 
 ---
 
@@ -531,9 +606,9 @@ Neben Unit-Tests sind für kritische Workflows Ende-zu-Ende-Integrationstests no
 | 3 | **Phase 3** – Stammdaten & Mapper ✅ | 10 Dateien | 102 Tests |
 | 4 | **Phase 4** – Controller + Sicherheit ✅ | 11 Dateien | 162 Tests |
 | 5 | **Phase 5** – Frontend ✅ | 14 Dateien | 100 Tests |
-| 6 | **Ergänzend** – Repositories | ~7 Dateien | ~25 Tests |
-| 7 | **Ergänzend** – Integrationstests | ~4 Dateien | ~15 Tests |
-| | **Gesamt** | **~65 Testdateien** | **~360 Tests** |
+| 6 | **Ergänzend** – Repositories (Abschnitt 5) – teilweise | ~7 Dateien | ~25 Tests |
+| 7 | **Ergänzend** – Workflow-Integrationstests (Abschnitt 6) – offen | ~4 Dateien | ~15 Tests |
+| | **Gesamt Plan** | **~58 Testdateien** | **~557 Tests** |
 
 ---
 
@@ -545,19 +620,24 @@ Damit neue Tests effizient geschrieben werden können:
 2. **Keine statischen Abhängigkeiten** – Services immer über DI beziehen
 3. **Kleine Methoden** – komplexe Logik in private Hilfsmethoden aufteilen
 4. **DTOs an Systemgrenzen** – Entities nie direkt exponieren
-5. **External Services mocken** – IMAP, Gemini-KI, REST-APIs immer via Interface/Mock testen
+5. **External Services mocken** – IMAP, KI-Dienste, REST-APIs immer via Interface/Mock testen (Mailserver: GreenMail)
+6. **Nur Dummy-Daten** (z. B. Max Mustermann) – Zeit- und Mitarbeiterdaten sind personenbezogen (DSGVO)
 
 ---
 
 ## 9. Coverage-Ziele
 
-| Schicht | Aktuell (geschätzt) | Ziel Phase 1–2 | Ziel Phase 3–4 | Endziel |
-|---|---|---|---|---|
-| **Service** | ~55 % | ✅ ≥60 % | ≥ 75 % | ≥ 80 % |
-| **Controller** | ~62 % | ~62 % | ✅ ≥60 % | ≥ 70 % |
-| **Repository** | ~8 % | ~8 % | ≥ 30 % | ≥ 40 % |
-| **Mapper** | ~11 % | ✅ ≥80 % | ≥ 80 % | ≥ 90 % |
-| **Frontend** | ~20 % | ~20 % | ≥ 20 % | ≥ 40 % |
+Die Abdeckung wird gemessen, aber nicht erzwungen: `./mvnw test` schreibt mit JaCoCo einen Bericht nach `target/site/jacoco`, `npm run test:coverage` erzeugt den Vitest-Bericht. Es gibt **keine Schwellwerte** (kein JaCoCo-`check`, keine Vitest-Thresholds) und keinen Coverage-Job in der CI. Aktuelle Prozentwerte sind deshalb nicht hinterlegt; die früheren Schätzungen (März 2026) sind veraltet.
+
+| Schicht | Ziel Phase 1–2 | Ziel Phase 3–4 | Endziel |
+|---|---|---|---|
+| **Service** | ≥60 % | ≥ 75 % | ≥ 80 % |
+| **Controller** | – | ≥60 % | ≥ 70 % |
+| **Repository** | – | ≥ 30 % | ≥ 40 % |
+| **Mapper** | ≥80 % | ≥ 80 % | ≥ 90 % |
+| **Frontend** | – | ≥ 20 % | ≥ 40 % |
+
+`TESTING_SECURITY.md` verlangt für die Service-Schicht ≥ 80 % Branch-Coverage je neuer Klasse und für Utilities 100 %; eine projektweite Schwelle gibt es bewusst nicht.
 
 ---
 
@@ -566,17 +646,24 @@ Damit neue Tests effizient geschrieben werden können:
 | Tool | Zweck | Schicht |
 |---|---|---|
 | **JUnit 5** | Test-Framework | Backend |
-| **Mockito** | Mocking (`@Mock`, `@InjectMocks`) | Backend – Unit |
+| **Mockito** | Mocking (`@Mock`, `@InjectMocks`, `@MockBean`) | Backend – Unit |
 | **MockMvc** | REST-Controller-Tests (`@WebMvcTest`) | Backend – Controller |
+| **Spring Security Test** | Tests mit Benutzern/Rollen, CSRF | Backend – Sicherheit |
 | **AssertJ** | Fluent Assertions | Backend |
-| **H2** | In-Memory-DB (`@DataJpaTest`) | Backend – Repository |
+| **H2** | In-Memory-DB (`@DataJpaTest`, Standard für alle Tests) | Backend – Repository |
+| **PostgreSQL 16** | Kompatibilitäts- und Nebenläufigkeitstests (nur mit System-Property) | Backend – Repository/Integration |
+| **GreenMail** | Test-Mailserver (SMTP/IMAP) | Backend – E-Mail |
 | **Awaitility** | Asynchrone Tests | Backend – Scheduled Tasks |
+| **JaCoCo** | Coverage-Bericht (ohne Schwellwert) | Backend |
 | **Vitest** | Test-Runner | Frontend |
-| **@testing-library/react** | Komponenten-Tests | Frontend |
+| **@testing-library/react** (+ jest-dom, user-event) | Komponenten-Tests | Frontend |
 | **vi.fn()** | Mock-Funktionen | Frontend |
+| **Playwright** | E2E-Tests im Browser | Frontend |
+
+Befehle: Backend `./mvnw test`; Frontend (jeweils in `react-pc-frontend/` und `react-zeiterfassung/`) `npm test`, `npm run test:coverage`, `npm run test:e2e`, `npm run lint`.
 
 ---
 
 *Erstellt am: 10.03.2026*
-*Zuletzt aktualisiert: 10.03.2026 – Phase 1–5 abgeschlossen (517 neue Tests, davon 162 Controller + 100 Frontend)*
-*Basiert auf Codebase-Analyse mit ~509 Java-Quelldateien und ~70 Frontend-Komponenten.*
+*Zuletzt aktualisiert: 12.10.2026 – Ist-Zustand, Testklassen, PostgreSQL-Tests, E2E und CI an den Code angeglichen*
+*Basiert auf Codebase-Analyse mit 997 Java-Quelldateien (Backend) und ~450 Frontend-Quelldateien.*
