@@ -4,8 +4,8 @@
  *
  * Hintergrund: Wird eine Abschlagsrechnung storniert, betrifft das die
  * Schlussrechnung. Eine gebuchte Schlussrechnung storniert der Server mit,
- * ein Entwurf bleibt stehen: Er zeigt den Abschlag schon nicht mehr an, sein
- * gespeicherter Betrag ist aber veraltet, bis jemand ihn öffnet und speichert.
+ * ein Entwurf bleibt stehen und rechnet ab jetzt ohne den stornierten Abschlag –
+ * der Nutzer soll die Beträge vor dem Buchen prüfen.
  * Beides soll der Nutzer sofort sehen, nicht nur im Server-Log.
  */
 export type StornoHinweisArt = 'MITSTORNIERT' | 'ENTWURF_PRUEFEN';

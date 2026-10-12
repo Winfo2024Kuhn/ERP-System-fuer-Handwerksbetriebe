@@ -25,7 +25,7 @@ const ABSCHLAG = {
 };
 
 const HINWEIS_MIT = 'Die Schlussrechnung SR-2026-0702 wurde mitstorniert (Stornorechnung ST-2026-0002), weil sie die Abschlagsrechnung AR-2026-0701 abgezogen hat.';
-const HINWEIS_ENTWURF = 'Die Schlussrechnung SR-2026-0703 ist noch ein Entwurf. Die Abschlagsrechnung AR-2026-0701 wird dort nicht mehr abgezogen. Bitte öffnen Sie die Schlussrechnung, prüfen Sie die Beträge und speichern Sie sie, bevor Sie sie buchen.';
+const HINWEIS_ENTWURF = 'Die Schlussrechnung SR-2026-0703 ist noch ein Entwurf. Die Abschlagsrechnung AR-2026-0701 wird dort nicht mehr abgezogen. Bitte öffnen Sie die Schlussrechnung und prüfen Sie die Beträge, bevor Sie sie buchen.';
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

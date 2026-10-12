@@ -31,7 +31,9 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDateiablage;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
+import org.example.kalkulationsprogramm.testsupport.LieferantDateiablageImTestordner;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.RechnungsuebersichtService;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,8 +52,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.util.AopTestUtils;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -67,7 +67,6 @@ class RechnungsuebersichtUploadTest {
             "Diese Datei kann hier nicht hochgeladen werden. Erlaubt sind PDF, XML (E-Rechnung), JPG und PNG.";
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private RechnungsuebersichtController controller;
 
     @MockBean private RechnungsuebersichtService rechnungsuebersichtService;
     @MockBean private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
@@ -77,15 +76,15 @@ class RechnungsuebersichtUploadTest {
     @MockBean private LieferantDokumentRepository lieferantDokumentRepository;
     @MockBean private LieferantDokumentZugriffService zugriffService;
     @MockBean private LieferantDokumentDateiService dokumentDateiService;
+    @MockBean private LieferantDateiablage dateiablage;
 
     @TempDir private Path arbeitsordner;
     private Path uploads;
 
     @BeforeEach
-    void uploadOrdnerInDenTestordnerLegen() {
+    void uploadOrdnerInDenTestordnerLegen() throws IOException {
         uploads = arbeitsordner.resolve("uploads");
-        Object ziel = AopTestUtils.getUltimateTargetObject(controller);
-        ReflectionTestUtils.setField(ziel, "uploadPath", uploads.toString());
+        LieferantDateiablageImTestordner.leiteUm(dateiablage, uploads);
     }
 
     private static MockMultipartFile datei(String name) {

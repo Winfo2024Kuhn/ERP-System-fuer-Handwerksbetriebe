@@ -2,16 +2,13 @@ package org.example.kalkulationsprogramm.service;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Abteilung;
@@ -30,11 +27,9 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import lombok.RequiredArgsConstructor;
@@ -58,9 +53,7 @@ public class LieferantDokumentService {
         private final BelegZuordnungService belegZuordnungService;
         private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
         private final LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
-
-        @Value("${upload.path:uploads}")
-        private String uploadPath;
+        private final LieferantDateiablage dateiablage;
 
         /**
          * Ermittelt die sichtbaren und scanbaren Dokumenttypen für einen Mitarbeiter
@@ -232,16 +225,12 @@ public class LieferantDokumentService {
                 Mitarbeiter uploadedBy = mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
 
                 // Datei speichern
-                String originalFilename = Path.of(StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()))).getFileName().toString();
-                String storedFilename = UUID.randomUUID() + "_" + originalFilename;
-
-                Path lieferantDir = Path.of(uploadPath, "lieferanten", lieferantId.toString()).toAbsolutePath().normalize();
-                Files.createDirectories(lieferantDir);
-                Path targetPath = lieferantDir.resolve(storedFilename).normalize();
-                if (!targetPath.startsWith(lieferantDir)) {
-                    throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
-                }
-                Files.copy(datei.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+                var gespeichert = dateiablage.speichereDokument(lieferantId, datei);
+                String originalFilename = gespeichert.originalDateiname();
+                String storedFilename = gespeichert.gespeicherterDateiname();
+                Path targetPath = gespeichert.pfad();
+                // Rollt die Transaktion zurück, darf keine verwaiste Datei bleiben.
+                loescheDateiBeiRollback(lieferantId, storedFilename);
 
                 // Entity erstellen
                 LieferantDokument dokument = new LieferantDokument();
@@ -351,31 +340,21 @@ public class LieferantDokumentService {
                 if (lieferant == null || lieferant.getId() == null) {
                         throw new BelegAbgelehntException("Die Bestellung hat keinen Lieferanten.");
                 }
-                String originalFilename = pruefeRechnungsdatei(datei);
-
-                Path lieferantDir = Path.of(uploadPath, "lieferanten", lieferant.getId().toString())
-                                .toAbsolutePath().normalize();
-                Files.createDirectories(lieferantDir);
-                String storedFilename = UUID.randomUUID() + "_" + originalFilename;
-                Path targetPath = lieferantDir.resolve(storedFilename).normalize();
-                if (!targetPath.startsWith(lieferantDir)) {
-                        throw new SecurityException("Ungültiger Dateipfad: Verzeichnistraversal erkannt");
-                }
-                try (var eingabe = datei.getInputStream()) {
-                        Files.copy(eingabe, targetPath, StandardCopyOption.REPLACE_EXISTING);
-                }
+                var gespeichert = dateiablage.speichereDokument(lieferant.getId(), datei,
+                                pruefeRechnungsdatei(datei));
                 try {
-                        LieferantDokument rechnung = legeRechnungAn(bestellung, lieferant, originalFilename,
-                                        storedFilename, hochgeladenVon);
+                        LieferantDokument rechnung = legeRechnungAn(bestellung, lieferant,
+                                        gespeichert.originalDateiname(), gespeichert.gespeicherterDateiname(),
+                                        hochgeladenVon);
                         // Rollt die Transaktion später noch zurück, darf keine verwaiste Datei bleiben.
-                        loescheDateiBeiRollback(targetPath);
+                        loescheDateiBeiRollback(lieferant.getId(), gespeichert.gespeicherterDateiname());
                         belegZuordnungService.analysiereUndOrdneEinNachCommit(rechnung.getId());
                         // Nur IDs (DSGVO)
                         log.info("[Bestellübersicht] Rechnung {} zu Bestelldokument {} hochgeladen",
                                         rechnung.getId(), bestellDokumentId);
                         return rechnung;
                 } catch (RuntimeException e) {
-                        loescheDateiStill(targetPath);
+                        dateiablage.loescheDokument(lieferant.getId(), gespeichert.gespeicherterDateiname());
                         throw e;
                 }
         }
@@ -395,7 +374,7 @@ public class LieferantDokumentService {
                 return dokumentRepository.saveAndFlush(rechnung);
         }
 
-        private static void loescheDateiBeiRollback(Path datei) {
+        private void loescheDateiBeiRollback(Long lieferantId, String gespeicherterDateiname) {
                 if (!org.springframework.transaction.support.TransactionSynchronizationManager
                                 .isSynchronizationActive()) {
                         return;
@@ -405,19 +384,10 @@ public class LieferantDokumentService {
                                         @Override
                                         public void afterCompletion(int status) {
                                                 if (status == STATUS_ROLLED_BACK) {
-                                                        loescheDateiStill(datei);
+                                                        dateiablage.loescheDokument(lieferantId, gespeicherterDateiname);
                                                 }
                                         }
                                 });
-        }
-
-        private static void loescheDateiStill(Path datei) {
-                try {
-                        Files.deleteIfExists(datei);
-                } catch (IOException e) {
-                        log.warn("[Bestellübersicht] Hochgeladene Datei konnte nicht entfernt werden: {}",
-                                        e.getClass().getSimpleName());
-                }
         }
 
         /**
@@ -435,15 +405,9 @@ public class LieferantDokumentService {
                 if (roh == null || roh.isBlank() || roh.length() > 255) {
                         throw new BelegAbgelehntException("Ungültiger Dateiname.");
                 }
-                String name;
-                try {
-                        Path nurName = Path.of(roh.replace('\\', '/')).getFileName();
-                        if (nurName == null) {
-                                // "/" oder "\\" – kein Dateiname übrig
-                                throw new BelegAbgelehntException("Ungültiger Dateiname.");
-                        }
-                        name = nurName.toString().replaceAll("[\\\\/:*?\"<>|]", "_");
-                } catch (java.nio.file.InvalidPathException e) {
+                // "/" oder "\\" allein lassen keinen Dateinamen übrig
+                String name = LieferantDateiablage.bereinigterDateiname(roh, null);
+                if (name == null) {
                         throw new BelegAbgelehntException("Ungültiger Dateiname.");
                 }
                 String klein = name.toLowerCase(java.util.Locale.ROOT);
@@ -682,16 +646,8 @@ public class LieferantDokumentService {
                 if (dokument.getAttachment() == null && dokument.getBeleg() == null
                                 && dokument.getGespeicherterDateiname() != null
                                 && dokument.getLieferant() != null) {
-                        Path lieferantDir = Path.of(uploadPath, "lieferanten", dokument.getLieferant().getId().toString())
-                                        .toAbsolutePath().normalize();
-                        Path filePath = lieferantDir.resolve(dokument.getGespeicherterDateiname()).normalize();
-                        if (filePath.startsWith(lieferantDir)) {
-                                try {
-                                        Files.deleteIfExists(filePath);
-                                } catch (IOException e) {
-                                        log.warn("Physische Datei konnte nicht gelöscht werden: {}", filePath, e);
-                                }
-                        }
+                        dateiablage.loescheDokument(dokument.getLieferant().getId(),
+                                        dokument.getGespeicherterDateiname());
                 }
 
                 // Kettenverknüpfungen lösen

@@ -27,6 +27,7 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentCounter;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Leistung;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
@@ -548,6 +549,11 @@ public class AusgangsGeschaeftsDokumentService {
             return dokument;
         }
 
+        var bearbeiter = bearbeiterId != null
+                ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
+                : null;
+        uebernehmeAktuellenSchlussrechnungsbetrag(dokument, bearbeiter, ipAdresse);
+
         dokument.setGebucht(true);
         dokument.setGebuchtAm(LocalDate.now());
 
@@ -555,12 +561,56 @@ public class AusgangsGeschaeftsDokumentService {
         erstelleOffenenPostenEintrag(saved);
 
         if (AUDIT_RELEVANTE_TYPEN.contains(saved.getTyp())) {
-            var bearbeiter = bearbeiterId != null
-                    ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
-                    : null;
             auditService.protokolliereBuchung(saved, bearbeiter, ipAdresse);
         }
         return saved;
+    }
+
+    /**
+     * Vor dem Festschreiben einer Schlussrechnung: Editor, PDF und Listen zeigen ihren Betrag
+     * frisch abgeleitet an ({@link #abgeleiteterSchlussrechnungsNetto}), gespeichert kann aber
+     * noch ein älterer stehen – etwa wenn nach dem letzten Speichern eine Abschlagsrechnung
+     * storniert wurde. Gebucht wird der Betrag, den Editor und PDF in diesem Moment zeigen; die
+     * Anpassung steht mit altem und neuem Betrag im Prüfprotokoll. Scheitert die Berechnung
+     * (z. B. weil das Basisdokument fehlt), wird nicht gebucht – sonst stünde still der alte
+     * Betrag fest. Sind nur die Positionen unlesbar, zeigen Anzeige und Buchung beide den
+     * gespeicherten Betrag.
+     */
+    private void uebernehmeAktuellenSchlussrechnungsbetrag(AusgangsGeschaeftsDokument dokument,
+                                                           FrontendUserProfile bearbeiter, String ipAdresse) {
+        BigDecimal abgeleitet;
+        try {
+            abgeleitet = berechneSchlussrechnungsNetto(dokument);
+        } catch (RuntimeException e) {
+            log.warn("Schlussrechnung {}: Betrag vor dem Buchen nicht berechenbar",
+                    dokument.getDokumentNummer(), e);
+            throw new RuntimeException("Der Betrag der Schlussrechnung " + dokument.getDokumentNummer()
+                    + " konnte vor dem Buchen nicht geprüft werden. Sie wurde nicht gebucht."
+                    + " Bitte wenden Sie sich an Ihren Administrator.", e);
+        }
+        if (abgeleitet == null) {
+            return;
+        }
+        BigDecimal neuNetto = abgeleitet.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal altNetto = dokument.getBetragNetto();
+        if (altNetto != null && altNetto.compareTo(neuNetto) == 0) {
+            return;
+        }
+
+        dokument.setBetragNetto(neuNetto);
+        dokument.setBetragBrutto(bruttoAusNetto(neuNetto, dokument.getMwstSatz()));
+        dokumentRepository.save(dokument);
+        String alterBetrag = altNetto != null ? altNetto.toPlainString() : "(kein Betrag gespeichert)";
+        log.info("Schlussrechnung {}: Betrag vor dem Buchen angepasst, netto {} -> {}",
+                dokument.getDokumentNummer(), alterBetrag, neuNetto);
+        auditService.protokolliereAenderung(dokument, bearbeiter,
+                "Betrag vor dem Buchen an die übrigen Rechnungen angepasst: Nettobetrag "
+                        + alterBetrag + " -> " + neuNetto
+                        + " (z. B. weil eine Abschlags- oder Teilrechnung inzwischen storniert ist)",
+                ipAdresse);
+        if (dokument.getProjekt() != null) {
+            aktualisiereProjektPreisAusDokumenten(dokument.getProjekt().getId());
+        }
     }
 
     /**
@@ -586,11 +636,17 @@ public class AusgangsGeschaeftsDokumentService {
             throw new RuntimeException("Storniertes Dokument kann nicht versendet werden.");
         }
 
-        dokument.setVersandDatum(LocalDate.now());
-
         // Anfragen und ABs werden nicht gebucht – nur Versanddatum setzen
         boolean istNichtBuchbar = NICHT_BUCHBARE_TYPEN.contains(dokument.getTyp());
         boolean warBereitsGebucht = dokument.isGebucht();
+        var bearbeiter = bearbeiterId != null
+                ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
+                : null;
+        if (!warBereitsGebucht && !istNichtBuchbar) {
+            uebernehmeAktuellenSchlussrechnungsbetrag(dokument, bearbeiter, ipAdresse);
+        }
+
+        dokument.setVersandDatum(LocalDate.now());
         if (!warBereitsGebucht && !istNichtBuchbar) {
             dokument.setGebucht(true);
             dokument.setGebuchtAm(LocalDate.now());
@@ -608,9 +664,6 @@ public class AusgangsGeschaeftsDokumentService {
         aktualisiereOffenenPostenFaelligkeitsdatum(saved);
 
         if (AUDIT_RELEVANTE_TYPEN.contains(saved.getTyp())) {
-            var bearbeiter = bearbeiterId != null
-                    ? frontendUserProfileRepository.findById(bearbeiterId).orElse(null)
-                    : null;
             // Buchung und Versand sind hier ein gemeinsamer Akt: Wenn das Dokument
             // gerade frisch gebucht wurde, wird das als BUCHUNG protokolliert; der
             // Versand kommt als zweiter Eintrag dazu, damit Prüfer beide Aktionen
@@ -785,8 +838,8 @@ public class AusgangsGeschaeftsDokumentService {
                     hinweise.add(new StornoHinweisDto(StornoHinweisDto.Art.ENTWURF_PRUEFEN,
                             "Die Schlussrechnung " + geschwisterDok.getDokumentNummer()
                                     + " ist noch ein Entwurf. Die Abschlagsrechnung " + original.getDokumentNummer()
-                                    + " wird dort nicht mehr abgezogen. Bitte öffnen Sie die Schlussrechnung,"
-                                    + " prüfen Sie die Beträge und speichern Sie sie, bevor Sie sie buchen."));
+                                    + " wird dort nicht mehr abgezogen. Bitte öffnen Sie die Schlussrechnung"
+                                    + " und prüfen Sie die Beträge, bevor Sie sie buchen."));
                     continue;
                 }
                 log.info("Kaskadierende Stornierung: Schlussrechnung {} wird mitstorniert (Abschlagsrechnung {} storniert)",
@@ -1676,6 +1729,76 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
+     * Nettobetrag einer Schlussrechnung, so wie Editor, PDF und Listen ihn zeigen – oder
+     * {@code null}, wenn der gespeicherte Betrag gilt.
+     *
+     * <p>Der gespeicherte Betrag ist im Editor als "Summe der eigenen Positionen minus bereits
+     * gestellte Rechnungen" entstanden. Bis 2026-09 wurde er durch "Basisbetrag minus andere
+     * Rechnungen" ersetzt; das rechnete jede aus der Schlussrechnung geloeschte Position (z.B.
+     * eine nicht benoetigte Geruststellung) wieder hinein und ignorierte Zusatzpositionen.
+     *
+     * <ul>
+     *   <li>Festgeschrieben (gebucht oder digital angenommen): {@code null} – der gespeicherte
+     *       Betrag ist der Beleg und steht so auch in den Offenen Posten (GoBD, §147 AO). Gilt
+     *       auch für Altdokumente ohne positionenJson; nur wenn dort gar kein Betrag gespeichert
+     *       ist, greift die Ableitung darunter, damit die Anzeige nicht leer bleibt.</li>
+     *   <li>Altdokument ohne positionenJson: Auftragssumme minus die anderen Rechnungen (es gibt
+     *       keine Positionen, aus denen sich der Betrag ableiten liesse).</li>
+     *   <li>Entwurf: aus den eigenen Positionen neu ableiten. Wird nach dem Anlegen noch eine
+     *       Teil- oder Abschlagsrechnung storniert oder gestellt, zieht der Betrag mit.
+     *       Deckungsgleich mit dem, was der Editor in handleSave berechnet.</li>
+     * </ul>
+     *
+     * <p>Für die Anzeige: Kann der Betrag nicht abgeleitet werden, gilt der gespeicherte.
+     */
+    private BigDecimal abgeleiteterSchlussrechnungsNetto(AusgangsGeschaeftsDokument dokument) {
+        try {
+            return berechneSchlussrechnungsNetto(dokument);
+        } catch (RuntimeException e) {
+            log.warn("Fehler beim Berechnen des Schlussrechnungsbetrags: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** Wie {@link #abgeleiteterSchlussrechnungsNetto}, reicht Fehler aber an den Aufrufer weiter. */
+    private BigDecimal berechneSchlussrechnungsNetto(AusgangsGeschaeftsDokument dokument) {
+        if (dokument.getTyp() != AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
+                || dokument.getVorgaenger() == null
+                || dokument.isStorniert()) {
+            return null;
+        }
+        if (!dokument.istBearbeitbar() && dokument.getBetragNetto() != null) {
+            return null;
+        }
+        AbrechnungsverlaufDto verlauf = getAbrechnungsverlauf(dokument.getVorgaenger().getId());
+        // Was die ANDEREN, nicht stornierten Rechnungen am Vorgänger schon abgerechnet haben.
+        // Direkt über die IDs statt "Summe minus eigener Betrag": Fehlt der gespeicherte
+        // eigene Betrag, zaehlt der Verlauf ihn aus den Positionen – die Differenz waere falsch.
+        BigDecimal andereAbgerechnet = verlauf.getPositionen().stream()
+                .filter(p -> !p.isStorniert() && !Objects.equals(p.getId(), dokument.getId()))
+                .map(AbrechnungsverlaufDto.AbrechnungspositionDto::getBetragNetto)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String positionen = dokument.getPositionenJson();
+
+        if (positionen == null || positionen.isBlank()) {
+            return verlauf.getBasisdokumentBetragNetto().subtract(andereAbgerechnet);
+        }
+        if (dokument.istBearbeitbar()) {
+            BigDecimal ausPositionen = berechneNettoAusPositionenJson(positionen);
+            if (ausPositionen != null) {
+                return ausPositionen.subtract(andereAbgerechnet);
+            }
+        }
+        return null;
+    }
+
+    /** Brutto = Netto + MwSt, auf Cent gerundet; ohne Satz gelten 19 %. */
+    private static BigDecimal bruttoAusNetto(BigDecimal netto, BigDecimal mwstSatz) {
+        BigDecimal satz = mwstSatz != null ? mwstSatz : new BigDecimal("0.19");
+        return netto.add(netto.multiply(satz)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
      * Konvertiert Entity zu Response DTO.
      */
     private AusgangsGeschaeftsDokumentResponseDto toResponseDto(AusgangsGeschaeftsDokument dokument) {
@@ -1694,61 +1817,15 @@ public class AusgangsGeschaeftsDokumentService {
             netto = berechneNettoAusPositionenJson(dokument.getPositionenJson());
         }
 
-        // Schlussrechnung: Der gespeicherte Betrag GILT — er ist im Editor als
-        // "Summe der eigenen Positionen minus bereits gestellte Rechnungen" entstanden
-        // und beruecksichtigt damit, welche Leistungen tatsaechlich angefallen sind.
-        //
-        // Bis 2026-09 wurde er hier durch "Basisbetrag minus andere Rechnungen"
-        // ersetzt. Das rechnete jede aus der Schlussrechnung geloeschte Position
-        // (z.B. eine nicht benoetigte Geruststellung) wieder in den Betrag hinein und
-        // ignorierte umgekehrt unvorhergesehene Zusatzpositionen. Der Rueckfallweg
-        // bleibt nur fuer Altdokumente ohne positionenJson: dort GIBT es keine
-        // Positionen, aus denen sich der Betrag ableiten liesse.
-        if (dokument.getTyp() == AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
-                && dokument.getVorgaenger() != null
-                && !dokument.isStorniert()) {
-            try {
-                AbrechnungsverlaufDto verlauf = getAbrechnungsverlauf(dokument.getVorgaenger().getId());
-                // Der Abrechnungsverlauf zaehlt ALLE nicht-stornierten Nachfolger, diese
-                // Schlussrechnung eingeschlossen. Fuer "was haben die ANDEREN Rechnungen
-                // schon abgerechnet" muss ihr eigener Betrag wieder raus.
-                BigDecimal eigenBetrag = dokument.getBetragNetto() != null ? dokument.getBetragNetto() : BigDecimal.ZERO;
-                String positionen = dokument.getPositionenJson();
-
-                if (positionen == null || positionen.isBlank()) {
-                    // Altdokument ohne Positionen: es gibt nichts, woraus sich der Betrag
-                    // ableiten liesse — hier bleibt nur der Rest aus der Auftragssumme.
-                    netto = verlauf.getRestbetrag().add(eigenBetrag);
-                } else if (dokument.istBearbeitbar()) {
-                    // Entwurf: aus den eigenen Positionen neu ableiten. Wird nach dem
-                    // Anlegen der Schlussrechnung noch eine Teilrechnung storniert oder
-                    // gestellt, zieht der Betrag mit — sonst bliebe ein still falscher
-                    // Wert stehen, bis jemand das Dokument im Editor oeffnet und speichert.
-                    // Deckungsgleich mit dem, was der Editor in handleSave berechnet.
-                    BigDecimal ausPositionen = berechneNettoAusPositionenJson(positionen);
-                    if (ausPositionen != null) {
-                        BigDecimal andereAbgerechnet = verlauf.getBereitsAbgerechnet().subtract(eigenBetrag);
-                        netto = ausPositionen.subtract(andereAbgerechnet);
-                    }
-                }
-                // Festgeschrieben (gebucht/versendet): der gespeicherte Betrag ist der
-                // Beleg und bleibt unangetastet (GoBD, §147 AO).
-            } catch (Exception e) {
-                log.warn("Fehler beim Berechnen des Schlussrechnungsbetrags: {}", e.getMessage());
-            }
+        BigDecimal schlussrechnungsNetto = abgeleiteterSchlussrechnungsNetto(dokument);
+        if (schlussrechnungsNetto != null) {
+            netto = schlussrechnungsNetto;
         }
 
         dto.setBetragNetto(netto);
 
         // Bruttobetrag: immer aus aktuellem Netto berechnen für Konsistenz
-        BigDecimal mwstSatz = dokument.getMwstSatz() != null ? dokument.getMwstSatz() : new BigDecimal("0.19");
-        BigDecimal brutto;
-        if (netto != null) {
-            BigDecimal mwst = netto.multiply(mwstSatz);
-            brutto = netto.add(mwst).setScale(2, RoundingMode.HALF_UP);
-        } else {
-            brutto = dokument.getBetragBrutto();
-        }
+        BigDecimal brutto = netto != null ? bruttoAusNetto(netto, dokument.getMwstSatz()) : dokument.getBetragBrutto();
         dto.setBetragBrutto(brutto);
 
         dto.setMwstSatz(dokument.getMwstSatz());
@@ -2184,8 +2261,7 @@ public class AusgangsGeschaeftsDokumentService {
                 continue;
             }
 
-            BigDecimal mwstSatz = dokument.getMwstSatz() != null ? dokument.getMwstSatz() : new BigDecimal("0.19");
-            BigDecimal neuBrutto = neuNetto.add(neuNetto.multiply(mwstSatz)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal neuBrutto = bruttoAusNetto(neuNetto, dokument.getMwstSatz());
 
             dokument.setBetragNetto(neuNetto);
             dokument.setBetragBrutto(neuBrutto);
