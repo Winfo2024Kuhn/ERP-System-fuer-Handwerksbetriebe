@@ -1535,6 +1535,7 @@ public class GeminiDokumentAnalyseService {
             }
             gd.setAiConfidence(1.0); // Strukturierte Daten
             gd.setDatenquelle("XML");
+            gd.setVerifiziert(true); // wie beim ZUGFeRD-PDF: strukturiert gelesen, nicht geschätzt
             gd.setAnalysiertAm(LocalDateTime.now());
 
             // Dokumentnummer extrahieren
