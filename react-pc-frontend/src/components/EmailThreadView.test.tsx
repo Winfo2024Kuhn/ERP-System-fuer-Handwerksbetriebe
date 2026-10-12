@@ -19,18 +19,6 @@ vi.mock('../lib/scrollInDenBlick', () => ({ scrolleMittigInDenBlick: vi.fn() }))
 beforeEach(() => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     vi.mocked(scrolleMittigInDenBlick).mockClear();
-    // matchMedia für prefers-reduced-motion mocken
-    Object.defineProperty(window, 'matchMedia', {
-        writable: true,
-        value: vi.fn().mockImplementation((query: string) => ({
-            matches: false,
-            media: query,
-            onchange: null,
-            addEventListener: vi.fn(),
-            removeEventListener: vi.fn(),
-            dispatchEvent: vi.fn(),
-        })),
-    });
 });
 
 // ─────────────────────────────────────────────────────────────────

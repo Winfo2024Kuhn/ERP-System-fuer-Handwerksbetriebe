@@ -12,29 +12,41 @@
  * springt die Ansicht ohne Animation.
  */
 export function scrolleMittigInDenBlick(element: HTMLElement): void {
+    // Ein fixiertes Element bewegt sich mit keinem Container – nichts zu scrollen.
+    if (window.getComputedStyle(element).position === 'fixed') return;
+
     const reduziert = typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const behavior: ScrollBehavior = reduziert ? 'auto' : 'smooth';
-    const elementRect = element.getBoundingClientRect();
+    const { top, height: hoehe } = element.getBoundingClientRect();
     // Lage des Elements im Fenster – wandert mit, sobald ein innerer Container scrollt.
-    let elementOben = elementRect.top;
+    let elementOben = top;
 
     for (let container = element.parentElement; container; container = container.parentElement) {
+        const stil = window.getComputedStyle(container);
         const istDokument = container === document.scrollingElement;
-        if (!istDokument && !istNutzerScrollbar(container)) continue;
-        const maxScroll = container.scrollHeight - container.clientHeight;
-        if (maxScroll <= 0 || typeof container.scrollTo !== 'function') continue;
-
-        const sichtOben = istDokument ? 0 : container.getBoundingClientRect().top + container.clientTop;
-        const mittig = container.scrollTop + elementOben - sichtOben - (container.clientHeight - elementRect.height) / 2;
-        const ziel = Math.min(Math.max(mittig, 0), maxScroll);
-        const verschiebung = ziel - container.scrollTop;
-        container.scrollTo({ top: ziel, behavior });
-        elementOben -= verschiebung;
+        if (istDokument || istNutzerScrollbar(stil)) {
+            elementOben -= zentriere(container, istDokument, elementOben, hoehe, behavior);
+        }
+        // Alles außerhalb eines fixierten Vorfahren (z. B. die Seite hinter einem
+        // Dialog) bewegt das Element nicht mehr – dort aufhören, wie scrollIntoView.
+        if (stil.position === 'fixed') break;
     }
 }
 
-function istNutzerScrollbar(element: Element): boolean {
-    const { overflowY } = window.getComputedStyle(element);
-    return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+/** Scrollt den Container so, dass das Element mittig steht; gibt die Verschiebung zurück. */
+function zentriere(container: HTMLElement, istDokument: boolean, elementOben: number, hoehe: number, behavior: ScrollBehavior): number {
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    if (maxScroll <= 0 || typeof container.scrollTo !== 'function') return 0;
+
+    const sichtOben = istDokument ? 0 : container.getBoundingClientRect().top + container.clientTop;
+    const mittig = container.scrollTop + elementOben - sichtOben - (container.clientHeight - hoehe) / 2;
+    const ziel = Math.min(Math.max(mittig, 0), maxScroll);
+    const verschiebung = ziel - container.scrollTop;
+    container.scrollTo({ top: ziel, behavior });
+    return verschiebung;
+}
+
+function istNutzerScrollbar(stil: CSSStyleDeclaration): boolean {
+    return stil.overflowY === 'auto' || stil.overflowY === 'scroll' || stil.overflowY === 'overlay';
 }

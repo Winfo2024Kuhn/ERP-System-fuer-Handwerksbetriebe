@@ -8,8 +8,10 @@ import { test, expect } from './hilfen/test';
  * blieb eine leere Fläche, die sich nicht zurückscrollen ließ.
  *
  * Auftreten nur „manchmal“: Die Hüllen brauchen dafür einen Überhang. Den
- * liefern bei mehreren Postfächern die unsichtbaren Vorlese-Texte der
+ * lieferten bei mehreren Postfächern die unsichtbaren Vorlese-Texte der
  * Postfach-Schilder in einer langen Liste – deshalb die Testdaten unten.
+ * Beide Ursachen sind einzeln abgesichert: kein Überhang mehr, und selbst mit
+ * Überhang scrollt beim Öffnen nur der Verlauf.
  */
 
 const INFO = { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' };
@@ -61,27 +63,36 @@ function verschobeneVorfahren(page: Page) {
     });
 }
 
+test('Postfach-Schilder in einer langen Liste geben dem E-Mail-Center keinen Überhang', async ({ page }) => {
+    await stubVerlauf(page, 955);
+    await page.goto('/emails/inbox');
+    await expect(page.getByTestId('postfach-schild')).toHaveCount(46);
+    // Früher hingen die sr-only-Texte der Schilder an <main> und ragten bis zu 4782px heraus.
+    expect(await page.locator('main').evaluate(main => main.scrollHeight - main.clientHeight)).toBe(0);
+});
+
 for (const [fall, fokusId] of [['mittlere', 953], ['letzte', 955]] as const) {
     test(`Verlauf öffnen (${fall} Nachricht gewählt) verschiebt das E-Mail-Center nicht`, async ({ page }) => {
         await stubVerlauf(page, fokusId);
+        // Ohne Animation springt der Verlauf sofort an seine Stelle – kein Warten aufs weiche Scrollen.
+        await page.emulateMedia({ reducedMotion: 'reduce' });
         await page.goto('/emails/inbox');
         const lesebereich = page.getByRole('region', { name: 'E-Mail lesen und schreiben' });
         await expect(lesebereich).toBeVisible();
         const obenVorher = (await lesebereich.boundingBox())!.y;
+        // Auch wenn das Layout künftig wieder einen Überhang bekommt, darf nur der Verlauf scrollen.
+        await page.locator('main').evaluate(main => {
+            const ueberhang = document.createElement('div');
+            ueberhang.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:5000px;pointer-events:none';
+            main.appendChild(ueberhang);
+        });
 
         await page.getByText('Re: Anfrage Terrasse', { exact: true }).first().click();
         const verlauf = page.getByTestId('email-verlauf');
         await expect(page.getByRole('button', { name: 'Nachricht von Max Mustermann einklappen' })).toBeVisible();
-        // Weiches Scrollen abwarten, bis der Verlauf zur Ruhe kommt.
-        await expect.poll(async () => {
-            const vorher = await verlauf.evaluate(el => el.scrollTop);
-            await page.waitForTimeout(250);
-            return vorher > 0 && vorher === await verlauf.evaluate(el => el.scrollTop);
-        }).toBe(true);
+        await expect.poll(() => verlauf.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
 
         expect(await verschobeneVorfahren(page)).toEqual([]);
-        // Ohne Überhang gibt es auch für andere Auslöser (Fokus, Suche im Browser) nichts zu verschieben.
-        expect(await page.locator('main').evaluate(main => main.scrollHeight - main.clientHeight)).toBe(0);
         expect((await lesebereich.boundingBox())!.y).toBe(obenVorher);
         await expect(page.getByRole('heading', { name: 'E-Mail Center' })).toBeInViewport();
     });

@@ -1418,7 +1418,7 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
         global.fetch = fetchMock as unknown as typeof fetch;
         global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
         global.URL.revokeObjectURL = vi.fn();
-        // jsdom kennt scrollIntoView nicht (Vorbild EmailThreadView.test.tsx:14-16).
+        // jsdom kennt scrollIntoView nicht (Vorbild EmailThreadView.test.tsx).
         window.HTMLElement.prototype.scrollIntoView = vi.fn();
     });
 

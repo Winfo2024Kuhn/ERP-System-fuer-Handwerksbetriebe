@@ -95,6 +95,29 @@ describe('scrolleMittigInDenBlick', () => {
         expect(seite.scrollTo).toHaveBeenCalledWith({ top: 852, behavior: 'smooth' });
     });
 
+    it('hört an einem fixierten Dialog auf – die Seite dahinter bleibt stehen', () => {
+        const seite = box('auto', { oben: 0, hoehe: 800, inhalt: 4000, scrollTop: 500 });
+        const dialog = box(null, { oben: 0, hoehe: 800 }, seite);
+        dialog.style.position = 'fixed';
+        const verlauf = box('auto', { oben: 100, hoehe: 400, inhalt: 2000 }, dialog);
+        const nachricht = box(null, { oben: 700, hoehe: 100 }, verlauf);
+
+        scrolleMittigInDenBlick(nachricht);
+
+        expect(verlauf.scrollTo).toHaveBeenCalledWith({ top: 450, behavior: 'smooth' });
+        expect(seite.scrollTo).not.toHaveBeenCalled();
+    });
+
+    it('scrollt nichts, wenn das Element selbst fixiert ist', () => {
+        const seite = box('auto', { oben: 0, hoehe: 800, inhalt: 4000 });
+        const leiste = box(null, { oben: 900, hoehe: 50 }, seite);
+        leiste.style.position = 'fixed';
+
+        scrolleMittigInDenBlick(leiste);
+
+        expect(seite.scrollTo).not.toHaveBeenCalled();
+    });
+
     it('scrollt das Dokument selbst, wenn es der scrollende Bereich ist', () => {
         const dokument = document.documentElement;
         const scrollTo = vi.fn();
