@@ -10,6 +10,15 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/graphify\" hook-guard search"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run-hook.sh\" check-doc-read"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -20,6 +29,26 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/claude-cloud/setup.sh\" --session",
             "timeout": 300
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run-hook.sh\" mark-doc-read"
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run-hook.sh\" mark-design-skill-used"
           }
         ]
       }
