@@ -12,6 +12,7 @@ import { useConfirm } from '../components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { DecimalInput } from '../components/ui/decimal-input';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
+import { leseFehlermeldung } from '../lib/apiFehler';
 
 // Types
 interface Mitarbeiter {
@@ -1739,11 +1740,12 @@ function DayEditorModal({
         }
     };
 
-    const handleSave = async (buchung: Buchung) => {
+    /** Speichert eine Buchung; bei Fehlern mit der Meldung des Servers (falls vorhanden). */
+    const handleSave = async (buchung: Buchung): Promise<{ ok: boolean; meldung?: string }> => {
         // Validation: PAUSE braucht kein Projekt
         const isPause = buchung.typ === 'PAUSE';
-        if (!isPause && (!buchung.projektId || buchung.projektId <= 0)) return false;
-        if (!buchung.startZeit) return false;
+        if (!isPause && (!buchung.projektId || buchung.projektId <= 0)) return { ok: false };
+        if (!buchung.startZeit) return { ok: false };
 
         const isNew = buchung.id < 0;
 
@@ -1781,13 +1783,13 @@ function DayEditorModal({
                 if (isNew && savedData && savedData.id) {
                     setBuchungen(prev => prev.map(b => b.id === buchung.id ? { ...b, id: savedData.id } : b));
                 }
-                return true;
-            } else {
-                return false;
+                return { ok: true };
             }
+            // Konkrete Meldung des Servers (z. B. „keinem Mitarbeiter zugeordnet“).
+            return { ok: false, meldung: await leseFehlermeldung(res, 'Buchung konnte nicht gespeichert werden.') };
         } catch (e) {
             console.error(e);
-            return false;
+            return { ok: false };
         }
     };
 
@@ -1867,6 +1869,9 @@ function DayEditorModal({
         setSaveSuccess(false);
 
         let allSuccess = true;
+        // Gleiche Server-Meldungen (z. B. 403 bei jeder Buchung) nur einmal zeigen.
+        const meldungen = new Set<string>();
+        let fehlerOhneMeldung = false;
         for (const buchung of normalisierteBuchungen) {
             // Nur neue (id < 0) oder geänderte Buchungen speichern
             const isNew = buchung.id < 0;
@@ -1875,8 +1880,10 @@ function DayEditorModal({
             const isPause = buchung.typ === 'PAUSE';
             const hasValidProjekt = buchung.projektId && buchung.projektId > 0;
             if ((isNew || isDirty) && (isPause || hasValidProjekt) && buchung.startZeit) {
-                const success = await handleSave(buchung);
-                if (!success) allSuccess = false;
+                const ergebnis = await handleSave(buchung);
+                if (!ergebnis.ok) allSuccess = false;
+                if (ergebnis.meldung) meldungen.add(ergebnis.meldung);
+                else if (!ergebnis.ok) fehlerOhneMeldung = true;
             }
         }
 
@@ -1885,7 +1892,8 @@ function DayEditorModal({
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 2000);
         } else {
-            toast.warning('Einige Buchungen konnten nicht gespeichert werden.');
+            meldungen.forEach(meldung => toast.error(meldung));
+            if (fehlerOhneMeldung) toast.warning('Einige Buchungen konnten nicht gespeichert werden.');
         }
     };
 
@@ -1915,7 +1923,7 @@ function DayEditorModal({
             if (res.ok || res.status === 204) {
                 setBuchungen(prev => prev.filter(b => b.id !== id));
             } else {
-                toast.error('Fehler beim Löschen: ' + res.status);
+                toast.error(await leseFehlermeldung(res, 'Buchung konnte nicht gelöscht werden.'));
             }
         } catch (e) {
             console.error(e);

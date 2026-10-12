@@ -3,6 +3,7 @@ import { X, Loader2, Calculator, Plus, Trash2, AlertCircle, Clock, CalendarDays,
 import { Button } from './ui/button';
 import { DecimalInput } from './ui/decimal-input';
 import { validateDecimalInput } from '../lib/numberInput';
+import { leseFehlermeldung } from '../lib/apiFehler';
 import { Dialog } from './ui/dialog';
 import { DatePicker } from './ui/datepicker';
 import { useToast } from './ui/toast';
@@ -78,19 +79,6 @@ export function ZeitkontoKorrekturenModal({
         setLoading(false);
     };
 
-    const getBearbeiterId = (): number => {
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            try {
-                const user = JSON.parse(storedUser);
-                return user.id || mitarbeiterId;
-            } catch {
-                // Fallback
-            }
-        }
-        return mitarbeiterId;
-    };
-
     const handleAddKorrektur = async () => {
         const parsed = validateDecimalInput(newStunden, { label: newTyp === 'STUNDEN' ? 'Stunden' : 'Tage', required: true, min: 0 });
         const message = !parsed.valid ? parsed.message : parsed.value === 0 ? 'Bitte einen Wert größer als 0 eingeben.' : !newDatum ? 'Bitte ein Datum auswählen.' : !newGrund.trim() ? 'Bitte eine Begründung eingeben.' : '';
@@ -115,7 +103,6 @@ export function ZeitkontoKorrekturenModal({
                     stunden: finalStunden,
                     datum: newDatum,
                     grund: newGrund.trim(),
-                    erstelltVonId: getBearbeiterId(),
                     typ: newTyp
                 })
             });
@@ -130,9 +117,9 @@ export function ZeitkontoKorrekturenModal({
                 loadKorrekturen();
                 onUpdate();
             } else {
-                const errorData = await res.json();
-                setError(errorData.error || 'Fehler beim Speichern');
-                toast.error(errorData.error || 'Fehler beim Speichern');
+                const meldung = await leseFehlermeldung(res, 'Korrektur konnte nicht gespeichert werden.');
+                setError(meldung);
+                toast.error(meldung);
             }
         } catch {
             setError('Netzwerkfehler - bitte erneut versuchen');
@@ -157,7 +144,6 @@ export function ZeitkontoKorrekturenModal({
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    bearbeiterId: getBearbeiterId(),
                     stornierungsgrund: stornoGrund.trim()
                 })
             });
@@ -167,8 +153,7 @@ export function ZeitkontoKorrekturenModal({
                 loadKorrekturen();
                 onUpdate();
             } else {
-                const errorData = await res.json();
-                toast.error(errorData.error || 'Fehler beim Stornieren');
+                toast.error(await leseFehlermeldung(res, 'Korrektur konnte nicht storniert werden.'));
             }
         } catch {
             toast.error('Netzwerkfehler');

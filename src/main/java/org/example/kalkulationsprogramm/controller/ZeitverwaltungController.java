@@ -35,6 +35,7 @@ import org.example.kalkulationsprogramm.service.TagesSollService;
 import org.example.kalkulationsprogramm.service.ZeitbuchungAuditService;
 import org.example.kalkulationsprogramm.service.ZeitkontoService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -68,7 +69,7 @@ public class ZeitverwaltungController {
     private final org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
     private final org.example.kalkulationsprogramm.repository.ArbeitsgangRepository arbeitsgangRepository;
     private final ZeitbuchungAuditService auditService;
-    private final org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
+    private final org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
     private final org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
     private final org.example.kalkulationsprogramm.service.MonatsSaldoWarmupService monatsSaldoWarmupService;
 
@@ -102,17 +103,15 @@ public class ZeitverwaltungController {
 
     /**
      * Aktualisiert eine Zeitbuchung (GoBD-konform mit Audit-Trail).
-     * Erwartet: bearbeiterId und aenderungsgrund im Request-Body.
+     * Erwartet: aenderungsgrund im Request-Body. Der Bearbeiter im Protokoll ist der
+     * Mitarbeiter des angemeldeten Benutzers, nie ein Wert aus dem Request.
      */
     @PutMapping("/buchungen/{id}")
     public ResponseEntity<?> updateBuchung(
             @PathVariable Long id,
-            @RequestBody Map<String, Object> data) {
+            @RequestBody Map<String, Object> data,
+            Authentication authentication) {
 
-        // Bearbeiter ermitteln
-        Long bearbeiterId = data.get("bearbeiterId") != null
-                ? Long.valueOf(data.get("bearbeiterId").toString())
-                : null;
         String aenderungsgrund = (String) data.get("aenderungsgrund");
 
         // Validierung: Änderungsgrund ist Pflicht für GoBD-Konformität
@@ -121,25 +120,11 @@ public class ZeitverwaltungController {
                     .body(Map.of("error", "Änderungsgrund ist ein Pflichtfeld"));
         }
 
-        Mitarbeiter bearbeiter = null;
-        if (bearbeiterId != null) {
-            bearbeiter = mitarbeiterRepository.findById(bearbeiterId).orElse(null);
-        }
-        if (bearbeiter == null) {
-            // Fallback: Versuche über FrontendUserProfile
-            bearbeiter = frontendUserProfileRepository.findAll().stream()
-                    .filter(p -> p.getMitarbeiter() != null)
-                    .map(p -> p.getMitarbeiter())
-                    .findFirst()
-                    .orElse(null);
-        }
-        if (bearbeiter == null) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Bearbeiter konnte nicht ermittelt werden"));
-        }
+        Mitarbeiter bearbeiter = angemeldeterMitarbeiter.bearbeiter(authentication);
 
         Zeitbuchung buchung = zeitbuchungRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Buchung nicht gefunden: " + id));
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Diese Zeitbuchung gibt es nicht mehr."));
 
         if (buchung.getStartZeit() != null && buchung.getMitarbeiter() != null) {
             int jahr = buchung.getStartZeit().getYear();
@@ -250,29 +235,20 @@ public class ZeitverwaltungController {
 
     /**
      * Storniert eine Zeitbuchung (GoBD-konform: kein hartes Löschen).
-     * Für manuelle Löschung: Buchung bleibt mit Storno-Audit markiert.
+     * Für manuelle Löschung: Buchung bleibt mit Storno-Audit markiert. Der Bearbeiter
+     * im Protokoll ist der Mitarbeiter des angemeldeten Benutzers.
      */
     @DeleteMapping("/buchungen/{id}")
     public ResponseEntity<?> deleteBuchung(
             @PathVariable Long id,
-            @RequestParam(required = false) Long bearbeiterId,
-            @RequestParam(required = false) String grund) {
+            @RequestParam(required = false) String grund,
+            Authentication authentication) {
 
         if (grund == null || grund.isBlank()) {
             grund = "Manuelle Löschung im Büro";
         }
 
-        Mitarbeiter bearbeiter = null;
-        if (bearbeiterId != null) {
-            bearbeiter = mitarbeiterRepository.findById(bearbeiterId).orElse(null);
-        }
-        if (bearbeiter == null) {
-            bearbeiter = frontendUserProfileRepository.findAll().stream()
-                    .filter(p -> p.getMitarbeiter() != null)
-                    .map(p -> p.getMitarbeiter())
-                    .findFirst()
-                    .orElse(null);
-        }
+        Mitarbeiter bearbeiter = angemeldeterMitarbeiter.bearbeiter(authentication);
 
         Zeitbuchung buchung = zeitbuchungRepository.findById(id).orElse(null);
         Long mitarbeiterId = null;
@@ -289,14 +265,12 @@ public class ZeitverwaltungController {
                             .body(Map.of("error", "Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
                 }
             }
-            if (bearbeiter != null) {
-                // WICHTIG: Erst Version erhöhen, dann Storno-Audit!
-                buchung.markiereAlsGeaendert(bearbeiter);
-                zeitbuchungRepository.save(buchung);
+            // WICHTIG: Erst Version erhöhen, dann Storno-Audit!
+            buchung.markiereAlsGeaendert(bearbeiter);
+            zeitbuchungRepository.save(buchung);
 
-                // AUDIT: Stornierung mit NEUER Version protokollieren
-                auditService.protokolliereStorno(buchung, bearbeiter, ErfassungsQuelle.DESKTOP, grund);
-            }
+            // AUDIT: Stornierung mit NEUER Version protokollieren
+            auditService.protokolliereStorno(buchung, bearbeiter, ErfassungsQuelle.DESKTOP, grund);
         }
 
         zeitbuchungRepository.deleteById(id);
