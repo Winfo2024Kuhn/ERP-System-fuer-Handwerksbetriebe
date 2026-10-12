@@ -179,7 +179,7 @@ class GeminiEinbetterTest {
         assertThatThrownBy(() -> einbetter.einbetten(List.of("Text")))
                 .isInstanceOf(IOException.class)
                 .hasMessageStartingWith("Gemini Embedding Fehler 400")
-                .hasMessageEndingWith(" ...");
+                .hasMessageEndingWith("…");
         verify(httpClient, times(1)).send(any(), any());
         assertThat(pausen).isEmpty();
     }

@@ -141,8 +141,9 @@ public class EmailKiClassificationService {
             String response = geminiClient.chat(CLASSIFICATION_SYSTEM_PROMPT, userPrompt);
             return parseResponse(response, projekte, anfragen);
         } catch (Exception e) {
-            log.warn("[KI-Classify] Fehler bei KI-Klassifizierung: {}", e.getMessage());
-            return ClassificationResult.none("KI-Fehler: " + e.getMessage());
+            // Nur die Fehlerart: Parse-Fehler zitieren die Antwort, die auf E-Mail-Inhalten beruht.
+            log.warn("[KI-Classify] Fehler bei KI-Klassifizierung: {}", e.getClass().getSimpleName());
+            return ClassificationResult.none("KI-Fehler: " + e.getClass().getSimpleName());
         }
     }
 

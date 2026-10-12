@@ -9,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -97,11 +96,7 @@ public class GeminiScannerService {
 
             // Send
             String body = objectMapper.writeValueAsString(requestBody);
-            String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                    geminiModel, geminiApiKey);
-
-            HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
-                    .header("Content-Type", "application/json")
+            HttpRequest request = GeminiAnfrage.generateContent(geminiModel, geminiApiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .build();
 
@@ -109,7 +104,7 @@ public class GeminiScannerService {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (response.statusCode() != 200) {
-                log.error("Gemini Naming Error {}: {}", response.statusCode(), response.body());
+                log.error("Gemini Naming Error {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                 return "Scan_" + System.currentTimeMillis();
             }
 
@@ -123,7 +118,7 @@ public class GeminiScannerService {
             return text.isEmpty() ? "Scan_" + System.currentTimeMillis() : text;
 
         } catch (Exception e) {
-            log.error("Failed to generate filename", e);
+            log.error("Failed to generate filename: {}", e.getClass().getSimpleName());
             return "Scan_" + System.currentTimeMillis();
         }
     }

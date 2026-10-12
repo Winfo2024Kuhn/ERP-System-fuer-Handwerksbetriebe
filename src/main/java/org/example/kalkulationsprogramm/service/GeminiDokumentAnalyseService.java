@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.math.BigDecimal;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -95,8 +94,6 @@ public class GeminiDokumentAnalyseService {
 
     // Retry configuration for transient failures
     private static final int MAX_RETRIES = 3;
-    /** Schlüssel für die Gemini-API im Header, nie in der URL (die steht in Fehlermeldungen). */
-    private static final String GEMINI_SCHLUESSEL_HEADER = "x-goog-api-key";
     private static final long INITIAL_RETRY_DELAY_MS = 2000; // 2 seconds, doubles each retry
 
     @Value("${ai.gemini.model.dokument-analyse:gemini-3-flash-preview}")
@@ -658,9 +655,6 @@ public class GeminiDokumentAnalyseService {
 
             String base64Data = Base64.getEncoder().encodeToString(bytes);
             String modelToUse = useProModel ? geminiProModel : geminiModel;
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelToUse
-                    + ":generateContent";
-
             ObjectNode requestBody = objectMapper.createObjectNode();
             ArrayNode contents = requestBody.putArray("contents");
             ObjectNode content = contents.addObject();
@@ -674,10 +668,7 @@ public class GeminiDokumentAnalyseService {
             // Custom Prompt Teil
             parts.addObject().put("text", customPrompt);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Content-Type", "application/json")
-                    .header(GEMINI_SCHLUESSEL_HEADER, geminiApiKey)
+            HttpRequest request = GeminiAnfrage.generateContent(modelToUse, geminiApiKey)
                     .timeout(Duration.ofSeconds(120))
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
                     .build();
@@ -686,7 +677,7 @@ public class GeminiDokumentAnalyseService {
             lastApiCallTime = System.currentTimeMillis();
 
             if (response.statusCode() != 200) {
-                log.error("Gemini API Fehler: {} - {}", response.statusCode(), kuerzeFuerLog(response.body()));
+                log.error("Gemini API Fehler: {} - {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                 return null;
             }
 
@@ -2145,11 +2136,6 @@ public class GeminiDokumentAnalyseService {
         return normalizedPath;
     }
 
-    /** Fehlerantworten der Gemini-API nur gekürzt ins Log. */
-    private static String kuerzeFuerLog(String antwort) {
-        return antwort == null ? "" : antwort.substring(0, Math.min(200, antwort.length()));
-    }
-
     /** Kennung eines Dokuments fürs Log, nie der Dateiname: der trägt Namen aus den Rechnungen (DSGVO). */
     private static Object dokumentFuerLog(LieferantDokument dokument) {
         return dokument != null && dokument.getId() != null ? dokument.getId() : "ohne ID";
@@ -2503,13 +2489,7 @@ public class GeminiDokumentAnalyseService {
                         modelToUse = useProModel ? geminiProModel : geminiModel;
                     }
 
-                    String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
-                            .formatted(modelToUse);
-
-                    // Schlüssel im Header statt in der URL: Fehlermeldungen zur URL landen im Log.
-                    HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
-                            .header("Content-Type", "application/json")
-                            .header(GEMINI_SCHLUESSEL_HEADER, geminiApiKey)
+                    HttpRequest request = GeminiAnfrage.generateContent(modelToUse, geminiApiKey)
                             .timeout(Duration.ofSeconds(180))
                             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                             .build();
@@ -2550,14 +2530,14 @@ public class GeminiDokumentAnalyseService {
                         long delay = INITIAL_RETRY_DELAY_MS * (1L << attempt); // Exponential backoff
                         log.warn("[Gemini API] Fehler {} bei Attempt {}/{} - Retry in {}ms. Body: {}",
                                 response.statusCode(), attempt + 1, MAX_RETRIES, delay,
-                                kuerzeFuerLog(response.body()));
+                                GeminiAnfrage.fuerLog(response.body()));
                         Thread.sleep(delay);
                         continue;
                     }
 
                     // Client-Fehler (4xx außer 429) - Nicht retryable
                     log.error("[Gemini API] Client-Fehler {} - kein Retry. Body: {}",
-                            response.statusCode(), kuerzeFuerLog(response.body()));
+                            response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                     return null;
 
                 } catch (java.net.http.HttpTimeoutException timeoutEx) {
