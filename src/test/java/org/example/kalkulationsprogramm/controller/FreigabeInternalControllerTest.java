@@ -532,9 +532,28 @@ class FreigabeInternalControllerTest {
     }
 
     @Test
-    void pdfLoeschen_gibt204() throws Exception {
+    void pdfLoeschen_abgelaufeneFreigabe_gibt204() throws Exception {
+        given(freigabeService.entfernePdfAusFreigabe("uuid-x"))
+                .willReturn(DokumentFreigabeService.PdfEntfernenErgebnis.ENTFERNT);
+
         mockMvc.perform(delete("/api/internal/freigabe/uuid-x/pdf")).andExpect(status().isNoContent());
-        verify(freigabeService).loeschePdfFuerFreigabe("uuid-x");
+        verify(freigabeService).entfernePdfAusFreigabe("uuid-x");
+    }
+
+    @Test
+    void pdfLoeschen_offeneOderAngenommeneFreigabe_gibt409() throws Exception {
+        given(freigabeService.entfernePdfAusFreigabe("uuid-offen"))
+                .willReturn(DokumentFreigabeService.PdfEntfernenErgebnis.NOCH_GUELTIG);
+
+        mockMvc.perform(delete("/api/internal/freigabe/uuid-offen/pdf")).andExpect(status().isConflict());
+    }
+
+    @Test
+    void pdfLoeschen_unbekannteUuid_gibt404() throws Exception {
+        given(freigabeService.entfernePdfAusFreigabe("unbekannt"))
+                .willReturn(DokumentFreigabeService.PdfEntfernenErgebnis.UNBEKANNT);
+
+        mockMvc.perform(delete("/api/internal/freigabe/unbekannt/pdf")).andExpect(status().isNotFound());
     }
 
     @Test

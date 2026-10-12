@@ -360,9 +360,9 @@ In Offene Posten › Eingangsrechnungen zeigen die Spalten „Fällig“, „Sko
 | `POST` | `/lieferant/{lieferantId}/reanalyze` | Alle Dokumente eines Lieferanten neu auslesen (Admin) |
 | `POST` | `/relink-all` | Dokumentenketten aller Lieferanten neu abgleichen (Admin) |
 | `POST` | `/lieferant/{lieferantId}/relink` | Dokumentenketten eines Lieferanten neu abgleichen (Admin) |
-| `POST` | `/process-assigned-emails` | Anhänge aller Lieferanten-E-Mails verarbeiten |
-| `POST` | `/process-email/{emailId}` | Anhänge einer E-Mail verarbeiten |
-| `POST` | `/lieferant/{lieferantId}/process-emails` | Anhänge der E-Mails eines Lieferanten verarbeiten |
+| `POST` | `/process-assigned-emails` | Anhänge aller Lieferanten-E-Mails verarbeiten (Admin) |
+| `POST` | `/process-email/{emailId}` | Anhänge einer E-Mail verarbeiten (Admin) |
+| `POST` | `/lieferant/{lieferantId}/process-emails` | Anhänge der E-Mails eines Lieferanten verarbeiten (Admin) |
 | `GET` / `DELETE` | `/duplicates` | Doppelte Dokumente auflisten / entfernen (Admin) |
 
 ### 10.2 Weitere Endpunkte

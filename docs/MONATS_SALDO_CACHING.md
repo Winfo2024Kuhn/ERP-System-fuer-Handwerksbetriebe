@@ -204,7 +204,7 @@ Alle Methoden sperren vorher den Mitarbeiter. `ZeitkontoService` ruft direkt `Mo
 
 ### 6.1 Zweck
 
-Der Warmup-Service füllt den Cache beim Anwendungsstart vor, damit die ersten Abfragen nicht alle Saldenwerte live berechnen müssen. Er läuft im `ApplicationReadyEvent`-Listener (ohne `@Async`) und kann zusätzlich über `POST /api/zeitverwaltung/saldo-cache/warmup` angestoßen werden.
+Der Warmup-Service füllt den Cache beim Anwendungsstart vor, damit die ersten Abfragen nicht alle Saldenwerte live berechnen müssen. Er läuft im `ApplicationReadyEvent`-Listener (ohne `@Async`) und kann zusätzlich über `POST /api/zeitverwaltung/saldo-cache/warmup` angestoßen werden (nur Admin).
 
 ### 6.2 Ablauf
 

@@ -321,7 +321,7 @@ public class AusgangsGeschaeftsDokumentController {
     }
 
     /**
-     * Dokument stornieren.
+     * Dokument stornieren: nur gebuchte Rechnungen (keine Stornorechnungen, keine Entwürfe).
      * Erstellt ein Storno-Gegendokument.
      */
     @PostMapping("/{id}/storno")
@@ -345,7 +345,8 @@ public class AusgangsGeschaeftsDokumentController {
 
     /**
      * Dokument löschen.
-     * Alle nicht gebuchten Dokumente dürfen mit einer Begründung gelöscht werden.
+     * Nur Entwürfe (nicht gebucht, versandt, digital angenommen oder storniert) dürfen mit
+     * einer Begründung gelöscht werden.
      * Schreibt vor dem Hard-Delete einen GoBD-konformen Audit-Eintrag.
      */
     @DeleteMapping("/{id}")

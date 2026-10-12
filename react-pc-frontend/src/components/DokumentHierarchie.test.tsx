@@ -7,6 +7,48 @@ import type { AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp } from '
 const mockFetch = vi.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
+function dok(
+    id: number,
+    typ: AusgangsGeschaeftsDokumentTyp,
+    dokumentNummer: string,
+    vorgaengerId?: number
+): AusgangsGeschaeftsDokument {
+    return {
+        id,
+        dokumentNummer,
+        typ,
+        datum: '2026-01-15',
+        betreff: 'Carport Musterstraße',
+        betragNetto: 10000,
+        gebucht: false,
+        storniert: false,
+        bearbeitbar: true,
+        vorgaengerId,
+    } as AusgangsGeschaeftsDokument;
+}
+
+function renderBaum(
+    dokumente: AusgangsGeschaeftsDokument[],
+    kontext: { projektId?: number; anfrageId?: number } = { projektId: 158 }
+) {
+    return render(
+        <ToastProvider>
+            <DokumentHierarchie
+                ausgangsDokumente={dokumente}
+                {...kontext}
+                onRefresh={vi.fn()}
+                toast={{ error: vi.fn(), success: vi.fn() }}
+            />
+        </ToastProvider>
+    );
+}
+
+/** Öffnet das Aktionsmenü des Dokuments über einen Klick auf dessen Karte. */
+async function oeffneAktionsmenue(dokumentNummer: string) {
+    fireEvent.click(screen.getByText(dokumentNummer));
+    await waitFor(() => expect(screen.getByText('Öffnen (neuer Tab)')).toBeInTheDocument());
+}
+
 /**
  * Abgerechnet wird immer am untersten Dokument eines Vorgangs. Hängt unter einem
  * Angebot (oder Nachtragsangebot) bereits eine Auftragsbestätigung, entstehen die
@@ -19,48 +61,6 @@ describe('DokumentHierarchie – Rechnungen nur am untersten Dokument', () => {
         // Freigabe-Status-Abfrage im useEffect
         mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as unknown as Response);
     });
-
-    function dok(
-        id: number,
-        typ: AusgangsGeschaeftsDokumentTyp,
-        dokumentNummer: string,
-        vorgaengerId?: number
-    ): AusgangsGeschaeftsDokument {
-        return {
-            id,
-            dokumentNummer,
-            typ,
-            datum: '2026-01-15',
-            betreff: 'Carport Musterstraße',
-            betragNetto: 10000,
-            gebucht: false,
-            storniert: false,
-            bearbeitbar: true,
-            vorgaengerId,
-        } as AusgangsGeschaeftsDokument;
-    }
-
-    function renderBaum(
-        dokumente: AusgangsGeschaeftsDokument[],
-        kontext: { projektId?: number; anfrageId?: number } = { projektId: 158 }
-    ) {
-        return render(
-            <ToastProvider>
-                <DokumentHierarchie
-                    ausgangsDokumente={dokumente}
-                    {...kontext}
-                    onRefresh={vi.fn()}
-                    toast={{ error: vi.fn(), success: vi.fn() }}
-                />
-            </ToastProvider>
-        );
-    }
-
-    /** Öffnet das Aktionsmenü des Dokuments über einen Klick auf dessen Karte. */
-    async function oeffneAktionsmenue(dokumentNummer: string) {
-        fireEvent.click(screen.getByText(dokumentNummer));
-        await waitFor(() => expect(screen.getByText('Öffnen (neuer Tab)')).toBeInTheDocument());
-    }
 
     it('sperrt "Rechnung erstellen" am Angebot, sobald eine Auftragsbestätigung darunter hängt', async () => {
         renderBaum([
@@ -129,5 +129,43 @@ describe('DokumentHierarchie – Rechnungen nur am untersten Dokument', () => {
         await oeffneAktionsmenue('2026/01/00002');
 
         expect(screen.getByText('→ Rechnung erstellen').closest('button')).toBeEnabled();
+    });
+});
+
+/**
+ * Löschen gibt es nur für Entwürfe. Ein digital angenommenes Dokument ist verbindlich –
+ * auch eine AB, deren automatischer Versand gescheitert ist (dann fehlt das Versanddatum).
+ */
+describe('DokumentHierarchie – Löschen nur bei Entwürfen', () => {
+    beforeEach(() => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as unknown as Response);
+    });
+
+    it('bietet Löschen beim Angebots-Entwurf an', async () => {
+        renderBaum([dok(1, 'ANGEBOT', '2026/01/00001')]);
+
+        await oeffneAktionsmenue('2026/01/00001');
+
+        expect(screen.getByText('Löschen')).toBeInTheDocument();
+    });
+
+    it('bietet kein Löschen bei digital angenommener Auftragsbestätigung ohne Versanddatum', async () => {
+        renderBaum([
+            dok(1, 'ANGEBOT', '2026/01/00001'),
+            { ...dok(2, 'AUFTRAGSBESTAETIGUNG', '2026/01/00002', 1), digitalAngenommen: true },
+        ]);
+
+        await oeffneAktionsmenue('2026/01/00002');
+
+        expect(screen.queryByText('Löschen')).not.toBeInTheDocument();
+    });
+
+    it('bietet kein Löschen bei versandtem Angebot', async () => {
+        renderBaum([{ ...dok(1, 'ANGEBOT', '2026/01/00001'), versandDatum: '2026-01-16' }]);
+
+        await oeffneAktionsmenue('2026/01/00001');
+
+        expect(screen.queryByText('Löschen')).not.toBeInTheDocument();
     });
 });
