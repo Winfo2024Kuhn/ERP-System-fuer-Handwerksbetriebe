@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../auth/AuthContext';
 import { RequireAuth } from '../../auth/RouteGuards';
 import { MainLayout } from './MainLayout';
+import { ToastProvider } from '../ui/toast';
 import { antwort, stubbeFetch } from '../../features/telefon/telefonTestdaten';
 import { benutzer } from '../../features/ki/kiTestdaten';
 
@@ -17,15 +18,17 @@ vi.mock('../../features/telefon/useTelefonBerechtigungJeBenutzer', () => ({ useT
 function zeige(kiAktiv: boolean) {
     stubbeFetch((url) => (url.pathname === '/api/auth/me' ? antwort(benutzer({ kiAktiv })) : undefined));
     return render(
-        <MemoryRouter initialEntries={['/projekte']}>
-            <AuthProvider>
-                <Routes>
-                    <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
-                        <Route path="/projekte" element={<p>Projektliste</p>} />
-                    </Route>
-                </Routes>
-            </AuthProvider>
-        </MemoryRouter>,
+        <ToastProvider>
+            <MemoryRouter initialEntries={['/projekte']}>
+                <AuthProvider>
+                    <Routes>
+                        <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
+                            <Route path="/projekte" element={<p>Projektliste</p>} />
+                        </Route>
+                    </Routes>
+                </AuthProvider>
+            </MemoryRouter>
+        </ToastProvider>,
     );
 }
 

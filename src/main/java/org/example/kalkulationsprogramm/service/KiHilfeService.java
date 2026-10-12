@@ -4,14 +4,21 @@ import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
+import org.example.kalkulationsprogramm.service.kihilfe.KiHilfeWerkzeuge;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -31,8 +38,8 @@ public class KiHilfeService {
     /** Frontend context sent alongside chat messages for RAG enrichment. */
     public record PageContext(String route, String pageTitle, String visibleContent, String errorMessages, Double latitude, Double longitude) {}
 
-    /** Result of a chat call including optional web sources from Google Search grounding. */
-    public record ChatResult(String reply, List<SourceLink> sources) {}
+    /** Antwort der KI-Hilfe mit Web-Quellen (Google-Suche) und den Schritten, die sie dafuer gegangen ist. */
+    public record ChatResult(String reply, List<SourceLink> sources, List<String> schritte) {}
     public record SourceLink(String title, String url) {}
 
     /** Begrenzt den Firmennamen im System-Prompt. */
@@ -58,7 +65,7 @@ public class KiHilfeService {
             
             ## Verhaltensregeln
             - Du hilfst Benutzern, sich im Programm zurechtzufinden: Wo finde ich was? Wie mache ich X?
-            - Du hast Zugriff auf den VOLLSTÄNDIGEN Frontend-Quellcode (alle React-Seiten, Komponenten, Navigation)
+            - Du kennst das Programm aus seiner Anleitung und dem Aufbau seiner Seiten (Abschnitte unten)
             - Erkläre Schritt für Schritt, wie der Benutzer zu einer Funktion navigiert
             - Beschreibe welche Buttons, Menüpunkte und Formulare auf jeder Seite verfügbar sind
             - Wenn du nach einem Workflow gefragt wirst (z.B. "Wie erstelle ich ein Anfrage?"), erkläre die Schritte aus Benutzersicht
@@ -67,6 +74,8 @@ public class KiHilfeService {
             - Wenn du etwas nicht finden kannst, sage es ehrlich
             - Verweise bei technischen Problemen auf den Administrator
             - Formatiere Antworten mit Markdown für bessere Lesbarkeit
+            - Nenne NIE Dateinamen, Pfade, Komponenten- oder Klassennamen und zeige keinen Code: Der Benutzer
+              ist Handwerker und kennt nur die Oberfläche (Reiter, Knöpfe, Felder, Dialoge)
             - Nutze Tabellen fuer strukturierte Daten (z.B. Zeugnistypen, Anforderungen, Vergleiche)
             - Nutze Aufzählungen und Nummerierungen für Schritt-für-Schritt-Anleitungen
             
@@ -219,6 +228,44 @@ public class KiHilfeService {
             Erstelle bei Schritt-für-Schritt-Anleitungen am Ende einen Link zur relevanten Seite.
             """;
 
+    /** Selbst nachschlagen: wird an den System-Prompt gehaengt, wenn die KI Werkzeuge hat. */
+    private static final String NACHSCHLAGEN_PROMPT = """
+
+            ## Selbst nachschlagen (Werkzeuge)
+            Unten stehen Abschnitte, die automatisch zur Frage gefunden wurden. Reichen sie nicht für eine
+            sichere Antwort, schlage selbst nach, BEVOR du antwortest:
+            - `im_programm_suchen`: Suche mit eigenen Begriffen. Probiere Varianten: Fachbegriffe, Beschriftungen
+              von Knöpfen und Reitern, Seitennamen, Synonyme (z. B. "Storno", "stornieren", "Gutschrift").
+              Bereich "technik" für Regeln und Sperren im Hintergrund (z. B. warum etwas nicht geht).
+            - `datei_lesen`: Zeigt ein Treffer nur einen Teil einer Seite, lies die ganze Datei, bevor du
+              Knöpfe, Reiter oder Dialoge beschreibst.
+            - Mehrere Suchen in einer Runde sind erlaubt. Nach höchstens {{RUNDEN}} Runden antwortest du mit dem,
+              was du sicher weißt.
+            - Bevor du sagst, dass es etwas nicht gibt oder du es nicht weißt: Suche mindestens einmal gezielt danach.
+            - Fragen außerhalb des Programms (Normen, Wetter, Preise) beantwortest du mit der Google-Suche,
+              nicht mit diesen Werkzeugen.
+            """;
+
+    /** Hoechstens so viele Nachschlage-Runden; danach muss die KI antworten. */
+    static final int MAX_NACHSCHLAGE_RUNDEN = 4;
+    /** Weitere gleichzeitige Werkzeug-Aufrufe einer Runde werden nicht ausgefuehrt. */
+    static final int MAX_AUFRUFE_JE_RUNDE = 3;
+    /** Hoechstens so viele Internet-Suchen werden dem Nutzer als Schritt gezeigt. */
+    private static final int MAX_WEBSUCHEN_ANZEIGE = 3;
+    /** Bis zu so vielen Woertern gilt eine Frage als Nachfrage ("Und bei Anfragen?"). */
+    private static final int MAX_WOERTER_NACHFRAGE = 8;
+    /** Danach wird nicht mehr nachgeschlagen, sondern geantwortet - der Nutzer wartet. */
+    private static final Duration NACHSCHLAGEN_BIS = Duration.ofSeconds(75);
+    /** Laengste Wartezeit auf eine einzelne Gemini-Antwort. */
+    private static final Duration GEMINI_ZEITLIMIT = Duration.ofSeconds(60);
+    /** So viel Zeit muss fuer die Antwort selbst bleiben, sonst wird nicht mehr nachgeschlagen. */
+    private static final Duration RESERVE_FUER_ANTWORT = GEMINI_ZEITLIMIT;
+    /** Gemini meldet so einen kaputten Werkzeug-Aufruf; dann wird einmal ohne Werkzeuge geantwortet. */
+    private static final String KAPUTTER_AUFRUF = "MALFORMED_FUNCTION_CALL";
+
+    /** Schritt, den der Nutzer nach der ersten, automatischen Suche sieht. */
+    static final String SCHRITT_ERSTE_SUCHE = "Passende Stellen im Programm gesucht";
+
     private final ObjectMapper objectMapper;
     private final CodebaseIndexService codebaseIndexService;
     private final LocalRagService localRagService;
@@ -227,6 +274,15 @@ public class KiHilfeService {
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
             .build();
+
+    /** Pause vor dem zweiten Versuch, wenn Gemini kurz ueberlastet ist; in Tests ohne Warten. */
+    private Duration wiederholungsPause = Duration.ofSeconds(1);
+
+    /**
+     * So lange darf eine Frage hoechstens dauern, ueber alle Runden und den Rueckfall hinweg. Kuerzer
+     * als das Zeitlimit des Chats ({@code KiHilfeController}), damit der Nutzer eine Meldung bekommt.
+     */
+    private Duration gesamtZeitlimit = Duration.ofSeconds(150);
 
     @Value("${ai.ki-hilfe.model:gemini-3-flash-preview}")
     private String model;
@@ -242,20 +298,37 @@ public class KiHilfeService {
 
     public record ChatMessage(String role, String text) {}
 
-    /**
-     * Build system prompt with RAG context (if available) or full codebase fallback.
-     */
+    /** System-Prompt ohne Werkzeuge (z. B. wenn die Wissensbasis noch laedt). */
     String buildSystemPrompt(String ragContext) {
+        return buildSystemPrompt(ragContext, false);
+    }
+
+    /**
+     * System-Prompt mit den automatisch gefundenen Abschnitten (falls vorhanden). Sonst haengt ohne
+     * Werkzeuge der vollstaendige Codebase-Index als Rueckfall an; mit Werkzeugen nicht - er ginge
+     * in jeder Runde neu mit, und die KI kann selbst suchen.
+     */
+    String buildSystemPrompt(String ragContext, boolean mitWerkzeugen) {
         String basisPrompt = BASE_SYSTEM_PROMPT.replace("{{BETRIEB}}", betriebsBezeichnung());
+        if (mitWerkzeugen) {
+            basisPrompt += NACHSCHLAGEN_PROMPT.replace("{{RUNDEN}}", String.valueOf(MAX_NACHSCHLAGE_RUNDEN));
+        }
         if (ragContext != null && !ragContext.isBlank()) {
             return basisPrompt +
-                    "\n\n## Relevanter Quellcode (per Vektor-Suche gefunden)\n" +
-                    "Die folgenden Code-Abschnitte wurden automatisch als relevant fuer die aktuelle Frage identifiziert. " +
+                    "\n\n## Automatisch gefundene Abschnitte\n" +
+                    "Die folgenden Abschnitte wurden automatisch als passend zur aktuellen Frage gefunden. " +
+                    "Jeder ist markiert: 'Anleitung fuer Nutzer', 'Bildschirm (was der Nutzer sieht)', " +
+                    "'Technische Beschreibung' oder 'Server-Regel (fuer den Nutzer nicht sichtbar)'. " +
+                    "Was der Nutzer anklickt, steht nur in der Anleitung und im Bildschirm-Code. " +
                     "Abschnitte mit '>>> AKTUELLE SEITE DES BENUTZERS <<<' zeigen den EXAKTEN Quellcode der Seite, " +
                     "auf der sich der Benutzer GERADE befindet. Diese Abschnitte haben HOECHSTE Prioritaet: " +
                     "Nur Buttons, Tabs, Formulare und Funktionen die IN DIESEM CODE vorkommen, existieren auf dieser Seite. " +
                     "Beschreibe NUR das, was du im Code der aktuellen Seite tatsaechlich siehst.\n\n" +
                     ragContext;
+        }
+
+        if (mitWerkzeugen) {
+            return basisPrompt;
         }
 
         // Fallback: full codebase index
@@ -287,16 +360,21 @@ public class KiHilfeService {
     }
 
     /**
-     * Chat without page context (backward-compatible).
+     * Chat ohne Live-Schritte.
      */
-    public ChatResult chat(List<ChatMessage> messages) throws IOException, InterruptedException {
-        return chat(messages, null);
+    public ChatResult chat(List<ChatMessage> messages, PageContext pageContext) throws IOException, InterruptedException {
+        return chat(messages, pageContext, schritt -> { });
     }
 
     /**
-     * Chat with optional page context for RAG-enhanced responses.
+     * Beantwortet die letzte Frage. Zuerst sucht das Programm selbst passende Abschnitte; reichen
+     * sie der KI nicht, schlaegt sie ueber Werkzeuge nach (hoechstens {@value #MAX_NACHSCHLAGE_RUNDEN}
+     * Runden), Fachfragen per Google-Suche.
+     *
+     * @param fortschritt bekommt jeden Schritt als kurzen Text fuer den Nutzer ("Schaut nach: ...")
      */
-    public ChatResult chat(List<ChatMessage> messages, PageContext pageContext) throws IOException, InterruptedException {
+    public ChatResult chat(List<ChatMessage> messages, PageContext pageContext, Consumer<String> fortschritt)
+            throws IOException, InterruptedException {
         // Key zur Laufzeit aus System-Setup lesen.
         String geminiApiKey = systemSettingsService.getGeminiApiKey();
         if (geminiApiKey == null || geminiApiKey.isBlank()) {
@@ -312,42 +390,20 @@ public class KiHilfeService {
                 ? messages.subList(messages.size() - 20, messages.size())
                 : messages;
 
-        // Try RAG: embed the latest user message and search for relevant code
+        List<String> schritte = new ArrayList<>();
+        Consumer<String> melden = text -> {
+            String schritt = KiHilfeWerkzeuge.anzeigeText(text, "");
+            schritte.add(schritt);
+            fortschritt.accept(schritt);
+        };
+
+        // Die Frist laeuft ab hier - auch das Einbetten der ersten Suche zaehlt
+        Frist frist = new Frist(System.nanoTime(), gesamtZeitlimit);
+        KiHilfeWerkzeuge werkzeuge = null;
         String ragContext = null;
-        boolean ragUsed = false;
         if (localRagService.isAvailable()) {
-            log.info("  -> Lokales RAG ist verfuegbar, starte Vektor-Suche...");
-            try {
-                String latestUserMessage = limitedMessages.stream()
-                        .filter(m -> "user".equals(m.role()))
-                        .reduce((first, second) -> second)
-                        .map(ChatMessage::text)
-                        .orElse("");
-
-                String contextHint = pageContext != null
-                        ? "Seite: %s (%s)".formatted(
-                                pageContext.pageTitle() != null ? pageContext.pageTitle() : "",
-                                pageContext.route() != null ? pageContext.route() : "")
-                        : null;
-
-                String currentRoute = pageContext != null ? pageContext.route() : null;
-
-                var results = localRagService.search(latestUserMessage, contextHint, currentRoute);
-                if (!results.isEmpty()) {
-                    ragContext = localRagService.buildContextFromResults(results);
-                    ragUsed = true;
-                    log.info("  [OK] RAG: {} relevante Code-Chunks gefunden ({} Zeichen Kontext)",
-                            results.size(), ragContext.length());
-                    for (var r : results) {
-                        log.info("    - [{}] {} -- {} ({})",
-                                String.format("%.2f", r.score()), r.filePath(), r.name(), r.chunkType());
-                    }
-                } else {
-                    log.info("  [X] RAG: Keine passenden Chunks gefunden, Fallback auf Full-Index");
-                }
-            } catch (Exception e) {
-                log.warn("  [X] RAG-Suche fehlgeschlagen, Fallback auf Full-Index: {}", e.getClass().getSimpleName());
-            }
+            werkzeuge = new KiHilfeWerkzeuge(localRagService, objectMapper, melden);
+            ragContext = ersteSuche(limitedMessages, pageContext, werkzeuge, melden);
         } else {
             log.info("  -> RAG nicht verfuegbar (enabled={}, ready={}), nutze Full-Codebase-Index",
                     localRagService.isEnabled(), localRagService.isReady());
@@ -359,113 +415,257 @@ public class KiHilfeService {
             log.info("  -> Seitenkontext ({} Zeichen) wird an Nachricht angehaengt", pageContextInfo.length());
         }
 
-        String promptMode = ragUsed ? "RAG (Vektor-Suche)" : "Full-Codebase-Index";
-        log.info("  -> Prompt-Modus: {}", promptMode);
+        String systemPrompt = buildSystemPrompt(ragContext, werkzeuge != null);
+        try {
+            return beantworten(geminiApiKey, systemPrompt, verlauf(limitedMessages, pageContextInfo),
+                    werkzeuge, melden, schritte, frist);
+        } catch (AnfrageAbgelehnt e) {
+            // Sicherheitsnetz: Kann das eingestellte Modell eigene Werkzeuge (zusammen mit der
+            // Google-Suche) nicht, antwortet die KI-Hilfe wie frueher - ohne selbst nachzuschlagen.
+            if (werkzeuge == null || e.status != 400) throw e;
+            log.warn("Gemini lehnt die Anfrage mit Werkzeugen ab (HTTP 400) - Antwort ohne Nachschlagen. "
+                    + "Unterstuetzt das Modell '{}' Function Calling zusammen mit der Google-Suche?", model);
+            return beantworten(geminiApiKey, buildSystemPrompt(ragContext, false),
+                    verlauf(limitedMessages, pageContextInfo), null, melden, schritte, frist);
+        }
+    }
 
-        ObjectNode requestBody = objectMapper.createObjectNode();
+    /** Gesamtzeit einer Frage; gemessen ab dem Start, gilt auch fuer den Rueckfall. */
+    private record Frist(long startNanos, Duration gesamt) {
 
-        // System Prompt with RAG context or full codebase fallback
-        ObjectNode systemInstruction = objectMapper.createObjectNode();
-        ArrayNode sysParts = objectMapper.createArrayNode();
-        sysParts.add(objectMapper.createObjectNode().put("text", buildSystemPrompt(ragContext)));
-        systemInstruction.set("parts", sysParts);
-        requestBody.set("systemInstruction", systemInstruction);
+        Duration vergangen() {
+            return Duration.ofNanos(System.nanoTime() - startNanos);
+        }
 
-        // Conversation history (inject page context into the latest user message)
+        Duration rest() {
+            return gesamt.minus(vergangen());
+        }
+
+        /** Nachschlagen nur in den ersten 75 s und solange genug Zeit fuer die Antwort bleibt. */
+        boolean nachschlagenErlaubt() {
+            return vergangen().compareTo(NACHSCHLAGEN_BIS) < 0 && rest().compareTo(RESERVE_FUER_ANTWORT) >= 0;
+        }
+    }
+
+    /** Die Frage hat die Gesamtzeit ueberschritten; der Nutzer soll es noch einmal versuchen. */
+    public static final class ZeitlimitErreicht extends IOException {
+        public ZeitlimitErreicht() {
+            super("Zeitlimit der KI-Hilfe erreicht");
+        }
+    }
+
+    /** Gemini hat die Anfrage abgelehnt; ein zweiter Versuch mit derselben Anfrage hilft nicht. */
+    static final class AnfrageAbgelehnt extends IOException {
+        final int status;
+
+        AnfrageAbgelehnt(int status) {
+            super("KI-Hilfe nicht verfügbar (Fehler " + status + ")");
+            this.status = status;
+        }
+    }
+
+    /** Erste, automatische Suche; {@code null}, wenn nichts gefunden wurde. */
+    private String ersteSuche(List<ChatMessage> verlauf, PageContext pageContext, KiHilfeWerkzeuge werkzeuge,
+                              Consumer<String> melden) {
+        String contextHint = pageContext != null
+                ? "Seite: %s (%s)".formatted(
+                        pageContext.pageTitle() != null ? pageContext.pageTitle() : "",
+                        pageContext.route() != null ? pageContext.route() : "")
+                : null;
+        String currentRoute = pageContext != null ? pageContext.route() : null;
+        List<LocalRagService.CodeChunkResult> results;
+        try {
+            results = localRagService.search(suchfrage(verlauf), contextHint, currentRoute);
+        } catch (RuntimeException e) {
+            log.warn("  [X] RAG-Suche fehlgeschlagen: {}", e.getClass().getSimpleName());
+            return null;
+        }
+        if (results.isEmpty()) {
+            log.info("  [X] RAG: Keine passenden Abschnitte gefunden");
+            return null;
+        }
+        werkzeuge.merkeGesehen(results);
+        String ragContext = localRagService.buildContextFromResults(results);
+        log.info("  [OK] RAG: {} Abschnitte ({} Zeichen Kontext)", results.size(), ragContext.length());
+        for (var r : results) {
+            log.info("    - {} -- {} ({}{})", r.filePath(), r.name(), r.category(),
+                    r.aktuelleSeite() ? ", aktuelle Seite" : "");
+        }
+        // Ausserhalb des try: Hat der Nutzer den Chat geschlossen, bricht die Meldung hier ab
+        melden.accept(SCHRITT_ERSTE_SUCHE);
+        return ragContext;
+    }
+
+    /**
+     * Suchtext fuer die erste Suche: die letzte Frage. Ist sie kurz, ist sie meist eine Nachfrage
+     * ("Und bei Anfragen?") - dann kommt die Frage davor dazu, sonst fehlt der Suche das Thema.
+     */
+    static String suchfrage(List<ChatMessage> verlauf) {
+        List<String> fragen = verlauf.stream()
+                .filter(m -> "user".equals(m.role()))
+                .map(ChatMessage::text)
+                .toList();
+        if (fragen.isEmpty()) return "";
+        String letzte = fragen.get(fragen.size() - 1);
+        if (fragen.size() == 1 || letzte.strip().split("\\s++").length > MAX_WOERTER_NACHFRAGE) {
+            return letzte;
+        }
+        return fragen.get(fragen.size() - 2) + "\n" + letzte;
+    }
+
+    /** Gespraechsverlauf fuer Gemini; der Seitenkontext haengt an der letzten Frage. */
+    private ArrayNode verlauf(List<ChatMessage> messages, String pageContextInfo) {
         ArrayNode contents = objectMapper.createArrayNode();
-        for (int i = 0; i < limitedMessages.size(); i++) {
-            ChatMessage msg = limitedMessages.get(i);
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage msg = messages.get(i);
             String role = "user".equals(msg.role()) ? "user" : "model";
-            ObjectNode msgNode = objectMapper.createObjectNode().put("role", role);
-            ArrayNode parts = objectMapper.createArrayNode();
-
-            // Append page context to the last user message
             String text = msg.text();
-            boolean isLastUserMessage = "user".equals(msg.role()) && i == limitedMessages.size() - 1;
+            boolean isLastUserMessage = "user".equals(msg.role()) && i == messages.size() - 1;
             if (isLastUserMessage && pageContextInfo != null && !pageContextInfo.isBlank()) {
                 text = text + "\n\n" + pageContextInfo;
             }
-
-            parts.add(objectMapper.createObjectNode().put("text", text));
-            msgNode.set("parts", parts);
-            contents.add(msgNode);
+            ObjectNode msgNode = contents.addObject().put("role", role);
+            msgNode.putArray("parts").addObject().put("text", text);
         }
+        return contents;
+    }
+
+    /**
+     * Die Nachschlage-Schleife: Gemini antwortet oder ruft Werkzeuge auf; deren Ergebnisse gehen in
+     * den Verlauf, und es geht in die naechste Runde. In der letzten Runde sind Werkzeug-Aufrufe
+     * abgeschaltet ({@code mode NONE}) - dann muss eine Antwort kommen.
+     */
+    private ChatResult beantworten(String geminiApiKey, String systemPrompt, ArrayNode contents,
+                                   KiHilfeWerkzeuge werkzeuge, Consumer<String> melden, List<String> schritte,
+                                   Frist frist) throws IOException, InterruptedException {
+        Map<String, SourceLink> quellen = new LinkedHashMap<>();
+        Set<String> websuchen = new LinkedHashSet<>();
+        boolean antwortErzwingen = false;
+        for (int runde = 0; ; runde++) {
+            boolean nachschlagen = werkzeuge != null && runde < MAX_NACHSCHLAGE_RUNDEN && !antwortErzwingen
+                    && frist.nachschlagenErlaubt();
+            JsonNode kandidat = GeminiVerlauf.kandidat(
+                    senden(anfrage(systemPrompt, contents, werkzeuge, nachschlagen), geminiApiKey, frist));
+
+            websuchenMelden(kandidat, websuchen, melden);
+            for (SourceLink quelle : extractGroundingSources(kandidat)) {
+                quellen.putIfAbsent(quelle.url(), quelle);
+            }
+
+            List<JsonNode> aufrufe = GeminiVerlauf.funktionsaufrufe(kandidat);
+            if (aufrufe.isEmpty() || !nachschlagen) {
+                if (kandidat.isMissingNode()) {
+                    throw new IOException("Keine Antwort von der KI erhalten");
+                }
+                String replyText = GeminiVerlauf.text(kandidat);
+                if (replyText.isBlank() && nachschlagen
+                        && KAPUTTER_AUFRUF.equals(kandidat.path("finishReason").asText(""))) {
+                    // Die KI hat einen Werkzeug-Aufruf verbockt: noch einmal, dann aber mit Antwortpflicht
+                    log.warn("  -> Gemini: kaputter Werkzeug-Aufruf, Antwort ohne weiteres Nachschlagen");
+                    antwortErzwingen = true;
+                    continue;
+                }
+                if (replyText.isBlank()) {
+                    throw new IOException("Keine Textantwort von der KI erhalten");
+                }
+                log.info("  -> Antwort nach {} Nachschlage-Runde(n), {} Web-Quellen", runde, quellen.size());
+                return new ChatResult(replyText, List.copyOf(quellen.values()), List.copyOf(schritte));
+            }
+
+            contents.add(GeminiVerlauf.modellZug(kandidat));
+            List<ObjectNode> antworten = new ArrayList<>();
+            for (int i = 0; i < aufrufe.size(); i++) {
+                JsonNode aufruf = aufrufe.get(i);
+                // Je Aufruf pruefen: Auch das Einbetten der Werkzeug-Suchen kostet Zeit
+                boolean nochZeit = frist.nachschlagenErlaubt();
+                antwortErzwingen |= !nochZeit;
+                ObjectNode ergebnis = !nochZeit ? werkzeuge.keineZeitMehr()
+                        : i < MAX_AUFRUFE_JE_RUNDE ? werkzeuge.ausfuehren(aufruf) : werkzeuge.zuVieleAufrufe();
+                antworten.add(GeminiVerlauf.antwortTeil(aufruf, ergebnis));
+            }
+            contents.add(GeminiVerlauf.antwortZug(antworten));
+            log.info("  -> Nachschlage-Runde {}: {} Werkzeug-Aufruf(e)", runde + 1, aufrufe.size());
+        }
+    }
+
+    private ObjectNode anfrage(String systemPrompt, ArrayNode contents, KiHilfeWerkzeuge werkzeuge,
+                               boolean nachschlagen) {
+        ObjectNode requestBody = objectMapper.createObjectNode();
+        requestBody.putObject("systemInstruction").putArray("parts").addObject().put("text", systemPrompt);
         requestBody.set("contents", contents);
 
-        // Generation config
-        ObjectNode config = objectMapper.createObjectNode();
+        ObjectNode config = requestBody.putObject("generationConfig");
         config.put("temperature", temperature);
         config.put("maxOutputTokens", maxOutputTokens);
-        requestBody.set("generationConfig", config);
 
+        ArrayNode tools = objectMapper.createArrayNode();
         // Google Search grounding tool – allows Gemini to search the web
         if (webSearchEnabled) {
-            ArrayNode tools = objectMapper.createArrayNode();
-            ObjectNode searchTool = objectMapper.createObjectNode();
-            searchTool.set("googleSearch", objectMapper.createObjectNode());
-            tools.add(searchTool);
+            tools.addObject().putObject("googleSearch");
+        }
+        if (werkzeuge != null) {
+            tools.addObject().set("functionDeclarations", werkzeuge.deklarationen());
+        }
+        if (!tools.isEmpty()) {
             requestBody.set("tools", tools);
         }
 
+        if (werkzeuge != null && (webSearchEnabled || !nachschlagen)) {
+            ObjectNode toolConfig = requestBody.putObject("toolConfig");
+            if (webSearchEnabled) {
+                // Google-Suche und eigene Werkzeuge in einer Anfrage (Gemini 3): Die Suchaufrufe
+                // kommen dann im Verlauf mit und gehen im naechsten Zug unveraendert zurueck.
+                toolConfig.put("includeServerSideToolInvocations", true);
+            }
+            if (!nachschlagen) {
+                toolConfig.putObject("functionCallingConfig").put("mode", "NONE");
+            }
+        }
+        return requestBody;
+    }
+
+    private JsonNode senden(ObjectNode requestBody, String geminiApiKey, Frist frist)
+            throws IOException, InterruptedException {
         String body = objectMapper.writeValueAsString(requestBody);
-
-        HttpRequest request = GeminiAnfrage.generateContent(model, geminiApiKey)
-                .timeout(Duration.ofSeconds(60))
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request,
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-        if (response.statusCode() != 200) {
+        for (int versuch = 1; ; versuch++) {
+            Duration rest = frist.rest();
+            if (rest.isNegative() || rest.isZero()) {
+                throw new ZeitlimitErreicht();
+            }
+            HttpRequest request = GeminiAnfrage.generateContent(model, geminiApiKey)
+                    .timeout(rest.compareTo(GEMINI_ZEITLIMIT) < 0 ? rest : GEMINI_ZEITLIMIT)
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response;
+            try {
+                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            } catch (HttpTimeoutException e) {
+                if (!frist.rest().isPositive()) throw new ZeitlimitErreicht();
+                throw e;
+            }
+            if (response.statusCode() == 200) {
+                return objectMapper.readTree(response.body());
+            }
+            if (versuch == 1 && GeminiAnfrage.istVoruebergehend(response.statusCode())) {
+                log.warn("Gemini KI-Hilfe: HTTP {} - neuer Versuch", response.statusCode());
+                Thread.sleep(wiederholungsPause.toMillis());
+                continue;
+            }
             log.error("Gemini KI-Hilfe API Error {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
-            throw new IOException("KI-Hilfe nicht verfügbar (Fehler " + response.statusCode() + ")");
+            throw new AnfrageAbgelehnt(response.statusCode());
         }
+    }
 
-        JsonNode root = objectMapper.readTree(response.body());
-
-        // Debug: log grounding metadata presence
-        JsonNode candidates = root.path("candidates");
-        if (candidates.isArray() && !candidates.isEmpty()) {
-            JsonNode candidate = candidates.get(0);
-            JsonNode gm = candidate.path("groundingMetadata");
-            if (!gm.isMissingNode()) {
-                JsonNode queries = gm.path("webSearchQueries");
-                if (queries.isArray() && !queries.isEmpty()) {
-                    // Nur die Anzahl: die Suchanfragen entstehen aus der Nutzerfrage.
-                    log.info("  -> Google Search Queries: {}", queries.size());
-                }
-            }
-
-            JsonNode partsNode = candidate.path("content").path("parts");
-            if (partsNode.isArray() && !partsNode.isEmpty()) {
-                // Collect text from all parts (some may be function call results)
-                StringBuilder replyBuilder = new StringBuilder();
-                for (JsonNode part : partsNode) {
-                    String partText = part.path("text").asText("");
-                    if (!partText.isEmpty()) {
-                        if (replyBuilder.length() > 0) replyBuilder.append("\n");
-                        replyBuilder.append(partText);
-                    }
-                }
-                String replyText = replyBuilder.toString();
-
-                if (replyText.isEmpty()) {
-                    throw new IOException("Keine Textantwort von der KI erhalten");
-                }
-
-                // Extract grounding sources from Google Search results
-                List<SourceLink> sources = extractGroundingSources(candidate);
-                if (!sources.isEmpty()) {
-                    log.info("  -> {} Web-Quellen aus Google Search Grounding extrahiert", sources.size());
-                    sources.forEach(s -> log.info("    - [{}] {}", s.title(), s.url()));
-                }
-
-                return new ChatResult(replyText, sources);
-            }
+    /** Neue Internet-Suchen der Runde als Schritt melden; ins Log nur die Anzahl (sie enthalten die Frage). */
+    private void websuchenMelden(JsonNode kandidat, Set<String> bisher, Consumer<String> melden) {
+        JsonNode queries = kandidat.path("groundingMetadata").path("webSearchQueries");
+        if (!queries.isArray() || queries.isEmpty()) return;
+        log.info("  -> Google Search Queries: {}", queries.size());
+        for (JsonNode query : queries) {
+            String text = query.asText("").strip();
+            if (text.isEmpty() || bisher.size() >= MAX_WEBSUCHEN_ANZEIGE || !bisher.add(text)) continue;
+            melden.accept("Sucht im Internet: " + text);
         }
-
-        throw new IOException("Keine Antwort von der KI erhalten");
     }
 
     /**
@@ -504,12 +704,7 @@ public class KiHilfeService {
      * Extracts source links from Gemini Google Search grounding metadata.
      */
     private List<SourceLink> extractGroundingSources(JsonNode candidate) {
-        JsonNode groundingMetadata = candidate.path("groundingMetadata");
-        if (groundingMetadata.isMissingNode()) {
-            return Collections.emptyList();
-        }
-
-        JsonNode chunks = groundingMetadata.path("groundingChunks");
+        JsonNode chunks = candidate.path("groundingMetadata").path("groundingChunks");
         if (!chunks.isArray() || chunks.isEmpty()) {
             return Collections.emptyList();
         }

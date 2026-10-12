@@ -1,20 +1,28 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Gem, X, Send, Trash2, Minimize2, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BESTELLBEDARF_PFAD, istFreigegeben } from '../lib/freigaben';
-
-interface SourceLink {
-    title: string;
-    url: string;
-}
+import { InfoAbschnitt, InfoButton } from './ui/info-button';
+import { useToast } from './ui/toast';
+import { KiSchritteLive, KiSchritteVerlauf } from '../features/ki/KiSchritte';
+import { KI_VERBINDUNGSFEHLER, KiHilfeFehler, stelleKiFrage, type KiQuelle } from '../features/ki/kiHilfeAnfrage';
 
 interface Message {
     role: 'user' | 'assistant';
     text: string;
-    sources?: SourceLink[];
+    sources?: KiQuelle[];
+    /** Wo die KI für diese Antwort nachgeschaut hat. Fehlt bei älteren gespeicherten Nachrichten. */
+    schritte?: string[];
 }
+
+/** Vorschläge im leeren Chat – häufige Fragen aus dem Büroalltag. */
+const VORSCHLAEGE = [
+    'Wie lege ich eine neue Anfrage an?',
+    'Wo finde ich die Zeiterfassung?',
+    'Wie storniere ich eine Rechnung?',
+];
 
 const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
 
@@ -42,6 +50,7 @@ function readLS<T>(key: string, fallback: T): T {
 export function KiHilfeChat() {
     const location = useLocation();
     const navigate = useNavigate();
+    const toast = useToast();
     const [userId, setUserId] = useState<number | null>(() => getCurrentUserId());
 
     // Derive user-scoped localStorage keys
@@ -55,9 +64,21 @@ export function KiHilfeChat() {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    /** Schritte der laufenden Anfrage, live vom Server. */
+    const [liveSchritte, setLiveSchritte] = useState<string[]>([]);
+    const laufendeAnfrageRef = useRef<AbortController | null>(null);
+    /** Text der Frage, auf deren Antwort gerade gewartet wird. */
+    const offeneFrageRef = useRef<string | null>(null);
+    /** Nach „Abbrechen“ soll der Nutzer die Frage gleich ändern können. */
+    const eingabeFokussierenRef = useRef(false);
+    /** Das Chatfenster selbst – seine Inhalte sind keine Meldungen der Seite. */
+    const fensterRef = useRef<HTMLDivElement>(null);
+    /** Fehler, die die KI-Hilfe selbst als Toast gezeigt hat. */
+    const eigeneFehlerRef = useRef(new Set<string>());
     const [geoLocation, setGeoLocation] = useState<{ latitude: number; longitude: number } | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const titelId = useId();
 
     // Detect user profile changes (login/switch)
     useEffect(() => {
@@ -77,14 +98,28 @@ export function KiHilfeChat() {
         };
     }, [userId]);
 
+    /** Bricht eine laufende Frage still ab – ohne Fehlermeldung. */
+    const anfrageAbbrechen = useCallback(() => {
+        laufendeAnfrageRef.current?.abort();
+        laufendeAnfrageRef.current = null;
+        offeneFrageRef.current = null;
+        setLoading(false);
+        setLiveSchritte([]);
+    }, []);
+
+    // Beim Verlassen der Seite keine Antwort mehr abwarten.
+    useEffect(() => () => laufendeAnfrageRef.current?.abort(), []);
+
     // Reload state when user changes
     useEffect(() => {
+        // Eine Antwort für den vorherigen Benutzer gehört nicht in den neuen Chat.
+        anfrageAbbrechen();
         setMessages(readLS(keyMessages, []));
         setOpen(readLS(keyOpen, false));
         setMinimized(readLS(keyMinimized, false));
         setError(null);
         setInput('');
-    }, [keyMessages, keyOpen, keyMinimized]);
+    }, [keyMessages, keyOpen, keyMinimized, anfrageAbbrechen]);
 
     // Persist state to localStorage on change
     useEffect(() => { localStorage.setItem(keyMessages, JSON.stringify(messages)); }, [messages, keyMessages]);
@@ -121,13 +156,21 @@ export function KiHilfeChat() {
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages, scrollToBottom]);
+    }, [messages, liveSchritte, loading, scrollToBottom]);
 
     useEffect(() => {
         if (open && !minimized) {
             inputRef.current?.focus();
         }
     }, [open, minimized]);
+
+    // Erst wenn das Eingabefeld wieder frei ist, lässt es sich fokussieren.
+    useEffect(() => {
+        if (!loading && eingabeFokussierenRef.current) {
+            eingabeFokussierenRef.current = false;
+            inputRef.current?.focus();
+        }
+    }, [loading]);
 
     /** Collect current page context for RAG-enhanced responses. */
     const gatherPageContext = useCallback(() => {
@@ -141,7 +184,13 @@ export function KiHilfeChat() {
         const errorEls = document.querySelectorAll(
             '[role="alert"], .bg-red-50, .bg-yellow-50'
         );
+        // Eigene Meldungen der KI-Hilfe (im Chatfenster oder als ihr Toast) gehören
+        // nicht zur Seite. Andere Toasts zählen weiter, sie erklären oft die Frage.
+        const istEigeneMeldung = (el: Element) =>
+            !!fensterRef.current?.contains(el)
+            || (!!el.closest('[data-pc-toasts]') && eigeneFehlerRef.current.has(el.textContent?.trim() ?? ''));
         const errors = Array.from(errorEls)
+            .filter(el => !istEigeneMeldung(el))
             .map(el => el.textContent?.trim())
             .filter(Boolean)
             .slice(0, 5)
@@ -277,31 +326,46 @@ export function KiHilfeChat() {
         setMessages(newMessages);
         setInput('');
         setError(null);
+        setLiveSchritte([]);
         setLoading(true);
 
+        const steuerung = new AbortController();
+        laufendeAnfrageRef.current = steuerung;
+        offeneFrageRef.current = trimmed;
         try {
-            const context = gatherPageContext();
-            const res = await fetch('/api/ki-hilfe/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+            const antwort = await stelleKiFrage(
+                {
                     messages: newMessages.map(m => ({ role: m.role, text: m.text })),
-                    context,
-                }),
-            });
-
-            const data = await res.json();
-
-            if (!res.ok || data.error) {
-                setError(data.error || 'Fehler bei der KI-Anfrage');
-                return;
-            }
-
-            setMessages(prev => [...prev, { role: 'assistant', text: data.reply, sources: data.sources }]);
-        } catch {
-            setError('Verbindung zur KI fehlgeschlagen. Ist der Server erreichbar?');
+                    context: gatherPageContext(),
+                },
+                {
+                    signal: steuerung.signal,
+                    beiSchritt: (text) => {
+                        if (!steuerung.signal.aborted) setLiveSchritte(prev => [...prev, text]);
+                    },
+                },
+            );
+            if (steuerung.signal.aborted) return;
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                text: antwort.reply,
+                sources: antwort.sources,
+                schritte: antwort.schritte,
+            }]);
+        } catch (fehler) {
+            // Abgebrochen (Knopf „Abbrechen“, Chat geleert, Seite verlassen): kein Fehler für den Nutzer.
+            if (steuerung.signal.aborted) return;
+            const meldung = fehler instanceof KiHilfeFehler ? fehler.message : KI_VERBINDUNGSFEHLER;
+            setError(meldung);
+            eigeneFehlerRef.current.add(meldung);
+            toast.error(meldung);
         } finally {
-            setLoading(false);
+            if (laufendeAnfrageRef.current === steuerung) {
+                laufendeAnfrageRef.current = null;
+                offeneFrageRef.current = null;
+                setLoading(false);
+                setLiveSchritte([]);
+            }
         }
     };
 
@@ -312,7 +376,25 @@ export function KiHilfeChat() {
         }
     };
 
+    /**
+     * „Abbrechen“ in der Lade-Blase: Die Frage kommt zurück ins Eingabefeld, damit
+     * man sie ändern kann. Im Verlauf bleibt keine unbeantwortete Frage stehen –
+     * sonst bekäme die KI später zwei Nutzer-Nachrichten hintereinander.
+     */
+    const frageZuruecknehmen = () => {
+        const frage = offeneFrageRef.current;
+        anfrageAbbrechen();
+        if (frage === null) return;
+        setMessages(prev => {
+            const letzte = prev[prev.length - 1];
+            return letzte?.role === 'user' && letzte.text === frage ? prev.slice(0, -1) : prev;
+        });
+        setInput(frage);
+        eingabeFokussierenRef.current = true;
+    };
+
     const clearChat = () => {
+        anfrageAbbrechen();
         setMessages([]);
         setError(null);
         localStorage.setItem(keyMessages, '[]');
@@ -335,14 +417,43 @@ export function KiHilfeChat() {
 
     // Full chat panel
     return createPortal(
-        <div className="fixed bottom-6 right-6 z-50 w-[420px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-4rem)] flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+        // Schwebendes, nicht-modales Fenster: die Seite dahinter bleibt bedienbar.
+        <div
+            ref={fensterRef}
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby={titelId}
+            className="fixed bottom-6 right-6 z-50 w-[420px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-4rem)] flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-rose-600 to-rose-700 text-white flex-shrink-0">
                 <div className="flex items-center gap-2">
                     <Gem className="w-5 h-5" />
                     <div>
-                        <h3 className="text-sm font-semibold">KI-Hilfe</h3>
-                        <p className="text-xs text-rose-200">Gemini Pro · Programmhilfe</p>
+                        <div className="flex items-center gap-1">
+                            <h3 id={titelId} className="text-sm font-semibold">KI-Hilfe</h3>
+                            <InfoButton titel="So arbeitet die KI-Hilfe" variante="hell" className="-my-1">
+                                <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                    <p>
+                                        Deine Frage, die bisherigen Nachrichten in diesem Chat und ein Auszug von dem,
+                                        was gerade auf dem Bildschirm steht, gehen an Google Gemini. Die KI schaut zuerst
+                                        in der Anleitung und im Aufbau der Seiten nach. Findet sie nicht sofort eine sichere
+                                        Antwort, sucht sie selbst weiter, mit anderen Begriffen und in höchstens vier Runden.
+                                        Fachfragen wie Normen, Vorschriften, Wetter oder Preise beantwortet sie mit der
+                                        Google-Suche. Hast du den Standort freigegeben, geht er mit jeder Frage mit, damit
+                                        die KI Wetter- und Ortsfragen beantworten kann.
+                                    </p>
+                                </InfoAbschnitt>
+                                <InfoAbschnitt titel="Was bewirkt das?">
+                                    <p>
+                                        Einfache Fragen sind in wenigen Sekunden beantwortet, schwierige dauern etwas
+                                        länger. Während die KI sucht, siehst du, wo sie gerade nachschaut. Sie liest und
+                                        erklärt nur und ändert nichts im Programm. Antworten können trotzdem einmal falsch
+                                        sein, bei wichtigen Dingen lieber kurz nachprüfen.
+                                    </p>
+                                </InfoAbschnitt>
+                            </InfoButton>
+                        </div>
+                        <p className="text-xs text-rose-200">Gemini · Programmhilfe</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-1">
@@ -377,11 +488,7 @@ export function KiHilfeChat() {
                         <Gem className="w-10 h-10 mx-auto text-rose-300" />
                         <p className="text-sm font-medium">Wie kann ich dir helfen?</p>
                         <div className="space-y-2">
-                            {[
-                                'Wie erstelle ich ein neues Anfrage?',
-                                'Wo finde ich die Zeiterfassung?',
-                                'Wie funktioniert die Kalkulation?',
-                            ].map((suggestion) => (
+                            {VORSCHLAEGE.map((suggestion) => (
                                 <button
                                     key={suggestion}
                                     onClick={() => {
@@ -397,64 +504,59 @@ export function KiHilfeChat() {
                     </div>
                 )}
 
-                {messages.map((msg, i) => (
-                    <div
-                        key={i}
-                        className={cn(
-                            'flex',
-                            msg.role === 'user' ? 'justify-end' : 'justify-start'
-                        )}
-                    >
+                {/* Fertige Antworten liest der Screenreader vor; die Schritte haben ihre eigene Live-Region darunter. */}
+                <div role="log" aria-live="polite" aria-label="Unterhaltung" className="space-y-3">
+                    {messages.map((msg, i) => (
                         <div
+                            key={i}
                             className={cn(
-                                'max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
-                                msg.role === 'user'
-                                    ? 'bg-rose-600 text-white rounded-br-md'
-                                    : 'bg-slate-100 text-slate-800 rounded-bl-md'
+                                'flex flex-col',
+                                msg.role === 'user' ? 'items-end' : 'items-start'
                             )}
                         >
-                            {msg.role === 'assistant' ? (
-                                <>
-                                    <MarkdownText text={msg.text} onNavigate={navigate} />
-                                    {msg.sources && msg.sources.length > 0 && (
-                                        <div className="mt-2 pt-2 border-t border-slate-200/60">
-                                            <p className="text-[11px] text-slate-400 font-medium mb-1">Quellen:</p>
-                                            <div className="space-y-0.5">
-                                                {msg.sources.map((source, j) => (
-                                                    <a
-                                                        key={j}
-                                                        href={source.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-800 hover:underline truncate"
-                                                    >
-                                                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                                                        <span className="truncate">{source.title || source.url}</span>
-                                                    </a>
-                                                ))}
+                            <div
+                                className={cn(
+                                    'max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed',
+                                    msg.role === 'user'
+                                        ? 'bg-rose-600 text-white rounded-br-md'
+                                        : 'bg-slate-100 text-slate-800 rounded-bl-md'
+                                )}
+                            >
+                                {msg.role === 'assistant' ? (
+                                    <>
+                                        <MarkdownText text={msg.text} onNavigate={navigate} />
+                                        {msg.sources && msg.sources.length > 0 && (
+                                            <div className="mt-2 pt-2 border-t border-slate-200/60">
+                                                <p className="text-[11px] text-slate-400 font-medium mb-1">Quellen:</p>
+                                                <div className="space-y-0.5">
+                                                    {msg.sources.map((source, j) => (
+                                                        <a
+                                                            key={j}
+                                                            href={source.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-800 hover:underline truncate"
+                                                        >
+                                                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                                            <span className="truncate">{source.title || source.url}</span>
+                                                        </a>
+                                                    ))}
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
-                                </>
-                            ) : (
-                                <span className="whitespace-pre-wrap">{msg.text}</span>
-                            )}
-                        </div>
-                    </div>
-                ))}
-
-                {loading && (
-                    <div className="flex justify-start">
-                        <div className="bg-slate-100 rounded-2xl rounded-bl-md px-4 py-3">
-                            <div className="flex gap-1.5">
-                                <span className="w-2 h-2 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                <span className="w-2 h-2 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                <span className="w-2 h-2 bg-rose-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                        )}
+                                    </>
+                                ) : (
+                                    <span className="whitespace-pre-wrap">{msg.text}</span>
+                                )}
                             </div>
+                            {msg.role === 'assistant' && msg.schritte && <KiSchritteVerlauf schritte={msg.schritte} />}
                         </div>
-                    </div>
-                )}
+                    ))}
+                </div>
 
+                {loading && <KiSchritteLive schritte={liveSchritte} onAbbrechen={frageZuruecknehmen} />}
+
+                {/* Ohne role="alert": Den Fehler sagt schon der Toast an. */}
                 {error && (
                     <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
                         {error}
@@ -480,6 +582,8 @@ export function KiHilfeChat() {
                     <button
                         onClick={sendMessage}
                         disabled={!input.trim() || loading}
+                        aria-label="Frage senden"
+                        title="Frage senden"
                         className="flex-shrink-0 p-2.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                         <Send className="w-4 h-4" />
