@@ -168,8 +168,24 @@ gelten dessen Regeln: ein Reviewer-Subagent, höchstens 2 Runden, nur eigene Dat
 stagen (die Liste aus deinen Edits + dem Bericht des Frontend-Agenten), Build-Artefakte
 aus `npm run build` dürfen mit.
 
+## 7. Pull Request bis zum Merge begleiten (Nutzervorgabe 11.10.2026, immer)
+
+`main` nimmt nur Pull Requests an. PR anlegen und Checks beobachten läuft nach
+`review-and-ship` Phase 4. Bei diesem Skill zusätzlich, **ohne erneute Rückfrage**:
+
+1. **Auto-Merge einschalten:** `mcp__ccd_pr__set_auto_merge` (Squash). GitHub mergt dann selbst,
+   sobald alle Pflicht-Checks grün sind – nie mit `--admin` oder sonst an Checks vorbei.
+2. **Auf Events reagieren:**
+   - **Roter Check:** Log lesen, Ursache beheben (nicht grün-fummeln), lokal Build/Tests der
+     betroffenen Seite, committen, pushen. Bei Frontend-Änderung `npm run build` + Assets mit.
+   - **Review-Kommentar** (Mensch, Copilot, CodeQL): sachlich prüfen, berechtigte Punkte umsetzen,
+     pushen und im Thread kurz antworten, was geändert wurde. Hält man einen Kommentar für falsch,
+     nicht still ignorieren, sondern im Thread begründen und dem Nutzer vorlegen.
+   - **Merge-Konflikt:** Branch mit `origin/main` zusammenführen (im App-Worktree über
+     `mcp__ccd_host__sync_with_base_branch`), Konflikte lösen, bei Asset-Konflikten neu bauen.
+3. **Nach dem Merge:** Issue-Status prüfen (`review-and-ship` Phase 4d), Worktree aufräumen.
+
 ## Abschluss an den Nutzer
 
 Kurz und in Handwerker-Sprache: was jetzt wo geht (welcher Knopf, welcher Reiter), was
-bewusst nicht gemacht wurde, Testzahlen, Commit/Branch. Kein Pull Request, wenn der
-Nutzer keinen verlangt hat.
+bewusst nicht gemacht wurde, Testzahlen, Commit/Branch, PR-Link, Stand von CI und Auto-Merge.

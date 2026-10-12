@@ -4,15 +4,9 @@ import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { Input } from '../components/ui/input';
 import { PageLayout } from '../components/layout/PageLayout';
-import { RefreshCw, FileText, ArrowUpRight, Building2, Check, Printer, Search, Upload, Wallet, Clock, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, FileText, ArrowUpRight, Building2, Check, Printer, Search, Wallet, Clock, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
-
-import { Dialog } from '../components/ui/dialog';
-import { DecimalInput } from '../components/ui/decimal-input';
-import { DatePicker } from '../components/ui/datepicker';
-import { formatDecimalInput } from '../lib/numberInput';
-import { validateNumberDrafts } from '../lib/numberDrafts';
 
 // API Types
 interface AusgangsrechnungDto {
@@ -47,69 +41,6 @@ interface EingangsrechnungDto {
     originalDateiname: string | null;
     pdfUrl: string | null;
 }
-
-// New interfaces for metadata
-interface AnalyzeResponse {
-    dokumentTyp: string;
-    dokumentNummer: string | null;
-    dokumentDatum: string | null;
-    betragNetto: number | null;
-    betragBrutto: number | null;
-    mwstSatz: number | null;
-    liefertermin: string | null;
-    zahlungsziel: string | null;
-    bestellnummer: string | null;
-    referenzNummer: string | null;
-    skontoTage: number | null;
-    skontoProzent: number | null;
-    nettoTage: number | null;
-    bereitsGezahlt: boolean | null;
-    zahlungsart: string | null;
-    aiConfidence: number | null;
-    analyseQuelle: string;
-    // New fields
-    lieferantName: string | null;
-    lieferantStrasse: string | null;
-    lieferantPlz: string | null;
-    lieferantOrt: string | null;
-}
-
-interface LieferantOption {
-    id: number;
-    name: string;
-}
-
-/**
- * Sucht den von der Analyse erkannten Lieferanten in der Liste: erst der genaue
- * Name, sonst ein Teilname in beide Richtungen, bei mehreren der längste
- * ("Müller Stahlbau" vor "Müller"). Teilnamen erst ab drei Zeichen, sonst träfe
- * ein kurzer Name wie "AB" fast jeden Lieferanten.
- */
-function findeErkanntenLieferanten(erkannterName: string | null | undefined, optionen: LieferantOption[]): string {
-    const gesucht = (erkannterName ?? '').trim().toLowerCase();
-    if (!gesucht) return '';
-    const mitNamen = optionen
-        .map(opt => ({ id: opt.id, name: (opt.name ?? '').trim().toLowerCase() }))
-        .filter(opt => opt.name !== '');
-    const teiltreffer = mitNamen
-        .filter(opt => (gesucht.length >= 3 && opt.name.includes(gesucht))
-            || (opt.name.length >= 3 && gesucht.includes(opt.name)))
-        .sort((a, b) => b.name.length - a.name.length);
-    const treffer = mitNamen.find(opt => opt.name === gesucht) ?? teiltreffer[0];
-    return treffer ? String(treffer.id) : '';
-}
-
-const ZAHLUNGSART_OPTIONS = [
-    { value: '', label: 'Nicht erkannt' },
-    { value: 'VORAUSKASSE', label: 'Vorauskasse' },
-    { value: 'SEPA_LASTSCHRIFT', label: 'SEPA-Lastschrift' },
-    { value: 'KREDITKARTE', label: 'Kreditkarte' },
-    { value: 'PAYPAL', label: 'PayPal' },
-    { value: 'AMAZON_PAY', label: 'Amazon Pay' },
-    { value: 'UEBERWEISUNG', label: 'Überweisung' },
-    { value: 'BAR', label: 'Bar' },
-    { value: 'SONSTIGE', label: 'Sonstige' },
-];
 
 // Utility functions
 const formatDate = (isoText: string | undefined | null): string => {
@@ -169,26 +100,6 @@ export default function RechnungsuebersichtEditor() {
     // Export loading
     const [exporting, setExporting] = useState(false);
 
-    // Manual upload states
-    const [showUploadModal, setShowUploadModal] = useState(false);
-    const [uploadFile, setUploadFile] = useState<File | null>(null);
-    const [analyzing, setAnalyzing] = useState(false);
-    const [betragDraft, setBetragDraft] = useState('');
-    const [analyzedData, setAnalyzedData] = useState<AnalyzeResponse | null>(null);
-    const [lieferantOptions, setLieferantOptions] = useState<LieferantOption[]>([]);
-    // null = noch nicht von Hand gewählt, dann gilt der aus der Analyse erkannte Lieferant.
-    const [lieferantVonHand, setLieferantVonHand] = useState<string | null>(null);
-    const [formErrors, setFormErrors] = useState<string[]>([]);
-
-    // Abgeleitet statt einmalig nach der Analyse gesetzt: Die Lieferantenliste lädt
-    // erst mit dem Dialog. Kam die Analyse vorher zurück, blieb die Zuordnung früher
-    // aus und "Speichern" gesperrt. So passt sie, egal was zuerst ankommt.
-    const erkannterLieferantId = useMemo(
-        () => findeErkanntenLieferanten(analyzedData?.lieferantName, lieferantOptions),
-        [analyzedData?.lieferantName, lieferantOptions],
-    );
-    const selectedLieferantId = lieferantVonHand ?? erkannterLieferantId;
-
     // Load data
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -217,29 +128,6 @@ export default function RechnungsuebersichtEditor() {
             setLoading(false);
         }
     }, [selectedYear, selectedMonth, searchQuery]);
-
-    // Lieferanten für die Auswahl im Upload-Dialog. Der Endpunkt liefert eine Seite
-    // ({ lieferanten: [...] }, ohne Angabe nur 50 Einträge), darum die Höchstgröße.
-    // Früher wurde die Antwort als nackte Liste gelesen: Die Auswahl blieb leer und
-    // "Speichern" gesperrt, der Fehler landete still in der Konsole.
-    useEffect(() => {
-        if (!showUploadModal) return;
-        fetch('/api/lieferanten?size=1000')
-            .then(res => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.json();
-            })
-            .then((data: { lieferanten?: { id: number; lieferantenname?: string | null }[] }) => {
-                const opts = (Array.isArray(data?.lieferanten) ? data.lieferanten : [])
-                    .map(l => ({ id: l.id, name: l.lieferantenname ?? '' }))
-                    .sort((a, b) => a.name.localeCompare(b.name));
-                setLieferantOptions(opts);
-            })
-            .catch(err => {
-                console.error('Lieferanten konnten nicht geladen werden', err);
-                toast.error('Lieferanten konnten nicht geladen werden.');
-            });
-    }, [showUploadModal, toast]);
 
     // Debounce search and reload on filter change
     useEffect(() => {
@@ -353,90 +241,25 @@ export default function RechnungsuebersichtEditor() {
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
+
+            // Eingangsrechnungen ohne PDF-Datei (Foto, XML-E-Rechnung, Datei fehlt) lässt das
+            // Backend weg und meldet ihre IDs – sonst fehlten sie unbemerkt beim Steuerberater.
+            const fehlendeIds = (response.headers.get('X-Nicht-Enthalten') ?? '')
+                .split(',')
+                .map(Number)
+                .filter(id => Number.isInteger(id) && id > 0);
+            if (fehlendeIds.length > 0) {
+                const nummern = fehlendeIds.map(id =>
+                    eingangsrechnungen.find(r => r.id === id)?.dokumentNummer || 'ohne Nummer');
+                const liste = nummern.slice(0, 5).join(', ')
+                    + (nummern.length > 5 ? ` und ${nummern.length - 5} weitere` : '');
+                toast.warning(`Nicht im Gesamt-PDF, weil es keine PDF-Datei dazu gibt: ${liste}`);
+            }
         } catch (err) {
             console.error('Export-Fehler:', err);
             toast.error(err instanceof Error ? err.message : 'Fehler beim Erstellen der PDF-Datei.');
         } finally {
             setExporting(false);
-        }
-    };
-
-    // Handle Manual Upload
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files.length > 0) {
-            const file = e.target.files[0];
-            setUploadFile(file);
-            setAnalyzing(true);
-            setAnalyzedData(null);
-            setLieferantVonHand(null);
-            setBetragDraft('');
-            setFormErrors([]);
-
-            const formData = new FormData();
-            formData.append('datei', file);
-
-            try {
-                const res = await fetch('/api/rechnungsuebersicht/analyze-upload', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.length > 0) {
-                        const result = data[0].analyzeResponse;
-                        setAnalyzedData(result);
-                        setBetragDraft(result.betragBrutto == null ? '' : formatDecimalInput(result.betragBrutto));
-                    }
-                } else {
-                    console.error("Analysis failed");
-                    setFormErrors(["Fehler bei der Analyse"]);
-                }
-            } catch (err) {
-                console.error("Error analyzing", err);
-                setFormErrors(["Fehler bei der Übertragung"]);
-            } finally {
-                setAnalyzing(false);
-            }
-        }
-    };
-
-    const handleSaveUpload = async () => {
-        if (!uploadFile || !analyzedData) return;
-        const checked = validateNumberDrafts({ betrag: betragDraft }, { betrag: { label: 'Betrag Brutto', required: true, maxDecimalPlaces: 2 } });
-        if (!checked.valid) { setFormErrors([checked.message]); toast.error(checked.message); return; }
-        if (!selectedLieferantId) {
-            setFormErrors(["Bitte wählen Sie einen Lieferanten aus."]);
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append('datei', uploadFile);
-        formData.append('metadata', JSON.stringify({
-            ...analyzedData,
-            betragBrutto: checked.values.betrag,
-            lieferantId: parseInt(selectedLieferantId)
-        }));
-
-        try {
-            const res = await fetch('/api/rechnungsuebersicht/import-upload', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (res.ok) {
-                setShowUploadModal(false);
-                setUploadFile(null);
-                setAnalyzedData(null);
-                loadData(); // Refresh list
-            } else {
-                const err = await res.json();
-                setFormErrors([err.message || "Speichern fehlgeschlagen"]);
-                toast.error(err.message || "Speichern fehlgeschlagen");
-            }
-        } catch {
-            setFormErrors(["Netzwerkfehler beim Speichern"]);
-            toast.error("Netzwerkfehler beim Speichern");
         }
     };
 
@@ -450,16 +273,6 @@ export default function RechnungsuebersichtEditor() {
             subtitle="Alle Eingangs- und Ausgangsrechnungen nach Monat"
             actions={
                 <div className="flex items-center gap-2">
-                    <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowUploadModal(true)}
-                        className="bg-white hover:bg-slate-50 text-slate-700"
-                    >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Rechnung hochladen
-                    </Button>
-
                     {selectionCount > 0 && (
                         <Button
                             size="sm"
@@ -603,7 +416,7 @@ export default function RechnungsuebersichtEditor() {
                         <Card className="p-8 text-center border-0 shadow-sm rounded-xl">
                             <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                             <p className="text-sm font-medium text-slate-600">Keine Ausgangsrechnungen gefunden.</p>
-                            <p className="text-xs mt-1 text-slate-400">Passen Sie die Filter an oder laden Sie eine Rechnung hoch.</p>
+                            <p className="text-xs mt-1 text-slate-400">Passen Sie die Filter an.</p>
                         </Card>
                     ) : (
                         <Card className="overflow-hidden border-0 shadow-sm rounded-xl">
@@ -765,7 +578,7 @@ export default function RechnungsuebersichtEditor() {
                         <Card className="p-8 text-center border-0 shadow-sm rounded-xl">
                             <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                             <p className="text-sm font-medium text-slate-600">Keine Eingangsrechnungen gefunden.</p>
-                            <p className="text-xs mt-1 text-slate-400">Passen Sie die Filter an oder laden Sie eine Rechnung hoch.</p>
+                            <p className="text-xs mt-1 text-slate-400">Passen Sie die Filter an.</p>
                         </Card>
                     ) : (
                         <Card className="overflow-hidden border-0 shadow-sm rounded-xl">
@@ -856,157 +669,6 @@ export default function RechnungsuebersichtEditor() {
             {/* Document Preview Modal */}
             {previewDoc && (
                 <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
-            )}
-
-            {/* Manual Upload Modal */}
-            {showUploadModal && (
-                <Dialog open onOpenChange={setShowUploadModal} aria-label="Rechnung importieren" className="w-full max-w-2xl p-0 overflow-hidden">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-                        <div className="pl-6 pr-14 py-4 border-b border-slate-200 flex justify-between items-center">
-                            <h3 className="font-bold text-lg text-slate-900">Rechnung/Gutschrift manuell importieren</h3>
-
-                        </div>
-
-                        <div className="p-6 overflow-y-auto">
-                            {!analyzedData && !analyzing && (
-                                <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center bg-slate-50 hover:bg-slate-100 transition-colors">
-                                    <input
-                                        type="file"
-                                        onChange={handleFileChange}
-                                        className="hidden"
-                                        id="file-upload"
-                                        accept=".pdf,.xml,.jpg,.jpeg,.png"
-                                    />
-                                    <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-                                        <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mb-4">
-                                            <FileText className="w-8 h-8" />
-                                        </div>
-                                        <span className="font-medium text-slate-900">Datei auswählen</span>
-                                        <span className="text-sm text-slate-500 mt-1">PDF, XML oder Bilder</span>
-                                    </label>
-                                </div>
-                            )}
-
-                            {analyzing && (
-                                <div className="py-12 flex flex-col items-center justify-center text-rose-600">
-                                    <RefreshCw className="w-8 h-8 animate-spin mb-4" />
-                                    <p className="font-medium">Dokument wird analysiert...</p>
-                                </div>
-                            )}
-
-                            {analyzedData && (
-                                <div className="space-y-4">
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start gap-3">
-                                        <Check className="w-5 h-5 text-green-600 mt-0.5" />
-                                        <div>
-                                            <p className="font-medium text-green-800">Analyse erfolgreich</p>
-                                            <p className="text-sm text-green-700">
-                                                Bitte überprüfen Sie die Daten und wählen Sie einen Lieferanten.
-                                                {analyzedData.lieferantName && (
-                                                    <span className="block mt-1 font-semibold">Erkannter Lieferant: {analyzedData.lieferantName}</span>
-                                                )}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="md:col-span-2">
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Lieferant *</label>
-                                            <Select
-                                                aria-label="Lieferant"
-                                                value={selectedLieferantId}
-                                                onChange={setLieferantVonHand}
-                                                options={[
-                                                    { value: '', label: 'Bitte wählen...' },
-                                                    ...lieferantOptions.map(l => ({ value: String(l.id), label: l.name || `Ohne Namen (Nr. ${l.id})` }))
-                                                ]}
-                                                className="w-full"
-                                                placeholder="Lieferant auswählen"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Dokumentenart</label>
-                                            <Select
-                                                value={analyzedData.dokumentTyp || 'RECHNUNG'}
-                                                onChange={val => setAnalyzedData({ ...analyzedData, dokumentTyp: val })}
-                                                options={[
-                                                    { value: 'RECHNUNG', label: 'Rechnung' },
-                                                    { value: 'GUTSCHRIFT', label: 'Gutschrift' },
-                                                    { value: 'LIEFERSCHEIN', label: 'Lieferschein' }
-                                                ]}
-                                                className="w-full"
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Dokumentennummer</label>
-                                            <Input
-                                                value={analyzedData.dokumentNummer || ''}
-                                                onChange={e => setAnalyzedData({ ...analyzedData, dokumentNummer: e.target.value })}
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Datum</label>
-                                            <DatePicker aria-label="Datum"
-                                                value={analyzedData.dokumentDatum || ''}
-                                                onChange={value => setAnalyzedData({ ...analyzedData, dokumentDatum: value })}
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Betrag Brutto</label>
-                                            <DecimalInput aria-label="Betrag Brutto" required
-                                                value={betragDraft}
-                                                onChange={setBetragDraft}
-                                            />
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">Zahlungsart</label>
-                                            <Select
-                                                value={analyzedData.zahlungsart || ''}
-                                                onChange={val => setAnalyzedData({ ...analyzedData, zahlungsart: val || null })}
-                                                options={ZAHLUNGSART_OPTIONS}
-                                                className="w-full"
-                                            />
-                                        </div>
-
-                                        {/* Only Show Reference Number if Gutschrift */}
-                                        {analyzedData.dokumentTyp === 'GUTSCHRIFT' && (
-                                            <div className="md:col-span-2">
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">Referenz zu Rechnungsnr.</label>
-                                                <Input
-                                                    value={analyzedData.referenzNummer || ''}
-                                                    onChange={e => setAnalyzedData({ ...analyzedData, referenzNummer: e.target.value })}
-                                                    placeholder="z.B. Original-Rechnungsnummer"
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {formErrors.length > 0 && (
-                                        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
-                                            {formErrors.map((e, i) => <div key={i}>{e}</div>)}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-                            <Button variant="ghost" onClick={() => setShowUploadModal(false)}>Abbrechen</Button>
-                            <Button
-                                onClick={handleSaveUpload}
-                                disabled={!analyzedData || !selectedLieferantId}
-                                className="bg-rose-600 text-white hover:bg-rose-700"
-                            >
-                                Speichern
-                            </Button>
-                        </div>
-                    </div>
-                </Dialog>
             )}
         </PageLayout>
     );

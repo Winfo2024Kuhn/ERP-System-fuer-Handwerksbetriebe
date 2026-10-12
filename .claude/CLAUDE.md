@@ -1,5 +1,13 @@
 # Projekt-Kontext: Open-Source ERP für Handwerksbetriebe
 
+## ⬇️ Als Allererstes: neuesten Stand holen (immer)
+
+Vor jeder anderen Aktion einer Sitzung – noch vor dem ersten Code-Lesen – `git fetch origin` und auf den neuesten `origin/main` bringen:
+- **Haupt-Checkout auf `main`:** `git pull --ff-only`. Bricht das ab, weil lokale Änderungen (oft von anderen Sessions) im Weg sind: nichts stashen, verwerfen oder überschreiben, sondern dem Nutzer melden und für die eigene Arbeit einen Worktree von `origin/main` anlegen.
+- **Eigener Worktree / Feature-Branch:** `origin/main` hineinholen (im App-Worktree über `mcp__ccd_host__sync_with_base_branch`).
+
+**Warum:** Am 12.10.2026 lag der lokale `main` 56 Commits hinter GitHub – Skills, Hooks und Regeln waren veraltet, ohne dass es auffiel.
+
 ## 🔍 graphify: Code-Landkarte für breite Fragen (Empfehlung)
 
 graphify ist ein AST-Graph der ganzen Codebase. Er lohnt sich bei **breiten** Fragen: Architektur, „was bricht, wenn ich X ändere?“, „wie hängen A und B zusammen?“. Für gezielte Suchen nach Klassen-, Methoden- oder Begriffsnamen ist Grep meist schneller und genauer – die deutschen Namen im Code sind sehr treffsicher.
@@ -36,6 +44,15 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 1. **Strategisches Refactoring & Auslagerung:**
    Sobald du merkst, dass es Sinn macht, Code-Teile (Komponenten, Hooks, Services) auszulagern, um sie wiederverwenden zu können: **Halte an, frage den User um Erlaubnis** und setze es erst nach Freigabe um.
 
+2. **Sprache und Wording in der UI:**
+   Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
+
+3. **Abschluss jeder Aufgabe (Skill-Execution):**
+   Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
+   `.claude/commands/review-and-ship.md`.
+
+   **Aufgabenteilung im Skill:** Der `erp-code-reviewer`-Subagent prüft Code-Quality, Architektur, Security, DSGVO und Secrets parallel zur Build-Phase und liefert einen strukturierten Befund-Report mit Ampel. Du als Hauptagent kümmerst dich um Build, Tests und Coverage und arbeitest anschließend die Reviewer-Findings ein, bis die Ampel 🟢 ist – erst dann Commit & Push. Details zur Phasenfolge stehen im Skill selbst.
+
 ## 🛑 ABSOLUTE SICHERHEITSREGELN (NIEMALS IGNORIEREN)
 1. **API-Keys & Secrets:** NIEMALS in Code oder Commits schreiben. Nur in `application-local.properties` (gitignored). Vor jedem Commit `git diff --staged` prüfen. Bei Leak: Sofort rotieren!
 2. **Datenschutz (DSGVO):** Nutzer-, Mitarbeiter- und Zeitdaten sind personenbezogen. In Tests NUR Dummy-Daten (`Max Mustermann`). Logs/Dumps immer anonymisieren.
@@ -54,21 +71,9 @@ Bevor du Code schreibst oder änderst, lädst du **zwingend** die passende Dokum
 
 | Du willst editieren … | Pflicht VORHER |
 | --- | --- |
-| `*.java` (Backend, Tests, Config) | `Read` → `docs\agent instructions\docs\BACKEND_ARCH.md` |
-| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `Read` → `docs\agent instructions\docs\FRONTEND_UI.md` **+ zusätzlich** `Skill` → einer der Design-Skills (siehe unten) |
-| Test-Dateien (`*Test.java`, `*Tests.java`, `*.test.tsx`, `*.spec.ts`, …) | `Read` → `docs\agent instructions\docs\TESTING_SECURITY.md` |
-
-### 🎨 Design-Skill-Pflicht bei Frontend-Arbeit
-
-Frontend-Edits brauchen **zwei** Freigaben: das gelesene `FRONTEND_UI.md` **und** einen aufgerufenen Design-Skill. Der Hook blockt sonst mit `DESIGN-SKILL-GUARD`:
-
-- `handwerkerprogramm-design` — **Pflicht-Standard.** Unser eigenes, projektspezifisches Design-System: Farben, Typografie, Icon-Vokabular, Wording/Terminologie, fertige UI-Kits (Desktop + Mobile) und echte Screenshots. Immer zuerst dieser.
-- `ui-ux-pro-max:ui-ux-pro-max` — generisch (Styles, Farben, Typografie, UX-Regeln), nur ergänzend wenn `handwerkerprogramm-design` eine Frage offenlässt
-- `frontend-design:frontend-design` — visuelle Ausrichtung neuer UI
-- `ui-ux-pro-max:design-system` — Design-Tokens, Komponenten-Specs
-- `ui-ux-pro-max:design` — Logos, Banner, Icons, Präsentationen
-
-**MCP-Pflicht:** Für Komponenten immer die MCP-Server `shadcn` (fertige shadcn-Bausteine, installiert automatisch) und `magic` (21st.dev, animierte Tailwind-Layouts) nutzen, statt von Hand nachzubauen. Details in `FRONTEND_UI.md`.
+| `*.java` (Backend, Tests, Config) | `Read` → `docs/agent instructions/docs/BACKEND_ARCH.md` |
+| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `Read` → `docs/agent instructions/docs/FRONTEND_UI.md` **+ zusätzlich** `Skill` → einer der Design-Skills (Details in `.claude/rules/frontend.md`) |
+| Test-Dateien (`*Test.java`, `*Tests.java`, `*.test.tsx`, `*.spec.ts`, …) | `Read` → `docs/agent instructions/docs/TESTING_SECURITY.md` |
 
 Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht für die gesamte Session. Wenn dich der Hook blockt: **nicht umgehen**, sondern das genannte Doc per Read laden und den Edit/Write danach erneut versuchen.
 
@@ -79,23 +84,3 @@ Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht
 - Backend: `./mvnw spring-boot:run` (Port 8080)
 - Frontend PC: `cd react-pc-frontend && npm run dev`
 - Frontend Mobile: `cd react-zeiterfassung && npm run dev`
-
-
-3. **Sprache und Wording in der UI:**
-   Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
-
-4. **Abschluss jeder Aufgabe (Skill-Execution):**
-   Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
-   `.claude\commands\review-and-ship.md`.
-
-   **Aufgabenteilung im Skill:** Der `erp-code-reviewer`-Subagent prüft Code-Quality, Architektur, Security, DSGVO und Secrets parallel zur Build-Phase und liefert einen strukturierten Befund-Report mit Ampel. Du als Hauptagent kümmerst dich um Build, Tests und Coverage und arbeitest anschließend die Reviewer-Findings ein, bis die Ampel 🟢 ist – erst dann Commit & Push. Details zur Phasenfolge stehen im Skill selbst.
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
