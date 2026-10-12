@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
+import { BESTELLBEDARF_PFAD, istFreigegeben } from '../../lib/freigaben';
 import {
     BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
     FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings, Settings2,
@@ -96,7 +97,7 @@ const NAVIGATION: NavCategory[] = [
                 label: 'Einkauf',
                 items: [
                     { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
-                    { name: 'Bedarf', href: '/bestellungen/bedarf', icon: List },
+                    { name: 'Bedarf', href: BESTELLBEDARF_PFAD, icon: List },
                 ]
             }
         ]
@@ -206,7 +207,8 @@ export function RibbonNavigation() {
                     .map((subgroup) => ({
                         ...subgroup,
                         items: subgroup.items.filter((item) =>
-                            (isAdmin || !ADMIN_ONLY_PATHS.has(item.href))
+                            istFreigegeben(item.href)
+                            && (isAdmin || !ADMIN_ONLY_PATHS.has(item.href))
                             && (darfTelefon || !TELEFON_PATHS.has(item.href))),
                     }))
                     .filter((subgroup) => subgroup.items.length > 0),

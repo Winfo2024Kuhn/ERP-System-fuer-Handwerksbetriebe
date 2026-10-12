@@ -52,6 +52,7 @@ import WebsiteEditor from './pages/WebsiteEditor';
 import TelefonPage from './pages/TelefonPage';
 import BenachrichtigungenPage from './pages/BenachrichtigungenPage';
 import { AnrufFensterHost } from './features/telefon/AnrufFensterHost';
+import { BESTELLBEDARF_PFAD, istFreigegeben } from './lib/freigaben';
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -84,7 +85,9 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
                 <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
                 <Route path="/bestellungen" element={<ErrorBoundary><BestellungenUebersicht /></ErrorBoundary>} />
-                <Route path="/bestellungen/bedarf" element={<ErrorBoundary><BestellungEditor /></ErrorBoundary>} />
+                <Route path={BESTELLBEDARF_PFAD} element={istFreigegeben(BESTELLBEDARF_PFAD)
+                    ? <ErrorBoundary><BestellungEditor /></ErrorBoundary>
+                    : <Navigate to="/bestellungen" replace />} />
                 <Route path="/kalender" element={<ErrorBoundary><TerminKalender /></ErrorBoundary>} />
                 <Route path="/analyse" element={<ErrorBoundary><ErfolgsanalyseEditor /></ErrorBoundary>} />
                 <Route path="/kostenstellen" element={<ErrorBoundary><KostenstellenControllingEditor /></ErrorBoundary>} />
