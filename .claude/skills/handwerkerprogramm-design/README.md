@@ -272,7 +272,6 @@ Common icons used across the app (exact names — copy-paste):
 ## Known caveats / open questions
 
 - **No custom typeface.** The product relies on the system stack. If the user wants to mature the brand with a wordmark or display face, that's a design decision still to make.
-- **Legacy `#dc2626` UI accents in mobile.** `react-zeiterfassung/public/offline.html` (icon, button) and `src/services/scannerOverlay.ts` (scanner frame while locking) still use `red-600` as an accent; they should converge to `rose-600`.
 - **No slide template was attached,** so no `slides/` directory is created.
 - Several in-app illustrations (app_logo) are raster-only — vector versions would help the rebrand.
 - **`AngebotEditor` is gone upstream.** Quotes now flow through `AnfrageEditor` and the new document overview. If a screen still says "Angebote", check which surface it belongs to before building on it.
