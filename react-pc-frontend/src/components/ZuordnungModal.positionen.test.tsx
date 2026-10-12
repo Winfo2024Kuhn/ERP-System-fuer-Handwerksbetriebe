@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import type { DragEndEvent } from '@dnd-kit/core';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ZuordnungModal } from './ZuordnungModal';
 import { AuthProvider } from '../auth/AuthContext';
@@ -99,29 +100,53 @@ const antwort = (body: unknown, status = 200) => Promise.resolve({
     json: () => Promise.resolve(body),
 });
 
-/** Vorschau wie das Backend: Ware je Ziel, Nebenkosten anteilig; speicherbar erst ohne offene Position. */
-function vorschauFuer(body: { positionen: { positionId: number; projektId?: number; kostenstelleId?: number }[] }) {
+type VorschauAnfrage = { positionen: { positionId: number; projektId?: number; kostenstelleId?: number; bezugPositionIds?: number[] | null }[] };
+
+/**
+ * Vorschau wie das Backend: Ware je Ziel; Nebenkosten ohne Bezug anteilig auf alle,
+ * mit Bezug nur auf die Ziele der Bezugspositionen; speicherbar erst ohne offene Position.
+ */
+function vorschauFuer(body: VorschauAnfrage) {
     const preise: Record<number, number> = { 1: 300, 2: 50 };
-    const jeZiel = new Map<string, { projektId: number | null; kostenstelleId: number | null; warenwert: number }>();
+    const zuschlaege: Record<number, number> = { 3: 30 };
+    const zielVon = new Map<number, string>();
+    const jeZiel = new Map<string, { projektId: number | null; kostenstelleId: number | null; warenwert: number; mitBezug: number }>();
     let offen = 0;
     for (const p of body.positionen) {
+        if (p.bezugPositionIds !== undefined) continue;
         if (p.projektId == null && p.kostenstelleId == null) { offen++; continue; }
         const key = p.projektId != null ? `p${p.projektId}` : `k${p.kostenstelleId}`;
-        const eintrag = jeZiel.get(key) ?? { projektId: p.projektId ?? null, kostenstelleId: p.kostenstelleId ?? null, warenwert: 0 };
+        const eintrag = jeZiel.get(key) ?? { projektId: p.projektId ?? null, kostenstelleId: p.kostenstelleId ?? null, warenwert: 0, mitBezug: 0 };
         eintrag.warenwert += preise[p.positionId];
         jeZiel.set(key, eintrag);
+        zielVon.set(p.positionId, key);
     }
-    const ziele = [...jeZiel.values()].map(z => {
+    let aufAlle = 0;
+    let mitBezug = 0;
+    for (const p of body.positionen) {
+        if (p.bezugPositionIds === undefined) continue;
+        const betrag = zuschlaege[p.positionId] ?? 0;
+        const ids = (p.bezugPositionIds ?? []).filter(id => zielVon.has(id));
+        if (ids.length === 0) { aufAlle += betrag; continue; }
+        const basis = ids.reduce((s, id) => s + preise[id], 0);
+        for (const id of ids) jeZiel.get(zielVon.get(id)!)!.mitBezug += betrag * preise[id] / basis;
+        mitBezug += betrag;
+    }
+    const ziele = [...jeZiel.values()].map(({ mitBezug: zielMitBezug, ...z }) => {
         const anteil = z.warenwert / 350;
-        const netto = Math.round(380 * anteil * 100) / 100;
+        const netto = Math.round((z.warenwert + aufAlle * anteil + zielMitBezug) * 100) / 100;
         const brutto = Math.round(netto * 1.19 * 100) / 100;
-        return { ...z, anteilProzent: anteil * 100, betragNetto: netto, betragBrutto: brutto, betrag: z.projektId != null ? brutto : netto };
+        return {
+            ...z, anteilProzent: anteil * 100, betragNetto: netto, betragBrutto: brutto, betrag: z.projektId != null ? brutto : netto,
+            nebenkostenMitBezug: Math.round(zielMitBezug * 100) / 100,
+        };
     });
     return {
         ziele,
         nichtZugeordnet: offen,
         warenwert: 350,
         nebenkosten: 30,
+        nebenkostenMitBezug: mitBezug,
         abweichung: 0,
         speicherbar: offen === 0,
         hinweis: offen > 0 ? `Noch ${offen} Warenposition(en) ohne Projekt oder Kostenstelle.` : null,
@@ -220,7 +245,8 @@ describe('ZuordnungModal – Aufteilung nach Positionen', () => {
         expect(within(zeilen[0]).getByText('2 Stk')).toBeInTheDocument();
         expect(within(zeilen[0]).getByText('300,00 €')).toBeInTheDocument();
         expect(within(zeilen[0]).getByRole('combobox', { name: 'Ziel für Position 1' })).toBeInTheDocument();
-        expect(within(zeilen[2]).getByText(/wird anteilig verteilt/)).toBeInTheDocument();
+        expect(zeilen[2]).toHaveTextContent('Gilt für: alle Positionen');
+        expect(within(zeilen[2]).getByRole('button', { name: 'Wofür die Nebenkosten „Fracht“ gilt, ändern' })).toBeInTheDocument();
         expect(within(zeilen[2]).queryByRole('combobox')).toBeNull();
         expect(screen.getByText('Noch 2 Positionen nicht zugeordnet')).toBeInTheDocument();
     });
@@ -251,6 +277,8 @@ describe('ZuordnungModal – Aufteilung nach Positionen', () => {
             positionen: [
                 { positionId: 1, projektId: 20 },
                 { positionId: 2, projektId: 10 },
+                // Nebenkosten gehen immer mit ihrem Bezug mit, nie mit einem Ziel
+                { positionId: 3, bezugPositionIds: [] },
             ],
             ziele: [
                 { projektId: 10, beschreibung: '' },
@@ -275,6 +303,98 @@ describe('ZuordnungModal – Aufteilung nach Positionen', () => {
         expect(screen.getByText('Noch keine Position')).toBeInTheDocument();
         expect(screen.getAllByText('Noch 1 Warenposition(en) ohne Projekt oder Kostenstelle.').length).toBeGreaterThan(0);
         expect(screen.getByText(/Nebenkosten und Rabatte/).closest('div')).toHaveTextContent('30,00 €');
+        expect(screen.queryByText(/nur für bestimmte Positionen/)).toBeNull();
+    });
+
+    describe('Zuschlag gehört zu bestimmten Positionen („Gilt für“)', () => {
+        const fracht = () => screen.getByRole('listitem', { name: 'Position 3: Fracht' });
+        const aendern = () => within(fracht()).getByRole('button', { name: 'Wofür die Nebenkosten „Fracht“ gilt, ändern' });
+        const vorschauAnfragen = () => mockFetch.mock.calls
+            .filter(([url]) => String(url).includes('/positionen/1/vorschau'))
+            .map(([, options]) => JSON.parse(options.body as string) as VorschauAnfrage);
+
+        async function oeffneMitZielen(positionen = POSITIONEN) {
+            richteEin({ positionen: uebersicht({ positionen }), zuordnungen: ZWEI_PROJEKTE });
+            render(<ZuordnungModal {...props} />);
+            fireEvent.click(await screen.findByRole('button', { name: /Nach Positionen/ }));
+            await screen.findByRole('list', { name: 'Positionen der Rechnung' });
+            await waehle(zielVon(1), 'Halle Mustermann');
+            await waehle(zielVon(2), 'Carport Musterfrau');
+        }
+
+        it('ändert den Bezug im Dialog: Escape verwirft, Übernehmen schickt ihn mit und teilt die Summe auf', async () => {
+            await oeffneMitZielen();
+            expect(fracht()).toHaveTextContent('Gilt für: alle Positionen');
+
+            // Escape schließt nur den kleinen Dialog, nicht die Zuordnung
+            fireEvent.click(aendern());
+            let dialog = await screen.findByRole('dialog', { name: 'Wofür gilt dieser Zuschlag?' });
+            expect(within(dialog).getByText('Nebenkosten „Fracht“ · 30,00 €')).toBeInTheDocument();
+            expect(within(dialog).getByRole('radio', { name: /Auf alle Positionen verteilen/ })).toBeChecked();
+            fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Pos. 2: Schrauben M12' }));
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+            await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Wofür gilt dieser Zuschlag?' })).toBeNull());
+            expect(props.onClose).not.toHaveBeenCalled();
+            expect(fracht()).toHaveTextContent('Gilt für: alle Positionen');
+
+            // Häkchen setzen wählt „Nur für diese Positionen“ von selbst
+            fireEvent.click(aendern());
+            dialog = await screen.findByRole('dialog', { name: 'Wofür gilt dieser Zuschlag?' });
+            fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Pos. 2: Schrauben M12' }));
+            expect(within(dialog).getByRole('radio', { name: /Nur für diese Positionen/ })).toBeChecked();
+            fireEvent.click(within(dialog).getByRole('button', { name: 'Übernehmen' }));
+
+            await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Wofür gilt dieser Zuschlag?' })).toBeNull());
+            expect(fracht()).toHaveTextContent('Gilt für: Pos. 2');
+            await waitFor(() => expect(vorschauAnfragen().at(-1)?.positionen).toContainEqual({ positionId: 3, bezugPositionIds: [2] }));
+
+            // Zusammenfassung getrennt, Zielkarte nennt den eigenen Zuschlag
+            await waitFor(() => expect(screen.getByText(/nur für bestimmte Positionen/).closest('div')).toHaveTextContent('30,00 €'));
+            expect(screen.getByText(/anteilig auf alle verteilt/).closest('div')).toHaveTextContent('0,00 €');
+            expect(within(screen.getByRole('group', { name: 'Ziel Carport Musterfrau' })).getByText('inkl. 30,00 € Zuschläge für eigene Positionen')).toBeInTheDocument();
+            expect(within(screen.getByRole('group', { name: 'Ziel Halle Mustermann' })).queryByText(/Zuschläge für eigene Positionen/)).toBeNull();
+
+            await waitFor(() => expect(speichernKnopf()).toBeEnabled());
+            fireEvent.click(speichernKnopf());
+            await waitFor(() => expect(props.onSuccess).toHaveBeenCalled());
+            expect(postBody('/positionen/1/zuordnen').positionen).toContainEqual({ positionId: 3, bezugPositionIds: [2] });
+        });
+
+        it('sperrt Übernehmen ohne Häkchen und setzt mit „alle“ zurück', async () => {
+            await oeffneMitZielen(POSITIONEN.map(p => (p.id === 3 ? { ...p, bezugPositionIds: [1] } : p)));
+            // von der KI gespeicherter Bezug ist sofort zu sehen
+            expect(fracht()).toHaveTextContent('Gilt für: Pos. 1');
+
+            fireEvent.click(aendern());
+            const dialog = await screen.findByRole('dialog', { name: 'Wofür gilt dieser Zuschlag?' });
+            expect(within(dialog).getByRole('radio', { name: /Nur für diese Positionen/ })).toBeChecked();
+            fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Pos. 1: Stahlträger HEB 200' }));
+            expect(within(dialog).getByRole('button', { name: 'Übernehmen' })).toBeDisabled();
+            expect(within(dialog).getByText('Mindestens eine Position anhaken.')).toBeInTheDocument();
+
+            fireEvent.click(within(dialog).getByRole('radio', { name: /Auf alle Positionen verteilen/ }));
+            fireEvent.click(within(dialog).getByRole('button', { name: 'Übernehmen' }));
+            await waitFor(() => expect(fracht()).toHaveTextContent('Gilt für: alle Positionen'));
+            await waitFor(() => expect(vorschauAnfragen().at(-1)?.positionen).toContainEqual({ positionId: 3, bezugPositionIds: [] }));
+        });
+
+        it('lässt sich ganz mit der Tastatur bedienen', async () => {
+            await oeffneMitZielen();
+            const user = userEvent.setup();
+            aendern().focus();
+            await user.keyboard('{Enter}');
+            const dialog = await screen.findByRole('dialog', { name: 'Wofür gilt dieser Zuschlag?' });
+            // Fokus liegt im Dialog
+            await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+            within(dialog).getByRole('checkbox', { name: 'Pos. 1: Stahlträger HEB 200' }).focus();
+            await user.keyboard(' ');
+            expect(within(dialog).getByRole('radio', { name: /Nur für diese Positionen/ })).toBeChecked();
+            within(dialog).getByRole('button', { name: 'Übernehmen' }).focus();
+            await user.keyboard('{Enter}');
+            await waitFor(() => expect(fracht()).toHaveTextContent('Gilt für: Pos. 1'));
+            // Fokus kehrt zum „ändern“ zurück
+            await waitFor(() => expect(document.activeElement).toBe(aendern()));
+        });
     });
 
     it('startet bei gespeicherter Positionsaufteilung direkt im Positionsmodus mit vorbelegten Zielen', async () => {

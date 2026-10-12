@@ -1357,14 +1357,10 @@ public class DateiSpeicherService {
         ProjektDokument dokument = dokumentRepository.findById(dokumentID)
                 .orElseThrow(() -> new RuntimeException("Projektdokument konnte nicht gefunden werden!"));
         if (dokument instanceof ProjektGeschaeftsdokument geschaeftsdokument) {
-            geschaeftsdokument.setBezahlt(bezahlt);
-            dokumentRepository.save(geschaeftsdokument);
             // Ob das Projekt damit bezahlt und beendet ist, entscheidet allein die
             // zentrale Regel in AusgangsGeschaeftsDokumentService – sonst laufen zwei
             // Regeln auseinander und das Projekt springt zwischen offen und beendet.
-            if (geschaeftsdokument.getProjekt() != null) {
-                aktualisiereProjektFinanzstatus(geschaeftsdokument.getProjekt().getId());
-            }
+            ausgangsGeschaeftsDokumentService.setzeOffenenPostenBezahlt(geschaeftsdokument, bezahlt);
         } else {
             throw new RuntimeException("Dokument ist kein Geschäftsdokument.");
         }

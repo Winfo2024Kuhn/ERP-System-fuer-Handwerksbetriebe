@@ -29,6 +29,11 @@ export interface DokumentPosition {
     charge?: string | null;
     /** Abmessung, z. B. „50 x 5“ */
     abmessung?: string | null;
+    /**
+     * Nur bei Nebenkosten und Rabatten: IDs der Warenpositionen, zu denen der
+     * Zuschlag gehört. Leer (oder fehlend bei älteren Antworten) = gilt für alle.
+     */
+    bezugPositionIds?: number[] | null;
 }
 
 export interface PositionsUebersicht {
@@ -48,6 +53,11 @@ export interface PositionsZiel {
     positionId: number;
     projektId?: number;
     kostenstelleId?: number;
+    /**
+     * Nur bei Nebenkosten und Rabatten: `[]` = auf alle verteilen, `[ids]` = nur
+     * auf die Ziele dieser Warenpositionen. Weggelassen = gespeicherten Bezug behalten.
+     */
+    bezugPositionIds?: number[] | null;
 }
 
 export interface ZielDetail {
@@ -71,13 +81,18 @@ export interface VorschauZiel {
     betragBrutto: number | null;
     /** Verbuchter Betrag: brutto bei Projekten, netto bei Kostenstellen. */
     betrag: number | null;
+    /** Nebenkosten/Rabatte, die wegen ihres Bezugs bei diesem Ziel landen (in `betrag` schon enthalten). */
+    nebenkostenMitBezug?: number | null;
 }
 
 export interface PositionsVorschau {
     ziele: VorschauZiel[];
     nichtZugeordnet: number;
     warenwert: number | null;
+    /** Summe ALLER Nebenkosten und Rabatte. */
     nebenkosten: number | null;
+    /** Davon: Nebenkosten und Rabatte, die nur zu bestimmten Positionen gehören. */
+    nebenkostenMitBezug?: number | null;
     abweichung: number | null;
     speicherbar: boolean;
     hinweis: string | null;
@@ -141,9 +156,65 @@ export function offeneWarenpositionen(positionen: DokumentPosition[], zuweisunge
     return positionen.filter(p => istWare(p) && !zuweisungen[p.id]);
 }
 
-/** Request-Teil „positionen“: jede Warenposition mit ihrem Ziel (oder ohne = offen). */
-export function baueAufteilung(positionen: DokumentPosition[], zuweisungen: Record<number, ZielSchluessel>): PositionsZiel[] {
-    return positionen.filter(istWare).map(p => ({ positionId: p.id, ...zielAusSchluessel(zuweisungen[p.id] ?? '') }));
+/** Nebenkosten oder Rabatt – kann zu einzelnen Warenpositionen gehören. */
+export function istZuschlag(position: DokumentPosition): boolean {
+    return position.positionsArt === 'NEBENKOSTEN' || position.positionsArt === 'RABATT';
+}
+
+/** Bezug je Zuschlag: Position-ID → IDs der Warenpositionen (leer = gilt für alle). */
+export type Bezuege = Record<number, number[]>;
+
+/**
+ * Bezüge, wie sie beim Laden an den Positionen hängen. Unbekannte IDs (keine
+ * Warenposition dieses Belegs) fallen weg, damit das Backend nichts ablehnt.
+ */
+export function bezuegeAusPositionen(positionen: DokumentPosition[]): Bezuege {
+    const warenIds = new Set(positionen.filter(istWare).map(p => p.id));
+    const ergebnis: Bezuege = {};
+    for (const position of positionen) {
+        if (!istZuschlag(position)) continue;
+        const ids = Array.isArray(position.bezugPositionIds) ? position.bezugPositionIds : [];
+        ergebnis[position.id] = ids.filter(id => warenIds.has(id));
+    }
+    return ergebnis;
+}
+
+/**
+ * Request-Teil „positionen“: jede Warenposition mit ihrem Ziel (oder ohne = offen),
+ * jede Nebenkosten-/Rabattzeile mit ihrem aktuellen Bezug (immer ausdrücklich).
+ */
+export function baueAufteilung(positionen: DokumentPosition[], zuweisungen: Record<number, ZielSchluessel>, bezuege: Bezuege = {}): PositionsZiel[] {
+    const ergebnis: PositionsZiel[] = [];
+    for (const p of positionen) {
+        if (istWare(p)) ergebnis.push({ positionId: p.id, ...zielAusSchluessel(zuweisungen[p.id] ?? '') });
+        else if (istZuschlag(p)) ergebnis.push({ positionId: p.id, bezugPositionIds: [...(bezuege[p.id] ?? [])] });
+    }
+    return ergebnis;
+}
+
+/**
+ * Text hinter „Gilt für:“ – „alle Positionen“ oder „Pos. 3, 5“ (nach Positionsnummer
+ * sortiert). IDs, die es nicht als Warenposition gibt, werden übergangen.
+ */
+export function gueltigFuerText(bezug: readonly number[] | null | undefined, positionen: DokumentPosition[]): string {
+    if (!bezug || bezug.length === 0) return 'alle Positionen';
+    const gewaehlt = new Set(bezug);
+    const nummern = positionen
+        .filter(p => istWare(p) && gewaehlt.has(p.id))
+        .map(p => p.positionNr)
+        .sort((a, b) => a - b);
+    return nummern.length === 0 ? 'alle Positionen' : `Pos. ${nummern.join(', ')}`;
+}
+
+/** Nebenkosten/Rabatte, die anteilig auf alle verteilt werden (Summe minus die mit Bezug). */
+export function nebenkostenAufAlle(vorschau: Pick<PositionsVorschau, 'nebenkosten' | 'nebenkostenMitBezug'> | null | undefined): number | null {
+    if (vorschau?.nebenkosten == null) return null;
+    return Math.round((vorschau.nebenkosten - (vorschau.nebenkostenMitBezug ?? 0)) * 100) / 100;
+}
+
+/** Ab einem Cent zählt ein Betrag als vorhanden (Rabatte mit Bezug sind negativ). */
+export function istBetragDa(wert: number | null | undefined): wert is number {
+    return wert != null && Number.isFinite(wert) && Math.abs(wert) >= 0.005;
 }
 
 export const formatEuro = (value: number | null | undefined): string => {

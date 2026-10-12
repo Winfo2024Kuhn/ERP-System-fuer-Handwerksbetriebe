@@ -162,6 +162,59 @@ class BestellungsUebersichtServiceTest {
         }
 
         @Test
+        void mehrereRechnungenMeldenIhrenStatusEinzeln() {
+            // Issue #241: Teilrechnungen einer Lieferung – die Oberfläche ordnet jede einzeln zu.
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
+            LieferantDokument zugeordnet = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
+            LieferantDokument offen = dokument(3L, LieferantDokumentTyp.RECHNUNG, null);
+            LieferantDokument lager = dokument(4L, LieferantDokumentTyp.RECHNUNG, null);
+            verknuepfe(zugeordnet, ls);
+            verknuepfe(offen, ls);
+            verknuepfe(lager, ls);
+            LieferantDokumentProjektAnteil anteil = new LieferantDokumentProjektAnteil();
+            anteil.setDokument(zugeordnet);
+            LieferantGeschaeftsdokument gd = new LieferantGeschaeftsdokument();
+            gd.setDokument(lager);
+            gd.setLagerbestellung(true);
+            when(projektAnteilRepository.findAll()).thenReturn(List.of(anteil));
+            when(geschaeftsdokumentRepository.findAll()).thenReturn(List.of(gd));
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, zugeordnet, offen, lager));
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
+
+            assertThat(dto.abgeschlossen()).hasSize(1);
+            var dokumente = dto.abgeschlossen().get(0).dokumente();
+            assertThat(dokumente).filteredOn(d -> d.id.equals(2L)).singleElement()
+                    .satisfies(d -> assertThat(d.zugeordnet).isTrue())
+                    .satisfies(d -> assertThat(d.lagerbestellung).isFalse());
+            assertThat(dokumente).filteredOn(d -> d.id.equals(3L)).singleElement()
+                    .satisfies(d -> assertThat(d.zugeordnet).isFalse())
+                    .satisfies(d -> assertThat(d.lagerbestellung).isFalse());
+            assertThat(dokumente).filteredOn(d -> d.id.equals(4L)).singleElement()
+                    .satisfies(d -> assertThat(d.lagerbestellung).isTrue());
+        }
+
+        @Test
+        void sindAlleTeilrechnungenErledigtIstDieKetteZugeordnet() {
+            LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
+            LieferantDokument erste = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);
+            LieferantDokument zweite = dokument(3L, LieferantDokumentTyp.RECHNUNG, null);
+            verknuepfe(erste, ls);
+            verknuepfe(zweite, ls);
+            LieferantDokumentProjektAnteil anteilErste = new LieferantDokumentProjektAnteil();
+            anteilErste.setDokument(erste);
+            LieferantDokumentProjektAnteil anteilZweite = new LieferantDokumentProjektAnteil();
+            anteilZweite.setDokument(zweite);
+            when(projektAnteilRepository.findAll()).thenReturn(List.of(anteilErste, anteilZweite));
+            when(dokumentRepository.findAll()).thenReturn(List.of(ls, erste, zweite));
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
+
+            assertThat(dto.zugeordnet()).hasSize(1);
+            assertThat(dto.abgeschlossen()).isEmpty();
+        }
+
+        @Test
         void ausgeblendeteRechnungMachtDieKetteErledigt() {
             LieferantDokument ls = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN, null);
             LieferantDokument re = dokument(2L, LieferantDokumentTyp.RECHNUNG, null);

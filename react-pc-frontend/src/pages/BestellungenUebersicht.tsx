@@ -12,6 +12,8 @@ import type { VorschlagsTyp } from '../features/bestellungen/kettenVorschlag';
 import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter, type KettenDokumentTyp } from '../features/bestellungen/bestellungenListe';
 import { TREFFER_KLASSEN, formatiereQuote, rechnungVerknuepfen, rueckfrage, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
 import { KettenLinie } from '../features/bestellungen/KettenLinie';
+import { KettenZuordnung } from '../features/bestellungen/KettenZuordnung';
+import { anzahlOffeneRechnungen } from '../features/bestellungen/rechnungsLeisteLogik';
 import { istRechnungsTyp, type KettenVerbindung } from '../features/bestellungen/kettenLinieLogik';
 
 // ========== Types ==========
@@ -29,6 +31,10 @@ interface DokumentRef {
     pdfUrl: string | null;
     /** Ausgeblendete Belege bleiben in der Kette, werden aber gedämpft gezeigt. */
     ausgeblendet?: boolean;
+    /** Hat schon Projekt- oder Kostenstellen-Anteile (fehlt bei älteren Antworten = nein). */
+    zugeordnet?: boolean;
+    /** Als Lagerbestellung markiert (fehlt bei älteren Antworten = nein). */
+    lagerbestellung?: boolean;
 }
 
 interface DokumentenKette {
@@ -138,6 +144,7 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
     // Bestellt oder geliefert, aber noch keine Rechnung: offenes Ende in der Kette
     const offenesEnde = !kette.dokumente.some(d => istRechnungsTyp(d.typ))
         && kette.dokumente.some(d => d.typ === 'AUFTRAGSBESTAETIGUNG' || d.typ === 'LIEFERSCHEIN');
+    const offeneRechnungen = anzahlOffeneRechnungen(kette.dokumente);
 
     return (
         <Card className={`p-4 mb-4 break-inside-avoid flex flex-col gap-3 hover:shadow-md transition-shadow ${ohneRechnungHinweis ? 'border-amber-300' : ''}`}>
@@ -249,7 +256,7 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
                         {showZuordnenButton && onZuordnen && (
                             <Button onClick={() => onZuordnen(kette)} size="sm" variant="outline">
                                 <FolderOpen className="w-4 h-4" aria-hidden="true" />
-                                Projekten zuordnen
+                                {offeneRechnungen > 1 ? `Projekten zuordnen (${offeneRechnungen} offen)` : 'Projekten zuordnen'}
                             </Button>
                         )}
                         {onDokumentHinzufuegen && (
@@ -417,7 +424,6 @@ export default function BestellungenUebersicht() {
 
     // Zuordnung Modal State
     const [zuordnungKette, setZuordnungKette] = useState<DokumentenKette | null>(null);
-    const zuordnungRechnung = zuordnungKette?.dokumente.find(d => d.typ === 'RECHNUNG') ?? null;
 
     const loadData = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
@@ -909,15 +915,14 @@ export default function BestellungenUebersicht() {
                 />
             )}
 
-            {/* Zuordnung Modal */}
-            {zuordnungRechnung && zuordnungKette && (
-                <BelegZuordnungModal
-                    geschaeftsdokumentId={zuordnungRechnung.id}
-                    dokumentNummer={zuordnungRechnung.dokumentNummer}
-                    lieferantName={zuordnungKette.lieferantName}
-                    pdfUrl={zuordnungRechnung.pdfUrl}
-                    onClose={() => setZuordnungKette(null)}
-                    onSuccess={() => loadData()}
+            {/* Zuordnung: bei mehreren Rechnungen mit Rechnungs-Leiste, springt zur nächsten offenen */}
+            {zuordnungKette && (
+                <KettenZuordnung
+                    kette={zuordnungKette}
+                    onSchliessen={gespeichert => {
+                        setZuordnungKette(null);
+                        if (gespeichert) void loadData();
+                    }}
                 />
             )}
         </div>

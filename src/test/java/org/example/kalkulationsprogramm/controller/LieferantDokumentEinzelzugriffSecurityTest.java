@@ -42,6 +42,8 @@ import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
+import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -171,6 +173,11 @@ class LieferantDokumentEinzelzugriffSecurityTest {
     }
 
     // ---------------------------------------------- GET /api/lieferant-dokumente/{id}
+
+    @BeforeEach
+    void sitzungsRechteUnveraendert() {
+        SitzungsRechteImTest.rechteUnveraendert(frontendUserDetailsService);
+    }
 
     @Test
     @DisplayName("Einzelabruf ohne Anmeldung: 401, es wird nichts geladen")

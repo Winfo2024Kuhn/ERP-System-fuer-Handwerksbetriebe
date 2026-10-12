@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { useDndContext, useDroppable } from '@dnd-kit/core';
 import { Briefcase, CircleDashed, Package, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { ablageId, formatEuro, formatProzent, type VorschauZiel, type ZielSchluessel } from './positionen';
+import { ablageId, formatEuro, formatProzent, istBetragDa, type VorschauZiel, type ZielSchluessel } from './positionen';
 import type { ZielFarbe } from './zielFarben';
 
 /** Wie viele Positionen gerade gezogen werden (0 = es wird nichts gezogen). */
@@ -47,6 +47,7 @@ export function PositionsZielZeile({
     const Icon = istKostenstelle ? Package : Briefcase;
     const jahre = streckungJahre > 0 ? streckungJahre : 1;
     const betrag = vorschau?.betrag ?? null;
+    const mitBezug = vorschau?.nebenkostenMitBezug;
 
     return (
         <div
@@ -75,6 +76,11 @@ export function PositionsZielZeile({
                                 ? `${positionenText(anzahlPositionen)}${vorschau ? ` · ${formatProzent(vorschau.anteilProzent)} % der Ware` : ''}`
                                 : 'Noch keine Position'}
                     </p>
+                    {!isOver && istBetragDa(mitBezug) && (
+                        <p className="text-xs text-slate-500">
+                            inkl. {formatEuro(Math.abs(mitBezug))} € {mitBezug < 0 ? 'Rabatt' : 'Zuschläge'} für eigene Positionen
+                        </p>
+                    )}
                 </div>
                 <div className="shrink-0 text-right">
                     <p className="text-sm font-semibold tabular-nums text-slate-900">{betrag != null ? `${formatEuro(betrag)} €` : '–'}</p>

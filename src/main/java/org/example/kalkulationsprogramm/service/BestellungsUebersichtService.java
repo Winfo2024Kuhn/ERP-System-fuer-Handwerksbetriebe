@@ -317,7 +317,13 @@ public class BestellungsUebersichtService {
         List<DokumentenKette> ausgeblendet = new ArrayList<>();
 
         for (DokumentenKette kette : alleKetten) {
-            switch (einordnen(kette, zugeordneteDokumentIds, lagerbestellungIds)) {
+            // Status je Dokument: Bei mehreren Rechnungen (Teilrechnungen) zeigt die
+            // Oberfläche, welche noch offen ist, und ordnet jede einzeln zu.
+            for (DokumentRef d : kette.dokumente()) {
+                d.zugeordnet = zugeordneteDokumentIds.contains(d.id);
+                d.lagerbestellung = lagerbestellungIds.contains(d.id);
+            }
+            switch (einordnen(kette)) {
                 case RECHNUNG_ZUORDNEN -> abgeschlossen.add(kette);
                 case ERLEDIGT -> ausgeblendet.add(kette);
                 case ZUGEORDNET -> zugeordnet.add(kette);
@@ -353,12 +359,11 @@ public class BestellungsUebersichtService {
      *   <li>Sonst wie bisher über alle Dokumente: zugeordnet, laufend, Anfrage.</li>
      * </ol>
      */
-    private static Bereich einordnen(DokumentenKette kette, Set<Long> zugeordneteDokumentIds,
-            Set<Long> lagerbestellungIds) {
+    private static Bereich einordnen(DokumentenKette kette) {
         List<DokumentRef> dokumente = kette.dokumente();
         boolean offeneRechnung = dokumente.stream()
                 .anyMatch(d -> d.typ == LieferantDokumentTyp.RECHNUNG && !d.ausgeblendet
-                        && !zugeordneteDokumentIds.contains(d.id) && !lagerbestellungIds.contains(d.id));
+                        && !d.zugeordnet && !d.lagerbestellung);
         if (offeneRechnung) {
             return Bereich.RECHNUNG_ZUORDNEN;
         }

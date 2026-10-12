@@ -9,10 +9,12 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
@@ -153,13 +155,14 @@ public class LieferantDokumentZuordnungService {
             List<DokumentPositionenDto.PositionsZiel> zuordnung) {
         LieferantGeschaeftsdokument gd = ladeGeschaeftsdokument(geschaeftsdokumentId);
         List<LieferantDokumentPosition> positionen = positionRepository.findByGeschaeftsdokumentId(gd.getId());
-        PositionsAufteilung.Ergebnis ergebnis = berechne(gd, positionen, zielJePosition(positionen, zuordnung));
+        PositionsAufteilung.Ergebnis ergebnis = berechne(gd, positionen, Auswahl.aus(positionen, zuordnung));
         String hinweis = pruefe(ergebnis, positionen);
         return new DokumentPositionenDto.Vorschau(
                 ergebnis.ziele().stream().map(LieferantDokumentZuordnungService::alsDto).toList(),
                 ergebnis.nichtZugeordnet(),
                 ergebnis.warenwert(),
                 ergebnis.nebenkosten(),
+                ergebnis.nebenkostenMitBezug(),
                 ergebnis.abweichung(),
                 hinweis == null,
                 hinweis);
@@ -167,7 +170,8 @@ public class LieferantDokumentZuordnungService {
 
     /**
      * Speichert eine Aufteilung nach Positionen: merkt sich das Ziel jeder
-     * Warenposition und legt daraus die Projekt-/Kostenstellen-Anteile an.
+     * Warenposition und den Bezug jeder Nebenkostenzeile und legt daraus die
+     * Projekt-/Kostenstellen-Anteile an.
      *
      * @return Anzahl gespeicherter Anteile
      * @throws IllegalArgumentException wenn nicht alle Warenpositionen ein Ziel haben
@@ -178,8 +182,8 @@ public class LieferantDokumentZuordnungService {
             FrontendUserProfile zugeordnetVon) {
         LieferantGeschaeftsdokument gd = ladeGeschaeftsdokument(geschaeftsdokumentId);
         List<LieferantDokumentPosition> positionen = positionRepository.findByGeschaeftsdokumentId(gd.getId());
-        Map<Long, PositionsAufteilung.Ziel> ziele = zielJePosition(positionen, request.positionen());
-        PositionsAufteilung.Ergebnis ergebnis = berechne(gd, positionen, ziele);
+        Auswahl auswahl = Auswahl.aus(positionen, request.positionen());
+        PositionsAufteilung.Ergebnis ergebnis = berechne(gd, positionen, auswahl);
         String fehler = pruefe(ergebnis, positionen);
         if (fehler != null) {
             throw new IllegalArgumentException(fehler);
@@ -188,7 +192,11 @@ public class LieferantDokumentZuordnungService {
         Map<Long, Projekt> projekte = new HashMap<>();
         Map<Long, Kostenstelle> kostenstellen = new HashMap<>();
         for (LieferantDokumentPosition p : positionen) {
-            PositionsAufteilung.Ziel ziel = p.getPositionsArt() == PositionsArt.WARE ? ziele.get(p.getId()) : null;
+            if (auswahl.bezuege().containsKey(p.getId())) {
+                p.getBezugPositionIds().clear();
+                p.getBezugPositionIds().addAll(auswahl.bezuege().get(p.getId()));
+            }
+            PositionsAufteilung.Ziel ziel = p.getPositionsArt() == PositionsArt.WARE ? auswahl.ziele().get(p.getId()) : null;
             p.setProjekt(ziel != null && ziel.projektId() != null
                     ? projekte.computeIfAbsent(ziel.projektId(), this::ladeProjekt)
                     : null);
@@ -255,35 +263,74 @@ public class LieferantDokumentZuordnungService {
                 .orElseThrow(() -> new IllegalArgumentException("Kostenstelle nicht gefunden: " + id));
     }
 
-    /** Ziel je Positions-ID; unbekannte Positionen oder Doppelziele werden abgelehnt. */
-    private static Map<Long, PositionsAufteilung.Ziel> zielJePosition(List<LieferantDokumentPosition> positionen,
-            List<DokumentPositionenDto.PositionsZiel> zuordnung) {
-        Map<Long, PositionsAufteilung.Ziel> ziele = new HashMap<>();
-        if (zuordnung == null) {
-            return ziele;
+    /**
+     * Was der Nutzer im Dialog gewählt hat.
+     *
+     * @param ziele    Ziel je Warenposition
+     * @param bezuege  neuer Bezug je Nebenkosten-/Rabattzeile; fehlt eine Zeile, gilt der gespeicherte
+     */
+    private record Auswahl(Map<Long, PositionsAufteilung.Ziel> ziele, Map<Long, Set<Long>> bezuege) {
+
+        /** Liest die Auswahl; unbekannte Positionen, Doppelziele und falsche Bezüge werden abgelehnt. */
+        static Auswahl aus(List<LieferantDokumentPosition> positionen,
+                List<DokumentPositionenDto.PositionsZiel> zuordnung) {
+            Map<Long, PositionsAufteilung.Ziel> ziele = new HashMap<>();
+            Map<Long, Set<Long>> bezuege = new HashMap<>();
+            if (zuordnung == null) {
+                return new Auswahl(ziele, bezuege);
+            }
+            Map<Long, LieferantDokumentPosition> nachId = new HashMap<>();
+            positionen.forEach(p -> nachId.put(p.getId(), p));
+            for (DokumentPositionenDto.PositionsZiel z : zuordnung) {
+                LieferantDokumentPosition position = z == null ? null : nachId.get(z.positionId());
+                if (position == null) {
+                    throw new IllegalArgumentException("Position gehört nicht zu diesem Dokument");
+                }
+                if (z.bezugPositionIds() != null) {
+                    bezuege.put(position.getId(), pruefeBezug(position, z.bezugPositionIds(), nachId));
+                }
+                if (z.projektId() == null && z.kostenstelleId() == null) {
+                    continue;
+                }
+                PositionsAufteilung.Ziel ziel = new PositionsAufteilung.Ziel(z.projektId(), z.kostenstelleId());
+                if (!ziel.gueltig()) {
+                    throw new IllegalArgumentException("Eine Position gehört entweder zu einem Projekt oder zu einer Kostenstelle");
+                }
+                ziele.put(z.positionId(), ziel);
+            }
+            return new Auswahl(ziele, bezuege);
         }
-        var bekannte = positionen.stream().map(LieferantDokumentPosition::getId).toList();
-        for (DokumentPositionenDto.PositionsZiel z : zuordnung) {
-            if (z == null || !bekannte.contains(z.positionId())) {
-                throw new IllegalArgumentException("Position gehört nicht zu diesem Dokument");
+
+        private static Set<Long> pruefeBezug(LieferantDokumentPosition position, List<Long> bezug,
+                Map<Long, LieferantDokumentPosition> nachId) {
+            if (bezug.isEmpty()) {
+                return Set.of();
             }
-            if (z.projektId() == null && z.kostenstelleId() == null) {
-                continue;
+            if (istWare(position)) {
+                throw new IllegalArgumentException("Nur Nebenkosten und Rabatte können zu einzelnen Positionen gehören.");
             }
-            PositionsAufteilung.Ziel ziel = new PositionsAufteilung.Ziel(z.projektId(), z.kostenstelleId());
-            if (!ziel.gueltig()) {
-                throw new IllegalArgumentException("Eine Position gehört entweder zu einem Projekt oder zu einer Kostenstelle");
+            boolean nurWare = bezug.stream().allMatch(id -> nachId.containsKey(id) && istWare(nachId.get(id)));
+            if (!nurWare) {
+                throw new IllegalArgumentException("Ein Zuschlag kann nur zu Warenpositionen dieses Belegs gehören.");
             }
-            ziele.put(z.positionId(), ziel);
+            return new LinkedHashSet<>(bezug);
         }
-        return ziele;
+
+        /** Gewählter Bezug, sonst der gespeicherte. */
+        Set<Long> bezugVon(LieferantDokumentPosition p) {
+            return bezuege.getOrDefault(p.getId(), p.getBezugPositionIds());
+        }
+    }
+
+    private static boolean istWare(LieferantDokumentPosition p) {
+        return p.getPositionsArt() == null || p.getPositionsArt() == PositionsArt.WARE;
     }
 
     private static PositionsAufteilung.Ergebnis berechne(LieferantGeschaeftsdokument gd,
-            List<LieferantDokumentPosition> positionen, Map<Long, PositionsAufteilung.Ziel> ziele) {
+            List<LieferantDokumentPosition> positionen, Auswahl auswahl) {
         List<PositionsAufteilung.Eingabe> eingabe = positionen.stream()
-                .map(p -> new PositionsAufteilung.Eingabe(p.getPositionsArt(), p.getGesamtpreisNetto(),
-                        ziele.get(p.getId())))
+                .map(p -> new PositionsAufteilung.Eingabe(p.getId(), p.getPositionsArt(), p.getGesamtpreisNetto(),
+                        auswahl.ziele().get(p.getId()), istWare(p) ? Set.of() : auswahl.bezugVon(p)))
                 .toList();
         return PositionsAufteilung.berechne(eingabe, gd.getBetragNetto(), gd.getBetragBrutto());
     }
@@ -307,8 +354,9 @@ public class LieferantDokumentZuordnungService {
         boolean nichtPositiv = ergebnis.ziele().stream()
                 .anyMatch(z -> z.betrag() == null || z.betrag().signum() <= 0);
         if (nichtPositiv) {
-            return "Diese Aufteilung ergibt keinen positiven Betrag je Projekt (z. B. bei Gutschriften). "
-                    + "Bitte nach Prozent oder Betrag aufteilen.";
+            return "Diese Aufteilung ergibt keinen positiven Betrag je Projekt (z. B. bei Gutschriften "
+                    + "oder wenn ein Rabatt größer ist als die Ware, zu der er gehört). "
+                    + "Bitte den Rabatt anders zuordnen oder nach Prozent oder Betrag aufteilen.";
         }
         return null;
     }
@@ -498,13 +546,14 @@ public class LieferantDokumentZuordnungService {
                 p.getProjekt() != null ? p.getProjekt().getBauvorhaben() : null,
                 p.getKostenstelle() != null ? p.getKostenstelle().getId() : null,
                 p.getKostenstelle() != null ? p.getKostenstelle().getBezeichnung() : null,
-                p.getWerkstoff(), p.getCharge(), p.getAbmessung());
+                p.getWerkstoff(), p.getCharge(), p.getAbmessung(),
+                p.getBezugPositionIds() != null ? List.copyOf(p.getBezugPositionIds()) : List.of());
     }
 
     private static DokumentPositionenDto.ZielBetrag alsDto(PositionsAufteilung.ZielBetrag zb) {
         return new DokumentPositionenDto.ZielBetrag(
                 zb.ziel().projektId(), zb.ziel().kostenstelleId(), zb.warenwert(),
                 zb.anteil().multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP),
-                zb.betragNetto(), zb.betragBrutto(), zb.betrag());
+                zb.betragNetto(), zb.betragBrutto(), zb.betrag(), zb.nebenkostenMitBezug());
     }
 }

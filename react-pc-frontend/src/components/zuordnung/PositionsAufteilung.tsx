@@ -21,12 +21,17 @@ import {
     formatEuro,
     formatMenge,
     gezogenePositionen,
+    gueltigFuerText,
+    istBetragDa,
     istWare,
+    istZuschlag,
+    nebenkostenAufAlle,
     zielAusAblage,
     type DokumentPosition,
     type ZielSchluessel,
 } from './positionen';
 import { NichtZugeordnetAblage } from './PositionsZielZeile';
+import { BezugDialog, ZuschlagBezugInfo } from './BezugDialog';
 import type { ZielFarbe } from './zielFarben';
 import type { PositionsAufteilung as Aufteilung } from './usePositionsAufteilung';
 
@@ -61,17 +66,21 @@ interface ZiehDaten {
  * Aufteilung einer Lieferanten-Rechnung nach Positionen: Jede Warenposition
  * geht ganz an genau ein Projekt oder eine Kostenstelle – per Ziehen auf die
  * Zielkarte oder per Auswahlliste in der Zeile. Nebenkosten und Rabatte
- * verteilt das Backend anteilig nach Warenwert.
+ * verteilt das Backend anteilig nach Warenwert – entweder auf alle Ziele oder,
+ * wenn sie zu bestimmten Positionen gehören („Gilt für“), nur auf deren Ziele.
  */
 export function PositionsAufteilung({ aufteilung, ziele, zielKarten, onProjektHinzufuegen }: PositionsAufteilungProps) {
     const toast = useToast();
     // Positionen liest nur die KI aus. Ohne KI-Schlüssel bleibt der Knopf sichtbar, aber gesperrt (mit Grund).
     const kiAktiv = useKiAktiv();
     const kiAusId = useId();
-    const { uebersicht, positionen, zuweisungen, weiseZu, weiseOffeneZu, anzahlOffen, anzahlWare } = aufteilung;
+    const { uebersicht, positionen, zuweisungen, weiseZu, weiseOffeneZu, anzahlOffen, anzahlWare, bezuege, setzeBezug } = aufteilung;
     const [ausgewaehlt, setAusgewaehlt] = useState<Set<number>>(() => new Set());
     const [nurOffene, setNurOffene] = useState(false);
     const [gezogen, setGezogen] = useState<ZiehDaten | null>(null);
+    /** Zuschlag, dessen „Gilt für“ gerade geändert wird. */
+    const [bezugFuer, setBezugFuer] = useState<number | null>(null);
+    const bezugZuschlag = bezugFuer != null ? positionen.find(p => p.id === bezugFuer && istZuschlag(p)) : undefined;
 
     // Fehler der Live-Vorschau einmal melden, nicht bei jedem neuen Versuch erneut.
     const { vorschauFehler } = aufteilung;
@@ -128,6 +137,8 @@ export function PositionsAufteilung({ aufteilung, ziele, zielKarten, onProjektHi
             return neu;
         });
     };
+
+    const bezugAendern = useCallback((positionId: number) => setBezugFuer(positionId), []);
 
     const ausgewaehlteZuordnen = (ziel: string) => {
         if (!ziel || ausgewaehlt.size === 0) return;
@@ -371,8 +382,10 @@ export function PositionsAufteilung({ aufteilung, ziele, zielKarten, onProjektHi
                                     wirdGezogen={gezogeneIds.has(position.id)}
                                     optionen={zeilenOptionen}
                                     gesperrtGrund={zielGesperrtGrund}
+                                    gueltigFuer={istZuschlag(position) ? gueltigFuerText(bezuege[position.id], positionen) : undefined}
                                     onZiel={waehleZiel}
                                     onAuswahl={schalteAuswahl}
+                                    onBezugAendern={bezugAendern}
                                 />
                             );
                         })}
@@ -381,6 +394,19 @@ export function PositionsAufteilung({ aufteilung, ziele, zielKarten, onProjektHi
 
                 <VorschauZusammenfassung aufteilung={aufteilung} />
             </section>
+
+            {bezugZuschlag && (
+                <BezugDialog
+                    zuschlag={bezugZuschlag}
+                    positionen={positionen}
+                    bezug={bezuege[bezugZuschlag.id] ?? []}
+                    onAbbrechen={() => setBezugFuer(null)}
+                    onUebernehmen={ids => {
+                        setzeBezug(bezugZuschlag.id, ids);
+                        setBezugFuer(null);
+                    }}
+                />
+            )}
 
             {createPortal(
                 <DragOverlay dropAnimation={null} zIndex={70}>
@@ -410,13 +436,16 @@ interface PositionsZeileProps {
     wirdGezogen: boolean;
     optionen: { value: string; label: string; gruppe?: string }[];
     gesperrtGrund?: string;
+    /** Nur bei Nebenkosten/Rabatt: Text hinter „Gilt für:“, z. B. „alle Positionen“ oder „Pos. 3, 5“. */
+    gueltigFuer?: string;
     onZiel: (positionId: number, ziel: string) => void;
     onAuswahl: (positionId: number, an: boolean) => void;
+    onBezugAendern: (positionId: number) => void;
 }
 
 /** Eine Zeile; memo, damit bei 100+ Positionen nur die geänderte Zeile neu zeichnet. */
 const PositionsZeile = memo(function PositionsZeile({
-    position, ziel, farbe, zielName, ausgewaehlt, anzahlBeimZiehen, wirdGezogen, optionen, gesperrtGrund, onZiel, onAuswahl,
+    position, ziel, farbe, zielName, ausgewaehlt, anzahlBeimZiehen, wirdGezogen, optionen, gesperrtGrund, gueltigFuer, onZiel, onAuswahl, onBezugAendern,
 }: PositionsZeileProps) {
     const ware = istWare(position);
     const name = position.bezeichnung || `Position ${position.positionNr}`;
@@ -496,19 +525,31 @@ const PositionsZeile = memo(function PositionsZeile({
                             aria-label={`Ziel für Position ${position.positionNr}`}
                         />
                     </div>
-                ) : (
-                    <span className="text-xs italic">
-                        {position.positionsArt === 'RABATT' ? 'Rabatt' : 'Nebenkosten'} – wird anteilig verteilt
+                ) : gueltigFuer != null ? (
+                    <span className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                        <span className="min-w-0 break-words">
+                            Gilt für: <span className="font-medium text-slate-700">{gueltigFuer}</span>
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => onBezugAendern(position.id)}
+                            aria-label={`Wofür ${position.positionsArt === 'RABATT' ? 'der Rabatt' : 'die Nebenkosten'} „${name}“ gilt, ändern`}
+                            className="rounded font-medium text-rose-700 underline underline-offset-2 hover:text-rose-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
+                        >
+                            ändern
+                        </button>
                     </span>
-                )}
+                ) : null}
             </span>
         </div>
     );
 });
 
 function VorschauZusammenfassung({ aufteilung }: { aufteilung: Aufteilung }) {
-    const { vorschau, vorschauLaeuft, uebersicht } = aufteilung;
+    const { vorschau, vorschauLaeuft, uebersicht, positionen } = aufteilung;
     const verteilt = vorschau?.ziele.reduce((s, z) => s + (z.betragNetto ?? 0), 0) ?? 0;
+    const mitBezug = vorschau?.nebenkostenMitBezug;
+    const hatZuschlaege = positionen.some(istZuschlag);
     return (
         <div
             aria-live="polite"
@@ -524,9 +565,18 @@ function VorschauZusammenfassung({ aufteilung }: { aufteilung: Aufteilung }) {
                 <span className="tabular-nums">{formatEuro(vorschau?.warenwert)} €</span>
             </div>
             <div className="mt-1 flex items-center justify-between">
-                <span>Nebenkosten und Rabatte <span className="text-slate-500">(anteilig verteilt)</span></span>
-                <span className="tabular-nums">{formatEuro(vorschau?.nebenkosten)} €</span>
+                <span className="flex items-center gap-1">
+                    <span>Nebenkosten und Rabatte <span className="text-slate-500">(anteilig auf alle verteilt)</span></span>
+                    {hatZuschlaege && <ZuschlagBezugInfo />}
+                </span>
+                <span className="tabular-nums">{formatEuro(nebenkostenAufAlle(vorschau))} €</span>
             </div>
+            {istBetragDa(mitBezug) && (
+                <div className="mt-1 flex items-center justify-between">
+                    <span>Nebenkosten und Rabatte <span className="text-slate-500">(nur für bestimmte Positionen)</span></span>
+                    <span className="tabular-nums">{formatEuro(mitBezug)} €</span>
+                </div>
+            )}
             <div className="mt-1 flex items-center justify-between font-semibold">
                 <span className="flex items-center gap-2">
                     Verteilt (netto)

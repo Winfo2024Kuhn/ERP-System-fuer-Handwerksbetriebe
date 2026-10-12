@@ -13,8 +13,8 @@ public record StornoHinweisDto(Art art, String text) {
         /** Eine gebuchte Schlussrechnung wurde automatisch mitstorniert. */
         MITSTORNIERT,
         /**
-         * Ein Schlussrechnungs-Entwurf bleibt stehen. Angezeigt wird er schon ohne den stornierten
-         * Abschlag, gespeichert ist aber noch der alte Betrag: vor dem Buchen öffnen und speichern.
+         * Ein Schlussrechnungs-Entwurf bleibt stehen und rechnet ab jetzt ohne den stornierten
+         * Abschlag (Anzeige und Buchen). Der Nutzer soll die Beträge vor dem Buchen prüfen.
          */
         ENTWURF_PRUEFEN
     }

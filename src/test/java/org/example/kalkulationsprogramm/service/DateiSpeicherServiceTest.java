@@ -858,7 +858,7 @@ class DateiSpeicherServiceTest {
     }
 
     // --- Tests: setzeGeschaeftsdokumentBezahlt ---
-    // Ob das Projekt danach bezahlt/beendet ist, entscheidet die zentrale Regel in
+    // Haken setzen und Projektstatus nachziehen erledigt der gemeinsame Weg in
     // AusgangsGeschaeftsDokumentService (getestet in AusgangsGeschaeftsDokumentServiceBezahltTest).
 
     @Test
@@ -877,9 +877,7 @@ class DateiSpeicherServiceTest {
 
         setup.service.setzeGeschaeftsdokumentBezahlt(100L, true);
 
-        assertTrue(rechnung.isBezahlt());
-        verify(setup.dokumentRepository).save(rechnung);
-        verify(setup.preisAutomatik).aktualisiereProjektPreisAusDokumenten(10L);
+        verify(setup.preisAutomatik).setzeOffenenPostenBezahlt(rechnung, true);
         // Keine zweite, eigene Abschluss-Regel mehr – das Projekt fasst nur die Zentrale an.
         org.mockito.Mockito.verifyNoInteractions(setup.projektRepository);
     }
@@ -900,24 +898,7 @@ class DateiSpeicherServiceTest {
 
         setup.service.setzeGeschaeftsdokumentBezahlt(101L, false);
 
-        assertFalse(rechnung.isBezahlt());
-        verify(setup.preisAutomatik).aktualisiereProjektPreisAusDokumenten(11L);
-    }
-
-    @Test
-    void setzeGeschaeftsdokumentBezahltOhneProjektBerechnetNichtsNeu() throws IOException {
-        ServiceSetup setup = createMahnungService();
-
-        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
-        rechnung.setId(102L);
-        rechnung.setBezahlt(false);
-
-        when(setup.dokumentRepository.findById(102L)).thenReturn(Optional.of(rechnung));
-
-        setup.service.setzeGeschaeftsdokumentBezahlt(102L, true);
-
-        assertTrue(rechnung.isBezahlt());
-        org.mockito.Mockito.verifyNoInteractions(setup.preisAutomatik);
+        verify(setup.preisAutomatik).setzeOffenenPostenBezahlt(rechnung, false);
     }
 
     @Test

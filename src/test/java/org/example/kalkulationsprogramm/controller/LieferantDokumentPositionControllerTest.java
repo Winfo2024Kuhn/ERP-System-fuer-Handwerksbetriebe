@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -16,6 +17,8 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 import org.example.kalkulationsprogramm.config.CloudflareAccessJwtFilter;
 import org.example.kalkulationsprogramm.config.FrontendUserDetailsService;
@@ -88,7 +91,7 @@ class LieferantDokumentPositionControllerTest {
                 new BigDecimal("119"), new BigDecimal("100"), BigDecimal.ZERO, false, false,
                 List.of(new DokumentPositionenDto.Position(1L, 1, "WARE", "MAT-001", "Flachstahl 50x5",
                         BigDecimal.TEN, "m", new BigDecimal("10"), "€/m", new BigDecimal("100"),
-                        null, null, null, null, null, null, null)));
+                        null, null, null, null, null, null, null, List.of())));
     }
 
     @Nested
@@ -255,7 +258,7 @@ class LieferantDokumentPositionControllerTest {
         @Test
         void vorschau() throws Exception {
             given(zuordnungService.vorschau(eq(10L), anyList())).willReturn(new DokumentPositionenDto.Vorschau(
-                    List.of(), 0, BigDecimal.TEN, BigDecimal.ZERO, null, true, null));
+                    List.of(), 0, BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.ZERO, null, true, null));
 
             mockMvc.perform(post(BASIS + "10/vorschau").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(GUELTIG))
@@ -272,12 +275,53 @@ class LieferantDokumentPositionControllerTest {
                 "{\"positionen\":[{\"positionId\":1,\"projektId\":-5}]}",
                 "{\"positionen\":[null]}",
                 "{}",
+                "{\"positionen\":[{\"positionId\":3,\"bezugPositionIds\":[-1]}]}",
+                "{\"positionen\":[{\"positionId\":3,\"bezugPositionIds\":[0]}]}",
+                "{\"positionen\":[{\"positionId\":3,\"bezugPositionIds\":[null]}]}",
+                "{\"positionen\":[{\"positionId\":3,\"bezugPositionIds\":[\"'; DROP TABLE x; --\"]}]}",
         })
         void ungueltigeEingaben(String body) throws Exception {
             mockMvc.perform(post(BASIS + "10/zuordnen").with(csrf()).contentType(MediaType.APPLICATION_JSON)
                     .content(body))
                     .andExpect(status().isBadRequest());
             verifyNoInteractions(zuordnungService);
+        }
+
+        @Test
+        void zuvieleBezuegeAbgelehnt() throws Exception {
+            String ids = LongStream.rangeClosed(1, 2001).mapToObj(Long::toString)
+                    .collect(Collectors.joining(","));
+
+            mockMvc.perform(post(BASIS + "10/vorschau").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"positionen\":[{\"positionId\":3,\"bezugPositionIds\":[" + ids + "]}]}"))
+                    .andExpect(status().isBadRequest());
+            verifyNoInteractions(zuordnungService);
+        }
+
+        @Test
+        void bezugDerNebenkostenGehtAnDenService() throws Exception {
+            given(zuordnungService.vorschau(eq(10L), anyList())).willReturn(new DokumentPositionenDto.Vorschau(
+                    List.of(), 0, BigDecimal.TEN, BigDecimal.ONE, BigDecimal.ONE, null, true, null));
+
+            mockMvc.perform(post(BASIS + "10/vorschau").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"positionen\":[{\"positionId\":1,\"projektId\":3},"
+                            + "{\"positionId\":3,\"bezugPositionIds\":[1]}]}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.nebenkostenMitBezug").value(1));
+            verify(zuordnungService).vorschau(eq(10L), argThat(liste -> liste.size() == 2
+                    && List.of(1L).equals(liste.get(1).bezugPositionIds())
+                    && liste.get(0).bezugPositionIds() == null));
+        }
+
+        @Test
+        void falscherBezugGibtVerstaendliche400() throws Exception {
+            given(zuordnungService.vorschau(eq(10L), anyList())).willThrow(
+                    new IllegalArgumentException("Ein Zuschlag kann nur zu Warenpositionen dieses Belegs gehören."));
+
+            mockMvc.perform(post(BASIS + "10/vorschau").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"positionen\":[{\"positionId\":3,\"bezugPositionIds\":[3]}]}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value("Ein Zuschlag kann nur zu Warenpositionen dieses Belegs gehören."));
         }
 
         @Test

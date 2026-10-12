@@ -62,6 +62,7 @@ public class KassenbuchAbschlussService {
     private final BelegAuditService auditService;
     private final KasseSaldoService kasseSaldoService;
     private final ProjektDokumentRepository projektDokumentRepository;
+    private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
 
     // ===================== Vorschau =====================
 
@@ -317,8 +318,7 @@ public class KassenbuchAbschlussService {
         if (originalKategorie == BelegKategorie.KASSE_EINNAHME && original.getAusgangsrechnungId() != null) {
             var dokument = projektDokumentRepository.findById(original.getAusgangsrechnungId()).orElse(null);
             if (dokument instanceof ProjektGeschaeftsdokument rechnung && rechnung.isBezahlt()) {
-                rechnung.setBezahlt(false);
-                projektDokumentRepository.save(rechnung);
+                ausgangsGeschaeftsDokumentService.setzeOffenenPostenBezahlt(rechnung, false);
                 auditGrund += " Kundenrechnung ID " + rechnung.getId()
                         + ": bezahlt von ja auf nein zurückgesetzt (Barzahlung storniert).";
             }

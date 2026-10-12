@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.repository;
 
 import org.example.kalkulationsprogramm.domain.Kunde;
+import org.example.kalkulationsprogramm.domain.Mahnstufe;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.junit.jupiter.api.Test;
@@ -113,6 +114,44 @@ class ProjektDokumentRepositoryTest {
         assertThat(offene)
                 .extracting(ProjektGeschaeftsdokument::getDokumentid)
                 .containsExactlyInAnyOrder("DOC3", "DOC4", "DOC5");
+    }
+
+    @Test
+    void offenePostenIgnorierenMahnungenEinerAbgehaktenRechnung() {
+        // Im Offene-Posten-Center hat nur die Rechnung einen Bezahlt-Haken; ihre
+        // Mahnungen hängen darunter und bleiben intern "offen". Sie dürfen das
+        // Projekt nicht dauerhaft auf "Offen" halten.
+        Projekt abgehakt = projektRepository.saveAndFlush(createProjekt("AN10"));
+        ProjektGeschaeftsdokument bezahlteRechnung = geschaeftsdokument(abgehakt, "RE-10", "Rechnung", true);
+        projektDokumentRepository.saveAndFlush(bezahlteRechnung);
+        ProjektGeschaeftsdokument erinnerung = geschaeftsdokument(abgehakt, "ZE-10", "Zahlungserinnerung", false);
+        erinnerung.setMahnstufe(Mahnstufe.ZAHLUNGSERINNERUNG);
+        erinnerung.setReferenzDokument(bezahlteRechnung);
+        projektDokumentRepository.saveAndFlush(erinnerung);
+
+        Projekt offen = projektRepository.saveAndFlush(createProjekt("AN11"));
+        projektDokumentRepository.saveAndFlush(geschaeftsdokument(offen, "RE-11", "Rechnung", false));
+
+        // Alte Mahnung ohne Bezug zu einer Rechnung: steht im Offene-Posten-Center als
+        // eigene Zeile mit eigenem Haken und zählt deshalb weiter.
+        Projekt alteMahnung = projektRepository.saveAndFlush(createProjekt("AN12"));
+        projektDokumentRepository.saveAndFlush(geschaeftsdokument(alteMahnung, "MA-12", "Mahnung", false));
+
+        assertThat(projektDokumentRepository.existsOffenePostenByProjektId(abgehakt.getId())).isFalse();
+        assertThat(projektDokumentRepository.existsOffenePostenByProjektId(offen.getId())).isTrue();
+        assertThat(projektDokumentRepository.existsOffenePostenByProjektId(alteMahnung.getId())).isTrue();
+    }
+
+    private ProjektGeschaeftsdokument geschaeftsdokument(Projekt projekt, String nummer, String art, boolean bezahlt) {
+        ProjektGeschaeftsdokument dokument = new ProjektGeschaeftsdokument();
+        dokument.setProjekt(projekt);
+        dokument.setDokumentid(nummer);
+        dokument.setGeschaeftsdokumentart(art);
+        dokument.setOriginalDateiname(nummer + ".pdf");
+        dokument.setGespeicherterDateiname(nummer + "-gespeichert.pdf");
+        dokument.setBruttoBetrag(new BigDecimal("500.00"));
+        dokument.setBezahlt(bezahlt);
+        return dokument;
     }
 
     private Projekt createProjekt(String auftragsnummer) {

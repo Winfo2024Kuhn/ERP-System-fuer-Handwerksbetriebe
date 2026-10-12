@@ -117,6 +117,8 @@ Ein Rechnungsdokument wird gebucht (`gebucht = true`, `gebuchtAm = heute`) in fo
 2. **E-Mail-Versand** – der Editor bucht vor dem Versand; danach setzt `POST /api/ausgangs-dokumente/{id}/email-versendet` zusätzlich `versandDatum`
 3. **Stornierung** – Das Storno-Gegendokument wird sofort als gebucht erstellt
 
+Bei einer **Schlussrechnung** schreibt das Buchen den Betrag fest, den Editor und PDF zeigen. Ist der gespeicherte Betrag veraltet (z. B. weil danach eine Abschlagsrechnung storniert wurde), wird er vorher angepasst und als `GEAENDERT` mit altem und neuem Betrag protokolliert.
+
 Ein **Entwurfsversand** (Knopf „Entwurf“, PDF mit Wasserzeichen „ENTWURF“) bucht nicht. Das beim Buchen erzeugte PDF wird auf dem Server archiviert (`pdf-speichern`).
 
 ---
