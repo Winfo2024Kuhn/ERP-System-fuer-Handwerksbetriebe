@@ -119,7 +119,11 @@ if [[ -n "$BASIS" ]]; then
     tmp="$(mktemp -d)"
     docker cp "$container:/app/app.jar" "$tmp/app.jar" >/dev/null
     docker rm "$container" >/dev/null
-    if ! unzip -Z1 "$tmp/app.jar" "$BASIS_ORDNER" 2>/dev/null | grep -q '\.sql$'; then
+    # Erst die ganze Liste lesen: "unzip | grep -q" bricht unzip nach dem ersten
+    # Treffer ab (Broken pipe) - mit pipefail saehe das wie "keine Dateien" aus.
+    # Keine passende Datei: unzip endet mit Fehler, die Liste bleibt leer.
+    basis_dateien="$(unzip -Z1 "$tmp/app.jar" "$BASIS_ORDNER" 2>/dev/null || true)"
+    if ! grep -q '\.sql$' <<< "$basis_dateien"; then
         log "WARNUNG: $BASIS hat noch kein PostgreSQL-Startsetup - pruefe nur die Neuinstallation."
         [[ -n "${GITHUB_ACTIONS-}" ]] && echo "::warning::Kundenstand ohne PostgreSQL-Startsetup - nur Neuinstallation getestet, kein Upgrade."
         BASIS=""

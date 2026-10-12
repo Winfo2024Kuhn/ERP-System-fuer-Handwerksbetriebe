@@ -201,11 +201,16 @@ datenbank_ausgeben() {
         'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --lock-wait-timeout=120s'
 }
 
-# pg_dump schreibt zum Schluss eine feste Abschlusszeile (danach evtl. noch
-# "\unrestrict ..."). Fehlt sie, ist die Sicherung abgeschnitten und taugt
-# nicht zum Zurueckspielen.
+# pg_dump schreibt zum Schluss eine feste Abschlusszeile (danach noch ein paar
+# Zeilen wie "\unrestrict ..."). Fehlt sie, ist die Sicherung abgeschnitten
+# und taugt nicht zum Zurueckspielen.
+# Das Ende erst ganz einlesen, dann pruefen: Ein "| grep -q" hoert nach dem
+# ersten Treffer auf zu lesen. Schickt tail die Zeilen in zwei Stuecken, gibt
+# das "Broken pipe" - und pipefail meldet eine gute Sicherung als kaputt.
 sicherung_vollstaendig() {
-    gzip -cd "$1" | tail -n 5 | grep -q "PostgreSQL database dump complete"
+    local ende
+    ende="$(gzip -cd "$1" | tail -n 20)" || return 1
+    [[ "$ende" == *"PostgreSQL database dump complete"* ]]
 }
 
 # Komplette Sicherung der Datenbank nach <Zieldatei> (.sql.gz). Erst eine
