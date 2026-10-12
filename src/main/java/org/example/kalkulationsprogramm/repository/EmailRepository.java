@@ -49,8 +49,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   List<Email> findByDeletedAtIsNotNullOrderByDeletedAtDesc();
 
-  long countByDeletedAtIsNotNullAndIsReadFalse();
-
   // ═══════════════════════════════════════════════════════════════
   // SUCHE
   // ═══════════════════════════════════════════════════════════════
@@ -158,46 +156,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       """, nativeQuery = true)
   List<Email> findUnassigned();
 
-  /**
-   * Zählt alle unzugeordneten Emails von BEKANNTEN Kunden.
-   * Mit ±1 Monat Karenzzeit bezogen auf Projekt/Anfrage-Datumsangaben.
-   */
-  @Query(value = """
-      SELECT COUNT(DISTINCT e.id) FROM email e
-      WHERE e.zuordnung_typ = 'KEINE'
-        AND e.direction = 'IN'
-        AND e.projekt_id IS NULL
-        AND e.anfrage_id IS NULL
-        AND e.lieferant_id IS NULL
-        AND e.deleted_at IS NULL
-        AND e.is_read = false
-        AND (e.is_spam IS NULL OR e.is_spam = FALSE)
-        AND LOWER(COALESCE(e.subject, '')) NOT LIKE '%newsletter%'
-        AND LOWER(COALESCE(e.body, '')) NOT LIKE '%newsletter%'
-        AND (
-            EXISTS (
-                SELECT 1 FROM projekt_kunden_emails pke
-                JOIN projekt p ON pke.projekt_id = p.id
-                WHERE (LOWER(pke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(pke.email), '>%'))
-                AND CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH
-            )
-            OR EXISTS (
-                SELECT 1 FROM anfrage_kunden_emails ake
-                JOIN anfrage a ON ake.anfrage_id = a.id
-                WHERE (LOWER(ake.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ake.email), '>%'))
-                AND CAST(e.sent_at AS DATE) BETWEEN a.anlegedatum - INTERVAL '1' MONTH AND COALESCE(a.anlegedatum, CURRENT_DATE) + INTERVAL '1' MONTH
-            )
-            OR EXISTS (
-                SELECT 1 FROM kunden_emails ke
-                JOIN kunde k ON ke.kunden_id = k.id
-                JOIN projekt p ON p.kunden_id = k.id
-                WHERE (LOWER(ke.email) = LOWER(e.from_address) OR LOWER(e.from_address) LIKE CONCAT('%<', LOWER(ke.email), '>%'))
-                AND CAST(e.sent_at AS DATE) BETWEEN p.anlegedatum - INTERVAL '1' MONTH AND COALESCE(p.abschlussdatum, p.anlegedatum) + INTERVAL '1' MONTH
-            )
-        )
-      """, nativeQuery = true)
-  long countUnassigned();
-
   // ═══════════════════════════════════════════════════════════════
   // QUEUE
   // ═══════════════════════════════════════════════════════════════
@@ -277,23 +235,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   List<Email> findPotentialInquiries();
 
   /**
-   * Zählt potenzielle Anfragen für den Ordner-Badge.
-   */
-  @Query(value = """
-      SELECT COUNT(*) FROM email e
-      WHERE e.is_potential_inquiry = true
-        AND e.is_spam = false
-        AND e.deleted_at IS NULL
-        AND e.is_read = false
-        AND e.direction = 'IN'
-        AND e.zuordnung_typ = 'KEINE'
-        AND e.projekt_id IS NULL
-        AND e.anfrage_id IS NULL
-        AND e.lieferant_id IS NULL
-      """, nativeQuery = true)
-  long countPotentialInquiries();
-
-  /**
    * Findet Emails die noch nicht auf Anfrage-Score analysiert wurden.
    * Für rückwirkende Analyse.
    */
@@ -362,8 +303,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   long countByDirection(EmailDirection direction);
 
-  long countByDirectionAndIsReadFalse(EmailDirection direction);
-
   long countByDirectionAndZuordnungTypIsNull(EmailDirection direction);
 
   // ═══════════════════════════════════════════════════════════════
@@ -413,19 +352,10 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       + "ORDER BY e.sentAt DESC NULLS LAST")
   List<Email> findSpamOrdner();
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL AND e.isRead = false "
-      + "AND e.zuordnungTyp = 'KEINE' AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL")
-  long countSpamOrdnerUnread();
-
   @Query("SELECT e FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL "
       + "AND e.zuordnungTyp = 'KEINE' AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL "
       + "ORDER BY e.sentAt DESC NULLS LAST")
   List<Email> findNewsletterOrdner();
-
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL "
-      + "AND e.isRead = false "
-      + "AND e.zuordnungTyp = 'KEINE' AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL")
-  long countNewsletterOrdnerUnread();
 
   /**
    * Findet alle Emails die noch nicht auf Spam geprüft wurden.
@@ -485,23 +415,6 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "AND e.lieferant IS NULL")
   List<Email> findLongLivedInboxEmailsWithoutVerdict(@Param("cutoff") LocalDateTime cutoff);
 
-  /**
-   * Counts unread emails for "Posteingang" (filtered).
-   * EXCLUDES emails that appear in "Anfragen".
-   */
-  @Query("SELECT COUNT(e) FROM Email e " +
-      "WHERE e.direction = 'IN' " +
-      "AND e.zuordnungTyp = 'KEINE' " +
-      "AND e.deletedAt IS NULL " +
-      "AND e.isSpam = false " +
-      "AND e.isNewsletter = false " +
-      "AND e.isPotentialInquiry = false " +
-      "AND e.isRead = false " +
-      "AND e.projekt IS NULL " +
-      "AND e.anfrage IS NULL " +
-      "AND e.lieferant IS NULL")
-  long countInboxFilteredUnread();
-
   // ═══════════════════════════════════════════════════════════════
   // NEW FOLDERS: PROJECT, OFFER, SUPPLIER
   // ═══════════════════════════════════════════════════════════════
@@ -512,14 +425,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
   @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findProjectEmails();
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'PROJEKT' AND e.direction = 'IN' AND e.deletedAt IS NULL AND e.isRead = false")
-  long countProjectEmailsUnread();
-
   @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findAnfrageEmails();
-
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'ANFRAGE' AND e.direction = 'IN' AND e.deletedAt IS NULL AND e.isRead = false")
-  long countAnfrageEmailsUnread();
 
   @Query("SELECT e FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.direction = 'IN' AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findLieferantEmails();
@@ -536,26 +443,12 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "ORDER BY e.sentAt DESC")
   List<Email> findTaxAdvisorCandidates(@Param("domainFragment") String domainFragment);
 
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.zuordnungTyp = 'LIEFERANT' AND e.direction = 'IN' AND e.deletedAt IS NULL AND e.isRead = false")
-  long countLieferantEmailsUnread();
-
-  // Updates for existing counts to use "Unread" logic if needed by user
-  // requirements
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.isNewsletter = true AND e.isSpam = false AND e.deletedAt IS NULL AND e.isRead = false")
-  long countNewsletterUnread();
-
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.isSpam = true AND e.deletedAt IS NULL AND e.isRead = false")
-  long countSpamUnread();
-
   // ═══════════════════════════════════════════════════════════════
   // STARRED / MARKIERT
   // ═══════════════════════════════════════════════════════════════
 
   @Query("SELECT e FROM Email e WHERE e.isStarred = true AND e.deletedAt IS NULL ORDER BY e.sentAt DESC")
   List<Email> findStarred();
-
-  @Query("SELECT COUNT(e) FROM Email e WHERE e.isStarred = true AND e.deletedAt IS NULL AND e.isRead = false")
-  long countStarredUnread();
 
   // ═══════════════════════════════════════════════════════════════
   // GLOBALE SUCHE

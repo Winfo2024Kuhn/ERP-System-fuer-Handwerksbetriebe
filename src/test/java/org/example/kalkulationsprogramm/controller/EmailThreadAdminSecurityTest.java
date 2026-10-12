@@ -63,6 +63,7 @@ class EmailThreadAdminSecurityTest {
     @MockBean private org.example.kalkulationsprogramm.service.EmailDraftService emailDraftService;
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
     @MockBean private ProjektRepository projektRepository;
     @MockBean private AnfrageRepository anfrageRepository;
@@ -89,6 +90,11 @@ class EmailThreadAdminSecurityTest {
     @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
     @MockBean private org.example.kalkulationsprogramm.service.AusgangsmailService ausgangsmailService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void gelesenWieBisher() {
+        org.example.kalkulationsprogramm.service.GelesenTestHilfe.wieGemeinsam(emailGelesenService);
+    }
 
     @Test
     @DisplayName("Ohne Anmeldung kein Zugriff")

@@ -56,7 +56,8 @@ import jakarta.persistence.EntityManager;
  * hier als normale Bean mit echtem Repository und echtem Sichtbarkeits-Service.
  */
 @DataJpaTest
-@Import({ UnifiedEmailController.class, PostfachSichtbarkeitService.class, EmailThreadService.class })
+@Import({ UnifiedEmailController.class, PostfachSichtbarkeitService.class, EmailThreadService.class,
+        org.example.kalkulationsprogramm.service.EmailGelesenService.class })
 @TestPropertySource(properties = "file.mail-attachment-dir=target/test-attachments")
 class UnifiedEmailSichtbarkeitJpaTest {
 
@@ -100,7 +101,6 @@ class UnifiedEmailSichtbarkeitJpaTest {
     @BeforeEach
     void daten() {
         org.mockito.Mockito.doReturn(List.of()).when(emailRepository).findUnassigned();
-        org.mockito.Mockito.doReturn(0L).when(emailRepository).countUnassigned();
         info = postfach("info@example.com", true, true);
         max = postfach("max@example.com", false, false);
         erika = new FrontendUserProfile();
@@ -236,5 +236,36 @@ class UnifiedEmailSichtbarkeitJpaTest {
         // Öffnen darf Erika sie (Projekt-Reiter), bearbeiten im E-Mail-Center nicht.
         assertThat(controller.getEmailById(fremd.getId(), ERIKA).getStatusCode().value()).isEqualTo(200);
         assertThat(controller.markAsRead(fremd.getId(), ERIKA).getStatusCode().value()).isEqualTo(404);
+    }
+
+    /** „Gelesen“ gilt pro Person: Was die Chefin liest, bleibt für Erika ungelesen – und umgekehrt. */
+    @Test
+    void gelesenGiltProPerson() {
+        FrontendUserProfile chefin = new FrontendUserProfile();
+        chefin.setDisplayName("Max Mustermann");
+        chefin.setUsername("chefin");
+        chefin = benutzerRepository.save(chefin);
+        given(frontendUserProfileService.findByUsername("chefin")).willReturn(Optional.of(chefin));
+        Email carport = mail("Anfrage Carport", info);
+        mail("Anfrage Zaun", info);
+        speichern();
+
+        assertThat(controller.getStats(ERIKA).getInboxCount()).isEqualTo(2);
+
+        // Die Chefin liest eine Mail – nur für sie ist sie gelesen.
+        controller.markAsRead(carport.getId(), ADMIN);
+        assertThat(controller.getStats(ADMIN).getInboxCount()).isEqualTo(1);
+        assertThat(controller.getStats(ERIKA).getInboxCount()).isEqualTo(2);
+        assertThat(betreffe(controller.getInboxEmails(0, 100, true, ADMIN))).containsExactly("Anfrage Zaun");
+        assertThat(betreffe(controller.getInboxEmails(0, 100, true, ERIKA)))
+                .containsExactly("Anfrage Carport", "Anfrage Zaun");
+        assertThat(controller.getEmailById(carport.getId(), ADMIN).getBody().isRead()).isTrue();
+        assertThat(controller.getEmailById(carport.getId(), ERIKA).getBody().isRead()).isFalse();
+
+        // Erika: „Alle gelesen“ – nur für sie, die Chefin hat weiter eine ungelesene.
+        assertThat(controller.markAllRead("inbox", ERIKA).getBody()).containsEntry("updated", 2);
+        assertThat(controller.getStats(ERIKA).getInboxCount()).isZero();
+        assertThat(controller.getStats(ADMIN).getInboxCount()).isEqualTo(1);
+        assertThat(controller.markAllRead("inbox", ERIKA).getBody()).containsEntry("updated", 0);
     }
 }

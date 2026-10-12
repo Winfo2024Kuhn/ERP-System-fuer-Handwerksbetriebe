@@ -1,11 +1,14 @@
 package org.example.kalkulationsprogramm.config;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.repository.EmailGelesenRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -22,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 public class FrontendUserBootstrapInitializer implements ApplicationRunner {
 
     private final FrontendUserProfileRepository repository;
+    private final EmailGelesenRepository emailGelesenRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.admin.username:}")
@@ -57,7 +61,9 @@ public class FrontendUserBootstrapInitializer implements ApplicationRunner {
         admin.setActive(true);
         admin.setRoleSet(new LinkedHashSet<>(Set.of(FrontendUserRole.ADMIN, FrontendUserRole.USER)));
 
-        repository.save(admin);
+        FrontendUserProfile gespeichert = repository.save(admin);
+        // „Gelesen“ gilt pro Person: Schon vorhandene Mails gelten für den neuen Admin als gelesen.
+        emailGelesenRepository.alleMailsAlsGelesen(gespeichert.getId(), EmailDirection.IN, LocalDateTime.now());
 
         log.info("Bootstrap-Admin fuer Frontend-Login wurde angelegt: username={}", normalizedUsername);
     }

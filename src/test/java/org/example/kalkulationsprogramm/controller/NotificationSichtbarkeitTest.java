@@ -72,6 +72,7 @@ class NotificationSichtbarkeitTest {
 
     @Autowired private MockMvc mockMvc;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private EmailRepository emailRepository;
     @MockBean private UrlaubsantragRepository urlaubsantragRepository;
     @MockBean private ProjektNotizRepository projektNotizRepository;
@@ -96,6 +97,11 @@ class NotificationSichtbarkeitTest {
     @MockBean private BenachrichtigungErledigtService erledigtService;
     @MockBean private BetriebsstatusService betriebsstatusService;
     @MockBean private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
+    @org.junit.jupiter.api.BeforeEach
+    void gelesenWieBisher() {
+        org.example.kalkulationsprogramm.service.GelesenTestHilfe.wieGemeinsam(emailGelesenService);
+    }
 
     @BeforeEach
     void daten() {

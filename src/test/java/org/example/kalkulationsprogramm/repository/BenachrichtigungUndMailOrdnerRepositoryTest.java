@@ -92,9 +92,7 @@ class BenachrichtigungUndMailOrdnerRepositoryTest {
 
         assertThat(emailRepository.findSpamOrdner()).extracting(Email::getSubject)
                 .containsExactlyInAnyOrder("spam-frei", "spam-gelesen");
-        assertThat(emailRepository.countSpamOrdnerUnread()).isEqualTo(1);
         assertThat(emailRepository.findNewsletterOrdner()).extracting(Email::getSubject).containsExactly("news-frei");
-        assertThat(emailRepository.countNewsletterOrdnerUnread()).isEqualTo(1);
         // Die Bereinigung sieht weiter alle Spam-Mails und entscheidet selbst.
         assertThat(emailRepository.findSpam()).hasSize(3);
     }

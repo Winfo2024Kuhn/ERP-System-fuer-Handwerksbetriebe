@@ -2,10 +2,14 @@ package org.example.kalkulationsprogramm.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
 import org.example.kalkulationsprogramm.config.FlywayStartSetupConfig;
+import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.query.NativeQuery;
@@ -37,6 +41,8 @@ import jakarta.persistence.EntityManager;
  * Nachricht ohne HTML-Teil ({@code PostgresLangtextTypeContributor}).</li>
  * <li>Lieferantensuche: {@code DISTINCT} plus Sortierung ohne Groß-/Kleinschreibung warf auf
  * PostgreSQL Fehler 42P10 ({@link LieferantenSuche}).</li>
+ * <li>„Gelesen“ pro Person: eigenes SQL mit {@code ON CONFLICT DO NOTHING}, das nur auf PostgreSQL
+ * läuft ({@link EmailGelesenRepositoryErweiterungImpl}).</li>
  * </ul>
  */
 @DataJpaTest(showSql = false, properties = { "spring.jpa.hibernate.ddl-auto=validate",
@@ -57,6 +63,12 @@ class DatenbankKompatibilitaetBetriebTest {
     EntityManager em;
     @Autowired
     LieferantenRepository lieferanten;
+    @Autowired
+    EmailGelesenRepository gelesen;
+    @Autowired
+    EmailRepository emails;
+    @Autowired
+    FrontendUserProfileRepository benutzer;
 
     @Test
     @Transactional
@@ -99,5 +111,32 @@ class DatenbankKompatibilitaetBetriebTest {
 
         assertThat(perName).extracting(Lieferanten::getId).containsExactly(wuerth.getId());
         assertThat(perMail).extracting(Lieferanten::getId).containsExactly(wuerth.getId());
+    }
+
+    @Test
+    @Transactional
+    void gelesenMerkenMitOnConflictUndStartbefuellung() {
+        String kennung = UUID.randomUUID().toString().substring(0, 8);
+        FrontendUserProfile max = new FrontendUserProfile();
+        max.setDisplayName("Max Mustermann");
+        max.setUsername("max-" + kennung);
+        max = benutzer.saveAndFlush(max);
+        Email ein = new Email();
+        ein.setMessageId("<ein-" + kennung + "@example.org>");
+        ein.setDirection(EmailDirection.IN);
+        ein = emails.saveAndFlush(ein);
+        Email zwei = new Email();
+        zwei.setMessageId("<zwei-" + kennung + "@example.org>");
+        zwei.setDirection(EmailDirection.IN);
+        zwei = emails.saveAndFlush(zwei);
+
+        gelesen.alsGelesenMerken(max.getId(), List.of(ein.getId()), LocalDateTime.now());
+        // Zweites Mal: ON CONFLICT bzw. NOT EXISTS greift, keine Ausnahme, nichts doppelt.
+        gelesen.alsGelesenMerken(max.getId(), List.of(ein.getId(), ein.getId()), LocalDateTime.now());
+
+        assertThat(gelesen.geleseneAus(max.getId(), List.of(ein.getId(), zwei.getId()))).containsExactly(ein.getId());
+        assertThat(gelesen.alleMailsAlsGelesen(max.getId(), EmailDirection.IN, LocalDateTime.now()))
+                .isGreaterThanOrEqualTo(1);
+        assertThat(gelesen.findEmailIdsByBenutzerId(max.getId())).contains(ein.getId(), zwei.getId());
     }
 }

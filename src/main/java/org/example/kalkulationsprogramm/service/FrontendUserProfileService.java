@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -7,10 +8,12 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.EmailAbsender;
+import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
+import org.example.kalkulationsprogramm.repository.EmailGelesenRepository;
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,6 +29,7 @@ public class FrontendUserProfileService {
     private final FrontendUserProfileRepository repository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final EmailAbsenderRepository emailAbsenderRepository;
+    private final EmailGelesenRepository emailGelesenRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
@@ -129,7 +133,19 @@ public class FrontendUserProfileService {
             target.setShortCode(generateShortCode(target.getDisplayName()));
         }
 
-        return repository.save(target);
+        FrontendUserProfile gespeichert = repository.save(target);
+        if (creating) {
+            bisherigeMailsAlsGelesen(gespeichert);
+        }
+        return gespeichert;
+    }
+
+    /**
+     * „Gelesen“ gilt pro Person: Ein neuer Benutzer startet mit allen schon vorhandenen Mails als
+     * gelesen – sonst stünde er am ersten Tag vor Tausenden „neuen“ Mails und Glocken-Hinweisen.
+     */
+    private void bisherigeMailsAlsGelesen(FrontendUserProfile benutzer) {
+        emailGelesenRepository.alleMailsAlsGelesen(benutzer.getId(), EmailDirection.IN, LocalDateTime.now());
     }
 
     @Transactional
@@ -160,7 +176,9 @@ public class FrontendUserProfileService {
         profile.setRoleSet(ersterNutzer
                 ? new LinkedHashSet<>(Set.of(FrontendUserRole.ADMIN, FrontendUserRole.USER))
                 : new LinkedHashSet<>(Set.of(FrontendUserRole.USER)));
-        return repository.save(profile);
+        FrontendUserProfile gespeichert = repository.save(profile);
+        bisherigeMailsAlsGelesen(gespeichert);
+        return gespeichert;
     }
 
     @Transactional
