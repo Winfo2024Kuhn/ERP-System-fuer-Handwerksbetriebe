@@ -56,6 +56,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(addFilters = false)
 class ProjektControllerTest {
 
+        /** Standardmeldung des RestExceptionHandler bei einem Versionskonflikt (@Version). */
+        private static final String VERSIONSKONFLIKT =
+                        "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.";
+
         @Autowired
         private MockMvc mockMvc;
 
@@ -247,10 +251,22 @@ class ProjektControllerTest {
         @Test
         void setzeAbgeschlossen_liefert404FuerUnbekanntesProjekt() throws Exception {
                 when(projektManagementService.setzeAbgeschlossen(999L, true))
-                                .thenThrow(new RuntimeException("Projekt konnte nicht gefunden werden."));
+                                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
 
                 mockMvc.perform(patch("/api/projekte/999/abgeschlossen").param("abgeschlossen", "true"))
-                                .andExpect(status().isNotFound());
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+        }
+
+        @Test
+        void setzeAbgeschlossen_VersionskonfliktGibt409StattNichtGefunden() throws Exception {
+                when(projektManagementService.setzeAbgeschlossen(42L, true))
+                                .thenThrow(new ObjectOptimisticLockingFailureException(Projekt.class, 42L));
+
+                mockMvc.perform(patch("/api/projekte/42/abgeschlossen").param("abgeschlossen", "true"))
+                                .andExpect(status().isConflict())
+                                .andExpect(jsonPath("$.message").value(VERSIONSKONFLIKT));
         }
 
         @Test
@@ -350,8 +366,7 @@ class ProjektControllerTest {
                 mockMvc.perform(patch("/api/projekte/dokumente/42/bezahlt")
                                 .param("bezahlt", "true"))
                                 .andExpect(status().isConflict())
-                                .andExpect(jsonPath("$.message").value(
-                                                "Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden."));
+                                .andExpect(jsonPath("$.message").value(VERSIONSKONFLIKT));
         }
 
         @Test
@@ -667,7 +682,7 @@ class ProjektControllerTest {
                 projekt.setId(1L);
                 when(angemeldeterMitarbeiter.handelnderMitarbeiter(org.mockito.ArgumentMatchers.any()))
                                 .thenReturn(java.util.Optional.of(max));
-                when(projektRepository.findById(1L)).thenReturn(java.util.Optional.of(projekt));
+                when(projektManagementService.findeProjektEntity(1L)).thenReturn(projekt);
                 when(projektNotizRepository.save(org.mockito.ArgumentMatchers.any()))
                                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -693,7 +708,7 @@ class ProjektControllerTest {
                 projekt.setId(1L);
                 when(angemeldeterMitarbeiter.handelnderMitarbeiter(org.mockito.ArgumentMatchers.any()))
                                 .thenReturn(java.util.Optional.empty());
-                when(projektRepository.findById(1L)).thenReturn(java.util.Optional.of(projekt));
+                when(projektManagementService.findeProjektEntity(1L)).thenReturn(projekt);
 
                 mockMvc.perform(post("/api/projekte/1/notizen")
                                 .principal(pcAnmeldung())
@@ -818,5 +833,214 @@ class ProjektControllerTest {
                                 .andExpect(jsonPath("$.message").value(AngemeldeterMitarbeiterService.KEIN_MITARBEITER));
 
                 org.mockito.Mockito.verifyNoInteractions(projektNotizRepository);
+        }
+
+        // ==================== Fehlercodes statt Sammel-404 ====================
+        // Früher machte der Controller aus jeder RuntimeException ein 404 – auch aus einem
+        // Versionskonflikt oder einem Serverfehler. Jetzt gilt: fehlt etwas → 404 mit Meldung,
+        // Konflikt → 409, Unerwartetes → 500.
+
+        @Test
+        void getProjektById_UnbekanntesProjektGibt404MitMeldung() throws Exception {
+                when(projektManagementService.findeProjektById(999L))
+                                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+
+                mockMvc.perform(get("/api/projekte/999"))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+        }
+
+        @Test
+        void getProjektById_VersionskonfliktBeimNachrechnenGibt409() throws Exception {
+                // Das Öffnen rechnet Preis und Status neu und speichert das Projekt.
+                when(projektManagementService.findeProjektById(42L))
+                                .thenThrow(new ObjectOptimisticLockingFailureException(Projekt.class, 42L));
+
+                mockMvc.perform(get("/api/projekte/42"))
+                                .andExpect(status().isConflict())
+                                .andExpect(jsonPath("$.message").value(VERSIONSKONFLIKT));
+        }
+
+        @Test
+        void loescheProjekt_NochVerknuepftGibt409StattNichtGefunden() throws Exception {
+                doThrow(new org.springframework.dao.DataIntegrityViolationException(
+                                "update or delete on table \"projekt\" violates foreign key constraint "
+                                                + "\"fk_rechnung_projekt\" on table \"rechnung\""))
+                                .when(projektManagementService).loescheProjekt(42L);
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/42"))
+                                .andExpect(status().isConflict());
+        }
+
+        @Test
+        void loescheProjekt_UnbekanntesProjektGibt404MitMeldung() throws Exception {
+                doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, ProjektManagementService.PROJEKT_NICHT_GEFUNDEN))
+                                .when(projektManagementService).loescheProjekt(999L);
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/999"))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+        }
+
+        @Test
+        void fuegeProduktkategorienHinzu_UnbekanntesProjektGibt404MitMeldungStattTechnikText() throws Exception {
+                when(projektManagementService.fuegeProduktkategorienHinzu(eq(999L), org.mockito.ArgumentMatchers.anyList()))
+                                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+
+                mockMvc.perform(post("/api/projekte/999/produktkategorien")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("[]"))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+        }
+
+        @Test
+        void loescheProjektProduktkategorie_MitZeitbuchungenGibt409MitGrund() throws Exception {
+                String grund = "Die Produktkategorie kann nicht gelöscht werden, da bereits Zeitbuchungen dafür existieren.";
+                when(projektManagementService.loescheProjektProduktkategorie(1L, 5L))
+                                .thenThrow(new ResponseStatusException(HttpStatus.CONFLICT, grund));
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/1/produktkategorien/5"))
+                                .andExpect(status().isConflict())
+                                .andExpect(jsonPath("$.message").value(grund));
+        }
+
+        @Test
+        void loescheDokument_UnbekanntesDokumentGibt404MitMeldung() throws Exception {
+                doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Dieses Dokument gibt es nicht mehr."))
+                                .when(dateiSpeicherService).loescheDatei(77L);
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/1/dokumente/77"))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value("Dieses Dokument gibt es nicht mehr."));
+        }
+
+        @Test
+        void loescheDokument_DateifehlerWirdNichtAls404Gemeldet() throws Exception {
+                doThrow(new RuntimeException("Fehler beim Löschen der physischen Datei"))
+                                .when(dateiSpeicherService).loescheDatei(77L);
+
+                ServletException fehler = assertThrows(ServletException.class,
+                                () -> mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                                .delete("/api/projekte/1/dokumente/77")));
+                assertInstanceOf(RuntimeException.class, fehler.getCause());
+        }
+
+        @Test
+        void projektEmailHinzufuegen_UnbekanntesProjektGibt404StattServerfehler() throws Exception {
+                when(projektManagementService.findeProjektEntity(999L)).thenThrow(new ResponseStatusException(
+                                HttpStatus.NOT_FOUND, ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+
+                mockMvc.perform(post("/api/projekte/999/emails")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"email\":\"max.mustermann@example.com\"}"))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+        }
+
+        @Test
+        void notizAnlegen_UnbekanntesProjektGibt404MitMeldung() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                when(projektManagementService.findeProjektEntity(999L)).thenThrow(new ResponseStatusException(
+                                HttpStatus.NOT_FOUND, ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+
+                mockMvc.perform(post("/api/projekte/999/notizen")
+                                .principal(pcAnmeldung())
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"notiz\":\"Test\"}"))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+
+                org.mockito.Mockito.verify(projektNotizRepository, org.mockito.Mockito.never())
+                                .save(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        void notizLoeschen_UnbekannteNotizGibt404MitMeldung() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                when(projektNotizRepository.findById(404L)).thenReturn(java.util.Optional.empty());
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/1/notizen/404").principal(pcAnmeldung()))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(
+                                                "Diese Notiz gibt es nicht mehr. Vielleicht wurde sie inzwischen gelöscht."));
+        }
+
+        @Test
+        void notizAendern_GleichzeitigGeloeschtGibt409StattNichtGefunden() throws Exception {
+                // ProjektNotiz hat kein @Version: 409 kommt real, wenn jemand die Notiz zwischen
+                // Laden und Speichern löscht ("Row was updated or deleted by another transaction").
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                when(projektNotizRepository.findById(22L))
+                                .thenReturn(java.util.Optional.of(notiz(22L, mitarbeiter(7L, "Max"), false)));
+                when(projektNotizRepository.save(org.mockito.ArgumentMatchers.any()))
+                                .thenThrow(new ObjectOptimisticLockingFailureException(
+                                                org.example.kalkulationsprogramm.domain.ProjektNotiz.class, 22L));
+
+                mockMvc.perform(patch("/api/projekte/1/notizen/22")
+                                .principal(pcAnmeldung())
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"notiz\":\"x\"}"))
+                                .andExpect(status().isConflict())
+                                .andExpect(jsonPath("$.message").value(VERSIONSKONFLIKT));
+        }
+
+        @Test
+        void notizBildHochladen_UnbekannteNotizGibt404StattServerfehler() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                when(projektNotizRepository.findById(404L)).thenReturn(java.util.Optional.empty());
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .multipart("/api/projekte/1/notizen/404/bilder")
+                                .file(new org.springframework.mock.web.MockMultipartFile(
+                                                "datei", "foto.jpg", "image/jpeg", new byte[] { 1 }))
+                                .principal(pcAnmeldung()))
+                                .andExpect(status().isNotFound());
+
+                org.mockito.Mockito.verify(dateiSpeicherService, org.mockito.Mockito.never())
+                                .speichereProjektNotizBild(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        void notizBildLoeschen_BildEinerAnderenNotizGibt404UndBleibtStehen() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                when(projektNotizRepository.findById(22L))
+                                .thenReturn(java.util.Optional.of(notiz(22L, mitarbeiter(7L, "Max"), false)));
+                var bild = new org.example.kalkulationsprogramm.domain.ProjektNotizBild();
+                bild.setId(5L);
+                bild.setNotiz(notiz(30L, mitarbeiter(7L, "Max"), false));
+                when(projektNotizBildRepository.findById(5L)).thenReturn(java.util.Optional.of(bild));
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/1/notizen/22/bilder/5").principal(pcAnmeldung()))
+                                .andExpect(status().isNotFound());
+
+                org.mockito.Mockito.verify(projektNotizBildRepository, org.mockito.Mockito.never())
+                                .delete(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        void notizBildLoeschen_EigenesBildWirdGeloescht() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                var notiz = notiz(22L, mitarbeiter(7L, "Max"), false);
+                when(projektNotizRepository.findById(22L)).thenReturn(java.util.Optional.of(notiz));
+                var bild = new org.example.kalkulationsprogramm.domain.ProjektNotizBild();
+                bild.setId(5L);
+                bild.setNotiz(notiz);
+                bild.setGespeicherterDateiname("abc.jpg");
+                when(projektNotizBildRepository.findById(5L)).thenReturn(java.util.Optional.of(bild));
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/1/notizen/22/bilder/5").principal(pcAnmeldung()))
+                                .andExpect(status().isNoContent());
+
+                verify(projektNotizBildRepository).delete(bild);
         }
 }

@@ -46,6 +46,8 @@ import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -279,6 +281,57 @@ class ProjektManagementServiceTest {
         assertEquals(0, gespeicherter.getMeter().compareTo(new BigDecimal("180")));
         assertEquals(0, gespeicherter.getKilogramm().compareTo(new BigDecimal("102.60")));
         assertEquals(0, gespeicherter.getPreisProStueck().compareTo(new BigDecimal("17.10")));
+    }
+
+    // --- Fehlercodes: fehlt etwas → 404 mit Meldung, Konflikt → 409 (siehe RestExceptionHandler) ---
+
+    @Test
+    void unbekanntesProjektGibt404MitVerstaendlicherMeldung() {
+        when(projektRepository.findById(999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException beimOeffnen = assertThrows(ResponseStatusException.class,
+                () -> service.findeProjektById(999L));
+        ResponseStatusException beimBeenden = assertThrows(ResponseStatusException.class,
+                () -> service.setzeAbgeschlossen(999L, true));
+        ResponseStatusException beimLoeschen = assertThrows(ResponseStatusException.class,
+                () -> service.loescheProjekt(999L));
+
+        for (ResponseStatusException fehler : List.of(beimOeffnen, beimBeenden, beimLoeschen)) {
+            assertEquals(HttpStatus.NOT_FOUND, fehler.getStatusCode());
+            assertEquals(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN, fehler.getReason());
+        }
+        verify(projektRepository, never()).save(any());
+        verify(projektRepository, never()).delete(any(Projekt.class));
+    }
+
+    @Test
+    void produktkategorieMitZeitbuchungenLaesstSichNichtLoeschen409() {
+        Projekt projekt = new Projekt();
+        projekt.setId(5L);
+        when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+        when(ZeitbuchungRepository.existsByProjektProduktkategorieId(8L)).thenReturn(true);
+
+        ResponseStatusException fehler = assertThrows(ResponseStatusException.class,
+                () -> service.loescheProjektProduktkategorie(5L, 8L));
+
+        assertEquals(HttpStatus.CONFLICT, fehler.getStatusCode());
+        assertEquals("Die Produktkategorie kann nicht gelöscht werden, da bereits Zeitbuchungen dafür existieren.",
+                fehler.getReason());
+        verify(projektRepository, never()).save(any());
+    }
+
+    @Test
+    void produktkategorieDieNichtZumProjektGehoertGibt404() {
+        Projekt projekt = new Projekt();
+        projekt.setId(5L);
+        when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
+        when(ZeitbuchungRepository.existsByProjektProduktkategorieId(8L)).thenReturn(false);
+
+        ResponseStatusException fehler = assertThrows(ResponseStatusException.class,
+                () -> service.loescheProjektProduktkategorie(5L, 8L));
+
+        assertEquals(HttpStatus.NOT_FOUND, fehler.getStatusCode());
+        verify(projektRepository, never()).save(any());
     }
 
     @Test
