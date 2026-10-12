@@ -17,11 +17,21 @@ name: Docker-Image fuer Kundenserver
 # Tags:
 #   :stable          -> das, was die Kundenserver nachts installieren
 #   :sha-<commit>    -> fester Stand, z.B. um gezielt eine Version einzuspielen
+#
+# Wissen der KI-Hilfe: Vor dem Starttest entsteht aus Doku und Quellcode dieses
+# Stands die RAG-Datei und kommt ins Image (/app/ki-hilfe/rag-cache.json). So
+# bringt jedes Nachtupdate auch das passende Wissen mit. Braucht das Secret
+# GEMINI_API_KEY; ohne bleibt die Datei des letzten :stable (RAG_INDEXING.md).
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      rag_neu:
+        description: "KI-Hilfe: RAG-Datei komplett neu einbetten (ohne Vorlage aus :stable)"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -41,7 +51,7 @@ jobs:
       packages: write
       pull-requests: read   # PR zum Commit finden (Pruefschritt)
       checks: read          # "PR Quality Gate" des PR lesen (Pruefschritt)
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       COMMIT: ${{ github.sha }}
     steps:
@@ -117,6 +127,110 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Wissen der KI-Hilfe (RAG-Datei, siehe RAG_INDEXING.md) ---
+      # Ein Release haengt nie an der KI-Hilfe: Jeder Schritt hier faellt auf den
+      # bisherigen Stand (Datei aus :stable) zurueck, statt den Job abzubrechen.
+
+      # Vorlage ist die RAG-Datei aus dem aktuellen :stable - eingebettet wird nur,
+      # was sich seitdem geaendert hat (Cent-Betraege). Netzproblem und "noch kein
+      # :stable" werden unterschieden wie im Starttest: Ohne Vorlage wuerde sonst
+      # alles neu eingebettet und das Image kaeme nur mit Teilwissen heraus.
+      - name: KI-Hilfe - Vorlage aus :stable holen
+        id: vorlage
+        shell: bash
+        env:
+          RAG_NEU: ${{ inputs.rag_neu }}
+        run: |
+          set -uo pipefail
+          mkdir -p ki-hilfe
+          stable="${{ steps.name.outputs.image }}:stable"
+          if [ "${RAG_NEU:-false}" = "true" ]; then
+            echo "Von Hand angefordert: RAG-Datei komplett neu einbetten (ohne Vorlage)."
+            echo "einbetten=ja" >> "$GITHUB_OUTPUT"
+          elif ausgabe="$(docker pull -q "$stable" 2>&1)"; then
+            if vorlage="$(docker create "$stable" 2>/dev/null)"; then
+              if docker cp "$vorlage:/app/ki-hilfe/rag-cache.json" ki-hilfe/rag-cache.json 2>/dev/null; then
+                echo "Vorlage: RAG-Datei aus $stable"
+              else
+                echo "$stable hat noch keine RAG-Datei - alles wird neu eingebettet."
+              fi
+              docker rm "$vorlage" >/dev/null 2>&1 || true
+            fi
+            echo "einbetten=ja" >> "$GITHUB_OUTPUT"
+          elif grep -qiE "manifest unknown|not found" <<<"$ausgabe"; then
+            echo "Noch kein :stable veroeffentlicht - alles wird neu eingebettet."
+            echo "einbetten=ja" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::$stable nicht ladbar - RAG-Datei wird diesmal nicht aktualisiert: $ausgabe"
+            echo "einbetten=nein" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Laeuft im gerade gebauten Image, ohne zweiten Maven-Lauf. Das Zeitlimit des
+      # Indexers (12 min) wird zwischen zwei Stapeln geprueft; ein Stapel kann mit
+      # Wiederholungen noch ~10 min dauern - daher "timeout 24m" und das Schritt-Limit.
+      # Was fehlt, folgt beim naechsten Image.
+      - name: KI-Hilfe - neue und geaenderte Abschnitte einbetten
+        if: steps.vorlage.outputs.einbetten == 'ja'
+        continue-on-error: true
+        timeout-minutes: 26
+        shell: bash
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "::warning::Secret GEMINI_API_KEY fehlt - RAG-Datei der KI-Hilfe nicht aktualisiert."
+            exit 0
+          fi
+          if ! timeout 24m docker run --rm --user "$(id -u):$(id -g)" -e GEMINI_API_KEY \
+                -v "$GITHUB_WORKSPACE:/quelle:ro" -v "$PWD/ki-hilfe:/ausgabe" \
+                --entrypoint java erp-starttest:latest \
+                -cp /app/app.jar -Dloader.main=org.example.kalkulationsprogramm.cli.StandaloneRagIndexer \
+                org.springframework.boot.loader.launch.PropertiesLauncher \
+                /quelle /ausgabe/rag-cache.json --max-minuten 12; then
+            echo "::warning::RAG-Datei nur teilweise aktualisiert - der Rest folgt beim naechsten Image."
+            exit 1
+          fi
+
+      - name: KI-Hilfe - RAG-Datei pruefen
+        id: rag
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Halb geschriebene Datei eines abgebrochenen Laufs nicht ins Image
+          rm -f ki-hilfe/*.neu
+          abschnitte=0
+          if [ -s ki-hilfe/rag-cache.json ]; then
+            abschnitte="$(jq '.abschnitte | length' ki-hilfe/rag-cache.json 2>/dev/null || echo 0)"
+          fi
+          if [[ "$abschnitte" =~ ^[1-9][0-9]*$ ]]; then
+            # Der ERP-Benutzer im Container (uid 10001) muss sie lesen koennen
+            chmod 0644 ki-hilfe/rag-cache.json
+            echo "datei=ja" >> "$GITHUB_OUTPUT"
+            echo "abschnitte=$abschnitte" >> "$GITHUB_OUTPUT"
+            echo "KI-Hilfe: $abschnitte Abschnitte in der RAG-Datei" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Keine brauchbare RAG-Datei - die KI-Hilfe antwortet bei den Kunden ohne Programmwissen."
+          fi
+
+      # Dasselbe Image, nur mit der RAG-Datei (Dockerfile, Stufe "ki-hilfe").
+      # Alles andere kommt aus dem Cache des ersten Baus. Das Label liest das
+      # Nachtupdate fuer seine Meldung ("KI-Hilfe kennt ... Abschnitte").
+      - name: Image mit RAG-Datei fertigstellen
+        if: steps.rag.outputs.datei == 'ja'
+        # Scheitert das, bleibt das Image aus dem ersten Bau (ohne RAG-Datei)
+        continue-on-error: true
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-contexts: ki-hilfe=./ki-hilfe
+          load: true
+          push: false
+          tags: erp-starttest:latest
+          build-args: GIT_COMMIT=${{ env.COMMIT }}
+          labels: de.erp-handwerk.ki-hilfe.abschnitte=${{ steps.rag.outputs.abschnitte }}
+          cache-from: type=gha
 
       # Der wichtigste Schritt: Faehrt die neue Version auf dem Datenbankstand
       # hoch, den die Kunden gerade haben (= aktuelles :stable richtet eine leere

@@ -16,6 +16,8 @@ Für einen Windows-PC oder Linux-Server, auf dem das ERP dauerhaft läuft. Ein D
 
 Bei einer neuen Datenbank ohne vorkonfigurierten Admin legst du im Browser den ersten Benutzer an; dieser wird Administrator. Schließe die Ersteinrichtung im geschützten Netz ab, bevor die Anwendung über eine öffentliche Domain erreichbar wird. Es gibt keine fest eingebauten Standard-Zugangsdaten für diese Einrichtung.
 
+Danach fragt das ERP beim ersten Anmelden nach einem E-Mail-Postfach (SMTP); die KI-Funktionen sind freiwillig. Damit Postfach-Passwörter gespeichert werden können, braucht das ERP vorher einen Schlüssel in der `app.env` (`MAIL_CREDENTIALS_ENCRYPTIONKEY`, für den automatischen Abruf zusätzlich `EMAIL_FEATURES_ENABLED='true'`). Außerdem gehört ein Sicherungsziel außer Haus eingetragen. Beides steht in der Schritt-für-Schritt-Anleitung.
+
 Schritt-für-Schritt-Anleitung für einen neuen Kunden, mit Sicherung auf Festplatte und OneDrive: **[deployment/docker-server/EINRICHTEN.md](../deployment/docker-server/EINRICHTEN.md)**
 
 Alles Weitere (Umzug von einem anderen Server, Handy-Nachrichten, Sicherheit, was nachts passiert): **[deployment/docker-server/README.md](../deployment/docker-server/README.md)**
@@ -26,6 +28,7 @@ Alles Weitere (Umzug von einem anderen Server, Handy-Nachrichten, Sicherheit, wa
 |-------|-------------|
 | Datenbank | Docker-Volume `postgres_data` (PostgreSQL) |
 | Uploads | Docker-Volume `app_uploads` oder ein eigener Ordner (`UPLOADS_ORDNER` in der `.env`) |
+| Tägliche Sicherung (2 Uhr) | Ordner `sicherungen\` im ERP-Ordner, dazu externe Festplatte und Cloud-Ordner (`SICHERUNG_PLATTE`, `SICHERUNG_CLOUD` in der `.env`) |
 | Sicherungen vor jedem Update | Ordner `sicherungen\` im ERP-Ordner |
 
 ---
@@ -47,8 +50,8 @@ Mit Beispieldaten (erfundener Metallbaubetrieb mit Projekten, Zeiten und Rechnun
 **Was passiert automatisch:**
 - PostgreSQL 16 wird heruntergeladen und gestartet
 - Die leere Datenbank bekommt beim ersten Start alle Tabellen und Stammdaten
-- Qdrant (Vektor-DB für KI) wird gestartet
-- Die Anwendung startet auf `http://localhost:8080`
+- Qdrant (Vektor-DB) wird mitgestartet; das ERP nutzt ihn derzeit nicht
+- Das ERP wird aus dem Quellcode gebaut (Java und Node.js braucht der Rechner dafür nicht) und startet auf `http://localhost:8080`
 
 Benutzer und Passwort der Datenbank stehen in der `.env` (Vorlage: `.env.example`, Werte `DB_USER` und `DB_PASSWORD`).
 
@@ -95,11 +98,20 @@ spring.datasource.username=erp_user
 spring.datasource.password=DEIN_DB_PASSWORT
 ```
 
+Wer E-Mail-Postfächer einrichten will, braucht zusätzlich einen Schlüssel, mit dem das ERP die Postfach-Passwörter verschlüsselt (genau 16, 24 oder 32 Zeichen, z. B. aus `openssl rand -base64 24`). Der automatische Abruf der Postfächer ist ohne Eintrag aus:
+
+```properties
+mail.credentials.encryption-key=<genau 16, 24 oder 32 Zeichen>
+email.features.enabled=true
+```
+
 ### 4. Backend starten
 
 ```bash
 ./mvnw spring-boot:run
 ```
+
+Das ERP läuft dann unter `http://localhost:8080`, mit den eingecheckten Oberflächen aus `src/main/resources/static`.
 
 ### 5. Desktop-Frontend starten (optional, für Entwicklung)
 
@@ -132,10 +144,12 @@ Starte die Anwendung mit einem anderen Port:
 java -jar Kalkulationsprogramm-<Version>.jar --server.port=9090
 ```
 
+Bei Variante 1 steht der Port in der `.env` (`APP_PORT`, danach `docker compose up -d app`), bei Variante 2 in der `docker-compose.yml` (`"8080:8080"` → z. B. `"9090:8080"`).
+
 ### Wie sichere ich meine Daten?
 
-- **Variante 1 macht das selbst:** Jede Nacht um 2 Uhr sichert der Updater die komplette Datenbank und alle hochgeladenen Dateien – auf den Rechner und zusätzlich auf eine externe Festplatte und/oder in einen Cloud-Ordner wie OneDrive. Die Ziele trägst du einmal in der `.env` ein (`SICHERUNG_PLATTE`, `SICHERUNG_CLOUD`), Anleitung: [deployment/docker-server/README.md, Tägliche Sicherung](../deployment/docker-server/README.md#tägliche-sicherung). Geht etwas schief, sehen Admins das im ERP unter **Benachrichtigungen**.
-- **Von Hand** (andere Varianten): `pg_dump` im Datenbank-Container, z. B. `docker exec erp-postgres pg_dump -U postgres -d kalkulationsprogramm_db --no-owner --no-privileges > sicherung.sql` unter Linux. Unter Windows nicht mit `>` umleiten (Windows PowerShell 5.1 speichert dann UTF-16 und die Sicherung lässt sich nicht einspielen). Die hochgeladenen Dateien (Volume `app_uploads` bzw. `UPLOADS_ORDNER`) gehören mit in die Sicherung.
+- **Variante 1 macht das selbst:** Jede Nacht um 2 Uhr sichert der Updater die komplette Datenbank auf den Rechner. Datenbank-Sicherungen und hochgeladene Dateien kommen zusätzlich auf eine externe Festplatte und/oder in einen Cloud-Ordner wie OneDrive – die Dateien nur dorthin, nicht auf den Rechner selbst. Die Ziele trägst du einmal in der `.env` ein (`SICHERUNG_PLATTE`, `SICHERUNG_CLOUD`), Anleitung: [deployment/docker-server/README.md, Tägliche Sicherung](../deployment/docker-server/README.md#tägliche-sicherung). Geht etwas schief, sehen Admins das im ERP unter **Benachrichtigungen**. Eine Sicherung sofort: `docker compose exec updater bash /erp/sicherung.sh` im ERP-Ordner.
+- **Von Hand** (Variante 2 und 3): `pg_dump` im Datenbank-Container, z. B. `docker exec kalkulationsprogramm-postgres pg_dump -U erp_user -d kalkulationsprogramm_db --no-owner --no-privileges > sicherung.sql` unter Linux (Variante 3: Container `erp-dev-pg`; Benutzer wie in `DB_USER` bzw. beim Anlegen des Containers). Unter Windows nicht mit `>` umleiten (Windows PowerShell 5.1 speichert dann UTF-16 und die Sicherung lässt sich nicht einspielen). Die hochgeladenen Dateien gehören mit in die Sicherung: bei Variante 2 das Volume `app_uploads`, beim Start mit Maven oder als JAR der Ordner `uploads/` im Arbeitsordner.
 
 ### Kann ich das Programm im Netzwerk nutzen?
 
@@ -166,15 +180,16 @@ Das Handwerkerprogramm kann auf zwei Arten betrieben werden: **lokal im Firmenne
 ### Backend für Produktion vorbereiten
 
 ```bash
-# 1. JAR bauen (inkl. Tests)
-./mvnw clean package
+# 1. Frontends bauen (nur nötig, wenn sich am Frontend etwas geändert hat –
+#    die Ausgabe liegt eingecheckt unter src/main/resources/static)
+cd react-pc-frontend && npm install && npm run build && cd ..
+cd react-zeiterfassung && npm install && npm run build && cd ..
 
-# 2. Frontend für Produktion bauen
-cd react-pc-frontend && npm install && npm run build
-cd ../react-zeiterfassung && npm install && npm run build
+# 2. JAR bauen (inkl. Tests) – packt die Oberflächen aus src/main/resources/static mit ein
+./mvnw clean package
 ```
 
-Das fertige JAR liegt unter `target/kalkulationsprogramm-*.jar`.
+Das fertige JAR liegt unter `target/Kalkulationsprogramm-<Version>.jar`.
 
 ### Authentifizierung konfigurieren
 
@@ -208,7 +223,7 @@ Wie in [Variante 3, Schritt 2](#2-datenbank-starten-postgresql-im-container): Po
 
 #### 2. Konfiguration anpassen
 
-Erstelle `src/main/resources/application-local.properties`:
+Erstelle `application-local.properties` im Ordner, aus dem das JAR gestartet wird (Spring Boot liest sie dort ein; alternativ vor dem Bauen nach `src/main/resources/`):
 
 ```properties
 spring.datasource.url=jdbc:postgresql://localhost:5432/kalkulationsprogramm_db
@@ -224,7 +239,7 @@ $env:APP_ADMIN_USER = "admin"
 $env:APP_ADMIN_PASS = "deinSicheresPasswort"
 
 # JAR starten
-java -jar target/kalkulationsprogramm-*.jar --spring.profiles.active=local
+java -jar target/Kalkulationsprogramm-<Version>.jar --spring.profiles.active=local
 ```
 
 #### 4. Zugriff im Netzwerk
@@ -256,7 +271,7 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
 
 # Handwerkerprogramm starten
-java -jar kalkulationsprogramm-*.jar
+java -jar Kalkulationsprogramm-*.jar
 ```
 
 **Auf jedem Client (PC, Handy):**
@@ -272,7 +287,7 @@ java -jar kalkulationsprogramm-*.jar
 sudo tailscale cert mein-server.tail-xxxx.ts.net
 
 # Spring Boot mit HTTPS starten
-java -jar kalkulationsprogramm-*.jar \
+java -jar Kalkulationsprogramm-*.jar \
   --server.ssl.certificate=mein-server.tail-xxxx.ts.net.crt \
   --server.ssl.certificate-private-key=mein-server.tail-xxxx.ts.net.key \
   --server.port=8443
@@ -280,7 +295,7 @@ java -jar kalkulationsprogramm-*.jar \
 
 Dann erreichbar über: `https://mein-server.tail-xxxx.ts.net:8443`
 
-Einfacher geht es mit `tailscale serve --bg 8080`: Tailscale holt das Zertifikat selbst und reicht `https://mein-server.tail-xxxx.ts.net` an Port 8080 weiter. Das ERP erkennt dabei den echten Absender, ohne dass etwas konfiguriert werden muss.
+Einfacher geht es mit `tailscale serve --bg 8080`: Tailscale holt das Zertifikat selbst und reicht `https://mein-server.tail-xxxx.ts.net` an Port 8080 weiter. Läuft das ERP als JAR, erkennt es dabei den echten Absender, ohne dass etwas konfiguriert werden muss. Im [Docker-Paket](../deployment/docker-server/README.md#hinter-tailscale-serve-nur-über-tailscale-erreichbar) gehören dafür `APP_ADRESSE=127.0.0.1` und `LOKALER_PROXY=ja` in die `.env`.
 
 **Empfohlen – Handys nur zum ERP lassen:** Ohne eigene Regeln erreicht in Tailscale jedes Gerät jedes andere, also auch jedes Mitarbeiter-Handy die Büro-PCs. In der Tailscale-Verwaltung unter *Access controls* lassen sich die Handys davon trennen. Dazu bekommen die Handys in der Geräteliste über *Edit ACL tags* die Markierung `tag:handy`; alle anderen Geräte bleiben, wie sie sind:
 
@@ -308,7 +323,7 @@ Für Betriebe, in denen nicht jeder Mitarbeiter eine VPN-App auf dem Handy haben
 
 **Was von außen erreichbar ist:** Nur die Handy-App und ihre Schnittstelle, mit dem persönlichen Code des Mitarbeiters. Falsche Codes lösen steigende Wartezeiten aus. Die Desktop-Anmeldung, die Verwaltung und interne Schnittstellen bleiben gesperrt, auch für Büro-Sitzungen. Geräte im eigenen Tailscale-Netz erreichen über dieselbe Adresse weiterhin das ganze ERP.
 
-**Voraussetzung:** Tailscale läuft auf dem ERP-Rechner. Das ERP läuft dort direkt (JAR bzw. Windows-Dienst) oder im [Docker-Paket](../deployment/docker-server/README.md) mit `LOKALER_PROXY=ja`; sonst sieht es in Docker statt `localhost` das Docker-Netz als Absender.
+**Voraussetzung:** Tailscale läuft auf dem ERP-Rechner. Das ERP läuft dort direkt (als JAR) oder im [Docker-Paket](../deployment/docker-server/README.md) mit `LOKALER_PROXY=ja` und `APP_ADRESSE=127.0.0.1`; sonst sieht es in Docker statt `localhost` das Docker-Netz als Absender. `LOKALER_PROXY=ja` nie ohne `APP_ADRESSE=127.0.0.1`: Sonst könnte sich jedes Gerät im LAN als beliebiger Absender ausgeben.
 
 **Freigabe im ERP:** Zusätzlich muss der Funnel im ERP freigegeben sein: *Einstellungen → Zeiterfassung → Zugang von unterwegs → „Über Tailscale Funnel freigeben“*. Ohne diese Freigabe weist das ERP jede Funnel-Anfrage ab, auch wenn am Rechner ein Funnel läuft. Die Karte zeigt auch, wann zuletzt eine Anfrage über Funnel kam.
 
@@ -329,6 +344,7 @@ Für Betriebe, in denen nicht jeder Mitarbeiter eine VPN-App auf dem Handy haben
    ```properties
    zeiterfassung.base-url=https://erp-rechner.tail-xxxx.ts.net
    ```
+   Im Docker-Paket steht die Adresse stattdessen in der `.env` (`ZEITERFASSUNG_URL=https://erp-rechner.tail-xxxx.ts.net`, danach `docker compose up -d app`).
 6. Mitarbeiter scannen ihren QR-Code neu. Eine bereits installierte App mit anderer Adresse vorher abgleichen lassen: Offline-Buchungen gehören zur alten Adresse.
 
 **Prüfen – vom Handy mit ausgeschaltetem WLAN:**
@@ -382,7 +398,7 @@ Ein [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connect
 ## Skript-Referenz
 
 <!-- AUTO-GENERATED: scripts-table START -->
-> Erzeugt aus `pom.xml`, `react-pc-frontend/package.json`, `react-zeiterfassung/package.json`. **Nicht manuell editieren** – per `/ecc:update-docs` regenerieren.
+> Abgeleitet aus `pom.xml`, `react-pc-frontend/package.json` und `react-zeiterfassung/package.json`. Ändern sich die Skripte dort, diese Tabellen mitpflegen.
 
 ### Backend (Maven Wrapper)
 
@@ -398,7 +414,7 @@ Aufruf aus dem Projekt-Root. Unter Windows `./mvnw.cmd …`, unter Linux/macOS `
 
 ### Desktop-Frontend (`react-pc-frontend/`)
 
-Aufruf nach `cd react-pc-frontend`. Voraussetzung: `npm install` einmalig.
+Aufruf nach `cd react-pc-frontend`. Voraussetzung: `npm install` einmalig. `npm run build` schreibt nach `src/main/resources/static`.
 
 | Befehl | Beschreibung |
 |--------|--------------|
@@ -409,10 +425,13 @@ Aufruf nach `cd react-pc-frontend`. Voraussetzung: `npm install` einmalig.
 | `npm test` | Vitest-Suite einmal ausführen |
 | `npm run test:watch` | Vitest im Watch-Modus |
 | `npm run test:coverage` | Vitest mit V8-Coverage-Report |
+| `npm run test:e2e` | Playwright-End-to-End-Tests |
+| `npm run test:e2e:ui` | Playwright mit Oberfläche |
+| `npm run typecheck:e2e` | TypeScript-Prüfung der E2E-Tests |
 
 ### Mobile Zeiterfassung (`react-zeiterfassung/`)
 
-Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
+Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`. `npm run build` schreibt nach `src/main/resources/static/zeiterfassung`.
 
 | Befehl | Beschreibung |
 |--------|--------------|
@@ -423,6 +442,7 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 | `npm test` | Vitest-Suite einmal ausführen |
 | `npm run test:watch` | Vitest im Watch-Modus |
 | `npm run test:coverage` | Vitest mit V8-Coverage-Report |
+| `npm run test:e2e` | Playwright-End-to-End-Tests |
 <!-- AUTO-GENERATED: scripts-table END -->
 
 ---
@@ -430,9 +450,9 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 ## Umgebungsvariablen-Referenz
 
 <!-- AUTO-GENERATED: env-table START -->
-> Erzeugt aus `.env.example`. **Nicht manuell editieren** – per `/ecc:update-docs` regenerieren.
+> Abgeleitet aus `.env.example` im Projektordner (Variante 2). Das Docker-Paket beim Kunden (Variante 1) hat eine eigene, längere Vorlage: `deployment/docker-server/.env.example`, erklärt in dessen [README](../deployment/docker-server/README.md).
 >
-> Hinweis: SMTP/IMAP-Zugangsdaten und der Gemini-API-Key werden **nicht** über ENV-Variablen, sondern nach dem ersten Start in der UI unter **System-Einstellungen → E-Mail-Konto / KI Gemini** in der Datenbank gepflegt.
+> Hinweis: E-Mail-Postfächer (SMTP/IMAP) und der KI-Schlüssel werden nach dem ersten Start im ERP unter **System-Einstellungen → E-Mail** bzw. **→ KI-Funktionen** gepflegt und in der Datenbank gespeichert. Die KI ist freiwillig. Für die Postfach-Passwörter braucht das ERP den Schlüssel `mail.credentials.encryption-key` (Docker-Paket: `MAIL_CREDENTIALS_ENCRYPTIONKEY` in der `app.env`).
 
 ### Docker-Compose (PostgreSQL)
 
@@ -455,17 +475,18 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 
 | Variable | Pflicht | Beschreibung | Beispielwert |
 |----------|---------|--------------|--------------|
-| `APP_ADMIN_USER` | Ja | Login-Name des initialen Admin-Users | `admin` |
-| `APP_ADMIN_PASS` | Ja | Initiales Admin-Passwort (nach erstem Login ändern!) | `change_me_strong_password` |
+| `APP_ADMIN_USER` | Nein³ | Login-Name des ersten Admins | `admin` |
+| `APP_ADMIN_PASS` | Nein³ | Passwort des ersten Admins (nach dem ersten Login ändern!) | `change_me_strong_password` |
+
+³ Nur wenn beide gesetzt sind, legt das ERP den Admin beim Start an, und nur solange es noch keinen Login-Benutzer gibt. Bestehende Benutzer ändern die Variablen nicht. Ohne sie registriert sich der erste Nutzer im Browser und wird Admin; siehe [Authentifizierung konfigurieren](#authentifizierung-konfigurieren).
 
 ### Optionale Integration
 
 | Variable | Pflicht | Beschreibung | Beispielwert |
 |----------|---------|--------------|--------------|
-| `ZEITERFASSUNG_URL` | Nein | Basis-URL der mobilen Zeiterfassung (für Deep-Links) | `http://localhost:8080` |
+| `ZEITERFASSUNG_URL` | Nein | Adresse in den QR-Codes der Handy-App (ohne `/zeiterfassung`); fürs echte Handy die LAN- oder Tailscale-Adresse | `http://localhost:8080` |
+| `FREIGABE_PUBLIC_BASE_URL` | Nein | Öffentliche Adresse der Freigabe-Seite für die digitale Annahme von Angeboten. Ohne Eintrag gehen Angebote ohne Annahme-Link raus | `https://deine-firmen-website.de` |
 <!-- AUTO-GENERATED: env-table END -->
-
-**Präzisierung zur generierten Admin-Tabelle:** `APP_ADMIN_USER` und `APP_ADMIN_PASS` sind im aktuellen Backend optionale Angaben für die erste Admin-Anlage. Ohne sie erfolgt die Erstregistrierung im Browser. Bestehende Login-Benutzer werden durch diese Variablen nicht geändert; siehe [Authentifizierung konfigurieren](#authentifizierung-konfigurieren).
 
 ### Anbindung der Firmen-Website
 
@@ -473,5 +494,7 @@ Aufruf nach `cd react-zeiterfassung`. PWA mit `vite-plugin-pwa`.
 |----------|---------|--------------|--------------|
 | `WEBSITE_INTERNAL_API_KEY` | Nur mit Website | Gemeinsamer Schlüssel für `/api/internal/**` (Anfrage-Formular, Freigabe-Seite, Analytics). Ohne Wert weist das ERP diese Aufrufe mit 401 ab. Derselbe Wert steht auf der Website als `ERP_INTERNAL_API_KEY`. | `openssl rand -base64 32` |
 | `WEBSITE_BEITRAEGE_API_TOKEN` | Nur mit Beiträge-Modul | Bearer-Token für die Beiträge-Schnittstelle der Website | `<geheim>` |
+
+`WEBSITE_INTERNAL_API_KEY` reicht die `docker-compose.yml` im Projektordner nicht an die App weiter. Im Docker-Paket gehört er in die `app.env`, beim JAR in die Umgebung oder als `website.internal-api.key` in die `application-local.properties`.
 
 Reihenfolge der Umstellung ohne Ausfall (erst Website, dann ERP): siehe [Mobile Token-Sicherheit](MOBILE_TOKEN_SECURITY.md#website-schnittstelle-apiinternal).

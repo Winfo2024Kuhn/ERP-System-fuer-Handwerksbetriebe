@@ -362,11 +362,10 @@ if (-not $SkipBuild) {
 }
 
 # Finde die gebaute JAR Datei dynamisch im target-Verzeichnis
-# -jar-with-dependencies wird explizit ausgeschlossen: Das ist der Fat-Jar des
-# maven-assembly-plugin fuer den StandaloneRagIndexer (siehe rag-index.cmd/.sh),
-# kein lauffaehiger Spring-Boot-Jar. Er darf nie als "neueste JAR" ausgewaehlt
-# werden, selbst wenn er (z.B. durch eine kuenftige Phasen-Bindung im pom.xml)
-# einen juengeren Zeitstempel als der echte Boot-Jar bekommt.
+# -jar-with-dependencies wird explizit ausgeschlossen: Den Fat-Jar erzeugte
+# frueher das maven-assembly-plugin fuer den RAG-Indexer - kein lauffaehiger
+# Spring-Boot-Jar. Liegt so ein alter noch in target/, darf er nie als
+# "neueste JAR" ausgewaehlt werden. (rag-index.cmd nutzt heute den Boot-Jar.)
 $targetDir = Join-Path $REPO_PATH "target"
 $jarFile = Get-ChildItem $targetDir -Filter "*.jar" -ErrorAction SilentlyContinue |
            Where-Object { $_.Name -notmatch '(-sources|-javadoc|-jar-with-dependencies|\.original)' } |
@@ -512,9 +511,24 @@ Write-Info "Kopiere RAG-Cache fuer KI-Hilfe..."
 $ragCacheSource = Join-Path $REPO_PATH ".rag-cache.json"
 $ragCacheDest = Join-Path $PRODUCTION_PATH ".rag-cache.json"
 if (Test-Path $ragCacheSource) {
-    $ragSize = [math]::Round((Get-Item $ragCacheSource).Length / 1MB, 2)
-    Copy-Item $ragCacheSource $ragCacheDest -Force
-    Write-Success "RAG-Cache kopiert ($ragSize MB) - KI-Hilfe ist aktiv"
+    # Nur das aktuelle Format (seit Oktober 2026: {"format":2,...}) - eine alte Datei
+    # verwirft das ERP beim Start, die KI-Hilfe haette dann kein Programmwissen.
+    $stream = [System.IO.File]::OpenRead($ragCacheSource)
+    try {
+        $puffer = New-Object byte[] 200
+        $gelesen = $stream.Read($puffer, 0, $puffer.Length)
+    } finally {
+        $stream.Dispose()
+    }
+    $kopf = [System.Text.Encoding]::UTF8.GetString($puffer, 0, $gelesen)
+    if ($kopf -match '"format"\s*:\s*2') {
+        $ragSize = [math]::Round((Get-Item $ragCacheSource).Length / 1MB, 2)
+        Copy-Item $ragCacheSource $ragCacheDest -Force
+        Write-Success "RAG-Cache kopiert ($ragSize MB) - KI-Hilfe ist aktiv"
+    } else {
+        Write-Warning-Custom "RAG-Cache hat ein altes Format und wird nicht kopiert: $ragCacheSource"
+        Write-Info "Neu erzeugen: GEMINI_API_KEY setzen und rag-index.cmd ausfuehren (siehe RAG_INDEXING.md)"
+    }
 } else {
     Write-Warning-Custom "RAG-Cache nicht gefunden: $ragCacheSource"
     Write-Info "Starte die App einmal lokal (mvnw spring-boot:run) um den Cache zu generieren"

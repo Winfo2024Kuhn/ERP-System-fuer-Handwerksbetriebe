@@ -1,60 +1,60 @@
-# Kalkulationsprogramm - Deployment Guide
+# Kalkulationsprogramm - Deployment Guide (Altweg: JAR unter Windows)
+
+> **Altweg.** Diese Anleitung beschreibt den Betrieb als JAR auf einem Windows-Rechner mit
+> Windows-Aufgaben für Start und Sicherung. Für eine Neuinstallation ist
+> [`deployment/docker-server`](docker-server/README.md) der empfohlene Weg: Dort laufen
+> Sicherung, Nachtupdate und Rollback im Updater-Container, und diese Skripte werden nicht
+> gebraucht.
 
 ## Übersicht
 
-Dieses Dokument beschreibt die Installation und Konfiguration des Kalkulationsprogramms auf dem Produktions-Server, inklusive automatischer Backups und Scheduled Tasks.
+Dieses Dokument beschreibt die Installation und Konfiguration des Kalkulationsprogramms auf dem
+Produktions-Server, inklusive automatischer Backups und Scheduled Tasks. Die einzelnen Skripte
+(vor allem das Update) beschreibt [scripts/README.md](scripts/README.md).
 
 ## Voraussetzungen
 
 ### Software-Anforderungen
 
 - **Windows Server** oder Windows 10/11
-- **Java 17 oder höher** ([Download](https://www.oracle.com/java/technologies/downloads/))
-- **Docker Desktop** mit PostgreSQL. Die Sicherung läuft per `pg_dump` direkt im Container
-  `erp-postgres` – zusätzliche Datenbank-Programme braucht der Rechner nicht.
-  **Achtung:** Die Datenbank des docker-server ist von außen nicht erreichbar. Das JAR
-  braucht deshalb ein eigenes PostgreSQL, z. B. einen Container mit
-  `-p 127.0.0.1:5432:5432` (siehe `docs/INSTALLATION.md`, Variante 3). Sicherung und
-  Update dann auf diesen Container zeigen lassen (`update-production.ps1 -DbContainer <name>
-  -DbUser erp_user`, `backup-database.ps1 -DockerPostgresContainer <name>
-  -DockerPostgresUser erp_user`); ohne gelungene Sicherung bricht das Update ab. Für einen
-  neuen Server ist `deployment/docker-server` der empfohlene Weg.
+- **Java 23** (JRE oder JDK, siehe `pom.xml`)
+- **Docker Desktop** mit PostgreSQL. Die Sicherung läuft per `pg_dump` direkt im
+  Datenbank-Container – zusätzliche Datenbank-Programme braucht der Rechner nicht.
+  **Achtung:** Die Datenbank des docker-server (Container `erp-postgres`) ist von außen nicht
+  erreichbar (kein freigegebener Port, nur das interne Docker-Netz). Das JAR braucht deshalb
+  ein eigenes PostgreSQL, z. B. einen Container mit `-p 127.0.0.1:5432:5432` (siehe
+  `docs/INSTALLATION.md`, Variante 3). Sicherung und Update dann auf diesen Container zeigen
+  lassen (`update-production.ps1 -DbContainer <name> -DbUser erp_user`,
+  `backup-database.ps1 -DockerPostgresContainer <name> -DockerPostgresUser erp_user`). Ohne
+  gelungene Sicherung bricht das Update ab (bewusst ohne: `-SkipBackup`).
 - **PowerShell 5.1** oder höher (bereits in Windows enthalten)
 
 ### Hardware-Anforderungen
 
-- **Externe Festplatte E:\** für Backups (empfohlen: mindestens 50 GB frei)
+- Optional eine **externe Festplatte** für Backups. Das Backup-Skript findet sie über die
+  Datenträgerbezeichnung `INTENSO`, sonst nimmt es Laufwerk `E:`. Fehlt sie, wird trotzdem
+  lokal gesichert.
 
 ## Installation
 
-### Schritt 1: Verzeichnisstruktur erstellen
+### Schritt 1: JAR-Datei deployen
+
+Kopieren Sie die kompilierte JAR-Datei nach `C:\Kalkulationsprogramm\`. Das Startskript sucht
+zuerst `C:\Kalkulationsprogramm\Kalkulationsprogramm.jar` und nimmt sonst die neueste `*.jar`
+in diesem Ordner – umbenennen ist also nicht nötig.
 
 ```powershell
-# Deployment-Verzeichnis
 New-Item -ItemType Directory -Path "C:\Kalkulationsprogramm" -Force
-
-# Backup-Verzeichnis auf externer Festplatte
-New-Item -ItemType Directory -Path "E:\Kalkulationsprogramm\Backups" -Force
-New-Item -ItemType Directory -Path "E:\Kalkulationsprogramm\Logs" -Force
+Copy-Item "target\Kalkulationsprogramm-<Version>.jar" "C:\Kalkulationsprogramm\"
 ```
 
-### Schritt 2: JAR-Datei deployen
+Spätere Updates erledigt `update-production.ps1` (siehe [scripts/README.md](scripts/README.md)).
 
-1. Kopieren Sie die kompilierte JAR-Datei nach `C:\Kalkulationsprogramm\`
-2. Benennen Sie die Datei um zu: `Kalkulationsprogramm.jar`
-
-```powershell
-# Beispiel
-Copy-Item "\\Pfad\zur\Kalkulationsprogramm-1.0.0.jar" "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar"
-```
-
-### Schritt 3: Scripts installieren
-
-**Im Entwicklungs-Repository:**
+### Schritt 2: Scripts installieren
 
 ```powershell
 # Als Administrator PowerShell öffnen
-cd "<Repository-Pfad>\Handwerkerprogramm"
+cd "<Repository-Pfad>"
 
 # Installation starten
 .\deployment\scripts\install-scheduled-tasks.ps1
@@ -64,71 +64,64 @@ cd "<Repository-Pfad>\Handwerkerprogramm"
 ```
 
 Das Installations-Script führt automatisch folgende Schritte aus:
-- Kopiert alle Scripts nach `C:\Kalkulationsprogramm\scripts\`
-- Erstellt Windows Scheduled Tasks
-- Konfiguriert Autostart und Backups
+- Kopiert `backup-database.ps1`, `start-kalkulationsprogramm.ps1` und
+  `restart-kalkulationsprogramm.ps1` nach `C:\Kalkulationsprogramm\scripts\`
+  (anderer Ort: `-DeploymentPath`)
+- Erstellt die Windows Scheduled Tasks (siehe unten), alle als Konto `SYSTEM`
 
-### Schritt 4: Datenbank-Container prüfen
+Die Verzeichnisse für Backups und Logs legen die Skripte beim ersten Lauf selbst an.
 
-Prüfen Sie, ob die Datenbank läuft:
+### Schritt 3: Datenbank-Container prüfen
 
-```powershell
-docker ps --filter name=erp-postgres
-```
-
-Fehlt der Container, zuerst `deployment/docker-server` einrichten (siehe dortige README).
-
-### Schritt 5: Externe Festplatte prüfen
-
-Stellen Sie sicher, dass Laufwerk E:\ verfügbar ist:
+Prüfen Sie, ob der Datenbank-Container läuft, den das JAR benutzt:
 
 ```powershell
-Get-PSDrive E
+docker ps --filter name=<container-name>
 ```
 
 ## Konfiguration
 
-### Backup-Einstellungen anpassen
+Alle Einstellungen sind Parameter am Anfang der Skripte. Sie lassen sich beim Aufruf
+überschreiben (z. B. `.\backup-database.ps1 -RetentionDays 60`) oder in der Kopie unter
+`C:\Kalkulationsprogramm\scripts\` ändern. Achtung: `install-scheduled-tasks.ps1`
+überschreibt diese Kopien beim nächsten Lauf mit dem Stand aus dem Repository.
 
-Bearbeiten Sie `C:\Kalkulationsprogramm\scripts\backup-database.ps1`:
+### Backup-Einstellungen (`backup-database.ps1`)
 
-```powershell
-# Parameter am Anfang der Datei
-param(
-    [string]$BackupDir = "E:\Kalkulationsprogramm\Backups",     # Backup-Verzeichnis
-    [string]$LogDir = "E:\Kalkulationsprogramm\Logs",           # Log-Verzeichnis
-    [int]$RetentionDays = 30                                     # Aufbewahrungszeit
-)
-```
+| Parameter | Standard | Bedeutung |
+| --- | --- | --- |
+| `LocalStagingDir` | `C:\Kalkulationsprogramm\backups\db` | Lokale Datenbank-Sicherungen |
+| `ExternalVolumeLabel` | `INTENSO` | Bezeichnung der externen Festplatte |
+| `ExternalFallbackDrive` | `E` | Laufwerk, falls keine Platte mit dieser Bezeichnung gefunden wird |
+| `ExternalBackupSubDir` | `Kalkulationsprogramm-Backup` | Ordner auf der externen Platte (darin `db\` und `uploads\`) |
+| `OneDriveBackupDir` | OneDrive-Ordner des Benutzers | Cloud-Kopie: Datenbank-Sicherungen direkt im Ordner, Uploads in `uploads\` |
+| `LogDir` | `C:\Kalkulationsprogramm\logs\backups` | Backup-Logs |
+| `RetentionDays` | `30` | Aufbewahrung der Datenbank-Sicherungen (lokal, extern, OneDrive) |
+| `UploadsDir` | `C:\Kalkulationsprogramm\uploads` | Hochgeladene Dateien |
+| `DockerPostgresContainer` | `erp-postgres` | Datenbank-Container |
+| `DockerPostgresUser` | `postgres` | Datenbank-Benutzer für `pg_dump` |
 
-### Server-Port anpassen
+Der Standard für `OneDriveBackupDir` ist auf den bisherigen Server zugeschnitten – auf einem
+anderen Rechner unbedingt anpassen.
 
-Falls Ihr Server einen anderen Port verwendet, bearbeiten Sie:
+Die Uploads werden nicht gezippt, sondern per `robocopy` auf externe Platte und OneDrive
+gespiegelt: nur Neues und Geändertes, im Ziel wird nie etwas gelöscht.
 
-**In `start-kalkulationsprogramm.ps1`:**
-```powershell
-param(
-    [int]$ServerPort = 8082  # Ändern Sie diesen Wert
-)
-```
+### Server-Port
 
-**In `restart-kalkulationsprogramm.ps1`:**
-```powershell
-param(
-    [int]$ServerPort = 8082  # Ändern Sie diesen Wert
-)
-```
+| Skript | Parameter | Standard |
+| --- | --- | --- |
+| `start-kalkulationsprogramm.ps1` | `-ServerPort` | `8080` |
+| `restart-kalkulationsprogramm.ps1` | `-ServerPort` | `8082` |
 
-### JAR-Pfad anpassen
+**Achtung:** Die beiden Standards passen nicht zusammen. Läuft der Server auf 8080, findet der
+Neustart ihn auf 8082 nicht und das anschließende Startskript meldet nur „läuft bereits“. Den
+Port im Neustart-Skript deshalb auf den echten Port setzen.
 
-Falls die JAR an einem anderen Ort liegt:
+### JAR-Pfad
 
-**In `start-kalkulationsprogramm.ps1`:**
-```powershell
-param(
-    [string]$JarPath = "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar"
-)
-```
+`start-kalkulationsprogramm.ps1 -JarPath "<Pfad>"`. Standard:
+`C:\Kalkulationsprogramm\Kalkulationsprogramm.jar`, sonst die neueste `*.jar` im selben Ordner.
 
 ## Scheduled Tasks
 
@@ -136,15 +129,17 @@ param(
 
 | Task Name | Zeitplan | Beschreibung |
 |-----------|----------|--------------|
-| **Kalkulationsprogramm - Database Backup** | Täglich 02:00 Uhr | Erstellt komprimiertes Datenbank-Backup auf E:\ |
-| **Kalkulationsprogramm - Auto Start** | Bei System-Start | Startet Server automatisch nach Reboot |
-| **Kalkulationsprogramm - Weekly Restart** | Sonntags 03:00 Uhr | Wöchentlicher Neustart (optional) |
+| **Kalkulationsprogramm - Database Backup** | Täglich 02:00 Uhr | Datenbank-Sicherung (lokal, externe Platte, OneDrive) und Spiegel der Uploads |
+| **Kalkulationsprogramm - Auto Start** | Bei System-Start (2 Min. Verzögerung) | Startet Server automatisch nach Reboot |
+| **Kalkulationsprogramm - Weekly Restart** | Sonntags 03:00 Uhr | Wöchentlicher Neustart (optional, `-EnableWeeklyRestart`) |
+
+Nur den Autostart-Task (ohne Backup) richtet `SETUP-AUTOSTART.bat` ein.
 
 ### Tasks anzeigen
 
 ```powershell
 # Alle Kalkulationsprogramm-Tasks
-Get-ScheduledTask | Where-Object {$_.TaskName -like "*Kalkulationsprogramm*"} | Format-Table TaskName, State, LastRunTime, NextRunTime
+Get-ScheduledTask | Where-Object {$_.TaskName -like "*Kalkulationsprogramm*"} | Format-Table TaskName, State
 
 # Task Scheduler GUI öffnen
 taskschd.msc
@@ -156,7 +151,7 @@ taskschd.msc
 # Backup manuell starten
 Start-ScheduledTask -TaskName "Kalkulationsprogramm - Database Backup"
 
-# Server neu starten
+# Server neu starten (nur wenn mit -EnableWeeklyRestart eingerichtet)
 Start-ScheduledTask -TaskName "Kalkulationsprogramm - Weekly Restart"
 ```
 
@@ -166,7 +161,7 @@ Start-ScheduledTask -TaskName "Kalkulationsprogramm - Weekly Restart"
 # Backup-Zeit ändern (z.B. auf 03:00 Uhr)
 $task = Get-ScheduledTask -TaskName "Kalkulationsprogramm - Database Backup"
 $trigger = New-ScheduledTaskTrigger -Daily -At "03:00"
-Set-ScheduledTask -InputObject $task -Trigger $trigger
+Set-ScheduledTask -TaskName $task.TaskName -Trigger $trigger
 ```
 
 ## Manuelle Script-Ausführung
@@ -180,7 +175,7 @@ cd C:\Kalkulationsprogramm\scripts
 
 Mit benutzerdefinierten Parametern:
 ```powershell
-.\backup-database.ps1 -BackupDir "F:\Backups" -RetentionDays 60
+.\backup-database.ps1 -ExternalFallbackDrive F -RetentionDays 60
 ```
 
 ### Server starten
@@ -194,20 +189,23 @@ cd C:\Kalkulationsprogramm\scripts
 
 ```powershell
 cd C:\Kalkulationsprogramm\scripts
-.\restart-kalkulationsprogramm.ps1
+.\restart-kalkulationsprogramm.ps1 -ServerPort 8080
 ```
 
 ## Backup-Wiederherstellung
 
-Die Sicherungen (`kalkulationsprogramm_db_<datum>.sql.gz`) sind PostgreSQL-Sicherungen.
-Am sichersten spielt sie der Updater aus `deployment/docker-server` ein. Er sichert vorher
-den aktuellen Stand nach `sicherungen\vor-import-…` und startet das ERP danach neu:
+Die Sicherungen (`kalkulationsprogramm_db_<datum>.sql.gz`) sind PostgreSQL-Sicherungen
+(`pg_dump --no-owner --no-privileges`).
+
+**Datenbank des docker-server:** Am sichersten spielt sie der Updater aus
+`deployment/docker-server` ein. Er sichert vorher den aktuellen Stand nach
+`sicherungen\vor-import-…` und startet das ERP danach neu:
 
 ```powershell
 # Sicherung in den ERP-Ordner legen (Beispiel: C:\ERP-Handwerk), dann dort:
-Copy-Item "E:\Kalkulationsprogramm-Backup\db\kalkulationsprogramm_db_20261128_020000.sql.gz" "C:\ERP-Handwerk\"
+Copy-Item "C:\Kalkulationsprogramm\backups\db\kalkulationsprogramm_db_<datum>.sql.gz" "C:\ERP-Handwerk\"
 cd C:\ERP-Handwerk
-docker compose exec updater bash /erp/nachtupdate.sh --importieren kalkulationsprogramm_db_20261128_020000.sql.gz
+docker compose exec updater bash /erp/nachtupdate.sh --importieren kalkulationsprogramm_db_<datum>.sql.gz
 ```
 
 Die `.sql.gz`-Datei muss dafür nicht entpackt werden.
@@ -221,14 +219,16 @@ Die `.sql.gz`-Datei muss dafür nicht entpackt werden.
 **Symptom:** Task zeigt Fehler oder Backup-Datei wird nicht erstellt
 
 **Lösungen:**
-1. Prüfen Sie die Logs in `E:\Kalkulationsprogramm\Logs\`
-2. Prüfen Sie, ob externe Festplatte E:\ verfügbar ist
-3. Prüfen Sie, ob Docker Desktop läuft und der Datenbank-Container da ist:
+1. Prüfen Sie die Logs in `C:\Kalkulationsprogramm\logs\backups\`
+2. Prüfen Sie, ob Docker Desktop läuft und der Datenbank-Container da ist:
    ```powershell
    docker ps --filter name=erp-postgres
    ```
-4. Prüfen Sie, ob das Konto der geplanten Aufgabe Docker benutzen darf (Fehlermeldung
-   von `pg_dump` im Backup-Log).
+3. Prüfen Sie, ob das Konto der geplanten Aufgabe (`SYSTEM`) Docker benutzen darf
+   (Fehlermeldung von `pg_dump` im Backup-Log).
+
+Fehlen externe Platte oder OneDrive, ist das **kein** Fehler: Die lokale Sicherung gilt, im
+Log steht eine Warnung.
 
 ### Problem: Server startet nicht automatisch
 
@@ -241,39 +241,40 @@ Die `.sql.gz`-Datei muss dafür nicht entpackt werden.
    ```powershell
    java -version
    ```
-3. Prüfen Sie JAR-Pfad:
+3. Prüfen Sie, ob eine JAR da ist:
    ```powershell
-   Test-Path "C:\Kalkulationsprogramm\Kalkulationsprogramm.jar"
+   Get-ChildItem "C:\Kalkulationsprogramm\*.jar"
    ```
-4. Prüfen Sie Server-Logs in `E:\Kalkulationsprogramm\Logs\`
+4. Prüfen Sie die Start-Logs in `C:\Kalkulationsprogramm\Logs\`
 
 ### Problem: Server läuft, aber antwortet nicht
 
 **Lösungen:**
-1. Prüfen Sie, ob Port 8082 offen ist:
+1. Prüfen Sie, ob Port 8080 offen ist:
    ```powershell
-   Test-NetConnection -ComputerName localhost -Port 8082
+   Test-NetConnection -ComputerName localhost -Port 8080
    ```
 2. Prüfen Sie Firewall-Einstellungen
 3. Prüfen Sie Server-Logs nach Fehlern
 4. Versuchen Sie manuellen Neustart:
    ```powershell
-   C:\Kalkulationsprogramm\scripts\restart-kalkulationsprogramm.ps1
+   C:\Kalkulationsprogramm\scripts\restart-kalkulationsprogramm.ps1 -ServerPort 8080
    ```
 
 ### Problem: Alte Backups werden nicht gelöscht
 
 **Lösungen:**
-1. Prüfen Sie Berechtigungen auf E:\
+1. Prüfen Sie Berechtigungen auf den Backup-Ordnern
 2. Führen Sie Backup-Script manuell aus und prüfen Sie Ausgabe
 3. Prüfen Sie, ob Backup-Dateien das richtige Namensformat haben
+   (`kalkulationsprogramm_db_*.sql.gz`)
 
-### Problem: Externe Festplatte E:\ nicht verfügbar
+### Problem: Externe Festplatte wird nicht gefunden
 
 **Lösungen:**
-1. Prüfen Sie, ob Festplatte angeschlossen ist
-2. Ändern Sie Laufwerksbuchstaben in der Datenträgerverwaltung
-3. Alternativ: Ändern Sie Backup-Pfad in den Scripts auf anderes Laufwerk
+1. Prüfen Sie, ob die Festplatte angeschlossen ist
+2. Prüfen Sie die Datenträgerbezeichnung (`INTENSO`) bzw. den Laufwerksbuchstaben (`E:`)
+3. Alternativ: `-ExternalVolumeLabel` bzw. `-ExternalFallbackDrive` anpassen
 
 ## Monitoring
 
@@ -281,10 +282,10 @@ Die `.sql.gz`-Datei muss dafür nicht entpackt werden.
 
 ```powershell
 # Letzte Backups anzeigen
-Get-ChildItem "E:\Kalkulationsprogramm\Backups" | Sort-Object LastWriteTime -Descending | Select-Object -First 10
+Get-ChildItem "C:\Kalkulationsprogramm\backups\db" | Sort-Object LastWriteTime -Descending | Select-Object -First 10
 
 # Backup-Größen anzeigen
-Get-ChildItem "E:\Kalkulationsprogramm\Backups\*.gz" | 
+Get-ChildItem "C:\Kalkulationsprogramm\backups\db\*.gz" |
     Select-Object Name, @{Name="Size (MB)";Expression={[math]::Round($_.Length/1MB, 2)}} |
     Sort-Object Name -Descending
 ```
@@ -293,33 +294,37 @@ Get-ChildItem "E:\Kalkulationsprogramm\Backups\*.gz" |
 
 ```powershell
 # Prüfen ob Server läuft
-Test-NetConnection -ComputerName localhost -Port 8082
+Test-NetConnection -ComputerName localhost -Port 8080
 
-# Server-Prozess finden
-Get-Process java | Where-Object {$_.MainWindowTitle -match "Kalkulation"}
+# Prozess, der auf dem Port lauscht
+Get-NetTCPConnection -LocalPort 8080 -State Listen | ForEach-Object { Get-Process -Id $_.OwningProcess }
 ```
 
 ### Log-Dateien prüfen
 
 ```powershell
 # Neueste Backup-Logs
-Get-ChildItem "E:\Kalkulationsprogramm\Logs\backup_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | Get-Content
+Get-ChildItem "C:\Kalkulationsprogramm\logs\backups\backup_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | Get-Content
 
 # Neueste Server-Start-Logs
-Get-ChildItem "E:\Kalkulationsprogramm\Logs\server_start_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | Get-Content
+Get-ChildItem "C:\Kalkulationsprogramm\Logs\server_start_*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | Get-Content
 ```
+
+`restart-kalkulationsprogramm.ps1` schreibt sein Log standardmäßig noch nach
+`E:\Kalkulationsprogramm\Logs\` (Parameter `-LogDir`).
 
 ## Wartung
 
 ### Backup-Verzeichnis bereinigen
 
-Alte Backups werden automatisch nach 30 Tagen gelöscht. Für manuelle Bereinigung:
+Alte Datenbank-Sicherungen werden automatisch nach 30 Tagen gelöscht (lokal, auf der externen
+Platte und im OneDrive-Ordner). Für manuelle Bereinigung:
 
 ```powershell
-# Alle Backups älter als 60 Tage löschen
+# Alle lokalen Backups älter als 60 Tage löschen
 $cutoffDate = (Get-Date).AddDays(-60)
-Get-ChildItem "E:\Kalkulationsprogramm\Backups\*.gz" | 
-    Where-Object {$_.LastWriteTime -lt $cutoffDate} | 
+Get-ChildItem "C:\Kalkulationsprogramm\backups\db\*.gz" |
+    Where-Object {$_.LastWriteTime -lt $cutoffDate} |
     Remove-Item -Verbose
 ```
 
@@ -328,8 +333,8 @@ Get-ChildItem "E:\Kalkulationsprogramm\Backups\*.gz" |
 ```powershell
 # Logs älter als 90 Tage löschen
 $cutoffDate = (Get-Date).AddDays(-90)
-Get-ChildItem "E:\Kalkulationsprogramm\Logs\*.log" | 
-    Where-Object {$_.LastWriteTime -lt $cutoffDate} | 
+Get-ChildItem "C:\Kalkulationsprogramm\logs\backups\*.log", "C:\Kalkulationsprogramm\Logs\*.log" |
+    Where-Object {$_.LastWriteTime -lt $cutoffDate} |
     Remove-Item -Verbose
 ```
 
@@ -345,14 +350,16 @@ Get-ScheduledTask | Where-Object {$_.TaskName -like "*Kalkulationsprogramm*"} | 
 ### Scripts und Daten entfernen
 
 ```powershell
-# ACHTUNG: Löscht alle Daten!
+# ACHTUNG: Löscht alle Daten (JAR, Uploads, lokale Sicherungen, Logs)!
 Remove-Item "C:\Kalkulationsprogramm" -Recurse -Force
-Remove-Item "E:\Kalkulationsprogramm" -Recurse -Force
 ```
+
+Die Kopien auf der externen Platte (`Kalkulationsprogramm-Backup`) und im OneDrive-Ordner
+bleiben liegen, bis sie von Hand gelöscht werden.
 
 ## Support
 
 Bei Problemen:
-1. Prüfen Sie die Logs in `E:\Kalkulationsprogramm\Logs\`
+1. Prüfen Sie die Logs in `C:\Kalkulationsprogramm\logs\backups\` und `C:\Kalkulationsprogramm\Logs\`
 2. Prüfen Sie den Troubleshooting-Abschnitt in diesem Dokument
 3. Kontaktieren Sie den System-Administrator

@@ -23,6 +23,11 @@ uploads/
 logs/
 *.log
 
+# RAG-Datei der KI-Hilfe: kommt ueber den Build-Kontext "ki-hilfe" ins Image,
+# nicht ueber den normalen Kontext (Dockerfile, docker-image.yml)
+ki-hilfe/
+.rag-cache.json*
+
 # Docker
 docker-compose.yml
 Dockerfile
