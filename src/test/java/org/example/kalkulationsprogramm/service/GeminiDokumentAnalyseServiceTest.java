@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
@@ -37,6 +39,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.example.kalkulationsprogramm.testsupport.LogMitschnitt;
 import org.springframework.context.ApplicationEventPublisher;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -1004,6 +1007,10 @@ class GeminiDokumentAnalyseServiceTest {
     class AnalysiereDokumentStoesstPreisuebernahmeAn {
 
         private static final String DATEINAME = "muster-dokument.pdf";
+        /** Gespeicherte Dateinamen tragen Namen aus den Rechnungen (Dummy-Daten). */
+        private static final String ORIGINALNAME_MIT_NAMEN = "Rechnung_Max_Mustermann.pdf";
+        private static final String DATEINAME_MIT_NAMEN =
+                "0b1c2d3e-4f50-4617-8899-aabbccddeeff_" + ORIGINALNAME_MIT_NAMEN;
 
         private GeminiDokumentAnalyseService serviceMitEchtemMapper;
         private HttpClient httpClientMock;
@@ -1309,6 +1316,113 @@ class GeminiDokumentAnalyseServiceTest {
                     .isInstanceOf(PositionenNichtLesbarException.class)
                     .hasMessageNotContaining(tempUploadRoot.toString());
             verifyNoInteractions(positionService, httpClientMock);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Datei-Pruefung: Meldungen nennen weder Serverpfad noch Dateinamen")
+        void dateiPruefungOhneServerpfadInMeldung() {
+            Path ausserhalb = tempUploadRoot.getRoot().resolve("nicht-erlaubt").resolve(DATEINAME_MIT_NAMEN);
+            Path fehlt = tempUploadRoot.resolve("attachments").resolve(DATEINAME_MIT_NAMEN);
+
+            assertThat(fehlerDerDateiPruefung(ausserhalb))
+                    .isInstanceOf(SecurityException.class)
+                    .hasMessageNotContaining("nicht-erlaubt")
+                    .hasMessageNotContaining("Max_Mustermann");
+            assertThat(fehlerDerDateiPruefung(fehlt))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageNotContaining(tempUploadRoot.toString())
+                    .hasMessageNotContaining("Max_Mustermann");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Datei-Pruefung: gesperrte Datei gilt als nicht lesbar")
+        void dateiPruefungLehntGesperrteDateiAb() throws Exception {
+            Path gesperrt = Files.write(tempUploadRoot.resolve("attachments").resolve(DATEINAME_MIT_NAMEN),
+                    "%PDF-1.4 Dummy-Inhalt fuer den Test".getBytes());
+            assumeTrue(
+                    gesperrt.toFile().setReadable(false) && !Files.isReadable(gesperrt),
+                    "Leserechte lassen sich hier nicht entziehen (Windows oder root)");
+
+            assertThat(fehlerDerDateiPruefung(gesperrt))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageNotContaining("Max_Mustermann");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Abgelehnte Datei: Log nennt nur Dokument-ID und Fehlerart")
+        void abgelehnteDateiOhneServerpfadImLog() {
+            Path ausserhalb = tempUploadRoot.getRoot().resolve("nicht-erlaubt").resolve(DATEINAME_MIT_NAMEN);
+            Path fehlt = tempUploadRoot.resolve("attachments").resolve(DATEINAME_MIT_NAMEN);
+            LieferantDokument dokument = musterDokument(608L);
+            when(dokumentRepository.findById(608L)).thenReturn(Optional.of(dokument));
+
+            List<String> log = mitLog(() -> {
+                assertThat(serviceMitEchtemMapper.analyzeFile(ausserhalb, ORIGINALNAME_MIT_NAMEN)).isNull();
+                assertThat(serviceMitEchtemMapper.analyzeFileForMultipleInvoices(fehlt, ORIGINALNAME_MIT_NAMEN))
+                        .isEmpty();
+                assertThat(serviceMitEchtemMapper.analyzeAndReturnData(fehlt, ORIGINALNAME_MIT_NAMEN)).isNull();
+                assertThat(serviceMitEchtemMapper.analysiereDokument(dokument, ausserhalb)).isNull();
+            });
+
+            assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann")
+                    || zeile.contains("nicht-erlaubt") || zeile.contains(tempUploadRoot.toString()));
+            // Jeder Fehler steht weiter im Log, nur eben mit Fehlerart statt Pfad.
+            assertThat(log).contains(
+                    "Fehler bei Dateianalyse: SecurityException",
+                    "Fehler bei Multi-Invoice-Analyse: IllegalArgumentException",
+                    "Fehler bei Dateianalyse: IllegalArgumentException",
+                    "Fehler bei analyzeAndReturnData: IllegalArgumentException",
+                    "Fehler bei Dokumentanalyse für Dokument 608: SecurityException");
+            verifyNoInteractions(httpClientMock);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Lesefehler nach der Datei-Pruefung: Log nennt nur Dokument-ID und Fehlerart")
+        void lesefehlerOhneServerpfadImLog() throws Exception {
+            // Zwischen Prüfung und Lesen verschwunden (z. B. aufgeräumte Temp-Datei)
+            Path verschwunden = tempUploadRoot.resolve("attachments").resolve(DATEINAME_MIT_NAMEN);
+            Method kiAnalyse = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+                    "analysierePerKi", Path.class, String.class, Long.class, boolean.class);
+            kiAnalyse.setAccessible(true);
+            Method kiVorschau = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+                    "analysierePerKiFuerPreview", Path.class, String.class, boolean.class);
+            kiVorschau.setAccessible(true);
+
+            List<String> log = mitLog(() -> {
+                try {
+                    assertThat(kiAnalyse.invoke(serviceMitEchtemMapper, verschwunden, "application/pdf", 609L, true))
+                            .extracting("datenquelle").isEqualTo("AI_ERROR");
+                    assertThat(kiVorschau.invoke(serviceMitEchtemMapper, verschwunden, ORIGINALNAME_MIT_NAMEN, false))
+                            .isNull();
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+
+            assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann")
+                    || zeile.contains(tempUploadRoot.toString()));
+            assertThat(log).contains(
+                    "KI-Analyse fehlgeschlagen für Dokument 609: NoSuchFileException",
+                    "KI-Preview fehlgeschlagen: NoSuchFileException");
+            verifyNoInteractions(httpClientMock);
+        }
+
+        /** Fehler der privaten Datei-Prüfung (Temp-Dateien erlaubt), ohne Reflection-Hülle. */
+        private Throwable fehlerDerDateiPruefung(Path pfad) {
+            return catchThrowable(() -> {
+                Method pruefung = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+                        "validiereAnalyseDateiPfad", Path.class, boolean.class);
+                pruefung.setAccessible(true);
+                try {
+                    pruefung.invoke(serviceMitEchtemMapper, pfad, true);
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    throw e.getCause();
+                }
+            });
+        }
+
+        private List<String> mitLog(Runnable aktion) {
+            return LogMitschnitt.von(GeminiDokumentAnalyseService.class, aktion);
         }
 
         @Test

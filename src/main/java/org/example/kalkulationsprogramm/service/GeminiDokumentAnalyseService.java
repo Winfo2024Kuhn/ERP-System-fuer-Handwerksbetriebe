@@ -461,7 +461,8 @@ public class GeminiDokumentAnalyseService {
             return analysierePerKiFuerPreview(dateiPfad, originalFilename, useProModel);
 
         } catch (Exception e) {
-            log.error("Fehler bei Dateianalyse: {}", e.getMessage(), e);
+            // Nur die Fehlerart: Datei-Fehler nennen Serverpfad und Dateinamen.
+            log.error("Fehler bei Dateianalyse: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -561,7 +562,7 @@ public class GeminiDokumentAnalyseService {
             return results;
 
         } catch (Exception e) {
-            log.error("Fehler bei Multi-Invoice-Analyse: {}", e.getMessage(), e);
+            log.error("Fehler bei Multi-Invoice-Analyse: {}", e.getClass().getSimpleName());
             // Fallback: Einzelne Analyse
             try {
                 var singleResult = analyzeFile(dateiPfad, originalFilename);
@@ -575,7 +576,7 @@ public class GeminiDokumentAnalyseService {
                             .build());
                 }
             } catch (Exception ex) {
-                log.error("Auch Fallback fehlgeschlagen", ex);
+                log.error("Auch Fallback fehlgeschlagen: {}", ex.getClass().getSimpleName());
             }
             return results;
         }
@@ -894,7 +895,8 @@ public class GeminiDokumentAnalyseService {
             return parseJsonToAnalyzeResponse(jsonResponse);
 
         } catch (Exception e) {
-            log.error("KI-Preview fehlgeschlagen: {}", e.getMessage(), e);
+            // Nur die Fehlerart: Lesefehler nennen Serverpfad und Dateinamen.
+            log.error("KI-Preview fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1229,7 +1231,9 @@ public class GeminiDokumentAnalyseService {
             return savedGeschaeftsdaten;
 
         } catch (Exception e) {
-            log.error("Fehler bei Dokumentanalyse für Dokument {}", dokument.getId(), e);
+            // Nur ID und Fehlerart: Datei-Fehler nennen Serverpfad und Dateinamen.
+            log.error("Fehler bei Dokumentanalyse für Dokument {}: {}", dokument.getId(),
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1728,7 +1732,7 @@ public class GeminiDokumentAnalyseService {
             return analysierePerKi(dateiPfad, mimeType, null, true);
 
         } catch (Exception e) {
-            log.error("Fehler bei analyzeAndReturnData: {}", e.getMessage());
+            log.error("Fehler bei analyzeAndReturnData: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1887,7 +1891,8 @@ public class GeminiDokumentAnalyseService {
             return result;
 
         } catch (Exception e) {
-            log.error("KI-Analyse fehlgeschlagen für Dokument {}", docIdForLog, e);
+            // Nur ID und Fehlerart: Lesefehler nennen Serverpfad und Dateinamen.
+            log.error("KI-Analyse fehlgeschlagen für Dokument {}: {}", docIdForLog, e.getClass().getSimpleName());
             // Auch bei Exception: Dokument mit Flag erstellen
             LieferantGeschaeftsdokument errorResult = new LieferantGeschaeftsdokument();
             errorResult.setManuellePruefungErforderlich(true);
@@ -1978,7 +1983,7 @@ public class GeminiDokumentAnalyseService {
             return new NachleseVorlage(Files.readAllBytes(validiereAnalyseDateiPfad(dateiPfad, false)),
                     getMimeType(dokument));
         } catch (java.io.IOException | IllegalArgumentException | SecurityException e) {
-            // Keine Details nach außen: die Meldungen nennen den Serverpfad.
+            // Keine Details nach außen: IO-Fehler nennen den Serverpfad.
             throw new PositionenNichtLesbarException("Datei zum Dokument nicht lesbar");
         }
     }
@@ -2189,12 +2194,13 @@ public class GeminiDokumentAnalyseService {
             erlaubterPfad = normalizedPath.startsWith(tempRoot);
         }
 
+        // Kein Pfad in den Meldungen: gespeicherte Dateinamen tragen Namen aus den Rechnungen (DSGVO).
         if (!erlaubterPfad) {
-            throw new SecurityException("Dateizugriff außerhalb der erlaubten Verzeichnisse: " + normalizedPath);
+            throw new SecurityException("Dateizugriff außerhalb der erlaubten Verzeichnisse");
         }
 
-        if (!Files.isRegularFile(normalizedPath)) {
-            throw new IllegalArgumentException("Datei ist nicht lesbar oder existiert nicht: " + normalizedPath);
+        if (!Files.isRegularFile(normalizedPath) || !Files.isReadable(normalizedPath)) {
+            throw new IllegalArgumentException("Datei ist nicht lesbar oder existiert nicht");
         }
 
         return normalizedPath;
