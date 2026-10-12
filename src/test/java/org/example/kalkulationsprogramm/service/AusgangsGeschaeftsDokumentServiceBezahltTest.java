@@ -768,7 +768,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             service.setzeOffenenPostenBezahlt(posten, true);
 
             assertThat(posten.isBezahlt()).isTrue();
-            verify(projektDokumentRepository).save(posten);
+            verify(projektDokumentRepository).saveAndFlush(posten);
             assertThat(projekt.isBezahlt()).isTrue();
             assertThat(projekt.isAbgeschlossen()).isTrue();
             verify(projektRepository).save(projekt);
@@ -789,7 +789,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             service.setzeOffenenPostenBezahlt(posten, false);
 
             assertThat(posten.isBezahlt()).isFalse();
-            verify(projektDokumentRepository).save(posten);
+            verify(projektDokumentRepository).saveAndFlush(posten);
             assertThat(projekt.isBezahlt()).isFalse();
             assertThat(projekt.isAbgeschlossen()).isFalse();
         }
@@ -801,7 +801,7 @@ class AusgangsGeschaeftsDokumentServiceBezahltTest {
             service.setzeOffenenPostenBezahlt(posten, true);
 
             assertThat(posten.isBezahlt()).isTrue();
-            verify(projektDokumentRepository).save(posten);
+            verify(projektDokumentRepository).saveAndFlush(posten);
             verifyNoInteractions(projektRepository, dokumentRepository);
         }
 
