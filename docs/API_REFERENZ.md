@@ -243,7 +243,6 @@ Den früheren `AngebotController` unter `/api/angebote` gibt es nicht mehr; Ange
 | `GET` | `/freigabe-status` | Jüngste digitale Freigabe (Angebot/AB) je Projekt (`ids`) |
 | `POST` | `/` | Projekt mit Bild und Dokumenten anlegen (multipart) |
 | `POST` | `/` | Projekt anlegen (JSON) |
-| `POST` | `/{projektId}/zeiten` | Arbeitszeiten zum Projekt erfassen |
 | `POST` | `/{projektId}/anfragen/{anfrageId}/zusammenfuehren` | Anfrage in das Projekt übernehmen (`409` bei Konflikt) |
 | `GET` | `/{projektID}/stueckliste.pdf` | Stückliste als PDF |
 | `PUT` | `/{projektID}` | Projekt mit Bild ändern (multipart) |
