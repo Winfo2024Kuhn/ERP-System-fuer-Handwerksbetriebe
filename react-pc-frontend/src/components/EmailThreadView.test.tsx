@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EmailThreadView } from './EmailThreadView';
 import type { EmailThread } from './EmailThreadView';
+import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
 
 // EmailContentFrame nutzt iframe + srcDoc – im jsdom nicht vollständig unterstützt.
 // Wir mocken die Komponente als einfaches div mit dem HTML-Inhalt.
@@ -11,21 +12,13 @@ vi.mock('./EmailContentFrame', () => ({
     ),
 }));
 
+// Die Scroll-Rechnung selbst ist in lib/scrollInDenBlick.test.ts geprüft.
+vi.mock('../lib/scrollInDenBlick', () => ({ scrolleMittigInDenBlick: vi.fn() }));
+
 // jsdom implementiert scrollIntoView nicht – global mocken
 beforeEach(() => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
-    // matchMedia für prefers-reduced-motion mocken
-    Object.defineProperty(window, 'matchMedia', {
-        writable: true,
-        value: vi.fn().mockImplementation((query: string) => ({
-            matches: false,
-            media: query,
-            onchange: null,
-            addEventListener: vi.fn(),
-            removeEventListener: vi.fn(),
-            dispatchEvent: vi.fn(),
-        })),
-    });
+    vi.mocked(scrolleMittigInDenBlick).mockClear();
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -105,6 +98,16 @@ describe('EmailThreadView', () => {
         // Die fokussierte Email (id=2) hat einen EmailContentFrame statt Snippet-Paragraph
         const frames = screen.getAllByTestId('email-content-frame');
         expect(frames.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('holt die fokussierte Nachricht in den Blick, ohne das Seitenlayout mitzuschieben', () => {
+        render(<EmailThreadView thread={makeThread()} />);
+
+        // scrollIntoView würde auch die overflow-hidden-Hüllen des Layouts verschieben.
+        expect(window.HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+        const fokussierteNachricht = screen.getByRole('button', { name: 'Nachricht von Handwerk GmbH einklappen' }).parentElement;
+        expect(scrolleMittigInDenBlick).toHaveBeenCalledTimes(1);
+        expect(scrolleMittigInDenBlick).toHaveBeenCalledWith(fokussierteNachricht);
     });
 
     it('Klick auf kollabierte Bubble expandiert sie', () => {

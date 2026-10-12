@@ -7,6 +7,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import type { OffenerPosten, Mahnstufe } from '../types';
 import EingangsrechnungenTab from '../components/EingangsrechnungenTab';
 import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
+import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
 
 
 // Mahnstufe labels
@@ -95,7 +96,7 @@ export default function OffenePostenEditor() {
         const t = window.setTimeout(() => {
             const el = document.querySelector(`[data-dokument-id="${fokusId}"]`) as HTMLElement | null;
             if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                scrolleMittigInDenBlick(el);
                 el.classList.add('ring-2', 'ring-rose-400');
                 window.setTimeout(() => {
                     el.classList.remove('ring-2', 'ring-rose-400');
