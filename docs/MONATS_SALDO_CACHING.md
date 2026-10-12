@@ -85,6 +85,8 @@ BigDecimal getDifferenz()
 - Quelle: `Feiertagservice` (Bayern)
 - Bezahlte Stunden für Feiertage, die auf Arbeitstage fallen
 - Halbe Feiertage: 50% der Tagesstunden
+- Das Soll bleibt an jedem Feiertag stehen, gemindert wird nur über die Gutschrift. Am halben Feiertag (8-h-Tag) heißt das: Soll 8 h, Gutschrift 4 h, also 4 h zu arbeiten. Wer 4 h arbeitet, steht bei 0 (Fachentscheidung 12.10.2026; vorher wurden Soll und Gutschrift halbiert, der halbe Feiertag wirkte wie ein ganzer). Umgesetzt in `TagesSollService`.
+- Halbe Feiertage lassen sich im Programm noch nicht pflegen (nur direkt in der Datenbank, `feiertag.halb_tag`).
 
 ### 3.5 Korrektur-Stunden
 

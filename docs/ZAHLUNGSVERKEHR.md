@@ -99,10 +99,10 @@ Lieferantenrechnungen (`LieferantGeschaeftsdokument`) verwalten den Zahlungsstat
 
 ### 4.1 Sichtbarkeit
 
-| Abteilung | Rechte |
+| Abteilungsrecht (Einstellungen → Berechtigungen) | Rechte |
 |---|---|
-| **Abt. 3 (Büro)** | Sieht alle Dokumente, kann genehmigen |
-| **Abt. 2 (Buchhaltung)** | Sieht nur genehmigte Dokumente |
+| **Rechnungen genehmigen** (`darfRechnungenGenehmigen`) | Sieht alle Dokumente, kann genehmigen |
+| **Genehmigte Rechnungen sehen** (`darfRechnungenSehen`) | Sieht nur genehmigte Dokumente |
 
 ### 4.2 Genehmigungsprozess
 

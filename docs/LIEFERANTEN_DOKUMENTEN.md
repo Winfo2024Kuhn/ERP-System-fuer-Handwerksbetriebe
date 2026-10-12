@@ -130,7 +130,7 @@ Die Ergebnisse werden mit einem **Confidence-Score** (0.0–1.0) versehen. Das R
 | Feld | Typ | Beschreibung |
 |---|---|---|
 | `verifiziert` | `Boolean` | Manuelle Bestätigung der extrahierten Daten |
-| `genehmigt` | `Boolean` | Freigabe durch Abt. 3 (Büro) |
+| `genehmigt` | `Boolean` | Freigabe durch eine Abteilung mit dem Recht „Rechnungen genehmigen“ |
 | `lagerbestellung` | `Boolean` | Lagerbestellung (kein Projekt erforderlich) |
 
 **Zahlungsfelder:**
@@ -186,19 +186,22 @@ KI-Analyse / ZUGFeRD-Extraktion
    ├─ verifiziert = true (bei ZUGFERD/XML)
    │
    ▼
-Genehmigung durch Büro (Abt. 3)
+Genehmigung (Abteilungsrecht „Rechnungen genehmigen“)
    │
    └─► genehmigt = true
-        → Sichtbar für Buchhaltung (Abt. 2)
+        → Sichtbar für Abteilungen mit „Genehmigte Rechnungen sehen“
         → Zahlungsverfolgung aktiv
 ```
 
 ### 6.2 Abteilungsbasierte Sichtbarkeit
 
-| Abteilung | Sichtbarkeit |
+Welche Abteilung was sieht, steuern zwei Rechte je Abteilung (Einstellungen → Berechtigungen, Flags an `Abteilung`). Feste Abteilungsnummern oder -namen gibt es dafür nicht.
+
+| Abteilungsrecht | Sichtbarkeit |
 |---|---|
-| **Abt. 3 (Büro)** | Alle Dokumente – kann genehmigen |
-| **Abt. 2 (Buchhaltung)** | Nur genehmigte Dokumente |
+| **Rechnungen genehmigen** (`darfRechnungenGenehmigen`) | Alle Dokumente – kann genehmigen |
+| **Genehmigte Rechnungen sehen** (`darfRechnungenSehen`) | Nur genehmigte Dokumente |
+| keines der beiden | Keine Eingangsrechnungen; Genehmigen wird mit 403 abgelehnt |
 
 ---
 

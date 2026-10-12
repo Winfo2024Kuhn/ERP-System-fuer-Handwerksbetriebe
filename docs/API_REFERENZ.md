@@ -390,10 +390,10 @@ Basis-URL: `http://localhost:8082`
 
 ### 17.1 Abteilungsbasierte Zugriffssteuerung
 
-| Abteilung | Rechte |
+| Abteilungsrecht (Einstellungen → Berechtigungen) | Rechte |
 |---|---|
-| **Abt. 2 (Buchhaltung)** | Nur genehmigte Dokumente, Zahlungen |
-| **Abt. 3 (Büro)** | Alle Dokumente, Genehmigungsrecht |
+| **Genehmigte Rechnungen sehen** (`darfRechnungenSehen`) | Nur genehmigte Dokumente, Zahlungen |
+| **Rechnungen genehmigen** (`darfRechnungenGenehmigen`) | Alle Dokumente, Genehmigungsrecht |
 
 **Controller:** `FrontendUserController`  
 **Basis-URL:** `/api/user`

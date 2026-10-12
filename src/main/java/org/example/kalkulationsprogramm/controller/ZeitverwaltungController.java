@@ -543,7 +543,7 @@ public class ZeitverwaltungController {
                     .orElse(null));
             // TagesSollService (Task 3) kapselt die Sollstunden-Ermittlung inkl.
             // Feiertagsbehandlung und laufender Wiedereingliederung; arbeitsSollJeTag
-            // liefert an Feiertagen (voll wie halb) von sich aus 0.
+            // liefert am vollen Feiertag 0, am halben die Haelfte des Tagessolls.
             tagData.put("sollStunden", sollStundenJeTag.get(currentTag));
             tagData.put("feiertagsStunden", feiertagsGutschriftJeTag.get(currentTag));
             tagData.put("buchungen", buchungenProTag.getOrDefault(currentTag, Collections.emptyList()));
@@ -554,12 +554,11 @@ public class ZeitverwaltungController {
             // Bugfix (Task 11, siehe Plan "Bewusste Verhaltensaenderungen" Punkt 1):
             // bisher wurden an JEDEM Feiertag die vollen Sollstunden als
             // Ist-Stunden gutgeschrieben, auch an einem halben Feiertag wie
-            // Heiligabend - waehrend sollStundenMonat (berechneSollstundenFuerMonat,
-            // unten) den halben Feiertag schon immer korrekt halbierte. Das ergab
-            // +4h Phantom-Ueberstunden pro halbem Feiertag und einen Widerspruch
-            // zur Monatsuebersicht (MonatsSaldoService: Soll 4 / Gutschrift 4 ->
-            // netto 0). feiertagsGutschriftJeTag liefert an halben Feiertagen
-            // korrekt die halbe Stundenzahl (und 0 an Nicht-Feiertagen).
+            // Heiligabend. Das ergab +4h Phantom-Ueberstunden pro halbem Feiertag
+            // und einen Widerspruch zur Monatsuebersicht (MonatsSaldoService:
+            // Soll 8 / Gutschrift 4 -> der halbe Tag bleibt zu arbeiten, seit der
+            // Fachentscheidung 12.10.2026). feiertagsGutschriftJeTag liefert an
+            // halben Feiertagen die halbe Stundenzahl (und 0 an Nicht-Feiertagen).
             istStunden = istStunden.add(feiertagsGutschriftJeTag.get(currentTag));
 
             // Normale Buchungen dazuzählen (PAUSE ausschließen)

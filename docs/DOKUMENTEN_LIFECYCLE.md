@@ -345,10 +345,10 @@ Jede `Zahlung` enthält:
 
 ### 6.1 Abteilungs-basiert
 
-| Abteilung | Rechte |
+| Abteilungsrecht (Einstellungen → Berechtigungen) | Rechte |
 |---|---|
-| **Abt. 3 (Büro)** | Sieht alle Dokumente, kann genehmigen (`genehmigt = true`) |
-| **Abt. 2 (Buchhaltung)** | Sieht nur genehmigte Dokumente |
+| **Rechnungen genehmigen** (`darfRechnungenGenehmigen`) | Sieht alle Dokumente, kann genehmigen (`genehmigt = true`) |
+| **Genehmigte Rechnungen sehen** (`darfRechnungenSehen`) | Sieht nur genehmigte Dokumente |
 
 ### 6.2 Verifizierungs- und Genehmigungsflags
 

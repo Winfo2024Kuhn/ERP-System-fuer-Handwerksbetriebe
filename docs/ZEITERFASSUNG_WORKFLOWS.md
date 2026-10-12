@@ -1,6 +1,6 @@
 # Zeiterfassung Workflows - Online & Offline
 
-> **Zuletzt aktualisiert:** 15.01.2026  
+> **Zuletzt aktualisiert:** 12.10.2026  
 > **Anwendung:** react-zeiterfassung (Mobile App)
 
 Diese Dokumentation beschreibt alle Workflows der Zeiterfassung-App für die Fehleranalyse.
@@ -41,7 +41,8 @@ Body: {
 ```
 
 - **Erfolg:** Session in `localStorage` speichern → Dashboard
-- **Fehler (4xx):** Alert anzeigen, NICHT offline queuen
+- **Fehler (4xx/5xx):** Toast anzeigen, NICHT offline queuen
+- **Netzwerkfehler:** Jeder Fehler, bei dem `fetch` selbst scheitert (Timeout, Funkloch, WLAN ohne Internet), wird offline gespeichert – unabhängig von `navigator.onLine`, das oft „online“ meldet, obwohl kein Server erreichbar ist. Hat der Server dagegen schon geantwortet, wird nichts eingereiht (sonst doppelte Buchung beim Sync).
 
 ### Offline-Modus
 ```typescript
@@ -116,6 +117,8 @@ OfflineService.addPendingEntry('pause', { token })
 
 **Datei:** `src/pages/DashboardPage.tsx` - Funktion `handleSwitchArbeitsgang`
 
+Im Fenster „Tätigkeit wählen“ kann der Handwerker über **„Ändern“** zusätzlich ein anderes Projekt wählen. Dann läuft die neue Buchung auf diesem Projekt; die Kategorie fällt weg, weil Kategorien am Projekt hängen (`projektFuerTaetigkeitswechsel`). Ohne Projektwechsel bleiben Projekt und Kategorie.
+
 ### Online-Modus
 1. `POST /api/zeiterfassung/stop` (alte Buchung)
 2. `POST /api/zeiterfassung/start` (neue Buchung mit neuer Tätigkeit)
@@ -124,9 +127,9 @@ OfflineService.addPendingEntry('pause', { token })
 // Start-Request:
 {
     token,
-    projektId: selectedProjektId || activeSession.projektId,
+    projektId: ziel.projektId,               // gewähltes Projekt oder das bisherige
     arbeitsgangId: newArbeitsgang.id,
-    produktkategorieId: activeSession.produktkategorieId ?? null  // kategorie bleibt!
+    produktkategorieId: ziel.produktkategorieId  // bleibt nur ohne Projektwechsel
 }
 ```
 
@@ -135,14 +138,15 @@ OfflineService.addPendingEntry('pause', { token })
 OfflineService.addPendingEntry('stop', { token })
 OfflineService.addPendingEntry('start', {
     token,
-    projektId,
+    projektId: ziel.projektId,
     arbeitsgangId,
-    produktkategorieId: activeSession.produktkategorieId ?? null
+    produktkategorieId: ziel.produktkategorieId
 })
 ```
 
-### ✅ Behobene Probleme (15.01.2026)
-1. ~~`produktkategorieId` war `undefined`~~ → Behoben durch `??` Operator
+### ✅ Behobene Probleme
+1. ~~`produktkategorieId` war `undefined`~~ → Behoben durch `??` Operator (15.01.2026)
+2. ~~„Ändern“ (Projekt) hatte keine Wirkung, die Buchung lief immer auf dem alten Projekt~~ → behoben (12.10.2026)
 
 ---
 
@@ -257,3 +261,5 @@ Danach: `navigate('/zeiterfassung')` → Neue Buchung komplett neu
 |-------|----------|
 | 15.01.2026 | Fix Backend: `produktkategorieId` + `produktkategorieName` fehlen in `/api/zeiterfassung/aktiv/{token}` Response. Hinzugefügt in `ZeiterfassungApiService.getAktiveBuchung()`. |
 | 15.01.2026 | Fix Frontend: `produktkategorieId` bei Tätigkeitswechsel - `??` statt `\|\|` für undefined-Handling. |
+| 12.10.2026 | Fix Frontend: Tätigkeitswechsel nutzt das über „Ändern“ gewählte Projekt (Online und Offline), Kategorie fällt beim Projektwechsel weg. |
+| 12.10.2026 | Fix Frontend: Neue Buchung wird bei jedem Netzwerkfehler von `fetch` offline gespeichert, nicht nur bei Timeout oder `navigator.onLine = false`. |

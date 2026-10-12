@@ -111,7 +111,7 @@ docs/
 - [x] **Teilzahlungen**: Mehrere Zahlungen pro Dokument möglich
 - [x] **Offener Betrag**: `betragBrutto - Summe(Zahlungen)` → Automatische Berechnung
 - [x] **Offene Posten-Übersicht**: Endpoint `GET /api/offene-posten/eingang`
-- [x] **Abteilungs-Berechtigungen**: Abt. 3 (Büro) sieht alle, Abt. 2 (Buchhaltung) nur genehmigte
+- [x] **Abteilungs-Berechtigungen**: Recht „Rechnungen genehmigen“ sieht alle, „Genehmigte Rechnungen sehen“ nur genehmigte
 - [x] **Mahnwesen** (`Mahnstufe`-Enum):
   - Stufe 1: ZAHLUNGSERINNERUNG (Zahlungserinnerung)
   - Stufe 2: ERSTE_MAHNUNG (1. Mahnung)
@@ -127,7 +127,7 @@ docs/
 - [x] **KI-Extraktion**: ZUGFeRD → XML → Gemini-AI-Fallback (mit Confidence-Score)
 - [x] **Datenquelle-Enum**: ZUGFERD, XML, AI – Transparenz über Herkunft der Metadaten
 - [x] **Verifizierungs-Flag**: `verifiziert` – manuelle Bestätigung der KI-Daten
-- [x] **Genehmigung**: `genehmigt`-Flag (Freigabe durch Abt. 3)
+- [x] **Genehmigung**: `genehmigt`-Flag (Freigabe über das Abteilungsrecht „Rechnungen genehmigen“)
 - [x] **Projekt-Aufteilung**: Prozentuale Zuordnung auf mehrere Projekte
 - [x] **Rekursive Verknüpfung**: M:M `verknuepfteDokumente` (Rechnung ↔ Lieferschein ↔ AB)
 - [x] **Zahlungsbedingungen**: Nettotage, Skontotage, Skontoprozent, Liefertermin
