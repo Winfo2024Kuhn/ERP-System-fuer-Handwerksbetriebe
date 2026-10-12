@@ -244,8 +244,9 @@ Stornierte Dokumente werden aus der Summe **ausgenommen**. Bei Teilrechnungen me
 
 - Die Schlussrechnung rechnet **ihre eigenen Positionen** ab und zieht die bereits gestellten Rechnungen ab. Entfallene Leistungen (aus der Schlussrechnung gelöscht) und zusätzlich angefallene Leistungen werden dadurch korrekt berücksichtigt; der Editor weist die Differenz zum Angebot aus.
 - Solange die Schlussrechnung ein Entwurf ist, wird ihr Betrag bei jeder Anzeige neu abgeleitet (z. B. wenn danach noch eine Teilrechnung storniert wird).
-- Ist sie gebucht oder versendet, gilt der gespeicherte Betrag unverändert (GoBD).
-- Wird eine Abschlagsrechnung storniert, werden zugehörige, nicht stornierte **gebuchte** Schlussrechnungen am selben Vorgänger **automatisch mitstorniert**. Ein Schlussrechnungs-Entwurf bleibt stehen; angezeigt wird sein Betrag schon ohne den stornierten Abschlag, gespeichert (und beim Buchen übernommen) ist aber noch der alte, bis jemand ihn im Editor öffnet und speichert. Deshalb zeigt das Projekt nach dem Stornieren einen Hinweis: „mitstorniert“ (Info) bzw. „Entwurf prüfen“ (Warnung).
+- Beim Buchen (auch beim Buchen durch den E-Mail-Versand) wird genau dieser abgeleitete Betrag festgeschrieben. Weicht er vom gespeicherten ab, weil nach dem letzten Speichern eine Rechnung storniert oder gestellt wurde, wird er vorher übernommen und mit altem und neuem Betrag im Prüfprotokoll vermerkt.
+- Ist sie gebucht oder versendet, gilt der gespeicherte Betrag unverändert (GoBD) – auch bei alten Schlussrechnungen ohne Positionen. Anzeige, Offene Posten und Beleg zeigen dann denselben Betrag, selbst wenn später eine andere Rechnung storniert wird.
+- Wird eine Abschlagsrechnung storniert, werden zugehörige, nicht stornierte **gebuchte** Schlussrechnungen am selben Vorgänger **automatisch mitstorniert**. Ein Schlussrechnungs-Entwurf bleibt stehen; sein Betrag wird bei jeder Anzeige ohne den stornierten Abschlag abgeleitet. Deshalb zeigt das Projekt nach dem Stornieren einen Hinweis: „mitstorniert“ (Info) bzw. „Entwurf prüfen“ (Warnung).
 
 Auf Rechnungen kann ein **Abrechnungsstand** (Auftragssumme, bereits gestellte Rechnungen, offener Rest, wahlweise mit Fortschrittsbalken) gedruckt werden.
 
