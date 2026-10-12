@@ -8,6 +8,7 @@ import java.time.LocalDate;
 
 /**
  * DTO zum Erstellen eines neuen Ausgangs-Geschäftsdokuments.
+ * Bewusst ohne Ersteller: Der kommt aus der Anmeldung (GoBD-Audit).
  */
 @Data
 public class AusgangsGeschaeftsDokumentErstellenDto {
@@ -25,9 +26,6 @@ public class AusgangsGeschaeftsDokumentErstellenDto {
     private Long anfrageId;
     private Long kundeId;
     private Long vorgaengerId;
-
-    // Ersteller
-    private Long erstelltVonId;
 
     // Rechnungsadresse-Override (nur für dieses Dokument, ändert nicht Kundenstamm)
     private String rechnungsadresseOverride;
