@@ -1377,14 +1377,15 @@ public class DateiSpeicherService {
     @Transactional
     public void loescheDatei(Long dokumentID) {
         ProjektDokument dokument = this.dokumentRepository.findById(dokumentID)
-                .orElseThrow(() -> new RuntimeException("Projektdokument konnte nicht gefunden werden!"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Dieses Dokument gibt es nicht mehr. Vielleicht wurde es inzwischen gelöscht."));
         Long projektId = dokument.getProjekt() != null ? dokument.getProjekt().getId() : null;
         try {
             Path dateipfad = this.dokumentenSpeicherplatz.resolve(dokument.getGespeicherterDateiname());
             Files.deleteIfExists(dateipfad);
         } catch (IOException e) {
-            throw new RuntimeException("Fehler beim löschen der phyisischen Datei: " + dokument.getOriginalDateiname(),
-                    e);
+            // Nur die ID nennen: Originaldateinamen enthalten oft Kunden- oder Personennamen (DSGVO, Log).
+            throw new IllegalStateException("Datei zu Projektdokument " + dokumentID + " konnte nicht gelöscht werden.", e);
         }
         this.dokumentRepository.delete(dokument);
         if (projektId != null) {

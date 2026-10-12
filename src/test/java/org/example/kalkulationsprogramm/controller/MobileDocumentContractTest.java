@@ -162,7 +162,11 @@ class MobileDocumentContractTest {
         var note = new ProjektNotiz(); note.setId(5L); note.setProjekt(parent); note.setMitarbeiter(employee(7L)); note.setMobileSichtbar(true);
         when(projectNotes.findById(5L)).thenReturn(Optional.of(note));
         when(employees.findById(7L)).thenReturn(Optional.of(employee(7L)));
-        assertThat(projects.deleteProjektNotiz(2L, 5L, auth()).getStatusCode().value()).isEqualTo(404);
+        // 404 kommt als ResponseStatusException und wird im RestExceptionHandler zur Antwort.
+        var fehler = org.junit.jupiter.api.Assertions.assertThrows(
+            org.springframework.web.server.ResponseStatusException.class,
+            () -> projects.deleteProjektNotiz(2L, 5L, auth()));
+        assertThat(fehler.getStatusCode().value()).isEqualTo(404);
         verify(projectNotes, never()).delete(any());
     }
     @Test void projektNotizenAufDemHandyNurMobilFreigegebeneUndNurEigeneBearbeitbar() {

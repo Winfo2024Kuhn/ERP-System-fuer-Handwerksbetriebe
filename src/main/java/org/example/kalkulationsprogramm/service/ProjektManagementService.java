@@ -60,11 +60,13 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -76,6 +78,8 @@ public class
 
 ProjektManagementService {
     private static final String PROJEKT_KUNDE_PFLICHT_MESSAGE = "Für Projekte muss ein Kunde ausgewählt werden.";
+    public static final String PROJEKT_NICHT_GEFUNDEN =
+            "Dieses Projekt gibt es nicht mehr. Vielleicht wurde es inzwischen gelöscht.";
     private final ProjektRepository projektRepository;
     private final AnfrageNotizRepository anfrageNotizRepository;
     private final ProjektNotizRepository projektNotizRepository;
@@ -520,8 +524,7 @@ ProjektManagementService {
      */
     @Transactional
     public ProjektResponseDto setzeAbgeschlossen(Long id, boolean abgeschlossen) {
-        Projekt projekt = projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(id);
         projekt.setAbgeschlossen(abgeschlossen);
         projekt.setAbgeschlossenManuell(true);
         return projektMapper.toProjektResponseDto(projektRepository.save(projekt));
@@ -531,8 +534,7 @@ ProjektManagementService {
     public ProjektResponseDto aktualisiereProjekt(Long id, ProjektErstellenDto dto, String strasse, String plz,
             String ort, MultipartFile bild, Mitarbeiter uploadedBy)
             throws FalscheAuftragsnummerException {
-        Projekt projekt = projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(id);
 
         ensureProjektHatZugewiesenenKunden(dto, projekt);
         projekt.setStrasse(strasse);
@@ -758,8 +760,7 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto aktualisiereMaterialkosten(Long projektId, List<MaterialkostenErfassenDto> materialDtos) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
 
         // Dekrementiere Bestellungen für entfernte Materialkosten (oder alle, da wir
         // gleich clearen)
@@ -806,8 +807,7 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto fuegeArtikelMaterialkosten(Long projektId, List<ArtikelMengeDto> artikelAuswahl) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         if (artikelAuswahl != null) {
             for (ArtikelMengeDto auswahl : artikelAuswahl) {
                 Artikel artikel = artikelRepository.findById(auswahl.getArtikelId())
@@ -980,8 +980,7 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto entferneArtikelMaterialkosten(Long projektId, Long artikelInProjektId) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
 
         ArtikelInProjekt artikelInProjekt = artikelInProjektRepository.findById(artikelInProjektId)
                 .orElseThrow(() -> new RuntimeException("Artikel im Projekt konnte nicht gefunden werden."));
@@ -998,8 +997,7 @@ ProjektManagementService {
     @Transactional
     public ProjektResponseDto aktualisiereArtikelInProjekt(Long projektId, Long artikelInProjektId,
             org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektUpdateDto dto) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
 
         ArtikelInProjekt artikelInProjekt = artikelInProjektRepository.findById(artikelInProjektId)
                 .orElseThrow(() -> new RuntimeException("Artikel im Projekt konnte nicht gefunden werden."));
@@ -1047,8 +1045,7 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto entferneMaterialkosten(Long projektId, Long materialId) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         projekt.getMaterialkosten().removeIf(mk -> mk.getId().equals(materialId));
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
@@ -1057,8 +1054,7 @@ ProjektManagementService {
     @Transactional
     public ProjektResponseDto fuegeProduktkategorienHinzu(Long projektId,
             List<ProjektProduktkategorieErfassenDto> kategorienDtos) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         if (kategorienDtos != null) {
             for (ProjektProduktkategorieErfassenDto dto : kategorienDtos) {
                 Produktkategorie pk = produktkategorieRepository.findById(dto.getProduktkategorieID())
@@ -1086,8 +1082,7 @@ ProjektManagementService {
     @Transactional
     public ProjektResponseDto aktualisiereProjektProduktkategorie(Long projektId, Long ppkId,
             ProjektProduktkategorieErfassenDto dto) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         ProjektProduktkategorie ppk = projekt.getProjektProduktkategorien().stream()
                 .filter(k -> k.getId().equals(ppkId))
                 .findFirst()
@@ -1116,15 +1111,15 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto loescheProjektProduktkategorie(Long projektId, Long ppkId) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         if (ZeitbuchungRepository.existsByProjektProduktkategorieId(ppkId)) {
-            throw new IllegalStateException(
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Die Produktkategorie kann nicht gelöscht werden, da bereits Zeitbuchungen dafür existieren.");
         }
         boolean removed = projekt.getProjektProduktkategorien().removeIf(ppk -> ppk.getId().equals(ppkId));
         if (!removed) {
-            throw new RuntimeException("Produktkategorie im Projekt nicht gefunden.");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Diese Produktkategorie gehört nicht mehr zum Projekt. Bitte die Seite neu laden.");
         }
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
@@ -1144,8 +1139,7 @@ ProjektManagementService {
 
     @Transactional
     public void loescheProjekt(Long projektID) {
-        Projekt projekt = this.projektRepository.findById(projektID)
-                .orElseThrow(() -> new RuntimeException("Das Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektID);
         for (var dokument : new ArrayList<>(projekt.getProjektDokument())) {
             dateiSpeicherService.loescheDatei(dokument.getId());
         }
@@ -1263,20 +1257,22 @@ ProjektManagementService {
         // Beim Öffnen eines Projekts: Preis on-the-fly aus Dokumenten berechnen
         ausgangsGeschaeftsDokumentService.aktualisiereProjektPreisAusDokumenten(id);
 
-        Projekt projekt = this.projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden!"));
+        Projekt projekt = findeProjektEntity(id);
         return mappeMitKilogramm(projekt);
     }
 
+    /**
+     * Lädt ein Projekt oder antwortet mit 404 und verständlicher Meldung – über den
+     * RestExceptionHandler, damit die Controller keinen Sammel-Catch brauchen.
+     */
     public Projekt findeProjektEntity(Long id) {
         return this.projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden!"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, PROJEKT_NICHT_GEFUNDEN));
     }
 
     @Transactional
     public ProjektResponseDto updateProjektKurzbeschreibung(Long projektId, String kurzbeschreibung) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         projekt.setKurzbeschreibung(kurzbeschreibung);
         Projekt saved = projektRepository.save(projekt);
         return mappeMitKilogramm(saved);
