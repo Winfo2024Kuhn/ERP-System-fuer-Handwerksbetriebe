@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -34,42 +35,75 @@ public class BestellungService {
         return dtos;
     }
 
+    /**
+     * Hakt eine Bestellung ab oder nimmt das zurueck.
+     *
+     * <p>{@code preisProStueck} wechselt dabei seine Bedeutung (siehe
+     * {@link org.example.kalkulationsprogramm.mapper.ProjektMapper}): Beim
+     * Abhaken wird die Summe eingefroren, beim Zuruecknehmen wieder auf den
+     * Preis je Einheit zurueckgerechnet - sonst multipliziert die Anzeige die
+     * eingefrorene Summe ein zweites Mal mit der Menge. Lagerware traegt immer
+     * den Preis je Einheit und wird nicht umgerechnet.
+     */
     @Transactional
     public void setBestellt(Long id, boolean bestellt) {
         ArtikelInProjekt aip = artikelInProjektRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Artikel nicht gefunden"));
+        if (aip.isBestellt() == bestellt) {
+            // Doppelklick oder zweiter Tab: nichts umzuschalten, und der Preis
+            // darf nicht ein zweites Mal umgerechnet werden.
+            return;
+        }
         aip.setBestellt(bestellt);
         aip.setBestelltAm(bestellt ? LocalDate.now() : null);
-        if (bestellt && aip.getLieferantenArtikelPreis() != null) {
-            BigDecimal preis = aip.getLieferantenArtikelPreis().getPreis();
-            if (preis != null) {
-                if (aip.getArtikel() != null && aip.getArtikel().getVerrechnungseinheit() != null) {
-                    Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
-                    switch (ve) {
-                        case KILOGRAMM -> {
-                            if (aip.getKilogramm() != null) {
-                                preis = preis.multiply(aip.getKilogramm());
-                            }
-                        }
-                        case LAUFENDE_METER, QUADRATMETER -> {
-                            if (aip.getMeter() != null) {
-                                preis = preis.multiply(aip.getMeter());
-                            }
-                        }
-                        case STUECK -> {
-                            if (aip.getStueckzahl() != null) {
-                                preis = preis.multiply(BigDecimal.valueOf(aip.getStueckzahl()));
-                            }
-                        }
-                    }
-                }
-                aip.setPreisProStueck(preis);
+        if (!aip.isAusLager()) {
+            if (bestellt) {
+                friereGesamtpreisEin(aip);
             } else {
-                aip.setPreisProStueck(null);
+                rechneAufEinzelpreisZurueck(aip);
             }
-            aip.setLieferantenArtikelPreis(null);
         }
         artikelInProjektRepository.save(aip);
+    }
+
+    private void friereGesamtpreisEin(ArtikelInProjekt aip) {
+        // Wie im ProjektMapper: Der haengende Preisstand hat Vorrang, sonst
+        // gilt der festgehaltene Preis je Einheit.
+        BigDecimal jeEinheit = aip.getLieferantenArtikelPreis() != null
+                && aip.getLieferantenArtikelPreis().getPreis() != null
+                ? aip.getLieferantenArtikelPreis().getPreis()
+                : aip.getPreisProStueck();
+        aip.setPreisProStueck(jeEinheit != null ? jeEinheit.multiply(mengeFuerPreis(aip)) : null);
+        aip.setLieferantenArtikelPreis(null);
+    }
+
+    private void rechneAufEinzelpreisZurueck(ArtikelInProjekt aip) {
+        BigDecimal summe = aip.getPreisProStueck();
+        BigDecimal menge = mengeFuerPreis(aip);
+        // Bei Menge 0 ist die Summe 0 - daraus laesst sich kein Einzelpreis
+        // zurueckgewinnen, 0 x 0 bleibt aber richtig.
+        if (summe == null || menge.signum() == 0) {
+            return;
+        }
+        aip.setPreisProStueck(summe.divide(menge, 4, RoundingMode.HALF_UP));
+    }
+
+    /**
+     * Die Menge, mit der der Preis je Einheit zur Summe wird. Fehlt die
+     * Verrechnungseinheit oder die passende Menge, wurde schon immer nicht
+     * multipliziert - daher 1.
+     */
+    private BigDecimal mengeFuerPreis(ArtikelInProjekt aip) {
+        if (aip.getArtikel() == null || aip.getArtikel().getVerrechnungseinheit() == null) {
+            return BigDecimal.ONE;
+        }
+        Verrechnungseinheit ve = aip.getArtikel().getVerrechnungseinheit();
+        BigDecimal menge = switch (ve) {
+            case KILOGRAMM -> aip.getKilogramm();
+            case LAUFENDE_METER, QUADRATMETER -> aip.getMeter();
+            case STUECK -> aip.getStueckzahl() != null ? BigDecimal.valueOf(aip.getStueckzahl()) : null;
+        };
+        return menge != null ? menge : BigDecimal.ONE;
     }
 
     private BestellungResponseDto toDto(ArtikelInProjekt aip) {
