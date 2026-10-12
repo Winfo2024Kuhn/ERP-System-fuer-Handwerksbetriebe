@@ -9,6 +9,7 @@
  * DSGVO: ausschliesslich Dummy-Daten.
  */
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BestellungEmailModal } from './BestellungEditor';
 import { ToastProvider } from '../components/ui/toast';
@@ -56,5 +57,80 @@ describe('BestellungEmailModal Nachrichtentext', () => {
         expect(editor.querySelector('.email-signature')).not.toBeNull();
         expect(editor.querySelector('script')).toBeNull();
         expect(editor.querySelector('[onerror]')).toBeNull();
+    });
+});
+
+describe('BestellungEmailModal KI-Formulierung', () => {
+    const oeffneDialog = () => render(
+        <ToastProvider><ConfirmProvider>
+            <BestellungEmailModal isOpen onClose={vi.fn()} lieferantId={1}
+                lieferantName="Mustermann Stahlhandel" onSuccess={vi.fn()} />
+        </ConfirmProvider></ToastProvider>,
+    );
+
+    it('schickt den eigenen Text an die KI und ersetzt ihn, die Signatur bleibt', async () => {
+        const fetchMock = vi.mocked(fetch);
+        fetchMock.mockImplementation(((url: string) => {
+            if (url === '/api/email/beautify') return antwort({ body: 'Guten Tag,\n\nwir bitten um ein Angebot bis Freitag.' });
+            if (url.startsWith('/api/email/signatures/default')) return antwort({ html: '<p>Max Mustermann</p>' });
+            return antwort([]);
+        }) as unknown as typeof fetch);
+        oeffneDialog();
+        await screen.findByText('Max Mustermann');
+
+        await userEvent.click(screen.getByRole('button', { name: /KI Formulierung/ }));
+
+        const editor = (await screen.findByText(/bis Freitag/)).closest('[contenteditable]')!;
+        expect(Array.from(editor.querySelectorAll(':scope > p'), p => p.textContent))
+            .toEqual(['Guten Tag,', 'wir bitten um ein Angebot bis Freitag.']);
+        expect(editor).not.toHaveTextContent('bitte erstellen Sie uns ein Angebot');
+        expect(editor.querySelector('.email-signature')).toHaveTextContent('Max Mustermann');
+
+        const anfrage = fetchMock.mock.calls.find(([url]) => url === '/api/email/beautify')!;
+        expect(JSON.parse(String((anfrage[1] as RequestInit).body))).toEqual({
+            body: 'Sehr geehrte Damen und Herren,\n\nbitte erstellen Sie uns ein Angebot für die angehängten Positionen.',
+            context: 'Preisanfrage an den Lieferanten Mustermann Stahlhandel',
+        });
+    });
+
+    it('meldet einen Fehler der KI und laesst den Text stehen', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.mocked(fetch).mockImplementation(((url: string) => {
+            if (url === '/api/email/beautify') return Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({}) });
+            return antwort([]);
+        }) as unknown as typeof fetch);
+        oeffneDialog();
+        await screen.findByText(/bitte erstellen Sie uns ein Angebot/);
+
+        await userEvent.click(screen.getByRole('button', { name: /KI Formulierung/ }));
+
+        expect(await screen.findByText('Formulierung fehlgeschlagen. Bitte erneut versuchen.')).toBeInTheDocument();
+        expect(screen.getByText(/bitte erstellen Sie uns ein Angebot/)).toBeInTheDocument();
+    });
+
+    it('bittet um Text, wenn ausser der Signatur nichts im Editor steht', async () => {
+        oeffneDialog();
+        const name = await screen.findByText('Max Mustermann', { selector: 'strong' });
+        const editor = name.closest('[contenteditable]')!;
+        editor.innerHTML = editor.querySelector('.email-signature')!.outerHTML;
+
+        await userEvent.click(screen.getByRole('button', { name: /KI Formulierung/ }));
+
+        expect(await screen.findByText('Bitte zuerst eine Nachricht schreiben.')).toBeInTheDocument();
+        expect(vi.mocked(fetch).mock.calls.some(([url]) => url === '/api/email/beautify')).toBe(false);
+    });
+
+    it('meldet, wenn die KI keine andere Formulierung liefert', async () => {
+        vi.mocked(fetch).mockImplementation(((url: string) => {
+            if (url === '/api/email/beautify') return antwort({ body: '  ' });
+            return antwort([]);
+        }) as unknown as typeof fetch);
+        oeffneDialog();
+        await screen.findByText(/bitte erstellen Sie uns ein Angebot/);
+
+        await userEvent.click(screen.getByRole('button', { name: /KI Formulierung/ }));
+
+        expect(await screen.findByText('Die KI hat keine andere Formulierung geliefert.')).toBeInTheDocument();
+        expect(screen.getByText(/bitte erstellen Sie uns ein Angebot/)).toBeInTheDocument();
     });
 });

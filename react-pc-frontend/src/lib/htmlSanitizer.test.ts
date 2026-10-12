@@ -21,6 +21,11 @@ describe('htmlSanitizer', () => {
             expect(sauber).toContain('Klick');
         });
 
+        it('entfernt style-Bloecke, behaelt aber Inline-Stile', () => {
+            expect(sanitizeHtml('<p>a</p><style>body{display:none}</style><p style="color: red;">b</p>'))
+                .toBe('<p>a</p><p style="color: red;">b</p>');
+        });
+
         it('entfernt iframes und Formulare', () => {
             const sauber = sanitizeHtml('<iframe src="https://example.com"></iframe><form action="/x"><input></form>Text');
             expect(sauber).not.toMatch(/<iframe|<form/);

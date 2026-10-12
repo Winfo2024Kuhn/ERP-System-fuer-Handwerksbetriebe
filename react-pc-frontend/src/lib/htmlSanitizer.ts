@@ -21,13 +21,16 @@ import DOMPurify from 'dompurify';
  * `class`, `style` und `data-*` bleiben erhalten. Die Darstellung von Richtext
  * aus Tiptap, Textbausteinen und Signaturen ändert sich dadurch praktisch
  * nicht; entfernt werden u. a. auch `target`, `contenteditable`, `<meta>`,
- * `<link>`, `blob:`-Bilder und ein `<style>` ganz am Anfang.
- * Zusätzlich fällt `<form>` weg (Inhalt bleibt): ein eingeschleustes Formular
- * könnte sonst Eingaben an eine fremde Adresse schicken.
+ * `<link>` und `blob:`-Bilder.
+ * Zusätzlich fallen weg:
+ * - `<form>` (Inhalt bleibt): ein eingeschleustes Formular könnte sonst
+ *   Eingaben an eine fremde Adresse schicken.
+ * - `<style>`-Blöcke: sie gelten für die ganze ERP-Seite, könnten Knöpfe
+ *   verdecken oder über `url()` Daten nach außen laden. Inline-`style` bleibt.
  */
 export function sanitizeHtml(html?: string | null): string {
     if (!html) return '';
-    return DOMPurify.sanitize(html, { FORBID_TAGS: ['form'] });
+    return DOMPurify.sanitize(html, { FORBID_TAGS: ['form', 'style'] });
 }
 
 /**

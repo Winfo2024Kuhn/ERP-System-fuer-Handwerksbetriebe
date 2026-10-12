@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Mail, Search, Paperclip, Plus, Reply, MessagesSquare, X, ArrowLeft } from 'lucide-react';
 import { klartextGrund } from '../lib/zustellGrund';
-import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
+import { escapeHtml, extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { buildReplyAddressing } from '../features/email/emailCenterModel';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -360,7 +360,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
             cleanBody = doc.body.innerHTML;
         } catch { /* ignore */ }
         return `<div class="email-quote" style="border-left:3px solid #e2e8f0;padding-left:1rem;color:#64748b;margin-top:0.5rem">
-            <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">Am ${date} schrieb ${senderName}:</p>
+            <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">Am ${escapeHtml(date)} schrieb ${escapeHtml(senderName)}:</p>
             ${cleanBody}
         </div>`;
     }, [replyToEmail]);

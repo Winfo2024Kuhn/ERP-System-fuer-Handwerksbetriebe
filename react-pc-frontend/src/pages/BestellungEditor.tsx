@@ -23,7 +23,8 @@ import { Card } from "../components/ui/card";
 import { PageLayout } from '../components/layout/PageLayout';
 import { Select } from '../components/ui/select-custom';
 import { cn } from "../lib/utils";
-import { parseHtmlInert, sanitizeHtml } from "../lib/htmlSanitizer";
+import { sanitizeHtml } from "../lib/htmlSanitizer";
+import { formuliereMitKi, htmlFuerVersand, ladeStandardSignatur } from "../features/email/mailEditorHtml";
 import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
@@ -84,24 +85,6 @@ const getCurrentFrontendUser = (): FrontendUserSelection | null => {
         console.warn('Frontend-Profil konnte nicht gelesen werden:', err);
     }
     return null;
-};
-
-// Signatur-Wrapper
-const wrapSignatureHtml = (rawHtml: string): string => {
-    const trimmed = (rawHtml || '').trim();
-    if (!trimmed) return '';
-    if (/email-signature/i.test(trimmed)) {
-        return trimmed;
-    }
-    return `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${trimmed}</div>`;
-};
-
-// HTML für E-Mail-Versand vorbereiten
-const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = parseHtmlInert(rawHtml || '');
-    wrapper.querySelectorAll('script, style').forEach(n => n.remove());
-    wrapper.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
-    return wrapper.innerHTML.trim();
 };
 
 // ==================== TYPES ====================
@@ -228,19 +211,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     const pdfPreviewUrl = `/api/bestellungen/lieferant/${lieferantId}/pdf`;
 
     // Signatur laden
-    const loadSignature = useCallback(async () => {
-        const user = getCurrentFrontendUser();
-        if (!user) return '';
-        try {
-            const res = await fetch(`/api/email/signatures/default?frontendUserId=${user.id}`);
-            if (!res.ok) return '';
-            const data = await res.json();
-            const rawHtml = data?.html || '';
-            return wrapSignatureHtml(rawHtml);
-        } catch {
-            return '';
-        }
-    }, []);
+    const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
 
     // Modal initialisieren
     useEffect(() => {
@@ -307,33 +278,25 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
         });
     }, [isOpen, lieferantId, lieferantName, loadSignature]);
 
-    // AI Verschönerung
+    // KI-Formulierung: gleicher Ablauf wie im E-Mail-Formular, Signatur bleibt stehen
     const handleBeautify = async () => {
-        if (!editorRef.current) return;
-        const currentContent = editorRef.current.innerHTML;
-
-        // Extrahiere nur den Text vor der Signatur
-        const sigIndex = currentContent.indexOf('email-signature');
-        const textToBeautify = sigIndex > -1
-            ? currentContent.substring(0, currentContent.lastIndexOf('<div', sigIndex))
-            : currentContent;
-
         setBeautifying(true);
         try {
-            const res = await fetch('/api/email/beautify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: textToBeautify }),
+            const ergebnis = await formuliereMitKi(editorRef.current?.innerHTML || body, {
+                kontext: `Preisanfrage an den Lieferanten ${lieferantName}`,
+                ersatzSignaturHtml: signature,
             });
-            if (!res.ok) throw new Error('Beautify failed');
-            const data = await res.json();
-            const beautified = data.suggestion || data.beautifiedText || '';
-            if (beautified) {
-                const newBody = `${beautified}${signature}`;
-                setBody(newBody);
+            if (ergebnis.status === 'kein-text') {
+                toast.warning('Bitte zuerst eine Nachricht schreiben.');
+                return;
             }
+            if (ergebnis.status === 'kein-vorschlag') {
+                toast.warning('Die KI hat keine andere Formulierung geliefert.');
+                return;
+            }
+            setBody(ergebnis.html);
         } catch (err) {
-            console.error('Beautify error:', err);
+            console.error('KI-Formulierung fehlgeschlagen:', err);
             toast.error('Formulierung fehlgeschlagen. Bitte erneut versuchen.');
         } finally {
             setBeautifying(false);
@@ -396,7 +359,7 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                     .map(value => value.trim())
                     .filter(Boolean),
                 subject: subject.trim(),
-                body: prepareHtmlForSending(editorRef.current?.innerHTML || body),
+                body: htmlFuerVersand(editorRef.current?.innerHTML || body),
                 direction: 'OUT',
                 benutzer: user?.displayName || '',
                 frontendUserId: user?.id || null,

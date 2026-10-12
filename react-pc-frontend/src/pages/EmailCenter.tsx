@@ -1469,7 +1469,7 @@ export default function EmailCenter() {
 
                 // replyQuote verwenden (nicht initialBody), damit EmailComposeForm
                 // die korrekte Reihenfolge: [leer] → [Signatur] → [Zitat] erzeugt
-                replyQuote = `<div style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:1rem;color:#64748b">
+                replyQuote = `<div class="email-quote" style="border-top:1px solid #e2e8f0;padding-top:1rem;margin-top:1rem;color:#64748b">
                     <p style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.5rem">---------- Weitergeleitete Nachricht ----------<br/>
                     Von: ${escapeHtml(senderName)} &lt;${escapeHtml(forwardEmail.fromAddress || '')}&gt;<br/>
                     Datum: ${escapeHtml(date)}<br/>
