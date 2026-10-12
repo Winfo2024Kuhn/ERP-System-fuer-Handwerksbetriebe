@@ -9,6 +9,7 @@ import { anrufbeantworterName, tagAnzeige, tagAusAdresse } from './format';
 import { SprachnachrichtEintrag } from './SprachnachrichtEintrag';
 import type { Anrufbeantworter, Sprachnachricht, ZuordnenZiel } from './types';
 import { useZuordnen } from './useZuordnen';
+import { scrolleMittigInDenBlick } from '../../lib/scrollInDenBlick';
 
 /**
  * Reiter „Anrufbeantworter": alle Nachrichten, neueste zuerst.
@@ -65,7 +66,7 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
         const eintrag = eintraegeRef.current.get(hervorgehobenId);
         if (!eintrag) return;
         gescrollt.current = hervorgehobenId;
-        eintrag.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+        scrolleMittigInDenBlick(eintrag);
     }, [nachrichten, hervorgehobenId]);
 
     const wechsleAb = (wert: string) => {
