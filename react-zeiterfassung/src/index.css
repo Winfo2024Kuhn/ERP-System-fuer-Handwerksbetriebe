@@ -7,13 +7,8 @@
   }
 }
 
-/* Mobile Zeiterfassung App - Corporate Identity */
+/* Safe area variables - fallback to 0 */
 :root {
-  --rose-primary: #dc2626;
-  --rose-light: #fef2f2;
-  --slate-dark: #0f172a;
-  
-  /* Safe area variables - fallback to 0 */
   --sat: env(safe-area-inset-top, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
