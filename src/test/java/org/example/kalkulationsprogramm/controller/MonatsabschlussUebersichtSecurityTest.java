@@ -13,6 +13,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import jakarta.persistence.EntityManager;
 import java.util.*;
+import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
+import org.junit.jupiter.api.BeforeEach;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -36,6 +38,11 @@ class MonatsabschlussUebersichtSecurityTest {
     FrontendUserPrincipal principal() {
         var m=new Mitarbeiter();m.setId(1L);var a=new Abteilung();a.setDarfMonatAbschliessen(true);m.setAbteilungen(Set.of(a));var p=new FrontendUserProfile();p.setMitarbeiter(m);when(profiles.findById(70L)).thenReturn(Optional.of(p));return new FrontendUserPrincipal(70L,"test@example.com","Max Mustermann","",true,Set.of());
     }
+    @BeforeEach
+    void sitzungsRechteUnveraendert() {
+        SitzungsRechteImTest.rechteUnveraendert(details);
+    }
+
     @Test void anonym401() throws Exception { for(String path:List.of("/uebersicht","/vergleich","/jahresvergleich")) mvc.perform(get(B+path).param("jahr","2025").param("monat","1").header("X-Mitarbeiter-Id","1")).andExpect(status().isUnauthorized());mvc.perform(post(B+"/sammelabschluss").with(csrf()).contentType("application/json").content("{\"auswahl\":[]}")).andExpect(status().isUnauthorized()); }
     @Test @WithMockUser void alleEndpunkteVerlangenRecht() throws Exception { for(String path:List.of("/uebersicht","/vergleich","/jahresvergleich"))mvc.perform(get(B+path).param("jahr","2025").param("monat","1")).andExpect(status().isForbidden());mvc.perform(post(B+"/sammelabschluss").with(csrf()).contentType("application/json").content("{\"auswahl\":[]}")).andExpect(status().isForbidden());verifyNoInteractions(repo,saldo,tm); }
     @Test void berechtigterZugriffUndUngueltigeFilter() throws Exception {

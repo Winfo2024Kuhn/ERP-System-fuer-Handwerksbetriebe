@@ -1,8 +1,12 @@
 package org.example.kalkulationsprogramm.domain;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -98,6 +102,17 @@ public class LieferantDokumentPosition {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "kostenstelle_id")
     private Kostenstelle kostenstelle;
+
+    /**
+     * Nur bei Nebenkosten und Rabatten: die Warenpositionen desselben Belegs, zu denen
+     * die Zeile gehört (z. B. „Legierungszuschlag zu Pos. 3“). Leer = gilt für alle
+     * Positionen und wird anteilig verteilt (siehe {@code PositionsAufteilung}).
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "lieferant_dokument_position_bezug",
+            joinColumns = @JoinColumn(name = "position_id"))
+    @Column(name = "bezug_position_id", nullable = false)
+    private Set<Long> bezugPositionIds = new LinkedHashSet<>();
 
     @PrePersist
     @PreUpdate

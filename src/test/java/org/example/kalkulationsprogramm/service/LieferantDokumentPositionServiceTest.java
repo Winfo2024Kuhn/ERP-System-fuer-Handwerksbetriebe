@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -221,6 +222,106 @@ class LieferantDokumentPositionServiceTest {
             String zurueck = LieferantDokumentPositionService.mitPositionen("{}", positionen, mapper);
             assertThat(LieferantDokumentPositionService.ausKiAntwort(mapper.readTree(zurueck)))
                     .isEqualTo(positionen);
+        }
+    }
+
+    @Nested
+    class NebenkostenBezug {
+
+        /** Wie die Datenbank: saveAll vergibt IDs ab 100 an dieselben Objekte. */
+        private List<LieferantDokumentPosition> speichereMitIds(String kiJson) throws Exception {
+            when(repository.saveAll(anyList())).thenAnswer(aufruf -> {
+                List<LieferantDokumentPosition> liste = aufruf.getArgument(0);
+                long id = 100;
+                for (LieferantDokumentPosition p : liste) {
+                    p.setId(id++);
+                }
+                return liste;
+            });
+            service.ersetzePositionen(gd(), LieferantDokumentTyp.RECHNUNG,
+                    LieferantDokumentPositionService.ausKiAntwort(mapper.readTree(kiJson)));
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<LieferantDokumentPosition>> captor = ArgumentCaptor.forClass(List.class);
+            verify(repository).saveAll(captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        void kiBezugWirdUeberDieGedrucktePositionsnummerAufgeloest() throws Exception {
+            var positionen = speichereMitIds("""
+                    {"artikelPositionen": [
+                      {"positionsArt": "WARE", "bezeichnung": "Flachstahl 50x5", "gesamtpreisNetto": 700, "belegPositionNr": "10"},
+                      {"positionsArt": "WARE", "bezeichnung": "Rundrohr 60,3x2,9", "gesamtpreisNetto": 300, "belegPositionNr": "20"},
+                      {"positionsArt": "NEBENKOSTEN", "bezeichnung": "Legierungszuschlag", "gesamtpreisNetto": 40, "gehoertZuPositionen": ["Pos. 020"]},
+                      {"positionsArt": "RABATT", "bezeichnung": "Rabatt", "gesamtpreisNetto": -5, "gehoertZuPositionen": [10, "20"]},
+                      {"positionsArt": "NEBENKOSTEN", "bezeichnung": "Fracht", "gesamtpreisNetto": 50, "gehoertZuPositionen": []},
+                      {"positionsArt": "WARE", "bezeichnung": "Schrauben", "gesamtpreisNetto": 5, "gehoertZuPositionen": ["10"]}
+                    ]}
+                    """);
+
+            assertThat(positionen.get(2).getBezugPositionIds()).containsExactly(101L);
+            assertThat(positionen.get(3).getBezugPositionIds()).containsExactlyInAnyOrder(100L, 101L);
+            assertThat(positionen.get(4).getBezugPositionIds()).isEmpty();
+            // Ware gehört nie zu anderer Ware.
+            assertThat(positionen.get(5).getBezugPositionIds()).isEmpty();
+        }
+
+        @Test
+        void unklareNummernLassenDenZuschlagOhneBezug() throws Exception {
+            var positionen = speichereMitIds("""
+                    {"artikelPositionen": [
+                      {"positionsArt": "WARE", "bezeichnung": "Flachstahl", "gesamtpreisNetto": 10, "belegPositionNr": "1"},
+                      {"positionsArt": "WARE", "bezeichnung": "Flachstahl Rest", "gesamtpreisNetto": 10, "belegPositionNr": "1"},
+                      {"positionsArt": "WARE", "bezeichnung": "Rohr", "gesamtpreisNetto": 10, "belegPositionNr": "2"},
+                      {"positionsArt": "NEBENKOSTEN", "bezeichnung": "Zuschlag doppelt", "gesamtpreisNetto": 1, "gehoertZuPositionen": ["1"]},
+                      {"positionsArt": "NEBENKOSTEN", "bezeichnung": "Zuschlag teils unbekannt", "gesamtpreisNetto": 1, "gehoertZuPositionen": ["2", "9"]},
+                      {"positionsArt": "NEBENKOSTEN", "bezeichnung": "Zuschlag auf Zuschlag", "gesamtpreisNetto": 1, "belegPositionNr": "5", "gehoertZuPositionen": ["5"]}
+                    ]}
+                    """);
+
+            assertThat(positionen.subList(3, 6)).allSatisfy(p -> assertThat(p.getBezugPositionIds()).isEmpty());
+        }
+
+        @Test
+        void gedrucktePositionsnummerVereinheitlicht() {
+            assertThat(LieferantDokumentPositionService.belegNr("Pos. 010")).isEqualTo("10");
+            assertThat(LieferantDokumentPositionService.belegNr("pos10")).isEqualTo("10");
+            assertThat(LieferantDokumentPositionService.belegNr(" 3.1 ")).isEqualTo("3.1");
+            assertThat(LieferantDokumentPositionService.belegNr("A12")).isEqualTo("a12");
+            assertThat(LieferantDokumentPositionService.belegNr("000")).isEqualTo("0");
+            assertThat(LieferantDokumentPositionService.belegNr("Pos.")).isNull();
+            assertThat(LieferantDokumentPositionService.belegNr("  ")).isNull();
+            assertThat(LieferantDokumentPositionService.belegNr(null)).isNull();
+            // Ausreißer der KI werden gekürzt, bevor sie verglichen werden.
+            assertThat(LieferantDokumentPositionService.belegNr("9".repeat(10_000))).hasSize(20);
+        }
+
+        @Test
+        void bezugUeberlebtDasZurueckschreibenInDieKiAntwort() throws Exception {
+            var zuschlag = new AusgelesenePosition(PositionsArt.NEBENKOSTEN, null, "Legierungszuschlag", null, null,
+                    null, null, new BigDecimal("40"), null, null, null, "3", List.of("1", "2"));
+
+            String neu = LieferantDokumentPositionService.mitPositionen("{\"artikelPositionen\":[]}",
+                    List.of(ware("Flachstahl", "10"), zuschlag), mapper);
+            var gelesen = LieferantDokumentPositionService.ausKiAntwort(mapper.readTree(neu));
+
+            assertThat(gelesen.get(0).belegPositionNr()).isNull();
+            assertThat(gelesen.get(0).gehoertZuPositionen()).isEmpty();
+            assertThat(gelesen.get(1).belegPositionNr()).isEqualTo("3");
+            assertThat(gelesen.get(1).gehoertZuPositionen()).containsExactly("1", "2");
+        }
+
+        @Test
+        void unsinnImBezugWirdIgnoriert() throws Exception {
+            var gelesen = LieferantDokumentPositionService.ausKiAntwort(mapper.readTree("""
+                    {"artikelPositionen": [
+                      {"positionsArt": "NEBENKOSTEN", "bezeichnung": "A", "gesamtpreisNetto": 1, "gehoertZuPositionen": "3"},
+                      {"positionsArt": "NEBENKOSTEN", "bezeichnung": "B", "gesamtpreisNetto": 1, "gehoertZuPositionen": [null, " ", "4"]}
+                    ]}
+                    """));
+
+            assertThat(gelesen.get(0).gehoertZuPositionen()).isEmpty();
+            assertThat(gelesen.get(1).gehoertZuPositionen()).containsExactly("4");
         }
     }
 

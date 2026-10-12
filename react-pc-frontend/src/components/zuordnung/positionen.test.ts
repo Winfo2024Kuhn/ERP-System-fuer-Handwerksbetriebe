@@ -3,7 +3,12 @@ import { freierFarbIndex, zielFarbe } from './zielFarben';
 import {
     ablageId,
     baueAufteilung,
+    bezuegeAusPositionen,
     gezogenePositionen,
+    gueltigFuerText,
+    istBetragDa,
+    istZuschlag,
+    nebenkostenAufAlle,
     zielAusAblage,
     formatEuro,
     formatMenge,
@@ -97,13 +102,15 @@ describe('positionen – Zuweisungen', () => {
         expect(offeneWarenpositionen(positionen, { 1: 'p:10' }).map(p => p.id)).toEqual([2, 3, 5]);
     });
 
-    it('baut die Aufteilung nur aus Warenpositionen', () => {
+    it('baut die Aufteilung: Ware mit Ziel, Nebenkosten immer mit ausdrücklichem Bezug und nie mit Ziel', () => {
         expect(baueAufteilung(positionen, { 1: 'p:10', 2: 'k:3' })).toEqual([
             { positionId: 1, projektId: 10 },
             { positionId: 2, kostenstelleId: 3 },
             { positionId: 3 },
+            { positionId: 4, bezugPositionIds: [] },
             { positionId: 5 },
         ]);
+        expect(baueAufteilung(positionen, { 1: 'p:10' }, { 4: [5, 1] })).toContainEqual({ positionId: 4, bezugPositionIds: [5, 1] });
     });
 
     it('liefert jedes Ziel der Positionen genau einmal', () => {
@@ -182,5 +189,55 @@ describe('zielFarben', () => {
         expect(freierFarbIndex([0, 1, 2])).toBe(3);
         expect(freierFarbIndex([1, 2])).toBe(0);
         expect(freierFarbIndex([0, 2, undefined])).toBe(1);
+    });
+});
+
+describe('positionen – Zuschläge, die zu bestimmten Positionen gehören', () => {
+    const positionen = [
+        position(1, 'WARE'),
+        position(3, 'WARE', { positionNr: 3 }),
+        position(5, 'WARE', { positionNr: 5 }),
+        position(7, 'NEBENKOSTEN', { bezugPositionIds: [5, 3] }),
+        position(8, 'RABATT', { bezugPositionIds: [99, 7] }),
+        // ältere Antwort ohne das Feld
+        position(9, 'NEBENKOSTEN'),
+    ];
+
+    it('erkennt Nebenkosten und Rabatte als Zuschlag', () => {
+        expect(istZuschlag(positionen[3])).toBe(true);
+        expect(istZuschlag(positionen[4])).toBe(true);
+        expect(istZuschlag(positionen[0])).toBe(false);
+    });
+
+    it('übernimmt den Bezug nur mit Warenpositionen dieses Belegs, fehlend = alle', () => {
+        expect(bezuegeAusPositionen(positionen)).toEqual({ 7: [5, 3], 8: [], 9: [] });
+        expect(bezuegeAusPositionen([position(1, 'NEBENKOSTEN', { bezugPositionIds: null })])).toEqual({ 1: [] });
+    });
+
+    it('zeigt „Gilt für“ als „alle Positionen“ oder sortierte Positionsnummern', () => {
+        expect(gueltigFuerText([], positionen)).toBe('alle Positionen');
+        expect(gueltigFuerText(undefined, positionen)).toBe('alle Positionen');
+        expect(gueltigFuerText([5, 3], positionen)).toBe('Pos. 3, 5');
+        expect(gueltigFuerText([3], positionen)).toBe('Pos. 3');
+        // unbekannte IDs oder Nebenkosten zählen nicht
+        expect(gueltigFuerText([99, 7], positionen)).toBe('alle Positionen');
+    });
+
+    it('rechnet die anteilig verteilten Nebenkosten aus', () => {
+        expect(nebenkostenAufAlle({ nebenkosten: 75, nebenkostenMitBezug: 45 })).toBe(30);
+        expect(nebenkostenAufAlle({ nebenkosten: 30 })).toBe(30);
+        expect(nebenkostenAufAlle({ nebenkosten: 0.3, nebenkostenMitBezug: 0.1 })).toBe(0.2);
+        expect(nebenkostenAufAlle({ nebenkosten: null, nebenkostenMitBezug: 5 })).toBeNull();
+        expect(nebenkostenAufAlle(null)).toBeNull();
+    });
+
+    it('zählt Beträge ab einem Cent, auch negative Rabatte', () => {
+        expect(istBetragDa(45)).toBe(true);
+        expect(istBetragDa(-5)).toBe(true);
+        expect(istBetragDa(0)).toBe(false);
+        expect(istBetragDa(0.001)).toBe(false);
+        expect(istBetragDa(null)).toBe(false);
+        expect(istBetragDa(undefined)).toBe(false);
+        expect(istBetragDa(Number.NaN)).toBe(false);
     });
 });

@@ -49,10 +49,11 @@ public interface LieferantDokumentPositionRepository extends JpaRepository<Liefe
             @Param("wort4") String wort4, @Param("wort5") String wort5,
             Pageable seite);
 
-    /** Positionen eines Dokuments in Belegreihenfolge, mit Projekt und Kostenstelle. */
+    /** Positionen eines Dokuments in Belegreihenfolge, mit Projekt, Kostenstelle und Bezug der Nebenkosten. */
     @Query("SELECT p FROM LieferantDokumentPosition p "
             + "LEFT JOIN FETCH p.projekt "
             + "LEFT JOIN FETCH p.kostenstelle "
+            + "LEFT JOIN FETCH p.bezugPositionIds "
             + "WHERE p.geschaeftsdokument.id = :geschaeftsdokumentId "
             + "ORDER BY p.positionNr")
     List<LieferantDokumentPosition> findByGeschaeftsdokumentId(

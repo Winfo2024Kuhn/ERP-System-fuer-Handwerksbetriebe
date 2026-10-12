@@ -15,6 +15,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import java.util.*;
+import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
+import org.junit.jupiter.api.BeforeEach;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -40,6 +42,11 @@ class DatevExportSecurityTest {
   var p=new FrontendUserProfile();p.setMitarbeiter(m);p.setActive(true);when(profiles.findById(70L)).thenReturn(Optional.of(p));
   return new FrontendUserPrincipal(70L,"test@example.com","Max Mustermann","",true,Set.of());
  }
+ @BeforeEach
+ void sitzungsRechteUnveraendert() {
+     SitzungsRechteImTest.rechteUnveraendert(users);
+ }
+
  @Test void anonymUndGefaelschteIdentitaetAbgewiesen() throws Exception {
   for(String action:List.of("vorpruefung","export")) mvc.perform(post(BASE+action).with(csrf()).header("X-Mitarbeiter-Id","9").contentType("application/json").content(BODY)).andExpect(status().isUnauthorized());
   verifyNoInteractions(repo);

@@ -228,7 +228,8 @@ public class GeminiDokumentAnalyseService {
               "externeArtikelnummer": "..." oder null, "bezeichnung": "Artikeltext",
               "menge": 12.5, "mengeneinheit": "...", "einzelpreis": 12.34,
               "preiseinheit": "...", "gesamtpreisNetto": 154.25,
-              "werkstoff": "..." oder null, "charge": "..." oder null, "abmessung": "..." oder null}
+              "werkstoff": "..." oder null, "charge": "..." oder null, "abmessung": "..." oder null,
+              "belegPositionNr": "10" oder null, "gehoertZuPositionen": []}
             - werkstoff, charge, abmessung bei JEDEM Dokumenttyp ausfüllen, wenn sie zur Position
               aufgedruckt sind (auch auf Lieferscheinen/Rechnungen), sonst null:
               werkstoff = Werkstoff/Güte ("S235JR+AR", "S355J2+N", "1.4301", "EN AW-6060 T66"),
@@ -242,6 +243,7 @@ public class GeminiDokumentAnalyseService {
               Energie-, Legierungs-, Material-, Mindermengen- oder Kleinmengenzuschlag.
             - positionsArt RABATT: Rabatt-, Abzugs- oder Bonuszeilen; gesamtpreisNetto NEGATIV.
             - Alles andere ist WARE.
+            """ + LieferantDokumentPositionLeser.REGEL_BELEGNUMMER_UND_BEZUG + """
             - bezeichnung: kurzer, vollständiger Artikeltext (z. B. "Flachstahl 50x5 S235JR").
             - gesamtpreisNetto ist die Zeilensumme netto. KEINE Summenzeilen (Zwischensumme,
               Nettobetrag, MwSt, Gesamtbetrag) als Position aufnehmen.
