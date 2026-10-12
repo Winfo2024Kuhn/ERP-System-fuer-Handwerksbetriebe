@@ -131,16 +131,16 @@ export function BezugDialog({ zuschlag, positionen, bezug, onUebernehmen, onAbbr
                             <ul aria-label="Warenpositionen" className={cn('space-y-1 pl-7', !nurBestimmte && 'opacity-60')}>
                                 {waren.map(p => (
                                     <li key={p.id}>
-                                        <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50">
+                                        <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50">
                                             <input
                                                 type="checkbox"
                                                 checked={nurBestimmte && gewaehlt.has(p.id)}
                                                 onChange={e => schalte(p.id, e.target.checked)}
                                                 aria-label={`Pos. ${p.positionNr}: ${p.bezeichnung || 'ohne Bezeichnung'}`}
-                                                className="h-4 w-4 shrink-0 accent-rose-600 focus:ring-2 focus:ring-rose-500"
+                                                className="mt-0.5 h-4 w-4 shrink-0 accent-rose-600 focus:ring-2 focus:ring-rose-500"
                                             />
                                             <span className="w-14 shrink-0 tabular-nums text-slate-500">Pos. {p.positionNr}</span>
-                                            <span className="min-w-0 flex-1 truncate text-slate-800" title={p.bezeichnung ?? undefined}>
+                                            <span className="min-w-0 flex-1 break-words text-slate-800">
                                                 {p.bezeichnung || '–'}
                                             </span>
                                             <span className="shrink-0 tabular-nums text-slate-600">{formatEuro(p.gesamtpreisNetto)} €</span>
