@@ -478,6 +478,8 @@ class GeminiDokumentAnalyseServiceTest {
                 assertThat(result).isNotNull();
                 assertThat(result.getDatenquelle()).isEqualTo("XML");
                 assertThat(result.getAiConfidence()).isEqualTo(1.0);
+                // wie beim ZUGFeRD-PDF: strukturiert gelesen gilt als verifiziert
+                assertThat(result.getVerifiziert()).isTrue();
             } finally {
                 Files.deleteIfExists(tempFile);
             }
