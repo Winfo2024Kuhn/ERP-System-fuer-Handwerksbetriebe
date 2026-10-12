@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -26,6 +27,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.web.servlet.MockMvc;
@@ -107,6 +109,40 @@ class FirmaControllerSecurityTest {
 
         mockMvc.perform(get("/api/firma"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Normaler Benutzer darf das Firmenlogo laden")
+    void normalerBenutzerDarfLogoLaden() throws Exception {
+        BDDMockito.given(firmeninformationService.loadLogoBytes()).willReturn(new byte[] {(byte) 0x89, 'P', 'N', 'G'});
+        BDDMockito.given(firmeninformationService.ermittleLogoContentType()).willReturn("image/png");
+
+        mockMvc.perform(get("/api/firma/logo"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "USER")
+    @DisplayName("Normaler Benutzer darf das Firmenlogo weder hochladen noch loeschen")
+    void normalerBenutzerDarfLogoNichtAendern() throws Exception {
+        mockMvc.perform(multipart("/api/firma/logo")
+                        .file(new MockMultipartFile("datei", "logo.png", "image/png", new byte[] {1, 2, 3}))
+                        .with(csrf()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/firma/logo").with(csrf()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(firmeninformationService);
+    }
+
+    @Test
+    @DisplayName("Ohne Anmeldung bleibt das Firmenlogo gesperrt")
+    void anonymBekommtKeinLogo() throws Exception {
+        mockMvc.perform(get("/api/firma/logo"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(firmeninformationService);
     }
 
     @Test

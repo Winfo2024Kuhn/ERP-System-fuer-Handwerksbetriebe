@@ -1525,17 +1525,6 @@ public class DateiSpeicherService {
         }
     }
 
-    public void loescheDokumentPdfByDateiname(String dateiname) {
-        if (dateiname == null || dateiname.isBlank()) return;
-        try {
-            Path pfad = dokumentenSpeicherplatz.resolve(dateiname).normalize();
-            if (!pfad.startsWith(dokumentenSpeicherplatz)) return;
-            Files.deleteIfExists(pfad);
-        } catch (Exception e) {
-            log.warn("Freigabe-PDF konnte nicht gelöscht werden: {}", dateiname, e);
-        }
-    }
-
     /**
      * Liest ausschließlich die zuvor freigegebene mobile Datei im zugehörigen
      * Speicher. Keine Originalnamen-Aliasse, HiCAD-Suche oder anderen Ordner.

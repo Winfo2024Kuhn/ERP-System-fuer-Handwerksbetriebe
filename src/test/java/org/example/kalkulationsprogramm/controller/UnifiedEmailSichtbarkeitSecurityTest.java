@@ -752,7 +752,6 @@ class UnifiedEmailSichtbarkeitSecurityTest {
         void unbekannteMail404() throws Exception {
             given(emailRepository.findById(404L)).willReturn(Optional.empty());
 
-            mockMvc.perform(get("/api/emails/404/mark-viewed")).andExpect(status().isNotFound());
             mockMvc.perform(post("/api/emails/404/toggle-star").with(csrf())).andExpect(status().isNotFound());
             mockMvc.perform(post("/api/emails/404/unassign").with(csrf())).andExpect(status().isNotFound());
             mockMvc.perform(post("/api/emails/404/mark-read").with(csrf())).andExpect(status().isNotFound());
@@ -761,20 +760,13 @@ class UnifiedEmailSichtbarkeitSecurityTest {
         }
 
         @Test
-        void angesehenMarkierenNurBeimErstenMal() throws Exception {
-            mockMvc.perform(get("/api/emails/" + INFO_MAIL + "/mark-viewed")).andExpect(status().isOk());
-            LocalDateTime erstesMal = infoMail.getFirstViewedAt();
-            org.assertj.core.api.Assertions.assertThat(erstesMal).isNotNull();
-
-            mockMvc.perform(get("/api/emails/" + INFO_MAIL + "/mark-viewed")).andExpect(status().isOk());
-            org.assertj.core.api.Assertions.assertThat(infoMail.getFirstViewedAt()).isEqualTo(erstesMal);
-            verify(emailRepository, Mockito.times(1)).save(infoMail);
-        }
-
-        @Test
-        void angesehenGiltAuchFuerZugeordneteFremdeMail() throws Exception {
-            mockMvc.perform(get("/api/emails/" + FREMDE_PROJEKT_MAIL + "/mark-viewed")).andExpect(status().isOk());
-            mockMvc.perform(get("/api/emails/" + FREMDE_MAIL + "/mark-viewed")).andExpect(status().isNotFound());
+        void angesehenMarkierenGehtNichtPerGet() throws Exception {
+            // GET ändert keine Daten (kein CSRF-Schutz); gelesen markiert POST /{id}/mark-read.
+            mockMvc.perform(get("/api/emails/" + INFO_MAIL + "/mark-viewed"))
+                    .andExpect(result -> org.assertj.core.api.Assertions
+                            .assertThat(result.getResponse().getStatus()).isGreaterThanOrEqualTo(400));
+            org.assertj.core.api.Assertions.assertThat(infoMail.getFirstViewedAt()).isNull();
+            verify(emailRepository, never()).save(any());
         }
 
         @Test
