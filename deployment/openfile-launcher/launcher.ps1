@@ -4,11 +4,13 @@ param([string]$Url)
 Add-Type -AssemblyName System.Web
 $ErrorActionPreference = 'Stop'
 
-# Konfiguration aus config.json laden (wird von Setup-Freigabe.ps1 generiert)
-# Fallback auf hartcodierte Werte wenn Datei fehlt
+# Erlaubte Pfade aus config.json neben diesem Skript (erzeugt von Setup-Freigabe.ps1,
+# vom Installations-Skript mitkopiert). Ohne config.json oeffnet der Launcher nichts:
+# Ein fest eingetragener Rechnername wuerde auf fremden Installationen nie passen.
 $AllowedRoots = @()
 $RootAliases  = @{}
 $configFile   = Join-Path $PSScriptRoot 'config.json'
+$configError  = $null
 if (Test-Path $configFile) {
   try {
     $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
@@ -18,17 +20,9 @@ if (Test-Path $configFile) {
         $RootAliases[$key] = $cfg.rootAliases.$key
       }
     }
-    # config.json geladen – keine Fallback-Roots noetig
   } catch {
-    # Fehler beim Lesen – Fallback greift unten
+    $configError = $_.Exception.Message
   }
-}
-
-# Fallback falls config.json fehlt oder leer
-if ($AllowedRoots.Count -eq 0) {
-  $AllowedRoots = @(
-    '\\Marvins_Laptop\ERP-Uploads\CADdrawings'
-  )
 }
 
 # Bevorzugter Laufwerksbuchstabe
@@ -203,6 +197,21 @@ try {
   L "User: $env:USERNAME  Identity: $([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
   L "PSVersion: $($PSVersionTable.PSVersion)  PID: $PID"
   L "WD: $(Get-Location)"
+
+  if ($configError){ L "ERR config.json nicht lesbar ($configFile): $configError" }
+  if ($AllowedRoots.Count -eq 0){
+    L "ERR keine erlaubten Pfade: $configFile fehlt oder enthaelt keine allowedRoots. Auf dem ERP-Rechner Setup-Freigabe.ps1 ausfuehren und den Launcher mit der erzeugten config.json neu installieren."
+    # Der Launcher laeuft unsichtbar - ohne Meldung saehe der Nutzer nach dem Klick gar nichts
+    try {
+      Add-Type -AssemblyName System.Windows.Forms
+      [System.Windows.Forms.MessageBox]::Show(
+        "Die Datei kann nicht direkt geoeffnet werden: Der OpenFile Launcher ist auf diesem PC noch nicht fertig eingerichtet (config.json fehlt).`n`nBitte wenden Sie sich an den Administrator.",
+        "OpenFile Launcher",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+    } catch {}
+    exit 2
+  }
 
   # URL -> UNC (unterstützt openfile://?path=... und openfile://open/?path=...)
   $unc = $null

@@ -57,21 +57,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ========== Qdrant (Vektordatenbank für KI/RAG) ==========
-  qdrant:
-    image: qdrant/qdrant:v1.12.1
-    container_name: kalkulationsprogramm-qdrant
-    ports:
-      - "127.0.0.1:6333:6333"   # REST API, nur auf diesem Rechner
-      - "127.0.0.1:6334:6334"   # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   app_uploads:
   app_logs:
-  qdrant_data:
