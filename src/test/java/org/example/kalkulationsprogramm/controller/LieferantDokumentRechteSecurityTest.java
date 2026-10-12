@@ -37,6 +37,7 @@ import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRep
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.service.BelegService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.LieferantenDetailService;
@@ -57,7 +58,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.mock.web.MockHttpSession;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -81,9 +81,6 @@ class LieferantDokumentRechteSecurityTest {
 
     @Autowired
     private MockMvc mockMvc;
-
-    @Autowired
-    private LieferantenController lieferantenController;
 
     @TempDir
     Path uploadVerzeichnis;
@@ -140,8 +137,18 @@ class LieferantDokumentRechteSecurityTest {
     private org.example.kalkulationsprogramm.service.EmailSignatureService emailSignatureService;
     @MockBean
     private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
+    @MockBean
+    private LieferantDokumentDateiService dokumentDateiService;
 
     // ---------------------------------------------------------------- Helfer
+
+    /** Echte Dateisuche hinter dem Mock; die Ordner liegen unter {@code uploadDir} wie im Standard-Setup. */
+    private void dateisucheUnter(Path uploadDir) {
+        var echt = new LieferantDokumentDateiService(uploadDir.toString(), uploadDir.toString(),
+                uploadDir.resolve("attachments").toString(),
+                uploadDir.resolve("attachments").resolve("lieferanten").toString());
+        given(dokumentDateiService.findeDatei(any())).willAnswer(aufruf -> echt.findeDatei(aufruf.getArgument(0)));
+    }
 
     private static RequestPostProcessor sessionAls(FrontendUserRole rolle) {
         var principal = new FrontendUserPrincipal(1L, "max.mustermann", "Max Mustermann", "hash", true,
@@ -557,7 +564,7 @@ class LieferantDokumentRechteSecurityTest {
     private byte[] downloadDatei(LieferantDokumentTyp typ) throws Exception {
         byte[] datei = "%PDF-1.4 Dummy-Dokument Max Mustermann".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         Files.write(uploadVerzeichnis.resolve("muster.pdf"), datei);
-        ReflectionTestUtils.setField(lieferantenController, "uploadDir", uploadVerzeichnis.toString());
+        dateisucheUnter(uploadVerzeichnis);
         LieferantDokument dokument = dokumentVon(9L, 7L, typ);
         dokument.setOriginalDateiname("muster.pdf");
         dokument.setGespeicherterDateiname("muster.pdf");

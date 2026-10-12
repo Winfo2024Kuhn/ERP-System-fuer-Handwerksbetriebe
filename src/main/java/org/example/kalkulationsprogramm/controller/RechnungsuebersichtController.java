@@ -28,6 +28,7 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.dto.Rechnungsuebersicht.AusgangsrechnungDto;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -99,6 +100,7 @@ public class RechnungsuebersichtController {
     private final GeminiDokumentAnalyseService geminiService;
     private final LieferantDokumentRepository lieferantDokumentRepository;
     private final LieferantDokumentZugriffService zugriffService;
+    private final LieferantDokumentDateiService dokumentDateiService;
 
     @Value("${upload.path:uploads}")
     private String uploadPath;
@@ -242,7 +244,7 @@ public class RechnungsuebersichtController {
                             // Nicht sichtbarer Typ: wie "nicht gefunden" behandeln, nichts preisgeben.
                             log.warn("[merge-pdf] Eingangsrechnung ID={} nicht sichtbar", id);
                         } else if (gd.getDokument() != null) {
-                            Path pdfPath = findeLieferantDokumentPdf(gd.getDokument());
+                            Path pdfPath = dokumentDateiService.findePdf(gd.getDokument()).orElse(null);
                             if (pdfPath != null) {
                                 byte[] pdfBytes = Files.readAllBytes(pdfPath);
                                 RandomAccessReadBuffer buffer = new RandomAccessReadBuffer(pdfBytes);
@@ -299,97 +301,6 @@ public class RechnungsuebersichtController {
     }
 
     // ==================== Hilfsmethoden ====================
-
-    /**
-     * Sucht die PDF-Datei eines Lieferanten-Dokuments an denselben Ablageorten wie die Vorschau
-     * ({@code LieferantDokumentController}), jeweils unter dem Upload-Ordner und in dieser
-     * Reihenfolge:
-     * <ol>
-     * <li>direkt im Upload-Ordner – auch Belege aus „Belege &amp; Kasse“ ({@code belege/<name>})</li>
-     * <li>{@code attachments/email/<lieferantId>/} – E-Mail-Anhänge im Lieferanten-Ordner</li>
-     * <li>{@code lieferanten/<lieferantId>/} – manuell hochgeladene Rechnungen</li>
-     * <li>{@code attachments/lieferanten/<lieferantId>/}</li>
-     * <li>{@code attachments/vendor-invoices/}</li>
-     * <li>{@code attachments/}</li>
-     * <li>{@code attachments/<emailId>/}</li>
-     * </ol>
-     * Gesucht wird nach dem eigenen gespeicherten Namen und danach nach dem des E-Mail-Anhangs.
-     * Nur echte PDFs zählen – liegt unter dem einen Namen eine XML-E-Rechnung und unter dem
-     * anderen die PDF, wird die PDF genommen. Kandidaten außerhalb des Upload-Ordners (z. B. ein
-     * {@code ../} im gespeicherten Namen) werden übersprungen. Gibt {@code null} zurück, wenn es
-     * nirgends eine PDF gibt.
-     */
-    private Path findeLieferantDokumentPdf(LieferantDokument dok) {
-        Path uploadBase = Path.of(uploadPath).toAbsolutePath().normalize();
-        String lieferantId = dok.getLieferant() != null && dok.getLieferant().getId() != null
-                ? dok.getLieferant().getId().toString()
-                : null;
-        String emailId = dok.getAttachment() != null && dok.getAttachment().getEmail() != null
-                ? dok.getAttachment().getEmail().getId().toString()
-                : null;
-
-        List<List<String>> ordner = new ArrayList<>();
-        ordner.add(List.of());
-        if (lieferantId != null) {
-            ordner.add(List.of("attachments", "email", lieferantId));
-            ordner.add(List.of("lieferanten", lieferantId));
-            ordner.add(List.of("attachments", "lieferanten", lieferantId));
-        }
-        ordner.add(List.of("attachments", "vendor-invoices"));
-        ordner.add(List.of("attachments"));
-        if (emailId != null) {
-            ordner.add(List.of("attachments", emailId));
-        }
-
-        List<String> dateinamen = new ArrayList<>();
-        if (dok.getGespeicherterDateiname() != null) {
-            dateinamen.add(dok.getGespeicherterDateiname());
-        }
-        if (dok.getAttachment() != null && dok.getAttachment().getStoredFilename() != null
-                && !dateinamen.contains(dok.getAttachment().getStoredFilename())) {
-            dateinamen.add(dok.getAttachment().getStoredFilename());
-        }
-
-        return dateinamen.stream()
-                .flatMap(name -> ordner.stream().map(o -> pfadImUploadOrdner(uploadBase, o, name)))
-                .filter(pfad -> pfad != null && Files.isRegularFile(pfad) && istPdfDatei(pfad))
-                .findFirst()
-                .orElse(null);
-    }
-
-    /**
-     * Setzt {@code ordner} und {@code dateiname} unter {@code uploadBase} zusammen und gibt den
-     * Pfad nur zurück, wenn er danach noch im Upload-Ordner liegt. Sonst (oder bei einem
-     * ungültigen Namen) {@code null}.
-     */
-    private static Path pfadImUploadOrdner(Path uploadBase, List<String> ordner, String dateiname) {
-        try {
-            Path pfad = uploadBase;
-            for (String teil : ordner) {
-                pfad = pfad.resolve(teil);
-            }
-            pfad = pfad.resolve(dateiname).normalize();
-            return pfad.startsWith(uploadBase) ? pfad : null;
-        } catch (InvalidPathException e) {
-            return null;
-        }
-    }
-
-    /**
-     * {@code true}, wenn die Datei eine PDF ist. Entscheidend ist der Inhalt, nicht die Endung:
-     * Die PDF-Kennung {@code %PDF-} muss in den ersten 1024 Bytes stehen (wie es die
-     * PDF-Spezifikation erlaubt). Fotos und XML-E-Rechnungen fallen so heraus, eine nicht
-     * lesbare Datei ebenso – sie gilt als fehlend statt das Gesamt-PDF abbrechen zu lassen.
-     */
-    private static boolean istPdfDatei(Path datei) {
-        try (var in = Files.newInputStream(datei)) {
-            byte[] anfang = in.readNBytes(1024);
-            return new String(anfang, StandardCharsets.ISO_8859_1).contains("%PDF-");
-        } catch (IOException e) {
-            log.warn("[merge-pdf] Datei konnte nicht gelesen werden: {}", e.getClass().getSimpleName());
-            return false;
-        }
-    }
 
     private EingangsrechnungDto toEingangsrechnungDto(LieferantGeschaeftsdokument gd) {
         EingangsrechnungDto dto = new EingangsrechnungDto();
