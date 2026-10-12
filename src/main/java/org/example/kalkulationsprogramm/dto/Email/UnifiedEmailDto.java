@@ -35,7 +35,7 @@ public class UnifiedEmailDto {
     private LocalDateTime firstViewedAt;
 
     @JsonProperty("isRead")
-    private boolean isRead; // Computed: firstViewedAt != null
+    private boolean isRead; // Gelesen für den angemeldeten Benutzer (EmailGelesenService)
 
     @JsonProperty("isStarred")
     private boolean isStarred;

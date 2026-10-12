@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.math.BigDecimal;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -79,6 +78,7 @@ public class GeminiDokumentAnalyseService {
     private final LieferantDokumentPositionService positionService;
     private final LieferantDokumentPositionLeser positionLeser;
     private final TransactionTemplate transactionTemplate;
+    private final LieferantDokumentDateiService dokumentDateiService;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -101,9 +101,6 @@ public class GeminiDokumentAnalyseService {
 
     @Value("${ai.gemini.model.pro:gemini-3.1-pro-preview}")
     private String geminiProModel;
-
-    @Value("${upload.path:uploads}")
-    private String uploadPath;
 
     /** Ausgabelimit je Gemini-Aufruf; Flash-Modelle erlauben bis 65.536. */
     @Value("${ai.gemini.dokument-analyse.max-output-tokens:65536}")
@@ -461,7 +458,8 @@ public class GeminiDokumentAnalyseService {
             return analysierePerKiFuerPreview(dateiPfad, originalFilename, useProModel);
 
         } catch (Exception e) {
-            log.error("Fehler bei Dateianalyse: {}", e.getMessage(), e);
+            // Nur die Fehlerart: Datei-Fehler nennen Serverpfad und Dateinamen.
+            log.error("Fehler bei Dateianalyse: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -561,7 +559,7 @@ public class GeminiDokumentAnalyseService {
             return results;
 
         } catch (Exception e) {
-            log.error("Fehler bei Multi-Invoice-Analyse: {}", e.getMessage(), e);
+            log.error("Fehler bei Multi-Invoice-Analyse: {}", e.getClass().getSimpleName());
             // Fallback: Einzelne Analyse
             try {
                 var singleResult = analyzeFile(dateiPfad, originalFilename);
@@ -575,7 +573,7 @@ public class GeminiDokumentAnalyseService {
                             .build());
                 }
             } catch (Exception ex) {
-                log.error("Auch Fallback fehlgeschlagen", ex);
+                log.error("Auch Fallback fehlgeschlagen: {}", ex.getClass().getSimpleName());
             }
             return results;
         }
@@ -657,9 +655,6 @@ public class GeminiDokumentAnalyseService {
 
             String base64Data = Base64.getEncoder().encodeToString(bytes);
             String modelToUse = useProModel ? geminiProModel : geminiModel;
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelToUse
-                    + ":generateContent?key=" + geminiApiKey;
-
             ObjectNode requestBody = objectMapper.createObjectNode();
             ArrayNode contents = requestBody.putArray("contents");
             ObjectNode content = contents.addObject();
@@ -673,9 +668,7 @@ public class GeminiDokumentAnalyseService {
             // Custom Prompt Teil
             parts.addObject().put("text", customPrompt);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Content-Type", "application/json")
+            HttpRequest request = GeminiAnfrage.generateContent(modelToUse, geminiApiKey)
                     .timeout(Duration.ofSeconds(120))
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
                     .build();
@@ -684,7 +677,7 @@ public class GeminiDokumentAnalyseService {
             lastApiCallTime = System.currentTimeMillis();
 
             if (response.statusCode() != 200) {
-                log.error("Gemini API Fehler: {} - {}", response.statusCode(), response.body());
+                log.error("Gemini API Fehler: {} - {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                 return null;
             }
 
@@ -715,7 +708,7 @@ public class GeminiDokumentAnalyseService {
             return text.trim();
 
         } catch (Exception e) {
-            log.error("Gemini Multi-Doc API-Aufruf fehlgeschlagen: {}", e.getMessage(), e);
+            log.error("Gemini Multi-Doc API-Aufruf fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         } finally {
             API_LOCK.unlock();
@@ -819,7 +812,7 @@ public class GeminiDokumentAnalyseService {
                     .build();
 
         } catch (Exception e) {
-            log.debug("ZUGFeRD-Preview fehlgeschlagen: {}", e.getMessage());
+            log.debug("ZUGFeRD-Preview fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -871,7 +864,7 @@ public class GeminiDokumentAnalyseService {
                     .build();
 
         } catch (Exception e) {
-            log.debug("XML-Preview fehlgeschlagen: {}", e.getMessage());
+            log.debug("XML-Preview fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -894,7 +887,8 @@ public class GeminiDokumentAnalyseService {
             return parseJsonToAnalyzeResponse(jsonResponse);
 
         } catch (Exception e) {
-            log.error("KI-Preview fehlgeschlagen: {}", e.getMessage(), e);
+            // Nur die Fehlerart: Lesefehler nennen Serverpfad und Dateinamen.
+            log.error("KI-Preview fehlgeschlagen: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1034,7 +1028,8 @@ public class GeminiDokumentAnalyseService {
             return builder.build();
 
         } catch (Exception e) {
-            log.warn("Fehler beim Parsen der KI-Antwort (wird als manuelle Prüfung markiert): {}", e.getMessage());
+            log.warn("Fehler beim Parsen der KI-Antwort (wird als manuelle Prüfung markiert): {}",
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1092,7 +1087,8 @@ public class GeminiDokumentAnalyseService {
                 return null;
             }
 
-            Path dateiPfad = explicitPath != null ? explicitPath : getDateiPfad(freshDokument);
+            Path dateiPfad = explicitPath != null ? explicitPath
+                    : dokumentDateiService.findeDatei(freshDokument).orElse(null);
             if (dateiPfad == null) {
                 log.warn("Konnte Datei nicht finden für Dokument {}", freshDokument.getId());
                 return null;
@@ -1113,8 +1109,7 @@ public class GeminiDokumentAnalyseService {
                     // Versuche XML-Extraktion (XRechnung, ZUGFeRD-XML)
                     geschaeftsdaten = versucheXmlExtraktion(
                             leseXmlDateiSicher(dateiPfad, explicitPath != null),
-                            freshDokument,
-                            dateiPfad.getFileName().toString());
+                            freshDokument);
                 }
             }
 
@@ -1137,7 +1132,7 @@ public class GeminiDokumentAnalyseService {
                                 geschaeftsdaten.getDokumentNummer());
                     } catch (Exception e) {
                         log.warn("Preisuebernahme aus KI-Analyse fehlgeschlagen für Dokument {}: {}",
-                                freshDokument.getId(), e.getMessage());
+                                freshDokument.getId(), e.getClass().getSimpleName());
                     }
                 }
             }
@@ -1229,7 +1224,9 @@ public class GeminiDokumentAnalyseService {
             return savedGeschaeftsdaten;
 
         } catch (Exception e) {
-            log.error("Fehler bei Dokumentanalyse für Dokument {}", dokument.getId(), e);
+            // Nur ID und Fehlerart: Datei-Fehler nennen Serverpfad und Dateinamen.
+            log.error("Fehler bei Dokumentanalyse für Dokument {}: {}", dokument.getId(),
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1384,12 +1381,12 @@ public class GeminiDokumentAnalyseService {
 
             // Prüfe ob relevante Daten extrahiert wurden
             if (zugferd.getRechnungsnummer() == null && zugferd.getBetrag() == null) {
-                log.debug("Keine ZUGFeRD-Daten in PDF gefunden: {}", dateiname);
+                log.debug("Keine ZUGFeRD-Daten in PDF von Dokument {}", dokumentFuerLog(dokument));
                 return null;
             }
 
-            log.info("ZUGFeRD-Daten gefunden in {}: Nr={}, Betrag={}",
-                    dateiname, zugferd.getRechnungsnummer(), zugferd.getBetrag());
+            log.info("ZUGFeRD-Daten gefunden für Dokument {}: Nr={}, Betrag={}",
+                    dokumentFuerLog(dokument), zugferd.getRechnungsnummer(), zugferd.getBetrag());
 
             // Existierendes Geschaeftsdokument wiederverwenden oder neues erstellen
             LieferantGeschaeftsdokument gd = null;
@@ -1486,7 +1483,8 @@ public class GeminiDokumentAnalyseService {
             return gd;
 
         } catch (Exception e) {
-            log.debug("ZUGFeRD-Extraktion fehlgeschlagen für {}: {}", dateiname, e.getMessage());
+            log.debug("ZUGFeRD-Extraktion fehlgeschlagen für Dokument {}: {}", dokumentFuerLog(dokument),
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1494,30 +1492,15 @@ public class GeminiDokumentAnalyseService {
     /**
      * Versucht XML-Rechnung zu parsen (z.B. XRechnung, ZUGFeRD-XML).
      */
-    private LieferantGeschaeftsdokument versucheXmlExtraktion(Path dateiPfad, LieferantDokument dokument) {
-        try {
-            return versucheXmlExtraktion(
-                    leseXmlDateiSicher(dateiPfad, true),
-                    dokument,
-                    dateiPfad != null ? dateiPfad.getFileName().toString() : "unbekannt");
-        } catch (Exception e) {
-            log.debug("XML-Extraktion fehlgeschlagen für {}: {}",
-                    dateiPfad != null ? dateiPfad.getFileName() : "unbekannt",
-                    e.getMessage());
-            return null;
-        }
-    }
-
-    private LieferantGeschaeftsdokument versucheXmlExtraktion(String xmlContent, LieferantDokument dokument,
-            String dateinameFuerLog) {
+    private LieferantGeschaeftsdokument versucheXmlExtraktion(String xmlContent, LieferantDokument dokument) {
         try {
             // Einfache Prüfung ob es eine Rechnungs-XML ist
             if (!xmlContent.contains("Invoice") && !xmlContent.contains("CrossIndustryInvoice")) {
-                log.debug("XML ist keine Rechnung: {}", dateinameFuerLog);
+                log.debug("XML von Dokument {} ist keine Rechnung", dokumentFuerLog(dokument));
                 return null;
             }
 
-            log.info("XML-Rechnung gefunden: {}", dateinameFuerLog);
+            log.info("XML-Rechnung gefunden für Dokument {}", dokumentFuerLog(dokument));
 
             // Existierendes Geschaeftsdokument wiederverwenden oder neues erstellen
             LieferantGeschaeftsdokument gd = null;
@@ -1532,6 +1515,7 @@ public class GeminiDokumentAnalyseService {
             }
             gd.setAiConfidence(1.0); // Strukturierte Daten
             gd.setDatenquelle("XML");
+            gd.setVerifiziert(true); // wie beim ZUGFeRD-PDF: strukturiert gelesen, nicht geschätzt
             gd.setAnalysiertAm(LocalDateTime.now());
 
             // Dokumentnummer extrahieren
@@ -1620,7 +1604,8 @@ public class GeminiDokumentAnalyseService {
             return gd;
 
         } catch (Exception e) {
-            log.debug("XML-Extraktion fehlgeschlagen: {}", e.getMessage());
+            log.debug("XML-Extraktion fehlgeschlagen für Dokument {}: {}", dokumentFuerLog(dokument),
+                    e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1710,8 +1695,7 @@ public class GeminiDokumentAnalyseService {
             if (lower.endsWith(".xml")) {
                 LieferantGeschaeftsdokument xmlResult = versucheXmlExtraktion(
                         leseXmlDateiSicher(dateiPfad, true),
-                        null,
-                        dateiPfad.getFileName().toString());
+                        null);
                 if (xmlResult != null)
                     return xmlResult;
             }
@@ -1728,7 +1712,7 @@ public class GeminiDokumentAnalyseService {
             return analysierePerKi(dateiPfad, mimeType, null, true);
 
         } catch (Exception e) {
-            log.error("Fehler bei analyzeAndReturnData: {}", e.getMessage());
+            log.error("Fehler bei analyzeAndReturnData: {}", e.getClass().getSimpleName());
             return null;
         }
     }
@@ -1887,7 +1871,8 @@ public class GeminiDokumentAnalyseService {
             return result;
 
         } catch (Exception e) {
-            log.error("KI-Analyse fehlgeschlagen für Dokument {}", docIdForLog, e);
+            // Nur ID und Fehlerart: Lesefehler nennen Serverpfad und Dateinamen.
+            log.error("KI-Analyse fehlgeschlagen für Dokument {}: {}", docIdForLog, e.getClass().getSimpleName());
             // Auch bei Exception: Dokument mit Flag erstellen
             LieferantGeschaeftsdokument errorResult = new LieferantGeschaeftsdokument();
             errorResult.setManuellePruefungErforderlich(true);
@@ -1970,7 +1955,7 @@ public class GeminiDokumentAnalyseService {
         LieferantDokument dokument = dokumentRepository.findById(dokumentId)
                 .orElseThrow(() -> new NoSuchElementException("Dokument nicht gefunden"));
         pruefeNachlesbar(dokument);
-        Path dateiPfad = getDateiPfad(dokument);
+        Path dateiPfad = dokumentDateiService.findeDatei(dokument).orElse(null);
         if (dateiPfad == null) {
             throw new PositionenNichtLesbarException("Datei zum Dokument nicht gefunden");
         }
@@ -1978,7 +1963,7 @@ public class GeminiDokumentAnalyseService {
             return new NachleseVorlage(Files.readAllBytes(validiereAnalyseDateiPfad(dateiPfad, false)),
                     getMimeType(dokument));
         } catch (java.io.IOException | IllegalArgumentException | SecurityException e) {
-            // Keine Details nach außen: die Meldungen nennen den Serverpfad.
+            // Keine Details nach außen: IO-Fehler nennen den Serverpfad.
             throw new PositionenNichtLesbarException("Datei zum Dokument nicht lesbar");
         }
     }
@@ -2125,54 +2110,6 @@ public class GeminiDokumentAnalyseService {
         }
     }
 
-    private Path getDateiPfad(LieferantDokument dokument) {
-        String dateiname = dokument.getEffektiverGespeicherterDateiname();
-        if (dateiname == null)
-            return null;
-
-        Long lieferantId = dokument.getLieferant().getId();
-
-        // 1. E-Mail-Attachments: uploads/attachments/ (flat structure - most common)
-        Path pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 2. E-Mail-Attachments: uploads/attachments/lieferanten/{lieferantId}/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", "lieferanten", lieferantId.toString(), dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 3. Manuell hochgeladene Dokumente: uploads/lieferanten/{lieferantId}/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "lieferanten", lieferantId.toString(), dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 4. Vendor-Invoices: uploads/attachments/vendor-invoices/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "attachments", "vendor-invoices", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 5. Fallback: uploads/lieferant-emails/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "lieferant-emails", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        // 6. Fallback: uploads/email/
-        pfad = pruefeUploadDateiPfad(Path.of(uploadPath, "email", dateiname));
-        if (pfad != null) {
-            return pfad;
-        }
-
-        log.warn("Datei nicht gefunden: {} (geprüft: attachments/, attachments/lieferanten/{}, lieferanten/{})",
-                dateiname, lieferantId, lieferantId);
-        return null;
-    }
-
     private String leseXmlDateiSicher(Path dateiPfad, boolean tempDateienErlaubt) throws java.io.IOException {
         Path sichererPfad = validiereAnalyseDateiPfad(dateiPfad, tempDateienErlaubt);
         // Zeichensatz aus BOM bzw. XML-Deklaration – XRechnungen kommen auch als ISO-8859-1.
@@ -2181,42 +2118,28 @@ public class GeminiDokumentAnalyseService {
 
     private Path validiereAnalyseDateiPfad(Path dateiPfad, boolean tempDateienErlaubt) {
         Path normalizedPath = dateiPfad.toAbsolutePath().normalize();
-        Path uploadRoot = getUploadRootPath();
 
-        boolean erlaubterPfad = normalizedPath.startsWith(uploadRoot);
+        boolean erlaubterPfad = dokumentDateiService.liegtInAblage(normalizedPath);
         if (!erlaubterPfad && tempDateienErlaubt) {
             Path tempRoot = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
             erlaubterPfad = normalizedPath.startsWith(tempRoot);
         }
 
+        // Kein Pfad in den Meldungen: gespeicherte Dateinamen tragen Namen aus den Rechnungen (DSGVO).
         if (!erlaubterPfad) {
-            throw new SecurityException("Dateizugriff außerhalb der erlaubten Verzeichnisse: " + normalizedPath);
+            throw new SecurityException("Dateizugriff außerhalb der erlaubten Verzeichnisse");
         }
 
-        if (!Files.isRegularFile(normalizedPath)) {
-            throw new IllegalArgumentException("Datei ist nicht lesbar oder existiert nicht: " + normalizedPath);
+        if (!Files.isRegularFile(normalizedPath) || !Files.isReadable(normalizedPath)) {
+            throw new IllegalArgumentException("Datei ist nicht lesbar oder existiert nicht");
         }
 
         return normalizedPath;
     }
 
-    private Path pruefeUploadDateiPfad(Path pfad) {
-        Path normalizedPath = pfad.toAbsolutePath().normalize();
-        Path uploadRoot = getUploadRootPath();
-        if (!normalizedPath.startsWith(uploadRoot)) {
-            log.warn("Verwerfe ungültigen Upload-Pfad außerhalb von {}: {}", uploadRoot, normalizedPath);
-            return null;
-        }
-        if (!Files.isRegularFile(normalizedPath)) {
-            return null;
-        }
-        log.debug("Datei gefunden unter: {}", normalizedPath);
-        return normalizedPath;
-    }
-
-    private Path getUploadRootPath() {
-        String configuredUploadPath = (uploadPath == null || uploadPath.isBlank()) ? "uploads" : uploadPath;
-        return Path.of(configuredUploadPath).toAbsolutePath().normalize();
+    /** Kennung eines Dokuments fürs Log, nie der Dateiname: der trägt Namen aus den Rechnungen (DSGVO). */
+    private static Object dokumentFuerLog(LieferantDokument dokument) {
+        return dokument != null && dokument.getId() != null ? dokument.getId() : "ohne ID";
     }
 
     /**
@@ -2567,11 +2490,7 @@ public class GeminiDokumentAnalyseService {
                         modelToUse = useProModel ? geminiProModel : geminiModel;
                     }
 
-                    String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                            modelToUse, geminiApiKey);
-
-                    HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
-                            .header("Content-Type", "application/json")
+                    HttpRequest request = GeminiAnfrage.generateContent(modelToUse, geminiApiKey)
                             .timeout(Duration.ofSeconds(180))
                             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                             .build();
@@ -2612,14 +2531,14 @@ public class GeminiDokumentAnalyseService {
                         long delay = INITIAL_RETRY_DELAY_MS * (1L << attempt); // Exponential backoff
                         log.warn("[Gemini API] Fehler {} bei Attempt {}/{} - Retry in {}ms. Body: {}",
                                 response.statusCode(), attempt + 1, MAX_RETRIES, delay,
-                                response.body().substring(0, Math.min(200, response.body().length())));
+                                GeminiAnfrage.fuerLog(response.body()));
                         Thread.sleep(delay);
                         continue;
                     }
 
                     // Client-Fehler (4xx außer 429) - Nicht retryable
                     log.error("[Gemini API] Client-Fehler {} - kein Retry. Body: {}",
-                            response.statusCode(), response.body());
+                            response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                     return null;
 
                 } catch (java.net.http.HttpTimeoutException timeoutEx) {
@@ -2639,8 +2558,9 @@ public class GeminiDokumentAnalyseService {
                     break;
                 } catch (Exception e) {
                     lastException = e;
+                    // Nur die Fehlerart: Parse-Fehler zitieren die Antwort (Rechnungsdaten).
                     log.error("[Gemini API] Exception bei Attempt {}/{}: {}",
-                            attempt + 1, MAX_RETRIES, e.getMessage());
+                            attempt + 1, MAX_RETRIES, e.getClass().getSimpleName());
                     // Nur bei bestimmten Exceptions retry
                     if (e instanceof java.io.IOException) {
                         long delay = INITIAL_RETRY_DELAY_MS * (1L << attempt);
@@ -2658,11 +2578,11 @@ public class GeminiDokumentAnalyseService {
 
             // Alle Retries erschöpft
             log.error("[Gemini API] Alle {} Retries fehlgeschlagen. Letzte Exception: {}",
-                    MAX_RETRIES, lastException != null ? lastException.getMessage() : "keine");
+                    MAX_RETRIES, lastException != null ? lastException.getClass().getSimpleName() : "keine");
             return null;
 
         } catch (Exception e) {
-            log.error("Fehler beim Aufruf der Gemini API", e);
+            log.error("Fehler beim Aufruf der Gemini API: {}", e.getClass().getSimpleName());
             return null;
         } finally {
             API_LOCK.unlock();
@@ -2854,7 +2774,9 @@ public class GeminiDokumentAnalyseService {
             return gd;
 
         } catch (Exception e) {
-            log.error("Fehler beim Parsen der KI-Response: {}", jsonString, e);
+            // Nie die Antwort selbst: sie enthält die Rechnungsdaten.
+            log.error("Fehler beim Parsen der KI-Response ({} Zeichen): {}",
+                    jsonString != null ? jsonString.length() : 0, e.getClass().getSimpleName());
             return null;
         }
     }

@@ -108,6 +108,7 @@ class UnifiedEmailAntwortPostfachTest {
     @MockBean private EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private EmailAbsenderRepository postfachRepository;
     @MockBean private EmailPostfachZuordnungRepository zuordnungRepository;
     @MockBean private ProjektRepository projektRepository;
@@ -134,6 +135,11 @@ class UnifiedEmailAntwortPostfachTest {
     @MockBean private AusgangsmailService ausgangsmailService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
     @MockBean private LieferantDokumentZugriffService lieferantDokumentZugriffService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void gelesenWieBisher() {
+        org.example.kalkulationsprogramm.service.GelesenTestHilfe.wieGemeinsam(emailGelesenService);
+    }
 
     private EmailAbsender info;
     private EmailAbsender rechnungen;

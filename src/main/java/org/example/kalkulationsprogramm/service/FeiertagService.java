@@ -102,7 +102,8 @@ public class FeiertagService {
 
     /**
      * Prüft ob ein Datum ein halber Feiertag ist (z.B. Heiligabend, Silvester).
-     * Halbe Feiertage werden mit 50% der Sollstunden berechnet.
+     * Halbe Feiertage schreiben 50% des Tagessolls gut, die andere Haelfte
+     * bleibt zu arbeiten (siehe TagesSollService).
      */
     public boolean istHalberFeiertag(LocalDate datum) {
         self.getFeiertageForJahr(datum.getYear()); // Sicherstellen dass Feiertage existieren

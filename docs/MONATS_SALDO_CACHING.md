@@ -83,7 +83,7 @@ BigDecimal getDifferenz()
 
 - Quelle: `ZeitkontoVersion` des Mitarbeiters – für jeden Tag gilt die an diesem Tag gültige Version mit ihren Stunden je Wochentag
 - Berechnung: `ZeitkontoService.berechneSollstundenFuerMonat()` → `TagesSollService.periodenSollSumme()`
-- Feiertag auf einem Arbeitstag: Soll bleibt voll (bezahlter Arbeitstag); halber Feiertag: Soll 50 %
+- Feiertag auf einem Arbeitstag: Soll bleibt voll (bezahlter Arbeitstag) – auch am halben Feiertag; dort wird nur die Hälfte gutgeschrieben (siehe 3.4)
 - Läuft eine Wiedereingliederung (Langzeitkrankmeldung), ersetzen deren Stunden pro Tag das Tages-Soll (höchstens bis zum Zeitkonto-Soll)
 
 ### 3.3 Abwesenheits-Stunden
@@ -98,6 +98,8 @@ BigDecimal getDifferenz()
 - Quelle: `TagesSollService.feiertagsGutschriftSumme()` mit den Feiertagen aus `FeiertagService` – **nur Bayern** (`"BY"`, fest im Code)
 - Bezahlte Stunden für Feiertage, die auf Arbeitstage (Tages-Soll > 0) fallen
 - Halbe Feiertage: 50 % der Tagesstunden
+- Das Soll bleibt an jedem Feiertag stehen, gemindert wird nur über die Gutschrift. Am halben Feiertag (8-h-Tag) heißt das: Soll 8 h, Gutschrift 4 h, also 4 h zu arbeiten. Wer 4 h arbeitet, steht bei 0 (Fachentscheidung 12.10.2026; vorher wurden Soll und Gutschrift halbiert, der halbe Feiertag wirkte wie ein ganzer). Umgesetzt in `TagesSollService`.
+- Halbe Feiertage lassen sich im Programm noch nicht pflegen (nur direkt in der Datenbank, `feiertag.halb_tag`).
 
 ### 3.5 Korrektur-Stunden
 
@@ -202,7 +204,7 @@ Alle Methoden sperren vorher den Mitarbeiter. `ZeitkontoService` ruft direkt `Mo
 
 ### 6.1 Zweck
 
-Der Warmup-Service füllt den Cache beim Anwendungsstart vor, damit die ersten Abfragen nicht alle Saldenwerte live berechnen müssen. Er läuft im `ApplicationReadyEvent`-Listener (ohne `@Async`) und kann zusätzlich über `POST /api/zeitverwaltung/saldo-cache/warmup` angestoßen werden.
+Der Warmup-Service füllt den Cache beim Anwendungsstart vor, damit die ersten Abfragen nicht alle Saldenwerte live berechnen müssen. Er läuft im `ApplicationReadyEvent`-Listener (ohne `@Async`) und kann zusätzlich über `POST /api/zeitverwaltung/saldo-cache/warmup` angestoßen werden (nur Admin).
 
 ### 6.2 Ablauf
 
@@ -250,7 +252,7 @@ Input: mitarbeiterId, jahr, monat
 2. Soll-Stunden berechnen:
    → ZeitkontoService.berechneSollstundenFuerMonat()
    → je Tag: Stunden der gültigen Zeitkonto-Version für den Wochentag
-     (Wiedereingliederung ersetzt das Tages-Soll, halber Feiertag = 50 %)
+     (Wiedereingliederung ersetzt das Tages-Soll; Feiertage – auch halbe – lassen das Soll voll stehen)
 
 3. Abwesenheits-Stunden berechnen:
    → Summe(Abwesenheit.stunden) im Monat

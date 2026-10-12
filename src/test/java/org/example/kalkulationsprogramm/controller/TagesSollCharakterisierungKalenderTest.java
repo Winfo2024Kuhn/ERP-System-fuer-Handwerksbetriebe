@@ -73,7 +73,7 @@ class TagesSollCharakterisierungKalenderTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.ZeitbuchungAuditService auditService;
     @MockBean
-    private org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
+    private org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
     @MockBean
     private org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
     @MockBean
@@ -105,7 +105,8 @@ class TagesSollCharakterisierungKalenderTest {
         // siehe Kontext-Log) fuer einen Monat ohne laufende Wiedereingliederung
         // liefert: an Werktagen die volle Tagesbasis als arbeitsSoll, am vollen
         // Feiertag (25.12.) 0 arbeitsSoll/volle Gutschrift, am halben Feiertag
-        // (24.12.) 0 arbeitsSoll/halbe Gutschrift.
+        // (24.12.) halbes arbeitsSoll/halbe Gutschrift (Fachentscheidung
+        // 12.10.2026: der halbe Tag bleibt zu arbeiten).
         //
         // Nachbesserung Abschnitt 4, Befund 2: der Stub wertet den
         // tatsaechlich uebergebenen Zeitraum (von/bis-Argumente der
@@ -148,7 +149,8 @@ class TagesSollCharakterisierungKalenderTest {
                 .andExpect(jsonPath("$.tage[0].datum").value("2026-12-01"))
                 .andExpect(jsonPath("$.tage[0].sollStunden").value(8.00))
                 .andExpect(jsonPath("$.tage[23].datum").value("2026-12-24"))
-                .andExpect(jsonPath("$.tage[23].sollStunden").value(0))
+                // Halber Feiertag: der halbe Tag bleibt zu arbeiten (Fachentscheidung 12.10.2026).
+                .andExpect(jsonPath("$.tage[23].sollStunden").value(4.00))
                 .andExpect(jsonPath("$.tage[24].datum").value("2026-12-25"))
                 .andExpect(jsonPath("$.tage[24].sollStunden").value(0))
                 .andExpect(jsonPath("$.tage[0].feiertagsStunden").value(0))
@@ -160,8 +162,8 @@ class TagesSollCharakterisierungKalenderTest {
                 // feiertagService.halbTag=true nur ein halber Feiertag ist, und
                 // schrieb dadurch +4h Phantom-Ueberstunden gut. Der neue Wert 4.00
                 // kommt aus TagesSollService.feiertagsGutschrift und stimmt jetzt mit
-                // der Monatsuebersicht (MonatsSaldoService: Soll 4 / Gutschrift 4 ->
-                // netto 0) ueberein.
+                // der Monatsuebersicht (MonatsSaldoService: Soll 8 / Gutschrift 4 ->
+                // 4 h zu arbeiten) ueberein.
                 .andExpect(jsonPath("$.tage[23].istStunden").value(4.00));
     }
 
@@ -169,7 +171,9 @@ class TagesSollCharakterisierungKalenderTest {
     private static Map<LocalDate, BigDecimal> arbeitsSollJeTagFuer(LocalDate von, LocalDate bis) {
         Map<LocalDate, BigDecimal> ergebnis = new LinkedHashMap<>();
         for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
-            if (tag.equals(LocalDate.of(2026, 12, 24)) || tag.equals(LocalDate.of(2026, 12, 25))) {
+            if (tag.equals(LocalDate.of(2026, 12, 24))) {
+                ergebnis.put(tag, new BigDecimal("4.00"));
+            } else if (tag.equals(LocalDate.of(2026, 12, 25))) {
                 ergebnis.put(tag, BigDecimal.ZERO);
             } else {
                 int wochentag = tag.getDayOfWeek().getValue();

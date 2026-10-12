@@ -262,7 +262,7 @@ void sucheMitUnionInjectionWirdAbgefangen() {
 **Regel:** NIEMALS String-Konkatenation in SQL/JPQL verwenden. Immer `@Query` mit benannten Parametern (`:param`) oder Spring Data Derived Queries verwenden.
 
 #### 2. Cross-Site Scripting / XSS (A03:2021 – Injection)
-Alle HTML-Ausgaben müssen sanitisiert werden (vgl. `EmailHtmlSanitizer`).
+Alle HTML-Ausgaben müssen sanitisiert werden: E-Mail-HTML über `EmailHtmlSanitizer`, anderes gespeichertes HTML per jsoup-`Safelist` (Vorbild `SignaturHtmlPruefung`).
 
 ```java
 @Test
@@ -283,7 +283,7 @@ void xssInBeschreibungsfeldWirdEscaped() {
 }
 ```
 
-**Regel im Frontend (React):** Kein `dangerouslySetInnerHTML` ohne vorherige Sanitisierung. Wenn HTML-Rendering nötig (z.B. E-Mail-Vorschau), immer serverseitig sanitisierte Daten verwenden.
+**Regel im Frontend (React):** Kein `dangerouslySetInnerHTML` ohne `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (DOMPurify) (oder eine strengere eigene DOMPurify-Instanz mit Positivliste, Vorbild `bereinigeBeitragsHtml`; nie lockerer), auch wenn das Backend die Daten schon bereinigt hat. Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren). `EmailHtmlSanitizer` ist eine Backend-Klasse und gilt nur für E-Mails. HTML, das nur ausgelesen wird, über `parseHtmlInert()`/`htmlToText()` parsen, nie über `document.createElement('div').innerHTML`.
 
 #### 3. Path Traversal (A01:2021 – Broken Access Control)
 Datei-Upload und -Download-Endpoints müssen gegen Path-Traversal geschützt sein.
@@ -408,9 +408,11 @@ Path target = uploadDir.resolve(userProvidedFilename);
 // FALSCH: Unsanitisiertes HTML
 <div dangerouslySetInnerHTML={{ __html: benutzerEingabe }} />
 
-// RICHTIG: Nur sanitisiertes HTML (z.B. für E-Mail-Anzeige)
-<div dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
-// → sanitizedHtml kommt vom Server, dort mit EmailHtmlSanitizer bereinigt
+// RICHTIG: HTML im Frontend bereinigen (lib/htmlSanitizer.ts, DOMPurify)
+<div dangerouslySetInnerHTML={{ __html: sanitizeHtml(gespeichertesHtml) }} />
+
+// RICHTIG: HTML nur auslesen, ohne es auszuführen
+const text = htmlToText(gespeichertesHtml);
 
 // RICHTIG: URL-Parameter escapen
 const url = `/api/search?q=${encodeURIComponent(suchbegriff)}`;
@@ -681,7 +683,6 @@ Um das **DRY (Don't Repeat Yourself)** Prinzip zu wahren und ein konsistentes UI
 - **Pfad:** `src/components/EmailsTab.tsx`
 - **Verwendung:** Einheitliche Darstellung von E-Mail-Verläufen in Detailansichten (Kunde, Projekt, Anfrage, Lieferant). Genau einen Bezug übergeben: `kundeId`, `projektId`, `anfrageId` oder `lieferantId`.
 - **Features:** Suche, Verläufe mit Antworten, Anhang-Vorschau, Zustellstatus (unzustellbar), „Neue E-Mail“ und „Antworten“ (abschaltbar über `showComposeButton`/`showReplyButton`).
-- `EmailHistory.tsx` ist ungenutzter Altbestand – nicht verwenden.
 
 ### GoogleMapsEmbed
 - **Pfad:** `src/components/GoogleMapsEmbed.tsx`

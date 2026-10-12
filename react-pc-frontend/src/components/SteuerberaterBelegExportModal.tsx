@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
+import { htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from '../features/email/mailEditorHtml';
 
 /**
  * Issue #58 – Steuerberater-Beleg-Export.
@@ -86,52 +87,8 @@ const getCurrentFrontendUser = (): FrontendUserSelection | null => {
     return null;
 };
 
-const wrapSignatureHtml = (rawHtml: string): string => {
-    const trimmed = (rawHtml || '').trim();
-    if (!trimmed) return '';
-    if (/email-signature/i.test(trimmed)) return trimmed;
-    return `<div class="email-signature" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd;">${trimmed}</div>`;
-};
-
-// Whitelist gefaehrlicher Attribute & Tags. Der Editor ist contentEditable —
-// der Buchhalter koennte beim Paste/Drag eigene Inhalte einfuegen. Wir
-// entfernen <script>/<style>/<iframe>/<object>/<embed>/<link>, alle
-// on*-Eventhandler-Attribute sowie javascript:/data:/vbscript:-URLs in
-// href/src — sonst landet das per text/html im Mailclient des Steuerberaters.
-const DANGEROUS_TAGS = ['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'base'];
-const DANGEROUS_URL_PROTOCOLS = /^\s*(javascript|data|vbscript):/i;
-
-const sanitizeNode = (node: Element): void => {
-    Array.from(node.attributes).forEach(attr => {
-        const name = attr.name.toLowerCase();
-        if (name.startsWith('on')) {
-            node.removeAttribute(attr.name);
-            return;
-        }
-        if ((name === 'href' || name === 'src' || name === 'xlink:href')
-            && DANGEROUS_URL_PROTOCOLS.test(attr.value || '')) {
-            node.removeAttribute(attr.name);
-            return;
-        }
-        if (name === 'contenteditable') {
-            node.removeAttribute(attr.name);
-        }
-    });
-    Array.from(node.children).forEach(child => sanitizeNode(child as Element));
-};
-
-const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = rawHtml || '';
-    DANGEROUS_TAGS.forEach(tag => {
-        wrapper.querySelectorAll(tag).forEach(n => n.remove());
-    });
-    sanitizeNode(wrapper);
-    return wrapper.innerHTML.trim();
-};
-
 const buildAnredeZeile = (anrede: string | null | undefined, nachname: string | undefined): string => {
-    const safeNachname = (nachname || '').trim();
+    const safeNachname = escapeHtml((nachname || '').trim());
     switch (anrede) {
         case 'HERR':
             return safeNachname ? `Sehr geehrter Herr ${safeNachname},` : 'Sehr geehrter Herr,';
@@ -389,24 +346,7 @@ ${sig}
 `;
     }, [entries, paketMonat, jahr]);
 
-    const loadSignature = useCallback(async (): Promise<string> => {
-        try {
-            const currentUser = getCurrentFrontendUser();
-            const params = new URLSearchParams();
-            if (currentUser?.id) params.set('frontendUserId', String(currentUser.id));
-            const url = params.toString()
-                ? `/api/email/signatures/default?${params.toString()}`
-                : '/api/email/signatures/default';
-            const res = await fetch(url);
-            if (res.ok && res.status !== 204) {
-                const data = await res.json();
-                if (data.html) return wrapSignatureHtml(data.html);
-            }
-        } catch (err) {
-            console.error('Signatur konnte nicht geladen werden:', err);
-        }
-        return '';
-    }, []);
+    const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
 
     useEffect(() => {
         if (!isOpen) {
@@ -489,7 +429,7 @@ ${sig}
         const body = anhang
             ? `<p>${anredeZeile}</p><p>anbei die Kassenunterlagen für ${MONATSNAMEN[paketMonat - 1]} ${paketJahr} als ZIP-Datei. Sie enthält das Kassenbuch als PDF, die Buchungen als DATEV-Datei, die Belegliste und alle Belegbilder.</p><p>Mit freundlichen Grüßen,</p>${signatureRef.current}`
             : generateEmailBody(signatureRef.current, anredeZeile);
-        if (editorRef.current) editorRef.current.innerHTML = body;
+        setzeEditorHtml(editorRef.current, body);
         lastRenderedKeyRef.current = key;
     }, [isOpen, selectedSteuerberaterId, selectedAnsprechpartnerId, selectedAnsprechpartner, monat, jahr, entriesFingerprint, loadingEntries, generateEmailBody, anhang, paketMonat, paketJahr]);
 
@@ -509,7 +449,7 @@ ${sig}
                 recipients: [recipient.trim()],
                 cc: [],
                 subject: subject.trim(),
-                body: prepareHtmlForSending(editorRef.current?.innerHTML || ''),
+                body: htmlFuerVersand(editorRef.current?.innerHTML),
                 direction: 'OUT',
                 benutzer: currentUser?.displayName || '',
                 frontendUserId: currentUser?.id || null,

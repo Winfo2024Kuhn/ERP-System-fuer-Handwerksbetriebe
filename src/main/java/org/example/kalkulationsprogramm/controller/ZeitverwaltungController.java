@@ -35,6 +35,8 @@ import org.example.kalkulationsprogramm.service.TagesSollService;
 import org.example.kalkulationsprogramm.service.ZeitbuchungAuditService;
 import org.example.kalkulationsprogramm.service.ZeitkontoService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -68,7 +70,7 @@ public class ZeitverwaltungController {
     private final org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
     private final org.example.kalkulationsprogramm.repository.ArbeitsgangRepository arbeitsgangRepository;
     private final ZeitbuchungAuditService auditService;
-    private final org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
+    private final org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
     private final org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
     private final org.example.kalkulationsprogramm.service.MonatsSaldoWarmupService monatsSaldoWarmupService;
 
@@ -102,17 +104,16 @@ public class ZeitverwaltungController {
 
     /**
      * Aktualisiert eine Zeitbuchung (GoBD-konform mit Audit-Trail).
-     * Erwartet: bearbeiterId und aenderungsgrund im Request-Body.
+     * Erwartet: aenderungsgrund im Request-Body. Der Bearbeiter im Protokoll ist der
+     * Mitarbeiter des angemeldeten Benutzers, nie ein Wert aus dem Request.
      */
     @PutMapping("/buchungen/{id}")
+    @Transactional
     public ResponseEntity<?> updateBuchung(
             @PathVariable Long id,
-            @RequestBody Map<String, Object> data) {
+            @RequestBody Map<String, Object> data,
+            Authentication authentication) {
 
-        // Bearbeiter ermitteln
-        Long bearbeiterId = data.get("bearbeiterId") != null
-                ? Long.valueOf(data.get("bearbeiterId").toString())
-                : null;
         String aenderungsgrund = (String) data.get("aenderungsgrund");
 
         // Validierung: Änderungsgrund ist Pflicht für GoBD-Konformität
@@ -121,25 +122,11 @@ public class ZeitverwaltungController {
                     .body(Map.of("error", "Änderungsgrund ist ein Pflichtfeld"));
         }
 
-        Mitarbeiter bearbeiter = null;
-        if (bearbeiterId != null) {
-            bearbeiter = mitarbeiterRepository.findById(bearbeiterId).orElse(null);
-        }
-        if (bearbeiter == null) {
-            // Fallback: Versuche über FrontendUserProfile
-            bearbeiter = frontendUserProfileRepository.findAll().stream()
-                    .filter(p -> p.getMitarbeiter() != null)
-                    .map(p -> p.getMitarbeiter())
-                    .findFirst()
-                    .orElse(null);
-        }
-        if (bearbeiter == null) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Bearbeiter konnte nicht ermittelt werden"));
-        }
+        Mitarbeiter bearbeiter = angemeldeterMitarbeiter.bearbeiter(authentication);
 
         Zeitbuchung buchung = zeitbuchungRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Buchung nicht gefunden: " + id));
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Diese Zeitbuchung gibt es nicht mehr."));
 
         if (buchung.getStartZeit() != null && buchung.getMitarbeiter() != null) {
             int jahr = buchung.getStartZeit().getYear();
@@ -250,29 +237,21 @@ public class ZeitverwaltungController {
 
     /**
      * Storniert eine Zeitbuchung (GoBD-konform: kein hartes Löschen).
-     * Für manuelle Löschung: Buchung bleibt mit Storno-Audit markiert.
+     * Für manuelle Löschung: Buchung bleibt mit Storno-Audit markiert. Der Bearbeiter
+     * im Protokoll ist der Mitarbeiter des angemeldeten Benutzers.
      */
     @DeleteMapping("/buchungen/{id}")
+    @Transactional
     public ResponseEntity<?> deleteBuchung(
             @PathVariable Long id,
-            @RequestParam(required = false) Long bearbeiterId,
-            @RequestParam(required = false) String grund) {
+            @RequestParam(required = false) String grund,
+            Authentication authentication) {
 
         if (grund == null || grund.isBlank()) {
             grund = "Manuelle Löschung im Büro";
         }
 
-        Mitarbeiter bearbeiter = null;
-        if (bearbeiterId != null) {
-            bearbeiter = mitarbeiterRepository.findById(bearbeiterId).orElse(null);
-        }
-        if (bearbeiter == null) {
-            bearbeiter = frontendUserProfileRepository.findAll().stream()
-                    .filter(p -> p.getMitarbeiter() != null)
-                    .map(p -> p.getMitarbeiter())
-                    .findFirst()
-                    .orElse(null);
-        }
+        Mitarbeiter bearbeiter = angemeldeterMitarbeiter.bearbeiter(authentication);
 
         Zeitbuchung buchung = zeitbuchungRepository.findById(id).orElse(null);
         Long mitarbeiterId = null;
@@ -289,14 +268,12 @@ public class ZeitverwaltungController {
                             .body(Map.of("error", "Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
                 }
             }
-            if (bearbeiter != null) {
-                // WICHTIG: Erst Version erhöhen, dann Storno-Audit!
-                buchung.markiereAlsGeaendert(bearbeiter);
-                zeitbuchungRepository.save(buchung);
+            // WICHTIG: Erst Version erhöhen, dann Storno-Audit!
+            buchung.markiereAlsGeaendert(bearbeiter);
+            zeitbuchungRepository.save(buchung);
 
-                // AUDIT: Stornierung mit NEUER Version protokollieren
-                auditService.protokolliereStorno(buchung, bearbeiter, ErfassungsQuelle.DESKTOP, grund);
-            }
+            // AUDIT: Stornierung mit NEUER Version protokollieren
+            auditService.protokolliereStorno(buchung, bearbeiter, ErfassungsQuelle.DESKTOP, grund);
         }
 
         zeitbuchungRepository.deleteById(id);
@@ -331,7 +308,11 @@ public class ZeitverwaltungController {
      * Erstellt eine neue Zeitbuchung.
      */
     @PostMapping("/buchungen")
-    public ResponseEntity<Map<String, Object>> createBuchung(@RequestBody Map<String, Object> data) {
+    @Transactional // Buchung und Protokolleintrag gemeinsam oder gar nicht (GoBD)
+    public ResponseEntity<Map<String, Object>> createBuchung(@RequestBody Map<String, Object> data,
+            Authentication authentication) {
+        // GoBD: Ohne zugeordneten Mitarbeiter kein Protokolleintrag möglich → ablehnen (403).
+        Mitarbeiter bearbeiter = angemeldeterMitarbeiter.bearbeiter(authentication);
         Zeitbuchung buchung = new Zeitbuchung();
 
         // Typ früh setzen, um zu prüfen ob Projekt erforderlich ist
@@ -440,7 +421,16 @@ public class ZeitverwaltungController {
             }
         }
 
+        // GoBD-Felder der Erfassung wie in der Handy-App
+        buchung.setErfasstVon(bearbeiter);
+        buchung.setErfasstAm(LocalDateTime.now());
+        buchung.setErfasstVia(ErfassungsQuelle.DESKTOP);
+        buchung.setVersion(1);
+
         Zeitbuchung saved = zeitbuchungRepository.save(buchung);
+
+        // AUDIT: Version 1 protokollieren – sonst beginnt die Historie erst mit der ersten Änderung.
+        auditService.protokolliereErstellung(saved, bearbeiter, ErfassungsQuelle.DESKTOP);
 
         // MonatsSaldo-Cache invalidieren
         monatsSaldoService.invalidiereFuerDateTime(
@@ -543,7 +533,7 @@ public class ZeitverwaltungController {
                     .orElse(null));
             // TagesSollService (Task 3) kapselt die Sollstunden-Ermittlung inkl.
             // Feiertagsbehandlung und laufender Wiedereingliederung; arbeitsSollJeTag
-            // liefert an Feiertagen (voll wie halb) von sich aus 0.
+            // liefert am vollen Feiertag 0, am halben die Haelfte des Tagessolls.
             tagData.put("sollStunden", sollStundenJeTag.get(currentTag));
             tagData.put("feiertagsStunden", feiertagsGutschriftJeTag.get(currentTag));
             tagData.put("buchungen", buchungenProTag.getOrDefault(currentTag, Collections.emptyList()));
@@ -554,12 +544,11 @@ public class ZeitverwaltungController {
             // Bugfix (Task 11, siehe Plan "Bewusste Verhaltensaenderungen" Punkt 1):
             // bisher wurden an JEDEM Feiertag die vollen Sollstunden als
             // Ist-Stunden gutgeschrieben, auch an einem halben Feiertag wie
-            // Heiligabend - waehrend sollStundenMonat (berechneSollstundenFuerMonat,
-            // unten) den halben Feiertag schon immer korrekt halbierte. Das ergab
-            // +4h Phantom-Ueberstunden pro halbem Feiertag und einen Widerspruch
-            // zur Monatsuebersicht (MonatsSaldoService: Soll 4 / Gutschrift 4 ->
-            // netto 0). feiertagsGutschriftJeTag liefert an halben Feiertagen
-            // korrekt die halbe Stundenzahl (und 0 an Nicht-Feiertagen).
+            // Heiligabend. Das ergab +4h Phantom-Ueberstunden pro halbem Feiertag
+            // und einen Widerspruch zur Monatsuebersicht (MonatsSaldoService:
+            // Soll 8 / Gutschrift 4 -> der halbe Tag bleibt zu arbeiten, seit der
+            // Fachentscheidung 12.10.2026). feiertagsGutschriftJeTag liefert an
+            // halben Feiertagen die halbe Stundenzahl (und 0 an Nicht-Feiertagen).
             istStunden = istStunden.add(feiertagsGutschriftJeTag.get(currentTag));
 
             // Normale Buchungen dazuzählen (PAUSE ausschließen)
@@ -876,8 +865,9 @@ public class ZeitverwaltungController {
 
     /**
      * Befüllt den MonatsSaldo-Cache für alle aktiven Mitarbeiter.
-     * Kann manuell aufgerufen werden um den Cache nachträglich zu füllen.
-     * GET /api/zeitverwaltung/saldo-cache/warmup
+     * Kann manuell aufgerufen werden um den Cache nachträglich zu füllen (nur Admin,
+     * siehe {@code SecurityConfig.ADMIN_MASSENLAEUFE}).
+     * POST /api/zeitverwaltung/saldo-cache/warmup
      */
     @PostMapping("/saldo-cache/warmup")
     public ResponseEntity<Map<String, Object>> warmupSaldoCache() {

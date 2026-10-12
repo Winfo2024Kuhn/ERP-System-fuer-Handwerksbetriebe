@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.dto.SpracheingabeErgebnis;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -272,5 +273,10 @@ class SpracheingabeServiceTest {
         SpracheingabeErgebnis ergebnis = service.transkribiere(audio, "audio/webm");
 
         assertThat(ergebnis.text()).isEqualTo("Gelaender montiert.");
+        // Schlüssel im Header, nie in der URL (die steht in Fehlermeldungen)
+        ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
+        Mockito.verify(httpClient).send(anfrage.capture(), Mockito.any());
+        assertThat(anfrage.getValue().uri().toString()).doesNotContain("dummy-test-key");
+        assertThat(anfrage.getValue().headers().firstValue("x-goog-api-key")).hasValue("dummy-test-key");
     }
 }

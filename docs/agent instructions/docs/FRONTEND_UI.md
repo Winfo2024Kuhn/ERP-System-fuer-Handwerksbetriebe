@@ -69,10 +69,14 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 
 ## Build & Coding-Regeln
 - Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!). Der Build schreibt nach `src/main/resources/static/` (PC) bzw. `static/zeiterfassung/` (Handy-App). Diese Dateien sind eingecheckt und werden mitcommittet (siehe `review-and-ship`). Die CI (`.github/workflows/pr-ci.yml`) prüft je Frontend außerdem `npm run lint`, `npm test` und `npm run test:e2e`.
-- Kein `dangerouslySetInnerHTML` mit ungeprüftem HTML:
-  - E-Mail-HTML bereinigt das Backend (`EmailHtmlSanitizer`). Angezeigt wird es in `EmailContentFrame` (iframe mit `sandbox`).
-  - HTML, das im Frontend entsteht oder von Nutzern kommt, vorher mit `DOMPurify.sanitize()` bereinigen (Vorbild `pages/EmailTextvorlagenEditor.tsx`).
-  - Tags entfernen, Entities entpacken, URLs prüfen: nur über `react-pc-frontend/src/lib/htmlSanitizer.ts` (siehe `TESTING_SECURITY.md`).
+- Kein `dangerouslySetInnerHTML` ohne `sanitizeHtml()` aus `src/lib/htmlSanitizer.ts` (DOMPurify):
+  - Gilt für jedes HTML aus Datenbank, API, KI oder Nutzereingabe, auch wenn das Backend es schon bereinigt hat. Bereinigt wird an der Stelle selbst oder sichtbar davor in derselben Datei (z. B. im `useMemo`, das die Vorschau baut).
+  - Braucht eine Stelle engere Regeln, nimmt sie eine eigene DOMPurify-Instanz mit Positivliste (Vorbild `bereinigeBeitragsHtml` in `components/website/textumwandlung.ts`). Lockerer als `sanitizeHtml()` wird nie bereinigt; `DOMPurify.sanitize()` nicht direkt in Seiten aufrufen.
+  - `EmailHtmlSanitizer` ist eine Backend-Klasse (Java) und bereinigt nur E-Mails. Im Frontend ersetzt sie `sanitizeHtml()` nicht. Fremdes E-Mail-HTML zeigt `EmailContentFrame` im iframe mit `sandbox` an.
+  - Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren).
+  - HTML nur auslesen oder umbauen (Text, `querySelector`, `dataset`): `parseHtmlInert()` bzw. `htmlToText()`, nie `document.createElement('div').innerHTML = …`. In so einem div führt `<img onerror>` Code aus, auch wenn es nie angezeigt wird. Wird geparstes HTML danach wieder in die Seite geschrieben, gilt die Regel oben: vorher `sanitizeHtml()`.
+  - Tags entfernen, Entities entpacken, URLs prüfen: ebenfalls nur über `src/lib/htmlSanitizer.ts` (siehe `TESTING_SECURITY.md`).
+  - `react-zeiterfassung` hat kein `htmlSanitizer.ts` und derzeit keine HTML-Stelle. Vor der ersten das Gegenstück zur Freigabe stellen.
 - URL-Parameter immer mit `encodeURIComponent()`.
 - CSS-Klassen bedingt zusammensetzen mit `cn()` aus `src/lib/utils.ts`.
 - Hierarchie:
@@ -84,7 +88,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 
 ## Design-System (Handwerker-Fokus: Schlicht & Klar)
 - **Farbschema:** Rose (ZWINGEND – kein indigo/blue, kein `red-*` als Primärfarbe).
-- **Primärfarbe:** `rose-600` = `#e11d48` | Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`. `tailwind.config.js` überschreibt keine Farben; in der Zeiterfassung (Tailwind v4) ist `rose-600` ein OKLCH-Wert, die Klasse bleibt dieselbe. `#dc2626` ist `red-600` (Gefahr/Fehler), nicht die Primärfarbe – auch die Variable `--rose-primary: #dc2626` in `react-zeiterfassung/src/index.css` ist ein unbenutzter Altwert.
+- **Primärfarbe:** `rose-600` = `#e11d48` | Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`. `tailwind.config.js` überschreibt keine Farben; in der Zeiterfassung (Tailwind v4) ist `rose-600` ein OKLCH-Wert, die Klasse bleibt dieselbe. `#dc2626` ist `red-600` (Gefahr/Fehler), nicht die Primärfarbe.
 - **Status-Farben:** nur für Zustände, nie als Markenfarbe. Erfolg `emerald`/`green`, Warnung `amber`, Gefahr/Löschen `red-600`. So machen es `toast.tsx` und `confirm-dialog.tsx` (`variant: 'danger'`).
 
 ### Button-Klassen
@@ -109,7 +113,7 @@ PC-Frontend (`react-pc-frontend/src`):
 - `useToast()` -> `src/components/ui/toast.tsx` (siehe Toast-Pflicht)
 - `<ImageViewer>` -> `src/components/ui/image-viewer.tsx`
 - `<DetailLayout>` -> `src/components/DetailLayout.tsx` (2-Spalten-Layout)
-- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant; `EmailHistory.tsx` ist ungenutzter Altbestand)
+- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant)
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 - `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)

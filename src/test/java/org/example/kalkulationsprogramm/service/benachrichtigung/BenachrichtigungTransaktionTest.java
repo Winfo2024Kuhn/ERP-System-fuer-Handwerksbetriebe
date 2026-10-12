@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 @DataJpaTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import({ BenachrichtigungService.class, BenachrichtigungErledigtService.class,
+        org.example.kalkulationsprogramm.service.EmailGelesenService.class,
         BenachrichtigungTransaktionTest.TelefonMitDefekterQuelle.class })
 class BenachrichtigungTransaktionTest {
 

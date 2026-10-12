@@ -8,7 +8,7 @@ Unterpaket `miete`) und der `SecurityConfig`.
 
 - **Port:** `8080` (`server.port` in `application.properties`, im Docker-Image
   ebenso). Lokal also `http://localhost:8080`.
-- **Umfang:** 97 Controller mit zusammen 737 Endpunkt-Methoden
+- **Umfang:** 97 Controller mit zusammen 736 Endpunkt-Methoden
   (732 verschiedene Kombinationen aus HTTP-Methode und Pfad; einige
   Pfade gibt es zweimal, getrennt nach JSON oder multipart bzw. nach
   Query-Parameter). Dazu kommt `RestExceptionHandler` (`@ControllerAdvice`,
@@ -66,8 +66,8 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 **Nur für Admins** (Rolle `ADMIN`, alles in Kette 4):
 
 - `PUT /api/abteilungen/*/berechtigungen`
-- `/api/firma/**` – außer lesend `GET /api/firma`, `GET /api/firma/steuerberater`
-  und `GET /api/firma/steuerberater/*`, die dürfen alle Angemeldeten
+- `/api/firma/**` – außer lesend `GET /api/firma`, `GET /api/firma/logo`,
+  `GET /api/firma/steuerberater` und `GET /api/firma/steuerberater/*`, die dürfen alle Angemeldeten
 - `/api/settings/**`, `/api/frontend-users/**`, `/api/postfaecher/**`
 - `PUT /api/email/signatures/*/system-default`,
   `PUT` und `DELETE /api/email/signatures/*/firmen-vorlage`
@@ -75,6 +75,13 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 - `POST /api/verrechnungslohn/uebernehmen`
 - `POST /api/mahnwesen/lauf`
 - `POST /api/emails/admin/**`
+- Massenläufe ohne Knopf (`ADMIN_MASSENLAEUFE`, jede Methode): `/api/emails/import`,
+  `/api/emails/scan-spam|scan-inquiries|scan-assignments|scan-steuerberater`,
+  `/api/emails/backfill-parents`, `/api/emails/spam-model/rescore|bootstrap`,
+  `/api/lieferant-dokumente/process-assigned-emails`,
+  `/api/lieferant-dokumente/process-email/*`,
+  `/api/lieferant-dokumente/lieferant/*/process-emails`,
+  `/api/zeitverwaltung/saldo-cache/warmup`
 - `DELETE /api/lieferant-dokumente/**`, `GET /api/lieferant-dokumente/duplicates`,
   `POST /api/lieferant-dokumente/relink-all`,
   `POST /api/lieferant-dokumente/lieferant/*/relink`,
@@ -106,7 +113,8 @@ Anmeldecodes der Mitarbeiter.
 - Projekte und Anfragen (`/api/projekte/{id}` bzw. `/api/anfragen/{id}`):
   `GET`/`POST …/dokumente`, `GET`/`POST …/notizen`, `PATCH`/`DELETE …/notizen/{nid}`,
   `POST`/`DELETE …/notizen/{nid}/bilder…`
-- `GET` und `POST /api/reklamationen/lieferant/{id}`, `POST /api/reklamationen/{id}/bilder`
+- `GET` und `POST /api/reklamationen/lieferant/{id}`, `GET /api/reklamationen/{id}`,
+  `POST /api/reklamationen/{id}/bilder`
 - `GET /api/zeitverwaltung/feiertage/zwischen`
 - `GET /api/buchhaltung/mobile/me/permissions`, `GET /api/buchhaltung/mobile/belege` (auch `/{id}`),
   `POST /api/buchhaltung/mobile/belege`, `POST /api/buchhaltung/mobile/mwst-rechner`,
@@ -341,8 +349,8 @@ Angebote, Auftragsbestätigungen, Rechnungen, Mahnungen usw. als Ausgangsdokumen
 | `POST` | `/{id}/email-versendet` | Nach dem Mail-Versand buchen und Versanddatum setzen |
 | `POST` | `/{id}/pdf-speichern` | PDF zu einem gebuchten Dokument ablegen |
 | `GET` | `/{id}/pdf` | Gespeicherte PDF (`404`, wenn keine da ist) |
-| `POST` | `/{id}/storno` | Stornieren, legt ein Storno-Gegendokument an |
-| `DELETE` | `/{id}` | Ungebuchtes Dokument mit Begründung (`begruendung`) löschen, Eintrag im Prüfprotokoll |
+| `POST` | `/{id}/storno` | Gebuchte Rechnung stornieren, legt ein Storno-Gegendokument an (nicht für Stornorechnungen und Entwürfe) |
+| `DELETE` | `/{id}` | Entwurf mit Begründung (`begruendung`) löschen, Eintrag im Prüfprotokoll (nicht wenn gebucht, versandt, digital angenommen oder storniert) |
 | `GET` | `/{id}/historie` | Änderungsverlauf (Prüfprotokoll) eines Dokuments |
 | `GET` | `/historie/nummer/{dokumentNummer}` | Verlauf über die Dokumentnummer, auch für gelöschte Dokumente |
 | `GET` | `/{id}/abrechnungsverlauf` | Bisherige Rechnungen und Restbetrag zu einem Basisdokument |
@@ -516,9 +524,9 @@ Löschen (jedes DELETE) nur für Admins.
 | `POST` | `/{dokumentId}/reanalyze` | Ein Dokument neu per KI lesen |
 | `POST` | `/relink-all` | Fehlende Belegketten-Verknüpfungen aller Lieferanten ergänzen *(nur Admin)* |
 | `POST` | `/lieferant/{lieferantId}/relink` | Dasselbe für einen Lieferanten *(nur Admin)* |
-| `POST` | `/process-assigned-emails` | Anhänge aller Lieferanten-Mails zu Dokumenten machen (KI) |
-| `POST` | `/process-email/{emailId}` | Anhänge einer Mail verarbeiten |
-| `POST` | `/lieferant/{lieferantId}/process-emails` | Anhänge aller Mails eines Lieferanten verarbeiten |
+| `POST` | `/process-assigned-emails` | Anhänge aller Lieferanten-Mails zu Dokumenten machen (KI) *(nur Admin)* |
+| `POST` | `/process-email/{emailId}` | Anhänge einer Mail verarbeiten *(nur Admin)* |
+| `POST` | `/lieferant/{lieferantId}/process-emails` | Anhänge aller Mails eines Lieferanten verarbeiten *(nur Admin)* |
 | `GET` | `/duplicates` | Doppelte Dokumente anzeigen (gleiche Nummer und Lieferant) *(nur Admin)* |
 | `DELETE` | `/duplicates` | Doppelte Dokumente löschen, das älteste bleibt *(nur Admin)* |
 | `DELETE` | `/{id}` | Dokument löschen *(nur Admin)* |
@@ -560,6 +568,7 @@ Lieferanten-Rechnungen nach Positionen auf Projekte/Kostenstellen aufteilen.
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | `GET` | `/lieferant/{lieferantId}` | Reklamationen eines Lieferanten |
+| `GET` | `/{id}` | Eine Reklamation mit Bildern (Detailseite der Handy-App) |
 | `PATCH` | `/{id}/status` | Status einer Reklamation ändern |
 | `DELETE` | `/{id}` | Reklamation löschen |
 | `POST` | `/lieferant/{lieferantId}` | Reklamation anlegen |
@@ -771,15 +780,15 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 |---|---|---|
 | `GET` | `/absender-postfaecher` | Auswahl „Senden von“ (eigenes Postfach zuerst) |
 | `GET` | `/{emailId}/attachments/{attachmentId}` | Anhang herunterladen |
-| `POST` | `/import` | Postfach sofort abrufen |
+| `POST` | `/import` | Postfach sofort abrufen *(nur Admin)* |
 | `POST` | `/{emailId}/block-sender` | Absender sperren |
 | `POST` | `/{emailId}/mark-spam` | Als Spam markieren |
 | `POST` | `/{emailId}/mark-not-spam` | Kein Spam |
 | `POST` | `/{emailId}/mark-not-newsletter` | Newsletter zurück in den Posteingang |
 | `POST` | `/{emailId}/confirm-newsletter` | Newsletter bestätigen |
-| `POST` | `/spam-model/bootstrap` | Spam-Modell aus einer CSV-Datei anlernen |
+| `POST` | `/spam-model/bootstrap` | Spam-Modell aus einer CSV-Datei anlernen *(nur Admin)* |
 | `GET` | `/spam-model/stats` | Stand des Spam-Lernmodells |
-| `POST` | `/spam-model/rescore` | Alle Mails mit dem Spam-Modell neu bewerten (`400`, solange nicht angelernt) |
+| `POST` | `/spam-model/rescore` | Alle Mails mit dem Spam-Modell neu bewerten (`400`, solange nicht angelernt) *(nur Admin)* |
 | `GET` | `/projekt/{projektId}` | Mails eines Projekts |
 | `GET` | `/anfrage/{anfrageId}` | Mails einer Anfrage |
 | `GET` | `/lieferant/{lieferantId}` | Mails eines Lieferanten |
@@ -803,7 +812,6 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `GET` | `/{emailId}/thread` | Ganzer Verlauf zu einer Mail |
 | `POST` | `/admin/backfill-attachment-filenames` | Kodierte Anhang-Dateinamen reparieren *(nur Admin)* |
 | `POST` | `/admin/backfill-xml-to-pdf` | Lieferanten-Dokumente von XML auf die PDF aus derselben Mail umstellen *(nur Admin)* |
-| `GET` | `/{id}/mark-viewed` | Mail als angesehen markieren |
 | `POST` | `/{id}/assign/projekt/{projektId}` | Mail einem Projekt zuordnen |
 | `POST` | `/{id}/assign/anfrage/{anfrageId}` | Mail einer Anfrage zuordnen |
 | `POST` | `/{id}/assign/lieferant/{lieferantId}` | Mail einem Lieferanten zuordnen |
@@ -816,14 +824,14 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `POST` | `/{id}/toggle-star` | Markierung an/aus |
 | `GET` | `/{emailId}/attachments/download-all` | Alle Anhänge als ZIP |
 | `GET` | `/stats` | Zähler je Ordner |
-| `POST` | `/scan-spam` | Spam-Prüfung für noch nicht geprüfte Mails |
-| `POST` | `/scan-inquiries` | Anfrage-Erkennung für noch nicht geprüfte Mails |
-| `POST` | `/scan-assignments` | Spam neu prüfen und nicht zugeordnete Mails automatisch zuordnen |
+| `POST` | `/scan-spam` | Spam-Prüfung für noch nicht geprüfte Mails *(nur Admin)* |
+| `POST` | `/scan-inquiries` | Anfrage-Erkennung für noch nicht geprüfte Mails *(nur Admin)* |
+| `POST` | `/scan-assignments` | Spam neu prüfen und nicht zugeordnete Mails automatisch zuordnen *(nur Admin)* |
 | `GET` | `/contacts` | Kontakte für die Empfänger-Auswahl (`q`) |
 | `GET` | `/{id}/possible-assignments` | Mögliche Zuordnungen einer Mail |
-| `POST` | `/backfill-parents` | Antworten nachträglich mit ihrer Ursprungsmail verknüpfen |
+| `POST` | `/backfill-parents` | Antworten nachträglich mit ihrer Ursprungsmail verknüpfen *(nur Admin)* |
 | `POST` | `/admin/rebuild-threads` | Verläufe bereinigen (Standard Probelauf, `probelauf=false` speichert) *(nur Admin)* |
-| `POST` | `/scan-steuerberater` | Steuerberater-Mails nachträglich verarbeiten (Lohnabrechnungen, BWA) |
+| `POST` | `/scan-steuerberater` | Steuerberater-Mails nachträglich verarbeiten (Lohnabrechnungen, BWA) *(nur Admin)* |
 | `POST` | `/send` | Neue Mail senden (multipart, mit Anhängen) |
 | `POST` | `/{emailId}/reply` | Auf eine Mail antworten (multipart) |
 
@@ -1030,7 +1038,7 @@ Liefert die Handy-App (PWA) aus, kein JSON. Ohne Anmeldung erreichbar.
 | `POST` | `/zeitkonten/{mitarbeiterId}/ausschalten` | Zeitkonto ausschalten |
 | `GET` | `/auswertung/projekt/{projektId}/pdf` | Projektauswertung als PDF |
 | `GET` | `/auswertung/projekt/{projektId}` | Projektauswertung nach Tätigkeiten/Arbeitsgängen |
-| `POST` | `/saldo-cache/warmup` | Monatssalden aller aktiven Mitarbeiter neu in den Zwischenspeicher rechnen |
+| `POST` | `/saldo-cache/warmup` | Monatssalden aller aktiven Mitarbeiter neu in den Zwischenspeicher rechnen *(nur Admin)* |
 
 ### ZeitkontoKorrekturController
 
@@ -1234,7 +1242,6 @@ Lohnabrechnungen, die vom Steuerberater kommen.
 | `GET` | `/mobile/tag` | Einträge eines Tages für die Handy-App |
 | `GET` | `/{id}` | Einzelner Eintrag |
 | `POST` | `/` | Eintrag anlegen |
-| `POST` | `/mobile` | Eintrag aus der Handy-App anlegen (mit Handy-Token derzeit gesperrt, siehe Absicherung) |
 | `PUT` | `/{id}` | Eintrag ändern |
 | `DELETE` | `/{id}` | Eintrag löschen |
 
@@ -1529,14 +1536,14 @@ Bereich „Aktuelles“ der Firmen-Website; ganzer Pfad nur für Admins. Ganze B
 
 **Basis-URL:** `/api/firma`
 
-`/api/firma/**` ist Admin-Sache. Lesen dürfen alle Angemeldeten nur `GET /api/firma`, `GET /api/firma/steuerberater` und `GET /api/firma/steuerberater/{id}`.
+`/api/firma/**` ist Admin-Sache. Lesen dürfen alle Angemeldeten nur `GET /api/firma`, `GET /api/firma/logo`, `GET /api/firma/steuerberater` und `GET /api/firma/steuerberater/{id}`.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | `GET` | `/` | Firmendaten |
 | `PUT` | `/` | Firmendaten speichern *(nur Admin)* |
 | `POST` | `/logo` | Firmenlogo hochladen (PNG, JPEG, WebP) *(nur Admin)* |
-| `GET` | `/logo` | Firmenlogo *(nur Admin)* |
+| `GET` | `/logo` | Firmenlogo (alle Angemeldeten) |
 | `DELETE` | `/logo` | Firmenlogo löschen *(nur Admin)* |
 | `GET` | `/kostenstellen` | Alle Kostenstellen *(nur Admin)* |
 | `GET` | `/kostenstellen/typ/{typ}` | Kostenstellen eines Typs *(nur Admin)* |
@@ -1695,7 +1702,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 |---|---|---|
 | `GET` | `/{uuid}` | Daten für die Freigabe-Seite (Status `PENDING`, `ACCEPTED`, `EXPIRED`, `REVOKED`) |
 | `GET` | `/{uuid}/pdf` | PDF zur Freigabe (nur solange sie nicht abgelaufen ist) |
-| `DELETE` | `/{uuid}/pdf` | PDF einer abgelaufenen Freigabe löschen |
+| `DELETE` | `/{uuid}/pdf` | PDF vom abgelaufenen oder zurückgezogenen Link lösen (`204`); die Datei bleibt im ERP. Offen oder angenommen: `409`, unbekannt: `404` |
 | `POST` | `/{uuid}/code` | Sechsstelligen Bestätigungscode an den Kunden schicken |
 | `POST` | `/{uuid}/akzeptieren` | Freigabe als angenommen speichern (mit IP und User-Agent) |
 
@@ -1753,7 +1760,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 36 | `FreigabeInternalController` | `/api/internal/freigabe` | 5 | 20 |
 | 37 | `FrontendUserController` | `/api/frontend-users` | 3 | 1 |
 | 38 | `GaebImportController` | `/api/import` | 1 | 8 |
-| 39 | `KalenderController` | `/api/kalender` | 8 | 13 |
+| 39 | `KalenderController` | `/api/kalender` | 7 | 13 |
 | 40 | `KassenbuchController` | `/api/buchhaltung/kassenbuch` | 10 | 14 |
 | 41 | `KassenbuchungController` | `/api/buchhaltung/kassenbuch` | 2 | 14 |
 | 42 | `KasseShortcutController` | `/api/buchhaltung/kasse` | 7 | 14 |
@@ -1767,7 +1774,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 50 | `LieferantDokumentPositionController` | `/api/bestellungen-uebersicht/positionen` | 4 | 7 |
 | 51 | `LieferantDokumentWartungController` | `/api/admin/lieferant-dokumente` | 1 | 7 |
 | 52 | `LieferantenController` | `/api/lieferanten` | 29 | 7 |
-| 53 | `LieferantReklamationController` | `/api/reklamationen` | 6 | 7 |
+| 53 | `LieferantReklamationController` | `/api/reklamationen` | 7 | 7 |
 | 54 | `LieferantWartungController` | `/api/admin/lieferanten` | 1 | 7 |
 | 55 | `LohnabrechnungController` | `/api/lohnabrechnungen` | 7 | 12 |
 | 56 | `LohnStammdatenController` | `/api/lohn-stammdaten` | 12 | 12 |
@@ -1798,7 +1805,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 81 | `TelefonController` | `/api/telefon` | 19 | 16 |
 | 82 | `TelefonEinstellungenController` | `/api/telefon` | 4 | 16 |
 | 83 | `TextbausteinController` | `/api/textbausteine` | 8 | 5 |
-| 84 | `UnifiedEmailController` | `/api/emails` | 57 | 9 |
+| 84 | `UnifiedEmailController` | `/api/emails` | 56 | 9 |
 | 85 | `UrlaubsantragController` | `/api/langzeitkrankmeldungen`, `/api/urlaub` (ohne Klassen-Mapping) | 8 | 12 |
 | 86 | `UtilsController` | `/api/utils` | 1 | 8 |
 | 87 | `VendorInvoiceController` | `/api/admin/vendor-invoices` | 4 | 7 |

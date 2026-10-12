@@ -26,7 +26,7 @@ interface Eingangsrechnung {
     pdfUrl: string;
     ueberfaellig: boolean;
     genehmigt: boolean;
-    darfGenehmigen: boolean; // Vom Backend: true wenn User aus Abteilung 3 (Büro)
+    darfGenehmigen: boolean; // Vom Backend: true, wenn die Abteilung des Users das Recht „Rechnungen genehmigen“ hat
     // Skonto-Felder
     skontoTage: number | null;
     skontoProzent: number | null;
@@ -167,7 +167,7 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
             });
 
             if (res.status === 403) {
-                toast.error('Keine Berechtigung zum Genehmigen. Nur Mitarbeiter aus Abteilung Büro dürfen genehmigen.');
+                toast.error('Keine Berechtigung zum Genehmigen. Das Recht „Rechnungen genehmigen“ wird je Abteilung unter Einstellungen → Berechtigungen vergeben.');
                 return;
             }
 
@@ -212,9 +212,9 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
         }
     };
 
-    // Backend filtert bereits nach Berechtigungen:
-    // - Abteilung 3 (Büro) sieht alle
-    // - Abteilung 2 (Buchhaltung) sieht nur genehmigte
+    // Backend filtert bereits nach den Abteilungsrechten:
+    // - „Rechnungen genehmigen“ sieht alle
+    // - „Genehmigte Rechnungen sehen“ sieht nur genehmigte
     const visibleItems = items;
 
     const totalSum = useMemo(() => {
@@ -401,11 +401,12 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
                 <div className="flex justify-center">
                     <label
                         className={`inline-flex items-center justify-center p-1.5 rounded-full transition-colors ${canApprove ? 'cursor-pointer hover:bg-slate-100' : 'cursor-not-allowed opacity-70'}`}
-                        title={canApprove ? "Status ändern" : "Nur Büro/Berechtigte"}
+                        title={canApprove ? "Status ändern" : "Nur mit dem Abteilungsrecht „Rechnungen genehmigen“"}
                     >
                         <input
                             type="checkbox"
                             className="sr-only"
+                            aria-label={item.genehmigt ? 'Genehmigung zurücknehmen' : 'Rechnung genehmigen'}
                             checked={item.genehmigt}
                             onChange={() => toggleGenehmigt(item.id, item.genehmigt)}
                             disabled={!canApprove}

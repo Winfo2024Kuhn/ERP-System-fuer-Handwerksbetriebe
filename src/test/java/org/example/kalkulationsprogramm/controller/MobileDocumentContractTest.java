@@ -23,6 +23,7 @@ class MobileDocumentContractTest {
     @Mock ProjektNotizRepository projectNotes;
     @org.junit.jupiter.api.io.TempDir java.nio.file.Path storage;
     @Mock MitarbeiterRepository employees;
+    @Mock FrontendUserProfileRepository profiles;
     @Mock LieferantDokumentService documents;
     @Mock LieferantBildRepository pictures;
     @Mock BildVorschauService thumbnails;
@@ -34,9 +35,15 @@ class MobileDocumentContractTest {
     @InjectMocks LieferantenController suppliers;
 
     @BeforeEach void mobile() {
-        org.springframework.test.util.ReflectionTestUtils.setField(suppliers, "uploadDir", storage.toString());
+        // Echte Dateisuche: Lieferanten-Dokumente liegen direkt im Upload-Ordner storage.
+        org.springframework.test.util.ReflectionTestUtils.setField(suppliers, "dokumentDateiService",
+            new LieferantDokumentDateiService(storage.toString(), storage.toString(), storage.toString(), storage.toString()));
         org.springframework.test.util.ReflectionTestUtils.setField(suppliers, "mailAttachmentDir", storage.toString());
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(new MobilePrincipal(7L), null, List.of()));
+        // Echter Service: Der handelnde Mitarbeiter kommt aus dem Token (MobilePrincipal), nicht aus Headern.
+        var angemeldet = new AngemeldeterMitarbeiterService(profiles, employees);
+        org.springframework.test.util.ReflectionTestUtils.setField(projects, "angemeldeterMitarbeiter", angemeldet);
+        org.springframework.test.util.ReflectionTestUtils.setField(enquiries, "angemeldeterMitarbeiter", angemeldet);
         // Echter Zugriffs-Service: prüft, dass der Header-Token (MobilePrincipal) die Abteilungsrechte des Mitarbeiters bekommt.
         org.springframework.test.util.ReflectionTestUtils.setField(suppliers, "dokumentZugriffService",
             new LieferantDokumentZugriffService(belege, documents));
@@ -59,7 +66,7 @@ class MobileDocumentContractTest {
         assertThat(enquiries.listeDokumente(1L, null).getBody()).extracting("id").containsExactly(1L);
     }
     @Test void mobileUploadsKoennenKeineInterneDokumentgruppeBefuellen() {
-        assertThat(projects.uploadDokument(1L, List.of(), DokumentGruppe.DIVERSE_DOKUMENTE, null, 7L, null).getStatusCode().value()).isEqualTo(403);
+        assertThat(projects.uploadDokument(1L, List.of(), DokumentGruppe.DIVERSE_DOKUMENTE, null, auth()).getStatusCode().value()).isEqualTo(403);
         assertThat(enquiries.uploadDokument(1L, List.of(), null).getStatusCode().value()).isEqualTo(403);
         verifyNoInteractions(files);
     }
@@ -110,7 +117,7 @@ class MobileDocumentContractTest {
     @Test void mobileBildUploadsNehmenKeineSvgOderHtmlDateienAn() {
         var svg = new org.springframework.mock.web.MockMultipartFile("datei", "bild.svg", "image/svg+xml", "<svg/>".getBytes());
         var html = new org.springframework.mock.web.MockMultipartFile("datei", "bild.html", "text/html", "<p>".getBytes());
-        assertThat(projects.uploadDokument(1L, List.of(svg), DokumentGruppe.BILDER, null, 7L, null).getStatusCode().value()).isEqualTo(400);
+        assertThat(projects.uploadDokument(1L, List.of(svg), DokumentGruppe.BILDER, null, auth()).getStatusCode().value()).isEqualTo(400);
         assertThat(enquiries.uploadDokument(1L, List.of(html), DokumentGruppe.BILDER).getStatusCode().value()).isEqualTo(400);
         verifyNoInteractions(files);
     }
@@ -120,7 +127,7 @@ class MobileDocumentContractTest {
         var visible = note(1L, parent, me, true, true);
         when(notes.findByAnfrageIdOrderByErstelltAmDesc(1L)).thenReturn(List.of(visible,
             note(2L,parent,me,false,false),note(3L,parent,other,true,true)));
-        assertThat(enquiries.getNotizen(1L,null,7L,"token").getBody()).extracting("id").containsExactly(1L);
+        assertThat(enquiries.getNotizen(1L, auth()).getBody()).extracting("id").containsExactly(1L);
     }
     @Test void direkterLieferantenDownloadPrueftDasDokumentTypRecht() {
         var supplier = new Lieferanten(); supplier.setId(1L);
@@ -154,8 +161,20 @@ class MobileDocumentContractTest {
         var parent = new Projekt(); parent.setId(1L);
         var note = new ProjektNotiz(); note.setId(5L); note.setProjekt(parent); note.setMitarbeiter(employee(7L)); note.setMobileSichtbar(true);
         when(projectNotes.findById(5L)).thenReturn(Optional.of(note));
-        assertThat(projects.deleteProjektNotiz(2L,5L,null,"token").getStatusCode().value()).isEqualTo(404);
+        when(employees.findById(7L)).thenReturn(Optional.of(employee(7L)));
+        assertThat(projects.deleteProjektNotiz(2L, 5L, auth()).getStatusCode().value()).isEqualTo(404);
         verify(projectNotes, never()).delete(any());
+    }
+    @Test void projektNotizenAufDemHandyNurMobilFreigegebeneUndNurEigeneBearbeitbar() {
+        // Handy-Signal ist jetzt der MobilePrincipal (nicht mehr der token-Parameter).
+        var me = employee(7L); var other = employee(8L); var parent = new Projekt(); parent.setId(1L);
+        when(employees.findById(7L)).thenReturn(Optional.of(me));
+        when(projectNotes.findByProjektIdOrderByErstelltAmDesc(1L)).thenReturn(List.of(
+            projektNote(1L, parent, me, true, false), projektNote(2L, parent, other, true, false),
+            projektNote(3L, parent, me, false, false), projektNote(4L, parent, other, true, true)));
+        var notizen = projects.getProjektNotizen(1L, auth()).getBody();
+        assertThat(notizen).extracting("id").containsExactly(1L, 2L);
+        assertThat(notizen).extracting("canEdit").containsExactly(true, false);
     }
     @Test void desktopListeBehaeltInterneDokumente() {
         SecurityContextHolder.clearContext();
@@ -164,6 +183,9 @@ class MobileDocumentContractTest {
         assertThat(enquiries.listeDokumente(1L,null).getBody()).extracting("id").containsExactly(2L);
     }
     private Mitarbeiter employee(Long id) { var m = new Mitarbeiter(); m.setId(id); m.setVorname("Max"); m.setNachname("Mustermann"); return m; }
+    private ProjektNotiz projektNote(Long id, Projekt parent, Mitarbeiter author, boolean mobile, boolean privateNote) {
+        var n=new ProjektNotiz(); n.setId(id); n.setProjekt(parent); n.setMitarbeiter(author); n.setMobileSichtbar(mobile); n.setNurFuerErsteller(privateNote); n.setErstelltAm(LocalDateTime.of(2026,1,1,10,0)); return n;
+    }
     private AnfrageNotiz note(Long id, Anfrage parent, Mitarbeiter author, boolean mobile, boolean privateNote) {
         var n=new AnfrageNotiz(); n.setId(id); n.setAnfrage(parent); n.setMitarbeiter(author); n.setMobileSichtbar(mobile); n.setNurFuerErsteller(privateNote); n.setErstelltAm(LocalDateTime.of(2026,1,1,10,0)); return n;
     }

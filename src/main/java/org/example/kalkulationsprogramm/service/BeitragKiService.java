@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -180,7 +179,8 @@ public class BeitragKiService {
         try {
             wurzel = objectMapper.readTree(gewaehlt.get().getPositionenJson());
         } catch (IOException e) {
-            log.warn("[BeitragKi] positionenJson unlesbar, Leistungen bleiben leer.", e);
+            // Nur die Fehlerart: Jackson-Meldungen zitieren den Inhalt.
+            log.warn("[BeitragKi] positionenJson unlesbar, Leistungen bleiben leer: {}", e.getClass().getSimpleName());
             return "";
         }
 
@@ -310,7 +310,8 @@ public class BeitragKiService {
                 inline.put("mime_type", bild.getContentType() == null ? "image/jpeg" : bild.getContentType());
                 inline.put("data", Base64.getEncoder().encodeToString(bild.getBytes()));
             } catch (IOException e) {
-                log.warn("[BeitragKi] Bild konnte nicht gelesen werden, wird uebersprungen.", e);
+                log.warn("[BeitragKi] Bild konnte nicht gelesen werden, wird uebersprungen: {}",
+                        e.getClass().getSimpleName());
             }
         }
 
@@ -345,14 +346,10 @@ public class BeitragKiService {
     }
 
     private BeitragKiEntwurf sendeUndLies(ObjectNode koerper, String apiKey) {
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/"
-                + modell + ":generateContent?key=" + apiKey;
-
         HttpRequest request;
         try {
-            request = HttpRequest.newBuilder(URI.create(url))
+            request = GeminiAnfrage.generateContent(modell, apiKey)
                     .timeout(READ_TIMEOUT)
-                    .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(
                             objectMapper.writeValueAsString(koerper), StandardCharsets.UTF_8))
                     .build();
@@ -371,7 +368,7 @@ public class BeitragKiService {
         }
 
         if (antwort.statusCode() >= 400) {
-            log.warn("[BeitragKi] Gemini HTTP {} - {}", antwort.statusCode(), antwort.body());
+            log.warn("[BeitragKi] Gemini HTTP {} - {}", antwort.statusCode(), GeminiAnfrage.fuerLog(antwort.body()));
             throw new IllegalStateException("Die KI hat mit einem Fehler geantwortet.");
         }
 

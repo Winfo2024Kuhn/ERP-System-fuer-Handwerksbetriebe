@@ -236,7 +236,7 @@ Die Rechte hängen nicht an festen Abteilungsnummern, sondern an Haken je Abteil
 | **„Genehmigte Rechnungen sehen“** | „Sieht nur schon genehmigte Eingangsrechnungen (Buchhaltung).“ |
 | keins von beiden | sieht unter Offene Posten keine Eingangsrechnungen |
 
-Zusätzlich legt die Tabelle „Dokumente & Belege“ je Abteilung und Dokumentart fest, was jemand **„Sehen“** und **„Scannen“** darf. Administratoren sehen alle Dokumentarten, brauchen zum Genehmigen aber ebenfalls das Abteilungsrecht. Ohne Recht zeigt die Spalte „Genehmigt“ den Hinweis „Nur Büro/Berechtigte“.
+Zusätzlich legt die Tabelle „Dokumente & Belege“ je Abteilung und Dokumentart fest, was jemand **„Sehen“** und **„Scannen“** darf. Administratoren sehen alle Dokumentarten, brauchen zum Genehmigen aber ebenfalls das Abteilungsrecht. Ohne Recht zeigt die Spalte „Genehmigt“ den Hinweis „Nur mit dem Abteilungsrecht „Rechnungen genehmigen““. Lehnt der Server das Genehmigen trotzdem ab (Recht inzwischen entzogen), erklärt eine Meldung, dass das Recht je Abteilung unter Einstellungen → Berechtigungen vergeben wird.
 
 ---
 
@@ -360,9 +360,9 @@ In Offene Posten › Eingangsrechnungen zeigen die Spalten „Fällig“, „Sko
 | `POST` | `/lieferant/{lieferantId}/reanalyze` | Alle Dokumente eines Lieferanten neu auslesen (Admin) |
 | `POST` | `/relink-all` | Dokumentenketten aller Lieferanten neu abgleichen (Admin) |
 | `POST` | `/lieferant/{lieferantId}/relink` | Dokumentenketten eines Lieferanten neu abgleichen (Admin) |
-| `POST` | `/process-assigned-emails` | Anhänge aller Lieferanten-E-Mails verarbeiten |
-| `POST` | `/process-email/{emailId}` | Anhänge einer E-Mail verarbeiten |
-| `POST` | `/lieferant/{lieferantId}/process-emails` | Anhänge der E-Mails eines Lieferanten verarbeiten |
+| `POST` | `/process-assigned-emails` | Anhänge aller Lieferanten-E-Mails verarbeiten (Admin) |
+| `POST` | `/process-email/{emailId}` | Anhänge einer E-Mail verarbeiten (Admin) |
+| `POST` | `/lieferant/{lieferantId}/process-emails` | Anhänge der E-Mails eines Lieferanten verarbeiten (Admin) |
 | `GET` / `DELETE` | `/duplicates` | Doppelte Dokumente auflisten / entfernen (Admin) |
 
 ### 10.2 Weitere Endpunkte

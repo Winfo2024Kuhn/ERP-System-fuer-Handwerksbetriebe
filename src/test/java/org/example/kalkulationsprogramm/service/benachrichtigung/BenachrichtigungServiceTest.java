@@ -81,8 +81,15 @@ class BenachrichtigungServiceTest {
     @Mock BetriebsstatusService betriebsstatusService;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
 
+    @Mock org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
+
     @InjectMocks
     private BenachrichtigungService service;
+
+    @org.junit.jupiter.api.BeforeEach
+    void gelesenWieBisher() {
+        org.example.kalkulationsprogramm.service.GelesenTestHilfe.wieGemeinsam(emailGelesenService);
+    }
 
     @Test
     void abschlussHinweisNurAusSessionUndGebundeltMitKalenderlink() {

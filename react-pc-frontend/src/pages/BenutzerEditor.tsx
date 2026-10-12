@@ -13,6 +13,7 @@ import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { useToast } from '../components/ui/toast';
@@ -421,7 +422,10 @@ export default function BenutzerEditor() {
 
                         {/* Mitarbeiter Zuordnung */}
                         <div className="space-y-2">
-                            <Label htmlFor="mitarbeiter">Mitarbeiter zuordnen</Label>
+                            <div className="flex items-center gap-1.5">
+                                <Label htmlFor="mitarbeiter">Mitarbeiter zuordnen</Label>
+                                <MitarbeiterZuordnungInfo />
+                            </div>
                             <Select
                                 value={formData.mitarbeiterId?.toString() || ''}
                                 onChange={(value) => setFormData(prev => ({
@@ -435,7 +439,7 @@ export default function BenutzerEditor() {
                                 placeholder="Mitarbeiter wählen"
                             />
                             <p className="text-xs text-slate-500">
-                                Verknüpft diesen Benutzer mit einem Mitarbeiter für die Nachverfolgung von Uploads.
+                                Nötig für Arbeitszeiten, Zeitkonto-Korrekturen und Notizen – und damit Uploads mit diesem Namen protokolliert werden.
                             </p>
                         </div>
 
@@ -470,7 +474,8 @@ export default function BenutzerEditor() {
                             <h4 className="text-sm font-semibold text-slate-900 mb-2">Hinweis</h4>
                             <p className="text-sm text-slate-600 leading-relaxed">
                                 Benutzerprofile steuern Login, Rollen und die Personalisierung von E-Mails/Dokumenten.
-                                Die Mitarbeiter-Zuordnung dient der Nachverfolgung hochgeladener Dokumente.
+                                Über die Mitarbeiter-Zuordnung steht im Protokoll, wer Dokumente hochgeladen, Notizen
+                                geschrieben und Arbeitszeiten oder Zeitkonto-Korrekturen erfasst oder geändert hat.
                             </p>
                         </div>
 
@@ -502,5 +507,30 @@ export default function BenutzerEditor() {
                 </Card>
             </div>
         </PageLayout>
+    );
+}
+
+/** Info-Knopf neben „Mitarbeiter zuordnen“. */
+function MitarbeiterZuordnungInfo() {
+    return (
+        <InfoButton titel="Mitarbeiter zuordnen">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <p>
+                    Erfasst, ändert oder löscht dieser Benutzer Arbeitszeiten im Kalender oder legt er
+                    Zeitkonto-Korrekturen an bzw. storniert sie, schreibt das ERP den zugeordneten Mitarbeiter als
+                    Bearbeiter ins Protokoll für die Steuerprüfung. Bei Notizen und hochgeladenen Dokumenten steht
+                    dieser Name als Verfasser bzw. Hochlader.
+                </p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <p>
+                    Ohne Zuordnung kann dieser Benutzer keine Arbeitszeiten erfassen, ändern oder löschen, keine
+                    Zeitkonto-Korrekturen anlegen oder stornieren und keine Notizen schreiben, bearbeiten oder löschen – das
+                    ERP lehnt das mit einem Hinweis ab, statt jemand anderen einzutragen. Hochladen geht weiter, dann
+                    aber ohne Namen. Urlaub und Krankheit, Login, Rollen und alle übrigen Funktionen bleiben
+                    unverändert.
+                </p>
+            </InfoAbschnitt>
+        </InfoButton>
     );
 }

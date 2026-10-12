@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { htmlToText, sanitizeHtml } from '../lib/htmlSanitizer';
 import { serviceLineTotal } from './document-editor/helpers';
 import type { DocBlock } from './document-editor/types';
 
@@ -8,12 +9,6 @@ const formatCurrencyValue = (val: number | null | undefined) =>
     val !== null && val !== undefined
         ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val)
         : '-';
-
-function stripHtml(html: string): string {
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return div.textContent || div.innerText || '';
-}
 
 interface TeilrechnungPositionRowProps {
     block: DocBlock;
@@ -28,7 +23,7 @@ export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSel
     // serviceLineTotal statt quantity*price: sonst zeigt die Auswahlzeile den
     // vollen Preis, obwohl auf der Position ein Rabatt liegt.
     const lineTotal = serviceLineTotal(block);
-    const hasLangtext = !!(block.content && stripHtml(block.content).trim());
+    const hasLangtext = !!(block.content && htmlToText(block.content).trim());
 
     return (
         <div className={cn(
@@ -67,7 +62,7 @@ export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSel
                 <div className={cn("flex-1 min-w-0", disabled ? "cursor-default" : "cursor-pointer")} onClick={disabled ? undefined : (hasLangtext ? onToggleExpand : onToggleSelect)}>
                     <p className={cn("text-sm font-medium truncate", disabled ? "text-slate-400" : "text-slate-800")}>
                         {block.pos && <span className={cn("mr-1.5", disabled ? "text-slate-300" : "text-slate-400")}>{block.pos}</span>}
-                        {block.title || stripHtml(block.content || '') || 'Position'}
+                        {block.title || htmlToText(block.content || '') || 'Position'}
                     </p>
                     <p className={cn("text-xs mt-0.5", disabled ? "text-slate-300" : "text-slate-400")}>
                         {block.quantity} {block.unit} × {formatCurrencyValue(block.price || 0)}
@@ -89,7 +84,7 @@ export function TeilrechnungPositionRow({ block, selected, expanded, onToggleSel
                 <div className="px-3 pb-3 pt-0 ml-11">
                     <div
                         className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100 prose prose-xs max-w-none rich-text-einheitlich"
-                        dangerouslySetInnerHTML={{ __html: block.content! }}
+                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(block.content) }}
                     />
                 </div>
             )}

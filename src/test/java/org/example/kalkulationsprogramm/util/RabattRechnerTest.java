@@ -109,4 +109,22 @@ class RabattRechnerTest {
             assertThat(RabattRechner.normalisiereProzent(new BigDecimal("7.5"))).isEqualByComparingTo("7.5");
         }
     }
+
+    @Nested
+    @DisplayName("Text auf der E-Rechnung")
+    class RabattText {
+
+        @Test
+        void prozentsatzMitDeutschemKomma() {
+            assertThat(RabattRechner.rabattText(new BigDecimal("5.00"))).isEqualTo("Rabatt 5 %");
+            assertThat(RabattRechner.rabattText(new BigDecimal("2.5"))).isEqualTo("Rabatt 2,5 %");
+            assertThat(RabattRechner.rabattText(new BigDecimal("150"))).isEqualTo("Rabatt 100 %");
+        }
+
+        @Test
+        void ohneWirksamenRabattNurDasWort() {
+            assertThat(RabattRechner.rabattText(null)).isEqualTo("Rabatt");
+            assertThat(RabattRechner.rabattText(BigDecimal.ZERO)).isEqualTo("Rabatt");
+        }
+    }
 }

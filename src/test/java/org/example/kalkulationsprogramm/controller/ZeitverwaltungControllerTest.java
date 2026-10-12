@@ -17,14 +17,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -66,7 +72,7 @@ class ZeitverwaltungControllerTest {
     @MockBean
     private org.example.kalkulationsprogramm.service.ZeitbuchungAuditService auditService;
     @MockBean
-    private org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
+    private org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
     @MockBean
     private org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
     @MockBean
@@ -161,7 +167,7 @@ class ZeitverwaltungControllerTest {
         buchung.setAutomatischBeendet(true);
         buchung.setVersion(2);
 
-        given(mitarbeiterRepository.findById(1L)).willReturn(Optional.of(bearbeiter));
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(bearbeiter);
         given(zeitbuchungRepository.findById(1903L)).willReturn(Optional.of(buchung));
         given(zeitbuchungRepository.save(any(Zeitbuchung.class)))
                 .willAnswer(inv -> inv.getArgument(0));
@@ -170,7 +176,6 @@ class ZeitverwaltungControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "bearbeiterId": 1,
                                   "aenderungsgrund": "Korrektur im Zeiterfassungskalender",
                                   "endeZeit": "2026-07-29T17:00:00"
                                 }
@@ -228,8 +233,10 @@ class ZeitverwaltungControllerTest {
         // schon immer korrekt halbierte - Ergebnis: +4h Phantom-Ueberstunden pro
         // halbem Feiertag und ein Kalender, der der Monatsuebersicht widersprach.
         // Dieser Test bildet nach, was in einem Monat passiert, in dem der halbe
-        // Feiertag der einzige arbeitsrelevante Tag ist: Soll und Ist muessen
-        // sich jetzt zu 0 ausgleichen, nicht mehr zu +4.
+        // Feiertag der einzige arbeitsrelevante Tag ist und nicht gearbeitet
+        // wird. Seit der Fachentscheidung 12.10.2026 bleibt am halben Feiertag
+        // der halbe Tag zu arbeiten: Soll 8, Gutschrift 4 -> -4, keine
+        // Phantom-Ueberstunden und kein "ganzer Tag frei".
         Mitarbeiter mitarbeiter = new Mitarbeiter();
         mitarbeiter.setId(1L);
         mitarbeiter.setVorname("Max");
@@ -241,25 +248,27 @@ class ZeitverwaltungControllerTest {
 
         given(feiertagService.getFeiertageZwischen(any(), any())).willReturn(List.of(heiligabend));
         given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
-                .willReturn(new BigDecimal("4.00"));
+                .willReturn(new BigDecimal("8.00"));
         given(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitAfter(anyLong(), any()))
                 .willReturn(List.of());
         given(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(anyLong(), any(), any()))
                 .willReturn(List.of());
         // Steht stellvertretend fuer einen Monat, in dem der halbe Feiertag der
-        // einzige arbeitsrelevante Tag ist - ZeitkontoService.berechneSollstundenFuerMonat
-        // (unveraendert, ausserhalb dieses Tasks) halbiert ihn schon immer korrekt auf 4.00.
-        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(
-                konstanteJeTag(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31), BigDecimal.ZERO));
+        // einzige arbeitsrelevante Tag ist: TagesSollService liefert dort
+        // Soll 8, Gutschrift 4 und damit arbeitsSoll 4.
+        Map<LocalDate, BigDecimal> arbeitsSollJeTag = konstanteJeTag(LocalDate.of(2026, 12, 1),
+                LocalDate.of(2026, 12, 31), BigDecimal.ZERO);
+        arbeitsSollJeTag.put(LocalDate.of(2026, 12, 24), new BigDecimal("4.00"));
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(arbeitsSollJeTag);
         Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = konstanteJeTag(LocalDate.of(2026, 12, 1),
                 LocalDate.of(2026, 12, 31), BigDecimal.ZERO);
         feiertagsGutschriftJeTag.put(LocalDate.of(2026, 12, 24), new BigDecimal("4.00"));
         given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any()))
                 .willReturn(feiertagsGutschriftJeTag);
         // Monatssummen kommen seit dem Korrektur-Bugfix aus dem MonatsSaldo: der
-        // halbe Feiertag steht dort als Gutschrift 4.00 gegen ein Soll von 4.00.
+        // halbe Feiertag steht dort als Gutschrift 4.00 gegen ein Soll von 8.00.
         given(monatsSaldoService.berechneOhneSpeichern(1L, 2026, 12))
-                .willReturn(monatsSaldo(2026, 12, "0.00", "4.00", "0.00", "4.00", "0.00"));
+                .willReturn(monatsSaldo(2026, 12, "0.00", "8.00", "0.00", "4.00", "0.00"));
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -269,11 +278,12 @@ class ZeitverwaltungControllerTest {
                 .andExpect(jsonPath("$.tage[23].datum").value("2026-12-24"))
                 // Bugfix: bisher 8.00 (voller Tag als Ist gezaehlt), jetzt korrekt 4.00
                 .andExpect(jsonPath("$.tage[23].istStunden").value(4.00))
+                .andExpect(jsonPath("$.tage[23].sollStunden").value(4.00))
                 .andExpect(jsonPath("$.istStundenMonat").value(4.00))
-                .andExpect(jsonPath("$.sollStundenMonat").value(4.00))
-                // Kalender und Monatsuebersicht widersprechen sich nicht mehr:
-                // Soll 4 / Ist 4 -> netto 0, keine Phantom-Ueberstunden mehr.
-                .andExpect(jsonPath("$.differenz").value(0.00));
+                .andExpect(jsonPath("$.sollStundenMonat").value(8.00))
+                // Kalender und Monatsuebersicht widersprechen sich nicht:
+                // Soll 8 / Ist 4 (nur Gutschrift) -> der halbe Tag fehlt noch.
+                .andExpect(jsonPath("$.differenz").value(-4.00));
     }
 
     @Test
@@ -329,13 +339,13 @@ class ZeitverwaltungControllerTest {
         b.setMitarbeiter(m);
         b.setStartZeit(LocalDateTime.of(2025, 1, 15, 8, 0));
 
-        given(mitarbeiterRepository.findById(1L)).willReturn(Optional.of(m));
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(m);
         given(zeitbuchungRepository.findById(100L)).willReturn(Optional.of(b));
         given(monatsSaldoService.isMonatFestgeschrieben(1L, 2025, 1)).willReturn(true);
 
         mockMvc.perform(put("/api/zeitverwaltung/buchungen/100")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"aenderungsgrund\":\"Test\",\"bearbeiterId\":1,\"notiz\":\"Korrektur\"}"))
+                        .content("{\"aenderungsgrund\":\"Test\",\"notiz\":\"Korrektur\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
     }
@@ -349,12 +359,173 @@ class ZeitverwaltungControllerTest {
         b.setMitarbeiter(m);
         b.setStartZeit(LocalDateTime.of(2025, 1, 15, 8, 0));
 
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(m);
         given(zeitbuchungRepository.findById(100L)).willReturn(Optional.of(b));
         given(monatsSaldoService.isMonatFestgeschrieben(1L, 2025, 1)).willReturn(true);
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/zeitverwaltung/buchungen/100"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
+    }
+
+    // ==================== Bearbeiter im Protokoll kommt aus der Anmeldung ====================
+
+    private static final String KEIN_MITARBEITER =
+            org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService.KEIN_MITARBEITER;
+
+    private static Mitarbeiter mitarbeiter(long id, String vorname, String nachname) {
+        Mitarbeiter m = new Mitarbeiter();
+        m.setId(id);
+        m.setVorname(vorname);
+        m.setNachname(nachname);
+        return m;
+    }
+
+    private static Zeitbuchung buchungVon(Mitarbeiter m, long id) {
+        Zeitbuchung b = new Zeitbuchung();
+        b.setId(id);
+        b.setMitarbeiter(m);
+        b.setStartZeit(LocalDateTime.of(2026, 9, 1, 7, 0));
+        b.setEndeZeit(LocalDateTime.of(2026, 9, 1, 15, 0));
+        b.setVersion(1);
+        return b;
+    }
+
+    @Test
+    void updateBuchung_ProtokolliertAngemeldetenMitarbeiterUndIgnoriertBearbeiterIdImBody() throws Exception {
+        Mitarbeiter angemeldet = mitarbeiter(7L, "Max", "Mustermann");
+        Zeitbuchung buchung = buchungVon(mitarbeiter(3L, "Erika", "Musterfrau"), 500L);
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(angemeldet);
+        given(zeitbuchungRepository.findById(500L)).willReturn(Optional.of(buchung));
+        given(zeitbuchungRepository.save(any(Zeitbuchung.class))).willAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(put("/api/zeitverwaltung/buchungen/500")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aenderungsgrund\":\"Tippfehler\",\"bearbeiterId\":999,\"notiz\":\"x\"}"))
+                .andExpect(status().isOk());
+
+        verify(auditService).protokolliereAenderung(eq(buchung), eq(angemeldet),
+                eq(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.DESKTOP), eq("Tippfehler"));
+        verify(mitarbeiterRepository, never()).findById(999L);
+    }
+
+    @Test
+    void updateBuchung_OhneZugeordnetenMitarbeiterGibt403UndAendertNichts() throws Exception {
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willThrow(
+                new ResponseStatusException(HttpStatus.FORBIDDEN, KEIN_MITARBEITER));
+
+        mockMvc.perform(put("/api/zeitverwaltung/buchungen/500")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aenderungsgrund\":\"Tippfehler\",\"notiz\":\"x\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(KEIN_MITARBEITER));
+
+        verify(zeitbuchungRepository, never()).save(any());
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void updateBuchung_OhneAenderungsgrundGibt400VorDerBearbeiterPruefung() throws Exception {
+        mockMvc.perform(put("/api/zeitverwaltung/buchungen/500")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"notiz\":\"x\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Änderungsgrund ist ein Pflichtfeld"));
+
+        verifyNoInteractions(angemeldeterMitarbeiter);
+    }
+
+    @Test
+    void deleteBuchung_ProtokolliertStornoImmerMitAngemeldetemMitarbeiter() throws Exception {
+        Mitarbeiter angemeldet = mitarbeiter(7L, "Max", "Mustermann");
+        Zeitbuchung buchung = buchungVon(mitarbeiter(3L, "Erika", "Musterfrau"), 501L);
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(angemeldet);
+        given(zeitbuchungRepository.findById(501L)).willReturn(Optional.of(buchung));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/zeitverwaltung/buchungen/501")
+                        .param("bearbeiterId", "999")
+                        .param("grund", "'; DROP TABLE zeitbuchung; --"))
+                .andExpect(status().isNoContent());
+
+        verify(auditService).protokolliereStorno(eq(buchung), eq(angemeldet),
+                eq(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.DESKTOP),
+                eq("'; DROP TABLE zeitbuchung; --"));
+        verify(zeitbuchungRepository).deleteById(501L);
+        verify(mitarbeiterRepository, never()).findById(999L);
+    }
+
+    @Test
+    void deleteBuchung_OhneZugeordnetenMitarbeiterGibt403UndLoeschtNichts() throws Exception {
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willThrow(
+                new ResponseStatusException(HttpStatus.FORBIDDEN, KEIN_MITARBEITER));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/zeitverwaltung/buchungen/501"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(KEIN_MITARBEITER));
+
+        verify(zeitbuchungRepository, never()).deleteById(anyLong());
+        verifyNoInteractions(auditService);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(longs = {0L, -1L, Long.MAX_VALUE})
+    void updateBuchung_UngueltigeIdGibt404(long id) throws Exception {
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(mitarbeiter(7L, "Max", "Mustermann"));
+        given(zeitbuchungRepository.findById(id)).willReturn(Optional.empty());
+
+        mockMvc.perform(put("/api/zeitverwaltung/buchungen/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aenderungsgrund\":\"<script>alert(1)</script>\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Diese Zeitbuchung gibt es nicht mehr."));
+
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void createBuchung_ProtokolliertErstellungMitAngemeldetemMitarbeiter() throws Exception {
+        Mitarbeiter angemeldet = mitarbeiter(7L, "Max", "Mustermann");
+        Mitarbeiter betroffen = mitarbeiter(3L, "Erika", "Musterfrau");
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(angemeldet);
+        given(mitarbeiterRepository.findById(3L)).willReturn(Optional.of(betroffen));
+        given(zeitbuchungRepository.save(any(Zeitbuchung.class))).willAnswer(inv -> {
+            Zeitbuchung b = inv.getArgument(0);
+            b.setId(900L);
+            return b;
+        });
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/zeitverwaltung/buchungen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mitarbeiterId\":3,\"projektId\":-1,\"typ\":\"PAUSE\","
+                                + "\"startZeit\":\"2026-09-01T12:00:00\",\"endeZeit\":\"2026-09-01T12:30:00\","
+                                + "\"bearbeiterId\":999}"))
+                .andExpect(status().isCreated());
+
+        org.mockito.ArgumentCaptor<Zeitbuchung> gespeichert = org.mockito.ArgumentCaptor.forClass(Zeitbuchung.class);
+        verify(auditService).protokolliereErstellung(gespeichert.capture(), eq(angemeldet),
+                eq(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.DESKTOP));
+        assertThat(gespeichert.getValue().getErfasstVon()).isSameAs(angemeldet);
+        assertThat(gespeichert.getValue().getErfasstVia())
+                .isEqualTo(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.DESKTOP);
+        assertThat(gespeichert.getValue().getVersion()).isEqualTo(1);
+        verify(mitarbeiterRepository, never()).findById(999L);
+    }
+
+    @Test
+    void createBuchung_OhneZugeordnetenMitarbeiterGibt403UndLegtNichtsAn() throws Exception {
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willThrow(
+                new ResponseStatusException(HttpStatus.FORBIDDEN, KEIN_MITARBEITER));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/zeitverwaltung/buchungen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mitarbeiterId\":3,\"projektId\":-1,\"typ\":\"PAUSE\",\"startZeit\":\"2026-09-01T12:00:00\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(KEIN_MITARBEITER));
+
+        verify(zeitbuchungRepository, never()).save(any());
+        verifyNoInteractions(auditService);
     }
 
     @Test
