@@ -13,6 +13,7 @@ import type { Anrufbeantworter, KontaktTyp, TelefonAnruf, ZuordnenZiel } from '.
 import { useZuordnen } from './useZuordnen';
 import { WerAnzeige, ZuordnungsMenue } from './WerAnzeige';
 import { ZurueckrufenKnopf } from './ZurueckrufenKnopf';
+import { scrolleMittigInDenBlick } from '../../lib/scrollInDenBlick';
 
 /**
  * Reiter „Anrufe": die Anrufliste der FRITZ!Box.
@@ -145,7 +146,7 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
         const zeile = zeilenRef.current.get(hervorgehobenId);
         if (!zeile) return;
         gescrollt.current = hervorgehobenId;
-        zeile.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+        scrolleMittigInDenBlick(zeile);
     }, [anrufe, hervorgehobenId]);
 
     const wechsleFilter = (neu: Filter) => {
