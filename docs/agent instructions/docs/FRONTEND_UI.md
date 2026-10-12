@@ -83,8 +83,8 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
   - `src/lib/`: reine Hilfsfunktionen
 
 ## Design-System (Handwerker-Fokus: Schlicht & Klar)
-- **Farbschema:** Rose/Rot (ZWINGEND – kein indigo/blue).
-- **Primärfarbe:** `rose-600` = `#e11d48` (Tailwind-Standardwert; `react-pc-frontend/tailwind.config.js` überschreibt keine Farben, die Handy-App nutzt Tailwind 4 ohne eigene Palette). Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`. Die Variable `--rose-primary: #dc2626` in `react-zeiterfassung/src/index.css` ist `red-600`, ein unbenutzter Altwert, und nicht die Markenfarbe.
+- **Farbschema:** Rose (ZWINGEND – kein indigo/blue, kein `red-*` als Primärfarbe).
+- **Primärfarbe:** `rose-600` = `#e11d48` | Palette: `rose-50`–`rose-900` + `slate-50`–`slate-900`. `tailwind.config.js` überschreibt keine Farben; in der Zeiterfassung (Tailwind v4) ist `rose-600` ein OKLCH-Wert, die Klasse bleibt dieselbe. `#dc2626` ist `red-600` (Gefahr/Fehler), nicht die Primärfarbe – auch die Variable `--rose-primary: #dc2626` in `react-zeiterfassung/src/index.css` ist ein unbenutzter Altwert.
 - **Status-Farben:** nur für Zustände, nie als Markenfarbe. Erfolg `emerald`/`green`, Warnung `amber`, Gefahr/Löschen `red-600`. So machen es `toast.tsx` und `confirm-dialog.tsx` (`variant: 'danger'`).
 
 ### Button-Klassen
@@ -109,7 +109,7 @@ PC-Frontend (`react-pc-frontend/src`):
 - `useToast()` -> `src/components/ui/toast.tsx` (siehe Toast-Pflicht)
 - `<ImageViewer>` -> `src/components/ui/image-viewer.tsx`
 - `<DetailLayout>` -> `src/components/DetailLayout.tsx` (2-Spalten-Layout)
-- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant)
+- `<EmailsTab>` -> `src/components/EmailsTab.tsx` (E-Mail-Verlauf in Kunde, Projekt, Anfrage, Lieferant; `EmailHistory.tsx` ist ungenutzter Altbestand)
 - `<GoogleMapsEmbed>` -> `src/components/GoogleMapsEmbed.tsx`
 - `<DocumentPreviewModal>` -> `src/components/DocumentPreviewModal.tsx` (für PDFs)
 - `<InfoButton>` -> `src/components/ui/info-button.tsx` (Erklärungen an komplexen Stellen, siehe unten)

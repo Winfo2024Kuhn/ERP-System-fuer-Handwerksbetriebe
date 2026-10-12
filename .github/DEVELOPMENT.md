@@ -486,9 +486,9 @@ Buttons sollen im gesamten Programm einheitlich gestaltet werden, um eine konsis
 - Größe: `className="w-4 h-4"` für `size="sm"` Buttons
 
 ### Farbschema
-Das gesamte Programm verwendet das **rose/rot** Farbschema:
-- farbe des firmenlogos #dc2626
-- `rose-50` bis `rose-900` für Primärfarben
+Das gesamte Programm verwendet das **Rose**-Farbschema:
+- Farbe des Firmenlogos/App-Icons: `#dc2626` (`red-600`) – nicht die UI-Primärfarbe
+- `rose-50` bis `rose-900` für Primärfarben, Primärfarbe `rose-600` (`#e11d48`)
 - `slate-50` bis `slate-900` für neutrale Farben
 - Kein indigo, blue oder andere Akzentfarben verwenden
 
@@ -679,8 +679,9 @@ Um das **DRY (Don't Repeat Yourself)** Prinzip zu wahren und ein konsistentes UI
 
 ### EmailsTab
 - **Pfad:** `src/components/EmailsTab.tsx`
-- **Verwendung:** Einheitliche Darstellung von E-Mail-Verläufen in Detailansichten (Projekt, Anfrage, Kunde, Lieferant) – genau eine der Props `projektId`, `anfrageId`, `kundeId` oder `lieferantId` setzen.
-- **Features:** Verläufe mit Antworten, Anhänge, Zustellstatus, Antworten/Verfassen direkt aus der Detailseite.
+- **Verwendung:** Einheitliche Darstellung von E-Mail-Verläufen in Detailansichten (Kunde, Projekt, Anfrage, Lieferant). Genau einen Bezug übergeben: `kundeId`, `projektId`, `anfrageId` oder `lieferantId`.
+- **Features:** Suche, Verläufe mit Antworten, Anhang-Vorschau, Zustellstatus (unzustellbar), „Neue E-Mail“ und „Antworten“ (abschaltbar über `showComposeButton`/`showReplyButton`).
+- `EmailHistory.tsx` ist ungenutzter Altbestand – nicht verwenden.
 
 ### GoogleMapsEmbed
 - **Pfad:** `src/components/GoogleMapsEmbed.tsx`
@@ -714,7 +715,7 @@ Neue Detailseiten sollten immer `DetailLayout` verwenden, um das zweispaltige La
 - **Fail Fast:** Ensure the application compiles without errors before moving to the next implementation step.
 
 ### Visual Consistency Check
-- **Color Enforcement:** Strictly adhere to the **Rose/Red** (`#dc2626`, `rose-50` to `rose-900`) theme defined in the "Button Design Guidelines".
+- **Color Enforcement:** Strictly adhere to the **Rose** theme (primary `rose-600` = `#e11d48`, `rose-50` to `rose-900`) defined in the "Button Design Guidelines". `#dc2626` is `red-600` (danger/error), not the primary color.
 - **No Magic Values:** Do not invent new styles. If a style is missing in `.github/DEVELOPMENT.md`, define it there first.
 
 ---

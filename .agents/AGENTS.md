@@ -14,8 +14,9 @@ Ein Hook in `.claude/settings.json` gibt bei Grep/Glob einen Tipp (blockt nichts
 | "Wie hängen A und B zusammen?" | `scripts/graphify path "A" "B"` |
 | "Was ist Konzept Y?" | `scripts/graphify explain "Y"` |
 | "Was bricht, wenn ich X ändere?" | `scripts/graphify affected "X"` |
-| Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
-| Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
+| Breiter Architektur-Überblick / sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
+
+Hängt graphify selbst einen `## graphify`-Block an (blankes `graphify`, Update nach jeder Änderung, `wiki/index.md`), gilt er nicht – wieder entfernen.
 
 **Ausnahmen** (Grep/Glob direkt erlaubt):
 
@@ -39,20 +40,33 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 
 ## 📜 Workflow & Entwicklungsrichtlinien
 
-1. **Strategisches Refactoring & Auslagerung:**
-   Sobald du merkst, dass es Sinn macht, Code-Teile (Komponenten, Hooks, Services) auszulagern, um sie wiederverwenden zu können: **Halte an, frage den User um Erlaubnis** und setze es erst nach Freigabe um.
+1. **Auslagern und wiederverwenden (dauerhafte Nutzerfreigabe vom 09.09.2026, bestätigt am 12.10.2026):**
+   Wiederkehrende UI und Logik in gemeinsame Komponenten, Hooks, Services oder Hilfsfunktionen auslagern und vorhandene Bausteine konsequent wiederverwenden. Keine kopierten Sonderlösungen pro Seite. Das dafür nötige Refactoring ist ausdrücklich autorisiert und benötigt keine erneute Freigabe. Abstraktionen nach gemeinsamer Verantwortung schneiden; fachliche Unterschiede erhalten.
+
+2. **Sprache und Wording in der UI:**
+   Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
+
+3. **Abschluss jeder Aufgabe (Skill-Execution):**
+   Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
+   `.claude/commands/review-and-ship.md`.
+
+   **Aufgabenteilung im Skill:** Der `erp-code-reviewer`-Subagent (mit frischem/leerem Kontextfenster) prüft Code-Quality, Architektur, E2E-Tests, Security, DSGVO und Secrets parallel zur Build-Phase und liefert einen strukturierten Befund-Report mit Ampel. Du als Hauptagent kümmerst dich um Build, Tests und Coverage und arbeitest anschließend die Reviewer-Findings ein, bis die Ampel 🟢 ist – erst dann Commit & Push. Details zur Phasenfolge stehen im Skill selbst.
 
 ## 🛑 ABSOLUTE SICHERHEITSREGELN (NIEMALS IGNORIEREN)
-1. **API-Keys & Secrets:** NIEMALS in Code oder Commits schreiben. Nur in `application-local.properties` (gitignored). Vor jedem Commit `git diff --staged` prüfen. Bei Leak: Sofort rotieren!
+1. **API-Keys & Secrets:** NIEMALS in Code, Logs oder Commits schreiben. Vor jedem Commit `git diff --staged` prüfen. Bei Leak: Sofort rotieren! Wo sie liegen:
+   - **Grundregel (alle übrigen und neuen Secrets):** nur in `application-local.properties` (gitignored) bzw. im Docker-Betrieb in `app.env` (Umgebungsvariablen). Muss ein Secret in die DB, dann nur verschlüsselt über `MailSecretService` – wie das FRITZ!Box-Passwort. Keine weiteren Klartext-Secrets in `system_setting`.
+   - **Gemini-Key, SMTP/IMAP-Zugänge:** DB-Tabelle `system_setting` (im Klartext), gepflegt unter System-Einstellungen → KI-Funktionen bzw. → E-Mail; Postfach-Passwörter zusätzlich verschlüsselt in `email_absender`. Die Properties `ai.gemini.api-key`, `smtp.*`, `imap.*` sind nur Rückfall (`application-local.properties` bzw. `app.env`).
+   - **FRITZ!Box-Passwort:** `system_setting`, verschlüsselt mit `mail.credentials.encryption-key`.
+   - DB-Dumps enthalten deshalb Klartext-Zugänge: nie committen oder weitergeben.
 2. **Datenschutz (DSGVO):** Nutzer-, Mitarbeiter- und Zeitdaten sind personenbezogen. In Tests NUR Dummy-Daten (`Max Mustermann`). Logs/Dumps immer anonymisieren.
-3. **Sperrzone für Commits:** `application-local.properties`, `*.env`, `uploads/`, `*.key/pem/p12`.
+3. **Sperrzone für Commits:** `application-local.properties`, `*.env`, `uploads/`, `*.key/pem/p12`, DB-Dumps.
 4. **CodeQL & Injection-Prävention (dauerhafte Pflicht):**
    - **ReDoS:** Keine verschachtelten Wiederholungen `(\w+.*)*`. In Java possessive Quantifizierer (`*+`, `++`) oder atomare Gruppen `(?>...)` nutzen.
    - **Path Traversal:** Niemals `MultipartFile.getOriginalFilename()` ungeprüft in Pfade/Files einsetzen. Bereinigen mit `Path.of(name).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_")` und prüfen mit `.normalize()` und `dst.startsWith(baseDir)`. E-Mail-Anhänge in `EmailService` als In-Memory-Bytes (`ByteArrayDataSource`) übertragen.
    - **Spring CSRF:** Niemals `.csrf(csrf -> csrf.disable())` aufrufen. Wenn Endpoints ausgenommen werden müssen, immer `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))` verwenden.
-   - **HTML Tag-Stripping:** Niemals einfaches `.replace(/<[^>]*>/g, '')` nutzen. Immer die Fixpunktschleife `stripHtmlTags()` aus `src/lib/htmlSanitizer.ts` verwenden.
-   - **Entity Unescaping:** Niemals sequentiell mit mehreren `.replace()` entpacken. Immer `unescapeHtmlEntities()` aus `src/lib/htmlSanitizer.ts` (Single-Pass) verwenden.
-   - **DOM-XSS:** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `src/lib/htmlSanitizer.ts` absichern.
+   - **HTML Tag-Stripping:** Niemals einfaches `.replace(/<[^>]*>/g, '')` nutzen. Immer die Fixpunktschleife `stripHtmlTags()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` verwenden.
+   - **Entity Unescaping:** Niemals sequentiell mit mehreren `.replace()` entpacken. Immer `unescapeHtmlEntities()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Single-Pass) verwenden.
+   - **DOM-XSS:** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` absichern.
 
 ## 📚 Entwickler-Dokumentation (Pflichtlektüre VOR jedem Edit/Write)
 
@@ -94,22 +108,3 @@ Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht
 - **100% grüne Tests und fehlerfreies Linting:** Alle Tests (Backend: `./mvnw test`, Frontend Unit: `npm test` und E2E: `npm run test:e2e`) sowie Linter (`npm run lint`) MÜSSEN ausnahmslos fehlerfrei durchlaufen.
 - Niemals fehlschlagende Tests oder Linter-Fehler überspringen, ignorieren, auskommentieren oder ungelöst lassen. Vor jedem Commit, Push oder PR muss alles vollständig grün sein.
 - **Review & Ship Pflicht:** Am Ende jeder Aufgabe immer `/review-and-ship` ausführen.
-
-3. **Sprache und Wording in der UI:**
-   Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
-
-4. **Abschluss jeder Aufgabe (Skill-Execution):**
-   Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
-   `.claude\commands\review-and-ship.md`.
-
-   **Aufgabenteilung im Skill:** Der `erp-code-reviewer`-Subagent (mit frischem/leerem Kontextfenster) prüft Code-Quality, Architektur, E2E-Tests, Security, DSGVO und Secrets parallel zur Build-Phase und liefert einen strukturierten Befund-Report mit Ampel. Du als Hauptagent kümmerst dich um Build, Tests und Coverage und arbeitest anschließend die Reviewer-Findings ein, bis die Ampel 🟢 ist – erst dann Commit & Push. Details zur Phasenfolge stehen im Skill selbst.
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

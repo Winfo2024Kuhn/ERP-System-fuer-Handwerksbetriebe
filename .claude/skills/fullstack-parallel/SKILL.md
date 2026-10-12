@@ -25,8 +25,9 @@ dem Nutzer **einen konkreten Vorschlag** machen statt offener Fragen:
   Hintergrund, eine Einstellung wirkt auf andere Bereiche, Folgen sind nicht
   rückgängig zu machen, Fachbegriff)? Diese Stellen im Vorschlag nennen – sie bekommen
   einen Info-Button (siehe Abschnitt „Info-Buttons“).
-- **Auslagerung/Refactoring** (Komponente, Hook, Service verallgemeinern) gleich
-  mit zur Freigabe stellen – CLAUDE.md verlangt die Zustimmung des Nutzers vorher.
+- **Auslagerung/Refactoring** (Komponente, Hook, Service verallgemeinern) im Vorschlag
+  mit nennen, damit klar ist, was sich mitändert – eine eigene Freigabe braucht es nicht
+  (dauerhafte Nutzerfreigabe, siehe CLAUDE.md „Auslagern und wiederverwenden“).
 
 Erst nach dem „ja passt“ weiter. Ist der Weg schon völlig klar und vom Nutzer
 vorgegeben, genügt ein Satz Zusammenfassung.
