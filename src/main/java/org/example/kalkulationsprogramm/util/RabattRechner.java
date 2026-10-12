@@ -80,4 +80,13 @@ public final class RabattRechner {
         }
         return normalisiereBetrag(netto).subtract(rabattBetrag(netto, rabattProzent));
     }
+
+    /** Text eines Rabatts auf der E-Rechnung: „Rabatt 2,5 %“, ohne wirksamen Prozentsatz nur „Rabatt“. */
+    public static String rabattText(BigDecimal rabattProzent) {
+        BigDecimal prozent = normalisiereProzent(rabattProzent);
+        if (prozent == null) {
+            return "Rabatt";
+        }
+        return "Rabatt " + prozent.stripTrailingZeros().toPlainString().replace('.', ',') + " %";
+    }
 }

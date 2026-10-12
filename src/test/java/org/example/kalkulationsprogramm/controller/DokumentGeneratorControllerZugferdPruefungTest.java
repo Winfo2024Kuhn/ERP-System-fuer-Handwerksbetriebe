@@ -10,6 +10,7 @@ import java.util.List;
 
 import org.example.kalkulationsprogramm.controller.advice.RestExceptionHandler;
 import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
+import org.example.kalkulationsprogramm.mapper.ZugferdRechnungMapper;
 import org.example.kalkulationsprogramm.service.RechnungPdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,8 @@ class DokumentGeneratorControllerZugferdPruefungTest {
     void setUp() {
         zugferdErstellService = mock(ZugferdErstellService.class);
         DokumentGeneratorController controller =
-                new DokumentGeneratorController(mock(RechnungPdfService.class), zugferdErstellService);
+                new DokumentGeneratorController(mock(RechnungPdfService.class), zugferdErstellService,
+                        new ZugferdRechnungMapper());
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new RestExceptionHandler(null))
                 .build();
