@@ -202,6 +202,10 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
         const startTime = new Date().toISOString()
         const startOperationId = createOperationId()
 
+        // Hat der Server geantwortet, ist ein späterer Fehler kein Netzproblem:
+        // Die Buchung dann offline einzureihen, würde sie beim Sync doppelt anlegen.
+        let serverHatGeantwortet = false
+
         try {
             // Online Start Attempt with Timeout
             const controller = new AbortController()
@@ -219,6 +223,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                 signal: controller.signal
             })
             clearTimeout(timeoutId)
+            serverHatGeantwortet = true
 
             if (res.ok) {
                 const data = await res.json()
@@ -252,8 +257,12 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                 return // Don't navigate, don't queue
             }
         } catch (err) {
-            // Only queue offline if we're actually offline or it was a network error
-            if (!navigator.onLine || (err instanceof Error && err.name === 'AbortError')) {
+            // fetch selbst ist gescheitert (Funkloch, WLAN ohne Internet, Timeout) →
+            // offline einreihen. navigator.onLine taugt dafür nicht: Es meldet oft
+            // "online", obwohl kein Server erreichbar ist; fetch wirft dann sofort
+            // einen TypeError statt in den Timeout zu laufen. Doppelte Übertragung
+            // fängt die Operation-ID beim Sync ab.
+            if (!serverHatGeantwortet) {
                 console.log('Offline oder Timeout - wird später synchronisiert', err)
 
                 // Queue sync job - mit originalem Zeitstempel!

@@ -103,7 +103,7 @@ public class LieferantGeschaeftsdokument {
     private String datenquelle; // ZUGFERD, XML, AI
 
     @Column(nullable = false)
-    private Boolean genehmigt = false; // Genehmigung durch Abteilung 3 (Büro)
+    private Boolean genehmigt = false; // Genehmigung durch eine Abteilung mit darfRechnungenGenehmigen
 
     /**
      * Flag für manuelle Prüfung erforderlich.

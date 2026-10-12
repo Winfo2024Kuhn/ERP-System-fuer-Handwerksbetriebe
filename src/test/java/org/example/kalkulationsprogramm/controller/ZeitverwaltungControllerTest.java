@@ -228,8 +228,10 @@ class ZeitverwaltungControllerTest {
         // schon immer korrekt halbierte - Ergebnis: +4h Phantom-Ueberstunden pro
         // halbem Feiertag und ein Kalender, der der Monatsuebersicht widersprach.
         // Dieser Test bildet nach, was in einem Monat passiert, in dem der halbe
-        // Feiertag der einzige arbeitsrelevante Tag ist: Soll und Ist muessen
-        // sich jetzt zu 0 ausgleichen, nicht mehr zu +4.
+        // Feiertag der einzige arbeitsrelevante Tag ist und nicht gearbeitet
+        // wird. Seit der Fachentscheidung 12.10.2026 bleibt am halben Feiertag
+        // der halbe Tag zu arbeiten: Soll 8, Gutschrift 4 -> -4, keine
+        // Phantom-Ueberstunden und kein "ganzer Tag frei".
         Mitarbeiter mitarbeiter = new Mitarbeiter();
         mitarbeiter.setId(1L);
         mitarbeiter.setVorname("Max");
@@ -241,25 +243,27 @@ class ZeitverwaltungControllerTest {
 
         given(feiertagService.getFeiertageZwischen(any(), any())).willReturn(List.of(heiligabend));
         given(zeitkontoService.berechneSollstundenFuerMonat(anyLong(), any(Integer.class), any(Integer.class)))
-                .willReturn(new BigDecimal("4.00"));
+                .willReturn(new BigDecimal("8.00"));
         given(zeitbuchungRepository.findByMitarbeiterIdAndStartZeitAfter(anyLong(), any()))
                 .willReturn(List.of());
         given(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(anyLong(), any(), any()))
                 .willReturn(List.of());
         // Steht stellvertretend fuer einen Monat, in dem der halbe Feiertag der
-        // einzige arbeitsrelevante Tag ist - ZeitkontoService.berechneSollstundenFuerMonat
-        // (unveraendert, ausserhalb dieses Tasks) halbiert ihn schon immer korrekt auf 4.00.
-        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(
-                konstanteJeTag(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 31), BigDecimal.ZERO));
+        // einzige arbeitsrelevante Tag ist: TagesSollService liefert dort
+        // Soll 8, Gutschrift 4 und damit arbeitsSoll 4.
+        Map<LocalDate, BigDecimal> arbeitsSollJeTag = konstanteJeTag(LocalDate.of(2026, 12, 1),
+                LocalDate.of(2026, 12, 31), BigDecimal.ZERO);
+        arbeitsSollJeTag.put(LocalDate.of(2026, 12, 24), new BigDecimal("4.00"));
+        given(tagesSollService.arbeitsSollJeTag(anyLong(), any(), any())).willReturn(arbeitsSollJeTag);
         Map<LocalDate, BigDecimal> feiertagsGutschriftJeTag = konstanteJeTag(LocalDate.of(2026, 12, 1),
                 LocalDate.of(2026, 12, 31), BigDecimal.ZERO);
         feiertagsGutschriftJeTag.put(LocalDate.of(2026, 12, 24), new BigDecimal("4.00"));
         given(tagesSollService.feiertagsGutschriftJeTag(anyLong(), any(), any()))
                 .willReturn(feiertagsGutschriftJeTag);
         // Monatssummen kommen seit dem Korrektur-Bugfix aus dem MonatsSaldo: der
-        // halbe Feiertag steht dort als Gutschrift 4.00 gegen ein Soll von 4.00.
+        // halbe Feiertag steht dort als Gutschrift 4.00 gegen ein Soll von 8.00.
         given(monatsSaldoService.berechneOhneSpeichern(1L, 2026, 12))
-                .willReturn(monatsSaldo(2026, 12, "0.00", "4.00", "0.00", "4.00", "0.00"));
+                .willReturn(monatsSaldo(2026, 12, "0.00", "8.00", "0.00", "4.00", "0.00"));
 
         mockMvc.perform(get("/api/zeitverwaltung/kalender")
                         .param("mitarbeiterId", "1")
@@ -269,11 +273,12 @@ class ZeitverwaltungControllerTest {
                 .andExpect(jsonPath("$.tage[23].datum").value("2026-12-24"))
                 // Bugfix: bisher 8.00 (voller Tag als Ist gezaehlt), jetzt korrekt 4.00
                 .andExpect(jsonPath("$.tage[23].istStunden").value(4.00))
+                .andExpect(jsonPath("$.tage[23].sollStunden").value(4.00))
                 .andExpect(jsonPath("$.istStundenMonat").value(4.00))
-                .andExpect(jsonPath("$.sollStundenMonat").value(4.00))
-                // Kalender und Monatsuebersicht widersprechen sich nicht mehr:
-                // Soll 4 / Ist 4 -> netto 0, keine Phantom-Ueberstunden mehr.
-                .andExpect(jsonPath("$.differenz").value(0.00));
+                .andExpect(jsonPath("$.sollStundenMonat").value(8.00))
+                // Kalender und Monatsuebersicht widersprechen sich nicht:
+                // Soll 8 / Ist 4 (nur Gutschrift) -> der halbe Tag fehlt noch.
+                .andExpect(jsonPath("$.differenz").value(-4.00));
     }
 
     @Test
