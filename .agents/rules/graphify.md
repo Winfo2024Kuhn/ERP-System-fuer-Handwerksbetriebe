@@ -17,8 +17,9 @@ Der Projekt-Graph enthält die gesamte Symbolik, Abhängigkeiten und Komponenten
 | "Wie hängen A und B zusammen?" | `scripts/graphify path "A" "B"` |
 | "Was ist Konzept Y?" | `scripts/graphify explain "Y"` |
 | "Was bricht, wenn ich X ändere?" | `scripts/graphify affected "X"` |
-| Breiter Architektur-Überblick | `graphify-out/wiki/index.md` lesen |
-| Sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
+| Breiter Architektur-Überblick / sehr breite Review | `graphify-out/GRAPH_REPORT.md` lesen |
+
+Hängt graphify selbst einen `## graphify`-Block an (blankes `graphify`, Update nach jeder Änderung, `wiki/index.md`), gilt er nicht – wieder entfernen.
 
 ### Aktualisierung:
-Nach Änderungen am Code einmalig am Ende der Aufgabe `scripts/graphify update .` ausführen.
+Nach Änderungen am Code einmalig am Ende der Aufgabe `scripts/graphify update .` ausführen – nicht nach jedem Edit.
