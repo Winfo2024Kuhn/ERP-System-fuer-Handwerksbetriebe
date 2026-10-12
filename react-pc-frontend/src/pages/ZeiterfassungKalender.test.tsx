@@ -277,6 +277,45 @@ describe('Tageserfassung und smarte Buchungslogik', () => {
         const optional = mockFetch.mock.calls.find(call => call[0] === '/api/zeitverwaltung/buchungen/2');
         expect(JSON.parse(optional![1].body).endeZeit).toBeNull();
     });
+
+    it('zeigt die Server-Meldung einmal, wenn der angemeldete Benutzer keinem Mitarbeiter zugeordnet ist', async () => {
+        const meldung = 'Ihr Benutzer ist keinem Mitarbeiter zugeordnet.';
+        tage = [{
+            datum: `${year}-08-03`,
+            wochentag: 1,
+            istFeiertag: false,
+            feiertagName: null,
+            sollStunden: 8,
+            istStunden: 8,
+            buchungen: [1, 2].map(id => ({
+                id,
+                projektId: 1,
+                projektName: 'Testprojekt',
+                arbeitsgangName: '',
+                startZeit: '08:00:00',
+                endeZeit: '16:00:00',
+                dauerMinuten: 480,
+                dauerFormatiert: '8:00',
+                notiz: ''
+            }))
+        }];
+        const standard = mockFetch.getMockImplementation()!;
+        mockFetch.mockImplementation(async (input: string, init?: RequestInit) => init?.method === 'PUT'
+            ? { ok: false, status: 403, json: async () => ({ status: 403, message: meldung }) }
+            : standard(input, init));
+        mount();
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Von Buchung 1' }), { target: { value: '09:00' } });
+        fireEvent.change(screen.getByRole('textbox', { name: 'Von Buchung 2' }), { target: { value: '09:30' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Alle Speichern' }));
+        await waitFor(() => expect(mockFetch.mock.calls.filter(call => call[1]?.method === 'PUT')).toHaveLength(2));
+        await waitFor(() => expect(toast.error).toHaveBeenCalledWith(meldung));
+        // Zwei abgelehnte Buchungen → die gleiche Meldung nur einmal, keine Sammelwarnung.
+        expect(toast.error).toHaveBeenCalledTimes(1);
+        expect(toast.warning).not.toHaveBeenCalled();
+        const put = mockFetch.mock.calls.find(call => call[1]?.method === 'PUT');
+        expect(JSON.parse(put![1].body)).not.toHaveProperty('bearbeiterId');
+    });
 });
 
 describe('Mitarbeiter-Filter und Geschäftsführer-Ansicht', () => {
