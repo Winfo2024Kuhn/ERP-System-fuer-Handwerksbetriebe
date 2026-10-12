@@ -146,15 +146,20 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto) {
-        return erstellen(dto, null);
+        return erstellen(dto, null, null);
     }
 
     /**
-     * Wie {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto)}, schreibt aber
-     * für buchhaltungsrelevante Typen einen Audit-Eintrag mit Aufrufer-IP.
+     * Wie {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto)}, setzt aber den
+     * Ersteller und schreibt für buchhaltungsrelevante Typen einen Audit-Eintrag mit
+     * Ersteller und Aufrufer-IP.
+     *
+     * @param erstelltVonId ID des angemeldeten FrontendUserProfile (aus der Anmeldung,
+     *                      nicht vom Client); {@code null} = "system"
      */
     @Transactional
-    public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto, String ipAdresse) {
+    public AusgangsGeschaeftsDokument erstellen(AusgangsGeschaeftsDokumentErstellenDto dto,
+            Long erstelltVonId, String ipAdresse) {
         // Basisdokument-Regeln (Dokumente ohne Vorgänger = eigene Wurzel-Vorgänge):
         //   - Das ERSTE Basisdokument ist das ANGEBOT (max. eines pro Projekt/Anfrage).
         //   - Jedes WEITERE Basisdokument muss ein NACHTRAGSANGEBOT sein und setzt
@@ -300,8 +305,8 @@ public class AusgangsGeschaeftsDokumentService {
         }
 
         // Ersteller setzen
-        if (dto.getErstelltVonId() != null) {
-            frontendUserProfileRepository.findById(dto.getErstelltVonId())
+        if (erstelltVonId != null) {
+            frontendUserProfileRepository.findById(erstelltVonId)
                     .ifPresent(dokument::setErstelltVon);
         }
 
@@ -1463,12 +1468,8 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Generiert eine neue Dokumentnummer im Format {PREFIX}-YYYY/MM/NNNNN.
-     * Thread-sicher durch pessimistisches Locking. Gemeinsamer Monatszähler für alle Typen.
-     */
-    /**
      * Prüft die Regeln für ein neues Basisdokument (ohne Vorgänger).
-     * Siehe Kommentar in {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto, String)}.
+     * Siehe Kommentar in {@link #erstellen(AusgangsGeschaeftsDokumentErstellenDto, Long, String)}.
      */
     private void validiereBasisdokument(AusgangsGeschaeftsDokumentTyp typ, Long projektId, Long anfrageId) {
         if (typ == AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT) {
@@ -1573,6 +1574,10 @@ public class AusgangsGeschaeftsDokumentService {
                         + "Bitte legen Sie die Rechnung dort an.");
     }
 
+    /**
+     * Generiert eine neue Dokumentnummer im Format {PREFIX}-YYYY/MM/NNNNN.
+     * Thread-sicher durch pessimistisches Locking. Gemeinsamer Monatszähler für alle Typen.
+     */
     private String generiereNummer(AusgangsGeschaeftsDokumentTyp typ) {
         YearMonth now = YearMonth.now();
         String monatKey = now.format(DateTimeFormatter.ofPattern("yyyy/MM"));

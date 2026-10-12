@@ -1253,6 +1253,47 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
             assertThat(result.getDatum()).isEqualTo(LocalDate.now());
         }
+
+        @Test
+        void setztErstellerAusAnmeldungUndProtokolliertIhn() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+            FrontendUserProfile max = new FrontendUserProfile();
+            max.setId(42L);
+            when(frontendUserProfileRepository.findById(42L)).thenReturn(Optional.of(max));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto, 42L, "10.0.0.5");
+
+            // GoBD: Der Ersteller im Audit ist der angemeldete Benutzer.
+            assertThat(result.getErstelltVon()).isSameAs(max);
+            verify(auditService).protokolliereErstellung(result, max, "10.0.0.5");
+        }
+
+        @Test
+        void ohneAngemeldetenBenutzerBleibtErstellerLeer() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(1L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto, null, "10.0.0.5");
+
+            assertThat(result.getErstelltVon()).isNull();
+            verify(frontendUserProfileRepository, never()).findById(any());
+            verify(auditService).protokolliereErstellung(result, null, "10.0.0.5");
+        }
     }
 
     @Nested

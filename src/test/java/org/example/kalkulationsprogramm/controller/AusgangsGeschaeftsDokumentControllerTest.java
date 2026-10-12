@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.example.kalkulationsprogramm.config.ClientIpConfig;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
@@ -18,10 +19,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -36,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -46,6 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(AusgangsGeschaeftsDokumentController.class)
 @AutoConfigureMockMvc(addFilters = false)
+@Import(ClientIpConfig.class)
 class AusgangsGeschaeftsDokumentControllerTest {
 
     @Autowired
@@ -233,7 +239,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void erstelltDokumentErfolgreich() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any())).willReturn(entity);
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -253,7 +259,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void vergibtLockFuerErsteller() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(7L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any())).willReturn(entity);
             given(service.findById(7L)).willReturn(buildResponseDto(7L, "RE-2026-007"));
             given(dokumentLockService.acquire(any(SperrbarerTyp.class), anyLong(), anyLong(), anyString()))
                     .willReturn(new DatensatzLockDto(
@@ -283,7 +289,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void ohneAuthKeinLock() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(8L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any())).willReturn(entity);
             given(service.findById(8L)).willReturn(buildResponseDto(8L, "RE-2026-008"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -303,7 +309,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void lockServiceWirftAusnahme() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(9L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any())).willReturn(entity);
             given(service.findById(9L)).willReturn(buildResponseDto(9L, "RE-2026-009"));
             given(dokumentLockService.acquire(any(SperrbarerTyp.class), anyLong(), anyLong(), anyString()))
                     .willThrow(new RuntimeException("Lock-DB nicht erreichbar"));
@@ -323,7 +329,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Erstellung mit ungültigen Daten gibt 400 zurück")
         void erstellungMitUngueltigemDtoGibt400() throws Exception {
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any()))
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any()))
                     .willThrow(new RuntimeException("Betrag muss positiv sein"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -341,7 +347,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void sqlInjectionImBetreff() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any())).willReturn(entity);
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-001"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -360,7 +366,7 @@ class AusgangsGeschaeftsDokumentControllerTest {
         void xssInHtmlInhalt() throws Exception {
             AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
             entity.setId(1L);
-            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any())).willReturn(entity);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any())).willReturn(entity);
             given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-001"));
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -506,6 +512,202 @@ class AusgangsGeschaeftsDokumentControllerTest {
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isBadRequest())
                     .andExpect(content().string("Betrag muss positiv sein"));
+        }
+    }
+
+    /**
+     * GoBD: Der Bearbeiter im revisionssicheren Protokoll kommt aus der Anmeldung.
+     * Ein vom Client mitgeschickter {@code userId}/{@code erstelltVonId} darf nie
+     * im Audit landen.
+     */
+    @Nested
+    @DisplayName("Bearbeiter im Audit kommt aus der Anmeldung")
+    class BearbeiterAusAnmeldung {
+
+        private static final String FREMDE_ID = "999";
+
+        @Test
+        @DisplayName("Erstellen: erstelltVonId im Body wird ignoriert")
+        void erstellenIgnoriertErstelltVonIdImBody() throws Exception {
+            AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
+            entity.setId(1L);
+            given(service.erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), any(), any()))
+                    .willReturn(entity);
+            given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
+            given(dokumentLockService.acquire(any(SperrbarerTyp.class), anyLong(), anyLong(), anyString()))
+                    .willReturn(new DatensatzLockDto(DatensatzLockDto.ACQUIRED, 42L, "Max Mustermann", null, null));
+
+            mockMvc.perform(post("/api/ausgangs-dokumente")
+                            .principal(testAuth())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"typ\":\"RECHNUNG\",\"erstelltVonId\":" + FREMDE_ID + "}"))
+                    .andExpect(status().isOk());
+
+            verify(service).erstellen(any(AusgangsGeschaeftsDokumentErstellenDto.class), eq(42L), any());
+        }
+
+        @Test
+        @DisplayName("Buchen: userId-Parameter wird ignoriert")
+        void buchenIgnoriertUserIdParameter() throws Exception {
+            AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
+            entity.setId(1L);
+            given(service.buchen(eq(1L), any(), any())).willReturn(entity);
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen")
+                            .principal(testAuth())
+                            .param("userId", FREMDE_ID))
+                    .andExpect(status().isOk());
+
+            verify(service).buchen(eq(1L), eq(42L), any());
+        }
+
+        @Test
+        @DisplayName("E-Mail-Versand: userId-Parameter wird ignoriert")
+        void emailVersendetIgnoriertUserIdParameter() throws Exception {
+            given(service.buchenNachEmailVersand(eq(1L), any(), any())).willReturn(new AusgangsGeschaeftsDokument());
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/email-versendet")
+                            .principal(testAuth())
+                            .param("userId", FREMDE_ID))
+                    .andExpect(status().isOk());
+
+            verify(service).buchenNachEmailVersand(eq(1L), eq(42L), any());
+        }
+
+        @Test
+        @DisplayName("Storno: userId-Parameter wird ignoriert, Grund wird durchgereicht")
+        void stornoIgnoriertUserIdParameter() throws Exception {
+            AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
+            storno.setId(2L);
+            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/storno")
+                            .principal(testAuth())
+                            .param("userId", FREMDE_ID)
+                            .param("grund", "Falscher Betrag"))
+                    .andExpect(status().isOk());
+
+            verify(service).stornieren(eq(1L), eq(42L), any(), eq("Falscher Betrag"));
+        }
+
+        @Test
+        @DisplayName("Löschen: userId-Parameter wird ignoriert")
+        void loeschenIgnoriertUserIdParameter() throws Exception {
+            given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
+
+            mockMvc.perform(delete("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .param("begruendung", "Tippfehler")
+                            .param("userId", FREMDE_ID))
+                    .andExpect(status().isOk());
+
+            verify(service).loeschen(eq(1L), eq("Tippfehler"), eq(42L), any());
+        }
+
+        @Test
+        @DisplayName("Ohne Anmeldung landet kein fremder Bearbeiter im Audit")
+        void ohneAnmeldungKeinFremderBearbeiter() throws Exception {
+            given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
+            AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
+            entity.setId(1L);
+            given(service.buchen(eq(1L), any(), any())).willReturn(entity);
+            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(entity);
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen").param("userId", FREMDE_ID))
+                    .andExpect(status().isOk());
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/storno").param("userId", FREMDE_ID))
+                    .andExpect(status().isOk());
+            mockMvc.perform(delete("/api/ausgangs-dokumente/1")
+                            .param("begruendung", "Tippfehler")
+                            .param("userId", FREMDE_ID))
+                    .andExpect(status().isOk());
+
+            verify(service).buchen(eq(1L), isNull(), any());
+            verify(service).stornieren(eq(1L), isNull(), any(), any());
+            verify(service).loeschen(eq(1L), eq("Tippfehler"), isNull(), any());
+        }
+
+        @Test
+        @DisplayName("IP im Audit: X-Forwarded-For von einem nicht freigegebenen Absender wird ignoriert")
+        void gefaelschtesXForwardedForWirdIgnoriert() throws Exception {
+            AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
+            storno.setId(2L);
+            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/storno")
+                            .principal(testAuth())
+                            .header("X-Forwarded-For", "198.51.100.66")
+                            .with(req -> {
+                                req.setRemoteAddr("203.0.113.8");
+                                return req;
+                            }))
+                    .andExpect(status().isOk());
+
+            verify(service).stornieren(eq(1L), eq(42L), eq("203.0.113.8"), any());
+        }
+
+        @Test
+        @DisplayName("IP im Audit: X-Forwarded-For vom Proxy auf demselben Rechner zählt")
+        void xForwardedForVomEigenenProxyZaehlt() throws Exception {
+            AusgangsGeschaeftsDokument entity = new AusgangsGeschaeftsDokument();
+            entity.setId(1L);
+            given(service.buchen(eq(1L), any(), any())).willReturn(entity);
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/buchen")
+                            .principal(testAuth())
+                            .header("X-Forwarded-For", "203.0.113.8")
+                            .with(req -> {
+                                req.setRemoteAddr("127.0.0.1");
+                                return req;
+                            }))
+                    .andExpect(status().isOk());
+
+            verify(service).buchen(eq(1L), eq(42L), eq("203.0.113.8"));
+        }
+
+        @Test
+        @DisplayName("SQL-Injection und XSS in Begründung/Grund werden unverändert als Text durchgereicht")
+        void boesartigeTexteWerdenNurDurchgereicht() throws Exception {
+            String sql = "'; DROP TABLE ausgangs_geschaefts_dokument; --";
+            String xss = "<script>alert(1)</script>";
+            given(service.findById(1L)).willReturn(buildResponseDto(1L, "RE-2026-001"));
+            AusgangsGeschaeftsDokument storno = new AusgangsGeschaeftsDokument();
+            storno.setId(1L);
+            given(service.stornieren(eq(1L), any(), any(), any())).willReturn(storno);
+
+            mockMvc.perform(delete("/api/ausgangs-dokumente/1")
+                            .principal(testAuth())
+                            .param("begruendung", sql))
+                    .andExpect(status().isOk());
+            mockMvc.perform(post("/api/ausgangs-dokumente/1/storno")
+                            .principal(testAuth())
+                            .param("grund", xss))
+                    .andExpect(status().isOk());
+
+            verify(service).loeschen(eq(1L), eq(sql), eq(42L), any());
+            verify(service).stornieren(eq(1L), eq(42L), any(), eq(xss));
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = {0L, -1L, Long.MAX_VALUE})
+        @DisplayName("Ungültige IDs: Storno und Buchen melden 400, Löschen 404")
+        void ungueltigeIds(long id) throws Exception {
+            given(service.buchen(eq(id), any(), any()))
+                    .willThrow(new RuntimeException("Dokument nicht gefunden: " + id));
+            given(service.stornieren(eq(id), any(), any(), any()))
+                    .willThrow(new RuntimeException("Dokument nicht gefunden: " + id));
+            given(service.findById(id)).willReturn(null);
+
+            mockMvc.perform(post("/api/ausgangs-dokumente/" + id + "/buchen").principal(testAuth()))
+                    .andExpect(status().isBadRequest());
+            mockMvc.perform(post("/api/ausgangs-dokumente/" + id + "/storno").principal(testAuth()))
+                    .andExpect(status().isBadRequest());
+            mockMvc.perform(delete("/api/ausgangs-dokumente/" + id)
+                            .principal(testAuth())
+                            .param("begruendung", "Tippfehler"))
+                    .andExpect(status().isNotFound());
+
+            verify(service, never()).loeschen(anyLong(), any(), any(), any());
         }
     }
 
