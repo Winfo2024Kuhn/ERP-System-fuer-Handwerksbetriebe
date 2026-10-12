@@ -31,11 +31,7 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
         if (path === '/api/lieferanten')
             body = { lieferanten: [{ id: 1, lieferantenname: 'Testlieferant' }], gesamt: 1, seite: 0, seitenGroesse: 1000 };
         if (route.request().method() === 'PUT' || route.request().method() === 'POST') {
-            if (path.endsWith('/analyze-upload'))
-                body = [{ analyzeResponse: { betragBrutto: 0, dokumentTyp: 'RECHNUNG', dokumentDatum: '2026-09-09', lieferantName: 'Testlieferant' } }];
-            else if (path.endsWith('/import-upload'))
-                writes.push({ path, body: {} });
-            else if (path === '/api/buchhaltung/kassenbuch/buchungen') {
+            if (path === '/api/buchhaltung/kassenbuch/buchungen') {
                 const daten = route.request().postData() ?? '';
                 const json = daten.match(/\r?\n\r?\n({.*})\r?\n--/)?.[1] ?? '{}';
                 writes.push({ path, body: JSON.parse(json) });
@@ -155,25 +151,6 @@ test('Finanzen: Kommawerte, Zahlpflicht, eigene Picker und Kassenmeldungen', asy
 
     await page.getByRole('button', { name: 'Speichern', exact: true }).click();
     await expect.poll(() => writes.length).toBe(4);
-    await page.goto('/rechnungsuebersicht');
-    await page.getByRole('button', { name: /hochladen/i }).click();
-    await page.locator('input[type=file]').setInputFiles({ name: 'test.pdf', mimeType: 'application/pdf', buffer: Buffer.from('dummy') });
-    // Lieferant ausdruecklich waehlen statt auf die automatische Zuordnung zu
-    // bauen: die haengt daran, ob die erst mit dem Dialog geladene
-    // Lieferantenliste vor der Analyse da ist, und liess "Speichern" sonst
-    // gesperrt. Um die Zuordnung geht es in diesem Test nicht.
-    const lieferantAuswahl = page.locator('label', { hasText: /^Lieferant \*$/ }).locator('..').getByRole('combobox');
-    await lieferantAuswahl.click();
-    await page.getByRole('option', { name: 'Testlieferant', exact: true }).click();
-    await expect(lieferantAuswahl).toHaveText('Testlieferant');
-    const invoice = page.getByRole('textbox', { name: 'Betrag Brutto' });
-    await invoice.click();
-    await expect(invoice).toHaveValue('');
-    await invoice.fill('12,50');
-    await uebergaengeAusklingenLassen(page);
-    await designPruefung(page, info, 'task10-rechnung');
-    await page.getByRole('button', { name: /speichern/i }).last().click();
-    await expect.poll(() => writes.length).toBe(5);
     expect(native).toEqual([]);
     await expect(page.locator('input[type=number],input[type=date],select')).toHaveCount(0);
 });

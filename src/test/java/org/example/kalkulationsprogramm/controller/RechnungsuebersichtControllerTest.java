@@ -260,6 +260,190 @@ class RechnungsuebersichtControllerTest {
         }
     }
 
+    private static void leeresPdf(java.nio.file.Path ziel) throws Exception {
+        java.nio.file.Files.createDirectories(ziel.getParent());
+        try (var pdf = new org.apache.pdfbox.pdmodel.PDDocument()) {
+            pdf.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            pdf.save(ziel.toFile());
+        }
+    }
+
+    @Test
+    void mergeFindetManuellHochgeladeneRechnungImLieferantenOrdner() throws Exception {
+        var lieferant = new Lieferanten();
+        lieferant.setId(7L);
+        lieferant.setLieferantenname("Musterlieferant GmbH");
+        var rechnung = eingang(1L, LieferantDokumentTyp.RECHNUNG);
+        rechnung.getDokument().setLieferant(lieferant);
+        rechnung.getDokument().setGespeicherterDateiname("0b6f-uuid_Rechnung_Muster.pdf");
+        // Liegt nur dort, wo import-upload und der Lieferanten-Import speichern.
+        leeresPdf(uploads.resolve("lieferanten").resolve("7").resolve("0b6f-uuid_Rechnung_Muster.pdf"));
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        when(lieferantGeschaeftsdokumentRepository.findById(1L)).thenReturn(java.util.Optional.of(rechnung));
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        try (var pdf = org.apache.pdfbox.Loader.loadPDF((byte[]) result.getBody())) {
+            assertThat(pdf.getNumberOfPages()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void mergeLiestKeineEingangsrechnungAusserhalbDesUploadOrdners() throws Exception {
+        var lieferant = new Lieferanten();
+        lieferant.setId(7L);
+        var rechnung = eingang(1L, LieferantDokumentTyp.RECHNUNG);
+        rechnung.getDokument().setLieferant(lieferant);
+        rechnung.getDokument().setGespeicherterDateiname("../../../draussen.pdf");
+        // Die Datei gibt es – aber neben dem Upload-Ordner, nicht darin.
+        var ablage = uploads.resolve("ablage");
+        java.nio.file.Files.createDirectories(ablage.resolve("lieferanten").resolve("7"));
+        leeresPdf(uploads.resolve("draussen.pdf"));
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", ablage.toString());
+        when(lieferantGeschaeftsdokumentRepository.findById(1L)).thenReturn(java.util.Optional.of(rechnung));
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(400);
+    }
+
+    private LieferantGeschaeftsdokument rechnungVonLieferant7(long id, String gespeicherterName) {
+        var lieferant = new Lieferanten();
+        lieferant.setId(7L);
+        var rechnung = eingang(id, LieferantDokumentTyp.RECHNUNG);
+        rechnung.getDokument().setLieferant(lieferant);
+        rechnung.getDokument().setGespeicherterDateiname(gespeicherterName);
+        when(lieferantGeschaeftsdokumentRepository.findById(id)).thenReturn(java.util.Optional.of(rechnung));
+        return rechnung;
+    }
+
+    private static int seitenzahl(org.springframework.http.ResponseEntity<?> antwort) throws Exception {
+        try (var pdf = org.apache.pdfbox.Loader.loadPDF((byte[]) antwort.getBody())) {
+            return pdf.getNumberOfPages();
+        }
+    }
+
+    @Test
+    void mergeLaesstFotoUndFehlendeDateiAusUndMeldetSieImHeader() throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        var ordner = uploads.resolve("lieferanten").resolve("7");
+        rechnungVonLieferant7(1L, "rechnung.pdf");
+        rechnungVonLieferant7(2L, "foto.jpg");
+        rechnungVonLieferant7(3L, "gibt-es-nicht.pdf");
+        leeresPdf(ordner.resolve("rechnung.pdf"));
+        // JPEG-Anfang: früher brach PDFBox daran das ganze Gesamt-PDF mit 500 ab.
+        java.nio.file.Files.write(ordner.resolve("foto.jpg"), new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0x00});
+        when(lieferantGeschaeftsdokumentRepository.findById(4L)).thenReturn(java.util.Optional.empty());
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L, 2L, 3L, 4L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        assertThat(seitenzahl(result)).isEqualTo(1);
+        // Die unbekannte ID 4 bleibt stumm – der Header verrät nicht, welche IDs es gibt.
+        assertThat(result.getHeaders().getFirst(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isEqualTo("2,3");
+    }
+
+    @Test
+    void mergeBehandeltGesperrteUndUnbekannteIdsGleichUndNenntSieNicht() throws Exception {
+        sichtbar(LieferantDokumentTyp.RECHNUNG);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        rechnungVonLieferant7(1L, "rechnung.pdf");
+        leeresPdf(uploads.resolve("lieferanten").resolve("7").resolve("rechnung.pdf"));
+        var gesperrt = eingang(2L, LieferantDokumentTyp.GUTSCHRIFT);
+        when(lieferantGeschaeftsdokumentRepository.findById(2L)).thenReturn(java.util.Optional.of(gesperrt));
+        when(lieferantGeschaeftsdokumentRepository.findById(3L)).thenReturn(java.util.Optional.empty());
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L, 2L, 3L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        assertThat(seitenzahl(result)).isEqualTo(1);
+        assertThat(result.getHeaders().containsKey(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
+    }
+
+    @Test
+    void mergeNimmtDiePdfWennUnterDemAnderenNamenNurDieXmlLiegt() throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        var rechnung = rechnungVonLieferant7(1L, "e-rechnung.xml");
+        var anhang = new EmailAttachment();
+        anhang.setStoredFilename("e-rechnung.pdf");
+        rechnung.getDokument().setAttachment(anhang);
+        var ordner = uploads.resolve("lieferanten").resolve("7");
+        java.nio.file.Files.createDirectories(ordner);
+        java.nio.file.Files.writeString(ordner.resolve("e-rechnung.xml"), "<?xml version=\"1.0\"?><Invoice/>");
+        leeresPdf(uploads.resolve("attachments").resolve("e-rechnung.pdf"));
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        assertThat(seitenzahl(result)).isEqualTo(1);
+        assertThat(result.getHeaders().containsKey(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
+    }
+
+    @Test
+    void mergeOhneEinzigePdfGibt400MitVerstaendlicherMeldung() throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        rechnungVonLieferant7(1L, "e-rechnung.xml");
+        var xml = uploads.resolve("lieferanten").resolve("7").resolve("e-rechnung.xml");
+        java.nio.file.Files.createDirectories(xml.getParent());
+        java.nio.file.Files.writeString(xml, "<?xml version=\"1.0\"?><Invoice/>");
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(400);
+        assertThat(result.getBody()).isEqualTo(java.util.Map.of("message",
+                "Zu den ausgewählten Rechnungen gibt es keine PDF-Datei. Das Gesamt-PDF kann nicht erstellt werden."));
+    }
+
+    @Test
+    void mergeFindetRechnungAusEmailEingangWieDieVorschau() throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        rechnungVonLieferant7(1L, "vendor.pdf");
+        rechnungVonLieferant7(2L, "lieferanten-anhang.pdf");
+        rechnungVonLieferant7(3L, "email-ordner.pdf");
+        leeresPdf(uploads.resolve("attachments").resolve("vendor-invoices").resolve("vendor.pdf"));
+        leeresPdf(uploads.resolve("attachments").resolve("lieferanten").resolve("7").resolve("lieferanten-anhang.pdf"));
+        leeresPdf(uploads.resolve("attachments").resolve("email").resolve("7").resolve("email-ordner.pdf"));
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L, 2L, 3L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        assertThat(seitenzahl(result)).isEqualTo(3);
+        assertThat(result.getHeaders().containsKey(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
+    }
+
+    @Test
+    void mergeFindetAnhangOhneEigenenDateinamenAuchFlachUndImMailOrdner() throws Exception {
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "uploadPath", uploads.toString());
+        var email = new Email();
+        email.setId(55L);
+        var flach = rechnungVonLieferant7(1L, null);
+        var anhangFlach = new EmailAttachment();
+        anhangFlach.setStoredFilename("flach.pdf");
+        anhangFlach.setEmail(email);
+        flach.getDokument().setAttachment(anhangFlach);
+        var imMailOrdner = rechnungVonLieferant7(2L, null);
+        var anhangImOrdner = new EmailAttachment();
+        anhangImOrdner.setStoredFilename("im-mail-ordner.pdf");
+        anhangImOrdner.setEmail(email);
+        imMailOrdner.getDokument().setAttachment(anhangImOrdner);
+        leeresPdf(uploads.resolve("attachments").resolve("flach.pdf"));
+        leeresPdf(uploads.resolve("attachments").resolve("55").resolve("im-mail-ordner.pdf"));
+
+        var result = controller.mergePdfs(
+                new RechnungsuebersichtController.MergePdfRequest(List.of(), List.of(1L, 2L)), null);
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        assertThat(seitenzahl(result)).isEqualTo(2);
+    }
+
     @Test
     void mergeNurMitNichtSichtbarenRechnungenGibt400() {
         sichtbar(LieferantDokumentTyp.LIEFERSCHEIN);

@@ -2,11 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { RefreshCw, FileText, AlertTriangle, Building2, ArrowUpRight, Clock, BadgeAlert, Wallet, Plus } from 'lucide-react';
+import { RefreshCw, FileText, AlertTriangle, Building2, ArrowUpRight, Clock, BadgeAlert, Wallet } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import type { OffenerPosten, Mahnstufe } from '../types';
 import EingangsrechnungenTab from '../components/EingangsrechnungenTab';
-import { AusgangsrechnungUploadModal } from '../components/AusgangsrechnungUploadModal';
 import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
 
 
@@ -67,7 +66,6 @@ export default function OffenePostenEditor() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
-    const [showUploadModal, setShowUploadModal] = useState(false);
     const [activeTab, setActiveTab] = useState<'ausgang' | 'eingang'>(() => {
         const tabParam = searchParams.get('tab');
         return tabParam === 'eingang' ? 'eingang' : 'ausgang';
@@ -354,16 +352,10 @@ export default function OffenePostenEditor() {
             subtitle="Übersicht aller unbezahlten Rechnungen"
             actions={
                 activeTab === 'ausgang' ? (
-                    <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setShowUploadModal(true)}>
-                            <Plus className="w-4 h-4 mr-1" />
-                            Manuell erfassen
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
-                            <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-                            Aktualisieren
-                        </Button>
-                    </div>
+                    <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+                        <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+                        Aktualisieren
+                    </Button>
                 ) : null
             }
         >
@@ -499,16 +491,6 @@ export default function OffenePostenEditor() {
             {previewDoc && (
                 <DocumentPreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
             )}
-
-            {/* Upload Modal */}
-            <AusgangsrechnungUploadModal
-                isOpen={showUploadModal}
-                onClose={() => setShowUploadModal(false)}
-                onSuccess={() => {
-                    setShowUploadModal(false);
-                    loadData();
-                }}
-            />
         </PageLayout>
     );
 }
