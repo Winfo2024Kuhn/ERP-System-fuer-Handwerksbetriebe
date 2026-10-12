@@ -56,7 +56,7 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 
 ## 📚 Entwickler-Dokumentation (Pflichtlektüre VOR jedem Edit/Write)
 
-Bevor du Code schreibst oder änderst, lädst du **zwingend** die passende Dokumentation per `Read`-Tool in deinen Kontext. Das ist **keine Empfehlung** – ein PreToolUse-Hook (`.claude/hooks/check-doc-read.ps1`) blockiert deine Edit/Write/MultiEdit-Aufrufe mit Exit 2, solange das passende Doc in dieser Session noch nicht gelesen wurde:
+Bevor du Code schreibst oder änderst, lädst du **zwingend** die passende Dokumentation per `Read`-Tool in deinen Kontext. Das ist **keine Empfehlung** – ein PreToolUse-Hook (`.claude/hooks/check-doc-read.ps1`, auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh` mit `jq`; Auswahl über `run-hook.sh`, verdrahtet in `.claude/settings.json`) blockiert deine Edit/Write/MultiEdit-Aufrufe mit Exit 2, solange das passende Doc in dieser Session noch nicht gelesen wurde:
 
 | Du willst editieren … | Pflicht VORHER |
 | --- | --- |
