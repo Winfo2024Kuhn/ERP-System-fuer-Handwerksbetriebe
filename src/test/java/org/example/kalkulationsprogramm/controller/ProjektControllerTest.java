@@ -7,14 +7,13 @@ import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
+import org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
-import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
@@ -41,6 +40,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -76,10 +76,8 @@ class ProjektControllerTest {
         private PdfAiExtractorService pdfAiExtractorService;
 
         @MockBean
-        private FrontendUserProfileService frontendUserProfileService;
+        private AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
 
-        @MockBean
-        private MitarbeiterRepository mitarbeiterRepository;
 
         @MockBean
         private LieferantenRepository lieferantenRepository;
@@ -572,5 +570,217 @@ class ProjektControllerTest {
                                                 "zugferdDaten", "", "application/json",
                                                 "{\"kundenName\":\"Max Mustermann\"}".getBytes())))
                                 .andExpect(status().isBadRequest());
+        }
+
+        // ==================== Identität kommt aus der Anmeldung, nie aus Headern ====================
+
+        private static org.example.kalkulationsprogramm.domain.Mitarbeiter mitarbeiter(long id, String vorname) {
+                var m = new org.example.kalkulationsprogramm.domain.Mitarbeiter();
+                m.setId(id);
+                m.setVorname(vorname);
+                m.setNachname("Mustermann");
+                return m;
+        }
+
+        private static org.springframework.security.authentication.UsernamePasswordAuthenticationToken pcAnmeldung() {
+                var p = new org.example.kalkulationsprogramm.config.FrontendUserPrincipal(
+                                42L, "max.mustermann", "Max Mustermann", "hash", true,
+                                java.util.Set.of(org.example.kalkulationsprogramm.domain.FrontendUserRole.ADMIN));
+                return new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                                p, null, p.getAuthorities());
+        }
+
+        private static org.example.kalkulationsprogramm.domain.ProjektNotiz notiz(long id,
+                        org.example.kalkulationsprogramm.domain.Mitarbeiter verfasser, boolean privat) {
+                var n = new org.example.kalkulationsprogramm.domain.ProjektNotiz();
+                var projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+                projekt.setId(1L);
+                n.setId(id);
+                n.setProjekt(projekt);
+                n.setMitarbeiter(verfasser);
+                n.setNotiz("Notiz " + id);
+                n.setMobileSichtbar(true);
+                n.setNurFuerErsteller(privat);
+                n.setErstelltAm(java.time.LocalDateTime.of(2026, 9, 1, 8, 0));
+                return n;
+        }
+
+        @Test
+        void notizen_PrivateNotizenFremderBleibenVerborgenAuchMitGefaelschtenHeadern() throws Exception {
+                var max = mitarbeiter(7L, "Max");
+                var erika = mitarbeiter(3L, "Erika");
+                when(angemeldeterMitarbeiter.handelnderMitarbeiter(org.mockito.ArgumentMatchers.any()))
+                                .thenReturn(java.util.Optional.of(max));
+                when(projektNotizRepository.findByProjektIdOrderByErstelltAmDesc(1L)).thenReturn(List.of(
+                                notiz(1L, max, true), notiz(2L, erika, true), notiz(3L, erika, false)));
+
+                mockMvc.perform(get("/api/projekte/1/notizen")
+                                .principal(pcAnmeldung())
+                                .header("X-User-Profile-Id", "99")
+                                .header("X-Mitarbeiter-Id", "3"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.length()").value(2))
+                                .andExpect(jsonPath("$[0].id").value(1))
+                                .andExpect(jsonPath("$[1].id").value(3));
+        }
+
+        @Test
+        void notizAnlegen_VerfasserIstAngemeldeterMitarbeiterNichtDerHeader() throws Exception {
+                var max = mitarbeiter(7L, "Max");
+                var projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+                projekt.setId(1L);
+                when(angemeldeterMitarbeiter.handelnderMitarbeiter(org.mockito.ArgumentMatchers.any()))
+                                .thenReturn(java.util.Optional.of(max));
+                when(projektRepository.findById(1L)).thenReturn(java.util.Optional.of(projekt));
+                when(projektNotizRepository.save(org.mockito.ArgumentMatchers.any()))
+                                .thenAnswer(inv -> inv.getArgument(0));
+
+                mockMvc.perform(post("/api/projekte/1/notizen")
+                                .principal(pcAnmeldung())
+                                .header("X-User-Profile-Id", "99")
+                                .header("X-Mitarbeiter-Id", "3")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"notiz\":\"<script>alert(1)</script>\",\"nurFuerErsteller\":true}"))
+                                .andExpect(status().isCreated())
+                                .andExpect(jsonPath("$.mitarbeiterId").value(7))
+                                .andExpect(jsonPath("$.notiz").value("<script>alert(1)</script>"));
+
+                var gespeichert = org.mockito.ArgumentCaptor
+                                .forClass(org.example.kalkulationsprogramm.domain.ProjektNotiz.class);
+                verify(projektNotizRepository).save(gespeichert.capture());
+                org.assertj.core.api.Assertions.assertThat(gespeichert.getValue().getMitarbeiter()).isSameAs(max);
+        }
+
+        @Test
+        void notizAnlegen_OhneZugeordnetenMitarbeiterGibt403MitHinweisStatt401() throws Exception {
+                var projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+                projekt.setId(1L);
+                when(angemeldeterMitarbeiter.handelnderMitarbeiter(org.mockito.ArgumentMatchers.any()))
+                                .thenReturn(java.util.Optional.empty());
+                when(projektRepository.findById(1L)).thenReturn(java.util.Optional.of(projekt));
+
+                mockMvc.perform(post("/api/projekte/1/notizen")
+                                .principal(pcAnmeldung())
+                                .header("X-Mitarbeiter-Id", "3")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"notiz\":\"Test\"}"))
+                                // 401 würde im PC-Frontend als abgelaufene Sitzung abmelden
+                                .andExpect(status().isForbidden())
+                                .andExpect(jsonPath("$.message").value(AngemeldeterMitarbeiterService.KEIN_MITARBEITER));
+
+                org.mockito.Mockito.verify(projektNotizRepository, org.mockito.Mockito.never())
+                                .save(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        void upload_HochladerIstAngemeldeterMitarbeiterNichtDerHeader() throws Exception {
+                var max = mitarbeiter(7L, "Max");
+                when(angemeldeterMitarbeiter.handelnderMitarbeiter(org.mockito.ArgumentMatchers.any()))
+                                .thenReturn(java.util.Optional.of(max));
+                var dokument = new org.example.kalkulationsprogramm.domain.ProjektDokument();
+                dokument.setId(55L);
+                dokument.setOriginalDateiname("aufmass.jpg");
+                dokument.setGespeicherterDateiname("abc.jpg");
+                when(dateiSpeicherService.speichereDatei(org.mockito.ArgumentMatchers.any(), eq(1L),
+                                eq(org.example.kalkulationsprogramm.domain.DokumentGruppe.BILDER), eq(max), isNull(),
+                                isNull())).thenReturn(dokument);
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .multipart("/api/projekte/1/dokumente")
+                                .file(new org.springframework.mock.web.MockMultipartFile(
+                                                "datei", "aufmass.jpg", "image/jpeg", new byte[] { 1 }))
+                                .param("gruppe", "BILDER")
+                                .principal(pcAnmeldung())
+                                .header("X-User-Profile-Id", "99")
+                                .header("X-Mitarbeiter-Id", "3"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$[0].id").value(55));
+
+                verify(dateiSpeicherService).speichereDatei(org.mockito.ArgumentMatchers.any(), eq(1L),
+                                eq(org.example.kalkulationsprogramm.domain.DokumentGruppe.BILDER), eq(max), isNull(),
+                                isNull());
+        }
+
+        // ==================== Private Notizen bleiben auch am PC beim Verfasser ====================
+
+        private void angemeldetAls(org.example.kalkulationsprogramm.domain.Mitarbeiter m) {
+                when(angemeldeterMitarbeiter.handelnderMitarbeiter(org.mockito.ArgumentMatchers.any()))
+                                .thenReturn(java.util.Optional.ofNullable(m));
+        }
+
+        @Test
+        void notizAendern_FremdePrivateNotizGibt403OhneTextUndBleibtPrivat() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                var fremd = notiz(20L, mitarbeiter(3L, "Erika"), true);
+                when(projektNotizRepository.findById(20L)).thenReturn(java.util.Optional.of(fremd));
+
+                mockMvc.perform(patch("/api/projekte/1/notizen/20")
+                                .principal(pcAnmeldung())
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                                .andExpect(status().isForbidden())
+                                .andExpect(content().string(org.hamcrest.Matchers.not(
+                                                org.hamcrest.Matchers.containsString("Notiz 20"))));
+
+                org.assertj.core.api.Assertions.assertThat(fremd.isNurFuerErsteller()).isTrue();
+                org.mockito.Mockito.verify(projektNotizRepository, org.mockito.Mockito.never())
+                                .save(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        void notizLoeschen_FremdePrivateNotizGibt403() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                var fremd = notiz(21L, mitarbeiter(3L, "Erika"), true);
+                when(projektNotizRepository.findById(21L)).thenReturn(java.util.Optional.of(fremd));
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/1/notizen/21").principal(pcAnmeldung()))
+                                .andExpect(status().isForbidden());
+
+                org.mockito.Mockito.verify(projektNotizRepository, org.mockito.Mockito.never())
+                                .delete(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        void notizAendern_FremdeOeffentlicheNotizDarfAmPcGeaendertWerden() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                var fremd = notiz(22L, mitarbeiter(3L, "Erika"), false);
+                when(projektNotizRepository.findById(22L)).thenReturn(java.util.Optional.of(fremd));
+                when(projektNotizRepository.save(org.mockito.ArgumentMatchers.any()))
+                                .thenAnswer(inv -> inv.getArgument(0));
+
+                mockMvc.perform(patch("/api/projekte/1/notizen/22")
+                                .principal(pcAnmeldung())
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"notiz\":\"Korrigiert\"}"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.notiz").value("Korrigiert"));
+        }
+
+        @Test
+        void notizAendern_NotizAusAnderemProjektGibt404() throws Exception {
+                angemeldetAls(mitarbeiter(7L, "Max"));
+                when(projektNotizRepository.findById(23L))
+                                .thenReturn(java.util.Optional.of(notiz(23L, mitarbeiter(7L, "Max"), false)));
+
+                mockMvc.perform(patch("/api/projekte/2/notizen/23")
+                                .principal(pcAnmeldung())
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"notiz\":\"x\"}"))
+                                .andExpect(status().isNotFound());
+        }
+
+        @Test
+        void notizAendern_OhneZugeordnetenMitarbeiterGibt403MitHinweis() throws Exception {
+                angemeldetAls(null);
+
+                mockMvc.perform(patch("/api/projekte/1/notizen/22")
+                                .principal(pcAnmeldung())
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"notiz\":\"x\"}"))
+                                .andExpect(status().isForbidden())
+                                .andExpect(jsonPath("$.message").value(AngemeldeterMitarbeiterService.KEIN_MITARBEITER));
+
+                org.mockito.Mockito.verifyNoInteractions(projektNotizRepository);
         }
 }

@@ -36,6 +36,7 @@ import org.example.kalkulationsprogramm.service.ZeitbuchungAuditService;
 import org.example.kalkulationsprogramm.service.ZeitkontoService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -107,6 +108,7 @@ public class ZeitverwaltungController {
      * Mitarbeiter des angemeldeten Benutzers, nie ein Wert aus dem Request.
      */
     @PutMapping("/buchungen/{id}")
+    @Transactional
     public ResponseEntity<?> updateBuchung(
             @PathVariable Long id,
             @RequestBody Map<String, Object> data,
@@ -239,6 +241,7 @@ public class ZeitverwaltungController {
      * im Protokoll ist der Mitarbeiter des angemeldeten Benutzers.
      */
     @DeleteMapping("/buchungen/{id}")
+    @Transactional
     public ResponseEntity<?> deleteBuchung(
             @PathVariable Long id,
             @RequestParam(required = false) String grund,
@@ -305,7 +308,11 @@ public class ZeitverwaltungController {
      * Erstellt eine neue Zeitbuchung.
      */
     @PostMapping("/buchungen")
-    public ResponseEntity<Map<String, Object>> createBuchung(@RequestBody Map<String, Object> data) {
+    @Transactional // Buchung und Protokolleintrag gemeinsam oder gar nicht (GoBD)
+    public ResponseEntity<Map<String, Object>> createBuchung(@RequestBody Map<String, Object> data,
+            Authentication authentication) {
+        // GoBD: Ohne zugeordneten Mitarbeiter kein Protokolleintrag möglich → ablehnen (403).
+        Mitarbeiter bearbeiter = angemeldeterMitarbeiter.bearbeiter(authentication);
         Zeitbuchung buchung = new Zeitbuchung();
 
         // Typ früh setzen, um zu prüfen ob Projekt erforderlich ist
@@ -414,7 +421,16 @@ public class ZeitverwaltungController {
             }
         }
 
+        // GoBD-Felder der Erfassung wie in der Handy-App
+        buchung.setErfasstVon(bearbeiter);
+        buchung.setErfasstAm(LocalDateTime.now());
+        buchung.setErfasstVia(ErfassungsQuelle.DESKTOP);
+        buchung.setVersion(1);
+
         Zeitbuchung saved = zeitbuchungRepository.save(buchung);
+
+        // AUDIT: Version 1 protokollieren – sonst beginnt die Historie erst mit der ersten Änderung.
+        auditService.protokolliereErstellung(saved, bearbeiter, ErfassungsQuelle.DESKTOP);
 
         // MonatsSaldo-Cache invalidieren
         monatsSaldoService.invalidiereFuerDateTime(

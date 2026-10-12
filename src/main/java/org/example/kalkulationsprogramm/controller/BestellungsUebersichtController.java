@@ -989,13 +989,11 @@ public class BestellungsUebersichtController {
 
     public static class ZuordnungRequest {
         public Long geschaeftsdokumentId;
-        public Long frontendUserProfileId;
         public List<ProjektAnteil> projektAnteile;
     }
 
     public static class BelegZuordnungRequest {
         public Long belegId;
-        public Long frontendUserProfileId;
         public List<ProjektAnteil> projektAnteile;
     }
 
