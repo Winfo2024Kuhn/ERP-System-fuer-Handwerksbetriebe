@@ -69,20 +69,13 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | Tailwind CSS | ^4.1.17 | MIT License | https://tailwindcss.com/ |
 | vite-plugin-pwa | ^1.2.0 | MIT License | https://vite-pwa-org.netlify.app/ |
 
-## Python AI-Indexer
-
-| Bibliothek | Version | Lizenz | Quelle |
-|---|---|---|---|
-| google-generativeai | >=0.8.0 | Apache License 2.0 | https://github.com/google-gemini/generative-ai-python |
-| qdrant-client | >=1.12.0 | Apache License 2.0 | https://github.com/qdrant/qdrant-client |
-
 ---
 
 ## Lizenzhinweise
 
 ### Apache License 2.0
 Betrifft: Spring Boot, Mustang Project, Flyway, Apache PDFBox, Apache Commons Text,
-ZXing, html5-qrcode, class-variance-authority, TypeScript, google-generativeai, qdrant-client
+ZXing, html5-qrcode, class-variance-authority, TypeScript
 
 > Licensed under the Apache License, Version 2.0 (the "License");
 > you may not use this file except in compliance with the License.

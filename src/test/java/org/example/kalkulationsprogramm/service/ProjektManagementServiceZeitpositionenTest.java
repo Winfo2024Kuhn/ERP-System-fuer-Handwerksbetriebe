@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = { "spring.jpa.hibernate.ddl-auto=create-drop", "file.mail-attachment-dir=attachments" })
 @Transactional
-class ProjektManagementServiceIT {
+class ProjektManagementServiceZeitpositionenTest {
 
     @Autowired
     private ProjektManagementService projektManagementService;

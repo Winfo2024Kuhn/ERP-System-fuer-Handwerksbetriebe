@@ -24,6 +24,15 @@ if not exist "install-openfile-launcher.ps1" (
     exit /b 1
 )
 
+REM config.json (erlaubte Netzwerkpfade) kommt mit in die Setup.exe
+if not exist "config.json" (
+    echo FEHLER: config.json nicht gefunden!
+    echo Zuerst auf dem ERP-Rechner Setup-Freigabe.ps1 als Administrator ausfuehren,
+    echo es legt config.json in diesen Ordner.
+    pause
+    exit /b 1
+)
+
 echo Erstelle Setup.exe mit IExpress...
 echo.
 

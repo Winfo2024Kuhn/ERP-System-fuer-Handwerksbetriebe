@@ -99,7 +99,7 @@ if ($network.Code -eq 0) {
 }
 # Switching profiles must not leave the old public entry point running.
 $null = Docker-Checked ($public + @('--profile', 'quick', '--profile', 'domain', 'stop', 'caddy', 'tunnel')) 'Bisherigen oeffentlichen Zugang stoppen'
-$null = Docker-Checked ($erp + @('up', '-d', '--no-build', 'postgres', 'qdrant', 'app')) 'ERP mit privaten Portbindungen starten'
+$null = Docker-Checked ($erp + @('up', '-d', '--no-build', 'postgres', 'app')) 'ERP mit privaten Portbindungen starten'
 $null = Docker-Checked ($public + @('up', '-d', '--wait', 'gateway')) 'Mobiles Gateway starten'
 $protected = $false
 for ($attempt = 0; $attempt -lt 24; $attempt++) {

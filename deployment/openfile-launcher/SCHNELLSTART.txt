@@ -2,10 +2,18 @@
   OpenFile Launcher - Schnellstart-Anleitung
 ==========================================================================
 
+VORHER (einmal, auf dem ERP-Rechner):
+-------------------------------------
+
+Setup-Freigabe.ps1 als Administrator ausfuehren. Es richtet die
+Netzwerkfreigabe ein und legt config.json (erlaubte Netzwerkpfade) in
+diesen Ordner. Ohne config.json oeffnet der Launcher keine Dateien.
+
+
 INSTALLATION (auf einem Client-PC):
 ------------------------------------
 
-1. Kopieren Sie diesen GESAMTEN Ordner auf den Ziel-PC
+1. Kopieren Sie diesen GESAMTEN Ordner (mit config.json) auf den Ziel-PC
    (z.B. auf den Desktop)
 
 2. RECHTSKLICK auf "INSTALL.bat"

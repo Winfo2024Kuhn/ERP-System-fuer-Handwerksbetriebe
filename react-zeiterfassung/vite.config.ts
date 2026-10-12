@@ -61,10 +61,10 @@ export default defineConfig({
   server: {
     host: true, // Allow access from network (mobile)
     proxy: {
+      // Backend (./mvnw spring-boot:run) spricht HTTP auf server.port=8080
       '/api': {
-        target: 'http://localhost:8082',
+        target: 'http://localhost:8080',
         changeOrigin: true,
-        secure: false,
       },
     },
   },
