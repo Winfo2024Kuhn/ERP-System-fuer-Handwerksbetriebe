@@ -67,7 +67,7 @@ class MobileDocumentContractTest {
     }
     @Test void mobileUploadsKoennenKeineInterneDokumentgruppeBefuellen() {
         assertThat(projects.uploadDokument(1L, List.of(), DokumentGruppe.DIVERSE_DOKUMENTE, null, auth()).getStatusCode().value()).isEqualTo(403);
-        assertThat(enquiries.uploadDokument(1L, List.of(), null).getStatusCode().value()).isEqualTo(403);
+        assertThat(enquiries.uploadDokument(1L, List.of(), null, auth()).getStatusCode().value()).isEqualTo(403);
         verifyNoInteractions(files);
     }
     @Test void anfragenListeLiefertMobilNurOffeneAnfragenOhneBetragUndBegrenzt() {
@@ -118,7 +118,7 @@ class MobileDocumentContractTest {
         var svg = new org.springframework.mock.web.MockMultipartFile("datei", "bild.svg", "image/svg+xml", "<svg/>".getBytes());
         var html = new org.springframework.mock.web.MockMultipartFile("datei", "bild.html", "text/html", "<p>".getBytes());
         assertThat(projects.uploadDokument(1L, List.of(svg), DokumentGruppe.BILDER, null, auth()).getStatusCode().value()).isEqualTo(400);
-        assertThat(enquiries.uploadDokument(1L, List.of(html), DokumentGruppe.BILDER).getStatusCode().value()).isEqualTo(400);
+        assertThat(enquiries.uploadDokument(1L, List.of(html), DokumentGruppe.BILDER, auth()).getStatusCode().value()).isEqualTo(400);
         verifyNoInteractions(files);
     }
     @Test void anfrageNotizenVerbergenDesktopOnlyUndFremdePrivateNotizen() {

@@ -653,7 +653,6 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 // ein zwischenzeitlich beendetes Projekt nicht wieder aufreißen.
                 ...(isEditMode ? {} : {
                     anlegedatum: new Date().toISOString().split('T')[0],
-                    zeitPositionen: [],
                     materialkosten: [],
                 }),
             };
