@@ -55,7 +55,7 @@ import jakarta.persistence.EntityManager;
         BelegZuordnungService.class, BelegKiAnalyseService.class, SystemSettingsService.class,
         BestellungsUebersichtController.class, BestellungsUebersichtService.class,
         LieferantDokumentPositionService.class, LieferantDokumentPositionLeser.class,
-        LieferantDokumentZuordnungService.class,
+        LieferantDokumentZuordnungService.class, LieferantDokumentDateiService.class,
         RechnungLieferscheinZuordnungIntegrationTest.Konfiguration.class })
 class RechnungLieferscheinZuordnungIntegrationTest {
 
