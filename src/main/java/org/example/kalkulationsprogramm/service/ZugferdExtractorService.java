@@ -193,13 +193,20 @@ public class ZugferdExtractorService {
                 }
             }
 
-            // Nettobetrag berechnen falls Bruttoangabe vorhanden
-            if (data.getBetrag() != null) {
-                BigDecimal mwstSatz = new BigDecimal("0.19");
-                data.setMwstSatz(mwstSatz);
-                data.setBetragNetto(data.getBetrag().divide(
-                        BigDecimal.ONE.add(mwstSatz), 2, java.math.RoundingMode.HALF_UP));
+            // Netto und Steuersatz stehen in der Rechnung selbst – früher wurde fest mit 19 %
+            // zurückgerechnet, was jede 7-%-Rechnung verfälschte.
+            BigDecimal mwstSatz = rawXml != null ? einzigerSteuersatz(rawXml) : null;
+            data.setMwstSatz(mwstSatz);
+            BigDecimal netto = null;
+            try {
+                netto = alsBetrag(zugFeRDImporter.getTaxBasisTotalAmount());
+            } catch (Exception e) {
+                log.debug("Kein Nettobetrag (TaxBasisTotalAmount) in ZUGFeRD: {}", e.getMessage());
             }
+            if (netto == null && mwstSatz != null && data.getBetrag() != null) {
+                netto = data.getBetrag().divide(BigDecimal.ONE.add(mwstSatz), 2, java.math.RoundingMode.HALF_UP);
+            }
+            data.setBetragNetto(netto);
 
             // NettoTage aus Fälligkeitsdatum berechnen
             if (data.getRechnungsdatum() != null && data.getFaelligkeitsdatum() != null) {
@@ -238,6 +245,34 @@ public class ZugferdExtractorService {
             }
         }
         return null;
+    }
+
+    /** Steuersatz einer Zeile oder der Steueraufschlüsselung, z. B. {@code 19.00}. */
+    private static final Pattern STEUERSATZ = Pattern.compile("RateApplicablePercent(?:\\s[^>]*+)?>\\s*+(\\d++(?:[.,]\\d++)?)\\s*+<");
+
+    /**
+     * Der Steuersatz der Rechnung als Anteil (0.19) – nur, wenn sie genau einen ausweist.
+     * Bei gemischten Sätzen (7 % und 19 %) gibt es keinen einen Satz; {@code null} sagt dann
+     * die Wahrheit, statt einen der beiden zu behaupten.
+     */
+    static BigDecimal einzigerSteuersatz(String xml) {
+        java.util.Set<BigDecimal> saetze = new java.util.HashSet<>();
+        Matcher m = STEUERSATZ.matcher(xml);
+        while (m.find()) {
+            saetze.add(new BigDecimal(m.group(1).replace(',', '.')).stripTrailingZeros());
+        }
+        return saetze.size() == 1 ? saetze.iterator().next().movePointLeft(2) : null;
+    }
+
+    private static BigDecimal alsBetrag(String wert) {
+        if (wert == null || wert.isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(wert.trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private LocalDate parseDate(String raw) {
@@ -443,7 +478,7 @@ public class ZugferdExtractorService {
 
                 // Menge (BilledQuantity)
                 String mengeStr = extractFromXml(itemXml,
-                        "BilledQuantity[^>]*>([0-9.,]+)</");
+                        "BilledQuantity[^>]*>(-?[0-9.,]+)</");
                 if (mengeStr != null) {
                     try {
                         pos.setMenge(new BigDecimal(mengeStr.replace(',', '.')));
