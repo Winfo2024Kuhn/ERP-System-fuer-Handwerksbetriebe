@@ -4,7 +4,6 @@ import {
     formatEingabe,
     formatEur,
     formatHours,
-    leseFehlermeldung,
     parseDecimal,
 } from './verrechnungslohnFormat';
 
@@ -100,48 +99,6 @@ describe('formatHours', () => {
 
     it('zeigt 0 h statt "NaN h"', () => {
         expect(formatHours(Number.NaN)).toBe('0 h');
-    });
-});
-
-describe('leseFehlermeldung', () => {
-    const antwort = (status: number, json: () => Promise<unknown>) =>
-        ({ status, json } as unknown as Response);
-
-    it('nimmt die Klartext-Meldung des Servers', async () => {
-        const res = antwort(400, async () => ({ message: 'Der Abschlag ist zu gross.' }));
-        expect(await leseFehlermeldung(res, 'Fehlgeschlagen')).toBe('Der Abschlag ist zu gross.');
-    });
-
-    it('versteht auch reason und error als Feldnamen', async () => {
-        expect(await leseFehlermeldung(antwort(400, async () => ({ reason: 'Grund' })), 'F'))
-            .toBe('Grund');
-        expect(await leseFehlermeldung(antwort(500, async () => ({ error: 'Kaputt' })), 'F'))
-            .toBe('Kaputt');
-    });
-
-    it('faellt bei kaputtem JSON auf den Statustext zurueck', async () => {
-        const res = antwort(502, async () => {
-            throw new Error('kein JSON');
-        });
-        expect(await leseFehlermeldung(res, 'Übernehmen fehlgeschlagen')).toBe(
-            'Übernehmen fehlgeschlagen (Status 502).'
-        );
-    });
-
-    it('faellt bei leerer oder unbrauchbarer Meldung auf den Statustext zurueck', async () => {
-        expect(await leseFehlermeldung(antwort(400, async () => ({})), 'Fehlgeschlagen')).toBe(
-            'Fehlgeschlagen (Status 400).'
-        );
-        expect(
-            await leseFehlermeldung(antwort(400, async () => ({ message: '   ' })), 'Fehlgeschlagen')
-        ).toBe('Fehlgeschlagen (Status 400).');
-        expect(
-            await leseFehlermeldung(antwort(400, async () => ({ message: 42 })), 'Fehlgeschlagen')
-        ).toBe('Fehlgeschlagen (Status 400).');
-        // leerer Body: res.json() liefert null
-        expect(await leseFehlermeldung(antwort(503, async () => null), 'Fehlgeschlagen')).toBe(
-            'Fehlgeschlagen (Status 503).'
-        );
     });
 });
 

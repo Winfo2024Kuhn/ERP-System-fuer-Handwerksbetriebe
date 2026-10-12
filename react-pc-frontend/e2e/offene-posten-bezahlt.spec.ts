@@ -77,3 +77,38 @@ test('erklärt am Status, was der Haken im Hintergrund auslöst', async ({ page 
     await expect(page.getByText(/gilt das Projekt als bezahlt und wird automatisch beendet/)).toBeVisible();
     await designPruefung(page, testInfo, 'offene-posten-bezahlt-info');
 });
+
+test('Eingangsrechnungen: zeigt bei einem Konflikt die Meldung und lässt den Haken offen', async ({ page }, testInfo) => {
+    const meldung = 'Jemand anders hat diese Daten gerade gespeichert. Ihre Änderungen wurden nicht übernommen — bitte neu laden.';
+    await stubbeApi(page, { status: 204 });
+    const lieferantenRechnung = {
+        id: 11, dokumentId: 21, lieferantId: 31, lieferantName: 'Musterstahl GmbH',
+        dokumentNummer: 'ER-2026-011', dokumentDatum: '2026-10-01', zahlungsziel: '2026-10-31',
+        betragNetto: 100, betragBrutto: 119, bezahlt: false, bezahltAm: null, bereitsGezahlt: false,
+        zahlungsart: null, dateiname: 'er-011.pdf', pdfUrl: '/api/dokumente/er-011.pdf',
+        ueberfaellig: false, genehmigt: true, darfGenehmigen: true,
+        skontoTage: null, skontoProzent: null, nettoTage: null, skontoFrist: null,
+        skontoVerbleibendeTage: null, skontoAbgelaufen: false, tatsaechlichGezahlt: null, mitSkonto: false,
+    };
+    // Nach stubbeApi registriert, damit diese Route zuerst greift.
+    await page.route('**/api/offene-posten/eingang**', route => route.request().method() === 'PUT'
+        ? route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ status: 409, message: meldung, fields: [] }) })
+        : route.fulfill({ contentType: 'application/json', body: JSON.stringify([lieferantenRechnung]) }));
+    await page.goto('/offeneposten?tab=eingang');
+
+    const haken = page.getByRole('checkbox', { name: 'Offen' });
+    await haken.click();
+
+    await expect(page.getByRole('region', { name: 'Meldungen' }).getByText(meldung)).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Offen' })).not.toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Offen' })).toBeEnabled();
+    await designPruefung(page, testInfo, 'eingangsrechnungen-bezahlt-konflikt');
+
+    // Der Genehmigt-Haken ist eine versteckte Checkbox: Fokus per Tastatur muss sichtbar sein.
+    const genehmigt = page.getByRole('checkbox', { name: 'Genehmigung zurücknehmen' });
+    await genehmigt.focus();
+    await expect(genehmigt).toBeFocused();
+    const ring = await genehmigt.evaluate(el => getComputedStyle(el.closest('label')!).boxShadow);
+    expect(ring).not.toBe('none');
+    await designPruefung(page, testInfo, 'eingangsrechnungen-genehmigt-fokus');
+});
