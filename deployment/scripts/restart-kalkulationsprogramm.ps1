@@ -6,9 +6,10 @@
 # =========================================================
 
 param(
-    [int]$ServerPort = 8082,
+    # Gleicher Port und Log-Ordner wie start-kalkulationsprogramm.ps1 (server.port=8080)
+    [int]$ServerPort = 8080,
     [int]$ShutdownTimeout = 30,
-    [string]$LogDir = "E:\Kalkulationsprogramm\Logs"
+    [string]$LogDir = "C:\Kalkulationsprogramm\Logs"
 )
 
 # Zeitstempel für Log
@@ -47,9 +48,10 @@ function Stop-KalkulationsprogrammServer {
     
     Write-Log "Suche Server-Prozess auf Port $Port..."
     
-    # Finde Prozess, der auf dem Port lauscht
+    # Finde Prozess, der auf dem Port lauscht. Nur "Listen": Abgebaute Verbindungen
+    # (TIME_WAIT) gehoeren dem Leerlaufprozess (PID 0), den darf man nicht beenden.
     try {
-        $connection = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
+        $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($connection) {
             $processId = $connection.OwningProcess
             $process = Get-Process -Id $processId -ErrorAction SilentlyContinue

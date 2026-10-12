@@ -2,8 +2,13 @@
 # OpenFile Launcher - Automatisches Installations-Skript
 # ====================================================================
 # Dieses Skript installiert den OpenFile Launcher auf einem Client:
-# 1. Kopiert launcher.ps1 nach C:\Program Files\OpenFileLauncher
+# 1. Kopiert launcher.ps1 (und config.json, falls sie daneben liegt) nach
+#    C:\Program Files\OpenFileLauncher
 # 2. Registriert das openfile:// Schema in der Windows Registry
+#
+# config.json enthaelt die erlaubten Netzwerkpfade. Sie entsteht auf dem
+# ERP-Rechner mit Setup-Freigabe.ps1 in diesem Ordner. Ohne sie oeffnet der
+# Launcher keine Dateien.
 #
 # WICHTIG: Muss als Administrator ausgeführt werden!
 # ====================================================================
@@ -41,7 +46,10 @@ if ($MyInvocation.MyCommand.Path) {
 }
 
 $targetDir = "C:\Program Files\OpenFileLauncher"
+# Fruehere Setups installierten hierhin; uninstall-openfile-launcher.ps1 kennt beide Orte
+$legacyTargetDir = "C:\Program Files (x86)\OpenFileLauncher"
 $launcherScript = Join-Path $scriptDir "launcher.ps1"
+$configSource = Join-Path $scriptDir "config.json"
 
 # Prüfen, ob launcher.ps1 vorhanden ist
 if (-not (Test-Path $launcherScript)) {
@@ -81,6 +89,31 @@ try {
         $targetCmd = Join-Path $targetDir "launcher.cmd"
         Copy-Item -Path $launcherCmd -Destination $targetCmd -Force
         Write-Host "   launcher.cmd ebenfalls kopiert" -ForegroundColor Green
+    }
+
+    # config.json (erlaubte Netzwerkpfade) neben launcher.ps1 legen
+    $targetConfig = Join-Path $targetDir "config.json"
+    if (Test-Path $configSource) {
+        Copy-Item -Path $configSource -Destination $targetConfig -Force
+        Write-Host "   config.json kopiert nach: $targetConfig" -ForegroundColor Green
+    } elseif (Test-Path $targetConfig) {
+        Write-Host "   config.json nicht im Ordner - vorhandene bleibt: $targetConfig" -ForegroundColor Yellow
+    } else {
+        Write-Host "   WARNUNG: Keine config.json gefunden. Der Launcher oeffnet erst Dateien," -ForegroundColor Yellow
+        Write-Host "   wenn config.json neben launcher.ps1 liegt (Setup-Freigabe.ps1 auf dem ERP-Rechner)." -ForegroundColor Yellow
+    }
+
+    # Alte Installation unter Program Files (x86) entfernen - die Registry zeigt gleich hierher
+    if (Test-Path $legacyTargetDir) {
+        # Kam sie aus dem Inno-Setup, erst dessen Deinstallation laufen lassen,
+        # sonst bleibt ein toter Eintrag unter "Programme und Features"
+        $legacyUninstaller = Join-Path $legacyTargetDir "unins000.exe"
+        if (Test-Path $legacyUninstaller) {
+            Start-Process -FilePath $legacyUninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+        }
+        # Die Inno-Deinstallation entfernt auch openfile:// - gleich unten neu registriert
+        Remove-Item -Path $legacyTargetDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "   Alte Installation entfernt: $legacyTargetDir" -ForegroundColor Green
     }
 
     # Schritt 3: Registry - HKCR verfügbar machen
@@ -135,6 +168,7 @@ try {
     Write-Host ""
     Write-Host "Installierte Komponenten:" -ForegroundColor Cyan
     Write-Host "  - Launcher-Skript: $targetScript" -ForegroundColor White
+    Write-Host "  - Erlaubte Pfade:  $targetConfig" -ForegroundColor White
     Write-Host "  - Registry Schema: openfile://" -ForegroundColor White
     Write-Host ""
     Write-Host "Sie koennen jetzt openfile://-Links verwenden!" -ForegroundColor Green

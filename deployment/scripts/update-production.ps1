@@ -85,25 +85,28 @@ if ($gitStatus -and -not $Force) {
     }
 }
 
-# Pruefe aktuellen Branch
+# Pruefe aktuellen Branch. Eingespielt wird immer main: Mit -Force wird ohne
+# Rueckfrage gewechselt - frueher blieb das Skript dann auf dem anderen Branch,
+# zog main nur hinein und spielte diesen Mischstand ein.
 $currentBranch = git rev-parse --abbrev-ref HEAD
 if ($currentBranch -ne "main") {
     Write-Warning-Custom "Du bist nicht auf dem main branch (aktuell: $currentBranch)"
+    $switchToMain = $Force
     if (-not $Force) {
         $continue = Read-Host "Zum main branch wechseln? (j/n)"
-        if ($continue -eq "j" -or $continue -eq "J") {
-            Write-Info "Wechsle zu main branch..."
-            git checkout main
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error-Custom "Fehler beim Wechseln zum main branch"
-                exit 1
-            }
-            Write-Success "Branch gewechselt zu main"
-        } else {
-            Write-Info "Update abgebrochen."
-            exit 0
-        }
+        $switchToMain = ($continue -eq "j" -or $continue -eq "J")
     }
+    if (-not $switchToMain) {
+        Write-Info "Update abgebrochen."
+        exit 0
+    }
+    Write-Info "Wechsle zu main branch..."
+    git checkout main
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Custom "Fehler beim Wechseln zum main branch"
+        exit 1
+    }
+    Write-Success "Branch gewechselt zu main"
 }
 
 # Frontend-Build-Ausgabe zuruecksetzen, damit der Pull nicht mit den beim letzten
@@ -534,25 +537,14 @@ if (Test-Path $ragCacheSource) {
     Write-Info "Starte die App einmal lokal (mvnw spring-boot:run) um den Cache zu generieren"
 }
 
-# Kopiere OpenFile Launcher Setup-Dateien
-Write-Host ""
-Write-Info "Kopiere OpenFile Launcher Setup-Dateien..."
-$openFileLauncherSource = Join-Path $REPO_PATH "deployment\openfile-launcher"
-$openFileLauncherDest = Join-Path $PRODUCTION_PATH "downloads"
-
-if (Test-Path $openFileLauncherSource) {
-    # Erstelle downloads-Verzeichnis falls nicht vorhanden
-    if (-not (Test-Path $openFileLauncherDest)) {
-        New-Item -ItemType Directory -Path $openFileLauncherDest -Force | Out-Null
+# Frueher lag hier das OpenFile-Launcher-Setup zum Herunterladen (mit fest eingetragenen
+# PC-Namen). Den Download gibt es nicht mehr - die alten Dateien wegraeumen.
+foreach ($oldSetupFile in @("OpenFileLauncher-Setup.ps1", "OpenFileLauncher-Install.bat")) {
+    $oldSetupPath = Join-Path $PRODUCTION_PATH "downloads\$oldSetupFile"
+    if (Test-Path $oldSetupPath) {
+        Remove-Item $oldSetupPath -Force
+        Write-Info "Altes Launcher-Setup entfernt: $oldSetupPath"
     }
-    
-    # Kopiere Setup-Dateien
-    Copy-Item "$openFileLauncherSource\OpenFileLauncher-Setup.ps1" $openFileLauncherDest -Force
-    Copy-Item "$openFileLauncherSource\OpenFileLauncher-Install.bat" $openFileLauncherDest -Force
-    
-    Write-Success "OpenFile Launcher Setup-Dateien kopiert nach: $openFileLauncherDest"
-} else {
-    Write-Warning-Custom "OpenFile Launcher Quellverzeichnis nicht gefunden: $openFileLauncherSource"
 }
 
 Write-Host ""

@@ -4,7 +4,8 @@
 ; Erstellt ein professionelles Windows-Setup-Programm
 ;
 ; VERWENDUNG:
-; 1. Installieren Sie Inno Setup: https://jrsoftware.org/isdl.php
+; 1. Installieren Sie Inno Setup ab Version 6.3: https://jrsoftware.org/isdl.php
+;    Vorher auf dem ERP-Rechner Setup-Freigabe.ps1 ausfuehren (legt config.json hierher)
 ; 2. Rechtsklick auf diese .iss-Datei -> "Compile"
 ; 3. Das Setup wird als "Output\OpenFileLauncher-Setup.exe" erstellt
 ; ====================================================================
@@ -20,7 +21,13 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
+; 64-Bit-Modus: {autopf} ist dann "C:\Program Files" - derselbe Ort wie
+; install-openfile-launcher.ps1 und Setup-Freigabe.ps1 (nicht "Program Files (x86)")
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={autopf}\OpenFileLauncher
+; Nicht den Ordner einer frueheren x86-Installation weiterverwenden
+UsePreviousAppDir=no
 DisableDirPage=yes
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -37,6 +44,8 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 
 [Files]
 Source: "launcher.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; Erlaubte Netzwerkpfade, erzeugt von Setup-Freigabe.ps1. Ohne sie oeffnet der Launcher nichts.
+Source: "config.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "SCHNELLSTART.txt"; DestDir: "{app}"; Flags: ignoreversion
 
