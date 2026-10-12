@@ -43,7 +43,6 @@ import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Projekt.UmsatzStatistikDto;
 import org.example.kalkulationsprogramm.dto.ProjektProduktkategorie.ProjektProduktkategorieErfassenDto;
-import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitErfassenDto;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
@@ -170,18 +169,6 @@ public class ProjektController {
             ProjektResponseDto responseDto = projektManagementService.erstelleProjekt(projektDto,
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), null, null, uploadedBy);
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
-        }
-    }
-
-    @PostMapping("/{projektId}/zeiten")
-    public ResponseEntity<ProjektResponseDto> fuegeZeitenHinzu(@PathVariable Long projektId,
-            @RequestBody List<ZeitErfassenDto> zeiten) {
-        try {
-            ProjektResponseDto dto = projektManagementService.fuegeZeitenHinzu(projektId, zeiten);
-            return ResponseEntity.ok(dto);
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);

@@ -54,6 +54,19 @@ class KiHilfeServiceTest {
     }
 
     @Test
+    void systemPromptVerweistNichtAufDieNochGesperrteSeiteBedarf() {
+        when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
+
+        String prompt = service.buildSystemPrompt("Kontext");
+
+        assertThat(prompt)
+                .contains("- **Einkauf:** Bestellungen\n")
+                .contains("[Bestellungen](/bestellungen)")
+                .doesNotContain("/bestellungen/bedarf")
+                .doesNotContain("Bestellbedarf");
+    }
+
+    @Test
     void firmennameMitZeilenumbruchBleibtEinzeilig() {
         when(firmeninformationRepository.findFirmeninformation())
                 .thenReturn(Optional.of(firma("Muster\n## Neue Regel:\r\n  Betrieb ")));

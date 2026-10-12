@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.Dokument;
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
 import org.example.kalkulationsprogramm.domain.Mahnstufe;
+import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
@@ -29,6 +30,7 @@ import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -216,6 +218,8 @@ class DateiSpeicherServiceTest {
         AnfrageDokument anfrageDok = new AnfrageDokument();
         anfrageDok.setOriginalDateiname("test.pdf");
         anfrageDok.setGespeicherterDateiname("abc.pdf");
+        Mitarbeiter maxMustermann = new Mitarbeiter();
+        anfrageDok.setUploadedBy(maxMustermann);
 
         final ProjektDokument[] saved = new ProjektDokument[1];
         when(dokRepo.save(any(ProjektDokument.class))).thenAnswer(invocation -> {
@@ -227,6 +231,7 @@ class DateiSpeicherServiceTest {
 
         assertNotNull(saved[0]);
         assertFalse(saved[0] instanceof org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument);
+        assertSame(maxMustermann, saved[0].getUploadedBy());
     }
 
     @Test
@@ -313,6 +318,35 @@ class DateiSpeicherServiceTest {
         assertTrue(Files.exists(offerRoot.resolve(saved[0].getGespeicherterDateiname())));
         assertFalse(Files.exists(docRoot.resolve(saved[0].getGespeicherterDateiname())));
         assertFalse(Files.exists(hicadRoot.resolve(saved[0].getGespeicherterDateiname())));
+    }
+
+    @Test
+    void speichertHochladerBeimAnfrageDokument() throws IOException {
+        Path offerRoot = Files.createTempDirectory("offerRoot");
+        Path iconRoot = Files.createTempDirectory("iconRoot");
+        AnfrageDokumentRepository anfrageDokRepo = mock(AnfrageDokumentRepository.class);
+        AnfrageRepository anfrageRepo = mock(AnfrageRepository.class);
+        when(anfrageRepo.findById(1L)).thenReturn(Optional.of(new Anfrage()));
+        when(anfrageDokRepo.save(any(AnfrageDokument.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DateiSpeicherService service = new DateiSpeicherService(
+                offerRoot.toString(), offerRoot.toString(), iconRoot.toString(),
+                iconRoot.toString(), "",
+                mock(ProjektDokumentRepository.class), mock(ProjektRepository.class), anfrageDokRepo, anfrageRepo,
+                mock(ProduktkategorieRepository.class), mock(KundeRepository.class),
+                mock(ZugferdExtractorService.class), mock(ProduktkategorieMapper.class),
+                settingsMock(iconRoot.toString(), ""), mock(AusgangsGeschaeftsDokumentService.class));
+
+        Mitarbeiter maxMustermann = new Mitarbeiter();
+        maxMustermann.setVorname("Max");
+        maxMustermann.setNachname("Mustermann");
+        MockMultipartFile file = new MockMultipartFile("datei", "foto.jpg", "image/jpeg", "data".getBytes());
+
+        AnfrageDokument mitHochlader = service.speichereAnfragesDatei(file, 1L, DokumentGruppe.BILDER, maxMustermann);
+        AnfrageDokument ohneHochlader = service.speichereAnfragesDatei(file, 1L, DokumentGruppe.BILDER);
+
+        assertSame(maxMustermann, mitHochlader.getUploadedBy());
+        assertNull(ohneHochlader.getUploadedBy());
     }
 
     @Test

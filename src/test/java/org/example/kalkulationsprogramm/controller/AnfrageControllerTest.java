@@ -319,6 +319,59 @@ class AnfrageControllerTest {
         verify(notizen, never()).save(any());
     }
 
+    @Test
+    void dokumentHochladenSpeichertAngemeldetenMitarbeiterAlsHochlader() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        DateiSpeicherService dateiSpeicher = mock(DateiSpeicherService.class);
+        AnfrageController controller = uploadController(angemeldet, dateiSpeicher);
+        var max = mitarbeiter(7L);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.of(max));
+        when(dateiSpeicher.speichereAnfragesDatei(any(), eq(1L), any(), any())).thenAnswer(inv -> gespeichertesDokument());
+        var datei = new MockMultipartFile("datei", "plan.pdf", "application/pdf", "data".getBytes());
+
+        var antwort = controller.uploadDokument(1L, List.of(datei), null, auth);
+
+        assertEquals(200, antwort.getStatusCode().value());
+        verify(dateiSpeicher).speichereAnfragesDatei(datei, 1L,
+                org.example.kalkulationsprogramm.domain.DokumentGruppe.DIVERSE_DOKUMENTE, max);
+    }
+
+    @Test
+    void dokumentHochladenOhneZugeordnetenMitarbeiterSpeichertOhneHochlader() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        DateiSpeicherService dateiSpeicher = mock(DateiSpeicherService.class);
+        AnfrageController controller = uploadController(angemeldet, dateiSpeicher);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.empty());
+        when(dateiSpeicher.speichereAnfragesDatei(any(), eq(1L), any(), any())).thenAnswer(inv -> gespeichertesDokument());
+        var datei = new MockMultipartFile("datei", "foto.jpg", "image/jpeg", "data".getBytes());
+
+        var antwort = controller.uploadDokument(1L, List.of(datei),
+                org.example.kalkulationsprogramm.domain.DokumentGruppe.BILDER, auth);
+
+        assertEquals(200, antwort.getStatusCode().value());
+        verify(dateiSpeicher).speichereAnfragesDatei(datei, 1L,
+                org.example.kalkulationsprogramm.domain.DokumentGruppe.BILDER, null);
+    }
+
+    private AnfrageController uploadController(AngemeldeterMitarbeiterService angemeldet,
+            DateiSpeicherService dateiSpeicher) {
+        return new AnfrageController(mock(AnfrageService.class),
+                mock(AusgangsGeschaeftsDokumentService.class), dateiSpeicher,
+                mock(ZugferdErstellService.class), mock(ZugferdExtractorService.class),
+                mock(PdfAiExtractorService.class), mock(KundeRepository.class), mock(AnfrageNotizRepository.class),
+                mock(AnfrageNotizBildRepository.class), angemeldet, mock(DokumentFreigabeService.class));
+    }
+
+    private static org.example.kalkulationsprogramm.domain.AnfrageDokument gespeichertesDokument() {
+        var dokument = new org.example.kalkulationsprogramm.domain.AnfrageDokument();
+        dokument.setId(5L);
+        dokument.setOriginalDateiname("plan.pdf");
+        dokument.setGespeicherterDateiname("abc_plan.pdf");
+        return dokument;
+    }
+
     private AnfrageController notizController(AngemeldeterMitarbeiterService angemeldet, AnfrageNotizRepository notizen) {
         return new AnfrageController(mock(AnfrageService.class),
                 mock(AusgangsGeschaeftsDokumentService.class), mock(DateiSpeicherService.class),

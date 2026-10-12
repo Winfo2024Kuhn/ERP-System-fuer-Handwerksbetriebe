@@ -299,6 +299,11 @@ public class DateiSpeicherService {
     }
 
     public AnfrageDokument speichereAnfragesDatei(MultipartFile datei, Long anfrageID, DokumentGruppe gruppe) {
+        return speichereAnfragesDatei(datei, anfrageID, gruppe, null);
+    }
+
+    public AnfrageDokument speichereAnfragesDatei(MultipartFile datei, Long anfrageID, DokumentGruppe gruppe,
+            Mitarbeiter uploadedBy) {
         Anfrage anfrage = anfrageRepository.findById(anfrageID)
                 .orElseThrow(() -> new RuntimeException("Anfrage nicht gefunden!"));
         String originalDateiname = Path.of(StringUtils.cleanPath(Objects.requireNonNull(datei.getOriginalFilename()))).getFileName().toString();
@@ -374,6 +379,7 @@ public class DateiSpeicherService {
         dokument.setDateityp(datei.getContentType());
         dokument.setDateigroesse(datei.getSize());
         dokument.setUploadDatum(LocalDate.now());
+        dokument.setUploadedBy(uploadedBy);
         DokumentGruppe verwendeteGruppe = gruppe;
         if (dokument instanceof AnfrageGeschaeftsdokument && isDrawing) {
             verwendeteGruppe = DokumentGruppe.GESCHAEFTSDOKUMENTE;
@@ -604,6 +610,7 @@ public class DateiSpeicherService {
         dokument.setDateityp(anfrageDokument.getDateityp());
         dokument.setDateigroesse(anfrageDokument.getDateigroesse());
         dokument.setUploadDatum(anfrageDokument.getUploadDatum());
+        dokument.setUploadedBy(anfrageDokument.getUploadedBy());
         dokument.setEmailVersandDatum(anfrageDokument.getEmailVersandDatum());
         dokument.setDokumentGruppe(anfrageDokument.getDokumentGruppe());
 

@@ -28,11 +28,7 @@ import { formuliereMitKi, htmlFuerVersand, ladeStandardSignatur } from "../featu
 import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
-
-// Bestellanfrage per E-Mail an den Lieferanten ist fachlich noch nicht fertig.
-// Bis dahin bleibt der „E-Mail“-Knopf je Lieferant ausgeblendet; der Dialog
-// (BestellungEmailModal) ist vorbereitet und getestet.
-const BESTELLANFRAGE_PER_EMAIL_AKTIV = false;
+import { BESTELLANFRAGE_PER_EMAIL_AKTIV } from '../lib/freigaben';
 
 // Statische Icon-Pfade
 const BASE_URL = '/react-textbausteine/';

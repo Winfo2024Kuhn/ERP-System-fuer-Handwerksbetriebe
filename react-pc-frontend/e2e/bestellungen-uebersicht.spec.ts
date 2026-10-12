@@ -231,6 +231,16 @@ test.describe('Bestellungen – Übersicht', () => {
         await expect(page.getByRole('tab', { name: /^Bestellt\s*3$/ })).toBeVisible();
     });
 
+    test('„Bedarf“ ist noch nicht freigegeben: kein Menüpunkt, die Adresse führt zu den Bestellungen', async ({ page }) => {
+        await stubApi(page, neu());
+        await page.goto('/bestellungen/bedarf');
+
+        await expect(page).toHaveURL(/\/bestellungen$/);
+        await expect(page.getByRole('heading', { name: 'BESTELLUNGEN' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Bestellungen', exact: true })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Bedarf', exact: true })).toHaveCount(0);
+    });
+
     test('ältere Angebote sind eingeklappt, „Alle ausblenden“ fragt nach', async ({ page }, testInfo) => {
         const mitschrift = neu();
         await stubApi(page, mitschrift);
