@@ -37,6 +37,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.Abrechnun
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.StornoHinweisDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.util.RabattRechner;
@@ -682,6 +683,23 @@ public class AusgangsGeschaeftsDokumentService {
      */
     @Transactional
     public AusgangsGeschaeftsDokument stornieren(Long id, Long bearbeiterId, String ipAdresse, String grund) {
+        return stornierenMitHinweisen(id, bearbeiterId, ipAdresse, grund).storno();
+    }
+
+    /**
+     * Ergebnis einer Stornierung: die Stornorechnung und die Hinweise, die der Nutzer
+     * über Folgen für andere Rechnungen bekommen soll.
+     */
+    public record StornoErgebnis(AusgangsGeschaeftsDokument storno, List<StornoHinweisDto> hinweise) {
+    }
+
+    /**
+     * Wie {@link #stornieren(Long, Long, String, String)}, liefert aber zusätzlich Hinweise
+     * zu Schlussrechnungen, die der Storno einer Abschlagsrechnung betrifft: eine gebuchte
+     * Schlussrechnung wird mitstorniert, ein Entwurf bleibt stehen und muss geprüft werden.
+     */
+    @Transactional
+    public StornoErgebnis stornierenMitHinweisen(Long id, Long bearbeiterId, String ipAdresse, String grund) {
         AusgangsGeschaeftsDokument original = dokumentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + id));
 
@@ -751,6 +769,7 @@ public class AusgangsGeschaeftsDokumentService {
         // da deren Betrag auf Basis der Abschlagsrechnungen berechnet wurde.
         // Ein Schlussrechnungs-Entwurf bleibt stehen: Er ist nicht gebucht und lässt sich
         // noch ändern oder löschen.
+        List<StornoHinweisDto> hinweise = new ArrayList<>();
         if (original.getTyp() == AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG
                 && original.getVorgaenger() != null) {
             List<AusgangsGeschaeftsDokument> geschwister = dokumentRepository
@@ -763,12 +782,20 @@ public class AusgangsGeschaeftsDokumentService {
                 if (!geschwisterDok.isGebucht()) {
                     log.info("Schlussrechnungs-Entwurf {} bleibt stehen (Abschlagsrechnung {} storniert) – Beträge bitte prüfen",
                             geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
+                    hinweise.add(new StornoHinweisDto(StornoHinweisDto.Art.ENTWURF_PRUEFEN,
+                            "Die Schlussrechnung " + geschwisterDok.getDokumentNummer()
+                                    + " ist noch ein Entwurf und zieht die stornierte Abschlagsrechnung "
+                                    + original.getDokumentNummer() + " noch ab. Bitte Beträge prüfen, bevor Sie sie buchen."));
                     continue;
                 }
                 log.info("Kaskadierende Stornierung: Schlussrechnung {} wird mitstorniert (Abschlagsrechnung {} storniert)",
                         geschwisterDok.getDokumentNummer(), original.getDokumentNummer());
-                stornieren(geschwisterDok.getId(), bearbeiterId, ipAdresse,
+                AusgangsGeschaeftsDokument schlussStorno = stornieren(geschwisterDok.getId(), bearbeiterId, ipAdresse,
                         "Kaskadierende Stornierung wegen storniertem Vorgänger " + original.getDokumentNummer());
+                hinweise.add(new StornoHinweisDto(StornoHinweisDto.Art.MITSTORNIERT,
+                        "Die Schlussrechnung " + geschwisterDok.getDokumentNummer()
+                                + " wurde mitstorniert (Stornorechnung " + schlussStorno.getDokumentNummer()
+                                + "), weil sie die Abschlagsrechnung " + original.getDokumentNummer() + " abgezogen hat."));
             }
         }
 
@@ -796,7 +823,7 @@ public class AusgangsGeschaeftsDokumentService {
             auditService.protokolliereErstellung(savedStorno, bearbeiter, ipAdresse);
         }
 
-        return savedStorno;
+        return new StornoErgebnis(savedStorno, List.copyOf(hinweise));
     }
 
     // ==================== OFFENE POSTEN INTEGRATION ====================

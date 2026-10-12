@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.domain.SperrbarerTyp;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentErstellenDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
+import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.StornoAntwortDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
 import org.example.kalkulationsprogramm.domain.Mahnstufe;
@@ -321,7 +322,8 @@ public class AusgangsGeschaeftsDokumentController {
 
     /**
      * Dokument stornieren: nur gebuchte Rechnungen (keine Stornorechnungen, keine Entwürfe).
-     * Erstellt ein Storno-Gegendokument.
+     * Erstellt ein Storno-Gegendokument. Die Antwort enthält die Stornorechnung und
+     * Hinweise zu betroffenen Schlussrechnungen (mitstorniert oder als Entwurf zu prüfen).
      */
     @PostMapping("/{id}/storno")
     public ResponseEntity<?> stornieren(@PathVariable Long id,
@@ -329,9 +331,10 @@ public class AusgangsGeschaeftsDokumentController {
                                         Authentication authentication,
                                         jakarta.servlet.http.HttpServletRequest request) {
         try {
-            AusgangsGeschaeftsDokument storno = service.stornieren(
+            AusgangsGeschaeftsDokumentService.StornoErgebnis ergebnis = service.stornierenMitHinweisen(
                     id, FrontendUserPrincipal.idAus(authentication), clientIp(request), grund);
-            return ResponseEntity.ok(service.findById(storno.getId()));
+            return ResponseEntity.ok(new StornoAntwortDto(
+                    service.findById(ergebnis.storno().getId()), ergebnis.hinweise()));
         } catch (ObjectOptimisticLockingFailureException e) {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
             // RestExceptionHandler durchreichen -- der macht daraus sauber 409

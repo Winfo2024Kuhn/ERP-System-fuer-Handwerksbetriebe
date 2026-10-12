@@ -60,6 +60,7 @@ import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks }
 import { serviceLineTotal, nettoNachGlobalRabatt, calculateNettoNachRabatt } from '../components/document-editor/helpers';
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
+import { stornoHinweiseAus, zeigeStornoHinweise } from '../lib/stornoHinweise';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ZuordnungModal } from '../components/ZuordnungModal';
 import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
@@ -2132,6 +2133,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                 if (response.ok) {
                                                                                     const stornoDok = await response.json();
                                                                                     toast.success(`Stornorechnung ${stornoDok.dokumentNummer} wurde erstellt`);
+                                                                                    zeigeStornoHinweise(toast, stornoHinweiseAus(stornoDok));
                                                                                     loadAusgangsDokumente();
                                                                                 } else {
                                                                                     const errText = await response.text();
