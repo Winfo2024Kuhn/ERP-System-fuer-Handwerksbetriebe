@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.repository.LieferantBildRepository;
 import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantEmailResolver;
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
@@ -34,7 +35,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
@@ -110,9 +110,15 @@ class LieferantenControllerTest {
   private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
   @MockBean
   private org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
+  @MockBean
+  private LieferantDokumentDateiService dokumentDateiService;
 
-  @Autowired
-  private LieferantenController controller;
+  /** Echte Dateisuche hinter dem Mock; die Ordner liegen unter {@code uploadDir} wie im Standard-Setup. */
+  private void dateisucheUnter(Path uploadDir) {
+    var echt = new LieferantDokumentDateiService(uploadDir.toString(), uploadDir.toString(),
+        uploadDir.resolve("attachments").toString(), uploadDir.resolve("attachments").resolve("lieferanten").toString());
+    when(dokumentDateiService.findeDatei(any())).thenAnswer(aufruf -> echt.findeDatei(aufruf.getArgument(0)));
+  }
 
   /** Rechte-Logik ist in LieferantDokumentRechteSecurityTest abgedeckt; hier darf jeder alles sehen. */
   @org.junit.jupiter.api.BeforeEach
@@ -379,7 +385,7 @@ class LieferantenControllerTest {
   /**
    * Happy-Path fuer den Mobile-Beleg-Bugfix: ein zu LieferantDokument promoteter
    * Mobile-Beleg traegt gespeicherterDateiname="belege/<file>" und liegt physisch
-   * unter <uploadDir>/belege/. Die neue Stufe-0-Aufloesung in resolveDokumentPath
+   * unter <uploadDir>/belege/. Die Dateisuche (LieferantDokumentDateiService)
    * muss diese Datei finden — vorher 404 (Bug), jetzt 200.
    */
   @Test
@@ -389,7 +395,7 @@ class LieferantenControllerTest {
     Files.createDirectories(belegeDir);
     Files.write(belegeDir.resolve("scan.pdf"), "%PDF-1.4 stub".getBytes());
 
-    ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+    dateisucheUnter(uploadDir);
 
     LieferantDokument dokument = dokumentVonLieferant(7L, 42L);
     dokument.setOriginalDateiname("scan.pdf");
@@ -403,10 +409,8 @@ class LieferantenControllerTest {
   /**
    * Defense-in-Depth: ein boesartig gesetzter gespeicherterDateiname mit
    * ../-Traversal darf die Datei NICHT ausserhalb von uploadDir ausliefern.
-   * Ohne die startsWith(uploadBase)-Pruefung in Stufe 0 wuerde Files.exists()
-   * fuer "<uploadDir>/../secret.txt" Treffer melden → LFI. Mit Containment-
-   * Check muss Stufe 0 die Datei verwerfen, und die uebrigen Stufen finden
-   * den relativen Pfad im cwd nicht.
+   * Ohne Containment-Pruefung wuerde "<uploadDir>/../secret.txt" gefunden → LFI.
+   * Die Dateisuche verwirft jeden Kandidaten ausserhalb seines Suchordners.
    */
   @Test
   void pathTraversalWirdBlockiert(@TempDir Path workDir) throws Exception {
@@ -415,7 +419,7 @@ class LieferantenControllerTest {
     Path secret = workDir.resolve("secret.txt");
     Files.writeString(secret, "geheim");
 
-    ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+    dateisucheUnter(uploadDir);
 
     LieferantDokument dokument = dokumentVonLieferant(8L, 42L);
     dokument.setGespeicherterDateiname("../secret.txt");
