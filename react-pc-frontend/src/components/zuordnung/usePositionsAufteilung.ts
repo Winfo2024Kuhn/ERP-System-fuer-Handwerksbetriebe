@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { vergissDokumentPositionen } from '../../features/bestellungen/dokumentPositionen';
 import {
     baueAufteilung,
+    bezuegeAusPositionen,
     nachPositionenAufteilbar,
     offeneWarenpositionen,
     zuweisungenAusPositionen,
+    type Bezuege,
     type DokumentPosition,
     type PositionsUebersicht,
     type PositionsVorschau,
@@ -46,6 +48,11 @@ export interface PositionsAufteilung {
     anzahlOffen: number;
     anzahlWare: number;
 
+    /** Wozu gehört welcher Zuschlag (Nebenkosten/Rabatt)? Leer = gilt für alle Positionen. */
+    bezuege: Bezuege;
+    /** Setzt den Bezug eines Zuschlags; `[]` = auf alle verteilen. Die Vorschau rechnet neu. */
+    setzeBezug: (positionId: number, warenPositionIds: number[]) => void;
+
     vorschau: PositionsVorschau | null;
     vorschauLaeuft: boolean;
     vorschauFehler: string | null;
@@ -61,6 +68,7 @@ export interface PositionsAufteilung {
 export function usePositionsAufteilung(geschaeftsdokumentId: number | null | undefined, aktiv: boolean): PositionsAufteilung {
     const [uebersicht, setUebersicht] = useState<PositionsUebersicht | null>(null);
     const [zuweisungen, setZuweisungen] = useState<Record<number, ZielSchluessel>>({});
+    const [bezuege, setBezuege] = useState<Bezuege>({});
     const [auslesenLaeuft, setAuslesenLaeuft] = useState(false);
     const [auslesenFehler, setAuslesenFehler] = useState<string | null>(null);
     const [vorschau, setVorschau] = useState<{ schluessel: string; daten: PositionsVorschau } | null>(null);
@@ -77,6 +85,8 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
         }
         setUebersicht(sauber);
         setZuweisungen(gespeichert);
+        // Bezug der Zuschläge: gespeichert bzw. nach dem Auslesen frisch von der KI
+        setBezuege(bezuegeAusPositionen(sauber.positionen));
         return sauber;
     }, []);
 
@@ -136,11 +146,15 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
         setZuweisungen(alt => Object.fromEntries(Object.entries(alt).filter(([, z]) => z !== ziel)));
     }, []);
 
+    const setzeBezug = useCallback((positionId: number, warenPositionIds: number[]) => {
+        setBezuege(alt => ({ ...alt, [positionId]: [...new Set(warenPositionIds)] }));
+    }, []);
+
     const anzahlWare = useMemo(() => positionen.filter(p => p.positionsArt === 'WARE').length, [positionen]);
     const anzahlOffen = useMemo(() => offeneWarenpositionen(positionen, zuweisungen).length, [positionen, zuweisungen]);
 
     // Request für Vorschau/Speichern; der JSON-Text dient zugleich als Vergleichsschlüssel.
-    const aufteilung = useMemo(() => baueAufteilung(positionen, zuweisungen), [positionen, zuweisungen]);
+    const aufteilung = useMemo(() => baueAufteilung(positionen, zuweisungen, bezuege), [positionen, zuweisungen, bezuege]);
     const aufteilungsSchluessel = useMemo(() => JSON.stringify(aufteilung), [aufteilung]);
 
     // Live-Vorschau, entprellt; veraltete Antworten werden verworfen.
@@ -209,6 +223,8 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
         entferneZiel,
         anzahlOffen,
         anzahlWare,
+        bezuege,
+        setzeBezug,
         // Letzte Vorschau weiter zeigen, während die neue rechnet – sonst flackern die Beträge.
         vorschau: aktuelleVorschau ?? vorschau?.daten ?? null,
         vorschauLaeuft,

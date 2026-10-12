@@ -1,9 +1,15 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.AusgelesenePosition;
@@ -39,6 +45,12 @@ public class LieferantDokumentPositionService {
 
     /** Schlüssel der Positionsliste in der KI-Antwort (aiRawJson). */
     public static final String KI_FELD_POSITIONEN = "artikelPositionen";
+    /** Positionsnummer, wie sie auf dem Beleg steht. */
+    static final String KI_FELD_BELEG_POSITION = "belegPositionNr";
+    /** Bei Nebenkosten/Rabatten: gedruckte Positionsnummern der Ware, zu der die Zeile gehört. */
+    static final String KI_FELD_GEHOERT_ZU = "gehoertZuPositionen";
+    /** Schutz gegen ausufernde Bezugslisten. */
+    static final int MAX_BEZUG = 200;
 
     private static final Set<LieferantDokumentTyp> TYPEN_MIT_POSITIONEN = EnumSet.of(
             LieferantDokumentTyp.ANGEBOT,
@@ -85,11 +97,13 @@ public class LieferantDokumentPositionService {
             return 0;
         }
         List<LieferantDokumentPosition> neu = new ArrayList<>();
+        List<AusgelesenePosition> gelesen = new ArrayList<>();
         int nr = 1;
         for (AusgelesenePosition a : positionen) {
             if (a == null || neu.size() >= MAX_POSITIONEN) {
                 continue;
             }
+            gelesen.add(a);
             LieferantDokumentPosition p = new LieferantDokumentPosition();
             p.setGeschaeftsdokument(gd);
             p.setPositionNr(nr++);
@@ -109,8 +123,67 @@ public class LieferantDokumentPositionService {
             neu.add(p);
         }
         positionRepository.saveAll(neu);
+        verknuepfeNebenkosten(neu, gelesen);
         log.debug("[Positionen] Dokument {}: {} Positionen gespeichert", gd.getId(), neu.size());
         return neu.size();
+    }
+
+    /**
+     * Hängt Nebenkosten und Rabatte an die Warenpositionen, zu denen sie laut Beleg gehören
+     * („Legierungszuschlag zu Pos. 3“). Zugeordnet wird über die gedruckte Positionsnummer;
+     * lässt sich auch nur eine Nummer nicht eindeutig finden, bleibt die Zeile ohne Bezug und
+     * wird wie bisher anteilig verteilt – lieber anteilig als beim falschen Projekt.
+     */
+    private static void verknuepfeNebenkosten(List<LieferantDokumentPosition> neu, List<AusgelesenePosition> gelesen) {
+        Map<String, Long> wareNachBelegNr = new HashMap<>();
+        Set<String> mehrdeutig = new HashSet<>();
+        for (int i = 0; i < neu.size(); i++) {
+            String belegNr = belegNr(gelesen.get(i).belegPositionNr());
+            if (belegNr == null || neu.get(i).getPositionsArt() != PositionsArt.WARE) {
+                continue;
+            }
+            if (wareNachBelegNr.putIfAbsent(belegNr, neu.get(i).getId()) != null) {
+                mehrdeutig.add(belegNr);
+            }
+        }
+        mehrdeutig.forEach(wareNachBelegNr::remove);
+
+        for (int i = 0; i < neu.size(); i++) {
+            LieferantDokumentPosition zeile = neu.get(i);
+            List<String> bezug = gelesen.get(i).gehoertZuPositionen();
+            if (zeile.getPositionsArt() == PositionsArt.WARE || bezug.isEmpty()) {
+                continue;
+            }
+            List<Long> ids = bezug.stream()
+                    .map(LieferantDokumentPositionService::belegNr)
+                    .map(wareNachBelegNr::get)
+                    .toList();
+            if (ids.stream().allMatch(Objects::nonNull)) {
+                zeile.getBezugPositionIds().addAll(ids);
+            }
+        }
+    }
+
+    /** Gedruckte Positionsnummer vereinheitlicht: „Pos. 010“ → „10“; leer → {@code null}. */
+    static String belegNr(String roh) {
+        if (roh == null) {
+            return null;
+        }
+        String nr = kuerze(roh.strip(), MAX_EINHEIT);
+        if (nr.regionMatches(true, 0, "pos", 0, 3)) {
+            nr = nr.substring(3);
+            if (nr.startsWith(".")) {
+                nr = nr.substring(1);
+            }
+            nr = nr.strip();
+        }
+        if (nr.isEmpty()) {
+            return null;
+        }
+        if (nr.chars().allMatch(Character::isDigit)) {
+            nr = new BigInteger(nr).toString();
+        }
+        return nr.toLowerCase(Locale.ROOT);
     }
 
     @Transactional(readOnly = true)
@@ -149,7 +222,8 @@ public class LieferantDokumentPositionService {
             ergebnis.add(new AusgelesenePosition(art, artikelnummer, bezeichnung,
                     betrag(pos.get("menge")), text(pos, "mengeneinheit"),
                     betrag(pos.get("einzelpreis")), text(pos, "preiseinheit"), gesamt,
-                    text(pos, "werkstoff"), text(pos, "charge"), text(pos, "abmessung")));
+                    text(pos, "werkstoff"), text(pos, "charge"), text(pos, "abmessung"),
+                    text(pos, KI_FELD_BELEG_POSITION), textListe(pos.get(KI_FELD_GEHOERT_ZU))));
         }
         return ergebnis;
     }
@@ -217,6 +291,13 @@ public class LieferantDokumentPositionService {
             o.put("werkstoff", p.werkstoff());
             o.put("charge", p.charge());
             o.put("abmessung", p.abmessung());
+            if (p.belegPositionNr() != null) {
+                o.put(KI_FELD_BELEG_POSITION, p.belegPositionNr());
+            }
+            if (!p.gehoertZuPositionen().isEmpty()) {
+                ArrayNode bezug = o.putArray(KI_FELD_GEHOERT_ZU);
+                p.gehoertZuPositionen().forEach(bezug::add);
+            }
         }
         return liste;
     }
@@ -253,6 +334,21 @@ public class LieferantDokumentPositionService {
             return null;
         }
         return leerAlsNull(wert.asText());
+    }
+
+    /** Textliste aus einem JSON-Array (Zahlen werden zu Text); alles andere ergibt eine leere Liste. */
+    private static List<String> textListe(JsonNode liste) {
+        if (liste == null || !liste.isArray()) {
+            return List.of();
+        }
+        List<String> ergebnis = new ArrayList<>();
+        for (JsonNode eintrag : liste) {
+            String text = eintrag == null || eintrag.isNull() ? null : leerAlsNull(eintrag.asText());
+            if (text != null && ergebnis.size() < MAX_BEZUG) {
+                ergebnis.add(kuerze(text, MAX_EINHEIT));
+            }
+        }
+        return ergebnis;
     }
 
     private static String leerAlsNull(String text) {

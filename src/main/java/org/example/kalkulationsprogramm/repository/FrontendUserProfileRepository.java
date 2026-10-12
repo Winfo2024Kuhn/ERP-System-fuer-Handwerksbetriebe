@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
@@ -27,6 +28,14 @@ public interface FrontendUserProfileRepository extends JpaRepository<FrontendUse
     List<Long> findEmailAbsenderIdsMitBesitzer();
 
     boolean existsByUsernameIgnoreCase(String username);
+
+    /** Nur „aktiv?“ – ohne die eager geladenen Verknüpfungen; läuft bei jeder Anfrage (SitzungsRechteFilter). */
+    @Query("SELECT p.active FROM FrontendUserProfile p WHERE p.id = :id")
+    Optional<Boolean> findAktivById(@Param("id") Long id);
+
+    /** Nur die Rollen eines Benutzers; läuft bei jeder Anfrage (SitzungsRechteFilter). */
+    @Query("SELECT r FROM FrontendUserProfile p JOIN p.roleSet r WHERE p.id = :id")
+    Set<FrontendUserRole> findRollenById(@Param("id") Long id);
 
     long countByUsernameIsNotNull();
 

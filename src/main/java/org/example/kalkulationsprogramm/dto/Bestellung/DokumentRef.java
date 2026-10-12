@@ -19,6 +19,10 @@ public class DokumentRef {
     public LocalDate eingangsDatum;
     /** Ausgeblendet (z. B. bezahlte Rechnung) – gehört trotzdem zur Kette. */
     public boolean ausgeblendet;
+    /** Hat schon Projekt- oder Kostenstellen-Anteile (auch die automatische Standard-Kostenstelle). */
+    public boolean zugeordnet;
+    /** Als Lagerbestellung markiert – braucht keine Projekt-Zuordnung. */
+    public boolean lagerbestellung;
     public String dateiname;
     public String pdfUrl;
 }

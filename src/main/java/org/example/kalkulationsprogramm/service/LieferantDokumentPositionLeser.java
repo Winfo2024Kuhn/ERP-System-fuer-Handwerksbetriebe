@@ -38,6 +38,22 @@ public class LieferantDokumentPositionLeser {
     /** Mehr Seiten lesen wir nicht einzeln – Schutz vor endlosen Aufrufen. */
     static final int MAX_SEITEN = 60;
 
+    /**
+     * Gemeinsame Prompt-Regel (auch in {@code GeminiDokumentAnalyseService}): gedruckte
+     * Positionsnummer und – bei Nebenkosten/Rabatten – die Ware, zu der die Zeile gehört
+     * (Issue #242). {@link LieferantDokumentPositionService} löst die Nummern auf.
+     */
+    static final String REGEL_BELEGNUMMER_UND_BEZUG = """
+            - belegPositionNr: Positionsnummer genau wie auf dem Beleg gedruckt ("1", "10", "3.1"),
+              ohne Nummer null.
+            - gehoertZuPositionen (nur bei NEBENKOSTEN und RABATT, sonst []): die belegPositionNr
+              der Warenpositionen, zu denen die Zeile laut Beleg gehört. Beispiele:
+              "Legierungszuschlag zu Pos. 3" -> ["3"]; ein Zuschlag oder Rabatt direkt unter einem
+              Artikel, der sich erkennbar nur auf diesen bezieht (eingerückt, gleiche Positionsnummer,
+              "dazu", "auf Pos.") -> dessen Nummer. Gilt die Zeile für die ganze Lieferung (Fracht,
+              Porto, Verpackung, Mindermengenzuschlag) oder ist der Bezug unklar -> [].
+            """;
+
     static final String PROMPT_NUR_POSITIONEN = """
             Lies ALLE Positionen (Tabellenzeilen) dieses Lieferanten-Dokuments aus.
             Antworte NUR mit JSON in genau dieser Form:
@@ -55,7 +71,9 @@ public class LieferantDokumentPositionLeser {
              "gesamtpreisNetto": 154.25 oder null,
              "werkstoff": "Werkstoff/Güte, z. B. 'S235JR+AR', '1.4301' – nur wenn aufgedruckt, sonst null",
              "charge": "Charge/Schmelze/Heat No. exakt wie gedruckt – nur wenn aufgedruckt, sonst null",
-             "abmessung": "Maße, z. B. '50x5', '60,3x2,9', 'IPE 200' – nur wenn aufgedruckt, sonst null"}
+             "abmessung": "Maße, z. B. '50x5', '60,3x2,9', 'IPE 200' – nur wenn aufgedruckt, sonst null",
+             "belegPositionNr": "10" oder null,
+             "gehoertZuPositionen": []}
 
             Regeln:
             - JEDE Zeile mit Betrag oder Artikel ist eine Position, auch ohne Artikelnummer.
@@ -63,6 +81,7 @@ public class LieferantDokumentPositionLeser {
               Energie-, Legierungs-, Material-, Mindermengen- oder Kleinmengenzuschlag.
             - positionsArt RABATT: Rabatt-, Abzugs- oder Bonuszeilen; gesamtpreisNetto NEGATIV.
             - Alles andere ist WARE (Material, Artikel, Arbeitsleistung, Montage).
+            """ + REGEL_BELEGNUMMER_UND_BEZUG + """
             - einzelpreis ist der Preis EINER Preiseinheit, gesamtpreisNetto die Zeilensumme netto.
             - KEINE Summenzeilen (Zwischensumme, Nettobetrag, MwSt, Gesamtbetrag) aufnehmen.
             - KEINE reinen Text-/Hinweiszeilen ohne Menge und Betrag aufnehmen.

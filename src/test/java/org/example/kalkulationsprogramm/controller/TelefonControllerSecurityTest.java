@@ -56,6 +56,8 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
+import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
+import org.junit.jupiter.api.BeforeEach;
 
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
@@ -146,6 +148,11 @@ class TelefonControllerSecurityTest {
     }
 
     // ------------------------------------------------------------ ohne Anmeldung / ohne Recht
+
+    @BeforeEach
+    void sitzungsRechteUnveraendert() {
+        SitzungsRechteImTest.rechteUnveraendert(frontendUserDetailsService);
+    }
 
     @Test
     @DisplayName("Anonym: alles 401, nichts wird aufgerufen")

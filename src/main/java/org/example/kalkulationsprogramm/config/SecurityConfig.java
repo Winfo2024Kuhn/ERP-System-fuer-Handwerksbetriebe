@@ -17,6 +17,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -138,6 +139,8 @@ public class SecurityConfig {
                     // Nur explizit geprüfte Tokens, niemals automatisch gesendete Cookies.
                     .ignoringRequestMatchers(request -> Boolean.TRUE.equals(request.getAttribute(MobileTokenAuthenticationFilter.EXPLICIT_TOKEN))))
                 .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
+                // Desktop-Sitzungen kommen auch hier vorbei (/api/lieferanten/**, /api/projekte/**).
+                .addFilterBefore(new SitzungsRechteFilter(frontendUserDetailsService), AuthorizationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/zeiterfassung", "/zeiterfassung/**").permitAll()
                     .anyRequest().authenticated())
@@ -235,6 +238,7 @@ public class SecurityConfig {
                 })
             // Force the CSRF cookie to be set on every response (Spring Security 6 deferred token fix)
             .addFilterAfter(new CsrfCookieFilter(), org.springframework.security.web.csrf.CsrfFilter.class)
+            .addFilterBefore(new SitzungsRechteFilter(frontendUserDetailsService), AuthorizationFilter.class)
             .userDetailsService(frontendUserDetailsService)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
@@ -356,6 +360,7 @@ public class SecurityConfig {
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(requestHandler);
                 })
+                .addFilterBefore(new SitzungsRechteFilter(frontendUserDetailsService), AuthorizationFilter.class)
                 .userDetailsService(frontendUserDetailsService)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
                 .headers(headers -> headers
