@@ -270,4 +270,152 @@ class LieferantDateiablageTest {
             assertThat(bilderOrdner()).doesNotExist();
         }
     }
+
+    @Nested
+    @DisplayName("Dokumente mit vorgeprüftem Namen und Löschen")
+    class DokumenteVorgeprueftUndLoeschen {
+
+        @Test
+        @DisplayName("Ein vorgeprüfter Name gilt statt des Browser-Namens; der Pfad kommt mit zurück")
+        void vorgeprueftenNamenNutzen() throws Exception {
+            var ergebnis = ablage.speichereDokument(LIEFERANT_ID, datei("egal.bin"), "Rechnung_Muster.pdf");
+
+            assertThat(ergebnis.originalDateiname()).isEqualTo("Rechnung_Muster.pdf");
+            assertThat(ergebnis.pfad())
+                    .isEqualTo(lieferantOrdner().resolve(ergebnis.gespeicherterDateiname()).toAbsolutePath().normalize())
+                    .hasBinaryContent(INHALT);
+        }
+
+        @Test
+        @DisplayName("Auch ein vorgeprüfter Name wird bereinigt")
+        void vorgeprueftenNamenTrotzdemBereinigen() throws Exception {
+            var ergebnis = ablage.speichereDokument(LIEFERANT_ID, datei("x.pdf"), "../../boese.pdf");
+
+            assertThat(ergebnis.originalDateiname()).isEqualTo("boese.pdf");
+            assertThat(ergebnis.pfad().getParent()).isEqualTo(lieferantOrdner().toAbsolutePath().normalize());
+        }
+
+        @Test
+        @DisplayName("Löschen entfernt die Datei des Dokuments")
+        void loeschen() throws Exception {
+            var ergebnis = ablage.speichereDokument(LIEFERANT_ID, datei("Rechnung.pdf"));
+
+            ablage.loescheDokument(LIEFERANT_ID, ergebnis.gespeicherterDateiname());
+
+            assertThat(ergebnis.pfad()).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("Löschen mit Path-Traversal im Namen lässt Dateien außerhalb des Lieferanten-Ordners stehen")
+        void loeschenMitTraversal() throws Exception {
+            Path fremd = uploadPath.resolve("lieferanten").resolve("8").resolve("fremd.pdf");
+            Files.createDirectories(fremd.getParent());
+            Files.write(fremd, INHALT);
+
+            ablage.loescheDokument(LIEFERANT_ID, "../8/fremd.pdf");
+
+            assertThat(fremd).exists();
+        }
+
+        @Test
+        @DisplayName("Löschen trifft nichts in Unterordnern, etwa ein Lieferantenbild")
+        void loeschenNichtInUnterordnern() throws Exception {
+            var bild = ablage.speichereBild(LIEFERANT_ID, datei("Kratzer.jpg"));
+
+            ablage.loescheDokument(LIEFERANT_ID, "bilder/" + bild.gespeicherterDateiname());
+
+            assertThat(bild.pfad()).exists();
+        }
+
+        @Test
+        @DisplayName("Löschen trifft keinen Ordner")
+        void loeschenTrifftKeinenOrdner() throws Exception {
+            Files.createDirectories(lieferantOrdner().resolve("bilder"));
+
+            ablage.loescheDokument(LIEFERANT_ID, "bilder");
+            ablage.loescheDokument(LIEFERANT_ID, ".");
+
+            assertThat(lieferantOrdner().resolve("bilder")).isDirectory();
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { "", "  ", "a\u0000b.pdf", "gibt-es-nicht.pdf" })
+        @DisplayName("Leere, ungültige oder fehlende Namen: nichts passiert")
+        void loeschenOhneTreffer(String name) {
+            ablage.loescheDokument(LIEFERANT_ID, name);
+
+            assertThat(lieferantOrdner()).doesNotExist();
+        }
+
+        @Test
+        @DisplayName("Ohne Lieferant oder Namen: nichts passiert")
+        void loeschenOhneAngaben() {
+            ablage.loescheDokument(null, "Rechnung.pdf");
+            ablage.loescheDokument(LIEFERANT_ID, null);
+
+            assertThat(uploadPath).doesNotExist();
+        }
+    }
+
+    @Nested
+    @DisplayName("Überlange Dateinamen")
+    class UeberlangeNamen {
+
+        private static int bytes(String text) {
+            return text.getBytes(StandardCharsets.UTF_8).length;
+        }
+
+        @Test
+        @DisplayName("Werden vor der Endung auf 200 Bytes gekürzt")
+        void kuerztVorDerEndung() {
+            String name = LieferantDateiablage.bereinigterDateiname("Rechnung_" + "a".repeat(400) + ".PDF", "x");
+
+            assertThat(bytes(name)).isEqualTo(LieferantDateiablage.MAX_DATEINAME_BYTES);
+            assertThat(name).startsWith("Rechnung_a").endsWith(".PDF");
+        }
+
+        @Test
+        @DisplayName("Kein halbes Zeichen am Ende, auch bei Umlauten und Emojis")
+        void keinHalbesZeichen() {
+            String name = LieferantDateiablage.bereinigterDateiname("Prüfbericht_" + "😀".repeat(100) + ".pdf", "x");
+
+            assertThat(bytes(name)).isLessThanOrEqualTo(LieferantDateiablage.MAX_DATEINAME_BYTES);
+            assertThat(name).endsWith(".pdf");
+            assertThat(new String(name.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8)).isEqualTo(name);
+        }
+
+        @Test
+        @DisplayName("Eine überlange „Endung“ zählt nicht als Endung")
+        void ueberlangeEndung() {
+            String name = LieferantDateiablage.bereinigterDateiname("a." + "b".repeat(300), "x");
+
+            assertThat(bytes(name)).isEqualTo(LieferantDateiablage.MAX_DATEINAME_BYTES);
+            assertThat(name).startsWith("a.b");
+        }
+
+        @Test
+        @DisplayName("Ohne Endung endet der gekürzte Name nicht auf Punkt oder Leerzeichen")
+        void keinPunktOderLeerzeichenAmEnde() {
+            String name = LieferantDateiablage.bereinigterDateiname("a".repeat(197) + ". . " + "b".repeat(100), "x");
+
+            assertThat(name).isEqualTo("a".repeat(197));
+        }
+
+        @Test
+        @DisplayName("Kurze Namen bleiben, wie sie sind")
+        void kurzeNamenBleiben() {
+            String name = "b".repeat(LieferantDateiablage.MAX_DATEINAME_BYTES - 4) + ".pdf";
+
+            assertThat(LieferantDateiablage.bereinigterDateiname(name, "x")).isEqualTo(name);
+        }
+
+        @Test
+        @DisplayName("Gespeicherter Name bleibt unter der Dateisystem-Grenze von 255 Bytes")
+        void gespeicherterNameUnter255Bytes() throws Exception {
+            var ergebnis = ablage.speichereDokument(LIEFERANT_ID, datei("ä".repeat(300) + ".pdf"));
+
+            assertThat(bytes(ergebnis.gespeicherterDateiname())).isLessThanOrEqualTo(255);
+            assertThat(ergebnis.pfad()).exists();
+        }
+    }
 }

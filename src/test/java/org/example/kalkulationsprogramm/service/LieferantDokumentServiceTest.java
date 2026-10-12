@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
 import org.example.kalkulationsprogramm.repository.*;
+import org.example.kalkulationsprogramm.testsupport.LieferantDateiablageImTestordner;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import jakarta.persistence.EntityNotFoundException;
 import java.io.IOException;
@@ -56,6 +56,9 @@ class LieferantDokumentServiceTest {
     private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     @Mock
     private LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
+
+    @Mock
+    private LieferantDateiablage dateiablage;
 
     @InjectMocks
     private LieferantDokumentService service;
@@ -419,7 +422,7 @@ class LieferantDokumentServiceTest {
         @Test
         @DisplayName("Loescht die physische Datei eines manuell hochgeladenen Dokuments (kein Attachment, kein Beleg)")
         void loeschtPhysischeDatei_beiManuellemUpload(@TempDir Path tempDir) throws IOException {
-            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+            LieferantDateiablageImTestordner.leiteUm(dateiablage, tempDir);
 
             Lieferanten lieferant = new Lieferanten();
             lieferant.setId(555L);
@@ -447,7 +450,7 @@ class LieferantDokumentServiceTest {
         @Test
         @DisplayName("Loescht die physische Datei NICHT, wenn das Dokument ueber ein EmailAttachment verknuepft ist")
         void loeschtPhysischeDateiNicht_beiEmailAttachment(@TempDir Path tempDir) throws IOException {
-            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+            LieferantDateiablageImTestordner.leiteUm(dateiablage, tempDir);
 
             Lieferanten lieferant = new Lieferanten();
             lieferant.setId(556L);
@@ -479,7 +482,7 @@ class LieferantDokumentServiceTest {
         @Test
         @DisplayName("Loescht die physische Datei NICHT, wenn das Dokument aus einem mobilen Beleg-Scan promotet wurde")
         void loeschtPhysischeDateiNicht_beiMobilemBeleg(@TempDir Path tempDir) throws IOException {
-            ReflectionTestUtils.setField(service, "uploadPath", tempDir.toString());
+            LieferantDateiablageImTestordner.leiteUm(dateiablage, tempDir);
 
             Lieferanten lieferant = new Lieferanten();
             lieferant.setId(557L);
@@ -513,7 +516,7 @@ class LieferantDokumentServiceTest {
     @DisplayName("uploadDokument speichert die KI-Antwort und verknüpft in der Dokumentenkette")
     void uploadDokument_speichertKiAntwortUndVerknuepft(@org.junit.jupiter.api.io.TempDir java.nio.file.Path uploadRoot)
             throws Exception {
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+        LieferantDateiablageImTestordner.leiteUm(dateiablage, uploadRoot);
 
         org.example.kalkulationsprogramm.domain.Abteilung abteilung = new org.example.kalkulationsprogramm.domain.Abteilung();
         abteilung.setId(3L);
@@ -588,7 +591,7 @@ class LieferantDokumentServiceTest {
 
         @Test
         void legtRechnungAnHaengtSieAnUndStoesstAnalyseAn(@TempDir Path uploadRoot) throws IOException {
-            ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+            LieferantDateiablageImTestordner.leiteUm(dateiablage, uploadRoot);
             LieferantDokument ls = lieferschein();
             given(dokumentRepository.findById(10L)).willReturn(Optional.of(ls));
             given(dokumentRepository.saveAndFlush(any(LieferantDokument.class))).willAnswer(inv -> {
@@ -669,7 +672,7 @@ class LieferantDokumentServiceTest {
 
         @Test
         void fehlerNachDemSchreibenLoeschtDieDatei(@TempDir Path uploadRoot) throws IOException {
-            ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+            LieferantDateiablageImTestordner.leiteUm(dateiablage, uploadRoot);
             given(dokumentRepository.findById(10L)).willReturn(Optional.of(lieferschein()));
             given(dokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .willThrow(new IllegalStateException("DB weg"));
@@ -686,7 +689,7 @@ class LieferantDokumentServiceTest {
 
         @Test
         void rollbackDerTransaktionLoeschtDieDatei(@TempDir Path uploadRoot) throws IOException {
-            ReflectionTestUtils.setField(service, "uploadPath", uploadRoot.toString());
+            LieferantDateiablageImTestordner.leiteUm(dateiablage, uploadRoot);
             given(dokumentRepository.findById(10L)).willReturn(Optional.of(lieferschein()));
             given(dokumentRepository.saveAndFlush(any(LieferantDokument.class))).willAnswer(inv -> {
                 LieferantDokument d = inv.getArgument(0);

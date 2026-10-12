@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -17,14 +18,14 @@ import org.springframework.web.multipart.MultipartFile;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Ablage der Dateien, die direkt an einem Lieferanten hängen: manuell hochgeladene Dokumente
- * unter {@code lieferanten/<lieferantId>/} und Bilder (auch Reklamationsfotos) unter
+ * Ablage der Dateien, die direkt an einem Lieferanten hängen: hochgeladene Dokumente unter
+ * {@code lieferanten/<lieferantId>/} und Bilder (auch Reklamationsfotos) unter
  * {@code lieferanten/<lieferantId>/bilder/} – beides im Upload-Ordner {@code upload.path}.
+ * Alle Stellen, die dort speichern oder löschen, gehen über diesen Service.
  *
- * <p>Das ist derselbe Ordner, in den {@link LieferantDokumentService} beim Upload speichert und
- * in dem {@link LieferantDokumentDateiService} Dokumente sucht. Wird {@code upload.path}
- * umgestellt, ziehen Speichern und Suchen gemeinsam um – die vorhandenen Ordner
- * {@code lieferanten/} müssen dann mit umziehen, sonst fehlen ältere Bilder.
+ * <p>{@link LieferantDokumentDateiService} sucht Dokumente in demselben Ordner. Wird
+ * {@code upload.path} umgestellt, ziehen Speichern und Suchen gemeinsam um – die vorhandenen
+ * Ordner {@code lieferanten/} müssen dann mit umziehen, sonst fehlen ältere Bilder.
  *
  * <p>Path Traversal: Namen von außen werden auf den reinen Dateinamen gekürzt und bereinigt.
  * Jeder Pfad wird normalisiert und muss danach noch in seinem Ordner liegen – auch ein Name aus
@@ -33,6 +34,15 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @Slf4j
 public class LieferantDateiablage {
+
+    /**
+     * Höchstlänge des Originalnamens in Bytes (UTF-8). Zusammen mit dem UUID-Präfix (37 Zeichen)
+     * bleibt der gespeicherte Name unter 255 Bytes – der Grenze von ext4/NTFS.
+     */
+    static final int MAX_DATEINAME_BYTES = 200;
+
+    /** Längere „Endungen“ sind keine – dann wird der Name ohne Rücksicht auf einen Punkt gekürzt. */
+    private static final int MAX_ENDUNG_ZEICHEN = 16;
 
     private static final String STANDARD_UPLOAD_PATH = "uploads";
     private static final String BILDER = "bilder";
@@ -48,15 +58,24 @@ public class LieferantDateiablage {
     }
 
     /**
-     * Was beim Speichern herauskam: der bereinigte Originalname für die Anzeige und der Name,
-     * unter dem die Datei auf der Platte liegt.
+     * Was beim Speichern herauskam: der bereinigte Originalname für die Anzeige, der Name, unter
+     * dem die Datei auf der Platte liegt, und ihr Pfad (z. B. für die KI-Analyse).
      */
-    public record GespeicherteDatei(String originalDateiname, String gespeicherterDateiname) {
+    public record GespeicherteDatei(String originalDateiname, String gespeicherterDateiname, Path pfad) {
     }
 
     /** Speichert ein Dokument als {@code lieferanten/<lieferantId>/<UUID>_<Name>}. */
     public GespeicherteDatei speichereDokument(Long lieferantId, MultipartFile datei) throws IOException {
-        String original = bereinigterDateiname(datei.getOriginalFilename(), ERSATZNAME_DOKUMENT);
+        return speichereDokument(lieferantId, datei, datei.getOriginalFilename());
+    }
+
+    /**
+     * Wie {@link #speichereDokument(Long, MultipartFile)}, aber unter einem Namen, den der Aufrufer
+     * schon geprüft hat (z. B. gegen erlaubte Endungen). Bereinigt und gekürzt wird er trotzdem.
+     */
+    public GespeicherteDatei speichereDokument(Long lieferantId, MultipartFile datei, String originalDateiname)
+            throws IOException {
+        String original = bereinigterDateiname(originalDateiname, ERSATZNAME_DOKUMENT);
         return speichere(lieferantOrdner(lieferantId), datei, original, UUID.randomUUID() + "_" + original);
     }
 
@@ -74,6 +93,20 @@ public class LieferantDateiablage {
         String original = bereinigterDateiname(datei.getOriginalFilename(), ERSATZNAME_BILD);
         String anhang = original.toLowerCase(Locale.ROOT).endsWith(endung) ? "" : endung;
         return speichere(bilderOrdner(lieferantId), datei, original, UUID.randomUUID() + "_" + original + anhang);
+    }
+
+    /**
+     * Löscht die Datei eines Dokuments aus {@code lieferanten/<lieferantId>/}, falls es sie gibt.
+     * Ein Name, der aus dem Ordner heraus- oder in einen Unterordner (etwa {@code bilder/}) führt,
+     * löscht nichts. Ein Fehler wird nur protokolliert.
+     */
+    public void loescheDokument(Long lieferantId, String gespeicherterDateiname) {
+        if (lieferantId == null || gespeicherterDateiname == null || gespeicherterDateiname.isBlank()) {
+            return;
+        }
+        direktImOrdner(lieferantOrdner(lieferantId), gespeicherterDateiname)
+                .filter(Files::isRegularFile)
+                .ifPresent(LieferantDateiablage::loescheStill);
     }
 
     /**
@@ -98,23 +131,17 @@ public class LieferantDateiablage {
      * protokolliert, damit der Datensatz trotzdem gelöscht werden kann.
      */
     public void loescheBild(LieferantBild bild) {
-        findeBild(bild).ifPresent(pfad -> {
-            try {
-                Files.deleteIfExists(pfad);
-            } catch (IOException e) {
-                // Nur die Fehlerart: Der Pfad enthält den Originalnamen vom Handy (DSGVO).
-                log.warn("Bild eines Lieferanten konnte nicht gelöscht werden: {}", e.getClass().getSimpleName());
-            }
-        });
+        findeBild(bild).ifPresent(LieferantDateiablage::loescheStill);
     }
 
     /**
      * Macht aus dem Dateinamen des Browsers einen reinen Dateinamen ohne Ordner-Anteil
      * ({@code ../../x.pdf} und {@code ..\..\x.pdf} werden zu {@code x.pdf}) und ersetzt Zeichen,
-     * die in einem Dateinamen nichts zu suchen haben. Bleibt kein brauchbarer Name übrig, gilt
-     * {@code ersatz}.
+     * die in einem Dateinamen nichts zu suchen haben. Zu lange Namen werden direkt vor der Endung
+     * auf {@link #MAX_DATEINAME_BYTES} Bytes gekürzt. Bleibt kein brauchbarer Name übrig, gilt
+     * {@code ersatz} (darf {@code null} sein, wenn der Aufrufer dann ablehnen will).
      */
-    static String bereinigterDateiname(String rohName, String ersatz) {
+    public static String bereinigterDateiname(String rohName, String ersatz) {
         if (rohName == null) {
             return ersatz;
         }
@@ -124,8 +151,42 @@ public class LieferantDateiablage {
         String einheitlich = rohName.trim().replace('\\', '/')
                 .replaceAll("[:*?\"<>|\\p{Cntrl}\\p{Cf}]", "_");
         return reinerName(einheitlich)
-                .map(name -> name.replaceAll("[\\\\/:*?\"<>|]", "_"))
+                .map(LieferantDateiablage::kuerzeAufHoechstlaenge)
                 .orElse(ersatz);
+    }
+
+    /**
+     * Kürzt den Namensteil so weit, dass Name und Endung zusammen höchstens
+     * {@link #MAX_DATEINAME_BYTES} Bytes (UTF-8) lang sind. Die Endung bleibt.
+     */
+    private static String kuerzeAufHoechstlaenge(String name) {
+        if (name.getBytes(StandardCharsets.UTF_8).length <= MAX_DATEINAME_BYTES) {
+            return name;
+        }
+        int punkt = name.lastIndexOf('.');
+        String endung = punkt >= 0 && name.length() - punkt <= MAX_ENDUNG_ZEICHEN ? name.substring(punkt) : "";
+        int erlaubt = MAX_DATEINAME_BYTES - endung.getBytes(StandardCharsets.UTF_8).length;
+        String gekuerzt = name.substring(0, name.length() - endung.length());
+        // Jedes Zeichen braucht mindestens ein Byte: erst grob, dann Zeichen für Zeichen kürzen.
+        if (gekuerzt.length() > erlaubt) {
+            gekuerzt = gekuerzt.substring(0, erlaubt);
+        }
+        while (gekuerzt.getBytes(StandardCharsets.UTF_8).length > erlaubt) {
+            gekuerzt = gekuerzt.substring(0, gekuerzt.length() - 1);
+        }
+        // Kein halbes Zeichen (z. B. halbes Emoji) am Ende stehen lassen.
+        if (!gekuerzt.isEmpty() && Character.isHighSurrogate(gekuerzt.charAt(gekuerzt.length() - 1))) {
+            gekuerzt = gekuerzt.substring(0, gekuerzt.length() - 1);
+        }
+        // Ohne Endung darf der Name nicht auf Punkt oder Leerzeichen enden – Windows lehnt das ab.
+        if (endung.isEmpty()) {
+            int ende = gekuerzt.length();
+            while (ende > 1 && (gekuerzt.charAt(ende - 1) == '.' || gekuerzt.charAt(ende - 1) == ' ')) {
+                ende--;
+            }
+            gekuerzt = gekuerzt.substring(0, ende);
+        }
+        return gekuerzt + endung;
     }
 
     /** Der letzte Namensteil – leer bei leeren oder ungültigen Namen und bei {@code .}/{@code ..}. */
@@ -144,11 +205,11 @@ public class LieferantDateiablage {
 
     private GespeicherteDatei speichere(Path ordner, MultipartFile datei, String original, String gespeichert)
             throws IOException {
-        Path ziel = imOrdner(ordner, gespeichert)
+        Path ziel = direktImOrdner(ordner, gespeichert)
                 .orElseThrow(() -> new IOException("Ungültiger Dateiname"));
         Files.createDirectories(ordner);
         datei.transferTo(ziel);
-        return new GespeicherteDatei(original, gespeichert);
+        return new GespeicherteDatei(original, gespeichert, ziel);
     }
 
     private Path lieferantOrdner(Long lieferantId) {
@@ -160,9 +221,30 @@ public class LieferantDateiablage {
         return lieferantOrdner(lieferantId).resolve(BILDER);
     }
 
-    /** {@code name} in {@code ordner} – nur, wenn der normalisierte Pfad danach noch darin liegt. */
+    /**
+     * {@code name} in {@code ordner} – nur, wenn der normalisierte Pfad danach noch darin liegt.
+     * Ein ungültiger Name (z. B. mit Null-Byte) gilt als nicht vorhanden.
+     */
     private static Optional<Path> imOrdner(Path ordner, String name) {
-        Path pfad = ordner.resolve(name).normalize();
-        return pfad.startsWith(ordner) ? Optional.of(pfad) : Optional.empty();
+        try {
+            Path pfad = ordner.resolve(name).normalize();
+            return pfad.startsWith(ordner) ? Optional.of(pfad) : Optional.empty();
+        } catch (InvalidPathException e) {
+            return Optional.empty();
+        }
+    }
+
+    /** Wie {@link #imOrdner}, aber nur direkt im Ordner – nicht in einem Unterordner. */
+    private static Optional<Path> direktImOrdner(Path ordner, String name) {
+        return imOrdner(ordner, name).filter(pfad -> ordner.equals(pfad.getParent()));
+    }
+
+    private static void loescheStill(Path pfad) {
+        try {
+            Files.deleteIfExists(pfad);
+        } catch (IOException e) {
+            // Nur die Fehlerart: Der Pfad enthält den Originalnamen vom Gerät (DSGVO).
+            log.warn("Datei eines Lieferanten konnte nicht gelöscht werden: {}", e.getClass().getSimpleName());
+        }
     }
 }

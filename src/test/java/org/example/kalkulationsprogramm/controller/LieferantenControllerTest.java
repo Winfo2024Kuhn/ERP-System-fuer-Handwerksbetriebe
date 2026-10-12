@@ -13,6 +13,7 @@ import org.example.kalkulationsprogramm.repository.LieferantBildRepository;
 import org.example.kalkulationsprogramm.service.BildVorschauService;
 import org.example.kalkulationsprogramm.service.LieferantArtikelpreisService;
 import org.example.kalkulationsprogramm.service.LieferantDateiablage;
+import org.example.kalkulationsprogramm.testsupport.LieferantDateiablageImTestordner;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantEmailResolver;
@@ -45,7 +46,6 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -445,16 +445,7 @@ class LieferantenControllerTest {
 
   @org.junit.jupiter.api.BeforeEach
   void ablageImTempOrdner() throws Exception {
-    var echt = new LieferantDateiablage(ablageOrdner.toString());
-    when(dateiablage.speichereDokument(any(), any()))
-        .thenAnswer(aufruf -> echt.speichereDokument(aufruf.getArgument(0), aufruf.getArgument(1)));
-    when(dateiablage.speichereBild(any(), any()))
-        .thenAnswer(aufruf -> echt.speichereBild(aufruf.getArgument(0), aufruf.getArgument(1)));
-    when(dateiablage.findeBild(any())).thenAnswer(aufruf -> echt.findeBild(aufruf.getArgument(0)));
-    doAnswer(aufruf -> {
-      echt.loescheBild(aufruf.getArgument(0));
-      return null;
-    }).when(dateiablage).loescheBild(any());
+    LieferantDateiablageImTestordner.leiteUm(dateiablage, ablageOrdner);
   }
 
   private Path lieferantOrdner(long lieferantId) {
