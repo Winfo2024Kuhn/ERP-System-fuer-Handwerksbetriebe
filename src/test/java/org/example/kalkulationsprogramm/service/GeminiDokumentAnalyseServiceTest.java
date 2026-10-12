@@ -1378,25 +1378,16 @@ class GeminiDokumentAnalyseServiceTest {
 
         @Test
         @org.junit.jupiter.api.DisplayName("Lesefehler nach der Datei-Pruefung: Log nennt nur Dokument-ID und Fehlerart")
-        void lesefehlerOhneServerpfadImLog() throws Exception {
+        void lesefehlerOhneServerpfadImLog() {
             // Zwischen Prüfung und Lesen verschwunden (z. B. aufgeräumte Temp-Datei)
             Path verschwunden = tempUploadRoot.resolve("attachments").resolve(DATEINAME_MIT_NAMEN);
-            Method kiAnalyse = GeminiDokumentAnalyseService.class.getDeclaredMethod(
-                    "analysierePerKi", Path.class, String.class, Long.class, boolean.class);
-            kiAnalyse.setAccessible(true);
-            Method kiVorschau = GeminiDokumentAnalyseService.class.getDeclaredMethod(
-                    "analysierePerKiFuerPreview", Path.class, String.class, boolean.class);
-            kiVorschau.setAccessible(true);
 
             List<String> log = mitLog(() -> {
-                try {
-                    assertThat(kiAnalyse.invoke(serviceMitEchtemMapper, verschwunden, "application/pdf", 609L, true))
-                            .extracting("datenquelle").isEqualTo("AI_ERROR");
-                    assertThat(kiVorschau.invoke(serviceMitEchtemMapper, verschwunden, ORIGINALNAME_MIT_NAMEN, false))
-                            .isNull();
-                } catch (ReflectiveOperationException e) {
-                    throw new IllegalStateException(e);
-                }
+                assertThat(rufePrivat("analysierePerKi", new Class<?>[] {Path.class, String.class, Long.class,
+                        boolean.class}, verschwunden, "application/pdf", 609L, true))
+                        .extracting("datenquelle").isEqualTo("AI_ERROR");
+                assertThat(rufePrivat("analysierePerKiFuerPreview", new Class<?>[] {Path.class, String.class,
+                        boolean.class}, verschwunden, ORIGINALNAME_MIT_NAMEN, false)).isNull();
             });
 
             assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann")
@@ -1405,6 +1396,120 @@ class GeminiDokumentAnalyseServiceTest {
                     "KI-Analyse fehlgeschlagen für Dokument 609: NoSuchFileException",
                     "KI-Preview fehlgeschlagen: NoSuchFileException");
             verifyNoInteractions(httpClientMock);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Datei-Suche: Log nennt Dokument-ID statt Dateinamen")
+        void dateiSucheOhneDateinamenImLog() {
+            LieferantDokument fehlt = musterDokument(610L);
+            fehlt.setGespeicherterDateiname(DATEINAME_MIT_NAMEN);
+            LieferantDokument ausserhalb = musterDokument(611L);
+            ausserhalb.setGespeicherterDateiname("../../" + DATEINAME_MIT_NAMEN);
+            Class<?>[] dokumentTyp = {LieferantDokument.class};
+
+            List<String> log = mitLog(() -> {
+                assertThat(rufePrivat("getDateiPfad", dokumentTyp, fehlt)).isNull();
+                assertThat(rufePrivat("getDateiPfad", dokumentTyp, ausserhalb)).isNull();
+            });
+
+            assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann")
+                    || zeile.contains(tempUploadRoot.toString()));
+            assertThat(log).contains(
+                    "Datei zu Dokument 610 in keinem Upload-Ordner gefunden",
+                    "Datei zu Dokument 611 in keinem Upload-Ordner gefunden",
+                    "Verwerfe ungültigen Upload-Pfad außerhalb des Upload-Ordners");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("ZUGFeRD und XML: Log nennt Dokument-ID statt Dateinamen und Inhalt")
+        void strukturierteDatenOhneDateinamenImLog() {
+            LieferantDokument dokument = musterDokument(612L);
+            Path pdf = tempUploadRoot.resolve("attachments").resolve(DATEINAME);
+            when(zugferdExtractorService.extract(anyString(), anyString()))
+                    .thenReturn(new ZugferdDaten())
+                    .thenThrow(new IllegalStateException("Nicht lesbar: " + DATEINAME_MIT_NAMEN));
+            Class<?>[] zugferd = {Path.class, String.class, LieferantDokument.class};
+            Class<?>[] xml = {String.class, LieferantDokument.class};
+
+            List<String> log = mitLog(() -> {
+                assertThat(rufePrivat("versucheZugferdExtraktion", zugferd, pdf, DATEINAME_MIT_NAMEN, dokument))
+                        .isNull();
+                assertThat(rufePrivat("versucheZugferdExtraktion", zugferd, pdf, DATEINAME_MIT_NAMEN, dokument))
+                        .isNull();
+                assertThat(rufePrivat("versucheXmlExtraktion", xml, "<Lieferschein/>", dokument)).isNull();
+                rufePrivat("versucheXmlExtraktion", xml, "<Invoice><Name>Max_Mustermann</Name></Invoice>", dokument);
+            });
+
+            assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann"));
+            assertThat(log).contains(
+                    "Keine ZUGFeRD-Daten in PDF von Dokument 612",
+                    "ZUGFeRD-Extraktion fehlgeschlagen für Dokument 612: IllegalStateException",
+                    "XML von Dokument 612 ist keine Rechnung",
+                    "XML-Rechnung gefunden für Dokument 612");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("KI-Fehler: Log nennt nur Laenge und Fehlerart, nie den Inhalt")
+        void kiFehlerOhneInhaltImLog() throws Exception {
+            String abgeschnitten = "{\"dokumentNummer\":\"RE-2026-0904\",\"lieferant\":\"Max_Mustermann\","
+                    + "\"betragBrutto\":";
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            when(httpClientMock.<String>send(any(HttpRequest.class), any()))
+                    .thenThrow(new java.io.IOException("Verbindung abgebrochen bei " + DATEINAME_MIT_NAMEN));
+            Class<?>[] text = {String.class};
+
+            List<String> log = mitLog(() -> {
+                assertThat(rufePrivat("mapJsonToData", text, abgeschnitten)).isNull();
+                assertThat(rufePrivat("parseJsonToAnalyzeResponse", text, abgeschnitten)).isNull();
+                assertThat(serviceMitEchtemMapper.rufGeminiApiMitPrompt(
+                        new byte[] {1, 2, 3}, "application/pdf", "Wie viele Dokumente?")).isNull();
+            });
+
+            assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann") || zeile.contains("RE-2026-0904"));
+            assertThat(log)
+                    .anyMatch(zeile -> zeile.startsWith(
+                            "Fehler beim Parsen der KI-Response (" + abgeschnitten.length() + " Zeichen): "))
+                    .anyMatch(zeile -> zeile.startsWith("Fehler beim Parsen der KI-Antwort"))
+                    .contains("Gemini Multi-Doc API-Aufruf fehlgeschlagen: IOException");
+            // Der Schlüssel reist im Header, nie in der URL – die steht in Fehlermeldungen.
+            ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
+            verify(httpClientMock).send(anfrage.capture(), any());
+            assertThat(anfrage.getValue().uri().toString()).doesNotContain("dummy-test-key");
+            assertThat(anfrage.getValue().headers().firstValue("x-goog-api-key")).hasValue("dummy-test-key");
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Gemini-Fehler mit Wiederholung: Log nennt nur Fehlerart, Schluessel im Header")
+        void geminiWiederholungOhneInhaltImLog() throws Exception {
+            when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+            when(httpClientMock.<String>send(any(HttpRequest.class), any()))
+                    .thenThrow(new IllegalStateException("Antwort nicht lesbar: Max_Mustermann"));
+
+            List<String> log = mitLog(() -> assertThat(rufePrivat("rufGeminiApi",
+                    new Class<?>[] {byte[].class, String.class, boolean.class},
+                    new byte[] {1, 2, 3}, "application/pdf", false)).isNull());
+
+            assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann"));
+            assertThat(log).contains(
+                    "[Gemini API] Exception bei Attempt 1/3: IllegalStateException",
+                    "[Gemini API] Alle 3 Retries fehlgeschlagen. Letzte Exception: IllegalStateException");
+            ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
+            verify(httpClientMock).send(anfrage.capture(), any());
+            assertThat(anfrage.getValue().uri().toString()).doesNotContain("dummy-test-key");
+            assertThat(anfrage.getValue().headers().firstValue("x-goog-api-key")).hasValue("dummy-test-key");
+        }
+
+        /** Ruft eine private Methode des Service auf; Fehler kommen ohne Reflection-Hülle heraus. */
+        private Object rufePrivat(String methode, Class<?>[] parameterTypen, Object... argumente) {
+            try {
+                Method privat = GeminiDokumentAnalyseService.class.getDeclaredMethod(methode, parameterTypen);
+                privat.setAccessible(true);
+                return privat.invoke(serviceMitEchtemMapper, argumente);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                throw new IllegalStateException(e.getCause());
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
         }
 
         /** Fehler der privaten Datei-Prüfung (Temp-Dateien erlaubt), ohne Reflection-Hülle. */
@@ -2209,10 +2314,9 @@ class GeminiDokumentAnalyseServiceTest {
     private LieferantGeschaeftsdokument invokeXmlExtraktion(Path dateiPfad,
             LieferantDokument dokument) throws Exception {
         Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
-            "versucheXmlExtraktion", String.class, LieferantDokument.class, String.class);
+            "versucheXmlExtraktion", String.class, LieferantDokument.class);
         method.setAccessible(true);
-        return (LieferantGeschaeftsdokument) method.invoke(service, Files.readString(dateiPfad), dokument,
-            dateiPfad.getFileName().toString());
+        return (LieferantGeschaeftsdokument) method.invoke(service, Files.readString(dateiPfad), dokument);
         }
 
         private org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse invokeParseJsonToAnalyzeResponse(

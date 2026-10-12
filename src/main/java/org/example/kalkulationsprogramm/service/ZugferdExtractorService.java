@@ -210,13 +210,15 @@ public class ZugferdExtractorService {
                 }
             }
 
-            log.info("ZUGFeRD-Extraktion abgeschlossen für {}: Nr={}, Betrag={}, Skonto={}%/{}Tage, Bestell={}",
-                    originalFilename, data.getRechnungsnummer(), data.getBetrag(),
+            // Ohne Dateinamen: er trägt Namen aus den Rechnungen (DSGVO).
+            log.info("ZUGFeRD-Extraktion abgeschlossen: Nr={}, Betrag={}, Skonto={}%/{}Tage, Bestell={}",
+                    data.getRechnungsnummer(), data.getBetrag(),
                     data.getSkontoProzent(), data.getSkontoTage(), data.getBestellnummer());
 
         } catch (Exception e) {
-            log.info("ZUGFeRD-Extraktion fehlgeschlagen für {} (kein ZUGFeRD-PDF oder ungültiges Format): {}",
-                    originalFilename, e.getMessage());
+            // Nur die Fehlerart: die Meldung kann den Serverpfad nennen.
+            log.info("ZUGFeRD-Extraktion fehlgeschlagen (kein ZUGFeRD-PDF oder ungültiges Format): {}",
+                    e.getClass().getSimpleName());
         }
         return data;
     }
