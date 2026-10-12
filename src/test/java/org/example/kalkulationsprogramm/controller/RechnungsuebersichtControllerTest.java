@@ -43,7 +43,8 @@ class RechnungsuebersichtControllerTest {
         return new RechnungsuebersichtController(
                 new org.example.kalkulationsprogramm.service.RechnungsuebersichtService(ausgangsRepository, projektDokumentRepository, uploads.toString()),
                 lieferantGeschaeftsdokumentRepository, mitarbeiterRepository, lieferantenRepository, geminiService,
-                lieferantDokumentRepository, zugriffService, dateiService);
+                lieferantDokumentRepository, zugriffService, dateiService,
+                new org.example.kalkulationsprogramm.service.LieferantDateiablage(ablage.toString()));
     }
 
     @Test

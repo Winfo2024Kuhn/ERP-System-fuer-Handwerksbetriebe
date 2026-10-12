@@ -2,9 +2,7 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -28,9 +26,9 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.dto.Rechnungsuebersicht.AusgangsrechnungDto;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDateiablage;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -75,12 +73,6 @@ public class RechnungsuebersichtController {
     /** Größte Datei, die der manuelle Upload annimmt (wie bei Belegen). */
     private static final long MAX_DATEI_BYTES = 25L * 1024 * 1024;
 
-    /**
-     * Höchstlänge des Dateinamens in Bytes. Zusammen mit UUID-Präfix bleibt der gespeicherte
-     * Name unter 255 Bytes – der Grenze von ext4/NTFS und der Datenbank-Spalte.
-     */
-    private static final int MAX_DATEINAME_BYTES = 200;
-
     private static final String MELDUNG_DATEI_NICHT_ERLAUBT =
             "Diese Datei kann hier nicht hochgeladen werden. Erlaubt sind PDF, XML (E-Rechnung), JPG und PNG.";
 
@@ -101,9 +93,7 @@ public class RechnungsuebersichtController {
     private final LieferantDokumentRepository lieferantDokumentRepository;
     private final LieferantDokumentZugriffService zugriffService;
     private final LieferantDokumentDateiService dokumentDateiService;
-
-    @Value("${upload.path:uploads}")
-    private String uploadPath;
+    private final LieferantDateiablage dateiablage;
 
     // ==================== Ausgangsrechnungen (AusgangsGeschaeftsDokument)
     // ====================
@@ -443,14 +433,8 @@ public class RechnungsuebersichtController {
             return ResponseEntity.badRequest().body(Map.of("message", "Die Datei ist zu groß. Erlaubt sind höchstens 25 MB."));
         }
 
-        Path targetPath = null;
+        LieferantDateiablage.GespeicherteDatei gespeichert = null;
         try {
-            // Wiederverwenden der Logik aus LieferantenController via Service-Call oder
-            // hier
-            // duplizieren (da Controller-Methoden nicht direkt aufrufbar/schön sind).
-            // Besser: wir implementieren es hier direkt, da es leicht abweicht ("check if
-            // exists")
-
             var lieferant = lieferantenRepository.findById(request.getLieferantId()).orElse(null);
             if (lieferant == null) {
                 return ResponseEntity.badRequest().body(Map.of("message", "Lieferant nicht gefunden."));
@@ -468,23 +452,15 @@ public class RechnungsuebersichtController {
             }
 
             // 1. Datei speichern
-            String storedFilename = java.util.UUID.randomUUID() + "_" + originalFilename;
-
-            Path lieferantDir = Path.of(uploadPath, "lieferanten", lieferant.getId().toString());
-            targetPath = zielpfadImOrdner(lieferantDir, storedFilename);
-            if (targetPath == null) {
-                return ResponseEntity.badRequest().body(Map.of("message", MELDUNG_DATEI_NICHT_ERLAUBT));
-            }
-            Files.createDirectories(targetPath.getParent());
-            datei.transferTo(targetPath);
+            gespeichert = dateiablage.speichereDokument(lieferant.getId(), datei, originalFilename);
 
             // 2. LieferantDokument erstellen
             var dokument = new LieferantDokument();
             dokument.setLieferant(lieferant);
             dokument.setTyp(request.getDokumentTyp() != null ? request.getDokumentTyp()
                     : LieferantDokumentTyp.RECHNUNG);
-            dokument.setOriginalDateiname(originalFilename);
-            dokument.setGespeicherterDateiname(storedFilename);
+            dokument.setOriginalDateiname(gespeichert.originalDateiname());
+            dokument.setGespeicherterDateiname(gespeichert.gespeicherterDateiname());
             dokument.setUploadDatum(java.time.LocalDateTime.now());
 
             // Uploader
@@ -531,65 +507,27 @@ public class RechnungsuebersichtController {
             log.error("Import einer hochgeladenen Rechnung für Lieferant {} fehlgeschlagen: {}",
                     request.getLieferantId(), e.getClass().getSimpleName());
             // Ohne Datenbank-Eintrag findet niemand die Datei wieder – also nicht liegen lassen.
-            loescheStill(targetPath);
+            if (gespeichert != null) {
+                dateiablage.loescheDokument(request.getLieferantId(), gespeichert.gespeicherterDateiname());
+            }
             return ResponseEntity.internalServerError()
                     .body(Map.of("message", "Die Rechnung konnte nicht gespeichert werden. Bitte noch einmal versuchen."));
         }
     }
 
     /**
-     * Macht aus dem Dateinamen des Browsers einen reinen Dateinamen ohne Ordner-Anteil
-     * ({@code ../../x.pdf} wird zu {@code x.pdf}) und ersetzt Zeichen, die in einem
-     * Dateinamen nichts zu suchen haben. Zu lange Namen werden am Ende des Namensteils
-     * (direkt vor der Endung) gekürzt, die Endung bleibt. Gibt {@code null} zurück, wenn kein Name übrig bleibt oder die Endung nicht
-     * in {@link #ERLAUBTE_ENDUNGEN} steht.
+     * Bereinigter Dateiname (siehe {@link LieferantDateiablage#bereinigterDateiname}) – oder
+     * {@code null}, wenn kein Name übrig bleibt oder die Endung nicht in
+     * {@link #ERLAUBTE_ENDUNGEN} steht.
      */
     private static String bereinigeDateiname(String rohName) {
-        if (!StringUtils.hasText(rohName)) {
+        String name = LieferantDateiablage.bereinigterDateiname(rohName, null);
+        if (name == null) {
             return null;
         }
-        // Backslash zählt überall als Ordnertrenner, und was Windows in Pfaden verbietet, wird
-        // vorher ersetzt – so kommt auf jedem Server derselbe Name heraus. Unsichtbare
-        // Formatzeichen (z. B. Schreibrichtungs-Umkehr) fliegen mit raus.
-        String einheitlich = rohName.trim().replace('\\', '/')
-                .replaceAll("[:*?\"<>|\\p{Cntrl}\\p{Cf}]", "_");
-        Path nurName;
-        try {
-            nurName = Path.of(einheitlich).getFileName();
-        } catch (InvalidPathException e) {
-            return null;
-        }
-        if (nurName == null) {
-            return null;
-        }
-        String name = nurName.toString().replaceAll("[\\\\/:*?\"<>|]", "_");
         int punkt = name.lastIndexOf('.');
         String endung = punkt < 0 ? "" : name.substring(punkt + 1).toLowerCase(Locale.ROOT);
-        if (!ERLAUBTE_ENDUNGEN.contains(endung)) {
-            return null;
-        }
-        return kuerzeAufHoechstlaenge(name.substring(0, punkt), name.substring(punkt));
-    }
-
-    /**
-     * Kürzt den Namensteil so weit, dass Name und Endung zusammen höchstens
-     * {@link #MAX_DATEINAME_BYTES} Bytes (UTF-8) lang sind.
-     */
-    private static String kuerzeAufHoechstlaenge(String namensteil, String punktUndEndung) {
-        int erlaubt = MAX_DATEINAME_BYTES - punktUndEndung.length();
-        String gekuerzt = namensteil;
-        // Jedes Zeichen braucht mindestens ein Byte: erst grob, dann Zeichen für Zeichen kürzen.
-        if (gekuerzt.length() > erlaubt) {
-            gekuerzt = gekuerzt.substring(0, erlaubt);
-        }
-        while (gekuerzt.getBytes(StandardCharsets.UTF_8).length > erlaubt) {
-            gekuerzt = gekuerzt.substring(0, gekuerzt.length() - 1);
-        }
-        // Kein halbes Zeichen (z. B. halbes Emoji) am Ende stehen lassen.
-        if (!gekuerzt.isEmpty() && Character.isHighSurrogate(gekuerzt.charAt(gekuerzt.length() - 1))) {
-            gekuerzt = gekuerzt.substring(0, gekuerzt.length() - 1);
-        }
-        return gekuerzt + punktUndEndung;
+        return ERLAUBTE_ENDUNGEN.contains(endung) ? name : null;
     }
 
     /** Löscht eine Datei, falls es sie gibt; ein Fehler dabei wird nur protokolliert. */
@@ -602,18 +540,5 @@ public class RechnungsuebersichtController {
         } catch (IOException e) {
             log.warn("Hochgeladene Datei konnte nicht aufgeräumt werden: {}", e.getClass().getSimpleName());
         }
-    }
-
-    /**
-     * Bildet den Zielpfad für {@code dateiname} im {@code ordner} und prüft, dass er direkt
-     * darin liegt – nicht darüber und nicht in einem Unterordner. Sonst {@code null}.
-     */
-    private static Path zielpfadImOrdner(Path ordner, String dateiname) {
-        Path basis = ordner.toAbsolutePath().normalize();
-        Path ziel = basis.resolve(dateiname).normalize();
-        if (!ziel.startsWith(basis) || !basis.equals(ziel.getParent())) {
-            return null;
-        }
-        return ziel;
     }
 }
