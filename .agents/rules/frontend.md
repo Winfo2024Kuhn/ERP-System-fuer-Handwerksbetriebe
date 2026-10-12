@@ -35,6 +35,6 @@ Ist in letzter Zeit mehrfach passiert: Ein gewähltes oder fokussiertes Element 
 
 ## Build & Coding-Regeln
 - Nach Änderungen: `npm test` und `npm run build` im jeweiligen Frontend-Ordner ausführen.
-- Kein `dangerouslySetInnerHTML` ohne Sanitizing.
+- Kein `dangerouslySetInnerHTML` ohne `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (DOMPurify) (oder eine strengere eigene DOMPurify-Instanz mit Positivliste, Vorbild `bereinigeBeitragsHtml`; nie lockerer), auch bei serverseitig bereinigten Daten; gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren); HTML nur zum Auslesen über `parseHtmlInert()`/`htmlToText()` parsen.
 - URL-Parameter immer mit `encodeURIComponent()`.
 - Hierarchie: `src/components/ui/` (wiederverwendbare UI-Atome), `src/features/{name}/` (Domänenlogik).

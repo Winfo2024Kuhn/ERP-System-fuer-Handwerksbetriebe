@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
+import { parseHtmlInert } from '../lib/htmlSanitizer';
 
 /**
  * Issue #58 – Steuerberater-Beleg-Export.
@@ -121,8 +122,7 @@ const sanitizeNode = (node: Element): void => {
 };
 
 const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = rawHtml || '';
+    const wrapper = parseHtmlInert(rawHtml || '');
     DANGEROUS_TAGS.forEach(tag => {
         wrapper.querySelectorAll(tag).forEach(n => n.remove());
     });

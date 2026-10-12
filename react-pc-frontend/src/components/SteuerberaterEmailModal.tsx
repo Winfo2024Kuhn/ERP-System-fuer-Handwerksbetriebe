@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select } from './ui/select-custom';
+import { parseHtmlInert } from '../lib/htmlSanitizer';
 
 interface MitarbeiterStunden {
     mitarbeiterId: number;
@@ -76,8 +77,7 @@ const wrapSignatureHtml = (rawHtml: string): string => {
 };
 
 const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = rawHtml || '';
+    const wrapper = parseHtmlInert(rawHtml || '');
     wrapper.querySelectorAll('script, style').forEach(n => n.remove());
     wrapper.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     return wrapper.innerHTML.trim();

@@ -15,11 +15,10 @@ import { komprimiereBildFuerEmail, komprimiereBilderFuerEmail } from '../lib/bil
 import { EmailRecipientInput } from './EmailRecipientInput';
 import { EmailEntityDocumentPicker } from './EmailEntityDocumentPicker';
 import { EmailZuordnungSearchModal, type EmailZuordnung } from './EmailZuordnungSearchModal';
-import DOMPurify from 'dompurify';
 import { useToast } from './ui/toast';
 import { useEmailDraft } from '../features/email/useEmailDraft';
 import { loadEmailDraft } from '../features/email/emailDraftPersistence';
-import { toSafeResourceUrl } from '../lib/htmlSanitizer';
+import { parseHtmlInert, sanitizeHtml, toSafeResourceUrl } from '../lib/htmlSanitizer';
 import { AbsenderPostfachAuswahl } from '../features/email/AbsenderPostfachAuswahl';
 import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
 import { nurWaehlbareAbsender, waehleStandardAbsender, type PostfachKurz } from '../features/email/postfach';
@@ -186,8 +185,7 @@ const wrapSignatureHtml = (rawHtml: string): string => {
 
 // HTML für E-Mail-Versand vorbereiten
 const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = rawHtml || '';
+    const wrapper = parseHtmlInert(rawHtml || '');
     wrapper.querySelectorAll('script, style').forEach(n => n.remove());
     wrapper.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     return wrapper.innerHTML.trim();
@@ -528,7 +526,7 @@ export function EmailComposeForm({
             if (cancelled) return;
             setRecipient(content.recipient ?? initialRecipient);
             setSubject(content.subject ?? initialSubject);
-            const html = DOMPurify.sanitize(content.body ?? initialBody);
+            const html = sanitizeHtml(content.body ?? initialBody);
             setBody(html);
             const gespeicherterEinzelversand = !!content.einzelversand;
             // Einzelversand und CC schließen sich aus (Backend lehnt sonst mit 400 ab).
@@ -876,8 +874,7 @@ export function EmailComposeForm({
     // KI-Verschönerung
     const handleBeautify = async () => {
         const currentHtml = editorRef.current?.innerHTML || body;
-        const container = document.createElement('div');
-        container.innerHTML = currentHtml;
+        const container = parseHtmlInert(currentHtml);
 
         // 1. Signatur entfernen (und speichern)
         const sigEl = container.querySelector('.email-signature');

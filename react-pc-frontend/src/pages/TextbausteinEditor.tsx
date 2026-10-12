@@ -21,6 +21,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
 import { cn } from '../lib/utils';
+import { htmlToText, sanitizeHtml } from '../lib/htmlSanitizer';
 import { type Kunde, type TextTemplate } from '../types';
 import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
@@ -163,12 +164,6 @@ function replacePlaceholders(html: string, kunde: Kunde | null, days: number) {
   return result;
 }
 
-function stripHtml(html: string) {
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  return div.textContent || '';
-}
-
 /* ─── Sidebar: Template List Item ─── */
 function TemplateCard({
   template,
@@ -183,7 +178,7 @@ function TemplateCard({
   onDelete: () => void;
   onSelect: () => void;
 }) {
-  const preview = stripHtml(template.content).trim();
+  const preview = htmlToText(template.content).trim();
   const docTypes = template.docTypes || [];
 
   return (
@@ -535,7 +530,7 @@ function TemplateView({
             <span className="text-sm font-medium text-slate-700">Vorschau</span>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onCopy('text', stripHtml(preview || ''))}>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onCopy('text', htmlToText(preview || ''))}>
               {copied === 'text' ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
               {copied === 'text' ? 'Kopiert!' : 'Text'}
             </Button>
@@ -702,7 +697,8 @@ export default function TextbausteinEditor() {
   const activeKunde = useMemo(() => kunden.find((kunde) => kunde.id === effectiveKundeId) || null, [kunden, effectiveKundeId]);
   const activeTage = activeKunde?.zahlungsziel ?? DEFAULT_PAYMENT_DAYS;
   const previewHtml = useMemo(
-    () => (activeTemplate ? replacePlaceholders(activeTemplate.content, activeKunde, activeTage) : ''),
+    // Vorlagen-HTML kommt ungeprüft aus der Datenbank: vor Anzeige und HTML-Kopie bereinigen.
+    () => (activeTemplate ? sanitizeHtml(replacePlaceholders(activeTemplate.content, activeKunde, activeTage)) : ''),
     [activeTemplate, activeKunde, activeTage]
   );
 
@@ -711,7 +707,7 @@ export default function TextbausteinEditor() {
     const q = searchQuery.toLowerCase();
     return templates.filter((tpl) =>
       tpl.name.toLowerCase().includes(q) ||
-      stripHtml(tpl.content).toLowerCase().includes(q)
+      htmlToText(tpl.content).toLowerCase().includes(q)
     );
   }, [templates, searchQuery]);
 

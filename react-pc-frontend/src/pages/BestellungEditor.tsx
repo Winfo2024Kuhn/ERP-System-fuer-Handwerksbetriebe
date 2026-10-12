@@ -23,6 +23,7 @@ import { Card } from "../components/ui/card";
 import { PageLayout } from '../components/layout/PageLayout';
 import { Select } from '../components/ui/select-custom';
 import { cn } from "../lib/utils";
+import { parseHtmlInert, sanitizeHtml } from "../lib/htmlSanitizer";
 import { Input } from "../components/ui/input";
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
@@ -97,8 +98,7 @@ const wrapSignatureHtml = (rawHtml: string): string => {
 
 // HTML für E-Mail-Versand vorbereiten
 const prepareHtmlForSending = (rawHtml: string): string => {
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = rawHtml || '';
+    const wrapper = parseHtmlInert(rawHtml || '');
     wrapper.querySelectorAll('script, style').forEach(n => n.remove());
     wrapper.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     return wrapper.innerHTML.trim();
@@ -196,7 +196,7 @@ interface BestellungEmailModalProps {
     onSuccess: () => void;
 }
 
-const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
+export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     isOpen,
     onClose,
     lieferantId,
@@ -218,6 +218,7 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     const [fromAddresses, setFromAddresses] = useState<string[]>([]);
     const [subject, setSubject] = useState('');
     const [body, setBody] = useState('');
+    const sicheresBody = useMemo(() => sanitizeHtml(body), [body]);
     const [signature, setSignature] = useState('');
     const [sending, setSending] = useState(false);
     const [beautifying, setBeautifying] = useState(false);
@@ -626,7 +627,7 @@ const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                                 ref={editorRef}
                                 contentEditable
                                 suppressContentEditableWarning
-                                dangerouslySetInnerHTML={{ __html: body }}
+                                dangerouslySetInnerHTML={{ __html: sicheresBody }}
                                 onBlur={() => setBody(editorRef.current?.innerHTML || '')}
                                 className="min-h-[250px] p-4 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 prose prose-sm max-w-none"
                             />

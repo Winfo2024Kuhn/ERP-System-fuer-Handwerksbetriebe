@@ -87,3 +87,22 @@ describe('SectionHeaderBlock Verlaufsmodus (DOM-Vertraege fuer "Stelle zeigen")'
         expect(onUpdateChild).toHaveBeenCalledWith('sec', 'k1', { title: 'neu' }, 'sonstiges');
     });
 });
+
+describe('SectionHeaderBlock Hinweis-Text (XSS)', () => {
+    it('zeigt gespeichertes HTML eines Hinweises nur bereinigt an', () => {
+        const mitHinweis: DocBlock = {
+            ...block,
+            children: [{
+                id: 't1', type: 'TEXT',
+                content: '<p><strong>Bitte beachten</strong></p><img src="x" onerror="alert(1)"><script>alert(2)</script>',
+            }],
+        };
+        const { container } = render(<SectionHeaderBlock {...props} block={mitHinweis} />);
+        fireEvent.click(screen.getByRole('button', { name: /aufklappen/i }));
+
+        const hinweis = container.querySelector('[data-block-id="t1"]')!;
+        expect(hinweis.querySelector('strong')).toHaveTextContent('Bitte beachten');
+        expect(hinweis.querySelector('script')).toBeNull();
+        expect(hinweis.querySelector('[onerror]')).toBeNull();
+    });
+});

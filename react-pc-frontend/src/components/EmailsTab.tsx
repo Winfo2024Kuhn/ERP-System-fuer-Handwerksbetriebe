@@ -6,6 +6,7 @@ import { extractDisplayName, extractEmailAddress } from '../lib/emailAddress';
 import { buildReplyAddressing } from '../features/email/emailCenterModel';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
+import { parseHtmlInert } from '../lib/htmlSanitizer';
 import { EmailComposeModal } from './EmailComposeModal';
 import { EmailThreadView } from './EmailThreadView';
 import { EmailComposeForm } from './EmailComposeForm';
@@ -287,8 +288,7 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     const getTextPreview = (email: GenericEmail) => {
         const html = email.bodyHtml || email.bodyPreview || email.body || '';
-        const div = document.createElement('div');
-        div.innerHTML = html;
+        const div = parseHtmlInert(html);
 
         // Remove style/script tags first (prevent raw CSS in preview)
         div.querySelectorAll('style, script, link').forEach(el => el.remove());
