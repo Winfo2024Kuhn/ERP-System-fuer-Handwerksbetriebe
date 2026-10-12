@@ -25,6 +25,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.List;
@@ -143,38 +144,53 @@ public class BelegKiKostenkontoService {
                 return;
             }
 
-            JsonNode functionCall = findeFunctionCall(antwort);
-            if (functionCall == null) {
+            JsonNode kandidat = GeminiVerlauf.kandidat(antwort);
+            List<JsonNode> aufrufe = GeminiVerlauf.funktionsaufrufe(kandidat);
+            if (aufrufe.isEmpty()) {
                 // Modell antwortet ohne Tool-Aufruf → versuche, das Ergebnis aus dem
                 // freien Text zu parsen (Fallback fuer Modelle, die das End-Tool
                 // ignorieren) und beende die Schleife.
-                String text = findeText(antwort);
+                String text = GeminiVerlauf.text(kandidat);
                 ergebnis = parseFreienText(text);
                 break;
             }
 
-            // Modell-Turn aufzeichnen, damit der nachfolgende functionResponse
-            // im Konversations-Strom korrekt referenziert wird.
-            contents.add(modelTurn(antwort));
-
-            String toolName = functionCall.path("name").asText("");
-            JsonNode args = functionCall.path("args");
-
-            if ("finale_zuordnung".equals(toolName)) {
-                ergebnis = parseFinaleZuordnung(args);
+            // finale_zuordnung beendet den Lauf - auch wenn Gemini daneben noch
+            // andere Werkzeuge aufruft; die werden dann nicht mehr ausgefuehrt.
+            JsonNode finale = aufrufe.stream()
+                    .filter(a -> "finale_zuordnung".equals(a.path("name").asText("")))
+                    .findFirst().orElse(null);
+            if (finale != null) {
+                ergebnis = parseFinaleZuordnung(finale.path("args"));
                 break;
             }
 
-            JsonNode toolResult = dispatch(toolName, args, beleg);
-            if (toolResult != null && toolResult.has("fehler")) {
+            // Modell-Turn aufzeichnen, damit die nachfolgenden functionResponses
+            // im Konversations-Strom korrekt referenziert werden.
+            contents.add(GeminiVerlauf.modellZug(kandidat));
+
+            // Gemini kann mehrere Werkzeuge gleichzeitig aufrufen: Jeder Aufruf
+            // braucht eine Antwort (gleiche id) im selben Zug, sonst HTTP 400.
+            List<ObjectNode> antworten = new ArrayList<>();
+            String unbekanntesTool = null;
+            for (JsonNode aufruf : aufrufe) {
+                String toolName = aufruf.path("name").asText("");
+                JsonNode toolResult = dispatch(toolName, aufruf.path("args"), beleg);
+                if (toolResult != null && toolResult.has("fehler")) {
+                    unbekanntesTool = toolName;
+                    break;
+                }
+                antworten.add(toolResponseTeil(aufruf, toolResult));
+            }
+            if (unbekanntesTool != null) {
                 // Modell halluziniert einen Tool-Namen, den wir nicht bedienen
                 // koennen. Loop sofort verlassen, statt 6 Iterationen lang
                 // dieselbe Tool-Antwort zu wiederholen.
                 log.info("KI-Agent Beleg {}: unbekanntes Tool '{}' — Loop abgebrochen",
-                        beleg.getId(), toolName);
+                        beleg.getId(), unbekanntesTool);
                 break;
             }
-            contents.add(toolResponseTurn(toolName, toolResult));
+            contents.add(GeminiVerlauf.antwortZug(antworten));
 
         } while (iteration < MAX_ITERATIONS);
 
@@ -471,7 +487,7 @@ public class BelegKiKostenkontoService {
      * sind deterministisch und werden nicht wiederholt.
      */
     static boolean isRetryableStatus(int status) {
-        return status == 429 || (status >= 500 && status < 600);
+        return GeminiAnfrage.istVoruebergehend(status);
     }
 
     private static void sleepQuiet(long ms) {
@@ -600,57 +616,11 @@ public class BelegKiKostenkontoService {
         return turn;
     }
 
-    private ObjectNode modelTurn(JsonNode antwort) {
-        // Wir uebernehmen den ersten Candidate-Content unveraendert, damit
-        // functionCall + ggf. begleitender Text identisch im naechsten Turn
-        // wieder eingespielt werden.
-        ObjectNode turn = objectMapper.createObjectNode();
-        turn.put("role", "model");
-        JsonNode content = antwort.path("candidates").path(0).path("content");
-        if (content.isObject() && content.has("parts")) {
-            turn.set("parts", content.get("parts").deepCopy());
-        } else {
-            turn.putArray("parts");
-        }
-        return turn;
-    }
-
-    private ObjectNode toolResponseTurn(String toolName, JsonNode result) {
-        ObjectNode turn = objectMapper.createObjectNode();
-        // Gemini erwartet "user"-Role fuer functionResponse-Parts.
-        turn.put("role", "user");
-        ArrayNode parts = turn.putArray("parts");
-        ObjectNode part = parts.addObject();
-        ObjectNode functionResponse = part.putObject("functionResponse");
-        functionResponse.put("name", toolName);
-        ObjectNode responseWrapper = functionResponse.putObject("response");
-        responseWrapper.put("name", toolName);
+    private ObjectNode toolResponseTeil(JsonNode functionCall, JsonNode result) {
+        ObjectNode responseWrapper = objectMapper.createObjectNode();
+        responseWrapper.put("name", functionCall.path("name").asText(""));
         responseWrapper.set("content", result);
-        return turn;
-    }
-
-    private JsonNode findeFunctionCall(JsonNode antwort) {
-        JsonNode parts = antwort.path("candidates").path(0).path("content").path("parts");
-        if (!parts.isArray()) return null;
-        for (JsonNode part : parts) {
-            JsonNode fc = part.get("functionCall");
-            if (fc != null && !fc.isNull()) {
-                return fc;
-            }
-        }
-        return null;
-    }
-
-    private String findeText(JsonNode antwort) {
-        JsonNode parts = antwort.path("candidates").path(0).path("content").path("parts");
-        if (!parts.isArray()) return null;
-        StringBuilder sb = new StringBuilder();
-        for (JsonNode part : parts) {
-            if (part.has("text")) {
-                sb.append(part.get("text").asText());
-            }
-        }
-        return sb.toString();
+        return GeminiVerlauf.antwortTeil(functionCall, responseWrapper);
     }
 
     // ---------------------------------------------------------------------

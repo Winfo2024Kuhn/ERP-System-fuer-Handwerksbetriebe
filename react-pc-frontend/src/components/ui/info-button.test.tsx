@@ -86,6 +86,28 @@ describe('InfoButton', () => {
         expect(screen.getByRole('dialog')).toBeVisible();
     });
 
+    it('ist standardmäßig grau und wird beim Öffnen rose', () => {
+        zeige();
+        expect(knopf()).toHaveClass('text-slate-400', 'focus-visible:ring-rose-500');
+        fireEvent.click(knopf());
+        expect(knopf()).toHaveClass('bg-rose-50', 'text-rose-600');
+        expect(knopf()).not.toHaveClass('text-slate-400');
+    });
+
+    it('hat eine helle Variante für farbige Flächen wie den roten Kopf der KI-Hilfe', () => {
+        render(
+            <InfoButton titel="So arbeitet die KI-Hilfe" variante="hell">
+                <p>Erklärung</p>
+            </InfoButton>,
+        );
+        const hell = screen.getByRole('button', { name: 'Mehr zu: So arbeitet die KI-Hilfe' });
+        expect(hell).toHaveClass('text-rose-100', 'focus-visible:ring-white');
+        expect(hell).not.toHaveClass('text-slate-400');
+        fireEvent.click(hell);
+        expect(hell).toHaveClass('bg-white/20', 'text-white');
+        expect(hell).not.toHaveClass('text-rose-100');
+    });
+
     it('bleibt innerhalb des Fensters, auch rechts am Rand', () => {
         zeige();
         const fensterBreite = window.innerWidth;
