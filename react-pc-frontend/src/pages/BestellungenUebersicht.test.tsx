@@ -35,7 +35,18 @@ const uebersicht = {
         verbindungen: [{ vonId: 2, zuId: 1 }, { vonId: 3, zuId: 1 }],
         rechnungsVorschlag: null,
     }],
-    abgeschlossen: [],
+    abgeschlossen: [{
+        id: 'k4', lieferantId: 4, lieferantName: 'Muster Metallbau GmbH',
+        dokumente: [
+            dok(20, 'AUFTRAGSBESTAETIGUNG', 'AB-20', vorTagen(20)),
+            dok(21, 'RECHNUNG', 'RE-4711', vorTagen(9), { betragBrutto: 1200, zugeordnet: true }),
+            dok(22, 'RECHNUNG', 'RE-4712', vorTagen(6), { betragBrutto: 300, zugeordnet: false }),
+            // ältere Antwort ohne die neuen Felder = offen
+            dok(23, 'RECHNUNG', 'RE-4713', vorTagen(3), { betragBrutto: 80 }),
+            dok(24, 'GUTSCHRIFT', 'GS-1', vorTagen(2), { betragBrutto: -20 }),
+        ],
+        verbindungen: [{ vonId: 21, zuId: 20 }, { vonId: 22, zuId: 20 }, { vonId: 23, zuId: 20 }],
+    }],
     zugeordnet: [{
         id: 'k3', lieferantId: 3, lieferantName: 'Stahlhandel Beispiel GmbH',
         dokumente: [
@@ -62,6 +73,10 @@ const uebersicht = {
 let kettenVorschlaege: unknown[] = [];
 
 function antwortFuer(url: string): Response {
+    if (url.startsWith('/api/bestellungen-uebersicht/geschaeftsdaten/')) {
+        return { ok: true, json: async () => ({ id: 22, dokumentNummer: null, betragNetto: 252.1, betragBrutto: 300 }) } as Response;
+    }
+    if (url.startsWith('/api/bestellungen-uebersicht/zuordnungen/')) return { ok: true, json: async () => [] } as Response;
     if (url === '/api/bestellungen-uebersicht') return { ok: true, json: async () => uebersicht } as Response;
     if (url.startsWith('/api/bestellungen-uebersicht/belege-offen')) return { ok: true, json: async () => [] } as Response;
     if (url.startsWith('/api/bestellungen-uebersicht/ketten-vorschlaege')) return { ok: true, json: async () => kettenVorschlaege } as Response;
@@ -174,5 +189,34 @@ describe('BestellungenUebersicht – Kette als Linie', () => {
         ]);
         expect(within(listen[0]).queryByText('Rechnung fehlt noch')).not.toBeInTheDocument();
         expect(screen.queryByRole('region', { name: /Rechnung R-90/ })).not.toBeInTheDocument();
+    });
+});
+
+describe('BestellungenUebersicht – mehrere Rechnungen zuordnen', () => {
+    beforeEach(() => {
+        vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL) => antwortFuer(String(url))));
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('nennt auf der Karte die offenen Rechnungen und öffnet die erste offene mit Leiste', async () => {
+        zeige();
+        await screen.findByRole('list', { name: 'Belege der Bestellung' });
+        await userEvent.click(screen.getByRole('tab', { name: /Rechnung zuordnen/ }));
+
+        await userEvent.click(await screen.findByRole('button', { name: 'Projekten zuordnen (2 offen)' }));
+        expect(await screen.findByRole('heading', { name: 'Rechnung RE-4712' })).toBeInTheDocument();
+        const leiste = screen.getByRole('group', { name: 'Rechnungen dieser Bestellung' });
+        // nur Rechnungen, keine Gutschrift
+        expect(within(leiste).getAllByRole('button').map(b => b.textContent)).toEqual([
+            expect.stringMatching(/^RE-4711.*zugeordnet$/),
+            expect.stringMatching(/^RE-4712.*offen$/),
+            expect.stringMatching(/^RE-4713.*offen$/),
+        ]);
+        expect(within(leiste).getByRole('button', { name: /^RE-4712/ })).toHaveAttribute('aria-pressed', 'true');
+
+        // Schließen ohne Speichern lädt nicht neu
+        await userEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+        expect(screen.queryByRole('group', { name: 'Rechnungen dieser Bestellung' })).toBeNull();
+        expect(vi.mocked(fetch).mock.calls.filter(c => String(c[0]) === '/api/bestellungen-uebersicht')).toHaveLength(1);
     });
 });

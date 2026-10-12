@@ -12,6 +12,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import java.util.*;
+import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
+import org.junit.jupiter.api.BeforeEach;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -39,6 +41,11 @@ class DatevKonfigurationSecurityTest {
   when(profiles.findById(70L)).thenReturn(Optional.of(p));
   return new FrontendUserPrincipal(70L,"test@example.com","Max Mustermann","",true,Set.of());
  }
+ @BeforeEach
+ void sitzungsRechteUnveraendert() {
+     SitzungsRechteImTest.rechteUnveraendert(users);
+ }
+
  @Test void anonymUndGefälschteIdentitaetAbgewiesen() throws Exception {
   mvc.perform(get(URL).header("X-Mitarbeiter-Id","9")).andExpect(status().isUnauthorized());
   mvc.perform(put(URL).with(csrf()).contentType("application/json").content(BODY)).andExpect(status().isUnauthorized());

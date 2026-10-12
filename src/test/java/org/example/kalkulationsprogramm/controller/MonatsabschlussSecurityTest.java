@@ -12,6 +12,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import java.util.*;
+import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
+import org.junit.jupiter.api.BeforeEach;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -31,6 +33,11 @@ class MonatsabschlussSecurityTest {
     @MockBean AbteilungRepository abteilungen;
     @MockBean AbteilungDokumentBerechtigungRepository dokumentRechte;
     static final String BASE = "/api/zeitverwaltung/monatsabschluesse";
+
+    @BeforeEach
+    void sitzungsRechteUnveraendert() {
+        SitzungsRechteImTest.rechteUnveraendert(frontendUserDetailsService);
+    }
 
     @Test void anonymUndGefälschterHeaderErhaltenKeinenZugriff() throws Exception {
         mvc.perform(get(BASE + "/berechtigung").header("X-Mitarbeiter-Id", "1")).andExpect(status().isUnauthorized());

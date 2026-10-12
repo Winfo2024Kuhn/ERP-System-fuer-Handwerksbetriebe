@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from 'react';
+import { useState, useEffect, useId, type ReactNode } from 'react';
 import { PdfCanvasViewer } from './ui/PdfCanvasViewer';
 import { Button } from './ui/button';
 import { RefreshCw, FileText, X, Download, Plus, Trash2, Percent, Euro, Save, Briefcase, Package, ListChecks } from 'lucide-react';
@@ -59,11 +59,17 @@ export interface ZuordnungModalProps {
     lieferantName?: string | null;
     pdfUrl?: string | null;
     previewMimeType?: string | null;
+    /** Optional: Leiste unter dem Kopf, z. B. die Rechnungen einer Bestellung zum Wechseln. */
+    rechnungsLeiste?: ReactNode;
     onClose: () => void;
-    onSuccess: () => void;
+    /**
+     * Nach erfolgreichem Speichern. Gibt der Aufrufer `'offen-lassen'` zurück,
+     * bleibt der Dialog offen (z. B. weil er zur nächsten Rechnung springt).
+     */
+    onSuccess: () => void | 'offen-lassen' | Promise<void>;
 }
 
-export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, lieferantName, pdfUrl, previewMimeType, onClose, onSuccess }: ZuordnungModalProps) {
+export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, lieferantName, pdfUrl, previewMimeType, rechnungsLeiste, onClose, onSuccess }: ZuordnungModalProps) {
     const toast = useToast();
     const titelId = useId();
     const isBelegZuordnung = belegId != null;
@@ -155,6 +161,11 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
             .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [geschaeftsdokumentId, belegId, isBelegZuordnung]);
+
+    /** Gespeichert: Aufrufer informieren und schließen – außer er will den Dialog offen lassen. */
+    const abschliessen = () => {
+        if (onSuccess() !== 'offen-lassen') onClose();
+    };
 
     const betragNetto = geschaeftsdaten?.betragNetto || 0;
     const rechnungsJahr = geschaeftsdaten?.dokumentDatum
@@ -299,8 +310,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                 beschreibung: a.beschreibung,
                 streckungJahre: a.kostenstelleId != null ? (a.streckungJahre && a.streckungJahre > 1 ? a.streckungJahre : 1) : undefined,
             })));
-            onSuccess();
-            onClose();
+            abschliessen();
         } catch (err) {
             toast.error(err instanceof Error && err.message !== 'Failed to fetch' ? err.message : 'Die Aufteilung konnte nicht gespeichert werden.');
         } finally {
@@ -348,8 +358,7 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                 })
             });
             if (res.ok) {
-                onSuccess();
-                onClose();
+                abschliessen();
             } else {
                 toast.error('Fehler beim Speichern');
             }
@@ -407,6 +416,8 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                         <X className="w-5 h-5 text-slate-500" />
                     </button>
                 </div>
+
+                {rechnungsLeiste}
 
                 {/* Content - Split Layout */}
                 <div className="flex-1 overflow-hidden flex">

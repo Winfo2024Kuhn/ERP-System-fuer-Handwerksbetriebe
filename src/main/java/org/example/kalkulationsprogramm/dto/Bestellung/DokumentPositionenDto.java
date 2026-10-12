@@ -17,7 +17,12 @@ public final class DokumentPositionenDto {
     private DokumentPositionenDto() {
     }
 
-    /** Eine gespeicherte Position mit ihrem aktuellen Ziel. */
+    /**
+     * Eine gespeicherte Position mit ihrem aktuellen Ziel.
+     *
+     * @param bezugPositionIds nur bei Nebenkosten/Rabatten: die Warenpositionen, zu denen die
+     *                         Zeile gehört; leer = gilt für alle Positionen
+     */
     public record Position(
             Long id,
             int positionNr,
@@ -35,7 +40,8 @@ public final class DokumentPositionenDto {
             String kostenstelleName,
             String werkstoff,
             String charge,
-            String abmessung) {
+            String abmessung,
+            List<Long> bezugPositionIds) {
     }
 
     /**
@@ -60,11 +66,18 @@ public final class DokumentPositionenDto {
             List<Position> positionen) {
     }
 
-    /** Ziel einer Position: Projekt ODER Kostenstelle (beides leer = nicht zugeordnet). */
+    /**
+     * Ziel einer Position: Projekt ODER Kostenstelle (beides leer = nicht zugeordnet).
+     *
+     * @param bezugPositionIds nur bei Nebenkosten/Rabatten: {@code null} = gespeicherten Bezug
+     *                         behalten, leer = auf alle verteilen, sonst nur auf die Ziele dieser
+     *                         Warenpositionen
+     */
     public record PositionsZiel(
             @NotNull @Positive Long positionId,
             @Positive Long projektId,
-            @Positive Long kostenstelleId) {
+            @Positive Long kostenstelleId,
+            @Size(max = 2000) List<@NotNull @Positive Long> bezugPositionIds) {
     }
 
     /** Zusatzangaben je Ziel (wie bei der Prozent-/Betragsaufteilung). */
@@ -83,8 +96,9 @@ public final class DokumentPositionenDto {
     /**
      * Ergebnis je Ziel.
      *
-     * @param anteilProzent Anteil am Warenwert in Prozent
-     * @param betrag        verbuchter Betrag: brutto bei Projekten, netto bei Kostenstellen
+     * @param anteilProzent       Anteil am Warenwert in Prozent
+     * @param betrag              verbuchter Betrag: brutto bei Projekten, netto bei Kostenstellen
+     * @param nebenkostenMitBezug Nebenkosten/Rabatte netto, die über ihren Bezug bei diesem Ziel landen
      */
     public record ZielBetrag(
             Long projektId,
@@ -93,21 +107,25 @@ public final class DokumentPositionenDto {
             BigDecimal anteilProzent,
             BigDecimal betragNetto,
             BigDecimal betragBrutto,
-            BigDecimal betrag) {
+            BigDecimal betrag,
+            BigDecimal nebenkostenMitBezug) {
     }
 
     /**
      * Vorschau der Aufteilung.
      *
      * @param nichtZugeordnet Warenpositionen ohne Ziel – Speichern erst bei 0
-     * @param nebenkosten     Nebenkosten und Rabatte, anteilig verteilt
-     * @param abweichung      Belegnetto minus Positionssumme, ebenfalls anteilig verteilt
+     * @param nebenkosten     alle Nebenkosten und Rabatte
+     * @param nebenkostenMitBezug davon die, die nur bei den Zielen ihrer Positionen landen;
+     *                        der Rest wird anteilig verteilt
+     * @param abweichung      Belegnetto minus Positionssumme, anteilig verteilt
      */
     public record Vorschau(
             List<ZielBetrag> ziele,
             int nichtZugeordnet,
             BigDecimal warenwert,
             BigDecimal nebenkosten,
+            BigDecimal nebenkostenMitBezug,
             BigDecimal abweichung,
             boolean speicherbar,
             String hinweis) {

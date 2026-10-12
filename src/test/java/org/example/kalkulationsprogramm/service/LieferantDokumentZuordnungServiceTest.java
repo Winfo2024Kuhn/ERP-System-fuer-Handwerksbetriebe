@@ -130,7 +130,7 @@ class LieferantDokumentZuordnungServiceTest {
             List<LieferantDokumentPosition> positionen = rechnungMitFracht();
 
             int anzahl = service.speichereNachPositionen(10L, new DokumentPositionenDto.AufteilungRequest(
-                    List.of(new PositionsZiel(1L, 1L, null), new PositionsZiel(2L, null, 9L)),
+                    List.of(new PositionsZiel(1L, 1L, null, null), new PositionsZiel(2L, null, 9L, null)),
                     List.of(new DokumentPositionenDto.ZielDetail(null, 9L, "Lagerware", 3))), null);
 
             assertThat(anzahl).isEqualTo(2);
@@ -156,7 +156,7 @@ class LieferantDokumentZuordnungServiceTest {
             rechnungMitFracht();
 
             assertThatThrownBy(() -> service.speichereNachPositionen(10L,
-                    request(new PositionsZiel(1L, 1L, null)), null))
+                    request(new PositionsZiel(1L, 1L, null, null)), null))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("Eine Position hat noch kein Projekt.");
             verify(projektAnteilRepository, never()).saveAll(anyList());
@@ -167,8 +167,8 @@ class LieferantDokumentZuordnungServiceTest {
             rechnungMitFracht();
 
             assertThatThrownBy(() -> service.speichereNachPositionen(10L,
-                    request(new PositionsZiel(1L, 1L, null), new PositionsZiel(2L, 1L, null),
-                            new PositionsZiel(555L, 1L, null)), null))
+                    request(new PositionsZiel(1L, 1L, null, null), new PositionsZiel(2L, 1L, null, null),
+                            new PositionsZiel(555L, 1L, null, null)), null))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("gehört nicht zu diesem Dokument");
         }
@@ -178,7 +178,7 @@ class LieferantDokumentZuordnungServiceTest {
             rechnungMitFracht();
 
             assertThatThrownBy(() -> service.speichereNachPositionen(10L,
-                    request(new PositionsZiel(1L, 1L, 9L), new PositionsZiel(2L, 1L, null)), null))
+                    request(new PositionsZiel(1L, 1L, 9L, null), new PositionsZiel(2L, 1L, null, null)), null))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -187,7 +187,7 @@ class LieferantDokumentZuordnungServiceTest {
             rechnungMitFracht();
 
             assertThatThrownBy(() -> service.speichereNachPositionen(10L,
-                    request(new PositionsZiel(1L, 99L, null), new PositionsZiel(2L, 1L, null)), null))
+                    request(new PositionsZiel(1L, 99L, null, null), new PositionsZiel(2L, 1L, null, null)), null))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Projekt nicht gefunden");
             verify(projektAnteilRepository, never()).saveAll(anyList());
@@ -199,7 +199,7 @@ class LieferantDokumentZuordnungServiceTest {
                     .thenReturn(List.of(position(1, PositionsArt.WARE, null)));
 
             assertThatThrownBy(() -> service.speichereNachPositionen(10L,
-                    request(new PositionsZiel(1L, 1L, null)), null))
+                    request(new PositionsZiel(1L, 1L, null, null)), null))
                     .hasMessageContaining("keine Preise");
         }
 
@@ -211,7 +211,7 @@ class LieferantDokumentZuordnungServiceTest {
                     .thenReturn(List.of(position(1, PositionsArt.WARE, "100")));
 
             assertThatThrownBy(() -> service.speichereNachPositionen(10L,
-                    request(new PositionsZiel(1L, 1L, null)), null))
+                    request(new PositionsZiel(1L, 1L, null, null)), null))
                     .hasMessageContaining("Gutschriften");
         }
 
@@ -223,11 +223,81 @@ class LieferantDokumentZuordnungServiceTest {
                     .hasMessageContaining("noch keine Positionen");
         }
 
+        @SuppressWarnings("unchecked")
+        @Test
+        void zuschlagMitBezugWirdGemerktUndNurDortVerbucht() {
+            // Issue #242: Fracht (Pos. 3) gehört nur zur Lagerware (Pos. 2).
+            List<LieferantDokumentPosition> positionen = rechnungMitFracht();
+
+            service.speichereNachPositionen(10L, request(new PositionsZiel(1L, 1L, null, null),
+                    new PositionsZiel(2L, null, 9L, null), new PositionsZiel(3L, null, null, List.of(2L))), null);
+
+            assertThat(positionen.get(2).getBezugPositionIds()).containsExactly(2L);
+            ArgumentCaptor<List<LieferantDokumentProjektAnteil>> captor = ArgumentCaptor.forClass(List.class);
+            verify(projektAnteilRepository).saveAll(captor.capture());
+            // Projekt brutto: 700 von 1100 netto → 833,00 von 1309; Lager netto: 300 + 100 Fracht
+            assertThat(captor.getValue().get(0).getBerechneterBetrag()).isEqualByComparingTo("833.00");
+            assertThat(captor.getValue().get(1).getBerechneterBetrag()).isEqualByComparingTo("400.00");
+        }
+
+        @Test
+        void gespeicherterBezugGiltOhneNeueAngabe() {
+            List<LieferantDokumentPosition> positionen = rechnungMitFracht();
+            positionen.get(2).getBezugPositionIds().add(2L);
+
+            var vorschau = service.vorschau(10L, List.of(new PositionsZiel(1L, 1L, null, null),
+                    new PositionsZiel(2L, null, 9L, null)));
+
+            assertThat(vorschau.nebenkostenMitBezug()).isEqualByComparingTo("100");
+            assertThat(vorschau.ziele()).extracting(z -> z.betragNetto().toPlainString())
+                    .containsExactly("700.00", "400.00");
+            assertThat(vorschau.ziele().get(1).nebenkostenMitBezug()).isEqualByComparingTo("100");
+        }
+
+        @Test
+        void leererBezugVerteiltWiederAufAlle() {
+            List<LieferantDokumentPosition> positionen = rechnungMitFracht();
+            positionen.get(2).getBezugPositionIds().add(2L);
+
+            var vorschau = service.vorschau(10L, List.of(new PositionsZiel(1L, 1L, null, null),
+                    new PositionsZiel(2L, null, 9L, null), new PositionsZiel(3L, null, null, List.of())));
+
+            assertThat(vorschau.nebenkostenMitBezug()).isEqualByComparingTo("0");
+            assertThat(vorschau.ziele()).extracting(z -> z.betragNetto().toPlainString())
+                    .containsExactly("770.00", "330.00");
+            // Nur die Vorschau – der gespeicherte Bezug bleibt.
+            assertThat(positionen.get(2).getBezugPositionIds()).containsExactly(2L);
+        }
+
+        @Test
+        void warenpositionKannKeinenBezugHaben() {
+            rechnungMitFracht();
+
+            assertThatThrownBy(() -> service.vorschau(10L, List.of(new PositionsZiel(1L, 1L, null, List.of(2L)))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Nur Nebenkosten und Rabatte können zu einzelnen Positionen gehören.");
+        }
+
+        @Test
+        void bezugNurAufWareDiesesBelegs() {
+            rechnungMitFracht();
+
+            assertThatThrownBy(() -> service.vorschau(10L, List.of(new PositionsZiel(3L, null, null, List.of(3L)))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Ein Zuschlag kann nur zu Warenpositionen dieses Belegs gehören.");
+            assertThatThrownBy(() -> service.vorschau(10L, List.of(new PositionsZiel(3L, null, null, List.of(555L)))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Ein Zuschlag kann nur zu Warenpositionen dieses Belegs gehören.");
+            // Leere Liste an Ware ist harmlos (nichts zu merken).
+            var vorschau = service.vorschau(10L, List.of(new PositionsZiel(1L, 1L, null, List.of())));
+            assertThat(vorschau.nichtZugeordnet()).isEqualTo(1);
+        }
+
         @Test
         void vorschauOhneSpeichern() {
             rechnungMitFracht();
 
-            var vorschau = service.vorschau(10L, List.of(new PositionsZiel(1L, 1L, null)));
+            var vorschau = service.vorschau(10L, List.of(new PositionsZiel(1L, 1L, null, null)));
 
             assertThat(vorschau.nichtZugeordnet()).isEqualTo(1);
             assertThat(vorschau.speicherbar()).isFalse();
@@ -252,6 +322,7 @@ class LieferantDokumentZuordnungServiceTest {
             assertThat(uebersicht.abweichungAuffaellig()).isTrue();
             assertThat(uebersicht.nachPositionenAufgeteilt()).isTrue();
             assertThat(uebersicht.positionen().getFirst().projektName()).isEqualTo("BV Mustermann");
+            assertThat(uebersicht.positionen().getFirst().bezugPositionIds()).isEmpty();
         }
 
         @Test
