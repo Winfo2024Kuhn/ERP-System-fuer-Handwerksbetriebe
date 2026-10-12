@@ -6,6 +6,8 @@ import { RefreshCw, FileText, CheckCircle, AlertTriangle, ShieldCheck, Clock, Wa
 import { useToast } from './ui/toast';
 import LieferantDokumentModal from './LieferantDokumentModal';
 import type { LieferantDokument } from '../types';
+import { useHakenSpeichern } from '../hooks/useHakenSpeichern';
+import { cn } from '../lib/utils';
 
 // API Types
 interface Eingangsrechnung {
@@ -54,6 +56,17 @@ const getAuthToken = (): string | null => {
     return null;
 };
 
+/** JSON-Header samt Login-Token (Handy-Anmeldung), falls vorhanden. */
+const authHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = getAuthToken();
+    if (token) headers['X-Auth-Token'] = token;
+    return headers;
+};
+
+const KEIN_GENEHMIGUNGSRECHT =
+    'Keine Berechtigung zum Genehmigen. Das Recht „Rechnungen genehmigen“ wird je Abteilung unter Einstellungen → Berechtigungen vergeben.';
+
 
 // Format date to German locale
 const formatDate = (isoText: string | undefined | null): string => {
@@ -100,6 +113,7 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
     const navigate = useNavigate();
     const [items, setItems] = useState<Eingangsrechnung[]>([]);
     const [loading, setLoading] = useState(true);
+    const [ladeFehler, setLadeFehler] = useState(false);
     const [showBezahlt, setShowBezahlt] = useState(false);
     const [editDokument, setEditDokument] = useState<LieferantDokument | null>(null);
     const [editLieferantId, setEditLieferantId] = useState<number | null>(null);
@@ -115,68 +129,52 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
         setLoading(true);
         try {
             const endpoint = showBezahlt ? '/api/offene-posten/eingang/alle' : '/api/offene-posten/eingang';
-            const token = getAuthToken();
-            const headers: HeadersInit = { 'Content-Type': 'application/json' };
-            if (token) {
-                headers['X-Auth-Token'] = token;
-            }
-            const res = await fetch(endpoint, { headers });
-            if (res.ok) {
-                const data = await res.json();
-                setItems(data);
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden:', err);
+            const res = await fetch(endpoint, { headers: authHeaders() });
+            if (!res.ok) throw new Error(`Status ${res.status}`);
+            setItems(await res.json());
+            setLadeFehler(false);
+        } catch {
+            // Bereits geladene Zeilen bleiben stehen; ohne Daten zeigt die Seite eine Fehlerkarte.
+            setLadeFehler(true);
+            toast.error('Die Eingangsrechnungen konnten nicht geladen werden. Bitte auf „Aktualisieren“ klicken.');
         } finally {
             setLoading(false);
         }
-    }, [showBezahlt]);
+    }, [showBezahlt, toast]);
 
     useEffect(() => {
         loadData();
     }, [loadData]);
 
-    const toggleBezahlt = async (id: number, currentValue: boolean) => {
-        try {
-            const token = getAuthToken();
-            const headers: HeadersInit = { 'Content-Type': 'application/json' };
-            if (token) headers['X-Auth-Token'] = token;
+    // Haken „Bezahlt“ und „Genehmigt“: Zeile während des Speicherns gesperrt, Fehler als Toast.
+    const { inArbeit, speichern } = useHakenSpeichern(loadData);
 
-            await fetch(`/api/offene-posten/eingang/${id}/bezahlt`, {
-                method: 'PUT',
-                headers,
-                body: JSON.stringify({ bezahlt: !currentValue })
-            });
-            await loadData();
-        } catch (err) {
-            console.error('Fehler beim Aktualisieren:', err);
-        }
-    };
+    const toggleBezahlt = (id: number, currentValue: boolean) => speichern({
+        id,
+        senden: () => fetch(`/api/offene-posten/eingang/${id}/bezahlt`, {
+            method: 'PUT',
+            headers: authHeaders(),
+            body: JSON.stringify({ bezahlt: !currentValue }),
+        }),
+        fehlertext: currentValue
+            ? 'Die Rechnung konnte nicht wieder auf offen gesetzt werden.'
+            : 'Die Rechnung konnte nicht als bezahlt markiert werden.',
+    });
 
-    const toggleGenehmigt = async (id: number, currentValue: boolean) => {
+    const toggleGenehmigt = (id: number, currentValue: boolean) => {
         if (!canApprove) return;
-        try {
-            const token = getAuthToken();
-            const headers: HeadersInit = { 'Content-Type': 'application/json' };
-            if (token) headers['X-Auth-Token'] = token;
-
-            const res = await fetch(`/api/offene-posten/eingang/${id}/genehmigen`, {
+        return speichern({
+            id,
+            senden: () => fetch(`/api/offene-posten/eingang/${id}/genehmigen`, {
                 method: 'PATCH',
-                headers,
-                body: JSON.stringify({ genehmigt: !currentValue })
-            });
-
-            if (res.status === 403) {
-                toast.error('Keine Berechtigung zum Genehmigen. Das Recht „Rechnungen genehmigen“ wird je Abteilung unter Einstellungen → Berechtigungen vergeben.');
-                return;
-            }
-
-            // Reload data from server to ensure consistency
-            await loadData();
-        } catch (err) {
-            console.error('Fehler beim Genehmigen:', err);
-            loadData(); // Reload on error
-        }
+                headers: authHeaders(),
+                body: JSON.stringify({ genehmigt: !currentValue }),
+            }),
+            fehlertext: currentValue
+                ? 'Die Genehmigung konnte nicht zurückgenommen werden.'
+                : 'Die Rechnung konnte nicht genehmigt werden.',
+            meldungJeStatus: { 403: KEIN_GENEHMIGUNGSRECHT },
+        });
     };
 
     // Öffnet je nach Status den passenden Viewer:
@@ -277,9 +275,25 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
         );
     }
 
+    // Nie geladen: Fehlerkarte statt leerer Liste – sonst sähe es aus, als wäre alles bezahlt.
+    if (ladeFehler && items.length === 0) {
+        return (
+            <Card className="p-8 text-center border-0 shadow-sm rounded-xl">
+                <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-red-300" />
+                <p className="text-sm font-medium text-slate-700">Die Eingangsrechnungen konnten nicht geladen werden.</p>
+                <p className="text-xs mt-1 text-slate-500">Die Liste ist deshalb leer – das heißt nicht, dass alles bezahlt ist.</p>
+                <Button variant="outline" size="sm" className="mt-4" onClick={loadData}>
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Aktualisieren
+                </Button>
+            </Card>
+        );
+    }
+
     const renderRow = (item: Eingangsrechnung, isChild = false) => (
         <tr
             key={item.id}
+            aria-busy={inArbeit.has(item.id) || undefined}
             className={`align-top transition-colors ${item.bezahlt ? 'bg-green-50/60 opacity-60' : item.ueberfaellig ? 'bg-red-50/50 hover:bg-red-50' : 'bg-white hover:bg-slate-50/80'} ${isChild ? 'bg-slate-50/30' : ''}`}
         >
             {/* Lieferant */}
@@ -400,8 +414,14 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
             <td className="px-4 py-3 text-center">
                 <div className="flex justify-center">
                     <label
-                        className={`inline-flex items-center justify-center p-1.5 rounded-full transition-colors ${canApprove ? 'cursor-pointer hover:bg-slate-100' : 'cursor-not-allowed opacity-70'}`}
-                        title={canApprove ? "Status ändern" : "Nur mit dem Abteilungsrecht „Rechnungen genehmigen“"}
+                        className={cn(
+                            'inline-flex items-center justify-center p-1.5 rounded-full transition-colors focus-within:ring-2 focus-within:ring-rose-500',
+                            !canApprove ? 'cursor-not-allowed opacity-70'
+                                : inArbeit.has(item.id) ? 'cursor-wait opacity-60'
+                                    : 'cursor-pointer hover:bg-slate-100'
+                        )}
+                        title={!canApprove ? 'Nur mit dem Abteilungsrecht „Rechnungen genehmigen“'
+                            : inArbeit.has(item.id) ? 'Wird gespeichert …' : 'Status ändern'}
                     >
                         <input
                             type="checkbox"
@@ -409,7 +429,7 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
                             aria-label={item.genehmigt ? 'Genehmigung zurücknehmen' : 'Rechnung genehmigen'}
                             checked={item.genehmigt}
                             onChange={() => toggleGenehmigt(item.id, item.genehmigt)}
-                            disabled={!canApprove}
+                            disabled={!canApprove || inArbeit.has(item.id)}
                         />
                         {item.genehmigt ? (
                             <ShieldCheck className="w-5 h-5 text-emerald-600" />
@@ -422,10 +442,17 @@ export default function EingangsrechnungenTab({ onOpenPdf }: EingangsrechnungenT
 
             {/* Bezahlt */}
             <td className="px-4 py-3 text-center">
-                <label className="inline-flex items-center gap-2 text-sm font-medium cursor-pointer">
+                <label
+                    title={inArbeit.has(item.id) ? 'Wird gespeichert …' : undefined}
+                    className={cn(
+                        'inline-flex items-center gap-2 text-sm font-medium',
+                        inArbeit.has(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer'
+                    )}
+                >
                     <input
                         type="checkbox"
                         checked={item.bezahlt}
+                        disabled={inArbeit.has(item.id)}
                         onChange={() => toggleBezahlt(item.id, item.bezahlt)}
                         className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
                     />

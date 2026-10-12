@@ -64,24 +64,6 @@ export const parseDecimal = (raw: string): number | null => {
     return Number.isFinite(n) ? n : null;
 };
 
-/**
- * Holt die verständliche Fehlermeldung aus einer fehlgeschlagenen Antwort.
- *
- * Das Backend liefert bei fachlicher Ablehnung einen ApiError mit `message`
- * (bzw. `reason`/`error`). Ohne das sieht der Nutzer nur "Status 400" und
- * weiß nicht, was er ändern soll.
- */
-export const leseFehlermeldung = async (res: Response, fallback: string): Promise<string> => {
-    try {
-        const body = await res.json();
-        const text = body?.message ?? body?.reason ?? body?.error;
-        if (typeof text === 'string' && text.trim()) return text.trim();
-    } catch {
-        // kein oder kaputtes JSON – dann eben der Fallback
-    }
-    return `${fallback} (Status ${res.status}).`;
-};
-
 /** Hält einen Prozentwert aus einem Zahlenfeld zwischen 0 und 100. */
 export const clampPercent = (raw: string): number => {
     const n = Number(raw);

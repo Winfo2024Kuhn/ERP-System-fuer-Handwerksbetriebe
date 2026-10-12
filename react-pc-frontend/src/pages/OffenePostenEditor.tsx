@@ -8,8 +8,7 @@ import type { OffenerPosten, Mahnstufe } from '../types';
 import EingangsrechnungenTab from '../components/EingangsrechnungenTab';
 import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
 import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
-import { useToast } from '../components/ui/toast';
-import { leseFehlermeldung } from '../lib/apiFehler';
+import { useHakenSpeichern } from '../hooks/useHakenSpeichern';
 import { cn } from '../lib/utils';
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 
@@ -83,8 +82,6 @@ export default function OffenePostenEditor() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
-    const [bezahltWirdGespeichert, setBezahltWirdGespeichert] = useState<ReadonlySet<number>>(() => new Set());
-    const toast = useToast();
     const [activeTab, setActiveTab] = useState<'ausgang' | 'eingang'>(() => {
         const tabParam = searchParams.get('tab');
         return tabParam === 'eingang' ? 'eingang' : 'ausgang';
@@ -213,29 +210,16 @@ export default function OffenePostenEditor() {
         return { overdue, mitMahnung, overdueSum };
     }, [groupedInvoices]);
 
-    // Toggle bezahlt status
-    const toggleBezahlt = async (id: number, currentValue: boolean) => {
-        const bezahlt = !currentValue;
-        const ersatzMeldung = bezahlt
-            ? 'Die Rechnung konnte nicht als bezahlt markiert werden.'
-            : 'Die Rechnung konnte nicht wieder auf offen gesetzt werden.';
-        setBezahltWirdGespeichert(ids => new Set(ids).add(id));
-        try {
-            const res = await fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${bezahlt}`, { method: 'PATCH' });
-            if (!res.ok) toast.error(await leseFehlermeldung(res, ersatzMeldung));
-            // Auch nach einem Fehler neu laden: Der Haken zeigt dann den Stand, der
-            // wirklich gespeichert ist (z. B. nach einer Änderung von jemand anderem).
-            await loadData();
-        } catch {
-            toast.error(`${ersatzMeldung} Bitte die Verbindung prüfen und es noch einmal versuchen.`);
-        } finally {
-            setBezahltWirdGespeichert(ids => {
-                const rest = new Set(ids);
-                rest.delete(id);
-                return rest;
-            });
-        }
-    };
+    // Haken „Bezahlt“: Zeile während des Speicherns gesperrt, Fehler als Toast, danach neu laden.
+    const { inArbeit: bezahltWirdGespeichert, speichern } = useHakenSpeichern(loadData);
+
+    const toggleBezahlt = (id: number, currentValue: boolean) => speichern({
+        id,
+        senden: () => fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${!currentValue}`, { method: 'PATCH' }),
+        fehlertext: currentValue
+            ? 'Die Rechnung konnte nicht wieder auf offen gesetzt werden.'
+            : 'Die Rechnung konnte nicht als bezahlt markiert werden.',
+    });
 
     const navigate = useNavigate();
 
@@ -252,6 +236,7 @@ export default function OffenePostenEditor() {
                 {/* Main invoice row */}
                 <tr
                     data-dokument-id={invoice.id}
+                    aria-busy={bezahltWirdGespeichert.has(invoice.id) || undefined}
                     className={`align-top transition-all ${mahnungen.length > 0 ? 'border-l-4 border-amber-300 bg-white hover:bg-rose-50/30' : 'bg-white hover:bg-slate-50/80'}`}
                 >
                     {/* Projekt */}

@@ -268,10 +268,20 @@ describe('VerrechnungslohnRechnerDialog', () => {
         expect(String(mockFetch.mock.calls[1][0])).toContain('internProzent=8.5');
     });
 
+    it('zeigt bei der Berechnung die Meldung vom Server', async () => {
+        mockFetch.mockResolvedValue({
+            ok: false,
+            status: 400,
+            json: async () => ({ status: 400, message: 'Für 2026 fehlen die Arbeitstage.' }),
+        });
+        render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith('Für 2026 fehlen die Arbeitstage.'));
+    });
+
     it('meldet Berechnungsfehler als systemeigenen Toast', async () => {
         mockFetch.mockResolvedValue({ ok: false, status: 503 });
         render(<VerrechnungslohnRechnerDialog open onClose={vi.fn()} />);
-        await waitFor(() => expect(toastError).toHaveBeenCalledWith('Berechnung fehlgeschlagen (Status 503).'));
+        await waitFor(() => expect(toastError).toHaveBeenCalledWith('Der Verrechnungslohn konnte nicht berechnet werden.'));
     });
 
     it('zeigt die Klartext-Meldung des Servers statt einer Statusnummer', async () => {

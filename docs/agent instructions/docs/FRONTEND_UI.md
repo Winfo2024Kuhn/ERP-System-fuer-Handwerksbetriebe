@@ -83,6 +83,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
   - `src/components/ui/`: Atome
   - `src/components/`: geteilte Fach-Bausteine
   - `src/features/{name}/`: Domänenlogik
+  - `src/hooks/`: geteilte React-Hooks (z. B. `useHakenSpeichern` für Haken in Listen: Zeile sperren, Fehler-Toast, neu laden)
   - `src/pages/`: Seiten
   - `src/lib/`: reine Hilfsfunktionen
 

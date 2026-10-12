@@ -33,8 +33,8 @@ import { cn } from '../lib/utils';
 import {
     formatEur,
     formatHours,
-    leseFehlermeldung,
 } from './verrechnungslohnFormat';
+import { leseFehlermeldung } from '../lib/apiFehler';
 
 // ==================== API-Typen (Spiegel zu VerrechnungslohnErgebnisDto) ====================
 
@@ -363,7 +363,9 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                     setError(message);
                     showError(message);
                 } else {
-                    const message = `Berechnung fehlgeschlagen (Status ${res.status}).`;
+                    const message = await leseFehlermeldung(res, 'Der Verrechnungslohn konnte nicht berechnet werden.');
+                    // Während des Lesens kann schon eine neuere Abfrage laufen – die gewinnt.
+                    if (controller.signal.aborted) return;
                     setError(message);
                     showError(message);
                 }
@@ -536,7 +538,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
                 // Der Server schickt bei fachlicher Ablehnung einen verständlichen
                 // Text mit (z.B. "Der Abschlag für die Abteilung … ist zu groß").
                 // Den zeigen wir statt einer nackten Statusnummer.
-                toast.error(await leseFehlermeldung(res, 'Übernehmen fehlgeschlagen'));
+                toast.error(await leseFehlermeldung(res, 'Die Stundensätze konnten nicht übernommen werden.'));
                 return;
             }
             toast.success(`Stundensätze für ${data.jahr} übernommen.`);
@@ -544,7 +546,7 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
             onClose();
         } catch (e) {
             console.error(e);
-            toast.error('Übernehmen fehlgeschlagen.');
+            toast.error('Die Stundensätze konnten nicht übernommen werden.');
         } finally {
             setApplying(false);
         }
