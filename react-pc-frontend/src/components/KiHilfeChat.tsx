@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Gem, X, Send, Trash2, Minimize2, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { BESTELLBEDARF_PFAD, istFreigegeben } from '../lib/freigaben';
 
 interface SourceLink {
     title: string;
@@ -493,16 +494,16 @@ export function KiHilfeChat() {
     );
 }
 
-/** Valid internal routes that can be linked */
+/** Valid internal routes that can be linked; pages not yet released stay plain text */
 const VALID_ROUTES = new Set([
     '/projekte', '/anfragen', '/kunden', '/lieferanten', '/artikel',
-    '/bestellungen', '/bestellungen/bedarf', '/textbausteine', '/leistungen',
+    '/bestellungen', BESTELLBEDARF_PFAD, '/textbausteine', '/leistungen',
     '/arbeitsgaenge', '/produktkategorien', '/mitarbeiter', '/arbeitszeitarten',
     '/kalender', '/emails', '/formulare', '/offeneposten',
     '/rechnungsuebersicht', '/miete', '/analyse', '/zeitbuchungen',
     '/auswertung', '/steuerberater', '/zeitkonten', '/feiertage',
     '/urlaubsantraege', '/firma', '/benutzer',
-]);
+].filter(istFreigegeben));
 
 /** Simple markdown renderer for assistant messages */
 function MarkdownText({ text, onNavigate }: { text: string; onNavigate: (path: string) => void }) {

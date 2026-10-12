@@ -6,17 +6,30 @@
 
 Dieses Dokument beschreibt den Einkauf im Programm – vom Material, das ein Projekt braucht, über die Bestellung beim Lieferanten bis zur Lieferantenrechnung, die die Kosten ins Projekt bringt.
 
-Im Menü liegen zwei Seiten unter **Projektmanagement › Einkauf**:
+Unter **Projektmanagement › Einkauf** gibt es zwei Seiten. Im Menü steht derzeit nur **Bestellungen**, die Seite **Bedarf** ist noch nicht freigegeben (siehe „Noch nicht freigegeben“ unten):
 
 | Menüpunkt | Seite (Überschrift) | Wofür |
 |---|---|---|
-| **Bedarf** (`/bestellungen/bedarf`) | „Bestellungen“ – „Offene Bestellungen nach Lieferanten verwalten und versenden.“ | Material, das für Projekte noch bestellt werden muss. Von hier kommt das Bestell-PDF für den Lieferanten. |
+| **Bedarf** (`/bestellungen/bedarf`, ausgeblendet) | „Bestellungen“ – „Offene Bestellungen nach Lieferanten verwalten und versenden.“ | Material, das für Projekte noch bestellt werden muss. Von hier kommt das Bestell-PDF für den Lieferanten. |
 | **Bestellungen** (`/bestellungen`) | „BESTELLUNGEN“ – „Angefragt, bestellt, geliefert – und was noch abgerechnet werden muss. Alles an einem Ort.“ | Die Unterlagen der Lieferanten (Angebot, Auftragsbestätigung, Lieferschein, Werkstoffzeugnis, Rechnung) als Kette. Hier werden Rechnungen Projekten oder Kostenstellen zugeordnet (Abschnitt 7). |
+
+### Noch nicht freigegeben
+
+Das Bestellen aus dem Programm ist fachlich noch nicht fertig. Die Schalter dafür liegen zentral in `react-pc-frontend/src/lib/freigaben.ts`:
+
+| Schalter | Wirkung bei `false` (Stand heute) |
+|---|---|
+| `BESTELLBEDARF_AKTIV` | Kein Menüpunkt „Bedarf“. Die Adresse `/bestellungen/bedarf` leitet auf `/bestellungen` um, und die KI-Hilfe verlinkt die Seite nicht. Die Seite selbst (`BestellungEditor`) bleibt im Code. Positionen mit „Bestellen“ entstehen im Projekt weiterhin, sie sind nur nicht als Liste je Lieferant zu sehen. |
+| `BESTELLANFRAGE_PER_EMAIL_AKTIV` | Kein Knopf „E-Mail“ je Lieferant auf der Seite „Bedarf“ (Abschnitt 4.2). |
+
+Bei der Freigabe von „Bedarf“ außerdem den KI-Hilfe-Prompt wieder ergänzen (`KiHilfeService.BASE_SYSTEM_PROMPT`: Menüpunkt unter „Einkauf“ und Zeile in der Linkliste).
+
+**Vor der Freigabe zu klären:** Bringt ein Lieferanten-Angebot einen neuen Preis, legt `OfferPriceService` einen neuen Preisstand an und schreibt den Preis je Einheit in `preisProStueck` der offenen Positionen. Die Positionen zeigen aber weiter auf den alten Preisstand (`lieferantenArtikelPreis`), und der hat in Anzeige, Nachkalkulation und beim Abhaken Vorrang (Abschnitt 3.2). Deshalb wirkt der Angebotspreis heute nur bei offenen Positionen ohne Preisstand. Ob offene Positionen auf den Angebotspreis umgehängt werden sollen oder bis zum Abhaken beim Kalkulationspreis bleiben, ist noch nicht entschieden.
 
 ### So geht's (Kurzfassung)
 
 1. **Material ins Projekt eintragen:** Projekt öffnen → Knopf **„Artikel aus Lager“** → im Fenster „Artikel aus Lager hinzufügen“ Artikel suchen, Menge eintragen und je Artikel wählen: **„Lager“** (kommt aus dem eigenen Lager) oder **„Bestellen“** (muss noch bestellt werden).
-2. **Bestellen:** Alles mit „Bestellen“ steht danach unter **Einkauf › Bedarf**, sortiert nach Lieferant. Je Lieferant gibt es den Knopf **„PDF“** (Bestell-PDF ansehen). Den Versand an den Lieferanten erledigt man vorerst selbst, die Bestellanfrage per E-Mail aus dem Programm ist noch nicht freigegeben (Abschnitt 4.2).
+2. **Bestellen** (noch nicht freigegeben, siehe oben): Alles mit „Bestellen“ steht danach unter **Einkauf › Bedarf**, sortiert nach Lieferant. Je Lieferant gibt es den Knopf **„PDF“** (Bestell-PDF ansehen). Den Versand an den Lieferanten erledigt man vorerst selbst, die Bestellanfrage per E-Mail aus dem Programm ist noch nicht freigegeben (Abschnitt 4.2).
 3. **Abhaken:** Ist die Ware bestellt, das Häkchen in der Spalte **„Bestellt“** setzen. Die Position verschwindet aus dem Bedarf, ihr Preis wird festgeschrieben.
 4. **Rechnung zuordnen:** Auftragsbestätigung, Lieferschein und Rechnung des Lieferanten kommen meist per E-Mail und erscheinen unter **Einkauf › Bestellungen**. Liegt die Rechnung vor, steht die Bestellung im Reiter „Rechnung zuordnen“ – mit **„Projekten zuordnen“** landen die Kosten im Projekt.
 
@@ -156,7 +169,7 @@ Beim Abhaken wird der Endpreis in `preisProStueck` **eingefroren** (Einzelpreis 
 
 ### 4.2 Bestellung per E-Mail (noch nicht freigegeben)
 
-Die Bestellanfrage per E-Mail ist fachlich noch nicht fertig. Der Knopf **„E-Mail“** je Lieferant ist deshalb ausgeblendet (`BESTELLANFRAGE_PER_EMAIL_AKTIV = false` in `react-pc-frontend/src/pages/BestellungEditor.tsx`). Das vorbereitete Fenster „Bestellung an <Lieferant> senden“ (`BestellungEmailModal`) sieht so aus:
+Die Bestellanfrage per E-Mail ist fachlich noch nicht fertig. Der Knopf **„E-Mail“** je Lieferant ist deshalb ausgeblendet (`BESTELLANFRAGE_PER_EMAIL_AKTIV = false` in `react-pc-frontend/src/lib/freigaben.ts`). Das vorbereitete Fenster „Bestellung an <Lieferant> senden“ (`BestellungEmailModal`) sieht so aus:
 
 - **Empfänger:** die beim Lieferanten hinterlegten E-Mail-Adressen; über „Andere E-Mail eingeben...“ auch eine neue Adresse. Nach dem Senden an eine neue Adresse fragt das Programm „E-Mail-Adresse speichern?“ und legt sie auf Wunsch beim Lieferanten ab.
 - **CC**, **Von** (Absender-Adresse), **Betreff** (Vorschlag „Bestellanfrage: <Lieferant>“) und **Nachricht** mit Signatur. Der vorbelegte Text bittet um ein Angebot für die angehängten Positionen – vor dem Senden anpassen, wenn direkt bestellt werden soll.
