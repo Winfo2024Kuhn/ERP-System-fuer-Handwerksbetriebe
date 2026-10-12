@@ -211,38 +211,6 @@ public class KalenderController {
     }
 
     /**
-     * Erstellt einen neuen Kalendereintrag (Mobile App).
-     */
-    @PostMapping("/mobile")
-    public ResponseEntity<KalenderEintragDto> createEintragMobile(
-            @RequestParam String token,
-            @RequestBody KalenderEintragRequest request) {
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findByLoginToken(token).orElse(null);
-        if (mitarbeiter == null || !Boolean.TRUE.equals(mitarbeiter.getAktiv())) {
-            return ResponseEntity.status(401).build();
-        }
-
-        KalenderEintrag eintrag = new KalenderEintrag();
-        eintrag.setTitel(request.titel());
-        eintrag.setBeschreibung(request.beschreibung());
-        eintrag.setDatum(request.datum());
-        eintrag.setStartZeit(request.startZeit());
-        eintrag.setEndeZeit(request.endeZeit());
-        eintrag.setGanztaegig(request.ganztaegig());
-        eintrag.setFarbe(request.farbe());
-
-        KalenderEintrag saved = kalenderService.saveEintrag(
-                eintrag,
-                request.projektId(),
-                request.kundeId(),
-                request.lieferantId(),
-                request.anfrageId(),
-                mitarbeiter.getId(),
-                request.teilnehmerIds());
-        return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved));
-    }
-
-    /**
      * Aktualisiert einen bestehenden Kalendereintrag.
      */
     @PutMapping("/{id}")

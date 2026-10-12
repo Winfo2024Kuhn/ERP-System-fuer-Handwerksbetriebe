@@ -57,8 +57,6 @@ class DokumentFreigabeServiceTest {
     @Mock
     private WebPushService webPushService;
     @Mock
-    private DateiSpeicherService dateiSpeicherService;
-    @Mock
     private AutoAuftragsbestaetigungVersandService autoAuftragsbestaetigungVersandService;
     @Mock
     private ProjektManagementService projektManagementService;
@@ -485,8 +483,8 @@ class DokumentFreigabeServiceTest {
         service.erstelleFreigabeBlockFuerDokument(57L, false, "max@mustermann.de", null);
 
         assertThat(nochOffen.getStatus()).isEqualTo(FreigabeStatus.REVOKED);
+        // Der alte Link liefert keine PDF mehr; die Datei selbst gehört zum Dokument und bleibt.
         assertThat(nochOffen.getDokumentDatei()).isNull();
-        verify(dateiSpeicherService).loescheDokumentPdfByDateiname("angebot-alt.pdf");
         // Der Beweis der ersten Annahme bleibt unangetastet.
         assertThat(akzeptiert.getStatus()).isEqualTo(FreigabeStatus.ACCEPTED);
     }
@@ -1080,5 +1078,81 @@ class DokumentFreigabeServiceTest {
                 .getHashAcceptance();
 
         assertThat(hashMit).hasSize(64).isNotEqualTo(hashOhne).isNotEqualTo(hashOhneAdresse);
+    }
+
+    // ── PDF vom abgelaufenen Link lösen (DELETE /api/internal/freigabe/{uuid}/pdf) ──
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = FreigabeStatus.class, names = {"EXPIRED", "REVOKED"})
+    void entfernePdf_beiAbgelaufenOderZurueckgezogen_loestNurDieVerknuepfung(FreigabeStatus status) {
+        DokumentFreigabe f = pendingFreigabe("uuid-ende");
+        f.setStatus(status);
+        f.setDokumentDatei("angebot.pdf");
+        when(repository.findByUuid("uuid-ende")).thenReturn(Optional.of(f));
+
+        DokumentFreigabeService.PdfEntfernenErgebnis ergebnis = service.entfernePdfAusFreigabe("uuid-ende");
+
+        assertThat(ergebnis).isEqualTo(DokumentFreigabeService.PdfEntfernenErgebnis.ENTFERNT);
+        assertThat(f.getDokumentDatei()).isNull();
+        verify(repository).save(f);
+    }
+
+    @Test
+    void entfernePdf_beiOffenemLinkNachAblaufdatum_setztAbgelaufenUndLoestPdf() {
+        DokumentFreigabe f = pendingFreigabe("uuid-ueberfaellig");
+        f.setAblaufDatum(LocalDateTime.now().minusMinutes(1));
+        f.setDokumentDatei("angebot.pdf");
+        when(repository.findByUuid("uuid-ueberfaellig")).thenReturn(Optional.of(f));
+
+        assertThat(service.entfernePdfAusFreigabe("uuid-ueberfaellig"))
+                .isEqualTo(DokumentFreigabeService.PdfEntfernenErgebnis.ENTFERNT);
+        assertThat(f.getStatus()).isEqualTo(FreigabeStatus.EXPIRED);
+        assertThat(f.getDokumentDatei()).isNull();
+    }
+
+    @Test
+    void entfernePdf_beiOffenemGueltigemLink_bleibtAllesStehen() {
+        DokumentFreigabe f = pendingFreigabe("uuid-offen");
+        f.setDokumentDatei("angebot.pdf");
+        when(repository.findByUuid("uuid-offen")).thenReturn(Optional.of(f));
+
+        assertThat(service.entfernePdfAusFreigabe("uuid-offen"))
+                .isEqualTo(DokumentFreigabeService.PdfEntfernenErgebnis.NOCH_GUELTIG);
+        assertThat(f.getDokumentDatei()).isEqualTo("angebot.pdf");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void entfernePdf_beiAngenommenemDokument_bleibtDerBelegStehen() {
+        DokumentFreigabe f = pendingFreigabe("uuid-angenommen");
+        f.setStatus(FreigabeStatus.ACCEPTED);
+        f.setAblaufDatum(LocalDateTime.now().minusDays(30));
+        f.setDokumentDatei("angebot.pdf");
+        when(repository.findByUuid("uuid-angenommen")).thenReturn(Optional.of(f));
+
+        assertThat(service.entfernePdfAusFreigabe("uuid-angenommen"))
+                .isEqualTo(DokumentFreigabeService.PdfEntfernenErgebnis.NOCH_GUELTIG);
+        assertThat(f.getDokumentDatei()).isEqualTo("angebot.pdf");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void entfernePdf_beiUnbekannterUuid_meldetUnbekannt() {
+        when(repository.findByUuid("'; DROP TABLE dokument_freigabe; --")).thenReturn(Optional.empty());
+
+        assertThat(service.entfernePdfAusFreigabe("'; DROP TABLE dokument_freigabe; --"))
+                .isEqualTo(DokumentFreigabeService.PdfEntfernenErgebnis.UNBEKANNT);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void entfernePdf_ohneHinterlegteDatei_istTrotzdemErledigt() {
+        DokumentFreigabe f = pendingFreigabe("uuid-schon-leer");
+        f.setStatus(FreigabeStatus.EXPIRED);
+        when(repository.findByUuid("uuid-schon-leer")).thenReturn(Optional.of(f));
+
+        assertThat(service.entfernePdfAusFreigabe("uuid-schon-leer"))
+                .isEqualTo(DokumentFreigabeService.PdfEntfernenErgebnis.ENTFERNT);
+        verify(repository, never()).save(any());
     }
 }
