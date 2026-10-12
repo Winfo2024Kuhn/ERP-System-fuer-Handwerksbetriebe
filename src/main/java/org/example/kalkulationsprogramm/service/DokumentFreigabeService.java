@@ -92,7 +92,6 @@ public class DokumentFreigabeService
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
     private final AusgangsGeschaeftsDokumentAuditService ausgangsGeschaeftsDokumentAuditService;
     private final WebPushService webPushService;
-    private final DateiSpeicherService dateiSpeicherService;
     private final AutoAuftragsbestaetigungVersandService autoAuftragsbestaetigungVersandService;
     private final ProjektManagementService projektManagementService;
     private final AnfrageRepository anfrageRepository;
@@ -375,7 +374,7 @@ public class DokumentFreigabeService
     /**
      * Erzeugt einen Freigabe-Token für ein AusgangsGeschaeftsDokument (neues Dokumentsystem).
      * Die PDF-Datei wird beim E-Mail-Versand serverseitig gespeichert und hier eingetragen.
-     * Nach Ablauf der Freigabe wird sie über {@link #loeschePdfFuerFreigabe(String)} bereinigt.
+     * Nach Ablauf löst {@link #entfernePdfAusFreigabe(String)} sie vom Link; die Datei bleibt im ERP.
      */
     @Transactional
     public DokumentFreigabe erstelleFuerAusgangsGeschaeftsDokument(AusgangsGeschaeftsDokument dok, String kundeEmail, String pdfDateiname)
@@ -448,23 +447,44 @@ public class DokumentFreigabeService
         return repository.save(freigabe);
     }
 
+    /** Ergebnis von {@link #entfernePdfAusFreigabe(String)}. */
+    public enum PdfEntfernenErgebnis
+    {
+        ENTFERNT,
+        UNBEKANNT,
+        /** Freigabe ist noch offen oder angenommen – die PDF bleibt abrufbar. */
+        NOCH_GUELTIG
+    }
+
     /**
-     * Löscht die gespeicherte PDF einer abgelaufenen Freigabe vom Datenträger.
-     * Wird von der Internetseite aufgerufen, wenn die Freigabe abgelaufen ist.
+     * Nimmt einer abgelaufenen oder zurückgezogenen Freigabe ihre PDF weg, damit der Link
+     * sie nicht mehr ausliefert. Wird von der Internetseite aufgerufen, wenn der Link
+     * abgelaufen ist.
+     *
+     * <p>Die Datei selbst bleibt liegen: Sie ist die PDF des Dokuments im ERP (Ausgangs-
+     * dokument bzw. Projekt-/Anfrage-Dokument) und gehört zu den Geschäftsunterlagen.
+     * Offene und angenommene Freigaben bleiben unverändert – sonst könnte ein Aufruf dem
+     * Kunden das Dokument vor der Annahme bzw. den Beleg der Annahme wegnehmen.</p>
      */
     @Transactional
-    public void loeschePdfFuerFreigabe(String uuid)
+    public PdfEntfernenErgebnis entfernePdfAusFreigabe(String uuid)
     {
-        repository.findByUuid(uuid).ifPresent(freigabe ->
+        Optional<DokumentFreigabe> opt = findByUuidUndAktualisiereStatus(uuid);
+        if (opt.isEmpty())
         {
-            String dateiname = freigabe.getDokumentDatei();
-            if (dateiname != null && !dateiname.isBlank())
-            {
-                dateiSpeicherService.loescheDokumentPdfByDateiname(dateiname);
-                freigabe.setDokumentDatei(null);
-                repository.save(freigabe);
-            }
-        });
+            return PdfEntfernenErgebnis.UNBEKANNT;
+        }
+        DokumentFreigabe freigabe = opt.get();
+        if (freigabe.getStatus() != FreigabeStatus.EXPIRED && freigabe.getStatus() != FreigabeStatus.REVOKED)
+        {
+            return PdfEntfernenErgebnis.NOCH_GUELTIG;
+        }
+        if (freigabe.getDokumentDatei() != null)
+        {
+            freigabe.setDokumentDatei(null);
+            repository.save(freigabe);
+        }
+        return PdfEntfernenErgebnis.ENTFERNT;
     }
 
     /**
@@ -1421,17 +1441,10 @@ public class DokumentFreigabeService
             if (alt.getStatus() == FreigabeStatus.PENDING)
             {
                 alt.setStatus(FreigabeStatus.REVOKED);
-                // Restdatei nach Möglichkeit aufräumen, damit keine alte PDF mehr abrufbar ist.
-                String dateiname = alt.getDokumentDatei();
-                if (dateiname != null && !dateiname.isBlank())
-                {
-                    try
-                    {
-                        dateiSpeicherService.loescheDokumentPdfByDateiname(dateiname);
-                    }
-                    catch (Exception ignored) { /* Datei evtl. schon weg */ }
-                    alt.setDokumentDatei(null);
-                }
+                // Nur die Verknüpfung lösen, damit der alte Link keine PDF mehr liefert. Die Datei
+                // selbst ist die PDF des Dokuments im ERP (bei Projekt-/Anfrage-Dokumenten dieselbe
+                // Datei wie beim neuen Link) und bleibt liegen.
+                alt.setDokumentDatei(null);
                 alt.setAblaufDatum(jetzt);
                 repository.save(alt);
             }

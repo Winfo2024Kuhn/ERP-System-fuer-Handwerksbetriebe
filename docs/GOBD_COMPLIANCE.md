@@ -135,6 +135,7 @@ Die Methode `loeschen()` im `AusgangsGeschaeftsDokumentService` erzwingt folgend
 |---|---|---|
 | `gebucht = true` | **NEIN** | Grundsatz der Unveränderbarkeit |
 | `versandDatum != null` | **NEIN** | In den Geschäftsverkehr gebracht |
+| `digitalAngenommen = true` | **NEIN** | Vom Kunden verbindlich angenommen (auch wenn der automatische AB-Versand gescheitert ist) |
 | `storniert = true` | **NEIN** | Korrekturnachweis muss erhalten bleiben |
 | `typ = STORNO` | **NEIN** | Storno-Dokumente sind Korrekturbuchungen |
 | Entwurf (alles false) | **JA** | Nur mit Pflicht-Begründung |
@@ -192,20 +193,20 @@ Original-Rechnung (z.B. RECHNUNG, Nr. RE-2026/03/00001)
 
 ### 3.2 Stornierbare Dokumenttypen
 
-Nur Rechnungstypen können storniert werden (in der Oberfläche nur, wenn sie gebucht sind):
+Nur gebuchte Rechnungstypen können storniert werden (Oberfläche und Schnittstelle):
 - `RECHNUNG`
 - `TEILRECHNUNG`
 - `ABSCHLAGSRECHNUNG`
 - `SCHLUSSRECHNUNG`
 
-Angebote, Nachtragsangebote, Auftragsbestätigungen und Gutschriften können **nicht** storniert werden („Nur Rechnungen können storniert werden.“). Ein bereits storniertes Dokument lässt sich nicht erneut stornieren.
+Angebote, Nachtragsangebote, Auftragsbestätigungen und Gutschriften können **nicht** storniert werden („Nur Rechnungen können storniert werden.“). Ein bereits storniertes Dokument lässt sich nicht erneut stornieren, eine Stornorechnung selbst nicht stornieren (sonst sänke der Umsatz doppelt). Nur **gebuchte** Rechnungen sind stornierbar; ein Entwurf wird gelöscht („Nur gebuchte Rechnungen können storniert werden. Einen Entwurf bitte löschen.“).
 
 ### 3.3 Auswirkungen der Stornierung
 
 1. **Original-Dokument**: `storniert = true`, `storniertAm` gesetzt → dauerhaft gesperrt
 2. **Storno-Dokument**: Sofort gebucht und gesperrt → kann nie gelöscht werden
 3. **Offene Posten**: Zugehöriger Eintrag wird als bezahlt markiert
-4. **Kaskade**: Wird eine Abschlagsrechnung storniert, werden nicht stornierte Schlussrechnungen am selben Vorgänger automatisch mitstorniert
+4. **Kaskade**: Wird eine Abschlagsrechnung storniert, werden nicht stornierte, gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen
 5. **Projekt-Preis**: Wird automatisch aus verbleibenden Dokumenten neu berechnet
 6. **Anfrage-Betrag**: Wird automatisch aktualisiert (falls das Dokument noch an einer Anfrage hängt)
 7. **Audit**: `STORNIERT` für das Original (mit Grund; ohne Angabe „Stornierung des Originaldokuments“) und `ERSTELLT` für die Stornorechnung

@@ -16,6 +16,7 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
 import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.AfterEach;
@@ -31,7 +32,6 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
@@ -66,9 +66,6 @@ class LieferantDokumentControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Autowired
-    private LieferantDokumentController controller;
-
     @MockBean
     private LieferantDokumentRepository dokumentRepository;
 
@@ -95,6 +92,17 @@ class LieferantDokumentControllerTest {
 
     @MockBean
     private LieferantDokumentZugriffService zugriffService;
+
+    @MockBean
+    private LieferantDokumentDateiService dokumentDateiService;
+
+    /** Echte Dateisuche hinter dem Mock; die Ordner liegen unter {@code uploadDir} wie im Standard-Setup. */
+    private void dateisucheUnter(Path uploadDir) {
+        var echt = new LieferantDokumentDateiService(uploadDir.toString(), uploadDir.toString(),
+                uploadDir.resolve("attachments").toString(),
+                uploadDir.resolve("attachments").resolve("lieferanten").toString());
+        given(dokumentDateiService.findeDatei(any())).willAnswer(aufruf -> echt.findeDatei(aufruf.getArgument(0)));
+    }
 
     /**
      * MockMvc-Tests laufen mit `addFilters = false`, daher wird der
@@ -434,7 +442,7 @@ class LieferantDokumentControllerTest {
             LieferantDokument dokument = new LieferantDokument();
             dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             dokument.setId(1L);
-            // No gespeicherterDateiname and no attachment → resolveDokumentPath returns null
+            // Weder gespeicherterDateiname noch Anhang → die Dateisuche findet nichts
             given(dokumentRepository.findById(1L)).willReturn(Optional.of(dokument));
 
             mockMvc.perform(get("/api/lieferant-dokumente/1/download"))
@@ -444,7 +452,7 @@ class LieferantDokumentControllerTest {
         /**
          * Happy-Path fuer den Bugfix: Mobile-Belege (vom BelegScanner) werden
          * mit gespeicherterDateiname="belege/<file>" als LieferantDokument
-         * promotet. Die Stufe-0-Aufloesung muss diese Datei aus
+         * promotet. Die Dateisuche muss diese Datei aus
          * <uploadDir>/belege/ ausliefern.
          */
         @Test
@@ -455,7 +463,7 @@ class LieferantDokumentControllerTest {
             Files.createDirectories(belegeDir);
             Files.write(belegeDir.resolve("scan.pdf"), "%PDF-1.4 stub".getBytes());
 
-            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+            dateisucheUnter(uploadDir);
 
             LieferantDokument dokument = new LieferantDokument();
             dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
@@ -471,23 +479,22 @@ class LieferantDokumentControllerTest {
         /**
          * Defense-in-Depth: ein boesartig gesetzter gespeicherterDateiname mit
          * ../-Traversal darf die Datei NICHT ausserhalb von uploadDir
-         * ausliefern. Ohne die startsWith(uploadBase)-Pruefung wuerde Stufe 0
-         * `<uploadDir>/../secret.txt` aufloesen und Files.exists() haette
-         * Treffer → LFI. Mit Containment-Check muss Stufe 0 die Datei
-         * verwerfen.
+         * ausliefern. Ohne Containment-Pruefung wuerde
+         * `<uploadDir>/../secret.txt` gefunden → LFI. Die Dateisuche verwirft
+         * jeden Kandidaten ausserhalb seines Suchordners.
          */
         @Test
         @DisplayName("Path-Traversal in gespeicherterDateiname wird durch Containment-Check blockiert")
         void pathTraversalWirdBlockiert(@TempDir Path workDir) throws Exception {
             // uploadDir ist Subdir, secret.txt liegt als Geschwister im selben
-            // workDir → mit "../secret.txt" wuerde Stufe 0 ohne Haertung den
+            // workDir → mit "../secret.txt" wuerde eine Suche ohne Haertung den
             // aufgeloesten Pfad treffen.
             Path uploadDir = workDir.resolve("uploads");
             Files.createDirectories(uploadDir);
             Path secret = workDir.resolve("secret.txt");
             Files.writeString(secret, "geheim");
 
-            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+            dateisucheUnter(uploadDir);
 
             LieferantDokument dokument = new LieferantDokument();
             dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
@@ -513,7 +520,7 @@ class LieferantDokumentControllerTest {
             Files.createDirectories(belegeDir);
             Files.write(belegeDir.resolve("bild.svg"), "<svg onload=\"alert(1)\"></svg>".getBytes());
 
-            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+            dateisucheUnter(uploadDir);
 
             LieferantDokument dokument = new LieferantDokument();
             dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
@@ -538,7 +545,7 @@ class LieferantDokumentControllerTest {
             Files.createDirectories(belegeDir);
             Files.write(belegeDir.resolve("rechnung.pdf"), "%PDF-1.4 stub".getBytes());
 
-            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+            dateisucheUnter(uploadDir);
 
             LieferantDokument dokument = new LieferantDokument();
             dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
@@ -571,7 +578,7 @@ class LieferantDokumentControllerTest {
             Files.createDirectories(belegeDir);
             Files.write(belegeDir.resolve("anhang.dat"), "%PDF-1.4 stub".getBytes());
 
-            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+            dateisucheUnter(uploadDir);
 
             EmailAttachment anhang = new EmailAttachment();
             anhang.setOriginalFilename("Rechnung Mai");
@@ -603,7 +610,7 @@ class LieferantDokumentControllerTest {
             Files.createDirectories(belegeDir);
             Files.write(belegeDir.resolve("anhang2.dat"), "<svg onload=\"alert(1)\"></svg>".getBytes());
 
-            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+            dateisucheUnter(uploadDir);
 
             EmailAttachment anhang = new EmailAttachment();
             anhang.setOriginalFilename("logo.svg");
@@ -639,7 +646,7 @@ class LieferantDokumentControllerTest {
             Files.createDirectories(belegeDir);
             Files.write(belegeDir.resolve("scan.pdf"), "%PDF-1.4 stub".getBytes());
 
-            ReflectionTestUtils.setField(controller, "uploadDir", uploadDir.toString());
+            dateisucheUnter(uploadDir);
 
             LieferantDokument dokument = new LieferantDokument();
             dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
