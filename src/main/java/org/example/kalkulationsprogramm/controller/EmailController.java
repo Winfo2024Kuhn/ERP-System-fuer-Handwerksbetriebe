@@ -124,10 +124,11 @@ public class EmailController {
             return ResponseEntity.ok(response);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            log.warn("KI-Formulierung unterbrochen", ex);
+            log.warn("KI-Formulierung unterbrochen");
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
         } catch (Exception ex) {
-            log.warn("KI-Formulierung fehlgeschlagen", ex);
+            // Nur die Fehlerart: die Ursachen zitieren Teile des E-Mail-Entwurfs.
+            log.warn("KI-Formulierung fehlgeschlagen: {}", ex.getClass().getSimpleName());
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
         }
     }

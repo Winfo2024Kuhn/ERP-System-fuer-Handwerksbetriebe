@@ -17,6 +17,7 @@ import {
     type FormBlockType
 } from '../../types';
 import { notifyDokumentChanged } from '../../lib/dokumentChannel';
+import { parseHtmlInert, sanitizeHtml } from '../../lib/htmlSanitizer';
 import {
     DndContext,
     DragOverlay,
@@ -3067,8 +3068,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
 
     // --- Template / PDF Logic ---
     const deserializeTemplate = (html: string): FormBlock[] => {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = html || '';
+        const wrapper = parseHtmlInert(html || '');
         const found = wrapper.querySelectorAll('[data-block-type]');
         return Array.from(found).map((el, idx) => {
             const dataset = (el as HTMLElement).dataset;
@@ -3705,7 +3705,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                             {activeDragBlock.type === 'TEXT' && (
                                                 <div className="bg-white rounded-lg border border-slate-200 p-3">
                                                     <div className="text-[10px] font-semibold text-rose-400 uppercase tracking-wider mb-1">Textbaustein</div>
-                                                    <div className="text-xs text-slate-600 line-clamp-2 rich-text-einheitlich" dangerouslySetInnerHTML={{ __html: activeDragBlock.content || '' }} />
+                                                    <div className="text-xs text-slate-600 line-clamp-2 rich-text-einheitlich" dangerouslySetInnerHTML={{ __html: sanitizeHtml(activeDragBlock.content) }} />
                                                 </div>
                                             )}
                                             {activeDragBlock.type === 'SERVICE' && (

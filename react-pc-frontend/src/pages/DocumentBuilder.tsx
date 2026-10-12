@@ -46,6 +46,7 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
 import { cn } from '../lib/utils';
+import { parseHtmlInert } from '../lib/htmlSanitizer';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { useToast } from '../components/ui/toast';
 import {
@@ -520,8 +521,7 @@ export default function DocumentBuilder() {
 
     // Parse Template Logic
     const deserialize = useCallback((html: string) => {
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = html || '';
+        const wrapper = parseHtmlInert(html || '');
         const found = wrapper.querySelectorAll('[data-block-type]');
         return Array.from(found).map((el, idx) => {
             const dataset = (el as HTMLElement).dataset;

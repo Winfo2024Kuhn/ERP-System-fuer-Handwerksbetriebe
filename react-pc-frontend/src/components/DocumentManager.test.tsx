@@ -67,7 +67,10 @@ describe('DocumentManager – Hochladen in "Diverse Dokumente"', () => {
         await waitFor(() => expect(uploadAufruf(fetchMock)).toBeDefined());
         const [uploadUrl, uploadInit] = uploadAufruf(fetchMock)!;
         expect(uploadUrl).toBe('/api/projekte/7/dokumente?gruppe=DIVERSE_DOKUMENTE');
-        expect(uploadInit!.headers as Record<string, string>).not.toHaveProperty('X-Lieferant-Id');
+        const uploadHeader = (uploadInit?.headers ?? {}) as Record<string, string>;
+        expect(uploadHeader).not.toHaveProperty('X-Lieferant-Id');
+        // Den Hochlader ermittelt der Server aus der Anmeldung – keine Identität vom Client.
+        expect(uploadHeader).not.toHaveProperty('X-User-Profile-Id');
         expect(screen.queryByRole('dialog')).toBeNull();
         expect(screen.queryByText('Dokument hochladen')).toBeNull();
 

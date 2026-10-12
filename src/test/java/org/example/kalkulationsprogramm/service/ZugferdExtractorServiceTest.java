@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.testsupport.LogMitschnitt;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -735,5 +736,16 @@ class ZugferdExtractorServiceTest {
             assertThat(service.extractLineItems(null)).isEmpty();
             assertThat(service.extractLineItems("<Invoice></Invoice>")).isEmpty();
         }
+    }
+
+    @Test
+    void logNenntWederDateinamenNochServerpfad() {
+        java.util.List<String> log = LogMitschnitt.von(ZugferdExtractorService.class,
+                () -> service.extract("/nicht-erlaubt/0b1c2d3e_Rechnung_Max_Mustermann.pdf",
+                        "Rechnung_Max_Mustermann.pdf"));
+
+        assertThat(log).isNotEmpty()
+                .noneMatch(zeile -> zeile.contains("Max_Mustermann") || zeile.contains("nicht-erlaubt"));
+        assertThat(log).anyMatch(zeile -> zeile.startsWith("ZUGFeRD-Extraktion fehlgeschlagen"));
     }
 }

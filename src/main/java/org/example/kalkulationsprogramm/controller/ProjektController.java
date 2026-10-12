@@ -18,7 +18,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
-import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentProjektAnteil;
@@ -52,14 +51,13 @@ import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
-import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizBildRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
-import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
+import org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentKette;
 import org.example.kalkulationsprogramm.service.PdfAiExtractorService;
 import org.example.kalkulationsprogramm.service.ProjektManagementService;
@@ -73,6 +71,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -88,6 +87,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -110,8 +110,7 @@ public class ProjektController {
     private final ProduktkategorieMapper produktkategorieMapper;
     private final StuecklistePdfService stuecklistePdfService;
     private final PdfAiExtractorService pdfAiExtractorService;
-    private final FrontendUserProfileService frontendUserProfileService;
-    private final MitarbeiterRepository mitarbeiterRepository;
+    private final AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
     private final LieferantenRepository lieferantenRepository;
     private final LieferantDokumentProjektAnteilRepository lieferantDokumentProjektAnteilRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
@@ -149,10 +148,9 @@ public class ProjektController {
             @RequestPart("projektDto") ProjektErstellenDto projektDto,
             @RequestPart(value = "imageFile", required = false) MultipartFile imageFile,
             @RequestPart(value = "dokumente", required = false) List<MultipartFile> dokumente,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId) {
+            Authentication authentication) {
         try {
-            Mitarbeiter uploadedBy = resolveMitarbeiterByIds(userProfileId, mitarbeiterId);
+            Mitarbeiter uploadedBy = handelnderMitarbeiter(authentication);
             ProjektResponseDto responseDto = projektManagementService.erstelleProjekt(projektDto,
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), imageFile, dokumente,
                     uploadedBy);
@@ -166,10 +164,9 @@ public class ProjektController {
     // Projekte erstellen (JSON ohne Dateien)
     @PostMapping(consumes = { MediaType.APPLICATION_JSON_VALUE })
     public ResponseEntity<ProjektResponseDto> erstelleNeuesProjektJson(@RequestBody ProjektErstellenDto projektDto,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId) {
+            Authentication authentication) {
         try {
-            Mitarbeiter uploadedBy = resolveMitarbeiterByIds(userProfileId, mitarbeiterId);
+            Mitarbeiter uploadedBy = handelnderMitarbeiter(authentication);
             ProjektResponseDto responseDto = projektManagementService.erstelleProjekt(projektDto,
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), null, null, uploadedBy);
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
@@ -225,10 +222,9 @@ public class ProjektController {
     public ResponseEntity<ProjektResponseDto> aktualisiereProjekt(@PathVariable Long projektID,
             @RequestPart("projektDto") ProjektErstellenDto projektDto,
             @RequestPart(value = "imageFile", required = false) MultipartFile imageFile,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId) {
+            Authentication authentication) {
         try {
-            Mitarbeiter uploadedBy = resolveMitarbeiterByIds(userProfileId, mitarbeiterId);
+            Mitarbeiter uploadedBy = handelnderMitarbeiter(authentication);
             ProjektResponseDto responseDto = projektManagementService.aktualisiereProjekt(projektID, projektDto,
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), imageFile, uploadedBy);
             return ResponseEntity.ok(responseDto);
@@ -242,10 +238,9 @@ public class ProjektController {
     @PutMapping(value = "/{projektID}", consumes = { MediaType.APPLICATION_JSON_VALUE })
     public ResponseEntity<ProjektResponseDto> aktualisiereProjektJson(@PathVariable Long projektID,
             @RequestBody ProjektErstellenDto projektDto,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId) {
+            Authentication authentication) {
         try {
-            Mitarbeiter uploadedBy = resolveMitarbeiterByIds(userProfileId, mitarbeiterId);
+            Mitarbeiter uploadedBy = handelnderMitarbeiter(authentication);
             ProjektResponseDto responseDto = projektManagementService.aktualisiereProjekt(projektID, projektDto,
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), null, uploadedBy);
             return ResponseEntity.ok(responseDto);
@@ -519,9 +514,8 @@ public class ProjektController {
     public ResponseEntity<List<ProjektDokumentResponseDto>> uploadDokument(@PathVariable Long projektID,
             @RequestParam("datei") List<MultipartFile> dateien,
             @RequestParam(value = "gruppe", required = false) DokumentGruppe gruppe,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestHeader(value = "X-Mitarbeiter-Id", required = false) Long mitarbeiterId,
-            @RequestHeader(value = "X-Lieferant-Id", required = false) Long lieferantId) {
+            @RequestHeader(value = "X-Lieferant-Id", required = false) Long lieferantId,
+            Authentication authentication) {
         try {
             if (MobilePrincipal.current() != null && gruppe != DokumentGruppe.BILDER) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
@@ -531,17 +525,8 @@ public class ProjektController {
                 return ResponseEntity.badRequest().build();
             }
             DokumentGruppe verwendeteGruppe = gruppe != null ? gruppe : DokumentGruppe.DIVERSE_DOKUMENTE;
-            // Ermittle den Mitarbeiter: X-Mitarbeiter-Id hat Vorrang (für mobile App)
-            Mitarbeiter uploadedBy = null;
-            if (mitarbeiterId != null) {
-                // Direct mitarbeiter lookup for mobile app
-                uploadedBy = mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
-            } else if (userProfileId != null) {
-                // PC app: lookup via FrontendUserProfile
-                uploadedBy = frontendUserProfileService.findById(userProfileId)
-                        .map(profile -> profile.getMitarbeiter())
-                        .orElse(null);
-            }
+            // Hochlader kommt aus der Anmeldung (PC: zugeordneter Mitarbeiter, Handy: Token).
+            Mitarbeiter uploadedBy = handelnderMitarbeiter(authentication);
             // Ermittle den Lieferanten (optional)
             Lieferanten lieferant = null;
             if (lieferantId != null) {
@@ -638,7 +623,7 @@ public class ProjektController {
     @Transactional(readOnly = true)
     public ResponseEntity<List<EingangsrechnungDto>> listeEingangsrechnungen(@PathVariable Long projektID,
             @RequestParam(value = "token", required = false) String token,
-            org.springframework.security.core.Authentication authentication) {
+            Authentication authentication) {
         // Der Pfad liegt in der offenen Zeiterfassungs-Chain: ohne Token/Session gibt es nichts.
         // Sonst nur Dokumenttypen, die der Aufrufer laut Abteilungsrechten sehen darf (Admin: alle).
         var sichtbareTypen = lieferantDokumentZugriffService.sichtbareTypen(token, authentication);
@@ -1353,22 +1338,13 @@ public class ProjektController {
     @GetMapping("/{projektId}/notizen")
     public ResponseEntity<List<ProjektNotizDto>> getProjektNotizen(
             @PathVariable Long projektId,
-            @RequestParam(value = "token", required = false) String token,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId) {
+            Authentication authentication) {
 
         List<ProjektNotiz> notizen = projektNotizRepository.findByProjektIdOrderByErstelltAmDesc(projektId);
 
-        // Ermittle den anfragenden Mitarbeiter (falls Mobile oder PC)
-        Mitarbeiter requester = null;
-        boolean isMobileRequest = token != null && !token.isBlank();
-
-        if (isMobileRequest) {
-            requester = mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
-        } else if (userProfileId != null) {
-            requester = frontendUserProfileService.findById(userProfileId)
-                    .map(profile -> profile.getMitarbeiter())
-                    .orElse(null);
-        }
+        // Anfragender Mitarbeiter aus der Anmeldung (PC oder Handy), nie aus dem Request
+        Mitarbeiter requester = handelnderMitarbeiter(authentication);
+        boolean isMobileRequest = MobilePrincipal.current() != null;
 
         final Mitarbeiter finalRequester = requester;
         final boolean finalIsMobileRequest = isMobileRequest;
@@ -1427,16 +1403,11 @@ public class ProjektController {
     public ResponseEntity<ProjektNotizDto> erstelleProjektNotiz(
             @PathVariable Long projektId,
             @RequestBody ProjektNotizCreateDto dto,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestParam(value = "token", required = false) String token) {
+            Authentication authentication) {
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
         try {
             Projekt projekt = projektRepository.findById(projektId)
                     .orElseThrow(() -> new RuntimeException("Projekt nicht gefunden"));
-
-            Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
-            if (mitarbeiter == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
-            }
 
             ProjektNotiz notiz = new ProjektNotiz();
             notiz.setProjekt(projekt);
@@ -1451,7 +1422,7 @@ public class ProjektController {
             ProjektNotiz gespeichert = projektNotizRepository.save(notiz);
             // Nach Erstellen hat man Rechte darauf
             return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(mapNotizToDto(gespeichert, mitarbeiter, token != null));
+                    .body(mapNotizToDto(gespeichert, mitarbeiter, MobilePrincipal.current() != null));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
         }
@@ -1465,18 +1436,17 @@ public class ProjektController {
             @PathVariable Long projektId,
             @PathVariable Long notizId,
             @RequestBody ProjektNotizCreateDto dto, // Wiederverwendung CreateDto für einfaches Update
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestParam(value = "token", required = false) String token) {
+            Authentication authentication) {
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
         try {
             ProjektNotiz notiz = projektNotizRepository.findById(notizId)
                     .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (MobilePrincipal.current() != null && (notiz.getProjekt() == null
-                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId))) {
+            if (notiz.getProjekt() == null
+                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId)) {
                 return ResponseEntity.notFound().build();
             }
 
-            Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
-            boolean isMobile = token != null && !token.isBlank();
+            boolean isMobile = MobilePrincipal.current() != null;
 
             // Berechtigungsprüfung
             if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
@@ -1504,18 +1474,17 @@ public class ProjektController {
     public ResponseEntity<Void> deleteProjektNotiz(
             @PathVariable Long projektId,
             @PathVariable Long notizId,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestParam(value = "token", required = false) String token) {
+            Authentication authentication) {
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
         try {
             ProjektNotiz notiz = projektNotizRepository.findById(notizId)
                     .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (MobilePrincipal.current() != null && (notiz.getProjekt() == null
-                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId))) {
+            if (notiz.getProjekt() == null
+                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId)) {
                 return ResponseEntity.notFound().build();
             }
 
-            Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
-            boolean isMobile = token != null && !token.isBlank();
+            boolean isMobile = MobilePrincipal.current() != null;
 
             // Berechtigungsprüfung
             if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
@@ -1529,33 +1498,37 @@ public class ProjektController {
         }
     }
 
-    private Mitarbeiter resolveMitarbeiter(Long userProfileId, String token) {
-        if (token != null && !token.isBlank()) {
-            return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).orElse(null);
-        } else if (userProfileId != null) {
-            return frontendUserProfileService.findById(userProfileId)
-                    .map(profile -> profile.getMitarbeiter())
-                    .orElse(null);
-        }
-        return null;
+    /** Wer gerade handelt (PC: zugeordneter Mitarbeiter, Handy: Token) – nie ein Request-Wert. */
+    private Mitarbeiter handelnderMitarbeiter(Authentication authentication) {
+        return angemeldeterMitarbeiter.handelnderMitarbeiter(authentication).orElse(null);
     }
 
+    /**
+     * Verfasser für Notiz-Aktionen. Ohne zugeordneten Mitarbeiter 403 mit Hinweis – bewusst
+     * nicht 401, das würde im PC-Frontend als abgelaufene Sitzung gelten und abmelden.
+     */
+    private Mitarbeiter verfasserOderAblehnen(Authentication authentication) {
+        Mitarbeiter mitarbeiter = handelnderMitarbeiter(authentication);
+        if (mitarbeiter == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, AngemeldeterMitarbeiterService.KEIN_MITARBEITER);
+        }
+        return mitarbeiter;
+    }
+
+    /**
+     * Wer eine Notiz (samt Bildern) bearbeiten oder löschen darf: in der Handy-App nur
+     * der Verfasser, am PC jeder – außer bei privaten Notizen („Nur für mich sichtbar“),
+     * die bleiben auch am PC allein beim Verfasser.
+     */
     private boolean hasEditPermission(ProjektNotiz notiz, Mitarbeiter requester, boolean isMobile) {
         var mobile = MobilePrincipal.current();
         if (mobile != null && !MobileObjectAccessService.canReadProjektNotiz(notiz, mobile.mitarbeiterId())) return false;
         if (requester == null)
             return false;
-        // PC Nutzer dürfen alles (vereinfacht, oder man prüft ob Admin)
-        // Aber laut Anforderung: "auf mobile app kann jeder user nur seine eigenen
-        // notizen löschen oder bearbeiten"
-        // Im Umkehrschluss: Am PC darf man wohl alles (oder zumindest mehr), aber
-        // sicherheitshalber:
-        // PC User -> Darf alles bearbeiten (da Verwaltungssoftware)
-        if (!isMobile)
-            return true;
-
-        // Mobile User -> Nur eigene
-        return notiz.getMitarbeiter() != null && notiz.getMitarbeiter().getId().equals(requester.getId());
+        boolean eigene = notiz.getMitarbeiter() != null && notiz.getMitarbeiter().getId().equals(requester.getId());
+        if (isMobile || notiz.isNurFuerErsteller())
+            return eigene;
+        return true;
     }
 
     private ProjektNotizDto mapNotizToDto(ProjektNotiz notiz, Mitarbeiter requester, boolean isMobileRequest) {
@@ -1607,19 +1580,17 @@ public class ProjektController {
             @PathVariable Long projektId,
             @PathVariable Long notizId,
             @RequestParam("datei") MultipartFile datei,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestParam(value = "token", required = false) String token) {
+            Authentication authentication) {
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
         try {
             ProjektNotiz notiz = projektNotizRepository.findById(notizId)
                     .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (MobilePrincipal.current() != null && (notiz.getProjekt() == null
-                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId))) {
+            if (notiz.getProjekt() == null
+                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId)) {
                 return ResponseEntity.notFound().build();
             }
 
-            // Berechtigungsprüfung
-            Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
-            boolean isMobile = token != null && !token.isBlank();
+            boolean isMobile = MobilePrincipal.current() != null;
             if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
@@ -1654,8 +1625,8 @@ public class ProjektController {
             @PathVariable Long projektId,
             @PathVariable Long notizId,
             @PathVariable Long bildId,
-            @RequestHeader(value = "X-User-Profile-Id", required = false) Long userProfileId,
-            @RequestParam(value = "token", required = false) String token) {
+            Authentication authentication) {
+        Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
         try {
             ProjektNotizBild bild = projektNotizBildRepository.findById(bildId)
                     .orElseThrow(() -> new RuntimeException("Bild nicht gefunden"));
@@ -1665,11 +1636,10 @@ public class ProjektController {
                 return ResponseEntity.badRequest().build();
             }
 
-            if (MobilePrincipal.current() != null && (bild.getNotiz().getProjekt() == null
-                    || !java.util.Objects.equals(bild.getNotiz().getProjekt().getId(), projektId))) return ResponseEntity.notFound().build();
+            if (bild.getNotiz().getProjekt() == null
+                    || !java.util.Objects.equals(bild.getNotiz().getProjekt().getId(), projektId)) return ResponseEntity.notFound().build();
             // Berechtigungsprüfung über die Notiz
-            Mitarbeiter mitarbeiter = resolveMitarbeiter(userProfileId, token);
-            boolean isMobile = token != null && !token.isBlank();
+            boolean isMobile = MobilePrincipal.current() != null;
             if (!hasEditPermission(bild.getNotiz(), mitarbeiter, isMobile)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
@@ -1715,17 +1685,6 @@ public class ProjektController {
         public String notiz;
         public boolean mobileSichtbar = true; // Default true if omitted
         public boolean nurFuerErsteller = false;
-    }
-
-    private Mitarbeiter resolveMitarbeiterByIds(Long userProfileId, Long mitarbeiterId) {
-        if (mitarbeiterId != null) {
-            return mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
-        } else if (userProfileId != null) {
-            return frontendUserProfileService.findById(userProfileId)
-                    .map(FrontendUserProfile::getMitarbeiter)
-                    .orElse(null);
-        }
-        return null;
     }
 
 }

@@ -156,7 +156,8 @@ public class PdfAiExtractorService {
         try {
             Path path = Path.of(pdfPath);
             if (!Files.exists(path)) {
-                log.warn("[PdfAI/Gemini] PDF nicht gefunden: {}", pdfPath);
+                // Ohne Pfad: der Dateiname trägt Namen aus den Rechnungen (DSGVO).
+                log.warn("[PdfAI/Gemini] PDF nicht gefunden");
                 return Optional.empty();
             }
 
@@ -164,11 +165,12 @@ public class PdfAiExtractorService {
             byte[] pdfBytes = Files.readAllBytes(path);
             String base64Pdf = Base64.getEncoder().encodeToString(pdfBytes);
 
-            log.info("[PdfAI/Gemini] PDF geladen: {} ({} KB)", pdfPath, pdfBytes.length / 1024);
+            // Ohne Pfad: der Dateiname trägt Namen aus den Rechnungen (DSGVO).
+            log.info("[PdfAI/Gemini] PDF geladen ({} KB)", pdfBytes.length / 1024);
             return callGeminiApiWithPdf(base64Pdf, systemPrompt);
 
         } catch (Exception e) {
-            log.warn("[PdfAI/Gemini] Fehler: {}", e.getMessage());
+            log.warn("[PdfAI/Gemini] Fehler: {}", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }
@@ -227,11 +229,7 @@ public class PdfAiExtractorService {
             String body = objectMapper.writeValueAsString(requestBody);
 
             // API URL
-            String apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s".formatted(
-                    geminiModel, geminiApiKey);
-
-            HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
-                    .header("Content-Type", "application/json")
+            HttpRequest request = GeminiAnfrage.generateContent(geminiModel, geminiApiKey)
                     .timeout(Duration.ofSeconds(Math.max(90, timeoutSeconds)))
                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .build();
@@ -241,22 +239,22 @@ public class PdfAiExtractorService {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.warn("[PdfAI/Gemini] API Fehler {}: {}", response.statusCode(), response.body());
+                log.warn("[PdfAI/Gemini] API Fehler {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
                 return Optional.empty();
             }
 
             return parseGeminiResponse(response.body());
 
         } catch (Exception e) {
-            log.warn("[PdfAI/Gemini] Anfrage-Fehler: {}", e.getMessage());
+            log.warn("[PdfAI/Gemini] Anfrage-Fehler: {}", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }
 
     private Optional<ZugferdDaten> parseGeminiResponse(String responseBody) {
         try {
-            log.info("[PdfAI/Gemini] Raw Response (gekürzt): {}",
-                    responseBody.length() > 2000 ? responseBody.substring(0, 2000) + "..." : responseBody);
+            // Nie die Antwort selbst: sie enthält die Rechnungsdaten.
+            log.info("[PdfAI/Gemini] Antwort erhalten ({} Zeichen)", responseBody.length());
             JsonNode responseJson = objectMapper.readTree(responseBody);
 
             // Prüfe auf API-Fehler
@@ -273,7 +271,7 @@ public class PdfAiExtractorService {
                 if (!promptFeedback.isMissingNode()) {
                     log.error("[PdfAI/Gemini] Anfrage blockiert! PromptFeedback: {}", promptFeedback);
                 }
-                log.warn("[PdfAI/Gemini] Keine Candidates in Antwort: {}", responseBody);
+                log.warn("[PdfAI/Gemini] Keine Candidates in Antwort ({} Zeichen)", responseBody.length());
                 return Optional.empty();
             }
 
@@ -303,8 +301,7 @@ public class PdfAiExtractorService {
             JsonNode partsNode = contentNode.path("parts");
 
             if (!partsNode.isArray() || partsNode.isEmpty()) {
-                log.warn("[PdfAI/Gemini] Keine Parts in Antwort. FinishReason: {}, Candidate: {}",
-                        finishReason, firstCandidate);
+                log.warn("[PdfAI/Gemini] Keine Parts in Antwort. FinishReason: {}", finishReason);
                 return Optional.empty();
             }
 
@@ -322,13 +319,14 @@ public class PdfAiExtractorService {
             }
 
             content = cleanJsonResponse(content);
-            log.info("[PdfAI/Gemini] Bereinigte Antwort: {}", content);
+            // Nie den Inhalt: er ist das herausgelesene Rechnungs-JSON (DSGVO).
+            log.debug("[PdfAI/Gemini] Antwort bereinigt ({} Zeichen)", content.length());
 
             JsonNode dataJson = objectMapper.readTree(content);
             return Optional.of(mapToZugferdDaten(dataJson));
 
         } catch (Exception e) {
-            log.warn("[PdfAI/Gemini] Parse-Fehler: {}", e.getMessage());
+            log.warn("[PdfAI/Gemini] Parse-Fehler: {}", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }

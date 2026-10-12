@@ -160,18 +160,6 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
         });
     };
 
-    // Helper to get current user profile ID from localStorage
-    const getCurrentUserProfileId = (): number | null => {
-        try {
-            const stored = localStorage.getItem('frontendUserSelection');
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                return parsed.id || null;
-            }
-        } catch { /* ignore */ }
-        return null;
-    };
-
     // Upload Handler
     const handleUpload = async (files: File[], gruppe: DokumentGruppe) => {
         if (files.length === 0) return;
@@ -182,16 +170,9 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
             const formData = new FormData();
             files.forEach(file => formData.append('datei', file));
 
-            // Get current user profile ID for upload tracking
-            const userProfileId = getCurrentUserProfileId();
-            const headers: Record<string, string> = {};
-            if (userProfileId) {
-                headers['X-User-Profile-Id'] = String(userProfileId);
-            }
-
+            // Den Hochlader ermittelt der Server aus der Anmeldung.
             const res = await fetch(`${apiBasePath}?gruppe=${gruppe}`, {
                 method: 'POST',
-                headers,
                 body: formData,
             });
 

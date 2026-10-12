@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -345,7 +344,7 @@ public class KiHilfeService {
                     log.info("  [X] RAG: Keine passenden Chunks gefunden, Fallback auf Full-Index");
                 }
             } catch (Exception e) {
-                log.warn("  [X] RAG-Suche fehlgeschlagen, Fallback auf Full-Index: {}", e.getMessage());
+                log.warn("  [X] RAG-Suche fehlgeschlagen, Fallback auf Full-Index: {}", e.getClass().getSimpleName());
             }
         } else {
             log.info("  -> RAG nicht verfuegbar (enabled={}, ready={}), nutze Full-Codebase-Index",
@@ -360,9 +359,6 @@ public class KiHilfeService {
 
         String promptMode = ragUsed ? "RAG (Vektor-Suche)" : "Full-Codebase-Index";
         log.info("  -> Prompt-Modus: {}", promptMode);
-
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
-                .formatted(model, geminiApiKey);
 
         ObjectNode requestBody = objectMapper.createObjectNode();
 
@@ -411,8 +407,7 @@ public class KiHilfeService {
 
         String body = objectMapper.writeValueAsString(requestBody);
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/json")
+        HttpRequest request = GeminiAnfrage.generateContent(model, geminiApiKey)
                 .timeout(Duration.ofSeconds(60))
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
@@ -421,7 +416,7 @@ public class KiHilfeService {
                 HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
         if (response.statusCode() != 200) {
-            log.error("Gemini KI-Hilfe API Error {}: {}", response.statusCode(), response.body());
+            log.error("Gemini KI-Hilfe API Error {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
             throw new IOException("KI-Hilfe nicht verfügbar (Fehler " + response.statusCode() + ")");
         }
 
@@ -435,7 +430,8 @@ public class KiHilfeService {
             if (!gm.isMissingNode()) {
                 JsonNode queries = gm.path("webSearchQueries");
                 if (queries.isArray() && !queries.isEmpty()) {
-                    log.info("  -> Google Search Queries: {}", queries);
+                    // Nur die Anzahl: die Suchanfragen entstehen aus der Nutzerfrage.
+                    log.info("  -> Google Search Queries: {}", queries.size());
                 }
             }
 

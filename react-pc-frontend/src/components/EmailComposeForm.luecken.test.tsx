@@ -177,6 +177,27 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
         expect(editor.innerHTML).toContain('Zitat');
     });
 
+    it('schreibt Zitat und Signatur nur bereinigt in den Editor', async () => {
+        routen['/api/email/signatures/default'] = { body: { html: '<p>Viele Grüße</p><img src="x" onerror="alert(1)">' } };
+        render(<EmailComposeForm onClose={() => {}} replyEmailId={5} antwortPostfach={null}
+            replyQuote='<div class="email-quote">Alte Nachricht<script>alert(2)</script><a href="javascript:alert(3)">Link</a></div>'
+            initialRecipient="kunde@example.org" initialSubject="Re: x" />);
+        const editor = screen.getByRole('textbox', { name: 'Nachricht' });
+        await waitFor(() => expect(editor.innerHTML).toContain('Alte Nachricht'));
+        expect(editor.querySelector('.email-signature')).toHaveTextContent('Viele Grüße');
+        expect(editor.querySelector('.email-quote')).not.toBeNull();
+        expect(editor.innerHTML).not.toMatch(/onerror|<script|javascript:/);
+    });
+
+    it('bereinigt einen übergebenen Text samt Signatur', async () => {
+        render(<EmailComposeForm onClose={() => {}}
+            initialBody='<p>Angebot anbei</p><img src="x" onerror="alert(1)"><div class="email-signature">Max Mustermann</div>' />);
+        const editor = screen.getByRole('textbox', { name: 'Nachricht' });
+        await waitFor(() => expect(editor.innerHTML).toContain('Angebot anbei'));
+        expect(editor.innerHTML).toContain('Max Mustermann');
+        expect(editor.querySelector('[onerror]')).toBeNull();
+    });
+
     it('meldet leere Texte, leere Vorschläge und Fehler der KI', async () => {
         render(<EmailComposeForm onClose={() => {}} projektId={41} />);
         const editor = screen.getByRole('textbox', { name: 'Nachricht' });

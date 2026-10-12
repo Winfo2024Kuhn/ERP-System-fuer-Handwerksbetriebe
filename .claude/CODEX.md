@@ -65,6 +65,7 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
    - **HTML Tag-Stripping:** Niemals einfaches `.replace(/<[^>]*>/g, '')` nutzen. Immer die Fixpunktschleife `stripHtmlTags()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` verwenden.
    - **Entity Unescaping:** Niemals sequentiell mit mehreren `.replace()` entpacken. Immer `unescapeHtmlEntities()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Single-Pass) verwenden.
    - **DOM-XSS:** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` absichern.
+   - **HTML-Anzeige:** `dangerouslySetInnerHTML` nur mit `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (DOMPurify) (oder eine strengere eigene DOMPurify-Instanz mit Positivliste, Vorbild `bereinigeBeitragsHtml`; nie lockerer), auch bei serverseitig bereinigten Daten. Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren). `EmailHtmlSanitizer` ist Backend-Java und gilt nur für E-Mails. HTML nur zum Auslesen über `parseHtmlInert()`/`htmlToText()` parsen, nie über `document.createElement('div').innerHTML`.
 
 ## 📚 Entwickler-Dokumentation (Pflichtlektüre VOR jedem Edit/Write)
 

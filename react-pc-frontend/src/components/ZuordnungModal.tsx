@@ -344,16 +344,6 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...(isBelegZuordnung ? { belegId: targetId } : { geschaeftsdokumentId: targetId }),
-                    frontendUserProfileId: (() => {
-                        try {
-                            const stored = localStorage.getItem('frontendUserSelection');
-                            if (stored) {
-                                const parsed = JSON.parse(stored);
-                                return parsed.id || null;
-                            }
-                        } catch { /* ignore */ }
-                        return null;
-                    })(),
                     projektAnteile: anteileZumSpeichern
                 })
             });

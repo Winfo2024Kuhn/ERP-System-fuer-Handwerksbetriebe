@@ -69,10 +69,14 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 
 ## Build & Coding-Regeln
 - Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!). Der Build schreibt nach `src/main/resources/static/` (PC) bzw. `static/zeiterfassung/` (Handy-App). Diese Dateien sind eingecheckt und werden mitcommittet (siehe `review-and-ship`). Die CI (`.github/workflows/pr-ci.yml`) prüft je Frontend außerdem `npm run lint`, `npm test` und `npm run test:e2e`.
-- Kein `dangerouslySetInnerHTML` mit ungeprüftem HTML:
-  - E-Mail-HTML bereinigt das Backend (`EmailHtmlSanitizer`). Angezeigt wird es in `EmailContentFrame` (iframe mit `sandbox`).
-  - HTML, das im Frontend entsteht oder von Nutzern kommt, vorher mit `DOMPurify.sanitize()` bereinigen (Vorbild `pages/EmailTextvorlagenEditor.tsx`).
-  - Tags entfernen, Entities entpacken, URLs prüfen: nur über `react-pc-frontend/src/lib/htmlSanitizer.ts` (siehe `TESTING_SECURITY.md`).
+- Kein `dangerouslySetInnerHTML` ohne `sanitizeHtml()` aus `src/lib/htmlSanitizer.ts` (DOMPurify):
+  - Gilt für jedes HTML aus Datenbank, API, KI oder Nutzereingabe, auch wenn das Backend es schon bereinigt hat. Bereinigt wird an der Stelle selbst oder sichtbar davor in derselben Datei (z. B. im `useMemo`, das die Vorschau baut).
+  - Braucht eine Stelle engere Regeln, nimmt sie eine eigene DOMPurify-Instanz mit Positivliste (Vorbild `bereinigeBeitragsHtml` in `components/website/textumwandlung.ts`). Lockerer als `sanitizeHtml()` wird nie bereinigt; `DOMPurify.sanitize()` nicht direkt in Seiten aufrufen.
+  - `EmailHtmlSanitizer` ist eine Backend-Klasse (Java) und bereinigt nur E-Mails. Im Frontend ersetzt sie `sanitizeHtml()` nicht. Fremdes E-Mail-HTML zeigt `EmailContentFrame` im iframe mit `sandbox` an.
+  - Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren).
+  - HTML nur auslesen oder umbauen (Text, `querySelector`, `dataset`): `parseHtmlInert()` bzw. `htmlToText()`, nie `document.createElement('div').innerHTML = …`. In so einem div führt `<img onerror>` Code aus, auch wenn es nie angezeigt wird. Wird geparstes HTML danach wieder in die Seite geschrieben, gilt die Regel oben: vorher `sanitizeHtml()`.
+  - Tags entfernen, Entities entpacken, URLs prüfen: ebenfalls nur über `src/lib/htmlSanitizer.ts` (siehe `TESTING_SECURITY.md`).
+  - `react-zeiterfassung` hat kein `htmlSanitizer.ts` und derzeit keine HTML-Stelle. Vor der ersten das Gegenstück zur Freigabe stellen.
 - URL-Parameter immer mit `encodeURIComponent()`.
 - CSS-Klassen bedingt zusammensetzen mit `cn()` aus `src/lib/utils.ts`.
 - Hierarchie:

@@ -485,6 +485,50 @@ class ZeitverwaltungControllerTest {
     }
 
     @Test
+    void createBuchung_ProtokolliertErstellungMitAngemeldetemMitarbeiter() throws Exception {
+        Mitarbeiter angemeldet = mitarbeiter(7L, "Max", "Mustermann");
+        Mitarbeiter betroffen = mitarbeiter(3L, "Erika", "Musterfrau");
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(angemeldet);
+        given(mitarbeiterRepository.findById(3L)).willReturn(Optional.of(betroffen));
+        given(zeitbuchungRepository.save(any(Zeitbuchung.class))).willAnswer(inv -> {
+            Zeitbuchung b = inv.getArgument(0);
+            b.setId(900L);
+            return b;
+        });
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/zeitverwaltung/buchungen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mitarbeiterId\":3,\"projektId\":-1,\"typ\":\"PAUSE\","
+                                + "\"startZeit\":\"2026-09-01T12:00:00\",\"endeZeit\":\"2026-09-01T12:30:00\","
+                                + "\"bearbeiterId\":999}"))
+                .andExpect(status().isCreated());
+
+        org.mockito.ArgumentCaptor<Zeitbuchung> gespeichert = org.mockito.ArgumentCaptor.forClass(Zeitbuchung.class);
+        verify(auditService).protokolliereErstellung(gespeichert.capture(), eq(angemeldet),
+                eq(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.DESKTOP));
+        assertThat(gespeichert.getValue().getErfasstVon()).isSameAs(angemeldet);
+        assertThat(gespeichert.getValue().getErfasstVia())
+                .isEqualTo(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.DESKTOP);
+        assertThat(gespeichert.getValue().getVersion()).isEqualTo(1);
+        verify(mitarbeiterRepository, never()).findById(999L);
+    }
+
+    @Test
+    void createBuchung_OhneZugeordnetenMitarbeiterGibt403UndLegtNichtsAn() throws Exception {
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willThrow(
+                new ResponseStatusException(HttpStatus.FORBIDDEN, KEIN_MITARBEITER));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/zeitverwaltung/buchungen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mitarbeiterId\":3,\"projektId\":-1,\"typ\":\"PAUSE\",\"startZeit\":\"2026-09-01T12:00:00\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(KEIN_MITARBEITER));
+
+        verify(zeitbuchungRepository, never()).save(any());
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
     void createBuchung_Gibt409WennMonatFestgeschrieben() throws Exception {
         Mitarbeiter m = new Mitarbeiter();
         m.setId(1L);

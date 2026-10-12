@@ -5,9 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
+import org.example.kalkulationsprogramm.service.GeminiAnfrage;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -30,8 +30,6 @@ import java.util.function.Supplier;
 @Slf4j
 public class GeminiEinbetter implements RagIndexer.Einbetter {
 
-    private static final String BASIS_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/" + RagIndexer.MODELL;
     private static final int MAX_TEXT = 8000;
     private static final Set<Integer> WIEDERHOLBAR = Set.of(429, 500, 502, 503, 504);
 
@@ -104,9 +102,7 @@ public class GeminiEinbetter implements RagIndexer.Einbetter {
         if (key == null || key.isBlank()) {
             throw new IOException("Gemini API Key fehlt");
         }
-        HttpRequest request = HttpRequest.newBuilder(URI.create(BASIS_URL + methode))
-                .header("Content-Type", "application/json")
-                .header("x-goog-api-key", key)
+        HttpRequest request = GeminiAnfrage.modellMethode(RagIndexer.MODELL, methode, key)
                 .timeout(zeitlimit)
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
                 .build();
@@ -120,7 +116,7 @@ public class GeminiEinbetter implements RagIndexer.Einbetter {
                     return objectMapper.readTree(antwort.body());
                 }
                 if (!WIEDERHOLBAR.contains(antwort.statusCode())) {
-                    throw new IOException("Gemini Embedding Fehler " + antwort.statusCode() + ": " + kurz(antwort.body()));
+                    throw new IOException("Gemini Embedding Fehler " + antwort.statusCode() + ": " + GeminiAnfrage.fuerLog(antwort.body()));
                 }
                 grund = "HTTP " + antwort.statusCode();
                 if (antwort.statusCode() == 429 && regel.geduldig()) {
@@ -149,10 +145,5 @@ public class GeminiEinbetter implements RagIndexer.Einbetter {
             vektor[i] = (float) werte.get(i).asDouble();
         }
         return vektor;
-    }
-
-    private static String kurz(String text) {
-        if (text == null) return "";
-        return text.length() <= 300 ? text : text.substring(0, 300) + " ...";
     }
 }
