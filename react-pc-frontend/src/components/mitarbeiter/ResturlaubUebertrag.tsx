@@ -7,7 +7,7 @@ import { Select } from '../ui/select-custom';
 import { useToast } from '../ui/toast';
 import { leseFehlermeldung } from '../../lib/apiFehler';
 import { formatDecimalInput, validateDecimalInput } from '../../lib/numberInput';
-import { formatIsoDatumDe, formatUrlaubstageMitEinheit } from '../../lib/urlaubstage';
+import { anspruchHinweis, formatIsoDatumDe, formatUrlaubstageMitEinheit } from '../../lib/urlaubstage';
 
 /** Antwort von `/api/urlaub/uebertrag`. */
 interface UebertragStand {
@@ -19,6 +19,11 @@ interface UebertragStand {
     manuell: boolean;
     /** Letzter Tag für den Vorjahresrest (ISO); `null` = verfällt nicht. */
     verfallsdatum: string | null;
+    /** Urlaubsanspruch in diesem Jahr (im Eintrittsjahr anteilig bzw. gesetzlicher Mindesturlaub). */
+    anspruch?: number | null;
+    /** Herkunft des Anspruchs (`UrlaubskontoService.Anspruchsart`). */
+    anspruchArt?: string | null;
+    eintrittsdatum?: string | null;
 }
 
 const LADEFEHLER = 'Der Resturlaub aus dem Vorjahr konnte nicht geladen werden.';
@@ -28,6 +33,24 @@ function istStand(wert: unknown): wert is UebertragStand {
     return !!stand && typeof stand === 'object' && Number.isFinite(stand.tage) && Number.isFinite(stand.berechnet);
 }
 const SPEICHERFEHLER = 'Der Resturlaub aus dem Vorjahr konnte nicht gespeichert werden.';
+
+/** Erklärt, wie der Urlaubsanspruch nach dem Bundesurlaubsgesetz entsteht (v. a. im Eintrittsjahr). */
+function UrlaubsanspruchInfo() {
+    return (
+        <InfoButton titel="Urlaubsanspruch">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <ul className="list-disc pl-4 space-y-1">
+                    <li>Gesetzlich stehen jedem mindestens 24 Werktage bei einer 6-Tage-Woche zu – das sind 20 Tage bei 5 Arbeitstagen und 16 bei 4. Die Arbeitstage nimmt das Programm aus der Arbeitszeit des Mitarbeiters. Liegt der Jahresurlaub darunter, gilt das gesetzliche Minimum.</li>
+                    <li>Im Eintrittsjahr gibt es ein Zwölftel des Jahresurlaubs je vollem Monat. Halbe Tage und mehr werden aufgerundet.</li>
+                    <li>Wer spätestens am 1. Juli anfängt, hat die Wartezeit von sechs Monaten noch im selben Jahr erfüllt und bekommt dann mindestens den gesetzlichen Mindesturlaub.</li>
+                </ul>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <p>Der Anspruch zählt für Urlaubsanträge, Resturlaub und den Übertrag ins nächste Jahr. Hat ein früherer Arbeitgeber im selben Jahr schon Urlaub gewährt oder scheidet jemand im Jahr aus, ziehen Sie das bitte als Urlaubskorrektur ab – das rechnet das Programm nicht selbst. Stimmt der Hinweis „Eintritt am …“ nicht, prüfen Sie das Eintrittsdatum des Mitarbeiters.</p>
+            </InfoAbschnitt>
+        </InfoButton>
+    );
+}
 
 /**
  * Mitarbeiter → Konditionen: Resturlaub, der aus dem Vorjahr übernommen wird.
@@ -157,6 +180,17 @@ export function ResturlaubUebertrag({ mitarbeiterId }: { mitarbeiterId: number }
                             <RotateCcw aria-hidden="true" className="w-4 h-4" />
                             Wieder ausrechnen lassen
                         </Button>
+                    )}
+                    {stand.anspruch != null && (
+                        <div className="flex items-start gap-1 pt-1">
+                            <p className="text-xs text-slate-500" data-testid="urlaubsanspruch-jahr">
+                                Urlaubsanspruch {stand.jahr}: {formatUrlaubstageMitEinheit(stand.anspruch)}
+                                {anspruchHinweis(stand.anspruchArt, stand.eintrittsdatum)
+                                    ? ` – ${anspruchHinweis(stand.anspruchArt, stand.eintrittsdatum)}`
+                                    : ''}
+                            </p>
+                            <UrlaubsanspruchInfo />
+                        </div>
                     )}
                 </>
             )}

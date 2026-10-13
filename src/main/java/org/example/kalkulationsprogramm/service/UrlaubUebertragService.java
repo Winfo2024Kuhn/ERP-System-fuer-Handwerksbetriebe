@@ -45,8 +45,12 @@ public class UrlaubUebertragService {
      * @param berechnet     was das Programm selbst rechnen würde
      * @param manuell       {@code true}, wenn {@code tage} von Hand festgelegt ist
      * @param verfallsdatum ISO-Datum, bis zu dem der Übertrag genommen werden kann; {@code null} = verfällt nicht
+     * @param anspruch      Jahresurlaub in diesem Jahr (im Eintrittsjahr anteilig bzw. gesetzliches Minimum)
+     * @param anspruchArt   Herkunft des Anspruchs ({@link UrlaubskontoService.Anspruchsart})
+     * @param eintrittsdatum ISO-Datum des Eintritts oder {@code null}
      */
-    public record Stand(int jahr, BigDecimal tage, BigDecimal berechnet, boolean manuell, String verfallsdatum) {}
+    public record Stand(int jahr, BigDecimal tage, BigDecimal berechnet, boolean manuell, String verfallsdatum,
+            BigDecimal anspruch, String anspruchArt, String eintrittsdatum) {}
 
     @Transactional(readOnly = true)
     public Stand laden(Long mitarbeiterId, Integer jahr) {
@@ -88,8 +92,11 @@ public class UrlaubUebertragService {
     private Stand stand(Mitarbeiter mitarbeiter, int jahr) {
         // Rechnet nur das Vorjahr (für den berechneten Wert), nicht das ganze Konto des Jahres.
         UrlaubskontoService.UebertragStand stand = urlaubskontoService.uebertragStand(mitarbeiter, jahr);
+        UrlaubskontoService.Anspruch anspruch = urlaubskontoService.anspruch(mitarbeiter, jahr);
         return new Stand(jahr, stand.tage(), stand.berechnet(), stand.manuell(),
-                stand.verfallsdatum() != null ? stand.verfallsdatum().toString() : null);
+                stand.verfallsdatum() != null ? stand.verfallsdatum().toString() : null,
+                anspruch.tage(), anspruch.art().name(),
+                mitarbeiter.getEintrittsdatum() != null ? mitarbeiter.getEintrittsdatum().toString() : null);
     }
 
     private Mitarbeiter mitarbeiter(Long mitarbeiterId) {

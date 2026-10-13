@@ -45,6 +45,8 @@ class UrlaubUebertragServiceTest {
         max.setVorname("Max");
         max.setNachname("Mustermann");
         lenient().when(mitarbeiterRepository.findById(1L)).thenReturn(Optional.of(max));
+        lenient().when(urlaubskontoService.anspruch(any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(
+                new UrlaubskontoService.Anspruch(new BigDecimal("30"), UrlaubskontoService.Anspruchsart.VOLL));
     }
 
     private static UrlaubskontoService.UebertragStand stand(String tage, String berechnet, boolean manuell,
@@ -63,6 +65,8 @@ class UrlaubUebertragServiceTest {
         assertThat(stand.berechnet()).isEqualByComparingTo("4");
         assertThat(stand.manuell()).isFalse();
         assertThat(stand.verfallsdatum()).isEqualTo("2027-03-31");
+        assertThat(stand.anspruch()).isEqualByComparingTo("30");
+        assertThat(stand.anspruchArt()).isEqualTo("VOLL");
     }
 
     @Test

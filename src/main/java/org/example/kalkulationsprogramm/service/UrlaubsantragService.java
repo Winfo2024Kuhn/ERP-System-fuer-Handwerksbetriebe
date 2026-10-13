@@ -65,7 +65,7 @@ public class UrlaubsantragService {
                         : "";
                 throw new IllegalStateException(
                         String.format("Nicht genügend Urlaubstage. Verbleibend: %s, Beantragt: %d",
-                                UrlaubstageRechner.formatTage(pruefung.verbleibendVorher()), beantragt.size())
+                                UrlaubstageRechner.formatTage(pruefung.verbleibendVorher()), pruefung.beantragteTage())
                                 + grund);
             }
         }

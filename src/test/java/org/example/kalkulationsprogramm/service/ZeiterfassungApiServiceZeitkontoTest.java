@@ -61,6 +61,8 @@ class ZeiterfassungApiServiceZeitkontoTest {
         mitarbeiter.setEintrittsdatum(LocalDate.of(2020, 10, 1));
         mitarbeiter.setJahresUrlaub(28);
         // Das Urlaubskonto rechnet UrlaubskontoService (eigene Tests); hier nur ein leeres Jahr.
+        lenient().when(urlaubskontoService.anspruch(any(Mitarbeiter.class), anyInt())).thenReturn(
+                new UrlaubskontoService.Anspruch(new BigDecimal("28"), UrlaubskontoService.Anspruchsart.VOLL));
         lenient().when(urlaubskontoService.berechne(any(Mitarbeiter.class), anyInt(), anyList())).thenAnswer(inv -> {
             int jahr = inv.getArgument(1);
             return new Urlaubskonto(jahr, new java.math.BigDecimal("28"), BigDecimal.ZERO, false, LocalDate.of(jahr, 3, 31), BigDecimal.ZERO,
@@ -164,7 +166,8 @@ class ZeiterfassungApiServiceZeitkontoTest {
         Map<String, Object> result = service.getSaldo(TOKEN, 2020, 10, false);
 
         assertThat(teil(result, "monat")).containsKeys("sollStunden", "differenz", "festgeschrieben");
-        assertThat(teil(result, "urlaub")).containsKeys("jahresanspruch", "verbleibend", "korrektur");
+        assertThat(teil(result, "urlaub")).containsKeys("jahresanspruch", "verbleibend", "korrektur")
+                .containsEntry("anspruchArt", "VOLL").containsEntry("eintrittsdatum", "2020-10-01");
         assertThat(result).containsKey("gesamt");
     }
 

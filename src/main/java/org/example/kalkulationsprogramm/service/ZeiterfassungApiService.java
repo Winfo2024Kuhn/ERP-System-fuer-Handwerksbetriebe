@@ -1046,6 +1046,10 @@ public class ZeiterfassungApiService {
             urlaub.put("ausVorjahrOffen", konto.ausVorjahrOffen());
             urlaub.put("verfallen", konto.verfallen());
             urlaub.put("verfallsdatum", konto.verfallsdatum() != null ? konto.verfallsdatum().toString() : null);
+            // Warum der Anspruch so hoch ist (Eintrittsjahr, gesetzlicher Mindesturlaub) – für den Hinweis daneben.
+            urlaub.put("anspruchArt", urlaubskontoService.anspruch(mitarbeiter, currentYear).art().name());
+            urlaub.put("eintrittsdatum", mitarbeiter.getEintrittsdatum() != null
+                    ? mitarbeiter.getEintrittsdatum().toString() : null);
         } else {
             urlaub.put("genommen", konto.genommen());
             urlaub.put("geplant", konto.geplant());

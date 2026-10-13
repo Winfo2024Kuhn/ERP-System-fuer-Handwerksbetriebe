@@ -59,3 +59,28 @@ export function vorjahresHinweis(rest: VorjahresRest | null | undefined): string
     }
     return null;
 }
+
+/** Herkunft des Jahresanspruchs, wie der Server sie liefert (`UrlaubskontoService.Anspruchsart`). */
+export type Anspruchsart = 'VOLL' | 'MINDESTURLAUB' | 'ANTEILIG_EINTRITT' | 'MINDESTURLAUB_EINTRITT' | 'VOR_EINTRITT';
+
+/**
+ * Kurzer Hinweis, warum der Jahresanspruch vom Vertragsurlaub abweicht – oder `null`:
+ * „anteilig wegen Eintritt am 15.03.2027", „gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)",
+ * „gesetzlicher Mindesturlaub" bzw. „Eintritt erst am 01.02.2028".
+ * Gleicher Wortlaut wie `anspruchHinweis` in der Handy-App (`lib/urlaubsantrag.ts`).
+ */
+export function anspruchHinweis(art: string | null | undefined, eintrittsdatum: string | null | undefined): string | null {
+    const eintritt = eintrittsdatum ? formatIsoDatumDe(eintrittsdatum) : null;
+    switch (art) {
+        case 'ANTEILIG_EINTRITT':
+            return eintritt ? `anteilig wegen Eintritt am ${eintritt}` : 'anteilig wegen Eintritt im Jahr';
+        case 'MINDESTURLAUB_EINTRITT':
+            return eintritt ? `gesetzlicher Mindesturlaub (Eintritt am ${eintritt})` : 'gesetzlicher Mindesturlaub';
+        case 'MINDESTURLAUB':
+            return 'gesetzlicher Mindesturlaub';
+        case 'VOR_EINTRITT':
+            return eintritt ? `Eintritt erst am ${eintritt}` : 'vor dem Eintritt';
+        default:
+            return null;
+    }
+}

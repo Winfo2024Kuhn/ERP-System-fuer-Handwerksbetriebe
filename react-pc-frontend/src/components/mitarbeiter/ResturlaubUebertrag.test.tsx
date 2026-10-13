@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResturlaubUebertrag } from './ResturlaubUebertrag';
 import { ToastProvider } from '../ui/toast';
 
-type Stand = { jahr: number; tage: number; berechnet: number; manuell: boolean; verfallsdatum: string | null };
+type Stand = {
+    jahr: number; tage: number; berechnet: number; manuell: boolean; verfallsdatum: string | null;
+    anspruch?: number; anspruchArt?: string; eintrittsdatum?: string | null;
+};
 
 function server(start: Stand, putAntwort?: { status: number; body: unknown }) {
     let stand = start;
@@ -75,6 +78,26 @@ describe('ResturlaubUebertrag', () => {
         await user.type(feld, '3');
         await user.click(screen.getByRole('button', { name: 'Speichern' }));
         expect(await screen.findByText('Der Resturlaub muss zwischen 0 und 365 Tagen liegen.')).toBeVisible();
+    });
+
+    it('zeigt den Anspruch im Eintrittsjahr mit Grund und erklärt ihn per Info-Button', async () => {
+        const user = userEvent.setup();
+        server({
+            jahr: 2027, tage: 0, berechnet: 0, manuell: false, verfallsdatum: '2027-03-31',
+            anspruch: 20, anspruchArt: 'MINDESTURLAUB_EINTRITT', eintrittsdatum: '2027-06-01',
+        });
+        zeige();
+        expect(await screen.findByTestId('urlaubsanspruch-jahr'))
+            .toHaveTextContent('Urlaubsanspruch 2027: 20 Tage – gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)');
+
+        await user.click(screen.getByRole('button', { name: /Urlaubsanspruch/ }));
+        expect(await screen.findByText(/spätestens am 1\. Juli anfängt/)).toBeVisible();
+    });
+
+    it('zeigt beim vollen Anspruch keinen Grund', async () => {
+        server({ jahr: 2027, tage: 2, berechnet: 2, manuell: false, verfallsdatum: null, anspruch: 30, anspruchArt: 'VOLL' });
+        zeige();
+        expect(await screen.findByTestId('urlaubsanspruch-jahr')).toHaveTextContent(/^Urlaubsanspruch 2027: 30 Tage$/);
     });
 
     it('zeigt einen Ladefehler bei unbrauchbarer Antwort', async () => {

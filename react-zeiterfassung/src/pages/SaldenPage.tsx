@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Sun, Briefcase, Clock, TrendingUp, TrendingDown, Minus, RefreshCw, Stethoscope, GraduationCap, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
-import { formatUrlaubstage, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubsantrag'
+import { anspruchHinweis, formatUrlaubstage, tageMitEinheit, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubsantrag'
 
 interface Mitarbeiter {
     id: number
@@ -21,6 +21,9 @@ interface SaldoData {
         korrektur?: number
         krankheitsTage: number
         fortbildungsTage: number
+        /** Herkunft des Anspruchs (Eintrittsjahr, gesetzlicher Mindesturlaub) */
+        anspruchArt?: string | null
+        eintrittsdatum?: string | null
     } & VorjahresRest
     monat: {
         name: string
@@ -315,9 +318,14 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                     </div>
                                 )}
                             </div>
+                            {!zeitkontoStatus?.istGeschaeftsfuehrer && anspruchHinweis(saldo.urlaub.anspruchArt, saldo.urlaub.eintrittsdatum) && (
+                                <p className="px-4 pb-1 -mt-1 text-xs text-slate-500 text-center">
+                                    Anspruch: {anspruchHinweis(saldo.urlaub.anspruchArt, saldo.urlaub.eintrittsdatum)}
+                                </p>
+                            )}
                             {!zeitkontoStatus?.istGeschaeftsfuehrer && vorjahresHinweis(saldo.urlaub) && (
                                 <p className="px-4 pb-3 -mt-1 text-xs text-slate-500 text-center">
-                                    {formatUrlaubstage(saldo.urlaub.verbleibend)} Tage frei, {vorjahresHinweis(saldo.urlaub)}
+                                    {tageMitEinheit(saldo.urlaub.verbleibend)} frei, {vorjahresHinweis(saldo.urlaub)}
                                 </p>
                             )}
                             {/* Krankheit & Fortbildung */}

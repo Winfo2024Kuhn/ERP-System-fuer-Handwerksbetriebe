@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { DecimalInput } from '../components/ui/decimal-input';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { leseFehlermeldung } from '../lib/apiFehler';
-import { formatUrlaubstage, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubstage';
+import { anspruchHinweis, formatUrlaubstage, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubstage';
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 import { useMonatsabschlussBerechtigung } from '../features/monatsabschluss/useMonatsabschlussBerechtigung';
 
@@ -219,6 +219,9 @@ export default function ZeiterfassungKalender() {
             verbleibend: number;
             /** Resturlaub aus dem Vorjahr, der in dieses Jahr übertragen wurde. */
             uebertragVorjahr?: number;
+            /** Herkunft des Anspruchs (Eintrittsjahr, gesetzlicher Mindesturlaub). */
+            anspruchArt?: string | null;
+            eintrittsdatum?: string | null;
         } & VorjahresRest;
         gesamt: {
             istStunden: number;
@@ -807,6 +810,9 @@ export default function ZeiterfassungKalender() {
                                         </div>
                                         <div className="text-right text-xs text-green-600 tabular-nums">
                                             <p>Anspruch: {formatUrlaubstage(jahresSaldo.urlaub.jahresanspruch)}</p>
+                                            {anspruchHinweis(jahresSaldo.urlaub.anspruchArt, jahresSaldo.urlaub.eintrittsdatum) && (
+                                                <p>{anspruchHinweis(jahresSaldo.urlaub.anspruchArt, jahresSaldo.urlaub.eintrittsdatum)}</p>
+                                            )}
                                             {Number(jahresSaldo.urlaub.uebertragVorjahr) > 0 && (
                                                 <p>Aus {jahr - 1}: {formatUrlaubstage(jahresSaldo.urlaub.uebertragVorjahr)}</p>
                                             )}

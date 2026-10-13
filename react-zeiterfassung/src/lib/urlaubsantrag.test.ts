@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { entscheidungsText, formatIsoDatumDe, formatUrlaubstage, statusLabel, typLabel, vorjahresHinweis, zurueckziehenFrage } from './urlaubsantrag'
+import { anspruchHinweis, entscheidungsText, formatIsoDatumDe, formatUrlaubstage, statusLabel, tageMitEinheit, typLabel, vorjahresHinweis, zurueckziehenFrage } from './urlaubsantrag'
+
+describe('anspruchHinweis', () => {
+    it('erklärt abweichende Ansprüche wie am PC', () => {
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', '2027-08-01')).toBe('anteilig wegen Eintritt am 01.08.2027')
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', null)).toBe('anteilig wegen Eintritt im Jahr')
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', '2027-06-01')).toBe('gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)')
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', null)).toBe('gesetzlicher Mindesturlaub')
+        expect(anspruchHinweis('MINDESTURLAUB', null)).toBe('gesetzlicher Mindesturlaub')
+        expect(anspruchHinweis('VOR_EINTRITT', '2028-02-01')).toBe('Eintritt erst am 01.02.2028')
+        expect(anspruchHinweis('VOR_EINTRITT', null)).toBe('vor dem Eintritt')
+        expect(anspruchHinweis('VOLL', null)).toBeNull()
+    })
+})
+
+describe('tageMitEinheit', () => {
+    it('schreibt Tag in der Einzahl', () => {
+        expect(tageMitEinheit(1)).toBe('1 Tag')
+        expect(tageMitEinheit(2.5)).toBe('2,5 Tage')
+    })
+})
 
 describe('vorjahresHinweis', () => {
     it('nennt offenen Vorjahresrest mit oder ohne Verfall', () => {

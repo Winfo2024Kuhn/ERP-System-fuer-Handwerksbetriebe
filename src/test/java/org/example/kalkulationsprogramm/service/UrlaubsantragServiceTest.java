@@ -81,7 +81,9 @@ class UrlaubsantragServiceTest {
                 tagesSollService, new UrlaubstageRechner(), uebertragRepository, urlaubsverfallEinstellungen,
                 // Fester Tag vor allen Antragsdaten der Tests (10.01.2027).
                 java.time.Clock.fixed(LocalDate.of(2027, 1, 10).atStartOfDay(java.time.ZoneId.systemDefault())
-                        .toInstant(), java.time.ZoneId.systemDefault()));
+                        .toInstant(), java.time.ZoneId.systemDefault()),
+                // Kein Zeitkonto hinterlegt → 5-Tage-Woche, gesetzlicher Mindesturlaub 20 Tage.
+                mock(ZeitkontoVersionRepository.class));
         urlaubsantragService = service(tagesSollService);
         testMitarbeiter = new Mitarbeiter();
         testMitarbeiter.setId(MITARBEITER_ID);
@@ -566,7 +568,10 @@ class UrlaubsantragServiceTest {
 
     @Test
     void antrag_mehrTageAlsHalbeRestTage_wirdMitKommaMeldungAbgelehnt() {
-        testMitarbeiter.setJahresUrlaub(1);
+        // Unter dem gesetzlichen Minimum geht nicht: 20 Tage, davon 19 per Korrektur abgezogen → 1 Tag.
+        testMitarbeiter.setJahresUrlaub(20);
+        when(zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(MITARBEITER_ID, 2026))
+                .thenReturn(new BigDecimal("-19"));
         LocalDate montag = LocalDate.of(2026, 3, 2);
         Abwesenheit halb = new Abwesenheit();
         halb.setTyp(AbwesenheitsTyp.URLAUB);
@@ -588,10 +593,12 @@ class UrlaubsantragServiceTest {
 
     @Test
     void antrag_ueberDenVerfallstagHinweg_nutztDenVorjahresrestNurBisZumVerfall() {
-        // 2 Tage Anspruch + 5 Tage aus dem Vorjahr = 7 verfügbar. Antrag 31.03.–07.04.2027
-        // = 6 Arbeitstage: nur der 31.03. darf den Vorjahresrest nutzen, die übrigen 4 Tage
-        // Rest verfallen danach → 2 + 5 − 4 − 6 = −3, also abgelehnt.
-        testMitarbeiter.setJahresUrlaub(2);
+        // 2 Tage Anspruch (20 − 18 per Korrektur) + 5 Tage aus dem Vorjahr = 7 verfügbar. Antrag
+        // 31.03.–07.04.2027 = 6 Arbeitstage: nur der 31.03. darf den Vorjahresrest nutzen, die
+        // übrigen 4 Tage Rest verfallen danach → 2 + 5 − 4 − 6 = −3, also abgelehnt.
+        testMitarbeiter.setJahresUrlaub(20);
+        when(zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(MITARBEITER_ID, 2027))
+                .thenReturn(new BigDecimal("-18"));
         UrlaubUebertrag rest = new UrlaubUebertrag();
         rest.setTage(new BigDecimal("5"));
         when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));

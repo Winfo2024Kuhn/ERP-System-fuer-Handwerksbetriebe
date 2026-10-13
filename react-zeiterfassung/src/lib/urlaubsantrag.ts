@@ -55,7 +55,8 @@ export interface VorjahresRest {
     verfallsdatum?: string | null
 }
 
-function tageMitEinheit(tage: number): string {
+/** „12,5 Tage" bzw. „1 Tag". */
+export function tageMitEinheit(tage: number | null | undefined): string {
     const text = formatUrlaubstage(tage)
     return `${text} ${text === '1' ? 'Tag' : 'Tage'}`
 }
@@ -126,4 +127,29 @@ export function entscheidungsText(antrag: EntscheidungAntrag): string {
 /** Rückfrage vor dem Zurückziehen, z. B. „Deinen Urlaubsantrag vom … bis … zurückziehen?" */
 export function zurueckziehenFrage(antrag: { typ: string; vonDatum: string; bisDatum: string }): string {
     return `${antragImSatz(antrag.typ).objekt} ${zeitraumText(antrag.vonDatum, antrag.bisDatum)} zurückziehen?`
+}
+
+/** Herkunft des Jahresanspruchs, wie der Server sie liefert (`UrlaubskontoService.Anspruchsart`). */
+export type Anspruchsart = 'VOLL' | 'MINDESTURLAUB' | 'ANTEILIG_EINTRITT' | 'MINDESTURLAUB_EINTRITT' | 'VOR_EINTRITT'
+
+/**
+ * Kurzer Hinweis, warum der Jahresanspruch vom Vertragsurlaub abweicht – oder `null`:
+ * „anteilig wegen Eintritt am 15.03.2027", „gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)",
+ * „gesetzlicher Mindesturlaub" bzw. „Eintritt erst am 01.02.2028".
+ * Gleicher Wortlaut wie `anspruchHinweis` im PC-Frontend (`lib/urlaubstage.ts`).
+ */
+export function anspruchHinweis(art: string | null | undefined, eintrittsdatum: string | null | undefined): string | null {
+    const eintritt = eintrittsdatum ? formatIsoDatumDe(eintrittsdatum) : null
+    switch (art) {
+        case 'ANTEILIG_EINTRITT':
+            return eintritt ? `anteilig wegen Eintritt am ${eintritt}` : 'anteilig wegen Eintritt im Jahr'
+        case 'MINDESTURLAUB_EINTRITT':
+            return eintritt ? `gesetzlicher Mindesturlaub (Eintritt am ${eintritt})` : 'gesetzlicher Mindesturlaub'
+        case 'MINDESTURLAUB':
+            return 'gesetzlicher Mindesturlaub'
+        case 'VOR_EINTRITT':
+            return eintritt ? `Eintritt erst am ${eintritt}` : 'vor dem Eintritt'
+        default:
+            return null
+    }
 }

@@ -26,7 +26,9 @@ export function ResturlaubInfo() {
                     <li>Beim Mitarbeiter können Sie den übernommenen Rest von Hand ändern, z. B. wenn früher auf Papier geplant wurde.</li>
                     <li>Der Rest wird immer neu ausgerechnet: Wer später Urlaub im alten Jahr nachträgt oder den Jahresurlaub eines Mitarbeiters ändert, ändert damit auch den Übertrag.</li>
                     <li>Wurde im alten Jahr mehr Urlaub genommen als da war, wird nichts abgezogen – der Übertrag ist dann 0.</li>
-                    <li>Im Eintrittsjahr gibt es ein Zwölftel des Jahresurlaubs je vollem Monat (halbe Tage und mehr werden aufgerundet).</li>
+                    <li>Gesetzlich verfällt der Rest nur, wenn Sie Ihre Leute rechtzeitig und konkret darauf hingewiesen haben, wie viel Urlaub noch offen ist und wann er verfällt – sonst bleibt er erhalten. Die Erinnerung in der Handy-App hilft dabei, ein schriftlicher Hinweis vom Betrieb ist sicherer.</li>
+                    <li>Ein Verfallstag vor dem 31. März ist nur erlaubt, wenn Ihr Tarifvertrag das vorsieht.</li>
+                    <li>Im Eintrittsjahr rechnet das Programm den Anspruch nach dem Bundesurlaubsgesetz: ein Zwölftel je vollem Monat, bei Eintritt bis 1. Juli aber mindestens den gesetzlichen Mindesturlaub. Details stehen beim Mitarbeiter am Urlaubsanspruch.</li>
                     <li>Gebuchte Urlaubstage ändern sich nicht. Den ersten Übertrag gibt es ins Jahr nach dem Update.</li>
                 </ul>
             </InfoAbschnitt>

@@ -9,13 +9,17 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
 import org.example.kalkulationsprogramm.domain.AbwesenheitsTyp;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.UrlaubUebertrag;
+import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
 import org.example.kalkulationsprogramm.repository.AbwesenheitRepository;
 import org.example.kalkulationsprogramm.repository.UrlaubUebertragRepository;
+import org.example.kalkulationsprogramm.repository.ZeitkontoVersionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +63,7 @@ public class UrlaubskontoService {
     private final UrlaubUebertragRepository uebertragRepository;
     private final UrlaubsverfallEinstellungService einstellungen;
     private final Clock clock;
+    private final ZeitkontoVersionRepository zeitkontoVersionRepository;
 
     /** Ein Urlaubstag mit seinem Anteil (0,5 oder 1). */
     record UrlaubsTag(LocalDate datum, BigDecimal anteil) {}
@@ -85,9 +90,10 @@ public class UrlaubskontoService {
      * @param restDanach               Rest nach dem Antrag (negativ = reicht nicht)
      * @param verfallsdatum            letzter Tag für den Vorjahresrest; {@code null} = verfällt nicht
      * @param vorjahresrestVerfaellt   {@code true}, wenn im Antragszeitraum Vorjahresurlaub verfällt
+     * @param beantragteTage           neu beantragte Arbeitstage (ohne schon gebuchte Urlaubstage)
      */
     public record Antragspruefung(BigDecimal verbleibendVorher, BigDecimal restDanach, LocalDate verfallsdatum,
-            boolean vorjahresrestVerfaellt) {
+            boolean vorjahresrestVerfaellt, int beantragteTage) {
 
         public boolean reicht() {
             return restDanach.signum() >= 0;
@@ -138,13 +144,23 @@ public class UrlaubskontoService {
         LocalDate heute = kontext.heute();
         LocalDate erster = tage.stream().min(LocalDate::compareTo).orElse(heute);
         LocalDate letzter = tage.stream().max(LocalDate::compareTo).orElse(heute);
+        List<Abwesenheit> abwesenheiten = abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(
+                mitarbeiter.getId(), LocalDate.of(jahr, 1, 1), LocalDate.of(jahr, 12, 31));
+        // Schon gebuchte Urlaubstage im Zeitraum nicht doppelt zählen.
+        Set<LocalDate> schonGebucht = abwesenheiten.stream()
+                .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB && a.getDatum() != null)
+                .map(Abwesenheit::getDatum)
+                .collect(Collectors.toSet());
+        List<UrlaubsTag> beantragt = tage.stream()
+                .filter(t -> !schonGebucht.contains(t))
+                .map(t -> new UrlaubsTag(t, BigDecimal.ONE))
+                .toList();
         Urlaubskonto vorher = berechne(mitarbeiter, jahr, stichtagImJahr(spaeterer(erster, heute), jahr), kontext, 0,
-                null, List.of());
-        List<UrlaubsTag> beantragt = tage.stream().map(t -> new UrlaubsTag(t, BigDecimal.ONE)).toList();
+                abwesenheiten, List.of());
         Urlaubskonto danach = berechne(mitarbeiter, jahr, stichtagImJahr(spaeterer(letzter, heute), jahr), kontext, 0,
-                null, beantragt);
+                abwesenheiten, beantragt);
         return new Antragspruefung(vorher.verbleibend(), rohRest(danach), danach.verfallsdatum(),
-                danach.verfallen().compareTo(vorher.verfallen()) > 0);
+                danach.verfallen().compareTo(vorher.verfallen()) > 0, beantragt.size());
     }
 
     /** Übertrag in ein Jahr samt berechnetem Wert – rechnet höchstens das Vorjahr. */
@@ -179,33 +195,109 @@ public class UrlaubskontoService {
         return tag.isAfter(ende) ? ende : tag;
     }
 
+    /** Wie der Jahresanspruch zustande kommt – für Hinweise in der Oberfläche. */
+    public enum Anspruchsart {
+        /** Voller Vertragsurlaub. */
+        VOLL,
+        /** Vertragsurlaub liegt unter dem gesetzlichen Mindesturlaub – es gilt das Minimum. */
+        MINDESTURLAUB,
+        /** Eintrittsjahr: ein Zwölftel je vollem Monat. */
+        ANTEILIG_EINTRITT,
+        /** Eintrittsjahr mit erfüllter Wartezeit: angehoben auf den gesetzlichen Mindesturlaub. */
+        MINDESTURLAUB_EINTRITT,
+        /** Jahr vor dem Eintritt. */
+        VOR_EINTRITT
+    }
+
+    /** Jahresanspruch samt Herkunft. */
+    public record Anspruch(BigDecimal tage, Anspruchsart art) {}
+
+    /** Werktage (Mo–Sa) je Woche, auf die sich der gesetzliche Mindesturlaub bezieht (§ 3 BUrlG). */
+    static final int WERKTAGE_JE_WOCHE = 6;
+    /** Gesetzlicher Mindesturlaub in Werktagen bei 6-Tage-Woche (§ 3 Abs. 1 BUrlG). */
+    static final int MINDESTURLAUB_WERKTAGE = 24;
+    /** Ohne Arbeitszeit im Zeitkonto: übliche 5-Tage-Woche. */
+    static final int STANDARD_ARBEITSTAGE = 5;
+
     /**
-     * Jahresanspruch eines Jahres – im Eintrittsjahr anteilig (Nutzerentscheidung,
-     * angelehnt an § 5 Abs. 1 BUrlG): ein Zwölftel je vollem Beschäftigungsmonat
-     * bis zum 31.12. Vor dem Eintrittsjahr gibt es keinen Anspruch.
-     *
-     * <p><b>Rundung (§ 5 Abs. 2 BUrlG):</b> Bruchteile von mindestens einem halben
-     * Tag werden auf einen vollen Tag aufgerundet. Kleinere Bruchteile dürfen nach
-     * der Rechtsprechung des BAG nicht abgerundet werden; weil das Programm nur
-     * halbe Tage kennt, werden sie zugunsten des Mitarbeiters auf einen halben Tag
-     * aufgerundet. Beispiele: 30 Tage, Eintritt 15.03. → 9 volle Monate → 22,5 →
-     * 23 Tage; 28 Tage, Eintritt 01.11. → 2 Monate → 4,67 → 5 Tage; 30 Tage,
-     * Eintritt 01.12. → 2,5 → 3 Tage; 20 Tage, Eintritt 01.12. → 1,67 → 2 Tage;
-     * 26 Tage, Eintritt 01.12. → 2,17 → 2,5 Tage.
+     * Gesetzlicher Mindesturlaub in Arbeitstagen: 24 Werktage bei 6-Tage-Woche,
+     * umgerechnet auf die Arbeitstage des Mitarbeiters (24 × Tage ÷ 6, also 20 bei
+     * 5 Tagen, 16 bei 4 Tagen).
      */
-    static BigDecimal anspruchImJahr(Integer jahresUrlaub, LocalDate eintritt, int jahr) {
-        BigDecimal voll = BigDecimal.valueOf(jahresUrlaub != null ? jahresUrlaub : STANDARD_ANSPRUCH);
+    static BigDecimal gesetzlicherMindesturlaub(int arbeitstageJeWoche) {
+        int tage = Math.max(1, Math.min(WERKTAGE_JE_WOCHE, arbeitstageJeWoche));
+        return BigDecimal.valueOf((long) MINDESTURLAUB_WERKTAGE * tage / WERKTAGE_JE_WOCHE);
+    }
+
+    /** Jahresanspruch des Mitarbeiters; Arbeitstage je Woche aus seinem Zeitkonto. */
+    @Transactional(readOnly = true)
+    public Anspruch anspruch(Mitarbeiter mitarbeiter, int jahr) {
+        return anspruchImJahr(mitarbeiter.getJahresUrlaub(), mitarbeiter.getEintrittsdatum(), jahr,
+                arbeitstageJeWoche(mitarbeiter, jahr));
+    }
+
+    /**
+     * Arbeitstage je Woche laut Zeitkonto (Tage mit Soll &gt; 0) – Version zum
+     * Beginn der Beschäftigung im Jahr. Ohne Zeitkonto gilt die 5-Tage-Woche.
+     */
+    private int arbeitstageJeWoche(Mitarbeiter mitarbeiter, int jahr) {
+        LocalDate eintritt = mitarbeiter.getEintrittsdatum();
+        LocalDate stichtag = eintritt != null && eintritt.getYear() == jahr ? eintritt : LocalDate.of(jahr, 1, 1);
+        return zeitkontoVersionRepository.findAm(mitarbeiter.getId(), stichtag)
+                .map(ZeitkontoVersion::getArbeitstageProWoche)
+                .filter(tage -> tage > 0)
+                .orElse(STANDARD_ARBEITSTAGE);
+    }
+
+    /**
+     * Jahresanspruch nach dem Bundesurlaubsgesetz (Nutzerentscheidung: „was das Gesetz vorschreibt“).
+     *
+     * <ul>
+     *   <li>Liegt der Vertragsurlaub unter dem gesetzlichen Mindesturlaub, gilt das Minimum (§ 3, § 13 BUrlG).</li>
+     *   <li><b>Eintritt bis 01.07.:</b> Die Wartezeit von sechs Monaten (§ 4 BUrlG) ist im Eintrittsjahr
+     *       erfüllt – nach BAG-Lesart auch bei Eintritt am 01.07., denn sie endet dann mit dem 31.12. Der Mitarbeiter
+     *       bekommt mindestens den vollen gesetzlichen Mindesturlaub, sonst ein Zwölftel des Vertragsurlaubs je vollem
+     *       Monat, wenn das mehr ist; höchstens den vollen Vertragsurlaub.</li>
+     *   <li><b>Eintritt nach dem 01.07.:</b> Wartezeit nicht erfüllt, nur ein Zwölftel je vollem Monat
+     *       (§ 5 Abs. 1 a BUrlG).</li>
+     *   <li>Vor dem Eintrittsjahr: kein Anspruch.</li>
+     * </ul>
+     *
+     * <p>Ausscheiden im Jahr (§ 5 Abs. 1 b/c BUrlG) rechnet das Programm nicht, weil der Mitarbeiter kein
+     * Austrittsdatum hat; das Büro korrigiert dann über eine Urlaubskorrektur. Ebenso Urlaub, den ein früherer
+     * Arbeitgeber im selben Jahr schon gewährt hat (§ 6 BUrlG).
+     *
+     * <p><b>Rundung (§ 5 Abs. 2 BUrlG):</b> Bruchteile von mindestens einem halben Tag werden auf einen vollen
+     * Tag aufgerundet. Kleinere Bruchteile dürfen nach der Rechtsprechung des BAG nicht abgerundet werden; weil das
+     * Programm nur halbe Tage kennt, werden sie zugunsten des Mitarbeiters auf einen halben Tag aufgerundet.
+     * Beispiele (5-Tage-Woche): 30 Tage, Eintritt 15.03. → 22,5 → 23; Eintritt 01.06. → 17,5 → 18, angehoben auf
+     * 20; Eintritt 01.08. → 12,5 → 13.
+     */
+    static Anspruch anspruchImJahr(Integer jahresUrlaub, LocalDate eintritt, int jahr, int arbeitstageJeWoche) {
+        BigDecimal mindest = gesetzlicherMindesturlaub(arbeitstageJeWoche);
+        BigDecimal laut = BigDecimal.valueOf(jahresUrlaub != null ? jahresUrlaub : STANDARD_ANSPRUCH);
+        BigDecimal vertrag = laut.max(mindest);
+        Anspruchsart vollArt = laut.compareTo(mindest) < 0 ? Anspruchsart.MINDESTURLAUB : Anspruchsart.VOLL;
         if (eintritt == null || eintritt.getYear() < jahr) {
-            return voll;
+            return new Anspruch(vertrag, vollArt);
         }
         if (eintritt.getYear() > jahr) {
-            return BigDecimal.ZERO;
+            return new Anspruch(BigDecimal.ZERO, Anspruchsart.VOR_EINTRITT);
         }
         long monate = Math.min(12, ChronoUnit.MONTHS.between(eintritt, LocalDate.of(jahr + 1, 1, 1)));
         if (monate >= 12) {
-            return voll;
+            return new Anspruch(vertrag, vollArt);
         }
-        BigDecimal roh = voll.multiply(BigDecimal.valueOf(monate)).divide(BigDecimal.valueOf(12), 4, RoundingMode.HALF_UP);
+        BigDecimal anteilig = aufHalbeTageAufgerundet(
+                vertrag.multiply(BigDecimal.valueOf(monate)).divide(BigDecimal.valueOf(12), 4, RoundingMode.HALF_UP));
+        boolean wartezeitErfuellt = !eintritt.isAfter(LocalDate.of(jahr, 7, 1));
+        if (wartezeitErfuellt && anteilig.compareTo(mindest) < 0) {
+            return new Anspruch(mindest.min(vertrag), Anspruchsart.MINDESTURLAUB_EINTRITT);
+        }
+        return new Anspruch(anteilig.min(vertrag), Anspruchsart.ANTEILIG_EINTRITT);
+    }
+
+    private static BigDecimal aufHalbeTageAufgerundet(BigDecimal roh) {
         BigDecimal ganz = roh.setScale(0, RoundingMode.FLOOR);
         BigDecimal bruch = roh.subtract(ganz);
         if (bruch.signum() == 0) {
@@ -216,7 +308,7 @@ public class UrlaubskontoService {
 
     private Urlaubskonto berechne(Mitarbeiter mitarbeiter, int jahr, LocalDate stichtag, Kontext kontext, int tiefe,
             List<Abwesenheit> geladen, List<UrlaubsTag> zusaetzlich) {
-        BigDecimal anspruch = anspruchImJahr(mitarbeiter.getJahresUrlaub(), mitarbeiter.getEintrittsdatum(), jahr);
+        BigDecimal anspruch = anspruch(mitarbeiter, jahr).tage();
         List<Abwesenheit> abwesenheiten = geladen != null ? geladen
                 : abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(
                         mitarbeiter.getId(), LocalDate.of(jahr, 1, 1), LocalDate.of(jahr, 12, 31));

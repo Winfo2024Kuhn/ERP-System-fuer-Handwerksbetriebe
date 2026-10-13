@@ -100,7 +100,7 @@ describe('ResturlaubKarte', () => {
 
         await user.click(screen.getByRole('combobox', { name: 'Verfallsmonat' }));
         await user.click(screen.getByRole('option', { name: 'Januar' }));
-        expect(screen.getByText('Früher als 31. März ist nur erlaubt, wenn euer Tarifvertrag das vorsieht.')).toBeVisible();
+        expect(screen.getByText('Früher als 31. März ist nur erlaubt, wenn Ihr Tarifvertrag das vorsieht.')).toBeVisible();
 
         await user.click(screen.getByRole('button', { name: /Regel speichern/ }));
         expect(await screen.findByText(/Gesetzlich muss Resturlaub bis mindestens 31\. März genommen werden können/)).toBeVisible();

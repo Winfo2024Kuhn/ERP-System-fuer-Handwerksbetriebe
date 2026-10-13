@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { formatIsoDatumDe, formatUrlaubstage, formatUrlaubstageMitEinheit, vorjahresHinweis } from './urlaubstage';
+import { anspruchHinweis, formatIsoDatumDe, formatUrlaubstage, formatUrlaubstageMitEinheit, vorjahresHinweis } from './urlaubstage';
+
+describe('anspruchHinweis', () => {
+    it('erklärt abweichende Ansprüche', () => {
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', '2027-08-01')).toBe('anteilig wegen Eintritt am 01.08.2027');
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', null)).toBe('anteilig wegen Eintritt im Jahr');
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', '2027-06-01')).toBe('gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)');
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', null)).toBe('gesetzlicher Mindesturlaub');
+        expect(anspruchHinweis('MINDESTURLAUB', null)).toBe('gesetzlicher Mindesturlaub');
+        expect(anspruchHinweis('VOR_EINTRITT', '2028-02-01')).toBe('Eintritt erst am 01.02.2028');
+        expect(anspruchHinweis('VOR_EINTRITT', undefined)).toBe('vor dem Eintritt');
+    });
+
+    it('schweigt beim vollen oder unbekannten Anspruch', () => {
+        expect(anspruchHinweis('VOLL', '2020-01-01')).toBeNull();
+        expect(anspruchHinweis(null, null)).toBeNull();
+    });
+});
 
 describe('formatUrlaubstage', () => {
     it('zeigt ganze Tage ohne Nachkomma', () => {

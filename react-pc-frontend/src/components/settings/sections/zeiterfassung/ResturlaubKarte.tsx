@@ -101,7 +101,7 @@ export function ResturlaubKarte({ onSaved }: { onSaved?: () => void }) {
         if (entwurf.verfaellt && vorGesetzlichemTag(entwurf) && !await confirmDialog({
             title: 'Verfall vor dem 31. März?',
             message: `Gesetzlich muss Resturlaub bis mindestens 31. März genommen werden können. Ein früheres Datum `
-                + `(hier ${verfallsTagText(entwurf)}) ist nur erlaubt, wenn euer Tarifvertrag das vorsieht. Trotzdem speichern?`,
+                + `(hier ${verfallsTagText(entwurf)}) ist nur erlaubt, wenn Ihr Tarifvertrag das vorsieht. Trotzdem speichern?`,
             confirmLabel: 'Ja, laut Tarifvertrag',
             cancelLabel: 'Abbrechen',
             variant: 'warning',
@@ -201,7 +201,7 @@ export function ResturlaubKarte({ onSaved }: { onSaved?: () => void }) {
                             </div>
                             {vorGesetzlichemTag(entwurf) && (
                                 <p className="mt-2 text-sm text-amber-800">
-                                    Früher als 31. März ist nur erlaubt, wenn euer Tarifvertrag das vorsieht.
+                                    Früher als 31. März ist nur erlaubt, wenn Ihr Tarifvertrag das vorsieht.
                                 </p>
                             )}
                         </div>

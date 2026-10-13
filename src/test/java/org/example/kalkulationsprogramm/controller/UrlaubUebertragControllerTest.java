@@ -37,20 +37,24 @@ class UrlaubUebertragControllerTest {
     @Test
     void ladenLiefertStand() throws Exception {
         when(service.laden(1L, 2027)).thenReturn(
-                new Stand(2027, new BigDecimal("4.5"), new BigDecimal("4.5"), false, "2027-03-31"));
+                new Stand(2027, new BigDecimal("4.5"), new BigDecimal("4.5"), false, "2027-03-31",
+                        new BigDecimal("20"), "MINDESTURLAUB_EINTRITT", "2026-06-01"));
 
         mockMvc.perform(get("/api/urlaub/uebertrag").param("mitarbeiterId", "1").param("jahr", "2027"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tage").value(4.5))
                 .andExpect(jsonPath("$.berechnet").value(4.5))
                 .andExpect(jsonPath("$.manuell").value(false))
-                .andExpect(jsonPath("$.verfallsdatum").value("2027-03-31"));
+                .andExpect(jsonPath("$.verfallsdatum").value("2027-03-31"))
+                .andExpect(jsonPath("$.anspruch").value(20))
+                .andExpect(jsonPath("$.anspruchArt").value("MINDESTURLAUB_EINTRITT"))
+                .andExpect(jsonPath("$.eintrittsdatum").value("2026-06-01"));
     }
 
     @Test
     void speichernUndZuruecksetzen() throws Exception {
         when(service.speichern(1L, 2027, new BigDecimal("2.5"), null)).thenReturn(
-                new Stand(2027, new BigDecimal("2.5"), new BigDecimal("4"), true, null));
+                new Stand(2027, new BigDecimal("2.5"), new BigDecimal("4"), true, null, new BigDecimal("30"), "VOLL", null));
 
         mockMvc.perform(put("/api/urlaub/uebertrag").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mitarbeiterId\":1,\"jahr\":2027,\"tage\":2.5}"))

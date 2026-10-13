@@ -73,6 +73,17 @@ public class ZeitkontoVersion {
         return summe;
     }
 
+    /** Arbeitstage je Woche: Wochentage mit Soll über 0 Stunden (Grundlage für den gesetzlichen Mindesturlaub). */
+    public int getArbeitstageProWoche() {
+        int tage = 0;
+        for (int tag = 1; tag <= 7; tag++) {
+            if (getSollstundenFuerTag(tag).signum() > 0) {
+                tage++;
+            }
+        }
+        return tage;
+    }
+
     /** ISO-Wochentag: 1 = Montag, 7 = Sonntag; wie beim Altzeitkonto null-sicher. */
     public BigDecimal getSollstundenFuerTag(int dayOfWeek) {
         BigDecimal stunden = switch (dayOfWeek) {
