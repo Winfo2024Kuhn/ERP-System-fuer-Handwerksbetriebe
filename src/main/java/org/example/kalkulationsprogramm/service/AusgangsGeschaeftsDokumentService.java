@@ -1612,12 +1612,10 @@ public class AusgangsGeschaeftsDokumentService {
         // Alle übrigen Typen (Angebot, AB, Rechnung, …) sind nur als allererstes
         // Basisdokument erlaubt. Sobald irgendein Basisdokument existiert, ist das
         // einzige zulässige weitere Wurzel-Dokument ein Nachtragsangebot (oben).
-        // Stornierte Basisdokumente (z. B. eine direkt angelegte, dann stornierte
-        // Rechnung) zählen nicht mit – sonst wäre der Vorgang danach blockiert
-        // (Issue #262). Bewusst ohne Blick auf Nachfolger: Stornierbar sind nur
-        // Rechnungstypen, und Abschlags-/Teil-/Schlussrechnungen entstehen an
-        // Angebot oder Auftragsbestätigung, nicht an einer Rechnung. Unter einer
-        // stornierten Wurzel-Rechnung hängen deshalb nur Storno und Mahnungen.
+        // Wurzeln mit storniert=true zählen nicht mit, sonst bliebe der Vorgang
+        // blockiert (Issue #262). Nachfolger prüfen wir bewusst nicht: Folgedokumente
+        // entstehen nur an Angebot oder AB, unter einer solchen Wurzel hängen nur
+        // Gegenbuchung und Mahnungen.
         boolean hatBasis = (projektId != null && dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(projektId))
                 || (anfrageId != null && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndStorniertFalse(anfrageId));
         if (hatBasis) {

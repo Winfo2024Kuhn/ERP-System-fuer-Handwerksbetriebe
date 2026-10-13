@@ -8,10 +8,11 @@ import { SettingsCard } from '../settingsUi';
 import { StartDerZeiterfassungKarte } from './zeiterfassung/StartDerZeiterfassungKarte';
 import { DatevEinstellungenKarte } from './zeiterfassung/DatevEinstellungenKarte';
 import { ResturlaubKarte } from './zeiterfassung/ResturlaubKarte';
+import { UrlaubEintrittsjahrKarte } from './zeiterfassung/UrlaubEintrittsjahrKarte';
 
 /**
  * Reiter Zeiterfassung: oben die Einstellungen (Start der Zeiterfassung,
- * Resturlaub ins neue Jahr, Stunden ans Steuerbüro und DATEV), darunter unverändert die Infos zur
+ * Resturlaub ins neue Jahr, Urlaub im Eintrittsjahr, Stunden ans Steuerbüro und DATEV), darunter unverändert die Infos zur
  * Handy-App (Link zur Web-App, Zugriff von unterwegs, QR-Codes).
  *
  * <p>Jede Einstellungs-Karte lädt und speichert selbst. Die Infos darunter
@@ -31,6 +32,7 @@ export function ZeiterfassungSection({ onSaved }: { onSaved?: () => void }) {
         <div className="space-y-6">
             <StartDerZeiterfassungKarte onSaved={onSaved} />
             <ResturlaubKarte onSaved={onSaved} />
+            <UrlaubEintrittsjahrKarte onSaved={onSaved} />
             <DatevEinstellungenKarte onSaved={onSaved} />
 
             <h3 className="pt-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Handy-App für Mitarbeiter</h3>

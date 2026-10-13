@@ -134,4 +134,31 @@ class ZeiterfassungEinstellungenSecurityTest {
    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Bitte angeben, ob Resturlaub verfällt oder erhalten bleibt."));
   verify(settings,never()).save(anyString(),anyString(),anyString());
  }
+
+ static final String EINTRITT="/api/settings/urlaub-eintrittsjahr";
+
+ @Test void eintrittsjahrAnonymAbgewiesen() throws Exception {
+  mvc.perform(get(EINTRITT)).andExpect(status().isUnauthorized());
+  mvc.perform(put(EINTRITT).with(csrf()).contentType("application/json").content("{\"mehrurlaubAnteilig\":true}")).andExpect(status().isUnauthorized());
+  verifyNoInteractions(settings);
+ }
+ @Test @WithMockUser(roles="USER") void eintrittsjahrOhneAdminrechtVerboten() throws Exception {
+  mvc.perform(get(EINTRITT)).andExpect(status().isForbidden());
+  mvc.perform(put(EINTRITT).with(csrf()).contentType("application/json").content("{\"mehrurlaubAnteilig\":true}")).andExpect(status().isForbidden());
+  verifyNoInteractions(settings);
+ }
+ @Test @WithMockUser(roles="ADMIN") void eintrittsjahrLesenUndSpeichern() throws Exception {
+  when(settings.get("urlaub.eintrittsjahr.mehrurlaub-anteilig","false")).thenReturn("false");
+  mvc.perform(get(EINTRITT)).andExpect(status().isOk()).andExpect(jsonPath("$.mehrurlaubAnteilig").value(false));
+  mvc.perform(put(EINTRITT).with(csrf()).contentType("application/json").content("{\"mehrurlaubAnteilig\":true}"))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.mehrurlaubAnteilig").value(true));
+  verify(settings).save(eq("urlaub.eintrittsjahr.mehrurlaub-anteilig"),eq("true"),anyString());
+ }
+ @Test @WithMockUser(roles="ADMIN") void eintrittsjahrOhneAngabeWirdAbgelehnt() throws Exception {
+  mvc.perform(put(EINTRITT).with(csrf()).contentType("application/json").content("{}"))
+   .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Bitte angeben, ob der Urlaub im Eintrittsjahr anteilig gerechnet wird."));
+  mvc.perform(put(EINTRITT).with(csrf()).contentType("application/json").content("{\"mehrurlaubAnteilig\":\"<script>alert(1)</script>\"}"))
+   .andExpect(status().isBadRequest());
+  verify(settings,never()).save(anyString(),anyString(),anyString());
+ }
 }

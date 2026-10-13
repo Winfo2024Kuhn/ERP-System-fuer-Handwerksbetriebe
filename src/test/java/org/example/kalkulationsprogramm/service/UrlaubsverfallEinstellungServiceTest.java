@@ -100,4 +100,21 @@ class UrlaubsverfallEinstellungServiceTest {
         assertThat(service.uebertragAbJahr()).isEqualTo(2026);
         assertThat(service.uebertragAbJahr()).isEqualTo(2026);
     }
+
+    @Test
+    void mehrurlaubImEintrittsjahr_standardIstDasGesetz() {
+        when(settings.get(UrlaubsverfallEinstellungService.MEHRURLAUB_ANTEILIG, "false")).thenReturn("false", " TRUE ");
+
+        assertThat(service.mehrurlaubImEintrittsjahrAnteilig()).isFalse();
+        assertThat(service.mehrurlaubImEintrittsjahrAnteilig()).isTrue();
+    }
+
+    @Test
+    void mehrurlaubImEintrittsjahrSpeichern() {
+        assertThat(service.speichereMehrurlaubImEintrittsjahrAnteilig(true)).isTrue();
+        verify(settings).save(eq(UrlaubsverfallEinstellungService.MEHRURLAUB_ANTEILIG), eq("true"), anyString());
+
+        assertThatThrownBy(() -> service.speichereMehrurlaubImEintrittsjahrAnteilig(null))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("Eintrittsjahr");
+    }
 }

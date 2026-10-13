@@ -24,6 +24,7 @@ interface Mitschrift {
     datevPuts: Konfiguration[];
     datevGets: number;
     verfallPuts: { verfaellt: boolean; tag: number; monat: number }[];
+    eintrittPuts: { mehrurlaubAnteilig: boolean }[];
 }
 
 function json(route: Route, body: unknown, status = 200) {
@@ -31,10 +32,11 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 async function stubbe(page: Page, optionen: { start: string | null; config: Konfiguration; konfliktBeimErstenSpeichern?: boolean }): Promise<Mitschrift> {
-    const mitschrift: Mitschrift = { startPuts: [], datevPuts: [], datevGets: 0, verfallPuts: [] };
+    const mitschrift: Mitschrift = { startPuts: [], datevPuts: [], datevGets: 0, verfallPuts: [], eintrittPuts: [] };
     let start = optionen.start;
     let config = optionen.config;
     let verfall = { verfaellt: true, tag: 31, monat: 3 };
+    let eintritt = { mehrurlaubAnteilig: false };
     await page.route('**/api/**', async (route) => {
         const anfrage = route.request();
         const pfad = new URL(anfrage.url()).pathname;
@@ -49,6 +51,13 @@ async function stubbe(page: Page, optionen: { start: string | null; config: Konf
                 mitschrift.verfallPuts.push(verfall);
             }
             return json(route, verfall);
+        }
+        if (pfad === '/api/settings/urlaub-eintrittsjahr') {
+            if (schreibt) {
+                eintritt = anfrage.postDataJSON() as typeof eintritt;
+                mitschrift.eintrittPuts.push(eintritt);
+            }
+            return json(route, eintritt);
         }
         if (pfad === '/api/settings/zeiterfassung') {
             if (schreibt) {
@@ -174,6 +183,32 @@ test('Resturlaub: gesetzlicher Standard, eigener Verfallstag und „verfällt ni
         { verfaellt: false, tag: 30, monat: 6 },
     ]);
     await designPruefung(page, info, 'einstellungen-resturlaub-verfaellt-nicht');
+});
+
+test('Urlaub im Eintrittsjahr: Gesetz als Standard, „immer anteilig“ laut Vertrag', async ({ page }, info) => {
+    const mitschrift = await stubbe(page, { start: null, config: LEER });
+    await page.goto('/einstellungen#zeiterfassung');
+
+    const ueberschrift = page.getByRole('heading', { name: 'Urlaub im Eintrittsjahr' });
+    await ueberschrift.evaluate(el => el.scrollIntoView({ block: 'start' }));
+    const gesetz = page.getByRole('radio', { name: /Voller Urlaub bei Eintritt bis 1\. Juli/ });
+    await expect(gesetz).toBeChecked();
+    const speichern = page.getByRole('button', { name: /Eintrittsjahr speichern/ });
+    await expect(speichern).toBeDisabled();
+    await designPruefung(page, info, 'einstellungen-eintrittsjahr-standard', { primaerAktion: gesetz });
+
+    await page.getByRole('button', { name: 'Mehr zu: Urlaub im Eintrittsjahr' }).click();
+    await expect(page.getByRole('dialog', { name: 'Urlaub im Eintrittsjahr' })).toContainText('Wartezeit von sechs Monaten');
+    await designPruefung(page, info, 'einstellungen-eintrittsjahr-info');
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('radio', { name: /Immer anteilig/ }).check();
+    await expect(page.getByText(/Nur wählen, wenn Ihr Arbeitsvertrag oder Tarifvertrag/)).toBeVisible();
+    await speichern.click();
+    await expect(page.getByText('Regel für den Urlaub im Eintrittsjahr gespeichert.')).toBeVisible();
+    await expect(speichern).toBeDisabled();
+    expect(mitschrift.eintrittPuts).toEqual([{ mehrurlaubAnteilig: true }]);
+    await designPruefung(page, info, 'einstellungen-eintrittsjahr-anteilig');
 });
 
 test('DATEV einrichten: Nummern, Soll/Ist für Betrieb und Mitarbeiter, Lohnarten und Versionskonflikt', async ({ page }, info) => {

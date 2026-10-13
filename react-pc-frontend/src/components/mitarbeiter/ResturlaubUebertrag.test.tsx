@@ -91,7 +91,7 @@ describe('ResturlaubUebertrag', () => {
             .toHaveTextContent('Urlaubsanspruch 2027: 20 Tage – gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)');
 
         await user.click(screen.getByRole('button', { name: /Urlaubsanspruch/ }));
-        expect(await screen.findByText(/spätestens am 1\. Juli anfängt/)).toBeVisible();
+        expect(await screen.findByText(/bis einschließlich 1\. Juli anfängt/)).toBeVisible();
     });
 
     it('zeigt beim vollen Anspruch keinen Grund', async () => {

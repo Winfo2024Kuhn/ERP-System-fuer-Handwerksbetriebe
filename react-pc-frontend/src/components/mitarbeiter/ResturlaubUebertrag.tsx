@@ -41,8 +41,8 @@ function UrlaubsanspruchInfo() {
             <InfoAbschnitt titel="Was passiert im Hintergrund?">
                 <ul className="list-disc pl-4 space-y-1">
                     <li>Gesetzlich stehen jedem mindestens 24 Werktage bei einer 6-Tage-Woche zu – das sind 20 Tage bei 5 Arbeitstagen und 16 bei 4. Die Arbeitstage nimmt das Programm aus der Arbeitszeit des Mitarbeiters. Liegt der Jahresurlaub darunter, gilt das gesetzliche Minimum.</li>
-                    <li>Im Eintrittsjahr gibt es ein Zwölftel des Jahresurlaubs je vollem Monat. Halbe Tage und mehr werden aufgerundet.</li>
-                    <li>Wer spätestens am 1. Juli anfängt, hat die Wartezeit von sechs Monaten noch im selben Jahr erfüllt und bekommt dann mindestens den gesetzlichen Mindesturlaub.</li>
+                    <li>Wer bis einschließlich 1. Juli anfängt, hat die Wartezeit von sechs Monaten noch im selben Jahr erfüllt und bekommt den vollen Jahresurlaub. Wer später anfängt, bekommt ein Zwölftel je vollem Monat (halbe Tage und mehr werden aufgerundet).</li>
+                    <li>Sehen Arbeits- oder Tarifvertrag auch bei Eintritt bis 1. Juli Zwölftel vor, stellen Sie das unter Einstellungen → Zeiterfassung → „Urlaub im Eintrittsjahr“ ein. Dann gibt es mindestens den gesetzlichen Mindesturlaub.</li>
                 </ul>
             </InfoAbschnitt>
             <InfoAbschnitt titel="Was bewirkt das?">
@@ -126,6 +126,7 @@ export function ResturlaubUebertrag({ mitarbeiterId }: { mitarbeiterId: number }
     };
 
     const geaendert = stand !== null && entwurf !== formatDecimalInput(stand.tage);
+    const grund = stand ? anspruchHinweis(stand.anspruchArt, stand.eintrittsdatum) : null;
     const jahrOptionen = [aktuellesJahr - 1, aktuellesJahr, aktuellesJahr + 1]
         .map(j => ({ value: String(j), label: `${j - 1} → ${j}` }));
 
@@ -185,9 +186,7 @@ export function ResturlaubUebertrag({ mitarbeiterId }: { mitarbeiterId: number }
                         <div className="flex items-start gap-1 pt-1">
                             <p className="text-xs text-slate-500" data-testid="urlaubsanspruch-jahr">
                                 Urlaubsanspruch {stand.jahr}: {formatUrlaubstageMitEinheit(stand.anspruch)}
-                                {anspruchHinweis(stand.anspruchArt, stand.eintrittsdatum)
-                                    ? ` – ${anspruchHinweis(stand.anspruchArt, stand.eintrittsdatum)}`
-                                    : ''}
+                                {grund ? ` – ${grund}` : ''}
                             </p>
                             <UrlaubsanspruchInfo />
                         </div>

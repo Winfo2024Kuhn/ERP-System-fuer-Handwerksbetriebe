@@ -64,8 +64,8 @@ public class UrlaubsantragService {
                                 + " genommen werden."
                         : "";
                 throw new IllegalStateException(
-                        String.format("Nicht genügend Urlaubstage. Verbleibend: %s, Beantragt: %d",
-                                UrlaubstageRechner.formatTage(pruefung.verbleibendVorher()), pruefung.beantragteTage())
+                        String.format("Nicht genügend Urlaubstage. Verbleibend: %s, Beantragt: %s",
+                                UrlaubstageRechner.formatTage(pruefung.verbleibendVorher()), UrlaubstageRechner.formatTage(pruefung.beantragteTage()))
                                 + grund);
             }
         }

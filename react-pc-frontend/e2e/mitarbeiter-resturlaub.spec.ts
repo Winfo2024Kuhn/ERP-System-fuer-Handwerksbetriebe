@@ -9,7 +9,10 @@ import { designPruefung } from './hilfen/design';
  * Kein Backend: alle /api-Routen gestubbt. Nur Dummy-Daten (Max Mustermann).
  */
 
-interface Stand { jahr: number; tage: number; berechnet: number; manuell: boolean; verfallsdatum: string | null }
+interface Stand {
+    jahr: number; tage: number; berechnet: number; manuell: boolean; verfallsdatum: string | null;
+    anspruch?: number; anspruchArt?: string; eintrittsdatum?: string | null;
+}
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -20,9 +23,9 @@ const MAX = {
     jahresUrlaub: 30, stundenlohn: null, loginToken: null, istGeschaeftsfuehrer: false,
 };
 
-async function stubbe(page: Page) {
+async function stubbe(page: Page, zusatz: Partial<Stand> = {}) {
     const puts: { mitarbeiterId: number; jahr: number; tage: number | null }[] = [];
-    let stand: Stand = { jahr: new Date().getFullYear(), tage: 4, berechnet: 4, manuell: false, verfallsdatum: `${new Date().getFullYear()}-03-31` };
+    let stand: Stand = { jahr: new Date().getFullYear(), tage: 4, berechnet: 4, manuell: false, verfallsdatum: `${new Date().getFullYear()}-03-31`, ...zusatz };
     await page.route('**/api/**', async (route) => {
         const anfrage = route.request();
         const pfad = new URL(anfrage.url()).pathname;
@@ -74,4 +77,21 @@ test('Resturlaub aus dem Vorjahr von Hand festlegen und zurücknehmen', async ({
     await expect(feld).toHaveValue('4');
     expect(puts.map(p => p.tage)).toEqual([2.5, null]);
     expect(puts.every(p => p.mitarbeiterId === 7)).toBe(true);
+});
+
+test('Urlaubsanspruch im Eintrittsjahr mit Grund und Info-Button', async ({ page }, info) => {
+    const jahr = new Date().getFullYear();
+    await stubbe(page, { tage: 0, berechnet: 0, anspruch: 13, anspruchArt: 'ANTEILIG_EINTRITT', eintrittsdatum: `${jahr}-08-01` });
+    await page.goto('/mitarbeiter');
+    await page.getByText('Mustermann', { exact: true }).click();
+
+    const zeile = page.getByTestId('urlaubsanspruch-jahr');
+    await expect(zeile).toHaveText(`Urlaubsanspruch ${jahr}: 13 Tage – anteilig wegen Eintritt am 01.08.${jahr}`);
+    await zeile.scrollIntoViewIfNeeded();
+
+    await page.getByRole('button', { name: 'Mehr zu: Urlaubsanspruch' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Urlaubsanspruch' });
+    await expect(dialog).toContainText('Wartezeit von sechs Monaten');
+    await expect(dialog).toContainText('Urlaub im Eintrittsjahr');
+    await designPruefung(page, info, 'mitarbeiter-urlaubsanspruch-info');
 });

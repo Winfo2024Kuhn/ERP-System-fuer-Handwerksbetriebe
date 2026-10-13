@@ -34,6 +34,7 @@ public class UrlaubsverfallEinstellungService {
     static final String VERFAELLT = "urlaub.verfall.aktiv";
     static final String VERFALL_TAG = "urlaub.verfall.tag";
     static final String AB_JAHR = "urlaub.uebertrag.ab-jahr";
+    static final String MEHRURLAUB_ANTEILIG = "urlaub.eintrittsjahr.mehrurlaub-anteilig";
 
     /** Gesetzlicher Standard: 31. März. */
     static final MonthDay STANDARD_TAG = MonthDay.of(3, 31);
@@ -109,6 +110,29 @@ public class UrlaubsverfallEinstellungService {
         } catch (DateTimeException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Diesen Tag gibt es nicht. Bitte ein gültiges Datum wählen.");
         }
+    }
+
+    /**
+     * Wird vertraglicher Mehrurlaub im Eintrittsjahr auch bei erfüllter Wartezeit
+     * gezwölftelt? Voreinstellung {@code false} = gesetzliche Regel: Wer bis zum
+     * 01.07. eintritt, bekommt den vollen Vertragsurlaub (Gleichlauf, BAG
+     * 07.08.2012 – 9 AZR 353/10). {@code true} nur, wenn Arbeitsvertrag oder Tarif
+     * das Zwölfteln vorsehen; der gesetzliche Mindesturlaub bleibt dann trotzdem.
+     */
+    public boolean mehrurlaubImEintrittsjahrAnteilig() {
+        return "true".equalsIgnoreCase(settings.get(MEHRURLAUB_ANTEILIG, "false").trim());
+    }
+
+    @Transactional
+    public boolean speichereMehrurlaubImEintrittsjahrAnteilig(Boolean anteilig) {
+        if (anteilig == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Bitte angeben, ob der Urlaub im Eintrittsjahr anteilig gerechnet wird.");
+        }
+        settings.save(MEHRURLAUB_ANTEILIG, Boolean.toString(anteilig),
+                "Vertraglichen Mehrurlaub im Eintrittsjahr auch bei Eintritt bis 01.07. zwölfteln (laut Vertrag/Tarif)?");
+        log.info("Regel für Urlaub im Eintrittsjahr gespeichert: anteilig={}", anteilig);
+        return anteilig;
     }
 
     /**

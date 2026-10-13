@@ -21,7 +21,7 @@ const SALDO = {
 }
 const URLAUBSVERFALL = { resturlaubTage: 3.5, verfallsDatum: '2027-03-31', verfallsJahr: 2027, tageVerbleibend: 20, dringend: true }
 
-async function vorbereiten(page: Page) {
+async function vorbereiten(page: Page, saldo: typeof SALDO = SALDO) {
     page.on('dialog', async dialog => {
         await dialog.dismiss()
         throw new Error(`Nativer Browserdialog: ${dialog.type()}`)
@@ -34,7 +34,7 @@ async function vorbereiten(page: Page) {
         const path = new URL(route.request().url()).pathname
         if (path.includes('/by-token/')) return route.fulfill({ json: { id: 1, aktiv: true, vorname: 'Max', nachname: 'Mustermann' } })
         if (path.includes('buchungszeitfenster')) return route.fulfill({ json: { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null } })
-        if (path.includes('/zeiterfassung/saldo/')) return route.fulfill({ json: SALDO })
+        if (path.includes('/zeiterfassung/saldo/')) return route.fulfill({ json: saldo })
         if (path.endsWith('/resturlaub')) return route.fulfill({ json: RESTURLAUB })
         if (path.includes('/urlaubsverfall/')) return route.fulfill({ json: URLAUBSVERFALL })
         if (path.includes('/aktiv/')) return route.fulfill({ json: { aktiv: false } })
@@ -58,6 +58,18 @@ test('Saldenauswertung: freie Tage mit Rest aus dem Vorjahr', async ({ page }, t
 
     await expect(page.getByText('33,5 Tage frei, davon 3,5 Tage aus dem Vorjahr – bis 31.03.2027 nehmen, danach verfallen sie')).toBeVisible()
     await designPruefung(page, testInfo, 'salden-resturlaub-vorjahr')
+})
+
+test('Saldenauswertung: Anspruch im Eintrittsjahr mit Grund', async ({ page }, testInfo) => {
+    await vorbereiten(page, {
+        ...SALDO,
+        urlaub: { ...SALDO.urlaub, jahresanspruch: 13, verbleibend: 13, uebertragVorjahr: 0, ausVorjahrOffen: 0,
+            anspruchArt: 'ANTEILIG_EINTRITT', eintrittsdatum: '2027-08-01' },
+    } as typeof SALDO)
+    await page.goto('salden')
+
+    await expect(page.getByText('Anspruch: anteilig wegen Eintritt am 01.08.2027')).toBeVisible()
+    await designPruefung(page, testInfo, 'salden-anspruch-eintrittsjahr')
 })
 
 test('Glocke: Erinnerung vor dem Verfall', async ({ page }, testInfo) => {

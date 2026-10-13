@@ -7,9 +7,9 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
@@ -69,7 +69,12 @@ public class UrlaubskontoService {
     record UrlaubsTag(LocalDate datum, BigDecimal anteil) {}
 
     /** Was für eine Abfrage einmal geladen wird. */
-    private record Kontext(UrlaubsverfallEinstellungService.Verfallsregel regel, int abJahr, LocalDate heute) {}
+    /**
+     * Was eine Rechnung braucht, einmal geladen. {@code ansprueche} merkt sich den
+     * Jahresanspruch je Jahr, damit die Kette über die Vorjahre ihn nicht mehrfach lädt.
+     */
+    private record Kontext(UrlaubsverfallEinstellungService.Verfallsregel regel, int abJahr, LocalDate heute,
+            boolean mehrurlaubAnteilig, Map<Integer, Anspruch> ansprueche) {}
 
     private record Uebertrag(BigDecimal tage, boolean manuell) {}
 
@@ -93,7 +98,7 @@ public class UrlaubskontoService {
      * @param beantragteTage           neu beantragte Arbeitstage (ohne schon gebuchte Urlaubstage)
      */
     public record Antragspruefung(BigDecimal verbleibendVorher, BigDecimal restDanach, LocalDate verfallsdatum,
-            boolean vorjahresrestVerfaellt, int beantragteTage) {
+            boolean vorjahresrestVerfaellt, BigDecimal beantragteTage) {
 
         public boolean reicht() {
             return restDanach.signum() >= 0;
@@ -146,21 +151,21 @@ public class UrlaubskontoService {
         LocalDate letzter = tage.stream().max(LocalDate::compareTo).orElse(heute);
         List<Abwesenheit> abwesenheiten = abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(
                 mitarbeiter.getId(), LocalDate.of(jahr, 1, 1), LocalDate.of(jahr, 12, 31));
-        // Schon gebuchte Urlaubstage im Zeitraum nicht doppelt zählen.
-        Set<LocalDate> schonGebucht = abwesenheiten.stream()
-                .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB && a.getDatum() != null)
-                .map(Abwesenheit::getDatum)
-                .collect(Collectors.toSet());
+        // Schon gebuchten Urlaub im Zeitraum nicht doppelt zählen – bei einem
+        // gebuchten halben Tag zählt nur noch die andere Hälfte.
+        Map<LocalDate, BigDecimal> schonGebucht = urlaubsTage(mitarbeiter, abwesenheiten).stream()
+                .collect(Collectors.toMap(UrlaubsTag::datum, UrlaubsTag::anteil, BigDecimal::add));
         List<UrlaubsTag> beantragt = tage.stream()
-                .filter(t -> !schonGebucht.contains(t))
-                .map(t -> new UrlaubsTag(t, BigDecimal.ONE))
+                .map(t -> new UrlaubsTag(t, BigDecimal.ONE.subtract(schonGebucht.getOrDefault(t, BigDecimal.ZERO))))
+                .filter(t -> t.anteil().signum() > 0)
                 .toList();
         Urlaubskonto vorher = berechne(mitarbeiter, jahr, stichtagImJahr(spaeterer(erster, heute), jahr), kontext, 0,
                 abwesenheiten, List.of());
         Urlaubskonto danach = berechne(mitarbeiter, jahr, stichtagImJahr(spaeterer(letzter, heute), jahr), kontext, 0,
                 abwesenheiten, beantragt);
         return new Antragspruefung(vorher.verbleibend(), rohRest(danach), danach.verfallsdatum(),
-                danach.verfallen().compareTo(vorher.verfallen()) > 0, beantragt.size());
+                danach.verfallen().compareTo(vorher.verfallen()) > 0,
+                beantragt.stream().map(UrlaubsTag::anteil).reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
     /** Übertrag in ein Jahr samt berechnetem Wert – rechnet höchstens das Vorjahr. */
@@ -181,7 +186,8 @@ public class UrlaubskontoService {
     }
 
     private Kontext kontext() {
-        return new Kontext(einstellungen.regel(), einstellungen.uebertragAbJahr(), LocalDate.now(clock));
+        return new Kontext(einstellungen.regel(), einstellungen.uebertragAbJahr(), LocalDate.now(clock),
+                einstellungen.mehrurlaubImEintrittsjahrAnteilig(), new HashMap<>());
     }
 
     private static LocalDate spaeterer(LocalDate a, LocalDate b) {
@@ -232,20 +238,26 @@ public class UrlaubskontoService {
     /** Jahresanspruch des Mitarbeiters; Arbeitstage je Woche aus seinem Zeitkonto. */
     @Transactional(readOnly = true)
     public Anspruch anspruch(Mitarbeiter mitarbeiter, int jahr) {
-        return anspruchImJahr(mitarbeiter.getJahresUrlaub(), mitarbeiter.getEintrittsdatum(), jahr,
-                arbeitstageJeWoche(mitarbeiter, jahr));
+        return anspruch(mitarbeiter, jahr, kontext());
+    }
+
+    private Anspruch anspruch(Mitarbeiter mitarbeiter, int jahr, Kontext kontext) {
+        return kontext.ansprueche().computeIfAbsent(jahr, j -> anspruchImJahr(mitarbeiter.getJahresUrlaub(),
+                mitarbeiter.getEintrittsdatum(), j, arbeitstageJeWoche(mitarbeiter, j), kontext.mehrurlaubAnteilig()));
     }
 
     /**
-     * Arbeitstage je Woche laut Zeitkonto (Tage mit Soll &gt; 0) – Version zum
-     * Beginn der Beschäftigung im Jahr. Ohne Zeitkonto gilt die 5-Tage-Woche.
+     * Arbeitstage je Woche laut Zeitkonto (Tage mit Soll &gt; 0): die höchste Zahl
+     * aller Versionen, die im Jahr gelten – so bekommt niemand weniger als den
+     * Mindesturlaub, auch wenn das Zeitkonto erst im Laufe des Jahres angelegt
+     * wurde. Ohne Zeitkonto im Jahr gilt die 5-Tage-Woche.
      */
     private int arbeitstageJeWoche(Mitarbeiter mitarbeiter, int jahr) {
-        LocalDate eintritt = mitarbeiter.getEintrittsdatum();
-        LocalDate stichtag = eintritt != null && eintritt.getYear() == jahr ? eintritt : LocalDate.of(jahr, 1, 1);
-        return zeitkontoVersionRepository.findAm(mitarbeiter.getId(), stichtag)
-                .map(ZeitkontoVersion::getArbeitstageProWoche)
+        return zeitkontoVersionRepository.findImZeitraum(mitarbeiter.getId(), LocalDate.of(jahr, 1, 1),
+                        LocalDate.of(jahr, 12, 31)).stream()
+                .mapToInt(ZeitkontoVersion::getArbeitstageProWoche)
                 .filter(tage -> tage > 0)
+                .max()
                 .orElse(STANDARD_ARBEITSTAGE);
     }
 
@@ -255,9 +267,11 @@ public class UrlaubskontoService {
      * <ul>
      *   <li>Liegt der Vertragsurlaub unter dem gesetzlichen Mindesturlaub, gilt das Minimum (§ 3, § 13 BUrlG).</li>
      *   <li><b>Eintritt bis 01.07.:</b> Die Wartezeit von sechs Monaten (§ 4 BUrlG) ist im Eintrittsjahr
-     *       erfüllt – nach BAG-Lesart auch bei Eintritt am 01.07., denn sie endet dann mit dem 31.12. Der Mitarbeiter
-     *       bekommt mindestens den vollen gesetzlichen Mindesturlaub, sonst ein Zwölftel des Vertragsurlaubs je vollem
-     *       Monat, wenn das mehr ist; höchstens den vollen Vertragsurlaub.</li>
+     *       erfüllt – nach BAG-Lesart auch bei Eintritt am 01.07., denn sie endet dann mit dem 31.12. Ohne
+     *       abweichende Vereinbarung gilt für den vertraglichen Mehrurlaub dasselbe (Gleichlauf, BAG 07.08.2012 –
+     *       9 AZR 353/10): voller Vertragsurlaub. Nur wenn der Betrieb eingestellt hat, dass Vertrag oder Tarif den
+     *       Mehrurlaub zwölfteln ({@code mehrurlaubAnteilig}), gibt es ein Zwölftel je vollem Monat – aber mindestens
+     *       den gesetzlichen Mindesturlaub.</li>
      *   <li><b>Eintritt nach dem 01.07.:</b> Wartezeit nicht erfüllt, nur ein Zwölftel je vollem Monat
      *       (§ 5 Abs. 1 a BUrlG).</li>
      *   <li>Vor dem Eintrittsjahr: kein Anspruch.</li>
@@ -270,10 +284,11 @@ public class UrlaubskontoService {
      * <p><b>Rundung (§ 5 Abs. 2 BUrlG):</b> Bruchteile von mindestens einem halben Tag werden auf einen vollen
      * Tag aufgerundet. Kleinere Bruchteile dürfen nach der Rechtsprechung des BAG nicht abgerundet werden; weil das
      * Programm nur halbe Tage kennt, werden sie zugunsten des Mitarbeiters auf einen halben Tag aufgerundet.
-     * Beispiele (5-Tage-Woche): 30 Tage, Eintritt 15.03. → 22,5 → 23; Eintritt 01.06. → 17,5 → 18, angehoben auf
-     * 20; Eintritt 01.08. → 12,5 → 13.
+     * Beispiele (30 Tage, 5-Tage-Woche): Eintritt 15.03. → 30 (gezwölftelt: 22,5 → 23); Eintritt 01.06. → 30
+     * (gezwölftelt: 17,5 → 18, angehoben auf 20); Eintritt 01.08. → 12,5 → 13.
      */
-    static Anspruch anspruchImJahr(Integer jahresUrlaub, LocalDate eintritt, int jahr, int arbeitstageJeWoche) {
+    static Anspruch anspruchImJahr(Integer jahresUrlaub, LocalDate eintritt, int jahr, int arbeitstageJeWoche,
+            boolean mehrurlaubAnteilig) {
         BigDecimal mindest = gesetzlicherMindesturlaub(arbeitstageJeWoche);
         BigDecimal laut = BigDecimal.valueOf(jahresUrlaub != null ? jahresUrlaub : STANDARD_ANSPRUCH);
         BigDecimal vertrag = laut.max(mindest);
@@ -285,12 +300,12 @@ public class UrlaubskontoService {
             return new Anspruch(BigDecimal.ZERO, Anspruchsart.VOR_EINTRITT);
         }
         long monate = Math.min(12, ChronoUnit.MONTHS.between(eintritt, LocalDate.of(jahr + 1, 1, 1)));
-        if (monate >= 12) {
+        boolean wartezeitErfuellt = !eintritt.isAfter(LocalDate.of(jahr, 7, 1));
+        if (monate >= 12 || (wartezeitErfuellt && !mehrurlaubAnteilig)) {
             return new Anspruch(vertrag, vollArt);
         }
         BigDecimal anteilig = aufHalbeTageAufgerundet(
                 vertrag.multiply(BigDecimal.valueOf(monate)).divide(BigDecimal.valueOf(12), 4, RoundingMode.HALF_UP));
-        boolean wartezeitErfuellt = !eintritt.isAfter(LocalDate.of(jahr, 7, 1));
         if (wartezeitErfuellt && anteilig.compareTo(mindest) < 0) {
             return new Anspruch(mindest.min(vertrag), Anspruchsart.MINDESTURLAUB_EINTRITT);
         }
@@ -308,7 +323,7 @@ public class UrlaubskontoService {
 
     private Urlaubskonto berechne(Mitarbeiter mitarbeiter, int jahr, LocalDate stichtag, Kontext kontext, int tiefe,
             List<Abwesenheit> geladen, List<UrlaubsTag> zusaetzlich) {
-        BigDecimal anspruch = anspruch(mitarbeiter, jahr).tage();
+        BigDecimal anspruch = anspruch(mitarbeiter, jahr, kontext).tage();
         List<Abwesenheit> abwesenheiten = geladen != null ? geladen
                 : abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(
                         mitarbeiter.getId(), LocalDate.of(jahr, 1, 1), LocalDate.of(jahr, 12, 31));

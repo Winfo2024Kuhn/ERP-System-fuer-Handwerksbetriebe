@@ -20,6 +20,11 @@ export interface UrlaubsverfallRegel {
     monat: number;
 }
 
+/** Urlaub im Eintrittsjahr: `true` = Vertragsurlaub auch bei Eintritt bis 01.07. zwölfteln (laut Vertrag/Tarif). */
+export interface UrlaubEintrittsjahrRegel {
+    mehrurlaubAnteilig: boolean;
+}
+
 /** Mitarbeiter für die Personalnummern-Tabelle. */
 export interface MitarbeiterEintrag {
     id: number;
@@ -69,6 +74,10 @@ export const zeiterfassungApi = {
         anfrage<UrlaubsverfallRegel>('/api/settings/urlaubsverfall', 'Die Regel für Resturlaub konnte nicht geladen werden.'),
     speichereUrlaubsverfall: (regel: UrlaubsverfallRegel) =>
         anfrage<UrlaubsverfallRegel>('/api/settings/urlaubsverfall', 'Die Regel für Resturlaub konnte nicht gespeichert werden.', schreiben(regel)),
+    ladeUrlaubEintrittsjahr: () =>
+        anfrage<UrlaubEintrittsjahrRegel>('/api/settings/urlaub-eintrittsjahr', 'Die Regel für den Urlaub im Eintrittsjahr konnte nicht geladen werden.'),
+    speichereUrlaubEintrittsjahr: (regel: UrlaubEintrittsjahrRegel) =>
+        anfrage<UrlaubEintrittsjahrRegel>('/api/settings/urlaub-eintrittsjahr', 'Die Regel für den Urlaub im Eintrittsjahr konnte nicht gespeichert werden.', schreiben(regel)),
     ladeDatev: () =>
         anfrage<Konfiguration>('/api/settings/datev', 'Die DATEV-Einstellungen konnten nicht geladen werden.'),
     speichereDatev: (konfiguration: Konfiguration) =>

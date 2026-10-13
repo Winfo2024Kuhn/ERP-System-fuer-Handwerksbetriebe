@@ -49,6 +49,17 @@ public class ZeiterfassungEinstellungenController {
                 urlaubsverfall.speichern(eingabe.verfaellt(), eingabe.tag(), eingabe.monat()));
     }
 
+    @GetMapping("/urlaub-eintrittsjahr")
+    public UrlaubEintrittsjahrEinstellung urlaubEintrittsjahr() {
+        return new UrlaubEintrittsjahrEinstellung(urlaubsverfall.mehrurlaubImEintrittsjahrAnteilig());
+    }
+
+    @PutMapping("/urlaub-eintrittsjahr")
+    public UrlaubEintrittsjahrEinstellung urlaubEintrittsjahrSpeichern(@RequestBody UrlaubEintrittsjahrEinstellung eingabe) {
+        return new UrlaubEintrittsjahrEinstellung(
+                urlaubsverfall.speichereMehrurlaubImEintrittsjahrAnteilig(eingabe.mehrurlaubAnteilig()));
+    }
+
     @GetMapping("/datev")
     public Konfiguration datev() {
         return datev.einstellungenLaden();
@@ -62,6 +73,9 @@ public class ZeiterfassungEinstellungenController {
     private static ZeiterfassungEinstellung antwort(LocalDate tag) {
         return new ZeiterfassungEinstellung(tag == null ? null : tag.toString());
     }
+
+    /** mehrurlaubAnteilig: {@code true} = Vertragsurlaub im Eintrittsjahr immer zwölfteln (laut Vertrag/Tarif). */
+    public record UrlaubEintrittsjahrEinstellung(Boolean mehrurlaubAnteilig) {}
 
     /** eingefuehrtAm: ISO-Datum {@code yyyy-MM-dd} oder {@code null} (keine Grenze). */
     public record ZeiterfassungEinstellung(String eingefuehrtAm) {}

@@ -365,7 +365,8 @@ class UrlaubskontoServiceTest {
 
         @Test
         void eintrittsjahrHatAnteiligenAnspruchUndGibtDenRestWeiter() {
-            // Eintritt 15.03.2026 → 9 volle Monate → 30 × 9/12 = 22,5 → 23 Tage (§ 5 Abs. 2 BUrlG).
+            // Betrieb zwölftelt laut Tarif: Eintritt 15.03.2026 → 9 volle Monate → 30 × 9/12 = 22,5 → 23 Tage.
+            lenient().when(einstellungen.mehrurlaubImEintrittsjahrAnteilig()).thenReturn(true);
             max.setEintrittsdatum(LocalDate.of(2026, 3, 15));
             bucheUrlaub(LocalDate.of(2026, 7, 1), 20, 0);
 
@@ -407,30 +408,72 @@ class UrlaubskontoServiceTest {
             UrlaubskontoService.Antragspruefung pruefung = service.pruefeAntrag(max, 2027,
                     tage(LocalDate.of(2027, 8, 2), LocalDate.of(2027, 8, 3)));
 
-            assertThat(pruefung.beantragteTage()).isEqualTo(1);
+            assertThat(pruefung.beantragteTage()).isEqualByComparingTo("1");
             assertThat(pruefung.restDanach()).isEqualByComparingTo("1");
             assertThat(pruefung.reicht()).isTrue();
         }
 
+        private org.example.kalkulationsprogramm.domain.ZeitkontoVersion version(String... stundenMoBisSa) {
+            org.example.kalkulationsprogramm.domain.ZeitkontoVersion v = new org.example.kalkulationsprogramm.domain.ZeitkontoVersion();
+            v.setMontagStunden(d(stundenMoBisSa[0]));
+            v.setDienstagStunden(d(stundenMoBisSa[1]));
+            v.setMittwochStunden(d(stundenMoBisSa[2]));
+            v.setDonnerstagStunden(d(stundenMoBisSa[3]));
+            v.setFreitagStunden(d(stundenMoBisSa[4]));
+            v.setSamstagStunden(d(stundenMoBisSa[5]));
+            return v;
+        }
+
         @Test
         void anspruchNutztDieArbeitstageAusDemZeitkonto() {
-            // 4-Tage-Woche, Eintritt 01.06.2026 → 7/12 von 24 = 14 → angehoben auf 16 (gesetzliches Minimum)
+            // Betrieb zwölftelt laut Tarif. 4-Tage-Woche, Eintritt 01.06.2026 → 7/12 von 24 = 14 → angehoben auf 16
+            when(einstellungen.mehrurlaubImEintrittsjahrAnteilig()).thenReturn(true);
             max.setJahresUrlaub(24);
             max.setEintrittsdatum(LocalDate.of(2026, 6, 1));
-            org.example.kalkulationsprogramm.domain.ZeitkontoVersion version = new org.example.kalkulationsprogramm.domain.ZeitkontoVersion();
-            version.setMontagStunden(d("8"));
-            version.setDienstagStunden(d("8"));
-            version.setMittwochStunden(d("8"));
-            version.setDonnerstagStunden(d("8"));
-            version.setFreitagStunden(BigDecimal.ZERO);
-            when(zeitkontoVersionRepository.findAm(1L, LocalDate.of(2026, 6, 1))).thenReturn(Optional.of(version));
+            org.example.kalkulationsprogramm.domain.ZeitkontoVersion vierTage = version("8", "8", "8", "8", "0", "0");
+            when(zeitkontoVersionRepository.findImZeitraum(1L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)))
+                    .thenReturn(List.of(vierTage));
 
             UrlaubskontoService.Anspruch anspruch = service.anspruch(max, 2026);
 
-            assertThat(version.getArbeitstageProWoche()).isEqualTo(4);
+            assertThat(vierTage.getArbeitstageProWoche()).isEqualTo(4);
             assertThat(anspruch.tage()).isEqualByComparingTo("16");
             assertThat(anspruch.art()).isEqualTo(UrlaubskontoService.Anspruchsart.MINDESTURLAUB_EINTRITT);
             assertThat(service.berechne(max, 2026).jahresanspruch()).isEqualByComparingTo("16");
+        }
+
+        @Test
+        void ohneZwoelftelnGibtEsBeiEintrittBis0107DenVollenVertragsurlaub() {
+            max.setJahresUrlaub(30);
+            max.setEintrittsdatum(LocalDate.of(2026, 3, 15));
+
+            UrlaubskontoService.Anspruch anspruch = service.anspruch(max, 2026);
+
+            assertThat(anspruch.tage()).isEqualByComparingTo("30");
+            assertThat(anspruch.art()).isEqualTo(UrlaubskontoService.Anspruchsart.VOLL);
+        }
+
+        @Test
+        void hoechsteArbeitstageImJahrZaehlen_auchWennDasZeitkontoSpaeterBeginnt() {
+            // Vertrag 20 Tage, ab Sommer 6-Tage-Woche → Minimum 24, nicht 20 aus der Vorgabe ohne Zeitkonto
+            max.setJahresUrlaub(20);
+            when(zeitkontoVersionRepository.findImZeitraum(1L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)))
+                    .thenReturn(List.of(version("8", "8", "8", "8", "8", "0"), version("7", "7", "7", "7", "7", "5")));
+
+            UrlaubskontoService.Anspruch anspruch = service.anspruch(max, 2026);
+
+            assertThat(anspruch.tage()).isEqualByComparingTo("24");
+            assertThat(anspruch.art()).isEqualTo(UrlaubskontoService.Anspruchsart.MINDESTURLAUB);
+        }
+
+        @Test
+        void anspruchWirdInDerKetteJeJahrNurEinmalGeladen() {
+            when(einstellungen.uebertragAbJahr()).thenReturn(2024);
+
+            service.berechne(max, 2027);
+
+            verify(zeitkontoVersionRepository, org.mockito.Mockito.times(1))
+                    .findImZeitraum(1L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31));
         }
 
         @Test
@@ -451,12 +494,29 @@ class UrlaubskontoServiceTest {
     @Nested
     class AnspruchNachGesetz {
 
+        /** Gesetzliche Regel: Mehrurlaub bei erfüllter Wartezeit nicht zwölfteln. */
         private BigDecimal tage(Integer urlaub, LocalDate eintritt, int jahr, int arbeitstage) {
-            return UrlaubskontoService.anspruchImJahr(urlaub, eintritt, jahr, arbeitstage).tage();
+            return UrlaubskontoService.anspruchImJahr(urlaub, eintritt, jahr, arbeitstage, false).tage();
         }
 
         private UrlaubskontoService.Anspruchsart art(Integer urlaub, LocalDate eintritt, int jahr, int arbeitstage) {
-            return UrlaubskontoService.anspruchImJahr(urlaub, eintritt, jahr, arbeitstage).art();
+            return UrlaubskontoService.anspruchImJahr(urlaub, eintritt, jahr, arbeitstage, false).art();
+        }
+
+        /** Vertrag/Tarif zwölftelt den Mehrurlaub im Eintrittsjahr. */
+        private UrlaubskontoService.Anspruch gezwoelftelt(Integer urlaub, LocalDate eintritt, int jahr, int arbeitstage) {
+            return UrlaubskontoService.anspruchImJahr(urlaub, eintritt, jahr, arbeitstage, true);
+        }
+
+        @Test
+        void eintrittBis0107_ohneZwoelftelung_vollerVertragsurlaub() {
+            // Gleichlauf von gesetzlichem und vertraglichem Urlaub (BAG 9 AZR 353/10)
+            assertThat(tage(30, LocalDate.of(2027, 3, 15), 2027, 5)).isEqualByComparingTo("30");
+            assertThat(art(30, LocalDate.of(2027, 3, 15), 2027, 5)).isEqualTo(UrlaubskontoService.Anspruchsart.VOLL);
+            assertThat(tage(30, LocalDate.of(2027, 7, 1), 2027, 5)).isEqualByComparingTo("30");
+            // Vertrag unter dem Minimum: Minimum
+            assertThat(tage(18, LocalDate.of(2027, 5, 1), 2027, 5)).isEqualByComparingTo("20");
+            assertThat(art(18, LocalDate.of(2027, 5, 1), 2027, 5)).isEqualTo(UrlaubskontoService.Anspruchsart.MINDESTURLAUB);
         }
 
         @Test
@@ -491,17 +551,23 @@ class UrlaubskontoServiceTest {
         }
 
         @Test
-        void eintrittBis0107_wartezeitErfuellt_mindestensGesetzlicherUrlaub() {
+        void eintrittBis0107_gezwoelftelt_mindestensGesetzlicherUrlaub() {
             // 15.03.: 9 Monate → 22,5 → 23, mehr als das Minimum
-            assertThat(tage(30, LocalDate.of(2027, 3, 15), 2027, 5)).isEqualByComparingTo("23");
-            assertThat(art(30, LocalDate.of(2027, 3, 15), 2027, 5)).isEqualTo(UrlaubskontoService.Anspruchsart.ANTEILIG_EINTRITT);
+            assertThat(gezwoelftelt(30, LocalDate.of(2027, 3, 15), 2027, 5).tage()).isEqualByComparingTo("23");
+            assertThat(gezwoelftelt(30, LocalDate.of(2027, 3, 15), 2027, 5).art()).isEqualTo(UrlaubskontoService.Anspruchsart.ANTEILIG_EINTRITT);
             // 01.06.: 7 Monate → 17,5 → 18, angehoben auf 20
-            assertThat(tage(30, LocalDate.of(2027, 6, 1), 2027, 5)).isEqualByComparingTo("20");
-            assertThat(art(30, LocalDate.of(2027, 6, 1), 2027, 5)).isEqualTo(UrlaubskontoService.Anspruchsart.MINDESTURLAUB_EINTRITT);
+            assertThat(gezwoelftelt(30, LocalDate.of(2027, 6, 1), 2027, 5).tage()).isEqualByComparingTo("20");
+            assertThat(gezwoelftelt(30, LocalDate.of(2027, 6, 1), 2027, 5).art()).isEqualTo(UrlaubskontoService.Anspruchsart.MINDESTURLAUB_EINTRITT);
             // 01.07.: Wartezeit endet am 31.12. – noch erfüllt (BAG) → 15 angehoben auf 20
-            assertThat(tage(30, LocalDate.of(2027, 7, 1), 2027, 5)).isEqualByComparingTo("20");
+            assertThat(gezwoelftelt(30, LocalDate.of(2027, 7, 1), 2027, 5).tage()).isEqualByComparingTo("20");
             // 4-Tage-Woche: Minimum 16
-            assertThat(tage(24, LocalDate.of(2027, 6, 1), 2027, 4)).isEqualByComparingTo("16");
+            assertThat(gezwoelftelt(24, LocalDate.of(2027, 6, 1), 2027, 4).tage()).isEqualByComparingTo("16");
+        }
+
+        @Test
+        void eintrittNach0107_gleichMitOderOhneZwoelftelung() {
+            assertThat(gezwoelftelt(30, LocalDate.of(2027, 8, 1), 2027, 5).tage()).isEqualByComparingTo("13");
+            assertThat(tage(30, LocalDate.of(2027, 8, 1), 2027, 5)).isEqualByComparingTo("13");
         }
 
         @Test

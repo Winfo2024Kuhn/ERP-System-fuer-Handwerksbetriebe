@@ -10,6 +10,27 @@ import { InfoAbschnitt, InfoButton } from '../../../ui/info-button';
 const HINTERGRUND = 'Was passiert im Hintergrund?';
 const WIRKUNG = 'Was bewirkt das?';
 
+export function UrlaubEintrittsjahrInfo() {
+    return (
+        <InfoButton titel="Urlaub im Eintrittsjahr">
+            <InfoAbschnitt titel={HINTERGRUND}>
+                <ul className="list-disc space-y-0.5 pl-4">
+                    <li>Wer bis einschließlich 1. Juli anfängt, hat die Wartezeit von sechs Monaten noch im selben Jahr erfüllt. Gesetzlich steht ihm dann der volle Urlaub zu – auch der Urlaub, der über das gesetzliche Minimum hinausgeht, solange Arbeits- oder Tarifvertrag nichts anderes sagen.</li>
+                    <li>Wer später anfängt, bekommt ein Zwölftel des Jahresurlaubs je vollem Monat. Halbe Tage und mehr werden aufgerundet.</li>
+                    <li>„Immer anteilig“ rechnet auch bei Eintritt bis 1. Juli mit Zwölfteln, gibt aber mindestens den gesetzlichen Mindesturlaub (20 Tage bei 5 Arbeitstagen, 16 bei 4).</li>
+                </ul>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel={WIRKUNG}>
+                <ul className="list-disc space-y-0.5 pl-4">
+                    <li>Gilt für alle Mitarbeiter mit Eintrittsdatum – für Urlaubsanträge, Resturlaub und den Übertrag ins nächste Jahr. Gebuchte Urlaubstage ändern sich nicht.</li>
+                    <li>„Immer anteilig“ nur wählen, wenn Ihre Arbeitsverträge oder Ihr Tarifvertrag das vorsehen. Im Zweifel beim Steuerbüro oder der Innung nachfragen.</li>
+                    <li>Beim Mitarbeiter steht neben dem Urlaubsanspruch, wie er zustande kommt.</li>
+                </ul>
+            </InfoAbschnitt>
+        </InfoButton>
+    );
+}
+
 export function ResturlaubInfo() {
     return (
         <InfoButton titel="Resturlaub ins neue Jahr">
@@ -28,7 +49,7 @@ export function ResturlaubInfo() {
                     <li>Wurde im alten Jahr mehr Urlaub genommen als da war, wird nichts abgezogen – der Übertrag ist dann 0.</li>
                     <li>Gesetzlich verfällt der Rest nur, wenn Sie Ihre Leute rechtzeitig und konkret darauf hingewiesen haben, wie viel Urlaub noch offen ist und wann er verfällt – sonst bleibt er erhalten. Die Erinnerung in der Handy-App hilft dabei, ein schriftlicher Hinweis vom Betrieb ist sicherer.</li>
                     <li>Ein Verfallstag vor dem 31. März ist nur erlaubt, wenn Ihr Tarifvertrag das vorsieht.</li>
-                    <li>Im Eintrittsjahr rechnet das Programm den Anspruch nach dem Bundesurlaubsgesetz: ein Zwölftel je vollem Monat, bei Eintritt bis 1. Juli aber mindestens den gesetzlichen Mindesturlaub. Details stehen beim Mitarbeiter am Urlaubsanspruch.</li>
+                    <li>Wie viel Urlaub es im Eintrittsjahr gibt, legen Sie in der Karte „Urlaub im Eintrittsjahr“ fest.</li>
                     <li>Gebuchte Urlaubstage ändern sich nicht. Den ersten Übertrag gibt es ins Jahr nach dem Update.</li>
                 </ul>
             </InfoAbschnitt>
