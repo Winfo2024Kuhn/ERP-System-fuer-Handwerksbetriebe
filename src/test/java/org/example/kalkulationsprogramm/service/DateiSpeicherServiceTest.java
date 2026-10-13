@@ -36,11 +36,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 class DateiSpeicherServiceTest {
 
@@ -113,15 +117,19 @@ class DateiSpeicherServiceTest {
         final ProjektDokumentRepository dokumentRepository;
         final ProjektRepository projektRepository;
         final AusgangsGeschaeftsDokumentService preisAutomatik;
+        /** Ablage der Projektdokumente (Temp-Ordner). */
+        final Path dokumentenOrdner;
 
         ServiceSetup(DateiSpeicherService service,
                 ProjektDokumentRepository dokumentRepository,
                 ProjektRepository projektRepository,
-                AusgangsGeschaeftsDokumentService preisAutomatik) {
+                AusgangsGeschaeftsDokumentService preisAutomatik,
+                Path dokumentenOrdner) {
             this.service = service;
             this.dokumentRepository = dokumentRepository;
             this.projektRepository = projektRepository;
             this.preisAutomatik = preisAutomatik;
+            this.dokumentenOrdner = dokumentenOrdner;
         }
     }
 
@@ -147,7 +155,7 @@ class DateiSpeicherServiceTest {
                 iconRoot.toString(), "",
                 dokRepo, projRepo, anfrageDokRepo, anfrageRepo, prodRepo, kundeRepo, zugferd, mapper,
                 settingsMock(hicadRoot.toString(), networkUrl), preisAutomatik);
-        return new ServiceSetup(service, dokRepo, projRepo, preisAutomatik);
+        return new ServiceSetup(service, dokRepo, projRepo, preisAutomatik, docRoot);
     }
 
     @Test
@@ -910,8 +918,10 @@ class DateiSpeicherServiceTest {
 
         when(setup.dokumentRepository.findById(200L)).thenReturn(Optional.of(normalDoc));
 
-        assertThrows(RuntimeException.class,
+        ResponseStatusException fehler = assertThrows(ResponseStatusException.class,
                 () -> setup.service.setzeGeschaeftsdokumentBezahlt(200L, true));
+        assertEquals(HttpStatus.BAD_REQUEST, fehler.getStatusCode());
+        verify(setup.preisAutomatik, never()).setzeOffenenPostenBezahlt(any(), anyBoolean());
     }
 
     @Test
@@ -920,8 +930,43 @@ class DateiSpeicherServiceTest {
 
         when(setup.dokumentRepository.findById(999L)).thenReturn(Optional.empty());
 
-        assertThrows(RuntimeException.class,
+        ResponseStatusException fehler = assertThrows(ResponseStatusException.class,
                 () -> setup.service.setzeGeschaeftsdokumentBezahlt(999L, true));
+        assertEquals(HttpStatus.NOT_FOUND, fehler.getStatusCode());
+    }
+
+    @Test
+    void loescheDateiGibt404WennDokumentNichtGefunden() throws IOException {
+        ServiceSetup setup = createMahnungService();
+
+        when(setup.dokumentRepository.findById(999L)).thenReturn(Optional.empty());
+
+        ResponseStatusException fehler = assertThrows(ResponseStatusException.class,
+                () -> setup.service.loescheDatei(999L));
+        assertEquals(HttpStatus.NOT_FOUND, fehler.getStatusCode());
+        verify(setup.dokumentRepository, never()).delete(any());
+    }
+
+    @Test
+    void loescheDateiNenntBeiDateifehlerNurDieIdNichtDenDateinamen() throws IOException {
+        ServiceSetup setup = createMahnungService();
+        // Ein nicht leerer Ordner in der Ablage lässt sich nicht löschen – so entsteht ein
+        // echter Dateifehler.
+        Path volleAblage = Files.createDirectory(setup.dokumentenOrdner.resolve("nicht-leer"));
+        Files.writeString(volleAblage.resolve("inhalt.txt"), "x");
+        ProjektDokument dokument = new ProjektDokument();
+        dokument.setId(77L);
+        dokument.setOriginalDateiname("Angebot Max Mustermann.pdf");
+        dokument.setGespeicherterDateiname("nicht-leer");
+        when(setup.dokumentRepository.findById(77L)).thenReturn(Optional.of(dokument));
+
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> setup.service.loescheDatei(77L));
+
+        // Die Meldung landet im Server-Log: keine Klarnamen (DSGVO).
+        assertTrue(fehler.getMessage().contains("77"));
+        assertFalse(fehler.getMessage().contains("Mustermann"));
+        verify(setup.dokumentRepository, never()).delete(any());
     }
 
     /** Baut eine bezahlte Rechnung samt Projekt und Kunde für die Top-Kunden-Auswertung. */

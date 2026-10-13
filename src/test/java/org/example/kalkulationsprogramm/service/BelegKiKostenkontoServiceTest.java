@@ -437,4 +437,106 @@ class BelegKiKostenkontoServiceTest {
 
         assertThat(beleg.getKiKostenkontoConfidence()).isEqualByComparingTo("1.00");
     }
+
+    // ── Parallele Werkzeug-Aufrufe ──
+
+    @SuppressWarnings("unchecked")
+    private static HttpResponse<String> geminiAntwort(String body) {
+        HttpResponse<String> response = Mockito.mock(HttpResponse.class);
+        Mockito.lenient().when(response.statusCode()).thenReturn(200);
+        Mockito.lenient().when(response.body()).thenReturn(body);
+        return response;
+    }
+
+    private HttpClient mockAntworten(BelegKiKostenkontoService svc, String... koerper) throws Exception {
+        Mockito.when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        HttpClient client = Mockito.mock(HttpClient.class);
+        HttpResponse<?>[] antworten = java.util.Arrays.stream(koerper).map(BelegKiKostenkontoServiceTest::geminiAntwort)
+                .toArray(HttpResponse[]::new);
+        Mockito.doReturn(antworten[0], (Object[]) java.util.Arrays.copyOfRange(antworten, 1, antworten.length))
+                .when(client).send(Mockito.any(HttpRequest.class), Mockito.any());
+        ReflectionTestUtils.setField(svc, "httpClient", client);
+        ReflectionTestUtils.setField(svc, "geminiModel", "dummy-test-model");
+        return client;
+    }
+
+    /** Liest den JSON-Koerper einer HttpRequest. */
+    private static String anfrageKoerper(HttpRequest anfrage) {
+        StringBuilder text = new StringBuilder();
+        anfrage.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
+            @Override
+            public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(java.nio.ByteBuffer item) {
+                text.append(StandardCharsets.UTF_8.decode(item));
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                throw new IllegalStateException(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                // fertig
+            }
+        });
+        return text.toString();
+    }
+
+    @Test
+    void mehrereGleichzeitigeAufrufeWerdenAlleInEinemZugBeantwortet() throws Exception {
+        BelegKiKostenkontoService svc = service();
+        HttpClient client = mockAntworten(svc, """
+                {"candidates":[{"content":{"role":"model","parts":[
+                  {"functionCall":{"id":"a1","name":"liste_kostenstellen","args":{}},"thoughtSignature":"sig"},
+                  {"functionCall":{"id":"a2","name":"liste_sachkonten","args":{}}}
+                ]}}]}
+                """, """
+                {"candidates":[{"content":{"parts":[
+                  {"functionCall":{"id":"a3","name":"finale_zuordnung","args":{"confidence":0.3,"begruendung":"Unklar"}}}
+                ]}}]}
+                """);
+
+        svc.klassifiziereBeleg(new Beleg());
+
+        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
+        Mockito.verify(client, Mockito.times(2)).send(anfragen.capture(), Mockito.any());
+        var contents = new ObjectMapper().readTree(anfrageKoerper(anfragen.getAllValues().get(1))).path("contents");
+        assertThat(contents).hasSize(3);
+        assertThat(contents.get(1).path("parts").get(0).path("thoughtSignature").asText()).isEqualTo("sig");
+        var antworten = contents.get(2).path("parts");
+        assertThat(contents.get(2).path("role").asText()).isEqualTo("user");
+        assertThat(antworten).hasSize(2);
+        assertThat(antworten.get(0).path("functionResponse").path("id").asText()).isEqualTo("a1");
+        assertThat(antworten.get(0).path("functionResponse").path("response").path("name").asText())
+                .isEqualTo("liste_kostenstellen");
+        assertThat(antworten.get(1).path("functionResponse").path("id").asText()).isEqualTo("a2");
+        assertThat(antworten.get(1).path("functionResponse").path("response").path("name").asText())
+                .isEqualTo("liste_sachkonten");
+        Mockito.verify(kostenstelleRepository).findByAktivTrueOrderBySortierungAsc();
+        Mockito.verify(sachkontoRepository).findByAktivTrueOrderBySortierungAscBezeichnungAsc();
+    }
+
+    @Test
+    void finaleZuordnungNebenAnderenAufrufenBeendetDenLauf() throws Exception {
+        BelegKiKostenkontoService svc = service();
+        HttpClient client = mockAntworten(svc, """
+                {"candidates":[{"content":{"parts":[
+                  {"functionCall":{"id":"a1","name":"liste_kostenstellen","args":{}}},
+                  {"functionCall":{"id":"a2","name":"finale_zuordnung","args":{"confidence":0.3,"begruendung":"Unklar"}}}
+                ]}}]}
+                """);
+        Beleg beleg = new Beleg();
+
+        svc.klassifiziereBeleg(beleg);
+
+        Mockito.verify(client, Mockito.times(1)).send(Mockito.any(HttpRequest.class), Mockito.any());
+        Mockito.verify(kostenstelleRepository, Mockito.never()).findByAktivTrueOrderBySortierungAsc();
+        assertThat(beleg.getKiKostenkontoHinweis()).isNotEqualTo("Die KI konnte sich nicht entscheiden. Bitte von Hand wählen.");
+        assertKeineZuordnung(beleg);
+    }
 }

@@ -8,6 +8,9 @@ import type { OffenerPosten, Mahnstufe } from '../types';
 import EingangsrechnungenTab from '../components/EingangsrechnungenTab';
 import DocumentPreviewModal, { type PreviewDoc } from '../components/DocumentPreviewModal';
 import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
+import { useHakenSpeichern } from '../hooks/useHakenSpeichern';
+import { cn } from '../lib/utils';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 
 
 // Mahnstufe labels
@@ -54,6 +57,18 @@ const beschreibeFaelligkeit = (isoText: string | undefined | null): {
     }
     return { label: `Überfällig seit ${Math.abs(diffTage)} Tagen`, className: 'text-red-600 font-semibold', diffTage };
 };
+
+/** Erklärt, was der Haken „Bezahlt“ am Projekt auslöst (AusgangsGeschaeftsDokumentService). */
+function BezahltInfo() {
+    return <InfoButton titel="Haken „Bezahlt“">
+        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+            <p>Die Rechnung wird als bezahlt gespeichert und verschwindet aus dieser Liste. Danach prüft das Programm das ganze Projekt: Sind alle Rechnungen geschrieben und gebucht, ist keine mehr offen und deckt das bezahlte Geld den Auftragspreis, gilt das Projekt als bezahlt und wird automatisch beendet.</p>
+        </InfoAbschnitt>
+        <InfoAbschnitt titel="Was bewirkt das?">
+            <p>Die Rechnung selbst (Betrag, PDF) ändert sich nicht, und der Kunde bekommt nichts geschickt. Haben Sie das Projekt von Hand beendet oder wieder geöffnet, bleibt es dabei.</p>
+        </InfoAbschnitt>
+    </InfoButton>;
+}
 
 // Group invoices with their reminders
 interface InvoiceWithReminders {
@@ -195,15 +210,16 @@ export default function OffenePostenEditor() {
         return { overdue, mitMahnung, overdueSum };
     }, [groupedInvoices]);
 
-    // Toggle bezahlt status
-    const toggleBezahlt = async (id: number, currentValue: boolean) => {
-        try {
-            await fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${!currentValue}`, { method: 'PATCH' });
-            await loadData();
-        } catch (err) {
-            console.error('Status konnte nicht aktualisiert werden:', err);
-        }
-    };
+    // Haken „Bezahlt“: Zeile während des Speicherns gesperrt, Fehler als Toast, danach neu laden.
+    const { inArbeit: bezahltWirdGespeichert, speichern } = useHakenSpeichern(loadData);
+
+    const toggleBezahlt = (id: number, currentValue: boolean) => speichern({
+        id,
+        senden: () => fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${!currentValue}`, { method: 'PATCH' }),
+        fehlertext: currentValue
+            ? 'Die Rechnung konnte nicht wieder auf offen gesetzt werden.'
+            : 'Die Rechnung konnte nicht als bezahlt markiert werden.',
+    });
 
     const navigate = useNavigate();
 
@@ -220,6 +236,7 @@ export default function OffenePostenEditor() {
                 {/* Main invoice row */}
                 <tr
                     data-dokument-id={invoice.id}
+                    aria-busy={bezahltWirdGespeichert.has(invoice.id) || undefined}
                     className={`align-top transition-all ${mahnungen.length > 0 ? 'border-l-4 border-amber-300 bg-white hover:bg-rose-50/30' : 'bg-white hover:bg-slate-50/80'}`}
                 >
                     {/* Projekt */}
@@ -282,10 +299,17 @@ export default function OffenePostenEditor() {
                     </td>
                     {/* Bezahlt */}
                     <td className="px-4 py-3 text-center">
-                        <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 cursor-pointer">
+                        <label
+                            title={bezahltWirdGespeichert.has(invoice.id) ? 'Wird gespeichert …' : undefined}
+                            className={cn(
+                                'inline-flex items-center gap-2 text-sm font-medium text-slate-600',
+                                bezahltWirdGespeichert.has(invoice.id) ? 'cursor-wait opacity-60' : 'cursor-pointer'
+                            )}
+                        >
                             <input
                                 type="checkbox"
                                 checked={invoice.bezahlt}
+                                disabled={bezahltWirdGespeichert.has(invoice.id)}
                                 onChange={() => toggleBezahlt(invoice.id, invoice.bezahlt)}
                                 className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
                             />
@@ -470,7 +494,12 @@ export default function OffenePostenEditor() {
                                                 <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Tage</th>
                                                 <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Betrag</th>
                                                 <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Dokument</th>
-                                                <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Status</th>
+                                                <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                                    <span className="inline-flex items-center gap-1">
+                                                        Status
+                                                        <BezahltInfo />
+                                                    </span>
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">

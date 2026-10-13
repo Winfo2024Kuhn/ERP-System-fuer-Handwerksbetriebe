@@ -573,6 +573,9 @@ export interface ZeitprognoseDto {
 }
 
 // ==================== Projekt DTOs ====================
+/** Wie das Projekt abgerechnet wird – Werte wie im Backend-Enum `ProjektArt`. */
+export type ProjektArt = 'PAUSCHAL' | 'REGIE' | 'INTERN' | 'GARANTIE';
+
 export interface Projekt {
   id: number;
   bauvorhaben: string;
@@ -590,6 +593,7 @@ export interface Projekt {
   ort?: string;
   kurzbeschreibung?: string;
   bildUrl?: string;
+  projektArt?: ProjektArt;
 }
 
 export interface ProjektZeit {

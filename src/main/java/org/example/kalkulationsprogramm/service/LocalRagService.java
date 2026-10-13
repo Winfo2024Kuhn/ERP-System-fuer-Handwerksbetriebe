@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.kihilfe.GeminiEinbetter;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer.Abschnitt;
+import org.example.kalkulationsprogramm.service.kihilfe.StichwortIndex;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -14,13 +15,14 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Wissen der KI-Hilfe (RAG): Vektor-Suche im Prozess, ohne Qdrant oder andere Dienste.
+ * Wissen der KI-Hilfe (RAG): Suche im Prozess, ohne Qdrant oder andere Dienste.
  * <p>
  * Zwei Betriebsarten, beim Start automatisch gewaehlt:
  * <ul>
@@ -30,7 +32,9 @@ import java.util.Set;
  *   <li><b>Entwicklung:</b> Quellcode liegt im Projektordner. Geaenderte Abschnitte werden mit dem
  *       Gemini-Key aus den System-Einstellungen eingebettet und in der RAG-Datei gespeichert.</li>
  * </ul>
- * Fragen werden immer mit dem Gemini-Key des Betriebs eingebettet.
+ * Gesucht wird zweifach (Hybrid-Suche): nach Bedeutung (Vektor; die Frage wird mit dem Gemini-Key
+ * des Betriebs eingebettet) und nach Woertern ({@link StichwortIndex}). Beide Ranglisten werden per
+ * Reciprocal Rank Fusion verschmolzen. Faellt das Einbetten aus, sucht die Wortsuche allein weiter.
  */
 @Slf4j
 @Service
@@ -95,18 +99,50 @@ public class LocalRagService {
 
     private static final String STANDARD_DATEINAME = ".rag-cache.json";
 
+    /** Reciprocal Rank Fusion: Platz r zaehlt 1/(60 + r) - der uebliche Wert, daempft die Spitze. */
+    private static final int RRF_K = 60;
+    /** So viele Kandidaten je Suchart gehen in die Verschmelzung. */
+    private static final int KANDIDATEN = 50;
+    /** Hoechstens so viele Teile der aktuellen Seite in der ersten Suche. */
+    private static final int MAX_SEITEN_TEILE = 3;
+
+    /** Welche Abschnitte eine Suche beruecksichtigt. */
+    public enum Bereich {
+        /** Anleitungen und Bildschirmseiten: was der Nutzer sieht und wie er es bedient. */
+        BEDIENUNG,
+        /** Server-Code: Regeln, Pruefungen und Sperren im Hintergrund. */
+        TECHNIK,
+        ALLES;
+
+        boolean umfasst(String category) {
+            return switch (this) {
+                case BEDIENUNG -> !istTechnik(category);
+                case TECHNIK -> istTechnik(category);
+                case ALLES -> true;
+            };
+        }
+    }
+
+    /** Ein gefundener Abschnitt; {@code schluessel} ist je Abschnitt eindeutig. */
+    public record CodeChunkResult(String schluessel, String content, String filePath, String category,
+                                  String chunkType, String name, boolean aktuelleSeite) {}
+
+    /** Abschnitte und Wortindex - zusammen ersetzt, damit Suchen ohne Sperre laufen. */
+    private record Wissen(List<Abschnitt> abschnitte, StichwortIndex stichworte) {
+        static final Wissen LEER = new Wissen(List.of(), StichwortIndex.aus(List.of()));
+    }
+
     private final RagIndexer indexer;
     private final GeminiEinbetter einbetter;
     private final SystemSettingsService systemSettingsService;
 
-    /** Wird beim Laden komplett ersetzt, nie veraendert - Suchen laufen ohne Sperre. */
-    private volatile List<Abschnitt> wissen = List.of();
+    private volatile Wissen wissen = Wissen.LEER;
     private volatile boolean ready = false;
 
     @Value("${ai.rag.enabled:false}")
     private boolean ragEnabled;
 
-    @Value("${ai.rag.top-k:10}")
+    @Value("${ai.rag.top-k:8}")
     private int topK;
 
     @Value("${ai.rag.score-threshold:0.3}")
@@ -133,13 +169,6 @@ public class LocalRagService {
         this.systemSettingsService = systemSettingsService;
     }
 
-    // ── Data structures ──
-
-    public record CodeChunkResult(
-            String content, String filePath, String category,
-            String chunkType, String name, double score
-    ) {}
-
     // ── Public API ──
 
     public boolean isAvailable() {
@@ -155,132 +184,199 @@ public class LocalRagService {
     }
 
     /**
-     * Search for relevant code chunks by embedding the query and doing cosine similarity.
-     * Always includes chunks from the current page's source file so the LLM knows
-     * exactly what the user sees on screen.
+     * Erste, automatische Suche zur Frage. Die Seite, auf der der Nutzer gerade ist, kommt immer mit
+     * (die Teile, die am besten zur Frage passen); der Rest nach Hybrid-Rangliste, mit wenig
+     * Server-Code - der zeigt nicht, was auf dem Bildschirm steht.
      *
-     * @param query       The user's question
-     * @param pageContext A hint like "Seite: PROJEKTE (/projekte)" – used to enrich the query embedding
-     * @param currentRoute The frontend route, e.g. "/projekte" – used to deterministically include that page's code
+     * @param query        Die Frage (bei Nachfragen mit der vorigen Frage davor)
+     * @param pageContext  Hinweis wie "Seite: Projekte (/projekte)" - schaerft nur die Bedeutungssuche
+     * @param currentRoute Die Route im Frontend, z. B. "/projekte/42"
      */
-    public List<CodeChunkResult> search(String query, String pageContext, String currentRoute)
-            throws IOException, InterruptedException {
-        List<Abschnitt> store = wissen;
-        if (!ready || store.isEmpty()) return List.of();
+    public List<CodeChunkResult> search(String query, String pageContext, String currentRoute) {
+        Wissen stand = wissen;
+        if (!ready || stand.abschnitte().isEmpty() || query == null || query.isBlank()) return List.of();
 
-        String enrichedQuery = pageContext != null && !pageContext.isBlank()
+        String bedeutungsFrage = pageContext != null && !pageContext.isBlank()
                 ? query + "\n\nSeitenkontext: " + pageContext
                 : query;
-
+        float[] frageVektor = frageEinbetten(bedeutungsFrage);
         long t0 = System.currentTimeMillis();
-        float[] queryVec = einbetter.anfrageEinbetten(enrichedQuery);
-        log.info("    Embedding erstellt in {} ms", System.currentTimeMillis() - t0);
 
-        long t1 = System.currentTimeMillis();
+        // 1) Die aktuelle Seite. Grosse Seiten bestehen aus vielen Teilen - genommen werden die,
+        //    die am besten zur Frage passen, nicht der Dateianfang.
+        int seitenPlaetze = Math.min(MAX_SEITEN_TEILE, Math.max(1, topK / 3));
+        List<Integer> seitenTeile = nachRelevanz(stand, seitenPositionen(stand, currentRoute), query, frageVektor);
+        List<CodeChunkResult> ergebnis = new ArrayList<>();
+        Set<Integer> genommen = new HashSet<>();
+        for (int position : seitenTeile.subList(0, Math.min(seitenPlaetze, seitenTeile.size()))) {
+            ergebnis.add(treffer(stand.abschnitte().get(position), true));
+            genommen.add(position);
+        }
 
-        // 1) Die Seite, auf der der Nutzer gerade ist, kommt immer mit. Grosse Seiten bestehen aus
-        //    vielen Teilen - genommen werden die, die am besten zur Frage passen, nicht der Dateianfang.
-        int pageSlots = Math.max(1, topK / 3);
-        List<CodeChunkResult> currentPageChunks = findChunksForRoute(store, currentRoute).stream()
-                .sorted(Comparator.comparingDouble((Abschnitt a) -> cosineSimilarity(queryVec, a.vector())).reversed())
-                .limit(pageSlots)
-                .map(a -> new CodeChunkResult(a.content(), a.filePath(), a.category(), a.chunkType(), a.name(),
-                        1.0)) // max score for current page
+        // 2) Auffuellen nach Rangliste; Server-Code hoechstens zu einem Viertel
+        int maxTechnik = Math.max(1, topK / 4);
+        int technik = 0;
+        for (int position : rangliste(stand, query, frageVektor, Bereich.ALLES)) {
+            if (ergebnis.size() >= topK) break;
+            if (genommen.contains(position)) continue;
+            Abschnitt a = stand.abschnitte().get(position);
+            if (istTechnik(a.category())) {
+                if (technik >= maxTechnik) continue;
+                technik++;
+            }
+            ergebnis.add(treffer(a, false));
+        }
+
+        log.info("    Hybrid-Suche: {} Treffer in {} ms (Seitenteile={}, Bedeutungssuche={}, top-k={}, Abschnitte={})",
+                ergebnis.size(), System.currentTimeMillis() - t0, Math.min(seitenPlaetze, seitenTeile.size()),
+                frageVektor != null ? "ja" : "ausgefallen", topK, stand.abschnitte().size());
+        return ergebnis;
+    }
+
+    /**
+     * Suche der KI ueber ihr Werkzeug: die besten noch nicht gezeigten Abschnitte im Bereich.
+     *
+     * @param bereitsGesehen Schluessel der Abschnitte, die die KI in diesem Gespraech schon bekam
+     */
+    public List<CodeChunkResult> suchen(String anfrage, Bereich bereich, int anzahl, Set<String> bereitsGesehen) {
+        Wissen stand = wissen;
+        if (!ready || stand.abschnitte().isEmpty() || anfrage == null || anfrage.isBlank() || anzahl <= 0) {
+            return List.of();
+        }
+        float[] frageVektor = frageEinbetten(anfrage);
+        List<CodeChunkResult> ergebnis = new ArrayList<>();
+        for (int position : rangliste(stand, anfrage, frageVektor, bereich)) {
+            Abschnitt a = stand.abschnitte().get(position);
+            if (bereitsGesehen.contains(schluessel(a))) continue;
+            ergebnis.add(treffer(a, false));
+            if (ergebnis.size() >= anzahl) break;
+        }
+        return ergebnis;
+    }
+
+    /** Alle Abschnitte einer Datei der Wissensbasis in Dateireihenfolge; leer, wenn es sie nicht gibt. */
+    public List<CodeChunkResult> dateiLesen(String filePath) {
+        if (filePath == null || filePath.isBlank()) return List.of();
+        List<CodeChunkResult> teile = new ArrayList<>();
+        for (Abschnitt a : wissen.abschnitte()) {
+            if (a.filePath().equals(filePath)) teile.add(treffer(a, false));
+        }
+        return teile;
+    }
+
+    /** Ordner der Anleitung fuer Nutzer; die uebrige Doku beschreibt Technik fuer Entwickler. */
+    private static final String ANLEITUNG_ORDNER = "docs/benutzer/";
+
+    /**
+     * Lesbare Art eines Abschnitts fuer die KI. Die Unterscheidung ist wichtig: Nur die Anleitung
+     * und der Bildschirm-Code zeigen, was der Nutzer sieht und anklickt.
+     */
+    public static String art(String category, String filePath) {
+        if (category.startsWith("documentation")) {
+            return filePath.startsWith(ANLEITUNG_ORDNER)
+                    ? "Anleitung fuer Nutzer"
+                    : "Technische Beschreibung (Ablaeufe und Regeln, nicht die Oberflaeche)";
+        }
+        if (istTechnik(category)) return "Server-Regel (fuer den Nutzer nicht sichtbar)";
+        return "Bildschirm (was der Nutzer sieht)";
+    }
+
+    /** Kontext fuer den System-Prompt; Abschnitte der aktuellen Seite sind besonders markiert. */
+    public String buildContextFromResults(List<CodeChunkResult> results) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < results.size(); i++) {
+            CodeChunkResult r = results.get(i);
+            String label = r.aktuelleSeite() ? ">>> AKTUELLE SEITE DES BENUTZERS <<<" : art(r.category(), r.filePath());
+            sb.append("### [%d] %s -- %s | %s\n".formatted(i + 1, r.filePath(), r.name(), label));
+            sb.append("```\n").append(r.content()).append("\n```\n\n");
+        }
+        return sb.toString();
+    }
+
+    // ── Suche ──
+
+    /** Frage als Vektor; {@code null}, wenn das Einbetten scheitert - dann sucht die Wortsuche allein. */
+    private float[] frageEinbetten(String text) {
+        long t0 = System.currentTimeMillis();
+        try {
+            float[] vektor = einbetter.anfrageEinbetten(text);
+            log.info("    Embedding erstellt in {} ms", System.currentTimeMillis() - t0);
+            return vektor;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (IOException | RuntimeException e) {
+            log.warn("    Bedeutungssuche ausgefallen ({}), Wortsuche allein", e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /** Positionen nach Hybrid-Rangliste (Reciprocal Rank Fusion), beste zuerst. */
+    private List<Integer> rangliste(Wissen stand, String anfrage, float[] frageVektor, Bereich bereich) {
+        List<Abschnitt> abschnitte = stand.abschnitte();
+        Map<Integer, Double> punkte = new HashMap<>();
+
+        if (frageVektor != null) {
+            List<double[]> aehnlich = new ArrayList<>();
+            for (int position = 0; position < abschnitte.size(); position++) {
+                Abschnitt a = abschnitte.get(position);
+                if (!bereich.umfasst(a.category())) continue;
+                double score = cosineSimilarity(frageVektor, a.vector());
+                if (score >= scoreThreshold) aehnlich.add(new double[]{score, position});
+            }
+            aehnlich.sort(Comparator.comparingDouble((double[] t) -> t[0]).reversed());
+            for (int rang = 0; rang < Math.min(KANDIDATEN, aehnlich.size()); rang++) {
+                punkte.merge((int) aehnlich.get(rang)[1], 1.0 / (RRF_K + rang + 1), Double::sum);
+            }
+        }
+
+        List<StichwortIndex.Treffer> woerter = stand.stichworte().suchen(anfrage, KANDIDATEN,
+                position -> bereich.umfasst(abschnitte.get(position).category()));
+        for (int rang = 0; rang < woerter.size(); rang++) {
+            punkte.merge(woerter.get(rang).position(), 1.0 / (RRF_K + rang + 1), Double::sum);
+        }
+
+        return punkte.entrySet().stream()
+                .sorted(Map.Entry.<Integer, Double>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .map(Map.Entry::getKey)
                 .toList();
-        pageSlots = currentPageChunks.size();
-        Set<String> currentPagePaths = new HashSet<>();
-        for (CodeChunkResult c : currentPageChunks) {
-            currentPagePaths.add(c.filePath() + "::" + c.name());
-        }
-        if (!currentPageChunks.isEmpty()) {
-            log.info("    Aktuelle Seite: {} Chunks deterministisch eingebunden ({})",
-                    currentPageChunks.size(), currentPageChunks.stream().map(CodeChunkResult::name).toList());
-        }
+    }
 
-        // 2) Score all remaining chunks via cosine similarity
-        List<CodeChunkResult> similarityResults = new ArrayList<>();
-        for (Abschnitt entry : store) {
-            String key = entry.filePath() + "::" + entry.name();
-            if (currentPagePaths.contains(key)) continue; // already included deterministically
-
-            double score = cosineSimilarity(queryVec, entry.vector());
-            if (score >= scoreThreshold) {
-                similarityResults.add(new CodeChunkResult(
-                        entry.content(), entry.filePath(), entry.category(),
-                        entry.chunkType(), entry.name(), score
-                ));
+    /** Seitenteile nach Naehe zur Frage: Bedeutung, ohne Vektor nach Woertern, sonst Dateireihenfolge. */
+    private List<Integer> nachRelevanz(Wissen stand, List<Integer> positionen, String anfrage, float[] frageVektor) {
+        if (positionen.size() <= 1) return positionen;
+        Map<Integer, Double> relevanz = new HashMap<>();
+        if (frageVektor != null) {
+            for (int position : positionen) {
+                relevanz.put(position, cosineSimilarity(frageVektor, stand.abschnitte().get(position).vector()));
+            }
+        } else {
+            Set<Integer> seite = new HashSet<>(positionen);
+            for (StichwortIndex.Treffer t : stand.stichworte().suchen(anfrage, positionen.size(), seite::contains)) {
+                relevanz.put(t.position(), t.punkte());
             }
         }
-        similarityResults.sort(Comparator.comparingDouble(CodeChunkResult::score).reversed());
-
-        // 3) Reserve slots: current page gets priority (up to a third), rest filled by similarity with frontend/backend balance
-        int remainingSlots = Math.max(0, topK - pageSlots);
-
-        // Split similarity results into frontend vs backend
-        List<CodeChunkResult> frontendSimilarity = new ArrayList<>();
-        List<CodeChunkResult> otherSimilarity = new ArrayList<>();
-        for (CodeChunkResult r : similarityResults) {
-            if (istFrontend(r.category())) {
-                frontendSimilarity.add(r);
-            } else {
-                otherSimilarity.add(r);
-            }
-        }
-
-        // At least 30% of remaining slots for frontend (on top of current page chunks which are already frontend)
-        int frontendSlots = Math.min(frontendSimilarity.size(), Math.min(remainingSlots, Math.max(remainingSlots * 3 / 10, 1)));
-        int backendSlots = Math.max(0, remainingSlots - frontendSlots);
-
-        List<CodeChunkResult> finalResults = new ArrayList<>();
-        // Current page chunks first (highest priority)
-        finalResults.addAll(currentPageChunks);
-        // Then frontend similarity
-        finalResults.addAll(frontendSimilarity.subList(0, Math.min(frontendSlots, frontendSimilarity.size())));
-        // Then backend/other similarity
-        finalResults.addAll(otherSimilarity.subList(0, Math.min(backendSlots, otherSimilarity.size())));
-
-        // Fill remaining slots from whichever pool has leftovers
-        if (finalResults.size() < topK) {
-            int remaining = topK - finalResults.size();
-            // Try more frontend first
-            for (int i = frontendSlots; i < frontendSimilarity.size() && remaining > 0; i++) {
-                finalResults.add(frontendSimilarity.get(i));
-                remaining--;
-            }
-            // Then more backend
-            for (int i = backendSlots; i < otherSimilarity.size() && remaining > 0; i++) {
-                finalResults.add(otherSimilarity.get(i));
-                remaining--;
-            }
-        }
-
-        log.info("    Lokale Vektor-Suche: {} Treffer in {} ms (seiten-chunks={}, top-k={}, threshold={}, store={})",
-                finalResults.size(), System.currentTimeMillis() - t1, pageSlots, topK, scoreThreshold, store.size());
-        return finalResults;
+        return positionen.stream()
+                .sorted(Comparator.comparingDouble((Integer p) -> relevanz.getOrDefault(p, 0.0)).reversed())
+                .toList();
     }
 
     /**
-     * Backward-compatible search without route.
+     * Positionen aller Abschnitte der Seite(n) zur Route. Nur Frontend-Dateien: "Monatsabschluss"
+     * steckt auch in MonatsabschlussService.java - das ist aber nicht, was der Nutzer sieht.
      */
-    public List<CodeChunkResult> search(String query, String pageContext) throws IOException, InterruptedException {
-        return search(query, pageContext, null);
-    }
-
-    /**
-     * Alle Abschnitte der Seite(n) zur Route. Nur Frontend-Dateien: "Monatsabschluss" steckt auch
-     * in MonatsabschlussService.java - das ist aber nicht, was der Nutzer sieht.
-     */
-    private List<Abschnitt> findChunksForRoute(List<Abschnitt> store, String route) {
+    private List<Integer> seitenPositionen(Wissen stand, String route) {
         List<String> keywords = dateienZurRoute(route);
         if (keywords.isEmpty()) return List.of();
 
-        List<Abschnitt> pageChunks = new ArrayList<>();
-        for (Abschnitt entry : store) {
+        List<Integer> positionen = new ArrayList<>();
+        for (int position = 0; position < stand.abschnitte().size(); position++) {
+            Abschnitt entry = stand.abschnitte().get(position);
             if (istFrontend(entry.category()) && keywords.stream().anyMatch(entry.filePath()::contains)) {
-                pageChunks.add(entry);
+                positionen.add(position);
             }
         }
-        return pageChunks;
+        return positionen;
     }
 
     /**
@@ -322,23 +418,17 @@ public class LocalRagService {
         return category.startsWith("frontend") || category.startsWith("zeiterfassung");
     }
 
-    /**
-     * Build formatted context string from search results for the LLM prompt.
-     * Chunks with score 1.0 are from the current page (deterministically included).
-     */
-    public String buildContextFromResults(List<CodeChunkResult> results) {
-        if (results.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < results.size(); i++) {
-            CodeChunkResult r = results.get(i);
-            String label = r.score() >= 1.0
-                    ? ">>> AKTUELLE SEITE DES BENUTZERS <<<"
-                    : "Score: %.2f".formatted(r.score());
-            sb.append("### [%d] %s -- %s (%s) | %s\n".formatted(
-                    i + 1, r.filePath(), r.name(), r.chunkType(), label));
-            sb.append("```\n").append(r.content()).append("\n```\n\n");
-        }
-        return sb.toString();
+    private static boolean istTechnik(String category) {
+        return category.startsWith("backend");
+    }
+
+    private static String schluessel(Abschnitt a) {
+        return a.filePath() + "::" + a.contentHash();
+    }
+
+    private static CodeChunkResult treffer(Abschnitt a, boolean aktuelleSeite) {
+        return new CodeChunkResult(schluessel(a), a.content(), a.filePath(), a.category(), a.chunkType(),
+                a.name(), aktuelleSeite);
     }
 
     // ── Laden / Indexieren (beim Start, im Hintergrund) ──
@@ -371,7 +461,8 @@ public class LocalRagService {
                     return;
                 }
                 bereitstellen(List.copyOf(vorhanden.values()));
-                log.info("RAG-Index FERTIG (RAG-Datei {}): {} Abschnitte, bereit fuer Anfragen", datei, wissen.size());
+                log.info("RAG-Index FERTIG (RAG-Datei {}): {} Abschnitte, bereit fuer Anfragen",
+                        datei, wissen.abschnitte().size());
                 return;
             }
 
@@ -396,15 +487,20 @@ public class LocalRagService {
             }
             bereitstellen(ergebnis.abschnitte());
             log.info("RAG-Index FERTIG: {} Abschnitte ({} aus der RAG-Datei, {} neu), bereit fuer Anfragen",
-                    wissen.size(), ergebnis.ausVorlage(), ergebnis.neuEingebettet());
+                    wissen.abschnitte().size(), ergebnis.ausVorlage(), ergebnis.neuEingebettet());
         } catch (Exception e) {
             log.error("RAG-Index Aufbau fehlgeschlagen: {}", e.getMessage(), e);
         }
     }
 
     private void bereitstellen(List<Abschnitt> abschnitte) {
-        wissen = List.copyOf(abschnitte);
-        ready = !wissen.isEmpty();
+        List<Abschnitt> kopie = List.copyOf(abschnitte);
+        // Wie beim Einbetten: Dateipfad und Name helfen der Suche ("ProjektEditor" ~ Projekte)
+        StichwortIndex stichworte = StichwortIndex.aus(kopie.stream()
+                .map(a -> new StichwortIndex.Text(a.filePath() + " " + a.name(), a.content()))
+                .toList());
+        wissen = new Wissen(kopie, stichworte);
+        ready = !kopie.isEmpty();
     }
 
     // ── Math ──

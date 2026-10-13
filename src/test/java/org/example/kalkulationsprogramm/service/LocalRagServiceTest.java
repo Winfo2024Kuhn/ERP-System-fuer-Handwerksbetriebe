@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -111,14 +112,16 @@ class LocalRagServiceTest {
         List<LocalRagService.CodeChunkResult> treffer =
                 service.search("Wie schreibe ich eine Rechnung?", "Seite: Projekte (/projekte)", "/projekte/42");
 
+        // Doku "Rechnung schreiben" liegt bei Bedeutung UND Woertern vorn
         assertThat(treffer).extracting(LocalRagService.CodeChunkResult::name)
-                .containsExactly("ProjektEditor", "RechnungDialog", "Rechnung schreiben");
-        assertThat(treffer.get(0).score()).isEqualTo(1.0);
-        assertThat(treffer.get(1).score()).isLessThan(1.0);
+                .containsExactly("ProjektEditor", "Rechnung schreiben", "RechnungDialog");
+        assertThat(treffer.get(0).aktuelleSeite()).isTrue();
+        assertThat(treffer.get(1).aktuelleSeite()).isFalse();
         verify(einbetter).anfrageEinbetten("Wie schreibe ich eine Rechnung?\n\nSeitenkontext: Seite: Projekte (/projekte)");
 
         String kontext = service.buildContextFromResults(treffer);
-        assertThat(kontext).contains(">>> AKTUELLE SEITE DES BENUTZERS <<<", "Score: ", "Inhalt von RechnungDialog");
+        assertThat(kontext).contains(">>> AKTUELLE SEITE DES BENUTZERS <<<", "| Technische Beschreibung",
+                "| Bildschirm (was der Nutzer sieht)", "Inhalt von RechnungDialog");
         assertThat(service.buildContextFromResults(List.of())).isEmpty();
     }
 
@@ -139,7 +142,7 @@ class LocalRagServiceTest {
 
         assertThat(treffer).hasSize(1);
         assertThat(treffer.get(0).name()).isEqualTo("ProjektEditor.tsx (Teil 6/8)");
-        assertThat(treffer.get(0).score()).isEqualTo(1.0);
+        assertThat(treffer.get(0).aktuelleSeite()).isTrue();
     }
 
     @Test
@@ -165,7 +168,7 @@ class LocalRagServiceTest {
         service.indexAufbauen();
         when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
 
-        assertThat(service.search("Frage", null)).extracting(LocalRagService.CodeChunkResult::name).containsExactly("A");
+        assertThat(service.search("Frage", null, null)).extracting(LocalRagService.CodeChunkResult::name).containsExactly("A");
         verify(einbetter).anfrageEinbetten("Frage");
     }
 
@@ -264,4 +267,137 @@ class LocalRagServiceTest {
                 () -> assertThat(LocalRagService.dateienZurRoute(angriff)).isEmpty());
         assertThat(LocalRagService.dateienZurRoute("/projekte/" + "1".repeat(300))).isEmpty();
     }
+
+    // ── Hybrid-Suche ──
+
+    private static Abschnitt abschnitt(String pfad, String kategorie, String name, String inhalt, float[] vektor) {
+        return new Abschnitt(inhalt, pfad, kategorie, "component", name, name + "-hash", vektor);
+    }
+
+    @Test
+    @DisplayName("Hybrid: die Wortsuche findet, was die Bedeutungssuche verfehlt")
+    void wortsucheErgaenztVektor() throws Exception {
+        ragDateiImImage(List.of(
+                abschnitt("docs/A.md", "documentation", "A", "Allgemeines", richtung(1, 0)),
+                abschnitt("react-pc-frontend/src/components/StornoDialog.tsx", "frontend-component", "StornoDialog",
+                        "<Button>Stornieren</Button>", richtung(9, 0))));
+        service.indexAufbauen();
+        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+
+        assertThat(service.search("Wie kann ich stornieren?", null, null))
+                .extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("A", "StornoDialog");
+    }
+
+    @Test
+    @DisplayName("Bedeutungssuche faellt aus: die Wortsuche sucht allein weiter, kein Fehler")
+    void einbettenScheitertWortsucheAllein() throws Exception {
+        ragDateiImImage(List.of(
+                abschnitt("react-pc-frontend/src/pages/ProjektEditor.tsx", "frontend-page", "ProjektEditor (Teil 1/2)",
+                        "Kopf der Seite", richtung(5, 0)),
+                abschnitt("react-pc-frontend/src/pages/ProjektEditor.tsx", "frontend-page", "ProjektEditor (Teil 2/2)",
+                        "<Button>Rechnung stornieren</Button>", richtung(6, 0)),
+                abschnitt("docs/benutzer/storno.md", "documentation", "Storno", "Eine Rechnung stornieren", richtung(1, 0)),
+                abschnitt("docs/benutzer/urlaub.md", "documentation", "Urlaub", "Urlaub beantragen", richtung(2, 0))));
+        service.indexAufbauen();
+        when(einbetter.anfrageEinbetten(anyString())).thenThrow(new java.io.IOException("Gemini Embedding Fehler 503"));
+
+        List<LocalRagService.CodeChunkResult> treffer = service.search("Rechnung stornieren", null, "/projekte");
+
+        // Seitenteil nach Woertern gewaehlt (Teil 2 statt Dateianfang), dann der Wort-Treffer; Urlaub passt nicht
+        assertThat(treffer).extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("ProjektEditor (Teil 2/2)", "Storno");
+    }
+
+    @Test
+    @DisplayName("Unterbrochen beim Einbetten: Wortsuche allein, Unterbrechung bleibt gemeldet")
+    void einbettenUnterbrochen() throws Exception {
+        ragDateiImImage(List.of(abschnitt("docs/benutzer/storno.md", "documentation", "Storno", "Rechnung stornieren",
+                richtung(1, 0))));
+        service.indexAufbauen();
+        when(einbetter.anfrageEinbetten(anyString())).thenThrow(new InterruptedException());
+
+        assertThat(service.search("stornieren", null, null)).extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("Storno");
+        assertThat(Thread.interrupted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Erste Suche: Server-Code hoechstens zu einem Viertel")
+    void wenigServerCode() throws Exception {
+        ragDateiImImage(List.of(
+                abschnitt(JAVA + "RechnungService.java", "backend-service", "RechnungService", "rechnung", richtung(1, 0)),
+                abschnitt(JAVA + "RechnungController.java", "backend-controller", "RechnungController", "rechnung", richtung(1, 0.1f)),
+                abschnitt("docs/A.md", "documentation", "A", "rechnung", richtung(1, 0.3f)),
+                abschnitt("react-pc-frontend/src/components/R.tsx", "frontend-component", "R", "rechnung", richtung(1, 0.4f))));
+        service.indexAufbauen();
+        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+
+        List<LocalRagService.CodeChunkResult> treffer = service.search("rechnung", null, null);
+
+        assertThat(treffer).hasSize(3);
+        assertThat(treffer).filteredOn(t -> t.category().startsWith("backend")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Werkzeug-Suche: nur Neues, nur im Bereich, hoechstens die gewuenschte Anzahl")
+    void werkzeugSuche() throws Exception {
+        ragDateiImImage(List.of(
+                abschnitt(JAVA + "RechnungService.java", "backend-service", "RechnungService", "Rechnung sperren", richtung(1, 0)),
+                abschnitt("docs/A.md", "documentation", "A", "Rechnung schreiben", richtung(1, 0.1f)),
+                abschnitt("react-pc-frontend/src/components/R.tsx", "frontend-component", "R", "Rechnung Knopf", richtung(1, 0.2f)),
+                abschnitt("react-pc-frontend/src/components/S.tsx", "frontend-component", "S", "Rechnung Liste", richtung(1, 0.3f))));
+        service.indexAufbauen();
+        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+
+        String gesehen = service.suchen("Rechnung", LocalRagService.Bereich.BEDIENUNG, 9, Set.of())
+                .get(0).schluessel();
+
+        assertThat(service.suchen("Rechnung", LocalRagService.Bereich.BEDIENUNG, 9, Set.of(gesehen)))
+                .extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("R", "S");
+        assertThat(service.suchen("Rechnung", LocalRagService.Bereich.TECHNIK, 9, Set.of()))
+                .extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("RechnungService");
+        assertThat(service.suchen("Rechnung", LocalRagService.Bereich.ALLES, 2, Set.of())).hasSize(2);
+        assertThat(service.suchen(" ", LocalRagService.Bereich.ALLES, 2, Set.of())).isEmpty();
+        assertThat(service.suchen("Rechnung", LocalRagService.Bereich.ALLES, 0, Set.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Werkzeug-Suche ohne Wissensbasis: leer, ohne Einbetten")
+    void werkzeugSucheOhneWissen() throws Exception {
+        assertThat(service.suchen("Rechnung", LocalRagService.Bereich.ALLES, 3, Set.of())).isEmpty();
+        assertThat(service.search(" ", null, null)).isEmpty();
+        verify(einbetter, never()).anfrageEinbetten(anyString());
+    }
+
+    @Test
+    @DisplayName("Datei lesen: alle Teile in Dateireihenfolge, unbekannte Datei leer")
+    void dateiLesen() throws Exception {
+        ragDateiImImage(List.of(
+                abschnitt("react-pc-frontend/src/pages/ProjektEditor.tsx", "frontend-page", "Teil 1", "a", richtung(1, 0)),
+                abschnitt("docs/A.md", "documentation", "A", "b", richtung(2, 0)),
+                abschnitt("react-pc-frontend/src/pages/ProjektEditor.tsx", "frontend-page", "Teil 2", "c", richtung(3, 0))));
+        service.indexAufbauen();
+
+        assertThat(service.dateiLesen("react-pc-frontend/src/pages/ProjektEditor.tsx"))
+                .extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("Teil 1", "Teil 2");
+        assertThat(service.dateiLesen("../../etc/passwd")).isEmpty();
+        assertThat(service.dateiLesen(" ")).isEmpty();
+        assertThat(service.dateiLesen(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Art eines Abschnitts fuer die KI")
+    void art() {
+        assertThat(LocalRagService.art("documentation", "docs/benutzer/monatsabschluss.md")).isEqualTo("Anleitung fuer Nutzer");
+        assertThat(LocalRagService.art("documentation", "docs/API_REFERENZ.md")).startsWith("Technische Beschreibung");
+        assertThat(LocalRagService.art("backend-service", JAVA + "X.java")).startsWith("Server-Regel");
+        assertThat(LocalRagService.art("frontend-page", "react-pc-frontend/src/pages/X.tsx")).startsWith("Bildschirm");
+        assertThat(LocalRagService.art("zeiterfassung-page", "react-zeiterfassung/src/pages/X.tsx")).startsWith("Bildschirm");
+    }
+
+    private static final String JAVA = "src/main/java/org/example/kalkulationsprogramm/service/";
 }

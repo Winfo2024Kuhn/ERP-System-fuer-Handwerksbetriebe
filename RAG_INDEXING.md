@@ -4,7 +4,8 @@ Die KI-Hilfe (Knopf „KI-Hilfe“ in der oberen Menüleiste, Chatfenster unten 
 beantwortet Fragen zur Bedienung nur dann richtig, wenn sie das Programm kennt: Doku, Seiten, Knöpfe, Abläufe. Dieses
 Wissen steckt in der **RAG-Datei** – Doku und Quellcode, zerlegt in Abschnitte, jeder
 mit einem Embedding-Vektor von Gemini. Bei jeder Frage sucht das ERP die passendsten
-Abschnitte heraus und gibt sie der KI mit (Retrieval-Augmented Generation).
+Abschnitte heraus und gibt sie der KI mit (Retrieval-Augmented Generation). Reichen sie
+der KI nicht, schlägt sie selbst nach (siehe [Suchen](#suchen)).
 
 Stand: Oktober 2026
 
@@ -41,7 +42,7 @@ Im Docker-Image liegt kein Quellcode. Die fertige RAG-Datei liegt dort unter
 4. **Start der App:** `LocalRagService` lädt die Datei im Hintergrund. Der Server bettet
    selbst nichts ein, nur die Fragen der Nutzer – mit dem Gemini-Schlüssel des Betriebs
    (Einstellungen → KI-Funktionen). Klappt das nicht gleich, gibt es genau einen zweiten
-   Versuch nach einer Sekunde; danach antwortet die KI-Hilfe ohne die Suche, statt den
+   Versuch nach einer Sekunde; danach sucht die KI-Hilfe nur nach Wörtern, statt den
    Nutzer warten zu lassen.
 
 Das ERP liest die Datei nur. Sie gehört `root`, das Dateisystem des Containers ist
@@ -91,7 +92,8 @@ Einstellungen → KI-Funktionen ein und speichert alles in `.rag-cache.json` (gi
 
 - Ohne Schlüssel bleibt RAG aus (Meldung im Log). Nach dem Eintragen: Neustart.
 - Im Log: `RAG-Index FERTIG: N Abschnitte (… aus der RAG-Datei, … neu)`.
-- Bei einer Frage: `Lokale Vektor-Suche: N Treffer …`.
+- Bei einer Frage: `Hybrid-Suche: N Treffer …`, danach je Runde
+  `Nachschlage-Runde n: m Werkzeug-Aufruf(e)`.
 
 ---
 
@@ -164,13 +166,47 @@ Handwerkern weiter.
 
 ### Suchen
 
-- Der Code der Seite, auf der der Nutzer gerade ist, kommt immer mit (bis zu einem
-  Drittel der Plätze). Große Seiten bestehen aus vielen Teilen – genommen werden die, die
-  am besten zur Frage passen, nicht der Dateianfang. Welche Datei zu welcher Route gehört, steht in `LocalRagService`
-  (`ROUTE_TO_FILE_KEYWORDS`); `/emails/inbox/42` findet über `/emails` das E-Mail-Center.
-  **Neue Seite im ERP → dort eintragen.**
-- Der Rest nach Ähnlichkeit (Kosinus), mindestens 30 % Frontend.
-- `ai.rag.top-k` (Standard 15) Abschnitte, Mindestähnlichkeit `ai.rag.score-threshold` (0,3).
+**Hybrid-Suche.** Jede Suche läuft zweifach: nach Bedeutung (Vektor, Kosinus, Mindestähnlichkeit
+`ai.rag.score-threshold`) und nach Wörtern (`StichwortIndex`, BM25F: Treffer im Dateipfad
+oder Abschnittsnamen zählen dreifach, „Rechnungen“ findet auch „Rechnungsübersicht“). Beide
+Ranglisten werden per Reciprocal Rank Fusion verschmolzen. Fällt das Einbetten der Frage bei
+Google aus, sucht die Wortsuche allein weiter.
+
+**Erste, automatische Suche** (`ai.rag.top-k`, Standard 8 Abschnitte):
+
+- Der Code der Seite, auf der der Nutzer gerade ist, kommt immer mit (bis zu 3 Teile).
+  Große Seiten bestehen aus vielen Teilen – genommen werden die, die am besten zur Frage
+  passen, nicht der Dateianfang. Welche Datei zu welcher Route gehört, steht in
+  `LocalRagService` (`ROUTE_TO_FILE_KEYWORDS`); `/emails/inbox/42` findet über `/emails`
+  das E-Mail-Center. **Neue Seite im ERP → dort eintragen.**
+- Der Rest nach der Hybrid-Rangliste, Server-Code höchstens zu einem Viertel – er zeigt
+  nicht, was auf dem Bildschirm steht.
+- Ist die letzte Frage kurz (bis 8 Wörter, z. B. „Und bei Anfragen?“), wird mit der Frage
+  davor gesucht – sonst fehlt der Suche das Thema.
+
+**Selbst nachschlagen** (`KiHilfeWerkzeuge`, Gemini Function Calling). Reicht der KI das
+Gefundene nicht, ruft sie Werkzeuge auf – höchstens 4 Runden, danach muss sie antworten
+(`functionCallingConfig.mode = NONE`):
+
+- `im_programm_suchen`: eigene Suchbegriffe, Bereich `bedienung` (Anleitung + Seiten),
+  `technik` (Server-Regeln) oder `alles`; liefert nur Abschnitte, die sie noch nicht hat.
+- `datei_lesen`: eine Datei aus den Treffern ganz (bis 20.000 Zeichen).
+- Insgesamt liest die KI je Frage höchstens 100.000 Zeichen.
+- Google-Suche und Werkzeuge laufen in derselben Anfrage (Gemini 3,
+  `toolConfig.includeServerSideToolInvocations`).
+
+Jeder Schritt geht live an den Chat („Schaut nach: …“): `POST /api/ki-hilfe/chat` antwortet
+mit Server-Sent Events `schritt`, dann `antwort` oder `fehler`.
+
+Grenzen: Nach 75 s wird nicht mehr nachgeschlagen, nach 150 s meldet die KI-Hilfe „Die KI hat zu
+lange gebraucht …“. Höchstens 8 Fragen laufen im Betrieb gleichzeitig, die neunte bekommt 429
+„gerade ausgelastet“. Schließt der Nutzer den Chat, werden laufende Gemini-Aufrufe abgebrochen.
+Lehnt Gemini die Anfrage mit Werkzeugen ab (HTTP 400, z. B. ein älteres Modell in
+`ai.ki-hilfe.model`), antwortet die KI-Hilfe wie früher ohne Nachschlagen – im Log steht dann
+„Gemini lehnt die Anfrage mit Werkzeugen ab“.
+
+Wie gut die Wortsuche typische Fragen beantwortet, misst `KiHilfeSuchqualitaetTest`
+(Trefferquote unter den ersten 10).
 
 ---
 
@@ -181,7 +217,7 @@ Handwerkern weiter.
 | `ai.rag.enabled` | `true` | `true` |
 | `ai.rag.datei` | leer = `.rag-cache.json` im Projektordner | `/app/ki-hilfe/rag-cache.json` |
 | `ai.rag.projekt-ordner` | Startordner (`user.dir`) | – (dort liegt kein Quellcode) |
-| `ai.rag.top-k` | `15` | |
+| `ai.rag.top-k` | `8` | |
 | `ai.rag.score-threshold` | `0.3` | |
 
 Abschalten beim Kunden: `AI_RAG_ENABLED=false` in `deployment/docker-server/app.env`.
@@ -241,8 +277,11 @@ Alles neu einbetten lassen: Datei löschen (lokal) bzw. im Workflow *Run workflo
 | --- | --- |
 | `service/kihilfe/RagIndexer.java` | Zerlegen, Einbetten (nur Geändertes), RAG-Datei lesen/schreiben |
 | `service/kihilfe/GeminiEinbetter.java` | Embeddings über die Gemini-API, Wiederholen bei Überlastung |
-| `service/LocalRagService.java` | Laden beim Start, Suche für die KI-Hilfe |
-| `service/KiHilfeService.java` | Chat; nutzt die Suche, sonst den Fallback `CodebaseIndexService` |
+| `service/LocalRagService.java` | Laden beim Start, Hybrid-Suche für die KI-Hilfe |
+| `service/kihilfe/StichwortIndex.java` | Wortsuche (BM25F) |
+| `service/kihilfe/KiHilfeWerkzeuge.java` | Werkzeuge, mit denen die KI selbst nachschlägt |
+| `service/KiHilfeService.java` | Chat mit Nachschlage-Schleife; ohne Wissen der Fallback `CodebaseIndexService` |
+| `controller/KiHilfeController.java` | Antwort als Server-Sent Events (Schritte live) |
 | `cli/StandaloneRagIndexer.java` | Kommandozeile (Image-Bau, `rag-index.sh`) |
 | `cli/RagIndexingRunner.java` | `--rag-index`: ERP starten, warten bis der Index fertig ist, beenden |
 

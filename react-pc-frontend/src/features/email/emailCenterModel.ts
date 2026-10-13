@@ -1,4 +1,5 @@
 import { extractDisplayName, extractEmailAddress, formatRecipient, parseRecipientList } from '../../lib/emailAddress';
+import { htmlZuEinzeiler } from '../../lib/htmlSanitizer';
 import type { PostfachKurz } from './postfach';
 
 /** Anhang-Daten aus der Backend-API (UnifiedEmailDto.AttachmentDto). */
@@ -64,6 +65,37 @@ export interface EmailItem {
     postfaecher?: PostfachKurz[];
     /** Postfach, über das Antworten und Weiterleitungen fest rausgehen. */
     antwortPostfach?: PostfachKurz | null;
+}
+
+/** Gespeicherter E-Mail-Entwurf aus `/api/emails/drafts`. */
+export interface DraftItem {
+    id: number;
+    recipient?: string;
+    cc?: string;
+    subject?: string;
+    body?: string;
+    fromAddress?: string;
+    replyEmailId?: number;
+    weitergeleitetVonEmailId?: number | null;
+    projektId?: number;
+    anfrageId?: number;
+    updatedAt?: string;
+}
+
+/**
+ * Filtert Entwürfe nach Betreff, Empfänger, Absender und Text (ohne Groß-/Kleinschreibung).
+ * Der Text ist HTML: gesucht wird im Klartext, damit Tags und Entitäten nicht
+ * mittreffen und Wörter aus verschiedenen Absätzen getrennt bleiben.
+ */
+export function filtereEntwuerfe<T extends DraftItem>(drafts: T[], suchbegriff: string): T[] {
+    const q = suchbegriff.trim().toLowerCase();
+    if (!q) return drafts;
+    return drafts.filter(draft =>
+        draft.subject?.toLowerCase().includes(q) ||
+        draft.recipient?.toLowerCase().includes(q) ||
+        draft.fromAddress?.toLowerCase().includes(q) ||
+        htmlZuEinzeiler(draft.body).toLowerCase().includes(q)
+    );
 }
 
 // Folder Types

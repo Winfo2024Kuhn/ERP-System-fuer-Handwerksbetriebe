@@ -23,6 +23,7 @@ import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.Materialkosten;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Projekt;
@@ -60,11 +61,13 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -76,6 +79,12 @@ public class
 
 ProjektManagementService {
     private static final String PROJEKT_KUNDE_PFLICHT_MESSAGE = "Für Projekte muss ein Kunde ausgewählt werden.";
+    public static final String PROJEKT_NICHT_GEFUNDEN =
+            "Dieses Projekt gibt es nicht mehr. Vielleicht wurde es inzwischen gelöscht.";
+    /** Spaltenbreite der Texte in {@code materialkosten}. */
+    private static final int MAX_TEXTLAENGE_MATERIALKOSTEN = 255;
+    /** {@code numeric(19,2)}: höchstens 17 Stellen vor dem Komma. */
+    private static final int MAX_VORKOMMASTELLEN_BETRAG = 17;
     private final ProjektRepository projektRepository;
     private final AnfrageNotizRepository anfrageNotizRepository;
     private final ProjektNotizRepository projektNotizRepository;
@@ -520,8 +529,7 @@ ProjektManagementService {
      */
     @Transactional
     public ProjektResponseDto setzeAbgeschlossen(Long id, boolean abgeschlossen) {
-        Projekt projekt = projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(id);
         projekt.setAbgeschlossen(abgeschlossen);
         projekt.setAbgeschlossenManuell(true);
         return projektMapper.toProjektResponseDto(projektRepository.save(projekt));
@@ -531,8 +539,7 @@ ProjektManagementService {
     public ProjektResponseDto aktualisiereProjekt(Long id, ProjektErstellenDto dto, String strasse, String plz,
             String ort, MultipartFile bild, Mitarbeiter uploadedBy)
             throws FalscheAuftragsnummerException {
-        Projekt projekt = projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(id);
 
         ensureProjektHatZugewiesenenKunden(dto, projekt);
         projekt.setStrasse(strasse);
@@ -756,58 +763,89 @@ ProjektManagementService {
         return mappeMitKilogramm(gespeichertesProjekt);
     }
 
+    /**
+     * Hängt einen manuell erfassten Materialkosten-Eintrag an das Projekt an.
+     * Bereits erfasste Einträge bleiben unangetastet – früher ersetzte ein
+     * PATCH die ganze Liste, und jedes „Kosten erfassen“ löschte so alle
+     * älteren Einträge.
+     */
     @Transactional
-    public ProjektResponseDto aktualisiereMaterialkosten(Long projektId, List<MaterialkostenErfassenDto> materialDtos) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+    public ProjektResponseDto fuegeMaterialkostenHinzu(Long projektId, MaterialkostenErfassenDto dto) {
+        pruefeMaterialkosten(dto);
+        Projekt projekt = findeProjektEntity(projektId);
 
-        // Dekrementiere Bestellungen für entfernte Materialkosten (oder alle, da wir
-        // gleich clearen)
-        for (org.example.kalkulationsprogramm.domain.Materialkosten alt : projekt.getMaterialkosten()) {
-            if (alt.getLieferant() != null) {
-                Lieferanten l = alt.getLieferant();
-                if (l.getBestellungen() != null && l.getBestellungen() > 0) {
-                    l.setBestellungen(l.getBestellungen() - 1);
-                    lieferantenRepository.save(l);
-                }
-            }
+        Materialkosten mk = new Materialkosten();
+        mk.setProjekt(projekt);
+        mk.setBeschreibung(dto.getBeschreibung().trim());
+        mk.setExterneArtikelnummer(leerAlsNull(dto.getExterneArtikelnummer()));
+        mk.setMonat(dto.getMonat());
+        mk.setBetrag(dto.getBetrag());
+        mk.setRechnungsnummer(leerAlsNull(dto.getRechnungsnummer()));
+        if (dto.getLieferantId() != null) {
+            Lieferanten lieferant = lieferantenRepository.findById(dto.getLieferantId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Der gewählte Lieferant wurde nicht gefunden."));
+            mk.setLieferant(lieferant);
+            aendereBestellZaehler(lieferant, 1);
         }
+        projekt.getMaterialkosten().add(mk);
 
-        projekt.getMaterialkosten().clear();
-        if (materialDtos != null) {
-            List<org.example.kalkulationsprogramm.domain.Materialkosten> materialKosten = materialDtos.stream()
-                    .map(dto -> {
-                        org.example.kalkulationsprogramm.domain.Materialkosten mk = new org.example.kalkulationsprogramm.domain.Materialkosten();
-                        mk.setProjekt(projekt);
-                        mk.setBeschreibung(dto.getBeschreibung());
-                        mk.setExterneArtikelnummer(dto.getExterneArtikelnummer());
-                        mk.setMonat(dto.getMonat());
-                        mk.setBetrag(dto.getBetrag());
-                        mk.setRechnungsnummer(dto.getRechnungsnummer());
-
-                        if (dto.getLieferantId() != null) {
-                            Lieferanten lieferant = lieferantenRepository.findById(dto.getLieferantId()).orElse(null);
-                            if (lieferant != null) {
-                                mk.setLieferant(lieferant);
-                                // Increment bestellungen counter
-                                lieferant.setBestellungen(
-                                        lieferant.getBestellungen() == null ? 1 : lieferant.getBestellungen() + 1);
-                                lieferantenRepository.save(lieferant);
-                            }
-                        }
-
-                        return mk;
-                    }).collect(Collectors.toCollection(ArrayList::new));
-            projekt.getMaterialkosten().addAll(materialKosten);
-        }
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
     }
 
+    private static void pruefeMaterialkosten(MaterialkostenErfassenDto dto) {
+        if (dto == null || dto.getBeschreibung() == null || dto.getBeschreibung().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte eine Beschreibung angeben.");
+        }
+        if (dto.getBeschreibung().trim().length() > MAX_TEXTLAENGE_MATERIALKOSTEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Die Beschreibung darf höchstens " + MAX_TEXTLAENGE_MATERIALKOSTEN + " Zeichen lang sein.");
+        }
+        if (dto.getRechnungsnummer() != null && dto.getRechnungsnummer().trim().length() > MAX_TEXTLAENGE_MATERIALKOSTEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Die Rechnungsnummer darf höchstens " + MAX_TEXTLAENGE_MATERIALKOSTEN + " Zeichen lang sein.");
+        }
+        if (dto.getExterneArtikelnummer() != null && dto.getExterneArtikelnummer().trim().length() > MAX_TEXTLAENGE_MATERIALKOSTEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Die Artikelnummer darf höchstens " + MAX_TEXTLAENGE_MATERIALKOSTEN + " Zeichen lang sein.");
+        }
+        if (dto.getBetrag() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte einen Betrag angeben.");
+        }
+        if (dto.getBetrag().signum() < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Betrag darf nicht negativ sein.");
+        }
+        BigDecimal betrag = dto.getBetrag().stripTrailingZeros();
+        if (betrag.precision() - betrag.scale() > MAX_VORKOMMASTELLEN_BETRAG) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Betrag ist zu groß.");
+        }
+        if (betrag.scale() > 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Der Betrag darf höchstens zwei Nachkommastellen haben.");
+        }
+        if (dto.getMonat() != null && (dto.getMonat() < 1 || dto.getMonat() > 12)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Monat muss zwischen 1 und 12 liegen.");
+        }
+    }
+
+    private static String leerAlsNull(String text) {
+        return text == null || text.isBlank() ? null : text.trim();
+    }
+
+    /**
+     * Zählt mit, wie oft ein Lieferant in manuell erfassten Materialkosten
+     * vorkommt – hoch beim Erfassen, runter beim Entfernen, nie unter 0.
+     */
+    private void aendereBestellZaehler(Lieferanten lieferant, int delta) {
+        int bisher = lieferant.getBestellungen() == null ? 0 : lieferant.getBestellungen();
+        lieferant.setBestellungen(Math.max(0, bisher + delta));
+        lieferantenRepository.save(lieferant);
+    }
+
     @Transactional
     public ProjektResponseDto fuegeArtikelMaterialkosten(Long projektId, List<ArtikelMengeDto> artikelAuswahl) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         if (artikelAuswahl != null) {
             for (ArtikelMengeDto auswahl : artikelAuswahl) {
                 Artikel artikel = artikelRepository.findById(auswahl.getArtikelId())
@@ -980,8 +1018,7 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto entferneArtikelMaterialkosten(Long projektId, Long artikelInProjektId) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
 
         ArtikelInProjekt artikelInProjekt = artikelInProjektRepository.findById(artikelInProjektId)
                 .orElseThrow(() -> new RuntimeException("Artikel im Projekt konnte nicht gefunden werden."));
@@ -998,8 +1035,7 @@ ProjektManagementService {
     @Transactional
     public ProjektResponseDto aktualisiereArtikelInProjekt(Long projektId, Long artikelInProjektId,
             org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektUpdateDto dto) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
 
         ArtikelInProjekt artikelInProjekt = artikelInProjektRepository.findById(artikelInProjektId)
                 .orElseThrow(() -> new RuntimeException("Artikel im Projekt konnte nicht gefunden werden."));
@@ -1047,9 +1083,16 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto entferneMaterialkosten(Long projektId, Long materialId) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
-        projekt.getMaterialkosten().removeIf(mk -> mk.getId().equals(materialId));
+        Projekt projekt = findeProjektEntity(projektId);
+        Materialkosten eintrag = projekt.getMaterialkosten().stream()
+                .filter(mk -> materialId != null && materialId.equals(mk.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Diese Materialkosten gibt es in diesem Projekt nicht mehr."));
+        projekt.getMaterialkosten().remove(eintrag);
+        if (eintrag.getLieferant() != null) {
+            aendereBestellZaehler(eintrag.getLieferant(), -1);
+        }
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
     }
@@ -1057,8 +1100,7 @@ ProjektManagementService {
     @Transactional
     public ProjektResponseDto fuegeProduktkategorienHinzu(Long projektId,
             List<ProjektProduktkategorieErfassenDto> kategorienDtos) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         if (kategorienDtos != null) {
             for (ProjektProduktkategorieErfassenDto dto : kategorienDtos) {
                 Produktkategorie pk = produktkategorieRepository.findById(dto.getProduktkategorieID())
@@ -1086,8 +1128,7 @@ ProjektManagementService {
     @Transactional
     public ProjektResponseDto aktualisiereProjektProduktkategorie(Long projektId, Long ppkId,
             ProjektProduktkategorieErfassenDto dto) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         ProjektProduktkategorie ppk = projekt.getProjektProduktkategorien().stream()
                 .filter(k -> k.getId().equals(ppkId))
                 .findFirst()
@@ -1116,15 +1157,15 @@ ProjektManagementService {
 
     @Transactional
     public ProjektResponseDto loescheProjektProduktkategorie(Long projektId, Long ppkId) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         if (ZeitbuchungRepository.existsByProjektProduktkategorieId(ppkId)) {
-            throw new IllegalStateException(
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Die Produktkategorie kann nicht gelöscht werden, da bereits Zeitbuchungen dafür existieren.");
         }
         boolean removed = projekt.getProjektProduktkategorien().removeIf(ppk -> ppk.getId().equals(ppkId));
         if (!removed) {
-            throw new RuntimeException("Produktkategorie im Projekt nicht gefunden.");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "Diese Produktkategorie gehört nicht mehr zum Projekt. Bitte die Seite neu laden.");
         }
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
@@ -1144,8 +1185,7 @@ ProjektManagementService {
 
     @Transactional
     public void loescheProjekt(Long projektID) {
-        Projekt projekt = this.projektRepository.findById(projektID)
-                .orElseThrow(() -> new RuntimeException("Das Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektID);
         for (var dokument : new ArrayList<>(projekt.getProjektDokument())) {
             dateiSpeicherService.loescheDatei(dokument.getId());
         }
@@ -1263,20 +1303,22 @@ ProjektManagementService {
         // Beim Öffnen eines Projekts: Preis on-the-fly aus Dokumenten berechnen
         ausgangsGeschaeftsDokumentService.aktualisiereProjektPreisAusDokumenten(id);
 
-        Projekt projekt = this.projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden!"));
+        Projekt projekt = findeProjektEntity(id);
         return mappeMitKilogramm(projekt);
     }
 
+    /**
+     * Lädt ein Projekt oder antwortet mit 404 und verständlicher Meldung – über den
+     * RestExceptionHandler, damit die Controller keinen Sammel-Catch brauchen.
+     */
     public Projekt findeProjektEntity(Long id) {
         return this.projektRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden!"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, PROJEKT_NICHT_GEFUNDEN));
     }
 
     @Transactional
     public ProjektResponseDto updateProjektKurzbeschreibung(Long projektId, String kurzbeschreibung) {
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt konnte nicht gefunden werden."));
+        Projekt projekt = findeProjektEntity(projektId);
         projekt.setKurzbeschreibung(kurzbeschreibung);
         Projekt saved = projektRepository.save(projekt);
         return mappeMitKilogramm(saved);

@@ -11,7 +11,7 @@ import { DatePicker } from '../ui/datepicker';
 import { useToast } from '../ui/toast';
 import { useConfirm } from '../ui/confirm-dialog';
 import { cn } from '../../lib/utils';
-import { leseFehlermeldung } from '../verrechnungslohnFormat';
+import { leseFehlermeldung } from '../../lib/apiFehler';
 
 type SubTab = 'krankenkassen' | 'sv-saetze' | 'gewerke';
 
@@ -214,10 +214,10 @@ export function LohnStammdatenPanel() {
         try {
             const res = await fetch(`/api/lohn-stammdaten/gewerke/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
             // Ist das Gewerk in den Firmendaten eingetragen, sagt das Backend warum (409)
-            if (!res.ok) { toast.error(await leseFehlermeldung(res, 'Gewerk konnte nicht gelöscht werden')); return; }
+            if (!res.ok) { toast.error(await leseFehlermeldung(res, 'Das Gewerk konnte nicht gelöscht werden.')); return; }
             await loadGewerke();
         } catch {
-            toast.error('Gewerk konnte nicht gelöscht werden.');
+            toast.error('Das Gewerk konnte nicht gelöscht werden.');
         }
     };
 

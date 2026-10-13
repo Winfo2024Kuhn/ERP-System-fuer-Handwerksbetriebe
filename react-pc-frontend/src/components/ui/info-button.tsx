@@ -8,11 +8,31 @@ const ABSTAND = 6; // Abstand Popover <-> Knopf
 const RAND = 8; // Sicherheitsabstand zum Fensterrand
 const FOKUSSIERBAR = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
+/**
+ * Farbe des (i):
+ * - `standard`: graues (i) auf hellen Flächen (Formulare, Karten).
+ * - `hell`: helles (i) auf farbigen Flächen, z. B. im roten Kopf der KI-Hilfe.
+ */
+export type InfoButtonVariante = 'standard' | 'hell';
+
+const VARIANTEN: Record<InfoButtonVariante, { ruhe: string; offen: string }> = {
+    standard: {
+        ruhe: 'text-slate-400 hover:bg-rose-50 hover:text-rose-600 focus-visible:ring-rose-500',
+        offen: 'bg-rose-50 text-rose-600',
+    },
+    hell: {
+        ruhe: 'text-rose-100 hover:bg-white/20 hover:text-white focus-visible:ring-white',
+        offen: 'bg-white/20 text-white',
+    },
+};
+
 export interface InfoButtonProps {
     /** Worum es geht – Überschrift im Popover und Teil des Knopf-Namens („Mehr zu: …“). */
     titel: string;
     children: ReactNode;
     className?: string;
+    /** Farbe des (i), siehe {@link InfoButtonVariante}. Standard: `standard`. */
+    variante?: InfoButtonVariante;
 }
 
 /**
@@ -29,7 +49,7 @@ export interface InfoButtonProps {
  * schließen es; der Fokus kehrt dann zum (i) zurück (außer man hat daneben
  * etwas anderes Bedienbares angeklickt).</p>
  */
-export function InfoButton({ titel, children, className }: InfoButtonProps) {
+export function InfoButton({ titel, children, className, variante = 'standard' }: InfoButtonProps) {
     const id = useId();
     const panelId = `${id}-info`;
     const titelId = `${id}-titel`;
@@ -93,10 +113,11 @@ export function InfoButton({ titel, children, className }: InfoButtonProps) {
                 aria-controls={offen ? panelId : undefined}
                 onClick={() => (offen ? schliessen() : setOffen(true))}
                 className={cn(
-                    'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full align-middle text-slate-400 transition-colors',
-                    'hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500',
+                    'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full align-middle transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2',
                     'disabled:cursor-not-allowed disabled:opacity-50',
-                    offen && 'bg-rose-50 text-rose-600',
+                    VARIANTEN[variante].ruhe,
+                    offen && VARIANTEN[variante].offen,
                     className,
                 )}
             >

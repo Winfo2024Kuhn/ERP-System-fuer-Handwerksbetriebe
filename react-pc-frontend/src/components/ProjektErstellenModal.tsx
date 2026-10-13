@@ -7,6 +7,7 @@ import { AddressAutocomplete } from './AddressAutocomplete';
 import { KundeAnlegenForm } from './KundeAnlegenForm';
 import type { Kunde, Anfrage } from '../types';
 import { baueAuftragsnummerHinweis, type NaechsteAuftragsnummerResponse } from './auftragsnummerHinweis';
+import type { ProjektBearbeiten } from '../lib/projektBearbeiten';
 
 interface SelectedCategory {
     id: number;
@@ -28,40 +29,6 @@ interface ProjektErstellenPayload {
     ort?: string;
     anfrageIds?: number[];
     projektArt?: string;
-}
-
-interface ProjektBearbeiten {
-    id: number;
-    bauvorhaben: string;
-    kunde: string;
-    kundennummer: string;
-    kundenId?: number;
-    auftragsnummer: string;
-    bruttoPreis?: number;
-    strasse?: string;
-    plz?: string;
-    ort?: string;
-    abgeschlossen?: boolean;
-    projektArt?: string;
-    kundenEmails?: string[];
-    kundeDto?: {
-        id: number;
-        name: string;
-        kundennummer: string;
-        strasse?: string;
-        plz?: string;
-        ort?: string;
-        kundenEmails?: string[];
-    };
-    produktkategorien?: Array<{
-        id?: number; // ProjektProduktkategorie.id
-        produktkategorie: {
-            id: number;
-            bezeichnung: string;
-            verrechnungseinheit?: { name: string; anzeigename: string };
-        };
-        menge?: number;
-    }>;
 }
 
 interface ProjektErstellenModalProps {
@@ -426,7 +393,9 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 strasse: editProjekt.strasse || '',
                 plz: editProjekt.plz || '',
                 ort: editProjekt.ort || '',
-                projektArt: editProjekt.projektArt || 'PAUSCHAL',
+                // Unbekannte Projektart nicht durch „Pauschalpreis“ ersetzen: leer
+                // bleibt nichts vorgewählt, und das Backend lässt die gespeicherte stehen.
+                projektArt: editProjekt.projektArt ?? '',
             });
 
             // Produktkategorien aus bestehendem Projekt laden
@@ -1035,6 +1004,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                             key={art.value}
                                             type="button"
                                             onClick={() => handleInputChange('projektArt', art.value)}
+                                            aria-pressed={formData.projektArt === art.value}
                                             className={`p-3 rounded-lg border-2 text-left transition-all ${
                                                 formData.projektArt === art.value
                                                     ? 'border-rose-500 bg-rose-50'

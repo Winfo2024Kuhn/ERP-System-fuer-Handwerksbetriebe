@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.domain.DokumentGruppe;
@@ -244,23 +245,14 @@ public class ProjektController {
     @PatchMapping(value = "/{projektID}/abgeschlossen")
     public ResponseEntity<ProjektResponseDto> setzeAbgeschlossen(@PathVariable Long projektID,
             @RequestParam boolean abgeschlossen) {
-        try {
-            return ResponseEntity.ok(projektManagementService.setzeAbgeschlossen(projektID, abgeschlossen));
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.ok(projektManagementService.setzeAbgeschlossen(projektID, abgeschlossen));
     }
 
-    @PatchMapping(value = "/{projektID}/materialkosten")
-    public ResponseEntity<ProjektResponseDto> aktualisiereMaterialkosten(@PathVariable Long projektID,
-            @RequestBody List<MaterialkostenErfassenDto> materialkosten) {
-        try {
-            ProjektResponseDto dto = projektManagementService.aktualisiereMaterialkosten(projektID, materialkosten);
-            return ResponseEntity.ok(dto);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
-        }
+    /** Einen manuell erfassten Materialkosten-Eintrag anhängen; vorhandene bleiben stehen. */
+    @PostMapping(value = "/{projektID}/materialkosten")
+    public ResponseEntity<ProjektResponseDto> fuegeMaterialkostenHinzu(@PathVariable Long projektID,
+            @RequestBody MaterialkostenErfassenDto materialkosten) {
+        return ResponseEntity.ok(projektManagementService.fuegeMaterialkostenHinzu(projektID, materialkosten));
     }
 
     @PatchMapping(value = "/{projektID}/kurzbeschreibung", consumes = MediaType.TEXT_PLAIN_VALUE)
@@ -318,13 +310,7 @@ public class ProjektController {
     @DeleteMapping(value = "/{projektID}/materialkosten/{materialID}")
     public ResponseEntity<ProjektResponseDto> entferneMaterialkosten(@PathVariable Long projektID,
             @PathVariable Long materialID) {
-        try {
-            ProjektResponseDto dto = projektManagementService.entferneMaterialkosten(projektID, materialID);
-            return ResponseEntity.ok(dto);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
-        }
+        return ResponseEntity.ok(projektManagementService.entferneMaterialkosten(projektID, materialID));
     }
 
     @PostMapping("/{projektID}/produktkategorien")
@@ -335,6 +321,9 @@ public class ProjektController {
             return ResponseEntity.ok(dto);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
+        } catch (ResponseStatusException e) {
+            // z. B. 404 "Projekt gibt es nicht mehr" – Status und Meldung macht der RestExceptionHandler
+            throw e;
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
@@ -358,13 +347,7 @@ public class ProjektController {
     @DeleteMapping("/{projektID}/produktkategorien/{kategorieID}")
     public ResponseEntity<ProjektResponseDto> loescheProjektProduktkategorie(@PathVariable Long projektID,
             @PathVariable Long kategorieID) {
-        try {
-            ProjektResponseDto response = projektManagementService.loescheProjektProduktkategorie(projektID,
-                    kategorieID);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
-        }
+        return ResponseEntity.ok(projektManagementService.loescheProjektProduktkategorie(projektID, kategorieID));
     }
 
     @GetMapping("/{projektID}/produktkategorien/{ppkId}/referenziert")
@@ -378,12 +361,8 @@ public class ProjektController {
 
     @DeleteMapping("/{projektID}")
     public ResponseEntity<Void> loescheProjekt(@PathVariable Long projektID) {
-        try {
-            this.projektManagementService.loescheProjekt(projektID);
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            return ResponseEntity.notFound().build();
-        }
+        this.projektManagementService.loescheProjekt(projektID);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping(value = "/zugferd/extract", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
@@ -911,14 +890,15 @@ public class ProjektController {
         return ResponseEntity.ok(dtos);
     }
 
+    /**
+     * Bezahlt-Haken im Offene-Posten-Center. Kein eigenes Fehler-Mapping: 404/400
+     * kommen als ResponseStatusException aus dem Service, ein Versionskonflikt am
+     * Projekt wird im RestExceptionHandler zu 409.
+     */
     @PatchMapping("/dokumente/{dokumentID}/bezahlt")
     public ResponseEntity<Void> setzeDokumentBezahlt(@PathVariable Long dokumentID, @RequestParam boolean bezahlt) {
-        try {
-            dateiSpeicherService.setzeGeschaeftsdokumentBezahlt(dokumentID, bezahlt);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        dateiSpeicherService.setzeGeschaeftsdokumentBezahlt(dokumentID, bezahlt);
+        return ResponseEntity.noContent().build();
     }
 
     /**
@@ -1092,12 +1072,8 @@ public class ProjektController {
     @DeleteMapping({ "/{projektID}/dokumente/{dokumentID}" })
     public ResponseEntity<Void> loescheDokument(@PathVariable Long projektID,
             @PathVariable Long dokumentID) {
-        try {
-            dateiSpeicherService.loescheDatei(dokumentID);
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            return ResponseEntity.notFound().build();
-        }
+        dateiSpeicherService.loescheDatei(dokumentID);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping
@@ -1308,12 +1284,7 @@ public class ProjektController {
 
     @GetMapping("/{id}")
     public ResponseEntity<ProjektResponseDto> getProjektById(@PathVariable Long id) {
-        try {
-            ProjektResponseDto projekt = projektManagementService.findeProjektById(id);
-            return ResponseEntity.ok(projekt);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.ok(projektManagementService.findeProjektById(id));
     }
 
     // ============== PROJEKT-NOTIZEN ==============
@@ -1370,8 +1341,7 @@ public class ProjektController {
             return ResponseEntity.badRequest().body(Map.of("error", "E-Mail-Adresse fehlt"));
         }
         email = email.trim().toLowerCase();
-        Projekt projekt = projektRepository.findById(projektId)
-                .orElseThrow(() -> new RuntimeException("Projekt nicht gefunden"));
+        Projekt projekt = projektManagementService.findeProjektEntity(projektId);
         if (projekt.getKundenEmails() == null) {
             projekt.setKundenEmails(new java.util.ArrayList<>());
         }
@@ -1392,27 +1362,22 @@ public class ProjektController {
             @RequestBody ProjektNotizCreateDto dto,
             Authentication authentication) {
         Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
-        try {
-            Projekt projekt = projektRepository.findById(projektId)
-                    .orElseThrow(() -> new RuntimeException("Projekt nicht gefunden"));
+        Projekt projekt = projektManagementService.findeProjektEntity(projektId);
 
-            ProjektNotiz notiz = new ProjektNotiz();
-            notiz.setProjekt(projekt);
-            notiz.setMitarbeiter(mitarbeiter);
-            notiz.setNotiz(dto.notiz);
-            // Default true, falls null (wobei boolean primitiv im DTO schwierig wäre, aber
-            // hier Feldzugriff)
-            notiz.setMobileSichtbar(dto.mobileSichtbar);
-            notiz.setNurFuerErsteller(dto.nurFuerErsteller);
-            notiz.setErstelltAm(LocalDateTime.now());
+        ProjektNotiz notiz = new ProjektNotiz();
+        notiz.setProjekt(projekt);
+        notiz.setMitarbeiter(mitarbeiter);
+        notiz.setNotiz(dto.notiz);
+        // Default true, falls null (wobei boolean primitiv im DTO schwierig wäre, aber
+        // hier Feldzugriff)
+        notiz.setMobileSichtbar(dto.mobileSichtbar);
+        notiz.setNurFuerErsteller(dto.nurFuerErsteller);
+        notiz.setErstelltAm(LocalDateTime.now());
 
-            ProjektNotiz gespeichert = projektNotizRepository.save(notiz);
-            // Nach Erstellen hat man Rechte darauf
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(mapNotizToDto(gespeichert, mitarbeiter, MobilePrincipal.current() != null));
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
-        }
+        ProjektNotiz gespeichert = projektNotizRepository.save(notiz);
+        // Nach Erstellen hat man Rechte darauf
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(mapNotizToDto(gespeichert, mitarbeiter, MobilePrincipal.current() != null));
     }
 
     /**
@@ -1425,33 +1390,24 @@ public class ProjektController {
             @RequestBody ProjektNotizCreateDto dto, // Wiederverwendung CreateDto für einfaches Update
             Authentication authentication) {
         Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
-        try {
-            ProjektNotiz notiz = projektNotizRepository.findById(notizId)
-                    .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (notiz.getProjekt() == null
-                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId)) {
-                return ResponseEntity.notFound().build();
-            }
+        ProjektNotiz notiz = ladeNotizImProjekt(projektId, notizId);
 
-            boolean isMobile = MobilePrincipal.current() != null;
+        boolean isMobile = MobilePrincipal.current() != null;
 
-            // Berechtigungsprüfung
-            if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-
-            if (dto.notiz != null) {
-                notiz.setNotiz(dto.notiz);
-            }
-            // Mobile Sichtbarkeit updatebar
-            notiz.setMobileSichtbar(dto.mobileSichtbar);
-            notiz.setNurFuerErsteller(dto.nurFuerErsteller);
-
-            ProjektNotiz updated = projektNotizRepository.save(notiz);
-            return ResponseEntity.ok(mapNotizToDto(updated, mitarbeiter, isMobile));
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
+        // Berechtigungsprüfung
+        if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+
+        if (dto.notiz != null) {
+            notiz.setNotiz(dto.notiz);
+        }
+        // Mobile Sichtbarkeit updatebar
+        notiz.setMobileSichtbar(dto.mobileSichtbar);
+        notiz.setNurFuerErsteller(dto.nurFuerErsteller);
+
+        ProjektNotiz updated = projektNotizRepository.save(notiz);
+        return ResponseEntity.ok(mapNotizToDto(updated, mitarbeiter, isMobile));
     }
 
     /**
@@ -1463,26 +1419,29 @@ public class ProjektController {
             @PathVariable Long notizId,
             Authentication authentication) {
         Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
-        try {
-            ProjektNotiz notiz = projektNotizRepository.findById(notizId)
-                    .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (notiz.getProjekt() == null
-                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId)) {
-                return ResponseEntity.notFound().build();
-            }
+        ProjektNotiz notiz = ladeNotizImProjekt(projektId, notizId);
 
-            boolean isMobile = MobilePrincipal.current() != null;
+        boolean isMobile = MobilePrincipal.current() != null;
 
-            // Berechtigungsprüfung
-            if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-
-            projektNotizRepository.delete(notiz);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
+        // Berechtigungsprüfung
+        if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+
+        projektNotizRepository.delete(notiz);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Notiz, die zu genau diesem Projekt gehört. Fehlt sie oder hängt sie an einem anderen
+     * Projekt, antwortet der RestExceptionHandler mit 404 und verständlicher Meldung.
+     */
+    private ProjektNotiz ladeNotizImProjekt(Long projektId, Long notizId) {
+        return projektNotizRepository.findById(notizId)
+                .filter(notiz -> notiz.getProjekt() != null
+                        && Objects.equals(notiz.getProjekt().getId(), projektId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Diese Notiz gibt es nicht mehr. Vielleicht wurde sie inzwischen gelöscht."));
     }
 
     /** Wer gerade handelt (PC: zugeordneter Mitarbeiter, Handy: Token) – nie ein Request-Wert. */
@@ -1569,19 +1528,12 @@ public class ProjektController {
             @RequestParam("datei") MultipartFile datei,
             Authentication authentication) {
         Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
+        ProjektNotiz notiz = ladeNotizImProjekt(projektId, notizId);
+        boolean isMobile = MobilePrincipal.current() != null;
+        if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
         try {
-            ProjektNotiz notiz = projektNotizRepository.findById(notizId)
-                    .orElseThrow(() -> new RuntimeException("Notiz nicht gefunden"));
-            if (notiz.getProjekt() == null
-                    || !java.util.Objects.equals(notiz.getProjekt().getId(), projektId)) {
-                return ResponseEntity.notFound().build();
-            }
-
-            boolean isMobile = MobilePrincipal.current() != null;
-            if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-
             String originalName = datei.getOriginalFilename();
             String gespeicherterName = dateiSpeicherService.speichereProjektNotizBild(datei);
 
@@ -1614,36 +1566,29 @@ public class ProjektController {
             @PathVariable Long bildId,
             Authentication authentication) {
         Mitarbeiter mitarbeiter = verfasserOderAblehnen(authentication);
-        try {
-            ProjektNotizBild bild = projektNotizBildRepository.findById(bildId)
-                    .orElseThrow(() -> new RuntimeException("Bild nicht gefunden"));
+        ProjektNotiz notiz = ladeNotizImProjekt(projektId, notizId);
+        ProjektNotizBild bild = projektNotizBildRepository.findById(bildId)
+                .filter(b -> b.getNotiz() != null && Objects.equals(b.getNotiz().getId(), notiz.getId()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Dieses Bild gibt es nicht mehr. Vielleicht wurde es inzwischen gelöscht."));
 
-            // Prüfe ob Bild zur Notiz gehört
-            if (!bild.getNotiz().getId().equals(notizId)) {
-                return ResponseEntity.badRequest().build();
-            }
-
-            if (bild.getNotiz().getProjekt() == null
-                    || !java.util.Objects.equals(bild.getNotiz().getProjekt().getId(), projektId)) return ResponseEntity.notFound().build();
-            // Berechtigungsprüfung über die Notiz
-            boolean isMobile = MobilePrincipal.current() != null;
-            if (!hasEditPermission(bild.getNotiz(), mitarbeiter, isMobile)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-            }
-
-            // Datei löschen
-            try {
-                dateiSpeicherService.loescheProjektNotizBild(bild.getGespeicherterDateiname());
-            } catch (Exception ignored) {
-            }
-
-            // Entity löschen
-            projektNotizBildRepository.delete(bild);
-
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            return ResponseEntity.notFound().build();
+        // Berechtigungsprüfung über die Notiz
+        boolean isMobile = MobilePrincipal.current() != null;
+        if (!hasEditPermission(notiz, mitarbeiter, isMobile)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
+
+        // Datei löschen – schlägt das fehl, verschwindet der Eintrag trotzdem aus der Notiz
+        try {
+            dateiSpeicherService.loescheProjektNotizBild(bild.getGespeicherterDateiname());
+        } catch (Exception e) {
+            log.warn("Datei zu Notizbild {} konnte nicht gelöscht werden", bild.getId());
+        }
+
+        // Entity löschen
+        projektNotizBildRepository.delete(bild);
+
+        return ResponseEntity.noContent().build();
     }
 
     public static class ProjektNotizDto {

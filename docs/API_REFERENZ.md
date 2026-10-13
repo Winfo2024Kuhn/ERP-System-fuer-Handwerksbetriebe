@@ -248,7 +248,7 @@ Den früheren `AngebotController` unter `/api/angebote` gibt es nicht mehr; Ange
 | `PUT` | `/{projektID}` | Projekt mit Bild ändern (multipart) |
 | `PUT` | `/{projektID}` | Projekt ändern (JSON) |
 | `PATCH` | `/{projektID}/abgeschlossen` | Haken „Beendet“ setzen oder entfernen |
-| `PATCH` | `/{projektID}/materialkosten` | Materialkosten ändern |
+| `POST` | `/{projektID}/materialkosten` | Einen manuellen Materialkosten-Eintrag anhängen (vorhandene bleiben) |
 | `PATCH` | `/{projektID}/kurzbeschreibung` | Kurzbeschreibung ändern (reiner Text) |
 | `POST` | `/{projektID}/materialkosten/artikel` | Artikel als Materialkosten hinzufügen |
 | `DELETE` | `/{projektID}/materialkosten/artikel/{artikelInProjektID}` | Artikel aus den Materialkosten entfernen |
