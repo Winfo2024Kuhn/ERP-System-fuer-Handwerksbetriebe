@@ -28,6 +28,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
  * Zeiterfassungs-Controller muss von {@link ZeiterfassungZugriffInterceptor#GESPERRTE_PFADE}
  * erfasst sein oder ausdrücklich in {@code FREIE_PFADE} stehen. Kommt ein neuer
  * Endpunkt unter einem anderen Pfad dazu, schlägt dieser Test an.
+ *
+ * <p><b>Neue Zeiterfassungs-Controller hier in {@code ZEITERFASSUNGS_CONTROLLER}
+ * eintragen</b> – nur dann prüft der Wächter sie mit.
  */
 class ZeiterfassungSperreAbdeckungTest {
 

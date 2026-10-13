@@ -41,8 +41,21 @@ export function erzeugeBerechtigungsSpeicher(lade: () => Promise<boolean>): Bere
                 stand = darf;
                 ausFehler = fehler;
                 laufend = null;
+                if (fehler) wiederholeBeiRueckkehr();
                 melde();
             });
+    };
+
+    /** Nach einem Ladefehler erneut versuchen, sobald das Fenster wieder aktiv oder online ist. */
+    const wiederholeBeiRueckkehr = () => {
+        if (typeof window === 'undefined') return;
+        const erneut = () => {
+            window.removeEventListener('focus', erneut);
+            window.removeEventListener('online', erneut);
+            if (ausFehler) ladeEinmal();
+        };
+        window.addEventListener('focus', erneut);
+        window.addEventListener('online', erneut);
     };
 
     const abonniere = (zuhoererFn: () => void) => {

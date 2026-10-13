@@ -66,8 +66,9 @@ public class ZeiterfassungZugriffInterceptor implements HandlerInterceptor {
         }
         ZeiterfassungSichtbarkeitService service = sichtbarkeitService.getIfAvailable();
         if (service != null && !service.darfZeiterfassungSehen(authentication)) {
+            // Pfad ohne Zeilenumbrüche ins Log (keine Log-Injection), keine Namen (DSGVO).
             log.info("Zeiterfassung gesperrt: Profil {} auf {} {}", ((FrontendUserPrincipal) authentication.getPrincipal()).getId(),
-                    request.getMethod(), request.getRequestURI());
+                    request.getMethod(), request.getServletPath().replaceAll("[\\r\\n]", "_"));
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, MELDUNG);
         }
         return true;

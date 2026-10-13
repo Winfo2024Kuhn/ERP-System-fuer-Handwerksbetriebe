@@ -34,6 +34,20 @@ describe('erzeugeBerechtigungsSpeicher', () => {
         expect(lade).toHaveBeenCalledTimes(2);
     });
 
+    it('lädt nach einem Ladefehler neu, sobald das Fenster wieder aktiv ist', async () => {
+        const lade = vi.fn()
+            .mockRejectedValueOnce(new Error('Netz weg'))
+            .mockResolvedValueOnce(true);
+        const { useBerechtigung } = erzeugeBerechtigungsSpeicher(lade);
+        const { result } = renderHook(() => useBerechtigung());
+        await waitFor(() => expect(result.current).toBe(false));
+
+        act(() => { window.dispatchEvent(new Event('focus')); });
+
+        await waitFor(() => expect(result.current).toBe(true));
+        expect(lade).toHaveBeenCalledTimes(2);
+    });
+
     it('lädt nach einem echten "kein Recht" nicht bei jedem Einbinden neu', async () => {
         const lade = vi.fn().mockResolvedValue(false);
         const { useBerechtigung } = erzeugeBerechtigungsSpeicher(lade);
