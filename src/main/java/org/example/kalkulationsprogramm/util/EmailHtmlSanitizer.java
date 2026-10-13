@@ -136,7 +136,8 @@ public final class EmailHtmlSanitizer {
         String s = html.replace("\r\n", "\n").replace("\r", "\n");
         s = s.replaceAll("(?i)<br\\s*/?>", "\n");
         s = BLOCK_CLOSING_TAG_PATTERN.matcher(s).replaceAll("\n\n");
-        s = s.replaceAll("(?is)<[^>]+>", "");
+        // Fixpunktschleife statt einem Durchlauf: aus "<<b>b>" darf kein Rest-Tag übrig bleiben.
+        s = HtmlKlartext.entferneTags(s);
         // Entitäten in einem Durchgang entpacken – sequentielles replace() würde "&amp;lt;"
         // doppelt zu "<" auflösen (CLAUDE.md: Entity-Unescaping nur Single-Pass).
         // inAttribute=true: Alt-Entitäten ohne Semikolon in URLs ("?a=1&para=2") bleiben stehen.
