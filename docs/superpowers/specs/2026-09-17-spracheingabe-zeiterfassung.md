@@ -207,6 +207,15 @@ Verstehst du eine Stelle akustisch nicht, schreibe dort [unverstaendlich].
 Rate nicht.
 ```
 
+> **Nachtrag 2026-10-13 (Nutzerentscheidung):** Die KI schreibt nicht mehr
+> wortgetreu mit, sondern notiert das frei Gesprochene als Stichpunkte, nach
+> Themen geordnet in die Abschnitte „Erledigt:“, „Material verbraucht:“ und
+> „Probleme / Offen:“ (leere fallen weg, Unpassendes ohne Überschrift ans
+> Ende). Das gilt an allen Stellen mit Mikrofon. Die erste Kernregel unten
+> („strukturiert nicht um, fasst nicht zusammen“) ist damit aufgehoben; „dichtet
+> nichts hinzu“ und „reiner Text“ gelten weiter. Maßgeblich ist
+> `SpracheingabeService.SYSTEM_ANWEISUNG`.
+
 Kernregeln, die bei einer Verfeinerung während der Umsetzung nicht
 verwässert werden dürfen:
 
