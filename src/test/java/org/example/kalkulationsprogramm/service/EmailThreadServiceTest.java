@@ -250,6 +250,19 @@ class EmailThreadServiceTest {
         assertThat(result.getEmails().get(0).getSnippet().length()).isEqualTo(121);
     }
 
+    @Test
+    void snippet_ausHtmlBody_entpacktSonderzeichenGenauEinmal() {
+        Email email = makeEmail(1L, "Angebot", null);
+        email.setBody(null);
+        email.setHtmlBody("<style>p{color:red}</style><p>Angebot &amp;lt;Treppe&amp;gt;</p><p>Max&nbsp;&amp; Erika</p>");
+        when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
+
+        EmailThreadDto result = service.loadThreadFor(1L);
+
+        // Früher wurde &amp;lt; nacheinander erst zu &lt; und dann zu < entpackt.
+        assertThat(result.getEmails().get(0).getSnippet()).isEqualTo("Angebot &lt;Treppe&gt; Max & Erika");
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // Kennzahlen für die Liste und Antwort-Bezug für den Versand
     // ═══════════════════════════════════════════════════════════════

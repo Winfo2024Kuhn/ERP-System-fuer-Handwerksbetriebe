@@ -170,6 +170,13 @@ class EmailHtmlSanitizerLueckenTest {
                 "Ma&szlig;e &lt; 12&nbsp;cm &amp; 3 St&uuml;ck &quot;x&quot; &#39;y&apos; &#122;"));
     }
 
+    @Test
+    @DisplayName("htmlToPlainText entfernt verschachtelte Tags restlos (Fixpunkt)")
+    void plainVerschachtelteTags() {
+        // Ein einzelner Durchlauf mit <[^>]+> liess hier "b>" bzw. "ipt>" stehen.
+        assertEquals("Hallo Max", EmailHtmlSanitizer.htmlToPlainText("<<b>b>Hallo <scr<script>ipt>Max"));
+    }
+
     // ---------- plainTextToHtml ----------
 
     @Test
