@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -39,6 +40,7 @@ class EmailAttachmentProcessingServiceTest {
     @Mock private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     @Mock private LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
     @Mock private BelegZuordnungService belegZuordnungService;
+    @Mock private LieferantDokumentPositionService positionService;
 
     @TempDir
     Path tempDir;
@@ -50,7 +52,8 @@ class EmailAttachmentProcessingServiceTest {
         service = new EmailAttachmentProcessingService(
                 emailRepository, emailAttachmentRepository, lieferantDokumentRepository,
                 lieferantenRepository, lieferantGeschaeftsdokumentRepository, geminiAnalyseService,
-                standardKostenstelleAutoAssigner, vorauskasseAutoAssigner, belegZuordnungService);
+                standardKostenstelleAutoAssigner, vorauskasseAutoAssigner, belegZuordnungService,
+                positionService);
         ReflectionTestUtils.setField(service, "attachmentDir", tempDir.toString());
     }
 
@@ -107,7 +110,7 @@ class EmailAttachmentProcessingServiceTest {
         when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
         when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("beleg.pdf"))).thenReturn(daten);
         when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-        when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> {
+        when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> {
             LieferantDokument gespeichert = inv.getArgument(0);
             assertThat(gespeichert.getTyp()).isEqualTo(typ);
             assertThat(gespeichert.getGeschaeftsdaten().getBetragNetto()).isEqualTo(erwartetNetto);
@@ -144,13 +147,13 @@ class EmailAttachmentProcessingServiceTest {
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung_2025.pdf")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             int result = service.processLieferantAttachments(email);
 
             assertThat(result).isEqualTo(1);
-            verify(lieferantDokumentRepository).save(any(LieferantDokument.class));
+            verify(lieferantDokumentRepository).saveAndFlush(any(LieferantDokument.class));
             verify(emailAttachmentRepository).save(pdfAtt);
             assertThat(pdfAtt.getAiProcessed()).isTrue();
         }
@@ -189,7 +192,7 @@ class EmailAttachmentProcessingServiceTest {
 
             assertThat(result).isEqualTo(0);
             verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), any());
-            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
         }
 
         @Test
@@ -219,7 +222,7 @@ class EmailAttachmentProcessingServiceTest {
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung_2025.pdf")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             int result = service.processLieferantAttachments(email);
@@ -254,13 +257,13 @@ class EmailAttachmentProcessingServiceTest {
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), anyString()))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             service.processLieferantAttachments(email);
 
             ArgumentCaptor<LieferantDokument> captor = ArgumentCaptor.forClass(LieferantDokument.class);
-            verify(lieferantDokumentRepository).save(captor.capture());
+            verify(lieferantDokumentRepository).saveAndFlush(captor.capture());
 
             // KI-erkannter Typ hat Vorrang
             assertThat(captor.getValue().getTyp()).isEqualTo(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
@@ -284,13 +287,13 @@ class EmailAttachmentProcessingServiceTest {
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), anyString()))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             service.processLieferantAttachments(email);
 
             ArgumentCaptor<LieferantDokument> captor = ArgumentCaptor.forClass(LieferantDokument.class);
-            verify(lieferantDokumentRepository).save(captor.capture());
+            verify(lieferantDokumentRepository).saveAndFlush(captor.capture());
 
             // "RE-" am Anfang → RECHNUNG
             assertThat(captor.getValue().getTyp()).isEqualTo(LieferantDokumentTyp.RECHNUNG);
@@ -395,13 +398,13 @@ class EmailAttachmentProcessingServiceTest {
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung.pdf")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             service.processLieferantAttachments(email);
 
             ArgumentCaptor<LieferantDokument> captor = ArgumentCaptor.forClass(LieferantDokument.class);
-            verify(lieferantDokumentRepository).save(captor.capture());
+            verify(lieferantDokumentRepository).saveAndFlush(captor.capture());
 
             LieferantDokument saved = captor.getValue();
             assertThat(saved.getLieferant()).isEqualTo(lieferant);
@@ -411,6 +414,40 @@ class EmailAttachmentProcessingServiceTest {
 
             // Beleg wird über die zentrale Zuordnung in seine Kette einsortiert
             verify(belegZuordnungService).ordneEin(saved);
+        }
+
+        /**
+         * Regression: Per E-Mail eingegangene Angebote kamen ohne Positionen an – die
+         * KI hatte sie gelesen, gespeichert wurden sie aber nur beim Hochladen von Hand.
+         */
+        @Test
+        void speichertDieAusgelesenenPositionen() throws IOException {
+            Lieferanten lieferant = erstelleLieferant(10L);
+            Email email = erstelleEmailMitLieferant(1L, lieferant);
+            EmailAttachment pdfAtt = erstellePdfAttachment("Angebot.pdf");
+            pdfAtt.setEmail(email);
+            email.getAttachments().add(pdfAtt);
+            Files.write(tempDir.resolve(pdfAtt.getStoredFilename()), new byte[]{0x25, 0x50, 0x44, 0x46});
+
+            List<AusgelesenePosition> positionen = List.of(new AusgelesenePosition(PositionsArt.WARE,
+                    "4711", "Winkelschleifer 125 mm", BigDecimal.ONE, "Stück",
+                    new BigDecimal("140.40"), "Stück", new BigDecimal("140.40"),
+                    null, null, "125 mm", "10", List.of()));
+            LieferantGeschaeftsdokument geschaeftsdaten = new LieferantGeschaeftsdokument();
+            geschaeftsdaten.setDokumentNummer("AN-2026-001");
+            geschaeftsdaten.setDetectedTyp(LieferantDokumentTyp.ANGEBOT);
+            geschaeftsdaten.setAusgelesenePositionen(positionen);
+
+            when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
+            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Angebot.pdf")))
+                    .thenReturn(geschaeftsdaten);
+            when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            service.processLieferantAttachments(email);
+
+            verify(positionService).ersetzePositionen(geschaeftsdaten, LieferantDokumentTyp.ANGEBOT, positionen);
         }
     }
 
@@ -465,7 +502,7 @@ class EmailAttachmentProcessingServiceTest {
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantGeschaeftsdokumentRepository
                     .existsByLieferantIdAndDokumentNummer(10L, "2026-0814")).thenReturn(false);
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             int result = service.processLieferantAttachments(email);
@@ -474,7 +511,7 @@ class EmailAttachmentProcessingServiceTest {
             assertThat(result).isEqualTo(1);
 
             ArgumentCaptor<LieferantDokument> captor = ArgumentCaptor.forClass(LieferantDokument.class);
-            verify(lieferantDokumentRepository).save(captor.capture());
+            verify(lieferantDokumentRepository).saveAndFlush(captor.capture());
             LieferantDokument saved = captor.getValue();
 
             // Referenziert die PDF (Viewer zeigt PDF, nicht XML-Rohtext)
@@ -523,14 +560,14 @@ class EmailAttachmentProcessingServiceTest {
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantGeschaeftsdokumentRepository
                     .existsByLieferantIdAndDokumentNummer(10L, "X-1")).thenReturn(false);
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             int result = service.processLieferantAttachments(email);
 
             assertThat(result).isEqualTo(1);
             ArgumentCaptor<LieferantDokument> captor = ArgumentCaptor.forClass(LieferantDokument.class);
-            verify(lieferantDokumentRepository).save(captor.capture());
+            verify(lieferantDokumentRepository).saveAndFlush(captor.capture());
             assertThat(captor.getValue().getGespeicherterDateiname()).isEqualTo(pdfAtt.getStoredFilename());
             verify(geminiAnalyseService, never())
                     .analyzeAndReturnData(any(Path.class), eq("scan.pdf"));
@@ -567,14 +604,14 @@ class EmailAttachmentProcessingServiceTest {
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantGeschaeftsdokumentRepository
                     .existsByLieferantIdAndDokumentNummer(10L, "2026-0814")).thenReturn(false);
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class)))
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
             int result = service.processLieferantAttachments(email);
 
             assertThat(result).isEqualTo(1);
             ArgumentCaptor<LieferantDokument> captor = ArgumentCaptor.forClass(LieferantDokument.class);
-            verify(lieferantDokumentRepository).save(captor.capture());
+            verify(lieferantDokumentRepository).saveAndFlush(captor.capture());
             // Fällt auf die vorhandene XML zurück statt auf die fehlende PDF
             assertThat(captor.getValue().getGespeicherterDateiname()).isEqualTo(xmlAtt.getStoredFilename());
         }
@@ -791,7 +828,7 @@ class EmailAttachmentProcessingServiceTest {
             assertThat(service.processLieferantAttachments(email)).isZero();
 
             verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
-            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             assertThat(pdfAtt.getAiProcessed()).isTrue();
             assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
         }
@@ -809,11 +846,11 @@ class EmailAttachmentProcessingServiceTest {
             daten.setDokumentNummer("LS-2026-001");
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
 
             assertThat(service.processLieferantAttachments(email)).isEqualTo(1);
 
-            verify(lieferantDokumentRepository).save(any(LieferantDokument.class));
+            verify(lieferantDokumentRepository).saveAndFlush(any(LieferantDokument.class));
         }
 
         private EmailAttachment frueherVerarbeitet(String datei, byte[] inhalt, LieferantDokument dokument)
@@ -843,7 +880,7 @@ class EmailAttachmentProcessingServiceTest {
             assertThat(service.processLieferantAttachments(email)).isZero();
 
             verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
-            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             assertThat(pdfAtt.getAiProcessed()).isTrue();
             assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
         }
@@ -863,7 +900,7 @@ class EmailAttachmentProcessingServiceTest {
             daten.setDokumentNummer("LS-2026-002");
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
 
             assertThat(service.processLieferantAttachments(email)).isEqualTo(1);
         }
@@ -898,7 +935,7 @@ class EmailAttachmentProcessingServiceTest {
             daten.setDokumentNummer("RE-2026-0870");
             when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
-            when(lieferantDokumentRepository.save(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
 
             assertThat(service.processLieferantAttachments(email)).isEqualTo(1);
         }
@@ -919,7 +956,7 @@ class EmailAttachmentProcessingServiceTest {
                 assertThat(service.processLieferantAttachments(email)).isZero();
 
                 verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
-                verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+                verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             } finally {
                 Files.deleteIfExists(aussen);
             }
@@ -938,7 +975,7 @@ class EmailAttachmentProcessingServiceTest {
             assertThat(service.processLieferantAttachments(email)).isZero();
 
             verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
-            verify(lieferantDokumentRepository, never()).save(any(LieferantDokument.class));
+            verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
         }
     }

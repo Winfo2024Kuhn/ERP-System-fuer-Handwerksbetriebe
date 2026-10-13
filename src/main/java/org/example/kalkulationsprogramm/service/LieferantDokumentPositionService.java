@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.service;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -68,6 +69,11 @@ public class LieferantDokumentPositionService {
     static final int MAX_POSITIONEN = 2000;
 
     private final LieferantDokumentPositionRepository positionRepository;
+
+    /** Alle Dokumenttypen, die Positionen bekommen. */
+    public static Set<LieferantDokumentTyp> typenMitPositionen() {
+        return Collections.unmodifiableSet(TYPEN_MIT_POSITIONEN);
+    }
 
     /** Bekommt dieser Dokumenttyp Positionen? */
     public static boolean hatPositionen(LieferantDokumentTyp typ) {
