@@ -529,6 +529,29 @@ class RechnungPdfServiceTest {
     }
 
     @Nested
+    @DisplayName("HTML-Text aus dem Editor")
+    class HtmlTextTests {
+
+        @Test
+        @DisplayName("Sonderzeichen werden genau einmal entpackt")
+        void entpacktSonderzeichenGenauEinmal() {
+            List<com.lowagie.text.Element> elemente = service.parseHtmlToElements(
+                    "<p>Max &amp; Erika&nbsp;&quot;Treppe&quot; &amp;lt;Gel&auml;nder&amp;gt;</p>",
+                    java.awt.Color.BLACK, 10f, false);
+
+            StringBuilder text = new StringBuilder();
+            for (com.lowagie.text.Element element : elemente) {
+                for (com.lowagie.text.Element chunk : element.getChunks()) {
+                    text.append(((com.lowagie.text.Chunk) chunk).getContent());
+                }
+            }
+
+            // Früher machten nacheinander geschaltete replace() aus &amp;lt; ein "<".
+            assertEquals("Max & Erika \"Treppe\" &lt;Gel&auml;nder&gt;", text.toString().strip());
+        }
+    }
+
+    @Nested
     @DisplayName("Positionstitel in der Leistungstabelle")
     class PositionsTitelTests {
 

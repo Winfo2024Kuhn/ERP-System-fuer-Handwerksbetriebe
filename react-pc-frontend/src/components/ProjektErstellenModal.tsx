@@ -666,16 +666,21 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="projekt-erstellen-titel"
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+            >
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-rose-50 to-white">
                     <div>
                         <p className="text-xs font-semibold text-rose-600 uppercase tracking-wide">Projektmanagement</p>
-                        <h2 className="text-xl font-bold text-slate-900">
+                        <h2 id="projekt-erstellen-titel" className="text-xl font-bold text-slate-900">
                             {isEditMode ? 'Projekt bearbeiten' : 'Neues Projekt anlegen'}
                         </h2>
                     </div>
-                    <Button variant="ghost" size="sm" onClick={onClose} className="text-slate-500 hover:bg-slate-100">
+                    <Button variant="ghost" size="sm" onClick={onClose} aria-label="Schließen" className="text-slate-500 hover:bg-slate-100">
                         <X className="w-5 h-5" />
                     </Button>
                 </div>

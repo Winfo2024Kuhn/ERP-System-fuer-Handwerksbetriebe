@@ -48,6 +48,7 @@ import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -600,6 +601,148 @@ class ProjektManagementServiceTest {
         verify(dateiSpeicherService).kopiereBildZuDokumenten("uuid-test.jpg");
     }
 
+    /** Anfrage mit Kunde und Beschreibung, wie sie "Von Anfrage übernehmen" findet. */
+    private Anfrage anfrageMitBeschreibung(Long id, String bauvorhaben, String beschreibung) {
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(id);
+        anfrage.setBauvorhaben(bauvorhaben);
+        anfrage.setKurzbeschreibung(beschreibung);
+        anfrage.setDokumente(new ArrayList<>());
+        Kunde kunde = new Kunde();
+        kunde.setId(10L);
+        kunde.setName("Max Mustermann");
+        anfrage.setKunde(kunde);
+        return anfrage;
+    }
+
+    private Projekt erstelleProjektAusAnfragen(ProjektErstellenDto dto, List<Anfrage> anfragen) {
+        stubbeProjektAnlageAusAnfragen(dto, anfragen);
+
+        service.erstelleProjekt(dto, null, null, null, null, null, null);
+
+        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
+        verify(projektPersistenceService).saveProjektWithRetry(captor.capture());
+        return captor.getValue();
+    }
+
+    private void stubbeProjektAnlageAusAnfragen(ProjektErstellenDto dto, List<Anfrage> anfragen) {
+        when(kundeRepository.findById(10L)).thenReturn(Optional.of(anfragen.getFirst().getKunde()));
+        when(anfrageRepository.findAllById(dto.getAnfrageIds())).thenReturn(anfragen);
+        when(projektPersistenceService.saveProjektWithRetry(any(Projekt.class)))
+                .thenAnswer(inv -> {
+                    Projekt p = inv.getArgument(0);
+                    p.setId(100L);
+                    return p;
+                });
+        lenient().when(projektRepository.findById(100L)).thenAnswer(inv -> Optional.of(new Projekt()));
+        lenient().when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+    }
+
+    private ProjektErstellenDto projektAusAnfrage(Long anfrageId) {
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        dto.setAnfrageIds(List.of(anfrageId));
+        dto.setAuftragsnummer("2026/10/00001");
+        return dto;
+    }
+
+    @Test
+    void erstelleProjektBrichtAbUndBehaeltAnfrageWennAngeboteNichtUmziehen() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg", "Geländer 12 m");
+        ProjektErstellenDto dto = projektAusAnfrage(1L);
+        stubbeProjektAnlageAusAnfragen(dto, List.of(anfrage));
+        doThrow(new IllegalStateException("Dokumentkette defekt"))
+                .when(ausgangsGeschaeftsDokumentService).migrateFromAnfrageToProjekt(eq(1L), any(Projekt.class));
+
+        ResponseStatusException fehler = assertThrows(ResponseStatusException.class,
+                () -> service.erstelleProjekt(dto, null, null, null, null, null, null));
+
+        assertEquals(ProjektManagementService.ANFRAGE_UEBERNAHME_FEHLGESCHLAGEN, fehler.getReason());
+        verify(anfrageRepository, never()).delete(any(Anfrage.class));
+    }
+
+    @Test
+    void erstelleProjektBrichtAbWennEmailsNichtUmziehen() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg", "Geländer 12 m");
+        ProjektErstellenDto dto = projektAusAnfrage(1L);
+        stubbeProjektAnlageAusAnfragen(dto, List.of(anfrage));
+        when(emailRepository.findByAnfrageOrderBySentAtDesc(anfrage))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("Verbindung weg"));
+
+        assertThrows(ResponseStatusException.class,
+                () -> service.erstelleProjekt(dto, null, null, null, null, null, null));
+
+        verify(anfrageRepository, never()).delete(any(Anfrage.class));
+    }
+
+    @Test
+    void erstelleProjektBrichtAbWennNotizBildNichtKopiertWerdenKann() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg", "Geländer 12 m");
+        ProjektErstellenDto dto = projektAusAnfrage(1L);
+        stubbeProjektAnlageAusAnfragen(dto, List.of(anfrage));
+        AnfrageNotiz notiz = new AnfrageNotiz();
+        notiz.setNotiz("Aufmaß mit Foto");
+        AnfrageNotizBild bild = new AnfrageNotizBild();
+        bild.setGespeicherterDateiname("uuid-foto.jpg");
+        notiz.setBilder(List.of(bild));
+        when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(1L)).thenReturn(List.of(notiz));
+        // Datei da, aber Kopieren scheitert (z. B. Platte voll) – das darf nicht still verloren gehen
+        when(dateiSpeicherService.kopiereBildZuDokumenten("uuid-foto.jpg"))
+                .thenThrow(new RuntimeException("Notiz-Bild konnte nicht kopiert werden: uuid-foto.jpg"));
+
+        assertThrows(ResponseStatusException.class,
+                () -> service.erstelleProjekt(dto, null, null, null, null, null, null));
+
+        verify(projektNotizRepository, never()).save(any(ProjektNotiz.class));
+        verify(anfrageRepository, never()).delete(any(Anfrage.class));
+    }
+
+    @Test
+    void erstelleProjektBehaeltPrivateNotizenPrivatUndUebernimmtKontaktAdressen() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg", "Geländer 12 m");
+        anfrage.setKundenEmails(new ArrayList<>(List.of("bauleitung@example.com")));
+        ProjektErstellenDto dto = projektAusAnfrage(1L);
+        AnfrageNotiz notiz = new AnfrageNotiz();
+        notiz.setNotiz("Nur für mich: Kunde zahlt spät");
+        notiz.setNurFuerErsteller(true);
+        when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(1L)).thenReturn(List.of(notiz));
+
+        Projekt projekt = erstelleProjektAusAnfragen(dto, List.of(anfrage));
+
+        ArgumentCaptor<ProjektNotiz> notizCaptor = ArgumentCaptor.forClass(ProjektNotiz.class);
+        verify(projektNotizRepository).save(notizCaptor.capture());
+        assertTrue(notizCaptor.getValue().isNurFuerErsteller());
+        assertTrue(projekt.getKundenEmails().contains("bauleitung@example.com"));
+        verify(anfrageRepository).delete(anfrage);
+    }
+
+    @Test
+    void erstelleProjektUebernimmtBeschreibungDerAnfrageBevorSieGeloeschtWird() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg",
+                "Text aus dem Webseiten-Formular: Geländer 12 m, verzinkt");
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        dto.setAnfrageIds(List.of(1L));
+        dto.setAuftragsnummer("2026/10/00001");
+
+        Projekt projekt = erstelleProjektAusAnfragen(dto, List.of(anfrage));
+
+        assertEquals("Text aus dem Webseiten-Formular: Geländer 12 m, verzinkt", projekt.getKurzbeschreibung());
+        verify(anfrageRepository).delete(anfrage);
+    }
+
+    @Test
+    void erstelleProjektHaengtAnfrageBeschreibungAnEingegebeneBeschreibungAn() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg", "Geländer 12 m, verzinkt");
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        dto.setAnfrageIds(List.of(1L));
+        dto.setAuftragsnummer("2026/10/00001");
+        dto.setKurzbeschreibung("Aufmaß am Montag");
+
+        Projekt projekt = erstelleProjektAusAnfragen(dto, List.of(anfrage));
+
+        assertEquals("Aufmaß am Montag\n\n--- Übernommen aus Anfrage: Geländer Musterweg ---\n"
+                + "Geländer 12 m, verzinkt", projekt.getKurzbeschreibung());
+    }
+
     @Test
     void notizBildWirdUebersprungenWennDateiKopierenFehlschlaegt() {
         // Reproduziert den Bug-Fall, falls die Quelldatei nicht (mehr) existiert:
@@ -632,7 +775,7 @@ class ProjektManagementServiceTest {
         when(anfrageNotizRepository.findByAnfrageIdOrderByErstelltAmDesc(anfrageId)).thenReturn(List.of(notiz));
 
         when(dateiSpeicherService.kopiereBildZuDokumenten("uuid-weg.jpg"))
-                .thenThrow(new RuntimeException("Quelldatei für Notiz-Bild nicht gefunden: uuid-weg.jpg"));
+                .thenThrow(new NotFoundException("Quelldatei für Notiz-Bild nicht gefunden: uuid-weg.jpg"));
 
         Projekt projekt = new Projekt();
         projekt.setId(projektId);

@@ -23,6 +23,8 @@ import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendig
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.Arrays;
 import java.util.List;
@@ -30,6 +32,9 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class AnfrageControllerTest {
 
@@ -113,6 +118,35 @@ class AnfrageControllerTest {
                 mock(AnfrageNotizBildRepository.class),
                 mock(AngemeldeterMitarbeiterService.class),
                 mock(DokumentFreigabeService.class));
+    }
+
+    @Test
+    void beendetHakenSetztNurAbgeschlossen() throws Exception {
+        AnfrageService anfrageService = mock(AnfrageService.class);
+        AnfrageResponseDto dto = new AnfrageResponseDto();
+        dto.setId(42L);
+        dto.setAbgeschlossen(true);
+        dto.setKurzbeschreibung("Geländer 12 m");
+        when(anfrageService.setzeAbgeschlossen(42L, true)).thenReturn(dto);
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(neuerController(anfrageService)).build();
+
+        mockMvc.perform(patch("/api/anfragen/42/abgeschlossen").param("abgeschlossen", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.abgeschlossen").value(true))
+                .andExpect(jsonPath("$.kurzbeschreibung").value("Geländer 12 m"));
+
+        verify(anfrageService).setzeAbgeschlossen(42L, true);
+        verify(anfrageService, never()).aktualisiereAnfrage(anyLong(), any());
+    }
+
+    @Test
+    void beendetHakenUnbekannteAnfrageGibt404() {
+        AnfrageService anfrageService = mock(AnfrageService.class);
+        when(anfrageService.setzeAbgeschlossen(99L, false)).thenReturn(null);
+
+        ResponseEntity<AnfrageResponseDto> response = neuerController(anfrageService).setzeAbgeschlossen(99L, false);
+
+        assertEquals(404, response.getStatusCode().value());
     }
 
     @Test

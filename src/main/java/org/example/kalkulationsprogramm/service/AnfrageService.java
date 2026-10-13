@@ -88,42 +88,21 @@ public class AnfrageService {
     }
 
     public AnfrageResponseDto erstelleAnfrage(AnfrageErstellenDto dto) {
-        Anfrage anfrage = new Anfrage();
-        hydrateDtoFromKunde(dto, anfrage);
-        anfrage.setBauvorhaben(dto.getBauvorhaben());
-        // No redundant string fields setters
-        anfrage.setAnlegedatum(dto.getAnlegedatum() != null ? dto.getAnlegedatum() : LocalDate.now());
-        anfrage.setProjektStrasse(dto.getProjektStrasse());
-        anfrage.setProjektPlz(dto.getProjektPlz());
-        anfrage.setProjektOrt(dto.getProjektOrt());
-        anfrage.setKurzbeschreibung(dto.getKurzbeschreibung());
-        if (dto.getAbgeschlossen() != null) {
-            anfrage.setAbgeschlossen(dto.getAbgeschlossen());
-        }
-
-        // Anfrage-spezifische E-Mail-Adressen persistieren
-        if (dto.getKundenEmails() != null && !dto.getKundenEmails().isEmpty()) {
-            anfrage.getKundenEmails().clear();
-            anfrage.getKundenEmails().addAll(dto.getKundenEmails());
-        }
-
-        anfrageRepository.save(anfrage);
-        publishEmailBackfillEvent(anfrage, dto, true);
-
-        return mapToDto(anfrage);
+        return erstelleAnfrage(dto, null);
     }
 
     public AnfrageResponseDto erstelleAnfrage(AnfrageErstellenDto dto, MultipartFile imageFile) {
         Anfrage anfrage = new Anfrage();
         hydrateDtoFromKunde(dto, anfrage);
         anfrage.setBauvorhaben(dto.getBauvorhaben());
-
-        // No redundant string fields setters
         anfrage.setAnlegedatum(dto.getAnlegedatum() != null ? dto.getAnlegedatum() : LocalDate.now());
         anfrage.setProjektStrasse(dto.getProjektStrasse());
         anfrage.setProjektPlz(dto.getProjektPlz());
         anfrage.setProjektOrt(dto.getProjektOrt());
         anfrage.setKurzbeschreibung(dto.getKurzbeschreibung());
+        // Der Betrag wird bewusst nicht von Hand erfasst: Er kommt ausschließlich aus
+        // den Geschäftsdokumenten (Angebot/AB bzw. hochgeladenes ZUGFeRD-Angebot) –
+        // siehe AusgangsGeschaeftsDokumentService.aktualisiereAnfragePreisAusDokumenten().
         if (dto.getAbgeschlossen() != null) {
             anfrage.setAbgeschlossen(dto.getAbgeschlossen());
         }
@@ -454,47 +433,33 @@ public class AnfrageService {
     }
 
     public AnfrageResponseDto aktualisiereAnfrage(Long id, AnfrageErstellenDto dto) {
-        return anfrageRepository.findById(id).map(a -> {
-            hydrateDtoFromKunde(dto, a);
-            a.setBauvorhaben(dto.getBauvorhaben());
-            a.setProjektStrasse(dto.getProjektStrasse());
-            a.setProjektPlz(dto.getProjektPlz());
-            a.setProjektOrt(dto.getProjektOrt());
-            a.setKurzbeschreibung(dto.getKurzbeschreibung());
-            if (dto.getBetrag() != null) {
-                a.setBetrag(dto.getBetrag());
-            }
-            if (dto.getAbgeschlossen() != null) {
-                a.setAbgeschlossen(dto.getAbgeschlossen());
-            }
-
-            if (dto.getAnlegedatum() != null) {
-                a.setAnlegedatum(dto.getAnlegedatum());
-            }
-
-            // Anfrage-spezifische E-Mail-Adressen aktualisieren
-            if (dto.getKundenEmails() != null) {
-                a.getKundenEmails().clear();
-                a.getKundenEmails().addAll(dto.getKundenEmails());
-            }
-
-            anfrageRepository.save(a);
-            publishEmailBackfillEvent(a, dto, false);
-
-            return mapToDto(a);
-        }).orElse(null);
+        return aktualisiereAnfrage(id, dto, null);
     }
 
+    /**
+     * Übernimmt nur die Felder, die der Aufruf mitschickt. Ein fehlendes Feld
+     * ({@code null}) lässt den gespeicherten Wert stehen – sonst löscht z. B. der
+     * Bearbeiten-Dialog, der die Beschreibung gar nicht kennt, den Text aus dem
+     * Webseiten-Formular. Leeren geht über einen leeren Text ({@code ""}).
+     * Den Betrag gibt es hier nicht – er kommt nur aus den Geschäftsdokumenten.
+     */
     public AnfrageResponseDto aktualisiereAnfrage(Long id, AnfrageErstellenDto dto, MultipartFile imageFile) {
         return anfrageRepository.findById(id).map(a -> {
             hydrateDtoFromKunde(dto, a);
-            a.setBauvorhaben(dto.getBauvorhaben());
-            a.setProjektStrasse(dto.getProjektStrasse());
-            a.setProjektPlz(dto.getProjektPlz());
-            a.setProjektOrt(dto.getProjektOrt());
-            a.setKurzbeschreibung(dto.getKurzbeschreibung());
-            if (dto.getBetrag() != null) {
-                a.setBetrag(dto.getBetrag());
+            if (dto.getBauvorhaben() != null) {
+                a.setBauvorhaben(dto.getBauvorhaben());
+            }
+            if (dto.getProjektStrasse() != null) {
+                a.setProjektStrasse(dto.getProjektStrasse());
+            }
+            if (dto.getProjektPlz() != null) {
+                a.setProjektPlz(dto.getProjektPlz());
+            }
+            if (dto.getProjektOrt() != null) {
+                a.setProjektOrt(dto.getProjektOrt());
+            }
+            if (dto.getKurzbeschreibung() != null) {
+                a.setKurzbeschreibung(dto.getKurzbeschreibung());
             }
             if (dto.getAbgeschlossen() != null) {
                 a.setAbgeschlossen(dto.getAbgeschlossen());
@@ -522,6 +487,19 @@ public class AnfrageService {
             anfrageRepository.save(a);
             publishEmailBackfillEvent(a, dto, false);
 
+            return mapToDto(a);
+        }).orElse(null);
+    }
+
+    /**
+     * Haken "Beendet" setzen oder entfernen, ohne die übrigen Felder anzufassen.
+     *
+     * @return die geänderte Anfrage oder {@code null}, wenn es sie nicht gibt
+     */
+    public AnfrageResponseDto setzeAbgeschlossen(Long id, boolean abgeschlossen) {
+        return anfrageRepository.findById(id).map(a -> {
+            a.setAbgeschlossen(abgeschlossen);
+            anfrageRepository.save(a);
             return mapToDto(a);
         }).orElse(null);
     }

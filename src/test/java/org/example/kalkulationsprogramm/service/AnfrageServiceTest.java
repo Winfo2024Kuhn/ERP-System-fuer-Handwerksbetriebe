@@ -246,6 +246,117 @@ class AnfrageServiceTest {
         verify(kundeRepository, never()).findById(anyLong());
     }
 
+    /** Gespeicherte Anfrage mit Text aus dem Webseiten-Formular. */
+    private Anfrage anfrageMitBeschreibung(AnfrageRepository anfrageRepository) {
+        Anfrage anfrage = anfrageMit(42L, LocalDateTime.of(2026, 10, 1, 9, 0));
+        anfrage.setBauvorhaben("Geländer Musterweg");
+        anfrage.setProjektStrasse("Musterweg 1");
+        anfrage.setKurzbeschreibung("Geländer 12 m, verzinkt, bitte Angebot");
+        anfrage.setBetrag(new java.math.BigDecimal("1585.08")); // aus dem Angebot
+        when(anfrageRepository.findById(42L)).thenReturn(Optional.of(anfrage));
+        return anfrage;
+    }
+
+    @Test
+    void beendetUmschaltenBehaeltBeschreibung() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+        Anfrage anfrage = anfrageMitBeschreibung(anfrageRepository);
+
+        AnfrageResponseDto beendet = service.setzeAbgeschlossen(42L, true);
+
+        assertThat(beendet.isAbgeschlossen()).isTrue();
+        assertThat(anfrage.getKurzbeschreibung()).isEqualTo("Geländer 12 m, verzinkt, bitte Angebot");
+        assertThat(anfrage.getBauvorhaben()).isEqualTo("Geländer Musterweg");
+        verify(anfrageRepository).save(anfrage);
+
+        assertThat(service.setzeAbgeschlossen(42L, false).isAbgeschlossen()).isFalse();
+        assertThat(anfrage.getKurzbeschreibung()).isEqualTo("Geländer 12 m, verzinkt, bitte Angebot");
+    }
+
+    @Test
+    void beendetUmschaltenUnbekannteAnfrageLiefertNull() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+        when(anfrageRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThat(service.setzeAbgeschlossen(99L, true)).isNull();
+        verify(anfrageRepository, never()).save(any(Anfrage.class));
+    }
+
+    /** Regression: "Änderungen speichern" und der alte Beendet-Haken schickten keine Beschreibung mit. */
+    @Test
+    void aktualisierenOhneBeschreibungLaesstBeschreibungUndAdresseStehen() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+        Anfrage anfrage = anfrageMitBeschreibung(anfrageRepository);
+
+        AnfrageErstellenDto dto = new AnfrageErstellenDto();
+        dto.setAbgeschlossen(true);
+
+        AnfrageResponseDto ergebnis = service.aktualisiereAnfrage(42L, dto);
+
+        assertThat(ergebnis.isAbgeschlossen()).isTrue();
+        assertThat(anfrage.getKurzbeschreibung()).isEqualTo("Geländer 12 m, verzinkt, bitte Angebot");
+        assertThat(anfrage.getBauvorhaben()).isEqualTo("Geländer Musterweg");
+        assertThat(anfrage.getProjektStrasse()).isEqualTo("Musterweg 1");
+        assertThat(anfrage.getBetrag()).isEqualByComparingTo("1585.08");
+    }
+
+    @Test
+    void aktualisierenUebernimmtMitgeschickteFelderUndLeertMitLeeremText() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+        Anfrage anfrage = anfrageMitBeschreibung(anfrageRepository);
+
+        AnfrageErstellenDto dto = new AnfrageErstellenDto();
+        dto.setBauvorhaben("Treppe Musterweg");
+        dto.setProjektStrasse("");
+        dto.setProjektPlz("12345");
+        dto.setProjektOrt("Musterstadt");
+        dto.setKurzbeschreibung("");
+        dto.setAnlegedatum(LocalDate.of(2026, 10, 2));
+        dto.setKundenEmails(List.of("max@example.com"));
+
+        service.aktualisiereAnfrage(42L, dto);
+
+        assertThat(anfrage.getBauvorhaben()).isEqualTo("Treppe Musterweg");
+        assertThat(anfrage.getProjektStrasse()).isEmpty();
+        assertThat(anfrage.getProjektPlz()).isEqualTo("12345");
+        assertThat(anfrage.getProjektOrt()).isEqualTo("Musterstadt");
+        assertThat(anfrage.getKurzbeschreibung()).isEmpty();
+        assertThat(anfrage.getAnlegedatum()).isEqualTo(LocalDate.of(2026, 10, 2));
+        assertThat(anfrage.getKundenEmails()).containsExactly("max@example.com");
+    }
+
+    @Test
+    void aktualisierenUnbekannteAnfrageLiefertNull() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+        when(anfrageRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThat(service.aktualisiereAnfrage(99L, new AnfrageErstellenDto())).isNull();
+    }
+
+    /** Der Betrag kommt nur aus den Geschäftsdokumenten, nie aus dem Anlege-Dialog. */
+    @Test
+    void erstellenSpeichertBeschreibungAberKeinenBetrag() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
+        when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AnfrageErstellenDto dto = new AnfrageErstellenDto();
+        dto.setBauvorhaben("Geländer Musterweg");
+        dto.setKurzbeschreibung("Geländer 12 m");
+        dto.setAbgeschlossen(false);
+
+        AnfrageResponseDto ergebnis = service.erstelleAnfrage(dto);
+
+        assertThat(ergebnis.getBetrag()).isNull();
+        assertThat(ergebnis.getKurzbeschreibung()).isEqualTo("Geländer 12 m");
+        assertThat(ergebnis.getAnlegedatum()).isEqualTo(LocalDate.now());
+    }
+
     private AnfrageService neueServiceMitAnfragen(AnfrageRepository anfrageRepository) {
         return neueServiceMitAnfragen(anfrageRepository, mock(DokumentFreigabeService.class));
     }

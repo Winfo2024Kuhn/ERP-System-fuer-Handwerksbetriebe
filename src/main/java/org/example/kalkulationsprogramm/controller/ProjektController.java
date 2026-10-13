@@ -155,6 +155,9 @@ public class ProjektController {
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), imageFile, dokumente,
                     uploadedBy);
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+        } catch (ResponseStatusException e) {
+            // Verständliche Meldung (z. B. Anfrage-Übernahme fehlgeschlagen) an die Oberfläche durchreichen
+            throw e;
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
@@ -170,6 +173,9 @@ public class ProjektController {
             ProjektResponseDto responseDto = projektManagementService.erstelleProjekt(projektDto,
                     projektDto.getStrasse(), projektDto.getPlz(), projektDto.getOrt(), null, null, uploadedBy);
             return ResponseEntity.status(HttpStatus.CREATED).body(responseDto);
+        } catch (ResponseStatusException e) {
+            // Verständliche Meldung (z. B. Anfrage-Übernahme fehlgeschlagen) an die Oberfläche durchreichen
+            throw e;
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);

@@ -440,6 +440,41 @@ test.describe('Anfragen-Uebersicht: vier Karten mit langen Titeln', () => {
     });
 });
 
+test.describe('Anfrage-Betrag: nur aus Geschäftsdokumenten', () => {
+    test('Info-Knopf erklärt die Herkunft, der Bearbeiten-Dialog hat kein Betragsfeld', async ({ page }, testInfo) => {
+        await stubAnfrageApi(page);
+        await page.goto(`/anfragen?anfrageId=${ANFRAGE_ID}&tab=geschaeftsdokumente`);
+        await expect(page.getByRole('heading', { name: BAUVORHABEN })).toBeVisible();
+
+        const betragInfo = page.getByRole('button', { name: 'Mehr zu: Betrag der Anfrage' });
+        await betragInfo.click();
+        const erklaerung = page.getByRole('dialog', { name: 'Betrag der Anfrage' });
+        await expect(erklaerung).toContainText('nicht von Hand eingetragen');
+        await designPruefung(page, testInfo, 'anfrage-betrag-info');
+        await page.keyboard.press('Escape');
+        await expect(erklaerung).toHaveCount(0);
+        await expect(betragInfo).toBeFocused();
+
+        await page.getByRole('button', { name: 'Bearbeiten' }).click();
+        await expect(page.getByRole('heading', { name: 'Anfrage bearbeiten' })).toBeVisible();
+        await expect(page.getByText('Bauvorhaben *')).toBeVisible();
+        await expect(page.getByText('Bruttobetrag (€)')).toHaveCount(0);
+
+        // Speichern schickt weder Betrag noch Beschreibung – beides bleibt im Backend unangetastet.
+        const gesendet: Record<string, unknown>[] = [];
+        await page.route(`**/api/anfragen/${ANFRAGE_ID}`, (route) => {
+            if (route.request().method() !== 'PUT') return route.fallback();
+            gesendet.push(route.request().postDataJSON());
+            return json(route, DUMMY_ANFRAGE_DETAIL);
+        });
+        await page.getByRole('button', { name: 'Änderungen speichern' }).click();
+        await expect.poll(() => gesendet.length).toBe(1);
+        expect(gesendet[0]).not.toHaveProperty('betrag');
+        expect(gesendet[0]).not.toHaveProperty('kurzbeschreibung');
+        expect(gesendet[0]).toMatchObject({ bauvorhaben: BAUVORHABEN });
+    });
+});
+
 // Task 12 (Abschnitt 8): systematischer Nachweis fuer die Seitenspalte
 // "Anfragedaten" -- Ansprechpartner, Telefon, Mobiltelefon und Projektadresse
 // wurden bisher NIE mit echt ueberlaufendem Inhalt gerendert.

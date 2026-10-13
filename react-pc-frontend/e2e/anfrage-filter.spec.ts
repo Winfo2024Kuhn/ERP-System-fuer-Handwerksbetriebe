@@ -131,4 +131,32 @@ test.describe('Anfragen-Übersicht – Filter und Sortierung', () => {
         await page.getByRole('button', { name: 'Filter zurücksetzen' }).click();
         await expect.poll(() => kartentitel(page)).toEqual(['Vordach Musterallee 12', 'Geländer Musterweg 3']);
     });
+
+    test('Haken "Beendet" setzt nur den Status und schickt keine anderen Felder mit', async ({ page }) => {
+        await stubAnfragenApi(page, []);
+        const aenderungen: { methode: string; pfad: string; abfrage: string; body: string | null }[] = [];
+        // Später registrierte Routen haben Vorrang vor dem allgemeinen Stub.
+        await page.route('**/api/anfragen/*/abgeschlossen*', (route) => {
+            const request = route.request();
+            const url = new URL(request.url());
+            aenderungen.push({ methode: request.method(), pfad: url.pathname, abfrage: url.search, body: request.postData() });
+            return json(route, { ...ANFRAGEN[0], abgeschlossen: true });
+        });
+        page.on('request', (request) => {
+            if (request.method() === 'PUT') {
+                aenderungen.push({ methode: 'PUT', pfad: new URL(request.url()).pathname, abfrage: '', body: request.postData() });
+            }
+        });
+
+        await page.goto('/anfragen');
+        const karte = page.locator('div', { has: page.getByRole('heading', { name: 'Geländer Musterweg 3' }) })
+            .filter({ has: page.getByRole('checkbox', { name: 'Beendet' }) }).last();
+        // click statt check: Die Liste lädt danach neu und der Stub liefert den alten Stand.
+        await karte.getByRole('checkbox', { name: 'Beendet' }).click();
+
+        await expect(page.getByText('Anfrage als beendet markiert.')).toBeVisible();
+        expect(aenderungen).toEqual([
+            { methode: 'PATCH', pfad: '/api/anfragen/1/abgeschlossen', abfrage: '?abgeschlossen=true', body: null },
+        ]);
+    });
 });
