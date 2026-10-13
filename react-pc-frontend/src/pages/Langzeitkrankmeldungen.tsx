@@ -10,6 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { useKonfliktMeldung } from '../components/lock/useKonfliktMeldung';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
+import { heuteIso } from '../lib/datum';
+import type { ZeitkontoStatus } from '../types/zeitkonto';
+import { maxTagesstundenAusZeitkonto } from '../features/zeitkonto/tagesstunden';
 import { PhasenZeitleiste } from '../components/langzeitkrankmeldung/PhasenZeitleiste';
 import { StufenplanTabelle } from '../components/langzeitkrankmeldung/StufenplanTabelle';
 import { PHASEN_BADGE, formatDatum, type Phase, type PhasenTyp } from '../components/langzeitkrankmeldung/phasen';
@@ -54,15 +58,6 @@ interface MitarbeiterOption {
     aktiv?: boolean;
 }
 
-interface ZeitkontoEintrag {
-    mitarbeiterId: number;
-    montagStunden: number;
-    dienstagStunden: number;
-    mittwochStunden: number;
-    donnerstagStunden: number;
-    freitagStunden: number;
-}
-
 const STANDARD_MAX_STUNDEN_PRO_TAG = 8;
 
 /** ISO-Datum (YYYY-MM-DD) + Tage, ohne Zeitzonen-Ueberraschungen (feste Uhrzeit 00:00). */
@@ -72,14 +67,6 @@ function plusTage(iso: string, tage: number): string {
     const jahr = datum.getFullYear();
     const monat = String(datum.getMonth() + 1).padStart(2, '0');
     const tag = String(datum.getDate()).padStart(2, '0');
-    return `${jahr}-${monat}-${tag}`;
-}
-
-function heuteIso(): string {
-    const jetzt = new Date();
-    const jahr = jetzt.getFullYear();
-    const monat = String(jetzt.getMonth() + 1).padStart(2, '0');
-    const tag = String(jetzt.getDate()).padStart(2, '0');
     return `${jahr}-${monat}-${tag}`;
 }
 
@@ -104,6 +91,8 @@ export default function Langzeitkrankmeldungen() {
     const [maxStundenLookup, setMaxStundenLookup] = useState<Record<number, number>>({});
 
     const [anlegenOffen, setAnlegenOffen] = useState(false);
+    // „Auf Krankengeld umstellen": erst den Beginn bestätigen lassen, statt stumm „heute" zu nehmen.
+    const [krankengeldDialog, setKrankengeldDialog] = useState<{ meldung: Meldung; vonDatum: string } | null>(null);
     const [anlegenSpeichert, setAnlegenSpeichert] = useState(false);
     const [neuMitarbeiterId, setNeuMitarbeiterId] = useState('');
     const [neuBeginn, setNeuBeginn] = useState('');
@@ -141,13 +130,11 @@ export default function Langzeitkrankmeldungen() {
 
         fetch('/api/zeitverwaltung/zeitkonten')
             .then((res) => (res.ok ? res.json() : []))
-            .then((data: ZeitkontoEintrag[]) => {
+            .then((data: ZeitkontoStatus[]) => {
                 const lookup: Record<number, number> = {};
                 (Array.isArray(data) ? data : []).forEach((k) => {
-                    lookup[k.mitarbeiterId] = Math.max(
-                        k.montagStunden ?? 0, k.dienstagStunden ?? 0, k.mittwochStunden ?? 0,
-                        k.donnerstagStunden ?? 0, k.freitagStunden ?? 0,
-                    );
+                    const max = maxTagesstundenAusZeitkonto(k);
+                    if (max !== null) lookup[k.mitarbeiterId] = max;
                 });
                 setMaxStundenLookup(lookup);
             })
@@ -179,17 +166,30 @@ export default function Langzeitkrankmeldungen() {
         }
     };
 
-    const handleUmstellenAufKrankengeld = async (meldung: Meldung) => {
+    /** Öffnet den Dialog mit Vorgabe „Tag nach Ende der Lohnfortzahlung", sonst heute. */
+    const oeffneKrankengeldDialog = (meldung: Meldung) => {
+        const vorgabe = meldung.lohnfortzahlungBis ? plusTage(meldung.lohnfortzahlungBis, 1) : heuteIso();
+        setKrankengeldDialog({ meldung, vonDatum: vorgabe });
+    };
+
+    const handleUmstellenAufKrankengeld = async () => {
+        if (!krankengeldDialog) return;
+        const { meldung, vonDatum } = krankengeldDialog;
+        if (!vonDatum) {
+            toast.error('Bitte den Beginn des Krankengelds wählen.');
+            return;
+        }
         setAktionLaeuftId(meldung.id);
         try {
             const res = await fetch(`/api/langzeitkrankmeldungen/${meldung.id}/phasen?version=${meldung.version}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ typ: 'KRANKENGELD', vonDatum: heuteIso(), bisDatum: null, stundenProTag: null }),
+                body: JSON.stringify({ typ: 'KRANKENGELD', vonDatum, bisDatum: null, stundenProTag: null }),
             });
             if (await pruefeAntwort(res)) return;
             if (!res.ok) throw new Error(await fehlertextAus(res, 'Die Phase konnte nicht angelegt werden.'));
             toast.success('Auf Krankengeld umgestellt.');
+            setKrankengeldDialog(null);
             await ladeDetail(meldung.id);
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Die Phase konnte nicht angelegt werden.');
@@ -457,7 +457,7 @@ export default function Langzeitkrankmeldungen() {
                                                             variant="outline"
                                                             size="sm"
                                                             className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                                                            onClick={() => handleUmstellenAufKrankengeld(m)}
+                                                            onClick={() => oeffneKrankengeldDialog(m)}
                                                             disabled={aktionLaeuftId === m.id}
                                                         >
                                                             {aktionLaeuftId === m.id && (
@@ -579,6 +579,63 @@ export default function Langzeitkrankmeldungen() {
                     })}
                 </div>
             )}
+
+            <Dialog
+                open={krankengeldDialog !== null}
+                onOpenChange={(open) => { if (!open) setKrankengeldDialog(null); }}
+            >
+                <DialogContent className="sm:max-w-[480px]">
+                    <DialogHeader>
+                        <DialogTitle>Auf Krankengeld umstellen</DialogTitle>
+                        <DialogDescription>
+                            {krankengeldDialog ? `${krankengeldDialog.meldung.mitarbeiterName}: ab wann zahlt die Krankenkasse?` : ''}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="flex flex-col gap-4 py-2">
+                        <div>
+                            <div className="flex items-center gap-1">
+                                <Label id="krankengeld-ab-label">Krankengeld ab</Label>
+                                <InfoButton titel="Krankengeld ab">
+                                    <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                        <p>Die Phase „Lohnfortzahlung" endet automatisch am Tag vor dem gewählten Beginn – du musst sie nicht von Hand abschließen. Ab dem Beginn führt das Programm den Mitarbeiter unter „Krankengeld".</p>
+                                    </InfoAbschnitt>
+                                    <InfoAbschnitt titel="Was bewirkt das?">
+                                        <p>Vorgabe ist der Tag nach Ende der Lohnfortzahlung (in der Regel nach 6 Wochen). Ein späterer Stufenplan zur Wiedereingliederung schließt an diese Phase an. Bereits abgeschlossene Monate bleiben unverändert.</p>
+                                    </InfoAbschnitt>
+                                </InfoButton>
+                            </div>
+                            <div role="group" aria-labelledby="krankengeld-ab-label">
+                                <DatePicker
+                                    value={krankengeldDialog?.vonDatum ?? ''}
+                                    onChange={(wert) => setKrankengeldDialog((alt) => (alt ? { ...alt, vonDatum: wert } : alt))}
+                                    placeholder="Beginn wählen"
+                                />
+                            </div>
+                            {krankengeldDialog?.meldung.lohnfortzahlungBis && (
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Lohnfortzahlung endete am {formatDatum(krankengeldDialog.meldung.lohnfortzahlungBis)} – vorgeschlagen ist der Tag danach.
+                                </p>
+                            )}
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" size="sm" onClick={() => setKrankengeldDialog(null)} disabled={aktionLaeuftId !== null}>
+                            Abbrechen
+                        </Button>
+                        <Button
+                            size="sm"
+                            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+                            onClick={handleUmstellenAufKrankengeld}
+                            disabled={aktionLaeuftId !== null}
+                        >
+                            {aktionLaeuftId !== null && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+                            Umstellen
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog
                 open={anlegenOffen}

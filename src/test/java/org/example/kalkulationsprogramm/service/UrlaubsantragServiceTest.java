@@ -8,6 +8,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -56,6 +57,10 @@ class UrlaubsantragServiceTest {
     private TagesSollService tagesSollService;
     @Mock
     private LangzeitkrankmeldungService langzeitkrankmeldungService;
+    @Mock
+    private WebPushService webPushService;
+    @Spy
+    private UrlaubstageRechner urlaubstageRechner = new UrlaubstageRechner();
 
     @InjectMocks
     private UrlaubsantragService urlaubsantragService;
@@ -295,7 +300,8 @@ class UrlaubsantragServiceTest {
                 mock(LangzeitkrankmeldungPhaseRepository.class), versionRepository);
         UrlaubsantragService service = new UrlaubsantragService(repository, mitarbeiterRepository,
                 abwesenheitRepository, feiertagService, zeitkontoService, monatsSaldoService,
-                zeitkontoKorrekturService, realesSoll, langzeitkrankmeldungService);
+                zeitkontoKorrekturService, realesSoll, langzeitkrankmeldungService, urlaubstageRechner,
+                webPushService);
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
 
         service.approveAntrag(ANTRAG_ID);
@@ -342,4 +348,315 @@ class UrlaubsantragServiceTest {
         verify(abwesenheitRepository, never()).save(any());
     }
 
+
+    // ==================== Entscheidung, Benachrichtigung (Issue #270, Punkt 3) ====================
+
+    @Test
+    void genehmigung_merktEntscheidungUndSchicktPushAnMitarbeiter() {
+        LocalDate tag = LocalDate.of(2026, 8, 3);
+        Urlaubsantrag antrag = antrag(tag, tag);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, tag, tag)).thenReturn(List.of(testZeitkonto));
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, tag, tag)).thenReturn(Map.of(tag, new BigDecimal("8.00")));
+        when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Urlaubsantrag ergebnis = urlaubsantragService.approveAntrag(ANTRAG_ID);
+
+        assertEquals(Urlaubsantrag.Status.GENEHMIGT, ergebnis.getStatus());
+        assertNotNull(ergebnis.getEntschiedenAm());
+        assertFalse(ergebnis.isEntscheidungGesehen());
+        verify(webPushService).notifyMitarbeiter(eq(MITARBEITER_ID), eq("Antrag genehmigt"),
+                eq("Dein Urlaub vom 03.08.2026 bis 03.08.2026 wurde genehmigt."), eq("/zeiterfassung/urlaub"));
+    }
+
+    @Test
+    void genehmigung_imFestgeschriebenenMonat_wirft409OhneBuchung() {
+        LocalDate tag = LocalDate.of(2026, 8, 3);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(tag, tag)));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, tag, tag)).thenReturn(List.of(testZeitkonto));
+        when(monatsSaldoService.isMonatFestgeschrieben(MITARBEITER_ID, 2026, 8)).thenReturn(true);
+
+        org.springframework.web.server.ResponseStatusException fehler = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> urlaubsantragService.approveAntrag(ANTRAG_ID));
+
+        assertEquals(409, fehler.getStatusCode().value());
+        assertTrue(fehler.getReason().contains("08/2026"));
+        verify(abwesenheitRepository, never()).save(any());
+        verifyNoInteractions(webPushService);
+    }
+
+    @Test
+    void ablehnung_nurOffenerAntrag_merktEntscheidungUndSchicktPush() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 7));
+        antrag.setTyp(Urlaubsantrag.Typ.ZEITAUSGLEICH);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Urlaubsantrag ergebnis = urlaubsantragService.rejectAntrag(ANTRAG_ID);
+
+        assertEquals(Urlaubsantrag.Status.ABGELEHNT, ergebnis.getStatus());
+        assertFalse(ergebnis.isEntscheidungGesehen());
+        verify(webPushService).notifyMitarbeiter(eq(MITARBEITER_ID), eq("Antrag abgelehnt"),
+                eq("Dein Zeitausgleich vom 03.08.2026 bis 07.08.2026 wurde abgelehnt."), any());
+
+        antrag.setStatus(Urlaubsantrag.Status.GENEHMIGT);
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.rejectAntrag(ANTRAG_ID));
+        assertTrue(fehler.getMessage().contains("Nur offene"));
+    }
+
+    @Test
+    void antragMitArtikel_kenntAlleTypen() {
+        assertEquals("Dein Urlaub", UrlaubsantragService.antragMitArtikel(null));
+        assertEquals("Deine Krankmeldung", UrlaubsantragService.antragMitArtikel(Urlaubsantrag.Typ.KRANKHEIT));
+        assertEquals("Deine Fortbildung", UrlaubsantragService.antragMitArtikel(Urlaubsantrag.Typ.FORTBILDUNG));
+        assertEquals("Dein Zeitausgleich", UrlaubsantragService.antragMitArtikel(Urlaubsantrag.Typ.ZEITAUSGLEICH));
+        assertEquals("Dein Antrag", UrlaubsantragService.antragMitArtikel(Urlaubsantrag.Typ.ARBEIT));
+    }
+
+    @Test
+    void neueEntscheidungen_liefernDtoOhneMitarbeiter_undFragenAuchStornoAb() {
+        Urlaubsantrag entschieden = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 4));
+        entschieden.setStatus(Urlaubsantrag.Status.STORNIERT);
+        when(repository.findUngeseheneEntscheidungen(eq(MITARBEITER_ID), any())).thenReturn(List.of(entschieden));
+
+        List<org.example.kalkulationsprogramm.dto.UrlaubsentscheidungDto> dtos =
+                urlaubsantragService.neueEntscheidungen(MITARBEITER_ID);
+
+        assertEquals(1, dtos.size());
+        assertEquals(ANTRAG_ID, dtos.get(0).id());
+        assertEquals(Urlaubsantrag.Status.STORNIERT, dtos.get(0).status());
+        assertEquals(LocalDate.of(2026, 8, 4), dtos.get(0).bisDatum());
+        verify(repository).findUngeseheneEntscheidungen(eq(MITARBEITER_ID),
+                eq(java.util.EnumSet.of(Urlaubsantrag.Status.GENEHMIGT, Urlaubsantrag.Status.ABGELEHNT,
+                        Urlaubsantrag.Status.STORNIERT)));
+    }
+
+    // ==================== Storno (Issue #270, Punkt 1) ====================
+
+    @Test
+    void storno_genehmigterAntrag_loeschtTageUndSetztStorniert() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 7));
+        antrag.setStatus(Urlaubsantrag.Status.GENEHMIGT);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Urlaubsantrag ergebnis = urlaubsantragService.stornoAntrag(ANTRAG_ID);
+
+        assertEquals(Urlaubsantrag.Status.STORNIERT, ergebnis.getStatus());
+        assertFalse(ergebnis.isEntscheidungGesehen());
+        assertNotNull(ergebnis.getEntschiedenAm());
+        verify(abwesenheitRepository).deleteByUrlaubsantragId(ANTRAG_ID);
+        verify(monatsSaldoService).invalidiereMonat(MITARBEITER_ID, 2026, 8);
+        verify(webPushService).notifyMitarbeiter(eq(MITARBEITER_ID), eq("Antrag vom Büro storniert"),
+                eq("Dein Urlaub vom 03.08.2026 bis 07.08.2026 wurde vom Büro storniert."), any());
+    }
+
+    @Test
+    void storno_genehmigterAntragImFestgeschriebenenMonat_wirft409() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 7, 30), LocalDate.of(2026, 8, 3));
+        antrag.setStatus(Urlaubsantrag.Status.GENEHMIGT);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(monatsSaldoService.isMonatFestgeschrieben(MITARBEITER_ID, 2026, 7)).thenReturn(true);
+
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> urlaubsantragService.stornoAntrag(ANTRAG_ID));
+
+        verify(abwesenheitRepository, never()).deleteByUrlaubsantragId(any());
+        assertEquals(Urlaubsantrag.Status.GENEHMIGT, antrag.getStatus());
+    }
+
+    @Test
+    void storno_bereitsStorniertOderAbgelehnt_wirftKlartext() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 3));
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+
+        antrag.setStatus(Urlaubsantrag.Status.STORNIERT);
+        assertEquals("Dieser Antrag ist bereits storniert.", assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.stornoAntrag(ANTRAG_ID)).getMessage());
+
+        antrag.setStatus(Urlaubsantrag.Status.ABGELEHNT);
+        assertEquals("Ein abgelehnter Antrag kann nicht storniert werden.", assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.stornoAntrag(ANTRAG_ID)).getMessage());
+    }
+
+    @Test
+    void zurueckziehen_eigenerOffenerAntrag_ohneMonatspruefung() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 3));
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Urlaubsantrag ergebnis = urlaubsantragService.ziehEigenenAntragZurueck(ANTRAG_ID, MITARBEITER_ID);
+
+        assertEquals(Urlaubsantrag.Status.STORNIERT, ergebnis.getStatus());
+        assertTrue(ergebnis.isEntscheidungGesehen(), "Selbst zurückgezogen – keine Nachricht in der Glocke");
+        verify(monatsSaldoService, never()).isMonatFestgeschrieben(anyLong(), anyInt(), anyInt());
+        verifyNoInteractions(webPushService);
+    }
+
+    @Test
+    void zurueckziehen_fremderAntrag403_genehmigterAntragNurImBuero() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 3));
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+
+        org.springframework.web.server.ResponseStatusException fremd = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> urlaubsantragService.ziehEigenenAntragZurueck(ANTRAG_ID, 99L));
+        assertEquals(403, fremd.getStatusCode().value());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> urlaubsantragService.ziehEigenenAntragZurueck(ANTRAG_ID, null));
+
+        antrag.setStatus(Urlaubsantrag.Status.GENEHMIGT);
+        IllegalStateException genehmigt = assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.ziehEigenenAntragZurueck(ANTRAG_ID, MITARBEITER_ID));
+        assertTrue(genehmigt.getMessage().contains("Büro"));
+        verify(abwesenheitRepository, never()).deleteByUrlaubsantragId(any());
+    }
+
+    @Test
+    void storno_unbekannterAntrag_wirftIllegalArgument() {
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class, () -> urlaubsantragService.stornoAntrag(ANTRAG_ID));
+        assertThrows(IllegalArgumentException.class,
+                () -> urlaubsantragService.ziehEigenenAntragZurueck(ANTRAG_ID, MITARBEITER_ID));
+    }
+
+    // ==================== Resturlaub mit halben Tagen (Issue #269, Punkt 5) ====================
+
+    @Test
+    void resturlaub_halberTagZaehltHalb_undKorrekturNichtAbgeschnitten() {
+        testMitarbeiter.setJahresUrlaub(30);
+        LocalDate montag = LocalDate.of(2026, 3, 2);
+        LocalDate dienstag = montag.plusDays(1);
+        Abwesenheit ganz = new Abwesenheit();
+        ganz.setTyp(AbwesenheitsTyp.URLAUB);
+        ganz.setDatum(montag);
+        ganz.setStunden(new BigDecimal("8.00"));
+        Abwesenheit halb = new Abwesenheit();
+        halb.setTyp(AbwesenheitsTyp.URLAUB);
+        halb.setDatum(dienstag);
+        halb.setStunden(new BigDecimal("4.00"));
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(List.of(ganz, halb));
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(Map.of(montag, new BigDecimal("8.00"), dienstag, new BigDecimal("8.00")));
+        when(zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(MITARBEITER_ID, 2026))
+                .thenReturn(new BigDecimal("0.5"));
+
+        BigDecimal rest = urlaubsantragService.getResturlaub(MITARBEITER_ID, 2026);
+
+        assertEquals(0, new BigDecimal("29").compareTo(rest), "30 - 1,5 + 0,5 = 29");
+    }
+
+    @Test
+    void antrag_mehrTageAlsHalbeRestTage_wirdMitKommaMeldungAbgelehnt() {
+        testMitarbeiter.setJahresUrlaub(1);
+        LocalDate montag = LocalDate.of(2026, 3, 2);
+        Abwesenheit halb = new Abwesenheit();
+        halb.setTyp(AbwesenheitsTyp.URLAUB);
+        halb.setDatum(montag);
+        halb.setStunden(new BigDecimal("4.00"));
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(List.of(halb));
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(Map.of(montag, new BigDecimal("8.00")));
+
+        LocalDate mittwoch = LocalDate.of(2026, 3, 4);
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.createAntrag(MITARBEITER_ID, mittwoch, mittwoch.plusDays(1), null,
+                        Urlaubsantrag.Typ.URLAUB));
+
+        assertEquals("Nicht genügend Urlaubstage. Verbleibend: 0,5, Beantragt: 2", fehler.getMessage());
+    }
+
+    @Test
+    void einzelneEntscheidungGesehen_nurEigene_undNurEinmalSpeichern() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 3));
+        antrag.setEntscheidungGesehen(false);
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+
+        org.springframework.web.server.ResponseStatusException fremd = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> urlaubsantragService.eigeneEntscheidungGesehen(ANTRAG_ID, 99L));
+        assertEquals(403, fremd.getStatusCode().value());
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> urlaubsantragService.eigeneEntscheidungGesehen(ANTRAG_ID, null));
+        assertFalse(antrag.isEntscheidungGesehen());
+
+        urlaubsantragService.eigeneEntscheidungGesehen(ANTRAG_ID, MITARBEITER_ID);
+        urlaubsantragService.entscheidungGesehenImBuero(ANTRAG_ID);
+
+        assertTrue(antrag.isEntscheidungGesehen());
+        verify(repository, times(1)).save(antrag);
+    }
+
+    @Test
+    void einzelneEntscheidungGesehen_unbekannterAntrag() {
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> urlaubsantragService.eigeneEntscheidungGesehen(ANTRAG_ID, MITARBEITER_ID));
+        assertThrows(IllegalArgumentException.class,
+                () -> urlaubsantragService.entscheidungGesehenImBuero(ANTRAG_ID));
+    }
+
+    @Test
+    void push_imLaufenderTransaktion_gehtErstNachDemCommitRaus() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 3));
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            urlaubsantragService.rejectAntrag(ANTRAG_ID);
+            verifyNoInteractions(webPushService);
+
+            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+
+            verify(webPushService).notifyMitarbeiter(eq(MITARBEITER_ID), eq("Antrag abgelehnt"), any(), any());
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void resturlaub_geschaeftsfuehrer_zaehltGanzeTageOhneSoll() {
+        testMitarbeiter.setIstGeschaeftsfuehrer(true);
+        testMitarbeiter.setJahresUrlaub(30);
+        Abwesenheit gf = new Abwesenheit();
+        gf.setTyp(AbwesenheitsTyp.URLAUB);
+        gf.setDatum(LocalDate.of(2026, 3, 2));
+        gf.setStunden(BigDecimal.ZERO);
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(List.of(gf));
+
+        BigDecimal rest = urlaubsantragService.getResturlaub(MITARBEITER_ID, 2026);
+
+        assertEquals(0, new BigDecimal("29").compareTo(rest));
+        verifyNoInteractions(tagesSollService);
+    }
+
+    @Test
+    void push_fehlerNachDemCommit_wirdGeschlucktUndGeloggt() {
+        Urlaubsantrag antrag = antrag(LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 3));
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag));
+        when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("Commit der Push-Transaktion gescheitert"))
+                .when(webPushService).notifyMitarbeiter(any(), any(), any(), any());
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            urlaubsantragService.rejectAntrag(ANTRAG_ID);
+
+            assertDoesNotThrow(() -> org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations()
+                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
 }

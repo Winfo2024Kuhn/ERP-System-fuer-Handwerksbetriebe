@@ -4,6 +4,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -122,7 +125,7 @@ class MobileUrlaubsantragSecurityTest {
 
     @Test
     void eigenerResturlaubIstErreichbar() throws Exception {
-        when(service.getResturlaub(7L, 2026)).thenReturn(12);
+        when(service.getResturlaub(7L, 2026)).thenReturn(new java.math.BigDecimal("12"));
         mvc.perform(get("/api/urlaub/resturlaub?mitarbeiterId=7&jahr=2026").header("X-Auth-Token", TOKEN))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.verbleibend").value(12));
     }
@@ -164,7 +167,7 @@ class MobileUrlaubsantragSecurityTest {
     @ParameterizedTest
     @CsvSource({
             "PUT, /api/urlaub/antraege/70/approve", "PUT, /api/urlaub/antraege/70/reject",
-            "PUT, /api/urlaub/antraege/70/storno", "DELETE, /api/urlaub/antraege",
+            "DELETE, /api/urlaub/antraege/70", "DELETE, /api/urlaub/antraege",
             "POST, /api/projekte/preise-nachtragen", "PUT, /api/projekte/42", "DELETE, /api/projekte/42",
             "POST, /api/kunden", "DELETE, /api/kunden/42", "DELETE, /api/anfragen/42",
             "DELETE, /api/lieferanten/42", "DELETE, /api/produktkategorien/42",
@@ -174,6 +177,18 @@ class MobileUrlaubsantragSecurityTest {
         mvc.perform(request(HttpMethod.valueOf(method), path).header("X-Auth-Token", TOKEN))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void mobilerTokenZiehtNurDenEigenenAntragZurueck() throws Exception {
+        Urlaubsantrag storniert = antrag(7);
+        storniert.setStatus(Urlaubsantrag.Status.STORNIERT);
+        when(service.ziehEigenenAntragZurueck(70L, 7L)).thenReturn(storniert);
+
+        mvc.perform(put("/api/urlaub/antraege/70/storno").header("X-Auth-Token", TOKEN))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("STORNIERT"));
+        verify(service).ziehEigenenAntragZurueck(70L, 7L);
+        verify(service, never()).stornoAntrag(anyLong());
     }
 
     @Test

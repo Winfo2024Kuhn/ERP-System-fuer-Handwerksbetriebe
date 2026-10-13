@@ -127,6 +127,8 @@ Handy-App (`react-zeiterfassung/src`):
 - `useToast()` -> `components/ui/toast.tsx`
 - `Drawer` (Bottom-Sheet) -> `components/ui/drawer.tsx`
 - `<ImageViewer>` -> `components/ui/image-viewer.tsx`
+- `<InfoButton>` -> `components/ui/info-button.tsx` (öffnet ein Bottom-Sheet, Gegenstück zum PC-Baustein)
+- Nachrichten an den Mitarbeiter (Entscheidungen, Warnungen) gehören in die Glocke `features/nachrichten/NachrichtenGlocke.tsx`, nicht als Karte auf eine Seite
 
 ### Verbindliche Eingaben und Meldungen (Nutzervorgabe 09.09.2026)
 
@@ -147,7 +149,7 @@ Handy-App (`react-zeiterfassung/src`):
 
 - PC: `lib/numberDrafts.ts` prüft mehrere Zahlenentwürfe vollständig vor der ersten Aktion. Fachliche Geldregeln liegen in `features/finanzen/moneyDrafts.ts`; keine Kopien in Seiten anlegen. Zulässige Genauigkeit folgt dem API-/Datenbankvertrag. Fehlende gespeicherte Zahlen ergeben einen leeren Entwurf, keinen erfundenen Nullwert.
 - PC-Toasts schweben auf Nutzerwunsch vom 14.09.2026 als kompakte Meldungen oben rechts über der Anwendung. Sie reservieren keinen Platz und verschieben weder Anwendung noch Dialoge. Nur die Meldungskarten nehmen Zeigerereignisse an; der begrenzte Meldungsstapel bleibt scrollbar. Neue Dialoge bevorzugt mit dem gemeinsamen `Dialog` bauen und dessen Fokusverhalten wiederverwenden.
-- Mobile: eigene feste Overlays verwenden `mobileOverlayStyle` aus `components/ui/toast.tsx`. Die Höhe der Meldungsfläche wird zentral gemessen. Mehrere Meldungen, kleine verbleibende Dialoghöhe, erreichbare letzte Eingaben und Speichern gemeinsam prüfen.
+- Mobile-Toasts schweben auf Nutzerwunsch vom 13.10.2026 oben über dem Inhalt (unter der Safe-Area oben) und verschieben weder Seite noch Dialoge; es gibt keine reservierte Meldungsfläche mehr. Erfolg und Info verschwinden nach etwa 4 s, Warnung und Fehler bleiben bis zum X. Gleiche Meldungen werden nicht gestapelt. Weil Fehler-Toasts dabei Knöpfe am oberen Rand verdecken können, im E2E-Test die Meldung erst per X schließen und dann weiterbedienen. Hinweise nach einer Aktion als Toast zeigen, nicht als Karte, die den Inhalt nach unten schiebt.
 - Toasts dürfen auch bei offenem Dialog per Tastatur erreichbar sein. Dabei bleibt der übrige Seitenhintergrund gesperrt; Escape aus der Meldungsfläche darf keinen ungespeicherten Dialog verwerfen.
 
 ### Fokus-Ringe nie abschneiden (Nutzervorgabe 29.09.2026)
@@ -163,7 +165,7 @@ Der Nutzer möchte bei komplexeren Dingen **immer** einen Info-Button, der erkl�
 - **Wann:** Einstellungen mit Folgen für andere Bereiche (Export, Lohn, Glocke, Rechte, Versand), Aktionen, die etwas im Hintergrund auslösen oder nicht rückgängig zu machen sind, unvermeidbare Fachbegriffe (Lohnart, Personalnummer, Soll/Ist). **Nicht** bei selbsterklärenden Feldern (Name, Telefon) – zu viele (i) machen die Seite unruhig.
 - **Wo:** direkt neben dem Feld bzw. der Überschrift, auf die sich die Info bezieht – nie gesammelt am Seitenende oder auf einer separaten Hilfeseite.
 - **Inhalt:** zwei kurze Teile in Handwerker-Sprache: „Was passiert im Hintergrund?“ und „Was bewirkt das?“ – inklusive dessen, was sich *nicht* ändert (z. B. „bereits abgeschlossene Monate bleiben unverändert“). Wenige Sätze, keine internen Begriffe (Endpoint, Cache, Tabelle). Der Text muss zum tatsächlichen Backend-Verhalten passen – im Zweifel im Backend-Code nachsehen.
-- **Baustein:** immer `<InfoButton>` aus `src/components/ui/info-button.tsx` (Klick öffnet ein Popover, Tastatur + Touch, Escape schließt) – nicht pro Seite neu bauen und kein reiner Hover-Tooltip. In `react-zeiterfassung/` gibt es noch kein Gegenstück; das vor dem Bau zur Freigabe stellen.
+- **Baustein:** immer `<InfoButton>` aus `src/components/ui/info-button.tsx` (Klick öffnet ein Popover, Tastatur + Touch, Escape schließt) – nicht pro Seite neu bauen und kein reiner Hover-Tooltip. In `react-zeiterfassung/` das Gegenstück `components/ui/info-button.tsx` (Bottom-Sheet) nutzen.
 - Im Playwright-Durchlauf den geöffneten Info-Button mit prüfen: nichts abgeschnitten, nichts überdeckt, auch am Bildschirmrand.
 
 ### Page Header Pattern (Zwingend für alle Seiten)

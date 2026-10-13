@@ -17,6 +17,10 @@ public final class MobileApiPolicy {
         route("POST", "/api/zeiterfassung/(?:start|stop|pause)"),
         route("GET", "/api/urlaub/(?:antraege|resturlaub|typen)"),
         route("POST", "/api/urlaub/antraege"),
+        // Eigenen offenen Antrag zurückziehen; die Fachregel (nur eigener, nur offen) steht im Controller/Service.
+        route("PUT", "/api/urlaub/antraege/" + ID + "/storno"),
+        route("GET", "/api/urlaub/antraege/neue-entscheidungen"),
+        route("PUT", "/api/urlaub/antraege/" + ID + "/entscheidung-gesehen"),
         route("GET", "/api/kalender/mobile(?:/tag)?"),
         route("GET", "/api/abwesenheit/team"),
         route("GET", "/api/push/vapid-key"),

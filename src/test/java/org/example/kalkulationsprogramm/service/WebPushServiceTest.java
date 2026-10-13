@@ -250,4 +250,25 @@ class WebPushServiceTest {
             assertFalse(webPushService.isEnabled());
         }
     }
+
+    @Test
+    void notifyMitarbeiter_ohneVapidKeysOderOhneMitarbeiter_tutNichts() {
+        webPushService.notifyMitarbeiter(1L, "Urlaubantrag genehmigt", "Dein Urlaub …", "/zeiterfassung/urlaub");
+        webPushService.notifyMitarbeiter(null, "Titel", "Text", "/");
+
+        org.mockito.Mockito.verifyNoInteractions(pushSubscriptionRepository);
+    }
+
+    @Test
+    void notifyMitarbeiter_aktiv_fragtNurGeraeteDiesesMitarbeitersAb_undSchlucktFehler() {
+        WebPushService aktiv = org.mockito.Mockito.spy(webPushService);
+        org.mockito.Mockito.doReturn(true).when(aktiv).isEnabled();
+        org.mockito.Mockito.when(pushSubscriptionRepository.findByMitarbeiterId(1L))
+                .thenThrow(new RuntimeException("Datenbank weg"));
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> aktiv.notifyMitarbeiter(1L, "Titel", "Text", "/zeiterfassung/urlaub"));
+        org.mockito.Mockito.verify(pushSubscriptionRepository).findByMitarbeiterId(1L);
+        org.mockito.Mockito.verify(pushSubscriptionRepository, org.mockito.Mockito.never()).findAll();
+    }
 }

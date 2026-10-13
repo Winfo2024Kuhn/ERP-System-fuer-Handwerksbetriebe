@@ -1,4 +1,3 @@
-import { mobileOverlayStyle } from './toast'
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -55,7 +54,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         return () => document.removeEventListener('keydown', keydown)
     }, [options, finish])
     return <Context.Provider value={confirm}>{children}{options && createPortal(
-        <div style={mobileOverlayStyle} className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={event => { if (event.target === event.currentTarget) finish(false) }}>
+        <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={event => { if (event.target === event.currentTarget) finish(false) }}>
             <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={id} aria-describedby={`${id}-message`} className="max-h-full w-full max-w-md overflow-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
                 <AlertTriangle aria-hidden="true" className="mb-3 h-7 w-7 text-rose-600" />
                 <h2 id={id} className="text-lg font-semibold text-slate-900">{options.title ?? 'Bitte bestätigen'}</h2>

@@ -1,17 +1,28 @@
 package org.example.kalkulationsprogramm.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.example.kalkulationsprogramm.dto.UrlaubsentscheidungDto;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UrlaubsantragService {
@@ -25,6 +36,10 @@ public class UrlaubsantragService {
     private final ZeitkontoKorrekturService zeitkontoKorrekturService;
     private final TagesSollService tagesSollService;
     private final LangzeitkrankmeldungService langzeitkrankmeldungService;
+    private final UrlaubstageRechner urlaubstageRechner;
+    private final WebPushService webPushService;
+
+    private static final DateTimeFormatter TAG_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     /**
      * Erstellt einen neuen Urlaubsantrag.
@@ -40,12 +55,12 @@ public class UrlaubsantragService {
         // Urlaubskontingent prüfen (nur für URLAUB-Typ bei normalen Mitarbeitern)
         if (!istGf && typ == Urlaubsantrag.Typ.URLAUB) {
             int jahr = von.getYear();
-            int verbleibend = getResturlaub(mitarbeiterId, jahr);
+            BigDecimal verbleibend = getResturlaub(mitarbeiterId, jahr);
             long beantragteTage = zaehleArbeitstage(von, bis);
-            if (beantragteTage > verbleibend) {
+            if (BigDecimal.valueOf(beantragteTage).compareTo(verbleibend) > 0) {
                 throw new IllegalStateException(
-                        String.format("Nicht genügend Urlaubstage. Verbleibend: %d, Beantragt: %d",
-                                verbleibend, beantragteTage));
+                        String.format("Nicht genügend Urlaubstage. Verbleibend: %s, Beantragt: %d",
+                                UrlaubstageRechner.formatTage(verbleibend), beantragteTage));
             }
         }
 
@@ -152,6 +167,8 @@ public class UrlaubsantragService {
             }
         }
 
+        pruefeMonateNichtFestgeschrieben(antrag);
+
         // Soll-Stunden für den GESAMTEN Zeitraum auf einmal laden
         Map<LocalDate, BigDecimal> sollStundenJeTag = istGf
                 ? Map.of()
@@ -181,12 +198,15 @@ public class UrlaubsantragService {
         }
 
         antrag.setStatus(Urlaubsantrag.Status.GENEHMIGT);
+        markiereEntscheidung(antrag);
 
         // MonatsSaldo-Cache invalidieren für alle betroffenen Monate
         invalidiereBetroffeneMonate(antrag.getMitarbeiter().getId(),
                 antrag.getVonDatum(), antrag.getBisDatum());
 
-        return repository.save(antrag);
+        Urlaubsantrag gespeichert = repository.save(antrag);
+        benachrichtigeMitarbeiter(antrag, "genehmigt");
+        return gespeichert;
     }
 
     /**
@@ -197,17 +217,72 @@ public class UrlaubsantragService {
         Urlaubsantrag antrag = repository.findById(antragId)
                 .orElseThrow(() -> new IllegalArgumentException("Antrag nicht gefunden"));
 
+        if (antrag.getStatus() != Urlaubsantrag.Status.OFFEN) {
+            throw new IllegalStateException("Nur offene Anträge können abgelehnt werden");
+        }
         antrag.setStatus(Urlaubsantrag.Status.ABGELEHNT);
-        return repository.save(antrag);
+        markiereEntscheidung(antrag);
+        Urlaubsantrag gespeichert = repository.save(antrag);
+        benachrichtigeMitarbeiter(antrag, "abgelehnt");
+        return gespeichert;
     }
 
     /**
-     * Storniert einen Urlaubsantrag und löscht zugehörige Abwesenheiten.
+     * Storniert einen Urlaubsantrag (Büro, PC): offene und genehmigte Anträge.
+     * Zugehörige Abwesenheiten werden gelöscht, der Resturlaub steigt wieder.
+     *
+     * @throws IllegalStateException   bereits storniert oder abgelehnt
+     * @throws ResponseStatusException 409, wenn ein betroffener Monat festgeschrieben ist
      */
     @Transactional
     public Urlaubsantrag stornoAntrag(Long antragId) {
         Urlaubsantrag antrag = repository.findById(antragId)
                 .orElseThrow(() -> new IllegalArgumentException("Antrag nicht gefunden"));
+        pruefeStornierbar(antrag);
+        markiereEntscheidung(antrag);
+        Urlaubsantrag gespeichert = storniere(antrag);
+        benachrichtigeMitarbeiter(antrag, "vom Büro storniert");
+        return gespeichert;
+    }
+
+    /**
+     * Zurückziehen am Handy: nur der eigene Antrag und nur, solange er offen ist.
+     * Genehmigten Urlaub nimmt das Büro zurück, weil dabei gebuchte Tage aus
+     * dem Kalender verschwinden.
+     *
+     * @throws ResponseStatusException 403 bei fremdem Antrag
+     * @throws IllegalStateException   wenn der Antrag nicht mehr offen ist
+     */
+    @Transactional
+    public Urlaubsantrag ziehEigenenAntragZurueck(Long antragId, Long mitarbeiterId) {
+        Urlaubsantrag antrag = repository.findById(antragId)
+                .orElseThrow(() -> new IllegalArgumentException("Antrag nicht gefunden"));
+        if (mitarbeiterId == null || !mitarbeiterId.equals(antrag.getMitarbeiter().getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Zugriff verweigert.");
+        }
+        pruefeStornierbar(antrag);
+        if (antrag.getStatus() == Urlaubsantrag.Status.GENEHMIGT) {
+            throw new IllegalStateException("Genehmigten Urlaub nimmt das Büro zurück. Bitte dort melden.");
+        }
+        return storniere(antrag);
+    }
+
+    private void pruefeStornierbar(Urlaubsantrag antrag) {
+        if (antrag.getStatus() == Urlaubsantrag.Status.STORNIERT) {
+            throw new IllegalStateException("Dieser Antrag ist bereits storniert.");
+        }
+        if (antrag.getStatus() == Urlaubsantrag.Status.ABGELEHNT) {
+            throw new IllegalStateException("Ein abgelehnter Antrag kann nicht storniert werden.");
+        }
+    }
+
+    private Urlaubsantrag storniere(Urlaubsantrag antrag) {
+        Long antragId = antrag.getId();
+        if (antrag.getStatus() == Urlaubsantrag.Status.GENEHMIGT) {
+            // Nur genehmigte Anträge haben Tage im Kalender, die in einem
+            // abgeschlossenen Monat liegen könnten.
+            pruefeMonateNichtFestgeschrieben(antrag);
+        }
 
         // Lösche alle zugehörigen Abwesenheiten
         abwesenheitRepository.deleteByUrlaubsantragId(antragId);
@@ -228,6 +303,118 @@ public class UrlaubsantragService {
         java.time.YearMonth end = java.time.YearMonth.from(bis);
         for (java.time.YearMonth ym = start; !ym.isAfter(end); ym = ym.plusMonths(1)) {
             monatsSaldoService.invalidiereMonat(mitarbeiterId, ym.getYear(), ym.getMonthValue());
+        }
+    }
+
+    /**
+     * Genehmigen oder Stornieren schreibt Abwesenheiten in die betroffenen
+     * Monate – das darf in einem festgeschriebenen Monat nicht still passieren.
+     */
+    private void pruefeMonateNichtFestgeschrieben(Urlaubsantrag antrag) {
+        Long mitarbeiterId = antrag.getMitarbeiter().getId();
+        YearMonth start = YearMonth.from(antrag.getVonDatum());
+        YearMonth end = YearMonth.from(antrag.getBisDatum());
+        for (YearMonth ym = start; !ym.isAfter(end); ym = ym.plusMonths(1)) {
+            if (monatsSaldoService.isMonatFestgeschrieben(mitarbeiterId, ym.getYear(), ym.getMonthValue())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, String.format(
+                        "Der Monat %02d/%d ist bereits festgeschrieben. Bitte zuerst den Monatsabschluss zurücksetzen.",
+                        ym.getMonthValue(), ym.getYear()));
+            }
+        }
+    }
+
+    private void markiereEntscheidung(Urlaubsantrag antrag) {
+        antrag.setEntschiedenAm(LocalDateTime.now());
+        antrag.setEntscheidungGesehen(false);
+    }
+
+    /**
+     * Push an die Geräte des Mitarbeiters – erst NACH dem Commit. So bekommt
+     * niemand „genehmigt" aufs Handy, wenn das Speichern noch scheitert, und
+     * die Sperre auf den Mitarbeiter (Saldo-Neuberechnung) hängt nicht an
+     * langsamen Push-Diensten. Die Handy-App zeigt die Entscheidung zusätzlich
+     * in der Glocke.
+     *
+     * <p>Der Titel bleibt neutral („Antrag genehmigt"), weil er auf dem
+     * Sperrbildschirm steht; die Art steht erst im Text.
+     */
+    private void benachrichtigeMitarbeiter(Urlaubsantrag antrag, String entscheidung) {
+        Long mitarbeiterId = antrag.getMitarbeiter().getId();
+        String titel = "Antrag " + entscheidung;
+        String text = String.format("%s vom %s bis %s wurde %s.",
+                antragMitArtikel(antrag.getTyp()),
+                antrag.getVonDatum().format(TAG_FORMAT),
+                antrag.getBisDatum().format(TAG_FORMAT),
+                entscheidung);
+        Runnable senden = () -> webPushService.notifyMitarbeiter(mitarbeiterId, titel, text, "/zeiterfassung/urlaub");
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    // Spring reicht Fehler aus afterCommit an den Aufrufer durch – die
+                    // Entscheidung ist aber schon gespeichert und darf nicht als 500 enden.
+                    try {
+                        senden.run();
+                    } catch (RuntimeException e) {
+                        log.warn("Push nach Entscheidung fehlgeschlagen: {}", e.getMessage());
+                    }
+                }
+            });
+        } else {
+            senden.run();
+        }
+    }
+
+    /** „Dein Urlaub", „Deine Krankmeldung" … – Subjekt für Meldungen an den Mitarbeiter. */
+    static String antragMitArtikel(Urlaubsantrag.Typ typ) {
+        if (typ == null) return "Dein Urlaub";
+        return switch (typ) {
+            case URLAUB -> "Dein Urlaub";
+            case KRANKHEIT -> "Deine Krankmeldung";
+            case FORTBILDUNG -> "Deine Fortbildung";
+            case ZEITAUSGLEICH -> "Dein Zeitausgleich";
+            default -> "Dein Antrag";
+        };
+    }
+
+    /** Entschiedene Anträge, die der Mitarbeiter noch nicht mit „Verstanden" bestätigt hat. */
+    @Transactional(readOnly = true)
+    public List<UrlaubsentscheidungDto> neueEntscheidungen(Long mitarbeiterId) {
+        return repository.findUngeseheneEntscheidungen(mitarbeiterId,
+                EnumSet.of(Urlaubsantrag.Status.GENEHMIGT, Urlaubsantrag.Status.ABGELEHNT,
+                        Urlaubsantrag.Status.STORNIERT))
+                .stream()
+                .map(UrlaubsentscheidungDto::from)
+                .toList();
+    }
+
+    /**
+     * Eine einzelne Entscheidung als gelesen markieren – Handy: nur der eigene Antrag.
+     *
+     * @throws IllegalArgumentException unbekannter Antrag
+     * @throws ResponseStatusException  403 bei fremdem Antrag oder fehlendem Mitarbeiter
+     */
+    @Transactional
+    public void eigeneEntscheidungGesehen(Long antragId, Long mitarbeiterId) {
+        Urlaubsantrag antrag = repository.findById(antragId)
+                .orElseThrow(() -> new IllegalArgumentException("Antrag nicht gefunden"));
+        if (mitarbeiterId == null || !mitarbeiterId.equals(antrag.getMitarbeiter().getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Zugriff verweigert.");
+        }
+        markiereGesehen(antrag);
+    }
+
+    /** Büro-Anmeldung (PC): jede Entscheidung darf als gelesen markiert werden. */
+    @Transactional
+    public void entscheidungGesehenImBuero(Long antragId) {
+        markiereGesehen(repository.findById(antragId)
+                .orElseThrow(() -> new IllegalArgumentException("Antrag nicht gefunden")));
+    }
+
+    private void markiereGesehen(Urlaubsantrag antrag) {
+        if (!antrag.isEntscheidungGesehen()) {
+            antrag.setEntscheidungGesehen(true);
+            repository.save(antrag);
         }
     }
 
@@ -267,7 +454,7 @@ public class UrlaubsantragService {
      * Formel: Jahresanspruch - genommen - geplant + Korrekturen
      */
     @Transactional(readOnly = true)
-    public int getResturlaub(Long mitarbeiterId, int jahr) {
+    public BigDecimal getResturlaub(Long mitarbeiterId, int jahr) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
 
@@ -279,14 +466,13 @@ public class UrlaubsantragService {
         List<Abwesenheit> abwesenheiten = abwesenheitRepository
                 .findByMitarbeiterIdAndDatumBetween(mitarbeiterId, jahresanfang, jahresende);
 
-        long genommen = abwesenheiten.stream()
-                .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB)
-                .count();
+        // Halbe Urlaubstage zählen 0,5 – dafür braucht der Rechner das Tagessoll.
+        BigDecimal genommen = urlaubstageRechner.urlaubstage(abwesenheiten,
+                UrlaubstageRechner.sollLader(mitarbeiter, tagesSollService));
 
-        BigDecimal korrekturBD = zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(mitarbeiterId, jahr);
-        int korrektur = korrekturBD != null ? korrekturBD.intValue() : 0;
+        BigDecimal korrektur = zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(mitarbeiterId, jahr);
 
-        return Math.max(0, jahresUrlaub - (int) genommen + korrektur);
+        return urlaubstageRechner.resturlaub(jahresUrlaub, genommen, BigDecimal.ZERO, korrektur);
     }
 
     /**

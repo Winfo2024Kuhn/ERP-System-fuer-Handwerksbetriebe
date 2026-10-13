@@ -19,6 +19,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
@@ -131,6 +132,22 @@ public class RestExceptionHandler {
                 ex.getMessage()
         );
         return ResponseEntity.status(ex.getStatusCode()).body(body);
+    }
+
+    /**
+     * Fachliche Rechteprüfung im Service (z. B. Monatsabschluss öffnen ohne Recht):
+     * 403 mit dem Satz aus der Exception statt einer leeren Antwort, damit die
+     * Oberfläche sagen kann, woran es liegt. Die englische Standardmeldung von
+     * Spring Security wird übersetzt.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
+        String meldung = ex.getMessage();
+        if (meldung == null || meldung.isBlank() || "Access Denied".equals(meldung)) {
+            meldung = "Dafür fehlt die Berechtigung.";
+        }
+        ApiError body = new ApiError(HttpStatus.FORBIDDEN.value(), meldung, null, List.of(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     @ExceptionHandler(MietabrechnungValidationException.class)

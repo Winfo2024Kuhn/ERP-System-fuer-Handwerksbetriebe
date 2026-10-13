@@ -6,7 +6,7 @@ Unter **Projektmanagement → Kalender** plant man Termine, z. B. Montagen, Aufm
 
 In **Projektmanagement → Kalender** schaltet „Ansicht“ zwischen „Monat“, „Woche“ und „Tag“. Den Monat wählt man über das Feld „Monat“, das Jahr über die Pfeile bei „Jahr“; in Woche und Tag blättern die Pfeile über dem Kalender. „Heute“ springt auf den heutigen Tag.
 
-Die Legende zeigt die Farben: „Termin“, „Urlaub“, „Krankheit“, „Fortbildung“, „Zeitausgleich“ und „Feiertag“. In der Monatsansicht stehen pro Tag höchstens drei Einträge, der Rest als „+… weitere“ – die Woche zeigt alle.
+Die Legende zeigt die Farben: „Termin“, „Urlaub“, „Krankheit“, „Abwesend“, „Fortbildung“, „Zeitausgleich“ und „Feiertag“. In der Monatsansicht stehen pro Tag höchstens drei Einträge, der Rest als „+… weitere“ – die Woche zeigt alle.
 
 ## Termin anlegen
 
@@ -32,7 +32,7 @@ Wer unter „Teilnehmer einladen“ angehakt ist, sieht den Termin in seinem Kal
 
 Unter **Projektmanagement → Kalender** stehen außer den Terminen:
 - die Feiertage,
-- Urlaub, Krankheit, Fortbildung und Zeitausgleich aller Mitarbeiter mit Namen – so sieht jeder, wer wann fehlt.
+- Urlaub, Krankheit, Fortbildung und Zeitausgleich aller Mitarbeiter mit Namen – so sieht jeder, wer wann fehlt. Den Grund „Krankheit“ sehen nur Administratoren und die Geschäftsführung; alle anderen sehen kranke Kollegen nur als „Abwesend“. Die eigenen Einträge sieht jeder mit Grund.
 
 Diese Einträge kommen aus der Zeiterfassung und lassen sich im Kalender nicht ändern.
 

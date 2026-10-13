@@ -1,7 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, ImageOff, Loader2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { mobileOverlayStyle } from './toast';
 
 interface ImageViewerProps {
     /** Single image URL (legacy) or currently selected URL */
@@ -324,7 +323,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
     return createPortal(
         <div
             className={`fixed inset-0 bg-slate-50 z-[9999] flex flex-col touch-none transition-opacity duration-300 ${fadeIn ? 'opacity-100' : 'opacity-0'}`}
-            style={mobileOverlayStyle}
             role="dialog"
             aria-modal="true"
             aria-label={currentImage.name || alt || 'Bildansicht'}

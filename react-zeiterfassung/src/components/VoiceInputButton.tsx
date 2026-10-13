@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Mic, Square } from 'lucide-react'
-import { useToast, mobileOverlayStyle } from './ui/toast'
+import { useToast } from './ui/toast'
 import {
     starteAufnahme,
     mikrofonWirdUnterstuetzt,
@@ -327,7 +327,6 @@ export default function VoiceInputButton({
 
             {zeigtDatenschutzHinweis && createPortal(
                 <div
-                    style={mobileOverlayStyle}
                     className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
                     onClick={event => { if (event.target === event.currentTarget) setZeigtDatenschutzHinweis(false) }}
                 >

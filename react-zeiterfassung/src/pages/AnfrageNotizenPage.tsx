@@ -1,4 +1,4 @@
-import { useToast, mobileOverlayStyle } from '../components/ui/toast'
+import { useToast } from '../components/ui/toast'
 import { useConfirm } from '../components/ui/confirm-dialog'
 import VoiceInputButton from '../components/VoiceInputButton'
 import { useState, useEffect, useRef } from 'react'
@@ -490,7 +490,7 @@ export default function AnfrageNotizenPage() {
 
             {/* New Note Modal */}
             {showModal && (
-                <div style={mobileOverlayStyle}
+                <div
                     className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center"
                     onClick={() => setShowModal(false)}
                 >

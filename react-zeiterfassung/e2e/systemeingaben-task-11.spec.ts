@@ -1,5 +1,6 @@
 import { test, expect } from './hilfen/test'
 import type { Page, TestInfo, Locator } from '@playwright/test'
+import { meldungenSchliessen } from './hilfen/meldungen'
 
 const note = { id: 1, notiz: 'Testnotiz', erstelltAm: '2026-09-01T10:00:00', mitarbeiterId: 1, mitarbeiterVorname: 'Max', mitarbeiterNachname: 'Mustermann', mobileSichtbar: true, nurFuerErsteller: false, canEdit: true, bilder: [{ id: 2, originalDateiname: 'test.png', url: '/test.png', erstelltAm: '2026-09-01T10:00:00' }] }
 async function photo(page: Page, info: TestInfo, name: string, action?: Locator) {
@@ -35,9 +36,9 @@ test('Mehrwertsteuer: Null leeren, Komma berechnen, unvollständige Zahl ablehne
     const netto = page.getByRole('textbox', { name: 'Netto (ohne MwSt)' })
     await netto.fill('0,00'); await page.getByText('Mehrwertsteuer', { exact: true }).tap(); await netto.tap(); await expect(netto).toHaveValue('')
     await netto.fill('12,'); await page.getByRole('button', { name: 'Rechnen' }).tap(); await expect(page.getByRole('alert')).toContainText('Netto'); expect(payloads).toEqual([])
-    await page.locator('header button').first().click({ trial: true, timeout: 2000 })
-    const notice = await page.getByRole('alert').boundingBox(), header = await page.locator('header').boundingBox()
-    expect(notice!.y + notice!.height).toBeLessThanOrEqual(header!.y)
+    // Die Meldung schwebt über dem Kopf (fixed), statt ihn nach unten zu schieben.
+    expect((await page.locator('header').boundingBox())!.y).toBe(0)
+    expect(await page.locator('[data-mobile-toasts]').evaluate(el => getComputedStyle(el).position)).toBe('fixed')
     await photo(page, info, 'mwst-fehler', page.getByRole('button', { name: 'Rechnen' }))
     await page.getByRole('button', { name: 'Meldung schließen' }).tap(); await netto.fill('12,50'); await page.getByRole('button', { name: 'Rechnen' }).tap()
     await expect(netto).toHaveValue('12,50'); expect(payloads).toEqual([{ netto: 12.5, brutto: null, satzProzent: 19 }])
@@ -86,27 +87,32 @@ test('Zeitbuchung: Serverfehler bleibt sichtbar und startet keine Sitzung', asyn
     await page.route('**/api/zeiterfassung/start', route => route.fulfill({ status: 409, json: { error: 'Buchung ist gesperrt' } }))
     await page.goto('zeiterfassung'); await page.getByText('Testprojekt', { exact: true }).tap(); await page.getByText('Testkategorie', { exact: true }).tap(); await page.getByText('Montage', { exact: true }).tap(); await page.getByRole('button', { name: /Starten|Zeit erfassen|Buchung starten/i }).tap(); await expect(page.getByRole('alert')).toContainText('Buchung ist gesperrt'); expect(await page.evaluate(() => localStorage.getItem('zeiterfassung_active_session'))).toBeNull(); await photo(page, info, 'zeitbuchung-fehler', page.getByRole('button', { name: /Starten|Zeit erfassen|Buchung starten/i }))
 })
-test('Gestapelte Meldungen geben dem Kalender Platz und verschwinden ohne Leerraum', async ({ page }, info) => {
+test('Meldungen schweben über dem Inhalt, ohne ihn zu verschieben; gleiche stapeln sich nicht', async ({ page }, info) => {
     await page.goto('urlaub')
+    const headerVorher = (await page.locator('header').boundingBox())!.y
     await page.getByRole('button', { name: 'Antrag senden' }).tap()
     await page.getByRole('button', { name: 'Antrag senden' }).tap()
-    await expect(page.getByRole('alert')).toHaveCount(2)
+    // Zweimal derselbe Fehler bleibt eine Meldung.
+    await expect(page.getByRole('alert')).toHaveCount(1)
+    // Nichts rutscht nach unten: der Kopf bleibt, wo er war.
+    expect((await page.locator('header').boundingBox())!.y).toBe(headerVorher)
     await page.getByRole('button', { name: 'Vom (Erster Tag)' }).tap()
     const dialog = page.getByRole('dialog', { name: 'Vom (Erster Tag)' })
-    const notices = await page.locator('[data-mobile-toasts]').boundingBox(), panel = await dialog.boundingBox()
-    expect(notices!.y + notices!.height).toBeLessThan(panel!.y)
     await photo(page, info, 'kalender-mit-meldungen', dialog.getByRole('button', { name: 'Schließen' }))
     await dialog.getByRole('button', { name: 'Schließen' }).tap()
-    await page.getByRole('button', { name: 'Meldung schließen' }).first().tap(); await page.getByRole('button', { name: 'Meldung schließen' }).tap()
+    await page.getByRole('button', { name: 'Meldung schließen' }).tap()
     await expect(page.locator('[data-mobile-toasts]')).toBeHidden()
-    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--mobile-toast-height'))).toBe('0px')
-    expect((await page.locator('header').boundingBox())!.y).toBe(0)
+    expect((await page.locator('header').boundingBox())!.y).toBe(headerVorher)
 })
-test('Lieferscheinformular: Toasts lassen Schließen und Speichern erreichbar', async ({ page }, info) => {
+// Seit 13.10.2026 schweben Meldungen über dem Inhalt (Nutzerwunsch) und Fehler bleiben bis X:
+// Knöpfe darunter sind erreichbar, sobald die Meldung geschlossen ist.
+test('Lieferscheinformular: nach dem Schließen der Meldung sind Schließen und Speichern erreichbar', async ({ page }, info) => {
     await page.route('**/api/**/analyze*', route => route.fulfill({ json: [{ pageRange: '1', analyzeResponse: { dokumentTyp: 'LIEFERSCHEIN', dokumentDatum: '2026-09-01', dokumentNummer: 'TEST-1' } }] }))
     await page.route('**/api/lieferanten/1/dokumente/import*', route => route.fulfill({ status: 500, json: { message: 'Testbeleg konnte nicht gespeichert werden.' } }))
     await page.goto('lieferanten/1/lieferscheine'); await page.locator('input[type=file]').setInputFiles({ name: 'test.txt', mimeType: 'text/plain', buffer: Buffer.from('dummy') })
     await page.getByRole('button', { name: 'Speichern', exact: true }).tap(); await expect(page.getByRole('alert')).toContainText('Testbeleg')
+    await photo(page, info, 'lieferschein-formular-fehler-toast', page.getByRole('button', { name: 'Speichern', exact: true }))
+    await meldungenSchliessen(page)
     const close = page.getByRole('heading', { name: 'Prüfen & Speichern' }).locator('..').getByRole('button')
     await close.click({ trial: true })
     const reference = page.getByPlaceholder('z.B. AB-12345'); await reference.scrollIntoViewIfNeeded()
@@ -114,8 +120,9 @@ test('Lieferscheinformular: Toasts lassen Schließen und Speichern erreichbar', 
     await photo(page, info, 'lieferschein-formular-fehler', page.getByRole('button', { name: 'Speichern', exact: true }))
     await page.getByRole('button', { name: 'Belegdatum', exact: true }).tap(); const calendar = page.getByRole('dialog', { name: 'Belegdatum' }); await photo(page, info, 'lieferschein-formular-kalender-toast', calendar.getByRole('button', { name: 'Schließen' })); await calendar.getByRole('button', { name: 'Schließen' }).tap()
 })
-test('Reklamation: Meldung lässt die Speichern-Aktion frei', async ({ page }, info) => {
-    await page.goto('lieferanten/1/reklamation/neu'); const save = page.getByRole('button', { name: 'Speichern', exact: true }); await save.tap(); await expect(page.getByRole('alert')).toContainText('Beschreibung'); await save.click({ trial: true }); await photo(page, info, 'reklamation-pflichtfehler', save)
+test('Reklamation: nach dem Schließen der Meldung ist Speichern wieder frei', async ({ page }, info) => {
+    await page.goto('lieferanten/1/reklamation/neu'); const save = page.getByRole('button', { name: 'Speichern', exact: true }); await save.tap(); await expect(page.getByRole('alert')).toContainText('Beschreibung'); await photo(page, info, 'reklamation-pflichtfehler', save)
+    await meldungenSchliessen(page); await save.click({ trial: true })
 })
 test('Scanner: Kamerafehler bleibt sichtbar, Schließen bleibt erreichbar', async ({ page }, info) => {
     await page.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Permission denied', 'NotAllowedError') } })

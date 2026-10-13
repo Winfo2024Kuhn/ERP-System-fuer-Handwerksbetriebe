@@ -79,6 +79,7 @@ public class ZeiterfassungApiService {
     private final UrlaubsverfallService urlaubsverfallService;
     private final ZeitkontoKorrekturService zeitkontoKorrekturService;
     private final MonatsSaldoService monatsSaldoService;
+    private final UrlaubstageRechner urlaubstageRechner;
 
     // ==================== Daten abrufen ====================
 
@@ -1025,15 +1026,24 @@ public class ZeiterfassungApiService {
         List<Abwesenheit> abwesenheitenImJahr = abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(
                 mitarbeiter.getId(), jahresanfang, jahresende);
 
-        long urlaubstagGenommen = abwesenheitenImJahr.stream()
-                .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB)
-                .filter(a -> a.getDatum().isBefore(heute))
-                .count();
+        boolean istGf = Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer());
 
-        long urlaubstagGeplant = abwesenheitenImJahr.stream()
+        // Halbe Urlaubstage zählen 0,5 (Issue #269, Punkt 5). Das Tagessoll wird
+        // einmal für den ganzen Urlaubszeitraum geladen und für genommen und
+        // geplant gemeinsam genutzt (Geschäftsführung: kein Soll, ganze Tage).
+        List<Abwesenheit> urlaubImJahr = abwesenheitenImJahr.stream()
                 .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB)
+                .toList();
+        Map<LocalDate, BigDecimal> sollJeTag = urlaubstageRechner.sollFuerUrlaub(urlaubImJahr,
+                UrlaubstageRechner.sollLader(mitarbeiter, tagesSollService));
+
+        BigDecimal urlaubstagGenommen = urlaubstageRechner.urlaubstage(urlaubImJahr.stream()
+                .filter(a -> a.getDatum().isBefore(heute))
+                .toList(), sollJeTag);
+
+        BigDecimal urlaubstagGeplant = urlaubstageRechner.urlaubstage(urlaubImJahr.stream()
                 .filter(a -> !a.getDatum().isBefore(heute))
-                .count();
+                .toList(), sollJeTag);
 
         long krankheitsTage = abwesenheitenImJahr.stream()
                 .filter(a -> a.getTyp() == AbwesenheitsTyp.KRANKHEIT)
@@ -1043,16 +1053,13 @@ public class ZeiterfassungApiService {
                 .filter(a -> a.getTyp() == AbwesenheitsTyp.FORTBILDUNG)
                 .count();
 
-        // Manuelle Urlaubskorrekturen abrufen (als Tage, gespeichert im Feld 'stunden')
-        BigDecimal manuellKorrekturBD = zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(
-                mitarbeiter.getId(), currentYear);
-        int manuellKorrekturTage = manuellKorrekturBD != null ? manuellKorrekturBD.intValue() : 0;
+        // Manuelle Urlaubskorrekturen (als Tage, gespeichert im Feld 'stunden') – 0,5 bleibt 0,5
+        BigDecimal manuellKorrekturTage = urlaubstageRechner.korrekturTage(
+                zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(mitarbeiter.getId(), currentYear));
 
         // verbleibend = Anspruch - Genommen - Geplant + Korrekturen
-        int urlaubstagVerbleibend = (int) (jahresUrlaub - urlaubstagGenommen - urlaubstagGeplant
-                + manuellKorrekturTage);
-
-        boolean istGf = Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer());
+        BigDecimal urlaubstagVerbleibend = urlaubstageRechner.resturlaub(jahresUrlaub, urlaubstagGenommen,
+                urlaubstagGeplant, manuellKorrekturTage);
 
         Map<String, Object> urlaub = new LinkedHashMap<>();
         if (!istGf) {
@@ -1060,7 +1067,7 @@ public class ZeiterfassungApiService {
             urlaub.put("genommen", urlaubstagGenommen);
             urlaub.put("geplant", urlaubstagGeplant);
             urlaub.put("korrektur", manuellKorrekturTage);
-            urlaub.put("verbleibend", Math.max(0, urlaubstagVerbleibend));
+            urlaub.put("verbleibend", urlaubstagVerbleibend);
         } else {
             urlaub.put("genommen", urlaubstagGenommen);
             urlaub.put("geplant", urlaubstagGeplant);

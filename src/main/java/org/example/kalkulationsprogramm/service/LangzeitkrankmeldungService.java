@@ -230,6 +230,7 @@ public class LangzeitkrankmeldungService {
     public Langzeitkrankmeldung phaseHinzufuegen(Long id, LangzeitkrankmeldungPhaseTyp typ, LocalDate vonDatum,
             LocalDate bisDatum, BigDecimal stundenProTag) {
         Langzeitkrankmeldung meldung = ladeMitPhasen(id);
+        schliesseOffenePhaseVor(meldung, vonDatum);
 
         LangzeitkrankmeldungPhase phase = new LangzeitkrankmeldungPhase();
         phase.setLangzeitkrankmeldung(meldung);
@@ -240,6 +241,23 @@ public class LangzeitkrankmeldungService {
         meldung.getPhasen().add(phase);
 
         return speichernUndFolgeaktionen(meldung);
+    }
+
+    /**
+     * Die Oberfläche legt Phasen ohne Ende an („Auf Krankengeld umstellen",
+     * Stufenplan). Damit die Folgephase nicht an „Nur die letzte Phase darf
+     * offen sein" scheitert, endet eine offene Vorgängerphase automatisch am
+     * Vortag des neuen Beginns – aber nur, wenn die neue Phase wirklich nach
+     * ihrem Beginn startet. Sonst greift wie bisher die Überlappungsprüfung
+     * (Issue #270, Punkt 9).
+     */
+    private void schliesseOffenePhaseVor(Langzeitkrankmeldung meldung, LocalDate neuerBeginn) {
+        if (neuerBeginn == null) return;
+        sortierePhasen(meldung).stream()
+                .filter(p -> p.getBisDatum() == null)
+                .reduce((erste, letzte) -> letzte)
+                .filter(offene -> neuerBeginn.isAfter(offene.getVonDatum()))
+                .ifPresent(offene -> offene.setBisDatum(neuerBeginn.minusDays(1)));
     }
 
     @Transactional
