@@ -26,6 +26,7 @@ import { type Kunde, type TextTemplate } from '../types';
 import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { useToast } from '../components/ui/toast';
+import { useConfirm } from '../components/ui/confirm-dialog';
 
 
 const PLACEHOLDERS = [
@@ -90,7 +91,7 @@ function addDays(date: Date, days: number) {
 }
 
 function escapeHtml(value: string) {
-  return value.replace(/[&<"']/g, (char) => {
+  return value.replace(/[&<>"']/g, (char) => {
     switch (char) {
       case '&':
         return '&amp;';
@@ -155,11 +156,12 @@ function replacePlaceholders(html: string, kunde: Kunde | null, days: number) {
   result = result.replace(/<span[^>]*data-placeholder-chip[^>]*>(.*?)<\/span>/g, '$1');
 
   Object.entries(replacements).forEach(([token, value]) => {
+    if (!value) return;
     const regex = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-    const replacement = value ? escapeHtml(value) : highlightPlaceholder(token);
-    result = result.replace(regex, replacement);
+    result = result.replace(regex, escapeHtml(value));
   });
 
+  // Alles, was ohne Wert übrig bleibt, genau einmal als Chip markieren.
   result = result.replace(/{{[^}]+}}/g, (match) => highlightPlaceholder(match));
   return result;
 }
@@ -199,7 +201,8 @@ function TemplateCard({
           <p className={cn('text-sm font-medium truncate', active ? 'text-rose-900' : 'text-slate-900')}>
             {template.name || 'Unbenannt'}
           </p>
-          <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">{preview || 'Leer'}</p>
+          {/* Gewollt einzeilig: nur ein Anriss, der volle Text steht in der Vorschau. */}
+          <p className="text-xs text-slate-400 line-clamp-1 mt-0.5" data-kuerzung-erlaubt>{preview || 'Leer'}</p>
           {docTypes.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">
               {docTypes.slice(0, 2).map((type) => (
@@ -224,6 +227,7 @@ function TemplateCard({
             className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
             onClick={(event) => { event.stopPropagation(); onEdit(); }}
             title="Bearbeiten"
+            aria-label={`Vorlage „${template.name || 'Unbenannt'}“ bearbeiten`}
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
@@ -232,6 +236,7 @@ function TemplateCard({
             className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
             onClick={(event) => { event.stopPropagation(); onDelete(); }}
             title="Löschen"
+            aria-label={`Vorlage „${template.name || 'Unbenannt'}“ löschen`}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -411,6 +416,9 @@ function TemplateView({
   const tage = activeKunde?.zahlungsziel ?? DEFAULT_PAYMENT_DAYS;
   const docTypes = template.docTypes || [];
   const [kundenPanelOpen, setKundenPanelOpen] = useState(true);
+  // React 19 setzt innerHTML bei jedem neuen __html-Objekt neu. Stabil halten, sonst
+  // ersetzt jeder Render (z. B. „Kopiert!“) die Vorschau und hebt die Textauswahl auf.
+  const vorschauHtml = useMemo(() => ({ __html: preview || '' }), [preview]);
 
   return (
     <div className="space-y-4">
@@ -448,6 +456,8 @@ function TemplateView({
               size="sm"
               className="text-red-500 hover:text-red-700 hover:bg-red-50"
               onClick={onDelete}
+              title="Vorlage löschen"
+              aria-label="Vorlage löschen"
             >
               <Trash2 className="w-4 h-4" />
             </Button>
@@ -542,7 +552,7 @@ function TemplateView({
         </div>
         <div
           className="min-h-[400px] p-6 bg-white prose prose-slate max-w-none rich-text-einheitlich"
-          dangerouslySetInnerHTML={{ __html: preview || '' }}
+          dangerouslySetInnerHTML={vorschauHtml}
         />
       </Card>
     </div>
@@ -551,6 +561,7 @@ function TemplateView({
 
 export default function TextbausteinEditor() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [templates, setTemplates] = useState<TextTemplate[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<TextTemplate | null>(null);
@@ -575,17 +586,16 @@ export default function TextbausteinEditor() {
         : [];
 
       setTemplates(mapped);
-      if (mapped.length === 0) {
-        setSelectedId(null);
-        return;
-      }
-      if (!selectedId || !mapped.some((tpl) => tpl.id === selectedId)) {
-        setSelectedId(mapped[0].id);
-      }
+      // Auswahl funktional nachziehen: hinge fetchTemplates an selectedId, würde der
+      // Lade-Effect nach jeder Auswahl alle Endpunkte erneut abrufen.
+      setSelectedId((current) => {
+        if (mapped.length === 0) return null;
+        return current && mapped.some((tpl) => tpl.id === current) ? current : mapped[0].id;
+      });
     } catch (error) {
       console.warn('Templates konnten nicht geladen werden', error);
     }
-  }, [selectedId]);
+  }, []);
 
   const fetchKunden = useCallback(async () => {
     try {
@@ -667,18 +677,27 @@ export default function TextbausteinEditor() {
   };
 
   const deleteTemplate = async (template: TextTemplate) => {
+    // Die Datenbank entfernt die Vorlage auch aus den Standard-Texten der Formularvorlagen
+    // (ON DELETE CASCADE); erstellte Dokumente speichern ihren Text selbst.
+    const bestaetigt = await confirm({
+      title: 'Textvorlage löschen?',
+      message: `„${template.name || 'Unbenannt'}“ wird endgültig gelöscht. Ist sie in einer Formularvorlage als Standard-Text hinterlegt, fällt sie dort ebenfalls weg. Bereits erstellte Dokumente behalten ihren Text.`,
+      confirmLabel: 'Löschen',
+      cancelLabel: 'Abbrechen',
+      variant: 'danger',
+    });
+    if (!bestaetigt) return;
     try {
       const response = await fetch(`/api/textbausteine/${template.id}`, { method: 'DELETE' });
       if (!response.ok) {
         toast.error('Die Vorlage konnte nicht gelöscht werden.');
         return;
       }
-      if (selectedId === template.id) {
-        setSelectedId(null);
-      }
+      // fetchTemplates wählt die erste Vorlage, wenn die gewählte gelöscht wurde.
       await fetchTemplates();
     } catch (error) {
       console.error('Löschen fehlgeschlagen', error);
+      toast.error('Die Vorlage konnte nicht gelöscht werden.');
     }
   };
 
@@ -720,7 +739,7 @@ export default function TextbausteinEditor() {
         <Button
           size="sm"
           className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-          onClick={() => { setEditing({ ...EMPTY_TEMPLATE }); setSelectedId(null); }}
+          onClick={() => setEditing({ ...EMPTY_TEMPLATE })}
         >
           <Plus className="w-4 h-4" /> Neue Vorlage
         </Button>
