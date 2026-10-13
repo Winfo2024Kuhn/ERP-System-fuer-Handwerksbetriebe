@@ -402,6 +402,10 @@ export interface Artikel {
   beschreibung?: string;
   /** Aufschlag auf den Einkaufspreis in Prozent. */
   verkaufsaufschlagProzent?: number;
+  /** Der Aufschlag, der tatsächlich gilt (Artikel, sonst Kategorie, sonst allgemein), und woher er kommt. */
+  wirksamProzent?: number | null;
+  wirksamQuelle?: 'ARTIKEL' | 'KATEGORIE' | 'ALLGEMEIN' | 'KEINER';
+  wirksamVon?: string | null;
   /** Einheit der Dokumentposition: lfm, m², kg oder Stk. */
   positionsEinheit?: string;
   /** Vorgeschlagener Einzelpreis inklusive Aufschlag. */

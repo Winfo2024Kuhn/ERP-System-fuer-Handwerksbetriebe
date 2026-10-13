@@ -102,7 +102,7 @@ Beim Artikel (**Vorlagen & Stammdaten → Artikel**) im Abschnitt „Für Angebo
 
 - „Kurzbeschreibung“: nur für den Betrieb, steht nicht auf dem Angebot.
 - „Beschreibung“: das liest der Kunde auf Angebot und Rechnung.
-- „Aufschlag auf den Einkaufspreis“ in Prozent.
+- „Aufschlag auf den Einkaufspreis“ in Prozent. Bleibt das Feld leer, steht darunter, was stattdessen gilt, zum Beispiel „Leer: es gilt 25 % von „Stahl““.
 - „Angebotsfelder speichern“.
 
 Einen festen Verkaufspreis gibt es nicht: Der Preis im Angebot ist der günstigste Einkaufspreis plus Aufschlag. Welcher Aufschlag gilt, siehe „Aufschläge einstellen“ weiter oben. Darunter steht nach dem Speichern, wie es im Angebot aussieht („So steht es im Angebot: …“). Gelbe Hinweise zeigen, was fehlt, z. B. „Kein Aufschlag hinterlegt“ oder „Kein Preis hinterlegt“.

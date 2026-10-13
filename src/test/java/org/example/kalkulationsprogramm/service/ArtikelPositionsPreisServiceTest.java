@@ -272,4 +272,26 @@ class ArtikelPositionsPreisServiceTest {
         assertThat(vorschlag.einzelpreis()).isEqualByComparingTo("10.00");
         assertThat(vorschlag.hinweis()).isEqualTo(ArtikelPreisHinweis.KEIN_AUFSCHLAG);
     }
+
+    @Test
+    void geltenderAufschlagOhneRegelnIstDerAmArtikel() {
+        Artikel rohr = new Artikel();
+        assertThat(service.geltenderAufschlag(rohr).quelle()).isEqualTo(AufschlagService.Quelle.KEINER);
+
+        rohr.setVerkaufsaufschlagProzent(new BigDecimal("40"));
+        var wirksam = service.geltenderAufschlag(rohr);
+
+        assertThat(wirksam.prozent()).isEqualByComparingTo("40");
+        assertThat(wirksam.quelle()).isEqualTo(AufschlagService.Quelle.ARTIKEL);
+    }
+
+    @Test
+    void geltenderAufschlagMitRegelnKommtVomAufschlagService() {
+        AufschlagService regeln = org.mockito.Mockito.mock(AufschlagService.class);
+        Artikel rohr = new Artikel();
+        var erwartet = new AufschlagService.Wirksam(new BigDecimal("25"), AufschlagService.Quelle.KATEGORIE, "Stahl");
+        org.mockito.Mockito.when(regeln.wirksamer(rohr)).thenReturn(erwartet);
+
+        assertThat(new ArtikelPositionsPreisService(regeln).geltenderAufschlag(rohr)).isEqualTo(erwartet);
+    }
 }

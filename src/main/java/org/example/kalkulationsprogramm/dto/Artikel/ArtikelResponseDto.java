@@ -85,6 +85,15 @@ public class ArtikelResponseDto {
     /** Aufschlag auf den Einkaufspreis in Prozent. */
     private BigDecimal verkaufsaufschlagProzent;
 
+    /** Der Aufschlag, der tatsaechlich gilt (Artikel, sonst Kategorie, sonst allgemein); {@code null} = keiner. */
+    private BigDecimal wirksamProzent;
+
+    /** Woher er kommt: ARTIKEL, KATEGORIE, ALLGEMEIN oder KEINER. */
+    private String wirksamQuelle;
+
+    /** Bei {@code KATEGORIE}: Name der Kategorie, deren Aufschlag gilt. */
+    private String wirksamVon;
+
     // --- Preisvorschlag fuer die Dokumentposition ----------------------
     // Diese drei versorgen das Auswahlfenster im DocumentEditor. Sie stehen
     // bewusst schon in der Suchantwort: sonst muesste das Frontend je Treffer

@@ -54,6 +54,14 @@ function richtextOderNull(html: string): string | null {
  * den Preisverlauf. Preise koennen hier von Hand nachgetragen werden - etwa nach
  * einem Telefonat, wenn kein Angebot per Mail vorliegt.
  */
+/** Was gilt, wenn am Artikel selbst kein Aufschlag steht: der der Kategorie, sonst der allgemeine. */
+function geltenderAufschlagText(a: Artikel): string {
+    const prozent = a.wirksamProzent == null ? "" : `${formatZahl(a.wirksamProzent, 2)} %`;
+    if (a.wirksamQuelle === "KATEGORIE") return `Leer: es gilt ${prozent} von „${a.wirksamVon || "Kategorie"}“.`;
+    if (a.wirksamQuelle === "ALLGEMEIN") return `Leer: es gilt der allgemeine Aufschlag von ${prozent}.`;
+    return "Leer: es gilt kein Aufschlag, der Preis ist der Einkaufspreis.";
+}
+
 export default function ArtikelDetail() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -378,6 +386,9 @@ export default function ArtikelDetail() {
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
                         </div>
+                        {aufschlag === "" && (
+                            <p className="text-xs text-slate-500" data-testid="aufschlag-wirksam">{geltenderAufschlagText(daten.artikel)}</p>
+                        )}
                     </div>
 
                     {hinweis === "OK" ? (
