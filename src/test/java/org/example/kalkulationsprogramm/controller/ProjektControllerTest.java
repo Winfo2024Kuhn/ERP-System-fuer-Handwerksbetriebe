@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
@@ -42,6 +43,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
@@ -257,6 +259,19 @@ class ProjektControllerTest {
                 mockMvc.perform(patch("/api/projekte/999/abgeschlossen").param("abgeschlossen", "true"))
                                 .andExpect(status().isNotFound())
                                 .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+        }
+
+        @Test
+        void erstelleProjekt_meldetFehlgeschlageneAnfrageUebernahmeVerstaendlich() throws Exception {
+                when(projektManagementService.erstelleProjekt(any(), any(), any(), any(), isNull(), isNull(), any()))
+                                .thenThrow(new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                                                ProjektManagementService.ANFRAGE_UEBERNAHME_FEHLGESCHLAGEN));
+
+                mockMvc.perform(post("/api/projekte").contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"bauvorhaben\":\"Geländer Musterweg\",\"anfrageIds\":[1]}"))
+                                .andExpect(status().isInternalServerError())
+                                .andExpect(jsonPath("$.message")
+                                                .value(ProjektManagementService.ANFRAGE_UEBERNAHME_FEHLGESCHLAGEN));
         }
 
         @Test

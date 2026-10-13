@@ -1488,7 +1488,8 @@ public class DateiSpeicherService {
     public String kopiereBildZuDokumenten(String quellDateiname) {
         Path quelle = resolveAndValidate(this.bilderSpeicherplatz, quellDateiname);
         if (!Files.exists(quelle)) {
-            throw new RuntimeException("Quelldatei für Notiz-Bild nicht gefunden: " + quellDateiname);
+            // Eigener Typ, damit Aufrufer "Datei fehlt schon" von echten Kopierfehlern trennen können
+            throw new NotFoundException("Quelldatei für Notiz-Bild nicht gefunden: " + quellDateiname);
         }
         String neuerName = generiereEinzigartigenDateinamen(quellDateiname);
         Path ziel = resolveAndValidate(this.dokumentenSpeicherplatz, neuerName);

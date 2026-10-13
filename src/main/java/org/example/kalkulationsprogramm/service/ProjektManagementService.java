@@ -61,6 +61,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -78,7 +80,11 @@ import jakarta.transaction.Transactional;
 public class
 
 ProjektManagementService {
+    private static final Logger log = LoggerFactory.getLogger(ProjektManagementService.class);
     private static final String PROJEKT_KUNDE_PFLICHT_MESSAGE = "Für Projekte muss ein Kunde ausgewählt werden.";
+    public static final String ANFRAGE_UEBERNAHME_FEHLGESCHLAGEN =
+            "Die Anfrage konnte nicht übernommen werden. Es wurde nichts gespeichert – die Anfrage ist"
+                    + " unverändert da. Bitte versuchen Sie es noch einmal.";
     public static final String PROJEKT_NICHT_GEFUNDEN =
             "Dieses Projekt gibt es nicht mehr. Vielleicht wurde es inzwischen gelöscht.";
     /** Spaltenbreite der Texte in {@code materialkosten}. */
@@ -188,25 +194,42 @@ ProjektManagementService {
             throw new IllegalStateException("Diese Anfrage wurde bereits einem Projekt zugeordnet.");
         }
 
-        for (AnfrageDokument dokument : anfrage.getDokumente()) {
-            dateiSpeicherService.verschiebeAnfragesDatei(dokument, projekt);
-        }
-
-        copyAnfrageEmailsToProjektOhneFehlerunterdrueckung(anfrage, projekt);
-        copyAnfrageNotizenToProjekt(anfrage, projekt);
-        mergeAnfrageKontaktEmails(projekt, anfrage);
-        mergeKurzbeschreibung(projekt, anfrage);
-
-        ausgangsGeschaeftsDokumentService.migrateFromAnfrageToProjekt(anfrageId, projekt);
-        migrateAnfrageKalenderEintraegeToProjekt(anfrage, projekt);
-        projektRepository.save(projekt);
-        anfrageRepository.delete(anfrage);
+        uebernehmeAnfrageInsProjekt(anfrage, projekt);
         anfrageRepository.flush();
 
         return findeProjektById(projektId);
     }
 
-    private void copyAnfrageEmailsToProjektOhneFehlerunterdrueckung(Anfrage anfrage, Projekt projekt) {
+    /**
+     * Gemeinsamer Weg für „Neues Projekt aus Anfrage“ und „mit Anfrage zusammenführen“:
+     * Dateien, E-Mails, Notizen, Kontakt-Adressen, Beschreibung, Angebote/Rechnungen
+     * und Termine wandern ins Projekt, danach wird die Anfrage gelöscht.
+     * <p>
+     * Fehler werden bewusst nicht verschluckt. Schlägt ein Schritt fehl, bricht die
+     * ganze Übernahme ab und die umgebende Transaktion rollt zurück – die Anfrage
+     * bleibt dann vollständig erhalten, statt halb übernommen gelöscht zu werden.
+     */
+    private void uebernehmeAnfrageInsProjekt(Anfrage anfrage, Projekt projekt) {
+        try {
+            for (AnfrageDokument dokument : anfrage.getDokumente()) {
+                dateiSpeicherService.verschiebeAnfragesDatei(dokument, projekt);
+            }
+            uebertrageAnfrageEmails(anfrage, projekt);
+            copyAnfrageNotizenToProjekt(anfrage, projekt);
+            mergeAnfrageKontaktEmails(projekt, anfrage);
+            mergeKurzbeschreibung(projekt, anfrage);
+            ausgangsGeschaeftsDokumentService.migrateFromAnfrageToProjekt(anfrage.getId(), projekt);
+            migrateAnfrageKalenderEintraegeToProjekt(anfrage, projekt);
+            projektRepository.save(projekt);
+            anfrageRepository.delete(anfrage);
+        } catch (RuntimeException e) {
+            log.error("Anfrage {} konnte nicht ins Projekt übernommen werden", anfrage.getId(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    ANFRAGE_UEBERNAHME_FEHLGESCHLAGEN, e);
+        }
+    }
+
+    private void uebertrageAnfrageEmails(Anfrage anfrage, Projekt projekt) {
         List<Email> anfrageEmails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
         for (Email email : anfrageEmails) {
             email.assignToProjekt(projekt);
@@ -229,8 +252,18 @@ ProjektManagementService {
             List<ProjektNotizBild> bilder = new ArrayList<>();
             if (anfrageNotiz.getBilder() != null) {
                 for (AnfrageNotizBild anfrageBild : anfrageNotiz.getBilder()) {
-                    String neuerDateiname = dateiSpeicherService
-                            .kopiereBildZuDokumenten(anfrageBild.getGespeicherterDateiname());
+                    String neuerDateiname;
+                    try {
+                        neuerDateiname = dateiSpeicherService
+                                .kopiereBildZuDokumenten(anfrageBild.getGespeicherterDateiname());
+                    } catch (NotFoundException fehltSchon) {
+                        // Die Bilddatei ist schon vorher verloren gegangen. Daran ändert die
+                        // Übernahme nichts – ohne Auslassen ließe sich die Anfrage aber nie
+                        // mehr übernehmen. Andere Fehler (z. B. Platte voll) brechen ab.
+                        log.warn("Notiz-Bild {} fehlt und wird nicht übernommen",
+                                anfrageBild.getGespeicherterDateiname());
+                        continue;
+                    }
                     ProjektNotizBild projektBild = new ProjektNotizBild();
                     projektBild.setNotiz(projektNotiz);
                     projektBild.setOriginalDateiname(anfrageBild.getOriginalDateiname());
@@ -293,39 +326,39 @@ ProjektManagementService {
 
         // Wenn Referenzanfragen angegeben wurden, fehlende Felder aus dem ersten übernehmen.
         // Der Bruttopreis wird hier NICHT gesetzt – er kommt aus den Dokumenten des Projekts.
-        if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
-            List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
-            if (!anfragen.isEmpty()) {
-                Anfrage erstes = anfragen.getFirst();
-                if (dto.getBauvorhaben() == null) {
-                    dto.setBauvorhaben(erstes.getBauvorhaben());
-                }
-                if (dto.getKundenId() == null && erstes.getKunde() != null) {
-                    dto.setKundenId(erstes.getKunde().getId());
-                }
-                if (dto.getKunde() == null && erstes.getKunde() != null) {
-                    dto.setKunde(erstes.getKunde().getName());
-                }
-                if (dto.getAuftragsnummer() == null) {
-                    erstes.getDokumente().stream()
-                            .filter(AnfrageGeschaeftsdokument.class::isInstance)
-                            .map(AnfrageGeschaeftsdokument.class::cast)
-                            .map(AnfrageGeschaeftsdokument::getDokumentid)
-                            .findFirst()
-                            .ifPresent(dto::setAuftragsnummer);
-                }
-                if (dto.getKundennummer() == null && erstes.getKunde() != null) {
-                    dto.setKundennummer(erstes.getKunde().getKundennummer());
-                }
-                if ((dto.getKundenEmails() == null || dto.getKundenEmails().isEmpty())) {
-                    dto.setKundenEmails(anfragen.stream()
-                            .flatMap(a -> (a.getKunde() != null && a.getKunde().getKundenEmails() != null)
-                                    ? a.getKunde().getKundenEmails().stream()
-                                    : java.util.stream.Stream.empty())
-                            .filter(java.util.Objects::nonNull)
-                            .distinct()
-                            .collect(Collectors.toList()));
-                }
+        List<Anfrage> uebernommeneAnfragen = dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()
+                ? anfrageRepository.findAllById(dto.getAnfrageIds())
+                : List.of();
+        if (!uebernommeneAnfragen.isEmpty()) {
+            Anfrage erstes = uebernommeneAnfragen.getFirst();
+            if (dto.getBauvorhaben() == null) {
+                dto.setBauvorhaben(erstes.getBauvorhaben());
+            }
+            if (dto.getKundenId() == null && erstes.getKunde() != null) {
+                dto.setKundenId(erstes.getKunde().getId());
+            }
+            if (dto.getKunde() == null && erstes.getKunde() != null) {
+                dto.setKunde(erstes.getKunde().getName());
+            }
+            if (dto.getAuftragsnummer() == null) {
+                erstes.getDokumente().stream()
+                        .filter(AnfrageGeschaeftsdokument.class::isInstance)
+                        .map(AnfrageGeschaeftsdokument.class::cast)
+                        .map(AnfrageGeschaeftsdokument::getDokumentid)
+                        .findFirst()
+                        .ifPresent(dto::setAuftragsnummer);
+            }
+            if (dto.getKundennummer() == null && erstes.getKunde() != null) {
+                dto.setKundennummer(erstes.getKunde().getKundennummer());
+            }
+            if ((dto.getKundenEmails() == null || dto.getKundenEmails().isEmpty())) {
+                dto.setKundenEmails(uebernommeneAnfragen.stream()
+                        .flatMap(a -> (a.getKunde() != null && a.getKunde().getKundenEmails() != null)
+                                ? a.getKunde().getKundenEmails().stream()
+                                : java.util.stream.Stream.empty())
+                        .filter(java.util.Objects::nonNull)
+                        .distinct()
+                        .collect(Collectors.toList()));
             }
         }
 
@@ -425,89 +458,12 @@ ProjektManagementService {
             System.err.println("Failed to trigger email backfill: " + e.getMessage());
         }
 
-        if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
-            List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
-            boolean imageSetFromAnfrage = false;
-            for (Anfrage a : anfragen) {
-                // Übernehme Profilbild vom Anfrage, falls Projekt noch keines hat
-                if (!imageSetFromAnfrage
-                        && (gespeichertesProjekt.getBildUrl() == null || gespeichertesProjekt.getBildUrl().isBlank())) {
-                    if (a.getBildUrl() != null && !a.getBildUrl().isBlank()) {
-                        gespeichertesProjekt.setBildUrl(a.getBildUrl());
-                        imageSetFromAnfrage = true;
-                    }
-                }
-                for (AnfrageDokument doc : a.getDokumente()) {
-                    dateiSpeicherService.verschiebeAnfragesDatei(doc, gespeichertesProjekt);
-                }
-                // E-Mail-Verlauf vom Anfrage in das Projekt kopieren (inkl. Anhänge)
-                try {
-                    copyAnfrageEmailsToProjekt(a, gespeichertesProjekt);
-                } catch (Exception ignored) {
-                }
-                // Notizen vom Anfrage in das Projekt kopieren (inkl. Bilder)
-                try {
-                    List<AnfrageNotiz> aNotizen = anfrageNotizRepository
-                            .findByAnfrageIdOrderByErstelltAmDesc(a.getId());
-                    for (AnfrageNotiz aNotiz : aNotizen) {
-                        ProjektNotiz pNotiz = new ProjektNotiz();
-                        pNotiz.setProjekt(gespeichertesProjekt);
-                        pNotiz.setMitarbeiter(aNotiz.getMitarbeiter());
-                        pNotiz.setNotiz(aNotiz.getNotiz());
-                        pNotiz.setErstelltAm(aNotiz.getErstelltAm());
-                        pNotiz.setMobileSichtbar(aNotiz.isMobileSichtbar());
-
-                        List<ProjektNotizBild> pBilder = new ArrayList<>();
-                        if (aNotiz.getBilder() != null) {
-                            for (AnfrageNotizBild aBild : aNotiz.getBilder()) {
-                                // Anfrage-Notiz-Bilder liegen im bilder-Speicherplatz (Auslieferung
-                                // via /api/images). Projekt-Notiz-Bilder werden über /api/dokumente
-                                // ausgeliefert und müssen daher physisch in den Dokumenten-
-                                // Speicherplatz kopiert werden, sonst sind sie nach dem Transfer
-                                // nicht mehr öffenbar.
-                                String neuerName;
-                                try {
-                                    neuerName = dateiSpeicherService
-                                            .kopiereBildZuDokumenten(aBild.getGespeicherterDateiname());
-                                } catch (Exception bildEx) {
-                                    System.err.println("Notiz-Bild konnte nicht kopiert werden ("
-                                            + aBild.getGespeicherterDateiname() + "): "
-                                            + bildEx.getMessage());
-                                    continue;
-                                }
-                                ProjektNotizBild pBild = new ProjektNotizBild();
-                                pBild.setNotiz(pNotiz);
-                                pBild.setOriginalDateiname(aBild.getOriginalDateiname());
-                                pBild.setGespeicherterDateiname(neuerName);
-                                pBild.setDateityp(aBild.getDateityp());
-                                pBild.setErstelltAm(aBild.getErstelltAm());
-                                pBilder.add(pBild);
-                            }
-                        }
-                        pNotiz.setBilder(pBilder);
-                        projektNotizRepository.save(pNotiz);
-                    }
-                } catch (Exception e) {
-                    System.err.println("Fehler beim Kopieren der Anfragesnotizen: " + e.getMessage());
-                }
-
-                // Ausgangsgeschäftsdokumente vom Anfrage zum Projekt migrieren
-                try {
-                    ausgangsGeschaeftsDokumentService.migrateFromAnfrageToProjekt(a.getId(), gespeichertesProjekt);
-                } catch (Exception e) {
-                    System.err.println("Fehler beim Migrieren der Ausgangsgeschäftsdokumente: " + e.getMessage());
-                }
-
-                migrateAnfrageKalenderEintraegeToProjekt(a, gespeichertesProjekt);
-
-                anfrageRepository.delete(a);
+        for (Anfrage a : uebernommeneAnfragen) {
+            // Profilbild der Anfrage übernehmen, falls das Projekt noch keines hat
+            if (!StringUtils.hasText(gespeichertesProjekt.getBildUrl()) && StringUtils.hasText(a.getBildUrl())) {
+                gespeichertesProjekt.setBildUrl(a.getBildUrl());
             }
-            if (imageSetFromAnfrage) {
-                try {
-                    projektRepository.save(gespeichertesProjekt);
-                } catch (Exception ignored) {
-                }
-            }
+            uebernehmeAnfrageInsProjekt(a, gespeichertesProjekt);
         }
 
         if (dokumente != null) {
@@ -1400,27 +1356,6 @@ ProjektManagementService {
             current = current.getParentEmail();
         }
         return count;
-    }
-
-    private void copyAnfrageEmailsToProjekt(Anfrage anfrage, Projekt projekt) {
-        if (anfrage == null || projekt == null) {
-            return;
-        }
-        try {
-            // Alle E-Mails vom Anfrage abrufen und dem Projekt zuordnen
-            List<Email> anfrageEmails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
-            for (Email email : anfrageEmails) {
-                // E-Mail vom Anfrage zum Projekt übertragen
-                email.assignToProjekt(projekt);
-                emailRepository.save(email);
-            }
-            if (!anfrageEmails.isEmpty()) {
-                System.out.println("Übertragen: " + anfrageEmails.size() + " E-Mails von Anfrage "
-                        + anfrage.getId() + " zu Projekt " + projekt.getId());
-            }
-        } catch (Exception e) {
-            System.err.println("Fehler beim Übertragen der E-Mails von Anfrage zu Projekt: " + e.getMessage());
-        }
     }
 
     private void ensureProjektHatZugewiesenenKunden(ProjektErstellenDto dto, Projekt projekt) {
