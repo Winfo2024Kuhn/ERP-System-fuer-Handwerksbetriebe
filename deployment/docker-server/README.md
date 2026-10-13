@@ -215,7 +215,7 @@ Findet jemand eine Lücke im ERP, soll er weder an den Rechner noch an das Firme
 | Eigener Benutzer `erp` (uid 10001) | `Dockerfile`, `deployment/docker-image/app-start.sh` | Java läuft nie als root. Das Startskript gibt nur noch alte Upload-/Log-Ordner an `erp` und wechselt dann den Benutzer. Dabei verliert der Prozess alle Berechtigungen. |
 | Schreibgeschütztes Dateisystem | `read_only: true` | Das ERP kann weder sich selbst noch das System im Container verändern. Beschreibbar: Uploads, Logs, `/tmp`. |
 | Keine Linux-Berechtigungen | `cap_drop: [ALL]`, `no-new-privileges` | Kein Zugriff auf Kernel-Funktionen, kein Weg zurück zu root. Nur das Startskript bekommt kurz `CHOWN`, `SETUID`, `SETGID`, die mit dem Benutzerwechsel wegfallen. |
-| Kein Docker-Socket für die App | `docker-compose.yml` | Den Socket hat nur der Updater. Er hat keinen Port und führt nur `nachtupdate.sh` und `sicherung.sh` aus. Die App liest deren Ergebnis nur (Volume `betriebsstatus`, schreibgeschützt eingebunden). |
+| Kein Docker-Socket für die App | `docker-compose.yml` | Den Socket haben nur der Updater und der Klick-Container `erp-jetzt-aktualisieren` (kein Netz, kein Port, nur `docker exec` auf den Updater). Der Updater hat keinen Port und führt nur `nachtupdate.sh` und `sicherung.sh` aus (der Klick-Container lässt ihn `nachtupdate.sh` über `update-jetzt.sh` aufrufen). Die App liest deren Ergebnis nur (Volume `betriebsstatus`, schreibgeschützt eingebunden). |
 | Datenbank ohne Netz nach außen | Netz `intern` (`internal: true`) | PostgreSQL erreicht nur die App, keinen Port und kein Internet. |
 | Netzsperre | Dienst `netzsperre` | Die App darf ins Internet (Mail, KI, Website), aber nicht ins Firmennetz: keine PCs, keine Buchhaltung, keine Dateifreigaben, auch nicht der Rechner selbst. Ausnahmen in `NETZSPERRE_AUSNAHMEN`, Standard `fritz.box:49000,fritz.box:1012` (Anrufliste und Anrufbeantworter, Anrufmonitor für das Anruf-Fenster). |
 | Nur ein Port | `APP_ADRESSE`, `APP_PORT` | Der Browser-Zugang, sonst nichts. Hinter `tailscale serve` nur auf `127.0.0.1`. |
@@ -359,6 +359,42 @@ Scheitert das Einspielen, bleibt sie, wie sie war.
   von Hand. Das nächste `docker compose up` würde sonst ohne Sicherung wechseln (ein
   einfacher Neustart dagegen behält die laufende Version).
 
+## Update per Klick (Docker Desktop)
+
+Wer nicht bis 3 Uhr warten will (oder der PC nachts aus ist), aktualisiert das ERP
+**ohne Befehl**: In Docker Desktop unter *Containers* in der Gruppe `erp-handwerk` den
+Container **`erp-jetzt-aktualisieren`** suchen und auf **Start** (▶) klicken. Im Reiter
+*Logs* läuft das Update mit: neue Version holen, Datenbank sichern, wechseln, prüfen. Am
+Ende steht dort, ob das ERP aktualisiert wurde, schon aktuell war oder die alte Version
+weiterläuft. Danach beendet sich der Container (grau, „Exited“). Beim nächsten Mal wieder
+auf Start klicken.
+
+- **Derselbe Ablauf wie nachts**, mit Sicherung und automatischem Rollback. Der Container
+  ruft nur `updater/update-jetzt.sh` im Updater auf, der wiederum `nachtupdate.sh`. Es gibt
+  keine zweite Update-Logik.
+- **Ist eine neue Version da,** ist das ERP während des Updates einige Minuten nicht
+  erreichbar. Am besten also nicht mitten im Arbeitstag klicken.
+- **Nur diesen einen Container starten,** nicht die ganze Gruppe `erp-handwerk` (Start oder
+  Neustart der Gruppe in Docker Desktop kann auch ein Update auslösen, mitten am Tag).
+- **Fenster schließen oder Stop klicken ist harmlos:** Das Update läuft im Updater
+  abgekoppelt zu Ende. Nach einem Stop zeigt der Container allerdings nicht das Ergebnis
+  (sein Code stammt vom abgebrochenen Mitlesen): Das steht im ERP unter Benachrichtigungen
+  und in `logs/nachtupdate-*.log`. Ein zweiter Klick währenddessen wartet auf den ersten
+  Lauf und meldet danach „schon aktuell“ – oder, war der erste gescheitert, dass diese
+  Version schon einmal gescheitert ist. Eine gescheiterte Version spielt der Klick nicht
+  erneut ein; das geht nur per Befehl mit `--erzwingen` (siehe [Alltag](#alltag)).
+- **Rot („Exited (1)“):** nicht eingespielt, die alte Version läuft. **Exited (2)** ist ein
+  NOTFALL (siehe [Was nachts passiert](#was-nachts-passiert)), **Exited (3)**: nichts
+  verändert, eine Voraussetzung fehlt. Jeder andere Code: Ausgang unklar, im ERP und in
+  den Logs nachsehen. Das Ergebnis steht auch im ERP unter Benachrichtigungen und in
+  `logs/nachtupdate-*.log`. Fehlt der Updater ganz (z. B. nach `docker compose down`),
+  startet der Klick ihn; geht auch das nicht, erst `docker compose up -d`.
+- **Er taucht von selbst auf:** Den Container legt der Updater bei jedem Start an
+  (`updater/start.sh`), gestartet wird er nie von allein (Profil `manuell`). Fehlt er auf
+  einer bestehenden Installation nach dem Kopieren dieser Dateien, einmal
+  `docker compose restart updater` ausführen.
+- Auf der Kommandozeile geht dasselbe mit `docker start -a erp-jetzt-aktualisieren`.
+
 ## Handy-Nachrichten
 
 Empfohlen ist [ntfy](https://ntfy.sh), eine kostenlose App für Android und iOS. Eintrag in der `.env`:
@@ -435,6 +471,7 @@ Wächter Docker Desktop nach etwa 10 Minuten wieder.
 | Aufgabe | Befehl (im ERP-Ordner) |
 | --- | --- |
 | Alles starten | `docker compose up -d` |
+| Update sofort einspielen | **ohne Befehl:** in Docker Desktop beim Container `erp-jetzt-aktualisieren` auf Start klicken ([Update per Klick](#update-per-klick-docker-desktop)) |
 | Update sofort testen | `docker compose exec updater bash /erp/nachtupdate.sh` |
 | Gescheiterte Version trotzdem einspielen | `docker compose exec updater bash /erp/nachtupdate.sh --erzwingen` |
 | Bestimmte Version festhalten | in `.env`: `ERP_IMAGE=ghcr.io/…:sha-abc1234`, dann **`docker compose exec updater bash /erp/nachtupdate.sh --erzwingen`** (nicht `compose up`, das würde ohne Sicherung wechseln) |
@@ -458,7 +495,9 @@ auf die Rechner der Kunden kopiert werden. `.env`, `app.env`, `sicherungen/`, `l
 `.status/` dabei nicht überschreiben. Danach
 `docker compose build updater netzsperre && docker compose up -d` – das baut den Updater neu,
 wenn sich `updater/Dockerfile` geändert hat, und die Netzsperre, deren Skript `sperre.sh` im
-Image steckt. Außerdem bindet es geänderte Ordner ein.
+Image steckt. Außerdem bindet es geänderte Ordner ein. Danach den Updater einmal neu starten
+(`docker compose restart updater`), damit er den Container
+[`erp-jetzt-aktualisieren`](#update-per-klick-docker-desktop) anlegt bzw. erneuert.
 
 ## Offene Punkte
 
@@ -528,7 +567,7 @@ dann mit Rollback.
 | Datei | Zweck |
 | --- | --- |
 | `EINRICHTEN.md` | Schritt-für-Schritt-Anleitung für einen neuen Kunden (zum Abhaken) |
-| `docker-compose.yml` | postgres, app, updater, netzsperre, alle mit `restart: always` |
+| `docker-compose.yml` | postgres, app, updater, netzsperre, alle mit `restart: always`; dazu der Klick-Container `jetzt-aktualisieren` (Profil `manuell`, startet nur auf Klick) |
 | `postgres-init/` | Legt beim ersten Start die App-Rolle in PostgreSQL an (ohne Superuser-Rechte) |
 | `.env.example` | Vorlage für `.env`. Die `.env` wird beim Einrichten erzeugt und nie committet |
 | `app.env` | Optional, weitere ERP-Einstellungen (API-Schlüssel …). Nie committet |
@@ -539,6 +578,6 @@ dann mit Rollback.
 | `nachtupdate.sh` | Nachtupdate, Rollback, Wiederaufnahme nach Neustart, Import |
 | `sicherung.sh` | Tägliche Sicherung auf diesen Rechner, externe Festplatte und Cloud-Ordner |
 | `gemeinsam.sh` | Bausteine beider Skripte: `.env` lesen, Datenbank sichern, Handy-Nachricht, Ergebnis fürs ERP |
-| `updater/` | Image des Updater-Containers und sein Startskript (Zeitplan per crond) |
+| `updater/` | Image des Updater-Containers und sein Startskript (Zeitplan per crond); `update-jetzt.sh` ist der Ablauf hinter dem Knopf „Jetzt aktualisieren“ |
 | Volume `betriebsstatus` | Ergebnis der letzten Sicherung bzw. des letzten Updates – liest das ERP für die Benachrichtigungen |
 | `starttest.sh` | Starttest für die GitHub Action |

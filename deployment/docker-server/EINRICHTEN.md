@@ -13,6 +13,7 @@ Hintergründe und alle Einstellungen stehen im [README](README.md).
 | Immer | Datenbank, ERP und Updater laufen als Docker-Container und starten nach jedem Neustart von selbst | ERP über die Verknüpfung „ERP Handwerk“ |
 | Jede Nacht 2 Uhr | **Sicherung:** die Datenbank auf den PC, die externe Festplatte und in OneDrive, dazu alle hochgeladenen Dateien auf die Festplatte und in OneDrive | nichts |
 | Jede Nacht 3 Uhr | **Update:** neue Version holen, vorher sichern, bei Problemen automatisch zurück zur alten | nichts |
+| Auf Klick | **Jetzt aktualisieren:** in Docker Desktop beim Container `erp-jetzt-aktualisieren` auf **Start** klicken – derselbe Ablauf wie nachts, sofort ([README](README.md#update-per-klick-docker-desktop)) | ERP ist während eines Updates ein paar Minuten weg |
 | Alle 5 Minuten | **Docker-Wächter:** Hängt Docker Desktop (z. B. nach einem Windows-Update), startet er es neu | ERP ist höchstens ein paar Minuten weg |
 | Wenn etwas schiefgeht | Meldung im ERP für Admins (Glocke → Benachrichtigungen → „Sicherung & Updates“), auf Wunsch zusätzlich aufs Handy | Admin sieht die Meldung |
 
