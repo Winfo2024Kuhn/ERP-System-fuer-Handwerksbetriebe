@@ -75,6 +75,7 @@ class BenachrichtigungServiceTest {
     @Mock org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService telefonBenachrichtigungService;
     @Mock org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
     @Mock org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService zeiterfassungEinstellungService;
+    @Mock org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
 
     @Mock org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @Mock BenachrichtigungErledigtService erledigtService;
@@ -89,6 +90,30 @@ class BenachrichtigungServiceTest {
     @org.junit.jupiter.api.BeforeEach
     void gelesenWieBisher() {
         org.example.kalkulationsprogramm.service.GelesenTestHilfe.wieGemeinsam(emailGelesenService);
+        // Standard: Zugang darf die Zeiterfassung sehen (Urlaubsanträge in der Glocke wie bisher).
+        given(zeiterfassungSichtbarkeitService.darfZeiterfassungSehen(org.mockito.ArgumentMatchers.any())).willReturn(true);
+    }
+
+    @Test
+    void ohneZeiterfassungsRecht_keineUrlaubsantraegeKeineBeendetenZeitenKeinMonatsabschluss() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+        given(zeiterfassungSichtbarkeitService.darfZeiterfassungSehen(auth)).willReturn(false);
+        given(monatsabschlussBerechtigungService.darfMonatAbschliessen(auth)).willReturn(true);
+
+        var kategorien = service.quellen(1L, auth).stream().map(q -> q.typ()).toList();
+
+        org.assertj.core.api.Assertions.assertThat(kategorien)
+                .doesNotContain("URLAUBSANTRAEGE", "ZEITEN_AUTO_BEENDET", "MONATSABSCHLUSS")
+                .contains("TERMINE");
+    }
+
+    @Test
+    void mitZeiterfassungsRecht_urlaubsantraegeUndAutomatischBeendeteZeitenInDerGlocke() {
+        var auth = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated("session", null, List.of());
+
+        var kategorien = service.quellen(1L, auth).stream().map(q -> q.typ()).toList();
+
+        org.assertj.core.api.Assertions.assertThat(kategorien).contains("URLAUBSANTRAEGE", "ZEITEN_AUTO_BEENDET");
     }
 
     @Test

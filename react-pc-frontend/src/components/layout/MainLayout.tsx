@@ -3,12 +3,13 @@ import { RibbonNavigation } from './RibbonNav';
 import { MobileBottomNav } from './MobileBottomNav';
 import { KiHilfeChat } from '../KiHilfeChat';
 import { AnrufFensterHost } from '../../features/telefon/AnrufFensterHost';
-import { useTelefonBerechtigungJeBenutzer } from '../../features/telefon/useTelefonBerechtigungJeBenutzer';
+import { useBerechtigungenJeBenutzer } from '../../hooks/useBerechtigungenJeBenutzer';
+import { ZeiterfassungSchutz } from '../../features/zeiterfassung/ZeiterfassungSchutz';
 import { useKiAktiv } from '../../features/ki/useKiAktiv';
 
 export function MainLayout() {
   const { pathname } = useLocation();
-  useTelefonBerechtigungJeBenutzer();
+  useBerechtigungenJeBenutzer();
   const kiAktiv = useKiAktiv();
   const isEmailCenter = pathname === '/emails' || pathname.startsWith('/emails/');
   return (
@@ -30,7 +31,9 @@ export function MainLayout() {
       <main className={isEmailCenter
         ? "flex-1 min-h-0 w-full overflow-hidden relative"
         : "flex-1 w-full px-4 md:px-8 pt-4 md:pt-8 pb-20 md:pb-8 overflow-y-auto overflow-x-auto relative"}>
-        <Outlet />
+        <ZeiterfassungSchutz>
+          <Outlet />
+        </ZeiterfassungSchutz>
       </main>
 
       {/* Mobile Bottom Navigation */}

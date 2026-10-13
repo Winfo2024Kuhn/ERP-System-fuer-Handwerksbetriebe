@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 /**
@@ -109,6 +110,7 @@ async function filtereNach(page: Page, option: string) {
 test.describe('Urlaubsanträge: Stornieren und Server-Meldungen (#270)', () => {
     test('storniert einen genehmigten Antrag nach Rückfrage und zeigt den Erfolg', async ({ page }, testInfo) => {
         const aktionen = await stubbeApi(page);
+        await stubbeZeiterfassungSichtbarkeit(page);
         await page.goto('/urlaubsantraege');
         await expect(page.locator('[data-antrag-id="1"]')).toBeVisible();
 
@@ -163,6 +165,7 @@ test.describe('Urlaubsanträge: Stornieren und Server-Meldungen (#270)', () => {
 
     test('zeigt bei 409 die Meldung des Servers und lässt den Antrag stehen', async ({ page }, testInfo) => {
         const aktionen = await stubbeApi(page, { stornoFehler: true });
+        await stubbeZeiterfassungSichtbarkeit(page);
         await page.goto('/urlaubsantraege');
         await expect(page.locator('[data-antrag-id="1"]')).toBeVisible();
 
@@ -182,6 +185,7 @@ test.describe('Urlaubsanträge: Stornieren und Server-Meldungen (#270)', () => {
 
     test('zeigt beim Genehmigen die Meldung des Servers statt stillem Nichts', async ({ page }) => {
         const aktionen = await stubbeApi(page, { approveFehler: true });
+        await stubbeZeiterfassungSichtbarkeit(page);
         await page.goto('/urlaubsantraege');
         const karte = page.locator('[data-antrag-id="1"]');
         await expect(karte).toBeVisible();

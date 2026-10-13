@@ -58,6 +58,7 @@ class BenachrichtigungMailSichtbarkeitTest {
 
     @MockBean private MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
     @MockBean private TelefonBerechtigungService telefonBerechtigungService;
+    @MockBean private org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
     @MockBean private TelefonBenachrichtigungService telefonBenachrichtigungService;
     @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
     @MockBean private FrontendUserProfileService frontendUserProfileService;

@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 import type { Konfiguration } from '../src/features/monatsabschluss/types';
 
@@ -217,6 +218,7 @@ test('DATEV einrichten: Nummern, Soll/Ist für Betrieb und Mitarbeiter, Lohnarte
 
 test('Monatsabschluss führt über „DATEV einrichten“ direkt in diesen Reiter', async ({ page }) => {
     await stubbe(page, { start: null, config: LEER });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/monatsabschluss');
     await page.getByRole('link', { name: 'DATEV einrichten', exact: true }).click();
     await expect(page).toHaveURL(/\/einstellungen#zeiterfassung$/);

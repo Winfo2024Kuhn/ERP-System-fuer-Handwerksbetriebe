@@ -20,6 +20,7 @@ public class AbteilungBerechtigungDto {
         private List<TypBerechtigung> berechtigungen;
         private Boolean darfMonatAbschliessen;
         private Boolean darfTelefonSehen;
+        private Boolean darfZeiterfassungSehen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
         private Boolean darfFreigabeAnnahmePushen;
@@ -43,6 +44,7 @@ public class AbteilungBerechtigungDto {
         private List<TypBerechtigung> berechtigungen;
         private Boolean darfMonatAbschliessen;
         private Boolean darfTelefonSehen;
+        private Boolean darfZeiterfassungSehen;
         private Boolean darfRechnungenGenehmigen;
         private Boolean darfRechnungenSehen;
         private Boolean darfFreigabeAnnahmePushen;

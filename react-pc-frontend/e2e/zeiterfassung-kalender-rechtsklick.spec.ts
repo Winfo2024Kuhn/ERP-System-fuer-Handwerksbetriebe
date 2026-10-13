@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 /**
@@ -66,6 +67,7 @@ const zelle = (page: Page, nr: string) => page.locator('[class*="min-h-32"]').fi
 
 test('Rechtsklick bucht den angeklickten Tag; Resturlaub mit halben Tagen und Info-Knopf', async ({ page }, testInfo) => {
     const abwesenheiten = await stubbeApi(page);
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
 
     // Resturlaub: 12,5 Tage mit Komma, Erklärung über (i).
@@ -106,6 +108,7 @@ test('Rechtsklick bucht den angeklickten Tag; Resturlaub mit halben Tagen und In
 
 test('ohne Abschlussrecht fehlt „Monatsabschluss zurücksetzen" und der Dialog erklärt warum', async ({ page }, testInfo) => {
     await stubbeApi(page, { darfMonatAbschliessen: false, festgeschrieben: true });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
     await expect(page.getByText(/Abgeschlossen – die Monatssummen/)).toBeVisible();
 

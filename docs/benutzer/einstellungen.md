@@ -35,10 +35,12 @@ Unter **Einstellungen → Berechtigungen**, Karte „Rechte pro Abteilung“, f�
 
 - **„Dokumente & Belege“:** je Belegart (Angebot, Auftragsbestätigung, Lieferschein, Rechnung, Gutschrift, Sonstiges, Belege für Kasse und Bank, Werkstoffzeugnis) „Sehen“ und „Scannen“ (mit dem Handy hochladen).
 - **„Eingangsrechnungen“:** „Rechnungen genehmigen“ oder „Genehmigte Rechnungen sehen“.
-- **„Monatsabschluss & Telefon“:** „Monate abschließen und wieder öffnen“ sowie „Anrufe & Anrufbeantworter“.
+- **„Zeiterfassung, Monatsabschluss & Telefon“:** „Zeiterfassung im Menü sehen“, „Monate abschließen und wieder öffnen“ sowie „Anrufe & Anrufbeantworter“.
 - **„Push-Nachrichten aufs Handy“:** „Kunde hat angenommen“ und „Neue Anfrage über Webseite“.
 
-Die Rechte wirken über den Mitarbeiter, mit dem ein Benutzer verknüpft ist. Ein Benutzer ohne verknüpften Mitarbeiter bekommt diese Rechte nicht – auch ein Admin braucht für Monatsabschluss und Telefon ein solches Abteilungsrecht. Abteilungen legt man unter **Vorlagen & Stammdaten → Arbeitsgänge** an und weist sie beim Mitarbeiter zu.
+Die Rechte wirken über den Mitarbeiter, mit dem ein Benutzer verknüpft ist. Ein Benutzer ohne verknüpften Mitarbeiter bekommt diese Rechte nicht – auch ein Admin braucht für Monatsabschluss und Telefon ein solches Abteilungsrecht.
+
+„Zeiterfassung im Menü sehen“ steuert, wer am PC den Bereich **Zeiterfassung** bekommt: Ohne Haken verschwindet er aus dem Menü, und das Programm gibt Zeiten, Abwesenheiten, Urlaubsanträge, Lange Krankheit und Monatsabschlüsse anderer Mitarbeiter an diesen Zugang nicht mehr heraus. Auch die Arbeitszeit im Mitarbeiter-Stammblatt und die offenen Urlaubsanträge in der Glocke sieht er dann nicht. Im Termin-Kalender sieht er kranke Kollegen nur als „Abwesend“. Administratoren und die Geschäftsführung sehen die Zeiterfassung immer. Nach dem Update ist der Haken bei allen Abteilungen aus: Zunächst sehen nur Administratoren und die Geschäftsführung die Zeiterfassung und die Krankheit anderer. Hake danach die Abteilungen an, die die Zeiterfassung brauchen (meist das Büro). Ebenfalls ohne Zugang sind Zugänge ohne verknüpften Mitarbeiter (außer Admin), Mitarbeiter ohne Abteilung und inaktive Mitarbeiter. Wer „Monate abschließen“ soll, braucht zusätzlich diesen Haken. Die Handy-App (Stempeln, Urlaub beantragen) ist davon nicht betroffen. Abteilungen legt man unter **Vorlagen & Stammdaten → Arbeitsgänge** an und weist sie beim Mitarbeiter zu.
 
 ## Ablageort für Zeichnungen und Tabellen
 

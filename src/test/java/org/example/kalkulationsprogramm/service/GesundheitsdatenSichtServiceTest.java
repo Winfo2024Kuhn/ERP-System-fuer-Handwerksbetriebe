@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -36,6 +37,8 @@ class GesundheitsdatenSichtServiceTest {
     @Mock
     private MitarbeiterRepository mitarbeiterRepository;
 
+    @Mock
+    private ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
     @InjectMocks
     private GesundheitsdatenSichtService service;
 
@@ -61,6 +64,7 @@ class GesundheitsdatenSichtServiceTest {
 
     @Test
     void admin_siehtAlleGruende() {
+        when(zeiterfassungSichtbarkeitService.darfZeiterfassungSehen(any())).thenReturn(true);
         GesundheitsdatenSichtService.Sicht sicht = service.sichtFuer(pc(5L, FrontendUserRole.ADMIN));
 
         assertTrue(sicht.darfAlleGruendeSehen());
@@ -68,8 +72,10 @@ class GesundheitsdatenSichtServiceTest {
     }
 
     @Test
-    void geschaeftsfuehrerAmPc_siehtAlleGruende() {
-        profilMit(5L, mitarbeiter(7L, true));
+    void mitZeiterfassungsRechtAmPc_siehtAlleGruende() {
+        // Recht über Geschäftsführung oder Abteilung entscheidet ZeiterfassungSichtbarkeitService.
+        when(zeiterfassungSichtbarkeitService.darfZeiterfassungSehen(any())).thenReturn(true);
+        profilMit(5L, mitarbeiter(7L, false));
 
         GesundheitsdatenSichtService.Sicht sicht = service.sichtFuer(pc(5L, FrontendUserRole.USER));
 
@@ -78,8 +84,9 @@ class GesundheitsdatenSichtServiceTest {
     }
 
     @Test
-    void normalerBenutzerAmPc_siehtNurEigenenGrund() {
-        profilMit(5L, mitarbeiter(7L, false));
+    void ohneZeiterfassungsRechtAmPc_siehtNurEigenenGrund() {
+        when(zeiterfassungSichtbarkeitService.darfZeiterfassungSehen(any())).thenReturn(false);
+        profilMit(5L, mitarbeiter(7L, true));
 
         GesundheitsdatenSichtService.Sicht sicht = service.sichtFuer(pc(5L, FrontendUserRole.USER));
 

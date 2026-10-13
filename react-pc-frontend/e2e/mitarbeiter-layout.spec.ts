@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung, keinTextLaeuftUeber } from './hilfen/design';
 import { erwarteteKartenspalten } from './hilfen/testdaten';
 
@@ -190,6 +191,7 @@ test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regre
         // abgeriegelt (e2e/hilfen/test.ts, auf dem context vor jeder
         // Navigation registriert).
         await stubMitarbeiterApi(page);
+        await stubbeZeiterfassungSichtbarkeit(page);
         await page.goto('/mitarbeiter');
 
         await expect(page.getByRole('heading', { name: 'MITARBEITER' })).toBeVisible();
@@ -521,6 +523,7 @@ test.describe('Mitarbeiter-Uebersicht: Kartenraster (Design-Review-Nachbesserung
             if (pfad === '/api/abteilungen') return json(route, []);
             return json(route, []);
         });
+        await stubbeZeiterfassungSichtbarkeit(page);
         await page.goto('/mitarbeiter');
         await expect(page.getByRole('heading', { name: 'MITARBEITER' })).toBeVisible();
         // Warten, bis alle vier Karten wirklich gerendert sind -- loadMitarbeiter()

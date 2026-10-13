@@ -1,188 +1,17 @@
 import { useState, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
-import { BESTELLBEDARF_PFAD, istFreigegeben } from '../../lib/freigaben';
-import {
-    BarChart3, Briefcase, Building2, Clock, Euro, FileCheck, FileJson,
-    FileText, Gem, Globe, Home, Layers, List, Mail, MailPlus, Package, Settings, Settings2,
-    ShoppingCart, Truck, ChevronUp, ChevronDown, User, LogOut,
-    Calendar, CalendarDays, Plane, Receipt, Wallet, Stethoscope,
-    Phone, Voicemail
-} from 'lucide-react';
+import { istFreigegeben } from '../../lib/freigaben';
+import { Gem, ChevronUp, ChevronDown, User, LogOut } from 'lucide-react';
 import { Button } from '../ui/button';
 import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../../auth/AuthContext';
 import { useTelefonBerechtigung } from '../../features/telefon/useTelefonBerechtigung';
 import { useNeueSprachnachrichten } from '../../features/telefon/useNeueSprachnachrichten';
 import { useKiAktiv } from '../../features/ki/useKiAktiv';
+import { useZeiterfassungSichtbarkeit } from '../../features/zeiterfassung/useZeiterfassungSichtbarkeit';
+import { NAVIGATION, ZEITERFASSUNG_KATEGORIE, type NavCategory } from './navigation';
 
-// Navigation structure with subgroups for better organization
-interface NavItem {
-    name: string;
-    href: string;
-    icon: React.ComponentType<{ className?: string }>;
-}
-
-interface NavSubgroup {
-    label: string;
-    items: NavItem[];
-}
-
-interface NavCategory {
-    category: string;
-    subgroups: NavSubgroup[];
-}
-
-const NAVIGATION: NavCategory[] = [
-    {
-        category: 'Vorlagen & Stammdaten',
-        subgroups: [
-            {
-                label: 'Dokumente',
-                items: [
-                    { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
-                    { name: 'Leistungen', href: '/leistungen', icon: List },
-                    { name: 'Stundensätze', href: '/arbeitszeitarten', icon: Clock },
-                ]
-            },
-            {
-                label: 'Kontakte',
-                items: [
-                    { name: 'Kunden', href: '/kunden', icon: User },
-                    { name: 'Mitarbeiter', href: '/mitarbeiter', icon: User },
-                    { name: 'Lieferanten', href: '/lieferanten', icon: Truck },
-                ]
-            },
-            {
-                label: 'Katalog',
-                items: [
-                    { name: 'Artikel', href: '/artikel', icon: Package },
-                    { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
-                    { name: 'Kategorien', href: '/produktkategorien', icon: Layers },
-                ]
-            },
-            {
-                label: 'Administration',
-                items: [
-                    { name: 'Firma', href: '/firma', icon: Building2 },
-                    { name: 'Formularwesen', href: '/formulare', icon: FileJson },
-                    { name: 'Einstellungen', href: '/einstellungen', icon: Settings },
-                ]
-            }
-        ]
-    },
-    {
-        category: 'Projektmanagement',
-        subgroups: [
-            {
-                label: 'Aufträge',
-                items: [
-                    { name: 'Projekte', href: '/projekte', icon: Briefcase },
-                    { name: 'Anfragen', href: '/anfragen', icon: FileCheck },
-                ]
-            },
-            {
-                label: 'Dokumente',
-                items: [
-                    { name: 'Dokumente', href: '/dokumentuebersicht', icon: FileText },
-                ]
-            },
-            {
-                label: 'Planung',
-                items: [
-                    { name: 'Kalender', href: '/kalender', icon: Calendar },
-                ]
-            },
-            {
-                label: 'Einkauf',
-                items: [
-                    { name: 'Bestellungen', href: '/bestellungen', icon: ShoppingCart },
-                    { name: 'Bedarf', href: BESTELLBEDARF_PFAD, icon: List },
-                ]
-            }
-        ]
-    },
-    {
-        category: 'Zeiterfassung',
-        subgroups: [
-            {
-                label: 'Übersicht',
-                items: [
-                    { name: 'Kalender', href: '/zeitbuchungen', icon: Calendar },
-                    { name: 'Monatsabschluss', href: '/monatsabschluss', icon: FileCheck },
-                ]
-            },
-            {
-                label: 'Berichte',
-                items: [
-                    { name: 'Auswertung', href: '/auswertung', icon: BarChart3 },
-                    { name: 'Steuerberater', href: '/steuerberater', icon: Mail },
-                ]
-            },
-            {
-                label: 'Einstellungen',
-                items: [
-                    { name: 'Zeitkonten', href: '/zeitkonten', icon: Clock },
-                    { name: 'Feiertage', href: '/feiertage', icon: CalendarDays },
-                ]
-            },
-            {
-                label: 'Abwesenheiten',
-                items: [
-                    { name: 'Urlaubsanträge', href: '/urlaubsantraege', icon: Plane },
-                    { name: 'Lange Krankheit', href: '/langzeitkrankmeldungen', icon: Stethoscope },
-                ]
-            }
-        ]
-    },
-    {
-        category: 'Kommunikation',
-        subgroups: [
-            {
-                label: 'E-Mail',
-                items: [
-                    { name: 'E-Mail Center', href: '/emails/inbox', icon: Mail },
-                    { name: 'E-Mail Vorlagen', href: '/email-textvorlagen', icon: MailPlus },
-                    { name: 'E-Mail-Einstellungen', href: '/email-einstellungen', icon: Settings2 },
-                ]
-            },
-            {
-                label: 'Telefon',
-                items: [
-                    { name: 'Anrufe', href: '/telefon/anrufe', icon: Phone },
-                    { name: 'Anrufbeantworter', href: '/telefon/anrufbeantworter', icon: Voicemail },
-                ]
-            },
-            {
-                label: 'Website',
-                items: [
-                    { name: 'Neuigkeiten', href: '/website', icon: Globe },
-                ]
-            }
-        ]
-    },
-    {
-        category: 'Finanzen & Controlling',
-        subgroups: [
-            {
-                label: 'Buchhaltung',
-                items: [
-                    { name: 'Offene Posten', href: '/offeneposten', icon: Euro },
-                    { name: 'Rechnungen', href: '/rechnungsuebersicht', icon: FileText },
-                    { name: 'Belege & Kasse', href: '/belege-kasse', icon: Receipt },
-                    { name: 'Mietabrechnung', href: '/miete', icon: Home },
-                ]
-            },
-            {
-                label: 'Auswertung',
-                items: [
-                    { name: 'Erfolgsanalyse', href: '/analyse', icon: BarChart3 },
-                    { name: 'Kostenstellen', href: '/kostenstellen', icon: Wallet },
-                ]
-            }
-        ]
-    }
-];
 
 const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/benutzer', '/website']);
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
@@ -195,12 +24,15 @@ export function RibbonNavigation() {
     const { user, isAdmin, logout } = useAuth();
     const kiAktiv = useKiAktiv();
     const darfTelefon = useTelefonBerechtigung() === true;
+    // Während der Prüfung (null) bleibt der Bereich verborgen – so blitzt der Reiter nicht kurz auf.
+    const darfZeiterfassung = useZeiterfassungSichtbarkeit() === true;
     // Zähler neuer Nachrichten am Menüpunkt "Anrufbeantworter".
     const neueSprachnachrichten = useNeueSprachnachrichten(darfTelefon);
     const zaehler: Record<string, number> = { '/telefon/anrufbeantworter': neueSprachnachrichten };
 
     const visibleNavigation = useMemo<NavCategory[]>(() => {
         return NAVIGATION
+            .filter((category) => darfZeiterfassung || category.category !== ZEITERFASSUNG_KATEGORIE)
             .map((category) => ({
                 ...category,
                 subgroups: category.subgroups
@@ -214,7 +46,7 @@ export function RibbonNavigation() {
                     .filter((subgroup) => subgroup.items.length > 0),
             }))
             .filter((category) => category.subgroups.length > 0);
-    }, [isAdmin, darfTelefon]);
+    }, [isAdmin, darfTelefon, darfZeiterfassung]);
 
     const [selectedCategory, setSelectedCategory] = useState<string>(NAVIGATION[0].category);
     // Track the pathname when the user explicitly clicked a tab.

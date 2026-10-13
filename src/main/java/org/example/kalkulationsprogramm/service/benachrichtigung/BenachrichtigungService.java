@@ -58,6 +58,7 @@ import org.example.kalkulationsprogramm.service.EmailGelesenService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.GelesenStand;
 import org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService;
+import org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeit;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
 import org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService;
@@ -126,6 +127,7 @@ public class BenachrichtigungService {
     private final ZeitbuchungRepository zeitbuchungRepository;
     private final MonatsSaldoRepository monatsSaldoRepository;
     private final MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
+    private final ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
     private final TelefonBerechtigungService telefonBerechtigungService;
     private final TelefonBenachrichtigungService telefonBenachrichtigungService;
     private final PostfachSichtbarkeitService postfachSichtbarkeitService;
@@ -395,7 +397,11 @@ public class BenachrichtigungService {
                     ungelesen, "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter")));
         }
 
-        quellen.add(new QuellenAufruf("URLAUBSANTRAEGE", this::urlaubsantraege));
+        // Urlaubsanträge und automatisch beendete Zeiten gehören zur Zeiterfassung – nur mit deren Recht.
+        boolean zeiterfassung = zeiterfassungSichtbarkeitService.darfZeiterfassungSehen(authentication);
+        if (zeiterfassung) {
+            quellen.add(new QuellenAufruf("URLAUBSANTRAEGE", this::urlaubsantraege));
+        }
         quellen.add(new QuellenAufruf("BAUTAGEBUCH", this::bautagebuch));
         quellen.add(new QuellenAufruf("EINGANG_FAELLIG", () -> eingangsrechnungenFaellig(heute)));
         quellen.add(new QuellenAufruf("AUSGANG_UEBERFAELLIG", () -> ausgangsrechnungenUeberfaellig(heute)));
@@ -404,10 +410,13 @@ public class BenachrichtigungService {
         quellen.add(new QuellenAufruf("LIEFERSCHEINE", this::lieferscheine));
         quellen.add(new QuellenAufruf("REKLAMATIONEN", this::reklamationen));
         quellen.add(new QuellenAufruf("FREIGABEN_ANGENOMMEN", this::freigaben));
-        quellen.add(new QuellenAufruf("ZEITEN_AUTO_BEENDET", this::zeitenAutomatischBeendet));
+        if (zeiterfassung) {
+            quellen.add(new QuellenAufruf("ZEITEN_AUTO_BEENDET", this::zeitenAutomatischBeendet));
+        }
 
-        // Only the authenticated session decides who receives closure reminders.
-        if (monatsabschlussBerechtigungService.darfMonatAbschliessen(authentication)) {
+        // Only the authenticated session decides who receives closure reminders. Ohne Zeiterfassungs-Recht
+        // ist die Monatsabschluss-Seite gesperrt – dann kein Hinweis, der ins Leere führt.
+        if (zeiterfassung && monatsabschlussBerechtigungService.darfMonatAbschliessen(authentication)) {
             quellen.add(new QuellenAufruf("MONATSABSCHLUSS", () -> monatsabschluss(heute)));
         }
         // Telefon: nur für Benutzer mit dem Abteilungs-Recht "Anrufe & Anrufbeantworter".

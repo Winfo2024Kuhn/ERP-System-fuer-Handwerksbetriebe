@@ -76,6 +76,7 @@ public class AbteilungBerechtigungController {
             .abteilungName(abteilung.getName())
             .darfMonatAbschliessen(Boolean.TRUE.equals(abteilung.getDarfMonatAbschliessen()))
             .darfTelefonSehen(Boolean.TRUE.equals(abteilung.getDarfTelefonSehen()))
+            .darfZeiterfassungSehen(Boolean.TRUE.equals(abteilung.getDarfZeiterfassungSehen()))
             .berechtigungen(typBerechtigungen)
             .darfRechnungenGenehmigen(Boolean.TRUE.equals(abteilung.getDarfRechnungenGenehmigen()))
             .darfRechnungenSehen(Boolean.TRUE.equals(abteilung.getDarfRechnungenSehen()))
@@ -143,6 +144,9 @@ public class AbteilungBerechtigungController {
         }
         if (request.getDarfTelefonSehen() != null) {
             abteilung.setDarfTelefonSehen(request.getDarfTelefonSehen());
+        }
+        if (request.getDarfZeiterfassungSehen() != null) {
+            abteilung.setDarfZeiterfassungSehen(request.getDarfZeiterfassungSehen());
         }
         abteilungRepository.save(abteilung);
 

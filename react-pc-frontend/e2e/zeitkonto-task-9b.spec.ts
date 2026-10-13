@@ -1,5 +1,6 @@
 import type { Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 const arbeitszeit = { montagStunden: 8, dienstagStunden: 8, mittwochStunden: 8, donnerstagStunden: 8, freitagStunden: 8, samstagStunden: 0, sonntagStunden: 0, buchungStartZeit: '06:00', buchungEndeZeit: '18:00' };
@@ -22,6 +23,7 @@ test('Zeitkonto: Vorschau vor der bewussten Übernahme', async ({ page }, testIn
         if (url.pathname === '/api/zeitverwaltung/zeitkonten' && method === 'GET') return json(route, [zeitkonto]);
         return json(route, { ...ergebnis, gespeichert: true });
     });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitkonten');
     await expect(page.getByText('Max Mustermann')).toBeVisible();
     await page.getByRole('button', { name: 'Arbeitszeit ändern' }).click();
@@ -36,6 +38,7 @@ test('Zeitkonto: Vorlagenänderung wählt niemanden automatisch aus', async ({ p
     await page.route('**/api/auth/me', route => json(route, { id: 1, username: 'anna', vorname: 'Anna', nachname: 'Büro', admin: true, roles: ['ADMIN'], requiresInitialSetup: false }));
     await page.route('**/api/zeitverwaltung/zeitkontenmodelle**', route => json(route, route.request().method() === 'GET' ? [modell] : modell));
     await page.route('**/api/zeitverwaltung/zeitkonten', route => json(route, [zeitkonto]));
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitkonten');
     await page.getByRole('button', { name: 'Bearbeiten' }).click();
     await page.getByRole('button', { name: 'Speichern' }).click();

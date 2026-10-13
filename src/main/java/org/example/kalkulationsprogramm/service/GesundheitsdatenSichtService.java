@@ -17,10 +17,12 @@ import lombok.RequiredArgsConstructor;
 /**
  * Wer darf den Grund einer Abwesenheit sehen, wenn er „Krankheit" lautet?
  *
- * <p>Gesundheitsdaten sind besonders geschützt (DSGVO Art. 9). Im Team-Kalender
- * sehen deshalb nur Administratoren und die Geschäftsführung, dass ein Kollege
- * krank ist; alle anderen sehen ihn nur als „abwesend". Die eigenen Einträge
- * sieht jeder im Klartext (Entscheidung des Nutzers vom 13.10.2026, Issue #268).
+ * <p>Gesundheitsdaten sind besonders geschützt (DSGVO Art. 9). Am PC sieht den
+ * Grund, wer die Zeiterfassung sehen darf ({@link ZeiterfassungSichtbarkeitService}:
+ * Admin, Geschäftsführung, Abteilungsrecht „Zeiterfassung im Menü sehen“). In der
+ * Handy-App nur die Geschäftsführung. Alle anderen sehen Kollegen nur als
+ * „abwesend“; die eigenen Einträge sieht jeder im Klartext (Nutzerentscheidungen
+ * vom 13.10.2026, Issue #268).
  */
 @Service
 @RequiredArgsConstructor
@@ -29,6 +31,7 @@ public class GesundheitsdatenSichtService {
 
     private final FrontendUserProfileRepository profileRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
+    private final ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
 
     /** Sicht des angemeldeten Benutzers; {@code eigeneMitarbeiterId} ist null, wenn kein Mitarbeiter verknüpft ist. */
     public record Sicht(boolean darfAlleGruendeSehen, Long eigeneMitarbeiterId) {
@@ -50,13 +53,15 @@ public class GesundheitsdatenSichtService {
             return new Sicht(gf, mobile.mitarbeiterId());
         }
         if (principal instanceof FrontendUserPrincipal frontend) {
+            // Am PC sieht Krankheit, wer die Zeiterfassung sehen darf (Admin, Geschäftsführung,
+            // Abteilungsrecht „Zeiterfassung im Menü sehen“) – Nutzerentscheidung 13.10.2026.
+            boolean darf = zeiterfassungSichtbarkeitService.darfZeiterfassungSehen(authentication);
             if (frontend.hasRole(FrontendUserRole.ADMIN)) {
-                return new Sicht(true, null);
+                return new Sicht(darf, null);
             }
             Optional<Mitarbeiter> eigener = frontend.getId() == null ? Optional.empty()
                     : profileRepository.findById(frontend.getId()).map(p -> p.getMitarbeiter());
-            boolean gf = eigener.map(GesundheitsdatenSichtService::istGeschaeftsfuehrer).orElse(false);
-            return new Sicht(gf, eigener.map(Mitarbeiter::getId).orElse(null));
+            return new Sicht(darf, eigener.map(Mitarbeiter::getId).orElse(null));
         }
         return new Sicht(false, null);
     }
