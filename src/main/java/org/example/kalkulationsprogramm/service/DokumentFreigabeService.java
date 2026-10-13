@@ -651,6 +651,24 @@ public class DokumentFreigabeService
                                               String vorname, String nachname, String unterzeichnerName,
                                               List<String> ausgewaehlteAlternativen, String code)
     {
+        return akzeptiereMitCode(uuid, ip, userAgent, email, vorname, nachname, unterzeichnerName,
+                ausgewaehlteAlternativen, code, FreigabeErklaerung.KEINE);
+    }
+
+    /**
+     * Wie {@link #akzeptiereMitCode(String, String, String, String, String, String, String, List, String)},
+     * speichert aber zusätzlich den Rechtsnachweis der Annahme: Zustimmung zum vorzeitigen Beginn,
+     * Stand von Widerrufsbelehrung und Datenschutzerklärung, Wortlaut von Häkchen und Knopf.
+     * Alles fließt in den Acceptance-Hash ein.
+     *
+     * <p>Wie oben rollt ein falscher Code nicht zurück, damit der Fehlversuch gezählt bleibt.</p>
+     */
+    @Transactional(noRollbackFor = FreigabeCodeException.class)
+    public DokumentFreigabe akzeptiereMitCode(String uuid, String ip, String userAgent, String email,
+                                              String vorname, String nachname, String unterzeichnerName,
+                                              List<String> ausgewaehlteAlternativen, String code,
+                                              FreigabeErklaerung erklaerung)
+    {
         // Zeile sperren, bevor irgendetwas geprüft wird: Ein Doppelklick wartet hier auf
         // den ersten und sieht danach dessen Status (ACCEPTED → idempotent) bzw. dessen
         // Fehlversuch. findByUuid in akzeptiere liefert anschließend dieselbe Instanz.
@@ -664,7 +682,8 @@ public class DokumentFreigabeService
         {
             freigabeCodeService.pruefeUndVerbrauche(freigabe, code);
         }
-        return akzeptiere(uuid, ip, userAgent, email, vorname, nachname, unterzeichnerName, ausgewaehlteAlternativen);
+        return akzeptiere(uuid, ip, userAgent, email, vorname, nachname, unterzeichnerName,
+                ausgewaehlteAlternativen, erklaerung);
     }
 
     /**
@@ -695,6 +714,16 @@ public class DokumentFreigabeService
     DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
                                 String vorname, String nachname, String unterzeichnerName,
                                 List<String> ausgewaehlteAlternativen)
+    {
+        return akzeptiere(uuid, ip, userAgent, email, vorname, nachname, unterzeichnerName,
+                ausgewaehlteAlternativen, FreigabeErklaerung.KEINE);
+    }
+
+    /** Wie oben, mit Rechtsnachweis der Annahme (siehe {@link FreigabeErklaerung}). */
+    @Transactional
+    DokumentFreigabe akzeptiere(String uuid, String ip, String userAgent, String email,
+                                String vorname, String nachname, String unterzeichnerName,
+                                List<String> ausgewaehlteAlternativen, FreigabeErklaerung erklaerung)
     {
         DokumentFreigabe freigabe = repository.findByUuid(uuid)
                 .orElseThrow(() -> new IllegalArgumentException(UNBEKANNTE_UUID_MESSAGE));
@@ -760,6 +789,13 @@ public class DokumentFreigabeService
         freigabe.setUnterzeichnerName(anzeigeName);
         freigabe.setAkzeptierteAlternativen(auswahl.json());
         freigabe.setAkzeptierterBetrag(auswahl.betragBrutto());
+        // Rechtsnachweis (V423) VOR dem Hash setzen – er gehört zur unveränderbaren Beweissicherung.
+        FreigabeErklaerung nachweis = (erklaerung == null ? FreigabeErklaerung.KEINE : erklaerung).bereinigt();
+        freigabe.setVorzeitigerBeginn(nachweis.vorzeitigerBeginn());
+        freigabe.setWiderrufStand(nachweis.widerrufStand());
+        freigabe.setDatenschutzStand(nachweis.datenschutzStand());
+        freigabe.setBestaetigungText(pruefeBestaetigungText(freigabe, nachweis.bestaetigungText()));
+        freigabe.setKnopfText(nachweis.knopfText());
         freigabe.setHashAcceptance(berechneHashAcceptance(freigabe, ip, email, jetzt));
         DokumentFreigabe saved = repository.save(freigabe);
 
@@ -778,6 +814,7 @@ public class DokumentFreigabeService
                     ? "Freigabe eingegangen von " + unterzeichner + " für " + kunde
                         + " — " + art + " " + saved.getDokumentNummer() + " digital angenommen."
                     : kunde + " hat " + art + " " + saved.getDokumentNummer() + " digital angenommen.";
+            body = body + arbeitsbeginnHinweis(saved);
             // Klick auf den Push oeffnet die Mobile-PWA-Projekteseite, weil mit der
             // Annahme die Anfrage zum Projekt wird (siehe erzeugeAutoAuftragsbestaetigungWennAngebot).
             webPushService.notifyFreigabeAnnahme(art + " angenommen", body, "/zeiterfassung/projekte");
@@ -1297,6 +1334,13 @@ public class DokumentFreigabeService
                 .unterzeichnerName(f.getUnterzeichnerName())
                 .hashOriginal(f.getHashOriginal())
                 .hashAcceptance(f.getHashAcceptance())
+                .codeBestaetigtAm(f.getCodeBestaetigtAm())
+                .codeBestaetigtEmail(f.getCodeBestaetigtEmail())
+                .vorzeitigerBeginn(f.getVorzeitigerBeginn())
+                .widerrufStand(f.getWiderrufStand())
+                .datenschutzStand(f.getDatenschutzStand())
+                .bestaetigungText(f.getBestaetigungText())
+                .knopfText(f.getKnopfText())
                 .build());
     }
 
@@ -1470,7 +1514,8 @@ public class DokumentFreigabeService
         return sha256Hex(input);
     }
 
-    private String berechneHashAcceptance(DokumentFreigabe freigabe, String ip, String email, LocalDateTime zeitpunkt)
+    // Paketsichtbar für den Test, dass jede Angabe des Rechtsnachweises den Hash verändert.
+    String berechneHashAcceptance(DokumentFreigabe freigabe, String ip, String email, LocalDateTime zeitpunkt)
     {
         String input = String.join("|",
                 freigabe.getHashOriginal(),
@@ -1496,7 +1541,69 @@ public class DokumentFreigabeService
             input = String.join("|", input, freigabe.getCodeBestaetigtAm().toString(),
                     freigabe.getCodeBestaetigtEmail() == null ? "" : freigabe.getCodeBestaetigtEmail());
         }
+        // Rechtsnachweis (seit V423): Zustimmung zum vorzeitigen Beginn, Textstände und Wortlaut
+        // von Häkchen und Knopf. Nur angehängt, wenn etwas davon vorliegt – so bleiben die Hashes
+        // älterer Annahmen reproduzierbar.
+        if (hatRechtsnachweis(freigabe))
+        {
+            input = String.join("|", input,
+                    freigabe.getVorzeitigerBeginn() == null ? "" : freigabe.getVorzeitigerBeginn().toString(),
+                    leerWennNull(freigabe.getWiderrufStand()),
+                    leerWennNull(freigabe.getDatenschutzStand()),
+                    leerWennNull(freigabe.getBestaetigungText()),
+                    leerWennNull(freigabe.getKnopfText()));
+        }
         return sha256Hex(input);
+    }
+
+    /**
+     * Zusatz für die Push-Nachricht: Darf das Büro sofort loslegen oder muss es die Widerrufsfrist
+     * abwarten? Ohne Angabe (ältere Website) leer.
+     */
+    static String arbeitsbeginnHinweis(DokumentFreigabe f)
+    {
+        if (Boolean.TRUE.equals(f.getVorzeitigerBeginn()))
+        {
+            return " Sofort beginnen erlaubt.";
+        }
+        if (Boolean.FALSE.equals(f.getVorzeitigerBeginn()))
+        {
+            String bis = f.getAkzeptiertAm() == null ? ""
+                    : " (bis " + f.getAkzeptiertAm().toLocalDate().plusDays(14).format(ABLAUF_DATUM_FORMAT) + ")";
+            return " Erst nach Ablauf der Widerrufsfrist beginnen" + bis + ".";
+        }
+        return "";
+    }
+
+    /**
+     * Der Häkchen-Wortlaut kommt von der Website, die ihn aus der angezeigten Dokument-Bezeichnung
+     * baut. Nennt er nicht genau dieses Dokument („Angebot AN-2026-0001“), wurde er unterwegs
+     * verändert – dann wird er nicht als Nachweis gespeichert.
+     */
+    private static String pruefeBestaetigungText(DokumentFreigabe freigabe, String text)
+    {
+        if (text == null) return null;
+        String bezeichnung = ((freigabe.getDokumentArt() == null ? "" : freigabe.getDokumentArt()) + " "
+                + (freigabe.getDokumentNummer() == null ? "" : freigabe.getDokumentNummer())).trim();
+        if (bezeichnung.isEmpty() || !text.contains(bezeichnung))
+        {
+            // Dokumentnummer statt UUID loggen – die UUID ist zugleich der Zugang zum Freigabe-Link.
+            log.warn("Bestätigungstext der Freigabe zu {} nennt nicht das freigegebene Dokument – nicht gespeichert",
+                    freigabe.getDokumentNummer());
+            return null;
+        }
+        return text;
+    }
+
+    private static boolean hatRechtsnachweis(DokumentFreigabe f)
+    {
+        return f.getVorzeitigerBeginn() != null || f.getWiderrufStand() != null || f.getDatenschutzStand() != null
+                || f.getBestaetigungText() != null || f.getKnopfText() != null;
+    }
+
+    private static String leerWennNull(String s)
+    {
+        return s == null ? "" : s;
     }
 
     /**

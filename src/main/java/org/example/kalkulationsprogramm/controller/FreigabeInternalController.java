@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAnsichtDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeCodeVersendetResponse;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.FreigabeErklaerung;
 import org.example.kalkulationsprogramm.service.FreigabeCodeAnforderungException;
 import org.example.kalkulationsprogramm.service.FreigabeCodeException;
 import org.example.kalkulationsprogramm.service.FreigabeCodeService;
@@ -199,7 +200,13 @@ public class FreigabeInternalController
                     request.getNachname(),
                     request.getUnterzeichnerName(),
                     request.getAusgewaehlteAlternativen(),
-                    request.getCode());
+                    request.getCode(),
+                    new FreigabeErklaerung(
+                            request.getVorzeitigerBeginn(),
+                            request.getWiderrufBelehrungStand(),
+                            request.getDatenschutzStand(),
+                            request.getBestaetigungText(),
+                            request.getKnopfText()));
             return ResponseEntity.ok(FreigabeAkzeptiertResponse.builder()
                     .uuid(freigabe.getUuid())
                     .dokumentNummer(freigabe.getDokumentNummer())
@@ -207,6 +214,7 @@ public class FreigabeInternalController
                     .akzeptiertAm(freigabe.getAkzeptiertAm())
                     .hashAcceptance(freigabe.getHashAcceptance())
                     .unterzeichnerName(freigabe.getUnterzeichnerName())
+                    .vorzeitigerBeginn(freigabe.getVorzeitigerBeginn())
                     .build());
         }
         catch (FreigabeCodeException e)

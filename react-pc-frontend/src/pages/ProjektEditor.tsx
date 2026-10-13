@@ -74,6 +74,8 @@ import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
 import { artikelBezeichnung } from '../components/artikel/artikelBezeichnung';
 import { KettenLinie } from '../features/bestellungen/KettenLinie';
 import { alsKettenTyp, type KettenLinienDokument, type KettenVerbindung } from '../features/bestellungen/kettenLinieLogik';
+import { FreigabeRechtsnachweis } from '../features/freigabe/FreigabeRechtsnachweis';
+import type { FreigabeRechtsnachweisDaten } from '../features/freigabe/rechtsnachweisLogik';
 
 interface Supplier {
     id: number;
@@ -189,7 +191,7 @@ type FreigabeAuditData = {
     unterzeichnerName: string | null;
     hashOriginal: string | null;
     hashAcceptance: string | null;
-};
+} & Omit<FreigabeRechtsnachweisDaten, 'akzeptiertAm'>;
 
 // ==================== DETAIL VIEW ====================
 
@@ -3605,7 +3607,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         <p className="text-sm text-slate-500 py-4">Keine Audit-Daten verfügbar.</p>
                     )}
                     {!auditLoading && auditDaten && (
-                        <div className="space-y-3 py-2 text-sm">
+                        // Scrollt bei kleinen Bildschirmen, damit „Schließen“ im Dialog bleibt;
+                        // -mx-1 px-1 lässt den Fokus-Ringen der Kopieren-Knöpfe Luft.
+                        <div className="space-y-3 py-2 text-sm min-h-0 flex-1 overflow-y-auto -mx-1 px-1">
                             <AuditRow label="Dokument" value={`${auditDaten.dokumentArt} ${auditDaten.dokumentNummer}`} />
                             <AuditRow
                                 label="Angenommen am"
@@ -3627,6 +3631,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             {auditDaten.akzeptiertUserAgent && (
                                 <AuditRow label="Browser" value={auditDaten.akzeptiertUserAgent} mono small />
                             )}
+                            <FreigabeRechtsnachweis daten={auditDaten} />
                             <div className="pt-2 mt-2 border-t border-slate-100 space-y-3">
                                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                                     Kryptographischer Beweis

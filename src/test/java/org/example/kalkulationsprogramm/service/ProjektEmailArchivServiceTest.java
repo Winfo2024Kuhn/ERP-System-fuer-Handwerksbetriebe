@@ -80,6 +80,65 @@ class ProjektEmailArchivServiceTest
     }
 
     @Test
+    void archiviertMehrerePdfAnhaenge() throws Exception
+    {
+        EmailRepository emailRepository = mock(EmailRepository.class);
+        when(emailRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        ProjektEmailArchivService service =
+                new ProjektEmailArchivService(emailRepository, tempDir.toString());
+        Path ab = tempDir.resolve("ab.pdf");
+        Path widerruf = tempDir.resolve("widerruf.pdf");
+        Files.write(ab, new byte[] { 1, 2 });
+        Files.write(widerruf, new byte[] { 3, 4, 5 });
+
+        Email gespeichert = service.archiviereVersandteEmail(new Projekt(),
+                "max.mustermann@example.org", "firma@example.org", "AB", "<p>Text</p>", "<msg-3>",
+                java.util.List.of(new ProjektEmailArchivService.PdfAnhang(ab, "Auftragsbestaetigung_1.pdf"),
+                        new ProjektEmailArchivService.PdfAnhang(widerruf, "../Widerruf:Stand.pdf")));
+
+        assertThat(gespeichert.getAttachments()).hasSize(2);
+        assertThat(gespeichert.getAttachments().get(0).getOriginalFilename()).isEqualTo("Auftragsbestaetigung_1.pdf");
+        assertThat(gespeichert.getAttachments().get(1).getOriginalFilename()).isEqualTo(".._Widerruf_Stand.pdf");
+        assertThat(gespeichert.getAttachments().get(1).getSizeBytes()).isEqualTo(3L);
+    }
+
+    @Test
+    void zweiterAnhangFehltEntferntAuchDenErsten() throws Exception
+    {
+        EmailRepository emailRepository = mock(EmailRepository.class);
+        ProjektEmailArchivService service =
+                new ProjektEmailArchivService(emailRepository, tempDir.toString());
+        Path ab = tempDir.resolve("ab.pdf");
+        Files.write(ab, new byte[] { 1 });
+
+        assertThatThrownBy(() -> service.archiviereVersandteEmail(new Projekt(),
+                "max.mustermann@example.org", "firma@example.org", "AB", "<p>Text</p>", "<msg-4>",
+                java.util.List.of(new ProjektEmailArchivService.PdfAnhang(ab, "AB.pdf"),
+                        new ProjektEmailArchivService.PdfAnhang(tempDir.resolve("fehlt.pdf"), "W.pdf"))))
+                .isInstanceOf(IllegalStateException.class);
+
+        try (var dateien = Files.list(tempDir))
+        {
+            assertThat(dateien.filter(path -> !path.equals(ab))).isEmpty();
+        }
+    }
+
+    @Test
+    void leereOderUnvollstaendigeAnhanglisteWirdAbgelehnt()
+    {
+        ProjektEmailArchivService service =
+                new ProjektEmailArchivService(mock(EmailRepository.class), tempDir.toString());
+
+        assertThatThrownBy(() -> service.archiviereVersandteEmail(new Projekt(), "a", "b", "c", "d", "e",
+                java.util.List.of())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.archiviereVersandteEmail(new Projekt(), "a", "b", "c", "d", "e",
+                (java.util.List<ProjektEmailArchivService.PdfAnhang>) null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.archiviereVersandteEmail(new Projekt(), "a", "b", "c", "d", "e",
+                java.util.List.of(new ProjektEmailArchivService.PdfAnhang(null, "x.pdf"))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void leeresAttachmentVerzeichnisWirdAbgelehnt()
     {
         assertThatThrownBy(() -> new ProjektEmailArchivService(mock(EmailRepository.class), " "))

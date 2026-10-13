@@ -201,6 +201,30 @@ public class DokumentFreigabe
     @Column(name = "kunde_email_aus_versand", nullable = false)
     private boolean kundeEmailAusVersand;
 
+    /**
+     * Rechtsnachweis (seit V423): {@code true} = der Kunde verlangt ausdrücklich, dass vor Ablauf
+     * der Widerrufsfrist begonnen wird (und weiß, dass sein Widerrufsrecht bei vollständiger
+     * Leistung erlischt). {@code false} = nicht verlangt, {@code null} = Annahme vor V423.
+     */
+    @Column(name = "vorzeitiger_beginn")
+    private Boolean vorzeitigerBeginn;
+
+    /** Stand der Widerrufsbelehrung, die bei der Annahme galt (z. B. {@code 2026-10-13}). */
+    @Column(name = "widerruf_stand", length = 20)
+    private String widerrufStand;
+
+    /** Stand der Datenschutzerklärung, die bei der Annahme galt. */
+    @Column(name = "datenschutz_stand", length = 20)
+    private String datenschutzStand;
+
+    /** Wortlaut des Pflicht-Häkchens („Ich beauftrage … verbindlich und zahlungspflichtig.“). */
+    @Column(name = "bestaetigung_text", length = 500)
+    private String bestaetigungText;
+
+    /** Beschriftung des Knopfs, der die Annahme ausgelöst hat (Button-Lösung, § 312j BGB). */
+    @Column(name = "knopf_text", length = 100)
+    private String knopfText;
+
     @PrePersist
     protected void onCreate()
     {

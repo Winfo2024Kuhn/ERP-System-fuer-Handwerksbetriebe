@@ -76,6 +76,7 @@ public class AutoAuftragsbestaetigungVersandService
     private final DokumentFreigabeRepository dokumentFreigabeRepository;
     private final SentMailArchiver sentMailArchiver;
     private final FirmeninformationService firmeninformationService;
+    private final WiderrufsbelehrungPdfService widerrufsbelehrungPdfService;
 
     /**
      * Einstieg fuer den asynchronen Versand NACH dem Commit der
@@ -130,42 +131,72 @@ public class AutoAuftragsbestaetigungVersandService
             return false;
         }
 
-        Path tempPdf = null;
+        List<Path> tempDateien = new ArrayList<>();
         try
         {
             byte[] pdfBytes = generierePdfFuerAB(ab);
             String filename = "Auftragsbestaetigung_" + sanitizeForFilename(ab.getDokumentNummer()) + ".pdf";
-            tempPdf = Files.createTempFile("auto-ab-", ".pdf");
-            Files.write(tempPdf, pdfBytes);
+            List<VersandAnhang> anhaenge = new ArrayList<>();
+            anhaenge.add(new VersandAnhang(pdfBytes, filename));
+            // Nach digitaler Annahme geht die Widerrufsbelehrung samt Muster-Formular als zweites PDF
+            // mit – so liegt sie beim Kunden auf einem dauerhaften Datenträger, zusammen mit seiner
+            // Erklärung zum vorzeitigen Beginn. Scheitert nur sie, geht die AB trotzdem raus.
+            if (freigabe != null)
+            {
+                try
+                {
+                    anhaenge.add(new VersandAnhang(widerrufsbelehrungPdfService.erzeugePdf(freigabe),
+                            WiderrufsbelehrungPdfService.dateiname()));
+                }
+                catch (Exception e)
+                {
+                    log.error("Widerrufsbelehrung für Auto-AB {} nicht erzeugt – AB geht ohne sie raus, "
+                            + "Belehrung bitte von Hand nachschicken: {}",
+                            ab.getDokumentNummer(), e.getMessage(), e);
+                }
+            }
 
+            // Der Beleg kündigt die Belehrung nur an, wenn sie wirklich anhängt.
+            boolean belehrungAngehaengt = anhaenge.size() > 1;
             EmailService.EmailContent content = baueEmailInhalt(ab);
             if (freigabe != null)
             {
-                content = mitAnnahmeBeleg(content, freigabe);
+                content = mitAnnahmeBeleg(content, freigabe, belehrungAngehaengt);
+            }
+
+            // Dateien für das E-Mail-Center VOR dem Versand anlegen: Scheitert das (Platte voll,
+            // Rechte), ist noch keine Mail beim Kunden, und der Versand gilt sauber als fehlgeschlagen.
+            List<ProjektEmailArchivService.PdfAnhang> archivAnhaenge = new ArrayList<>();
+            for (VersandAnhang a : anhaenge)
+            {
+                Path temp = Files.createTempFile("auto-ab-", ".pdf");
+                tempDateien.add(temp);
+                Files.write(temp, a.daten());
+                archivAnhaenge.add(new ProjektEmailArchivService.PdfAnhang(temp, a.dateiname()));
             }
 
             // Auftragsbestaetigung ist ein Ausgangsgeschaeftsdokument und geht
             // ueber das dafuer eingerichtete Konto raus. Ohne eigenes Konto
             // liefert getDokumentMailKonto() das Standard-Konto zurueck.
             SystemSettingsService.MailKonto konto = systemSettingsService.getDokumentMailKonto();
-            EmailService emailService = new EmailService(
-                    konto.host(), konto.port(), konto.username(), konto.password())
-                    .mitAbsenderName(konto.fromName())
-                    .mitSentKopie(sentMailArchiver.fuerDokumentKonto());
+            EmailService emailService = emailServiceFabrik.apply(konto);
 
             // Absender muss aus demselben Konto stammen, sonst schlagen SPF und
             // DKIM beim Empfaenger fehl.
             String absender = konto.fromAddress();
             String htmlMitSignatur = emailSignatureService
                     .appendSystemSignatureIfConfigured(content.htmlBody());
-            String messageId = emailService.sendEmailAndReturnMessageId(
+            // Anhänge als In-Memory-Bytes (ByteArrayDataSource), keine Temp-Datei im MIME-Teil.
+            String messageId = emailService.sendEmailWithMultipleAttachments(
                     empfaenger,
                     null,
                     absender,
                     content.subject(),
                     htmlMitSignatur,
-                    tempPdf.toString(),
-                    filename);
+                    null,
+                    anhaenge.stream()
+                            .map(a -> new EmailService.Attachment(a.daten(), a.dateiname(), "application/pdf"))
+                            .toList());
 
             // Erst archivieren, dann Versanddatum setzen: die Archivierung kann
             // bei Lock-Kontention bis zu ~6s Retry-Pausen schlafen — waere das
@@ -174,7 +205,7 @@ public class AutoAuftragsbestaetigungVersandService
             // AB-Zeile. So schlaeft der Retry, ohne Row-Locks zu halten (die
             // Tx-Connection bleibt belegt — bewusster, seltener Trade-off).
             archiviereAlsProjektEmail(ab, empfaenger, absender,
-                    content.subject(), htmlMitSignatur, messageId, tempPdf, filename);
+                    content.subject(), htmlMitSignatur, messageId, archivAnhaenge);
             markiereAlsVersendet(ab);
             // Bewusst ohne Empfaenger-Adresse geloggt (DSGVO) — die
             // Dokumentnummer reicht zum Wiederfinden im E-Mail-Center.
@@ -188,11 +219,30 @@ public class AutoAuftragsbestaetigungVersandService
         }
         finally
         {
-            if (tempPdf != null)
+            for (Path temp : tempDateien)
             {
-                try { Files.deleteIfExists(tempPdf); } catch (IOException ignored) { /* temp-Datei ggf. schon weg */ }
+                try { Files.deleteIfExists(temp); } catch (IOException ignored) { /* temp-Datei ggf. schon weg */ }
             }
         }
+    }
+
+    /**
+     * Baut den SMTP-Versand für das Dokument-Konto. Paketsichtbar und austauschbar, damit der
+     * Unit-Test den Versand prüfen kann, ohne einen Mailserver zu brauchen.
+     */
+    java.util.function.Function<SystemSettingsService.MailKonto, EmailService> emailServiceFabrik =
+            this::standardEmailService;
+
+    private EmailService standardEmailService(SystemSettingsService.MailKonto konto)
+    {
+        return new EmailService(konto.host(), konto.port(), konto.username(), konto.password())
+                .mitAbsenderName(konto.fromName())
+                .mitSentKopie(sentMailArchiver.fuerDokumentKonto());
+    }
+
+    /** Ein PDF der Auto-AB-Mail im Speicher. */
+    private record VersandAnhang(byte[] daten, String dateiname)
+    {
     }
 
     /**
@@ -225,6 +275,14 @@ public class AutoAuftragsbestaetigungVersandService
     void archiviereAlsProjektEmail(AusgangsGeschaeftsDokument ab, String empfaenger, String absender,
             String subject, String htmlBody, String messageId, Path pdf, String dateiname)
     {
+        archiviereAlsProjektEmail(ab, empfaenger, absender, subject, htmlBody, messageId,
+                List.of(new ProjektEmailArchivService.PdfAnhang(pdf, dateiname)));
+    }
+
+    /** Wie oben, mit mehreren PDF-Anhängen (AB und Widerrufsbelehrung). */
+    void archiviereAlsProjektEmail(AusgangsGeschaeftsDokument ab, String empfaenger, String absender,
+            String subject, String htmlBody, String messageId, List<ProjektEmailArchivService.PdfAnhang> anhaenge)
+    {
         if (ab.getProjekt() == null)
         {
             log.warn("Auto-AB {} versendet, aber ohne Projekt — Mail kann nicht im E-Mail-Center archiviert werden",
@@ -236,7 +294,7 @@ public class AutoAuftragsbestaetigungVersandService
             try
             {
                 projektEmailArchivService.archiviereVersandteEmail(
-                        ab.getProjekt(), empfaenger, absender, subject, htmlBody, messageId, pdf, dateiname);
+                        ab.getProjekt(), empfaenger, absender, subject, htmlBody, messageId, anhaenge);
                 return;
             }
             catch (Exception e)
@@ -1187,7 +1245,14 @@ public class AutoAuftragsbestaetigungVersandService
      */
     EmailService.EmailContent mitAnnahmeBeleg(EmailService.EmailContent content, DokumentFreigabe freigabe)
     {
-        String belegHtml = buildAnnahmeBelegHtml(freigabe, firmentelefon());
+        return mitAnnahmeBeleg(content, freigabe, false);
+    }
+
+    /** Wie oben; {@code belehrungAngehaengt} = die Widerrufsbelehrung hängt als PDF an der Mail. */
+    EmailService.EmailContent mitAnnahmeBeleg(EmailService.EmailContent content, DokumentFreigabe freigabe,
+            boolean belehrungAngehaengt)
+    {
+        String belegHtml = buildAnnahmeBelegHtml(freigabe, firmentelefon(), belehrungAngehaengt);
         String html = content.htmlBody() == null ? belegHtml : content.htmlBody() + belegHtml;
         return new EmailService.EmailContent(content.subject(), html);
     }
@@ -1210,6 +1275,11 @@ public class AutoAuftragsbestaetigungVersandService
 
     static String buildAnnahmeBelegHtml(DokumentFreigabe f, String telefon)
     {
+        return buildAnnahmeBelegHtml(f, telefon, false);
+    }
+
+    static String buildAnnahmeBelegHtml(DokumentFreigabe f, String telefon, boolean belehrungAngehaengt)
+    {
         String wann = f.getAkzeptiertAm() != null ? f.getAkzeptiertAm().format(ANNAHME_FORMAT) : "—";
         String hash = kuerzeHash(f.getHashAcceptance());
         String angebotsNummer = nullSafe(f.getDokumentNummer());
@@ -1228,6 +1298,35 @@ public class AutoAuftragsbestaetigungVersandService
                 ? "Bestätigt per Einmal-Code an <strong>" + escapeHtml(nullSafe(f.getCodeBestaetigtEmail()))
                         + "</strong><br>"
                 : "";
+        // Rechtsnachweis (seit V423). Die Entscheidung zum vorzeitigen Beginn steht bewusst in
+        // normaler Schrift: Sie bestimmt, wann wir anfangen, und muss für den Kunden lesbar sein.
+        String beginnAbsatz = "";
+        if (Boolean.TRUE.equals(f.getVorzeitigerBeginn()))
+        {
+            beginnAbsatz = "<p style=\"margin:12px 0 0 0;color:#1e293b;line-height:1.45;\">"
+                    + "<strong>Beginn vor Ablauf der Widerrufsfrist:</strong> Sie haben ausdrücklich verlangt, dass wir "
+                    + "schon vor Ablauf der Widerrufsfrist beginnen, und bestätigt, dass Ihr Widerrufsrecht bei "
+                    + "vollständiger Ausführung erlischt.</p>";
+        }
+        else if (Boolean.FALSE.equals(f.getVorzeitigerBeginn()))
+        {
+            beginnAbsatz = "<p style=\"margin:12px 0 0 0;color:#1e293b;line-height:1.45;\">"
+                    + "<strong>Beginn der Arbeiten:</strong> Sie haben keinen Beginn vor Ablauf der Widerrufsfrist "
+                    + "verlangt. Wir beginnen daher erst nach Ablauf der 14-tägigen Frist. Möchten Sie, dass wir "
+                    + "früher starten, teilen Sie uns das bitte kurz per E-Mail mit.</p>";
+        }
+        if (f.getWiderrufStand() != null && !WiderrufsbelehrungPdfService.STAND.equals(f.getWiderrufStand()))
+        {
+            // Website und ERP führen den Text getrennt – laufen die Stände auseinander, widersprechen
+            // sich Mail und angehängtes PDF. Das muss auffallen.
+            log.warn("Widerrufsbelehrung: Website-Stand {} weicht vom ERP-Stand {} ab (Dokument {})",
+                    f.getWiderrufStand(), WiderrufsbelehrungPdfService.STAND, f.getDokumentNummer());
+        }
+        String standZeile = f.getWiderrufStand() != null
+                ? "Widerrufsbelehrung Stand " + escapeHtml(WiderrufsbelehrungPdfService.formatiereStand(f.getWiderrufStand()))
+                        + (f.getKnopfText() != null ? ", ausgelöst mit „" + escapeHtml(f.getKnopfText()) + "“" : "")
+                        + "<br>"
+                : "";
         // "Waren Sie das nicht?" bewusst in normaler Textfarbe statt im grauen Kleingedruckten:
         // Diese Mail ist die einzige Stelle, an der der echte Kunde eine fremde Annahme bemerkt.
         String warnung = telefon != null
@@ -1240,11 +1339,15 @@ public class AutoAuftragsbestaetigungVersandService
                 + "<p style=\"margin:0 0 10px 0;color:#475569;line-height:1.45;\">"
                 + "Diese Mail wurde automatisch vom System erstellt, nachdem das Angebot "
                 + "<strong>" + escapeHtml(angebotsNummer) + "</strong> online digital angenommen wurde. "
-                + "Im Anhang finden Sie Ihre verbindliche Auftragsbestätigung als PDF."
+                + (belehrungAngehaengt
+                        ? "Im Anhang finden Sie Ihre verbindliche Auftragsbestätigung und unsere Widerrufsbelehrung als PDF."
+                        : "Im Anhang finden Sie Ihre verbindliche Auftragsbestätigung als PDF.")
                 + "</p>"
+                + beginnAbsatz
                 + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;line-height:1.5;\">"
                 + "Beweissicherung: " + beweisZeile + "<br>"
                 + codeZeile
+                + standZeile
                 + "Audit-Hash zur Rechtssicherheit: <code style=\"font-family:monospace;color:#64748b;\">" + hash + "</code>"
                 + "</p>"
                 + "<p style=\"margin:12px 0 0 0;color:#1e293b;line-height:1.45;\">" + warnung + "</p>"

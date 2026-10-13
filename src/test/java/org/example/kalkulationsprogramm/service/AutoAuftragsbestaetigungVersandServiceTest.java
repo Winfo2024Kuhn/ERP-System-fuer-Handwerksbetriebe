@@ -38,6 +38,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
     @Mock org.example.kalkulationsprogramm.repository.DokumentFreigabeRepository dokumentFreigabeRepository;
     @Mock org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @Mock FirmeninformationService firmeninformationService;
+    @Mock WiderrufsbelehrungPdfService widerrufsbelehrungPdfService;
 
     private AutoAuftragsbestaetigungVersandService neuService() {
         return new AutoAuftragsbestaetigungVersandService(
@@ -51,7 +52,8 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 projektEmailArchivService,
                 dokumentFreigabeRepository,
                 sentMailArchiver,
-                firmeninformationService);
+                firmeninformationService,
+                widerrufsbelehrungPdfService);
     }
 
     @Test
@@ -326,7 +328,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                org.mockito.ArgumentMatchers.anyList()))
                 .thenThrow(new org.springframework.dao.PessimisticLockingFailureException("Lock wait timeout"))
                 .thenReturn(null);
 
@@ -338,7 +340,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+                        org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test
@@ -350,7 +352,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                org.mockito.ArgumentMatchers.anyList()))
                 .thenThrow(new org.springframework.dao.PessimisticLockingFailureException("Lock wait timeout"));
 
         // Darf nicht werfen — die SMTP-Mail ist bereits beim Kunden.
@@ -362,7 +364,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+                        org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test
@@ -513,6 +515,90 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 nach == null ? List.of() : List.of(nach));
     }
 
+    // ------------- Versand: AB + Widerrufsbelehrung als zwei PDFs -------------
+
+    @SuppressWarnings("unchecked")
+    private java.util.List<org.example.email.EmailService.Attachment> versendeUndHoleAnhaenge(
+            AutoAuftragsbestaetigungVersandService service, DokumentFreigabe freigabe, boolean[] erfolg) {
+        when(systemSettingsService.getDokumentMailKonto()).thenReturn(new SystemSettingsService.MailKonto(
+                "smtp.example.com", 465, "info@example.com", "geheim", "info@example.com", "Musterbetrieb"));
+        when(rechnungPdfService.generatePdfBytes(org.mockito.ArgumentMatchers.any()))
+                .thenReturn("%PDF-AB".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        java.util.List<java.util.List<org.example.email.EmailService.Attachment>> gesendet = new java.util.ArrayList<>();
+        org.example.email.EmailService mail = org.mockito.Mockito.mock(org.example.email.EmailService.class);
+        try {
+            when(mail.sendEmailWithMultipleAttachments(
+                    org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.anyList()))
+                    .thenAnswer(inv -> {
+                        gesendet.add(inv.getArgument(6));
+                        return "<msg@example.com>";
+                    });
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+        service.emailServiceFabrik = konto -> mail;
+        erfolg[0] = service.versende(baueAbMitProjekt(), "max@example.com", freigabe);
+        assertThat(gesendet).hasSize(1);
+        return gesendet.get(0);
+    }
+
+    @Test
+    void versende_nachAnnahme_schicktAbUndWiderrufsbelehrungUndArchiviertBeide() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setVorzeitigerBeginn(true);
+        when(widerrufsbelehrungPdfService.erzeugePdf(f))
+                .thenReturn("%PDF-W".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        boolean[] erfolg = new boolean[1];
+
+        java.util.List<org.example.email.EmailService.Attachment> anhaenge = versendeUndHoleAnhaenge(service, f, erfolg);
+
+        assertThat(erfolg[0]).isTrue();
+        assertThat(anhaenge).extracting(org.example.email.EmailService.Attachment::filename)
+                .containsExactly("Auftragsbestaetigung_AB-2026_07_0001.pdf", "Widerrufsbelehrung_Stand_2026-10-13.pdf");
+        assertThat(anhaenge).allSatisfy(a -> assertThat(a.mimeType()).isEqualTo("application/pdf"));
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<java.util.List<ProjektEmailArchivService.PdfAnhang>> archiv =
+                org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        org.mockito.Mockito.verify(projektEmailArchivService).archiviereVersandteEmail(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), archiv.capture());
+        assertThat(archiv.getValue()).extracting(ProjektEmailArchivService.PdfAnhang::dateiname)
+                .containsExactly("Auftragsbestaetigung_AB-2026_07_0001.pdf", "Widerrufsbelehrung_Stand_2026-10-13.pdf");
+        // Temp-Dateien sind nach dem Versand wieder weg.
+        assertThat(archiv.getValue()).allSatisfy(a -> assertThat(java.nio.file.Files.exists(a.quelle())).isFalse());
+    }
+
+    @Test
+    void versende_belehrungScheitert_abGehtTrotzdemAllein() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        DokumentFreigabe f = angenommeneFreigabe();
+        when(widerrufsbelehrungPdfService.erzeugePdf(f)).thenThrow(new IllegalStateException("PDF kaputt"));
+        boolean[] erfolg = new boolean[1];
+
+        java.util.List<org.example.email.EmailService.Attachment> anhaenge = versendeUndHoleAnhaenge(service, f, erfolg);
+
+        assertThat(erfolg[0]).isTrue();
+        assertThat(anhaenge).extracting(org.example.email.EmailService.Attachment::filename)
+                .containsExactly("Auftragsbestaetigung_AB-2026_07_0001.pdf");
+    }
+
+    @Test
+    void versende_ohneFreigabe_ohneBelehrung() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        boolean[] erfolg = new boolean[1];
+
+        java.util.List<org.example.email.EmailService.Attachment> anhaenge = versendeUndHoleAnhaenge(service, null, erfolg);
+
+        assertThat(erfolg[0]).isTrue();
+        assertThat(anhaenge).hasSize(1);
+        org.mockito.Mockito.verifyNoInteractions(widerrufsbelehrungPdfService);
+    }
+
     private static AusgangsGeschaeftsDokument baueAbMitProjekt() {
         AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
         ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
@@ -589,6 +675,72 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 .contains("Annahme am <strong>11.10.2026 um 14:05 Uhr</strong>")
                 .contains("&lt;b&gt;AN&lt;/b&gt;")
                 .contains("&lt;i&gt;0800&lt;/i&gt;");
+    }
+
+    @Test
+    void annahmeBeleg_vorzeitigerBeginnVerlangt_nenntZustimmungUndStand() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setVorzeitigerBeginn(true);
+        f.setWiderrufStand("2026-10-13");
+        f.setKnopfText("Zahlungspflichtig beauftragen");
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null, true);
+
+        assertThat(html)
+                .contains("Auftragsbestätigung und unsere Widerrufsbelehrung als PDF")
+                .contains("Beginn vor Ablauf der Widerrufsfrist:")
+                .contains("Widerrufsbelehrung Stand 13.10.2026, ausgelöst mit „Zahlungspflichtig beauftragen“")
+                .doesNotContain("erst nach Ablauf der 14-tägigen Frist");
+    }
+
+    @Test
+    void annahmeBeleg_ohneAngehaengteBelehrung_kuendigtSieNichtAn() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setWiderrufStand("2020-01-01"); // abweichender Stand: nur Log-Warnung, Beleg bleibt lesbar
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null, false);
+
+        assertThat(html)
+                .contains("Im Anhang finden Sie Ihre verbindliche Auftragsbestätigung als PDF.")
+                .doesNotContain("unsere Widerrufsbelehrung als PDF")
+                .contains("Widerrufsbelehrung Stand 01.01.2020");
+    }
+
+    @Test
+    void annahmeBeleg_vorzeitigerBeginnNichtVerlangt_kuendigtWartezeitAn() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setVorzeitigerBeginn(false);
+        f.setWiderrufStand("2026-10-13");
+        f.setKnopfText("<b>X</b>");
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null);
+
+        assertThat(html)
+                .contains("erst nach Ablauf der 14-tägigen Frist")
+                .contains("&lt;b&gt;X&lt;/b&gt;")
+                .doesNotContain("Sie haben ausdrücklich verlangt");
+    }
+
+    @Test
+    void annahmeBeleg_altAnnahmeOhneRechtsnachweis_ohneBeginnUndStandzeile() {
+        DokumentFreigabe f = angenommeneFreigabe();
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null);
+
+        assertThat(html)
+                .doesNotContain("Beginn der Arbeiten")
+                .doesNotContain("Beginn vor Ablauf")
+                .doesNotContain("Widerrufsbelehrung Stand");
+    }
+
+    @Test
+    void annahmeBeleg_standOhneKnopftext() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setWiderrufStand("2026-10-13");
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null);
+
+        assertThat(html).contains("Widerrufsbelehrung Stand 13.10.2026<br>").doesNotContain("ausgelöst mit");
     }
 
     @Test
