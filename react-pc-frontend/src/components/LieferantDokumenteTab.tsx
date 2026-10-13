@@ -154,8 +154,11 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
         try {
             const res = await fetch(`/api/lieferanten/${lieferantId}/dokumente`);
             if (res.ok) {
-                const data = await res.json();
+                const data: LieferantDokument[] = await res.json();
                 setDokumente(data);
+                // Ein offenes Bearbeiten-Fenster bekommt den frischen Stand (z. B. die neue
+                // Projekt-Zuordnung); es befüllt sein Formular nur bei anderer ID neu.
+                setSelectedDokument(prev => (prev ? data.find(d => d.id === prev.id) ?? prev : prev));
             }
         } catch (err) {
             console.error("Fehler beim Laden der Dokumente", err);
@@ -605,7 +608,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                 onSave={(updated) => {
                     setDokumente(prev => prev.map(d => d.id === updated.id ? updated : d));
                 }}
-                onZugeordnet={() => void loadDokumente({ still: true })}
+                onZuordnen={(dok) => setZuordnungDokument(dok)}
             />
 
             {/* Dokument Import Modal */}
@@ -632,7 +635,8 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                 />
             )}
 
-            {/* Zuordnung bearbeiten Modal */}
+            {/* Zuordnung bearbeiten Modal – steht im DOM nach dem Bearbeiten-Fenster und liegt
+                bei gleichem z-Index darüber, wenn es von dort über „Zuordnen“ geöffnet wird. */}
             {zuordnungDokument && zuordnungDokument.geschaeftsdaten && (
                 <ZuordnungModal
                     geschaeftsdokumentId={zuordnungDokument.id}
@@ -642,7 +646,8 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                     onClose={() => setZuordnungDokument(null)}
                     onSuccess={() => {
                         setZuordnungDokument(null);
-                        void loadDokumente();
+                        // Still: Die Ladeanzeige ersetzt den Reiter und schlösse ein offenes Bearbeiten-Fenster.
+                        void loadDokumente({ still: true });
                     }}
                 />
             )}

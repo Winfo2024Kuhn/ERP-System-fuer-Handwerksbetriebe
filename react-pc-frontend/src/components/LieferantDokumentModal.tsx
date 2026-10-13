@@ -14,7 +14,6 @@ import { useKonfliktMeldung } from "./lock/useKonfliktMeldung";
 import { useIdleTimer } from "../hooks/useIdleTimer";
 import { useToast } from "./ui/toast";
 import { ZeugnisPositionen } from "./ZeugnisPositionen";
-import { ZuordnungModal } from "./ZuordnungModal";
 
 interface LieferantDokumentModalProps {
     isOpen: boolean;
@@ -22,8 +21,12 @@ interface LieferantDokumentModalProps {
     dokument: LieferantDokument | null;
     lieferantId: number | string;
     onSave?: (updated: LieferantDokument) => void;
-    /** Nach erfolgreicher Projekt-Zuordnung über „Zuordnen“ – der Aufrufer lädt seine Liste neu. */
-    onZugeordnet?: () => void;
+    /**
+     * „Zuordnen“ im Warnband „Kein Projekt zugeordnet“: Der Aufrufer öffnet seinen
+     * Zuordnungs-Dialog und reicht danach das neu geladene Dokument (gleiche ID) herein.
+     * Ohne diese Prop gibt es keinen Knopf.
+     */
+    onZuordnen?: (dokument: LieferantDokument) => void;
 }
 
 const DOK_TYP_OPTIONS = [
@@ -46,12 +49,9 @@ export default function LieferantDokumentModal({
     dokument,
     lieferantId,
     onSave,
-    onZugeordnet
+    onZuordnen
 }: LieferantDokumentModalProps) {
     const [showPdf, setShowPdf] = useState(true);
-    const [zeigeZuordnung, setZeigeZuordnung] = useState(false);
-    // Nach dem Zuordnen ist dokument.projektAnteile veraltet, bis der Aufrufer neu lädt.
-    const [zugeordnet, setZugeordnet] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -169,7 +169,9 @@ export default function LieferantDokumentModal({
         tatsaechlichGezahlt: "",
     });
 
-    // Reset form when document changes
+    // Formular beim Öffnen bzw. bei einem ANDEREN Dokument neu befüllen. Bewusst nicht
+    // bei jedem neuen Objekt derselben ID: Lädt der Aufrufer nach dem Zuordnen neu,
+    // sollen ungespeicherte Eingaben stehen bleiben.
     useEffect(() => {
         if (dokument) {
             setFormData({
@@ -194,21 +196,23 @@ export default function LieferantDokumentModal({
             });
             setError(null);
             setShowPdf(true);
-            setZeigeZuordnung(false);
-            setZugeordnet(false);
         }
-    }, [dokument]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dokument?.id, isOpen]);
 
-    // Lade PDF als Blob um X-Frame-Options externer URLs zu umgehen
+    // Lade PDF als Blob um X-Frame-Options externer URLs zu umgehen.
+    // Nur an der ID festgemacht: Ein neu geladenes Objekt desselben Dokuments
+    // (z. B. nach dem Zuordnen) lädt die Vorschau nicht erneut.
+    const dokumentId = dokument?.id;
     useEffect(() => {
-        if (!isOpen || !dokument || !showPdf) {
+        if (!isOpen || dokumentId == null || !showPdf) {
             setPdfBlobUrl(null);
             return;
         }
         const controller = new AbortController();
         let currentUrl: string | null = null;
 
-        fetch(`/api/lieferanten/${lieferantId}/dokumente/${dokument.id}/download`, { signal: controller.signal })
+        fetch(`/api/lieferanten/${lieferantId}/dokumente/${dokumentId}/download`, { signal: controller.signal })
             .then(res => res.blob())
             .then(blob => {
                 currentUrl = URL.createObjectURL(blob);
@@ -221,7 +225,7 @@ export default function LieferantDokumentModal({
             if (currentUrl) URL.revokeObjectURL(currentUrl);
             setPdfBlobUrl(null);
         };
-    }, [dokument?.id, dokument, lieferantId, isOpen, showPdf]);
+    }, [dokumentId, lieferantId, isOpen, showPdf]);
 
     if (!isOpen || !dokument) return null;
 
@@ -744,26 +748,30 @@ export default function LieferantDokumentModal({
                                 {showZeugnisPositionen && <ZeugnisPositionen dokumentId={dokument.id} />}
 
                                 {/* Warnung: Kein Projekt */}
-                                {dokument.projektAnteile.length === 0 && !zugeordnet && (
+                                {dokument.projektAnteile.length === 0 && (
                                     <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
                                         <div className="flex items-center gap-2 text-sm text-amber-700">
                                             <AlertCircle className="w-4 h-4" />
                                             <span>Kein Projekt zugeordnet</span>
                                         </div>
                                         {/* Gleicher Dialog wie in Projektmanagement → Bestellungen.
-                                            Ohne ausgelesene Geschäftsdaten (Nummer, Betrag) gibt es
-                                            nichts aufzuteilen – dann kein Knopf. */}
-                                        {dokument.geschaeftsdaten && (
+                                            Ohne ausgelesene Rechnungsdaten (Nummer, Betrag) gibt es
+                                            nichts aufzuteilen – dann ein Hinweis statt Knopf. */}
+                                        {onZuordnen && (dokument.geschaeftsdaten ? (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
                                                 className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                                                onClick={() => setZeigeZuordnung(true)}
+                                                onClick={() => onZuordnen(dokument)}
                                             >
                                                 <FolderPlus className="w-4 h-4 mr-1" />
                                                 Zuordnen
                                             </Button>
-                                        )}
+                                        ) : (
+                                            <span className="text-xs text-amber-700">
+                                                Erst die Rechnungsdaten eintragen und speichern, dann zuordnen.
+                                            </span>
+                                        ))}
                                     </div>
                                 )}
 
@@ -818,21 +826,6 @@ export default function LieferantDokumentModal({
                     </div>
                 </div>
             </div>
-
-            {/* Projekt-Zuordnung: liegt im DOM nach dem Fenster und damit darüber */}
-            {zeigeZuordnung && (
-                <ZuordnungModal
-                    geschaeftsdokumentId={dokument.id}
-                    dokumentNummer={dokument.geschaeftsdaten?.dokumentNummer ?? null}
-                    pdfUrl={dokument.url ?? null}
-                    onClose={() => setZeigeZuordnung(false)}
-                    onSuccess={() => {
-                        setZugeordnet(true);
-                        toast.success("Projekt zugeordnet.");
-                        onZugeordnet?.();
-                    }}
-                />
-            )}
         </>
     );
 }

@@ -48,15 +48,36 @@ class EmailFreemailBackfillRepositoryTest {
     }
 
     @Test
+    void absenderMitAnzeigenameTrifftNurDieExakteAdresse() {
+        Email mitName = mail("<n1@example.org>", "\"Max Mustermann\" <Max@GMX.de>", EmailDirection.IN);
+        mail("<n2@example.org>", "Max Mustermann <xy@gmx.de>", EmailDirection.IN);
+        mail("<n3@example.org>", "Erika Musterfrau <erika@gmx.de>", EmailDirection.IN);
+        Email unterstrich = mail("<n4@example.org>", "Max <max_m@gmx.de>", EmailDirection.IN);
+        mail("<n5@example.org>", "Max <maxXm@gmx.de>", EmailDirection.IN);
+        entityManager.flush();
+
+        assertThat(emailRepository.findUnassignedEingangVonAdresse("max@gmx.de"))
+                .extracting(Email::getId)
+                .containsExactly(mitName.getId());
+        assertThat(emailRepository.findUnassignedEingangVonAdresse("x@gmx.de")).isEmpty();
+        // Unterstrich ist im LIKE-Muster maskiert: kein Treffer auf maxXm@gmx.de.
+        assertThat(emailRepository.findUnassignedEingangVonAdresse(" Max_M@gmx.de "))
+                .extracting(Email::getId)
+                .containsExactly(unterstrich.getId());
+    }
+
+    @Test
     void anfrageFlagNurFuerExakteAdresse() {
         Email eigene = mail("<a1@example.org>", "max.mustermann@gmail.com", EmailDirection.IN);
         eigene.setPotentialInquiry(true);
         Email fremd = mail("<a2@example.org>", "erika.musterfrau@gmail.com", EmailDirection.IN);
         fremd.setPotentialInquiry(true);
+        Email mitName = mail("<a3@example.org>", "Max Mustermann <max.mustermann@gmail.com>", EmailDirection.IN);
+        mitName.setPotentialInquiry(true);
         entityManager.flush();
 
         assertThat(emailRepository.findInquiriesVonAdresse("max.mustermann@gmail.com"))
                 .extracting(Email::getId)
-                .containsExactly(eigene.getId());
+                .containsExactlyInAnyOrder(eigene.getId(), mitName.getId());
     }
 }

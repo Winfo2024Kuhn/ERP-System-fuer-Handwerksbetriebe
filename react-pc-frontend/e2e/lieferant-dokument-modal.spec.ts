@@ -309,6 +309,14 @@ test.describe('LieferantDokumentModal - Zuordnen', () => {
 
         const zuordnung = page.getByRole('dialog', { name: 'Rechnung RE-2026-100' });
         await expect(zuordnung).toBeVisible();
+        // Der Zuordnungs-Dialog liegt sichtbar ÜBER dem Bearbeiten-Fenster: Die Mitte seines
+        // Kopfes gehört zu ihm und nicht zum Fenster darunter.
+        const kopf = (await zuordnung.getByRole('heading', { name: 'Rechnung RE-2026-100' }).boundingBox())!;
+        const obenAuf = await page.evaluate(
+            ({ x, y }) => document.elementFromPoint(x, y)?.closest('[role="dialog"]')?.getAttribute('aria-labelledby') ?? null,
+            { x: kopf.x + kopf.width / 2, y: kopf.y + kopf.height / 2 },
+        );
+        expect(obenAuf).toBe(await zuordnung.getAttribute('aria-labelledby'));
         await designPruefung(page, testInfo, 'lieferant-modal-zuordnen-offen');
 
         await zuordnung.getByRole('button', { name: /Projekt hinzufügen/ }).click();
@@ -316,7 +324,6 @@ test.describe('LieferantDokumentModal - Zuordnen', () => {
         await zuordnung.getByRole('button', { name: /Zuordnen & Abschließen/ }).click();
 
         await expect(zuordnung).toBeHidden();
-        await expect(page.getByTestId('toast-container')).toContainText('Projekt zugeordnet.');
         await expect(dialog(page).getByText('Kein Projekt zugeordnet')).toBeHidden();
         // Das Bearbeiten-Fenster bleibt offen, die Liste dahinter ist aktualisiert.
         await expect(dialog(page)).toBeVisible();

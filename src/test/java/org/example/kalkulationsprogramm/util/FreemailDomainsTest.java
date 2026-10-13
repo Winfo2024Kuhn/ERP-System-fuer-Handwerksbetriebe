@@ -16,7 +16,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class FreemailDomainsTest {
 
-    private static final Path FRONTEND_LISTE = Path.of("react-pc-frontend/src/lib/freemailDomains.ts");
+    private static final Path FRONTEND_LISTE_RELATIV = Path.of("react-pc-frontend", "src", "lib", "freemailDomains.ts");
+
+    /**
+     * Sucht die Frontend-Liste vom Arbeitsverzeichnis aus nach oben. Maven startet im
+     * Projekt-Wurzelordner, manche IDEs in einem Unterordner – beides soll funktionieren.
+     */
+    private static Path frontendListe() {
+        for (Path ordner = Path.of(System.getProperty("user.dir")).toAbsolutePath(); ordner != null; ordner = ordner.getParent()) {
+            Path kandidat = ordner.resolve(FRONTEND_LISTE_RELATIV);
+            if (Files.isRegularFile(kandidat)) {
+                return kandidat;
+            }
+        }
+        throw new AssertionError("Frontend-Liste " + FRONTEND_LISTE_RELATIV + " nicht gefunden (gesucht ab "
+                + System.getProperty("user.dir") + " aufwärts)");
+    }
 
     @Test
     @DisplayName("istFreemailDomain erkennt die gaengigen Anbieter, egal wie geschrieben")
@@ -41,10 +56,11 @@ class FreemailDomainsTest {
     @Test
     @DisplayName("Frontend-Liste stimmt mit der Backend-Liste ueberein")
     void frontendListeIstGleich() throws IOException {
-        String quelle = Files.readString(FRONTEND_LISTE, StandardCharsets.UTF_8);
+        Path datei = frontendListe();
+        String quelle = Files.readString(datei, StandardCharsets.UTF_8);
         int start = quelle.indexOf("new Set([");
         int ende = quelle.indexOf("])", start);
-        assertThat(start).as("Set-Literal in %s", FRONTEND_LISTE).isPositive();
+        assertThat(start).as("Set-Literal in %s", datei).isPositive();
 
         Set<String> frontend = new TreeSet<>();
         Matcher m = Pattern.compile("'([^']++)'").matcher(quelle.substring(start, ende));
