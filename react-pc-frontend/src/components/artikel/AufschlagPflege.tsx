@@ -30,9 +30,12 @@ const json = { 'Content-Type': 'application/json' };
 const MAX_PROZENT = 999.99;
 const alsText = (p: number | null) => (p == null ? '' : formatDecimalInput(p));
 
+/** Name der Kategorie, von der der Aufschlag stammt; ohne Namen „Kategorie“. */
+const vonText = (z: KategorieZeile) => z.wirksamVon || 'Kategorie';
+
 /** Was für die Artikel einer Kategorie gilt, in einem Satz. */
 function wirkung(z: KategorieZeile): string {
-    if (z.wirksamQuelle === 'KATEGORIE') return z.prozent != null ? `${alsText(z.wirksamProzent)} %` : `${alsText(z.wirksamProzent)} % (von „${z.wirksamVon}“)`;
+    if (z.wirksamQuelle === 'KATEGORIE') return z.prozent != null ? `${alsText(z.wirksamProzent)} %` : `${alsText(z.wirksamProzent)} % (von „${vonText(z)}“)`;
     if (z.wirksamQuelle === 'ALLGEMEIN') return `${alsText(z.wirksamProzent)} % (allgemein)`;
     return 'kein Aufschlag';
 }
@@ -42,7 +45,7 @@ function wirkung(z: KategorieZeile): string {
  * dann der der Kategorie (sonst der der Oberkategorie), dann der allgemeine. Ist nirgends einer eingestellt, übernimmt das Programm den Einkaufspreis unverändert.
  * Gedacht für ein Fenster in der Artikelübersicht, das nur Benutzer mit dem Recht „Aufschläge ändern“ öffnen können.
  */
-export function AufschlagPflege() {
+export function AufschlagPflege({ onGeaendert }: { onGeaendert?: () => void } = {}) {
     const toast = useToast();
     const [daten, setDaten] = useState<Uebersicht | null>(null);
     const [fehler, setFehler] = useState('');
@@ -81,6 +84,7 @@ export function AufschlagPflege() {
             const res = await fetch(url, { method: 'PUT', headers: json, body: JSON.stringify({ prozent: p.value }) });
             if (!res.ok) throw new Error(await parseErrorMessage(res, 'Der Aufschlag konnte nicht gespeichert werden.'));
             uebernehmen(await res.json() as Uebersicht);
+            onGeaendert?.();
             toast.success(p.value == null ? `${name}: kein Aufschlag eingestellt.` : `${name}: ${formatDecimalInput(p.value)} % gespeichert.`);
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Der Aufschlag konnte nicht gespeichert werden.');
@@ -111,7 +115,7 @@ export function AufschlagPflege() {
                         <p className="mt-1 text-sm text-slate-600">Gilt für alle Artikel, die weder einen eigenen Aufschlag noch eine Kategorie mit Aufschlag haben. Leer lassen heißt: kein allgemeiner Aufschlag.</p>
                         <div className="mt-4 flex flex-wrap items-end gap-3">
                             <div className="w-40">
-                                <DecimalInput id="aufschlag-allgemein" label="Aufschlag in Prozent" value={allgemein} onChange={setAllgemein} min={0} max={MAX_PROZENT} placeholder="zum Beispiel 25" />
+                                <DecimalInput id="aufschlag-allgemein" label="Aufschlag in Prozent" value={allgemein} onChange={setAllgemein} min={0} max={MAX_PROZENT} nullBehalten placeholder="zum Beispiel 25" />
                             </div>
                             <Button onClick={() => void speichere('allgemein', `${BASIS}/allgemein`, allgemein, 'Allgemeiner Aufschlag')}
                                 disabled={speichert !== null || allgemein.trim() === alsText(daten.allgemein)}
@@ -149,7 +153,7 @@ export function AufschlagPflege() {
                                                     <th scope="row" className="px-3 py-2 text-left font-medium text-slate-800">{k.pfad}</th>
                                                     <td className="px-3 py-2">
                                                         <div className="w-28">
-                                                            <DecimalInput aria-label={`Aufschlag für ${k.pfad}`} value={text} min={0} max={MAX_PROZENT} placeholder="kein eigener"
+                                                            <DecimalInput aria-label={`Aufschlag für ${k.pfad}`} value={text} min={0} max={MAX_PROZENT} nullBehalten placeholder="kein eigener"
                                                                 onChange={v => setEingabe(alt => ({ ...alt, [k.id]: v }))} />
                                                         </div>
                                                     </td>

@@ -16,6 +16,7 @@ export default function ArtikelEditor() {
     // Filterleiste und Trefferliste stecken in ArtikelSuche - dieselbe Suche nutzt
     // das Auswahlfenster im Dokument-Editor. Hier bleibt nur das Seitengeruest.
     const sucheRef = useRef<ArtikelSucheHandle>(null);
+    const aufschlaegeGeaendert = useRef(false);
     // Der Aktualisieren-Knopf steht in der Kopfzeile, die Liste eine Ebene tiefer:
     // Damit sein Spinner mitlaeuft, meldet die Suche ihren Ladezustand herauf.
     const [loading, setLoading] = useState(false);
@@ -26,6 +27,11 @@ export default function ArtikelEditor() {
     // Aufschläge sind eine Preisregel: Knopf und Fenster gibt es nur für Benutzer mit dem Recht „Aufschläge ändern“
     const darfAufschlaegeAendern = useDarfAufschlaegeAendern();
     const [showAufschlaege, setShowAufschlaege] = useState(false);
+    // Nach dem Schließen zeigt die Liste die neuen Preisvorschläge, aber nur, wenn wirklich etwas gespeichert wurde.
+    const schliesseAufschlaege = (offen: boolean) => {
+        setShowAufschlaege(offen);
+        if (!offen && aufschlaegeGeaendert.current) { aufschlaegeGeaendert.current = false; sucheRef.current?.neuLaden(); }
+    };
 
     return (
         <PageLayout
@@ -83,17 +89,17 @@ export default function ArtikelEditor() {
                 />
             )}
             {darfAufschlaegeAendern && (
-                <Dialog open={showAufschlaege} onOpenChange={setShowAufschlaege} className="w-full max-w-5xl max-h-[90vh]" aria-labelledby="artikel-aufschlaege-titel">
+                <Dialog open={showAufschlaege} onOpenChange={schliesseAufschlaege} className="w-full max-w-5xl max-h-[90vh]" aria-labelledby="artikel-aufschlaege-titel">
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle id="artikel-aufschlaege-titel">Aufschläge</DialogTitle>
                             <DialogDescription>Wie viel Prozent auf den Einkaufspreis kommen, damit der Verkaufspreis stimmt.</DialogDescription>
                         </DialogHeader>
                         <div className="min-h-0 flex-1 overflow-y-auto -m-1 p-1">
-                            {showAufschlaege && <AufschlagPflege />}
+                            {showAufschlaege && <AufschlagPflege onGeaendert={() => { aufschlaegeGeaendert.current = true; }} />}
                         </div>
                         <DialogFooter>
-                            <Button variant="outline" size="sm" onClick={() => setShowAufschlaege(false)}>Schließen</Button>
+                            <Button variant="outline" size="sm" onClick={() => schliesseAufschlaege(false)}>Schließen</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

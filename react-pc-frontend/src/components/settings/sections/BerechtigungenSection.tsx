@@ -135,7 +135,7 @@ function AufschlaegeInfo() {
             </InfoAbschnitt>
             <InfoAbschnitt titel="Was bewirkt das?">
                 <p>
-                    Ohne dieses Recht sehen und ändern andere die Aufschläge nicht. Der Aufschlag direkt am Artikel kann weiterhin jeder Benutzer
+                    Ohne dieses Recht sehen und ändern andere den allgemeinen Aufschlag und die Aufschläge der Kategorien nicht. Der Aufschlag direkt am Artikel kann weiterhin jeder Benutzer
                     ändern. Der Preisvorschlag ändert sich nach einer Änderung sofort; bereits erstellte Angebote und Rechnungen bleiben unverändert.
                 </p>
             </InfoAbschnitt>

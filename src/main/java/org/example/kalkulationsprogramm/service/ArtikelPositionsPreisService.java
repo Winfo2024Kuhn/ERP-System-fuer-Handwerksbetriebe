@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.ArtikelPreisHinweis;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -37,12 +38,21 @@ public class ArtikelPositionsPreisService {
 
     /** Ohne Aufschlagsregeln: nur der Aufschlag am Artikel zaehlt. */
     public ArtikelPositionsPreisService() {
-        this(null);
+        this((AufschlagService) null);
     }
 
-    @Autowired
+    /** Mit bekannten Aufschlagsregeln (für Tests und direkte Aufrufer). */
     public ArtikelPositionsPreisService(AufschlagService aufschlaege) {
         this.aufschlaege = aufschlaege;
+    }
+
+    /**
+     * Konstruktor für Spring: Die Aufschlagsregeln sind im laufenden Programm immer da. Kontexte ohne sie (zum Beispiel Tests, die nur einen Ausschnitt laden)
+     * bekommen keinen Fehler, sondern rechnen wie früher nur mit dem Aufschlag am Artikel.
+     */
+    @Autowired
+    public ArtikelPositionsPreisService(ObjectProvider<AufschlagService> aufschlaege) {
+        this(aufschlaege.getIfAvailable());
     }
 
     /** Vorschlag fuer eine Dokumentposition. {@code einzelpreis} ist {@code null}, wenn er nicht ermittelbar war. */

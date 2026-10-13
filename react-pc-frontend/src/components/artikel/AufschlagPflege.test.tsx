@@ -35,6 +35,19 @@ afterEach(() => { vi.unstubAllGlobals(); });
 const rendern = () => render(<ToastProvider><AufschlagPflege /></ToastProvider>);
 
 describe('Aufschläge einstellen (Fenster in der Artikelübersicht)', { timeout: 30000 }, () => {
+    it('lässt eine gespeicherte 0 beim Anklicken stehen: 0 Prozent ist ein eigener Wert, leer heißt „nicht eingestellt“', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => json({ ...UEBERSICHT, allgemein: 0 })));
+        const user = userEvent.setup();
+        rendern();
+        const feld = await screen.findByLabelText('Aufschlag in Prozent');
+        expect(feld).toHaveValue('0');
+
+        await user.click(feld);
+
+        expect(feld).toHaveValue('0');
+        expect(screen.getByRole('button', { name: 'Allgemeinen Aufschlag speichern' })).toBeDisabled();
+    });
+
     it('zeigt den allgemeinen Aufschlag und je Kategorie den eigenen und was für ihre Artikel gilt', async () => {
         rendern();
 

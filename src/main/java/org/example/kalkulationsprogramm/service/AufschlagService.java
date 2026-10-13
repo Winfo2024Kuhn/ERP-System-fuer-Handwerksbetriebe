@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Kategorie;
@@ -57,7 +58,7 @@ public class AufschlagService {
         if (artikel.getVerkaufsaufschlagProzent() != null) {
             return new Wirksam(artikel.getVerkaufsaufschlagProzent(), Quelle.ARTIKEL, null);
         }
-        return ausKategorieOderAllgemein(artikel.getKategorie());
+        return ausKategorieOderAllgemein(artikel.getKategorie(), this::allgemein);
     }
 
     @Transactional(readOnly = true)
@@ -79,14 +80,15 @@ public class AufschlagService {
         Map<Integer, Kategorie> nachId = new HashMap<>();
         alle.forEach(k -> nachId.put(k.getId(), k));
         List<KategorieZeile> zeilen = new ArrayList<>();
+        BigDecimal allgemein = allgemein();
         for (Kategorie k : alle) {
-            Wirksam w = ausKategorieOderAllgemein(k);
+            Wirksam w = ausKategorieOderAllgemein(k, () -> allgemein);
             Kategorie eltern = k.getParentKategorie();
             zeilen.add(new KategorieZeile(k.getId(), eltern == null ? null : eltern.getId(), pfad(k), k.getVerkaufsaufschlagProzent(), w.prozent(), w.quelle(),
                     w.quellenName()));
         }
         zeilen.sort(Comparator.comparing((KategorieZeile z) -> z.pfad().toLowerCase(Locale.ROOT)));
-        return new Uebersicht(allgemein(), zeilen);
+        return new Uebersicht(allgemein, zeilen);
     }
 
     @Transactional
@@ -105,24 +107,28 @@ public class AufschlagService {
         return uebersicht();
     }
 
-    private Wirksam ausKategorieOderAllgemein(Kategorie start) {
+    private Wirksam ausKategorieOderAllgemein(Kategorie start, Supplier<BigDecimal> allgemeinQuelle) {
         Set<Integer> gesehen = new HashSet<>();
         Kategorie k = start;
         for (int tiefe = 0; k != null && tiefe < MAX_TIEFE && gesehen.add(k.getId()); tiefe++) {
             if (k.getVerkaufsaufschlagProzent() != null) {
-                return new Wirksam(k.getVerkaufsaufschlagProzent(), Quelle.KATEGORIE, k.getBeschreibung());
+                return new Wirksam(k.getVerkaufsaufschlagProzent(), Quelle.KATEGORIE, name(k));
             }
             k = k.getParentKategorie();
         }
-        BigDecimal allgemein = allgemein();
+        BigDecimal allgemein = allgemeinQuelle.get();
         return allgemein != null ? new Wirksam(allgemein, Quelle.ALLGEMEIN, null) : new Wirksam(null, Quelle.KEINER, null);
+    }
+
+    private static String name(Kategorie k) {
+        return k.getBeschreibung() == null || k.getBeschreibung().isBlank() ? "Kategorie " + k.getId() : k.getBeschreibung().strip();
     }
 
     private static String pfad(Kategorie k) {
         List<String> teile = new ArrayList<>();
         Set<Integer> gesehen = new HashSet<>();
         for (Kategorie x = k; x != null && gesehen.add(x.getId()) && teile.size() < MAX_TIEFE; x = x.getParentKategorie()) {
-            teile.add(0, x.getBeschreibung() == null || x.getBeschreibung().isBlank() ? "Kategorie " + x.getId() : x.getBeschreibung().strip());
+            teile.add(0, name(x));
         }
         return String.join(" › ", teile);
     }
