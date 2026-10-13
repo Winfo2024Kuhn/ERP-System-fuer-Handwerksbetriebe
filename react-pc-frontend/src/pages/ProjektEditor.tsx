@@ -37,7 +37,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
-import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel, ArtikelInProjekt } from "../types";
+import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel, ArtikelInProjekt, Materialkosten } from "../types";
 import { canCreateEinfacheRechnung, istRechnungAmVorgaengerGesperrt, hatAktiveAuftragsbestaetigung } from "../lib/abrechnungsverlauf";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
@@ -62,6 +62,9 @@ import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import { stornoHinweiseAus, zeigeStornoHinweise } from '../lib/stornoHinweise';
 import { leseFehlermeldung } from '../lib/apiFehler';
+import { projektZumBearbeiten } from '../lib/projektBearbeiten';
+import { DecimalInput } from '../components/ui/decimal-input';
+import { validateMoneyDraft } from '../features/finanzen/moneyDrafts';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ZuordnungModal } from '../components/ZuordnungModal';
 import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
@@ -207,6 +210,20 @@ interface ProjektDetailViewProps {
     initialTab?: ProjektDetailTab;
 }
 
+/** Papierkorb am Zeilenende der Material-Listen; gesperrt, solange das Entfernen laeuft. */
+const AusProjektEntfernenKnopf: React.FC<{ name: string; laeuft: boolean; onClick: () => void }> = ({ name, laeuft, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={laeuft}
+        aria-label={`${name} aus dem Projekt entfernen`}
+        title="Aus dem Projekt entfernen"
+        className="p-2 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+        <Trash2 className="w-4 h-4" />
+    </button>
+);
+
 const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, onEdit, onRefresh, initialTab }) => {
     const toast = useToast();
     const confirmDialog = useConfirm();
@@ -260,6 +277,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [savingLagerArtikel, setSavingLagerArtikel] = useState(false);
     // Id der Position, die gerade entfernt wird - sperrt genau ihren Knopf.
     const [loeschendeArtikelId, setLoeschendeArtikelId] = useState<number | null>(null);
+    const [loeschendeMaterialId, setLoeschendeMaterialId] = useState<number | null>(null);
     // Die Auswahl haengt an der Artikel-Id. Die Trefferliste zeigt eine Zeile je
     // Artikel (mit dem guenstigsten Anbieter darin) - ein zusammengesetzter
     // Schluessel aus Artikel und Lieferant haette hier nichts mehr zu unterscheiden.
@@ -948,42 +966,78 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         }
     };
 
+    /**
+     * Haengt genau einen neuen Eintrag an. Bereits erfasste Materialkosten
+     * bleiben stehen - frueher ersetzte das Speichern die ganze Liste.
+     */
     const handleSaveMaterial = async () => {
-        if (!newMaterial.beschreibung || !newMaterial.betrag) return;
+        const beschreibung = newMaterial.beschreibung.trim();
+        if (!beschreibung) {
+            toast.error('Bitte eine Beschreibung angeben.');
+            return;
+        }
+        const betrag = validateMoneyDraft(newMaterial.betrag);
+        if (!betrag.valid) {
+            toast.error(betrag.message);
+            return;
+        }
+
         setSavingMaterial(true);
         try {
-            const betrag = parseFloat(newMaterial.betrag.replace(',', '.'));
-            const payload = [{
-                beschreibung: newMaterial.beschreibung,
-                betrag: betrag,
-                monat: new Date().getMonth() + 1, // Default to current month
-                lieferantId: newMaterial.lieferantId ? parseInt(newMaterial.lieferantId) : null,
-                rechnungsnummer: newMaterial.rechnungsnummer
-            }];
-
             const res = await fetch(`/api/projekte/${projekt.id}/materialkosten`, {
-                method: 'PATCH',
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    beschreibung,
+                    betrag: betrag.value,
+                    monat: new Date().getMonth() + 1,
+                    lieferantId: newMaterial.lieferantId ? Number(newMaterial.lieferantId) : null,
+                    rechnungsnummer: newMaterial.rechnungsnummer.trim() || null,
+                }),
             });
-
-            if (res.ok) {
-                setShowMaterialModal(false);
-                setNewMaterial({ beschreibung: '', betrag: '', rechnungsnummer: '' });
-                // Trigger refresh if possible, or just notify user
-                // Ideally, we callback to parent to reload project
-                onBack(); // Simple workaround: go back to list to force reload on re-entry (or we could implement a reload callback)
-                // Better: onEdit() effectively reloads? No. 
-                // We'll modify the props to accept onRefresh?
-                // For now, reload via window.location.reload() is too harsh.
-                // Let's rely on the user navigating or implementing a proper refresh later.
-                // Or simply: 
-                window.location.reload();
+            if (!res.ok) {
+                toast.error(await leseFehlermeldung(res, 'Materialkosten konnten nicht gespeichert werden.'));
+                return;
             }
+            setShowMaterialModal(false);
+            setNewMaterial({ beschreibung: '', betrag: '', rechnungsnummer: '' });
+            toast.success(`${beschreibung} erfasst.`);
+            await onRefresh();
         } catch (error) {
-            console.error(error);
+            console.error('Fehler beim Erfassen der Materialkosten:', error);
+            toast.error('Materialkosten konnten nicht gespeichert werden.');
         } finally {
             setSavingMaterial(false);
+        }
+    };
+
+    /** Entfernt einen manuell erfassten Eintrag - mit Rueckfrage, es gibt kein Rueckgaengig. */
+    const handleDeleteMaterial = async (eintrag: Materialkosten) => {
+        const name = eintrag.beschreibung || 'Eintrag';
+        const bestaetigt = await confirmDialog({
+            title: 'Materialkosten entfernen',
+            message: `„${name}“ (${formatCurrency(eintrag.betrag)}) aus dem Projekt entfernen?`,
+            variant: 'danger',
+            confirmLabel: 'Entfernen',
+        });
+        if (!bestaetigt) return;
+
+        setLoeschendeMaterialId(eintrag.id);
+        try {
+            const res = await fetch(`/api/projekte/${projekt.id}/materialkosten/${eintrag.id}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) {
+                toast.error(await leseFehlermeldung(res, 'Materialkosten konnten nicht entfernt werden.'));
+                return;
+            }
+            toast.success(`${name} entfernt.`);
+            await onRefresh();
+        } catch (error) {
+            console.error('Fehler beim Entfernen der Materialkosten:', error);
+            toast.error('Materialkosten konnten nicht entfernt werden.');
+        } finally {
+            setLoeschendeMaterialId(null);
         }
     };
 
@@ -1626,7 +1680,14 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                         <p className="font-medium text-slate-900 break-words">{m.beschreibung}</p>
                                         {m.rechnungsnummer && <p className="text-xs text-slate-500 break-words">Rech-Nr: {m.rechnungsnummer}</p>}
                                     </div>
-                                    <p className="font-semibold text-slate-900 shrink-0">{formatCurrency(m.betrag)}</p>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <p className="font-semibold text-slate-900">{formatCurrency(m.betrag)}</p>
+                                        <AusProjektEntfernenKnopf
+                                            name={m.beschreibung || 'Materialkosten'}
+                                            laeuft={loeschendeMaterialId === m.id}
+                                            onClick={() => handleDeleteMaterial(m)}
+                                        />
+                                    </div>
                                 </div>
                             ))
                         ) : (
@@ -1661,16 +1722,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                 <p className="font-semibold text-slate-400">{formatCurrency(a.gesamtpreis ?? a.preisProStueck ?? 0)}</p>
                                             </>
                                         )}
-                                        <button
-                                            type="button"
+                                        <AusProjektEntfernenKnopf
+                                            name={a.produktname || 'Artikel'}
+                                            laeuft={loeschendeArtikelId === a.id}
                                             onClick={() => handleDeleteLagerArtikel(a)}
-                                            disabled={loeschendeArtikelId === a.id}
-                                            aria-label={`${a.produktname || 'Artikel'} aus dem Projekt entfernen`}
-                                            title="Aus dem Projekt entfernen"
-                                            className="p-2 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                        />
                                     </div>
                                 </div>
                             ))
@@ -3054,28 +3110,34 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                            <Label>Beschreibung</Label>
+                            <Label htmlFor="materialkosten-beschreibung">Beschreibung</Label>
                             <Input
+                                id="materialkosten-beschreibung"
+                                maxLength={255}
                                 placeholder="z.B. Kleinmaterial"
                                 value={newMaterial.beschreibung}
                                 onChange={e => setNewMaterial(prev => ({ ...prev, beschreibung: e.target.value }))}
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label>Rechnungsnummer (Optional)</Label>
+                            <Label htmlFor="materialkosten-rechnungsnummer">Rechnungsnummer (Optional)</Label>
                             <Input
+                                id="materialkosten-rechnungsnummer"
+                                maxLength={255}
                                 placeholder="z.B. RE-2023-001"
                                 value={newMaterial.rechnungsnummer}
                                 onChange={e => setNewMaterial(prev => ({ ...prev, rechnungsnummer: e.target.value }))}
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label>Betrag (€)</Label>
-                            <Input
-                                type="number"
-                                placeholder="0.00"
+                            <Label htmlFor="materialkosten-betrag">Betrag (€)</Label>
+                            <DecimalInput
+                                id="materialkosten-betrag"
+                                placeholder="z.B. 12,50"
+                                min={0}
+                                required
                                 value={newMaterial.betrag}
-                                onChange={e => setNewMaterial(prev => ({ ...prev, betrag: e.target.value }))}
+                                onChange={betrag => setNewMaterial(prev => ({ ...prev, betrag }))}
                             />
                         </div>
                         <div className="space-y-2">
@@ -3095,7 +3157,11 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowMaterialModal(false)}>Abbrechen</Button>
-                        <Button onClick={handleSaveMaterial} disabled={savingMaterial || !newMaterial.beschreibung || !newMaterial.betrag}>
+                        <Button
+                            onClick={handleSaveMaterial}
+                            disabled={savingMaterial || !newMaterial.beschreibung.trim() || !newMaterial.betrag}
+                            title={!newMaterial.beschreibung.trim() || !newMaterial.betrag ? 'Bitte Beschreibung und Betrag angeben.' : undefined}
+                        >
                             {savingMaterial ? 'Speichern...' : 'Speichern'}
                         </Button>
                     </DialogFooter>
@@ -3668,6 +3734,11 @@ export default function ProjektEditor() {
     const [projekte, setProjekte] = useState<Projekt[]>([]);
     const [freigabeStatusByProjektId, setFreigabeStatusByProjektId] = useState<Record<number, FreigabeStatusKurz>>({});
     const [selectedProjekt, setSelectedProjekt] = useState<ProjektDetail | null>(null);
+    // Stabil halten: Der Bearbeiten-Dialog füllt sein Formular neu, sobald sich die Vorbelegung ändert.
+    const editVorbelegung = useMemo(
+        () => (selectedProjekt ? projektZumBearbeiten(selectedProjekt) : null),
+        [selectedProjekt],
+    );
     const [loading, setLoading] = useState(false);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
@@ -3938,22 +4009,7 @@ export default function ProjektEditor() {
                             console.error('Projekt konnte nicht neu geladen werden:', err);
                         }
                     }}
-                    editProjekt={{
-                        id: selectedProjekt.id,
-                        bauvorhaben: selectedProjekt.bauvorhaben || '',
-                        kunde: selectedProjekt.kunde || '',
-                        kundennummer: selectedProjekt.kundennummer || '',
-                        kundenId: selectedProjekt.kundeDto?.id,
-                        auftragsnummer: selectedProjekt.auftragsnummer || '',
-                        bruttoPreis: selectedProjekt.bruttoPreis,
-                        strasse: selectedProjekt.strasse,
-                        plz: selectedProjekt.plz,
-                        ort: selectedProjekt.ort,
-                        abgeschlossen: selectedProjekt.abgeschlossen,
-                        kundeDto: selectedProjekt.kundeDto,
-                        produktkategorien: selectedProjekt.produktkategorien,
-                        kundenEmails: selectedProjekt.kundenEmails,
-                    }}
+                    editProjekt={editVorbelegung}
                 />
 
             </>
@@ -4118,22 +4174,7 @@ export default function ProjektEditor() {
                         }
                         loadProjekte();
                     }}
-                    editProjekt={{
-                        id: selectedProjekt.id,
-                        bauvorhaben: selectedProjekt.bauvorhaben || '',
-                        kunde: selectedProjekt.kunde || '',
-                        kundennummer: selectedProjekt.kundennummer || '',
-                        kundenId: selectedProjekt.kundeDto?.id,
-                        auftragsnummer: selectedProjekt.auftragsnummer || '',
-                        bruttoPreis: selectedProjekt.bruttoPreis,
-                        strasse: selectedProjekt.strasse,
-                        plz: selectedProjekt.plz,
-                        ort: selectedProjekt.ort,
-                        abgeschlossen: selectedProjekt.abgeschlossen,
-                        kundeDto: selectedProjekt.kundeDto,
-                        produktkategorien: selectedProjekt.produktkategorien,
-                        kundenEmails: selectedProjekt.kundenEmails,
-                    }}
+                    editProjekt={editVorbelegung}
                 />
             )}
         </PageLayout>
