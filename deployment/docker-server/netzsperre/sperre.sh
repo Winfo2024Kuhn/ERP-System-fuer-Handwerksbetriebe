@@ -5,8 +5,8 @@
 # Bricht jemand ins ERP ein, soll er von dort aus weder die PCs im Buero, noch
 # die Buchhaltung, noch den Rechner selbst (Dateifreigaben!) erreichen. Das ERP
 # braucht aus dem Firmennetz nur das, was in NETZSPERRE_AUSNAHMEN steht (z. B.
-# die FRITZ!Box fuer Anrufliste und Anrufbeantworter). Ins Internet (Mail,
-# KI, Website) und zur eigenen Datenbank darf es weiter.
+# die FRITZ!Box fuer Anrufliste, Anrufbeantworter und Anrufmonitor). Ins
+# Internet (Mail, KI, Website) und zur eigenen Datenbank darf es weiter.
 #
 # Umsetzung: eigene Kette ERP-NETZSPERRE in der Docker-Firewall (DOCKER-USER),
 # gilt nur fuer Verbindungen, die das ERP SELBST aus seinem Netz (Bridge
@@ -66,7 +66,7 @@ fi
 # Ausnahmen "ziel:port" (Komma-getrennt), ziel als IP-Adresse oder Name.
 # Gibt je Ausnahme eine Zeile "adresse port" aus. Nur TCP.
 ausnahmen_aufloesen() {
-    printf '%s\n' "${NETZSPERRE_AUSNAHMEN-fritz.box:49000}" | tr ',' '\n' | while IFS= read -r eintrag; do
+    printf '%s\n' "${NETZSPERRE_AUSNAHMEN-fritz.box:49000,fritz.box:1012}" | tr ',' '\n' | while IFS= read -r eintrag; do
         eintrag="$(printf '%s' "$eintrag" | tr -d ' \r')"
         [ -n "$eintrag" ] || continue
         ziel="${eintrag%:*}"
