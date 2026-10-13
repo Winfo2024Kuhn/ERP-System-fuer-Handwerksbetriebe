@@ -1,9 +1,11 @@
 package org.example.kalkulationsprogramm.controller;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -19,16 +21,22 @@ import org.example.kalkulationsprogramm.service.WerkstoffService;
 import org.example.kalkulationsprogramm.service.WerkstoffService.Eingabe;
 import org.example.kalkulationsprogramm.service.WerkstoffService.Zeile;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.server.ResponseStatusException;
 
+/** Mit der echten Fehlerbehandlung ({@code RestExceptionHandler}): Die Oberfläche liest den Grund aus {@code message}. */
+@WebMvcTest(WerkstoffController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class WerkstoffControllerTest {
 
-    private final WerkstoffService service = mock(WerkstoffService.class);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new WerkstoffController(service)).build();
+    @Autowired private MockMvc mvc;
+    @MockBean private WerkstoffService service;
 
     private static Zeile zeile() {
         return new Zeile(1L, "S235JR", "Baustahl", "Schwarzstahl", new BigDecimal("7.850"), "EN 10025", true, true, null, 2);
@@ -51,20 +59,22 @@ class WerkstoffControllerTest {
     }
 
     @Test
-    void ablehnungenKommenMitStatusAnDerOberflaecheAn() throws Exception {
+    void ablehnungenKommenMitStatusUndGrundInMessageAn() throws Exception {
         when(service.anlegen(any())).thenThrow(new ResponseStatusException(HttpStatus.CONFLICT, "Einen Werkstoff mit dem Namen „S235JR“ gibt es schon."));
 
-        mvc.perform(post("/api/werkstoffe").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"S235JR\"}")).andExpect(status().isConflict());
+        mvc.perform(post("/api/werkstoffe").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"S235JR\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(containsString("gibt es schon")));
     }
 
     @Test
     void unbekannteIdUndBenutzterWerkstoffKommenAlsStatusAn() throws Exception {
         when(service.aendern(eq(999L), any())).thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Den Werkstoff gibt es nicht."));
-        org.mockito.Mockito.doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "Dieser Werkstoff wird von 3 Artikeln benutzt."))
-                .when(service).loeschen(1L);
+        doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "Dieser Werkstoff wird von 3 Artikeln benutzt.")).when(service).loeschen(1L);
 
-        mvc.perform(put("/api/werkstoffe/999").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"X\"}")).andExpect(status().isNotFound());
-        mvc.perform(delete("/api/werkstoffe/1")).andExpect(status().isConflict());
+        mvc.perform(put("/api/werkstoffe/999").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"X\"}"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("Den Werkstoff gibt es nicht."));
+        mvc.perform(delete("/api/werkstoffe/1")).andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(containsString("3 Artikeln")));
     }
 
     @Test
@@ -72,7 +82,7 @@ class WerkstoffControllerTest {
         mvc.perform(post("/api/werkstoffe").contentType(MediaType.APPLICATION_JSON).content("{kaputt")).andExpect(status().isBadRequest());
         mvc.perform(post("/api/werkstoffe").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"X\",\"dichte\":\"viel\"}")).andExpect(status().isBadRequest());
         mvc.perform(put("/api/werkstoffe/abc").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"X\"}")).andExpect(status().isBadRequest());
-        org.mockito.Mockito.verifyNoInteractions(service);
+        verifyNoInteractions(service);
     }
 
     @Test

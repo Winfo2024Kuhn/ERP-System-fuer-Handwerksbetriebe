@@ -26,6 +26,14 @@ export default function ArtikelEditor() {
     const [showWerkstoffe, setShowWerkstoffe] = useState(false);
     // Nach Änderungen an den Werkstoffen lädt die Suche ihre Filterlisten neu (die Filter selbst stehen in der Adresszeile und bleiben)
     const [sucheSchluessel, setSucheSchluessel] = useState(0);
+    const werkstoffeGeaendert = useRef(false);
+    const werkstoffFensterSchliessen = () => {
+        setShowWerkstoffe(false);
+        if (werkstoffeGeaendert.current) {
+            werkstoffeGeaendert.current = false;
+            setSucheSchluessel(k => k + 1);
+        }
+    };
 
     return (
         <PageLayout
@@ -80,17 +88,17 @@ export default function ArtikelEditor() {
                     onClose={() => setShowCategoryManagerModal(false)}
                 />
             )}
-            <Dialog open={showWerkstoffe} onOpenChange={(offen) => { setShowWerkstoffe(offen); if (!offen) setSucheSchluessel(k => k + 1); }} className="w-full max-w-5xl max-h-[90vh]" aria-labelledby="artikel-werkstoffe-titel">
+            <Dialog open={showWerkstoffe} onOpenChange={(offen) => { if (offen) setShowWerkstoffe(true); else werkstoffFensterSchliessen(); }} className="w-full max-w-5xl max-h-[90vh]" aria-labelledby="artikel-werkstoffe-titel">
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle id="artikel-werkstoffe-titel">Werkstoffe</DialogTitle>
                         <DialogDescription>Die Auswahlliste „Werkstoff“ am Artikel: Stahl, Edelstahl, Aluminium und was Sie sonst verarbeiten.</DialogDescription>
                     </DialogHeader>
                     <div className="min-h-0 flex-1 overflow-y-auto -m-1 p-1">
-                        {showWerkstoffe && <WerkstoffPflege />}
+                        {showWerkstoffe && <WerkstoffPflege onGeaendert={() => { werkstoffeGeaendert.current = true; }} />}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" size="sm" onClick={() => { setShowWerkstoffe(false); setSucheSchluessel(k => k + 1); }}>Schließen</Button>
+                        <Button variant="outline" size="sm" onClick={werkstoffFensterSchliessen}>Schließen</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

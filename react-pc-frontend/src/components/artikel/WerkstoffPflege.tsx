@@ -49,12 +49,16 @@ const ausWerkstoff = (w: Werkstoff): Formular => ({
     beschichtungshinweis: w.beschichtungshinweis ?? '',
 });
 
+interface Props {
+    /** Wird gemeldet, sobald sich an den Werkstoffen etwas geändert hat (angelegt, gespeichert, gelöscht), damit die Umgebung ihre Listen neu laden kann. */
+    onGeaendert?: () => void;
+}
+
 /**
  * Werkstoffe pflegen: die Auswahlliste „Werkstoff“ am Artikel (Stahl, Edelstahl, Aluminium und was sonst verarbeitet wird).
- * Gedacht für ein Fenster in der Artikelübersicht. Die Eignung für Verzinken und Pulvern gilt für alle Artikel aus diesem Werkstoff,
- * solange am Artikel nichts anderes eingestellt ist.
+ * Gedacht für ein Fenster in der Artikelübersicht. Die Eignung für Verzinken und Pulvern gilt für alle Artikel aus diesem Werkstoff.
  */
-export function WerkstoffPflege() {
+export function WerkstoffPflege({ onGeaendert }: Props = {}) {
     const toast = useToast();
     const confirm = useConfirm();
     const [liste, setListe] = useState<Werkstoff[] | null>(null);
@@ -90,7 +94,7 @@ export function WerkstoffPflege() {
     const speichern = async () => {
         if (!form) return;
         const dichte = validateDecimalInput(form.dichte, { label: 'Dichte', min: 0.1, max: 25 });
-        if (!dichte.valid) { setFehler(dichte.message); return; }
+        if (!dichte.valid) { setFehler(dichte.message); toast.error(dichte.message); return; }
         setSpeichert(true);
         setFehler('');
         try {
@@ -104,6 +108,7 @@ export function WerkstoffPflege() {
             if (!res.ok) throw new Error(await parseErrorMessage(res, 'Der Werkstoff konnte nicht gespeichert werden.'));
             toast.success(form.id == null ? 'Der Werkstoff wurde angelegt.' : 'Der Werkstoff wurde gespeichert.');
             setForm(null);
+            onGeaendert?.();
             await laden();
         } catch (e) {
             const text = e instanceof Error ? e.message : 'Der Werkstoff konnte nicht gespeichert werden.';
@@ -122,6 +127,7 @@ export function WerkstoffPflege() {
             if (!res.ok) throw new Error(await parseErrorMessage(res, 'Der Werkstoff konnte nicht gelöscht werden.'));
             toast.success('Der Werkstoff wurde gelöscht.');
             if (form?.id === w.id) setForm(null);
+            onGeaendert?.();
             await laden();
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Der Werkstoff konnte nicht gelöscht werden.');
@@ -130,9 +136,11 @@ export function WerkstoffPflege() {
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-end">
-                <Button size="sm" onClick={neu}><Plus className="mr-2 h-4 w-4" aria-hidden="true" />Neuer Werkstoff</Button>
-            </div>
+            {!form && (
+                <div className="flex justify-end">
+                    <Button size="sm" onClick={neu}><Plus className="mr-2 h-4 w-4" aria-hidden="true" />Neuer Werkstoff</Button>
+                </div>
+            )}
             {ladefehler && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{ladefehler}</p>}
 
             {form && (
@@ -144,20 +152,21 @@ export function WerkstoffPflege() {
                     <div className="grid gap-4 md:grid-cols-2">
                         <div>
                             <Label htmlFor="ws-name">Name (technisch) *</Label>
-                            <Input id="ws-name" value={form.name} onChange={e => setze({ name: e.target.value })} placeholder="S235JR oder 1.4301" maxLength={100} />
+                            <Input id="ws-name" value={form.name} onChange={e => setze({ name: e.target.value })} placeholder="S235JR oder 1.4301" maxLength={255} />
+                            <p className="mt-1 text-xs text-slate-500">Beim Artikel-Import erkennt das Programm den Werkstoff an diesem Namen wieder.</p>
                         </div>
                         <div>
                             <Label htmlFor="ws-anzeige">Anzeigename</Label>
-                            <Input id="ws-anzeige" value={form.anzeigename} onChange={e => setze({ anzeigename: e.target.value })} placeholder="Baustahl S235JR" maxLength={100} />
+                            <Input id="ws-anzeige" value={form.anzeigename} onChange={e => setze({ anzeigename: e.target.value })} placeholder="Baustahl S235JR" maxLength={255} />
                         </div>
                         <div>
                             <Label htmlFor="ws-werkstatt">Werkstattname</Label>
-                            <Input id="ws-werkstatt" value={form.werkstattname} onChange={e => setze({ werkstattname: e.target.value })} placeholder="V2A, Schwarzstahl" maxLength={64} />
+                            <Input id="ws-werkstatt" value={form.werkstattname} onChange={e => setze({ werkstattname: e.target.value })} placeholder="V2A, Schwarzstahl" maxLength={255} />
                             <p className="mt-1 text-xs text-slate-500">So sagt man in der Werkstatt dazu; die Artikelsuche findet den Werkstoff auch darüber.</p>
                         </div>
                         <div>
                             <Label htmlFor="ws-norm">Norm</Label>
-                            <Input id="ws-norm" value={form.werkstoffnorm} onChange={e => setze({ werkstoffnorm: e.target.value })} placeholder="EN 10025-2" maxLength={64} />
+                            <Input id="ws-norm" value={form.werkstoffnorm} onChange={e => setze({ werkstoffnorm: e.target.value })} placeholder="EN 10025-2" maxLength={255} />
                         </div>
                         <div>
                             <div className="flex items-center gap-1">
@@ -173,7 +182,15 @@ export function WerkstoffPflege() {
                             <p className="mt-1 text-xs text-slate-500">Stahl 7,85, Edelstahl 7,9, Aluminium 2,7.</p>
                         </div>
                         <fieldset>
-                            <legend className="mb-1 block text-sm font-medium text-slate-700">Eignung für die Oberfläche</legend>
+                            <legend className="mb-1 flex items-center gap-1 text-sm font-medium text-slate-700">
+                                Eignung für die Oberfläche
+                                <InfoButton titel="Eignung für die Oberfläche">
+                                    <p className="font-medium text-slate-800">Was passiert im Hintergrund?</p>
+                                    <p>Alle Artikel aus diesem Werkstoff gelten sofort als verzinkbar bzw. pulverbeschichtbar.</p>
+                                    <p className="mt-2 font-medium text-slate-800">Was bewirkt das?</p>
+                                    <p>Die Eignung erscheint auf der Artikelseite und in den Filtern „verzinkbar“ und „pulverbeschichtbar“ der Artikelsuche. Preise und bestehende Angebote ändern sich nicht.</p>
+                                </InfoButton>
+                            </legend>
                             <label className="flex items-center gap-2 text-sm text-slate-700">
                                 <input type="checkbox" checked={form.verzinkungsgeeignet} onChange={e => setze({ verzinkungsgeeignet: e.target.checked })}
                                     className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
@@ -184,7 +201,7 @@ export function WerkstoffPflege() {
                                     className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
                                 Pulverbeschichten geht
                             </label>
-                            <p className="mt-1 text-xs text-slate-500">Gilt für alle Artikel aus diesem Werkstoff, solange am Artikel nichts anderes eingestellt ist.</p>
+                            <p className="mt-1 text-xs text-slate-500">Gilt für alle Artikel aus diesem Werkstoff.</p>
                         </fieldset>
                         <div className="md:col-span-2">
                             <Label htmlFor="ws-hinweis">Hinweis zur Beschichtung</Label>
@@ -194,7 +211,7 @@ export function WerkstoffPflege() {
                     </div>
                     {fehler && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{fehler}</p>}
                     <div className="mt-4 flex gap-2">
-                        <Button onClick={() => void speichern()} disabled={speichert || !form.name.trim()}><Save className="mr-2 h-4 w-4" aria-hidden="true" />Speichern</Button>
+                        <Button onClick={() => void speichern()} disabled={speichert || !form.name.trim()} title={form.name.trim() ? undefined : 'Bitte zuerst einen Namen eingeben'}><Save className="mr-2 h-4 w-4" aria-hidden="true" />Speichern</Button>
                         <Button variant="outline" onClick={() => setForm(null)}>Abbrechen</Button>
                     </div>
                 </Card>

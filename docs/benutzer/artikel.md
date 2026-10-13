@@ -32,7 +32,8 @@ Der „Werkstoff“ am Artikel kommt aus einer eigenen Liste. Sie lässt sich in
 - Der Stift ändert einen Werkstoff, der Papierkorb löscht ihn nach einer Rückfrage.
 - Ein Name kommt nur einmal vor (Groß- und Kleinschreibung zählt nicht).
 - Ein Werkstoff, den Artikel benutzen, lässt sich **nicht löschen**. Die Meldung nennt, wie viele Artikel ihn benutzen.
-- Die Eignung für Verzinken und Pulvern gilt für alle Artikel aus diesem Werkstoff, solange am Artikel („Stammdaten bearbeiten“) nichts anderes eingestellt ist.
+- Die Eignung für Verzinken und Pulvern gilt für alle Artikel aus diesem Werkstoff. Sie erscheint auf der Artikelseite und in den Filtern „verzinkbar“ und „pulverbeschichtbar“ der Artikelsuche; Preise und bestehende Angebote ändern sich dadurch nicht.
+- Der technische Name wird beim Artikel-Import benutzt, um Werkstoffe wiederzuerkennen. Wird er geändert, legt der nächste Import den alten Namen als neuen Werkstoff an.
 - Die Dichte wird beim Werkstoff gespeichert. Das Programm rechnet damit im Moment noch nichts aus; an Artikeln, Preisen und Angeboten ändert sich dadurch nichts.
 
 ## Ordner für Artikel anlegen

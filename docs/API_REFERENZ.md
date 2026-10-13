@@ -665,7 +665,7 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 |---|---|---|
 | `GET` | `/` | Alle Werkstoffe mit der Zahl der Artikel, die sie benutzen |
 | `POST` | `/` | Werkstoff anlegen (Name Pflicht und eindeutig, Dichte 0,1 bis 25 kg/dm³); 400 bei ungültigen Werten, 409 bei doppeltem Namen |
-| `PUT` | `/{id}` | Werkstoff ändern; 404 bei unbekannter ID |
+| `PUT` | `/{id}` | Werkstoff ändern; 400 bei ungültigen Werten, 404 bei unbekannter ID, 409 bei doppeltem Namen |
 | `DELETE` | `/{id}` | Werkstoff löschen; 409, solange Artikel ihn benutzen |
 
 ### ArtikelKategorieController

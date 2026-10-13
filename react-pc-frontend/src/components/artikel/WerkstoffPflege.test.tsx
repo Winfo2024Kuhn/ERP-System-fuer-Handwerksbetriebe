@@ -156,4 +156,57 @@ describe('Werkstoffe pflegen', { timeout: 30000 }, () => {
         await waitFor(() => expect(gesendet).toHaveLength(1));
         expect(gesendet[0].body?.name).toBe('<img src=x onerror=alert(1)>');
     });
+
+    it('meldet der Umgebung nach Anlegen, Speichern und Löschen, dass sich etwas geändert hat, aber nicht beim bloßen Ansehen', async () => {
+        const user = userEvent.setup();
+        const onGeaendert = vi.fn();
+        render(<ToastProvider><ConfirmProvider><WerkstoffPflege onGeaendert={onGeaendert} /></ConfirmProvider></ToastProvider>);
+        await screen.findByText('Baustahl');
+        expect(onGeaendert).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole('button', { name: 'Neuer Werkstoff' }));
+        await user.type(screen.getByLabelText('Name (technisch) *'), 'X');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(onGeaendert).toHaveBeenCalledTimes(1));
+
+        await user.click(await screen.findByRole('button', { name: '1.4301 löschen' }));
+        await user.click(await screen.findByRole('button', { name: 'Löschen', exact: true }));
+        await waitFor(() => expect(onGeaendert).toHaveBeenCalledTimes(2));
+    });
+
+    it('bei offenem Formular gibt es genau einen Primär-Knopf; der gesperrte Speichern-Knopf nennt den Grund', async () => {
+        const user = userEvent.setup();
+        rendern();
+        await user.click(await screen.findByRole('button', { name: 'Neuer Werkstoff' }));
+
+        expect(screen.queryByRole('button', { name: 'Neuer Werkstoff' })).toBeNull();
+        const speichern = screen.getByRole('button', { name: 'Speichern' });
+        expect(speichern).toBeDisabled();
+        expect(speichern).toHaveAttribute('title', 'Bitte zuerst einen Namen eingeben');
+
+        await user.type(screen.getByLabelText('Name (technisch) *'), 'X');
+        expect(speichern).toBeEnabled();
+        expect(speichern).not.toHaveAttribute('title');
+    });
+
+    it('ein Info-Button erklärt, was die Eignung für die Oberfläche bewirkt', async () => {
+        const user = userEvent.setup();
+        rendern();
+        await user.click(await screen.findByRole('button', { name: 'Neuer Werkstoff' }));
+        await user.click(screen.getByRole('button', { name: /Mehr zu: Eignung für die Oberfläche/ }));
+
+        expect(await screen.findByText(/Filtern „verzinkbar“ und „pulverbeschichtbar“/)).toBeVisible();
+    });
+
+    it('eine unmögliche Dichte erscheint auch als Meldung oben rechts', async () => {
+        const user = userEvent.setup();
+        rendern();
+        await user.click(await screen.findByRole('button', { name: 'Neuer Werkstoff' }));
+        await user.type(screen.getByLabelText('Name (technisch) *'), 'X');
+        await user.type(screen.getByLabelText('Dichte (kg/dm³)'), '78,5');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+
+        const meldungen = await screen.findAllByRole('alert');
+        expect(meldungen.length).toBeGreaterThanOrEqual(2);
+    });
 });

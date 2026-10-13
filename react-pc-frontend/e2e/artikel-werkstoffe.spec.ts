@@ -69,12 +69,17 @@ test('Artikelübersicht: Werkstoffe anlegen, ändern und löschen', async ({ pag
     await expect(fenster).toBeVisible();
     await expect(fenster.getByText('Baustahl')).toBeVisible();
     await expect(fenster.getByText('7,85 kg/dm³')).toBeVisible();
-    await designPruefung(page, testInfo, 'artikel-werkstoffe', { strengePruefungen: false });
+    await designPruefung(page, testInfo, 'artikel-werkstoffe');
 
     // Info-Button an der Dichte
     await fenster.getByRole('button', { name: 'Neuer Werkstoff' }).click();
     await fenster.getByRole('button', { name: /Mehr zu: Dichte/ }).click();
     await expect(page.getByText('Was passiert im Hintergrund?')).toBeVisible();
+    // offenes Formular mit offenem Info-Popover: nichts abgeschnitten, nichts überdeckt
+    await designPruefung(page, testInfo, 'artikel-werkstoffe-formular');
+    await page.keyboard.press('Escape');
+    await fenster.getByRole('button', { name: /Mehr zu: Eignung für die Oberfläche/ }).click();
+    await expect(page.getByText(/Filtern „verzinkbar“/)).toBeVisible();
     await page.keyboard.press('Escape');
 
     // doppelter Name: Klartext, nichts angelegt

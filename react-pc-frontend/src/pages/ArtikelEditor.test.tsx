@@ -334,15 +334,34 @@ describe('ArtikelEditor – Werkstoffe pflegen', () => {
         await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Werkstoffe' })).toBeNull());
     });
 
-    it('lädt nach dem Schließen die Suche neu, damit geänderte Werkstoffe in den Filtern erscheinen', async () => {
+    const werkstoffAufrufe = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/artikel/werkstoffe')).length;
+
+    it('lädt nach dem Schließen nichts neu, wenn an den Werkstoffen nichts geändert wurde', async () => {
         const user = userEvent.setup();
         renderArtikelEditor();
         await user.click(await screen.findByRole('button', { name: /Werkstoffe pflegen/ }));
         await screen.findByRole('dialog', { name: 'Werkstoffe' });
-        const vorher = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/artikel/werkstoffe')).length;
+        const vorher = werkstoffAufrufe();
 
         await user.click(screen.getByRole('button', { name: 'Schließen' }));
 
-        await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/artikel/werkstoffe')).length).toBeGreaterThan(vorher));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Werkstoffe' })).toBeNull());
+        expect(werkstoffAufrufe()).toBe(vorher);
+    });
+
+    it('lädt nach dem Schließen die Suche neu, wenn ein Werkstoff angelegt wurde, damit er in den Filtern erscheint', async () => {
+        const user = userEvent.setup();
+        renderArtikelEditor();
+        await user.click(await screen.findByRole('button', { name: /Werkstoffe pflegen/ }));
+        const fenster = await screen.findByRole('dialog', { name: 'Werkstoffe' });
+        const vorher = werkstoffAufrufe();
+
+        await user.click(within(fenster).getByRole('button', { name: 'Neuer Werkstoff' }));
+        await user.type(within(fenster).getByLabelText('Name (technisch) *'), 'EN AW-6060');
+        await user.click(within(fenster).getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(within(fenster).queryByTestId('werkstoff-formular')).toBeNull());
+        await user.click(within(fenster).getByRole('button', { name: 'Schließen' }));
+
+        await waitFor(() => expect(werkstoffAufrufe()).toBeGreaterThan(vorher));
     });
 });
