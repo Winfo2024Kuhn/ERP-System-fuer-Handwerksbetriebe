@@ -1,159 +1,96 @@
-import { useState } from 'react';
-import { Type, Table2, Image, ChevronDown, ChevronRight, Clipboard, Check } from 'lucide-react';
-import type { FormBlock, FormBlockType } from '../../types';
-import { PLACEHOLDER_MAP, uid, SIZE_DEFAULTS, STYLE_DEFAULTS, DEFAULT_TABLE_COLUMNS } from './constants';
+import { Layers } from 'lucide-react';
+import type { FormBlock } from '../../types';
+import { cn } from '../../lib/utils';
+import { BAUSTEIN_ZIEH_TYP, BAUSTEINE, bausteinName, type BausteinArt } from './bausteinVorlagen';
+import { BausteinSymbol } from './BausteinSymbol';
 
 interface BlocksSidebarProps {
     items: FormBlock[];
-    selectedId: string | null;
-    activePage: number;
-    onSelectBlock: (id: string, page: number) => void;
-    onAddBlock: (block: FormBlock) => void;
-    onInsertPlaceholder: (placeholder: string) => void;
+    seite: number;
+    ausgewaehltId: string | null;
+    onHinzufuegen: (art: BausteinArt) => void;
+    onAuswaehlen: (id: string) => void;
 }
 
-const ADD_BLOCKS: { type: FormBlockType; label: string; description: string; icon: React.ReactNode }[] = [
-    {
-        type: 'text',
-        label: 'Freitext',
-        description: 'Freier Textblock mit Platzhalter-Unterstützung',
-        icon: <Type className="w-5 h-5" />
-    },
-    {
-        type: 'table',
-        label: 'Leistungstabelle',
-        description: 'Tabelle mit Positionen, Mengen und Preisen',
-        icon: <Table2 className="w-5 h-5" />
-    },
-    {
-        type: 'logo',
-        label: 'Logo / Bild',
-        description: 'Firmenlogo oder Bild einfügen',
-        icon: <Image className="w-5 h-5" />
-    }
-];
+/** Kurzer Text, woran man einen Baustein in der Ebenen-Liste wiedererkennt. */
+function vorschauText(block: FormBlock): string {
+    if (block.type === 'table') return 'Leistungstabelle';
+    if (block.type === 'logo') return 'Bild';
+    const text = (block.content ?? '').replace(/\{\{(\w+)\}\}/g, (_t, name: string) => name.toLowerCase()).replace(/\s+/g, ' ').trim();
+    return text || 'leer';
+}
 
-/** Left sidebar — simplified: Freitext, Leistungen, Logo + Platzhalter */
-export default function BlocksSidebar({ items, selectedId, activePage, onAddBlock, onInsertPlaceholder }: BlocksSidebarProps) {
-    const [showPlaceholders, setShowPlaceholders] = useState(true);
-    const [copiedPlaceholder, setCopiedPlaceholder] = useState<string | null>(null);
-
-    const handleAddBlock = (type: FormBlockType) => {
-        const defaults = SIZE_DEFAULTS[type] || { width: 200, height: 80 };
-        const newBlock: FormBlock = {
-            id: uid(),
-            type,
-            page: activePage,
-            x: 32,
-            y: 32,
-            z: Math.max(0, ...items.map(i => i.z)) + 1,
-            width: defaults.width,
-            height: defaults.height,
-            content: type === 'logo' ? '/image001.png' : undefined,
-            styles: STYLE_DEFAULTS[type],
-            tableColumns: type === 'table' ? DEFAULT_TABLE_COLUMNS : undefined
-        };
-        onAddBlock(newBlock);
-    };
-
-    const selectedItem = items.find(i => i.id === selectedId) || null;
-    const canInsert = selectedItem && selectedItem.type !== 'table' && selectedItem.type !== 'logo';
-
-    const handlePlaceholderClick = (ph: string) => {
-        if (canInsert) {
-            onInsertPlaceholder(ph);
-            setCopiedPlaceholder(ph);
-            setTimeout(() => setCopiedPlaceholder(null), 1500);
-        } else {
-            navigator.clipboard.writeText(ph).then(() => {
-                setCopiedPlaceholder(ph);
-                setTimeout(() => setCopiedPlaceholder(null), 1500);
-            });
-        }
-    };
+/** Linke Spalte: Bausteine zum Hinzufügen (anklicken oder auf die Seite ziehen) und die Ebenen der Seite. */
+export default function BlocksSidebar({ items, seite, ausgewaehltId, onHinzufuegen, onAuswaehlen }: BlocksSidebarProps) {
+    const ebenen = items.filter(i => i.page === seite).sort((a, b) => b.z - a.z);
 
     return (
-        <div className="h-full flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            {/* Header */}
-            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight">Bausteine</h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">Klicke um einen Baustein hinzuzufügen</p>
+        <aside aria-label="Bausteine und Ebenen" className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-4 py-3">
+                <h2 className="text-sm font-semibold text-slate-900">Bausteine</h2>
+                <p className="mt-0.5 text-xs text-slate-500">Anklicken oder auf die Seite ziehen</p>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
-
-                {/* Block-Buttons */}
-                <div className="space-y-1.5">
-                    {ADD_BLOCKS.map(({ type, label, description, icon }) => (
-                        <button
-                            key={type}
-                            onClick={() => handleAddBlock(type)}
-                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left bg-slate-50 border border-slate-200 rounded-xl hover:border-rose-400 hover:bg-rose-50 hover:text-rose-700 transition-all duration-150 group cursor-pointer"
-                        >
-                            <span className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 group-hover:border-rose-300 group-hover:text-rose-600 transition-colors">
-                                {icon}
-                            </span>
-                            <span className="min-w-0">
-                                <span className="block text-xs font-semibold text-slate-700 group-hover:text-rose-700">{label}</span>
-                                <span className="block text-[10px] text-slate-400 leading-tight truncate">{description}</span>
-                            </span>
-                        </button>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+                <ul className="grid grid-cols-2 gap-2 p-3">
+                    {BAUSTEINE.map(({ art, titel, beschreibung, Icon }) => (
+                        <li key={art}>
+                            <button
+                                type="button"
+                                draggable
+                                onDragStart={e => {
+                                    e.dataTransfer.setData(BAUSTEIN_ZIEH_TYP, art);
+                                    e.dataTransfer.effectAllowed = 'copy';
+                                }}
+                                onClick={() => onHinzufuegen(art)}
+                                title={beschreibung}
+                                aria-label={`${titel} hinzufügen`}
+                                className="group flex h-full w-full cursor-grab flex-col items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-3 text-center transition-colors hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 active:cursor-grabbing"
+                            >
+                                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors group-hover:bg-rose-100 group-hover:text-rose-600">
+                                    <Icon aria-hidden="true" className="h-5 w-5" />
+                                </span>
+                                <span className="text-xs font-semibold leading-tight text-slate-700 group-hover:text-rose-700">{titel}</span>
+                            </button>
+                        </li>
                     ))}
-                </div>
+                </ul>
 
-                {/* Divider */}
-                <div className="border-t border-slate-100" />
-
-                {/* Platzhalter */}
-                <div>
-                    <button
-                        onClick={() => setShowPlaceholders(!showPlaceholders)}
-                        className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-                    >
-                        {showPlaceholders
-                            ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                            : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                        }
-                        <Clipboard className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Platzhalter</span>
-                    </button>
-
-                    {showPlaceholders && (
-                        <div className="mt-1.5 pl-1">
-                            <p className="text-[10px] text-slate-400 mb-2 px-1">
-                                {canInsert
-                                    ? <span className="text-rose-500 font-medium">Textblock aktiv — Klicke zum Einfügen</span>
-                                    : 'Wähle einen Textblock aus oder kopiere in Zwischenablage'
-                                }
-                            </p>
-                            <div className="flex flex-wrap gap-1">
-                                {Object.keys(PLACEHOLDER_MAP).map(ph => {
-                                    const isCopied = copiedPlaceholder === ph;
-                                    return (
+                <div className="border-t border-slate-100 px-3 pb-3 pt-3">
+                    <h3 className="mb-2 flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <Layers aria-hidden="true" className="h-3.5 w-3.5" />
+                        Ebenen auf {seite === 1 ? 'Seite 1' : 'Folgeseiten'}
+                    </h3>
+                    {ebenen.length === 0 ? (
+                        <p className="px-1 text-xs text-slate-400">Noch keine Bausteine auf dieser Seite.</p>
+                    ) : (
+                        <ul className="space-y-0.5" aria-label="Ebenen">
+                            {ebenen.map(block => {
+                                const gewaehlt = block.id === ausgewaehltId;
+                                return (
+                                    <li key={block.id}>
                                         <button
-                                            key={ph}
-                                            onClick={() => handlePlaceholderClick(ph)}
-                                            title={canInsert ? `Einfügen: ${ph}` : `Kopieren: ${ph}`}
-                                            className={`px-2 py-1 text-[10px] font-mono rounded-md transition-all duration-150 cursor-pointer ${
-                                                isCopied
-                                                    ? 'bg-green-100 text-green-700 border border-green-300'
-                                                    : canInsert
-                                                        ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
-                                                        : 'bg-slate-100 text-slate-600 border border-transparent hover:bg-slate-200'
-                                            }`}
+                                            type="button"
+                                            onClick={() => onAuswaehlen(block.id)}
+                                            aria-pressed={gewaehlt}
+                                            className={cn(
+                                                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500',
+                                                gewaehlt ? 'bg-rose-50 text-rose-700' : 'text-slate-700 hover:bg-slate-50',
+                                            )}
                                         >
-                                            {isCopied
-                                                ? <span className="flex items-center gap-1"><Check className="w-3 h-3 inline" /> OK</span>
-                                                : ph.replace(/[{}]/g, '')
-                                            }
+                                            <BausteinSymbol block={block} className={cn('h-4 w-4 shrink-0', gewaehlt ? 'text-rose-600' : 'text-slate-400')} />
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-xs font-medium">{bausteinName(block)}</span>
+                                                <span className="block truncate text-[11px] text-slate-400" data-kuerzung-erlaubt>{vorschauText(block)}</span>
+                                            </span>
                                         </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
                     )}
                 </div>
             </div>
-        </div>
+        </aside>
     );
 }

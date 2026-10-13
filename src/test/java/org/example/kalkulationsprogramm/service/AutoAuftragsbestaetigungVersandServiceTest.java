@@ -550,8 +550,10 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         AutoAuftragsbestaetigungVersandService service = neuService();
         DokumentFreigabe f = angenommeneFreigabe();
         f.setVorzeitigerBeginn(true);
-        when(widerrufsbelehrungPdfService.erzeugePdf(f))
-                .thenReturn("%PDF-W".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        f.setWiderrufStand("2026-10-13");
+        when(widerrufsbelehrungPdfService.erzeuge(f)).thenReturn(new WiderrufsbelehrungPdfService.Belehrung(
+                "%PDF-W".getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                "Widerrufsbelehrung_Stand_2026-10-13.pdf", java.time.LocalDate.of(2026, 10, 13), 2));
         boolean[] erfolg = new boolean[1];
 
         java.util.List<org.example.email.EmailService.Attachment> anhaenge = versendeUndHoleAnhaenge(service, f, erfolg);
@@ -571,13 +573,48 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 .containsExactly("Auftragsbestaetigung_AB-2026_07_0001.pdf", "Widerrufsbelehrung_Stand_2026-10-13.pdf");
         // Temp-Dateien sind nach dem Versand wieder weg.
         assertThat(archiv.getValue()).allSatisfy(a -> assertThat(java.nio.file.Files.exists(a.quelle())).isFalse());
+        // Nachweis: welche Fassung verschickt wurde, steht an der Freigabe.
+        assertThat(f.getWiderrufVersandStand()).isEqualTo("2026-10-13");
+        assertThat(f.getWiderrufVersandFassung()).isEqualTo(2);
+        org.mockito.Mockito.verify(dokumentFreigabeRepository).saveAndFlush(f);
+    }
+
+    @Test
+    void versende_nachweisSpeichernScheitert_versandBleibtErfolgreich() {
+        AutoAuftragsbestaetigungVersandService service = neuService();
+        DokumentFreigabe f = angenommeneFreigabe();
+        when(widerrufsbelehrungPdfService.erzeuge(f)).thenReturn(new WiderrufsbelehrungPdfService.Belehrung(
+                "%PDF-W".getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                "Widerrufsbelehrung_Stand_2026-11-02.pdf", java.time.LocalDate.of(2026, 11, 2), 0));
+        when(dokumentFreigabeRepository.saveAndFlush(f)).thenThrow(new IllegalStateException("DB weg"));
+        boolean[] erfolg = new boolean[1];
+
+        java.util.List<org.example.email.EmailService.Attachment> anhaenge = versendeUndHoleAnhaenge(service, f, erfolg);
+
+        assertThat(erfolg[0]).isTrue();
+        assertThat(anhaenge).hasSize(2);
+    }
+
+    @Test
+    void warneBeiAbweichendemStand_wirftNie() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        WiderrufsbelehrungPdfService.Belehrung b = new WiderrufsbelehrungPdfService.Belehrung(
+                new byte[0], "x.pdf", java.time.LocalDate.of(2026, 11, 2), 1);
+
+        AutoAuftragsbestaetigungVersandService.warneBeiAbweichendemStand(f, b);
+        f.setWiderrufStand("2026-11-02");
+        AutoAuftragsbestaetigungVersandService.warneBeiAbweichendemStand(f, b);
+        f.setWiderrufStand("2026-10-13");
+        AutoAuftragsbestaetigungVersandService.warneBeiAbweichendemStand(f, b);
+
+        assertThat(f.getWiderrufVersandStand()).isNull();
     }
 
     @Test
     void versende_belehrungScheitert_abGehtTrotzdemAllein() {
         AutoAuftragsbestaetigungVersandService service = neuService();
         DokumentFreigabe f = angenommeneFreigabe();
-        when(widerrufsbelehrungPdfService.erzeugePdf(f)).thenThrow(new IllegalStateException("PDF kaputt"));
+        when(widerrufsbelehrungPdfService.erzeuge(f)).thenThrow(new IllegalStateException("PDF kaputt"));
         boolean[] erfolg = new boolean[1];
 
         java.util.List<org.example.email.EmailService.Attachment> anhaenge = versendeUndHoleAnhaenge(service, f, erfolg);

@@ -8,7 +8,6 @@ export const PAGE_FORMATS: Record<PageFormat, { width: number; height: number; l
 };
 
 // Constants
-export const SNAP_THRESHOLD = 10;
 export const MIN_WIDTH = 20;
 export const MIN_HEIGHT = 10;
 
@@ -22,80 +21,12 @@ export const SAMPLE_DATA: Record<string, string> = {
     datum: '01.12.2025',
     seitenzahl: '1 / 2',
     bauvorhaben: 'Anbau Musterstraße 12',
+    betreff: 'Rechnung Anbau Musterstraße 12',
     anrede: 'Sehr geehrte Frau',
     ansprechpartner: 'Erika Muster',
     bezugsdokument: 'AN-2025-001',
     bezugsdokumentTyp: 'Angebot'
 };
-
-/** Pool of realistic sample data sets for the preview */
-const SAMPLE_POOL = [
-    {
-        dokumentnummer: 'RE-2026/02/00187',
-        projektnummer: 'PRJ-2026-0312',
-        kundennummer: 'KD-10478',
-        kundenadresse: 'Müller Bau GmbH\nHerr Thomas Müller\nBahnhofstraße 5\n80335 München',
-        kundenname: 'Müller Bau GmbH',
-        dokumenttyp: 'Angebot',
-        datum: '19.02.2026',
-        seitenzahl: '1 / 3',
-        bauvorhaben: 'Dachsanierung Lindwurmstr. 88',
-        anrede: 'Sehr geehrter Herr',
-        ansprechpartner: 'Thomas Müller',
-        bezugsdokument: 'AN-2026-044',
-        bezugsdokumentTyp: 'Angebot'
-    },
-    {
-        dokumentnummer: 'AB-2026/01/00053',
-        projektnummer: 'PRJ-2025-1190',
-        kundennummer: 'KD-10291',
-        kundenadresse: 'Schmidt & Partner\nFrau Claudia Weber\nKirchenweg 23\n90402 Nürnberg',
-        kundenname: 'Schmidt & Partner',
-        dokumenttyp: 'Auftragsbestätigung',
-        datum: '14.01.2026',
-        seitenzahl: '1 / 2',
-        bauvorhaben: 'Fassadenarbeiten Kaiserstr. 7',
-        anrede: 'Sehr geehrte Frau',
-        ansprechpartner: 'Claudia Weber',
-        bezugsdokument: 'RE-2025-389',
-        bezugsdokumentTyp: 'Rechnung'
-    },
-    {
-        dokumentnummer: 'RE-2026/02/00201',
-        projektnummer: 'PRJ-2026-0088',
-        kundennummer: 'KD-10655',
-        kundenadresse: 'Hausverwaltung Krause\nHerr Markus Krause\nAm Marktplatz 3\n97082 Würzburg',
-        kundenname: 'Hausverwaltung Krause',
-        dokumenttyp: 'Rechnung',
-        datum: '07.02.2026',
-        seitenzahl: '1 / 2',
-        bauvorhaben: 'Heizungstausch Residenzstr. 14',
-        anrede: 'Sehr geehrter Herr',
-        ansprechpartner: 'Markus Krause',
-        bezugsdokument: 'AB-2026-012',
-        bezugsdokumentTyp: 'Auftragsbestätigung'
-    },
-    {
-        dokumentnummer: 'AN-2026/02/00095',
-        projektnummer: 'PRJ-2026-0401',
-        kundennummer: 'KD-10812',
-        kundenadresse: 'Becker Immobilien AG\nFrau Dr. Sabine Becker\nSchloßstraße 18\n70173 Stuttgart',
-        kundenname: 'Becker Immobilien AG',
-        dokumenttyp: 'Angebot',
-        datum: '18.02.2026',
-        seitenzahl: '1 / 4',
-        bauvorhaben: 'Kernsanierung Bürogebäude Hohenheim',
-        anrede: 'Sehr geehrte Frau',
-        ansprechpartner: 'Dr. Sabine Becker',
-        bezugsdokument: 'AN-2026-091',
-        bezugsdokumentTyp: 'Angebot'
-    }
-];
-
-/** Get a random sample data set for preview rendering */
-export function getRandomSampleData(): Record<string, string> {
-    return SAMPLE_POOL[Math.floor(Math.random() * SAMPLE_POOL.length)];
-}
 
 /** Replace all {{PLACEHOLDER}} tokens in a string with sample data values */
 export function replacePlaceholders(text: string, data: Record<string, string>): string {
@@ -117,6 +48,7 @@ export const PLACEHOLDER_MAP: Record<string, string> = {
     '{{DOKUMENTNUMMER}}': SAMPLE_DATA.dokumentnummer,
     '{{PROJEKTNUMMER}}': SAMPLE_DATA.projektnummer,
     '{{BAUVORHABEN}}': SAMPLE_DATA.bauvorhaben,
+    '{{BETREFF}}': SAMPLE_DATA.betreff,
     '{{KUNDENADRESSE}}': SAMPLE_DATA.kundenadresse,
     '{{KUNDENNAME}}': SAMPLE_DATA.kundenname,
     '{{KUNDENNUMMER}}': SAMPLE_DATA.kundennummer,
@@ -173,37 +105,6 @@ export const BLOCK_LABELS: Record<FormBlockType, string> = {
     table: 'Leistungstabelle'
 };
 
-export const BLOCK_ICONS: Record<FormBlockType, string> = {
-    heading: 'H',
-    text: 'T',
-    doknr: '#',
-    projektnr: 'P',
-    kundennummer: 'K#',
-    kunde: 'K',
-    adresse: '📍',
-    dokumenttyp: 'D',
-    datum: '📅',
-    seitenzahl: '📄',
-    logo: '🖼',
-    table: '▦'
-};
-
-/** Block categories for the sidebar — organized by function */
-export const BLOCK_CATEGORIES: { label: string; types: FormBlockType[] }[] = [
-    {
-        label: 'Dokument-Felder',
-        types: ['dokumenttyp', 'doknr', 'datum', 'kundennummer', 'projektnr', 'kunde', 'adresse']
-    },
-    {
-        label: 'Inhalt',
-        types: ['heading', 'text', 'table']
-    },
-    {
-        label: 'Sonstiges',
-        types: ['logo', 'seitenzahl']
-    }
-];
-
 export const DEFAULT_TABLE_COLUMNS = {
     pos: 40,
     menge: 50,
@@ -240,5 +141,3 @@ export const DEFAULT_ITEMS: Omit<import('../../types').FormBlock, 'id'>[] = [
 
 export const uid = () => 'blk-' + Math.random().toString(16).slice(2);
 
-export const isTextualType = (type: FormBlockType) =>
-    ['heading', 'text', 'doknr', 'projektnr', 'kundennummer', 'kunde', 'adresse', 'dokumenttyp', 'datum', 'seitenzahl'].includes(type);
