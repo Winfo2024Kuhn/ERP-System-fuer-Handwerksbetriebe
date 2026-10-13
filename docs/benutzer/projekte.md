@@ -48,7 +48,7 @@ Die laufende Zahl lässt sich ändern. Mit „Auftragsnummer manuell vergeben“
 2. Die Anfrage suchen (Bauvorhaben, Kunde, Kundennummer, Ort, E-Mail) und anklicken. Angezeigt werden nur Anfragen, aus denen noch kein Projekt wurde.
 3. Kunde, Bauvorhaben, Adresse und Produktkategorien sind vorausgefüllt. Auftragsnummer und Projektart prüfen, dann „Projekt anlegen“.
 
-Das Projekt übernimmt aus der Anfrage die Dateien, E-Mails, Tagebuch-Einträge mit Bildern, Angebote und Auftragsbestätigungen sowie die Termine. Danach ist die Anfrage nicht mehr unter Anfragen zu finden.
+Das Projekt übernimmt aus der Anfrage die Beschreibung, Dateien, E-Mails, Tagebuch-Einträge mit Bildern (private bleiben privat), Angebote und Auftragsbestätigungen sowie die Termine. Danach ist die Anfrage nicht mehr unter Anfragen zu finden. Klappt die Übernahme nicht, zeigt das Fenster den Grund, und die Anfrage bleibt unverändert bestehen.
 
 Nimmt ein Kunde ein Angebot digital an, legt das Programm das Projekt selbst an (siehe [Anfragen](anfragen.md)).
 

@@ -40,7 +40,7 @@ Die Karte trägt „Webseite · neu“, bis aus der Anfrage ein Projekt wird ode
 
 ## Was zeigt eine Anfrage?
 
-Ein Klick auf eine Anfrage unter **Projektmanagement → Anfragen** öffnet sie. Oben stehen Bauvorhaben, Kunde, Adresse, Anlagedatum, „Brutto“ und „Netto“ sowie die Knöpfe „Bearbeiten“ und „Löschen“. Rechts stehen unter „Anfragedaten“ Kunde, Kundennummer, Ansprechpartner, Kunden-E-Mails, Telefon und die Projektadresse mit Karte.
+Ein Klick auf eine Anfrage unter **Projektmanagement → Anfragen** öffnet sie. Oben stehen Bauvorhaben, Kunde, Adresse, Anlagedatum, „Brutto“ und „Netto“ sowie die Knöpfe „Bearbeiten“ und „Löschen“. Den Betrag gibt man nicht von Hand ein: Er kommt aus dem Angebot bzw. der Auftragsbestätigung. Rechts stehen unter „Anfragedaten“ Kunde, Kundennummer, Ansprechpartner, Kunden-E-Mails, Telefon und die Projektadresse mit Karte.
 
 Reiter:
 - **„E-Mails“:** alle E-Mails zu dieser Anfrage, mit Suche, Filter „Eingang“ / „Ausgang“, „Neue E-Mail“ und „Antworten“.
