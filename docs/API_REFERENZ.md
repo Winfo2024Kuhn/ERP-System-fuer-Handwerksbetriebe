@@ -92,7 +92,7 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 `@PreAuthorize` wird nirgends verwendet. Feinere Rechte prüfen die Controller
 bzw. Services selbst, meist über die Abteilungsrechte: Belege und Kasse,
 sichtbare Lieferanten-Dokumenttypen, Eingangsrechnungen sehen/genehmigen,
-Telefon (`darfTelefonSehen`), Monatsabschluss, sichtbare Postfächer und
+Telefon (`darfTelefonSehen`), Aufschläge ändern (`darfAufschlaegeAendern`, Administratoren immer), Monatsabschluss, sichtbare Postfächer und
 Anmeldecodes der Mitarbeiter.
 
 **Mit Handy-Token erlaubt** (`MobileApiPolicy`, abschließende Liste):
@@ -657,6 +657,17 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `GET` | `/dokumente/{dokumentId}/datei` | Datei eines Artikel-Dokuments |
 | `DELETE` | `/dokumente/{dokumentId}` | Artikel-Dokument löschen |
 | `GET` | `/filteroptionen` | Auswahlwerte für die Filterleiste mit Klartext |
+
+### AufschlagController
+
+**Basis-URL:** `/api/aufschlaege`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/berechtigung` | Darf der angemeldete Benutzer die Aufschläge ändern? (`{"darfAendern": true/false}`, für jeden angemeldeten Benutzer) |
+| `GET` | `/` | Allgemeiner Aufschlag und je Artikelkategorie der eigene und der geltende Aufschlag *(Recht „Aufschläge ändern“ oder Admin, sonst 403)* |
+| `PUT` | `/allgemein` | Allgemeinen Aufschlag setzen, `prozent` leer = keiner (0 bis 999,99; 400 sonst) *(Recht oder Admin)* |
+| `PUT` | `/kategorien/{id}` | Aufschlag einer Kategorie setzen, `prozent` leer = keiner; 404 bei unbekannter Kategorie *(Recht oder Admin)* |
 
 ### ArtikelKategorieController
 

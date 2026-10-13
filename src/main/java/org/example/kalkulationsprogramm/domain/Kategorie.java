@@ -20,6 +20,10 @@ public class Kategorie
 
     private String beschreibung;
 
+    /** Aufschlag in Prozent auf den Einkaufspreis für alle Artikel dieser Kategorie; leer = keiner (dann gilt der der Oberkategorie, sonst der allgemeine). */
+    @Column(name = "verkaufsaufschlag_prozent", precision = 6, scale = 2)
+    private java.math.BigDecimal verkaufsaufschlagProzent;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_kategorie_id")
     private Kategorie parentKategorie;
