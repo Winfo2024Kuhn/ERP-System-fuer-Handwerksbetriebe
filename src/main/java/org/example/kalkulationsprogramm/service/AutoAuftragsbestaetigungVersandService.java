@@ -141,12 +141,14 @@ public class AutoAuftragsbestaetigungVersandService
             // Nach digitaler Annahme geht die Widerrufsbelehrung samt Muster-Formular als zweites PDF
             // mit – so liegt sie beim Kunden auf einem dauerhaften Datenträger, zusammen mit seiner
             // Erklärung zum vorzeitigen Beginn. Scheitert nur sie, geht die AB trotzdem raus.
+            WiderrufsbelehrungPdfService.Belehrung belehrung = null;
             if (freigabe != null)
             {
                 try
                 {
-                    anhaenge.add(new VersandAnhang(widerrufsbelehrungPdfService.erzeugePdf(freigabe),
-                            WiderrufsbelehrungPdfService.dateiname()));
+                    belehrung = widerrufsbelehrungPdfService.erzeuge(freigabe);
+                    anhaenge.add(new VersandAnhang(belehrung.pdf(), belehrung.dateiname()));
+                    warneBeiAbweichendemStand(freigabe, belehrung);
                 }
                 catch (Exception e)
                 {
@@ -157,7 +159,7 @@ public class AutoAuftragsbestaetigungVersandService
             }
 
             // Der Beleg kündigt die Belehrung nur an, wenn sie wirklich anhängt.
-            boolean belehrungAngehaengt = anhaenge.size() > 1;
+            boolean belehrungAngehaengt = belehrung != null;
             EmailService.EmailContent content = baueEmailInhalt(ab);
             if (freigabe != null)
             {
@@ -207,6 +209,7 @@ public class AutoAuftragsbestaetigungVersandService
             archiviereAlsProjektEmail(ab, empfaenger, absender,
                     content.subject(), htmlMitSignatur, messageId, archivAnhaenge);
             markiereAlsVersendet(ab);
+            merkeVerschickteBelehrung(freigabe, belehrung);
             // Bewusst ohne Empfaenger-Adresse geloggt (DSGVO) — die
             // Dokumentnummer reicht zum Wiederfinden im E-Mail-Center.
             log.info("Auto-AB {} per Mail versendet", ab.getDokumentNummer());
@@ -1257,6 +1260,42 @@ public class AutoAuftragsbestaetigungVersandService
         return new EmailService.EmailContent(content.subject(), html);
     }
 
+    /**
+     * Website und ERP führen den Text der Belehrung getrennt – laufen die Stände auseinander,
+     * widersprechen sich die Website, die der Kunde beim Annehmen gesehen hat, und das angehängte
+     * PDF. Das muss auffallen.
+     */
+    static void warneBeiAbweichendemStand(DokumentFreigabe f, WiderrufsbelehrungPdfService.Belehrung belehrung)
+    {
+        String erpStand = belehrung.stand().toString();
+        if (f.getWiderrufStand() != null && !erpStand.equals(f.getWiderrufStand()))
+        {
+            log.warn("Widerrufsbelehrung: Website-Stand {} weicht vom ERP-Stand {} ab (Dokument {}) – "
+                    + "Text im Formularwesen und auf der Website angleichen",
+                    f.getWiderrufStand(), erpStand, f.getDokumentNummer());
+        }
+    }
+
+    /**
+     * Hält an der Freigabe fest, welche Fassung der Belehrung verschickt wurde – Nachweis neben dem
+     * Website-Stand. Scheitert nur das, bleibt der Versand gültig.
+     */
+    private void merkeVerschickteBelehrung(DokumentFreigabe freigabe, WiderrufsbelehrungPdfService.Belehrung belehrung)
+    {
+        if (freigabe == null || belehrung == null) return;
+        try
+        {
+            freigabe.setWiderrufVersandStand(belehrung.stand().toString());
+            freigabe.setWiderrufVersandFassung(belehrung.fassung());
+            dokumentFreigabeRepository.saveAndFlush(freigabe);
+        }
+        catch (Exception e)
+        {
+            log.error("Verschickte Fassung der Widerrufsbelehrung für {} nicht gespeichert (Stand {}, Fassung {}): {}",
+                    freigabe.getDokumentNummer(), belehrung.stand(), belehrung.fassung(), e.getMessage(), e);
+        }
+    }
+
     /** Telefon aus den Firmendaten – fehlt es oder hakt das Laden, entfällt die Nummer im Beleg. */
     String firmentelefon()
     {
@@ -1314,13 +1353,6 @@ public class AutoAuftragsbestaetigungVersandService
                     + "<strong>Beginn der Arbeiten:</strong> Sie haben keinen Beginn vor Ablauf der Widerrufsfrist "
                     + "verlangt. Wir beginnen daher erst nach Ablauf der 14-tägigen Frist. Möchten Sie, dass wir "
                     + "früher starten, teilen Sie uns das bitte kurz per E-Mail mit.</p>";
-        }
-        if (f.getWiderrufStand() != null && !WiderrufsbelehrungPdfService.STAND.equals(f.getWiderrufStand()))
-        {
-            // Website und ERP führen den Text getrennt – laufen die Stände auseinander, widersprechen
-            // sich Mail und angehängtes PDF. Das muss auffallen.
-            log.warn("Widerrufsbelehrung: Website-Stand {} weicht vom ERP-Stand {} ab (Dokument {})",
-                    f.getWiderrufStand(), WiderrufsbelehrungPdfService.STAND, f.getDokumentNummer());
         }
         String standZeile = f.getWiderrufStand() != null
                 ? "Widerrufsbelehrung Stand " + escapeHtml(WiderrufsbelehrungPdfService.formatiereStand(f.getWiderrufStand()))

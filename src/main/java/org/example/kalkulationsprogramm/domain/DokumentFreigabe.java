@@ -225,6 +225,14 @@ public class DokumentFreigabe
     @Column(name = "knopf_text", length = 100)
     private String knopfText;
 
+    /** Stand der Widerrufsbelehrung, die das ERP mit der Auftragsbestätigung verschickt hat (seit V424). */
+    @Column(name = "widerruf_versand_stand", length = 20)
+    private String widerrufVersandStand;
+
+    /** Fassung dieser Belehrung; 0 = mitgelieferter Standardtext, {@code null} = nicht verschickt. */
+    @Column(name = "widerruf_versand_fassung")
+    private Integer widerrufVersandFassung;
+
     @PrePersist
     protected void onCreate()
     {
