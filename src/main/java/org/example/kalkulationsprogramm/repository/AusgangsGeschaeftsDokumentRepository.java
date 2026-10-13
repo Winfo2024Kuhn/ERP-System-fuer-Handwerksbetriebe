@@ -69,27 +69,32 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
                                                              @Param("typ") AusgangsGeschaeftsDokumentTyp typ);
 
     /**
-     * Prüft ob bereits ein Basisdokument (ohne Vorgänger) für ein Projekt existiert.
+     * Prüft ob bereits ein aktives Basisdokument (ohne Vorgänger, nicht storniert)
+     * für ein Projekt existiert. Eine stornierte Rechnung ohne Vorgänger zählt nicht:
+     * Sonst ließe sich im Vorgang nach dem Storno keine neue Rechnung mehr anlegen
+     * (Issue #262). Stornorechnungen selbst haben das Original als Vorgänger und
+     * sind damit nie Basisdokument.
      */
-    boolean existsByProjektIdAndVorgaengerIsNull(Long projektId);
+    boolean existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(Long projektId);
 
     /**
-     * Prüft ob bereits ein Basisdokument (ohne Vorgänger) für ein Anfrage existiert.
+     * Prüft ob bereits ein aktives Basisdokument (ohne Vorgänger, nicht storniert)
+     * für eine Anfrage existiert. Siehe {@link #existsByProjektIdAndVorgaengerIsNullAndStorniertFalse}.
      */
-    boolean existsByAnfrageIdAndVorgaengerIsNull(Long anfrageId);
+    boolean existsByAnfrageIdAndVorgaengerIsNullAndStorniertFalse(Long anfrageId);
 
     /**
-     * Prüft ob für ein Projekt bereits ein Basisdokument (ohne Vorgänger) eines
-     * bestimmten Typs existiert — z.B. das ursprüngliche ANGEBOT, das ein
-     * NACHTRAGSANGEBOT voraussetzt.
+     * Prüft ob für ein Projekt bereits ein aktives Basisdokument (ohne Vorgänger,
+     * nicht storniert) eines bestimmten Typs existiert — z.B. das ursprüngliche
+     * ANGEBOT, das ein NACHTRAGSANGEBOT voraussetzt.
      */
-    boolean existsByProjektIdAndVorgaengerIsNullAndTyp(Long projektId, AusgangsGeschaeftsDokumentTyp typ);
+    boolean existsByProjektIdAndVorgaengerIsNullAndTypAndStorniertFalse(Long projektId, AusgangsGeschaeftsDokumentTyp typ);
 
     /**
-     * Prüft ob für eine Anfrage bereits ein Basisdokument (ohne Vorgänger) eines
-     * bestimmten Typs existiert. Siehe {@link #existsByProjektIdAndVorgaengerIsNullAndTyp}.
+     * Prüft ob für eine Anfrage bereits ein aktives Basisdokument eines bestimmten
+     * Typs existiert. Siehe {@link #existsByProjektIdAndVorgaengerIsNullAndTypAndStorniertFalse}.
      */
-    boolean existsByAnfrageIdAndVorgaengerIsNullAndTyp(Long anfrageId, AusgangsGeschaeftsDokumentTyp typ);
+    boolean existsByAnfrageIdAndVorgaengerIsNullAndTypAndStorniertFalse(Long anfrageId, AusgangsGeschaeftsDokumentTyp typ);
 
     /**
      * Findet alle Dokumente, die über ein Anfrage mit einem Projekt verknüpft sind

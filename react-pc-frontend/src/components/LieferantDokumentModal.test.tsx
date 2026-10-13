@@ -532,4 +532,67 @@ describe('LieferantDokumentModal', () => {
             expect(screen.getByText('Beträge')).toBeInTheDocument();
         });
     });
+
+    // Issue #266 Punkt 2: Der Knopf „Zuordnen“ im Warnband war ohne Funktion.
+    describe('Zuordnen (Kein Projekt zugeordnet)', () => {
+        it('reicht das Dokument an den Aufrufer weiter, der die Projekt-Zuordnung öffnet', async () => {
+            global.fetch = buildFetchMock() as unknown as typeof fetch;
+            const onZuordnen = vi.fn();
+            const user = userEvent.setup();
+
+            renderModal({ onZuordnen });
+
+            expect(screen.getByText('Kein Projekt zugeordnet')).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: 'Zuordnen' }));
+
+            expect(onZuordnen).toHaveBeenCalledWith(DUMMY_DOKUMENT);
+        });
+
+        it('zeigt ohne Rechnungsdaten einen Hinweis statt des Knopfs', () => {
+            global.fetch = buildFetchMock() as unknown as typeof fetch;
+
+            renderModal({ dokument: { ...DUMMY_DOKUMENT, geschaeftsdaten: undefined }, onZuordnen: vi.fn() });
+
+            expect(screen.getByText('Kein Projekt zugeordnet')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Zuordnen' })).toBeNull();
+            expect(screen.getByText('Erst die Rechnungsdaten eintragen und speichern, dann zuordnen.')).toBeInTheDocument();
+        });
+
+        it('zeigt ohne Zuordnungs-Möglichkeit beim Aufrufer keinen Knopf', () => {
+            global.fetch = buildFetchMock() as unknown as typeof fetch;
+
+            renderModal();
+
+            expect(screen.getByText('Kein Projekt zugeordnet')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Zuordnen' })).toBeNull();
+        });
+
+        it('blendet das Warnband aus, sobald der Aufrufer das zugeordnete Dokument hereinreicht, ohne Eingaben zu verwerfen', async () => {
+            global.fetch = buildFetchMock() as unknown as typeof fetch;
+            const user = userEvent.setup();
+            const props = { isOpen: true, onClose: vi.fn(), lieferantId: LIEFERANT_ID, onZuordnen: vi.fn() };
+            const { rerender } = render(
+                <ToastProvider><ConfirmProvider>
+                    <LieferantDokumentModal {...props} dokument={DUMMY_DOKUMENT} />
+                </ConfirmProvider></ToastProvider>
+            );
+            const nummer = screen.getByPlaceholderText('RE-2024-001');
+            await waitFor(() => expect(nummer).toBeEnabled());
+            await user.clear(nummer);
+            await user.type(nummer, 'RE-2026-999');
+
+            const zugeordnet: LieferantDokument = {
+                ...DUMMY_DOKUMENT,
+                projektAnteile: [{ id: 1, projektId: 3, projektName: 'Musterbau Gartentor', prozent: 100 }] as unknown as LieferantDokument['projektAnteile'],
+            };
+            rerender(
+                <ToastProvider><ConfirmProvider>
+                    <LieferantDokumentModal {...props} dokument={zugeordnet} />
+                </ConfirmProvider></ToastProvider>
+            );
+
+            expect(screen.queryByText('Kein Projekt zugeordnet')).toBeNull();
+            expect(screen.getByPlaceholderText('RE-2024-001')).toHaveValue('RE-2026-999');
+        });
+    });
 });

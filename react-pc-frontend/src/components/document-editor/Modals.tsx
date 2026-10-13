@@ -148,13 +148,16 @@ function HoverPreview({ text, visible, anchorRect }: { text: string; visible: bo
 export function ExportWarningModal({
     onCancel,
     onConfirm,
+    loading = false,
 }: {
     onCancel: () => void;
     onConfirm: () => void;
+    /** Export läuft: Knöpfe gesperrt, damit nicht doppelt gebucht wird. */
+    loading?: boolean;
 }) {
     return (
         <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center">
-            <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md mx-4 border border-slate-100">
+            <div role="dialog" aria-modal="true" aria-label="Dokument exportieren?" className="bg-white rounded-2xl shadow-2xl p-6 max-w-md mx-4 border border-slate-100">
                 <div className="flex items-start gap-4">
                     <div className="p-2.5 bg-amber-50 rounded-xl flex-shrink-0">
                         <AlertTriangle className="w-5 h-5 text-amber-500" />
@@ -174,15 +177,17 @@ export function ExportWarningModal({
                     <Button
                         variant="outline"
                         onClick={onCancel}
+                        disabled={loading}
                         className="flex-1 border-slate-200 text-slate-600"
                     >
                         Abbrechen
                     </Button>
                     <Button
                         onClick={onConfirm}
+                        disabled={loading}
                         className="flex-1 bg-rose-600 hover:bg-rose-700 text-white shadow-sm"
                     >
-                        Exportieren & Buchen
+                        {loading ? 'Wird exportiert…' : 'Exportieren & Buchen'}
                     </Button>
                 </div>
             </div>

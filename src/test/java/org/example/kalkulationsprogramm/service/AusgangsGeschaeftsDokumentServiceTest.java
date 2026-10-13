@@ -886,7 +886,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
         @Test
         void wirftExceptionBeiAngebotWennBereitsBasisdokumentProProjekt() {
-            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNull(5L)).thenReturn(true);
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(5L)).thenReturn(true);
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
@@ -899,7 +899,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
         @Test
         void wirftExceptionBeiAngebotWennBereitsBasisdokumentProAnfrage() {
-            when(dokumentRepository.existsByAnfrageIdAndVorgaengerIsNull(7L)).thenReturn(true);
+            when(dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndStorniertFalse(7L)).thenReturn(true);
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
@@ -912,7 +912,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
         @Test
         void verhindertEigenstaendigeRechnungWennBereitsBasisdokument() {
-            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNull(5L)).thenReturn(true);
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(5L)).thenReturn(true);
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
@@ -924,9 +924,31 @@ class AusgangsGeschaeftsDokumentServiceTest {
         }
 
         @Test
+        void erlaubtNeueRechnungWennNurStornierteBasisVorhanden() {
+            // Issue #262: Eine direkt angelegte, stornierte Rechnung ist kein aktives
+            // Basisdokument mehr — die Prüfung fragt nur nicht stornierte Wurzeln ab.
+            mockCounterForNummer();
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(5L)).thenReturn(false);
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(9L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            dto.setProjektId(5L);
+
+            AusgangsGeschaeftsDokument result = service.erstellen(dto);
+
+            assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            verify(dokumentRepository).existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(5L);
+        }
+
+        @Test
         void erstelltNachtragsangebotAlsEigenesBasisdokumentWennAngebotExistiert() {
             mockCounterForNummer();
-            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTypAndStorniertFalse(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
                     .thenReturn(true);
             when(dokumentRepository.save(any())).thenAnswer(inv -> {
                 AusgangsGeschaeftsDokument d = inv.getArgument(0);
@@ -947,7 +969,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
         @Test
         void wirftExceptionBeiNachtragsangebotOhneVorhandenesAngebot() {
-            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTypAndStorniertFalse(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
                     .thenReturn(false);
 
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
@@ -1337,7 +1359,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             Projekt projekt = new Projekt();
             projekt.setId(5L);
             when(projektRepository.findById(5L)).thenReturn(Optional.of(projekt));
-            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTyp(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+            when(dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTypAndStorniertFalse(5L, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
                     .thenReturn(true);
             when(dokumentRepository.findRechnungsadresseOverridesByProjektId(5L))
                     .thenReturn(List.of(ADRESSE_NEU));

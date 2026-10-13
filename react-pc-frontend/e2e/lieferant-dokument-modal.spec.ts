@@ -265,3 +265,70 @@ test.describe('LieferantDokumentModal - Sperr-Fundament', () => {
         await designPruefung(page, testInfo, 'lieferant-modal-speicherfehler-toast', { primaerAktion: speichern });
     });
 });
+
+// Issue #266 Punkt 2: „Zuordnen“ im Warnband „Kein Projekt zugeordnet“ war ohne Funktion.
+test.describe('LieferantDokumentModal - Zuordnen', () => {
+    test('öffnet die Projekt-Zuordnung, speichert und blendet das Warnband aus', async ({ page }, testInfo) => {
+        await stubbeLieferantApi(page, 'frei');
+        const zuordnungen: unknown[] = [];
+        await page.route('**/api/bestellungen-uebersicht/**', route => {
+            const request = route.request();
+            const pfad = new URL(request.url()).pathname;
+            if (pfad === `/api/bestellungen-uebersicht/geschaeftsdaten/${DOKUMENT_ID}`) {
+                return json(route, {
+                    id: DOKUMENT_ID, dokumentNummer: 'RE-2026-100', dokumentDatum: '2026-08-01',
+                    betragNetto: 100, betragBrutto: 119, mwstSatz: 0.19, lieferantName: 'Musterbedarf Baustoffe GmbH',
+                });
+            }
+            if (pfad === '/api/bestellungen-uebersicht/zuordnen' && request.method() === 'POST') {
+                zuordnungen.push(request.postDataJSON());
+                return json(route, { success: true, message: 'Erfolgreich 1 Zuordnung(en) gespeichert', zuordnungen: 1 });
+            }
+            if (pfad === `/api/bestellungen-uebersicht/zuordnungen/${DOKUMENT_ID}`) return json(route, []);
+            if (pfad === `/api/bestellungen-uebersicht/positionen/${DOKUMENT_ID}`) {
+                return json(route, {
+                    geschaeftsdokumentId: DOKUMENT_ID, dokumentTyp: 'RECHNUNG', auslesbar: true, betragNetto: 100, betragBrutto: 119,
+                    summePositionen: 0, abweichung: 0, abweichungAuffaellig: false, nachPositionenAufgeteilt: false, positionen: [],
+                });
+            }
+            return route.fulfill({ status: 404, body: '' });
+        });
+        await page.route('**/api/projekte/simple**', route => json(route, [
+            { id: 30, bauvorhaben: 'Garage Musterweg', auftragsnummer: 'A-2026-030', kunde: 'Max Mustermann', abgeschlossen: false },
+        ]));
+        // Nach dem Zuordnen lädt der Reiter seine Liste still neu (ohne das Fenster zu schließen).
+        let listeNeuGeladen = 0;
+        await page.route(`**/api/lieferanten/${LIEFERANT_ID}/dokumente`, route => {
+            listeNeuGeladen++;
+            return json(route, [{ ...DUMMY_DOKUMENT, projektAnteile: [{ id: 1, projektId: 30, projektName: 'Garage Musterweg', prozent: 100 }] }]);
+        });
+        await oeffneDokumentModal(page);
+
+        await expect(dialog(page).getByText('Kein Projekt zugeordnet')).toBeVisible();
+        await dialog(page).getByRole('button', { name: 'Zuordnen' }).click();
+
+        const zuordnung = page.getByRole('dialog', { name: 'Rechnung RE-2026-100' });
+        await expect(zuordnung).toBeVisible();
+        // Der Zuordnungs-Dialog liegt sichtbar ÜBER dem Bearbeiten-Fenster: Die Mitte seines
+        // Kopfes gehört zu ihm und nicht zum Fenster darunter.
+        const kopf = (await zuordnung.getByRole('heading', { name: 'Rechnung RE-2026-100' }).boundingBox())!;
+        const obenAuf = await page.evaluate(
+            ({ x, y }) => document.elementFromPoint(x, y)?.closest('[role="dialog"]')?.getAttribute('aria-labelledby') ?? null,
+            { x: kopf.x + kopf.width / 2, y: kopf.y + kopf.height / 2 },
+        );
+        expect(obenAuf).toBe(await zuordnung.getAttribute('aria-labelledby'));
+        await designPruefung(page, testInfo, 'lieferant-modal-zuordnen-offen');
+
+        await zuordnung.getByRole('button', { name: /Projekt hinzufügen/ }).click();
+        await page.getByRole('button', { name: /Garage Musterweg/ }).click();
+        await zuordnung.getByRole('button', { name: /Zuordnen & Abschließen/ }).click();
+
+        await expect(zuordnung).toBeHidden();
+        await expect(dialog(page).getByText('Kein Projekt zugeordnet')).toBeHidden();
+        // Das Bearbeiten-Fenster bleibt offen, die Liste dahinter ist aktualisiert.
+        await expect(dialog(page)).toBeVisible();
+        await expect.poll(() => listeNeuGeladen).toBeGreaterThan(0);
+        expect(zuordnungen).toHaveLength(1);
+        expect(zuordnungen[0]).toMatchObject({ geschaeftsdokumentId: DOKUMENT_ID, projektAnteile: [{ projektId: 30 }] });
+    });
+});

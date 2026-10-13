@@ -233,6 +233,18 @@ public class DokumentFreigabe
     @Column(name = "widerruf_versand_fassung")
     private Integer widerrufVersandFassung;
 
+    /**
+     * Zieht einen noch offenen Link zurück: Status REVOKED, Ablauf jetzt. Nur die Verknüpfung
+     * zur PDF wird gelöst, damit der alte Link keine PDF mehr liefert – die Datei selbst ist
+     * die PDF des Dokuments im ERP und bleibt liegen.
+     */
+    public void widerrufen(LocalDateTime jetzt)
+    {
+        this.status = FreigabeStatus.REVOKED;
+        this.dokumentDatei = null;
+        this.ablaufDatum = jetzt;
+    }
+
     @PrePersist
     protected void onCreate()
     {

@@ -239,6 +239,66 @@ export function brauchtAnnahmeLinkAbfrage(
     return istAngebot && !istEntwurfsVersand && !digitalAngenommen;
 }
 
+/** Angebot oder Nachtragsangebot – beide können einen Online-Annahme-Link bekommen. */
+export function istAngebotsTyp(dokumentTyp: string): boolean {
+    return dokumentTyp === 'ANGEBOT' || dokumentTyp === 'NACHTRAGSANGEBOT';
+}
+
+/**
+ * Wird das Dokument beim Export bzw. Versand gebucht und gesperrt? Nur Rechnungstypen,
+ * und nur solange es noch offen ist – ein gebuchtes oder storniertes Dokument ändert
+ * sich dadurch nicht mehr, eine Warnung wäre dort irreführend.
+ */
+export function brauchtBuchungsWarnung(
+    istBuchungstyp: boolean,
+    dokument: { gebucht?: boolean; storniert?: boolean } | null | undefined,
+): boolean {
+    return istBuchungstyp && !dokument?.gebucht && !dokument?.storniert;
+}
+
+/**
+ * Hat sich ein Nettobetrag zwischen zwei Ständen geändert (auf den Cent genau)? Fehlt
+ * einer der Werte, lässt sich nichts vergleichen – dann `false`.
+ */
+export function betragGeaendert(vorher: number | null | undefined, nachher: number | null | undefined): boolean {
+    if (vorher == null || nachher == null) return false;
+    return Math.round(vorher * 100) !== Math.round(nachher * 100);
+}
+
+/** Offener Online-Link, der beim Versand ungültig wird (Antwort von `/abzuloesende-freigaben`). */
+export interface AbzuloesendeFreigabe {
+    dokumentId: number;
+    dokumentNummer: string;
+    dokumentArt?: string;
+    ablaufDatum?: string;
+    /** `true` = älterer Link desselben Dokuments, `false` = Link eines anderen Angebots. */
+    diesesDokument?: boolean;
+}
+
+/**
+ * Text der Rückfrage, bevor offene Online-Links abgelöst werden – ältere Links desselben
+ * Angebots („Der bisherige Online-Link zu diesem Angebot wird damit ungültig.“) und Links
+ * anderer Angebote („Der Online-Link zu Angebot AG-1 wird damit ungültig.“).
+ */
+export function abloesungsFrage(freigaben: AbzuloesendeFreigabe[], bezeichnung: string = 'Angebot'): string {
+    const saetze: string[] = [];
+    if (freigaben.some(f => f.diesesDokument)) {
+        saetze.push(`Der bisherige Online-Link zu diesem ${bezeichnung} wird damit ungültig.`);
+    }
+    const nummern = Array.from(new Set(freigaben.filter(f => !f.diesesDokument).map(f => f.dokumentNummer).filter(Boolean)));
+    if (nummern.length === 1) {
+        saetze.push(`Der Online-Link zu Angebot ${nummern[0]} wird damit ungültig.`);
+    } else if (nummern.length > 1) {
+        const liste = `${nummern.slice(0, -1).join(', ')} und ${nummern[nummern.length - 1]}`;
+        saetze.push(`Die Online-Links zu den Angeboten ${liste} werden damit ungültig.`);
+    }
+    if (saetze.length === 0) {
+        saetze.push('Ein älterer Online-Link wird damit ungültig.');
+    }
+    saetze.push('Der Kunde kann die alte Fassung dann nicht mehr online annehmen. Trotzdem fortfahren?');
+    return saetze.join(' ');
+}
+
 /**
  * Dokumenttyp-Labels, unter denen die Standard-Textbausteine (Vor-/Nachtexte)
  * der Formular-Vorlage gesucht werden — in Fallback-Reihenfolge.

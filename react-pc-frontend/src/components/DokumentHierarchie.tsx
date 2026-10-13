@@ -20,6 +20,7 @@ import { DokumentVerlaufDrawer } from './dokument/DokumentVerlaufDrawer';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { istRechnungAmVorgaengerGesperrt } from '../lib/abrechnungsverlauf';
+import { hatAktivesBasisdokument } from '../lib/basisdokumente';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -146,9 +147,9 @@ export function DokumentHierarchie({
             .catch(() => setFreigabeStatus({}));
     }, [ausgangsDokumente]);
 
-    // Prüfen ob bereits ein Basisdokument (Root ohne Vorgänger) existiert
+    // Prüfen ob bereits ein aktives Basisdokument (Root ohne Vorgänger, nicht storniert) existiert
     const hasBasisdokument = useMemo(
-        () => ausgangsDokumente.some(d => !d.vorgaengerId),
+        () => hatAktivesBasisdokument(ausgangsDokumente),
         [ausgangsDokumente]
     );
 

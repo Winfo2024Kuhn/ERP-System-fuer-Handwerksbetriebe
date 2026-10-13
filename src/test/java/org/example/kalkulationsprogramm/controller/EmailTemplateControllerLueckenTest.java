@@ -149,6 +149,32 @@ class EmailTemplateControllerLueckenTest {
                 .andExpect(jsonPath("$.body").value("<p>A</p><div>Freigabe</div>"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"ANGEBOT", "NACHTRAGSANGEBOT"})
+    @DisplayName("Online-Annahme abgewaehlt (mitFreigabe=false): kein Link, kein Freigabe-Token")
+    void angebotOhneFreigabe(String typ) throws Exception {
+        when(firma.getFirmeninformation()).thenReturn(new FirmeninformationDto());
+        when(vorlagen.render(eq(typ), any())).thenReturn(new EmailService.EmailContent("Angebot", "<p>A</p>"));
+
+        sende("{\"dokumentTyp\":\"" + typ + "\",\"dokumentId\":5,\"mitFreigabe\":false}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.body").value("<p>A</p>"));
+        verifyNoInteractions(freigabe);
+    }
+
+    @Test
+    @DisplayName("mitFreigabe=true verhaelt sich wie bisher: Freigabe-Block wird angehaengt")
+    void angebotMitFreigabeAusdruecklich() throws Exception {
+        when(firma.getFirmeninformation()).thenReturn(new FirmeninformationDto());
+        when(vorlagen.render(eq("ANGEBOT"), any())).thenReturn(new EmailService.EmailContent("Angebot", "<p>A</p>"));
+        when(freigabe.erstelleFreigabeBlockFuerDokument(eq(5L), eq(false), eq(""), any(), eq(DokumentFreigabeService.DEFAULT_GUELTIGKEITS_TAGE)))
+                .thenReturn(Optional.of("<div>Freigabe</div>"));
+
+        sende("{\"dokumentTyp\":\"ANGEBOT\",\"dokumentId\":5,\"mitFreigabe\":true}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.body").value("<p>A</p><div>Freigabe</div>"));
+    }
+
     @Test
     @DisplayName("Nachtragsangebot im Anfrage-Kontext: Empfaenger, PDF-Name und Gueltigkeit werden durchgereicht")
     void nachtragMitParametern() throws Exception {

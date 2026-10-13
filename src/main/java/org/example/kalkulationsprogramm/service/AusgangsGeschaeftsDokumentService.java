@@ -1599,9 +1599,9 @@ public class AusgangsGeschaeftsDokumentService {
         if (typ == AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT) {
             // Nachtragsangebote bauen auf einem bestehenden Angebot auf.
             boolean hatAngebotBasis = (projektId != null
-                        && dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTyp(projektId, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+                        && dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTypAndStorniertFalse(projektId, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
                     || (anfrageId != null
-                        && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndTyp(anfrageId, AusgangsGeschaeftsDokumentTyp.ANGEBOT));
+                        && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndTypAndStorniertFalse(anfrageId, AusgangsGeschaeftsDokumentTyp.ANGEBOT));
             if (!hatAngebotBasis) {
                 throw new IllegalStateException(
                         "Ein Nachtragsangebot benötigt ein bestehendes Angebot als Basisdokument.");
@@ -1612,8 +1612,14 @@ public class AusgangsGeschaeftsDokumentService {
         // Alle übrigen Typen (Angebot, AB, Rechnung, …) sind nur als allererstes
         // Basisdokument erlaubt. Sobald irgendein Basisdokument existiert, ist das
         // einzige zulässige weitere Wurzel-Dokument ein Nachtragsangebot (oben).
-        boolean hatBasis = (projektId != null && dokumentRepository.existsByProjektIdAndVorgaengerIsNull(projektId))
-                || (anfrageId != null && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNull(anfrageId));
+        // Stornierte Basisdokumente (z. B. eine direkt angelegte, dann stornierte
+        // Rechnung) zählen nicht mit – sonst wäre der Vorgang danach blockiert
+        // (Issue #262). Bewusst ohne Blick auf Nachfolger: Stornierbar sind nur
+        // Rechnungstypen, und Abschlags-/Teil-/Schlussrechnungen entstehen an
+        // Angebot oder Auftragsbestätigung, nicht an einer Rechnung. Unter einer
+        // stornierten Wurzel-Rechnung hängen deshalb nur Storno und Mahnungen.
+        boolean hatBasis = (projektId != null && dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(projektId))
+                || (anfrageId != null && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndStorniertFalse(anfrageId));
         if (hatBasis) {
             if (typ == AusgangsGeschaeftsDokumentTyp.ANGEBOT) {
                 throw new IllegalStateException(

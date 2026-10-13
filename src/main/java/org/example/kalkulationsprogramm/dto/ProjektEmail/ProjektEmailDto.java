@@ -75,4 +75,12 @@ public class ProjektEmailDto {
 
     /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail und sieht nur sich selbst. */
     private boolean einzelversand;
+
+    /**
+     * Versand eines Angebots aus dem Dokument-Editor: Nach erfolgreichem Versand werden die
+     * offenen Online-Links anderer Angebote desselben Vorgangs zurückgezogen (siehe
+     * {@code FreigabeAbloesungService}). Der Editor setzt das Feld nur, wenn der Anwender
+     * die Rückfrage dazu bestätigt hat.
+     */
+    private Long freigabenAbloesenFuerDokumentId;
 }

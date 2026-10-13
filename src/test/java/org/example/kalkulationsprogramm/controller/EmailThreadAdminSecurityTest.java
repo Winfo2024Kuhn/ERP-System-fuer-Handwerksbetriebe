@@ -60,6 +60,7 @@ class EmailThreadAdminSecurityTest {
     @Autowired private MockMvc mockMvc;
     @MockBean private FrontendUserDetailsService frontendUserDetailsService;
     @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
+    @MockBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
     @MockBean private org.example.kalkulationsprogramm.service.EmailDraftService emailDraftService;
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
     @MockBean private EmailRepository emailRepository;

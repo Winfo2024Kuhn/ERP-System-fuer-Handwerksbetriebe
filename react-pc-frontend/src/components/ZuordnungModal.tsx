@@ -5,6 +5,7 @@ import { RefreshCw, FileText, X, Download, Plus, Trash2, Percent, Euro, Save, Br
 import { ProjektSearchModal } from './ProjektSearchModal';
 import { KostenstelleSelectModal } from './KostenstelleSelectModal';
 import { useToast } from './ui/toast';
+import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 import { PositionsAufteilung, type AufteilungsZiel } from './zuordnung/PositionsAufteilung';
 import { usePositionsAufteilung } from './zuordnung/usePositionsAufteilung';
 import { zieleAusPositionen, zielSchluessel } from './zuordnung/positionen';
@@ -398,7 +399,8 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
     // Display values: prefer loaded geschaeftsdaten, fallback to props
     const displayDokNr = geschaeftsdaten?.dokumentNummer || dokumentNummer || '–';
     const displayLieferant = geschaeftsdaten?.lieferantName || lieferantName || 'Kein Lieferant angegeben';
-    const displayPdfUrl = pdfUrl;
+    // Nur sichere Quellen (blob:, http(s):, relative Pfade) in href/src – nie javascript: oder data:.
+    const displayPdfUrl = toSafeResourceUrl(pdfUrl) || null;
     const isImagePreview = previewMimeType?.startsWith('image/');
 
     return (

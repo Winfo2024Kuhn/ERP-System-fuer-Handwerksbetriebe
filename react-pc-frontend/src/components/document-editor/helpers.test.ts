@@ -18,6 +18,10 @@
 import { describe, it, expect } from 'vitest';
 import {
     brauchtAnnahmeLinkAbfrage,
+    brauchtBuchungsWarnung,
+    istAngebotsTyp,
+    abloesungsFrage,
+    betragGeaendert,
     buildPositionMap,
     calculateNetto,
     serviceLineTotal,
@@ -722,5 +726,81 @@ describe('baueDokumentSignatur', () => {
     it('liefert fuer geaenderte blocks eine andere Signatur', () => {
         expect(baueDokumentSignatur(basisDaten({ blocks: [dummyBlock({ title: 'Leistung B' })] })))
             .not.toBe(baueDokumentSignatur(basisDaten()));
+    });
+});
+
+describe('istAngebotsTyp', () => {
+    it('erkennt Angebot und Nachtragsangebot', () => {
+        expect(istAngebotsTyp('ANGEBOT')).toBe(true);
+        expect(istAngebotsTyp('NACHTRAGSANGEBOT')).toBe(true);
+        expect(istAngebotsTyp('RECHNUNG')).toBe(false);
+        expect(istAngebotsTyp('AUFTRAGSBESTAETIGUNG')).toBe(false);
+    });
+});
+
+describe('brauchtBuchungsWarnung', () => {
+    it('warnt nur bei offenen Rechnungstypen', () => {
+        expect(brauchtBuchungsWarnung(true, { gebucht: false, storniert: false })).toBe(true);
+        expect(brauchtBuchungsWarnung(true, null)).toBe(true);
+        expect(brauchtBuchungsWarnung(true, undefined)).toBe(true);
+    });
+
+    it('warnt nicht bei gebuchten, stornierten oder nicht buchbaren Dokumenten', () => {
+        expect(brauchtBuchungsWarnung(true, { gebucht: true })).toBe(false);
+        expect(brauchtBuchungsWarnung(true, { storniert: true })).toBe(false);
+        expect(brauchtBuchungsWarnung(false, { gebucht: false })).toBe(false);
+    });
+});
+
+describe('abloesungsFrage', () => {
+    const SCHLUSS = 'Der Kunde kann die alte Fassung dann nicht mehr online annehmen. Trotzdem fortfahren?';
+
+    it('nennt ein einzelnes anderes Angebot', () => {
+        expect(abloesungsFrage([{ dokumentId: 2, dokumentNummer: 'AG-2026-0001' }]))
+            .toBe(`Der Online-Link zu Angebot AG-2026-0001 wird damit ungültig. ${SCHLUSS}`);
+    });
+
+    it('fasst doppelte Links desselben Angebots zusammen', () => {
+        expect(abloesungsFrage([
+            { dokumentId: 2, dokumentNummer: 'AG-2026-0001' },
+            { dokumentId: 2, dokumentNummer: 'AG-2026-0001' },
+        ])).toBe(`Der Online-Link zu Angebot AG-2026-0001 wird damit ungültig. ${SCHLUSS}`);
+    });
+
+    it('zählt mehrere andere Angebote auf', () => {
+        expect(abloesungsFrage([
+            { dokumentId: 2, dokumentNummer: 'AG-1' },
+            { dokumentId: 3, dokumentNummer: 'AG-2' },
+            { dokumentId: 4, dokumentNummer: 'AG-3' },
+        ])).toBe(`Die Online-Links zu den Angeboten AG-1, AG-2 und AG-3 werden damit ungültig. ${SCHLUSS}`);
+    });
+
+    it('nennt den älteren Link desselben Dokuments mit seiner Bezeichnung', () => {
+        expect(abloesungsFrage([{ dokumentId: 1, dokumentNummer: 'NA-1', diesesDokument: true }], 'Nachtragsangebot'))
+            .toBe(`Der bisherige Online-Link zu diesem Nachtragsangebot wird damit ungültig. ${SCHLUSS}`);
+    });
+
+    it('nennt eigenen und fremden Link zusammen', () => {
+        expect(abloesungsFrage([
+            { dokumentId: 1, dokumentNummer: 'AG-2', diesesDokument: true },
+            { dokumentId: 2, dokumentNummer: 'AG-1', diesesDokument: false },
+        ])).toBe(`Der bisherige Online-Link zu diesem Angebot wird damit ungültig. Der Online-Link zu Angebot AG-1 wird damit ungültig. ${SCHLUSS}`);
+    });
+
+    it('bleibt ohne Angaben lesbar', () => {
+        expect(abloesungsFrage([])).toBe(`Ein älterer Online-Link wird damit ungültig. ${SCHLUSS}`);
+    });
+});
+
+describe('betragGeaendert', () => {
+    it('erkennt eine Änderung ab einem Cent', () => {
+        expect(betragGeaendert(1000, 1000.01)).toBe(true);
+        expect(betragGeaendert(1000, 800)).toBe(true);
+    });
+
+    it('ignoriert Rundungsrauschen und fehlende Werte', () => {
+        expect(betragGeaendert(0.1 + 0.2, 0.3)).toBe(false);
+        expect(betragGeaendert(null, 100)).toBe(false);
+        expect(betragGeaendert(100, undefined)).toBe(false);
     });
 });
