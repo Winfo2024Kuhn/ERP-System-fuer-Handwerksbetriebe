@@ -386,7 +386,7 @@ class SpamFilterServiceTest {
         void echteGeschaeftsMailMitLogoAberTextIstKeinSpam() {
             // Gegenprobe: HTML-Mail mit Bild (z.B. Logo), aber substanziellem
             // Text muss NICHT als Spam markiert werden.
-            Email email = erstelleEmail("kontakt@example-bauunternehmen.de",
+            Email email = erstelleEmail("kontakt@bauunternehmen.example",
                     "Anfrage Dachsanierung",
                     "");
             email.setHtmlBody(
@@ -404,6 +404,45 @@ class SpamFilterServiceTest {
             int score = service.calculateSpamScore(email);
 
             assertThat(score).isLessThan(50);
+        }
+
+        @Test
+        void geschaeftsMailMitLogoLinkUndTextLoestBildOnlyCheckNichtAus() {
+            // Gegenprobe fuer den Bild-only-Zweig selbst (Bild + Link): echter
+            // Text ueber 100 Zeichen darf nicht als "unsichtbar" gelten.
+            Email email = erstelleEmail("kontakt@bauunternehmen.example", "Angebot Treppengeländer", "");
+            email.setHtmlBody(
+                    "<html><body>"
+                            + "<img src=\"logo.png\" />"
+                            + "<p>Sehr geehrter Herr Mustermann,</p>"
+                            + "<p>anbei unser Angebot für das <b>Treppengeländer</b> aus Edelstahl. "
+                            + "Bei Fragen erreichen Sie uns jederzeit telefonisch.</p>"
+                            + "<p>Mit freundlichen Grüßen<br>Erika Musterfrau<br>"
+                            + "<a href=\"https://www.musterfirma.example\">www.musterfirma.example</a></p>"
+                            + "</body></html>");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isLessThan(85);
+        }
+
+        @Test
+        void verschachtelteTagsZaehlenNichtAlsSichtbarerText() {
+            // Spam-Trick: "<<b>b>" sieht fuer einen einzelnen Durchlauf mit <[^>]+>
+            // wie Text aus ("b>"), 50 Stueck ergaben genug "Text", um den
+            // Bild-only-Check zu umgehen. Mit Fixpunkt bleibt kein Text uebrig.
+            Email email = erstelleEmail("info@musterversand.example", "Angebot", "");
+            email.setHtmlBody(
+                    "<html><body>"
+                            + "<<b>b>".repeat(50)
+                            + "<a href=\"https://promo.example.com/click\">"
+                            + "<img src=\"https://cdn.example.com/banner.jpg\" />"
+                            + "</a>"
+                            + "</body></html>");
+
+            int score = service.calculateSpamScore(email);
+
+            assertThat(score).isGreaterThanOrEqualTo(85);
         }
 
         @Test

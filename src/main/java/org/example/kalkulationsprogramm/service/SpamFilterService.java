@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.util.HtmlKlartext;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -430,12 +431,6 @@ public class SpamFilterService {
             Pattern.CASE_INSENSITIVE);
 
     /**
-     * Beliebige HTML-Tags — fuer das Strippen, wenn wir die sichtbare
-     * Textmenge messen wollen.
-     */
-    private static final Pattern HTML_TAGS = Pattern.compile("<[^>]+>");
-
-    /**
      * Beliebiges <img>-Tag — fuer den Bild-only-Check (Image-Spam).
      */
     private static final Pattern IMG_TAG = Pattern.compile(
@@ -814,8 +809,9 @@ public class SpamFilterService {
                 imgCount++;
             }
             if (imgCount >= 1 && linkCount >= 1) {
-                String visible = HTML_TAGS.matcher(htmlBody).replaceAll(" ")
-                        .replaceAll("\\s+", " ").trim();
+                // Bis zum Fixpunkt: verschachtelte Tags wie "<<b>b>" dürfen nicht als Text zählen.
+                String visible = HtmlKlartext.entferneTags(htmlBody, " ")
+                        .replaceAll("\\s++", " ").trim();
                 if (visible.length() < 100) {
                     delta += 85;
                 }
