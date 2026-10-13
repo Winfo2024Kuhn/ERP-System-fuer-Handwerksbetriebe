@@ -43,6 +43,17 @@ class RestExceptionHandlerTest {
     @RestController
     private static class DummyController {
 
+        @GetMapping("/test/zugriff-verweigert")
+        public String zugriffVerweigert() {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Du darfst keine Monate abschließen oder wieder öffnen");
+        }
+
+        @GetMapping("/test/zugriff-verweigert-englisch")
+        public String zugriffVerweigertEnglisch() {
+            throw new org.springframework.security.access.AccessDeniedException("Access Denied");
+        }
+
         @GetMapping("/test/optimistic-lock")
         public String optimisticLock() {
             throw new ObjectOptimisticLockingFailureException(Testentitaet.class, 42L);
@@ -82,6 +93,17 @@ class RestExceptionHandlerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(new DummyController())
                 .setControllerAdvice(new RestExceptionHandler(null))
                 .build();
+    }
+
+    @Test
+    void accessDenied_liefert403MitDeutscherMeldung() throws Exception {
+        mockMvc.perform(get("/test/zugriff-verweigert"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message").value("Du darfst keine Monate abschließen oder wieder öffnen"));
+        mockMvc.perform(get("/test/zugriff-verweigert-englisch"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Dafür fehlt die Berechtigung."));
     }
 
     @Test

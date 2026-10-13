@@ -83,7 +83,8 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
                 lieferantenRepository, feiertagService, auditService, tagesSollService,
-                zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService);
+                zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
+                new UrlaubstageRechner());
     }
 
     private Mitarbeiter dummyMitarbeiter() {

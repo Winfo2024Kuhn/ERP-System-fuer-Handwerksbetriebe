@@ -1,4 +1,3 @@
-import { mobileOverlayStyle } from './ui/toast'
 import { useState, useRef, useEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
@@ -147,7 +146,7 @@ export default function MobileDatePicker({ value, onChange, label, required, min
                 onInvalid={event => { event.preventDefault(); setAttempted(true); triggerRef.current?.focus() }} />
             {shownError && <p id={`${inputId}-error`} role="alert" className="mt-1 text-sm text-rose-700">{shownError}</p>}
             {isOpen && !disabled && createPortal(
-                <div style={mobileOverlayStyle} className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm"
+                <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/40 p-2 backdrop-blur-sm"
                     onClick={event => { if (event.target === event.currentTarget) close() }}
                     onKeyDown={event => {
                         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() }

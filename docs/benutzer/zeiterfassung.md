@@ -19,7 +19,7 @@ Wählbar sind nur Projekte, die nicht beendet sind. Ohne eingerichtete Arbeitsze
 1. **Zeiterfassung → Kalender**.
 2. Oben den „Mitarbeiter“ wählen (mit dem Filter davor auch nicht aktive), dann „Monat“ und „Jahr“.
 
-Oben stehen „Soll-Stunden“, „Ist-Stunden“ und „Differenz“ des Monats, dazu das „Gesamtstundenkonto“ (Überstunden seit Eintritt) und der „Resturlaub“ des Jahres mit Anspruch, genommen und geplant. „Ist-Stunden“ enthält auch Urlaub, Krankheit, Feiertage und Korrekturen.
+Oben stehen „Soll-Stunden“, „Ist-Stunden“ und „Differenz“ des Monats, dazu das „Gesamtstundenkonto“ (Überstunden seit Eintritt) und der „Resturlaub“ des Jahres mit Anspruch, genommen und geplant. Halbe Urlaubstage zählen dabei als 0,5. „Ist-Stunden“ enthält auch Urlaub, Krankheit, Feiertage und Korrekturen.
 
 Im Monatsraster zeigt jeder Tag seine Buchungen (z. B. Projektname, „URLAUB“, „KRANK“, „PAUSE“) und rechts oben die Stunden des Tages. Feiertage sind rosa hinterlegt. Bei Geschäftsführern steht nur die erfasste Arbeitszeit, ohne Soll und ohne Monatsabschluss.
 
@@ -48,7 +48,7 @@ Normalerweise beantragen Mitarbeiter Urlaub in der Handy-App (siehe [Arbeitszeit
 
 - **In der Tageserfassung** (Doppelklick auf den Tag): „Urlaub“ (ganzer oder halber Tag), „Krankheit“ (ganzer Tag) oder „Zeitausgleich“ (Stunden wählbar).
 - **Per Rechtsklick** auf einen Tag: Menü „Abwesenheit buchen“ mit „Urlaub (ganzer Tag)“, „Urlaub (halber Tag)“, „Krankheit“, „Fortbildung“ und „Zeitausgleich“. Fortbildung gibt es nur hier.
-- **Mehrere Tage**: mit gedrückter Maustaste über die Tage ziehen (oder Umschalt-Klick), dann Rechtsklick. Gebucht werden nur Montag bis Freitag ohne Feiertage.
+- **Mehrere Tage**: mit gedrückter Maustaste über die Tage ziehen (oder Umschalt-Klick), dann Rechtsklick in die Markierung. Gebucht werden nur Montag bis Freitag ohne Feiertage. Ein Rechtsklick auf einen Tag außerhalb der Markierung bucht nur diesen einen Tag.
 
 Nicht möglich ist eine Abwesenheit an Feiertagen und an Tagen ohne Soll-Stunden. Zeitausgleich braucht genug Überstunden. War der Mitarbeiter an einem Krankheitstag schon arbeiten, füllt die Krankheit nur den Rest bis zum Soll auf. Entfernen lässt sich eine Abwesenheit in der Tageserfassung über den Papierkorb.
 

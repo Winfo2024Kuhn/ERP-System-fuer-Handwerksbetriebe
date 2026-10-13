@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -18,7 +19,7 @@ public interface UrlaubsantragRepository extends JpaRepository<Urlaubsantrag, Lo
     List<Urlaubsantrag> findByMitarbeiterIdOrderByVonDatumDesc(Long mitarbeiterId);
 
     @Query("SELECT u FROM Urlaubsantrag u WHERE u.mitarbeiter.id = :mitarbeiterId " +
-            "AND u.status != 'ABGELEHNT' " +
+            "AND u.status NOT IN ('ABGELEHNT', 'STORNIERT') " +
             "AND ((u.vonDatum <= :end) AND (u.bisDatum >= :start))")
     List<Urlaubsantrag> findOverlapping(@Param("mitarbeiterId") Long mitarbeiterId,
             @Param("start") LocalDate start,
@@ -29,4 +30,11 @@ public interface UrlaubsantragRepository extends JpaRepository<Urlaubsantrag, Lo
 
     List<Urlaubsantrag> findByMitarbeiterIdAndStatusOrderByVonDatumDesc(Long mitarbeiterId,
             Urlaubsantrag.Status status);
+
+    /** Entschiedene Anträge, deren Entscheidung der Mitarbeiter noch nicht bestätigt hat (neueste zuerst). */
+    @Query("SELECT u FROM Urlaubsantrag u WHERE u.mitarbeiter.id = :mitarbeiterId " +
+            "AND u.entscheidungGesehen = false AND u.status IN (:status) " +
+            "ORDER BY u.entschiedenAm DESC NULLS LAST, u.id DESC")
+    List<Urlaubsantrag> findUngeseheneEntscheidungen(@Param("mitarbeiterId") Long mitarbeiterId,
+            @Param("status") Collection<Urlaubsantrag.Status> status);
 }

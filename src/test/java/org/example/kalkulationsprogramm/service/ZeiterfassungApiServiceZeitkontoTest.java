@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -45,6 +46,7 @@ class ZeiterfassungApiServiceZeitkontoTest {
     @Mock private UrlaubsverfallService urlaubsverfallService;
     @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
     @Mock private MonatsSaldoService monatsSaldoService;
+    @Spy private UrlaubstageRechner urlaubstageRechner = new UrlaubstageRechner();
     @InjectMocks private ZeiterfassungApiService service;
 
     private static final String TOKEN = "test-token-max-mustermann";
@@ -197,7 +199,7 @@ class ZeiterfassungApiServiceZeitkontoTest {
         assertThat(teil(result, "gesamt")).containsEntry("geprueftBis", null)
                 .containsEntry("vorlaeufig", true).containsEntry("saldo", new BigDecimal("24"));
         assertThat(teil(result, "monat")).containsEntry("festgeschrieben", false);
-        assertThat(teil(result, "urlaub")).containsEntry("verbleibend", 28);
+        assertThat(teil(result, "urlaub")).containsEntry("verbleibend", new java.math.BigDecimal("28"));
     }
 
     @Test
@@ -225,7 +227,7 @@ class ZeiterfassungApiServiceZeitkontoTest {
         assertThat(result).containsEntry("fuehrtZeitkonto", false).containsEntry("eingerichtet", false);
         assertThat(teil(result, "gesamt")).containsEntry("sollStunden", new BigDecimal("80"))
                 .containsEntry("istStunden", new BigDecimal("8")).containsEntry("vorlaeufig", true);
-        assertThat(teil(result, "urlaub")).containsEntry("verbleibend", 28);
+        assertThat(teil(result, "urlaub")).containsEntry("verbleibend", new java.math.BigDecimal("28"));
         verify(zeitkontoService).versionAm(1L, LocalDate.now());
         verifyNoMoreInteractions(zeitkontoService);
     }

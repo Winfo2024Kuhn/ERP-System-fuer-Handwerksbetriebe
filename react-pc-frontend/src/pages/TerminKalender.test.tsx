@@ -30,3 +30,25 @@ describe('Terminuhrzeiten im eigenen Eingabefeld', () => {
         expect(JSON.parse(request![1].body)).toMatchObject({ startZeit: '09:05:00', endeZeit: '10:15:00' });
     });
 });
+
+describe('Team-Abwesenheiten ohne Einblick (#268)', () => {
+    it('zeigt „ABWESEND" als neutrales „Abwesend" statt auf Urlaub zurückzufallen', async () => {
+        const heute = new Date();
+        const datum = `${heute.getFullYear()}-${String(heute.getMonth() + 1).padStart(2, '0')}-15`;
+        fetchMock.mockImplementation(async (input: string) => {
+            if (input.startsWith('/api/abwesenheit/team')) {
+                return { ok: true, json: async () => [{ id: 7, datum, typ: 'ABWESEND', stunden: 8, mitarbeiterId: 3, mitarbeiterName: 'Hans Beispiel' }] };
+            }
+            return { ok: true, json: async () => [] };
+        });
+        render(<MemoryRouter><TerminKalender /></MemoryRouter>);
+
+        const eintrag = await screen.findByTitle('Hans Beispiel');
+        // Neutrale slate-Farbe wie Krankheit, nicht das Urlaubs-Blau.
+        expect(eintrag.className).toContain('text-slate-600');
+        expect(eintrag.className).not.toContain('text-sky-700');
+
+        // Die Legende erklärt den neuen Eintrag.
+        expect(screen.getByText('Legende:').parentElement).toHaveTextContent('Abwesend');
+    });
+});

@@ -25,6 +25,8 @@ const eintraege = [
 const abwesenheiten = [
     { id: 1, datum: '2026-09-03', typ: 'URLAUB', stunden: 8, mitarbeiterId: 2, mitarbeiterName: 'Erika Musterfrau' },
     { id: 2, datum: '2026-09-18', typ: 'FORTBILDUNG', stunden: 8, mitarbeiterId: 1, mitarbeiterName: 'Max Mustermann' },
+    // Krankheit eines Kollegen ohne Einblick (#268): der Server liefert „ABWESEND".
+    { id: 3, datum: '2026-09-18', typ: 'ABWESEND', stunden: 8, mitarbeiterId: 3, mitarbeiterName: 'Hans Beispiel' },
 ]
 const feiertage = [{ datum: '2026-10-03', bezeichnung: 'Tag der Deutschen Einheit' }]
 
@@ -82,8 +84,19 @@ describe('KalenderPage', () => {
         expect(screen.getByRole('button', { name: /Donnerstag, 3\. September 2026, 2 Einträge/ })).toBeInTheDocument()
         expect(screen.getByRole('button', { name: /Samstag, 3\. Oktober 2026, 1 Eintrag/ })).toBeInTheDocument()
         expect(screen.getByRole('list', { name: 'Legende' })).toHaveTextContent('Feiertag')
+        expect(screen.getByRole('list', { name: 'Legende' })).toHaveTextContent('Abwesend')
         expect(screen.queryByText('Baustelle Musterstraße')).not.toBeInTheDocument()
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('zeigt „ABWESEND" (Krankheit ohne Einblick, #268) neutral als „Abwesend"', async () => {
+        renderKalender()
+        fireEvent.click(await screen.findByRole('button', { name: /Freitag, 18\. September 2026, 2 Einträge/ }))
+        const sheet = await screen.findByRole('dialog')
+        expect(within(sheet).getByText('Hans Beispiel')).toBeInTheDocument()
+        expect(within(sheet).getByText('Abwesend')).toBeInTheDocument()
+        expect(within(sheet).queryByText('Krankheit')).not.toBeInTheDocument()
+        expect(within(sheet).queryByText('Urlaub')).not.toBeInTheDocument()
     })
 
     // Klicks per fireEvent statt userEvent: vaul reagiert auf Pointer-Events mit

@@ -2,6 +2,7 @@ import {
     EINTRAG_ARTEN,
     EINTRAG_ART_REIHENFOLGE,
     type Bereich,
+    type EintragArt,
     type Feiertag,
     type KalenderEintrag,
     type KalenderTermin,
@@ -177,7 +178,9 @@ export function terminAusEintrag(e: KalenderEintrag): KalenderTermin {
 }
 
 export function terminAusAbwesenheit(a: TeamAbwesenheit): KalenderTermin {
-    const art = EINTRAG_ARTEN[a.typ] ? a.typ : 'URLAUB'
+    // Unbekannte Arten (neuer Server, alte App) fallen auf „Abwesend" zurück – nie auf Urlaub,
+    // damit niemand versehentlich als „im Urlaub" erscheint.
+    const art: EintragArt = EINTRAG_ARTEN[a.typ] ? a.typ : 'ABWESEND'
     return {
         key: `a-${a.id}`,
         terminId: null,

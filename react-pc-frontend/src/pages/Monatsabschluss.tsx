@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { DatevBereich } from '../features/monatsabschluss/DatevBereich';
 import { JahresvergleichCharts } from '../features/monatsabschluss/JahresvergleichCharts';
 import { api } from '../features/monatsabschluss/api';
+import { useMonatsabschlussBerechtigung } from '../features/monatsabschluss/useMonatsabschlussBerechtigung';
 import type { Filter, AuswahlStand, Referenz, Uebersicht, Einzelergebnis, Verlauf, Kennzahlen, Zeile, Jahresvergleich } from '../features/monatsabschluss/types';
 const monate = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const felder: [keyof Kennzahlen, string][] = [['istStunden', 'Arbeit'], ['urlaubStunden', 'Urlaub'], ['krankheitStunden', 'Krank\u00ADheit'], ['zeitausgleichStunden', 'Zeit\u00ADausgleich'], ['sonstigeAbwesenheitStunden', 'Sonstige'], ['feiertagsStunden', 'Feiertage'], ['korrekturStunden', 'Korrektur'], ['gesamtIst', 'Gesamt'], ['sollStunden', 'Soll'], ['differenz', 'Differenz']];
@@ -30,7 +31,6 @@ export default function Monatsabschluss() {
         const mitarbeiterId = Number.isSafeInteger(pMitarbeiter) && pMitarbeiter > 0 ? pMitarbeiter : undefined;
         return { jahr, monat, mitarbeiterId, status: 'ALLE', page: 0, size: 50 };
     });
-    const [recht, setRecht] = useState<boolean | null>(null);
     const [fehler, setFehler] = useState('');
     const [mitarbeiter, setMitarbeiter] = useState<{ id: number; name: string }[]>([]);
     const [abteilungen, setAbteilungen] = useState<{ id: number; name: string }[]>([]);
@@ -51,15 +51,10 @@ export default function Monatsabschluss() {
     // DATEV einrichten dürfen nur Admins (Einstellungen → Zeiterfassung).
     const { isAdmin } = useAuth();
     const vergangen = filter.jahr * 12 + filter.monat < heute.getFullYear() * 12 + heute.getMonth() + 1;
-    useEffect(() => {
-        const controller = new AbortController();
-        api.ladeBerechtigung(controller.signal).then(data => { if (!controller.signal.aborted) setRecht(data.darfMonatAbschliessen); })
-            .catch(err => { if (!controller.signal.aborted) { setFehler(meldung(err)); setRecht(false); toastRef.current.error(meldung(err)); } });
-        return () => { controller.abort();
-            // Invalidate pending confirmation callbacks when this page unmounts.
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-            generation.current++;
-        };
+    const recht = useMonatsabschlussBerechtigung(text => { setFehler(text); toastRef.current.error(text); });
+    useEffect(() => () => {
+        // Invalidate pending confirmation callbacks when this page unmounts.
+        generation.current++;
     }, []);
     useEffect(() => {
         if (!recht) return;

@@ -1,0 +1,74 @@
+import { describe, expect, it } from 'vitest'
+import { entscheidungsText, formatIsoDatumDe, formatUrlaubstage, statusLabel, typLabel, zurueckziehenFrage } from './urlaubsantrag'
+
+describe('formatUrlaubstage', () => {
+    it('zeigt ganze Tage ohne und halbe Tage mit Komma', () => {
+        expect(formatUrlaubstage(12)).toBe('12')
+        expect(formatUrlaubstage(12.5)).toBe('12,5')
+        expect(formatUrlaubstage(0.5)).toBe('0,5')
+    })
+
+    it('fällt bei ungültigen Werten auf 0 zurück', () => {
+        expect(formatUrlaubstage(null)).toBe('0')
+        expect(formatUrlaubstage(Number.NaN)).toBe('0')
+    })
+})
+
+describe('statusLabel / typLabel', () => {
+    it('übersetzt Rohwerte in Klartext', () => {
+        expect(statusLabel('STORNIERT')).toBe('Storniert')
+        expect(statusLabel('OFFEN')).toBe('Offen')
+        expect(statusLabel('WAS_AUCH_IMMER')).toBe('Unbekannt')
+        expect(typLabel('ZEITAUSGLEICH')).toBe('Zeitausgleich')
+        expect(typLabel('UNBEKANNT')).toBe('Abwesenheit')
+    })
+})
+
+describe('entscheidungsText', () => {
+    it('formuliert Genehmigung mit deutschem Datum', () => {
+        expect(entscheidungsText({ vonDatum: '2026-08-03', bisDatum: '2026-08-14', status: 'GENEHMIGT', typ: 'URLAUB' }))
+            .toBe('Dein Urlaub vom 03.08.2026 bis 14.08.2026 wurde genehmigt.')
+    })
+
+    it('formuliert Ablehnung und passt das Typ-Wort an', () => {
+        expect(entscheidungsText({ vonDatum: '2026-09-01', bisDatum: '2026-09-02', status: 'ABGELEHNT', typ: 'ZEITAUSGLEICH' }))
+            .toBe('Dein Zeitausgleich vom 01.09.2026 bis 02.09.2026 wurde abgelehnt.')
+        expect(entscheidungsText({ vonDatum: '2026-09-01', bisDatum: '2026-09-02', status: 'GENEHMIGT', typ: 'KRANKHEIT' }))
+            .toBe('Deine Krankmeldung vom 01.09.2026 bis 02.09.2026 wurde genehmigt.')
+        expect(entscheidungsText({ vonDatum: '2026-09-01', bisDatum: '2026-09-02', status: 'GENEHMIGT', typ: 'FORTBILDUNG' }))
+            .toBe('Deine Fortbildung vom 01.09.2026 bis 02.09.2026 wurde genehmigt.')
+    })
+
+    it('nennt bei einem einzelnen Tag nur dieses Datum', () => {
+        expect(entscheidungsText({ vonDatum: '2026-10-05', bisDatum: '2026-10-05', status: 'GENEHMIGT', typ: 'URLAUB' }))
+            .toBe('Dein Urlaub am 05.10.2026 wurde genehmigt.')
+    })
+
+    it('formatIsoDatumDe lässt Zeitanteile weg', () => {
+        expect(formatIsoDatumDe('2026-10-05T00:00:00')).toBe('05.10.2026')
+    })
+})
+
+describe('entscheidungsText – Storno durch das Büro', () => {
+    it('nennt das Büro und behält den Artikel je Art', () => {
+        expect(entscheidungsText({ vonDatum: '2026-08-03', bisDatum: '2026-08-14', status: 'STORNIERT', typ: 'URLAUB' }))
+            .toBe('Dein Urlaub vom 03.08.2026 bis 14.08.2026 wurde vom Büro storniert.')
+        expect(entscheidungsText({ vonDatum: '2026-08-03', bisDatum: '2026-08-03', status: 'STORNIERT', typ: 'KRANKHEIT' }))
+            .toBe('Deine Krankmeldung am 03.08.2026 wurde vom Büro storniert.')
+    })
+})
+
+describe('zurueckziehenFrage', () => {
+    it('formuliert die Rückfrage mit Artikel je Art', () => {
+        expect(zurueckziehenFrage({ typ: 'URLAUB', vonDatum: '2026-08-03', bisDatum: '2026-08-14' }))
+            .toBe('Deinen Urlaubsantrag vom 03.08.2026 bis 14.08.2026 zurückziehen?')
+        expect(zurueckziehenFrage({ typ: 'KRANKHEIT', vonDatum: '2026-08-03', bisDatum: '2026-08-03' }))
+            .toBe('Deine Krankmeldung am 03.08.2026 zurückziehen?')
+        expect(zurueckziehenFrage({ typ: 'FORTBILDUNG', vonDatum: '2026-08-03', bisDatum: '2026-08-04' }))
+            .toBe('Deinen Fortbildungsantrag vom 03.08.2026 bis 04.08.2026 zurückziehen?')
+        expect(zurueckziehenFrage({ typ: 'ZEITAUSGLEICH', vonDatum: '2026-08-03', bisDatum: '2026-08-03' }))
+            .toBe('Deinen Zeitausgleichsantrag am 03.08.2026 zurückziehen?')
+        expect(zurueckziehenFrage({ typ: 'ARBEIT', vonDatum: '2026-08-03', bisDatum: '2026-08-03' }))
+            .toBe('Deinen Urlaubsantrag am 03.08.2026 zurückziehen?')
+    })
+})

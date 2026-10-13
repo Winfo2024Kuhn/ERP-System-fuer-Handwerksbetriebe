@@ -51,11 +51,14 @@ interface Mitarbeiter {
     aktiv: boolean;
 }
 
-// Team-Abwesenheiten (Urlaub, Krankheit, Fortbildung)
+// Team-Abwesenheiten (Urlaub, Krankheit, Fortbildung). „ABWESEND" liefert der Server statt
+// „Krankheit", wenn der Betrachter weder Admin noch Geschäftsführung ist (Datenschutz, #268).
+type AbwesenheitTyp = 'URLAUB' | 'KRANKHEIT' | 'ABWESEND' | 'FORTBILDUNG' | 'ZEITAUSGLEICH';
+
 interface TeamAbwesenheit {
     id: number;
     datum: string;
-    typ: 'URLAUB' | 'KRANKHEIT' | 'FORTBILDUNG' | 'ZEITAUSGLEICH';
+    typ: AbwesenheitTyp;
     stunden: number;
     mitarbeiterId: number;
     mitarbeiterName: string;
@@ -70,6 +73,7 @@ interface Feiertag {
 const ABWESENHEIT_FARBEN: Record<string, { bg: string; border: string; text: string; label: string; hex: string }> = {
     URLAUB: { bg: 'bg-sky-100', border: 'border-sky-500', text: 'text-sky-700', label: 'Urlaub', hex: '#0ea5e9' },
     KRANKHEIT: { bg: 'bg-slate-100', border: 'border-slate-400', text: 'text-slate-600', label: 'Krankheit', hex: '#64748b' },
+    ABWESEND: { bg: 'bg-slate-100', border: 'border-slate-400', text: 'text-slate-600', label: 'Abwesend', hex: '#64748b' },
     FORTBILDUNG: { bg: 'bg-emerald-100', border: 'border-emerald-500', text: 'text-emerald-700', label: 'Fortbildung', hex: '#10b981' },
     ZEITAUSGLEICH: { bg: 'bg-amber-100', border: 'border-amber-500', text: 'text-amber-700', label: 'Zeitausgleich', hex: '#f59e0b' },
     FEIERTAG: { bg: 'bg-rose-100', border: 'border-rose-400', text: 'text-rose-600', label: 'Feiertag', hex: '#f43f5e' },
@@ -265,7 +269,7 @@ export default function TerminKalender() {
                         startZeit: null,
                         endeZeit: null,
                         ganztaegig: true,
-                        farbe: a.typ === 'URLAUB' ? '#0ea5e9' : a.typ === 'KRANKHEIT' ? '#64748b' : a.typ === 'FORTBILDUNG' ? '#10b981' : '#f59e0b',
+                        farbe: farbInfo.hex,
                         projektId: null,
                         projektName: null,
                         kundeId: null,
