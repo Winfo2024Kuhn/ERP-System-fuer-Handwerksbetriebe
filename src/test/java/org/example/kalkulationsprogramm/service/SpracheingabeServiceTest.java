@@ -123,6 +123,15 @@ class SpracheingabeServiceTest {
         assertThat(anweisung).contains("reiner Text");
         assertThat(anweisung).contains("Erfinde nichts dazu");
         assertThat(anweisung).contains("HEB 200");
+        // Gliederung des Diktats in feste Abschnitte, leere fallen weg.
+        assertThat(anweisung).contains("Erledigt:", "Material verbraucht:", "Probleme / Offen:");
+        assertThat(anweisung).contains("Lass einen Abschnitt komplett weg");
+        assertThat(anweisung).contains("schreibst du als Stichpunkte ohne Ueberschrift ans Ende.");
+        assertThat(anweisung).contains("schreibe nur die Stichpunkte, ohne Ueberschrift.");
+        assertThat(anweisung).contains("Lass keine Angabe weg.");
+        assertThat(anweisung).contains("Zahlen schreibst du als Ziffern.");
+        assertThat(anweisung).contains("Wurde keine Menge genannt, schreibst du keine Zahl hin.");
+        assertThat(anweisung).doesNotContain("Ordne den Inhalt nicht um");
         // Reintext-Verbot: eigene Zeile, nicht durch "reiner Text" oben abgedeckt.
         assertThat(anweisung).contains("Keine Sternchen, keine Rauten, keine HTML-Tags, keine Markdown-Syntax.");
         // Metallbau-Vokabelblock: eigene Zeile, nicht durch "HEB 200" (Profile-Zeile) abgedeckt.
