@@ -33,7 +33,7 @@ import { Label } from './ui/label';
 import { DatePicker } from './ui/datepicker';
 import { InfoAbschnitt, InfoButton } from './ui/info-button';
 import { cn } from '../lib/utils';
-import { sanitizeHtml, stripHtmlTags, unescapeHtmlEntities } from '../lib/htmlSanitizer';
+import { htmlZuEinzeiler, sanitizeHtml } from '../lib/htmlSanitizer';
 import { useToast } from './ui/toast';
 import { useConfirm } from './ui/confirm-dialog';
 import { formatPostfach, type PostfachKurz } from '../features/email/postfach';
@@ -484,13 +484,6 @@ ${signatureHtml}`;
             cardBorder: 'border-slate-200',
             cardBg: 'bg-slate-50/60'
         };
-    };
-
-    // Reiner Text für die Vorschau – bewusst ohne innerHTML, damit gespeichertes HTML
-    // (z. B. <img onerror=…>) beim Anzeigen nie ausgeführt wird.
-    const stripHtml = (html: string): string => {
-        if (!html) return '';
-        return unescapeHtmlEntities(stripHtmlTags(html, ' ')).replace(/\s+/g, ' ').trim();
     };
 
     // Inserts a placeholder string into the subject input at the last known cursor position.
@@ -1076,7 +1069,7 @@ ${signatureHtml}`;
                                     const status = getOooStatus(entry);
                                     const StatusIcon = status.Icon;
                                     const duration = calculateDuration(entry.startDate, entry.endDate);
-                                    const messagePreview = stripHtml(entry.message);
+                                    const messagePreview = htmlZuEinzeiler(entry.message);
 
                                     return (
                                         <Card
