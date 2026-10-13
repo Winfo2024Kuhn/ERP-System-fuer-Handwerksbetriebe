@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { quadsAreClose, clearOverlay, drawOverlayQuad, glaetteQuad, istGueltigesViereck, viereckFehler } from './scannerOverlay'
 
 // Pixel-Koordinaten eines Quads (TL, TR, BR, BL) – Dummy-Daten, kein PII.
@@ -8,6 +8,28 @@ const baseQuad = [
     { x: 500, y: 700 },
     { x: 100, y: 700 },
 ]
+
+/**
+ * jsdom zeichnet ohne die native `canvas`-Bibliothek nicht (die CI installiert
+ * sie nicht). Deshalb pro Canvas ein nachgebauter 2D-Kontext, der Aufrufe und
+ * gesetzte Farben festhält.
+ */
+const kontexte = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>()
+beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+        let ctx = kontexte.get(this)
+        if (!ctx) {
+            ctx = {
+                clearRect: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), closePath: vi.fn(),
+                fill: vi.fn(), stroke: vi.fn(), arc: vi.fn(),
+                fillStyle: '', strokeStyle: '', lineWidth: 1,
+            } as unknown as CanvasRenderingContext2D
+            kontexte.set(this, ctx)
+        }
+        return ctx
+    } as never)
+})
+afterEach(() => vi.restoreAllMocks())
 
 describe('quadsAreClose', () => {
     it('liefert true für identische Quads', () => {
