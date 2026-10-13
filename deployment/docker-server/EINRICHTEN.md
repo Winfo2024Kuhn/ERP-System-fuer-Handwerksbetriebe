@@ -264,11 +264,13 @@ So erfährst du als Betreuer von Problemen, auch wenn beim Kunden niemand ins ER
 | „ERP-Update ausgelassen“ | Es wurde nichts verändert. Der Text der Meldung sagt, warum: zu wenig Speicherplatz, Sicherung fehlgeschlagen oder das ERP lief schon vorher nicht sauber. |
 | „NOTFALL“ | Sofort hinschauen: README, Abschnitt „Was nachts passiert“. |
 
+Nachrichten vom Docker-Wächter und wenn das ERP im Browser nicht aufgeht:
+
 | Handy-Nachricht oder Beobachtung | Was tun |
 | --- | --- |
 | „ERP war kurz nicht erreichbar“ | Nichts. Der Docker-Wächter hat Docker Desktop neu gestartet, das ERP läuft wieder. |
-| „ERP nicht erreichbar“ (dringend) | Der automatische Neustart hat nicht geholfen. Am PC: `docker compose ps`, Log `C:\ERP-Handwerk\logs\docker-waechter.log`. Hilft das nicht weiter, den PC neu starten. |
-| ERP lässt sich im Browser nicht öffnen | Ein paar Minuten warten, der Docker-Wächter startet Docker Desktop selbst neu. Eilt es: im Terminal `docker desktop restart`. |
+| „ERP nicht erreichbar“ (dringend) | Der automatische Neustart hat nicht geholfen. Der Wächter versucht es weiter, nach dem zweiten Fehlschlag nur noch alle 4 Stunden, und schickt keine weitere Nachricht. Am PC nachsehen: Zeigt Docker Desktop eine Frage (Lizenz, Anmeldung)? `docker compose ps`, Log `C:\ERP-Handwerk\logs\docker-waechter.log`. Hilft das nicht, den PC neu starten. |
+| ERP lässt sich im Browser nicht öffnen | Bis zu 10 Minuten warten, der Docker-Wächter startet Docker Desktop selbst neu. Eilt es: im Terminal `docker desktop restart`. |
 
 ### Eine gelöschte Datei zurückholen
 

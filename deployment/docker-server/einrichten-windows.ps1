@@ -101,6 +101,10 @@ try {
     Set-ItemProperty -Path $wu -Name 'SmartActiveHoursState' -Value 0 -Type DWord
     Set-ItemProperty -Path $wu -Name 'ActiveHoursStart' -Value 6 -Type DWord
     Set-ItemProperty -Path $wu -Name 'ActiveHoursEnd' -Value 22 -Type DWord
+    # Windows 11 merkt sich die Wahl in der Einstellungen-App zusaetzlich hier
+    # und wuerde sonst die alten Werte anzeigen und zurueckschreiben
+    Set-ItemProperty -Path $wu -Name 'UserChoiceActiveHoursStart' -Value 6 -Type DWord
+    Set-ItemProperty -Path $wu -Name 'UserChoiceActiveHoursEnd' -Value 22 -Type DWord
     Ok 'Keine automatischen Neustarts zwischen 6 und 22 Uhr'
 } catch { Hinweis 'Nutzungszeit nicht gesetzt (Administratorrechte?). Bitte von Hand: Einstellungen > Windows Update > Erweiterte Optionen > Nutzungszeit: Manuell, 6 bis 22 Uhr.' }
 
@@ -164,6 +168,7 @@ Ok "ERP laeuft: http://localhost:$port"
 Schritt 'Docker-Waechter einrichten (prueft alle 5 Minuten, ob das ERP antwortet)'
 try {
     & (Join-Path $Ordner 'docker-waechter.ps1') -Einrichten
+    if ($LASTEXITCODE -ne 0) { throw "Fehlercode $LASTEXITCODE" }
 } catch { Hinweis "Waechter nicht eingerichtet ($_). Spaeter erneut: Einrichten.cmd noch einmal starten." }
 
 # --- 9. Verknuepfung -----------------------------------------------------------

@@ -394,19 +394,29 @@ Docker Desktop auch ganz weg. So geschehen am 13.10.2026 mit dem Update auf WSL 
 **Die Abhilfe:** `docker-waechter.ps1` läuft als geplante Aufgabe „ERP Handwerk
 Docker-Waechter“ alle 5 Minuten im angemeldeten Benutzer, unsichtbar im Hintergrund:
 
-1. Antwortet `/actuator/health` von Windows aus? Dann ist nichts zu tun.
-2. Wenn nicht, prüft er noch dreimal im Abstand von 30 Sekunden. Kurze Aussetzer lösen
-   also nichts aus.
-3. Er greift **nur** ein, wenn Docker gar nicht antwortet oder der Container `erp-app`
+1. Antwortet `/actuator/health` von Windows aus? Dann ist nichts zu tun. Das gilt auch für
+   eine Fehlerseite (z. B. 503): Dann funktioniert die Weiterleitung, und das Problem liegt
+   in der App selbst. Ein Neustart von Docker würde da nichts helfen.
+2. Kommt keine Verbindung zustande, prüft er noch dreimal im Abstand von 30 Sekunden. Kurze
+   Aussetzer lösen also nichts aus.
+3. Er lässt die Finger davon, wenn der PC oder Docker Desktop erst vor weniger als
+   10 Minuten gestartet ist. Nach dem Anmelden braucht Docker Desktop ein paar Minuten.
+4. Er greift **nur** ein, wenn Docker gar nicht antwortet oder der Container `erp-app`
    sich selbst als gesund meldet und trotzdem nicht erreichbar ist. Startet das ERP gerade
    (Nachtupdate, Neustart) oder wurde es bewusst gestoppt, lässt er es in Ruhe.
-4. Dann startet er Docker Desktop neu, höchstens einmal in 30 Minuten, und wartet bis zu
-   8 Minuten, bis das ERP wieder antwortet.
-5. Mit `WEBHOOK_URL` kommt eine Handy-Nachricht: leise, wenn der Neustart geholfen hat,
-   dringend, wenn nicht.
+5. Dann startet er Docker Desktop neu und wartet bis zu 8 Minuten, bis das ERP wieder
+   antwortet. Das ERP ist so meist innerhalb von 10 Minuten wieder da.
+6. Er startet höchstens einmal in 30 Minuten neu. Hilft das zweimal hintereinander nicht
+   (z. B. weil Docker Desktop eine Lizenzfrage zeigt oder WSL kaputt ist), versucht er es
+   nur noch alle 4 Stunden. Sonst würde er Docker Desktop den ganzen Tag lang immer wieder
+   neu starten.
+7. Mit `WEBHOOK_URL` kommt eine Handy-Nachricht: leise, wenn der Neustart geholfen hat,
+   dringend beim **ersten** erfolglosen Neustart (danach keine weiteren, bis es wieder
+   geht).
 
 Was er tut, steht in `logs/docker-waechter.log`. Einen Neustart von Hand löst
-`docker desktop restart` aus.
+`docker desktop restart` aus. Sind `APP_PORT` oder `APP_ADRESSE` in der `.env` ungültig,
+pausiert der Wächter und schreibt das ins Log. Im Zweifel greift er also nicht ein.
 
 **Einrichten** macht `Einrichten.cmd` mit. Auf einer bestehenden Installation die Datei
 `docker-waechter.ps1` in den ERP-Ordner kopieren und einmal ausführen (kein Administrator
@@ -418,7 +428,7 @@ powershell -ExecutionPolicy Bypass -File C:\ERP-Handwerk\docker-waechter.ps1 -Ei
 
 **Abschalten**, z. B. auf einem PC, auf dem Docker Desktop auch mal bewusst beendet wird:
 *Aufgabenplanung → „ERP Handwerk Docker-Waechter“ → Deaktivieren*. Sonst startet der
-Wächter Docker Desktop nach spätestens 7 Minuten wieder.
+Wächter Docker Desktop nach etwa 10 Minuten wieder.
 
 ## Alltag
 
@@ -433,7 +443,7 @@ Wächter Docker Desktop nach spätestens 7 Minuten wieder.
 | Andere Sicherungszeit | in `.env`: `SICHERUNG_ZEITPLAN=30 1 * * *`, dann `docker compose up -d updater` |
 | Logs von Nachtupdate und Sicherung | Ordner `logs/` (`nachtupdate-*.log`, `sicherung-*.log`, nach einem Rollback `gescheitert-*-app.log`) |
 | App-Log live | `docker compose logs -f app` |
-| ERP im Browser weg, Container laufen aber (Windows) | `docker desktop restart` – macht der [Docker-Wächter](#docker-wächter-windows) nach spätestens 7 Minuten selbst; sein Log: `logs/docker-waechter.log` |
+| ERP im Browser weg, Container laufen aber (Windows) | `docker desktop restart` – macht der [Docker-Wächter](#docker-wächter-windows) meist innerhalb von 10 Minuten selbst; sein Log: `logs/docker-waechter.log` |
 | Updater selbst erneuern (selten) | `docker compose build --pull updater && docker compose up -d updater` |
 
 `sicherungen/` hält außer den täglichen Sicherungen die letzten 14 Sicherungen von vor den
