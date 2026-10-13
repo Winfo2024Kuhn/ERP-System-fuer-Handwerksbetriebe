@@ -43,12 +43,11 @@ export default defineConfig({
         ]
       },
       injectManifest: {
-        maximumFileSizeToCacheInBytes: 20 * 1024 * 1024, // 20MB limit to ensure build passes
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
-        // OpenCV.js (~8.6 MB) + jscanify.js werden bewusst MIT in den Precache
-        // genommen: bei schlechter Mobilfunkverbindung soll die Ecken-Erkennung
-        // sofort verfügbar sein, sobald die PWA installiert/aktualisiert ist.
-        // Bläht den initialen PWA-Install um ~9 MB auf, danach 100 % offline.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // größte Datei: Erkennungs-Modell ~1,9 MB
+        // mjs/wasm/ort = Ecken-Erkennung des Scanners (scanic-ml: Modell ~1,9 MB +
+        // Laufzeit ~1,5 MB). Bewusst im Precache: Die Erkennung soll auch bei
+        // schlechtem Netz auf der Baustelle sofort und offline funktionieren.
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,wasm,ort}']
       }
     }),
     basicSsl()

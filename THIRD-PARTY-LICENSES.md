@@ -62,9 +62,11 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | React Router DOM | ^7.10.1 | MIT License | https://reactrouter.com/ |
 | html5-qrcode | ^2.3.8 | Apache License 2.0 | https://github.com/nicbarker/html5-qrcode |
 | idb | ^8.0.3 | ISC License | https://github.com/nicbarker/html5-qrcode |
-| jscanify | ^1.4.2 | MIT License | https://colonelparrot.github.io/jscanify/ |
+| ONNX Runtime Web *(in scanic-ml gebündelt, schlanker Eigenbau)* | 1.23 | MIT License | https://github.com/microsoft/onnxruntime |
 | jsPDF | ^3.0.4 | MIT License | https://github.com/parallax/jsPDF |
 | Lucide React | ^0.556.0 | ISC License | https://lucide.dev/ |
+| scanic | 1.6.0 | MIT License | https://github.com/marquaye/scanic |
+| scanic-ml (Modell DocCornerNet LEAN + ONNX-Laufzeit) | 0.2.0 | MIT License | https://www.npmjs.com/package/scanic-ml |
 | react-webcam | ^7.2.0 | MIT License | https://github.com/nicbarker/html5-qrcode |
 | Tailwind CSS | ^4.1.17 | MIT License | https://tailwindcss.com/ |
 | vite-plugin-pwa | ^1.2.0 | MIT License | https://vite-pwa-org.netlify.app/ |
@@ -90,7 +92,8 @@ ZXing, html5-qrcode, class-variance-authority, TypeScript
 
 ### MIT License
 Betrifft: Lombok, jsoup, React, React DOM, React Router, dnd-kit, Tiptap, Chart.js,
-clsx, tailwind-merge, Tailwind CSS, Vite, Vitest, jsPDF, jscanify, react-dropzone, react-webcam u.a.
+clsx, tailwind-merge, Tailwind CSS, Vite, Vitest, jsPDF, scanic, scanic-ml (inkl. Modell DocCornerNet, Architektur von mapo80/DocCornerNet-CoordClass),
+ONNX Runtime Web, react-dropzone, react-webcam u.a.
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy of this
 > software and associated documentation files (the "Software"), to deal in the Software

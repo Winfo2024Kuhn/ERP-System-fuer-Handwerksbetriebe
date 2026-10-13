@@ -26,7 +26,7 @@ HTTPS braucht es, weil Kamera, Mikrofon, Service Worker (Offline-Modus) und Push
 
 `npm run build` leert `src/main/resources/static/zeiterfassung/` im Hauptordner und baut neu. Diese Dateien sind eingecheckt: Nach Änderungen bauen und den Build mitcommitten. Das Docker-Image baut beide Oberflächen beim Bauen selbst neu.
 
-OpenCV.js und jscanify für die Ecken-Erkennung im Belegscanner liegen in `public/scanner/` und kommen bewusst mit in den Offline-Speicher der App (rund 9 MB beim ersten Laden), damit der Scanner auch bei schlechtem Netz sofort bereit ist.
+Die Ecken-Erkennung im Dokumentenscanner nutzt `scanic` mit einem kleinen KI-Modell aus `scanic-ml` (Modell rund 1,9 MB, Laufzeit rund 1,5 MB). Beides liefert die App selbst aus, nicht über ein CDN, und es kommt bewusst mit in den Offline-Speicher, damit der Scanner auch bei schlechtem Netz sofort bereit ist. Die Fotos verlassen das Handy dafür nicht. Die Logik steckt in `src/services/` (`DocumentEdgeDetector`, `kantenEinrasten`, `scanFilter`, `scanSeite`), die Oberfläche in `src/components/scanner/`.
 
 ## Aufbau
 

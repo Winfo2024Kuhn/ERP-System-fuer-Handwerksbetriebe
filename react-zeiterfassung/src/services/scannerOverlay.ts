@@ -73,3 +73,77 @@ export function drawOverlayQuad(
         ctx.fill()
     }
 }
+
+export interface GlaettungsOptionen {
+    /**
+     * Wie stark der neue Wert zählt (0 < anteilNeu ≤ 1). Kleiner = ruhiger,
+     * aber träger. 0,4 folgt einer Handbewegung noch flüssig, schluckt aber
+     * das Zittern der Erkennung von Bild zu Bild.
+     */
+    anteilNeu?: number
+    /**
+     * Springt eine Ecke weiter als diese Strecke (Pixel), wird das neue
+     * Viereck sofort übernommen – dann liegt ein anderes Blatt im Bild, und
+     * ein langsam hinterherziehender Rahmen würde nur verwirren.
+     */
+    sprungPx: number
+}
+
+/**
+ * Glättet das erkannte Viereck zwischen zwei Kamerabildern (exponentielles
+ * Glätten je Ecke), damit der Live-Rahmen ruhig steht statt zu zittern.
+ * Ohne Vorgänger oder bei einem großen Sprung zählt sofort das neue Viereck.
+ * Liefert immer ein neues Array; die Eingaben bleiben unverändert.
+ */
+export function glaetteQuad(vorher: Point[] | null, neu: Point[], { anteilNeu = 0.4, sprungPx }: GlaettungsOptionen): Point[] {
+    const anteil = Math.min(1, Math.max(0, anteilNeu))
+    if (!vorher || vorher.length !== neu.length || !quadsAreClose(vorher, neu, sprungPx)) {
+        return neu.map(p => ({ x: p.x, y: p.y }))
+    }
+    return neu.map((p, i) => ({
+        x: vorher[i].x + (p.x - vorher[i].x) * anteil,
+        y: vorher[i].y + (p.y - vorher[i].y) * anteil,
+    }))
+}
+
+/** Warum sich ein Viereck nicht zum Zuschneiden eignet. */
+export type ViereckFehler = 'ueberkreuzt' | 'zu-klein'
+
+/** Fläche eines Vielecks (Gaußsche Trapezformel). */
+function flaeche(ecken: Point[]): number {
+    let summe = 0
+    for (let i = 0; i < ecken.length; i++) {
+        const a = ecken[i]
+        const b = ecken[(i + 1) % ecken.length]
+        summe += a.x * b.y - b.x * a.y
+    }
+    return Math.abs(summe) / 2
+}
+
+/**
+ * Prüft die vier Ecken (TL, TR, BR, BL) vor dem Zuschneiden: Sie müssen ein
+ * konvexes Viereck bilden (keine überkreuzten oder eingedellten Kanten) und
+ * mindestens `minAnteil` der Bildfläche abdecken. Liefert `null`, wenn alles
+ * passt, sonst den Grund.
+ */
+export function viereckFehler(ecken: Point[], bildBreite: number, bildHoehe: number, minAnteil = 0.01): ViereckFehler | null {
+    if (ecken.length !== 4) return 'ueberkreuzt'
+    let vorzeichen = 0
+    for (let i = 0; i < 4; i++) {
+        const a = ecken[i]
+        const b = ecken[(i + 1) % 4]
+        const c = ecken[(i + 2) % 4]
+        const kreuz = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+        if (kreuz === 0) return 'ueberkreuzt'
+        const s = Math.sign(kreuz)
+        if (vorzeichen === 0) vorzeichen = s
+        else if (s !== vorzeichen) return 'ueberkreuzt'
+    }
+    if (flaeche(ecken) < bildBreite * bildHoehe * minAnteil) return 'zu-klein'
+    return null
+}
+
+/** Kurzform: Taugt das Viereck zum Zuschneiden? */
+export function istGueltigesViereck(ecken: Point[], bildBreite: number, bildHoehe: number, minAnteil = 0.01): boolean {
+    return viereckFehler(ecken, bildBreite, bildHoehe, minAnteil) === null
+}
