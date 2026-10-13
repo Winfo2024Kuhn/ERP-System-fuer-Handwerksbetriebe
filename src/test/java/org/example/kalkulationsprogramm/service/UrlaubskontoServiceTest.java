@@ -425,6 +425,22 @@ class UrlaubskontoServiceTest {
         }
 
         @Test
+        void tagMitGebuchtemHalbemUrlaubZaehltImAntragNicht_wieBeiDerGenehmigung() {
+            // 29 ganze Tage + ein halber am 02.08. gebucht → 0,5 übrig. Antrag 02.–03.08.:
+            // der 02.08. bekommt bei der Genehmigung keinen zweiten Eintrag, zählt also nicht.
+            bucheUrlaub(LocalDate.of(2027, 7, 1), 29, 0);
+            bucheUrlaub(LocalDate.of(2027, 8, 2), 0, 1);
+
+            UrlaubskontoService.Antragspruefung pruefung = service.pruefeAntrag(max, 2027,
+                    tage(LocalDate.of(2027, 8, 2), LocalDate.of(2027, 8, 3)));
+
+            assertThat(pruefung.beantragteTage()).isEqualByComparingTo("1");
+            assertThat(pruefung.verbleibendVorher()).isEqualByComparingTo("0.5");
+            assertThat(pruefung.restDanach()).isEqualByComparingTo("-0.5");
+            assertThat(pruefung.reicht()).isFalse();
+        }
+
+        @Test
         void anspruchNutztDieArbeitstageAusDemZeitkonto() {
             // Betrieb zwölftelt laut Tarif. 4-Tage-Woche, Eintritt 01.06.2026 → 7/12 von 24 = 14 → angehoben auf 16
             when(einstellungen.mehrurlaubImEintrittsjahrAnteilig()).thenReturn(true);

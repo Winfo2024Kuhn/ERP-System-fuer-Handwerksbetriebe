@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Abwesenheit;
@@ -151,13 +152,16 @@ public class UrlaubskontoService {
         LocalDate letzter = tage.stream().max(LocalDate::compareTo).orElse(heute);
         List<Abwesenheit> abwesenheiten = abwesenheitRepository.findByMitarbeiterIdAndDatumBetween(
                 mitarbeiter.getId(), LocalDate.of(jahr, 1, 1), LocalDate.of(jahr, 12, 31));
-        // Schon gebuchten Urlaub im Zeitraum nicht doppelt zählen – bei einem
-        // gebuchten halben Tag zählt nur noch die andere Hälfte.
-        Map<LocalDate, BigDecimal> schonGebucht = urlaubsTage(mitarbeiter, abwesenheiten).stream()
-                .collect(Collectors.toMap(UrlaubsTag::datum, UrlaubsTag::anteil, BigDecimal::add));
+        // Tage mit schon gebuchtem Urlaub (auch einem halben) zählen nicht: Die
+        // Genehmigung legt dort keinen zweiten Eintrag an (UrlaubsantragService),
+        // Prüfung und Buchung rechnen so gleich.
+        Set<LocalDate> schonGebucht = abwesenheiten.stream()
+                .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB && a.getDatum() != null)
+                .map(Abwesenheit::getDatum)
+                .collect(Collectors.toSet());
         List<UrlaubsTag> beantragt = tage.stream()
-                .map(t -> new UrlaubsTag(t, BigDecimal.ONE.subtract(schonGebucht.getOrDefault(t, BigDecimal.ZERO))))
-                .filter(t -> t.anteil().signum() > 0)
+                .filter(t -> !schonGebucht.contains(t))
+                .map(t -> new UrlaubsTag(t, BigDecimal.ONE))
                 .toList();
         Urlaubskonto vorher = berechne(mitarbeiter, jahr, stichtagImJahr(spaeterer(erster, heute), jahr), kontext, 0,
                 abwesenheiten, List.of());

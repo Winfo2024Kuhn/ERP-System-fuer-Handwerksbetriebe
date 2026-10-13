@@ -22,7 +22,7 @@ export function UrlaubEintrittsjahrInfo() {
             </InfoAbschnitt>
             <InfoAbschnitt titel={WIRKUNG}>
                 <ul className="list-disc space-y-0.5 pl-4">
-                    <li>Gilt für alle Mitarbeiter mit Eintrittsdatum – für Urlaubsanträge, Resturlaub und den Übertrag ins nächste Jahr. Gebuchte Urlaubstage ändern sich nicht.</li>
+                    <li>Gilt für alle Mitarbeiter mit Eintrittsdatum – für Urlaubsanträge, Resturlaub und den Übertrag ins nächste Jahr. Ausgerechnete Überträge früherer Jahre können sich dadurch ändern, gebuchte Urlaubstage nicht.</li>
                     <li>„Immer anteilig“ nur wählen, wenn Ihre Arbeitsverträge oder Ihr Tarifvertrag das vorsehen. Im Zweifel beim Steuerbüro oder der Innung nachfragen.</li>
                     <li>Beim Mitarbeiter steht neben dem Urlaubsanspruch, wie er zustande kommt.</li>
                 </ul>
