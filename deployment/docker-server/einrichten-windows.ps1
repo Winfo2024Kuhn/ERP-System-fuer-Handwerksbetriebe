@@ -8,10 +8,12 @@
 #   2. Docker Desktop startet ab jetzt automatisch bei der Anmeldung
 #   3. PC geht am Strom nicht mehr in Standby/Ruhezustand (sonst ist das ERP
 #      nachts und in der Mittagspause weg)
-#   4. gibt den Ordner nur Administratoren und dem aktuellen Benutzer frei
-#   5. legt .env mit zufaelligen Passwoertern an (nur beim ersten Mal)
-#   6. startet alles mit "docker compose up -d" und wartet, bis das ERP laeuft
-#   7. legt eine Verknuepfung "ERP Handwerk" auf den Desktop
+#   4. Nutzungszeit 6-22 Uhr: Windows Update startet tagsueber nicht neu
+#   5. gibt den Ordner nur Administratoren und dem aktuellen Benutzer frei
+#   6. legt .env mit zufaelligen Passwoertern an (nur beim ersten Mal)
+#   7. startet alles mit "docker compose up -d" und wartet, bis das ERP laeuft
+#   8. richtet den Docker-Waechter ein (startet Docker Desktop neu, wenn es haengt)
+#   9. legt eine Verknuepfung "ERP Handwerk" auf den Desktop
 #
 # Danach laeuft das ERP immer: Die Container haben "restart: always" und
 # starten mit Docker Desktop von selbst. Updates spielt der Updater-Container
@@ -88,7 +90,21 @@ try {
     Ok 'PC bleibt am Strom wach'
 } catch { Hinweis 'Energieeinstellungen nicht geaendert (Administratorrechte?). Bitte von Hand: Einstellungen > System > Energie > Standby: Nie.' }
 
-# --- 4. Ordnerrechte -----------------------------------------------------------
+# --- 4. Nutzungszeit -------------------------------------------------------------
+# In der Nutzungszeit startet Windows Update den PC nicht von selbst neu. Ganz
+# verhindert das Unterbrechungen nicht: Ein WSL-Update haelt Docker Desktop auch
+# tagsueber kurz an - das faengt der Docker-Waechter (Schritt 8) ab.
+Schritt 'Windows Update: Nutzungszeit 6 bis 22 Uhr'
+try {
+    $wu = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
+    if (-not (Test-Path $wu)) { New-Item -Path $wu -Force | Out-Null }
+    Set-ItemProperty -Path $wu -Name 'SmartActiveHoursState' -Value 0 -Type DWord
+    Set-ItemProperty -Path $wu -Name 'ActiveHoursStart' -Value 6 -Type DWord
+    Set-ItemProperty -Path $wu -Name 'ActiveHoursEnd' -Value 22 -Type DWord
+    Ok 'Keine automatischen Neustarts zwischen 6 und 22 Uhr'
+} catch { Hinweis 'Nutzungszeit nicht gesetzt (Administratorrechte?). Bitte von Hand: Einstellungen > Windows Update > Erweiterte Optionen > Nutzungszeit: Manuell, 6 bis 22 Uhr.' }
+
+# --- 5. Ordnerrechte -----------------------------------------------------------
 # Ein Ordner wie C:\ERP-Handwerk erbt sonst "Authentifizierte Benutzer: Aendern":
 # jedes Windows-Konto koennte .env (Passwoerter), sicherungen\ (alle Kundendaten)
 # lesen und nachtupdate.sh aendern - das im Updater mit vollem Docker-Zugriff laeuft.
@@ -101,7 +117,7 @@ try {
     Ok 'Andere Windows-Benutzer haben keinen Zugriff mehr'
 } catch { Hinweis "Rechte nicht gesetzt ($_). Bitte von Hand: Ordner > Eigenschaften > Sicherheit." }
 
-# --- 5. Einstellungen (.env) ---------------------------------------------------
+# --- 6. Einstellungen (.env) ---------------------------------------------------
 Schritt 'Einstellungen'
 $EnvDatei = Join-Path $Ordner '.env'
 if (-not (Test-Path $EnvDatei)) {
@@ -127,7 +143,7 @@ if (-not (Test-Path $EnvDatei)) {
 $port = (Select-String -Path $EnvDatei -Pattern '^APP_PORT=(\d+)' | Select-Object -First 1)
 $port = if ($port) { $port.Matches[0].Groups[1].Value } else { '8080' }
 
-# --- 6. Starten ----------------------------------------------------------------
+# --- 7. Starten ----------------------------------------------------------------
 Schritt 'ERP starten (beim ersten Mal werden ca. 1 GB geladen)'
 docker compose up -d
 if ($LASTEXITCODE -ne 0) { Hinweis 'docker compose up ist fehlgeschlagen - Meldung oben ansehen.'; exit 1 }
@@ -144,7 +160,13 @@ while ((Get-Date) -lt $bis) {
 if (-not $laeuft) { Hinweis 'Das ERP antwortet noch nicht. Fehler ansehen mit:  docker compose logs app'; exit 1 }
 Ok "ERP laeuft: http://localhost:$port"
 
-# --- 7. Verknuepfung -----------------------------------------------------------
+# --- 8. Docker-Waechter --------------------------------------------------------
+Schritt 'Docker-Waechter einrichten (prueft alle 5 Minuten, ob das ERP antwortet)'
+try {
+    & (Join-Path $Ordner 'docker-waechter.ps1') -Einrichten
+} catch { Hinweis "Waechter nicht eingerichtet ($_). Spaeter erneut: Einrichten.cmd noch einmal starten." }
+
+# --- 9. Verknuepfung -----------------------------------------------------------
 $desktop = [Environment]::GetFolderPath('Desktop')
 [IO.File]::WriteAllText((Join-Path $desktop 'ERP Handwerk.url'), "[InternetShortcut]`r`nURL=http://localhost:$port/`r`n")
 Ok 'Verknuepfung "ERP Handwerk" auf dem Desktop'
