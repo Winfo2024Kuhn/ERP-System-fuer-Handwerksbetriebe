@@ -650,6 +650,7 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `GET` | `/` | Artikel suchen und filtern (seitenweise, sortierbar) |
 | `POST` | `/{id}/externe-nummer` | Artikelnummer eines Lieferanten hinterlegen |
 | `PATCH` | `/{id}/dokumenttexte` | Kurzbeschreibung, Kundentext und Verkaufsaufschlag ändern |
+| `PUT` | `/{id}/stammdaten` | Stammdaten ersetzen (Name, Nummern, EAN, Einheit, Kategorie, Werkstoff, Normen, Maße); 400 bei ungültigen Werten, 409 bei doppelter Nummer/EAN oder veraltetem Stand (`version`) |
 | `GET` | `/{id}/detail` | Artikel mit allen Lieferantenpreisen und Preisverlauf |
 | `POST` | `/{id}/dokumente` | Vorschaubild oder Zusatzdokument (Zulassung, Zeichnung, Datenblatt …) hochladen |
 | `GET` | `/{id}/dokumente` | Dokumente eines Artikels |

@@ -55,6 +55,10 @@ public class ArtikelResponseDto {
     // Technische Stammdaten
     // ------------------------------------------------------------------
     private String artikelnummer;
+    /** Strichcode, nur bei einem Teil der Artikel vorhanden. */
+    private String ean;
+    /** Stand des Datensatzes für das Ändern der Stammdaten. */
+    private Long version;
     private Profilform profilform;
     private Herstellverfahren herstellverfahren;
     private Fertigungszustand fertigungszustand;
@@ -65,6 +69,8 @@ public class ArtikelResponseDto {
     private BigDecimal hoehe;
     private BigDecimal breite;
     private BigDecimal wandstaerke;
+    private BigDecimal stegdicke;
+    private BigDecimal flanschdicke;
     /** Kurzform der Abmessung fuer die Anzeige, z.B. "42,4 x 2". */
     private String abmessung;
 

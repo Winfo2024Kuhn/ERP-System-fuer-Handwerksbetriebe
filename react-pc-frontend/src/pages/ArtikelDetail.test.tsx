@@ -485,4 +485,30 @@ describe('ArtikelDetail', () => {
         const gesendet = JSON.parse(String(patchAufruf?.[1]?.body));
         expect(gesendet.beschreibung).toBeNull();
     });
+
+    it('zeigt Artikelnummer und EAN bei den Angaben zum Teil', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve(url.includes('/dokumente') ? [] : { ...detailAntwort, artikel: { ...detailAntwort.artikel, ean: '4006381333931' } }),
+        })));
+        renderSeite();
+
+        expect(await screen.findByText('EAN / Strichcode')).toBeVisible();
+        expect(screen.getByText('4006381333931')).toBeVisible();
+    });
+
+    it('öffnet und schließt die Maske zum Bearbeiten der Stammdaten', async () => {
+        const user = userEvent.setup();
+        renderSeite();
+
+        await user.click(await screen.findByRole('button', { name: /Stammdaten bearbeiten/ }));
+        const maske = await screen.findByTestId('artikel-stammdaten-form');
+        expect(within(maske).getByLabelText('Produktname *')).toHaveValue('42.4x2');
+        // Solange die Maske offen ist, gibt es den Knopf nicht ein zweites Mal
+        expect(screen.queryByRole('button', { name: /Stammdaten bearbeiten/ })).toBeNull();
+
+        await user.click(within(maske).getByRole('button', { name: 'Abbrechen' }));
+        expect(screen.queryByTestId('artikel-stammdaten-form')).toBeNull();
+        expect(screen.getByRole('button', { name: /Stammdaten bearbeiten/ })).toBeVisible();
+    });
 });

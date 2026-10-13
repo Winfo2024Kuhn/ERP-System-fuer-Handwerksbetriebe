@@ -353,6 +353,7 @@ export interface Artikel {
   lieferantenname?: string;
   kategorieId?: number;
   kategoriePfad?: string;
+  werkstoffId?: number;
   werkstoffName?: string;
   kgProMeter?: number;
 
@@ -366,6 +367,10 @@ export interface Artikel {
 
   // Technische Stammdaten
   artikelnummer?: string;
+  /** Strichcode (EAN-8, UPC-A, EAN-13, GTIN-14), nur bei einem Teil der Artikel vorhanden. */
+  ean?: string | null;
+  /** Stand des Datensatzes: Beim Ändern der Stammdaten mitschicken, damit parallele Änderungen auffallen. */
+  version?: number | null;
   profilform?: Merkmal;
   herstellverfahren?: Merkmal;
   fertigungszustand?: Merkmal;
@@ -375,6 +380,8 @@ export interface Artikel {
   hoehe?: number;
   breite?: number;
   wandstaerke?: number;
+  stegdicke?: number;
+  flanschdicke?: number;
   abmessung?: string;
   kgProQm?: number;
   mantelflaeche?: number;

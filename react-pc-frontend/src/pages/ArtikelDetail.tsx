@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
-    ArrowLeft, Minus, Package, RefreshCw, Save, ShieldCheck, ShieldX,
+    ArrowLeft, Minus, Package, Pencil, RefreshCw, Save, ShieldCheck, ShieldX,
     TrendingDown, TrendingUp
 } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -13,6 +13,7 @@ import { useToast } from "../components/ui/toast";
 import { TiptapEditor } from "../components/TiptapEditor";
 import { preisHinweisText, type PreisHinweis } from "../components/artikel/preisHinweis";
 import { ArtikelDokumente } from "../components/artikel/ArtikelDokumente";
+import { ArtikelStammdatenForm } from "../components/artikel/ArtikelStammdatenForm";
 // Dieselbe Waehrungsformatierung wie in der Trefferliste - inklusive der
 // zusaetzlichen Nachkommastellen bei Kleinstpreisen (Schrauben, Muttern).
 import { formatCurrency as formatEuro } from "../components/artikel/formatCurrency";
@@ -95,6 +96,8 @@ export default function ArtikelDetail() {
     const [beschreibung, setBeschreibung] = useState("");
     const [aufschlag, setAufschlag] = useState<string>("");
     const [speichern, setSpeichern] = useState(false);
+    // Stammdaten bearbeiten (Name, Nummern, Einheit, Kategorie, Maße ...)
+    const [stammdatenBearbeiten, setStammdatenBearbeiten] = useState(false);
 
     const laden = useCallback(async () => {
         if (!id) return;
@@ -266,9 +269,25 @@ export default function ArtikelDetail() {
                         <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
                         Aktualisieren
                     </Button>
+                    {!stammdatenBearbeiten && (
+                        <Button size="sm" onClick={() => setStammdatenBearbeiten(true)}>
+                            <Pencil className="w-4 h-4 mr-2" aria-hidden="true" />
+                            Stammdaten bearbeiten
+                        </Button>
+                    )}
                 </div>
             }
         >
+            {/* ============ Stammdaten bearbeiten ============ */}
+            {stammdatenBearbeiten && (
+                <ArtikelStammdatenForm
+                    key={`${artikel.id}-${artikel.version ?? 0}`}
+                    artikel={artikel}
+                    onAbbrechen={() => setStammdatenBearbeiten(false)}
+                    onGespeichert={() => { setStammdatenBearbeiten(false); void laden(); }}
+                />
+            )}
+
             {/* ============ Was ist das für ein Teil? ============ */}
             <section className="bg-white border border-slate-200 rounded-lg p-5">
                 <h2 className="text-lg font-semibold text-slate-900 mb-4">Was ist das für ein Teil?</h2>
@@ -281,6 +300,8 @@ export default function ArtikelDetail() {
                 </div>
 
                 <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm">
+                    <Datenfeld label="Artikelnummer" wert={artikel.artikelnummer} />
+                    <Datenfeld label="EAN / Strichcode" wert={artikel.ean ?? undefined} />
                     <Datenfeld label="Abmessung" wert={artikel.abmessung} />
                     <Datenfeld label="Durchmesser" wert={artikel.durchmesser ? `${formatZahl(artikel.durchmesser, 1)} mm` : undefined} />
                     <Datenfeld label="Wandstärke" wert={artikel.wandstaerke ? `${formatZahl(artikel.wandstaerke, 1)} mm` : undefined} />

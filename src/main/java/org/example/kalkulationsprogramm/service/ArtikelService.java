@@ -7,10 +7,12 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelStammdatenRequest;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
@@ -24,8 +26,10 @@ import org.jsoup.safety.Safelist;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.stream.Collectors;
@@ -39,6 +43,9 @@ public class ArtikelService implements ArtikelServiceContract {
     private static final int MAX_KURZBESCHREIBUNG = 255;
     private static final int MAX_BESCHREIBUNG = 10_000;
     private static final BigDecimal MAX_AUFSCHLAG = new BigDecimal("999.99");
+    private static final BigDecimal MAX_MASS = new BigDecimal("100000");
+    private static final String MAX_MASS_TEXT = "100000";
+    private static final int MAX_STANDARDLAENGE = 30_000;
 
     /**
      * Tags, die der TiptapEditor fuer die Beschreibung tatsaechlich erzeugt.
@@ -195,6 +202,110 @@ public class ArtikelService implements ArtikelServiceContract {
         }
 
         return artikelRepository.save(artikel);
+    }
+
+    /**
+     * Ändert alle Stammdaten eines Artikels (vollständiges Ersetzen: Was fehlt, wird geleert). Texte für Angebote, Aufschlag,
+     * Lieferanten, Preise und Dokumente bleiben unberührt. Der Suchtext wird neu aufgebaut.
+     *
+     * @throws NotFoundException bei unbekannter ID
+     * @throws ResponseStatusException 400 bei ungültigen Werten, 409 bei doppelter Artikelnummer/EAN oder veraltetem Stand
+     */
+    @Override
+    @Transactional
+    public Artikel aktualisiereStammdaten(Long id, ArtikelStammdatenRequest r) {
+        Artikel artikel = artikelRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Artikel " + id + " nicht gefunden"));
+        if (r.getVersion() != null && artikel.getVersion() != null && !r.getVersion().equals(artikel.getVersion())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Der Artikel wurde inzwischen von jemand anderem geändert. Bitte die Seite neu laden und noch einmal versuchen.");
+        }
+        String name = text(r.getProduktname(), 255, "Der Produktname");
+        if (name == null) {
+            throw ungueltig("Bitte einen Produktnamen eingeben.");
+        }
+        String nummer = text(r.getArtikelnummer(), 64, "Die Artikelnummer");
+        if (nummer != null && artikelRepository.findByArtikelnummer(nummer).filter(a -> !a.getId().equals(id)).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Die Artikelnummer " + nummer + " gibt es schon bei einem anderen Artikel.");
+        }
+        String ean = EanPruefung.normalisiert(r.getEan());
+        pruefeEan(ean, id);
+        if (r.getVerpackungseinheit() != null && r.getVerpackungseinheit() < 0) {
+            throw ungueltig("Die Verpackungseinheit darf nicht negativ sein.");
+        }
+
+        artikel.setProduktname(name);
+        artikel.setProduktlinie(text(r.getProduktlinie(), 255, "Die Produktlinie"));
+        artikel.setProdukttext(text(r.getProdukttext(), MAX_BESCHREIBUNG, "Der Produkttext"));
+        artikel.setArtikelnummer(nummer);
+        artikel.setEan(ean);
+        artikel.setVerpackungseinheit(r.getVerpackungseinheit());
+        artikel.setPreiseinheit(text(r.getPreiseinheit(), 255, "Die Preiseinheit"));
+        artikel.setVerrechnungseinheit(r.getVerrechnungseinheit());
+        artikel.setKategorie(r.getKategorieId() == null ? null : kategorieRepository.findById(Math.toIntExact(r.getKategorieId()))
+                .orElseThrow(() -> ungueltig("Die gewählte Kategorie gibt es nicht.")));
+        artikel.setWerkstoff(r.getWerkstoffId() == null ? null : werkstoffRepository.findById(r.getWerkstoffId())
+                .orElseThrow(() -> ungueltig("Der gewählte Werkstoff gibt es nicht.")));
+        artikel.setProfilform(r.getProfilform());
+        artikel.setHerstellverfahren(r.getHerstellverfahren());
+        artikel.setFertigungszustand(r.getFertigungszustand());
+        artikel.setMassnorm(text(r.getMassnorm(), 64, "Die Maßnorm"));
+        artikel.setWerkstoffnorm(text(r.getWerkstoffnorm(), 64, "Die Werkstoffnorm"));
+
+        // Maße gibt es nur bei Halbzeug; andere Artikel ignorieren sie
+        if (artikel instanceof ArtikelWerkstoffe aw) {
+            aw.setDurchmesser(mass(r.getDurchmesser(), "Der Durchmesser"));
+            aw.setHoehe(mass(r.getHoehe(), "Die Höhe"));
+            aw.setBreite(mass(r.getBreite(), "Die Breite"));
+            aw.setWandstaerke(mass(r.getWandstaerke(), "Die Wandstärke"));
+            aw.setStegdicke(mass(r.getStegdicke(), "Die Stegdicke"));
+            aw.setFlanschdicke(mass(r.getFlanschdicke(), "Die Flanschdicke"));
+            Integer laenge = r.getStandardlaenge();
+            if (laenge != null && (laenge < 1 || laenge > MAX_STANDARDLAENGE)) {
+                throw ungueltig("Die Standardlänge muss zwischen 1 und " + MAX_STANDARDLAENGE + " mm liegen.");
+            }
+            aw.setStandardlaenge(laenge);
+        }
+        artikel.setSuchtext(ArtikelSuchtext.aufbauen(artikel));
+        return artikelRepository.save(artikel);
+    }
+
+    /** Prüft Prüfziffer und Eindeutigkeit einer EAN; {@code eigeneId} ist der Artikel, der sie schon tragen darf. */
+    private void pruefeEan(String ean, Long eigeneId) {
+        String fehler = EanPruefung.fehler(ean);
+        if (fehler != null) {
+            throw ungueltig(fehler);
+        }
+        if (ean != null && artikelRepository.findByEan(ean).filter(a -> !a.getId().equals(eigeneId)).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Die EAN " + ean + " gehört schon zu einem anderen Artikel.");
+        }
+    }
+
+    /** Text bereinigen: leer wird {@code null}, zu lang wird abgelehnt. */
+    private static String text(String wert, int max, String name) {
+        if (wert == null || wert.isBlank()) {
+            return null;
+        }
+        String s = wert.strip();
+        if (s.length() > max) {
+            throw ungueltig(name + " darf höchstens " + max + " Zeichen lang sein.");
+        }
+        return s;
+    }
+
+    /** Maß in mm: leer ist erlaubt, sonst muss es zwischen 0 und 100000 liegen. */
+    private static BigDecimal mass(BigDecimal wert, String name) {
+        if (wert == null) {
+            return null;
+        }
+        if (wert.signum() < 0 || wert.compareTo(MAX_MASS) > 0) {
+            throw ungueltig(name + " muss zwischen 0 und " + MAX_MASS_TEXT + " mm liegen.");
+        }
+        return wert;
+    }
+
+    private static ResponseStatusException ungueltig(String text) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, text);
     }
 
     /** Laesst nur die Formatierung durch, die der TiptapEditor erzeugt. */
