@@ -15,6 +15,9 @@
 #              und automatischem Rollback (nachtupdate.sh). Was schiefgeht, sehen
 #              Admins im ERP unter "Benachrichtigungen" (Volume betriebsstatus).
 #   netzsperre Trennt das ERP vom Firmennetz (netzsperre/sperre.sh).
+#   jetzt-aktualisieren
+#              Knopf in Docker Desktop: auf Start klicken, und das Update laeuft
+#              sofort (wie nachts). Startet nie von allein (Profil "manuell").
 #
 # Abschottung (README, Abschnitt "Sicherheit"):
 #   - Die Datenbank haengt nur im Netz "intern" - ohne Verbindung nach aussen,
@@ -178,6 +181,41 @@ services:
     networks: [extern]
     security_opt: [no-new-privileges:true]
     restart: always
+
+  # Knopf "Jetzt aktualisieren": In Docker Desktop auf Start klicken, und das
+  # Update laeuft sofort (derselbe Ablauf wie nachts: sichern, wechseln,
+  # pruefen, bei Fehler zurueck). Der Container tut nichts anderes, als im
+  # Updater update-jetzt.sh aufzurufen; die Update-Logik liegt allein dort.
+  # Profil "manuell": "docker compose up" startet ihn NICHT. Angelegt wird er
+  # vom Updater bei jedem Start (updater/start.sh), er steht also nach der
+  # Einrichtung ohne weiteren Befehl in der Liste. Nach dem Lauf beendet er
+  # sich; ein weiterer Klick auf Start wiederholt das Update.
+  jetzt-aktualisieren:
+    image: erp-updater:lokal
+    pull_policy: never
+    container_name: erp-jetzt-aktualisieren
+    profiles: [manuell]
+    # Startet den Updater, falls er gerade steht, und zeigt dessen Ausgabe
+    entrypoint:
+      - sh
+      - -c
+      - docker start erp-updater >/dev/null 2>&1; exec docker exec erp-updater bash /erp/updater/update-jetzt.sh
+    environment:
+      TZ: Europe/Berlin
+    volumes:
+      # Nur fuer "docker exec" auf den Updater (wie beim Updater selbst: Wer den
+      # Socket hat, steuert Docker). Kein Port, kein Netz, keine eigenen Dateien.
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: none
+    security_opt: [no-new-privileges:true]
+    # Stop soll sofort greifen (nicht erst nach 10 s), und die Logs aller Klicks
+    # sammeln sich nicht unbegrenzt an
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: 1m
+    restart: "no"
 
   netzsperre:
     build: ./netzsperre

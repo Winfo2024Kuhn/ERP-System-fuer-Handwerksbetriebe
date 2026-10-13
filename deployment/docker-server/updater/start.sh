@@ -4,12 +4,25 @@
 #     bringen (Stromausfall, Windows-Update mitten in der Nacht ...).
 #  2. Gibt es noch kein Ergebnis der taeglichen Sicherung, festhalten, dass
 #     ab jetzt gesichert wird - laeuft binnen eines Tages keine, meldet das ERP es.
-#  3. Danach wartet crond auf die naechste Sicherung (Standard 02:00) und das
+#  3. Den Klick-Container "erp-jetzt-aktualisieren" anlegen (nicht starten).
+#  4. Danach wartet crond auf die naechste Sicherung (Standard 02:00) und das
 #     naechste Nachtupdate (Standard 03:00 Ortszeit).
 set -euo pipefail
 
 bash /erp/nachtupdate.sh --nach-neustart || true
 bash /erp/sicherung.sh --status-anlegen || true
+
+# Den Knopf "Jetzt aktualisieren" in Docker Desktop bereitstellen: ein Container,
+# der nur bei Klick auf Start laeuft (Profil "manuell", sonst startete ihn
+# "docker compose up" mit). Hier anlegen statt per Befehl, damit er nach jedem
+# Neustart ohne Zutun in der Liste steht. Laeuft er gerade (ein Klick hat den
+# Updater eben erst gestartet), bleibt er unangetastet: "create" wuerde ihn bei
+# geaenderter Einstellung unter den Augen des Nutzers neu anlegen.
+if [[ "$(docker inspect -f '{{.State.Running}}' erp-jetzt-aktualisieren 2>/dev/null || true)" != "true" ]]; then
+    docker compose --project-directory /erp -f /erp/docker-compose.yml --profile manuell \
+        create jetzt-aktualisieren >/dev/null \
+        || echo "Hinweis: Der Knopf 'Jetzt aktualisieren' konnte nicht angelegt werden." >&2
+fi
 
 # Genau 5 cron-Felder aus Ziffern, * / , - (kein Platz fuer weitere Befehle)
 zeitplan_pruefen() {  # zeitplan_pruefen <Name> <Wert> <Standard>
