@@ -324,6 +324,39 @@ describe('ArtikelDetail', () => {
         expect(await screen.findByText(/Kein Aufschlag hinterlegt/)).toBeInTheDocument();
     });
 
+    it('erklärt bei leerem Aufschlag am Artikel, welcher stattdessen gilt', async () => {
+        mockFetchDetail({
+            artikel: { id: 9, produktname: 'Rundrohr', positionsEinheit: 'lfm', positionsEinzelpreis: 12.5, preisHinweis: 'OK',
+                wirksamProzent: 25, wirksamQuelle: 'KATEGORIE', wirksamVon: 'Stahl' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        expect(await screen.findByTestId('aufschlag-wirksam')).toHaveTextContent('Leer: es gilt 25 % von „Stahl“.');
+    });
+
+    it('nennt den allgemeinen Aufschlag und schweigt, wenn der Artikel einen eigenen hat', async () => {
+        mockFetchDetail({
+            artikel: { id: 9, produktname: 'Rundrohr', preisHinweis: 'OK', wirksamProzent: 20, wirksamQuelle: 'ALLGEMEIN' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+        const { unmount } = render(<ArtikelDetail />, { wrapper: Wrapper });
+        expect(await screen.findByTestId('aufschlag-wirksam')).toHaveTextContent('Leer: es gilt der allgemeine Aufschlag von 20 %.');
+        unmount();
+
+        mockFetchDetail({
+            artikel: { id: 9, produktname: 'Rundrohr', preisHinweis: 'OK', verkaufsaufschlagProzent: 40, wirksamProzent: 40, wirksamQuelle: 'ARTIKEL' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+        expect(await screen.findByLabelText('Aufschlag auf den Einkaufspreis')).toHaveValue(40);
+        expect(screen.queryByTestId('aufschlag-wirksam')).not.toBeInTheDocument();
+    });
+
     it('speichert die Angebotsfelder über den PATCH-Endpunkt', async () => {
         mockFetchDetail({
             artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },

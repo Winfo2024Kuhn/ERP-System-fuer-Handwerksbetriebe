@@ -55,6 +55,16 @@ public class ArtikelPositionsPreisService {
         this(aufschlaege.getIfAvailable());
     }
 
+    /** Der Aufschlag, der fuer den Artikel gilt, und woher er kommt. Ohne Aufschlagsregeln zaehlt nur der am Artikel. */
+    public AufschlagService.Wirksam geltenderAufschlag(Artikel artikel) {
+        if (aufschlaege != null) {
+            return aufschlaege.wirksamer(artikel);
+        }
+        BigDecimal p = artikel.getVerkaufsaufschlagProzent();
+        return p == null ? new AufschlagService.Wirksam(null, AufschlagService.Quelle.KEINER, null)
+                : new AufschlagService.Wirksam(p, AufschlagService.Quelle.ARTIKEL, null);
+    }
+
     /** Vorschlag fuer eine Dokumentposition. {@code einzelpreis} ist {@code null}, wenn er nicht ermittelbar war. */
     public record ArtikelPositionsVorschlag(String einheit, BigDecimal einzelpreis, ArtikelPreisHinweis hinweis) {}
 

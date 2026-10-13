@@ -331,6 +331,12 @@ public class ArtikelController {
         dto.setKurzbeschreibung(artikel.getKurzbeschreibung());
         dto.setBeschreibung(artikel.getBeschreibung());
         dto.setVerkaufsaufschlagProzent(artikel.getVerkaufsaufschlagProzent());
+        var wirksam = artikelPositionsPreisService.geltenderAufschlag(artikel);
+        if (wirksam != null) {
+            dto.setWirksamProzent(wirksam.prozent());
+            dto.setWirksamQuelle(wirksam.quelle().name());
+            dto.setWirksamVon(wirksam.quellenName());
+        }
 
         // Derselbe Preis, der oben in der Preisspalte steht - nicht irgendeiner.
         // mappeArtikelZuDto hat ihn unter Beruecksichtigung des
