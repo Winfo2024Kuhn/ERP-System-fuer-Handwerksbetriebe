@@ -2421,7 +2421,8 @@ public class AusgangsGeschaeftsDokumentService {
         BigDecimal neuerBetrag = berechneAktuellenBruttoPreis(aktive);
 
         // Betrag immer aktuell halten, sobald Dokumente einen Preis liefern.
-        // Ohne Dokumente (neuerBetrag == 0) bleibt ein manuell erfasster Betrag erhalten.
+        // Ohne gültiges Dokument (neuerBetrag == 0) bleibt der zuletzt berechnete Betrag stehen
+        // (z. B. aus einem hochgeladenen ZUGFeRD-Angebot). Von Hand wird er nicht mehr erfasst.
         if (neuerBetrag.compareTo(BigDecimal.ZERO) > 0) {
             anfrage.setBetrag(neuerBetrag);
         }

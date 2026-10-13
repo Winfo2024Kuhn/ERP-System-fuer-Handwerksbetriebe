@@ -2,7 +2,6 @@ package org.example.kalkulationsprogramm.dto.Anfrage;
 
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -19,5 +18,4 @@ public class AnfrageErstellenDto {
     private String projektOrt;
     private String kurzbeschreibung;
     private Boolean abgeschlossen;
-    private BigDecimal betrag;
 }

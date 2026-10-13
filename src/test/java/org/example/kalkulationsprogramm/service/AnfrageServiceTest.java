@@ -252,6 +252,7 @@ class AnfrageServiceTest {
         anfrage.setBauvorhaben("Geländer Musterweg");
         anfrage.setProjektStrasse("Musterweg 1");
         anfrage.setKurzbeschreibung("Geländer 12 m, verzinkt, bitte Angebot");
+        anfrage.setBetrag(new java.math.BigDecimal("1585.08")); // aus dem Angebot
         when(anfrageRepository.findById(42L)).thenReturn(Optional.of(anfrage));
         return anfrage;
     }
@@ -299,6 +300,7 @@ class AnfrageServiceTest {
         assertThat(anfrage.getKurzbeschreibung()).isEqualTo("Geländer 12 m, verzinkt, bitte Angebot");
         assertThat(anfrage.getBauvorhaben()).isEqualTo("Geländer Musterweg");
         assertThat(anfrage.getProjektStrasse()).isEqualTo("Musterweg 1");
+        assertThat(anfrage.getBetrag()).isEqualByComparingTo("1585.08");
     }
 
     @Test
@@ -313,7 +315,6 @@ class AnfrageServiceTest {
         dto.setProjektPlz("12345");
         dto.setProjektOrt("Musterstadt");
         dto.setKurzbeschreibung("");
-        dto.setBetrag(new java.math.BigDecimal("1585.08"));
         dto.setAnlegedatum(LocalDate.of(2026, 10, 2));
         dto.setKundenEmails(List.of("max@example.com"));
 
@@ -324,7 +325,6 @@ class AnfrageServiceTest {
         assertThat(anfrage.getProjektPlz()).isEqualTo("12345");
         assertThat(anfrage.getProjektOrt()).isEqualTo("Musterstadt");
         assertThat(anfrage.getKurzbeschreibung()).isEmpty();
-        assertThat(anfrage.getBetrag()).isEqualByComparingTo("1585.08");
         assertThat(anfrage.getAnlegedatum()).isEqualTo(LocalDate.of(2026, 10, 2));
         assertThat(anfrage.getKundenEmails()).containsExactly("max@example.com");
     }
@@ -338,8 +338,9 @@ class AnfrageServiceTest {
         assertThat(service.aktualisiereAnfrage(99L, new AnfrageErstellenDto())).isNull();
     }
 
+    /** Der Betrag kommt nur aus den Geschäftsdokumenten, nie aus dem Anlege-Dialog. */
     @Test
-    void erstellenSpeichertBruttobetragUndBeschreibung() {
+    void erstellenSpeichertBeschreibungAberKeinenBetrag() {
         AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
         AnfrageService service = neueServiceMitAnfragen(anfrageRepository);
         when(anfrageRepository.save(any(Anfrage.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -347,12 +348,11 @@ class AnfrageServiceTest {
         AnfrageErstellenDto dto = new AnfrageErstellenDto();
         dto.setBauvorhaben("Geländer Musterweg");
         dto.setKurzbeschreibung("Geländer 12 m");
-        dto.setBetrag(new java.math.BigDecimal("2500.00"));
         dto.setAbgeschlossen(false);
 
         AnfrageResponseDto ergebnis = service.erstelleAnfrage(dto);
 
-        assertThat(ergebnis.getBetrag()).isEqualByComparingTo("2500.00");
+        assertThat(ergebnis.getBetrag()).isNull();
         assertThat(ergebnis.getKurzbeschreibung()).isEqualTo("Geländer 12 m");
         assertThat(ergebnis.getAnlegedatum()).isEqualTo(LocalDate.now());
     }

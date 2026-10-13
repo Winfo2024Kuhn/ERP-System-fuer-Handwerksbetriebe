@@ -100,7 +100,9 @@ public class AnfrageService {
         anfrage.setProjektPlz(dto.getProjektPlz());
         anfrage.setProjektOrt(dto.getProjektOrt());
         anfrage.setKurzbeschreibung(dto.getKurzbeschreibung());
-        anfrage.setBetrag(dto.getBetrag());
+        // Der Betrag wird bewusst nicht von Hand erfasst: Er kommt ausschließlich aus
+        // den Geschäftsdokumenten (Angebot/AB bzw. hochgeladenes ZUGFeRD-Angebot) –
+        // siehe AusgangsGeschaeftsDokumentService.aktualisiereAnfragePreisAusDokumenten().
         if (dto.getAbgeschlossen() != null) {
             anfrage.setAbgeschlossen(dto.getAbgeschlossen());
         }
@@ -439,6 +441,7 @@ public class AnfrageService {
      * ({@code null}) lässt den gespeicherten Wert stehen – sonst löscht z. B. der
      * Bearbeiten-Dialog, der die Beschreibung gar nicht kennt, den Text aus dem
      * Webseiten-Formular. Leeren geht über einen leeren Text ({@code ""}).
+     * Den Betrag gibt es hier nicht – er kommt nur aus den Geschäftsdokumenten.
      */
     public AnfrageResponseDto aktualisiereAnfrage(Long id, AnfrageErstellenDto dto, MultipartFile imageFile) {
         return anfrageRepository.findById(id).map(a -> {
@@ -457,9 +460,6 @@ public class AnfrageService {
             }
             if (dto.getKurzbeschreibung() != null) {
                 a.setKurzbeschreibung(dto.getKurzbeschreibung());
-            }
-            if (dto.getBetrag() != null) {
-                a.setBetrag(dto.getBetrag());
             }
             if (dto.getAbgeschlossen() != null) {
                 a.setAbgeschlossen(dto.getAbgeschlossen());

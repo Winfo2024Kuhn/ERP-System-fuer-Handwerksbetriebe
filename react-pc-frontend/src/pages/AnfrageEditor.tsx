@@ -46,6 +46,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ImageViewer } from "../components/ui/image-viewer";
 import { ThumbnailImage } from "../components/ui/ThumbnailImage";
 import { useToast } from '../components/ui/toast';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { onDokumentChanged } from '../lib/dokumentChannel';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
@@ -405,6 +406,18 @@ interface AnfrageErstellenModalProps {
     editAnfrage?: Anfrage | null;
 }
 
+/** Erklärt, woher der Betrag einer Anfrage kommt (AusgangsGeschaeftsDokumentService.aktualisiereAnfragePreisAusDokumenten). */
+function BetragInfo() {
+    return <InfoButton titel="Betrag der Anfrage">
+        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+            <p>Der Betrag wird nicht von Hand eingetragen. Das Programm nimmt ihn aus dem aktuellen Angebot bzw. der Auftragsbestätigung dieser Anfrage; Nachtragsangebote kommen dazu, stornierte zählen nicht. Auch ein hochgeladenes Angebot als E-Rechnung (ZUGFeRD) liefert den Betrag.</p>
+        </InfoAbschnitt>
+        <InfoAbschnitt titel="Was bewirkt das?">
+            <p>Ändern Sie das Angebot, stimmt der Betrag hier automatisch wieder. Gibt es kein gültiges Angebot (mehr), bleibt der zuletzt berechnete Betrag stehen.</p>
+        </InfoAbschnitt>
+    </InfoButton>;
+}
+
 const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
     isOpen,
     onClose,
@@ -421,7 +434,6 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
 
     const [formData, setFormData] = useState({
         bauvorhaben: '',
-        betrag: undefined as number | undefined,
         projektStrasse: '',
         projektPlz: '',
         projektOrt: '',
@@ -430,7 +442,7 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
     // Reset beim Öffnen/Schließen
     useEffect(() => {
         if (!isOpen) {
-            setFormData({ bauvorhaben: '', betrag: undefined, projektStrasse: '', projektPlz: '', projektOrt: '' });
+            setFormData({ bauvorhaben: '', projektStrasse: '', projektPlz: '', projektOrt: '' });
             setSelectedKunde(null);
             setError(null);
             setSubView('main');
@@ -439,7 +451,6 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
         } else if (editAnfrage) {
             setFormData({
                 bauvorhaben: editAnfrage.bauvorhaben || '',
-                betrag: editAnfrage.betrag,
                 projektStrasse: editAnfrage.projektStrasse || '',
                 projektPlz: editAnfrage.projektPlz || '',
                 projektOrt: editAnfrage.projektOrt || '',
@@ -509,7 +520,7 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
             const payload = {
                 bauvorhaben: formData.bauvorhaben.trim(),
                 kundenId: selectedKunde.id,
-                betrag: formData.betrag,
+                // Kein Betrag: Er kommt nur aus Angebot/Auftragsbestätigung.
                 projektStrasse: formData.projektStrasse,
                 projektPlz: formData.projektPlz,
                 projektOrt: formData.projektOrt,
@@ -618,21 +629,6 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                                     value={formData.bauvorhaben}
                                     onChange={e => setFormData(prev => ({ ...prev, bauvorhaben: e.target.value }))}
                                     placeholder="Beschreibung des Bauvorhabens"
-                                />
-                            </div>
-
-                            {/* Betrag */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">
-                                    <Euro className="w-4 h-4 inline-block mr-1" />
-                                    Bruttobetrag (€)
-                                </label>
-                                <Input
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.betrag ?? ''}
-                                    onChange={e => setFormData(prev => ({ ...prev, betrag: e.target.value ? parseFloat(e.target.value) : undefined }))}
-                                    placeholder="0,00"
                                 />
                             </div>
 
@@ -1032,7 +1028,10 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
                 {/* Stats Row */}
                 <div className="flex flex-wrap gap-x-6 gap-y-2 shrink-0">
                     <div className="flex flex-col items-center px-4 py-2 border-r border-slate-200 min-w-[7rem]">
-                        <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Brutto</p>
+                        <p className="flex items-center gap-0.5 text-[11px] text-slate-400 uppercase tracking-wider font-medium">
+                            Brutto
+                            <BetragInfo />
+                        </p>
                         <p className="text-base font-semibold text-slate-800">{formatCurrency(anfrage.betrag)}</p>
                     </div>
                     <div className="flex flex-col items-center px-4 py-2 min-w-[7rem]">
