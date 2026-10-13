@@ -78,6 +78,7 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
 
     @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
+    @MockBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
     @MockBean private EmailRepository emailRepository;
     @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
@@ -1319,6 +1320,62 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(multipart("/api/emails/send").file(dto(
                             "{\"geschaeftsdokument\":true,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        void angebotsversandLoestAlteLinksErstNachDemVersandAb() throws Exception {
+            smtpOk();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+
+            verify(freigabeAbloesungService).loeseAb(7L);
+        }
+
+        @Test
+        void ohneBestaetigteAbloesungBleibenAlteLinksUnberuehrt() throws Exception {
+            smtpOk();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+
+            verifyNoInteractions(freigabeAbloesungService);
+        }
+
+        @Test
+        void gewoehnlicheMailLoestKeineLinksAb() throws Exception {
+            smtpOk();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kollege@example.com\"],\"subject\":\"zur Info\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+
+            verifyNoInteractions(freigabeAbloesungService);
+        }
+
+        @Test
+        void versandBleibtErfolgreichWennAbloesungScheitert() throws Exception {
+            smtpOk();
+            org.mockito.Mockito.doThrow(new IllegalStateException("DB weg"))
+                    .when(freigabeAbloesungService).loeseAb(any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void scheitertDerVersandWirdNichtsAbgeloest() throws Exception {
+            org.mockito.Mockito.doThrow(new RuntimeException("SMTP weg")).when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().is5xxServerError());
+
+            verifyNoInteractions(freigabeAbloesungService);
         }
 
         @Test

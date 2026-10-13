@@ -145,6 +145,32 @@ export interface EmailComposeFormProps {
      * bereits fest – dort bleibt das Feld aus.
      */
     zuordnungWaehlbar?: boolean;
+    /**
+     * Wird nach dem Klick auf „E-Mail senden“ und vor dem eigentlichen Versand
+     * aufgerufen (z. B. Rechnung buchen). `weiter: false` bricht ab, ohne zu senden –
+     * die Fehlermeldung zeigt der Aufrufer selbst. `hinweisBeiSendefehler` wird an
+     * die Meldung gehängt, falls der Versand danach scheitert.
+     */
+    vorDemSenden?: () => Promise<VorDemSendenErgebnis>;
+    /**
+     * Sperrt Vorschau und Download der automatisch angehängten Dateien und zeigt
+     * stattdessen diesen Hinweis (z. B. ungebuchte Rechnung: sonst ließe sie sich
+     * am Buchen vorbei herunterladen).
+     */
+    anhangVorschauGesperrt?: string;
+    /**
+     * `false`: kein automatischer Entwurf. Nötig, wenn beim Senden noch etwas
+     * passieren muss (Buchen, alte Online-Links ablösen) – ein später aus der
+     * Entwurfsliste verschickter Entwurf würde das sonst überspringen.
+     */
+    entwurfSpeichern?: boolean;
+    /** Angebotsversand: nach dem Senden offene Online-Links anderer Angebote zurückziehen. */
+    freigabenAbloesenFuerDokumentId?: number;
+}
+
+export interface VorDemSendenErgebnis {
+    weiter: boolean;
+    hinweisBeiSendefehler?: string;
 }
 
 // Aktuelles Frontend-Profil aus localStorage holen
@@ -210,6 +236,10 @@ export function EmailComposeForm({
     draftId: initialDraftId,
     zuordnungWaehlbar = false,
     variant = 'default',
+    vorDemSenden,
+    anhangVorschauGesperrt,
+    entwurfSpeichern = true,
+    freigabenAbloesenFuerDokumentId,
 }: EmailComposeFormProps) {
     const inline = variant !== 'modal';
     const toast = useToast();
@@ -492,7 +522,7 @@ export function EmailComposeForm({
     }), [recipient, ccRecipients, subject, body, absenderModus, gewaehltesPostfach, postfachId, einzelversandAktiv,
         replyEmailId, weitergeleitetVonEmailId, isAnfrageContext, entityId, geschaeftsdokument, uploadedFiles]);
     const draft = useEmailDraft(draftSnapshot, initialDraftId,
-        !draftLoading && !draftLoadError && !komprimiereAnhaenge, reportDraftError);
+        entwurfSpeichern && !draftLoading && !draftLoadError && !komprimiereAnhaenge, reportDraftError);
     const markDirty = draft.markDirty;
 
     useEffect(() => {
@@ -878,9 +908,18 @@ export function EmailComposeForm({
         setSending(true);
         setError(null);
         setEinzelversandErgebnis(null);
+        let hinweisBeiSendefehler: string | undefined;
 
         try {
             await draft.pause();
+            if (vorDemSenden) {
+                const vorbereitung = await vorDemSenden();
+                if (!vorbereitung.weiter) {
+                    draft.resume();
+                    return;
+                }
+                hinweisBeiSendefehler = vorbereitung.hinweisBeiSendefehler;
+            }
             const currentUser = getCurrentFrontendUser();
 
             // FormData für multipart request (mit Anhängen)
@@ -906,6 +945,7 @@ export function EmailComposeForm({
                 postfachId: absenderModus === 'auswahl' ? postfachId : null,
                 weitergeleitetVonEmailId: weitergeleitetVonEmailId ?? null,
                 einzelversand: einzelversandAktiv,
+                freigabenAbloesenFuerDokumentId: freigabenAbloesenFuerDokumentId ?? null,
             };
 
             formData.append('dto', new Blob([JSON.stringify(dtoPayload)], { type: 'application/json' }));
@@ -977,9 +1017,10 @@ export function EmailComposeForm({
             }
         } catch (err) {
             console.error('E-Mail senden fehlgeschlagen:', err);
-            const meldung = err instanceof VersandFehler && err.message
+            const grund = err instanceof VersandFehler && err.message
                 ? err.message
                 : 'E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.';
+            const meldung = hinweisBeiSendefehler ? `${grund} ${hinweisBeiSendefehler}` : grund;
             setError(meldung);
             toast.error(meldung);
             draft.resume();
@@ -1099,7 +1140,11 @@ export function EmailComposeForm({
                                     </p>
                                     <p className="mt-1 text-sm text-rose-700/90 break-words">{initialAttachmentLabel}</p>
                                 </div>
-                                {firstPdfAttachment && (
+                                {anhangVorschauGesperrt ? (
+                                    <p className="max-w-sm text-xs text-rose-700/90" data-testid="anhang-vorschau-gesperrt">
+                                        {anhangVorschauGesperrt}
+                                    </p>
+                                ) : firstPdfAttachment && (
                                     <Button
                                         type="button"
                                         variant="outline"
@@ -1531,7 +1576,8 @@ export function EmailComposeForm({
                                                 <span className="text-xs text-slate-500">{formatFileSize(uf.file.size)}</span>
                                             </div>
                                             <div className="flex items-center gap-1">
-                                                {(isPdfAttachment(uf.file) || isImageAttachment(uf.file)) && (
+                                                {(isPdfAttachment(uf.file) || isImageAttachment(uf.file))
+                                                    && !(anhangVorschauGesperrt && initialAttachments?.includes(uf.file)) && (
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
@@ -1582,7 +1628,7 @@ export function EmailComposeForm({
             {/* Footer – immer sichtbar, damit "E-Mail senden" nie verdeckt wird */}
             <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2 flex-shrink-0 relative z-10">
                 <span role="status" className={`text-xs ${draft.status === 'error' ? 'text-rose-700' : 'text-slate-500'}`}>
-                    {draft.label}
+                    {entwurfSpeichern ? draft.label : 'Wird nicht als Entwurf gespeichert'}
                     {draft.status === 'error' && <button className="ml-2 underline" onClick={() => { void draft.flush().catch(() => undefined); }}>Erneut speichern</button>}
                 </span>
                 <div className="flex gap-3">

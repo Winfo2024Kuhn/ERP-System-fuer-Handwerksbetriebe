@@ -18,6 +18,9 @@
 import { describe, it, expect } from 'vitest';
 import {
     brauchtAnnahmeLinkAbfrage,
+    brauchtBuchungsWarnung,
+    istAngebotsTyp,
+    abloesungsFrage,
     buildPositionMap,
     calculateNetto,
     serviceLineTotal,
@@ -722,5 +725,54 @@ describe('baueDokumentSignatur', () => {
     it('liefert fuer geaenderte blocks eine andere Signatur', () => {
         expect(baueDokumentSignatur(basisDaten({ blocks: [dummyBlock({ title: 'Leistung B' })] })))
             .not.toBe(baueDokumentSignatur(basisDaten()));
+    });
+});
+
+describe('istAngebotsTyp', () => {
+    it('erkennt Angebot und Nachtragsangebot', () => {
+        expect(istAngebotsTyp('ANGEBOT')).toBe(true);
+        expect(istAngebotsTyp('NACHTRAGSANGEBOT')).toBe(true);
+        expect(istAngebotsTyp('RECHNUNG')).toBe(false);
+        expect(istAngebotsTyp('AUFTRAGSBESTAETIGUNG')).toBe(false);
+    });
+});
+
+describe('brauchtBuchungsWarnung', () => {
+    it('warnt nur bei offenen Rechnungstypen', () => {
+        expect(brauchtBuchungsWarnung(true, { gebucht: false, storniert: false })).toBe(true);
+        expect(brauchtBuchungsWarnung(true, null)).toBe(true);
+        expect(brauchtBuchungsWarnung(true, undefined)).toBe(true);
+    });
+
+    it('warnt nicht bei gebuchten, stornierten oder nicht buchbaren Dokumenten', () => {
+        expect(brauchtBuchungsWarnung(true, { gebucht: true })).toBe(false);
+        expect(brauchtBuchungsWarnung(true, { storniert: true })).toBe(false);
+        expect(brauchtBuchungsWarnung(false, { gebucht: false })).toBe(false);
+    });
+});
+
+describe('abloesungsFrage', () => {
+    it('nennt ein einzelnes altes Angebot', () => {
+        expect(abloesungsFrage([{ dokumentId: 2, dokumentNummer: 'AG-2026-0001' }]))
+            .toBe('Der Online-Link zu Angebot AG-2026-0001 wird damit ungültig. Der Kunde kann das alte Angebot dann nicht mehr online annehmen. Trotzdem fortfahren?');
+    });
+
+    it('fasst doppelte Links desselben Angebots zusammen', () => {
+        expect(abloesungsFrage([
+            { dokumentId: 2, dokumentNummer: 'AG-2026-0001' },
+            { dokumentId: 2, dokumentNummer: 'AG-2026-0001' },
+        ])).toMatch(/^Der Online-Link zu Angebot AG-2026-0001 wird/);
+    });
+
+    it('zählt mehrere alte Angebote auf', () => {
+        expect(abloesungsFrage([
+            { dokumentId: 2, dokumentNummer: 'AG-1' },
+            { dokumentId: 3, dokumentNummer: 'AG-2' },
+            { dokumentId: 4, dokumentNummer: 'AG-3' },
+        ])).toBe('Die Online-Links zu den Angeboten AG-1, AG-2 und AG-3 werden damit ungültig. Der Kunde kann die alten Angebote dann nicht mehr online annehmen. Trotzdem fortfahren?');
+    });
+
+    it('bleibt ohne Nummer lesbar', () => {
+        expect(abloesungsFrage([])).toMatch(/^Der Online-Link zu Angebot +wird damit ungültig/);
     });
 });

@@ -1755,6 +1755,8 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
 
         await user.click(screen.getByRole('button', { name: 'PDF' }));
         await user.click(await screen.findByText('Standard PDF-Datei herunterladen'));
+        // Offene Rechnung: Der Export bucht – erst nach der Warnung (Issue #261).
+        await user.click(await screen.findByRole('button', { name: 'Exportieren & Buchen' }));
 
         await waitFor(() => expect(rueckgaengigKnopf()).toBeDisabled());
     });

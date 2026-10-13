@@ -102,6 +102,7 @@ public class UnifiedEmailController {
     private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
     private final org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     private final org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
+    private final org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
 
     @org.springframework.beans.factory.annotation.Value("${file.mail-attachment-dir}")
     private String mailAttachmentDir;
@@ -1898,6 +1899,7 @@ public class UnifiedEmailController {
                 if (istErstversandEinesDokuments(istGeschaeftsdokument, dto)) {
                     merkeFreigabeEmpfaenger(htmlBody, empfaenger.stream().filter(a -> !gescheitert.contains(a)).toList());
                 }
+                loeseAlteFreigabenAb(istGeschaeftsdokument, dto);
                 return ResponseEntity.ok(new org.example.kalkulationsprogramm.dto.Email.EinzelversandAntwortDto(
                         ergebnis.verschickt().size(), fehlgeschlagen, nichtGespeichert,
                         ergebnis.verschickt().stream().flatMap(java.util.Optional::stream).map(e -> toDto(e, kontext)).toList()));
@@ -1921,6 +1923,7 @@ public class UnifiedEmailController {
             if (istErstversandEinesDokuments(istGeschaeftsdokument, dto)) {
                 merkeFreigabeEmpfaenger(htmlBody, java.util.Arrays.asList(recipient, cc));
             }
+            loeseAlteFreigabenAb(istGeschaeftsdokument, dto);
 
             return ResponseEntity.ok(toDto(email, kontext));
         } catch (Exception e) {
@@ -1943,6 +1946,24 @@ public class UnifiedEmailController {
      * (siehe {@link org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService}). Die Mail
      * ist zu diesem Zeitpunkt schon raus – ein Fehler hier wird nur geloggt.
      */
+    /**
+     * Ein neues Angebot ist raus: offene Online-Links anderer Angebote desselben Vorgangs
+     * zurückziehen, wenn der Anwender das im Editor bestätigt hat. Erst hier – nach dem
+     * Versand –, damit ein abgebrochener Versand nichts kaputt macht. Die Mail ist schon raus,
+     * ein Fehler wird nur geloggt (eigene Transaktion im Service).
+     */
+    private void loeseAlteFreigabenAb(boolean istGeschaeftsdokument, ProjektEmailDto dto) {
+        if (!istErstversandEinesDokuments(istGeschaeftsdokument, dto) || dto.getFreigabenAbloesenFuerDokumentId() == null) {
+            return;
+        }
+        try {
+            freigabeAbloesungService.loeseAb(dto.getFreigabenAbloesenFuerDokumentId());
+        } catch (RuntimeException e) {
+            log.warn("Alte Online-Links zu Dokument {} nicht abgelöst: {}",
+                    dto.getFreigabenAbloesenFuerDokumentId(), e.getMessage());
+        }
+    }
+
     private void merkeFreigabeEmpfaenger(String htmlBody, List<String> empfaenger) {
         try {
             freigabeEmpfaengerService.uebernehmeVersandEmpfaenger(htmlBody, empfaenger);
