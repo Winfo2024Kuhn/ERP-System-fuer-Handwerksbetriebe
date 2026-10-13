@@ -1,11 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { acquireCameraStream, getActiveCameraStream } from '../services/cameraStreamService'
+import { canvasZuBlob, gibCanvasFrei } from '../services/scanBildHilfen'
 
 /**
  * Schlanker react-webcam-Ersatz mit folgender API:
- * - getScreenshot(): liefert das aktuelle Video-Frame als JPEG-Data-URL
- *   (vergleichbar mit `Webcam.getScreenshot()` bei
- *   `forceScreenshotSourceSize` + `screenshotQuality`).
+ * - getScreenshotBlob(): liefert das aktuelle Video-Frame in voller
+ *   Auflösung als JPEG-Blob (vergleichbar mit `Webcam.getScreenshot()` bei
+ *   `forceScreenshotSourceSize` + `screenshotQuality`, aber ohne den
+ *   Umweg über eine Base64-Data-URL).
  * - video: das underlying HTMLVideoElement (fuer Live-Detection).
  *
  * Im Gegensatz zu react-webcam holt diese Komponente den MediaStream
@@ -14,7 +16,8 @@ import { acquireCameraStream, getActiveCameraStream } from '../services/cameraSt
  * nur EINMAL pro Page-Besuch, nicht pro Modal-Oeffnung.
  */
 export interface CameraHandle {
-    getScreenshot: () => string | null
+    /** Aktuelles Kamerabild als JPEG; `null`, solange das Video noch nicht läuft. */
+    getScreenshotBlob: () => Promise<Blob | null>
     readonly video: HTMLVideoElement | null
 }
 
@@ -74,17 +77,25 @@ const Camera = forwardRef<CameraHandle, CameraProps>(function Camera(
     }, [])
 
     useImperativeHandle(ref, () => ({
-        getScreenshot: () => {
+        getScreenshotBlob: async () => {
             const video = videoRef.current
             if (!video) return null
             if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null
             const canvas = document.createElement('canvas')
             canvas.width = video.videoWidth
             canvas.height = video.videoHeight
-            const ctx = canvas.getContext('2d')
-            if (!ctx) return null
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-            return canvas.toDataURL('image/jpeg', screenshotQuality)
+            try {
+                const ctx = canvas.getContext('2d')
+                if (!ctx) return null
+                // Das Bild wird hier sofort festgehalten; nur das JPEG-Kodieren läuft danach asynchron.
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+                return await canvasZuBlob(canvas, screenshotQuality)
+            } catch {
+                return null
+            } finally {
+                // iOS begrenzt den Canvas-Speicher: 4K-Zwischenbild sofort freigeben.
+                gibCanvasFrei(canvas)
+            }
         },
         get video() {
             return videoRef.current
