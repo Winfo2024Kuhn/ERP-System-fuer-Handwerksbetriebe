@@ -202,6 +202,41 @@ describe('AnfrageEditor – Reihenfolge und Webseiten-Kennzeichnung', () => {
     });
 });
 
+describe('AnfrageEditor – Haken "Beendet"', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('setzt nur den Haken und schickt keine anderen Felder mit, damit die Beschreibung erhalten bleibt', async () => {
+        const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            const antwort = (daten: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(daten) });
+            if (url.startsWith('/api/anfragen/jahre')) return antwort([2026]);
+            if (url.startsWith('/api/anfragen/freigabe-status')) return antwort({});
+            if (url.startsWith('/api/anfragen?')) return antwort({ anfragen: mockAnfragen.slice(0, 1), gesamt: 1 });
+            if (url.startsWith('/api/anfragen/1/abgeschlossen') && init?.method === 'PATCH') {
+                return antwort({ ...mockAnfragen[0], abgeschlossen: true });
+            }
+            return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const user = userEvent.setup();
+        renderAnfrageEditor();
+
+        await waitFor(() => expect(screen.getByText('Dachsanierung Musterweg 1')).toBeInTheDocument());
+        await user.click(screen.getByRole('checkbox', { name: 'Beendet' }));
+
+        await waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledWith(
+                '/api/anfragen/1/abgeschlossen?abgeschlossen=true',
+                expect.objectContaining({ method: 'PATCH' }),
+            );
+        });
+        const aufrufe = fetchMock.mock.calls as unknown as [string, RequestInit | undefined][];
+        expect(aufrufe.some(([, init]) => init?.method === 'PUT')).toBe(false);
+        expect(await screen.findByText('Anfrage als beendet markiert.')).toBeInTheDocument();
+    });
+});
+
 describe('AnfrageEditor – Pagination', () => {
     // PAGE_SIZE im AnfrageEditor ist 12 – bei 40 Treffern also 4 Seiten.
     const PAGE_SIZE = 12;
