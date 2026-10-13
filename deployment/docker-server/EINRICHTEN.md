@@ -13,6 +13,7 @@ Hintergründe und alle Einstellungen stehen im [README](README.md).
 | Immer | Datenbank, ERP und Updater laufen als Docker-Container und starten nach jedem Neustart von selbst | ERP über die Verknüpfung „ERP Handwerk“ |
 | Jede Nacht 2 Uhr | **Sicherung:** die Datenbank auf den PC, die externe Festplatte und in OneDrive, dazu alle hochgeladenen Dateien auf die Festplatte und in OneDrive | nichts |
 | Jede Nacht 3 Uhr | **Update:** neue Version holen, vorher sichern, bei Problemen automatisch zurück zur alten | nichts |
+| Alle 5 Minuten | **Docker-Wächter:** Hängt Docker Desktop (z. B. nach einem Windows-Update), startet er es neu | ERP ist höchstens ein paar Minuten weg |
 | Wenn etwas schiefgeht | Meldung im ERP für Admins (Glocke → Benachrichtigungen → „Sicherung & Updates“), auf Wunsch zusätzlich aufs Handy | Admin sieht die Meldung |
 
 Der PC muss dafür **nachts eingeschaltet** bleiben.
@@ -65,9 +66,13 @@ Der PC muss dafür **nachts eingeschaltet** bleiben.
     doppelklicken.
   - Das Skript fragt nach dem **Namen des Betriebs**, z. B. „Schreinerei Mustermann“. Er
     steht später in den Handy-Nachrichten.
-  - Es legt die `.env` mit zufälligen Passwörtern an, schaltet Standby ab, startet alles
-    und legt die Verknüpfung „ERP Handwerk“ auf den Desktop. Beim ersten Mal lädt es etwa
-    1 GB.
+  - Es legt die `.env` mit zufälligen Passwörtern an, schaltet Standby ab, setzt die
+    Nutzungszeit von Windows Update auf 6 bis 22 Uhr, startet alles, richtet den
+    Docker-Wächter ein und legt die Verknüpfung „ERP Handwerk“ auf den Desktop. Beim ersten
+    Mal lädt es etwa 1 GB.
+  - Meldet es bei der Nutzungszeit „Administratorrechte?“: von Hand einstellen unter
+    *Einstellungen → Windows Update → Erweiterte Optionen → Nutzungszeit* → „Manuell“,
+    6 bis 22 Uhr.
 
 Kommt beim ersten Start die Meldung *denied* oder *unauthorized*, ist das Image privat:
 siehe README, Abschnitt „Image privat?“.
@@ -222,6 +227,7 @@ So erfährst du als Betreuer von Problemen, auch wenn beim Kunden niemand ins ER
       `erp-updater`, `erp-netzsperre`.
 - [ ] **PC neu starten.** Nach der automatischen Anmeldung läuft das ERP wieder von selbst
       (Verknüpfung „ERP Handwerk“ öffnen).
+- [ ] In der **Aufgabenplanung** steht „ERP Handwerk Docker-Waechter“ mit Status „Bereit“.
 - [ ] Im ERP als Admin auf die **Glocke** klicken: Unter „Sicherung & Updates“ steht nichts.
 - [ ] Die Sicherung aus Schritt 6 liegt auf der Festplatte und in OneDrive (OneDrive zeigt
       den grünen Haken).
@@ -257,6 +263,14 @@ So erfährst du als Betreuer von Problemen, auch wenn beim Kunden niemand ins ER
 | „ERP-Update: Download fehlgeschlagen“ | Es wurde nichts verändert. Hat der PC Internet? Ist das Image privat, siehe README, Abschnitt „Image privat?“. Nächste Nacht kommt ein neuer Versuch. |
 | „ERP-Update ausgelassen“ | Es wurde nichts verändert. Der Text der Meldung sagt, warum: zu wenig Speicherplatz, Sicherung fehlgeschlagen oder das ERP lief schon vorher nicht sauber. |
 | „NOTFALL“ | Sofort hinschauen: README, Abschnitt „Was nachts passiert“. |
+
+Nachrichten vom Docker-Wächter und wenn das ERP im Browser nicht aufgeht:
+
+| Handy-Nachricht oder Beobachtung | Was tun |
+| --- | --- |
+| „ERP war kurz nicht erreichbar“ | Nichts. Der Docker-Wächter hat Docker Desktop neu gestartet, das ERP läuft wieder. |
+| „ERP nicht erreichbar“ (dringend) | Der automatische Neustart hat nicht geholfen. Der Wächter versucht es weiter, nach dem zweiten Fehlschlag nur noch alle 4 Stunden, und schickt keine weitere Nachricht. Am PC nachsehen: Zeigt Docker Desktop eine Frage (Lizenz, Anmeldung)? `docker compose ps`, Log `C:\ERP-Handwerk\logs\docker-waechter.log`. Hilft das nicht, den PC neu starten. |
+| ERP lässt sich im Browser nicht öffnen | Bis zu 10 Minuten warten, der Docker-Wächter startet Docker Desktop selbst neu. Eilt es: im Terminal `docker desktop restart`. |
 
 ### Eine gelöschte Datei zurückholen
 
