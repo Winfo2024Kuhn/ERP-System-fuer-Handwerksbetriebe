@@ -2,6 +2,7 @@ import { Search, FileText, X, Plus, Star, Eye } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../../types';
 import type { AusgangsGeschaeftsDokumentTyp } from '../../types';
+import { htmlZuEinzeiler, stripHtmlTags, unescapeHtmlEntities } from '../../lib/htmlSanitizer';
 
 /** Minimal-Form eines Textbausteins, wie ihn der Picker braucht. */
 export interface TextbausteinPickerItem {
@@ -13,16 +14,9 @@ export interface TextbausteinPickerItem {
     dokumenttypen?: string[];
 }
 
-function stripHtml(html: string): string {
-    let text = html;
-    let prev: string;
-    do { prev = text; text = text.replace(/<[^>]*>/g, ''); } while (text !== prev);
-    return text.trim();
-}
-
 function HoverPreview({ text, visible, anchorRect }: { text: string; visible: boolean; anchorRect: DOMRect | null }) {
     if (!visible || !text || !anchorRect) return null;
-    const plain = stripHtml(text);
+    const plain = unescapeHtmlEntities(stripHtmlTags(text)).trim();
     if (!plain) return null;
 
     const viewportH = window.innerHeight;
@@ -147,7 +141,7 @@ export function TextbausteinPickerModal<T extends TextbausteinPickerItem>({
                     </span>
                     {tb.beschreibung && (
                         <span className="text-xs text-slate-400 block truncate mt-0.5">
-                            {stripHtml(tb.beschreibung).slice(0, 80)}
+                            {htmlZuEinzeiler(tb.beschreibung).slice(0, 80)}
                         </span>
                     )}
                 </div>

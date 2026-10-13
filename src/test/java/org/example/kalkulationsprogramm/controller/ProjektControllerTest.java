@@ -1043,4 +1043,90 @@ class ProjektControllerTest {
 
                 verify(projektNotizBildRepository).delete(bild);
         }
+
+        // ==================== Manuell erfasste Materialkosten ====================
+
+        @Test
+        void fuegeMaterialkostenHinzu_SchicktGenauEinenEintragAnDenService() throws Exception {
+                ProjektResponseDto antwort = new ProjektResponseDto();
+                antwort.setId(42L);
+                when(projektManagementService.fuegeMaterialkostenHinzu(eq(42L),
+                                org.mockito.ArgumentMatchers.any())).thenReturn(antwort);
+
+                mockMvc.perform(post("/api/projekte/42/materialkosten")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"beschreibung\":\"Kleinmaterial\",\"betrag\":12.5,\"monat\":10,"
+                                                + "\"lieferantId\":7,\"rechnungsnummer\":\"RE-1\"}"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(42));
+
+                var captor = org.mockito.ArgumentCaptor.forClass(
+                                org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenErfassenDto.class);
+                verify(projektManagementService).fuegeMaterialkostenHinzu(eq(42L), captor.capture());
+                org.junit.jupiter.api.Assertions.assertEquals("Kleinmaterial", captor.getValue().getBeschreibung());
+                org.junit.jupiter.api.Assertions.assertEquals(0,
+                                captor.getValue().getBetrag().compareTo(new java.math.BigDecimal("12.5")));
+                org.junit.jupiter.api.Assertions.assertEquals(7L, captor.getValue().getLieferantId());
+                org.junit.jupiter.api.Assertions.assertEquals("RE-1", captor.getValue().getRechnungsnummer());
+        }
+
+        @Test
+        void fuegeMaterialkostenHinzu_UngueltigeEingabeGibt400MitMeldung() throws Exception {
+                when(projektManagementService.fuegeMaterialkostenHinzu(eq(42L), org.mockito.ArgumentMatchers.any()))
+                                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte einen Betrag angeben."));
+
+                mockMvc.perform(post("/api/projekte/42/materialkosten")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"beschreibung\":\"Kleinmaterial\"}"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.message").value("Bitte einen Betrag angeben."));
+        }
+
+        @Test
+        void fuegeMaterialkostenHinzu_UnbekanntesProjektGibt404MitMeldung() throws Exception {
+                when(projektManagementService.fuegeMaterialkostenHinzu(eq(999L), org.mockito.ArgumentMatchers.any()))
+                                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+
+                mockMvc.perform(post("/api/projekte/999/materialkosten")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("{\"beschreibung\":\"Kleinmaterial\",\"betrag\":1}"))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value(ProjektManagementService.PROJEKT_NICHT_GEFUNDEN));
+        }
+
+        @Test
+        void materialkostenListeErsetzenGibtEsNichtMehr() throws Exception {
+                // Früher ersetzte PATCH die komplette Liste – und löschte so alle älteren Einträge.
+                mockMvc.perform(patch("/api/projekte/42/materialkosten")
+                                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                                .content("[]"))
+                                .andExpect(status().isMethodNotAllowed());
+
+                org.mockito.Mockito.verifyNoInteractions(projektManagementService);
+        }
+
+        @Test
+        void entferneMaterialkosten_LiefertDasAktualisierteProjekt() throws Exception {
+                ProjektResponseDto antwort = new ProjektResponseDto();
+                antwort.setId(42L);
+                when(projektManagementService.entferneMaterialkosten(42L, 10L)).thenReturn(antwort);
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/42/materialkosten/10"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.id").value(42));
+        }
+
+        @Test
+        void entferneMaterialkosten_UnbekannterEintragGibt404MitMeldung() throws Exception {
+                when(projektManagementService.entferneMaterialkosten(42L, Long.MAX_VALUE))
+                                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND,
+                                                "Diese Materialkosten gibt es in diesem Projekt nicht mehr."));
+
+                mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .delete("/api/projekte/42/materialkosten/" + Long.MAX_VALUE))
+                                .andExpect(status().isNotFound())
+                                .andExpect(jsonPath("$.message").value("Diese Materialkosten gibt es in diesem Projekt nicht mehr."));
+        }
 }

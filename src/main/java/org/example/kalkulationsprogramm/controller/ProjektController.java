@@ -248,16 +248,11 @@ public class ProjektController {
         return ResponseEntity.ok(projektManagementService.setzeAbgeschlossen(projektID, abgeschlossen));
     }
 
-    @PatchMapping(value = "/{projektID}/materialkosten")
-    public ResponseEntity<ProjektResponseDto> aktualisiereMaterialkosten(@PathVariable Long projektID,
-            @RequestBody List<MaterialkostenErfassenDto> materialkosten) {
-        try {
-            ProjektResponseDto dto = projektManagementService.aktualisiereMaterialkosten(projektID, materialkosten);
-            return ResponseEntity.ok(dto);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
-        }
+    /** Einen manuell erfassten Materialkosten-Eintrag anhängen; vorhandene bleiben stehen. */
+    @PostMapping(value = "/{projektID}/materialkosten")
+    public ResponseEntity<ProjektResponseDto> fuegeMaterialkostenHinzu(@PathVariable Long projektID,
+            @RequestBody MaterialkostenErfassenDto materialkosten) {
+        return ResponseEntity.ok(projektManagementService.fuegeMaterialkostenHinzu(projektID, materialkosten));
     }
 
     @PatchMapping(value = "/{projektID}/kurzbeschreibung", consumes = MediaType.TEXT_PLAIN_VALUE)
@@ -315,13 +310,7 @@ public class ProjektController {
     @DeleteMapping(value = "/{projektID}/materialkosten/{materialID}")
     public ResponseEntity<ProjektResponseDto> entferneMaterialkosten(@PathVariable Long projektID,
             @PathVariable Long materialID) {
-        try {
-            ProjektResponseDto dto = projektManagementService.entferneMaterialkosten(projektID, materialID);
-            return ResponseEntity.ok(dto);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
-        }
+        return ResponseEntity.ok(projektManagementService.entferneMaterialkosten(projektID, materialID));
     }
 
     @PostMapping("/{projektID}/produktkategorien")

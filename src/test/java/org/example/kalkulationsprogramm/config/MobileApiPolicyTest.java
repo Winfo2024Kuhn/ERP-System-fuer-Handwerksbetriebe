@@ -97,7 +97,7 @@ class MobileApiPolicyTest {
     @CsvSource({
             "POST, /api/projekte/preise-nachtragen",
             "POST, /api/projekte", "PUT, /api/projekte/42", "DELETE, /api/projekte/42",
-            "PATCH, /api/projekte/42/materialkosten", "PATCH, /api/projekte/42/abgeschlossen",
+            "POST, /api/projekte/42/materialkosten", "PATCH, /api/projekte/42/abgeschlossen",
             "DELETE, /api/projekte/42/dokumente/7",
             "POST, /api/anfragen", "PUT, /api/anfragen/42", "DELETE, /api/anfragen/42",
             "POST, /api/anfragen/42/emails", "DELETE, /api/anfragen/42/dokumente/7",
