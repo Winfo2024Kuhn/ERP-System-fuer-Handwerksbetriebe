@@ -72,7 +72,9 @@ Im Projekt (**Projektmanagement → Projekte**) zeigt der Reiter „Zeiten“ al
 Im Projekt (**Projektmanagement → Projekte**) Reiter „Material“:
 
 - **„Kosten erfassen“**: Fenster „Materialkosten erfassen“ mit „Beschreibung“ (z. B. Kleinmaterial), „Rechnungsnummer (Optional)“, „Betrag (€)“ und „Lieferant (Optional)“, dann „Speichern“.
-- **„Artikel aus Lager“**: Artikel aus der Artikelliste suchen, ankreuzen, Menge eintragen und mit „Abschließen“ übernehmen. Stückware nur in ganzen Stück. Einen Lagerbestand führt das Programm nicht – es geht nur um die Kosten. Mit dem Papierkorb lässt sich ein Artikel wieder aus dem Projekt entfernen.
+- **„Artikel aus Lager“**: Artikel aus der Artikelliste suchen, ankreuzen, Menge eintragen und mit „Abschließen“ übernehmen. Stückware nur in ganzen Stück. Einen Lagerbestand führt das Programm nicht – es geht nur um die Kosten.
+
+Einträge in beiden Listen lassen sich über den Papierkorb am Zeilenende („Aus dem Projekt entfernen“) wieder entfernen.
 
 Lieferantenrechnungen, die dem Projekt zugeordnet sind, stehen im Reiter „Geschäftsdokumente“ und zählen ebenfalls zum Material.
 
