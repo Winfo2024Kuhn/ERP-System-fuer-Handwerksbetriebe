@@ -13,7 +13,7 @@ import lombok.Setter;
 /**
  * Alle Stammdaten eines Artikels zum Ändern. Es ist ein vollständiges Ersetzen: Was fehlt, wird geleert, nur der Produktname ist Pflicht.
  * Die Abmessungen gelten nur für Halbzeug ({@code ArtikelWerkstoffe}), bei anderen Artikeln werden sie ignoriert. Texte für Angebote,
- * Aufschlag, Lieferanten, Preise, Gewicht und Eignung zum Verzinken haben eigene Endpunkte bzw. bleiben unberührt.
+ * Aufschlag, Lieferanten, Preise und Gewicht haben eigene Endpunkte bzw. bleiben unberührt.
  */
 @Getter
 @Setter
@@ -38,6 +38,11 @@ public class ArtikelStammdatenRequest {
     private Fertigungszustand fertigungszustand;
     private String massnorm;
     private String werkstoffnorm;
+
+    /** Eignung zum Feuerverzinken nur für diesen Artikel festlegen; leer = vom Werkstoff übernehmen. */
+    private Boolean verzinkungsgeeignet;
+    /** Eignung zum Pulverbeschichten nur für diesen Artikel festlegen; leer = vom Werkstoff übernehmen. */
+    private Boolean pulverbeschichtungsgeeignet;
 
     private BigDecimal durchmesser;
     private BigDecimal hoehe;

@@ -337,4 +337,37 @@ class ArtikelStammdatenServiceTest {
 
         assertThatThrownBy(() -> service.aktualisiereStammdaten(999L, anfrage())).isInstanceOf(NotFoundException.class);
     }
+
+    @Test
+    void eignungFuerVerzinkenUndPulvernLaesstSichProArtikelFestlegenOderVomWerkstoffUebernehmen() {
+        gefunden();
+        speichernAktiv();
+        Werkstoff stahl = new Werkstoff();
+        stahl.setVerzinkungsgeeignet(true);
+        stahl.setPulverbeschichtungsgeeignet(false);
+        when(werkstoffRepository.findById(2L)).thenReturn(Optional.of(stahl));
+        ArtikelStammdatenRequest r = anfrage();
+        r.setWerkstoffId(2L);
+
+        // Ohne Angabe gilt der Werkstoff (Verzinken ja, Pulvern nein)
+        Artikel e = service.aktualisiereStammdaten(7L, r);
+        assertThat(e.getVerzinkungsgeeignet()).isNull();
+        assertThat(e.getPulverbeschichtungsgeeignet()).isNull();
+        assertThat(e.istVerzinkungsgeeignet()).isTrue();
+        assertThat(e.istPulverbeschichtungsgeeignet()).isFalse();
+
+        // Für diesen Artikel festgelegt: überstimmt den Werkstoff, in beide Richtungen
+        r.setVerzinkungsgeeignet(false);
+        r.setPulverbeschichtungsgeeignet(true);
+        e = service.aktualisiereStammdaten(7L, r);
+        assertThat(e.istVerzinkungsgeeignet()).isFalse();
+        assertThat(e.istPulverbeschichtungsgeeignet()).isTrue();
+
+        // Wieder leer = zurück zum Werkstoff
+        r.setVerzinkungsgeeignet(null);
+        r.setPulverbeschichtungsgeeignet(null);
+        e = service.aktualisiereStammdaten(7L, r);
+        assertThat(e.istVerzinkungsgeeignet()).isTrue();
+        assertThat(e.istPulverbeschichtungsgeeignet()).isFalse();
+    }
 }

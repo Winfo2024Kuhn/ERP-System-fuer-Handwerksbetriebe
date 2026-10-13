@@ -27,7 +27,7 @@ const sendeBody = () => JSON.parse(puts()[0][1].body as string);
 beforeEach(() => {
     fetcher = vi.fn(async (url: string, init?: RequestInit) => {
         if (url.endsWith('/filteroptionen')) return antwort({ profilform: [{ wert: 'RUNDROHR', name: 'Rundrohr' }], herstellverfahren: [], fertigungszustand: [] });
-        if (url.endsWith('/werkstoffe/details')) return antwort([{ id: 4, name: 'Baustahl' }]);
+        if (url.endsWith('/werkstoffe/details')) return antwort([{ id: 4, name: 'Baustahl', verzinkungsgeeignet: true, pulverbeschichtungsgeeignet: false }]);
         if (init?.method === 'PUT') return antwort({ id: 7 });
         return antwort({});
     });
@@ -102,16 +102,16 @@ describe('ArtikelStammdatenForm', () => {
         expect(onGespeichert).not.toHaveBeenCalled();
     });
 
-    it('warnt bei geänderter Einheit, dass Mengen nicht umgerechnet werden', async () => {
+    it('zeigt bei geänderter Einheit keine Meldung zu Lager oder Leistungen, die es hier nicht gibt', async () => {
         const user = userEvent.setup();
         zeige();
         await screen.findByLabelText('Produktname *');
-        expect(screen.queryByRole('note')).toBeNull();
 
         await user.click(screen.getAllByRole('combobox')[0]);
         await user.click(await screen.findByRole('option', { name: 'Kilogramm' }));
 
-        expect(await screen.findByRole('note')).toHaveTextContent('nicht umgerechnet');
+        expect(screen.queryByRole('note')).toBeNull();
+        expect(screen.queryByText(/Lager|Leistungen/)).toBeNull();
     });
 
     it('übernimmt die gewählte Kategorie und lässt sie entfernen', async () => {
@@ -177,5 +177,42 @@ describe('ArtikelStammdatenForm', () => {
     it('begrenzt die interne Beschreibung auf 255 Zeichen wie die Datenbank', async () => {
         zeige();
         expect(await screen.findByLabelText('Beschreibung (intern)')).toHaveAttribute('maxlength', '255');
+    });
+
+    it('Verzinken und Pulvern: Standard ist „vom Werkstoff übernehmen“ (mit dessen Wert), gesendet wird dann nichts Eigenes', async () => {
+        const user = userEvent.setup();
+        zeige();
+        await screen.findByLabelText('Produktname *');
+        await user.click(screen.getByRole('combobox', { name: 'Feuerverzinken' }));
+        expect(await screen.findByRole('option', { name: 'Vom Werkstoff übernehmen (geeignet)' })).toBeVisible();
+        await user.keyboard('{Escape}');
+        await user.click(screen.getByRole('combobox', { name: 'Pulverbeschichten' }));
+        expect(await screen.findByRole('option', { name: 'Vom Werkstoff übernehmen (nicht geeignet)' })).toBeVisible();
+        await user.keyboard('{Escape}');
+
+        await user.click(screen.getByRole('button', { name: /^Speichern/ }));
+        await waitFor(() => expect(puts()).toHaveLength(1));
+        expect(sendeBody()).toMatchObject({ verzinkungsgeeignet: null, pulverbeschichtungsgeeignet: null });
+    });
+
+    it('Verzinken und Pulvern lassen sich für diesen Artikel festlegen, auch gegen den Werkstoff', async () => {
+        const user = userEvent.setup();
+        zeige();
+        await screen.findByLabelText('Produktname *');
+        await user.click(screen.getByRole('combobox', { name: 'Feuerverzinken' }));
+        await user.click(await screen.findByRole('option', { name: 'Nicht geeignet' }));
+        await user.click(screen.getByRole('combobox', { name: 'Pulverbeschichten' }));
+        await user.click(await screen.findByRole('option', { name: 'Geeignet' }));
+
+        await user.click(screen.getByRole('button', { name: /^Speichern/ }));
+        await waitFor(() => expect(puts()).toHaveLength(1));
+        expect(sendeBody()).toMatchObject({ verzinkungsgeeignet: false, pulverbeschichtungsgeeignet: true });
+    });
+
+    it('ein schon festgelegter Wert ist vorbelegt', async () => {
+        const festgelegt = { ...artikel, verzinkungsgeeignetEigen: false, pulverbeschichtungsgeeignetEigen: true };
+        render(<ToastProvider><ArtikelStammdatenForm artikel={festgelegt} onGespeichert={vi.fn()} onAbbrechen={vi.fn()} /></ToastProvider>);
+        expect(await screen.findByRole('combobox', { name: 'Feuerverzinken' })).toHaveTextContent('Nicht geeignet');
+        expect(screen.getByRole('combobox', { name: 'Pulverbeschichten' })).toHaveTextContent('Geeignet');
     });
 });

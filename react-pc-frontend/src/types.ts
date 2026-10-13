@@ -390,6 +390,9 @@ export interface Artikel {
   // Eignungen fuer die Kalkulation
   verzinkungsgeeignet?: boolean;
   pulverbeschichtungsgeeignet?: boolean;
+  /** Nur für diesen Artikel festgelegte Eignung; leer = vom Werkstoff übernommen. */
+  verzinkungsgeeignetEigen?: boolean | null;
+  pulverbeschichtungsgeeignetEigen?: boolean | null;
   beschichtungshinweis?: string;
 
   // Angebotsfelder - was der Kunde auf Angebot/Rechnung liest

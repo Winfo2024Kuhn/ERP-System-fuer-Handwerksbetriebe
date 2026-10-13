@@ -32,6 +32,7 @@ Auf der Artikelseite (Klick auf eine Zeile in **Vorlagen & Stammdaten → Artike
 - „Kategorie“ (im Auswahlfenster lassen sich auch neue Kategorien anlegen),
 - „Verrechnungseinheit“, „Verpackungseinheit (Menge)“, „Preiseinheit (Text)“ und „Werkstoff“,
 - „Form“, „Herstellverfahren“, „Fertigungszustand“, „Maßnorm“ und „Werkstoffnorm“,
+- „Feuerverzinken“ und „Pulverbeschichten“: ob das Teil dafür **geeignet** ist. Standard ist „Vom Werkstoff übernehmen“; für diesen einen Artikel lässt sich „Geeignet“ oder „Nicht geeignet“ festlegen. Die Artikelseite zeigt dahinter, woher die Eignung kommt,
 - bei Rohren, Profilen und Blechen die Maße (Durchmesser, Höhe, Breite, Wandstärke, Stegdicke, Flanschdicke) und die „Übliche Länge (mm)“.
 
 Gut zu wissen:
@@ -39,7 +40,7 @@ Gut zu wissen:
 - Speichern ersetzt alle diese Angaben. Was man leert, ist danach leer; nur der Produktname muss bleiben.
 - Artikelnummer und EAN dürfen nur bei einem Artikel vorkommen. Gibt es sie schon, meldet das Programm es mit Klartext. Die EAN wird auf die richtige Prüfziffer kontrolliert (erlaubt sind 8, 12, 13 oder 14 Ziffern).
 - Die Maske merkt sich den Stand, mit dem sie geladen wurde. Hat jemand den Artikel inzwischen geändert, wird das Speichern abgelehnt („Bitte die Seite neu laden“), damit keine Änderung unbemerkt überschrieben wird.
-- Eine andere Einheit rechnet vorhandene Mengen **nicht** um (Leistungen, Angebote). Die Maske weist darauf hin. Bestehende Angebote und Rechnungen bleiben unverändert.
+- Eine andere Einheit rechnet bereits eingetragene Mengen **nicht** um. Bestehende Angebote und Rechnungen bleiben unverändert. Das (i) an der Einheit erklärt es.
 - Nicht geändert werden Angebotstexte und Aufschlag („Angebotsfelder“), Lieferanten, Preise und Dokumente. Dafür gibt es weiter die eigenen Bereiche.
 - Die „Beschreibung (intern)“ darf höchstens 255 Zeichen lang sein.
 - Die Suche findet den Artikel nach dem Ändern unter den neuen Angaben, auch über die EAN.

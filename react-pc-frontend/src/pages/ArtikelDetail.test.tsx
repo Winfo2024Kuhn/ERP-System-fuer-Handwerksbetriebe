@@ -511,4 +511,19 @@ describe('ArtikelDetail', () => {
         expect(screen.queryByTestId('artikel-stammdaten-form')).toBeNull();
         expect(screen.getByRole('button', { name: /Stammdaten bearbeiten/ })).toBeVisible();
     });
+
+    it('zeigt bei der Eignung, ob sie vom Werkstoff kommt oder für den Artikel festgelegt ist', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve(url.includes('/dokumente') ? [] : {
+                ...detailAntwort,
+                artikel: { ...detailAntwort.artikel, verzinkungsgeeignet: false, verzinkungsgeeignetEigen: false, pulverbeschichtungsgeeignet: true, pulverbeschichtungsgeeignetEigen: null },
+            }),
+        })));
+        renderSeite();
+
+        const quellen = await screen.findAllByTestId('eignung-quelle');
+        expect(quellen.map(q => q.textContent?.trim())).toEqual(['(für diesen Artikel festgelegt)', '(vom Werkstoff)']);
+        expect(screen.getByText('nicht möglich')).toBeVisible();
+    });
 });

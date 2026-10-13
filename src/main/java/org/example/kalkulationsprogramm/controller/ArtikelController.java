@@ -175,6 +175,8 @@ public class ArtikelController {
                     map.put("id", w.getId());
                     map.put("name", w.getName());
                     map.put("werkstattname", w.getWerkstattname());
+                    map.put("verzinkungsgeeignet", w.isVerzinkungsgeeignet());
+                    map.put("pulverbeschichtungsgeeignet", w.isPulverbeschichtungsgeeignet());
                     return map;
                 })
                 .sorted(Comparator.comparing(m -> (String) m.get("name"), String.CASE_INSENSITIVE_ORDER))
@@ -294,8 +296,12 @@ public class ArtikelController {
         dto.setWerkstoffnorm(artikel.getWirksameWerkstoffnorm());
         dto.setVerzinkungsgeeignet(artikel.istVerzinkungsgeeignet());
         dto.setPulverbeschichtungsgeeignet(artikel.istPulverbeschichtungsgeeignet());
+        dto.setVerzinkungsgeeignetEigen(artikel.getVerzinkungsgeeignet());
+        dto.setPulverbeschichtungsgeeignetEigen(artikel.getPulverbeschichtungsgeeignet());
         if (artikel.getWerkstoff() != null) {
             dto.setBeschichtungshinweis(artikel.getWerkstoff().getBeschichtungshinweis());
+            dto.setWerkstoffVerzinkungsgeeignet(artikel.getWerkstoff().isVerzinkungsgeeignet());
+            dto.setWerkstoffPulverbeschichtungsgeeignet(artikel.getWerkstoff().isPulverbeschichtungsgeeignet());
         }
         if (preis != null) {
             dto.setPreis(preis.getPreis());

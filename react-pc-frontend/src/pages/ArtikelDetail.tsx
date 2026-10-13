@@ -327,8 +327,8 @@ export default function ArtikelDetail() {
                     Was mit diesem Werkstoff möglich ist — wichtig für die Kalkulation.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
-                    <Eignung ok={!!artikel.verzinkungsgeeignet} text="Feuerverzinken" />
-                    <Eignung ok={!!artikel.pulverbeschichtungsgeeignet} text="Pulverbeschichten" />
+                    <Eignung ok={!!artikel.verzinkungsgeeignet} text="Feuerverzinken" quelle={eignungsQuelle(artikel.verzinkungsgeeignetEigen)} />
+                    <Eignung ok={!!artikel.pulverbeschichtungsgeeignet} text="Pulverbeschichten" quelle={eignungsQuelle(artikel.pulverbeschichtungsgeeignetEigen)} />
                 </div>
                 {artikel.beschichtungshinweis && (
                     <p className="text-sm text-slate-600 mt-3">{artikel.beschichtungshinweis}</p>
@@ -563,7 +563,10 @@ function Datenfeld({ label, wert, hinweis }: { label: string; wert?: string | nu
 }
 
 /** Eignung mit Symbol UND Text - Farbe allein darf die Aussage nicht tragen. */
-function Eignung({ ok, text }: { ok: boolean; text: string }) {
+/** Woher die Eignung kommt: vom Werkstoff oder für diesen Artikel festgelegt. */
+const eignungsQuelle = (eigen?: boolean | null) => (eigen == null ? "vom Werkstoff" : "für diesen Artikel festgelegt");
+
+function Eignung({ ok, text, quelle }: { ok: boolean; text: string; quelle?: string }) {
     return (
         <div className={`flex items-center gap-2 rounded-lg border px-4 py-3 ${
             ok ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"
@@ -574,7 +577,8 @@ function Eignung({ ok, text }: { ok: boolean; text: string }) {
             <div>
                 <p className={`text-sm font-semibold ${ok ? "text-emerald-800" : "text-slate-700"}`}>{text}</p>
                 <p className={`text-xs ${ok ? "text-emerald-700" : "text-slate-500"}`}>
-                    {ok ? "möglich" : "nicht möglich"}
+                    <span>{ok ? "möglich" : "nicht möglich"}</span>
+                    {quelle && <span className="text-slate-500" data-testid="eignung-quelle"> ({quelle})</span>}
                 </p>
             </div>
         </div>

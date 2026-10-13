@@ -253,6 +253,9 @@ public class ArtikelService implements ArtikelServiceContract {
         artikel.setFertigungszustand(r.getFertigungszustand());
         artikel.setMassnorm(text(r.getMassnorm(), 64, "Die Maßnorm"));
         artikel.setWerkstoffnorm(text(r.getWerkstoffnorm(), 64, "Die Werkstoffnorm"));
+        // Leer = vom Werkstoff übernehmen; sonst gilt die Eignung nur für diesen Artikel
+        artikel.setVerzinkungsgeeignet(r.getVerzinkungsgeeignet());
+        artikel.setPulverbeschichtungsgeeignet(r.getPulverbeschichtungsgeeignet());
 
         // Maße gibt es nur bei Halbzeug; andere Artikel ignorieren sie
         if (artikel instanceof ArtikelWerkstoffe aw) {

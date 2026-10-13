@@ -59,6 +59,10 @@ test('Artikelseite: Stammdaten ändern und Fehler vom Server verstehen', async (
     await expect(page.getByText('Was passiert im Hintergrund?')).toBeVisible();
     await page.keyboard.press('Escape');
 
+    // Eignung: Standard ist der Werkstoff; keine Meldung zu Lager oder Leistungen (gibt es in diesem Stand nicht)
+    await expect(form.getByRole('combobox', { name: 'Feuerverzinken' })).toContainText('Vom Werkstoff übernehmen');
+    await expect(form.getByRole('note')).toHaveCount(0);
+
     // doppelte Artikelnummer: klare Meldung, nichts gespeichert
     await form.getByLabel('Artikelnummer').fill('ST-DOPPELT');
     await form.getByRole('button', { name: /^Speichern/ }).click();
@@ -70,12 +74,14 @@ test('Artikelseite: Stammdaten ändern und Fehler vom Server verstehen', async (
     await form.getByLabel('Artikelnummer').fill('ST-RR-048');
     await form.getByLabel('EAN / Strichcode').fill('4006 3813 33931');
     await form.getByLabel('Durchmesser (mm)').fill('48,3');
+    await form.getByRole('combobox', { name: 'Feuerverzinken' }).click();
+    await page.getByRole('option', { name: 'Nicht geeignet' }).click();
     await form.getByRole('button', { name: /^Speichern/ }).click();
 
     await expect(page.getByText('Die Stammdaten sind gespeichert.')).toBeVisible();
     await expect(page.getByTestId('artikel-stammdaten-form')).toHaveCount(0);
     expect(mit.stammdaten).toHaveLength(1);
     expect(mit.stammdaten[0]).toMatchObject({
-        version: 3, produktname: 'Rundrohr 48,3 x 2,6', artikelnummer: 'ST-RR-048', ean: '4006381333931', durchmesser: 48.3, stegdicke: null, werkstoffId: 4,
+        version: 3, produktname: 'Rundrohr 48,3 x 2,6', artikelnummer: 'ST-RR-048', ean: '4006381333931', durchmesser: 48.3, stegdicke: null, werkstoffId: 4, verzinkungsgeeignet: false, pulverbeschichtungsgeeignet: null,
     });
 });

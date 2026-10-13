@@ -112,6 +112,12 @@ public class ArtikelResponseDto {
     private boolean verzinkungsgeeignet;
     /** Pulverbeschichten moeglich. */
     private boolean pulverbeschichtungsgeeignet;
+    /** Nur für diesen Artikel festgelegte Eignung (leer = vom Werkstoff übernommen). */
+    private Boolean verzinkungsgeeignetEigen;
+    private Boolean pulverbeschichtungsgeeignetEigen;
+    /** Was der Werkstoff vorgibt (leer = der Artikel hat keinen Werkstoff). */
+    private Boolean werkstoffVerzinkungsgeeignet;
+    private Boolean werkstoffPulverbeschichtungsgeeignet;
     /** Erklaerung, warum eine Beschichtung geht oder nicht. */
     private String beschichtungshinweis;
 

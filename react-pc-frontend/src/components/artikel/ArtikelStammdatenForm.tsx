@@ -25,6 +25,16 @@ const VERRECHNUNGSEINHEITEN = [
 
 const KEINE = "";
 
+/** Eignung für ein Verfahren: vom Werkstoff übernehmen (Standard) oder für diesen Artikel festlegen. */
+type Eignungswahl = "UEBERNEHMEN" | "JA" | "NEIN";
+const wahlAus = (eigen?: boolean | null): Eignungswahl => (eigen == null ? "UEBERNEHMEN" : eigen ? "JA" : "NEIN");
+const wertAus = (wahl: Eignungswahl): boolean | null => (wahl === "UEBERNEHMEN" ? null : wahl === "JA");
+const eignungsOptionen = (werkstoffWert?: boolean) => [
+    { value: "UEBERNEHMEN", label: werkstoffWert == null ? "Vom Werkstoff übernehmen" : `Vom Werkstoff übernehmen (${werkstoffWert ? "geeignet" : "nicht geeignet"})` },
+    { value: "JA", label: "Geeignet" },
+    { value: "NEIN", label: "Nicht geeignet" },
+];
+
 const zahlText = (w?: number | null) => (w == null ? "" : formatDecimalInput(w));
 const einheitName = (e: Artikel["verrechnungseinheit"]) => (typeof e === "string" ? e : e?.name ?? "");
 
@@ -65,6 +75,9 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
     const [kategorieId, setKategorieId] = useState<number | null>(artikel.kategorieId ?? null);
     const [kategorieName, setKategorieName] = useState(artikel.kategoriePfad ?? "");
     const [werkstoffId, setWerkstoffId] = useState(artikel.werkstoffId != null ? String(artikel.werkstoffId) : KEINE);
+    // Eignung für die Oberflächenbehandlung: vom Werkstoff übernehmen (Standard) oder für diesen Artikel festlegen
+    const [verzinken, setVerzinken] = useState<Eignungswahl>(wahlAus(artikel.verzinkungsgeeignetEigen));
+    const [pulvern, setPulvern] = useState<Eignungswahl>(wahlAus(artikel.pulverbeschichtungsgeeignetEigen));
     const [profilform, setProfilform] = useState(artikel.profilform?.name ?? KEINE);
     const [herstellverfahren, setHerstellverfahren] = useState(artikel.herstellverfahren?.name ?? KEINE);
     const [fertigungszustand, setFertigungszustand] = useState(artikel.fertigungszustand?.name ?? KEINE);
@@ -77,7 +90,7 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
     const [laenge, setLaenge] = useState(zahlText(artikel.standardlaenge));
 
     const [optionen, setOptionen] = useState<Filteroptionen | null>(null);
-    const [werkstoffe, setWerkstoffe] = useState<{ id: number; name: string }[]>([]);
+    const [werkstoffe, setWerkstoffe] = useState<{ id: number; name: string; verzinkungsgeeignet?: boolean; pulverbeschichtungsgeeignet?: boolean }[]>([]);
     const [zeigeKategorien, setZeigeKategorien] = useState(false);
     const [speichert, setSpeichert] = useState(false);
     const [fehler, setFehler] = useState("");
@@ -103,7 +116,7 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
         return [{ value: KEINE, label: "– kein Werkstoff –" }, ...liste];
     }, [werkstoffe, werkstoffId, artikel.werkstoffName]);
 
-    const einheitGeaendert = einheit !== einheitName(artikel.verrechnungseinheit);
+    const werkstoffEignung = useMemo(() => werkstoffe.find(w => String(w.id) === werkstoffId), [werkstoffe, werkstoffId]);
 
     const speichern = async () => {
         setFehler("");
@@ -140,6 +153,8 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
                     fertigungszustand: fertigungszustand || null,
                     massnorm: massnorm.trim() || null,
                     werkstoffnorm: werkstoffnorm.trim() || null,
+                    verzinkungsgeeignet: wertAus(verzinken),
+                    pulverbeschichtungsgeeignet: wertAus(pulvern),
                     durchmesser: v.durchmesser, hoehe: v.hoehe, breite: v.breite,
                     wandstaerke: v.wandstaerke, stegdicke: v.stegdicke, flanschdicke: v.flanschdicke,
                     standardlaenge: v.laenge,
@@ -216,9 +231,9 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
                             <Label>Verrechnungseinheit</Label>
                             <InfoButton titel="Verrechnungseinheit">
                                 <p className="font-medium text-slate-800">Was passiert im Hintergrund?</p>
-                                <p>Mit dieser Einheit wird der Artikel eingekauft, verkauft und gerechnet. Das Programm rechnet vorhandene Mengen <strong>nicht</strong> um.</p>
+                                <p>Mit dieser Einheit wird der Artikel eingekauft, verkauft und gerechnet. Das Programm rechnet bereits eingetragene Mengen <strong>nicht</strong> um.</p>
                                 <p className="mt-2 font-medium text-slate-800">Was bewirkt das?</p>
-                                <p>Neue Angebote und Rechnungen nutzen die neue Einheit. Bestehende Dokumente und bereits gebuchte Mengen bleiben, wie sie sind.</p>
+                                <p>Neue Angebote und Rechnungen nutzen die neue Einheit. Bestehende Dokumente bleiben, wie sie sind.</p>
                             </InfoButton>
                         </div>
                         <Select options={VERRECHNUNGSEINHEITEN} value={einheit} onChange={setEinheit} />
@@ -239,11 +254,25 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
                         <div className="flex items-center gap-1"><Label>Werkstoff</Label></div>
                         <Select options={werkstoffOptionen} value={werkstoffId} onChange={setWerkstoffId} />
                     </div>
-                    {einheitGeaendert && (
-                        <p role="note" className="md:col-span-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                            Die Einheit ändert sich. Vorhandene Mengen im Lager, in Leistungen und in Angeboten werden <strong>nicht umgerechnet</strong>, sie gelten dann in der neuen Einheit.
-                        </p>
-                    )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg border border-slate-100 bg-slate-50 p-4">
+                    <div className="space-y-1.5">
+                        <div className="flex items-center gap-1">
+                            <Label>Feuerverzinken</Label>
+                            <InfoButton titel="Eignung zur Oberflächenbehandlung">
+                                <p className="font-medium text-slate-800">Was passiert im Hintergrund?</p>
+                                <p>Standardmäßig gilt, was beim Werkstoff steht. Hier lässt sich das für <strong>diesen einen Artikel</strong> überstimmen.</p>
+                                <p className="mt-2 font-medium text-slate-800">Was bewirkt das?</p>
+                                <p>Es legt nur fest, ob das Teil verzinkt oder pulverbeschichtet werden <strong>kann</strong>. Die Eignung erscheint auf der Artikelseite und in der Artikelsuche als Filter. Preise ändern sich dadurch nicht.</p>
+                            </InfoButton>
+                        </div>
+                        <Select aria-label="Feuerverzinken" options={eignungsOptionen(werkstoffEignung?.verzinkungsgeeignet)} value={verzinken} onChange={v => setVerzinken(v as Eignungswahl)} />
+                    </div>
+                    <div className="space-y-1.5">
+                        <div className="flex items-center gap-1"><Label>Pulverbeschichten</Label></div>
+                        <Select aria-label="Pulverbeschichten" options={eignungsOptionen(werkstoffEignung?.pulverbeschichtungsgeeignet)} value={pulvern} onChange={v => setPulvern(v as Eignungswahl)} />
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
