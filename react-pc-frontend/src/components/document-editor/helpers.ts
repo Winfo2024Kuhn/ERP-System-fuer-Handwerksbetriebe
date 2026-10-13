@@ -256,25 +256,47 @@ export function brauchtBuchungsWarnung(
     return istBuchungstyp && !dokument?.gebucht && !dokument?.storniert;
 }
 
-/** Offener Online-Link eines anderen Angebots (Antwort von `/abzuloesende-freigaben`). */
+/**
+ * Hat sich ein Nettobetrag zwischen zwei Ständen geändert (auf den Cent genau)? Fehlt
+ * einer der Werte, lässt sich nichts vergleichen – dann `false`.
+ */
+export function betragGeaendert(vorher: number | null | undefined, nachher: number | null | undefined): boolean {
+    if (vorher == null || nachher == null) return false;
+    return Math.round(vorher * 100) !== Math.round(nachher * 100);
+}
+
+/** Offener Online-Link, der beim Versand ungültig wird (Antwort von `/abzuloesende-freigaben`). */
 export interface AbzuloesendeFreigabe {
     dokumentId: number;
     dokumentNummer: string;
     dokumentArt?: string;
     ablaufDatum?: string;
+    /** `true` = älterer Link desselben Dokuments, `false` = Link eines anderen Angebots. */
+    diesesDokument?: boolean;
 }
 
 /**
- * Text der Rückfrage, bevor ein neues Angebot offene Online-Links anderer Angebote
- * ablöst: „Der Online-Link zu Angebot AG-1 wird damit ungültig. Trotzdem fortfahren?“
+ * Text der Rückfrage, bevor offene Online-Links abgelöst werden – ältere Links desselben
+ * Angebots („Der bisherige Online-Link zu diesem Angebot wird damit ungültig.“) und Links
+ * anderer Angebote („Der Online-Link zu Angebot AG-1 wird damit ungültig.“).
  */
-export function abloesungsFrage(freigaben: AbzuloesendeFreigabe[]): string {
-    const nummern = Array.from(new Set(freigaben.map(f => f.dokumentNummer).filter(Boolean)));
-    if (nummern.length <= 1) {
-        return `Der Online-Link zu Angebot ${nummern[0] ?? ''} wird damit ungültig. Der Kunde kann das alte Angebot dann nicht mehr online annehmen. Trotzdem fortfahren?`;
+export function abloesungsFrage(freigaben: AbzuloesendeFreigabe[], bezeichnung: string = 'Angebot'): string {
+    const saetze: string[] = [];
+    if (freigaben.some(f => f.diesesDokument)) {
+        saetze.push(`Der bisherige Online-Link zu diesem ${bezeichnung} wird damit ungültig.`);
     }
-    const liste = `${nummern.slice(0, -1).join(', ')} und ${nummern[nummern.length - 1]}`;
-    return `Die Online-Links zu den Angeboten ${liste} werden damit ungültig. Der Kunde kann die alten Angebote dann nicht mehr online annehmen. Trotzdem fortfahren?`;
+    const nummern = Array.from(new Set(freigaben.filter(f => !f.diesesDokument).map(f => f.dokumentNummer).filter(Boolean)));
+    if (nummern.length === 1) {
+        saetze.push(`Der Online-Link zu Angebot ${nummern[0]} wird damit ungültig.`);
+    } else if (nummern.length > 1) {
+        const liste = `${nummern.slice(0, -1).join(', ')} und ${nummern[nummern.length - 1]}`;
+        saetze.push(`Die Online-Links zu den Angeboten ${liste} werden damit ungültig.`);
+    }
+    if (saetze.length === 0) {
+        saetze.push('Ein älterer Online-Link wird damit ungültig.');
+    }
+    saetze.push('Der Kunde kann die alte Fassung dann nicht mehr online annehmen. Trotzdem fortfahren?');
+    return saetze.join(' ');
 }
 
 /**

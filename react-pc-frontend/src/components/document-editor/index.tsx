@@ -137,7 +137,7 @@ import '@fontsource/open-sans/latin-400-italic.css';
 import '@fontsource/open-sans/latin-700.css';
 import '@fontsource/open-sans/latin-700-italic.css';
 import '@fontsource/montserrat/latin-600.css';
-import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, type AbzuloesendeFreigabe, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, betragGeaendert, type AbzuloesendeFreigabe, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
 import { fehlermeldungAusAntwort, pruefeFirmendatenFuerERechnung } from './eRechnungPruefung';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
@@ -546,6 +546,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
      */
     const [buchungBeimSenden, setBuchungBeimSenden] = useState(false);
     const buchungsPdfRef = useRef<Blob | null>(null);
+    /** Nettobetrag laut Server beim Erzeugen dieses PDFs – Vergleich nach dem Buchen. */
+    const buchungsPdfNettoRef = useRef<number | null>(null);
     /** Vom Benutzer im Pop-up gewählte Gültigkeit des Annahme-Links (nur Angebote). */
     const [gueltigkeitTage, setGueltigkeitTage] = useState<number | null>(null);
     const [emailLoading, setEmailLoading] = useState(false);
@@ -2677,9 +2679,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     }, [showPreview]);
 
     /** Hilfsfunktion: Dokument buchen und State sofort aktualisieren (GoBD). */
-    const buchenUndSperren = async (): Promise<boolean> => {
-        if (!dokument?.id) return false;
-        if (dokument.gebucht || dokument.storniert) return true; // bereits gesperrt
+    const buchenUndSperren = async (): Promise<boolean> => (await bucheDokument()) !== null;
+
+    /** Wie buchenUndSperren, liefert aber den gebuchten Stand (oder null bei Fehler). */
+    const bucheDokument = async (): Promise<AusgangsGeschaeftsDokument | null> => {
+        if (!dokument?.id) return null;
+        if (dokument.gebucht || dokument.storniert) return dokument; // bereits gesperrt
         try {
             // Erst unsaved changes speichern, bevor das Dokument gebucht wird.
             // Schlaegt das fehl (Lock-Konflikt, Netz, Server), darf NICHT gebucht
@@ -2687,7 +2692,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // der User so nie gesehen hat — etwa der alten Rechnungsadresse.
             if (hasUnsavedChanges) {
                 const gespeichert = await handleSave();
-                if (!gespeichert) return false;
+                if (!gespeichert) return null;
             }
             const bookRes = await fetch(`/api/ausgangs-dokumente/${dokument.id}/buchen`, { method: 'POST' });
             if (!bookRes.ok) {
@@ -2710,11 +2715,11 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             setAdresseGeaendert(false);
             setZahlungszielGeaendert(false);
             notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
-            return true;
+            return updated as AusgangsGeschaeftsDokument;
         } catch (err) {
             console.error('Fehler beim Buchen:', err);
             toast.error('Dokument konnte nicht gebucht werden\n' + (err instanceof Error ? 'Antwort vom Server ' + err.message : ''));
-            return false;
+            return null;
         }
     };
 
@@ -2936,6 +2941,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
      */
     const pruefeAbloesungAlterLinks = async (): Promise<boolean> => {
         setFreigabenAbloesenFuerDokumentId(null);
+        // Auch Nachtragsangebote: Ihr eigener älterer Link wird beim erneuten Versand abgelöst
+        // (Links anderer Angebote löst das Backend nur für Angebote ab).
         if (!istAngebotsTyp(dokumentTyp) || draftSendMode) return true;
         let dokumentId = dokument?.id ?? null;
         if (!dokumentId) {
@@ -2958,7 +2965,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         setShowFormatDialog(false);
         const fortfahren = await confirm({
             title: 'Alter Online-Link wird ungültig',
-            message: abloesungsFrage(offeneLinks),
+            message: abloesungsFrage(offeneLinks, dokumentTyp === 'NACHTRAGSANGEBOT' ? 'Nachtragsangebot' : 'Angebot'),
             confirmLabel: 'Trotzdem fortfahren',
             variant: 'warning',
         });
@@ -3031,19 +3038,40 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
      * wird das PDF für die Offenen Posten gespeichert – erst jetzt gibt es den Eintrag.
      */
     const bucheVorDemSenden = async (): Promise<VorDemSendenErgebnis> => {
-        const gebucht = await buchenUndSperren();
+        const gebucht = await bucheDokument();
         if (!gebucht) return { weiter: false };
+        // Schlussrechnung: buchen() übernimmt den Betrag zum Buchungszeitpunkt. Hat er sich seit
+        // dem Erzeugen des PDFs geändert (z. B. Abschlagsrechnung inzwischen storniert), passt der
+        // Anhang nicht mehr – dann nicht senden. Das PDF lässt sich hier nicht sauber neu bauen,
+        // weil der Editor dafür den Abrechnungsstand neu laden muss.
+        if (betragGeaendert(buchungsPdfNettoRef.current, gebucht.betragNetto)) {
+            buchungsPdfRef.current = null;
+            toast.error('Der Betrag der Rechnung hat sich beim Buchen geändert (zum Beispiel, weil inzwischen '
+                + 'eine Abschlagsrechnung storniert wurde). Die Rechnung ist jetzt gebucht, die E-Mail wurde aber '
+                + 'nicht gesendet: Das angehängte PDF zeigt noch den alten Betrag. Bitte das Mailfenster schließen, '
+                + 'die Seite neu laden und die E-Mail neu öffnen.');
+            return { weiter: false };
+        }
         const pdf = buchungsPdfRef.current;
-        if (pdf && dokument?.id) {
+        if (pdf && gebucht.id) {
+            let gespeichert = false;
             try {
-                await fetch(`/api/ausgangs-dokumente/${dokument.id}/pdf-speichern`, {
+                const res = await fetch(`/api/ausgangs-dokumente/${gebucht.id}/pdf-speichern`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/pdf' },
                     body: await pdf.arrayBuffer(),
                 });
-                buchungsPdfRef.current = null;
+                gespeichert = res.ok;
             } catch (e) {
                 console.warn('PDF konnte nicht serverseitig gespeichert werden:', e);
+            }
+            if (gespeichert) {
+                buchungsPdfRef.current = null;
+            } else {
+                // Kein Grund, die Mail aufzuhalten: Die Rechnung ist gebucht, nur der Verweis
+                // in den Offenen Posten fehlt.
+                toast.warning('Die Rechnung ist gebucht, das PDF konnte aber nicht bei den Offenen Posten '
+                    + 'abgelegt werden. Die E-Mail wird trotzdem gesendet.');
             }
         }
         return {
@@ -3066,9 +3094,11 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             }
             // 1. Auto-Save wenn nötig – Rückgabewert liefert aktuelle ID (React-State ist async)
             let aktiveDokumentId = dokument?.id ?? null;
+            let gespeicherterStand: AusgangsGeschaeftsDokument | null = dokument;
             if (!dokument?.id || hasUnsavedChanges || !isDraft) {
                 const saved = await handleSave();
                 if (saved?.id) aktiveDokumentId = saved.id;
+                if (saved) gespeicherterStand = saved;
             }
 
             // 2. Rechnungstypen werden NICHT hier gebucht, sondern erst beim Klick auf
@@ -3104,6 +3134,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             let pdfDateiname: string | null = null;
             // Eine ungebuchte Rechnung wird erst nach dem Buchen gespeichert (bucheVorDemSenden).
             buchungsPdfRef.current = buchtBeimSenden ? blob : null;
+            buchungsPdfNettoRef.current = buchtBeimSenden ? gespeicherterStand?.betragNetto ?? null : null;
             const brauchtPdfSpeicherung = !isDraft && !buchtBeimSenden && aktiveDokumentId && (
                 dokumentTyp === 'ANGEBOT' ||
                 dokumentTyp === 'NACHTRAGSANGEBOT' ||
@@ -4182,6 +4213,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 vorDemSenden={buchungBeimSenden ? bucheVorDemSenden : undefined}
                 anhangVorschauGesperrt={buchungBeimSenden
                     ? 'Vorschau und Download erst nach dem Senden: Die Rechnung wird beim Senden gebucht.'
+                    : undefined}
+                pflichtanhangHinweis={buchungBeimSenden
+                    ? 'Das Rechnungs-PDF muss angehängt bleiben, denn die Rechnung wird beim Senden gebucht. '
+                        + 'Schließen Sie das Fenster und öffnen Sie die E-Mail neu, um es wieder anzuhängen.'
                     : undefined}
                 entwurfSpeichern={!buchungBeimSenden && freigabenAbloesenFuerDokumentId === null}
                 freigabenAbloesenFuerDokumentId={freigabenAbloesenFuerDokumentId ?? undefined}

@@ -1325,12 +1325,16 @@ class UnifiedEmailControllerTest {
         @Test
         void angebotsversandLoestAlteLinksErstNachDemVersandAb() throws Exception {
             smtpOk();
+            org.example.kalkulationsprogramm.domain.Projekt projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+            projekt.setId(3L);
+            given(projektRepository.findById(3L)).willReturn(Optional.of(projekt));
 
             mockMvc.perform(multipart("/api/emails/send").file(dto(
-                            "{\"geschaeftsdokument\":true,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                            "{\"geschaeftsdokument\":true,\"projektId\":3,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
                     .andExpect(status().isOk());
 
-            verify(freigabeAbloesungService).loeseAb(7L);
+            // Projekt der Mail und Links in der Mail gehen mit – der Service bindet die ID daran.
+            verify(freigabeAbloesungService).loeseAbNachVersand(eq(7L), eq(3L), isNull(), any());
         }
 
         @Test
@@ -1359,7 +1363,7 @@ class UnifiedEmailControllerTest {
         void versandBleibtErfolgreichWennAbloesungScheitert() throws Exception {
             smtpOk();
             org.mockito.Mockito.doThrow(new IllegalStateException("DB weg"))
-                    .when(freigabeAbloesungService).loeseAb(any());
+                    .when(freigabeAbloesungService).loeseAbNachVersand(any(), any(), any(), any());
 
             mockMvc.perform(multipart("/api/emails/send").file(dto(
                             "{\"geschaeftsdokument\":true,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))

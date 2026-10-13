@@ -21,6 +21,7 @@ import {
     brauchtBuchungsWarnung,
     istAngebotsTyp,
     abloesungsFrage,
+    betragGeaendert,
     buildPositionMap,
     calculateNetto,
     serviceLineTotal,
@@ -752,27 +753,54 @@ describe('brauchtBuchungsWarnung', () => {
 });
 
 describe('abloesungsFrage', () => {
-    it('nennt ein einzelnes altes Angebot', () => {
+    const SCHLUSS = 'Der Kunde kann die alte Fassung dann nicht mehr online annehmen. Trotzdem fortfahren?';
+
+    it('nennt ein einzelnes anderes Angebot', () => {
         expect(abloesungsFrage([{ dokumentId: 2, dokumentNummer: 'AG-2026-0001' }]))
-            .toBe('Der Online-Link zu Angebot AG-2026-0001 wird damit ungültig. Der Kunde kann das alte Angebot dann nicht mehr online annehmen. Trotzdem fortfahren?');
+            .toBe(`Der Online-Link zu Angebot AG-2026-0001 wird damit ungültig. ${SCHLUSS}`);
     });
 
     it('fasst doppelte Links desselben Angebots zusammen', () => {
         expect(abloesungsFrage([
             { dokumentId: 2, dokumentNummer: 'AG-2026-0001' },
             { dokumentId: 2, dokumentNummer: 'AG-2026-0001' },
-        ])).toMatch(/^Der Online-Link zu Angebot AG-2026-0001 wird/);
+        ])).toBe(`Der Online-Link zu Angebot AG-2026-0001 wird damit ungültig. ${SCHLUSS}`);
     });
 
-    it('zählt mehrere alte Angebote auf', () => {
+    it('zählt mehrere andere Angebote auf', () => {
         expect(abloesungsFrage([
             { dokumentId: 2, dokumentNummer: 'AG-1' },
             { dokumentId: 3, dokumentNummer: 'AG-2' },
             { dokumentId: 4, dokumentNummer: 'AG-3' },
-        ])).toBe('Die Online-Links zu den Angeboten AG-1, AG-2 und AG-3 werden damit ungültig. Der Kunde kann die alten Angebote dann nicht mehr online annehmen. Trotzdem fortfahren?');
+        ])).toBe(`Die Online-Links zu den Angeboten AG-1, AG-2 und AG-3 werden damit ungültig. ${SCHLUSS}`);
     });
 
-    it('bleibt ohne Nummer lesbar', () => {
-        expect(abloesungsFrage([])).toMatch(/^Der Online-Link zu Angebot +wird damit ungültig/);
+    it('nennt den älteren Link desselben Dokuments mit seiner Bezeichnung', () => {
+        expect(abloesungsFrage([{ dokumentId: 1, dokumentNummer: 'NA-1', diesesDokument: true }], 'Nachtragsangebot'))
+            .toBe(`Der bisherige Online-Link zu diesem Nachtragsangebot wird damit ungültig. ${SCHLUSS}`);
+    });
+
+    it('nennt eigenen und fremden Link zusammen', () => {
+        expect(abloesungsFrage([
+            { dokumentId: 1, dokumentNummer: 'AG-2', diesesDokument: true },
+            { dokumentId: 2, dokumentNummer: 'AG-1', diesesDokument: false },
+        ])).toBe(`Der bisherige Online-Link zu diesem Angebot wird damit ungültig. Der Online-Link zu Angebot AG-1 wird damit ungültig. ${SCHLUSS}`);
+    });
+
+    it('bleibt ohne Angaben lesbar', () => {
+        expect(abloesungsFrage([])).toBe(`Ein älterer Online-Link wird damit ungültig. ${SCHLUSS}`);
+    });
+});
+
+describe('betragGeaendert', () => {
+    it('erkennt eine Änderung ab einem Cent', () => {
+        expect(betragGeaendert(1000, 1000.01)).toBe(true);
+        expect(betragGeaendert(1000, 800)).toBe(true);
+    });
+
+    it('ignoriert Rundungsrauschen und fehlende Werte', () => {
+        expect(betragGeaendert(0.1 + 0.2, 0.3)).toBe(false);
+        expect(betragGeaendert(null, 100)).toBe(false);
+        expect(betragGeaendert(100, undefined)).toBe(false);
     });
 });

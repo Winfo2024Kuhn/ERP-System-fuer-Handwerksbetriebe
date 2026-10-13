@@ -67,21 +67,30 @@ interface Einstellungen {
     dokument?: Record<string, unknown>;
     abzuloesende?: unknown[];
     buchenOk?: boolean;
+    /** Nettobetrag, den der Server beim Buchen übernimmt (Schlussrechnung). Standard: unverändert. */
+    nettoNachBuchung?: number;
+    pdfSpeichernOk?: boolean;
 }
 
-function mockFetch({ dokument: abweichung = {}, abzuloesende = [], buchenOk = true }: Einstellungen = {}) {
+function mockFetch({
+    dokument: abweichung = {}, abzuloesende = [], buchenOk = true, nettoNachBuchung, pdfSpeichernOk = true,
+}: Einstellungen = {}) {
     const dokument = { ...basisDokument, ...abweichung };
+    let stand: Record<string, unknown> = { ...dokument };
     return vi.fn((url: string, init?: RequestInit) => {
         if (url === '/api/ausgangs-dokumente/1' && init?.method === 'PUT') {
-            return jsonAntwort({ ...dokument, ...JSON.parse(init.body as string) });
+            stand = { ...stand, ...JSON.parse(init.body as string) };
+            return jsonAntwort(stand);
         }
         if (url === '/api/ausgangs-dokumente/1') return jsonAntwort(dokument);
         if (url === '/api/ausgangs-dokumente/1/buchen') {
             return buchenOk
-                ? jsonAntwort({ ...dokument, gebucht: true })
+                ? jsonAntwort({ ...stand, gebucht: true, ...(nettoNachBuchung != null ? { betragNetto: nettoNachBuchung } : {}) })
                 : jsonAntwort('Buchung abgelehnt', false, 400);
         }
-        if (url === '/api/ausgangs-dokumente/1/pdf-speichern') return jsonAntwort({ dateiname: 'abc.pdf' });
+        if (url === '/api/ausgangs-dokumente/1/pdf-speichern') {
+            return pdfSpeichernOk ? jsonAntwort({ dateiname: 'abc.pdf' }) : jsonAntwort('Platte voll', false, 500);
+        }
         if (url === '/api/ausgangs-dokumente/1/abzuloesende-freigaben') return jsonAntwort(abzuloesende);
         if (url === '/api/email/template') return jsonAntwort({ subject: 'Betreff', body: '<p>Hallo</p>' });
         if (url.startsWith('/api/dokument-generator/')) return pdfAntwort();
@@ -230,6 +239,44 @@ describe('E-Mail-Versand einer Rechnung', () => {
         expect(aufrufeAn('/api/ausgangs-dokumente/1/pdf-speichern')).toHaveLength(0);
     });
 
+    it('sendet nicht, wenn sich der Betrag beim Buchen geändert hat, und sagt, dass gebucht ist', async () => {
+        const user = userEvent.setup();
+        starte({ dokument: { typ: 'SCHLUSSRECHNUNG' }, nettoNachBuchung: 812.5 });
+        await emailStarten(user);
+        await screen.findByTestId('mailfenster');
+
+        let ergebnis: Awaited<ReturnType<NonNullable<MailfensterProps['vorDemSenden']>>> | undefined;
+        await act(async () => { ergebnis = await mailfenster.props!.vorDemSenden!(); });
+
+        expect(ergebnis?.weiter).toBe(false);
+        expect(await screen.findByText(/Betrag der Rechnung hat sich beim Buchen geändert/)).toHaveTextContent(/Die Rechnung ist jetzt gebucht/);
+        expect(aufrufeAn('/api/ausgangs-dokumente/1/buchen')).toHaveLength(1);
+        // Das alte PDF wird nicht als Rechnungs-PDF abgelegt.
+        expect(aufrufeAn('/api/ausgangs-dokumente/1/pdf-speichern')).toHaveLength(0);
+    });
+
+    it('sendet trotzdem, wenn nur das Ablegen des PDFs scheitert, und warnt', async () => {
+        const user = userEvent.setup();
+        starte({ pdfSpeichernOk: false });
+        await emailStarten(user);
+        await screen.findByTestId('mailfenster');
+
+        let ergebnis: Awaited<ReturnType<NonNullable<MailfensterProps['vorDemSenden']>>> | undefined;
+        await act(async () => { ergebnis = await mailfenster.props!.vorDemSenden!(); });
+
+        expect(ergebnis?.weiter).toBe(true);
+        expect(await screen.findByText(/PDF konnte aber nicht bei den Offenen Posten abgelegt werden/)).toBeInTheDocument();
+    });
+
+    it('verlangt, dass das Rechnungs-PDF angehängt bleibt', async () => {
+        const user = userEvent.setup();
+        starte();
+        await emailStarten(user);
+        await screen.findByTestId('mailfenster');
+
+        expect(mailfenster.props?.pflichtanhangHinweis).toMatch(/muss angehängt bleiben/);
+    });
+
     it('bucht beim Schließen ohne Senden nichts', async () => {
         const user = userEvent.setup();
         starte();
@@ -300,6 +347,23 @@ describe('E-Mail-Versand eines Angebots', () => {
         expect(mailfenster.props?.freigabenAbloesenFuerDokumentId).toBe(1);
         // Ein später aus der Entwurfsliste verschickter Entwurf würde die Ablösung überspringen.
         expect(mailfenster.props?.entwurfSpeichern).toBe(false);
+    });
+
+    it('fragt auch beim eigenen älteren Link nach (erneuter Versand)', async () => {
+        const user = userEvent.setup();
+        starte({
+            dokument: angebot,
+            abzuloesende: [{ dokumentId: 1, dokumentNummer: 'AG-2026-0002', dokumentArt: 'Angebot', diesesDokument: true }],
+        });
+        await emailStarten(user);
+
+        expect(await screen.findByText(/Der bisherige Online-Link zu diesem Angebot wird damit ungültig/)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Trotzdem fortfahren' }));
+        const wahl = await screen.findByRole('dialog', { name: /online annehmen können/ });
+        await user.click(within(wahl).getByRole('button', { name: /Nein, nur das PDF schicken/ }));
+
+        await screen.findByTestId('mailfenster');
+        expect(mailfenster.props?.freigabenAbloesenFuerDokumentId).toBe(1);
     });
 
     it('bricht ab, wenn der Anwender die Ablösung nicht will', async () => {

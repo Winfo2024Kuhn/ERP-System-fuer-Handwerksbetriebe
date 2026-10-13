@@ -123,17 +123,13 @@ public class AusgangsGeschaeftsDokumentController {
     }
 
     /**
-     * Offene Online-Links anderer Angebote im selben Projekt bzw. derselben Anfrage, die beim
-     * Versand dieses Angebots ungültig werden. Der Editor fragt damit vor dem Versand nach;
+     * Offene Online-Links, die beim Versand dieses Angebots ungültig werden: ältere Links
+     * desselben Angebots und Links anderer Angebote im selben Projekt bzw. derselben Anfrage. Der Editor fragt damit vor dem Versand nach;
      * zurückgezogen werden sie erst beim tatsächlichen Senden ({@code /api/emails/send}).
      */
     @GetMapping("/{id}/abzuloesende-freigaben")
     public ResponseEntity<List<AbzuloesendeFreigabeDto>> abzuloesendeFreigaben(@PathVariable Long id) {
-        List<AbzuloesendeFreigabeDto> result = freigabeAbloesungService.findeAbzuloesendeFreigaben(id).stream()
-                .map(f -> new AbzuloesendeFreigabeDto(f.getQuellDokumentId(), f.getDokumentNummer(),
-                        f.getDokumentArt(), f.getAblaufDatum()))
-                .toList();
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(freigabeAbloesungService.findeAbzuloesendeFreigaben(id));
     }
 
     /**

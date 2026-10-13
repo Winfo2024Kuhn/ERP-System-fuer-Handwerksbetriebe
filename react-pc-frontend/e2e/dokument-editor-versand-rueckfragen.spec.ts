@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
-import { stubbeDokumentEditorApi, oeffneDokumentEditor } from './hilfen/dokument-editor';
+import { stubbeDokumentEditorApi, oeffneDokumentEditor, BEISPIEL_DOKUMENT } from './hilfen/dokument-editor';
 
 /**
  * Rückfragen vor Export und Versand im Dokument-Editor:
@@ -60,5 +60,62 @@ test.describe('Dokument-Editor – Rückfragen vor Export und Versand', () => {
         await expect(wahl.getByRole('button', { name: /Ja, mit Link zum Annehmen/ })).toBeVisible();
         await expect(wahl.getByRole('button', { name: /Nein, nur das PDF schicken/ })).toBeVisible();
         await designPruefung(page, testInfo, 'angebot-online-annahme-wahl');
+    });
+
+    test('Rechnung per E-Mail: Öffnen bucht nicht, Vorschau gesperrt, gebucht wird direkt vor dem Senden', async ({ page }, testInfo) => {
+        const mitschrift = await stubbeDokumentEditorApi(page);
+        const ablauf: string[] = [];
+        await page.route('**/api/dokument-generator/pdf', route => route.fulfill({
+            status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4\n%%EOF'),
+        }));
+        await page.route('**/api/email/template', route => route.fulfill({
+            status: 200, contentType: 'application/json', body: JSON.stringify({ subject: 'Rechnung', body: '<p>Guten Tag</p>' }),
+        }));
+        await page.route('**/api/ausgangs-dokumente/1/buchen', route => {
+            ablauf.push('buchen');
+            const letzterStand = mitschrift.speicherAufrufe.at(-1) ?? {};
+            return route.fulfill({
+                status: 200, contentType: 'application/json',
+                body: JSON.stringify({ ...BEISPIEL_DOKUMENT, ...letzterStand, gebucht: true }),
+            });
+        });
+        await page.route('**/api/ausgangs-dokumente/1/pdf-speichern', route => {
+            ablauf.push('pdf-speichern');
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ dateiname: 'abc.pdf' }) });
+        });
+        await page.route('**/api/emails/send', route => {
+            ablauf.push('senden');
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 900 }) });
+        });
+        await page.route('**/api/ausgangs-dokumente/1/email-versendet', route => {
+            ablauf.push('versendet');
+            return route.fulfill({
+                status: 200, contentType: 'application/json', body: JSON.stringify({ ...BEISPIEL_DOKUMENT, gebucht: true }),
+            });
+        });
+        await oeffneDokumentEditor(page);
+
+        // 1. Mailfenster öffnen und ohne Senden schließen: nichts gebucht.
+        await page.getByTitle('Dokument per E-Mail senden').click();
+        await page.getByText('PDF-Datei als E-Mail-Anhang versenden').click();
+        await expect(page.getByTestId('anhang-vorschau-gesperrt')).toBeVisible();
+        await expect(page.getByRole('button', { name: /PDF-Vorschau öffnen/ })).toHaveCount(0);
+        // Keine designPruefung: Das Mailfenster ist (noch) kein aria-modal-Dialog, die Prüfung
+        // würde den Editor-Kopf dahinter mitzählen. Den Hinweis selbst prüfen die Asserts oben.
+        await testInfo.attach('rechnung-mail-vorschau-gesperrt', { body: await page.screenshot(), contentType: 'image/png' });
+        await page.getByRole('button', { name: 'Schließen', exact: true }).click();
+        await expect(page.getByTestId('anhang-vorschau-gesperrt')).toHaveCount(0);
+        expect(ablauf).toEqual([]);
+
+        // 2. Erneut öffnen und senden: erst buchen, dann PDF ablegen, dann senden.
+        await page.getByTitle('Dokument per E-Mail senden').click();
+        await page.getByText('PDF-Datei als E-Mail-Anhang versenden').click();
+        await page.getByPlaceholder('Name, Firma oder E-Mail eingeben').fill('max.mustermann@example.com');
+        await page.getByPlaceholder('Name, Firma oder E-Mail eingeben').press('Enter');
+        expect(ablauf).toEqual([]);
+        await page.getByRole('button', { name: /E-Mail senden/ }).click();
+
+        await expect.poll(() => ablauf).toContain('versendet');
+        expect(ablauf.slice(0, 3)).toEqual(['buchen', 'pdf-speichern', 'senden']);
     });
 });

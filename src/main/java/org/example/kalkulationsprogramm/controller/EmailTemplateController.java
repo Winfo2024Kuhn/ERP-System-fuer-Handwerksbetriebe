@@ -52,6 +52,9 @@ public class EmailTemplateController {
             // Auftragsbestätigungen werden vom Büro versendet — der Kunde hat dem Angebot
             // bereits zugestimmt, eine zweite digitale Bestätigung waere irreführend.
             // Der Anwender kann die Online-Annahme beim Versand abwählen (mitFreigabe=false).
+            // Ein noch offener älterer Link desselben Angebots wird dann erst beim tatsächlichen
+            // Senden zurückgezogen (FreigabeAbloesungService, nach Rückfrage im Editor) – nicht
+            // hier, damit ein abgebrochener Versand nichts verändert.
             if ((dokumentTyp.equals("ANGEBOT") || dokumentTyp.equals("NACHTRAGSANGEBOT"))
                     && request.getDokumentId() != null
                     && !Boolean.FALSE.equals(request.getMitFreigabe())) {

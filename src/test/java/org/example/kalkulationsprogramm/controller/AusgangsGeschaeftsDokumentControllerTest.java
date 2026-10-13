@@ -1029,18 +1029,16 @@ class AusgangsGeschaeftsDokumentControllerTest {
         @Test
         @DisplayName("Liefert offene Links anderer Angebote mit Nummer und Ablauf")
         void liefertOffeneLinks() throws Exception {
-            org.example.kalkulationsprogramm.domain.DokumentFreigabe alt = new org.example.kalkulationsprogramm.domain.DokumentFreigabe();
-            alt.setQuellDokumentId(3L);
-            alt.setDokumentNummer("AG-2026-0001");
-            alt.setDokumentArt("Angebot");
-            alt.setAblaufDatum(java.time.LocalDateTime.of(2026, 12, 1, 12, 0));
+            var alt = new org.example.kalkulationsprogramm.dto.Freigabe.AbzuloesendeFreigabeDto(
+                    3L, "AG-2026-0001", "Angebot", java.time.LocalDateTime.of(2026, 12, 1, 12, 0), false);
             given(freigabeAbloesungService.findeAbzuloesendeFreigaben(7L)).willReturn(List.of(alt));
 
             mockMvc.perform(get("/api/ausgangs-dokumente/7/abzuloesende-freigaben"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[0].dokumentId").value(3))
                     .andExpect(jsonPath("$[0].dokumentNummer").value("AG-2026-0001"))
-                    .andExpect(jsonPath("$[0].dokumentArt").value("Angebot"));
+                    .andExpect(jsonPath("$[0].dokumentArt").value("Angebot"))
+                    .andExpect(jsonPath("$[0].diesesDokument").value(false));
         }
 
         @Test

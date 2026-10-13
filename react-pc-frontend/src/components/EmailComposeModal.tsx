@@ -86,6 +86,8 @@ interface EmailComposeModalProps {
     entwurfSpeichern?: boolean;
     /** Siehe EmailComposeForm: offene Online-Links anderer Angebote beim Senden ablösen. */
     freigabenAbloesenFuerDokumentId?: number;
+    /** Siehe EmailComposeForm: automatisch angehängte Dateien sind Pflicht. */
+    pflichtanhangHinweis?: string;
 }
 
 export default function EmailComposeModal({
@@ -107,6 +109,7 @@ export default function EmailComposeModal({
     anhangVorschauGesperrt,
     entwurfSpeichern,
     freigabenAbloesenFuerDokumentId,
+    pflichtanhangHinweis,
 }: EmailComposeModalProps) {
     if (!isOpen) return null;
 
@@ -136,6 +139,7 @@ export default function EmailComposeModal({
                     anhangVorschauGesperrt={anhangVorschauGesperrt}
                     entwurfSpeichern={entwurfSpeichern}
                     freigabenAbloesenFuerDokumentId={freigabenAbloesenFuerDokumentId}
+                    pflichtanhangHinweis={pflichtanhangHinweis}
                     variant="modal"
                 />
             </div>

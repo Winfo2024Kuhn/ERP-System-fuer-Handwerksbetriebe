@@ -169,4 +169,18 @@ describe('EmailComposeForm – Versand aus dem Dokument-Editor', () => {
         await waitFor(() => expect(onClose).toHaveBeenCalled());
         expect(aufrufe.some(a => a.url.startsWith('/api/emails/drafts'))).toBe(false);
     });
+
+    it('sperrt das Senden, wenn das Pflicht-PDF entfernt wurde, und nennt den Grund', async () => {
+        const vorDemSenden = vi.fn(async () => ({ weiter: true }));
+        renderFormular({ vorDemSenden, pflichtanhangHinweis: 'Das Rechnungs-PDF muss angehängt bleiben.' });
+
+        await waitFor(() => expect(screen.getByDisplayValue('Rechnung RE-2026-0001')).toBeInTheDocument());
+        expect(screen.queryByTestId('pflichtanhang-fehlt')).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: /Rechnung_RE-2026-0001\.pdf entfernen/i }));
+
+        expect(await screen.findByTestId('pflichtanhang-fehlt')).toHaveTextContent('Das Rechnungs-PDF muss angehängt bleiben.');
+        expect(screen.getByRole('button', { name: /E-Mail senden/i })).toBeDisabled();
+        expect(vorDemSenden).not.toHaveBeenCalled();
+        expect(sendeAufrufe()).toHaveLength(0);
+    });
 });

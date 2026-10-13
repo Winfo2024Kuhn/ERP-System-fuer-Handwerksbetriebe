@@ -166,6 +166,11 @@ export interface EmailComposeFormProps {
     entwurfSpeichern?: boolean;
     /** Angebotsversand: nach dem Senden offene Online-Links anderer Angebote zurückziehen. */
     freigabenAbloesenFuerDokumentId?: number;
+    /**
+     * Die automatisch angehängten Dateien sind Pflicht (z. B. die Rechnung, die beim Senden
+     * gebucht wird). Fehlt eine, ist „Senden“ gesperrt und dieser Hinweis erscheint.
+     */
+    pflichtanhangHinweis?: string;
 }
 
 export interface VorDemSendenErgebnis {
@@ -240,6 +245,7 @@ export function EmailComposeForm({
     anhangVorschauGesperrt,
     entwurfSpeichern = true,
     freigabenAbloesenFuerDokumentId,
+    pflichtanhangHinweis,
 }: EmailComposeFormProps) {
     const inline = variant !== 'modal';
     const toast = useToast();
@@ -473,6 +479,8 @@ export function EmailComposeForm({
             : `${initialAttachments!.length} Dateien automatisch angehängt`
         : '';
     const firstPdfAttachment = uploadedFiles.find(file => file.file.type === 'application/pdf');
+    const pflichtanhangFehlt = !!pflichtanhangHinweis && !!initialAttachments
+        && initialAttachments.some(datei => !uploadedFiles.some(uf => uf.file === datei));
     /** Antwort oder Weiterleitung: Absender steht fest (Postfach der Original-Mail). */
     const absenderFest = !!replyEmailId || !!weitergeleitetVonEmailId;
     const originalEmailId = replyEmailId ?? weitergeleitetVonEmailId;
@@ -890,6 +898,10 @@ export function EmailComposeForm({
         }
         if (zuVieleEmpfaenger) {
             setError(EINZELVERSAND_ZU_VIELE);
+            return;
+        }
+        if (pflichtanhangFehlt) {
+            setError(pflichtanhangHinweis ?? null);
             return;
         }
         // Ohne Projekt/Anfrage landet die E-Mail nirgendwo – einmal nachfragen.
@@ -1567,6 +1579,11 @@ export function EmailComposeForm({
                                 </div>
                             </div>
 
+                            {pflichtanhangFehlt && (
+                                <p role="alert" data-testid="pflichtanhang-fehlt" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                    {pflichtanhangHinweis}
+                                </p>
+                            )}
                             {uploadedFiles.length > 0 && (
                                 <div className="space-y-2 mt-2">
                                     {uploadedFiles.map((uf, idx) => (
@@ -1637,8 +1654,8 @@ export function EmailComposeForm({
                     </Button>
                     <Button
                         onClick={handleSend}
-                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || !recipient.trim() || !subject.trim() || attachmentLimitExceeded || zuVieleEmpfaenger}
-                        title={zuVieleEmpfaenger ? EINZELVERSAND_ZU_VIELE : undefined}
+                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || !recipient.trim() || !subject.trim() || attachmentLimitExceeded || zuVieleEmpfaenger || pflichtanhangFehlt}
+                        title={zuVieleEmpfaenger ? EINZELVERSAND_ZU_VIELE : pflichtanhangFehlt ? pflichtanhangHinweis : undefined}
                         className="bg-rose-600 hover:bg-rose-700 text-white"
                     >
                         {sending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
