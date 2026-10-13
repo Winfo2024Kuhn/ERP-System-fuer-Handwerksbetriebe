@@ -409,6 +409,17 @@ public class AnfrageController {
         return updated != null ? ResponseEntity.ok(updated) : ResponseEntity.notFound().build();
     }
 
+    /**
+     * Haken "Beendet" setzen oder entfernen. Eigener Weg, damit der Haken in der
+     * Liste keine anderen Felder (z. B. die Beschreibung) mitschicken muss.
+     */
+    @PatchMapping("/{id}/abgeschlossen")
+    public ResponseEntity<AnfrageResponseDto> setzeAbgeschlossen(@PathVariable Long id,
+            @RequestParam boolean abgeschlossen) {
+        AnfrageResponseDto aktualisiert = anfrageService.setzeAbgeschlossen(id, abgeschlossen);
+        return aktualisiert != null ? ResponseEntity.ok(aktualisiert) : ResponseEntity.notFound().build();
+    }
+
     @PutMapping(value = "/{id}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<AnfrageResponseDto> aktualisiereMitBild(@PathVariable Long id,
             @RequestPart("anfrageDto") AnfrageErstellenDto dto,

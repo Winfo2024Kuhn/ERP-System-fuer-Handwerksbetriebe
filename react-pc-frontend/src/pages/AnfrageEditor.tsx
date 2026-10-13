@@ -1731,22 +1731,12 @@ export default function AnfrageEditor() {
     // Toggle abgeschlossen status
     const handleToggleAbgeschlossen = async (anfrageId: number, abgeschlossen: boolean) => {
         try {
-            const anfrage = anfragen.find(a => a.id === anfrageId);
-            if (!anfrage) return;
-
-            const res = await fetch(`/api/anfragen/${anfrageId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    bauvorhaben: anfrage.bauvorhaben,
-                    kundenId: anfrage.kundenId,
-                    betrag: anfrage.betrag,
-                    projektStrasse: anfrage.projektStrasse,
-                    projektPlz: anfrage.projektPlz,
-                    projektOrt: anfrage.projektOrt,
-                    abgeschlossen: abgeschlossen
-                })
-            });
+            // Eigener Weg nur für den Haken: Ein PUT mit allen Feldern würde, was hier
+            // fehlt (z. B. die Beschreibung), mit überschreiben.
+            const res = await fetch(
+                `/api/anfragen/${encodeURIComponent(anfrageId)}/abgeschlossen?abgeschlossen=${abgeschlossen}`,
+                { method: 'PATCH' },
+            );
 
             if (!res.ok) throw new Error('Status der Anfrage konnte nicht gespeichert werden.');
 

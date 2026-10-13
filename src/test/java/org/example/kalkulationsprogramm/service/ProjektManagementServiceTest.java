@@ -600,6 +600,67 @@ class ProjektManagementServiceTest {
         verify(dateiSpeicherService).kopiereBildZuDokumenten("uuid-test.jpg");
     }
 
+    /** Anfrage mit Kunde und Beschreibung, wie sie "Von Anfrage übernehmen" findet. */
+    private Anfrage anfrageMitBeschreibung(Long id, String bauvorhaben, String beschreibung) {
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(id);
+        anfrage.setBauvorhaben(bauvorhaben);
+        anfrage.setKurzbeschreibung(beschreibung);
+        anfrage.setDokumente(new ArrayList<>());
+        Kunde kunde = new Kunde();
+        kunde.setId(10L);
+        kunde.setName("Max Mustermann");
+        anfrage.setKunde(kunde);
+        return anfrage;
+    }
+
+    private Projekt erstelleProjektAusAnfragen(ProjektErstellenDto dto, List<Anfrage> anfragen) {
+        when(kundeRepository.findById(10L)).thenReturn(Optional.of(anfragen.getFirst().getKunde()));
+        when(anfrageRepository.findAllById(dto.getAnfrageIds())).thenReturn(anfragen);
+        when(projektPersistenceService.saveProjektWithRetry(any(Projekt.class)))
+                .thenAnswer(inv -> {
+                    Projekt p = inv.getArgument(0);
+                    p.setId(100L);
+                    return p;
+                });
+        when(projektRepository.findById(100L)).thenAnswer(inv -> Optional.of(new Projekt()));
+        when(projektMapper.toProjektResponseDto(any())).thenReturn(new ProjektResponseDto());
+
+        service.erstelleProjekt(dto, null, null, null, null, null, null);
+
+        ArgumentCaptor<Projekt> captor = ArgumentCaptor.forClass(Projekt.class);
+        verify(projektPersistenceService).saveProjektWithRetry(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    void erstelleProjektUebernimmtBeschreibungDerAnfrageBevorSieGeloeschtWird() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg",
+                "Text aus dem Webseiten-Formular: Geländer 12 m, verzinkt");
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        dto.setAnfrageIds(List.of(1L));
+        dto.setAuftragsnummer("2026/10/00001");
+
+        Projekt projekt = erstelleProjektAusAnfragen(dto, List.of(anfrage));
+
+        assertEquals("Text aus dem Webseiten-Formular: Geländer 12 m, verzinkt", projekt.getKurzbeschreibung());
+        verify(anfrageRepository).delete(anfrage);
+    }
+
+    @Test
+    void erstelleProjektHaengtAnfrageBeschreibungAnEingegebeneBeschreibungAn() {
+        Anfrage anfrage = anfrageMitBeschreibung(1L, "Geländer Musterweg", "Geländer 12 m, verzinkt");
+        ProjektErstellenDto dto = new ProjektErstellenDto();
+        dto.setAnfrageIds(List.of(1L));
+        dto.setAuftragsnummer("2026/10/00001");
+        dto.setKurzbeschreibung("Aufmaß am Montag");
+
+        Projekt projekt = erstelleProjektAusAnfragen(dto, List.of(anfrage));
+
+        assertEquals("Aufmaß am Montag\n\n--- Übernommen aus Anfrage: Geländer Musterweg ---\n"
+                + "Geländer 12 m, verzinkt", projekt.getKurzbeschreibung());
+    }
+
     @Test
     void notizBildWirdUebersprungenWennDateiKopierenFehlschlaegt() {
         // Reproduziert den Bug-Fall, falls die Quelldatei nicht (mehr) existiert:

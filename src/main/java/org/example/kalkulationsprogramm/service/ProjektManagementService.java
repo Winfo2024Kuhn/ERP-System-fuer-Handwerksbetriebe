@@ -288,39 +288,39 @@ ProjektManagementService {
 
         // Wenn Referenzanfragen angegeben wurden, fehlende Felder aus dem ersten übernehmen.
         // Der Bruttopreis wird hier NICHT gesetzt – er kommt aus den Dokumenten des Projekts.
-        if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
-            List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
-            if (!anfragen.isEmpty()) {
-                Anfrage erstes = anfragen.getFirst();
-                if (dto.getBauvorhaben() == null) {
-                    dto.setBauvorhaben(erstes.getBauvorhaben());
-                }
-                if (dto.getKundenId() == null && erstes.getKunde() != null) {
-                    dto.setKundenId(erstes.getKunde().getId());
-                }
-                if (dto.getKunde() == null && erstes.getKunde() != null) {
-                    dto.setKunde(erstes.getKunde().getName());
-                }
-                if (dto.getAuftragsnummer() == null) {
-                    erstes.getDokumente().stream()
-                            .filter(AnfrageGeschaeftsdokument.class::isInstance)
-                            .map(AnfrageGeschaeftsdokument.class::cast)
-                            .map(AnfrageGeschaeftsdokument::getDokumentid)
-                            .findFirst()
-                            .ifPresent(dto::setAuftragsnummer);
-                }
-                if (dto.getKundennummer() == null && erstes.getKunde() != null) {
-                    dto.setKundennummer(erstes.getKunde().getKundennummer());
-                }
-                if ((dto.getKundenEmails() == null || dto.getKundenEmails().isEmpty())) {
-                    dto.setKundenEmails(anfragen.stream()
-                            .flatMap(a -> (a.getKunde() != null && a.getKunde().getKundenEmails() != null)
-                                    ? a.getKunde().getKundenEmails().stream()
-                                    : java.util.stream.Stream.empty())
-                            .filter(java.util.Objects::nonNull)
-                            .distinct()
-                            .collect(Collectors.toList()));
-                }
+        List<Anfrage> uebernommeneAnfragen = dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()
+                ? anfrageRepository.findAllById(dto.getAnfrageIds())
+                : List.of();
+        if (!uebernommeneAnfragen.isEmpty()) {
+            Anfrage erstes = uebernommeneAnfragen.getFirst();
+            if (dto.getBauvorhaben() == null) {
+                dto.setBauvorhaben(erstes.getBauvorhaben());
+            }
+            if (dto.getKundenId() == null && erstes.getKunde() != null) {
+                dto.setKundenId(erstes.getKunde().getId());
+            }
+            if (dto.getKunde() == null && erstes.getKunde() != null) {
+                dto.setKunde(erstes.getKunde().getName());
+            }
+            if (dto.getAuftragsnummer() == null) {
+                erstes.getDokumente().stream()
+                        .filter(AnfrageGeschaeftsdokument.class::isInstance)
+                        .map(AnfrageGeschaeftsdokument.class::cast)
+                        .map(AnfrageGeschaeftsdokument::getDokumentid)
+                        .findFirst()
+                        .ifPresent(dto::setAuftragsnummer);
+            }
+            if (dto.getKundennummer() == null && erstes.getKunde() != null) {
+                dto.setKundennummer(erstes.getKunde().getKundennummer());
+            }
+            if ((dto.getKundenEmails() == null || dto.getKundenEmails().isEmpty())) {
+                dto.setKundenEmails(uebernommeneAnfragen.stream()
+                        .flatMap(a -> (a.getKunde() != null && a.getKunde().getKundenEmails() != null)
+                                ? a.getKunde().getKundenEmails().stream()
+                                : java.util.stream.Stream.empty())
+                        .filter(java.util.Objects::nonNull)
+                        .distinct()
+                        .collect(Collectors.toList()));
             }
         }
 
@@ -336,6 +336,9 @@ ProjektManagementService {
         }
         neuesProjekt.setBauvorhaben(dto.getBauvorhaben());
         neuesProjekt.setKurzbeschreibung(dto.getKurzbeschreibung());
+        // Die Anfrage wird unten gelöscht – ihre Beschreibung (oft der Text aus dem
+        // Webseiten-Formular) muss vorher ins Projekt, wie beim Zusammenführen.
+        uebernommeneAnfragen.forEach(anfrage -> mergeKurzbeschreibung(neuesProjekt, anfrage));
         neuesProjekt.setBruttoPreis(java.math.BigDecimal.ZERO);
         neuesProjekt.setBezahlt(false);
         neuesProjekt.setAnlegedatum(dto.getAnlegedatum() != null ? dto.getAnlegedatum() : LocalDate.now());
@@ -420,10 +423,9 @@ ProjektManagementService {
             System.err.println("Failed to trigger email backfill: " + e.getMessage());
         }
 
-        if (dto.getAnfrageIds() != null && !dto.getAnfrageIds().isEmpty()) {
-            List<Anfrage> anfragen = anfrageRepository.findAllById(dto.getAnfrageIds());
+        if (!uebernommeneAnfragen.isEmpty()) {
             boolean imageSetFromAnfrage = false;
-            for (Anfrage a : anfragen) {
+            for (Anfrage a : uebernommeneAnfragen) {
                 // Übernehme Profilbild vom Anfrage, falls Projekt noch keines hat
                 if (!imageSetFromAnfrage
                         && (gespeichertesProjekt.getBildUrl() == null || gespeichertesProjekt.getBildUrl().isBlank())) {
