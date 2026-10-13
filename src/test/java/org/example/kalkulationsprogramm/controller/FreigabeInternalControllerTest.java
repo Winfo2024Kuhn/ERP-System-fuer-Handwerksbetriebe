@@ -7,6 +7,7 @@ import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAkzeptierenRequest;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.FreigabeErklaerung;
 import org.example.kalkulationsprogramm.service.FreigabeCodeAnforderungException;
 import org.example.kalkulationsprogramm.service.FreigabeCodeException;
 import org.example.kalkulationsprogramm.service.FreigabeCodeService;
@@ -29,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -89,7 +91,7 @@ class FreigabeInternalControllerTest {
         saved.setUnterzeichnerName("Max Mustermann");
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-ok"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
                 .willReturn(saved);
 
         String json = objectMapper.writeValueAsString(validRequest());
@@ -113,7 +115,7 @@ class FreigabeInternalControllerTest {
         saved.setUnterzeichnerName("Max Mustermann");
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-alt"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
                 .willReturn(saved);
 
         FreigabeAkzeptierenRequest req = validRequest();
@@ -129,8 +131,58 @@ class FreigabeInternalControllerTest {
         ArgumentCaptor<List<String>> captor = ArgumentCaptor.forClass(List.class);
         verify(freigabeService).akzeptiereMitCode(
                 eq("uuid-alt"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), captor.capture(), eq("123456"));
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), captor.capture(), eq("123456"), any());
         assertThat(captor.getValue()).containsExactly("alt-1", "alt-2");
+    }
+
+    @Test
+    void akzeptieren_reichtRechtsnachweisAnServiceUndMeldetVorzeitigenBeginn() throws Exception {
+        DokumentFreigabe saved = new DokumentFreigabe();
+        saved.setUuid("uuid-recht");
+        saved.setDokumentNummer("ANG-2026-0003");
+        saved.setDokumentArt("Angebot");
+        saved.setStatus(FreigabeStatus.ACCEPTED);
+        saved.setAkzeptiertAm(LocalDateTime.of(2026, 10, 13, 9, 0));
+        saved.setUnterzeichnerName("Max Mustermann");
+        saved.setVorzeitigerBeginn(true);
+        given(freigabeService.akzeptiereMitCode(
+                eq("uuid-recht"), anyString(), anyString(), anyString(),
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
+                .willReturn(saved);
+
+        FreigabeAkzeptierenRequest req = validRequest();
+        req.setVorzeitigerBeginn(true);
+        req.setWiderrufBelehrungStand("2026-10-13");
+        req.setDatenschutzStand("2026-10-13");
+        req.setBestaetigungText("Ich beauftrage Angebot ANG-2026-0003 verbindlich und zahlungspflichtig.");
+        req.setKnopfText("Zahlungspflichtig beauftragen");
+
+        mockMvc.perform(post("/api/internal/freigabe/uuid-recht/akzeptieren")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.vorzeitigerBeginn").value(true));
+
+        ArgumentCaptor<FreigabeErklaerung> captor = ArgumentCaptor.forClass(FreigabeErklaerung.class);
+        verify(freigabeService).akzeptiereMitCode(
+                eq("uuid-recht"), anyString(), anyString(), anyString(),
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), captor.capture());
+        assertThat(captor.getValue()).isEqualTo(new FreigabeErklaerung(true, "2026-10-13", "2026-10-13",
+                "Ich beauftrage Angebot ANG-2026-0003 verbindlich und zahlungspflichtig.",
+                "Zahlungspflichtig beauftragen"));
+    }
+
+    @Test
+    void akzeptieren_ueberlangerKnopftext_gibt400() throws Exception {
+        FreigabeAkzeptierenRequest req = validRequest();
+        req.setKnopfText("x".repeat(10_001));
+
+        mockMvc.perform(post("/api/internal/freigabe/uuid-lang/akzeptieren")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+        verify(freigabeService, never()).akzeptiereMitCode(
+                anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -182,7 +234,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_bereitsAngenommenerVorgang_gibt410MitKlartextMeldung() throws Exception {
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-zweitlink"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
                 .willThrow(new IllegalStateException("Angebot wurde bereits angenommen."));
 
         String json = objectMapper.writeValueAsString(validRequest());
@@ -199,7 +251,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_unbekannteUuid_gibt404() throws Exception {
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-gibts-nicht"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
                 .willThrow(new IllegalArgumentException(DokumentFreigabeService.UNBEKANNTE_UUID_MESSAGE));
 
         String json = objectMapper.writeValueAsString(validRequest());
@@ -330,7 +382,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_falscherCode_gibt422MitVerbleibendenVersuchen() throws Exception {
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-falsch"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
                 .willThrow(new FreigabeCodeException(FreigabeCodeException.Grund.FALSCH, "Der Code stimmt nicht.", 3));
 
         mockMvc.perform(post("/api/internal/freigabe/uuid-falsch/akzeptieren")
@@ -347,7 +399,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_fuenfterFehler_meldetNeuenCodeMitAdresseUndWartezeit() throws Exception {
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-neu"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
                 .willThrow(new FreigabeCodeException(FreigabeCodeException.Grund.NEUER_CODE_VERSCHICKT,
                         "Neuer Code unterwegs.", null, 30L, "m•••@example.de"));
 
@@ -364,7 +416,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_gesperrterCode_gibt422OhneVersuche() throws Exception {
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-gesperrt"), anyString(), anyString(), anyString(),
-                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456")))
+                eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), any()))
                 .willThrow(new FreigabeCodeException(FreigabeCodeException.Grund.GESPERRT, "Gesperrt.", null));
 
         mockMvc.perform(post("/api/internal/freigabe/uuid-gesperrt/akzeptieren")
@@ -410,7 +462,7 @@ class FreigabeInternalControllerTest {
         req.setUnterzeichnerName("<script>alert(1)</script> '; DROP TABLE x; --");
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-xss"), anyString(), anyString(), anyString(),
-                eq("<script>alert(1)</script>"), eq("'; DROP TABLE x; --"), anyString(), any(), eq("123456")))
+                eq("<script>alert(1)</script>"), eq("'; DROP TABLE x; --"), anyString(), any(), eq("123456"), any()))
                 .willThrow(new FreigabeCodeException(FreigabeCodeException.Grund.FALSCH, "Der Code stimmt nicht.", 4));
 
         mockMvc.perform(post("/api/internal/freigabe/uuid-xss/akzeptieren")
@@ -560,7 +612,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_serviceValidierung_gibt400MitMeldung() throws Exception {
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-name"), anyString(), anyString(), anyString(),
-                anyString(), anyString(), anyString(), any(), eq("123456")))
+                anyString(), anyString(), anyString(), any(), eq("123456"), any()))
                 .willThrow(new IllegalArgumentException("Vor- und Nachname sind für die digitale Annahme erforderlich."));
 
         mockMvc.perform(post("/api/internal/freigabe/uuid-name/akzeptieren")
@@ -574,7 +626,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_serviceValidierungOhneMeldung_gibt400MitStandardtext() throws Exception {
         given(freigabeService.akzeptiereMitCode(
                 eq("uuid-leer"), anyString(), anyString(), anyString(),
-                anyString(), anyString(), anyString(), any(), eq("123456")))
+                anyString(), anyString(), anyString(), any(), eq("123456"), any()))
                 .willThrow(new IllegalArgumentException());
 
         mockMvc.perform(post("/api/internal/freigabe/uuid-leer/akzeptieren")
@@ -588,7 +640,7 @@ class FreigabeInternalControllerTest {
     void akzeptieren_kuerztUserAgentUndAkzeptiertFehlenden() throws Exception {
         DokumentFreigabe saved = ansichtFreigabe("uuid-ua", FreigabeStatus.ACCEPTED);
         given(freigabeService.akzeptiereMitCode(
-                eq("uuid-ua"), any(), any(), any(), any(), any(), any(), any(), any()))
+                eq("uuid-ua"), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .willReturn(saved);
 
         FreigabeAkzeptierenRequest lang = validRequest();
@@ -598,7 +650,7 @@ class FreigabeInternalControllerTest {
                         .content(objectMapper.writeValueAsString(lang)))
                 .andExpect(status().isOk());
         verify(freigabeService).akzeptiereMitCode(eq("uuid-ua"), any(), eq("x".repeat(500)),
-                any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any());
 
         FreigabeAkzeptierenRequest ohne = validRequest();
         ohne.setUserAgent(null);
@@ -607,6 +659,6 @@ class FreigabeInternalControllerTest {
                         .content(objectMapper.writeValueAsString(ohne)))
                 .andExpect(status().isOk());
         verify(freigabeService).akzeptiereMitCode(eq("uuid-ua"), any(), org.mockito.ArgumentMatchers.isNull(),
-                any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any());
     }
 }

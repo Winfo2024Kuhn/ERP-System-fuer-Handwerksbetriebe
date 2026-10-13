@@ -22,4 +22,6 @@ public class FreigabeAkzeptiertResponse
     private String hashAcceptance;
     /** Vor- und Nachname der freigebenden Person, normalisiert wie gespeichert. */
     private String unterzeichnerName;
+    /** Gespeicherte Entscheidung zum vorzeitigen Beginn ({@code null} = keine Angabe). */
+    private Boolean vorzeitigerBeginn;
 }

@@ -62,4 +62,26 @@ public class FreigabeAkzeptierenRequest
      * Betrag selbst neu – der Client-Betrag wird nie vertraut.
      */
     private List<String> ausgewaehlteAlternativen;
+
+    /**
+     * Freiwilliges Häkchen „Beginn vor Ablauf der Widerrufsfrist“. {@code null} kommt von
+     * älteren Website-Ständen, die das Häkchen noch nicht kennen.
+     */
+    private Boolean vorzeitigerBeginn;
+
+    /** Stand der Widerrufsbelehrung, die die Freigabe-Seite verlinkt hat (z. B. 2026-10-13). */
+    @Size(max = 20, message = "Der Stand der Widerrufsbelehrung ist zu lang.")
+    private String widerrufBelehrungStand;
+
+    /** Stand der verlinkten Datenschutzerklärung. */
+    @Size(max = 20, message = "Der Stand der Datenschutzerklärung ist zu lang.")
+    private String datenschutzStand;
+
+    /** Wortlaut des Pflicht-Häkchens, wie ihn der Kunde gesehen hat. */
+    @Size(max = 500, message = "Der Bestätigungstext ist zu lang.")
+    private String bestaetigungText;
+
+    /** Beschriftung des Knopfs, der die Annahme ausgelöst hat. */
+    @Size(max = 100, message = "Der Knopftext ist zu lang.")
+    private String knopfText;
 }

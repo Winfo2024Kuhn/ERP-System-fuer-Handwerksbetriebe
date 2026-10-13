@@ -39,4 +39,17 @@ public class FreigabeAuditDto
     private String unterzeichnerName;
     private String hashOriginal;
     private String hashAcceptance;
+    /** Zeitpunkt, zu dem der E-Mail-Code bei der Annahme stimmte (seit V415, sonst {@code null}). */
+    private LocalDateTime codeBestaetigtAm;
+    /** Adresse, an die der bestätigte Code ging. */
+    private String codeBestaetigtEmail;
+    /**
+     * Rechtsnachweis (seit V423): {@code true} = Kunde verlangt Beginn vor Ablauf der
+     * Widerrufsfrist, {@code false} = nicht verlangt, {@code null} = ältere Annahme.
+     */
+    private Boolean vorzeitigerBeginn;
+    private String widerrufStand;
+    private String datenschutzStand;
+    private String bestaetigungText;
+    private String knopfText;
 }

@@ -1080,6 +1080,145 @@ class DokumentFreigabeServiceTest {
         assertThat(hashMit).hasSize(64).isNotEqualTo(hashOhne).isNotEqualTo(hashOhneAdresse);
     }
 
+    // ── Rechtsnachweis (V423): Zustimmung zum vorzeitigen Beginn, Textstände, Knopf ──
+
+    @Test
+    void akzeptiereMitCode_speichertBereinigtenRechtsnachweis() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-recht");
+        when(repository.findByUuidZumSperren("uuid-recht")).thenReturn(Optional.of(pending));
+        when(repository.findByUuid("uuid-recht")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(any())).thenReturn(Optional.empty());
+
+        DokumentFreigabe result = service.akzeptiereMitCode("uuid-recht", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, "123456",
+                new FreigabeErklaerung(true, " 2026-10-13 ", "2026-10-13",
+                        "Ich beauftrage\nAngebot  ANG-2026-0001 verbindlich.", "x".repeat(150)));
+
+        assertThat(result.getVorzeitigerBeginn()).isTrue();
+        assertThat(result.getWiderrufStand()).isEqualTo("2026-10-13");
+        assertThat(result.getDatenschutzStand()).isEqualTo("2026-10-13");
+        assertThat(result.getBestaetigungText()).isEqualTo("Ich beauftrage Angebot ANG-2026-0001 verbindlich.");
+        assertThat(result.getKnopfText()).hasSize(100);
+    }
+
+    @Test
+    void akzeptiere_bestaetigungTextMitFremdemDokument_wirdNichtGespeichert() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-fremd");
+        when(repository.findByUuid("uuid-fremd")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(any())).thenReturn(Optional.empty());
+
+        DokumentFreigabe result = service.akzeptiere("uuid-fremd", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null,
+                new FreigabeErklaerung(true, "2026-10-13", null, "Ich beauftrage nichts verbindlich.", "Knopf"));
+
+        assertThat(result.getBestaetigungText()).isNull();
+        assertThat(result.getVorzeitigerBeginn()).isTrue();
+        assertThat(result.getKnopfText()).isEqualTo("Knopf");
+    }
+
+    @Test
+    void akzeptiere_bestaetigungTextOhneDokumentbezeichnung_wirdNichtGespeichert() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-leer");
+        pending.setDokumentArt(null);
+        pending.setDokumentNummer(null);
+        when(repository.findByUuid("uuid-leer")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(any())).thenReturn(Optional.empty());
+
+        DokumentFreigabe result = service.akzeptiere("uuid-leer", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null,
+                new FreigabeErklaerung(null, null, null, "Ich beauftrage Angebot.", null));
+
+        assertThat(result.getBestaetigungText()).isNull();
+    }
+
+    @Test
+    void arbeitsbeginnHinweis_fuerPushNachricht() {
+        DokumentFreigabe f = pendingFreigabe("uuid-push");
+        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f)).isEmpty();
+
+        f.setVorzeitigerBeginn(true);
+        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f)).isEqualTo(" Sofort beginnen erlaubt.");
+
+        f.setVorzeitigerBeginn(false);
+        f.setAkzeptiertAm(LocalDateTime.of(2026, 10, 13, 9, 30));
+        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f))
+                .isEqualTo(" Erst nach Ablauf der Widerrufsfrist beginnen (bis 27.10.2026).");
+
+        f.setAkzeptiertAm(null);
+        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f))
+                .isEqualTo(" Erst nach Ablauf der Widerrufsfrist beginnen.");
+    }
+
+    @Test
+    void akzeptiere_ohneRechtsnachweis_bleibtLeer() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-ohne-recht");
+        when(repository.findByUuid("uuid-ohne-recht")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(any())).thenReturn(Optional.empty());
+
+        DokumentFreigabe result = service.akzeptiere("uuid-ohne-recht", "1.2.3.4", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null, null);
+
+        assertThat(result.getVorzeitigerBeginn()).isNull();
+        assertThat(result.getWiderrufStand()).isNull();
+        assertThat(result.getKnopfText()).isNull();
+    }
+
+    @Test
+    void hashAcceptance_jedeAngabeDesRechtsnachweisesVeraendertDenHash_ohneBleibtErWieBisher() {
+        LocalDateTime zeit = LocalDateTime.of(2026, 10, 13, 9, 0);
+        DokumentFreigabe basis = pendingFreigabe("uuid-h");
+        String ohne = service.berechneHashAcceptance(basis, "1.2.3.4", null, zeit);
+
+        java.util.List<java.util.function.Consumer<DokumentFreigabe>> aenderungen = List.of(
+                f -> f.setVorzeitigerBeginn(true),
+                f -> f.setVorzeitigerBeginn(false),
+                f -> f.setWiderrufStand("2026-10-13"),
+                f -> f.setDatenschutzStand("2026-10-13"),
+                f -> f.setBestaetigungText("Ich beauftrage verbindlich."),
+                f -> f.setKnopfText("Zahlungspflichtig beauftragen"));
+        java.util.Set<String> hashes = new java.util.HashSet<>();
+        hashes.add(ohne);
+        for (java.util.function.Consumer<DokumentFreigabe> aenderung : aenderungen) {
+            DokumentFreigabe f = pendingFreigabe("uuid-h");
+            aenderung.accept(f);
+            hashes.add(service.berechneHashAcceptance(f, "1.2.3.4", null, zeit));
+        }
+
+        assertThat(hashes).hasSize(aenderungen.size() + 1);
+        assertThat(service.berechneHashAcceptance(pendingFreigabe("uuid-h"), "1.2.3.4", null, zeit)).isEqualTo(ohne);
+    }
+
+    @Test
+    void findAuditByQuelle_liefertCodeBestaetigungUndRechtsnachweis() {
+        DokumentFreigabe f = pendingFreigabe("uuid-audit");
+        f.setQuellTyp(FreigabeQuellTyp.AUSGANGS_DOKUMENT);
+        f.setQuellDokumentId(77L);
+        f.setStatus(FreigabeStatus.ACCEPTED);
+        f.setCodeBestaetigtAm(LocalDateTime.of(2026, 10, 13, 9, 0));
+        f.setCodeBestaetigtEmail("max@example.de");
+        f.setVorzeitigerBeginn(false);
+        f.setWiderrufStand("2026-10-13");
+        f.setDatenschutzStand("2026-10-13");
+        f.setBestaetigungText("Ich beauftrage verbindlich.");
+        f.setKnopfText("Zahlungspflichtig beauftragen");
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(77L))).thenReturn(List.of(f));
+
+        org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto audit =
+                service.findAuditByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, 77L).orElseThrow();
+
+        assertThat(audit.getCodeBestaetigtEmail()).isEqualTo("max@example.de");
+        assertThat(audit.getCodeBestaetigtAm()).isEqualTo(LocalDateTime.of(2026, 10, 13, 9, 0));
+        assertThat(audit.getVorzeitigerBeginn()).isFalse();
+        assertThat(audit.getWiderrufStand()).isEqualTo("2026-10-13");
+        assertThat(audit.getDatenschutzStand()).isEqualTo("2026-10-13");
+        assertThat(audit.getBestaetigungText()).isEqualTo("Ich beauftrage verbindlich.");
+        assertThat(audit.getKnopfText()).isEqualTo("Zahlungspflichtig beauftragen");
+    }
+
     // ── PDF vom abgelaufenen Link lösen (DELETE /api/internal/freigabe/{uuid}/pdf) ──
 
     @org.junit.jupiter.params.ParameterizedTest

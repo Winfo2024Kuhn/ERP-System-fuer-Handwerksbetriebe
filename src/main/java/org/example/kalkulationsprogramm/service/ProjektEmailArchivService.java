@@ -5,6 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -61,22 +63,40 @@ public class ProjektEmailArchivService
             Path pdfQuelle,
             String dateiname)
     {
-        Objects.requireNonNull(projekt, "Projekt fehlt");
         Objects.requireNonNull(pdfQuelle, "PDF-Quelle fehlt");
+        return archiviereVersandteEmail(projekt, empfaenger, absender, subject, htmlBody, messageId,
+                List.of(new PdfAnhang(pdfQuelle, dateiname)));
+    }
 
-        String sichererDateiname = sichereDateikomponente(dateiname);
-        String gespeicherterDateiname = UUID.randomUUID() + "_" + sichererDateiname;
-        Path ziel = mailAttachmentDir.resolve(gespeicherterDateiname).normalize();
-        if (!ziel.startsWith(mailAttachmentDir))
+    /** Ein PDF-Anhang der archivierten Mail: Quelldatei und angezeigter Dateiname. */
+    public record PdfAnhang(Path quelle, String dateiname)
+    {
+    }
+
+    /**
+     * Wie {@link #archiviereVersandteEmail(Projekt, String, String, String, String, String, Path, String)},
+     * aber mit mehreren PDF-Anhängen (z. B. Auftragsbestätigung und Widerrufsbelehrung). Schlägt
+     * ein Anhang fehl, werden alle bereits kopierten Dateien wieder entfernt.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Email archiviereVersandteEmail(Projekt projekt,
+            String empfaenger,
+            String absender,
+            String subject,
+            String htmlBody,
+            String messageId,
+            List<PdfAnhang> anhaenge)
+    {
+        Objects.requireNonNull(projekt, "Projekt fehlt");
+        if (anhaenge == null || anhaenge.isEmpty() || anhaenge.stream().anyMatch(a -> a == null || a.quelle() == null))
         {
-            throw new IllegalArgumentException("Ungueltiger Attachment-Pfad");
+            throw new IllegalArgumentException("PDF-Quelle fehlt");
         }
 
+        List<Path> kopiert = new ArrayList<>();
         try
         {
             Files.createDirectories(mailAttachmentDir);
-            Files.copy(pdfQuelle, ziel, StandardCopyOption.REPLACE_EXISTING);
-            registriereRollbackBereinigung(ziel);
 
             Email email = new Email();
             email.assignToProjekt(projekt);
@@ -92,18 +112,32 @@ public class ProjektEmailArchivService
             email.setRead(true);
             email.setMessageId(messageId);
 
-            EmailAttachment attachment = new EmailAttachment();
-            attachment.setOriginalFilename(sichererDateiname);
-            attachment.setStoredFilename(gespeicherterDateiname);
-            attachment.setSizeBytes(Files.size(ziel));
-            attachment.setMimeType("application/pdf");
-            email.addAttachment(attachment);
+            for (PdfAnhang anhang : anhaenge)
+            {
+                String sichererDateiname = sichereDateikomponente(anhang.dateiname());
+                String gespeicherterDateiname = UUID.randomUUID() + "_" + sichererDateiname;
+                Path ziel = mailAttachmentDir.resolve(gespeicherterDateiname).normalize();
+                if (!ziel.startsWith(mailAttachmentDir))
+                {
+                    throw new IllegalArgumentException("Ungueltiger Attachment-Pfad");
+                }
+                Files.copy(anhang.quelle(), ziel, StandardCopyOption.REPLACE_EXISTING);
+                kopiert.add(ziel);
+                registriereRollbackBereinigung(ziel);
+
+                EmailAttachment attachment = new EmailAttachment();
+                attachment.setOriginalFilename(sichererDateiname);
+                attachment.setStoredFilename(gespeicherterDateiname);
+                attachment.setSizeBytes(Files.size(ziel));
+                attachment.setMimeType("application/pdf");
+                email.addAttachment(attachment);
+            }
 
             return emailRepository.save(email);
         }
         catch (Exception e)
         {
-            loescheStill(ziel);
+            kopiert.forEach(ProjektEmailArchivService::loescheStill);
             throw new IllegalStateException("Projekt-E-Mail konnte nicht archiviert werden", e);
         }
     }
