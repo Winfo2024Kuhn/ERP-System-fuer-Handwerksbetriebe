@@ -285,3 +285,120 @@ describe('Langzeitkrankmeldungen', () => {
         ).toBeInTheDocument();
     });
 });
+
+/**
+ * Issue #270: Das Tageslimit im Stufenplan kommt aus `aktuell.arbeitszeit` des
+ * Zeitkontos (nicht flach), und „Auf Krankengeld umstellen" fragt den Beginn ab.
+ */
+describe('Langzeitkrankmeldungen - Stufenplan-Limit und Krankengeld-Beginn (#270)', () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal('fetch', fetchMock);
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    const arbeitszeit = (stunden: number) => ({
+        montagStunden: stunden, dienstagStunden: stunden, mittwochStunden: stunden, donnerstagStunden: stunden,
+        freitagStunden: stunden - 0.5, samstagStunden: 0, sonntagStunden: 0, buchungStartZeit: '07:00', buchungEndeZeit: '16:00',
+    });
+    const zeitkonto = (mitarbeiterId: number, aktuell: unknown) => ({
+        mitarbeiterId, mitarbeiterVersion: 1, mitarbeiterName: 'Mustermann, Max', fuehrtZeitkonto: true, eingerichtet: aktuell !== null,
+        hinweis: null, aktuell, letzteVersion: aktuell, historie: aktuell ? [aktuell] : [],
+    });
+
+    function stubMitZeitkonten(zeitkonten: unknown[], phasenAntwort?: { status: number; body: unknown }) {
+        const postBodies: unknown[] = [];
+        fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.startsWith('/api/langzeitkrankmeldungen?status=')) {
+                return Promise.resolve(jsonResponse([MELDUNG_LAUFEND, MELDUNG_UEBERFAELLIG]));
+            }
+            if (url === '/api/langzeitkrankmeldungen/1' || url === '/api/langzeitkrankmeldungen/2') {
+                const meldung = url.endsWith('/1') ? MELDUNG_LAUFEND : MELDUNG_UEBERFAELLIG;
+                return Promise.resolve(jsonResponse({ ...meldung, stufenplanTage: [] }));
+            }
+            if (url.startsWith('/api/langzeitkrankmeldungen/2/phasen?version=3') && init?.method === 'POST') {
+                postBodies.push(JSON.parse(String(init.body)));
+                const antwort = phasenAntwort ?? { status: 201, body: { id: 9 } };
+                return Promise.resolve(jsonResponse(antwort.body, antwort.status));
+            }
+            if (url === '/api/mitarbeiter') return Promise.resolve(jsonResponse([]));
+            if (url === '/api/zeitverwaltung/zeitkonten') return Promise.resolve(jsonResponse(zeitkonten));
+            return Promise.resolve(jsonResponse({ error: 'Unbekannte Route im Test' }, 404));
+        });
+        return postBodies;
+    }
+
+    it('liest das Tageslimit aus aktuell.arbeitszeit statt „max. 0" zu zeigen', async () => {
+        const user = userEvent.setup();
+        stubMitZeitkonten([zeitkonto(10, { id: 1, version: 1, mitarbeiterId: 10, gueltigVon: '2026-01-01', gueltigBis: null, vorlageId: null, arbeitszeit: arbeitszeit(7.5) })]);
+        renderSeite();
+        await screen.findByText('Mustermann, Max');
+
+        const karte = screen.getByText('Mustermann, Max').closest('[data-meldung-id]') as HTMLElement;
+        await user.click(within(karte).getByRole('button', { name: 'Details anzeigen' }));
+
+        expect(await within(karte).findByPlaceholderText('max. 7,5')).toBeInTheDocument();
+        expect(within(karte).queryByPlaceholderText('max. 0')).not.toBeInTheDocument();
+    });
+
+    it('fällt ohne eingerichtete Arbeitszeit (aktuell = null) auf 8 Stunden zurück', async () => {
+        const user = userEvent.setup();
+        stubMitZeitkonten([zeitkonto(10, null)]);
+        renderSeite();
+        await screen.findByText('Mustermann, Max');
+
+        const karte = screen.getByText('Mustermann, Max').closest('[data-meldung-id]') as HTMLElement;
+        await user.click(within(karte).getByRole('button', { name: 'Details anzeigen' }));
+
+        expect(await within(karte).findByPlaceholderText('max. 8')).toBeInTheDocument();
+    });
+
+    it('öffnet beim Umstellen einen Dialog mit dem Tag nach Ende der Lohnfortzahlung als Vorgabe', async () => {
+        const user = userEvent.setup();
+        const postBodies = stubMitZeitkonten([]);
+        renderSeite();
+        await screen.findByText('Beispiel, Erika');
+
+        await user.click(screen.getByRole('button', { name: /Auf Krankengeld umstellen/ }));
+
+        const dialog = (await screen.findByRole('heading', { name: 'Auf Krankengeld umstellen' })).closest('[role="dialog"]') as HTMLElement;
+        // Lohnfortzahlung bis 14.03.2026 → Vorgabe 15.03.2026
+        expect(within(dialog).getByText(/Lohnfortzahlung endete am 14\.03\.2026/)).toBeInTheDocument();
+        expect(within(dialog).getByText('15.03.2026')).toBeInTheDocument();
+        // Noch nichts gesendet, bis „Umstellen" bestätigt wird.
+        expect(postBodies).toHaveLength(0);
+
+        // Info-Knopf erklärt, dass die Lohnfortzahlung automatisch endet.
+        await user.click(within(dialog).getByRole('button', { name: 'Mehr zu: Krankengeld ab' }));
+        const info = await screen.findByRole('dialog', { name: 'Krankengeld ab' });
+        expect(within(info).getByText(/endet automatisch am Tag vor dem gewählten Beginn/)).toBeInTheDocument();
+        await user.keyboard('{Escape}');
+
+        await user.click(within(dialog).getByRole('button', { name: 'Umstellen' }));
+
+        await waitFor(() => expect(postBodies).toHaveLength(1));
+        expect(postBodies[0]).toEqual({ typ: 'KRANKENGELD', vonDatum: '2026-03-15', bisDatum: null, stundenProTag: null });
+        const toastContainer = await screen.findByTestId('toast-container');
+        expect(within(toastContainer).getByText('Auf Krankengeld umgestellt.')).toBeInTheDocument();
+    });
+
+    it('zeigt beim Umstellen die Server-Meldung im Toast', async () => {
+        const user = userEvent.setup();
+        stubMitZeitkonten([], { status: 400, body: { error: 'Der Beginn liegt vor dem Beginn der Krankmeldung.' } });
+        renderSeite();
+        await screen.findByText('Beispiel, Erika');
+
+        await user.click(screen.getByRole('button', { name: /Auf Krankengeld umstellen/ }));
+        const dialog = (await screen.findByRole('heading', { name: 'Auf Krankengeld umstellen' })).closest('[role="dialog"]') as HTMLElement;
+        await user.click(within(dialog).getByRole('button', { name: 'Umstellen' }));
+
+        const toastContainer = await screen.findByTestId('toast-container');
+        expect(await within(toastContainer).findByText('Der Beginn liegt vor dem Beginn der Krankmeldung.')).toBeInTheDocument();
+        // Der Dialog bleibt offen, damit das Datum korrigiert werden kann.
+        expect(screen.getByRole('heading', { name: 'Auf Krankengeld umstellen' })).toBeInTheDocument();
+    });
+});

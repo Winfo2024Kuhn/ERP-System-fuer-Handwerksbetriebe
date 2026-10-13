@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardPage from './DashboardPage'
 import { OfflineService } from '../services/OfflineService'
+import { ToastProvider } from '../components/ui/toast'
 
 // actual-Spread ist notwendig, weil DashboardPage createOperationId und
 // buildBookingRequestPayload direkt aus dem Modul importiert – die müssen
@@ -66,9 +67,11 @@ function createMemoryStorage(): Storage {
 
 const renderDashboard = () =>
     render(
-        <MemoryRouter>
-            <DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />
-        </MemoryRouter>,
+        <ToastProvider>
+            <MemoryRouter>
+                <DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />
+            </MemoryRouter>
+        </ToastProvider>,
     )
 
 const buildActiveWorkSession = () => ({
@@ -603,18 +606,23 @@ describe('DashboardPage – Zahnrad zu den Einstellungen', () => {
     it('führt links neben dem Online-Abzeichen in die Einstellungen', async () => {
         const user = userEvent.setup()
         render(
-            <MemoryRouter initialEntries={['/']}>
-                <Routes>
-                    <Route
-                        path="/"
-                        element={<DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />}
-                    />
-                    <Route path="/einstellungen" element={<div>Einstellungs-Seite</div>} />
-                </Routes>
-            </MemoryRouter>,
+            <ToastProvider>
+                <MemoryRouter initialEntries={['/']}>
+                    <Routes>
+                        <Route
+                            path="/"
+                            element={<DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />}
+                        />
+                        <Route path="/einstellungen" element={<div>Einstellungs-Seite</div>} />
+                    </Routes>
+                </MemoryRouter>
+            </ToastProvider>,
         )
 
         const zahnrad = await screen.findByRole('button', { name: 'Einstellungen' })
+        // Die Nachrichten-Glocke sitzt direkt links neben dem Zahnrad.
+        const glocke = screen.getByRole('button', { name: /^Nachrichten/ })
+        expect(glocke.nextElementSibling).toBe(zahnrad)
         await user.click(zahnrad)
 
         expect(await screen.findByText('Einstellungs-Seite')).toBeInTheDocument()
@@ -751,5 +759,183 @@ describe('DashboardPage – Tätigkeit wählen mit Projektwechsel', () => {
 
         await waitFor(() => expect(startBodies(fetchMock)).toHaveLength(1))
         expect(startBodies(fetchMock)[0]).toMatchObject({ projektId: 77, arbeitsgangId: 12, produktkategorieId: 5 })
+    })
+})
+
+describe('DashboardPage – Nachrichten-Glocke (#270)', () => {
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', createMemoryStorage())
+        localStorage.setItem('zeiterfassung_token', 'tok-test')
+
+        mockedOfflineService.getFailedEntries.mockResolvedValue([])
+        mockedOfflineService.getHeuteGearbeitet.mockResolvedValue({ stunden: 0, minuten: 0, fromCache: false })
+        mockedOfflineService.getPendingCount.mockResolvedValue(1)
+        mockedOfflineService.getUnsyncedStopMinutes.mockResolvedValue(0)
+        mockedOfflineService.addPendingEntryWithOperationId.mockResolvedValue(undefined)
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+        localStorage.clear()
+        vi.unstubAllGlobals()
+    })
+
+    const ENTSCHEIDUNGEN = [
+        { id: 11, typ: 'URLAUB', status: 'GENEHMIGT', vonDatum: '2026-08-03', bisDatum: '2026-08-14', entschiedenAm: '2026-07-20T09:00:00' },
+        { id: 12, typ: 'ZEITAUSGLEICH', status: 'ABGELEHNT', vonDatum: '2026-09-01', bisDatum: '2026-09-01', entschiedenAm: '2026-07-21T09:00:00' },
+    ]
+    const VERFALL = { resturlaubTage: 3.5, verfallsDatum: '2027-03-31', verfallsJahr: 2027, tageVerbleibend: 20, dringend: true }
+
+    function stubNachrichten(opts: { entscheidungen?: unknown[]; verfall?: unknown; putStatus?: number; fehlerBeiId?: number } = {}) {
+        const puts: string[] = []
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (init?.method === 'PUT' && url.includes('/api/urlaub/antraege/')) {
+                puts.push(url)
+                if (opts.fehlerBeiId !== undefined && url.includes(`/antraege/${opts.fehlerBeiId}/`)) return new Response(null, { status: 500 })
+                return new Response(null, { status: opts.putStatus ?? 204 })
+            }
+            if (url.includes('/api/urlaub/antraege/neue-entscheidungen')) {
+                return new Response(JSON.stringify(opts.entscheidungen ?? ENTSCHEIDUNGEN), { status: 200, headers: { 'Content-Type': 'application/json' } })
+            }
+            if (url.includes('/api/zeiterfassung/urlaubsverfall/')) {
+                return new Response(JSON.stringify(opts.verfall ?? {}), { status: 200, headers: { 'Content-Type': 'application/json' } })
+            }
+            return antwortMitZeitkontoStatus(input)
+        })
+        vi.stubGlobal('fetch', fetchMock)
+        return { fetchMock, puts }
+    }
+
+    const glocke = () => screen.getByRole('button', { name: /^Nachrichten/ })
+    // Klicks im Sheet per fireEvent: vaul nutzt Pointer-APIs, die jsdom nicht hat (siehe KalenderPage.test).
+    const oeffneGlocke = async () => {
+        fireEvent.click(glocke())
+        return screen.findByRole('dialog')
+    }
+
+    it('zeigt die Zahl neuer Nachrichten an der Glocke statt Karten auf dem Dashboard', async () => {
+        const { fetchMock } = stubNachrichten()
+        renderDashboard()
+
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('2')
+        expect(glocke()).toHaveAccessibleName('Nachrichten, 2 neu')
+        expect(fetchMock).toHaveBeenCalledWith('/api/urlaub/antraege/neue-entscheidungen?mitarbeiterId=1')
+        // Auf dem Dashboard selbst steht keine Entscheidungskarte mehr.
+        expect(screen.queryByText('Dein Urlaub vom 03.08.2026 bis 14.08.2026 wurde genehmigt.')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Verstanden' })).not.toBeInTheDocument()
+    })
+
+    it('zeigt ab zehn Nachrichten „9+"', async () => {
+        stubNachrichten({ entscheidungen: Array.from({ length: 12 }, (_, i) => ({ ...ENTSCHEIDUNGEN[0], id: 100 + i })) })
+        renderDashboard()
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('9+')
+    })
+
+    it('markiert eine Entscheidung einzeln als gelesen – PUT …/{id}/entscheidung-gesehen, Zeile weg', async () => {
+        const { puts } = stubNachrichten()
+        renderDashboard()
+        await screen.findByTestId('nachrichten-zaehler')
+
+        const sheet = await oeffneGlocke()
+        expect(within(sheet).getByText('Dein Urlaub vom 03.08.2026 bis 14.08.2026 wurde genehmigt.')).toBeInTheDocument()
+        expect(within(sheet).getByText('Dein Zeitausgleich am 01.09.2026 wurde abgelehnt.')).toBeInTheDocument()
+        expect(within(sheet).getByText('Entschieden am 20.07.2026')).toBeInTheDocument()
+
+        fireEvent.click(within(sheet).getByRole('button', { name: 'Gelesen: Urlaub genehmigt' }))
+
+        await waitFor(() => expect(puts).toEqual(['/api/urlaub/antraege/11/entscheidung-gesehen']))
+        await waitFor(() => expect(within(sheet).queryByText('Dein Urlaub vom 03.08.2026 bis 14.08.2026 wurde genehmigt.')).not.toBeInTheDocument())
+        expect(within(sheet).getAllByTestId('nachricht')).toHaveLength(1)
+        expect(screen.getByTestId('nachrichten-zaehler')).toHaveTextContent('1')
+    })
+
+    it('markiert alle angezeigten einzeln als gelesen (nicht über den Sammel-Endpunkt) und zeigt danach den leeren Zustand', async () => {
+        const { puts } = stubNachrichten({ verfall: VERFALL })
+        renderDashboard()
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('3')
+
+        const sheet = await oeffneGlocke()
+        fireEvent.click(within(sheet).getByRole('button', { name: 'Alle als gelesen markieren' }))
+
+        await waitFor(() => expect([...puts].sort()).toEqual([
+            '/api/urlaub/antraege/11/entscheidung-gesehen',
+            '/api/urlaub/antraege/12/entscheidung-gesehen',
+        ]))
+        expect(puts.some(url => url.includes('entscheidungen-gesehen'))).toBe(false)
+        expect(await within(sheet).findByText('Keine neuen Nachrichten.')).toBeInTheDocument()
+        expect(screen.queryByTestId('nachrichten-zaehler')).not.toBeInTheDocument()
+    })
+
+    it('„Alle als gelesen": erfolgreiche verschwinden, eine fehlgeschlagene bleibt stehen und meldet sich', async () => {
+        stubNachrichten({ fehlerBeiId: 12 })
+        renderDashboard()
+        await screen.findByTestId('nachrichten-zaehler')
+
+        const sheet = await oeffneGlocke()
+        fireEvent.click(within(sheet).getByRole('button', { name: 'Alle als gelesen markieren' }))
+
+        expect(await screen.findByText('Das konnte gerade nicht gespeichert werden. Bitte später noch einmal versuchen.')).toBeInTheDocument()
+        await waitFor(() => expect(within(sheet).getAllByTestId('nachricht')).toHaveLength(1))
+        expect(within(sheet).getByText('Dein Zeitausgleich am 01.09.2026 wurde abgelehnt.')).toBeInTheDocument()
+    })
+
+    it('zeigt eine Storno-Entscheidung des Büros neutral mit „vom Büro storniert"', async () => {
+        stubNachrichten({ entscheidungen: [{ id: 13, typ: 'URLAUB', status: 'STORNIERT', vonDatum: '2026-08-03', bisDatum: '2026-08-14', entschiedenAm: '2026-07-22T09:00:00' }] })
+        renderDashboard()
+        await screen.findByTestId('nachrichten-zaehler')
+
+        const sheet = await oeffneGlocke()
+        expect(within(sheet).getByText('Urlaub storniert')).toBeInTheDocument()
+        expect(within(sheet).getByText('Dein Urlaub vom 03.08.2026 bis 14.08.2026 wurde vom Büro storniert.')).toBeInTheDocument()
+        expect(within(sheet).getByTestId('nachricht').querySelector('.lucide-ban')).not.toBeNull()
+    })
+
+    it('lässt die Nachricht stehen und zeigt einen Toast, wenn „Gelesen" nicht gespeichert werden kann', async () => {
+        stubNachrichten({ putStatus: 500 })
+        renderDashboard()
+        await screen.findByTestId('nachrichten-zaehler')
+
+        const sheet = await oeffneGlocke()
+        fireEvent.click(within(sheet).getByRole('button', { name: 'Gelesen: Urlaub genehmigt' }))
+
+        expect(await screen.findByText('Das konnte gerade nicht gespeichert werden. Bitte später noch einmal versuchen.')).toBeInTheDocument()
+        expect(within(sheet).getAllByTestId('nachricht')).toHaveLength(2)
+    })
+
+    it('merkt sich die gelesene Urlaubsverfall-Warnung auf dem Gerät, zeigt sie bei geänderten Daten wieder', async () => {
+        stubNachrichten({ entscheidungen: [], verfall: VERFALL })
+        const { unmount } = renderDashboard()
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('1')
+
+        const sheet = await oeffneGlocke()
+        expect(within(sheet).getByText('Dringend: Urlaub verfällt bald')).toBeInTheDocument()
+        expect(within(sheet).getByText(/Du hast noch 3,5 Resturlaubstage vom Vorjahr\. Sie verfallen am 31\.03\.2027 \(in 20 Tagen\)\./)).toBeInTheDocument()
+        fireEvent.click(within(sheet).getByRole('button', { name: 'Gelesen: Dringend: Urlaub verfällt bald' }))
+        expect(await within(sheet).findByText('Keine neuen Nachrichten.')).toBeInTheDocument()
+        unmount()
+
+        // Gleiche Warnung → bleibt gelesen.
+        renderDashboard()
+        await screen.findByText('Zeit erfassen')
+        await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(expect.stringContaining('/api/zeiterfassung/urlaubsverfall/')))
+        expect(screen.queryByTestId('nachrichten-zaehler')).not.toBeInTheDocument()
+        cleanup()
+
+        // Weniger Resttage → neue Warnung, erscheint wieder.
+        stubNachrichten({ entscheidungen: [], verfall: { ...VERFALL, resturlaubTage: 2 } })
+        renderDashboard()
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('1')
+    })
+
+    it('zeigt im leeren Zustand einen freundlichen Hinweis und keinen Zähler', async () => {
+        stubNachrichten({ entscheidungen: [] })
+        renderDashboard()
+        await screen.findByText('Zeit erfassen')
+        expect(screen.queryByTestId('nachrichten-zaehler')).not.toBeInTheDocument()
+
+        const sheet = await oeffneGlocke()
+        expect(within(sheet).getByText('Keine neuen Nachrichten.')).toBeInTheDocument()
+        expect(within(sheet).queryByRole('button', { name: 'Alle als gelesen markieren' })).not.toBeInTheDocument()
     })
 })

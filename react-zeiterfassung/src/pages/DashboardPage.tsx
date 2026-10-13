@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Settings, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, X, Stethoscope } from 'lucide-react'
+import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Settings, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, Stethoscope } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { NachrichtenGlocke } from '../features/nachrichten/NachrichtenGlocke'
+import { useToast } from '../components/ui/toast'
 
 interface Session {
     projektId: number | null
@@ -128,17 +130,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
     // ein nicht übertragener Feierabend nur in der Konsole: Die Karte verschwand,
     // der Handwerker war überzeugt gestempelt zu haben – und am Server lief die
     // Buchung weiter, bis der Auto-Stop sie auf die Endezeit setzte.
-    const [aktionsHinweis, setAktionsHinweis] = useState<string | null>(null)
-
-    // Urlaubsverfall-Warnung
-    interface UrlaubsVerfallWarnung {
-        resturlaubTage: number
-        verfallsDatum: string
-        verfallsJahr: number
-        tageVerbleibend: number
-        dringend: boolean
-    }
-    const [urlaubsWarnung, setUrlaubsWarnung] = useState<UrlaubsVerfallWarnung | null>(null)
+    // Bleibt als schwebender Warn-Toast stehen, bis man ihn per X schließt.
+    const toast = useToast()
+    const zeigeAktionsHinweis = (hinweis: string) => toast.warning(hinweis)
 
     // Langzeitkrankmeldung: informiert den Mitarbeiter, wenn gerade eine Phase
     // (Lohnfortzahlung/Krankengeld/Wiedereingliederung) läuft - damit klar ist,
@@ -205,8 +199,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             .then(data => { if (data?.darfScannen) setDarfBelegeScannen(true) })
             .catch(() => { /* offline -> Kachel bleibt versteckt, kein Drama */ })
     }, [])
-
-
 
     // Load today's hours - OFFLINE FIRST: show local data immediately
     //
@@ -395,26 +387,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         }
     }
 
-    // Load vacation expiration warning
-    const loadUrlaubsVerfallWarnung = async () => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return
-        try {
-            const res = await fetch(`/api/zeiterfassung/urlaubsverfall/${token}`)
-            if (res.ok) {
-                const data = await res.json()
-                // Only set warning if we have data (resturlaubTage > 0)
-                if (data && data.resturlaubTage && data.resturlaubTage > 0) {
-                    setUrlaubsWarnung(data)
-                } else {
-                    setUrlaubsWarnung(null)
-                }
-            }
-        } catch {
-            console.log('Urlaubsverfall-Warnung konnte nicht geladen werden')
-        }
-    }
-
     // Load running Langzeitkrankmeldung-Phase (falls vorhanden). Der Endpunkt
     // liefert genau fünf Felder, kein Name, keine Notiz (DSGVO) - und ein
     // leeres Objekt {}, wenn nichts anliegt (das ist der Normalfall für fast
@@ -444,10 +416,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         loadZeitkontoStatus()
         // Load today's hours
         loadHeuteGearbeitet()
-        // Urlaubsverfall-Warnung und Langzeitkrankmeldung parallel laden, nicht
-        // nacheinander - Handwerker sind oft im Funkloch, ein Fetch-Wasserfall
-        // kostet dort spürbar Zeit.
-        Promise.all([loadUrlaubsVerfallWarnung(), loadLangzeitkrankmeldung()])
+        // Langzeitkrankmeldung laden. Nachrichten (Entscheidungen, Urlaubsverfall)
+        // lädt die Glocke selbst, parallel dazu.
+        loadLangzeitkrankmeldung()
         // Load repair list (failed sync entries)
         loadFailedEntries()
 
@@ -525,15 +496,13 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         // Beide Guards haben früher stumm abgebrochen. Bei einer Aktion, die für
         // den Handwerker "Feierabend" bedeutet, darf nie einfach nichts passieren.
         if (!activeSession) {
-            setAktionsHinweis('Es läuft gerade keine Buchung, die beendet werden könnte.')
+            zeigeAktionsHinweis('Es läuft gerade keine Buchung, die beendet werden könnte.')
             return
         }
         if (!beginAction()) {
-            setAktionsHinweis('Einen Moment – die letzte Aktion läuft noch.')
+            zeigeAktionsHinweis('Einen Moment – die letzte Aktion läuft noch.')
             return
         }
-        setAktionsHinweis(null)
-
         const token = localStorage.getItem('zeiterfassung_token')
         const stopTime = new Date().toISOString()
         const stopOperationId = createOperationId()
@@ -574,7 +543,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                 // beim Chef angekommen. Ohne diesen Hinweis sieht der Handwerker
                 // nur die verschwundene Karte und geht heim - während die Buchung
                 // am Server weiterläuft.
-                setAktionsHinweis(
+                zeigeAktionsHinweis(
                     `Feierabend um ${new Date(stopTime).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} gespeichert, `
                     + 'aber noch kein Empfang. Er wird automatisch nachgetragen, sobald du wieder online bist.'
                 )
@@ -1018,11 +987,12 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         <h1 className="text-xl font-bold text-slate-900">{getDailyGreeting()}, {displayName}!</h1>
                         <p className="text-sm text-slate-500">{formatDate(new Date())}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                        <NachrichtenGlocke mitarbeiterId={mitarbeiter?.id} neuLadenAusloeser={syncStatus} />
                         <button
                             onClick={() => navigate('/einstellungen')}
                             aria-label="Einstellungen"
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95"
+                            className="flex min-h-11 min-w-11 items-center justify-center hover:bg-slate-100 rounded-lg transition-all active:scale-95 mr-1"
                         >
                             <Settings className="w-5 h-5 text-slate-600" />
                         </button>
@@ -1055,24 +1025,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         </div>
                         <ChevronRight className="w-5 h-5 text-amber-700 flex-shrink-0" />
                     </button>
-                )}
-
-                {/* Hinweis zur letzten Aktion (z.B. Feierabend ohne Empfang) */}
-                {aktionsHinweis && (
-                    <div className="w-full bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl p-4 shadow-sm flex items-start gap-3">
-                        <div className="w-10 h-10 bg-amber-200 rounded-xl flex items-center justify-center flex-shrink-0">
-                            <AlertTriangle className="w-5 h-5 text-amber-700" />
-                        </div>
-                        <p className="flex-1 text-sm font-medium leading-snug">{aktionsHinweis}</p>
-                        <button
-                            onClick={() => setAktionsHinweis(null)}
-                            aria-label="Hinweis schließen"
-                            title="Hinweis schließen"
-                            className="p-1 rounded-lg text-amber-700 hover:bg-amber-200 transition-colors flex-shrink-0"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
                 )}
 
                 {/* Aktive Buchung oder Start Button */}
@@ -1352,31 +1304,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                     </div>
                 )}
 
-                {/* Urlaubsverfall-Warnung - ganz unten auf dem Dashboard */}
-                {urlaubsWarnung && (
-                    <div className={`rounded-2xl p-4 ${urlaubsWarnung.dringend ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
-                        <div className="flex items-start gap-3">
-                            <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${urlaubsWarnung.dringend ? 'bg-red-100' : 'bg-amber-100'}`}>
-                                <AlertTriangle className={`w-5 h-5 ${urlaubsWarnung.dringend ? 'text-red-600' : 'text-amber-600'}`} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className={`font-bold ${urlaubsWarnung.dringend ? 'text-red-800' : 'text-amber-800'}`}>
-                                    {urlaubsWarnung.dringend ? '⚠️ Dringend: ' : ''}Urlaubsverfall beachten!
-                                </p>
-                                <p className={`text-sm mt-0.5 ${urlaubsWarnung.dringend ? 'text-red-700' : 'text-amber-700'}`}>
-                                    Du hast noch <strong>{urlaubsWarnung.resturlaubTage}</strong> Resturlaub-Tage vom Vorjahr.
-                                    Diese verfallen am <strong>01.02.{urlaubsWarnung.verfallsJahr}</strong>{urlaubsWarnung.tageVerbleibend > 0 ? ` (in ${urlaubsWarnung.tageVerbleibend} Tagen)` : ' (heute!)'}!
-                                </p>
-                                <button
-                                    onClick={() => navigate('/salden')}
-                                    className={`mt-2 text-sm font-medium ${urlaubsWarnung.dringend ? 'text-red-600' : 'text-amber-600'} hover:underline`}
-                                >
-                                    Zur Urlaubsübersicht →
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </main>
 
             {/* Arbeitsgang Switch Modal */}

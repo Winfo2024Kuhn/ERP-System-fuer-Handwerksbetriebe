@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import Urlaubsantraege from './Urlaubsantraege';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
+import { ToastProvider } from '../components/ui/toast';
 
 /**
  * Task 17 (Abschnitt 5, Langzeitkrankmeldung): Hinweis auf der
@@ -47,11 +48,13 @@ const WARNTEXT = 'In diesem Zeitraum läuft eine Krankmeldung (seit 01.03.2026).
 
 function renderSeite() {
     return render(
-        <ConfirmProvider>
-            <MemoryRouter initialEntries={['/urlaubsantraege']}>
-                <Urlaubsantraege />
-            </MemoryRouter>
-        </ConfirmProvider>,
+        <ToastProvider>
+            <ConfirmProvider>
+                <MemoryRouter initialEntries={['/urlaubsantraege']}>
+                    <Urlaubsantraege />
+                </MemoryRouter>
+            </ConfirmProvider>
+        </ToastProvider>,
     );
 }
 
@@ -156,5 +159,161 @@ describe('Urlaubsantraege - Hinweis bei laufender Krankmeldung', () => {
         for (const knopf of screen.getAllByRole('button', { name: /Genehmigen/ })) {
             expect(knopf).toBeEnabled();
         }
+    });
+});
+
+/**
+ * Issue #270: Entscheidungen des Büros müssen sichtbar bestätigt oder abgelehnt
+ * werden (Toast), ein Antrag lässt sich stornieren, und nirgends steht ein
+ * Rohwert wie „STORNIERT" auf dem Bildschirm.
+ */
+describe('Urlaubsantraege - Genehmigen, Stornieren und Klartext', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    const ANTRAG_GENEHMIGT = { ...ANTRAG_OHNE_HINWEIS, id: 3, status: 'GENEHMIGT' };
+
+    function mockFetchMitAktionen(opts: {
+        antraege?: unknown[];
+        aktion?: (url: string) => { status: number; body: unknown } | undefined;
+    }) {
+        const aufrufe: string[] = [];
+        const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (init?.method === 'PUT') {
+                aufrufe.push(url);
+                const antwort = opts.aktion?.(url) ?? { status: 200, body: { id: 1, status: 'GENEHMIGT' } };
+                return Promise.resolve({ ok: antwort.status < 400, status: antwort.status, json: () => Promise.resolve(antwort.body) });
+            }
+            if (url.startsWith('/api/urlaub/antraege')) {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts.antraege ?? [ANTRAG_OHNE_HINWEIS]) });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ warnungen: [] }) });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        return { fetchMock, aufrufe };
+    }
+
+    const toastText = async (muster: RegExp) => {
+        const container = await screen.findByTestId('toast-container');
+        return within(container).findByText(muster);
+    };
+
+    it('zeigt beim Genehmigen die Meldung des Servers statt stillem Nichts', async () => {
+        const meldung = 'Für den 03.08.2026 ist noch keine Arbeitszeit hinterlegt. Bitte zuerst Arbeitszeit zuweisen.';
+        mockFetchMitAktionen({ aktion: () => ({ status: 400, body: { status: 400, message: meldung } }) });
+        renderSeite();
+        await screen.findByText('Musterfrau, Erika');
+
+        fireEvent.click(screen.getByRole('button', { name: /Genehmigen/ }));
+        fireEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Genehmigen' }));
+
+        expect(await toastText(new RegExp(meldung.slice(0, 30)))).toBeInTheDocument();
+    });
+
+    it('bestätigt eine erfolgreiche Genehmigung per Toast und lädt die Liste neu', async () => {
+        const { fetchMock } = mockFetchMitAktionen({});
+        renderSeite();
+        await screen.findByText('Musterfrau, Erika');
+        const listenAufrufeVorher = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/urlaub/antraege?')).length;
+
+        fireEvent.click(screen.getByRole('button', { name: /Genehmigen/ }));
+        fireEvent.click(await within(screen.getByRole('dialog')).findByRole('button', { name: 'Genehmigen' }));
+
+        expect(await toastText(/Antrag genehmigt\./)).toBeInTheDocument();
+        await waitFor(() => {
+            const listenAufrufe = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/urlaub/antraege?')).length;
+            expect(listenAufrufe).toBe(listenAufrufeVorher + 1);
+        });
+    });
+
+    it('storniert einen genehmigten Antrag erst nach Rückfrage über PUT …/storno', async () => {
+        const { aufrufe } = mockFetchMitAktionen({ antraege: [ANTRAG_GENEHMIGT], aktion: () => ({ status: 200, body: { ...ANTRAG_GENEHMIGT, status: 'STORNIERT' } }) });
+        renderSeite();
+        await screen.findByText('Musterfrau, Erika');
+
+        // Genehmigte Anträge haben keinen Genehmigen-/Ablehnen-Knopf mehr, aber „Stornieren".
+        expect(screen.queryByRole('button', { name: /Genehmigen/ })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Stornieren' }));
+
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Urlaubsantrag stornieren?')).toBeInTheDocument();
+        expect(within(dialog).getByText(/Resturlaub steigt wieder/)).toBeInTheDocument();
+        // Abbrechen → nichts passiert.
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+        expect(aufrufe).toHaveLength(0);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Stornieren' }));
+        fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Stornieren' }));
+
+        await waitFor(() => expect(aufrufe).toEqual(['/api/urlaub/antraege/3/storno']));
+        expect(await toastText(/Antrag storniert\./)).toBeInTheDocument();
+    });
+
+    it('fragt beim Stornieren typabhängig nach – bei einer Krankmeldung ohne Resturlaub', async () => {
+        mockFetchMitAktionen({ antraege: [{ ...ANTRAG_GENEHMIGT, typ: 'KRANKHEIT' }] });
+        renderSeite();
+        await screen.findByText('Musterfrau, Erika');
+
+        const stornieren = screen.getByRole('button', { name: 'Stornieren' });
+        // Sekundär-Schema (rose), nicht das rote Gefahr-Rot.
+        expect(stornieren.className).toContain('text-rose-700');
+        expect(stornieren.className).not.toContain('text-red-600');
+        fireEvent.click(stornieren);
+
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Krankmeldung stornieren?')).toBeInTheDocument();
+        expect(within(dialog).getByText(/Bereits eingetragene Tage werden aus dem Kalender gelöscht\./)).toBeInTheDocument();
+        expect(within(dialog).queryByText(/Resturlaub/)).not.toBeInTheDocument();
+    });
+
+    it('zeigt beim Storno den 409-Text, wenn ein Monat festgeschrieben ist', async () => {
+        const meldung = 'Der Monat 08/2026 ist bereits festgeschrieben. Bitte zuerst den Monatsabschluss zurücksetzen.';
+        mockFetchMitAktionen({ antraege: [ANTRAG_GENEHMIGT], aktion: () => ({ status: 409, body: { status: 409, message: meldung } }) });
+        renderSeite();
+        await screen.findByText('Musterfrau, Erika');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Stornieren' }));
+        fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Stornieren' }));
+
+        expect(await toastText(/bereits festgeschrieben/)).toBeInTheDocument();
+    });
+
+    it('erklärt das Stornieren über einen Info-Knopf direkt am Knopf', async () => {
+        mockFetchMitAktionen({ antraege: [ANTRAG_GENEHMIGT] });
+        renderSeite();
+        await screen.findByText('Musterfrau, Erika');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Mehr zu: Stornieren' }));
+        const popover = await screen.findByRole('dialog', { name: 'Stornieren' });
+        expect(within(popover).getByText(/Was passiert im Hintergrund\?/)).toBeInTheDocument();
+        expect(within(popover).getByText(/Bei Urlaub steigt der Resturlaub/)).toBeInTheDocument();
+        expect(within(popover).getByText(/Nachricht aufs Handy/)).toBeInTheDocument();
+    });
+
+    it('zeigt stornierte Anträge mit Klartext-Badge und ohne Rohwert im Leerzustand', async () => {
+        const storniert = { ...ANTRAG_OHNE_HINWEIS, id: 4, status: 'STORNIERT' };
+        const fetchMock = vi.fn((url: string) => {
+            if (url.startsWith('/api/urlaub/antraege?status=STORNIERT')) {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([storniert]) });
+            }
+            if (url.startsWith('/api/urlaub/antraege')) {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ warnungen: [] }) });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        renderSeite();
+
+        expect(await screen.findByText('Keine offenen Anträge.')).toBeInTheDocument();
+        expect(screen.queryByText(/"OFFEN"/)).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Offene Anträge'));
+        fireEvent.click(await screen.findByRole('option', { name: 'Stornierte Anträge' }));
+
+        expect(await screen.findByText('Storniert')).toBeInTheDocument();
+        expect(screen.queryByText('STORNIERT')).not.toBeInTheDocument();
+        // Stornierte Anträge haben keine Aktionen mehr.
+        expect(screen.queryByRole('button', { name: 'Stornieren' })).not.toBeInTheDocument();
     });
 });

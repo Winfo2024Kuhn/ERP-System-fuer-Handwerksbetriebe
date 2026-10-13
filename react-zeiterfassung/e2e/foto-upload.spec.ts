@@ -1,6 +1,7 @@
 import type { Page, Route } from '@playwright/test'
 import { expect, test } from './hilfen/test'
 import { designPruefung } from './hilfen/design'
+import { meldungenSchliessen } from './hilfen/meldungen'
 
 // Dummy-Daten (DSGVO): Max Mustermann, Fotos sind ein winziges, gültiges JPEG.
 const KLEINES_JPEG = Buffer.from(
@@ -109,7 +110,8 @@ for (const art of ['projekte', 'anfragen'] as const) {
         await expect.poll(() => gesendet.length).toBe(4)
         expect(gesendet.slice(3)).toEqual(['riesig.jpg'])
 
-        // Foto entfernen schließt den Fall ab
+        // Foto entfernen schließt den Fall ab (vorher die schwebende Fehlermeldung per X schließen)
+        await meldungenSchliessen(page)
         await modal.getByRole('button', { name: 'Bild entfernen' }).tap()
         await expect(modal.getByRole('heading', { name: 'Bild hinzufügen' })).toBeVisible()
     })

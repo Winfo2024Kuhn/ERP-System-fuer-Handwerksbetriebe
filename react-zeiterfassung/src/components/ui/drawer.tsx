@@ -1,14 +1,13 @@
 import type { ComponentProps } from 'react'
 import { Drawer as DrawerPrimitive } from 'vaul'
 import { cn } from '../../lib/utils'
-import { mobileOverlayStyle } from './toast'
 
 /**
  * Bottom-Sheet auf Basis von vaul – der shadcn-Baustein „drawer“, über den
  * shadcn-MCP bezogen und auf unser Design-System umgestellt: weiße Fläche,
  * rounded-t-3xl, Griff oben, Scrim mit Weichzeichner. Lässt sich mit dem
- * Finger nach unten zuziehen und respektiert die reservierte Meldungsfläche
- * der Toasts (mobileOverlayStyle).
+ * Finger nach unten zuziehen. Meldungen (Toasts) schweben darüber und lassen
+ * sich per X schließen; sie verschieben das Sheet nicht.
  */
 function Drawer(props: ComponentProps<typeof DrawerPrimitive.Root>) {
     return <DrawerPrimitive.Root data-slot="drawer" {...props} />
@@ -30,7 +29,6 @@ function DrawerOverlay({ className, ...props }: ComponentProps<typeof DrawerPrim
     return (
         <DrawerPrimitive.Overlay
             data-slot="drawer-overlay"
-            style={mobileOverlayStyle}
             className={cn('fixed inset-0 z-[10000] bg-black/40 backdrop-blur-sm', className)}
             {...props}
         />
@@ -43,10 +41,9 @@ function DrawerContent({ className, children, style, ...props }: ComponentProps<
             <DrawerOverlay />
             <DrawerPrimitive.Content
                 data-slot="drawer-content"
-                // Die Meldungsfläche der Toasts (oben, bis 30dvh) darf das Sheet nie überdecken:
-                // die Höhe wird um die zentral gemessene Toast-Höhe gekürzt. Eigene Styles des
-                // Aufrufers kommen dazu, ersetzen diese Absicherung aber nicht.
-                style={{ maxHeight: 'calc(88dvh - var(--mobile-toast-height, 0px))', ...style }}
+                // Oben bleiben 12 % frei, damit Scrim und Statusleiste sichtbar bleiben.
+                // Eigene Styles des Aufrufers kommen dazu.
+                style={{ maxHeight: '88dvh', ...style }}
                 className={cn(
                     'fixed inset-x-0 bottom-0 z-[10001] flex h-auto flex-col rounded-t-3xl bg-white shadow-2xl outline-none',
                     className,

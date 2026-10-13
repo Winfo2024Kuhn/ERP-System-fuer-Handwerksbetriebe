@@ -4,8 +4,13 @@ import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select } from '../components/ui/select-custom';
-import { Check, X, Calendar, User, FileText, Plane, Stethoscope, Clock, AlertTriangle } from 'lucide-react';
+import { Check, X, Calendar, User, FileText, Plane, Stethoscope, Clock, AlertTriangle, Ban, Loader2 } from 'lucide-react';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { useToast } from '../components/ui/toast';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
+import { leseFehlermeldung } from '../lib/apiFehler';
+import { formatUrlaubstage } from '../lib/urlaubstage';
+import { stornoRueckfrage, type AntragTyp } from '../lib/antragStorno';
 import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
 
 interface Urlaubsantrag {
@@ -20,13 +25,33 @@ interface Urlaubsantrag {
     vonDatum: string;
     bisDatum: string;
     bemerkung: string | null;
-    status: 'OFFEN' | 'GENEHMIGT' | 'ABGELEHNT' | 'STORNIERT';
+    status: AntragStatus;
     erstellDatum: string;
-    typ: 'URLAUB' | 'KRANKHEIT' | 'FORTBILDUNG' | 'ZEITAUSGLEICH';
+    typ: AntragTyp;
+    /** Wann das Büro entschieden hat (null, solange der Antrag offen ist). */
+    entschiedenAm?: string | null;
+    /** Hat der Mitarbeiter die Entscheidung am Handy schon gesehen? */
+    entscheidungGesehen?: boolean;
+}
+
+type AntragStatus = 'OFFEN' | 'GENEHMIGT' | 'ABGELEHNT' | 'STORNIERT';
+
+/** Klartext je Stand – nie der Rohwert („STORNIERT") auf dem Bildschirm. */
+const STATUS_TEXTE: Record<AntragStatus, { label: string; leer: string; klasse: string }> = {
+    OFFEN: { label: 'Offen', leer: 'Keine offenen Anträge.', klasse: 'bg-yellow-100 text-yellow-700' },
+    GENEHMIGT: { label: 'Genehmigt', leer: 'Keine genehmigten Anträge.', klasse: 'bg-green-100 text-green-700' },
+    ABGELEHNT: { label: 'Abgelehnt', leer: 'Keine abgelehnten Anträge.', klasse: 'bg-red-100 text-red-700' },
+    STORNIERT: { label: 'Storniert', leer: 'Keine stornierten Anträge.', klasse: 'bg-slate-100 text-slate-700' },
+};
+
+function istAntragStatus(wert: string): wert is AntragStatus {
+    return wert in STATUS_TEXTE;
 }
 
 export default function Urlaubsantraege() {
     const confirmDialog = useConfirm();
+    const toast = useToast();
+    const [aktionLaeuftId, setAktionLaeuftId] = useState<number | null>(null);
     const [searchParams, setSearchParams] = useSearchParams();
     const [antraege, setAntraege] = useState<Urlaubsantrag[]>([]);
     const [statusFilter, setStatusFilter] = useState<string>(() => {
@@ -134,38 +159,46 @@ export default function Urlaubsantraege() {
         }
     };
 
+    /** Genehmigen, Ablehnen, Stornieren – ein Ablauf, damit jede Antwort des Servers sichtbar wird. */
+    const entscheide = async (id: number, aktion: 'approve' | 'reject' | 'storno', erfolg: string, ersatzFehler: string) => {
+        setAktionLaeuftId(id);
+        try {
+            const res = await fetch(`/api/urlaub/antraege/${id}/${aktion}`, { method: 'PUT' });
+            if (!res.ok) {
+                toast.error(await leseFehlermeldung(res, ersatzFehler));
+                return;
+            }
+            toast.success(erfolg);
+            await loadAntraege();
+        } catch (error) {
+            console.error(`Error (${aktion}) request`, error);
+            toast.error('Server nicht erreichbar. Bitte später erneut versuchen.');
+        } finally {
+            setAktionLaeuftId(null);
+        }
+    };
+
     const handleApprove = async (id: number) => {
         if (!await confirmDialog({ title: 'Genehmigen', message: 'Urlaubsantrag genehmigen?', variant: 'info', confirmLabel: 'Genehmigen' })) return;
-        try {
-            const res = await fetch(`/api/urlaub/antraege/${id}/approve`, { method: 'PUT' });
-            if (res.ok) {
-                loadAntraege();
-            }
-        } catch (error) {
-            console.error("Error approving request", error);
-        }
+        await entscheide(id, 'approve', 'Antrag genehmigt.', 'Der Antrag konnte nicht genehmigt werden.');
     };
 
     const handleReject = async (id: number) => {
         if (!await confirmDialog({ title: 'Ablehnen', message: 'Urlaubsantrag ablehnen?', variant: 'danger', confirmLabel: 'Ablehnen' })) return;
-        try {
-            const res = await fetch(`/api/urlaub/antraege/${id}/reject`, { method: 'PUT' });
-            if (res.ok) {
-                loadAntraege();
-            }
-        } catch (error) {
-            console.error("Error rejecting request", error);
-        }
+        await entscheide(id, 'reject', 'Antrag abgelehnt.', 'Der Antrag konnte nicht abgelehnt werden.');
+    };
+
+    const handleStorno = async (antrag: Urlaubsantrag) => {
+        if (!await confirmDialog({ ...stornoRueckfrage(antrag.typ), variant: 'danger', confirmLabel: 'Stornieren' })) return;
+        await entscheide(antrag.id, 'storno', 'Antrag storniert.', 'Der Antrag konnte nicht storniert werden.');
     };
 
     const getStatusBadge = (status: string) => {
-        switch (status) {
-            case 'OFFEN': return <span className="px-2 py-1 rounded bg-yellow-100 text-yellow-700 text-xs font-medium">Offen</span>;
-            case 'GENEHMIGT': return <span className="px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-medium">Genehmigt</span>;
-            case 'ABGELEHNT': return <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-medium">Abgelehnt</span>;
-            default: return <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">{status}</span>;
-        }
+        const text = istAntragStatus(status) ? STATUS_TEXTE[status] : { label: 'Unbekannt', klasse: 'bg-slate-100 text-slate-700' };
+        return <span className={`px-2 py-1 rounded text-xs font-medium ${text.klasse}`}>{text.label}</span>;
     };
+
+    const leerText = istAntragStatus(statusFilter) ? STATUS_TEXTE[statusFilter].leer : 'Keine Anträge gefunden.';
 
     return (
         <PageLayout>
@@ -198,7 +231,7 @@ export default function Urlaubsantraege() {
             <div className="space-y-4">
                 {antraege.length === 0 && !loading && (
                     <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-lg">
-                        <p>Keine Anträge mit Status "{statusFilter}" gefunden.</p>
+                        <p>{leerText}</p>
                     </div>
                 )}
 
@@ -250,7 +283,7 @@ export default function Urlaubsantraege() {
                                         </span>
                                         {antrag.mitarbeiter.jahresUrlaub && (
                                             <span className="text-rose-600 font-medium">
-                                                (Jahresurlaub: {antrag.mitarbeiter.jahresUrlaub} Tage)
+                                                (Jahresurlaub: {formatUrlaubstage(antrag.mitarbeiter.jahresUrlaub)} Tage)
                                             </span>
                                         )}
                                     </div>
@@ -267,9 +300,9 @@ export default function Urlaubsantraege() {
                                 <div>
                                     {getStatusBadge(antrag.status)}
                                 </div>
-                                {antrag.status === 'OFFEN' && (
+                                {(antrag.status === 'OFFEN' || antrag.status === 'GENEHMIGT') && (
                                     <div className="flex flex-col items-end gap-2">
-                                        {hinweise[antrag.id]?.length > 0 && (
+                                        {antrag.status === 'OFFEN' && hinweise[antrag.id]?.length > 0 && (
                                             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 flex items-start gap-2 max-w-sm">
                                                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                                                 <div>
@@ -279,22 +312,49 @@ export default function Urlaubsantraege() {
                                                 </div>
                                             </div>
                                         )}
-                                        <div className="flex gap-2">
+                                        <div className="flex items-center gap-2">
                                             <Button
-                                                onClick={() => handleReject(antrag.id)}
+                                                onClick={() => handleStorno(antrag)}
                                                 variant="outline"
-                                                className="text-red-600 hover:bg-red-50 border-red-200"
+                                                className="border-rose-300 text-rose-700 hover:bg-rose-50"
                                                 size="sm"
+                                                disabled={aktionLaeuftId === antrag.id}
                                             >
-                                                <X className="w-4 h-4 mr-1" /> Ablehnen
+                                                {aktionLaeuftId === antrag.id
+                                                    ? <Loader2 className="w-4 h-4 mr-1 animate-spin" aria-hidden="true" />
+                                                    : <Ban className="w-4 h-4 mr-1" aria-hidden="true" />}
+                                                Stornieren
                                             </Button>
-                                            <Button
-                                                onClick={() => handleApprove(antrag.id)}
-                                                className="bg-rose-600 text-white hover:bg-rose-700"
-                                                size="sm"
-                                            >
-                                                <Check className="w-4 h-4 mr-1" /> Genehmigen
-                                            </Button>
+                                            <InfoButton titel="Stornieren">
+                                                <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                                    <p>Der Antrag bekommt den Stand „Storniert". Alle Tage, die dieser Antrag im Kalender eingetragen hat, werden gelöscht. Bei Urlaub steigt der Resturlaub des Mitarbeiters entsprechend.</p>
+                                                </InfoAbschnitt>
+                                                <InfoAbschnitt titel="Was bewirkt das?">
+                                                    <p>Der Mitarbeiter bekommt eine Nachricht aufs Handy und findet sie in der Glocke der App. Den Antrag sieht er unter „Storniert" und kann neu beantragen. Liegt ein Tag in einem bereits abgeschlossenen Monat, geht das Storno nicht – erst den Monatsabschluss zurücksetzen.</p>
+                                                </InfoAbschnitt>
+                                            </InfoButton>
+                                            {antrag.status === 'OFFEN' && (
+                                                <>
+                                                    <span aria-hidden="true" className="mx-1 h-6 w-px bg-slate-200" />
+                                                    <Button
+                                                        onClick={() => handleReject(antrag.id)}
+                                                        variant="outline"
+                                                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                                                        size="sm"
+                                                        disabled={aktionLaeuftId === antrag.id}
+                                                    >
+                                                        <X className="w-4 h-4 mr-1" aria-hidden="true" /> Ablehnen
+                                                    </Button>
+                                                    <Button
+                                                        onClick={() => handleApprove(antrag.id)}
+                                                        className="bg-rose-600 text-white hover:bg-rose-700"
+                                                        size="sm"
+                                                        disabled={aktionLaeuftId === antrag.id}
+                                                    >
+                                                        <Check className="w-4 h-4 mr-1" aria-hidden="true" /> Genehmigen
+                                                    </Button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 )}

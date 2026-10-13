@@ -1,8 +1,8 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ZeiterfassungKalender from './ZeiterfassungKalender';
-const { toast, confirm } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() }, confirm: vi.fn() }));
+const { toast, confirm } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() }, confirm: vi.fn() }));
 vi.mock('../components/ui/toast', () => ({ useToast: () => toast }));
 vi.mock('../components/ui/confirm-dialog', () => ({ useConfirm: () => confirm }));
 const mockFetch = vi.fn();
@@ -22,6 +22,8 @@ const status = (closed = false) => ({
 let tage: unknown[];
 let closed: boolean, statusFailure: boolean;
 let saldoAntworten: Record<number, unknown>;
+let darfMonatAbschliessen: boolean;
+let berechtigungHaengt: boolean;
 
 function setup() {
     mockFetch.mockImplementation(async (input: string, init?: RequestInit) => {
@@ -35,6 +37,10 @@ function setup() {
         const saldoAbruf = /^\/api\/zeitverwaltung\/mitarbeiter\/(\d+)\/saldo\?/.exec(input);
         if (saldoAbruf) body = saldoAntworten[Number(saldoAbruf[1])];
         if (input.startsWith('/api/zeitverwaltung/kalender')) body = { tage, sollStundenMonat: 160, istStundenMonat: 168, differenz: 8 };
+        if (input === '/api/zeitverwaltung/monatsabschluesse/berechtigung') {
+            if (berechtigungHaengt) return new Promise(() => {});
+            body = { darfMonatAbschliessen };
+        }
         if (input === base) {
             if (statusFailure) return { ok: false, status: 500, json: async () => ({ message: 'Monatsabschluss konnte nicht geladen werden.' }) };
             body = status(closed);
@@ -65,6 +71,8 @@ beforeEach(() => {
     closed = false;
     statusFailure = false;
     saldoAntworten = {};
+    darfMonatAbschliessen = true;
+    berechtigungHaengt = false;
     confirm.mockResolvedValue(true);
     setup();
 });
@@ -470,3 +478,188 @@ describe('Festgeschriebener Monat Sperre und Freigabe-Dialog', () => {
     });
 });
 
+
+/** Ein Arbeitstag ohne Buchungen für die Rechtsklick-Tests. */
+const arbeitstag = (tag: number, wochentag: number, buchungen: unknown[] = []) => ({
+    datum: `${year}-08-${String(tag).padStart(2, '0')}`,
+    wochentag,
+    istFeiertag: false,
+    feiertagName: null,
+    sollStunden: wochentag < 6 ? 8 : 0,
+    istStunden: 0,
+    buchungen
+});
+
+const tagZelle = (tag: string) => screen.getByText(tag, { selector: 'span' }).closest('[class*="min-h-32"]') as HTMLElement;
+
+describe('Rechtsklick-Abwesenheit (#269)', () => {
+    it('bucht den rechtsgeklickten Tag, nicht den vorher angeklickten', async () => {
+        tage = [arbeitstag(9, 1), arbeitstag(14, 6 - 2)];
+        mount();
+        await screen.findByText('9', { selector: 'span' });
+
+        // Erst linker Klick auf den 9. (markiert ihn) …
+        fireEvent.mouseDown(tagZelle('9'), { button: 0 });
+        fireEvent.mouseUp(tagZelle('9'));
+        // … dann Rechtsklick auf den 14.
+        fireEvent.contextMenu(tagZelle('14'));
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Urlaub (ganzer Tag)' }));
+
+        await waitFor(() => {
+            const posts = mockFetch.mock.calls.filter(call => call[0] === '/api/abwesenheit' && call[1]?.method === 'POST');
+            expect(posts).toHaveLength(1);
+            expect(JSON.parse(String(posts[0][1].body))).toMatchObject({ datum: `${year}-08-14`, typ: 'URLAUB', halberTag: false });
+        });
+    });
+
+    it('behält die Mehrfachauswahl, wenn der Rechtsklick innerhalb der Markierung liegt', async () => {
+        tage = [arbeitstag(3, 1), arbeitstag(4, 2), arbeitstag(5, 3)];
+        mount();
+        await screen.findByText('3', { selector: 'span' });
+
+        fireEvent.mouseDown(tagZelle('3'), { button: 0 });
+        fireEvent.mouseEnter(tagZelle('4'));
+        fireEvent.mouseEnter(tagZelle('5'));
+        fireEvent.mouseUp(tagZelle('5'));
+        fireEvent.contextMenu(tagZelle('4'));
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Krankheit (3 Tage)' }));
+
+        await waitFor(() => {
+            const posts = mockFetch.mock.calls.filter(call => call[0] === '/api/abwesenheit' && call[1]?.method === 'POST');
+            expect(posts.map(call => JSON.parse(String(call[1].body)).datum)).toEqual([`${year}-08-03`, `${year}-08-04`, `${year}-08-05`]);
+        });
+    });
+
+    it('sagt Bescheid, wenn im markierten Zeitraum kein Arbeitstag liegt', async () => {
+        tage = [arbeitstag(1, 6), arbeitstag(2, 7)];
+        mount();
+        await screen.findByText('1', { selector: 'span' });
+
+        fireEvent.contextMenu(tagZelle('1'));
+        fireEvent.click(await screen.findByRole('button', { name: 'Urlaub (ganzer Tag)' }));
+
+        await waitFor(() => expect(toast.info).toHaveBeenCalledWith('Im markierten Zeitraum liegt kein Arbeitstag.'));
+        expect(mockFetch.mock.calls.filter(call => call[0] === '/api/abwesenheit')).toHaveLength(0);
+    });
+
+    it('zeigt die Server-Meldung, wenn der Monat festgeschrieben ist (409)', async () => {
+        tage = [arbeitstag(3, 1)];
+        const meldung = 'Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück.';
+        const standard = mockFetch.getMockImplementation()!;
+        mockFetch.mockImplementation(async (input: string, init?: RequestInit) => input === '/api/abwesenheit' && init?.method === 'POST'
+            ? { ok: false, status: 409, json: async () => ({ status: 409, message: meldung }) }
+            : standard(input, init));
+        mount();
+        await screen.findByText('3', { selector: 'span' });
+
+        fireEvent.contextMenu(tagZelle('3'));
+        fireEvent.click(await screen.findByRole('button', { name: 'Urlaub (ganzer Tag)' }));
+
+        await waitFor(() => expect(toast.error).toHaveBeenCalledWith(meldung));
+    });
+});
+
+describe('Monatsabschluss zurücksetzen nur mit Recht (#269)', () => {
+    it('blendet den Zurücksetzen-Knopf ohne Abschlussrecht aus und erklärt warum', async () => {
+        closed = true;
+        darfMonatAbschliessen = false;
+        tage = [arbeitstag(3, 1, [{
+            id: 1, projektId: 1, projektName: 'Testauftrag', arbeitsgangName: 'Montage',
+            startZeit: '08:00', endeZeit: '12:00', dauerMinuten: 240, dauerFormatiert: '4:00', notiz: ''
+        }])];
+        mount();
+        await screen.findByText('125,0h');
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+
+        const dialog = screen.getByRole('dialog', { name: 'Monatsabschluss ist festgeschrieben' });
+        expect(within(dialog).queryByRole('button', { name: /Monatsabschluss zurücksetzen/ })).not.toBeInTheDocument();
+        expect(within(dialog).getByText(/fehlt Ihnen das Abschlussrecht/)).toBeInTheDocument();
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /Nur ansehen/ }));
+        expect(screen.getByRole('dialog', { name: 'Tageserfassung' })).toBeVisible();
+        expect(screen.queryByRole('button', { name: /Monatsabschluss zurücksetzen/ })).not.toBeInTheDocument();
+    });
+});
+
+describe('Monatsabschluss-Recht wird noch geprüft', () => {
+    it('zeigt weder Zurücksetzen-Knopf noch „Recht fehlt“, solange die Antwort aussteht', async () => {
+        closed = true;
+        berechtigungHaengt = true;
+        tage = [arbeitstag(3, 1)];
+        mount();
+        await screen.findByText('125,0h');
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+
+        const dialog = screen.getByRole('dialog', { name: 'Monatsabschluss ist festgeschrieben' });
+        expect(within(dialog).queryByRole('button', { name: /Monatsabschluss zurücksetzen/ })).not.toBeInTheDocument();
+        expect(within(dialog).queryByText(/fehlt Ihnen das Abschlussrecht/)).not.toBeInTheDocument();
+        expect(within(dialog).getByText('Die bestehenden Buchungen können Sie im Nur-Lese-Modus ansehen.')).toBeInTheDocument();
+    });
+});
+
+describe('Resturlaub mit halben Tagen', () => {
+    it('zeigt halbe Urlaubstage mit Komma und erklärt die Rechnung über den Info-Knopf', async () => {
+        saldoAntworten = { 1: { urlaub: { jahresanspruch: 30, genommen: 10.5, geplant: 7, verbleibend: 12.5 }, gesamt: { istStunden: 100, sollStunden: 90, saldo: 10 } } };
+        mount();
+
+        expect(await screen.findByText('12,5 Tage')).toBeVisible();
+        expect(screen.getByText('Genommen: 10,5')).toBeVisible();
+        expect(screen.getByText('Geplant: 7')).toBeVisible();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Mehr zu: Resturlaub' }));
+        const popover = await screen.findByRole('dialog', { name: 'Resturlaub' });
+        expect(within(popover).getByText(/Halbe Urlaubstage zählen als 0,5 Tage/)).toBeInTheDocument();
+        expect(within(popover).getByText(/Jahresanspruch minus genommen minus geplant plus Korrekturen/)).toBeInTheDocument();
+    });
+});
+
+describe('Tageserfassung: Kategorie und Speichern (#269)', () => {
+    const buchung = {
+        id: 1, projektId: 1, projektName: 'Testprojekt', arbeitsgangName: '',
+        startZeit: '08:00:00', endeZeit: '16:00:00', dauerMinuten: 480, dauerFormatiert: '8:00', notiz: ''
+    };
+
+    it('übernimmt Produktkategorie-ID und -Name in einem Schritt', async () => {
+        tage = [arbeitstag(3, 1, [buchung])];
+        const standard = mockFetch.getMockImplementation()!;
+        mockFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+            if (input !== '/api/zeiterfassung/kategorien/1') return standard(input, init);
+            // Wie im Browser kommt die Antwort erst nach dem Lade-Tick des Auswahlfensters.
+            await new Promise(resolve => setTimeout(resolve, 5));
+            return { ok: true, json: async () => [{ id: 5, name: 'Geländer' }] };
+        });
+        mount();
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+
+        fireEvent.click(screen.getByRole('button', { name: /Kategorie wählen/ }));
+        fireEvent.click(await screen.findByText('Geländer'));
+
+        // Der Name steht sofort im Knopf …
+        expect(await screen.findByRole('button', { name: /Geländer/ })).toBeVisible();
+        // … und die ID geht mit dem Speichern an den Server – beides aus demselben Patch.
+        fireEvent.click(screen.getByRole('button', { name: 'Alle Speichern' }));
+        await waitFor(() => {
+            const put = mockFetch.mock.calls.find(call => call[0] === '/api/zeitverwaltung/buchungen/1');
+            expect(put).toBeDefined();
+            expect(JSON.parse(String(put![1].body))).toMatchObject({ produktkategorieId: 5 });
+        });
+    });
+
+    it('vergisst gespeicherte Änderungen, statt sie beim nächsten Speichern erneut zu schicken', async () => {
+        tage = [arbeitstag(3, 1, [buchung])];
+        mount();
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+
+        fireEvent.change(screen.getByRole('textbox', { name: 'Von Buchung 1' }), { target: { value: '09:00' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Alle Speichern' }));
+        await waitFor(() => expect(mockFetch.mock.calls.filter(call => call[1]?.method === 'PUT')).toHaveLength(1));
+
+        fireEvent.click(screen.getByRole('button', { name: /Alle Speichern|Gespeichert/ }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(mockFetch.mock.calls.filter(call => call[1]?.method === 'PUT')).toHaveLength(1);
+        // Die Anzeige bleibt beim gespeicherten Wert.
+        expect(screen.getByRole('textbox', { name: 'Von Buchung 1' })).toHaveValue('09:00');
+    });
+});

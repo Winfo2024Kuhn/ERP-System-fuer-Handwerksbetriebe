@@ -13,6 +13,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { DecimalInput } from '../components/ui/decimal-input';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { leseFehlermeldung } from '../lib/apiFehler';
+import { formatUrlaubstage } from '../lib/urlaubstage';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
+import { useMonatsabschlussBerechtigung } from '../features/monatsabschluss/useMonatsabschlussBerechtigung';
 
 // Types
 interface Mitarbeiter {
@@ -123,6 +126,10 @@ export default function ZeiterfassungKalender() {
 
     const aktuellerMitarbeiter = mitarbeiter.find(m => m.id === selectedMitarbeiter);
     const istGeschaeftsfuehrer = !!aktuellerMitarbeiter?.istGeschaeftsfuehrer;
+    // „Monatsabschluss zurücksetzen" nur anbieten, wenn der Server es auch erlaubt – sonst endet der Klick in einem 403.
+    // null = wird noch geprüft: dann weder Knopf noch „Recht fehlt“ zeigen.
+    const abschlussRecht = useMonatsabschlussBerechtigung();
+    const darfMonatAbschliessen = abschlussRecht === true;
     const isMonatFestgeschrieben = !istGeschaeftsfuehrer && !!aktuellerAbschluss?.festgeschrieben;
 
     const gefilterteMitarbeiter = mitarbeiter.filter(m => {
@@ -371,13 +378,13 @@ export default function ZeiterfassungKalender() {
             x = x - MENU_WIDTH;
         }
 
-        // Bei aktiver Selektion: Menü öffnen für alle selektierten Tage
-        if (selectionStart && selectionEnd) {
-            setContextMenu({ x, y, tag });
-        } else {
-            // Einzelner Tag
-            setContextMenu({ x, y, tag });
+        // Liegt der angeklickte Tag außerhalb der Markierung, gilt ab jetzt nur dieser Tag –
+        // sonst würde die alte Markierung (z. B. der vorher angeklickte 9.) gebucht statt des 14.
+        if (!isInSelection(tag.datum)) {
+            setSelectionStart(tag.datum);
+            setSelectionEnd(tag.datum);
         }
+        setContextMenu({ x, y, tag });
     };
 
     const handleCloseContextMenu = () => {
@@ -450,26 +457,29 @@ export default function ZeiterfassungKalender() {
         setSelectionEnd(null);
     };
 
+    /** Buchbare Tage im markierten Zeitraum: Arbeitstage mit Soll, keine Feiertage, kein Wochenende. */
+    const buchbareTageDerAuswahl = (): string[] => {
+        if (!kalenderData) return [];
+        if (selectionStart && selectionEnd) {
+            return kalenderData.tage
+                .filter(tag => isInSelection(tag.datum) && !tag.istFeiertag && tag.wochentag < 6 && tag.sollStunden > 0)
+                .map(tag => tag.datum);
+        }
+        return contextMenu ? [contextMenu.tag.datum] : [];
+    };
+
     // Batch-Buchung für alle selektierten Tage
     const handleBucheAbwesenheit = async (typ: string, halberTag: boolean) => {
         if (!selectedMitarbeiter) return;
 
-        setContextMenuLoading(true);
-
-        // Sammle alle zu buchenden Tage
-        const tageDaten: string[] = [];
-
-        if (selectionStart && selectionEnd && kalenderData) {
-            // Multi-Selektion: Alle Arbeitstage im Bereich
-            for (const tag of kalenderData.tage) {
-                if (isInSelection(tag.datum) && !tag.istFeiertag && tag.wochentag < 6 && tag.sollStunden > 0) {
-                    tageDaten.push(tag.datum);
-                }
-            }
-        } else if (contextMenu) {
-            // Einzelner Tag
-            tageDaten.push(contextMenu.tag.datum);
+        const tageDaten = buchbareTageDerAuswahl();
+        if (tageDaten.length === 0) {
+            toast.info('Im markierten Zeitraum liegt kein Arbeitstag.');
+            setContextMenu(null);
+            return;
         }
+
+        setContextMenuLoading(true);
 
         let successCount = 0;
         let errorMessage = '';
@@ -489,12 +499,13 @@ export default function ZeiterfassungKalender() {
 
                 if (res.ok) {
                     successCount++;
-                } else {
-                    const error = await res.json();
-                    if (!errorMessage) errorMessage = error.error || 'Fehler beim Buchen';
+                } else if (!errorMessage) {
+                    // Der Server meldet z. B. „Dieser Monat ist bereits festgeschrieben …" (409) als { message }.
+                    errorMessage = await leseFehlermeldung(res, 'Die Abwesenheit konnte nicht gebucht werden.');
                 }
             } catch (err) {
                 console.error('Fehler:', err);
+                if (!errorMessage) errorMessage = 'Server nicht erreichbar. Bitte später erneut versuchen.';
             }
         }
 
@@ -505,8 +516,9 @@ export default function ZeiterfassungKalender() {
             loadKalender();
         }
 
-        if (errorMessage && successCount < tageDaten.length) {
-            toast.warning(`${successCount} von ${tageDaten.length} Tagen gebucht. Fehler: ${errorMessage}`);
+        if (errorMessage) {
+            if (successCount === 0) toast.error(errorMessage);
+            else toast.warning(`${successCount} von ${tageDaten.length} Tagen gebucht. Fehler: ${errorMessage}`);
         }
 
         setContextMenuLoading(false);
@@ -772,16 +784,26 @@ export default function ZeiterfassungKalender() {
                                             <Palmtree className="w-5 h-5" />
                                         </div>
                                         <div className="flex-1">
-                                            <p className="text-sm text-green-700 font-medium">Resturlaub {jahr}</p>
-                                            <p className="text-2xl font-bold text-green-700">
-                                                {jahresSaldo.urlaub.verbleibend} Tage
+                                            <p className="flex items-center gap-1 text-sm text-green-700 font-medium">
+                                                Resturlaub {jahr}
+                                                <InfoButton titel="Resturlaub">
+                                                    <InfoAbschnitt titel="Was steckt dahinter?">
+                                                        <p>Urlaub vor heute zählt als genommen, Urlaub ab heute als geplant. Halbe Urlaubstage zählen als 0,5 Tage. Korrekturen aus den Zeitkonto-Korrekturen werden dazugerechnet.</p>
+                                                    </InfoAbschnitt>
+                                                    <InfoAbschnitt titel="Was bewirkt das?">
+                                                        <p>Der Resturlaub ist Jahresanspruch minus genommen minus geplant plus Korrekturen – genau diese Zahl prüft das Programm, wenn ein neuer Urlaubsantrag kommt.</p>
+                                                    </InfoAbschnitt>
+                                                </InfoButton>
+                                            </p>
+                                            <p className="text-2xl font-bold text-green-700 tabular-nums">
+                                                {formatUrlaubstage(jahresSaldo.urlaub.verbleibend)} Tage
                                             </p>
                                         </div>
-                                        <div className="text-right text-xs text-green-600">
-                                            <p>Anspruch: {jahresSaldo.urlaub.jahresanspruch}</p>
-                                            <p>Genommen: {jahresSaldo.urlaub.genommen}</p>
+                                        <div className="text-right text-xs text-green-600 tabular-nums">
+                                            <p>Anspruch: {formatUrlaubstage(jahresSaldo.urlaub.jahresanspruch)}</p>
+                                            <p>Genommen: {formatUrlaubstage(jahresSaldo.urlaub.genommen)}</p>
                                             {jahresSaldo.urlaub.geplant > 0 && (
-                                                <p>Geplant: {jahresSaldo.urlaub.geplant}</p>
+                                                <p>Geplant: {formatUrlaubstage(jahresSaldo.urlaub.geplant)}</p>
                                             )}
                                         </div>
                                     </div>
@@ -934,7 +956,7 @@ export default function ZeiterfassungKalender() {
                     arbeitsgaenge={arbeitsgaenge}
                     onClose={handleEditorClose}
                     readOnly={isReadOnlyDayModal}
-                    onMonatsabschlussZuruecksetzen={isReadOnlyDayModal ? () => handleResetMonatsabschluss() : undefined}
+                    onMonatsabschlussZuruecksetzen={isReadOnlyDayModal && darfMonatAbschliessen ? () => handleResetMonatsabschluss() : undefined}
                 />
             )}
 
@@ -1066,7 +1088,11 @@ export default function ZeiterfassungKalender() {
                                         Der Monat <span className="font-semibold text-slate-800">{MONATE[monat]} {jahr}</span> ist für {aktuellerMitarbeiter?.vorname} {aktuellerMitarbeiter?.nachname} bereits abgeschlossen und festgeschrieben. In abgeschlossenen Monaten können keine Zeiten geändert oder neu erfasst werden.
                                     </p>
                                     <p className="text-xs text-slate-500 mt-2">
-                                        Um Buchungen zu bearbeiten, setzen Sie bitte den Monatsabschluss zurück. Alternativ können Sie die bestehenden Buchungen im Nur-Lese-Modus ansehen.
+                                        {abschlussRecht === true
+                                            ? 'Um Buchungen zu bearbeiten, setzen Sie bitte den Monatsabschluss zurück. Alternativ können Sie die bestehenden Buchungen im Nur-Lese-Modus ansehen.'
+                                            : abschlussRecht === false
+                                                ? 'Zum Zurücksetzen fehlt Ihnen das Abschlussrecht – bitte wenden Sie sich an jemanden mit diesem Recht. Die bestehenden Buchungen können Sie im Nur-Lese-Modus ansehen.'
+                                                : 'Die bestehenden Buchungen können Sie im Nur-Lese-Modus ansehen.'}
                                     </p>
                                 </div>
                             </div>
@@ -1098,6 +1124,7 @@ export default function ZeiterfassungKalender() {
                                 <Eye className="w-4 h-4 mr-1.5" />
                                 Nur ansehen
                             </Button>
+                            {darfMonatAbschliessen && (
                             <Button
                                 className="bg-rose-600 hover:bg-rose-700 text-white"
                                 onClick={() => handleResetMonatsabschluss(true)}
@@ -1109,6 +1136,7 @@ export default function ZeiterfassungKalender() {
                                     <><LockOpen className="w-4 h-4 mr-1.5" />Monatsabschluss zurücksetzen</>
                                 )}
                             </Button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1696,25 +1724,35 @@ function DayEditorModal({
         }
     };
 
-    const handleUpdateBooking = (id: number, field: string, value: string | number | null) => {
-        if (field === 'startZeit' || field === 'endeZeit') {
-            setZeitEntwuerfe(prev => ({ ...prev, [`${id}:${field}`]: String(value ?? '') }));
+    /**
+     * Ändert eine Buchung lokal – alle Felder eines Patches auf einmal, damit kein
+     * zweiter Aufruf mit veraltetem Stand den ersten überschreibt (z. B. Kategorie-ID
+     * und -Name aus dem Auswahlfenster).
+     */
+    const handleUpdateBooking = (id: number, patch: Partial<Buchung>) => {
+        const zeitFelder = (['startZeit', 'endeZeit'] as const).filter(feld => feld in patch);
+        if (zeitFelder.length > 0) {
+            setZeitEntwuerfe(prev => {
+                const next = { ...prev };
+                for (const feld of zeitFelder) next[`${id}:${feld}`] = String(patch[feld] ?? '');
+                return next;
+            });
         }
 
         let updatedList = buchungen.map(b =>
-            b.id === id ? { ...b, [field]: value } : b
+            b.id === id ? { ...b, ...patch } : b
         );
 
         // Intelligente Pausenanpassung: Wenn eine Pause zeitlich geändert wird
         const currentBooking = updatedList.find(b => b.id === id);
-        if (currentBooking?.typ === 'PAUSE' && (field === 'startZeit' || field === 'endeZeit')) {
-            const curStart = field === 'startZeit' ? String(value ?? '') : zeitEntwurf(currentBooking, 'startZeit');
-            const curEnd = field === 'endeZeit' ? String(value ?? '') : zeitEntwurf(currentBooking, 'endeZeit');
+        if (currentBooking?.typ === 'PAUSE' && zeitFelder.length > 0) {
+            const curStart = 'startZeit' in patch ? String(patch.startZeit ?? '') : zeitEntwurf(currentBooking, 'startZeit');
+            const curEnd = 'endeZeit' in patch ? String(patch.endeZeit ?? '') : zeitEntwurf(currentBooking, 'endeZeit');
             const vStart = validateTimeInput(curStart, { label: 'Start' });
             const vEnd = validateTimeInput(curEnd, { label: 'Ende' });
 
             if (vStart.valid && vEnd.valid && vStart.value && vEnd.value && parseTime(vStart.value) < parseTime(vEnd.value)) {
-                if (field === 'endeZeit') {
+                if ('endeZeit' in patch) {
                     const oldEnd = zeitEntwurf(currentBooking, 'endeZeit');
                     if (oldEnd && oldEnd !== curEnd) {
                         // Anschlussbuchung am alten Pauseende verschieben
@@ -1872,6 +1910,7 @@ function DayEditorModal({
         // Gleiche Server-Meldungen (z. B. 403 bei jeder Buchung) nur einmal zeigen.
         const meldungen = new Set<string>();
         let fehlerOhneMeldung = false;
+        const gespeicherteIds: number[] = [];
         for (const buchung of normalisierteBuchungen) {
             // Nur neue (id < 0) oder geänderte Buchungen speichern
             const isNew = buchung.id < 0;
@@ -1881,10 +1920,27 @@ function DayEditorModal({
             const hasValidProjekt = buchung.projektId && buchung.projektId > 0;
             if ((isNew || isDirty) && (isPause || hasValidProjekt) && buchung.startZeit) {
                 const ergebnis = await handleSave(buchung);
-                if (!ergebnis.ok) allSuccess = false;
+                if (ergebnis.ok) gespeicherteIds.push(buchung.id);
+                else allSuccess = false;
                 if (ergebnis.meldung) meldungen.add(ergebnis.meldung);
                 else if (!ergebnis.ok) fehlerOhneMeldung = true;
             }
+        }
+
+        // Gespeicherte Buchungen gelten wieder als unverändert – sonst würde jedes weitere
+        // „Alle Speichern" dieselben Buchungen erneut schicken. Ihre Uhrzeit-Entwürfe sind
+        // jetzt der gespeicherte Stand und können weg.
+        if (gespeicherteIds.length > 0) {
+            setDirtyBuchungIds(prev => {
+                const next = new Set(prev);
+                gespeicherteIds.forEach(id => next.delete(id));
+                return next;
+            });
+            setZeitEntwuerfe(prev => {
+                const next = { ...prev };
+                gespeicherteIds.forEach(id => { delete next[`${id}:startZeit`]; delete next[`${id}:endeZeit`]; });
+                return next;
+            });
         }
 
         setSaving(false);
@@ -2043,7 +2099,7 @@ function DayEditorModal({
                                                     <TimeInput required aria-label={`Von Buchung ${index + 1}`}
                                                         className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-500"
                                                         value={zeitEntwurf(b, 'startZeit')}
-                                                        onChange={value => handleUpdateBooking(b.id, 'startZeit', value)}
+                                                        onChange={value => handleUpdateBooking(b.id, { startZeit: value })}
                                                         disabled={readOnly}
                                                     />
                                                 </div>
@@ -2052,7 +2108,7 @@ function DayEditorModal({
                                                     <TimeInput aria-label={`Bis Buchung ${index + 1}`}
                                                         className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-500"
                                                         value={zeitEntwurf(b, 'endeZeit')}
-                                                        onChange={value => handleUpdateBooking(b.id, 'endeZeit', value)}
+                                                        onChange={value => handleUpdateBooking(b.id, { endeZeit: value })}
                                                         disabled={readOnly}
                                                     />
                                                 </div>
@@ -2105,7 +2161,7 @@ function DayEditorModal({
                                                         <label className="block text-xs font-semibold text-slate-500 mb-1">Tätigkeit</label>
                                                         <Select
                                                             value={b.arbeitsgangId?.toString() || ''}
-                                                            onChange={val => handleUpdateBooking(b.id, 'arbeitsgangId', Number(val))}
+                                                            onChange={val => handleUpdateBooking(b.id, { arbeitsgangId: Number(val) })}
                                                             options={arbeitsgaenge.map(a => ({ value: a.id.toString(), label: a.beschreibung }))}
                                                             placeholder="Tätigkeit wählen..."
                                                             className="w-full"
@@ -2148,7 +2204,7 @@ function DayEditorModal({
                                                     placeholder="Optionale Notiz zur Tätigkeit..."
                                                     className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-500"
                                                     value={b.notiz || ''}
-                                                    onChange={e => handleUpdateBooking(b.id, 'notiz', e.target.value)}
+                                                    onChange={e => handleUpdateBooking(b.id, { notiz: e.target.value })}
                                                     disabled={readOnly}
                                                 />
                                             </div>
@@ -2238,8 +2294,7 @@ function DayEditorModal({
                 <ProjektKategorieTreeModal
                     projektId={aktiveBuchungFuerKategorie.projektId}
                     onSelect={(kategorieId, kategorieName) => {
-                        handleUpdateBooking(aktiveBuchungFuerKategorie.id, 'produktkategorieId', kategorieId);
-                        handleUpdateBooking(aktiveBuchungFuerKategorie.id, 'produktkategorieName', kategorieName);
+                        handleUpdateBooking(aktiveBuchungFuerKategorie.id, { produktkategorieId: kategorieId, produktkategorieName: kategorieName });
                         setKategorieModalForBuchungId(null);
                     }}
                     onClose={() => setKategorieModalForBuchungId(null)}
@@ -2252,7 +2307,7 @@ function DayEditorModal({
                     isOpen={true}
                     currentProjektId={buchungen.find(b => b.id === projektModalForBuchungId)?.projektId}
                     onSelect={(projekt) => {
-                        handleUpdateBooking(projektModalForBuchungId, 'projektId', projekt.id);
+                        handleUpdateBooking(projektModalForBuchungId, { projektId: projekt.id });
                         setProjektModalForBuchungId(null);
                     }}
                     onClose={() => setProjektModalForBuchungId(null)}

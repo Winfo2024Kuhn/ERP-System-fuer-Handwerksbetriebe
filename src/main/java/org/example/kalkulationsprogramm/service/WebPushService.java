@@ -195,6 +195,29 @@ public class WebPushService {
     }
 
     /**
+     * Push-Nachricht an alle Geräte eines einzelnen Mitarbeiters, z. B. „Dein
+     * Urlaubsantrag wurde genehmigt". Fail-safe wie {@link #notifyAll}: Ein
+     * Push-Problem darf die fachliche Entscheidung nie blockieren. Eigene
+     * Transaktion, weil der Aufruf nach dem Commit der Entscheidung läuft
+     * (abgelaufene Geräte werden dabei gelöscht) und ein Fehler hier nie die
+     * Transaktion des Aufrufers als rollback-only markieren darf.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void notifyMitarbeiter(Long mitarbeiterId, String title, String body, String url) {
+        if (!isEnabled() || mitarbeiterId == null) {
+            log.debug("WebPush nicht aktiv oder kein Mitarbeiter – notifyMitarbeiter wird ignoriert");
+            return;
+        }
+        try {
+            for (PushSubscription sub : pushSubscriptionRepository.findByMitarbeiterId(mitarbeiterId)) {
+                sendPush(sub, title, body, url, null, "mitarbeiter");
+            }
+        } catch (Exception e) {
+            log.warn("notifyMitarbeiter fehlgeschlagen: {}", e.getMessage());
+        }
+    }
+
+    /**
      * Subscribe a device for push notifications.
      */
     @Transactional

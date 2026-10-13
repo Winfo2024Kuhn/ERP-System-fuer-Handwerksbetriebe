@@ -1,16 +1,26 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react'
-import type { ReactNode, CSSProperties } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { AlertTriangle, CheckCircle, Info, X, XCircle } from 'lucide-react'
-
-/** Eigene Vollbild-Overlays halten die reservierte Meldungsfläche frei. */
-export const mobileOverlayStyle: CSSProperties = { top: 'var(--mobile-toast-height, 0px)' }
 
 type Kind = 'success' | 'error' | 'warning' | 'info'
 type ToastApi = Record<Kind, (message: string, duration?: number) => void>
 const Context = createContext<ToastApi | null>(null)
 const icons = { success: CheckCircle, error: XCircle, warning: AlertTriangle, info: Info }
-const styles = { success: 'bg-emerald-50 border-emerald-200 text-emerald-900', error: 'bg-rose-50 border-rose-200 text-rose-900', warning: 'bg-amber-50 border-amber-200 text-amber-900', info: 'bg-slate-50 border-slate-200 text-slate-900' }
+const styles = { success: 'bg-emerald-50 border-emerald-200 text-emerald-900', error: 'bg-rose-50 border-rose-200 text-rose-900', warning: 'bg-amber-50 border-amber-200 text-amber-900', info: 'bg-white border-slate-200 text-slate-900' }
+
+/**
+ * Wie lange eine Meldung von selbst stehen bleibt (ms). Erfolg und Info
+ * verschwinden nach 4 s, Warnung und Fehler bleiben, bis man sie per X
+ * schließt – sonst liest sie auf der Baustelle niemand zu Ende.
+ */
+const STANDARD_DAUER: Record<Kind, number> = { success: 4000, info: 4000, warning: 0, error: 0 }
+/** Höchstens so viele Meldungen schweben gleichzeitig; ältere kommen nach, sobald eine geschlossen wird. */
+const MAX_SICHTBAR = 3
+/** Dauer der Ausblende-Bewegung, muss zu `.mobile-toast` in index.css passen. */
+const AUSBLENDEN_MS = 180
+
+interface Meldung { id: number; kind: Kind; message: string; geht: boolean }
 
 export function useToast() {
     const value = useContext(Context)
@@ -18,53 +28,75 @@ export function useToast() {
     return value
 }
 
+function wenigerBewegung() {
+    return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
+/**
+ * Meldungen der Handy-App als schwebende Ebene oben über dem Inhalt.
+ *
+ * Die Ebene ist `fixed` und nimmt keinen Platz ein: nichts auf der Seite und
+ * in Dialogen verschiebt sich, wenn eine Meldung kommt oder geht. Der
+ * Container selbst lässt Tipps durch (`pointer-events-none`), nur die Karten
+ * und ihr X fangen sie ab. Oben hält die Ebene den Safe-Area-Abstand ein,
+ * unten gibt es bewusst keinen.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
-    const [messages, setMessages] = useState<{ id: number; kind: Kind; message: string }[]>([])
-    const noticeRef = useRef<HTMLDivElement>(null)
-    useLayoutEffect(() => {
-        const style = document.documentElement.style
-        const previous = style.getPropertyValue('--mobile-toast-height')
-        return () => {
-            if (previous) style.setProperty('--mobile-toast-height', previous)
-            else style.removeProperty('--mobile-toast-height')
-        }
+    const [messages, setMessagesState] = useState<Meldung[]>([])
+    // Spiegel des aktuellen Stands, damit `add` doppelte Meldungen erkennt, ohne im State-Updater Timer zu setzen.
+    const aktuell = useRef<Meldung[]>([])
+    const setMessages = useCallback((aendern: (alt: Meldung[]) => Meldung[]) => {
+        aktuell.current = aendern(aktuell.current)
+        setMessagesState(aktuell.current)
     }, [])
-    useLayoutEffect(() => {
-        const measure = () => document.documentElement.style.setProperty('--mobile-toast-height', `${messages.length ? noticeRef.current?.getBoundingClientRect().height ?? 0 : 0}px`)
-        measure()
-        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
-        if (noticeRef.current) observer?.observe(noticeRef.current)
-        window.addEventListener('resize', measure)
-        return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
-    }, [messages.length])
     const nextId = useRef(0)
     const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>())
-    const dismiss = useCallback((id: number) => {
+    const entfernen = useCallback((id: number) => {
         clearTimeout(timers.current.get(id))
         timers.current.delete(id)
         setMessages(current => current.filter(message => message.id !== id))
-    }, [])
+    }, [setMessages])
+    const dismiss = useCallback((id: number) => {
+        clearTimeout(timers.current.get(id))
+        if (wenigerBewegung()) { entfernen(id); return }
+        setMessages(current => current.map(message => message.id === id ? { ...message, geht: true } : message))
+        timers.current.set(id, setTimeout(() => entfernen(id), AUSBLENDEN_MS))
+    }, [entfernen, setMessages])
     useEffect(() => {
         const pending = timers.current
         return () => { pending.forEach(clearTimeout); pending.clear() }
     }, [])
     const api = useMemo<ToastApi>(() => {
-        const add = (kind: Kind) => (message: string, duration = 8000) => {
-            const id = ++nextId.current
-            setMessages(current => [...current, { id, kind, message }])
+        const add = (kind: Kind) => (message: string, duration = STANDARD_DAUER[kind]) => {
+            // Gleiche Meldung steht schon da (z. B. zweimal derselbe Fehler): nicht stapeln,
+            // nur ihre Laufzeit neu starten.
+            const vorhanden = aktuell.current.find(m => !m.geht && m.kind === kind && m.message === message)
+            const id = vorhanden?.id ?? ++nextId.current
+            if (vorhanden) clearTimeout(timers.current.get(id))
+            else setMessages(current => [...current, { id, kind, message, geht: false }])
             if (duration > 0) timers.current.set(id, setTimeout(() => dismiss(id), duration))
         }
         return { success: add('success'), error: add('error'), warning: add('warning'), info: add('info') }
-    }, [dismiss])
-    return <Context.Provider value={api}><div className="flex h-full min-h-0 flex-col">
-        <div ref={noticeRef} data-mobile-toasts hidden={messages.length === 0} className={messages.length ? "relative z-[10030] flex max-h-[30dvh] shrink-0 flex-col gap-2 overflow-y-auto bg-slate-50 p-3" : "hidden"}>
-            {messages.map(({ id, kind, message }) => {
+    }, [dismiss, setMessages])
+    const sichtbar = messages.slice(-MAX_SICHTBAR)
+    const verborgen = messages.length - sichtbar.length
+    return <Context.Provider value={api}>
+        <div data-mobile-toasts role="region" aria-label="Meldungen" hidden={messages.length === 0}
+            style={{ top: 'calc(var(--sa-base-top, 2.5rem) + var(--sat, 0px))' }}
+            className={messages.length ? 'pointer-events-none fixed inset-x-3 z-[10030] mx-auto flex max-w-md flex-col gap-2' : 'hidden'}>
+            {verborgen > 0 && <p className="pointer-events-none self-center rounded-full bg-slate-900/80 px-3 py-1 text-xs font-medium text-white shadow">
+                {verborgen === 1 ? '1 weitere Meldung' : `${verborgen} weitere Meldungen`}
+            </p>}
+            {sichtbar.map(({ id, kind, message, geht }) => {
                 const Icon = icons[kind]
-                return <div key={id} role={kind === 'error' || kind === 'warning' ? 'alert' : 'status'} className={`pointer-events-auto flex items-start gap-3 rounded-xl border p-3 shadow-lg ${styles[kind]}`}>
-                    <Icon aria-hidden="true" className="mt-3 h-5 w-5 shrink-0" />
-                    <p className="min-w-0 flex-1 break-words py-2 text-sm">{message}</p>
-                    <button type="button" aria-label="Meldung schließen" onClick={() => dismiss(id)} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"><X aria-hidden="true" className="h-5 w-5" /></button>
+                return <div key={id} role={kind === 'error' || kind === 'warning' ? 'alert' : 'status'} data-geht={geht || undefined}
+                    className={`mobile-toast pointer-events-auto flex items-center gap-2 rounded-2xl border py-1 pl-3 pr-1 shadow-xl shadow-slate-900/10 ${styles[kind]}`}>
+                    <Icon aria-hidden="true" className="h-5 w-5 shrink-0" />
+                    <p className="min-w-0 flex-1 break-words py-2 text-sm font-medium leading-snug">{message}</p>
+                    <button type="button" aria-label="Meldung schließen" onClick={() => dismiss(id)} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-rose-500"><X aria-hidden="true" className="h-5 w-5" /></button>
                 </div>
             })}
-        </div><div className="min-h-0 flex-1 overflow-auto">{children}</div></div></Context.Provider>
+        </div>
+        <div className="h-full min-h-0 overflow-auto">{children}</div>
+    </Context.Provider>
 }

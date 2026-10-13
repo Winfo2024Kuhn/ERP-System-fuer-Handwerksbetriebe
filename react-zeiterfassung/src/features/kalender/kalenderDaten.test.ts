@@ -139,6 +139,15 @@ describe('kalenderDaten – Anzeigemodell', () => {
         expect(feiertag).toMatchObject({ art: 'FEIERTAG', titel: 'Tag der Deutschen Einheit', farbe: '#f43f5e', terminId: null })
     })
 
+    it('„ABWESEND" (Krankheit ohne Einblick, #268) bleibt neutral und fällt nicht auf Urlaub zurück', () => {
+        const abwesend = terminAusAbwesenheit({ id: 6, datum: '2026-09-02', typ: 'ABWESEND', stunden: 8, mitarbeiterId: 3, mitarbeiterName: 'Hans Beispiel' })
+        expect(abwesend).toMatchObject({ key: 'a-6', art: 'ABWESEND', untertitel: 'Abwesend', farbe: '#64748b', ganztaegig: true })
+        // Unbekannte Arten von einem neueren Server werden ebenfalls neutral gezeigt.
+        const unbekannt = terminAusAbwesenheit({ id: 7, datum: '2026-09-02', typ: 'SONSTIGES' as never, stunden: 8, mitarbeiterId: 3, mitarbeiterName: 'Hans Beispiel' })
+        expect(unbekannt.art).toBe('ABWESEND')
+        expect(unbekannt.untertitel).toBe('Abwesend')
+    })
+
     it('sortiereTermine: Feiertag, Abwesenheiten, ganztägige Termine, dann nach Uhrzeit', () => {
         const sortiert = sortiereTermine([
             terminAusEintrag(eintrag({ id: 1, titel: 'Spät', startZeit: '15:00:00', endeZeit: null })),

@@ -1,4 +1,4 @@
-import { useToast, mobileOverlayStyle } from '../components/ui/toast'
+import { useToast } from '../components/ui/toast'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
@@ -258,7 +258,7 @@ export default function LieferantLieferscheinePage() {
 
     if (verifying) {
         return (
-            <div style={mobileOverlayStyle} className="fixed inset-0 bg-slate-50 z-50 flex flex-col safe-area-top overflow-hidden">
+            <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col safe-area-top overflow-hidden">
                 {/* Header */}
                 <div className="bg-white border-b border-slate-200 p-4 shrink-0 z-10 flex items-center justify-between">
                     <button onClick={() => setVerifying(false)} className="p-2 hover:bg-slate-100 rounded-full">
@@ -471,7 +471,7 @@ export default function LieferantLieferscheinePage() {
 
             {/* Analysis Loading Overlay */}
             {analyzing && !verifying && (
-                <div style={mobileOverlayStyle} className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
                     <div className="bg-white p-6 rounded-2xl flex flex-col items-center gap-4 animate-in fade-in zoom-in">
                         <Loader2 className="w-10 h-10 text-rose-600 animate-spin" />
                         <p className="font-medium text-slate-900">Analysiere Dokument...</p>

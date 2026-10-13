@@ -1,10 +1,14 @@
 import MobileDatePicker from '../components/MobileDatePicker'
 import VoiceInputButton from '../components/VoiceInputButton'
 import { Select } from '../components/ui/select-custom'
-import { useToast, mobileOverlayStyle } from '../components/ui/toast'
+import { useToast } from '../components/ui/toast'
+import { useConfirm } from '../components/ui/confirm-dialog'
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button'
+import { leseFehlermeldung } from '../lib/apiFehler'
+import { formatUrlaubstage, statusLabel, typLabel, zurueckziehenFrage, type AntragStatus, type AntragTyp } from '../lib/urlaubsantrag'
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Send, Loader2, CheckCircle2, Plane, Stethoscope, Calendar, AlertTriangle, X, Clock, RefreshCw } from 'lucide-react'
+import { ArrowLeft, FileText, Send, Loader2, CheckCircle2, Plane, Stethoscope, Calendar, AlertTriangle, X, Clock, RefreshCw, Undo2 } from 'lucide-react'
 
 interface UrlaubsantragPageProps {
     mitarbeiter: { id: number; name: string } | null
@@ -18,8 +22,10 @@ interface Urlaubsantrag {
     vonDatum: string
     bisDatum: string
     bemerkung: string
-    status: 'OFFEN' | 'GENEHMIGT' | 'ABGELEHNT' | 'STORNIERT'
-    typ: 'URLAUB' | 'KRANKHEIT' | 'FORTBILDUNG' | 'ZEITAUSGLEICH' | 'ARBEIT' | 'PAUSE'
+    status: AntragStatus
+    typ: AntragTyp | 'ARBEIT' | 'PAUSE'
+    entschiedenAm?: string | null
+    entscheidungGesehen?: boolean
 }
 
 interface Feiertag {
@@ -32,15 +38,20 @@ const STATUS_FILTER_OPTIONS = [
     { id: 'OFFEN', label: 'Offen' },
     { id: 'GENEHMIGT', label: 'Genehmigt' },
     { id: 'ABGELEHNT', label: 'Abgelehnt' },
+    { id: 'STORNIERT', label: 'Storniert' },
 ] as const
 
 export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: UrlaubsantragPageProps) {
     const toast = useToast()
+    const confirm = useConfirm()
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
+    const [zurueckziehenLaeuftId, setZurueckziehenLaeuftId] = useState<number | null>(null)
 
     // Tab State
-    const [activeTab, setActiveTab] = useState<'BEANTRAGEN' | 'UEBERSICHT'>('BEANTRAGEN')
+    // `?ansicht=uebersicht` (z. B. aus der Nachrichten-Glocke) öffnet direkt die Übersicht.
+    const [activeTab, setActiveTab] = useState<'BEANTRAGEN' | 'UEBERSICHT'>(
+        () => searchParams.get('ansicht') === 'uebersicht' ? 'UEBERSICHT' : 'BEANTRAGEN')
 
     // Form State
     const queryTyp = searchParams.get('typ')?.toUpperCase()
@@ -86,7 +97,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     const [antraege, setAntraege] = useState<Urlaubsantrag[]>([])
     const [loadingAntraege, setLoadingAntraege] = useState(false)
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
-    const [statusFilter, setStatusFilter] = useState<'ALLE' | 'OFFEN' | 'GENEHMIGT' | 'ABGELEHNT'>('ALLE')
+    const [statusFilter, setStatusFilter] = useState<'ALLE' | AntragStatus>('ALLE')
 
     // Feiertag Modal State
     const [showFeiertagModal, setShowFeiertagModal] = useState(false)
@@ -252,15 +263,10 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                     setBemerkung('')
                 }, 1500)
             } else {
-                // Parse error from backend (overlap validation)
-                try {
-                    const errorData = await res.json()
-                    setError(errorData.error || 'Fehler beim Senden des Antrags.')
-                    toast.error(errorData.error || 'Fehler beim Senden des Antrags.')
-                } catch {
-                    setError('Fehler beim Senden des Antrags.')
-                    toast.error('Fehler beim Senden des Antrags.')
-                }
+                // Meldung des Servers (z. B. Überschneidung) sichtbar machen
+                const meldung = await leseFehlermeldung(res, 'Fehler beim Senden des Antrags.')
+                setError(meldung)
+                toast.error(meldung)
             }
         } catch (err) {
             console.error(err)
@@ -294,6 +300,33 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
             // Keine Feiertage - direkt absenden
             setLoading(false)
             await submitAntrag()
+        }
+    }
+
+    /** Eigenen offenen Antrag zurückziehen – mit Rückfrage, danach Liste neu laden. */
+    const handleZurueckziehen = async (antrag: Urlaubsantrag) => {
+        const bestaetigt = await confirm({
+            title: 'Antrag zurückziehen?',
+            message: `${zurueckziehenFrage(antrag)} Du kannst danach jederzeit neu beantragen.`,
+            confirmLabel: 'Zurückziehen',
+            cancelLabel: 'Abbrechen',
+            variant: 'warning',
+        })
+        if (!bestaetigt) return
+        setZurueckziehenLaeuftId(antrag.id)
+        try {
+            const res = await fetch(`/api/urlaub/antraege/${antrag.id}/storno`, { method: 'PUT' })
+            if (!res.ok) {
+                toast.error(await leseFehlermeldung(res, 'Der Antrag konnte nicht zurückgezogen werden.'))
+                return
+            }
+            toast.success('Antrag zurückgezogen.')
+            // Ein offener Antrag hat noch keine Urlaubstage gebucht – der Resturlaub ändert sich nicht.
+            await fetchAntraege()
+        } catch {
+            toast.error('Verbindungsfehler. Bitte später versuchen.')
+        } finally {
+            setZurueckziehenLaeuftId(null)
         }
     }
 
@@ -490,7 +523,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                         ) : resturlaub !== null ? (
                                             <>
                                                 <span className="font-semibold">
-                                                    {resturlaub} Urlaubstage übrig
+                                                    {formatUrlaubstage(resturlaub)} Urlaubstage übrig
                                                 </span>
                                                 {beantragteTage > 0 && (
                                                     <span className="block mt-0.5">
@@ -609,12 +642,12 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                                     }`}>
                                                     {getTypeIcon(antrag.typ)}
                                                 </span>
-                                                <span className="font-semibold text-slate-900 capitalize">
-                                                    {antrag.typ.toLowerCase()}
+                                                <span className="font-semibold text-slate-900">
+                                                    {typLabel(antrag.typ)}
                                                 </span>
                                             </div>
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${getStatusColor(antrag.status)}`}>
-                                                {antrag.status}
+                                                {statusLabel(antrag.status)}
                                             </span>
                                         </div>
 
@@ -630,6 +663,30 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                                 "{antrag.bemerkung}"
                                             </p>
                                         )}
+
+                                        {antrag.status === 'OFFEN' && (
+                                            <div className="mt-3 flex items-center gap-1 border-t border-slate-100 pt-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleZurueckziehen(antrag)}
+                                                    disabled={zurueckziehenLaeuftId === antrag.id}
+                                                    className="flex-1 min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                                                >
+                                                    {zurueckziehenLaeuftId === antrag.id
+                                                        ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                                                        : <Undo2 className="w-4 h-4" aria-hidden="true" />}
+                                                    Zurückziehen
+                                                </button>
+                                                <InfoButton titel="Zurückziehen">
+                                                    <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                                        <p>Der Antrag bekommt den Stand „Storniert“. Im Kalender war noch nichts eingetragen, deshalb ändert sich dort nichts.</p>
+                                                    </InfoAbschnitt>
+                                                    <InfoAbschnitt titel="Was bewirkt das?">
+                                                        <p>Du kannst danach neu beantragen. Ist der Antrag schon genehmigt, geht Zurückziehen nicht mehr – dann meldest du dich im Büro.</p>
+                                                    </InfoAbschnitt>
+                                                </InfoButton>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -640,7 +697,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
 
             {/* Feiertage Modal */}
             {showFeiertagModal && (
-                <div style={mobileOverlayStyle} className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-md max-h-full overflow-auto rounded-2xl shadow-xl motion-safe:animate-slide-up">
                         {/* Modal Header */}
                         <div className="flex items-center gap-3 p-5 border-b border-slate-100">
