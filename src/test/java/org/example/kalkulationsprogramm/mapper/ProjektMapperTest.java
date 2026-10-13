@@ -4,6 +4,7 @@ import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelInProjekt;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.ProjektArt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Projekt.ProjektResponseDto;
 import org.junit.jupiter.api.Test;
@@ -193,5 +194,23 @@ class ProjektMapperTest {
         projekt.setAbgeschlossen(true);
         ProjektResponseDto dto2 = mapper.toProjektResponseDto(projekt);
         assertEquals(true, dto2.isAbgeschlossen(), "Projekt should be closed after setting abgeschlossen=true");
+    }
+
+    /**
+     * Der Bearbeiten-Dialog liest die Projektart aus dieser Antwort. Fehlt sie,
+     * schlägt er „Pauschalpreis“ vor – und Speichern machte aus Regie-, Internen
+     * und Garantie-Projekten still ein Pauschal-Projekt.
+     */
+    @Test
+    void liefertDieGespeicherteProjektart() {
+        for (ProjektArt art : ProjektArt.values()) {
+            Projekt projekt = new Projekt();
+            projekt.setProjektArt(art);
+
+            ProjektResponseDto dto = mapper.toProjektResponseDto(projekt);
+
+            assertEquals(art.name(), dto.getProjektArt());
+            assertEquals(art.isProduktiv(), dto.isProduktiv());
+        }
     }
 }

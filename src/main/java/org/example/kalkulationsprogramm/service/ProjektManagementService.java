@@ -23,6 +23,7 @@ import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
+import org.example.kalkulationsprogramm.domain.Materialkosten;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Projekt;
@@ -80,6 +81,10 @@ ProjektManagementService {
     private static final String PROJEKT_KUNDE_PFLICHT_MESSAGE = "Für Projekte muss ein Kunde ausgewählt werden.";
     public static final String PROJEKT_NICHT_GEFUNDEN =
             "Dieses Projekt gibt es nicht mehr. Vielleicht wurde es inzwischen gelöscht.";
+    /** Spaltenbreite der Texte in {@code materialkosten}. */
+    private static final int MAX_TEXTLAENGE_MATERIALKOSTEN = 255;
+    /** {@code numeric(19,2)}: höchstens 17 Stellen vor dem Komma. */
+    private static final int MAX_VORKOMMASTELLEN_BETRAG = 17;
     private final ProjektRepository projektRepository;
     private final AnfrageNotizRepository anfrageNotizRepository;
     private final ProjektNotizRepository projektNotizRepository;
@@ -758,51 +763,84 @@ ProjektManagementService {
         return mappeMitKilogramm(gespeichertesProjekt);
     }
 
+    /**
+     * Hängt einen manuell erfassten Materialkosten-Eintrag an das Projekt an.
+     * Bereits erfasste Einträge bleiben unangetastet – früher ersetzte ein
+     * PATCH die ganze Liste, und jedes „Kosten erfassen“ löschte so alle
+     * älteren Einträge.
+     */
     @Transactional
-    public ProjektResponseDto aktualisiereMaterialkosten(Long projektId, List<MaterialkostenErfassenDto> materialDtos) {
+    public ProjektResponseDto fuegeMaterialkostenHinzu(Long projektId, MaterialkostenErfassenDto dto) {
+        pruefeMaterialkosten(dto);
         Projekt projekt = findeProjektEntity(projektId);
 
-        // Dekrementiere Bestellungen für entfernte Materialkosten (oder alle, da wir
-        // gleich clearen)
-        for (org.example.kalkulationsprogramm.domain.Materialkosten alt : projekt.getMaterialkosten()) {
-            if (alt.getLieferant() != null) {
-                Lieferanten l = alt.getLieferant();
-                if (l.getBestellungen() != null && l.getBestellungen() > 0) {
-                    l.setBestellungen(l.getBestellungen() - 1);
-                    lieferantenRepository.save(l);
-                }
-            }
+        Materialkosten mk = new Materialkosten();
+        mk.setProjekt(projekt);
+        mk.setBeschreibung(dto.getBeschreibung().trim());
+        mk.setExterneArtikelnummer(leerAlsNull(dto.getExterneArtikelnummer()));
+        mk.setMonat(dto.getMonat());
+        mk.setBetrag(dto.getBetrag());
+        mk.setRechnungsnummer(leerAlsNull(dto.getRechnungsnummer()));
+        if (dto.getLieferantId() != null) {
+            Lieferanten lieferant = lieferantenRepository.findById(dto.getLieferantId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Der gewählte Lieferant wurde nicht gefunden."));
+            mk.setLieferant(lieferant);
+            aendereBestellZaehler(lieferant, 1);
         }
+        projekt.getMaterialkosten().add(mk);
 
-        projekt.getMaterialkosten().clear();
-        if (materialDtos != null) {
-            List<org.example.kalkulationsprogramm.domain.Materialkosten> materialKosten = materialDtos.stream()
-                    .map(dto -> {
-                        org.example.kalkulationsprogramm.domain.Materialkosten mk = new org.example.kalkulationsprogramm.domain.Materialkosten();
-                        mk.setProjekt(projekt);
-                        mk.setBeschreibung(dto.getBeschreibung());
-                        mk.setExterneArtikelnummer(dto.getExterneArtikelnummer());
-                        mk.setMonat(dto.getMonat());
-                        mk.setBetrag(dto.getBetrag());
-                        mk.setRechnungsnummer(dto.getRechnungsnummer());
-
-                        if (dto.getLieferantId() != null) {
-                            Lieferanten lieferant = lieferantenRepository.findById(dto.getLieferantId()).orElse(null);
-                            if (lieferant != null) {
-                                mk.setLieferant(lieferant);
-                                // Increment bestellungen counter
-                                lieferant.setBestellungen(
-                                        lieferant.getBestellungen() == null ? 1 : lieferant.getBestellungen() + 1);
-                                lieferantenRepository.save(lieferant);
-                            }
-                        }
-
-                        return mk;
-                    }).collect(Collectors.toCollection(ArrayList::new));
-            projekt.getMaterialkosten().addAll(materialKosten);
-        }
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
+    }
+
+    private static void pruefeMaterialkosten(MaterialkostenErfassenDto dto) {
+        if (dto == null || dto.getBeschreibung() == null || dto.getBeschreibung().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte eine Beschreibung angeben.");
+        }
+        if (dto.getBeschreibung().trim().length() > MAX_TEXTLAENGE_MATERIALKOSTEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Die Beschreibung darf höchstens " + MAX_TEXTLAENGE_MATERIALKOSTEN + " Zeichen lang sein.");
+        }
+        if (dto.getRechnungsnummer() != null && dto.getRechnungsnummer().trim().length() > MAX_TEXTLAENGE_MATERIALKOSTEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Die Rechnungsnummer darf höchstens " + MAX_TEXTLAENGE_MATERIALKOSTEN + " Zeichen lang sein.");
+        }
+        if (dto.getExterneArtikelnummer() != null && dto.getExterneArtikelnummer().trim().length() > MAX_TEXTLAENGE_MATERIALKOSTEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Die Artikelnummer darf höchstens " + MAX_TEXTLAENGE_MATERIALKOSTEN + " Zeichen lang sein.");
+        }
+        if (dto.getBetrag() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte einen Betrag angeben.");
+        }
+        if (dto.getBetrag().signum() < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Betrag darf nicht negativ sein.");
+        }
+        BigDecimal betrag = dto.getBetrag().stripTrailingZeros();
+        if (betrag.precision() - betrag.scale() > MAX_VORKOMMASTELLEN_BETRAG) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Betrag ist zu groß.");
+        }
+        if (betrag.scale() > 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Der Betrag darf höchstens zwei Nachkommastellen haben.");
+        }
+        if (dto.getMonat() != null && (dto.getMonat() < 1 || dto.getMonat() > 12)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Monat muss zwischen 1 und 12 liegen.");
+        }
+    }
+
+    private static String leerAlsNull(String text) {
+        return text == null || text.isBlank() ? null : text.trim();
+    }
+
+    /**
+     * Zählt mit, wie oft ein Lieferant in manuell erfassten Materialkosten
+     * vorkommt – hoch beim Erfassen, runter beim Entfernen, nie unter 0.
+     */
+    private void aendereBestellZaehler(Lieferanten lieferant, int delta) {
+        int bisher = lieferant.getBestellungen() == null ? 0 : lieferant.getBestellungen();
+        lieferant.setBestellungen(Math.max(0, bisher + delta));
+        lieferantenRepository.save(lieferant);
     }
 
     @Transactional
@@ -1046,7 +1084,15 @@ ProjektManagementService {
     @Transactional
     public ProjektResponseDto entferneMaterialkosten(Long projektId, Long materialId) {
         Projekt projekt = findeProjektEntity(projektId);
-        projekt.getMaterialkosten().removeIf(mk -> mk.getId().equals(materialId));
+        Materialkosten eintrag = projekt.getMaterialkosten().stream()
+                .filter(mk -> materialId != null && materialId.equals(mk.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Diese Materialkosten gibt es in diesem Projekt nicht mehr."));
+        projekt.getMaterialkosten().remove(eintrag);
+        if (eintrag.getLieferant() != null) {
+            aendereBestellZaehler(eintrag.getLieferant(), -1);
+        }
         Projekt gespeichert = projektRepository.save(projekt);
         return mappeMitKilogramm(gespeichert);
     }
