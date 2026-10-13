@@ -25,7 +25,7 @@ export default function ArtikelEditor() {
     // Modals state
     const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
-    // Aufschläge sind eine Preisregel: Knopf und Fenster gibt es nur für Benutzer mit dem Recht „Aufschläge ändern”
+    // Aufschläge sind eine Preisregel: Knopf und Fenster gibt es nur für Benutzer mit dem Recht „Aufschläge ändern“
     const darfAufschlaegeAendern = useDarfAufschlaegeAendern();
     const [showAufschlaege, setShowAufschlaege] = useState(false);
     // Nach dem Schließen zeigt die Liste die neuen Preisvorschläge, aber nur, wenn wirklich etwas gespeichert wurde.
@@ -111,32 +111,32 @@ export default function ArtikelEditor() {
                 />
             )}
             {darfAufschlaegeAendern && (
-                <Dialog open={showAufschlaege} onOpenChange={schliesseAufschlaege} className=”w-full max-w-5xl max-h-[90vh]” aria-labelledby=”artikel-aufschlaege-titel”>
+                <Dialog open={showAufschlaege} onOpenChange={schliesseAufschlaege} className="w-full max-w-5xl max-h-[90vh]" aria-labelledby="artikel-aufschlaege-titel">
                     <DialogContent>
                         <DialogHeader>
-                            <DialogTitle id=”artikel-aufschlaege-titel”>Aufschläge</DialogTitle>
+                            <DialogTitle id="artikel-aufschlaege-titel">Aufschläge</DialogTitle>
                             <DialogDescription>Wie viel Prozent auf den Einkaufspreis kommen, damit der Verkaufspreis stimmt.</DialogDescription>
                         </DialogHeader>
-                        <div className=”min-h-0 flex-1 overflow-y-auto -m-1 p-1”>
+                        <div className="min-h-0 flex-1 overflow-y-auto -m-1 p-1">
                             {showAufschlaege && <AufschlagPflege onGeaendert={() => { aufschlaegeGeaendert.current = true; }} />}
                         </div>
                         <DialogFooter>
-                            <Button variant=”outline” size=”sm” onClick={() => schliesseAufschlaege(false)}>Schließen</Button>
+                            <Button variant="outline" size="sm" onClick={() => schliesseAufschlaege(false)}>Schließen</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
             )}
-            <Dialog open={showWerkstoffe} onOpenChange={(offen) => { if (offen) setShowWerkstoffe(true); else werkstoffFensterSchliessen(); }} className=”w-full max-w-5xl max-h-[90vh]” aria-labelledby=”artikel-werkstoffe-titel”>
+            <Dialog open={showWerkstoffe} onOpenChange={(offen) => { if (offen) setShowWerkstoffe(true); else werkstoffFensterSchliessen(); }} className="w-full max-w-5xl max-h-[90vh]" aria-labelledby="artikel-werkstoffe-titel">
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle id=”artikel-werkstoffe-titel”>Werkstoffe</DialogTitle>
-                        <DialogDescription>Die Auswahlliste „Werkstoff” am Artikel: Stahl, Edelstahl, Aluminium und was Sie sonst verarbeiten.</DialogDescription>
+                        <DialogTitle id="artikel-werkstoffe-titel">Werkstoffe</DialogTitle>
+                        <DialogDescription>Die Auswahlliste „Werkstoff“ am Artikel: Stahl, Edelstahl, Aluminium und was Sie sonst verarbeiten.</DialogDescription>
                     </DialogHeader>
-                    <div className=”min-h-0 flex-1 overflow-y-auto -m-1 p-1”>
+                    <div className="min-h-0 flex-1 overflow-y-auto -m-1 p-1">
                         {showWerkstoffe && <WerkstoffPflege onGeaendert={() => { werkstoffeGeaendert.current = true; }} />}
                     </div>
                     <DialogFooter>
-                        <Button variant=”outline” size=”sm” onClick={werkstoffFensterSchliessen}>Schließen</Button>
+                        <Button variant="outline" size="sm" onClick={werkstoffFensterSchliessen}>Schließen</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
