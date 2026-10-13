@@ -106,7 +106,9 @@ describe('LieferantDokumenteTab – Werkstoffzeugnis und Positionssuche', () => 
 
         // Browser-Suche wirkt sofort
         expect(sichtbareNummern()).toEqual(['LS-1001']);
-        await act(async () => { vi.advanceTimersByTime(299); });
+        // Synchron: shouldAdvanceTime schiebt die Uhr alle 20 ms echter Zeit weiter. Ein
+        // asynchrones act gäbe ihm unter Last Gelegenheit, aus 299 ms über 300 ms zu machen.
+        act(() => { vi.advanceTimersByTime(299); });
         expect(positionssucheAufrufe(fetchMock)).toHaveLength(0);
 
         fireEvent.change(suchfeld(), { target: { value: 'S235' } });

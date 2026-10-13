@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
 
 // localStorage/sessionStorage In-Memory-Polyfill für die Test-Umgebung.
 // jsdom liefert beide normalerweise mit; in unserer Pipeline werden sie aber durch
@@ -33,6 +34,13 @@ if (typeof window !== 'undefined') {
             value: createMemoryStorage(),
         });
     }
+
+    // Jeder Test startet mit leerem Speicher. Sonst erben Tests derselben Datei gemerkte
+    // Einstellungen (z. B. eingeklappte Ordnerleiste im EmailCenter), je nach Reihenfolge.
+    afterEach(() => {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+    });
 }
 
 // Mock window.matchMedia
