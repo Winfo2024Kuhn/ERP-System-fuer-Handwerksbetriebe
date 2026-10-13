@@ -213,7 +213,7 @@ Findet jemand eine Lücke im ERP, soll er weder an den Rechner noch an das Firme
 | Keine Linux-Berechtigungen | `cap_drop: [ALL]`, `no-new-privileges` | Kein Zugriff auf Kernel-Funktionen, kein Weg zurück zu root. Nur das Startskript bekommt kurz `CHOWN`, `SETUID`, `SETGID`, die mit dem Benutzerwechsel wegfallen. |
 | Kein Docker-Socket für die App | `docker-compose.yml` | Den Socket hat nur der Updater. Er hat keinen Port und führt nur `nachtupdate.sh` und `sicherung.sh` aus. Die App liest deren Ergebnis nur (Volume `betriebsstatus`, schreibgeschützt eingebunden). |
 | Datenbank ohne Netz nach außen | Netz `intern` (`internal: true`) | PostgreSQL erreicht nur die App, keinen Port und kein Internet. |
-| Netzsperre | Dienst `netzsperre` | Die App darf ins Internet (Mail, KI, Website), aber nicht ins Firmennetz: keine PCs, keine Buchhaltung, keine Dateifreigaben, auch nicht der Rechner selbst. Ausnahmen in `NETZSPERRE_AUSNAHMEN`, Standard `fritz.box:49000` (Anrufliste und Anrufbeantworter). |
+| Netzsperre | Dienst `netzsperre` | Die App darf ins Internet (Mail, KI, Website), aber nicht ins Firmennetz: keine PCs, keine Buchhaltung, keine Dateifreigaben, auch nicht der Rechner selbst. Ausnahmen in `NETZSPERRE_AUSNAHMEN`, Standard `fritz.box:49000,fritz.box:1012` (Anrufliste und Anrufbeantworter, Anrufmonitor für das Anruf-Fenster). |
 | Nur ein Port | `APP_ADRESSE`, `APP_PORT` | Der Browser-Zugang, sonst nichts. Hinter `tailscale serve` nur auf `127.0.0.1`. |
 
 Die Netzsperre setzt Regeln in Dockers eigene Firewall-Kette `DOCKER-USER`, nur für die
@@ -230,6 +230,13 @@ Ausschalten (nicht empfohlen): `NETZSPERRE=nein` in der `.env`, dann
 > `docker compose up -d` ausführen. Damit entstehen die Netze `intern`/`extern` und alle
 > Dienste werden neu angelegt. Das Nachtupdate tauscht nur die App und würde sie sonst in
 > ein Netz ohne Datenbank stellen.
+
+> **Anruf-Fenster bleibt aus?** Ältere `.env`-Dateien erlauben nur `fritz.box:49000`. Der
+> Anrufmonitor der FRITZ!Box braucht zusätzlich Port 1012. In der `.env`
+> `NETZSPERRE_AUSNAHMEN=fritz.box:49000,fritz.box:1012` eintragen (bzw. die eigene
+> FRITZ!Box-Adresse aus den Telefon-Einstellungen), dann
+> `docker compose up -d netzsperre`. In `docker compose logs netzsperre` muss danach
+> `…:1012` bei den erlaubten Zielen stehen.
 
 Am sichersten ist ein eigener kleiner Rechner nur für das ERP, in einem eigenen Netz (VLAN
 oder Gastnetz). Dann bleibt auch beim schlimmsten Vorfall der Rest der Firma unberührt.

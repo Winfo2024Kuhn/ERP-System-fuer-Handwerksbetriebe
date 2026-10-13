@@ -189,8 +189,9 @@ services:
       TZ: Europe/Berlin
       # ja = das ERP erreicht aus dem Firmennetz nur NETZSPERRE_AUSNAHMEN
       NETZSPERRE: ${NETZSPERRE:-ja}
-      # ziel:port, Komma-getrennt. Standard: FRITZ!Box (Anrufliste, Anrufbeantworter)
-      NETZSPERRE_AUSNAHMEN: ${NETZSPERRE_AUSNAHMEN-fritz.box:49000}
+      # ziel:port, Komma-getrennt. Standard: FRITZ!Box (49000 = Anrufliste und
+      # Anrufbeantworter, 1012 = Anrufmonitor fuer das Anruf-Fenster)
+      NETZSPERRE_AUSNAHMEN: ${NETZSPERRE_AUSNAHMEN-fritz.box:49000,fritz.box:1012}
       NETZSPERRE_BRIDGE: erp-extern
     read_only: true
     tmpfs: [/tmp, /run]
