@@ -295,6 +295,49 @@ describe('EmailCenter', () => {
         });
     });
 
+    describe('Suche in Entwürfen', () => {
+        it('findet Entwürfe über den Text, auch über Absätze hinweg, und blendet die übrigen aus', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            global.fetch = mockFetchResponses({
+                '/api/emails/drafts': [
+                    {
+                        id: 71, recipient: 'max.mustermann@example.com', subject: 'Angebot Treppe',
+                        body: '<p>Maße für die</p><p><strong>Treppe</strong> &amp; Geländer</p>', updatedAt: '2026-10-10T09:00:00',
+                    },
+                    {
+                        id: 72, recipient: 'erika.musterfrau@example.com', subject: 'Rechnung 2026-014',
+                        body: '<p>Anbei die Rechnung.</p>', updatedAt: '2026-10-11T09:00:00',
+                    },
+                ],
+            }) as unknown as typeof fetch;
+            renderEmailCenter('drafts');
+            await screen.findByText('Angebot Treppe');
+            expect(screen.getByText('Rechnung 2026-014')).toBeInTheDocument();
+
+            await user.type(screen.getByPlaceholderText(/suchen/i), 'die Treppe & Geländer');
+
+            await waitFor(() => expect(screen.queryByText('Rechnung 2026-014')).not.toBeInTheDocument());
+            expect(screen.getByText('Angebot Treppe')).toBeInTheDocument();
+            expect(screen.getByText('Maße für die Treppe & Geländer')).toBeInTheDocument();
+        });
+
+        it('trifft keine HTML-Tags im Entwurfstext', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            global.fetch = mockFetchResponses({
+                '/api/emails/drafts': [{
+                    id: 73, recipient: 'max.mustermann@example.com', subject: 'Aufmaß Balkon',
+                    body: '<p><strong>Bitte</strong> prüfen.</p>', updatedAt: '2026-10-10T09:00:00',
+                }],
+            }) as unknown as typeof fetch;
+            renderEmailCenter('drafts');
+            await screen.findByText('Aufmaß Balkon');
+
+            await user.type(screen.getByPlaceholderText(/suchen/i), 'strong');
+
+            await waitFor(() => expect(screen.queryByText('Aufmaß Balkon')).not.toBeInTheDocument());
+        });
+    });
+
     describe('Globale Suche', () => {
         it('wechselt zwischen Ordner- und Serversuche', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });

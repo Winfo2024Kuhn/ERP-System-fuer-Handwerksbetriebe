@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Check, FileText, Plus, Search, X } from 'lucide-react';
 
 import { cn } from '../../lib/utils';
+import { htmlZuEinzeiler } from '../../lib/htmlSanitizer';
 import type { TextbausteinApiDto, LeistungApiDto, ArbeitszeitartApiDto, DocBlock } from './types';
 import { extractBoldFromHtml, unitMap } from './helpers';
 
@@ -232,7 +233,7 @@ export function DocumentEditorSidebar({
                                             </span>
                                         ) : tb.beschreibung && (
                                             <span className="text-[10px] text-slate-400 block truncate mt-0.5">
-                                                {(() => { let t = tb.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 60); })()}
+                                                {htmlZuEinzeiler(tb.beschreibung).slice(0, 60)}
                                             </span>
                                         )}
                                     </div>
