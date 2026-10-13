@@ -102,4 +102,37 @@ class AbteilungBerechtigungControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.darfWebseitenAnfragenPushen").value(true));
     }
+
+    @Test
+    @DisplayName("Zeiterfassung-Häkchen: Liste liefert es, Speichern übernimmt es, fehlend bleibt unverändert")
+    void zeiterfassungHaekchen() throws Exception {
+        Abteilung werkstatt = abteilung(false, false);
+        werkstatt.setDarfZeiterfassungSehen(true);
+        when(abteilungRepository.findAll()).thenReturn(List.of(werkstatt));
+        when(abteilungRepository.findById(3L)).thenReturn(Optional.of(werkstatt));
+        when(abteilungRepository.save(any(Abteilung.class))).thenAnswer(aufruf -> aufruf.getArgument(0));
+        when(berechtigungRepository.findByAbteilungId(3L)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/abteilungen/berechtigungen"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].darfZeiterfassungSehen").value(true));
+
+        mockMvc.perform(put("/api/abteilungen/3/berechtigungen")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"berechtigungen\":[],\"darfZeiterfassungSehen\":false}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.darfZeiterfassungSehen").value(false));
+
+        mockMvc.perform(put("/api/abteilungen/3/berechtigungen")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"berechtigungen\":[]}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.darfZeiterfassungSehen").value(false));
+    }
+
+    @Test
+    @DisplayName("Neue Abteilung: Zeiterfassung standardmäßig ausgeblendet (Datenschutz)")
+    void neueAbteilungSiehtZeiterfassungNicht() {
+        org.assertj.core.api.Assertions.assertThat(new Abteilung().getDarfZeiterfassungSehen()).isFalse();
+    }
 }

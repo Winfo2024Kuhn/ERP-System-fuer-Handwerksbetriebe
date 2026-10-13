@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 /**
@@ -105,6 +106,7 @@ async function stubbeApi(page: Page, opts: { hinweisFehler?: boolean } = {}) {
 test.describe('Urlaubsanträge: Hinweis bei laufender Krankmeldung (Task 17)', () => {
     test('zeigt den Warnhinweis nur beim betroffenen Antrag, und "Genehmigen" wirkt trotzdem', async ({ page }, testInfo) => {
         await stubbeApi(page);
+        await stubbeZeiterfassungSichtbarkeit(page);
         await page.goto('/urlaubsantraege');
 
         const karteMitHinweis = page.locator('[data-antrag-id="1"]');
@@ -144,6 +146,7 @@ test.describe('Urlaubsanträge: Hinweis bei laufender Krankmeldung (Task 17)', (
 
     test('ein Fehler bei der Hinweis-Abfrage zeigt keinen Kasten und lässt die Antragsliste unangetastet', async ({ page }) => {
         await stubbeApi(page, { hinweisFehler: true });
+        await stubbeZeiterfassungSichtbarkeit(page);
         await page.goto('/urlaubsantraege');
 
         await expect(page.getByText('Mustermann, Max')).toBeVisible();

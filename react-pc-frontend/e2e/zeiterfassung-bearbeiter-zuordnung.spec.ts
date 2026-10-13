@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './hilfen/test';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { blockiereFremdeNetzwerkzugriffe, stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 /**
@@ -82,6 +82,7 @@ test('Kalender: Ändern ohne Mitarbeiter-Zuordnung zeigt den Hinweis des Servers
     const aufrufe: Aufruf[] = [];
     await stubbeApi(page, aufrufe);
 
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
     await page.getByText('3', { exact: true }).dblclick();
     const modal = page.getByRole('dialog', { name: 'Tageserfassung' });
@@ -108,6 +109,7 @@ test('Zeitkonto-Korrektur ohne Mitarbeiter-Zuordnung zeigt den Hinweis des Serve
     const aufrufe: Aufruf[] = [];
     await stubbeApi(page, aufrufe);
 
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
     await page.getByRole('button', { name: 'Korrekturen', exact: true }).click();
     const modal = page.getByRole('dialog', { name: 'Korrekturen verwalten' });

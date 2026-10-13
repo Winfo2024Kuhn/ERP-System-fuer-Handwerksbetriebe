@@ -32,7 +32,7 @@ Wer unter „Teilnehmer einladen“ angehakt ist, sieht den Termin in seinem Kal
 
 Unter **Projektmanagement → Kalender** stehen außer den Terminen:
 - die Feiertage,
-- Urlaub, Krankheit, Fortbildung und Zeitausgleich aller Mitarbeiter mit Namen – so sieht jeder, wer wann fehlt. Den Grund „Krankheit“ sehen nur Administratoren und die Geschäftsführung; alle anderen sehen kranke Kollegen nur als „Abwesend“. Die eigenen Einträge sieht jeder mit Grund.
+- Urlaub, Krankheit, Fortbildung und Zeitausgleich aller Mitarbeiter mit Namen – so sieht jeder, wer wann fehlt. Den Grund „Krankheit“ sieht am PC nur, wer die Zeiterfassung sehen darf (Administratoren, Geschäftsführung und Abteilungen mit dem Recht „Zeiterfassung im Menü sehen“, siehe [Einstellungen](einstellungen.md)); in der Handy-App nur die Geschäftsführung. Alle anderen sehen kranke Kollegen nur als „Abwesend“. Die eigenen Einträge sieht jeder mit Grund.
 
 Diese Einträge kommen aus der Zeiterfassung und lassen sich im Kalender nicht ändern.
 

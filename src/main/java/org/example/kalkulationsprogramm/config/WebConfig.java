@@ -2,7 +2,10 @@ package org.example.kalkulationsprogramm.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import lombok.RequiredArgsConstructor;
 
 /**
  * Weiterleitungen und statische Ressourcen der beiden Oberflächen (PC-SPA und Mobile-PWA).
@@ -11,7 +14,17 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * gezielt.
  */
 @Configuration
+@RequiredArgsConstructor
 public class WebConfig implements WebMvcConfigurer {
+
+    private final ZeiterfassungZugriffInterceptor zeiterfassungZugriffInterceptor;
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(zeiterfassungZugriffInterceptor)
+                .addPathPatterns(ZeiterfassungZugriffInterceptor.GESPERRTE_PFADE)
+                .excludePathPatterns(ZeiterfassungZugriffInterceptor.FREIE_PFADE);
+    }
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {

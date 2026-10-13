@@ -7,6 +7,7 @@ import { RibbonNavigation } from './RibbonNav';
 import { MobileBottomNav } from './MobileBottomNav';
 import { antwort, stubbeFetch } from '../../features/telefon/telefonTestdaten';
 import { setzeTelefonBerechtigungZurueck } from '../../features/telefon/useTelefonBerechtigung';
+import { setzeZeiterfassungSichtbarkeitZurueck } from '../../features/zeiterfassung/useZeiterfassungSichtbarkeit';
 
 /**
  * „Benutzer verwalten“ ist nur für Admins da – in der Menüleiste (Benutzermenü)
@@ -21,6 +22,7 @@ function stubbe(admin: boolean) {
             ? antwort({ id: 1, displayName: 'Max Mustermann', username: 'max', active: true, roles: admin ? ['ADMIN'] : ['USER'], admin, requiresInitialSetup: false })
             : undefined),
         (url) => (url.pathname === '/api/telefon/berechtigung' ? antwort({ darfTelefonSehen: false }) : undefined),
+        (url) => (url.pathname === '/api/zeitverwaltung/sichtbarkeit' ? antwort({ darfZeiterfassungSehen: true }) : undefined),
         (url) => (url.pathname === '/api/notifications/summary' ? antwort({ totalCount: 0, categories: [], recentItems: [] }) : undefined),
     );
 }
@@ -54,7 +56,7 @@ async function oeffneMehr() {
 }
 
 describe('„Benutzer verwalten“ nur für Admins', () => {
-    beforeEach(() => setzeTelefonBerechtigungZurueck());
+    beforeEach(() => { setzeTelefonBerechtigungZurueck(); setzeZeiterfassungSichtbarkeitZurueck(); });
     afterEach(() => vi.unstubAllGlobals());
 
     it('Menüleiste: Admin sieht „Benutzer verwalten“', async () => {
@@ -90,7 +92,7 @@ describe('„Benutzer verwalten“ nur für Admins', () => {
 });
 
 describe('„Formularwesen“ im Admin-Bereich', () => {
-    beforeEach(() => setzeTelefonBerechtigungZurueck());
+    beforeEach(() => { setzeTelefonBerechtigungZurueck(); setzeZeiterfassungSichtbarkeitZurueck(); });
     afterEach(() => vi.unstubAllGlobals());
 
     async function oeffneStammdaten() {

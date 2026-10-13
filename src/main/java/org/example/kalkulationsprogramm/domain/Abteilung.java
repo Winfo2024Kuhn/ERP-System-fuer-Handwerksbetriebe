@@ -60,4 +60,13 @@ public class Abteilung {
      */
     @Column(nullable = false)
     private Boolean darfTelefonSehen = false;
+
+    /**
+     * Mitarbeiter dieser Abteilung sehen am PC den Menü-Bereich „Zeiterfassung“.
+     * Administratoren und die Geschäftsführung sehen ihn immer. Am selben Recht
+     * hängt, wer am PC Krankheit anderer Mitarbeiter sieht. Standard: aus
+     * (Datenschutz) – der Admin hakt gezielt an.
+     */
+    @Column(nullable = false)
+    private Boolean darfZeiterfassungSehen = false;
 }

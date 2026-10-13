@@ -13,7 +13,7 @@ import { benutzer } from '../../features/ki/kiTestdaten';
 vi.mock('./RibbonNav', () => ({ RibbonNavigation: () => <nav>Menüleiste</nav> }));
 vi.mock('./MobileBottomNav', () => ({ MobileBottomNav: () => null }));
 vi.mock('../../features/telefon/AnrufFensterHost', () => ({ AnrufFensterHost: () => null }));
-vi.mock('../../features/telefon/useTelefonBerechtigungJeBenutzer', () => ({ useTelefonBerechtigungJeBenutzer: () => undefined }));
+vi.mock('../../hooks/useBerechtigungenJeBenutzer', () => ({ useBerechtigungenJeBenutzer: () => undefined }));
 
 function zeige(kiAktiv: boolean) {
     stubbeFetch((url) => (url.pathname === '/api/auth/me' ? antwort(benutzer({ kiAktiv })) : undefined));

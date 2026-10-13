@@ -1,5 +1,5 @@
 import { test, expect } from './hilfen/test';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { blockiereFremdeNetzwerkzugriffe, stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 test('Kalender: Zeitausgleich buchen, smarter Buchungsbeginn, Pausenschnitt & Monatsabschluss-Link', async ({ page }, info) => {
@@ -66,6 +66,7 @@ test('Kalender: Zeitausgleich buchen, smarter Buchungsbeginn, Pausenschnitt & Mo
     });
 
     // 1. Kalenderseite öffnen
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
 
     // 2. Prüfen, dass "Zum Monatsabschluss" Link vorhanden ist
@@ -162,6 +163,7 @@ test('Kalender: Smarter Startzeit-Standard und automatisches Einschneiden von Pa
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
     const tagZelle = page.getByText('3', { exact: true });
     await tagZelle.dblclick();
@@ -270,6 +272,7 @@ test('Kalender: Mitarbeiter-Filter, geschlossener Monat Schutzdialog & GF-Ansich
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     });
 
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
 
     // 1. Filterprüfung: Standardmäßig "Aktive Mitarbeiter"

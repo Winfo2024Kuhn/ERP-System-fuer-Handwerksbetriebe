@@ -1,4 +1,5 @@
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 test('Stundenübermittlung an den Steuerberater: Geschäftsführer wird ausgeblendet', async ({ page }, info) => {
@@ -92,6 +93,7 @@ test('Stundenübermittlung an den Steuerberater: Geschäftsführer wird ausgeble
         await route.fulfill({ json: {} });
     });
 
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/steuerberater');
 
     // Button "Vorschau laden" klicken

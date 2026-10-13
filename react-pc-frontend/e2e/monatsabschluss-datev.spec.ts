@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { test, expect } from './hilfen/test';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { blockiereFremdeNetzwerkzugriffe, stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 import type { Konfiguration, ExportRequest } from '../src/features/monatsabschluss/types';
 
@@ -37,6 +37,7 @@ const eingerichtet: Konfiguration = { version: 1, ziel: 'LODAS', beraterNr: '001
 test('DATEV: Einrichten führt Admins in die Einstellungen, Export mit Ausschlüssen, Konflikt und echter Datei', async ({ page }, info) => {
  await blockiereFremdeNetzwerkzugriffe(page);
  const stand = await stubbeMonatsabschluss(page, { admin: true, config: eingerichtet });
+ await stubbeZeiterfassungSichtbarkeit(page);
  await page.goto('/monatsabschluss'); await page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true }).check();
  const einrichten = page.getByRole('link', { name: 'DATEV einrichten', exact: true });
  await expect(einrichten).toHaveAttribute('href', '/einstellungen#zeiterfassung');
@@ -64,6 +65,7 @@ test('DATEV: Einrichten führt Admins in die Einstellungen, Export mit Ausschlü
 test('DATEV: Nicht-Admins sehen, wer einrichtet, und den Hinweis auf fehlende Nummern', async ({ page }, info) => {
  await blockiereFremdeNetzwerkzugriffe(page);
  const stand = await stubbeMonatsabschluss(page, { admin: false, config: { ...eingerichtet, beraterNr: '', mandantenNr: '' } });
+ await stubbeZeiterfassungSichtbarkeit(page);
  await page.goto('/monatsabschluss'); await page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true }).check();
  await expect(page.getByText('DATEV richtet ein Admin unter Einstellungen → Zeiterfassung ein.', { exact: true })).toBeVisible();
  await expect(page.getByRole('link', { name: 'DATEV einrichten', exact: true })).toHaveCount(0);
@@ -91,6 +93,7 @@ test('DATEV sperrt offenen Stand 3 auch außerhalb der sichtbaren Ergebnisseite'
   if (path.endsWith('/uebersicht')) body = { items: all.slice(pageNumber * 50, pageNumber * 50 + 50).map(s => ({ referenz: { mitarbeiterId: s.mitarbeiterId, jahr, monat }, mitarbeiterName: `Max Mustermann ${s.mitarbeiterId}`, abteilungIds: [], festgeschrieben: s.festgeschrieben, version: s.version, festgeschriebenAm: null, kennzahlen })), totalElements: 51, page: pageNumber, size: 50, summen: kennzahlen, auswahl: all };
   await route.fulfill({ json: body });
  });
+ await stubbeZeiterfassungSichtbarkeit(page);
  await page.goto('/monatsabschluss');
  const exportieren = page.getByRole('button', { name: 'Für DATEV exportieren', exact: true });
  await page.getByRole('checkbox', { name: 'Max Mustermann 1 auswählen', exact: true }).check();

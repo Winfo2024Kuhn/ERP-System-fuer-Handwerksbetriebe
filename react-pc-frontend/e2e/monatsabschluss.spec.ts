@@ -1,5 +1,5 @@
 import { test, expect } from './hilfen/test';
-import { blockiereFremdeNetzwerkzugriffe } from './hilfen/api';
+import { blockiereFremdeNetzwerkzugriffe, stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 test('Monatsabschluss: Filter, vollständige Auswahl, Teilerfolg und Verlauf', async ({ page }, info) => {
  await blockiereFremdeNetzwerkzugriffe(page);
@@ -18,6 +18,7 @@ test('Monatsabschluss: Filter, vollständige Auswahl, Teilerfolg und Verlauf', a
   if (/monatsabschluesse\/\d+\/\d+\/\d+$/.test(path)) { historie++; body = { audit: [{ id: 1, aktion: 'ABSCHLIESSEN', akteurMitarbeiterId: 1, akteurName: 'Max Mustermann', zeitpunkt: '2026-08-01T10:00:00' }] }; }
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
  });
+ await stubbeZeiterfassungSichtbarkeit(page);
  await page.goto('/monatsabschluss'); await expect(page.getByRole('heading', { name: 'MONATSABSCHLUSS', exact: true })).toBeVisible();
  await expect(page.getByRole('checkbox', { name: 'Max Mustermann auswählen', exact: true })).toBeVisible();
  await expect(page.getByRole('row').filter({ hasText: 'Alle gefilterten Mitarbeiter' }).getByRole('cell')).toHaveText(['241,00', '20,00', '8,00', '0,00', '4,00', '16,00', '2,00', '291,00', '320,00', '-29,00', '']);
@@ -54,6 +55,7 @@ test('Monatsabschluss prüft zuerst das Recht und erklärt fehlenden Zugriff', a
   if (/\/(uebersicht|vergleich|mitarbeiter|abteilungen)$/.test(path)) datenabrufe.push(path);
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
  });
+ await stubbeZeiterfassungSichtbarkeit(page);
  await page.goto('/monatsabschluss'); await expect(page.getByRole('status').filter({ hasText: 'Abschlussrecht wird geprüft' })).toBeVisible(); await page.screenshot({ path: info.outputPath('rechte-laden.png') });
  freigeben(); await expect(page.getByRole('alert').filter({ hasText: 'Keine Berechtigung' })).toBeVisible(); expect(datenabrufe).toEqual([]); await designPruefung(page, info, 'monatsabschluss-kein-recht');
 });
