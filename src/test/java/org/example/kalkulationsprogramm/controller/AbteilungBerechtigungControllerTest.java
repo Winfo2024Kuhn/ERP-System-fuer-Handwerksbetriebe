@@ -131,6 +131,40 @@ class AbteilungBerechtigungControllerTest {
     }
 
     @Test
+    @DisplayName("Aufschläge-Häkchen: Liste liefert es, Speichern übernimmt es, fehlend bleibt unverändert")
+    void aufschlaegeHaekchen() throws Exception {
+        Abteilung buero = abteilung(false, false);
+        buero.setDarfAufschlaegeAendern(true);
+        when(abteilungRepository.findAll()).thenReturn(List.of(buero));
+        when(abteilungRepository.findById(3L)).thenReturn(Optional.of(buero));
+        when(abteilungRepository.save(any(Abteilung.class))).thenAnswer(aufruf -> aufruf.getArgument(0));
+        when(berechtigungRepository.findByAbteilungId(3L)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/abteilungen/berechtigungen"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].darfAufschlaegeAendern").value(true));
+
+        mockMvc.perform(put("/api/abteilungen/3/berechtigungen")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"berechtigungen\":[],\"darfAufschlaegeAendern\":false}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.darfAufschlaegeAendern").value(false));
+
+        buero.setDarfAufschlaegeAendern(true);
+        mockMvc.perform(put("/api/abteilungen/3/berechtigungen")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"berechtigungen\":[]}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.darfAufschlaegeAendern").value(true));
+    }
+
+    @Test
+    @DisplayName("Neue Abteilung darf die Aufschläge zunächst nicht ändern")
+    void neueAbteilungDarfAufschlaegeNichtAendern() {
+        org.assertj.core.api.Assertions.assertThat(new Abteilung().getDarfAufschlaegeAendern()).isFalse();
+    }
+
+    @Test
     @DisplayName("Neue Abteilung: Zeiterfassung standardmäßig ausgeblendet (Datenschutz)")
     void neueAbteilungSiehtZeiterfassungNicht() {
         org.assertj.core.api.Assertions.assertThat(new Abteilung().getDarfZeiterfassungSehen()).isFalse();

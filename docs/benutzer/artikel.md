@@ -24,6 +24,19 @@ Die Liste zeigt 12 Artikel pro Seite mit Bild, „Artikel-Nr.“, „Bezeichnung
 
 Name, Einheit, Werkstoff und Kategorie lassen sich nach dem Anlegen derzeit nicht mehr ändern. Artikel lassen sich nicht löschen.
 
+## Aufschläge einstellen
+
+In **Vorlagen & Stammdaten → Artikel** gibt es den Knopf **„Aufschläge“**. Ihn sehen nur Benutzer, deren Abteilung das Recht „Aufschläge ändern“ hat (Einstellungen → Berechtigungen) sowie Administratoren. Das Fenster zeigt:
+
+- **„Allgemeiner Aufschlag“:** Prozent auf den Einkaufspreis für alle Artikel, die weder einen eigenen noch eine Kategorie mit Aufschlag haben. Leer lassen heißt: kein allgemeiner Aufschlag.
+- **„Aufschlag je Kategorie“:** je Kategorie ein eigener Aufschlag. Leer lassen heißt: kein eigener. Die Spalte „Es gilt“ zeigt, was für die Artikel der Kategorie am Ende gilt, z. B. „25 % (von „Stahl“)“.
+
+Es gilt immer der **genaueste** Aufschlag: erst der am Artikel („Angebotsfelder“), dann der der Kategorie (hat sie keinen, der der nächsten Oberkategorie), zuletzt der allgemeine. 0 Prozent ist ein eigener Wert (zum Beispiel für Durchlaufposten), leer heißt „nicht eingestellt“. Ist nirgends einer eingestellt, übernimmt das Programm den Einkaufspreis unverändert und warnt „ohne Aufschlag“.
+
+- Erlaubt sind 0 bis 999,99 Prozent, mit Komma.
+- Der Preisvorschlag auf der Artikelseite und beim Einfügen von Material in ein Angebot oder eine Rechnung ändert sich sofort. Bereits erstellte Dokumente bleiben unverändert.
+- Nach dem Update ändert sich nichts, bis jemand einen Aufschlag einstellt.
+
 ## Ordner für Artikel anlegen
 
 In **Vorlagen & Stammdaten → Artikel** öffnet „Kategorien anlegen“ das Fenster „Kategorien verwalten“. Links steht die Ordnerstruktur. Ohne Auswahl entsteht mit „Hauptkategorie anlegen“ ein neuer Hauptordner; ist links ein Ordner gewählt, entsteht mit „Unterkategorie anlegen“ ein Unterordner darin. Umbenennen oder löschen lassen sich Ordner nicht.
@@ -59,7 +72,7 @@ Beim Artikel (**Vorlagen & Stammdaten → Artikel**) im Abschnitt „Für Angebo
 - „Aufschlag auf den Einkaufspreis“ in Prozent.
 - „Angebotsfelder speichern“.
 
-Einen festen Verkaufspreis gibt es nicht: Der Preis im Angebot ist der günstigste Einkaufspreis plus Aufschlag. Darunter steht nach dem Speichern, wie es im Angebot aussieht („So steht es im Angebot: …“). Gelbe Hinweise zeigen, was fehlt, z. B. „Kein Aufschlag hinterlegt“ oder „Kein Preis hinterlegt“.
+Einen festen Verkaufspreis gibt es nicht: Der Preis im Angebot ist der günstigste Einkaufspreis plus Aufschlag. Welcher Aufschlag gilt, siehe „Aufschläge einstellen“ weiter unten. Darunter steht nach dem Speichern, wie es im Angebot aussieht („So steht es im Angebot: …“). Gelbe Hinweise zeigen, was fehlt, z. B. „Kein Aufschlag hinterlegt“ oder „Kein Preis hinterlegt“.
 
 ## Material in ein Angebot oder eine Rechnung übernehmen
 
