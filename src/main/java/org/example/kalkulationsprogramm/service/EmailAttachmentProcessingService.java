@@ -48,6 +48,7 @@ public class EmailAttachmentProcessingService {
     private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     private final LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
     private final BelegZuordnungService belegZuordnungService;
+    private final LieferantDokumentPositionService positionService;
 
     // Self-injection für transactional proxy calls auf eigene Methoden
     // Setter-Injection um zirkuläre Abhängigkeit zu vermeiden
@@ -484,8 +485,18 @@ public class EmailAttachmentProcessingService {
             dokument.setGeschaeftsdaten(empty);
         }
 
-        // 4. Speichern (Kaskadiert zu Geschaeftsdaten)
-        dokument = lieferantDokumentRepository.save(dokument);
+        // 4. Speichern (Kaskadiert zu Geschaeftsdaten). Flush, damit die Geschaeftsdaten
+        // ihre ID (@MapsId) haben – die Positionen brauchen sie.
+        dokument = lieferantDokumentRepository.saveAndFlush(dokument);
+
+        // Ausgelesene Positionen speichern (Angebot, AB, Rechnung …). Formulare/SONSTIG
+        // bekommen keine – das entscheidet der PositionService am Typ. Bewusst in derselben
+        // Transaktion: die Positionen verweisen auf das noch nicht festgeschriebene Dokument.
+        // Ausreißer der KI kürzt ersetzePositionen auf die Spaltengrenzen.
+        if (geschaeftsdaten != null) {
+            positionService.ersetzePositionen(dokument.getGeschaeftsdaten(), dokument.getTyp(),
+                    geschaeftsdaten.getAusgelesenePositionen());
+        }
 
         // Beleg ist da -> passende Bestellung suchen (Vorgänger und Nachfolger)
         if (geschaeftsdaten != null) {
