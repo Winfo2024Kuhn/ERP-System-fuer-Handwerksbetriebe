@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
-import { RefreshCw, FolderPlus, Plus } from "lucide-react";
+import { RefreshCw, FolderPlus, Plus, Cuboid } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { cn } from "../lib/utils";
 import { CategoryTreeModal } from "../components/CategoryTreeModal";
 import { CreateArticleModal } from "../components/CreateArticleModal";
 import { PageLayout } from "../components/layout/PageLayout";
 import { ArtikelSuche, type ArtikelSucheHandle } from "../components/artikel/ArtikelSuche";
+import { WerkstoffPflege } from "../components/artikel/WerkstoffPflege";
 
 // ==================== MAIN COMPONENT ====================
 
@@ -20,6 +22,10 @@ export default function ArtikelEditor() {
     // Modals state
     const [showCategoryManagerModal, setShowCategoryManagerModal] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    // Werkstoffe gehören nur zu Artikeln und werden deshalb hier neben den Kategorien gepflegt
+    const [showWerkstoffe, setShowWerkstoffe] = useState(false);
+    // Nach Änderungen an den Werkstoffen lädt die Suche ihre Filterlisten neu (die Filter selbst stehen in der Adresszeile und bleiben)
+    const [sucheSchluessel, setSucheSchluessel] = useState(0);
 
     return (
         <PageLayout
@@ -41,6 +47,15 @@ export default function ArtikelEditor() {
                         <FolderPlus className="w-4 h-4 mr-2" />
                         Kategorien anlegen
                     </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                        onClick={() => setShowWerkstoffe(true)}
+                    >
+                        <Cuboid className="w-4 h-4 mr-2" aria-hidden="true" />
+                        Werkstoffe pflegen
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => sucheRef.current?.neuLaden()}>
                         <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
                         Aktualisieren
@@ -50,7 +65,7 @@ export default function ArtikelEditor() {
         >
             {/* Die Artikelverwaltung haelt ihre Suche in der Adresszeile: Filter
                 ueberleben einen Reload und lassen sich als Link weitergeben. */}
-            <ArtikelSuche ref={sucheRef} urlSync onLadezustand={setLoading} />
+            <ArtikelSuche key={sucheSchluessel} ref={sucheRef} urlSync onLadezustand={setLoading} />
 
             {/* Modals */}
             {showCreateModal && (
@@ -65,6 +80,20 @@ export default function ArtikelEditor() {
                     onClose={() => setShowCategoryManagerModal(false)}
                 />
             )}
+            <Dialog open={showWerkstoffe} onOpenChange={(offen) => { setShowWerkstoffe(offen); if (!offen) setSucheSchluessel(k => k + 1); }} className="w-full max-w-5xl max-h-[90vh]" aria-labelledby="artikel-werkstoffe-titel">
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle id="artikel-werkstoffe-titel">Werkstoffe</DialogTitle>
+                        <DialogDescription>Die Auswahlliste „Werkstoff“ am Artikel: Stahl, Edelstahl, Aluminium und was Sie sonst verarbeiten.</DialogDescription>
+                    </DialogHeader>
+                    <div className="min-h-0 flex-1 overflow-y-auto -m-1 p-1">
+                        {showWerkstoffe && <WerkstoffPflege />}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" size="sm" onClick={() => { setShowWerkstoffe(false); setSucheSchluessel(k => k + 1); }}>Schließen</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </PageLayout>
     );
 }

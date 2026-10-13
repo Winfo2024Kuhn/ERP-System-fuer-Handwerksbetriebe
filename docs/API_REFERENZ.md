@@ -657,6 +657,17 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `DELETE` | `/dokumente/{dokumentId}` | Artikel-Dokument löschen |
 | `GET` | `/filteroptionen` | Auswahlwerte für die Filterleiste mit Klartext |
 
+### WerkstoffController
+
+**Basis-URL:** `/api/werkstoffe`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Alle Werkstoffe mit der Zahl der Artikel, die sie benutzen |
+| `POST` | `/` | Werkstoff anlegen (Name Pflicht und eindeutig, Dichte 0,1 bis 25 kg/dm³); 400 bei ungültigen Werten, 409 bei doppeltem Namen |
+| `PUT` | `/{id}` | Werkstoff ändern; 404 bei unbekannter ID |
+| `DELETE` | `/{id}` | Werkstoff löschen; 409, solange Artikel ihn benutzen |
+
 ### ArtikelKategorieController
 
 **Basis-URL:** `/api/artikel/kategorien`

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -33,6 +33,9 @@ function mockArtikelApi() {
 
         if (typeof url !== 'string') return antwort({});
         if (url.startsWith('/api/artikel/werkstoffe')) return antwort(['S235JR', 'S355J2']);
+        if (url === '/api/werkstoffe') {
+            return antwort([{ id: 1, name: 'S235JR', anzeigename: 'Baustahl', werkstattname: null, dichte: 7.85, werkstoffnorm: null, verzinkungsgeeignet: true, pulverbeschichtungsgeeignet: true, beschichtungshinweis: null, artikelAnzahl: 3 }]);
+        }
         if (url.startsWith('/api/artikel/filteroptionen')) {
             return antwort({ herstellverfahren: [], fertigungszustand: [] });
         }
@@ -304,5 +307,42 @@ describe('ArtikelEditor – Suche ueberlebt die Navigation', () => {
         // Ohne diesen Vermerk wuesste die Detailseite nicht, dass ein Schritt
         // zurueck auf die gefilterte Liste fuehrt.
         expect(aktuellerNavigationsState).toEqual({ vonListe: true });
+    });
+});
+
+describe('ArtikelEditor – Werkstoffe pflegen', () => {
+    beforeEach(() => {
+        gesamtTreffer = GESAMT;
+        fetchMock = mockArtikelApi();
+        global.fetch = fetchMock as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('öffnet über „Werkstoffe pflegen“ ein Fenster mit der Werkstoffliste und schließt es wieder', async () => {
+        const user = userEvent.setup();
+        renderArtikelEditor();
+
+        await user.click(await screen.findByRole('button', { name: /Werkstoffe pflegen/ }));
+        const fenster = await screen.findByRole('dialog', { name: 'Werkstoffe' });
+        expect(await within(fenster).findByText('Baustahl')).toBeVisible();
+        expect(within(fenster).getByText('7,85 kg/dm³')).toBeVisible();
+
+        await user.click(within(fenster).getByRole('button', { name: 'Schließen' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Werkstoffe' })).toBeNull());
+    });
+
+    it('lädt nach dem Schließen die Suche neu, damit geänderte Werkstoffe in den Filtern erscheinen', async () => {
+        const user = userEvent.setup();
+        renderArtikelEditor();
+        await user.click(await screen.findByRole('button', { name: /Werkstoffe pflegen/ }));
+        await screen.findByRole('dialog', { name: 'Werkstoffe' });
+        const vorher = fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/artikel/werkstoffe')).length;
+
+        await user.click(screen.getByRole('button', { name: 'Schließen' }));
+
+        await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/artikel/werkstoffe')).length).toBeGreaterThan(vorher));
     });
 });
