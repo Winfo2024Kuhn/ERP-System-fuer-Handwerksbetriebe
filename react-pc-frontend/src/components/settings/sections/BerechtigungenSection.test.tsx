@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { BerechtigungenSection } from './BerechtigungenSection';
 const { toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -69,4 +69,39 @@ it('zeigt die Postfach-Karte ganz oben, auch während die Abteilungen noch laden
     render(<BerechtigungenSection />);
     expect(screen.getByTestId('postfach-karte')).toBeInTheDocument();
     expect(screen.getByText(/Lade Einstellungen/)).toBeInTheDocument();
+});
+it('lädt den Haken "Zeiterfassung im Menü sehen" und speichert ihn über den bestehenden PUT', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfZeiterfassungSehen: true }] });
+    render(<BerechtigungenSection />);
+    const haken = await screen.findByRole('checkbox', { name: /Zeiterfassung im Menü sehen/ });
+    expect(haken).toBeChecked();
+    fireEvent.click(haken);
+    expect(haken).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const put = fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')!;
+    expect(put[0]).toBe('/api/abteilungen/1/berechtigungen');
+    expect(JSON.parse(put[1].body)).toMatchObject({ darfZeiterfassungSehen: false, darfMonatAbschliessen: false });
+});
+it('setzt den Haken "Zeiterfassung im Menü sehen" und schickt ihn mit', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfZeiterfassungSehen: false }] });
+    render(<BerechtigungenSection />);
+    const haken = await screen.findByRole('checkbox', { name: /Zeiterfassung im Menü sehen/ });
+    expect(haken).not.toBeChecked();
+    fireEvent.click(haken);
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')![1].body)).toMatchObject({ darfZeiterfassungSehen: true });
+});
+it('erklärt "Zeiterfassung im Menü sehen" im Info-Popover, ohne den Haken zu verändern', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfZeiterfassungSehen: true }] });
+    render(<BerechtigungenSection />);
+    const haken = await screen.findByRole('checkbox', { name: /Zeiterfassung im Menü sehen/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Mehr zu: Zeiterfassung im Menü sehen' }));
+    const info = await screen.findByRole('dialog', { name: 'Zeiterfassung im Menü sehen' });
+    expect(within(info).getByText('Was passiert im Hintergrund?')).toBeInTheDocument();
+    expect(within(info).getByText('Was bewirkt das?')).toBeInTheDocument();
+    expect(within(info).getByText(/Administratoren und die Geschäftsführung sehen ihn immer/)).toBeInTheDocument();
+    expect(within(info).getByText(/Das Stempeln und Urlaub-Beantragen in der Handy-App bleibt davon unberührt/)).toBeInTheDocument();
+    expect(haken).toBeChecked();
 });

@@ -1,4 +1,5 @@
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung, uebergaengeAusklingenLassen } from './hilfen/design';
 
 test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async ({ page }, info) => {
@@ -27,6 +28,7 @@ test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async 
     await designPruefung(page, info, 'systemeingaben-task9-termin');
     await page.getByRole('button', { name: 'Speichern', exact: true }).click();
     await expect.poll(() => writes.find(w => w.path === '/api/kalender')?.body).toMatchObject({ startZeit: '09:05:00', endeZeit: '10:15:00' });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
     await page.getByText('3', { exact: true }).dblclick();
     const beginn = page.getByRole('textbox', { name: 'Von Buchung 1' });
@@ -35,6 +37,7 @@ test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async 
     await beginn.fill('09:05'); await designPruefung(page, info, 'systemeingaben-task9-zeitkalender');
     await page.getByRole('button', { name: 'Alle Speichern', exact: true }).click();
     await expect.poll(() => writes.find(w => w.path === '/api/zeitverwaltung/buchungen/1')?.body).toMatchObject({ startZeit: '2026-08-03T09:05:00', endeZeit: '2026-08-03T16:00:30' });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?mitarbeiterId=1&jahr=2026&monat=8');
     await page.getByText('3', { exact: true }).click({ button: 'right' });
     await page.getByText('Zeitkonto-Korrektur', { exact: true }).click();
@@ -84,6 +87,7 @@ test('Kalender: Uhrzeitentwürfe, Pflichtgrund und eigene Monatsauswahl', async 
     await stornoOeffner.click(); await grund.press('Escape');
     await expect(storno).toBeHidden(); await expect(stornoOeffner).toBeFocused();
     expect(writes.filter(w => w.path.startsWith('/api/zeitkonto/korrekturen/'))).toHaveLength(0);
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/steuerberater');
     const monat = page.getByRole('combobox', { name: 'Monat', exact: true });
     await monat.focus(); await monat.press('Enter'); await expect(page.getByRole('listbox')).toBeVisible();

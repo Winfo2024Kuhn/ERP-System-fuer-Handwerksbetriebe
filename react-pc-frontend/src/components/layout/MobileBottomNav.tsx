@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useTelefonBerechtigung } from '../../features/telefon/useTelefonBerechtigung';
+import { useZeiterfassungSichtbarkeit } from '../../features/zeiterfassung/useZeiterfassungSichtbarkeit';
+import { istZeiterfassungPfad } from './navigation';
 
 interface NavItem {
     name: string;
@@ -95,14 +97,26 @@ const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/be
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
 const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 
-function istSichtbar(href: string, isAdmin: boolean, darfTelefon: boolean): boolean {
-    return (isAdmin || !ADMIN_ONLY_PATHS.has(href)) && (darfTelefon || !TELEFON_PATHS.has(href));
+interface Rechte {
+    isAdmin: boolean;
+    darfTelefon: boolean;
+    darfZeiterfassung: boolean;
+}
+
+function istSichtbar(href: string, { isAdmin, darfTelefon, darfZeiterfassung }: Rechte): boolean {
+    return (isAdmin || !ADMIN_ONLY_PATHS.has(href))
+        && (darfTelefon || !TELEFON_PATHS.has(href))
+        && (darfZeiterfassung || !istZeiterfassungPfad(href));
 }
 
 export function MobileBottomNav() {
     const location = useLocation();
     const { isAdmin } = useAuth();
     const darfTelefon = useTelefonBerechtigung() === true;
+    // Während der Prüfung (null) bleibt die Zeiterfassung verborgen – wie im Menü am PC.
+    const darfZeiterfassung = useZeiterfassungSichtbarkeit() === true;
+    const rechte = useMemo<Rechte>(() => ({ isAdmin, darfTelefon, darfZeiterfassung }), [isAdmin, darfTelefon, darfZeiterfassung]);
+    const sichtbareTabs = useMemo(() => PRIMARY_TABS.filter(tab => istSichtbar(tab.href, rechte)), [rechte]);
     const [showMoreSheet, setShowMoreSheet] = useState(false);
     const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
     const [lastTap, setLastTap] = useState<{ tab: string; time: number } | null>(null);
@@ -110,19 +124,19 @@ export function MobileBottomNav() {
     const filteredSubmenuItems = useMemo<Record<string, NavItem[]>>(() => {
         return Object.fromEntries(
             Object.entries(SUBMENU_ITEMS)
-                .map(([key, items]) => [key, items.filter(item => istSichtbar(item.href, isAdmin, darfTelefon))] as const)
+                .map(([key, items]) => [key, items.filter(item => istSichtbar(item.href, rechte))] as const)
                 .filter(([, items]) => items.length > 0)
         );
-    }, [isAdmin, darfTelefon]);
+    }, [rechte]);
 
     const filteredMoreSections = useMemo<NavSection[]>(() => {
         return MORE_SECTIONS
             .map(section => ({
                 ...section,
-                items: section.items.filter(item => istSichtbar(item.href, isAdmin, darfTelefon)),
+                items: section.items.filter(item => istSichtbar(item.href, rechte)),
             }))
             .filter(section => section.items.length > 0);
-    }, [isAdmin, darfTelefon]);
+    }, [rechte]);
 
     // Find which primary tab is active based on current route
     const getActiveTab = () => {
@@ -138,7 +152,7 @@ export function MobileBottomNav() {
                 return 'more';
             }
         }
-        return PRIMARY_TABS[0].href;
+        return sichtbareTabs[0]?.href ?? PRIMARY_TABS[0].href;
     };
 
     const activeTab = getActiveTab();
@@ -291,7 +305,7 @@ export function MobileBottomNav() {
 
                 {/* Safe Area Spacer for iOS */}
                 <div className="relative flex items-center justify-around px-2 h-16">
-                    {PRIMARY_TABS.map((tab) => {
+                    {sichtbareTabs.map((tab) => {
                         const isActive = activeTab === tab.href;
                         const hasSubmenu = !!filteredSubmenuItems[tab.href];
 

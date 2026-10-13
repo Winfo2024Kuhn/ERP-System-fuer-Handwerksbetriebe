@@ -60,4 +60,12 @@ public class Abteilung {
      */
     @Column(nullable = false)
     private Boolean darfTelefonSehen = false;
+
+    /**
+     * Mitarbeiter dieser Abteilung sehen am PC den Menü-Bereich „Zeiterfassung“.
+     * Administratoren und die Geschäftsführung sehen ihn immer. Standard: an,
+     * damit beim Update niemand den Bereich verliert.
+     */
+    @Column(nullable = false)
+    private Boolean darfZeiterfassungSehen = true;
 }

@@ -1,5 +1,6 @@
 import type { Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
 
 /**
@@ -132,6 +133,7 @@ async function stubApi(page: import('@playwright/test').Page) {
 
 test('Lange Krankheit ueber das Menue erreichen, Karte aufklappen und die Zeitleiste sehen', async ({ page }, testInfo) => {
     await stubApi(page);
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/projekte');
 
     // Auffindbarkeit: ueber das Menue erreichen, nicht direkt per URL
@@ -194,6 +196,7 @@ test('"Doch noch krank" erscheint nur bei einer abgeschlossenen Meldung, ein Ver
         return json(route, { error: 'Jemand anders hat diese Krankmeldung gerade gespeichert.' }, 409);
     });
 
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/projekte');
     await page.getByRole('button', { name: 'Zeiterfassung', exact: true }).click();
     await page.getByRole('link', { name: 'Lange Krankheit' }).click();

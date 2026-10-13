@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Bell, CalendarCheck, Shield, Users, Wallet } from 'lucide-react';
+import { InfoAbschnitt, InfoButton } from '../../ui/info-button';
 import { Button } from '../../ui/button';
 import { useToast } from '../../ui/toast';
 import { SaveButton, SectionLoading, SettingsCard } from '../settingsUi';
@@ -7,7 +8,7 @@ import { PostfachSichtbarkeitKarte } from './berechtigungen/PostfachSichtbarkeit
 
 /**
  * Rechte pro Abteilung: welche Lieferanten-Dokumente sie sehen und scannen darf,
- * Eingangsrechnungen, Monatsabschluss, Telefon und Push-Nachrichten. Ganz oben:
+ * Eingangsrechnungen, Zeiterfassung im Menü, Monatsabschluss, Telefon und Push-Nachrichten. Ganz oben:
  * wer welches E-Mail-Postfach sieht ({@link PostfachSichtbarkeitKarte}).
  *
  * <p>War vorher eine eigene Seite „Lieferanten-Dokumentenrechte“ mit eigenem
@@ -27,6 +28,7 @@ interface AbteilungBerechtigung {
     abteilungName: string;
     berechtigungen: TypBerechtigung[];
     darfMonatAbschliessen: boolean;
+    darfZeiterfassungSehen: boolean;
     darfTelefonSehen: boolean;
     darfRechnungenGenehmigen: boolean;
     darfRechnungenSehen: boolean;
@@ -36,6 +38,7 @@ interface AbteilungBerechtigung {
 
 type Schalter =
     | 'darfMonatAbschliessen'
+    | 'darfZeiterfassungSehen'
     | 'darfTelefonSehen'
     | 'darfRechnungenGenehmigen'
     | 'darfRechnungenSehen'
@@ -60,6 +63,7 @@ function normalisiere(abt: AbteilungBerechtigung): AbteilungBerechtigung {
         ...abt,
         berechtigungen: abt.berechtigungen ?? [],
         darfMonatAbschliessen: abt.darfMonatAbschliessen === true,
+        darfZeiterfassungSehen: abt.darfZeiterfassungSehen === true,
         darfTelefonSehen: abt.darfTelefonSehen === true,
         darfRechnungenGenehmigen: abt.darfRechnungenGenehmigen === true,
         darfRechnungenSehen: abt.darfRechnungenSehen === true,
@@ -74,18 +78,45 @@ interface RechtZeileProps {
     onChange: () => void;
     titel: string;
     erklaerung: string;
+    /** Optionales (i) neben dem Recht – liegt bewusst außerhalb des Labels, damit es den Namen des Häkchens nicht verändert. */
+    info?: ReactNode;
 }
 
 /** Ein Recht als Zeile: Häkchen, Titel und ein Satz, was es bewirkt. */
-function RechtZeile({ checked, disabled, onChange, titel, erklaerung }: RechtZeileProps) {
+function RechtZeile({ checked, disabled, onChange, titel, erklaerung, info }: RechtZeileProps) {
     return (
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50">
-            <input type="checkbox" checked={checked} disabled={disabled} onChange={onChange} className={`mt-0.5 ${HAEKCHEN}`} />
-            <span>
-                <span className="block text-sm font-medium text-slate-900">{titel}</span>
-                <span className="block text-xs text-slate-500">{erklaerung}</span>
-            </span>
-        </label>
+        <div className="flex items-start gap-1 rounded-lg border border-slate-200 pr-2 hover:bg-slate-50">
+            <label className="flex flex-1 cursor-pointer items-start gap-3 px-3 py-2">
+                <input type="checkbox" checked={checked} disabled={disabled} onChange={onChange} className={`mt-0.5 ${HAEKCHEN}`} />
+                <span>
+                    <span className="block text-sm font-medium text-slate-900">{titel}</span>
+                    <span className="block text-xs text-slate-500">{erklaerung}</span>
+                </span>
+            </label>
+            {info && <span className="mt-1.5 shrink-0">{info}</span>}
+        </div>
+    );
+}
+
+function ZeiterfassungSichtbarkeitInfo() {
+    return (
+        <InfoButton titel="Zeiterfassung im Menü sehen">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <p>
+                    Mitarbeiter dieser Abteilung sehen am PC in der Menüleiste den Bereich „Zeiterfassung“ mit Kalender,
+                    Urlaubsanträgen, Monatsabschluss und den übrigen Seiten. Administratoren und die Geschäftsführung
+                    sehen ihn immer, egal welche Abteilung sie haben. Gehört ein Mitarbeiter zu mehreren Abteilungen,
+                    reicht ein Haken.
+                </p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <p>
+                    Ohne Haken verschwindet der Bereich aus dem Menü, und die Seiten öffnen sich auch nicht über einen
+                    gespeicherten Link. Das Stempeln und Urlaub-Beantragen in der Handy-App bleibt davon unberührt. Ein
+                    PC-Zugang ohne verknüpften Mitarbeiter sieht den Bereich nur als Administrator.
+                </p>
+            </InfoAbschnitt>
+        </InfoButton>
     );
 }
 
@@ -165,6 +196,7 @@ export function BerechtigungenSection() {
                 body: JSON.stringify({
                     berechtigungen: abteilung.berechtigungen,
                     darfMonatAbschliessen: abteilung.darfMonatAbschliessen,
+                    darfZeiterfassungSehen: abteilung.darfZeiterfassungSehen,
                     darfTelefonSehen: abteilung.darfTelefonSehen,
                     darfRechnungenGenehmigen: abteilung.darfRechnungenGenehmigen,
                     darfRechnungenSehen: abteilung.darfRechnungenSehen,
@@ -272,7 +304,12 @@ export function BerechtigungenSection() {
                                             erklaerung="Sieht nur schon genehmigte Eingangsrechnungen (Buchhaltung)." />
                                     </Gruppe>
 
-                                    <Gruppe icon={<CalendarCheck className="h-4 w-4 text-rose-600" />} titel="Monatsabschluss & Telefon">
+                                    <Gruppe icon={<CalendarCheck className="h-4 w-4 text-rose-600" />} titel="Zeiterfassung, Monatsabschluss & Telefon">
+                                        <RechtZeile checked={abt.darfZeiterfassungSehen} disabled={sperre}
+                                            onChange={() => schalte(abt.abteilungId, 'darfZeiterfassungSehen')}
+                                            titel="Zeiterfassung im Menü sehen"
+                                            erklaerung="Zeigt am PC den Bereich „Zeiterfassung“ in der Menüleiste."
+                                            info={<ZeiterfassungSichtbarkeitInfo />} />
                                         <RechtZeile checked={abt.darfMonatAbschliessen} disabled={sperre}
                                             onChange={() => schalte(abt.abteilungId, 'darfMonatAbschliessen')}
                                             titel="Monate abschließen und wieder öffnen"

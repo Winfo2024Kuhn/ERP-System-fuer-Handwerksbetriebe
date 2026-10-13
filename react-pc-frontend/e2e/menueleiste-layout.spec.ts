@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung, keinTextGekuerzt } from './hilfen/design';
 
 /**
@@ -133,6 +134,7 @@ async function stubbeMenueleisteApi(page: Page, displayName: string = LANGER_NUT
 
 async function oeffneProjekteMitMenueleiste(page: Page, displayName: string = LANGER_NUTZERNAME) {
     await stubbeMenueleisteApi(page, displayName);
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/projekte');
     await expect(page.getByRole('heading', { name: 'Projektübersicht' })).toBeVisible();
 }

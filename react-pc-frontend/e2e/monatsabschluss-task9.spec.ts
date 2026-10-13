@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 async function stub(page: Page, options: { allowed?: boolean; error?: boolean; conflict?: boolean } = {}) {
@@ -74,6 +75,7 @@ async function stub(page: Page, options: { allowed?: boolean; error?: boolean; c
 
 test('Recht speichern, Glockenlink, Abschluss und Wiederöffnung mit Verlauf', async ({ page }, info) => {
     const writes = await stub(page, { allowed: false });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/einstellungen#berechtigungen');
     const checkbox = page.getByRole('checkbox', { name: /Monate abschließen und wieder öffnen/ });
     await checkbox.check();
@@ -107,6 +109,7 @@ test('Recht speichern, Glockenlink, Abschluss und Wiederöffnung mit Verlauf', a
 
 test('Ohne Abschlussrecht bleiben offene Stunden lesbar', async ({ page }, info) => {
     const writes = await stub(page, { allowed: false });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?jahr=2025&monat=8');
     await expect(page.getByText('Noch offen – die Stunden werden weiterhin aktuell angezeigt.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Monat abschließen', exact: true })).toHaveCount(0);
@@ -117,6 +120,7 @@ test('Ohne Abschlussrecht bleiben offene Stunden lesbar', async ({ page }, info)
 
 test('Fehler im Monatsstatus sperrt die Stundenanzeige nicht', async ({ page }, info) => {
     await stub(page, { error: true });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/zeitbuchungen?jahr=2025&monat=8');
     await expect(page.getByRole('button', { name: 'Monatsstand erneut laden' })).toBeVisible();
     await expect(page.getByText('168,0h', { exact: true })).toBeVisible();
@@ -126,6 +130,7 @@ test('Fehler im Monatsstatus sperrt die Stundenanzeige nicht', async ({ page }, 
 test('Laufender Monat kann nicht abgeschlossen werden', async ({ page }, info) => {
     const writes = await stub(page);
     const jetzt = new Date();
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto(`/monatsabschluss?jahr=${jetzt.getFullYear()}&monat=${jetzt.getMonth() + 1}`);
     await expect(page.getByText('Nur vergangene Monate können abgeschlossen werden.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Monat jetzt abschließen', exact: true })).toBeDisabled();

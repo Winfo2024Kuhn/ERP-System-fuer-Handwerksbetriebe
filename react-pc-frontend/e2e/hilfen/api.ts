@@ -254,3 +254,17 @@ export async function oeffneNeuigkeiten(page: Page) {
     await page.goto('/website');
     await page.getByRole('heading', { name: 'NEUIGKEITEN' }).waitFor();
 }
+
+/**
+ * Stubbt, ob der Menue-Bereich "Zeiterfassung" am PC sichtbar ist
+ * (GET /api/zeitverwaltung/sichtbarkeit). Standard: sichtbar -- so wie fuer
+ * Administratoren und das Buero.
+ *
+ * Muss NACH dem allgemeinen `**\/api/**`-Auffangnetz einer Spec aufgerufen
+ * werden (Playwright wertet zuletzt registrierte Routen zuerst aus), am besten
+ * unmittelbar vor `page.goto(...)`. Ohne diesen Aufruf bleibt der Bereich
+ * verborgen, weil ein Auffangnetz das Feld nicht liefert.
+ */
+export async function stubbeZeiterfassungSichtbarkeit(page: Page, darf = true): Promise<void> {
+    await page.route('**/api/zeitverwaltung/sichtbarkeit', route => json(route, { darfZeiterfassungSehen: darf }));
+}
