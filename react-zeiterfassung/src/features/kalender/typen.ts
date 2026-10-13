@@ -28,7 +28,11 @@ export interface KalenderEintrag {
     teilnehmer: Teilnehmer[]
 }
 
-export type AbwesenheitTyp = 'URLAUB' | 'KRANKHEIT' | 'FORTBILDUNG' | 'ZEITAUSGLEICH'
+/**
+ * „ABWESEND" liefert der Server statt „KRANKHEIT", wenn der Betrachter weder Admin noch
+ * Geschäftsführung ist und der Eintrag nicht sein eigener ist (Datenschutz, Issue #268).
+ */
+export type AbwesenheitTyp = 'URLAUB' | 'KRANKHEIT' | 'ABWESEND' | 'FORTBILDUNG' | 'ZEITAUSGLEICH'
 
 /** Team-Abwesenheit, wie sie /api/abwesenheit/team liefert. */
 export interface TeamAbwesenheit {
@@ -52,6 +56,7 @@ export type EintragArt = AbwesenheitTyp | 'FEIERTAG' | 'TERMIN'
 export const EINTRAG_ARTEN: Record<EintragArt, { farbe: string; label: string }> = {
     URLAUB: { farbe: '#0ea5e9', label: 'Urlaub' },
     KRANKHEIT: { farbe: '#64748b', label: 'Krankheit' },
+    ABWESEND: { farbe: '#64748b', label: 'Abwesend' },
     FORTBILDUNG: { farbe: '#10b981', label: 'Fortbildung' },
     ZEITAUSGLEICH: { farbe: '#f59e0b', label: 'Zeitausgleich' },
     FEIERTAG: { farbe: '#f43f5e', label: 'Feiertag' },
@@ -59,7 +64,7 @@ export const EINTRAG_ARTEN: Record<EintragArt, { farbe: string; label: string }>
 }
 
 /** Reihenfolge der Legende und der Sortierung innerhalb eines Tages. */
-export const EINTRAG_ART_REIHENFOLGE: EintragArt[] = ['FEIERTAG', 'URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'ZEITAUSGLEICH', 'TERMIN']
+export const EINTRAG_ART_REIHENFOLGE: EintragArt[] = ['FEIERTAG', 'URLAUB', 'KRANKHEIT', 'ABWESEND', 'FORTBILDUNG', 'ZEITAUSGLEICH', 'TERMIN']
 
 export type VerknuepfungArt = 'projekt' | 'kunde' | 'lieferant' | 'anfrage'
 

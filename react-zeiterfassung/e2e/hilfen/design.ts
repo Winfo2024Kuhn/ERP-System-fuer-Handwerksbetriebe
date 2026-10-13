@@ -55,7 +55,7 @@ interface Rahmen {
     fest: boolean;
     /** Hat einen Vorfahren mit position: sticky (z.B. RibbonNav) -- siehe keineUeberschneidungen. */
     sticky: boolean;
-    /** Only the explicitly marked, fixed PC notification layer may float over app controls. */
+    /** Only the explicitly marked, fixed notification layer (PC or mobile) may float over app controls. */
     toastLayer: boolean;
     toastAncestors: number[];
 }
@@ -468,7 +468,8 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             if (dialog && !dialog.contains(el) && !fest) continue;
             if (el === dialog) continue;
             const rolle = el.getAttribute('role');
-            const toastRoot = el.closest('[data-pc-toasts]');
+            // Schwebende Meldungsebene: PC `data-pc-toasts`, Handy `data-mobile-toasts` – beide fest positioniert.
+            const toastRoot = el.closest('[data-pc-toasts], [data-mobile-toasts]');
             const toastLayer = !!toastRoot && getComputedStyle(toastRoot).position === 'fixed';
             const toastAncestors: number[] = [];
             if (toastLayer) {

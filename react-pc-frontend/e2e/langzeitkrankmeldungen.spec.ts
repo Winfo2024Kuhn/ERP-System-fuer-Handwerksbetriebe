@@ -230,3 +230,42 @@ test('"Doch noch krank" erscheint nur bei einer abgeschlossenen Meldung, ein Ver
 
     await keinHorizontalerUeberlauf(page);
 });
+
+// Issue #270: „Auf Krankengeld umstellen" fragt den Beginn ab, statt stumm
+// „heute" zu nehmen. Vorgabe ist der Tag nach Ende der Lohnfortzahlung
+// (14.03.2026 → 15.03.2026); der Server schließt die Lohnfortzahlung dann
+// automatisch am Vortag -- das erklärt der Info-Knopf am Datumsfeld.
+test('"Auf Krankengeld umstellen" öffnet einen Dialog mit Vorgabedatum und sendet den gewählten Beginn', async ({ page }, testInfo) => {
+    await stubApi(page);
+    const phasenBodies: unknown[] = [];
+    await page.route('**/api/langzeitkrankmeldungen/2/phasen**', (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        phasenBodies.push(route.request().postDataJSON());
+        return json(route, { id: 200, typ: 'KRANKENGELD', label: 'Krankengeld der Krankenkasse', vonDatum: '2026-03-15', bisDatum: null, stundenProTag: null }, 201);
+    });
+    await page.goto('/langzeitkrankmeldungen');
+    await expect(page.getByText(/Lohnfortzahlung endete am 14\.03\.2026/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Auf Krankengeld umstellen' }).click();
+
+    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Auf Krankengeld umstellen' }) });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('15.03.2026')).toBeVisible();
+    expect(phasenBodies).toEqual([]);
+
+    // Info-Knopf geöffnet mit prüfen: nichts abgeschnitten, nichts überdeckt.
+    await dialog.getByRole('button', { name: 'Mehr zu: Krankengeld ab' }).click();
+    const info = page.getByRole('dialog', { name: 'Krankengeld ab' });
+    await expect(info).toContainText('endet automatisch am Tag vor dem gewählten Beginn');
+    await designPruefung(page, testInfo, 'lange-krankheit-krankengeld-dialog', {
+        primaerAktion: dialog.getByRole('button', { name: 'Umstellen' }),
+    });
+    await page.keyboard.press('Escape');
+    await expect(info).toHaveCount(0);
+
+    await dialog.getByRole('button', { name: 'Umstellen' }).click();
+
+    await expect(page.getByText('Auf Krankengeld umgestellt.')).toBeVisible();
+    expect(phasenBodies).toEqual([{ typ: 'KRANKENGELD', vonDatum: '2026-03-15', bisDatum: null, stundenProTag: null }]);
+    await expect(dialog).toHaveCount(0);
+});

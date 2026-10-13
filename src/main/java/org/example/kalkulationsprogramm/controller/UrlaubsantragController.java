@@ -3,13 +3,18 @@ package org.example.kalkulationsprogramm.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
+import org.example.kalkulationsprogramm.dto.UrlaubsentscheidungDto;
 import org.example.kalkulationsprogramm.service.UrlaubsantragService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 @RestController
 @RequiredArgsConstructor
@@ -83,17 +88,61 @@ public class UrlaubsantragController {
 
     @PutMapping("/api/urlaub/antraege/{id}/approve")
     public ResponseEntity<Urlaubsantrag> approveAntrag(@PathVariable Long id) {
-        return ResponseEntity.ok(service.approveAntrag(id));
+        return ResponseEntity.ok(mitKlartextFehlern(() -> service.approveAntrag(id)));
     }
 
     @PutMapping("/api/urlaub/antraege/{id}/reject")
     public ResponseEntity<Urlaubsantrag> rejectAntrag(@PathVariable Long id) {
-        return ResponseEntity.ok(service.rejectAntrag(id));
+        return ResponseEntity.ok(mitKlartextFehlern(() -> service.rejectAntrag(id)));
     }
 
+    /**
+     * Storno: Am PC nimmt das Büro offene und genehmigte Anträge zurück. Mit
+     * Handy-Token darf ein Mitarbeiter nur seinen eigenen, noch offenen Antrag
+     * zurückziehen (MobileApiPolicy lässt die Route durch, die Fachregel steht hier).
+     */
     @PutMapping("/api/urlaub/antraege/{id}/storno")
     public ResponseEntity<Urlaubsantrag> stornoAntrag(@PathVariable Long id) {
-        return ResponseEntity.ok(service.stornoAntrag(id));
+        MobilePrincipal mobile = MobilePrincipal.current();
+        return ResponseEntity.ok(mitKlartextFehlern(() -> mobile != null
+                ? service.ziehEigenenAntragZurueck(id, mobile.mitarbeiterId())
+                : service.stornoAntrag(id)));
+    }
+
+    /** Entscheidungen (genehmigt, abgelehnt, vom Büro storniert), die der Mitarbeiter noch nicht als gelesen markiert hat – für die Glocke der Handy-App. */
+    @GetMapping("/api/urlaub/antraege/neue-entscheidungen")
+    public ResponseEntity<List<UrlaubsentscheidungDto>> neueEntscheidungen(@RequestParam Long mitarbeiterId) {
+        return ResponseEntity.ok(service.neueEntscheidungen(MobilePrincipal.ownMitarbeiterId(mitarbeiterId)));
+    }
+
+    /** „Gelesen" an einer einzelnen Nachricht in der Glocke der Handy-App. */
+    @PutMapping("/api/urlaub/antraege/{id}/entscheidung-gesehen")
+    public ResponseEntity<Void> entscheidungGesehen(@PathVariable Long id) {
+        MobilePrincipal mobile = MobilePrincipal.current();
+        mitKlartextFehlern(() -> {
+            if (mobile != null) {
+                service.eigeneEntscheidungGesehen(id, mobile.mitarbeiterId());
+            } else {
+                service.entscheidungGesehenImBuero(id);
+            }
+            return null;
+        });
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Übersetzt die Fachfehler des Services in Antworten mit Klartext
+     * ({@code ApiError.message} über den RestExceptionHandler): nicht gefunden → 404,
+     * Regelverstoß → 400. 403/409 wirft der Service bereits selbst.
+     */
+    private static <T> T mitKlartextFehlern(Supplier<T> aktion) {
+        try {
+            return aktion.get();
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Antrag nicht gefunden.");
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 
     /**
@@ -106,7 +155,7 @@ public class UrlaubsantragController {
         mitarbeiterId = MobilePrincipal.ownMitarbeiterId(mitarbeiterId);
         int targetJahr = (jahr != null) ? jahr : java.time.LocalDate.now().getYear();
         try {
-            int verbleibend = service.getResturlaub(mitarbeiterId, targetJahr);
+            BigDecimal verbleibend = service.getResturlaub(mitarbeiterId, targetJahr);
             return ResponseEntity.ok(Map.of("verbleibend", verbleibend, "jahr", targetJahr));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

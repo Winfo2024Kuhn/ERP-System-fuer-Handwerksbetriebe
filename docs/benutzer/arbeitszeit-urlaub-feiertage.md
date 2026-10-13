@@ -57,28 +57,30 @@ In der Handy-App „Abwesenheit beantragen“:
 2. „Vom (Erster Tag)“ und „Bis (Letzter Tag)“, optional eine Bemerkung.
 3. Senden, z. B. mit „Antrag senden“.
 
-Bei Urlaub zeigt die App vorher die übrigen Urlaubstage; reichen sie nicht, lässt sich nicht senden. Unter „Übersicht“ sieht der Mitarbeiter seine Anträge und ob sie genehmigt sind. Eine Nachricht bei Genehmigung bekommt er nicht.
+Bei Urlaub zeigt die App vorher die übrigen Urlaubstage; reichen sie nicht, lässt sich nicht senden. Unter „Übersicht“ sieht der Mitarbeiter seine Anträge und ob sie genehmigt sind. Solange ein Antrag noch offen ist, kann er ihn dort mit „Zurückziehen“ selbst zurücknehmen; genehmigten Urlaub nimmt nur das Büro zurück.
+
+Wird ein Antrag genehmigt oder abgelehnt, bekommt der Mitarbeiter eine Push-Nachricht aufs Handy (wenn er Benachrichtigungen erlaubt hat). Zusätzlich steht die Entscheidung in der Handy-App unter der Glocke oben rechts neben dem Zahnrad. Dort sammelt die App alle Nachrichten, auch die Warnung vor verfallendem Resturlaub. Mit „Gelesen“ verschwindet eine Nachricht aus der Liste.
 
 ## Urlaubsanträge genehmigen oder ablehnen
 
-Unter **Zeiterfassung → Urlaubsanträge** zeigt die Auswahl oben zuerst „Offene Anträge“; umschaltbar auf „Genehmigte Anträge“ und „Abgelehnte Anträge“. Jeder Antrag zeigt Art, Name, Zeitraum, Jahresurlaub und Bemerkung. „Genehmigen“ oder „Ablehnen“ wählen und bestätigen. Die Glocke oben rechts meldet neue Anträge.
+Unter **Zeiterfassung → Urlaubsanträge** zeigt die Auswahl oben zuerst „Offene Anträge“; umschaltbar auf „Genehmigte Anträge“, „Abgelehnte Anträge“ und „Stornierte Anträge“. Jeder Antrag zeigt Art, Name, Zeitraum, Jahresurlaub und Bemerkung. „Genehmigen“ oder „Ablehnen“ wählen und bestätigen. Die Glocke oben rechts meldet neue Anträge.
 
-Beim Genehmigen bucht das Programm für jeden Arbeitstag (Montag bis Freitag, ohne Feiertage) die Abwesenheit mit dem Tagessoll. Läuft für den Mitarbeiter gerade eine lange Krankheit, weist ein gelber Kasten darauf hin. Hat der Mitarbeiter für einen der Tage keine Arbeitszeit, klappt das Genehmigen nicht – zuerst die Arbeitszeit einrichten.
+Beim Genehmigen bucht das Programm für jeden Arbeitstag (Montag bis Freitag, ohne Feiertage) die Abwesenheit mit dem Tagessoll. Läuft für den Mitarbeiter gerade eine lange Krankheit, weist ein gelber Kasten darauf hin. Hat der Mitarbeiter für einen der Tage keine Arbeitszeit oder liegt ein Tag in einem abgeschlossenen Monat, klappt das Genehmigen nicht; das Programm sagt dann, woran es liegt.
 
 ## Genehmigten Urlaub zurücknehmen
 
-Einen eigenen Knopf zum Stornieren gibt es nicht. Stattdessen unter **Zeiterfassung → Kalender** die Urlaubstage doppelklicken und die Urlaubs-Buchung in der Tageserfassung über den Papierkorb entfernen. In einem abgeschlossenen Monat zuerst den Monat wieder öffnen.
+Unter **Zeiterfassung → Urlaubsanträge** hat jeder offene und genehmigte Antrag den Knopf „Stornieren“. Nach der Rückfrage bekommt der Antrag den Stand „Storniert“, und alle Urlaubstage, die er im Kalender eingetragen hat, werden gelöscht. Der Resturlaub steigt entsprechend. Liegt ein Urlaubstag in einem abgeschlossenen Monat, zuerst den Monat wieder öffnen.
 
 ## Resturlaub
 
-Resturlaub = Jahresurlaub minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Er steht in **Zeiterfassung → Kalender** („Resturlaub“) und in der Handy-App unter „Saldenauswertung“. Resturlaub aus dem Vorjahr überträgt das Programm nicht von selbst; dafür unter **Zeiterfassung → Kalender** eine Korrektur „Urlaubstage“ anlegen (siehe [Zeiterfassung](zeiterfassung.md)).
+Resturlaub = Jahresurlaub minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Ein halber Urlaubstag zählt als 0,5 Tage, auch Korrekturen dürfen halbe Tage sein. Er steht in **Zeiterfassung → Kalender** („Resturlaub“) und in der Handy-App unter „Saldenauswertung“. Resturlaub aus dem Vorjahr überträgt das Programm nicht von selbst; dafür unter **Zeiterfassung → Kalender** eine Korrektur „Urlaubstage“ anlegen (siehe [Zeiterfassung](zeiterfassung.md)).
 
 ## Lange Krankheit
 
 Unter **Zeiterfassung → Lange Krankheit** behält man längere Krankheiten im Blick: erst „Lohnfortzahlung durch den Betrieb“ (42 Tage), dann „Krankengeld der Krankenkasse“, dann „Wiedereingliederung“. Die Krankheitstage selbst kommen weiter aus dem Kalender oder der Krankmeldung in der App.
 
 1. „Krankmeldung anlegen“: Mitarbeiter, „Beginn“; „Lohnfortzahlung bis“ schlägt das Programm vor. In die interne Notiz keine Diagnosen eintragen.
-2. Ist die Lohnfortzahlung vorbei, auf der Karte „Auf Krankengeld umstellen“.
+2. Ist die Lohnfortzahlung vorbei, auf der Karte „Auf Krankengeld umstellen“. Im Fenster „Krankengeld ab“ steht schon der Tag nach dem Ende der Lohnfortzahlung; bei Bedarf ändern und „Umstellen“ wählen. Die Lohnfortzahlung endet dann automatisch am Vortag.
 3. Für die Wiedereingliederung unter „Details“ im „Stufenplan“ Stunden pro Tag hinterlegen; sie ersetzen dann das Tagessoll.
 4. Zum Schluss „Wieder voll im Einsatz“. Eine falsche Meldung lässt sich mit „Zurücknehmen“ verwerfen.
 

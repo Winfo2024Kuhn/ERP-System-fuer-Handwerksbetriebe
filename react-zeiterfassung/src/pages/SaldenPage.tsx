@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Sun, Briefcase, Clock, TrendingUp, TrendingDown, Minus, RefreshCw, Stethoscope, GraduationCap, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { formatUrlaubstage } from '../lib/urlaubsantrag'
 
 interface Mitarbeiter {
     id: number
@@ -295,21 +296,21 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                             <div className={`p-4 grid gap-2 ${zeitkontoStatus?.istGeschaeftsfuehrer ? 'grid-cols-2' : 'grid-cols-4'}`}>
                                 {!zeitkontoStatus?.istGeschaeftsfuehrer && (
                                     <div className="text-center">
-                                        <p className="text-xl font-bold text-slate-900">{saldo.urlaub.jahresanspruch ?? 0}</p>
+                                        <p className="text-xl font-bold text-slate-900">{formatUrlaubstage(saldo.urlaub.jahresanspruch)}</p>
                                         <p className="text-[10px] text-slate-500">Anspruch</p>
                                     </div>
                                 )}
                                 <div className="text-center">
-                                    <p className="text-xl font-bold text-amber-600">{saldo.urlaub.genommen}</p>
+                                    <p className="text-xl font-bold text-amber-600">{formatUrlaubstage(saldo.urlaub.genommen)}</p>
                                     <p className="text-[10px] text-slate-500">Genommen</p>
                                 </div>
                                 <div className="text-center">
-                                    <p className="text-xl font-bold text-blue-600">{saldo.urlaub.geplant || 0}</p>
+                                    <p className="text-xl font-bold text-blue-600">{formatUrlaubstage(saldo.urlaub.geplant)}</p>
                                     <p className="text-[10px] text-slate-500">Geplant</p>
                                 </div>
                                 {!zeitkontoStatus?.istGeschaeftsfuehrer && (
                                     <div className="text-center">
-                                        <p className="text-xl font-bold text-green-600">{saldo.urlaub.verbleibend ?? 0}</p>
+                                        <p className="text-xl font-bold text-green-600">{formatUrlaubstage(saldo.urlaub.verbleibend)}</p>
                                         <p className="text-[10px] text-slate-500">Frei</p>
                                     </div>
                                 )}

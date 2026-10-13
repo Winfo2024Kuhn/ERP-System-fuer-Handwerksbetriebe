@@ -105,7 +105,8 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
                 zeitbuchungRepository, abwesenheitRepository, produktkategorieRepository,
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
                 lieferantenRepository, feiertagService, auditService, tagesSollService,
-                zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService);
+                zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
+                new UrlaubstageRechner());
 
         // Keine Zeitbuchungen/Abwesenheiten/Korrekturen im Fixture-Zeitraum - isoliert
         // die Zusicherung auf die Feiertagsberechnung. any() fuer den Zeitraum ist hier

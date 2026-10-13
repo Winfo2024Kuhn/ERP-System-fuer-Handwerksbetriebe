@@ -13,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -61,6 +62,11 @@ class TagesSollCharakterisierungUrlaubsantragTest {
     private TagesSollService tagesSollService;
     @Mock
     private LangzeitkrankmeldungService langzeitkrankmeldungService;
+
+    @Mock
+    private WebPushService webPushService;
+    @Spy
+    private UrlaubstageRechner urlaubstageRechner = new UrlaubstageRechner();
 
     @InjectMocks
     private UrlaubsantragService urlaubsantragService;

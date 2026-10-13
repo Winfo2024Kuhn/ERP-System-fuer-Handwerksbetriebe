@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw } from 'lucide-react'
 import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { leseFehlermeldung } from '../lib/apiFehler'
 
 interface Projekt {
     id: number
@@ -250,9 +251,9 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
 
             } else {
                 // Server responded with error - DO NOT queue offline, it might be "already running"
-                const errorData = await res.json().catch(() => ({}))
-                console.error('Server error:', errorData.error || res.status)
-                toast.error(errorData.error || 'Fehler beim Starten der Buchung')
+                const meldung = await leseFehlermeldung(res, 'Fehler beim Starten der Buchung')
+                console.error('Server error:', res.status, meldung)
+                toast.error(meldung)
                 setStarting(false)
                 return // Don't navigate, don't queue
             }

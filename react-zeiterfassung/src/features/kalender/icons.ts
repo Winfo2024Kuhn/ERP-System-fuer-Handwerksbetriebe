@@ -1,4 +1,4 @@
-import { Briefcase, CalendarDays, Clock, FileText, Flag, GraduationCap, Plane, Stethoscope, Truck, User } from 'lucide-react'
+import { Briefcase, CalendarDays, Clock, FileText, Flag, GraduationCap, Plane, Stethoscope, Truck, User, UserX } from 'lucide-react'
 import type { ComponentType, SVGProps } from 'react'
 import type { EintragArt, VerknuepfungArt } from './typen'
 
@@ -8,6 +8,7 @@ export type KalenderIcon = ComponentType<SVGProps<SVGSVGElement>>
 export const ART_ICONS: Record<EintragArt, KalenderIcon> = {
     URLAUB: Plane,
     KRANKHEIT: Stethoscope,
+    ABWESEND: UserX,
     FORTBILDUNG: GraduationCap,
     ZEITAUSGLEICH: Clock,
     FEIERTAG: Flag,

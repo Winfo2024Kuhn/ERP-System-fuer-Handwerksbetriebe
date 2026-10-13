@@ -1,4 +1,4 @@
-import { useToast, mobileOverlayStyle } from './ui/toast'
+import { useToast } from './ui/toast'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Camera, { type CameraHandle } from './Camera'
 import { X, Loader2, Check, ArrowRight, Plus, Trash2, Layers, Wand2, ScanLine } from 'lucide-react'
@@ -671,7 +671,7 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
     const MAG_RADIUS = MAG_SIZE / 2;
 
     return (
-        <div style={mobileOverlayStyle} className="fixed inset-0 bg-black z-50 flex flex-col safe-area-top select-none touch-none">
+        <div className="fixed inset-0 bg-black z-50 flex flex-col safe-area-top select-none touch-none">
             {/* Header */}
             <div className="flex justify-between items-center p-4 bg-black/80 text-white z-10">
                 <button onClick={onClose}><X /></button>

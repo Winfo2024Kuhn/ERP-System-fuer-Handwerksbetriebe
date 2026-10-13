@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -37,6 +38,17 @@ public class Urlaubsantrag {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Typ typ = Typ.URLAUB;
+
+    /** Zeitpunkt der Genehmigung oder Ablehnung; null, solange der Antrag offen ist. */
+    private LocalDateTime entschiedenAm;
+
+    /**
+     * false, solange der Mitarbeiter die Entscheidung in der Handy-App noch nicht
+     * mit „Verstanden" bestätigt hat. Neue Anträge starten mit true, erst die
+     * Entscheidung setzt die Markierung zurück.
+     */
+    @Column(nullable = false)
+    private boolean entscheidungGesehen = true;
 
     public enum Status {
         OFFEN, GENEHMIGT, ABGELEHNT, STORNIERT

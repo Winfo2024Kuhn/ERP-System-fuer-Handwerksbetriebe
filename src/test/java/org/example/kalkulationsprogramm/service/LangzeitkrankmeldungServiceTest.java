@@ -308,7 +308,9 @@ class LangzeitkrankmeldungServiceTest {
     }
 
     @Test
-    void phaseHinzufuegen_ZweiOffenePhasen_wirftFehler() {
+    void phaseHinzufuegen_OffenePhaseVorDerOffenenPhase_wirftFehler() {
+        // Eine offene Phase, die VOR der bereits offenen beginnt, wird nicht
+        // automatisch geschlossen – die Regel „nur die letzte offen" greift weiter.
         Langzeitkrankmeldung meldung = meldungMitLohnfortzahlung(LocalDate.of(2020, 3, 1), LocalDate.of(2020, 4, 11));
         LangzeitkrankmeldungPhase bereitsOffen = neuePhase(meldung, LangzeitkrankmeldungPhaseTyp.KRANKENGELD,
                 LocalDate.of(2020, 4, 12), null, null);
@@ -316,10 +318,30 @@ class LangzeitkrankmeldungServiceTest {
         when(repository.findMitPhasenById(1L)).thenReturn(Optional.of(meldung));
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> service.phaseHinzufuegen(1L, LangzeitkrankmeldungPhaseTyp.WIEDEREINGLIEDERUNG,
-                        LocalDate.of(2020, 5, 1), null, new BigDecimal("4.00")));
+                () -> service.phaseHinzufuegen(1L, LangzeitkrankmeldungPhaseTyp.KRANKENGELD,
+                        LocalDate.of(2020, 4, 1), null, null));
 
         assertTrue(ex.getMessage().toLowerCase().contains("letzte"));
+        assertNull(bereitsOffen.getBisDatum());
+    }
+
+    @Test
+    void phaseHinzufuegen_SchliesstOffeneVorgaengerphaseAmVortag() {
+        // Issue #270, Punkt 9: „Auf Krankengeld umstellen" legt eine offene Phase an,
+        // obwohl die Lohnfortzahlung noch offen ist. Die alte Phase endet am Vortag.
+        Langzeitkrankmeldung meldung = meldungMitLohnfortzahlung(LocalDate.of(2020, 3, 1), LocalDate.of(2020, 4, 11));
+        LangzeitkrankmeldungPhase lohnfortzahlung = meldung.getPhasen().get(0);
+        lohnfortzahlung.setBisDatum(null);
+        when(repository.findMitPhasenById(1L)).thenReturn(Optional.of(meldung));
+        when(repository.save(any(Langzeitkrankmeldung.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(abwesenheitRepository.findByMitarbeiterIdAndTypAndDatumBetween(eq(MITARBEITER_ID),
+                eq(AbwesenheitsTyp.KRANKHEIT), any(), any())).thenReturn(List.of());
+
+        Langzeitkrankmeldung ergebnis = service.phaseHinzufuegen(1L, LangzeitkrankmeldungPhaseTyp.KRANKENGELD,
+                LocalDate.of(2020, 4, 15), null, null);
+
+        assertEquals(LocalDate.of(2020, 4, 14), lohnfortzahlung.getBisDatum());
+        assertEquals(2, ergebnis.getPhasen().size());
     }
 
     @Test
