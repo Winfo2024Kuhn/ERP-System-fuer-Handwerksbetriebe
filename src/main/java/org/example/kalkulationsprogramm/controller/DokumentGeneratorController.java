@@ -462,22 +462,4 @@ public class DokumentGeneratorController {
             return LocalDate.now();
         }
     }
-
-    /**
-     * Entfernt HTML-Tags aus dem Content
-     */
-    private String stripHtml(String html) {
-        if (html == null)
-            return "";
-        return html
-                .replaceAll("<br\\s*/?>", "\n")
-                .replaceAll("<p>", "")
-                .replaceAll("</p>", "\n")
-                .replaceAll("<[^>]+>", "")
-                .replaceAll("&nbsp;", " ")
-                .replaceAll("&amp;", "&")
-                .replaceAll("&lt;", "<")
-                .replaceAll("&gt;", ">")
-                .trim();
-    }
 }

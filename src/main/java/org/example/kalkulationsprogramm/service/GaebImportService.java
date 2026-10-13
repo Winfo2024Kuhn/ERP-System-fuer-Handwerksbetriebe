@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.HtmlKlartext;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -452,7 +453,7 @@ public class GaebImportService {
             if (n.getNodeType() == Node.ELEMENT_NODE && "LblTx".equals(n.getNodeName())) {
                 String text = n.getTextContent().trim();
                 // Strip any HTML tags from the label
-                text = text.replaceAll("<[^>]+>", "").trim();
+                text = HtmlKlartext.entferneTags(text).trim();
                 return text.isBlank() ? null : text;
             }
         }
@@ -496,8 +497,7 @@ public class GaebImportService {
     private String extractFirstLine(String html) {
         if (html == null) return "Position";
         // Strip HTML tags and decode entities
-        String text = html.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
-        text = decodeHtmlEntities(text);
+        String text = einzeiligerText(html);
         // Take first ~120 characters
         if (text.length() > 120) {
             text = text.substring(0, 120).trim() + "...";
@@ -510,8 +510,7 @@ public class GaebImportService {
      */
     private String cleanTextForTitle(String html) {
         if (html == null) return "Position";
-        String text = html.replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
-        text = decodeHtmlEntities(text);
+        String text = einzeiligerText(html);
         if (text.length() > 150) {
             text = text.substring(0, 150).trim() + "...";
         }
@@ -530,15 +529,13 @@ public class GaebImportService {
     }
 
     /**
-     * Decodes basic HTML entities back to plain text characters.
+     * HTML als einzeiliger Klartext: Tags werden zu Leerzeichen, Entitäten in einem
+     * Durchlauf entpackt, Leerraum zusammengefasst.
      */
-    private String decodeHtmlEntities(String text) {
-        if (text == null) return "";
-        return text.replace("&quot;", "\"")
-                   .replace("&amp;", "&")
-                   .replace("&lt;", "<")
-                   .replace("&gt;", ">")
-                   .replace("&#39;", "'");
+    private String einzeiligerText(String html) {
+        return HtmlKlartext.entpackeEntitaeten(HtmlKlartext.entferneTags(html, " "))
+                .replaceAll("\\s++", " ")
+                .trim();
     }
 
     // ========== Paragraph Compaction ==========

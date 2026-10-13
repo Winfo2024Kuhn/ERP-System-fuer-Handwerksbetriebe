@@ -33,6 +33,7 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfTemplate;
 import com.lowagie.text.pdf.PdfWriter;
 
+import org.example.kalkulationsprogramm.util.HtmlKlartext;
 import org.example.kalkulationsprogramm.util.PdfSchriften;
 import org.example.kalkulationsprogramm.util.RabattRechner;
 
@@ -1289,13 +1290,7 @@ public class RechnungPdfService {
                 }
             } else {
                 // Text-Content: originalPart verwenden um Leerzeichen zu erhalten
-                String text = originalPart
-                        .replace("&nbsp;", " ")
-                        .replace("&quot;", "\"")
-                        .replace("&#39;", "'")
-                        .replace("&amp;", "&")
-                        .replace("&lt;", "<")
-                        .replace("&gt;", ">");
+                String text = HtmlKlartext.entpackeEntitaeten(originalPart);
 
                 // Bild-Platzhalter verarbeiten
                 if (text.contains(imgPlaceholderPrefix)) {
@@ -1396,17 +1391,10 @@ public class RechnungPdfService {
      */
     private String stripHtmlForFallback(String html) {
         if (html == null) return "";
-        return html
+        return HtmlKlartext.zuText(html
             .replaceAll("<br\\s*/?>", "\n")
             .replaceAll("<p>", "")
-            .replaceAll("</p>", "\n")
-            .replaceAll("<[^>]+>", "")
-            .replaceAll("&nbsp;", " ")
-            .replaceAll("&quot;", "\"")
-            .replaceAll("&#39;", "'")
-            .replaceAll("&amp;", "&")
-            .replaceAll("&lt;", "<")
-            .replaceAll("&gt;", ">")
+            .replaceAll("</p>", "\n"))
             .trim();
     }
 
@@ -2240,114 +2228,6 @@ public class RechnungPdfService {
         ct.addElement(p);
     }
 
-
-
-
-    /**
-     * Rendert HTML-Inhalt mit eingebetteten Bildern (Base64).
-     * Extrahiert img-Tags und rendert sie als PDF-Bilder.
-     * Schriftgröße: Frontend sendet pt (10-20pt), wird direkt verwendet.
-     */
-    private void renderHtmlWithImages(ColumnText ct, String html, ContentBlockDto block, Color textColor) 
-            throws DocumentException {
-        // Pattern für img-Tags mit Base64-Data-URL (capture full tag for width/height extraction)
-        Pattern imgPattern = Pattern.compile("<img([^>]+)src=[\"']data:image/([^;]+);base64,([^\"']+)[\"'][^>]*>", 
-                Pattern.CASE_INSENSITIVE);
-        Pattern widthAttrP = Pattern.compile("\\bwidth=[\"'](\\d+)[\"']", Pattern.CASE_INSENSITIVE);
-        Pattern heightAttrP = Pattern.compile("\\bheight=[\"'](\\d+)[\"']", Pattern.CASE_INSENSITIVE);
-        Pattern styleWidthP = Pattern.compile("width:\\s*(\\d+)px", Pattern.CASE_INSENSITIVE);
-        Pattern styleHeightP = Pattern.compile("height:\\s*(\\d+)px", Pattern.CASE_INSENSITIVE);
-        
-        // Schriftgröße: Frontend sendet pt (10-20pt), direkt verwenden
-        // Begrenzt auf 10-20pt für Konsistenz
-        float fontSizePt = Math.max(10f, Math.min(20f, block.fontSize()));
-        
-        // Dynamische Zeilenhöhe: 1.3x der Schriftgröße
-        float leading = fontSizePt * 1.3f;
-        
-        Font font = block.fett()
-                ? PdfSchriften.brieftext(fontSizePt, Font.BOLD, textColor)
-                : PdfSchriften.brieftext(fontSizePt, Font.NORMAL, textColor);
-        
-        Matcher matcher = imgPattern.matcher(html);
-        int lastEnd = 0;
-        
-        while (matcher.find()) {
-            // Text vor dem Bild rendern
-            String textBefore = html.substring(lastEnd, matcher.start());
-            String plainText = textBefore.replaceAll("<[^>]*>", "").trim();
-            if (!plainText.isEmpty()) {
-                Paragraph textP = new Paragraph(plainText, font);
-                textP.setLeading(leading);
-                textP.setSpacingAfter(4f);
-                ct.addElement(textP);
-            }
-            
-            // Bild rendern
-            try {
-                String fullTag = matcher.group(0);
-                String base64Data = matcher.group(3);
-                byte[] imageBytes = Base64.getDecoder().decode(base64Data);
-                com.lowagie.text.Image img = com.lowagie.text.Image.getInstance(imageBytes);
-                
-                // Read width/height from HTML attributes (set by TiptapEditor)
-                float targetWidth = -1;
-                float targetHeight = -1;
-                Matcher wm = widthAttrP.matcher(fullTag);
-                if (wm.find()) targetWidth = Float.parseFloat(wm.group(1)) * 0.75f;
-                Matcher hm = heightAttrP.matcher(fullTag);
-                if (hm.find()) targetHeight = Float.parseFloat(hm.group(1)) * 0.75f;
-                if (targetWidth < 0) {
-                    Matcher sw = styleWidthP.matcher(fullTag);
-                    if (sw.find()) targetWidth = Float.parseFloat(sw.group(1)) * 0.75f;
-                }
-                if (targetHeight < 0) {
-                    Matcher sh = styleHeightP.matcher(fullTag);
-                    if (sh.find()) targetHeight = Float.parseFloat(sh.group(1)) * 0.75f;
-                }
-                
-                // Apply dimensions: editor-specified size takes priority
-                float maxWidth = 400f;
-                if (targetWidth > 0 && targetHeight > 0) {
-                    float w = Math.min(targetWidth, maxWidth);
-                    float h = (targetWidth > maxWidth) ? targetHeight * (maxWidth / targetWidth) : targetHeight;
-                    img.scaleAbsolute(w, h);
-                } else if (targetWidth > 0) {
-                    float scale = Math.min(targetWidth, maxWidth) / img.getWidth();
-                    img.scaleAbsolute(img.getWidth() * scale, img.getHeight() * scale);
-                } else {
-                    if (img.getWidth() > maxWidth) {
-                        float scale = maxWidth / img.getWidth();
-                        img.scaleAbsolute(maxWidth, img.getHeight() * scale);
-                    }
-                }
-                
-                // Als Paragraph mit Bild einfügen (damit es im Text-Flow bleibt)
-                Paragraph imgParagraph = new Paragraph();
-                imgParagraph.add(new Chunk(img, 0, 0, true));
-                imgParagraph.setSpacingBefore(6f);
-                imgParagraph.setSpacingAfter(6f);
-                ct.addElement(imgParagraph);
-                
-            } catch (Exception e) {
-                log.warn("Fehler beim Rendern eines eingebetteten Bildes: {}", e.getMessage());
-            }
-            
-            lastEnd = matcher.end();
-        }
-        
-        // Restlichen Text nach dem letzten Bild rendern
-        if (lastEnd < html.length()) {
-            String remainingText = html.substring(lastEnd).replaceAll("<[^>]*>", "").trim();
-            if (!remainingText.isEmpty()) {
-                Paragraph finalP = new Paragraph(remainingText, font);
-                finalP.setLeading(leading);
-                finalP.setSpacingAfter(6f);
-                ct.addElement(finalP);
-            }
-        }
-    }
-
     // ======================= Static Headers/Footers =======================
 
     private void renderBriefkopf(PdfContentByte cb, KopfdatenDto kopf, LayoutDto layout) throws DocumentException {
@@ -2413,121 +2293,6 @@ public class RechnungPdfService {
         cb.moveTo(50, 798);
         cb.lineTo(550, 798);
         cb.stroke();
-    }
-
-    /**
-     * Zerlegt HTML-Inhalt in eine Liste von iText-Elementen (Paragraphs, Images).
-     * Unterstützt Base64-Images aus Tiptap.
-     */
-    private java.util.List<Element> parseHtmlToElements(String html, Font font) {
-        java.util.List<Element> elements = new java.util.ArrayList<>();
-        if (html == null || html.isBlank()) return elements;
-
-        // Pattern für img-Tags mit Base64-Data-URL (capture full tag for width/height)
-        Pattern imgPattern = Pattern.compile("<img([^>]+)src=[\"']data:image/([^;]+);base64,([^\"']+)[\"'][^>]*>", 
-                Pattern.CASE_INSENSITIVE);
-        Pattern widthAttrP = Pattern.compile("\\bwidth=[\"'](\\d+)[\"']", Pattern.CASE_INSENSITIVE);
-        Pattern heightAttrP = Pattern.compile("\\bheight=[\"'](\\d+)[\"']", Pattern.CASE_INSENSITIVE);
-        Pattern styleWidthP = Pattern.compile("width:\\s*(\\d+)px", Pattern.CASE_INSENSITIVE);
-        Pattern styleHeightP = Pattern.compile("height:\\s*(\\d+)px", Pattern.CASE_INSENSITIVE);
-        
-        Matcher matcher = imgPattern.matcher(html);
-        int lastEnd = 0;
-        
-        while (matcher.find()) {
-            // Text vor dem Bild
-            String textBefore = html.substring(lastEnd, matcher.start());
-            // Einfaches HTML-Stripping für den Text-Teil
-            String plainText = textBefore.replaceAll("<br\\s*/?>", "\n")
-                                         .replaceAll("<p>", "\n")
-                                         .replaceAll("</p>", "\n")
-                                         .replaceAll("&nbsp;", " ")
-                                         .replaceAll("<[^>]*>", "")
-                                         .replaceAll("&quot;", "\"")
-                                         .replaceAll("&#39;", "'")
-                                         .replaceAll("&amp;", "&")
-                                         .replaceAll("&lt;", "<")
-                                         .replaceAll("&gt;", ">")
-                                         .trim();
-            if (!plainText.isEmpty()) {
-                Paragraph p = new Paragraph(plainText, font);
-                elements.add(p);
-            }
-            
-            // Bild
-            try {
-                String fullTag = matcher.group(0);
-                String base64Data = matcher.group(3);
-                byte[] imageBytes = Base64.getDecoder().decode(base64Data);
-                com.lowagie.text.Image img = com.lowagie.text.Image.getInstance(imageBytes);
-                
-                // Read width/height from HTML attributes (set by TiptapEditor)
-                float targetWidth = -1;
-                float targetHeight = -1;
-                Matcher wm = widthAttrP.matcher(fullTag);
-                if (wm.find()) targetWidth = Float.parseFloat(wm.group(1)) * 0.75f;
-                Matcher hm = heightAttrP.matcher(fullTag);
-                if (hm.find()) targetHeight = Float.parseFloat(hm.group(1)) * 0.75f;
-                if (targetWidth < 0) {
-                    Matcher sw = styleWidthP.matcher(fullTag);
-                    if (sw.find()) targetWidth = Float.parseFloat(sw.group(1)) * 0.75f;
-                }
-                if (targetHeight < 0) {
-                    Matcher sh = styleHeightP.matcher(fullTag);
-                    if (sh.find()) targetHeight = Float.parseFloat(sh.group(1)) * 0.75f;
-                }
-                
-                // Apply dimensions: editor-specified size takes priority
-                float maxWidth = 450f;
-                if (targetWidth > 0 && targetHeight > 0) {
-                    float w = Math.min(targetWidth, maxWidth);
-                    float h = (targetWidth > maxWidth) ? targetHeight * (maxWidth / targetWidth) : targetHeight;
-                    img.scaleAbsolute(w, h);
-                } else if (targetWidth > 0) {
-                    float scale = Math.min(targetWidth, maxWidth) / img.getWidth();
-                    img.scaleAbsolute(img.getWidth() * scale, img.getHeight() * scale);
-                } else {
-                    if (img.getWidth() > maxWidth) {
-                        float scale = maxWidth / img.getWidth();
-                        img.scaleAbsolute(maxWidth, img.getHeight() * scale);
-                    }
-                }
-                
-                // Bild in Paragraph wrappen
-                Paragraph imgP = new Paragraph();
-                imgP.add(new Chunk(img, 0, 0, true));
-                // Etwas Abstand
-                imgP.setSpacingBefore(5f);
-                imgP.setSpacingAfter(5f);
-                elements.add(imgP);
-                
-            } catch (Exception e) {
-                log.warn("Fehler beim Parsen von Bild: {}", e.getMessage());
-            }
-            
-            lastEnd = matcher.end();
-        }
-        
-        // Rest-Text
-        if (lastEnd < html.length()) {
-            String remaining = html.substring(lastEnd);
-            String plainText = remaining.replaceAll("<br\\s*/?>", "\n")
-                                        .replaceAll("<p>", "\n")
-                                        .replaceAll("</p>", "\n")
-                                        .replaceAll("&nbsp;", " ")
-                                        .replaceAll("<[^>]*>", "")
-                                        .replaceAll("&quot;", "\"")
-                                        .replaceAll("&#39;", "'")
-                                        .replaceAll("&amp;", "&")
-                                        .replaceAll("&lt;", "<")
-                                        .replaceAll("&gt;", ">")
-                                        .trim();
-            if (!plainText.isEmpty()) {
-                elements.add(new Paragraph(plainText, font));
-            }
-        }
-        
-        return elements;
     }
 
     // ======================= Helper Methods =======================

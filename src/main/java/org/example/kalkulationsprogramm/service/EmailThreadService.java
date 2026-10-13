@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.dto.EmailThreadDto;
 import org.example.kalkulationsprogramm.dto.EmailThreadEntryDto;
 import org.example.kalkulationsprogramm.repository.EmailDraftRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
+import org.example.kalkulationsprogramm.util.HtmlKlartext;
 import org.example.kalkulationsprogramm.util.InlineAttachmentUtil;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -405,20 +406,12 @@ public class EmailThreadService {
         if (html == null || html.isBlank()) return "";
 
         // style- und script-Blöcke vollständig entfernen (inkl. Inhalt)
-        text = html
+        text = HtmlKlartext.zuText(html
                 .replaceAll("(?si)<style[^>]*>.*?</style>", " ")
                 .replaceAll("(?si)<script[^>]*>.*?</script>", " ")
                 // Zeilenumbrüche aus Block-Tags erzeugen
                 .replaceAll("(?i)<br\\s*/?>", " ")
-                .replaceAll("(?i)</(p|div|tr|li|h[1-6])>", " ")
-                // alle restlichen Tags entfernen
-                .replaceAll("<[^>]+>", "")
-                // HTML-Entities dekodieren
-                .replace("&nbsp;", " ")
-                .replace("&amp;", "&")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&quot;", "\"")
+                .replaceAll("(?i)</(p|div|tr|li|h[1-6])>", " "))
                 // Whitespace normalisieren
                 .replaceAll("\\s+", " ")
                 .strip();
@@ -479,10 +472,7 @@ public class EmailThreadService {
         // Snippet aus Draft-Body erstellen
         String body = draft.getBody();
         if (body != null && !body.isBlank()) {
-            String text = body
-                    .replaceAll("(?si)<style[^>]*>.*?</style>", " ")
-                    .replaceAll("<[^>]+>", "")
-                    .replace("&nbsp;", " ")
+            String text = HtmlKlartext.zuText(body.replaceAll("(?si)<style[^>]*>.*?</style>", " "))
                     .replaceAll("\\s+", " ")
                     .strip();
             dto.setSnippet(text.length() > SNIPPET_MAX_LENGTH
