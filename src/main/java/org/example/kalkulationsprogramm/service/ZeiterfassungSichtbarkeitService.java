@@ -24,6 +24,11 @@ import lombok.RequiredArgsConstructor;
  * </ul>
  * Ein PC-Zugang ohne verknüpften Mitarbeiter sieht den Bereich nur als Admin.
  * Die Handy-App (Stempeln, Urlaub beantragen) ist davon nicht betroffen.
+ *
+ * <p>Dasselbe Recht entscheidet, wer am PC Krankheit anderer Mitarbeiter sieht
+ * ({@link GesundheitsdatenSichtService}), und das Backend sperrt die
+ * Zeiterfassungs-Daten ohne dieses Recht
+ * ({@code config.ZeiterfassungZugriffInterceptor}).
  */
 @Service
 @RequiredArgsConstructor

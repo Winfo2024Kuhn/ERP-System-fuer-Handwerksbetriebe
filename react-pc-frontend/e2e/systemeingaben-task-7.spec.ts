@@ -1,5 +1,6 @@
 import { type Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { stubbeZeiterfassungSichtbarkeit } from './hilfen/api';
 import { designPruefung } from './hilfen/design';
 
 const ARBEITSZEIT = {
@@ -40,6 +41,7 @@ test('Systemeingaben Task7: eigene Kalender- und Vorlagenauswahl per Tastatur', 
         return json(route, []);
     });
 
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/mitarbeiter');
     await page.getByText('Mustermann', { exact: true }).click();
     await page.getByRole('button', { name: 'Bearbeiten' }).click();

@@ -22,6 +22,7 @@ import { ImageViewer } from '../components/ui/image-viewer';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { useToast } from '../components/ui/toast';
 import { useAuth } from '../auth/AuthContext';
+import { useZeiterfassungSichtbarkeit } from '../features/zeiterfassung/useZeiterfassungSichtbarkeit';
 import { StundenlohnHistorieList } from '../components/mitarbeiter/StundenlohnHistorieList';
 import { BeschaeftigungsWizard, type Beschaeftigungsart } from '../components/mitarbeiter/BeschaeftigungsWizard';
 import type { Arbeitszeit, Zeitkontenmodell, ZeitkontoStatus, ZeitkontoWechsel, ZeitkontoWechselErgebnis } from '../types/zeitkonto';
@@ -117,6 +118,8 @@ export default function MitarbeiterEditor() {
     const confirmDialog = useConfirm();
     const toast = useToast();
     const { isAdmin, user } = useAuth();
+    // Arbeitszeit und Zeitkonto gehören zur Zeiterfassung: ohne Recht wird nichts geladen oder angezeigt (null = wird geprüft).
+    const darfZeiterfassung = useZeiterfassungSichtbarkeit();
     const showError = toast.error;
     const [view, setView] = useState<'LIST' | 'DETAIL'>('LIST');
     const [mitarbeiter, setMitarbeiter] = useState<Mitarbeiter[]>([]);
@@ -249,7 +252,7 @@ export default function MitarbeiterEditor() {
 
     useEffect(() => {
         if (isDialogOpen && formData.id) {
-            void loadZeitkonto(formData.id);
+            if (darfZeiterfassung === true) void loadZeitkonto(formData.id);
         } else if (!isDialogOpen && !zeitkontoDialogOpen) {
             setZeitkontoStatus(null);
             setWechselVorschau(null);
@@ -257,7 +260,7 @@ export default function MitarbeiterEditor() {
         }
     // Der Dialog soll nur bei einem anderen Mitarbeiter oder beim Oeffnen erneut laden.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isDialogOpen, zeitkontoDialogOpen, formData.id]);
+    }, [isDialogOpen, zeitkontoDialogOpen, formData.id, darfZeiterfassung]);
 
     const oeffneArbeitszeitDialog = () => {
         const aktuelleVersion = zeitkontoStatus?.aktuell;
@@ -1403,7 +1406,13 @@ export default function MitarbeiterEditor() {
                                     </div>
                                 </label>
                                 {formData.id ? (
-                                    loadingZeitkonto ? (
+                                    darfZeiterfassung === null ? (
+                                        <div className="h-28 rounded-lg border border-slate-200 bg-slate-50 motion-safe:animate-pulse" aria-label="Arbeitszeit wird geladen" />
+                                    ) : darfZeiterfassung === false ? (
+                                        <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                                            Arbeitszeit und Zeitkonto pflegt, wer die Zeiterfassung sehen darf.
+                                        </p>
+                                    ) : loadingZeitkonto ? (
                                         <div className="h-28 rounded-lg border border-slate-200 bg-slate-50 motion-safe:animate-pulse" aria-label="Arbeitszeit wird geladen" />
                                     ) : zeitkontoStatus ? (
                                         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm space-y-3">

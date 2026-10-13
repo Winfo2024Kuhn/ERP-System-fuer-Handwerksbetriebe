@@ -20,6 +20,31 @@ describe('erzeugeBerechtigungsSpeicher', () => {
         await waitFor(() => expect(result.current).toBe(false));
     });
 
+    it('versucht es nach einem Ladefehler beim nächsten Einbinden erneut', async () => {
+        const lade = vi.fn()
+            .mockRejectedValueOnce(new Error('Netz weg'))
+            .mockResolvedValueOnce(true);
+        const { useBerechtigung } = erzeugeBerechtigungsSpeicher(lade);
+        const erste = renderHook(() => useBerechtigung());
+        await waitFor(() => expect(erste.result.current).toBe(false));
+
+        const zweite = renderHook(() => useBerechtigung());
+
+        await waitFor(() => expect(zweite.result.current).toBe(true));
+        expect(lade).toHaveBeenCalledTimes(2);
+    });
+
+    it('lädt nach einem echten "kein Recht" nicht bei jedem Einbinden neu', async () => {
+        const lade = vi.fn().mockResolvedValue(false);
+        const { useBerechtigung } = erzeugeBerechtigungsSpeicher(lade);
+        const erste = renderHook(() => useBerechtigung());
+        await waitFor(() => expect(erste.result.current).toBe(false));
+
+        renderHook(() => useBerechtigung());
+
+        expect(lade).toHaveBeenCalledTimes(1);
+    });
+
     it('verwirft nach dem Zurücksetzen die Antwort der noch laufenden alten Anfrage', async () => {
         let antwortAlt: (darf: boolean) => void = () => undefined;
         const lade = vi.fn()

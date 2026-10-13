@@ -5,6 +5,7 @@ import { Button } from '../../ui/button';
 import { useToast } from '../../ui/toast';
 import { SaveButton, SectionLoading, SettingsCard } from '../settingsUi';
 import { PostfachSichtbarkeitKarte } from './berechtigungen/PostfachSichtbarkeitKarte';
+import { setzeZeiterfassungSichtbarkeitZurueck } from '../../../features/zeiterfassung/useZeiterfassungSichtbarkeit';
 
 /**
  * Rechte pro Abteilung: welche Lieferanten-Dokumente sie sehen und scannen darf,
@@ -103,17 +104,17 @@ function ZeiterfassungSichtbarkeitInfo() {
         <InfoButton titel="Zeiterfassung im Menü sehen">
             <InfoAbschnitt titel="Was passiert im Hintergrund?">
                 <p>
-                    Mitarbeiter dieser Abteilung sehen am PC in der Menüleiste den Bereich „Zeiterfassung“ mit Kalender,
-                    Urlaubsanträgen, Monatsabschluss und den übrigen Seiten. Administratoren und die Geschäftsführung
-                    sehen ihn immer, egal welche Abteilung sie haben. Gehört ein Mitarbeiter zu mehreren Abteilungen,
-                    reicht ein Haken.
+                    Mitarbeiter dieser Abteilung sehen am PC den Bereich „Zeiterfassung“ mit Kalender, Urlaubsanträgen,
+                    Monatsabschluss, Lange Krankheit und den übrigen Seiten. Administratoren und die Geschäftsführung
+                    sehen ihn immer. Gehört ein Mitarbeiter zu mehreren Abteilungen, reicht ein Haken.
                 </p>
             </InfoAbschnitt>
             <InfoAbschnitt titel="Was bewirkt das?">
                 <p>
-                    Ohne Haken verschwindet der Bereich aus dem Menü, und die Seiten öffnen sich auch nicht über einen
-                    gespeicherten Link. Das Stempeln und Urlaub-Beantragen in der Handy-App bleibt davon unberührt. Ein
-                    PC-Zugang ohne verknüpften Mitarbeiter sieht den Bereich nur als Administrator.
+                    Ohne Haken verschwindet der Bereich aus dem Menü, und das Programm gibt die Zeiten, Abwesenheiten und
+                    Urlaubsanträge anderer Mitarbeiter an diesen Zugang auch nicht mehr heraus. Im Termin-Kalender sieht er
+                    kranke Kollegen nur als „Abwesend“. Das Stempeln und Urlaub-Beantragen in der Handy-App bleibt davon
+                    unberührt. Ein PC-Zugang ohne verknüpften Mitarbeiter sieht den Bereich nur als Administrator.
                 </p>
             </InfoAbschnitt>
         </InfoButton>
@@ -210,6 +211,8 @@ export function BerechtigungenSection() {
                     : 'Berechtigungen konnten nicht gespeichert werden.');
             }
             toast.success(`Rechte für „${abteilung.abteilungName}“ gespeichert.`);
+            // Betrifft die Änderung die eigene Abteilung, sollen Menü und Seiten sofort folgen.
+            setzeZeiterfassungSichtbarkeitZurueck();
             setSaveSuccess(abteilung.abteilungId);
             clearTimeout(gespeichertTimer.current);
             gespeichertTimer.current = setTimeout(() => setSaveSuccess(null), 2000);

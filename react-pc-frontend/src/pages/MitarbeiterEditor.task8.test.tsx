@@ -8,6 +8,9 @@ import MitarbeiterEditor from './MitarbeiterEditor';
 
 const auth = vi.hoisted(() => ({ isAdmin: true, user: null as null | { mitarbeiter?: { id: number } } }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => auth }));
+// Recht „Zeiterfassung sehen“: true = ja, false = nein, null = wird noch geprüft.
+const zeiterfassung = vi.hoisted(() => ({ darf: true as boolean | null }));
+vi.mock('../features/zeiterfassung/useZeiterfassungSichtbarkeit', () => ({ useZeiterfassungSichtbarkeit: () => zeiterfassung.darf }));
 
 const MITARBEITER = {
     id: 42, vorname: 'Max', nachname: 'Mustermann', strasse: null, plz: null, ort: null,
@@ -79,7 +82,7 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         global.fetch = fetchMock as unknown as typeof fetch;
     });
 
-    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); auth.isAdmin = true; auth.user = null; });
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); auth.isAdmin = true; auth.user = null; zeiterfassung.darf = true; });
 
     it('zeigt die fehlende Einrichtung, erstellt eine Vorschau und speichert nur über den Wechsel-Endpunkt', async () => {
         const user = userEvent.setup();
@@ -223,6 +226,29 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         renderEditor();
         await user.click(await screen.findByText('Mustermann', { exact: true }));
         expect(await screen.findByRole('button', { name: /Token erstellen/ })).toBeVisible();
+    });
+
+    it('zeigt ohne Recht „Zeiterfassung sehen“ nur einen Hinweis und lädt keine Arbeitszeit', async () => {
+        const user = userEvent.setup();
+        zeiterfassung.darf = false;
+        renderEditor();
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await user.click(screen.getByRole('button', { name: 'Bearbeiten' }));
+        expect(await screen.findByText('Arbeitszeit und Zeitkonto pflegt, wer die Zeiterfassung sehen darf.')).toBeVisible();
+        expect(screen.queryByRole('button', { name: /Arbeitszeit (einrichten|ändern|ausschalten)/ })).not.toBeInTheDocument();
+        expect(screen.queryByText('Bitte zuerst die Arbeitszeit einrichten.')).not.toBeInTheDocument();
+        expect(requests.filter(request => request.url.startsWith('/api/zeitverwaltung'))).toHaveLength(0);
+    });
+
+    it('lädt keine Arbeitszeit, solange das Recht noch geprüft wird, und zeigt weder Knöpfe noch Hinweis', async () => {
+        const user = userEvent.setup();
+        zeiterfassung.darf = null;
+        renderEditor();
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await user.click(screen.getByRole('button', { name: 'Bearbeiten' }));
+        expect(await screen.findByLabelText('Arbeitszeit wird geladen')).toBeVisible();
+        expect(screen.queryByText(/pflegt, wer die Zeiterfassung sehen darf/)).not.toBeInTheDocument();
+        expect(requests.filter(request => request.url.startsWith('/api/zeitverwaltung'))).toHaveLength(0);
     });
 
 });

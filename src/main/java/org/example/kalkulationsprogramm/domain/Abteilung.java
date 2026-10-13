@@ -63,9 +63,10 @@ public class Abteilung {
 
     /**
      * Mitarbeiter dieser Abteilung sehen am PC den Menü-Bereich „Zeiterfassung“.
-     * Administratoren und die Geschäftsführung sehen ihn immer. Standard: an,
-     * damit beim Update niemand den Bereich verliert.
+     * Administratoren und die Geschäftsführung sehen ihn immer. Am selben Recht
+     * hängt, wer am PC Krankheit anderer Mitarbeiter sieht. Standard: aus
+     * (Datenschutz) – der Admin hakt gezielt an.
      */
     @Column(nullable = false)
-    private Boolean darfZeiterfassungSehen = true;
+    private Boolean darfZeiterfassungSehen = false;
 }

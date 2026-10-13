@@ -81,6 +81,7 @@ class BenachrichtigungTransaktionTest {
 
     @MockBean private MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
     @MockBean private TelefonBerechtigungService telefonBerechtigungService;
+    @MockBean private org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
     @MockBean private PostfachSichtbarkeitService postfachSichtbarkeitService;
     @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
     @MockBean private FrontendUserProfileService frontendUserProfileService;

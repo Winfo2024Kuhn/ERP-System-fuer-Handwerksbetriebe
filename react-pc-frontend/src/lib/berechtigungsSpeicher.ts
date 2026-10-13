@@ -11,7 +11,9 @@ import { useEffect, useSyncExternalStore } from 'react';
  * <p>{@code useBerechtigung} liefert `null`, solange noch geprüft wird, danach
  * `true`/`false`. Wer `null` bekommt, zeigt einfach noch nichts – so blitzt
  * kein Menüpunkt kurz auf, der danach wieder verschwindet. Ein Fehler beim
- * Laden zählt als „kein Recht“.</p>
+ * Laden zählt als „kein Recht“ – aber nur vorläufig: Die nächste Stelle, die
+ * das Recht abfragt, lädt neu (sonst fehlte ein Menü nach einem kurzen
+ * Netzaussetzer die ganze Sitzung).</p>
  */
 export interface BerechtigungsSpeicher {
     useBerechtigung: () => boolean | null;
@@ -20,6 +22,7 @@ export interface BerechtigungsSpeicher {
 
 export function erzeugeBerechtigungsSpeicher(lade: () => Promise<boolean>): BerechtigungsSpeicher {
     let stand: boolean | null = null;
+    let ausFehler = false;
     let laufend: Promise<void> | null = null;
     let generation = 0;
     const zuhoerer = new Set<() => void>();
@@ -27,14 +30,16 @@ export function erzeugeBerechtigungsSpeicher(lade: () => Promise<boolean>): Bere
     const melde = () => zuhoerer.forEach((z) => z());
 
     const ladeEinmal = () => {
-        if (stand !== null || laufend) return;
+        if ((stand !== null && !ausFehler) || laufend) return;
         const meineGeneration = generation;
         laufend = lade()
-            .catch(() => false)
-            .then((darf) => {
+            .then((darf) => ({ darf, fehler: false }))
+            .catch(() => ({ darf: false, fehler: true }))
+            .then(({ darf, fehler }) => {
                 // Inzwischen zurückgesetzt (z. B. Abmelden) – Ergebnis verwerfen.
                 if (meineGeneration !== generation) return;
                 stand = darf;
+                ausFehler = fehler;
                 laufend = null;
                 melde();
             });
@@ -53,11 +58,17 @@ export function erzeugeBerechtigungsSpeicher(lade: () => Promise<boolean>): Bere
         setzeZurueck: () => {
             generation += 1;
             stand = null;
+            ausFehler = false;
             laufend = null;
             melde();
         },
         useBerechtigung: () => {
             const aktuell = useSyncExternalStore(abonniere, momentaufnahme, momentaufnahme);
+            // Beim Einbinden: nach einem früheren Ladefehler neu versuchen (nur dann,
+            // nicht sofort im selben Moment, in dem der Fehler eintrifft).
+            useEffect(() => {
+                if (ausFehler) ladeEinmal();
+            }, []);
             useEffect(() => {
                 if (aktuell === null) ladeEinmal();
             }, [aktuell]);

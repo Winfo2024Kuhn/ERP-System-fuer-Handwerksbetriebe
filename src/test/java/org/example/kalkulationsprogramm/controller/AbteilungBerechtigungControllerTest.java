@@ -131,8 +131,8 @@ class AbteilungBerechtigungControllerTest {
     }
 
     @Test
-    @DisplayName("Neue Abteilung: Zeiterfassung standardmäßig sichtbar")
-    void neueAbteilungSiehtZeiterfassung() {
-        org.assertj.core.api.Assertions.assertThat(new Abteilung().getDarfZeiterfassungSehen()).isTrue();
+    @DisplayName("Neue Abteilung: Zeiterfassung standardmäßig ausgeblendet (Datenschutz)")
+    void neueAbteilungSiehtZeiterfassungNicht() {
+        org.assertj.core.api.Assertions.assertThat(new Abteilung().getDarfZeiterfassungSehen()).isFalse();
     }
 }

@@ -243,6 +243,7 @@ test('"Auf Krankengeld umstellen" öffnet einen Dialog mit Vorgabedatum und send
         phasenBodies.push(route.request().postDataJSON());
         return json(route, { id: 200, typ: 'KRANKENGELD', label: 'Krankengeld der Krankenkasse', vonDatum: '2026-03-15', bisDatum: null, stundenProTag: null }, 201);
     });
+    await stubbeZeiterfassungSichtbarkeit(page);
     await page.goto('/langzeitkrankmeldungen');
     await expect(page.getByText(/Lohnfortzahlung endete am 14\.03\.2026/)).toBeVisible();
 

@@ -1,6 +1,6 @@
 # Zeiterfassung
 
-Die Mitarbeiter stempeln ihre Zeiten in der Handy-App. Im Büro prüft und korrigiert man sie unter **Zeiterfassung → Kalender**. Nicht verwechseln mit **Projektmanagement → Kalender** – dort stehen die Termine (siehe [Kalender](kalender.md)). Arbeitszeiten, Urlaubsanträge und Feiertage richtet man unter [Arbeitszeit, Urlaub und Feiertage](arbeitszeit-urlaub-feiertage.md) ein, den Monatsabschluss beschreibt [Monatsabschluss](monatsabschluss.md).
+Die Mitarbeiter stempeln ihre Zeiten in der Handy-App. Im Büro prüft und korrigiert man sie unter **Zeiterfassung → Kalender**. Nicht verwechseln mit **Projektmanagement → Kalender** – dort stehen die Termine (siehe [Kalender](kalender.md)). Arbeitszeiten, Urlaubsanträge und Feiertage richtet man unter [Arbeitszeit, Urlaub und Feiertage](arbeitszeit-urlaub-feiertage.md) ein, den Monatsabschluss beschreibt [Monatsabschluss](monatsabschluss.md). Den Bereich **Zeiterfassung** sehen am PC nur Administratoren, die Geschäftsführung und Abteilungen mit dem Recht „Zeiterfassung im Menü sehen“ (siehe [Einstellungen](einstellungen.md)).
 
 ## Wie stempeln Mitarbeiter mit dem Handy?
 

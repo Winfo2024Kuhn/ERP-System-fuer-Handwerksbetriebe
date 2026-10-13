@@ -67,7 +67,7 @@ class FlywayMigrationenTest {
             Map.entry("V423__freigabe_rechtsnachweis.sql", 273844464),
             Map.entry("V424__rechtstext_fassung.sql", 157276652),
             Map.entry("V425__urlaubsantrag_entscheidung.sql", 1247692216),
-            Map.entry("V426__abteilung_zeiterfassung_sichtbar.sql", -1032379837));
+            Map.entry("V426__abteilung_zeiterfassung_sichtbar.sql", -1951496007));
 
     private static final char BOM = 0xFEFF;
 

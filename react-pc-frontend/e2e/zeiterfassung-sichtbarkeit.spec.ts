@@ -51,6 +51,7 @@ test('Haken „Zeiterfassung im Menü sehen“ wegnehmen, speichern und im Info-
     await expect(popover.getByText('Was passiert im Hintergrund?')).toBeVisible();
     await expect(popover.getByText('Was bewirkt das?')).toBeVisible();
     await expect(popover.getByText(/Administratoren und die Geschäftsführung sehen ihn immer/)).toBeVisible();
+    await expect(popover.getByText(/kranke Kollegen nur als „Abwesend“/)).toBeVisible();
     await designPruefung(page, info, 'zeiterfassung-sichtbarkeit-info');
     await page.keyboard.press('Escape');
     await expect(popover).toBeHidden();

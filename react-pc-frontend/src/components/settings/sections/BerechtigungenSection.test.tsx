@@ -101,7 +101,10 @@ it('erklärt "Zeiterfassung im Menü sehen" im Info-Popover, ohne den Haken zu v
     const info = await screen.findByRole('dialog', { name: 'Zeiterfassung im Menü sehen' });
     expect(within(info).getByText('Was passiert im Hintergrund?')).toBeInTheDocument();
     expect(within(info).getByText('Was bewirkt das?')).toBeInTheDocument();
-    expect(within(info).getByText(/Administratoren und die Geschäftsführung sehen ihn immer/)).toBeInTheDocument();
-    expect(within(info).getByText(/Das Stempeln und Urlaub-Beantragen in der Handy-App bleibt davon unberührt/)).toBeInTheDocument();
+    expect(within(info).getByText(/Administratoren und die Geschäftsführung sehen ihn immer\. Gehört ein Mitarbeiter zu mehreren Abteilungen, reicht ein Haken/)).toBeInTheDocument();
+    expect(within(info).getByText(/Lange Krankheit und den übrigen Seiten/)).toBeInTheDocument();
+    expect(within(info).getByText(/Urlaubsanträge anderer Mitarbeiter an diesen Zugang auch nicht mehr heraus/)).toBeInTheDocument();
+    expect(within(info).getByText(/kranke Kollegen nur als „Abwesend“/)).toBeInTheDocument();
+    expect(within(info).getByText(/Das Stempeln und Urlaub-Beantragen in der Handy-App bleibt davon unberührt\. Ein PC-Zugang ohne verknüpften Mitarbeiter sieht den Bereich nur als Administrator/)).toBeInTheDocument();
     expect(haken).toBeChecked();
 });
