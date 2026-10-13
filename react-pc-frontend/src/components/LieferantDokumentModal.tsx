@@ -14,6 +14,7 @@ import { useKonfliktMeldung } from "./lock/useKonfliktMeldung";
 import { useIdleTimer } from "../hooks/useIdleTimer";
 import { useToast } from "./ui/toast";
 import { ZeugnisPositionen } from "./ZeugnisPositionen";
+import { ZuordnungModal } from "./ZuordnungModal";
 
 interface LieferantDokumentModalProps {
     isOpen: boolean;
@@ -21,6 +22,8 @@ interface LieferantDokumentModalProps {
     dokument: LieferantDokument | null;
     lieferantId: number | string;
     onSave?: (updated: LieferantDokument) => void;
+    /** Nach erfolgreicher Projekt-Zuordnung über „Zuordnen“ – der Aufrufer lädt seine Liste neu. */
+    onZugeordnet?: () => void;
 }
 
 const DOK_TYP_OPTIONS = [
@@ -42,9 +45,13 @@ export default function LieferantDokumentModal({
     onClose,
     dokument,
     lieferantId,
-    onSave
+    onSave,
+    onZugeordnet
 }: LieferantDokumentModalProps) {
     const [showPdf, setShowPdf] = useState(true);
+    const [zeigeZuordnung, setZeigeZuordnung] = useState(false);
+    // Nach dem Zuordnen ist dokument.projektAnteile veraltet, bis der Aufrufer neu lädt.
+    const [zugeordnet, setZugeordnet] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -187,6 +194,8 @@ export default function LieferantDokumentModal({
             });
             setError(null);
             setShowPdf(true);
+            setZeigeZuordnung(false);
+            setZugeordnet(false);
         }
     }, [dokument]);
 
@@ -735,16 +744,26 @@ export default function LieferantDokumentModal({
                                 {showZeugnisPositionen && <ZeugnisPositionen dokumentId={dokument.id} />}
 
                                 {/* Warnung: Kein Projekt */}
-                                {dokument.projektAnteile.length === 0 && (
+                                {dokument.projektAnteile.length === 0 && !zugeordnet && (
                                     <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
                                         <div className="flex items-center gap-2 text-sm text-amber-700">
                                             <AlertCircle className="w-4 h-4" />
                                             <span>Kein Projekt zugeordnet</span>
                                         </div>
-                                        <Button variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 hover:bg-rose-50">
-                                            <FolderPlus className="w-4 h-4 mr-1" />
-                                            Zuordnen
-                                        </Button>
+                                        {/* Gleicher Dialog wie in Projektmanagement → Bestellungen.
+                                            Ohne ausgelesene Geschäftsdaten (Nummer, Betrag) gibt es
+                                            nichts aufzuteilen – dann kein Knopf. */}
+                                        {dokument.geschaeftsdaten && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                                onClick={() => setZeigeZuordnung(true)}
+                                            >
+                                                <FolderPlus className="w-4 h-4 mr-1" />
+                                                Zuordnen
+                                            </Button>
+                                        )}
                                     </div>
                                 )}
 
@@ -799,6 +818,21 @@ export default function LieferantDokumentModal({
                     </div>
                 </div>
             </div>
+
+            {/* Projekt-Zuordnung: liegt im DOM nach dem Fenster und damit darüber */}
+            {zeigeZuordnung && (
+                <ZuordnungModal
+                    geschaeftsdokumentId={dokument.id}
+                    dokumentNummer={dokument.geschaeftsdaten?.dokumentNummer ?? null}
+                    pdfUrl={dokument.url ?? null}
+                    onClose={() => setZeigeZuordnung(false)}
+                    onSuccess={() => {
+                        setZugeordnet(true);
+                        toast.success("Projekt zugeordnet.");
+                        onZugeordnet?.();
+                    }}
+                />
+            )}
         </>
     );
 }

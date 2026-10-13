@@ -139,6 +139,12 @@ describe('infoAdresseZuDomain', () => {
         expect(infoAdresseZuDomain('Lager@Meier.DE')).toBe('info@meier.de');
     });
 
+    it('ergänzt bei Freemail-Anbietern keine info@-Adresse (Issue #266)', () => {
+        expect(infoAdresseZuDomain('max.mustermann@gmail.com')).toBe('');
+        expect(infoAdresseZuDomain('Max.Mustermann@GMX.de')).toBe('');
+        expect(infoAdresseZuDomain('"Max Mustermann" <max@t-online.de>')).toBe('');
+    });
+
     it('liefert leeren String ohne erkennbare Domain', () => {
         expect(infoAdresseZuDomain('keine-adresse')).toBe('');
         expect(infoAdresseZuDomain('@ohne-lokalteil.de')).toBe('');

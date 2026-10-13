@@ -145,8 +145,12 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lieferantId, initialDokumente]);
 
-    const loadDokumente = useCallback(async () => {
-        setLoading(true);
+    /**
+     * Lädt die Dokumente neu. `still` = ohne Ladeanzeige: Die Ladeanzeige ersetzt den
+     * ganzen Reiter und würde ein offenes Bearbeiten-Fenster samt Eingaben schließen.
+     */
+    const loadDokumente = useCallback(async ({ still = false }: { still?: boolean } = {}) => {
+        if (!still) setLoading(true);
         try {
             const res = await fetch(`/api/lieferanten/${lieferantId}/dokumente`);
             if (res.ok) {
@@ -601,6 +605,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
                 onSave={(updated) => {
                     setDokumente(prev => prev.map(d => d.id === updated.id ? updated : d));
                 }}
+                onZugeordnet={() => void loadDokumente({ still: true })}
             />
 
             {/* Dokument Import Modal */}

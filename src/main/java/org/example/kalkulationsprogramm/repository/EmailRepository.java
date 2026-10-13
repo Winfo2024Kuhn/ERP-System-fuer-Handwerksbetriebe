@@ -265,6 +265,32 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       """, nativeQuery = true)
   List<Email> findInquiriesByDomain(@Param("domain") String domain);
 
+  /**
+   * Unzugeordnete eingehende Mails, deren Absender EXAKT diese Adresse ist.
+   * Für den Lieferanten-Backfill bei Freemail-Adressen (gmail.com, gmx.de, …):
+   * Dort sagt die Domain nichts über den Absender aus, siehe {@code FreemailDomains}.
+   */
+  @Query("""
+      SELECT e FROM Email e
+      WHERE e.zuordnungTyp = 'KEINE'
+        AND e.direction = 'IN'
+        AND e.deletedAt IS NULL
+        AND LOWER(TRIM(e.fromAddress)) = LOWER(TRIM(:address))
+      ORDER BY e.sentAt DESC NULLS LAST
+      """)
+  List<Email> findUnassignedEingangVonAdresse(@Param("address") String address);
+
+  /**
+   * Als mögliche Anfrage markierte Mails, deren Absender EXAKT diese Adresse ist.
+   * Gegenstück zu {@link #findInquiriesByDomain} für Freemail-Adressen.
+   */
+  @Query("""
+      SELECT e FROM Email e
+      WHERE e.isPotentialInquiry = true
+        AND LOWER(TRIM(e.fromAddress)) = LOWER(TRIM(:address))
+      """)
+  List<Email> findInquiriesVonAdresse(@Param("address") String address);
+
   // ═══════════════════════════════════════════════════════════════
   // THREAD/PARENT BACKFILL
   // ═══════════════════════════════════════════════════════════════

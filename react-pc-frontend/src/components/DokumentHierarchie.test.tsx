@@ -169,3 +169,27 @@ describe('DokumentHierarchie – Löschen nur bei Entwürfen', () => {
         expect(screen.queryByText('Löschen')).not.toBeInTheDocument();
     });
 });
+
+/**
+ * Issue #262: Eine direkt angelegte, später stornierte Rechnung darf den Vorgang nicht
+ * blockieren — sonst lässt sich keine neue Rechnung mehr anlegen.
+ */
+describe('DokumentHierarchie – stornierte Basisdokumente', () => {
+    beforeEach(() => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as unknown as Response);
+    });
+
+    it('lässt "Dokument erstellen" nach Storno der einzigen Rechnung wieder zu', () => {
+        const rechnung = { ...dok(1, 'RECHNUNG', '2026/01/00001'), gebucht: true, storniert: true };
+        renderBaum([rechnung, { ...dok(2, 'STORNO', 'ST-2026/01/00002', 1), gebucht: true }]);
+
+        expect(screen.getByRole('button', { name: /Dokument erstellen/ })).toBeEnabled();
+    });
+
+    it('sperrt "Dokument erstellen", solange eine aktive Rechnung ohne Vorgänger existiert', () => {
+        renderBaum([{ ...dok(1, 'RECHNUNG', '2026/01/00001'), gebucht: true }]);
+
+        expect(screen.getByRole('button', { name: /Dokument erstellen/ })).toBeDisabled();
+    });
+});

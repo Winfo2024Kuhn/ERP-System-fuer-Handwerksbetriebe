@@ -532,4 +532,43 @@ describe('LieferantDokumentModal', () => {
             expect(screen.getByText('Beträge')).toBeInTheDocument();
         });
     });
+
+    // Issue #266 Punkt 2: Der Knopf „Zuordnen“ im Warnband war ohne Funktion.
+    describe('Zuordnen (Kein Projekt zugeordnet)', () => {
+        it('öffnet die Projekt-Zuordnung für dieses Dokument', async () => {
+            const fetchMock = buildFetchMock();
+            global.fetch = fetchMock as unknown as typeof fetch;
+            const user = userEvent.setup();
+
+            renderModal();
+
+            expect(screen.getByText('Kein Projekt zugeordnet')).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: 'Zuordnen' }));
+
+            expect(await screen.findByRole('heading', { name: 'Rechnung RE-2026-100' })).toBeInTheDocument();
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/api/bestellungen-uebersicht/zuordnungen/${DOKUMENT_ID}`));
+        });
+
+        it('blendet den Knopf aus, solange keine Geschäftsdaten ausgelesen sind', () => {
+            global.fetch = buildFetchMock() as unknown as typeof fetch;
+
+            renderModal({ dokument: { ...DUMMY_DOKUMENT, geschaeftsdaten: undefined } });
+
+            expect(screen.getByText('Kein Projekt zugeordnet')).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: 'Zuordnen' })).toBeNull();
+        });
+
+        it('zeigt kein Warnband, wenn schon ein Projekt zugeordnet ist', () => {
+            global.fetch = buildFetchMock() as unknown as typeof fetch;
+
+            renderModal({
+                dokument: {
+                    ...DUMMY_DOKUMENT,
+                    projektAnteile: [{ id: 1, projektId: 3, projektName: 'Musterbau Gartentor', prozent: 100 }] as unknown as LieferantDokument['projektAnteile'],
+                },
+            });
+
+            expect(screen.queryByText('Kein Projekt zugeordnet')).toBeNull();
+        });
+    });
 });

@@ -110,14 +110,4 @@ class LieferantEmailResolverTest {
 
         assertThat(resolver.resolve(List.of("  INFO@MusterStahl.Example  "))).contains(1L);
     }
-
-    @Test
-    @DisplayName("istFreemailDomain erkennt die gaengigen Anbieter")
-    void istFreemailDomain_erkenntAnbieter() {
-        assertThat(LieferantEmailResolver.istFreemailDomain("t-online.de")).isTrue();
-        assertThat(LieferantEmailResolver.istFreemailDomain("GMX.DE")).isTrue();
-        assertThat(LieferantEmailResolver.istFreemailDomain("gmail.com")).isTrue();
-        assertThat(LieferantEmailResolver.istFreemailDomain("musterstahl.example")).isFalse();
-        assertThat(LieferantEmailResolver.istFreemailDomain(null)).isFalse();
-    }
 }
