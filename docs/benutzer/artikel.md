@@ -58,6 +58,18 @@ Es gilt immer der **genaueste** Aufschlag: erst der am Artikel („Angebotsfelde
 - Der Preisvorschlag auf der Artikelseite und beim Einfügen von Material in ein Angebot oder eine Rechnung ändert sich sofort. Bereits erstellte Dokumente bleiben unverändert.
 - Nach dem Update ändert sich nichts, bis jemand einen Aufschlag einstellt.
 
+## Werkstoffe pflegen
+
+Der „Werkstoff“ am Artikel kommt aus einer eigenen Liste. Sie lässt sich in **Vorlagen & Stammdaten → Artikel** mit „Werkstoffe pflegen“ ändern (Fenster „Werkstoffe“, daneben „Kategorien anlegen“). Die Liste zeigt je Werkstoff den Namen, den Werkstattnamen, die Dichte, die Eignung für die Oberfläche und wie viele Artikel ihn benutzen.
+
+- „Neuer Werkstoff“ öffnet das Formular. Eintragen lassen sich: „Name (technisch)“ (Pflicht, z. B. S235JR oder 1.4301), „Anzeigename“, „Werkstattname“ (so sagt man in der Werkstatt dazu, die Artikelsuche findet den Werkstoff auch darüber), „Norm“, „Dichte (kg/dm³)“ (0,1 bis 25; Stahl 7,85, Aluminium 2,7), „Feuerverzinken geht“, „Pulverbeschichten geht“ und ein „Hinweis zur Beschichtung“.
+- Der Stift ändert einen Werkstoff, der Papierkorb löscht ihn nach einer Rückfrage.
+- Ein Name kommt nur einmal vor (Groß- und Kleinschreibung zählt nicht).
+- Ein Werkstoff, den Artikel benutzen, lässt sich **nicht löschen**. Die Meldung nennt, wie viele Artikel ihn benutzen.
+- Die Eignung für Verzinken und Pulvern gilt für alle Artikel aus diesem Werkstoff. Sie erscheint auf der Artikelseite und in den Filtern „verzinkbar“ und „pulverbeschichtbar“ der Artikelsuche; Preise und bestehende Angebote ändern sich dadurch nicht.
+- Der technische Name wird beim Artikel-Import benutzt, um Werkstoffe wiederzuerkennen. Wird er geändert, legt der nächste Import den alten Namen als neuen Werkstoff an.
+- Die Dichte wird beim Werkstoff gespeichert. Das Programm rechnet damit im Moment noch nichts aus; an Artikeln, Preisen und Angeboten ändert sich dadurch nichts.
+
 ## Ordner für Artikel anlegen
 
 In **Vorlagen & Stammdaten → Artikel** öffnet „Kategorien anlegen“ das Fenster „Kategorien verwalten“. Links steht die Ordnerstruktur. Ohne Auswahl entsteht mit „Hauptkategorie anlegen“ ein neuer Hauptordner; ist links ein Ordner gewählt, entsteht mit „Unterkategorie anlegen“ ein Unterordner darin. Umbenennen oder löschen lassen sich Ordner nicht.

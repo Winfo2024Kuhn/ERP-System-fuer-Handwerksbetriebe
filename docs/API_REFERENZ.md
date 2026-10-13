@@ -664,10 +664,21 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| `GET` | `/berechtigung` | Darf der angemeldete Benutzer die Aufschläge ändern? (`{"darfAendern": true/false}`, für jeden angemeldeten Benutzer) |
-| `GET` | `/` | Allgemeiner Aufschlag und je Artikelkategorie der eigene und der geltende Aufschlag *(Recht „Aufschläge ändern“ oder Admin, sonst 403)* |
+| `GET` | `/berechtigung` | Darf der angemeldete Benutzer die Aufschläge ändern? (`{“darfAendern”: true/false}`, für jeden angemeldeten Benutzer) |
+| `GET` | `/` | Allgemeiner Aufschlag und je Artikelkategorie der eigene und der geltende Aufschlag *(Recht „Aufschläge ändern” oder Admin, sonst 403)* |
 | `PUT` | `/allgemein` | Allgemeinen Aufschlag setzen, `prozent` leer = keiner (0 bis 999,99; 400 sonst) *(Recht oder Admin)* |
 | `PUT` | `/kategorien/{id}` | Aufschlag einer Kategorie setzen, `prozent` leer = keiner; 404 bei unbekannter Kategorie *(Recht oder Admin)* |
+
+### WerkstoffController
+
+**Basis-URL:** `/api/werkstoffe`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Alle Werkstoffe mit der Zahl der Artikel, die sie benutzen |
+| `POST` | `/` | Werkstoff anlegen (Name Pflicht und eindeutig, Dichte 0,1 bis 25 kg/dm³); 400 bei ungültigen Werten, 409 bei doppeltem Namen |
+| `PUT` | `/{id}` | Werkstoff ändern; 400 bei ungültigen Werten, 404 bei unbekannter ID, 409 bei doppeltem Namen |
+| `DELETE` | `/{id}` | Werkstoff löschen; 409, solange Artikel ihn benutzen |
 
 ### ArtikelKategorieController
 

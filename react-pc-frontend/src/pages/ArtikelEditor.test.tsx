@@ -37,6 +37,9 @@ function mockArtikelApi() {
         if (url.startsWith('/api/artikel/werkstoffe')) return antwort(['S235JR', 'S355J2']);
         if (url === '/api/aufschlaege/berechtigung') return antwort({ darfAendern: darfAufschlaege });
         if (url === '/api/aufschlaege') return antwort({ allgemein: 20, kategorien: [] });
+        if (url === '/api/werkstoffe') {
+            return antwort([{ id: 1, name: 'S235JR', anzeigename: 'Baustahl', werkstattname: null, dichte: 7.85, werkstoffnorm: null, verzinkungsgeeignet: true, pulverbeschichtungsgeeignet: true, beschichtungshinweis: null, artikelAnzahl: 3 }]);
+        }
         if (url.startsWith('/api/artikel/filteroptionen')) {
             return antwort({ herstellverfahren: [], fertigungszustand: [] });
         }
@@ -323,7 +326,7 @@ describe('ArtikelEditor – Aufschläge nur mit Recht', () => {
         vi.restoreAllMocks();
     });
 
-    it('zeigt ohne das Recht keinen Knopf „Aufschläge“ und fragt die Aufschläge gar nicht erst ab', async () => {
+    it('zeigt ohne das Recht keinen Knopf „Aufschläge” und fragt die Aufschläge gar nicht erst ab', async () => {
         darfAufschlaege = false;
         renderArtikelEditor();
         await screen.findByRole('button', { name: /Kategorien anlegen/ });
@@ -344,5 +347,61 @@ describe('ArtikelEditor – Aufschläge nur mit Recht', () => {
 
         await user.click(within(fenster).getByRole('button', { name: 'Schließen' }));
         await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Aufschläge' })).toBeNull());
+    });
+});
+
+describe('ArtikelEditor – Werkstoffe pflegen', () => {
+    beforeEach(() => {
+        gesamtTreffer = GESAMT;
+        fetchMock = mockArtikelApi();
+        global.fetch = fetchMock as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('öffnet über „Werkstoffe pflegen” ein Fenster mit der Werkstoffliste und schließt es wieder', async () => {
+        const user = userEvent.setup();
+        renderArtikelEditor();
+
+        await user.click(await screen.findByRole('button', { name: /Werkstoffe pflegen/ }));
+        const fenster = await screen.findByRole('dialog', { name: 'Werkstoffe' });
+        expect(await within(fenster).findByText('Baustahl')).toBeVisible();
+        expect(within(fenster).getByText('7,85 kg/dm³')).toBeVisible();
+
+        await user.click(within(fenster).getByRole('button', { name: 'Schließen' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Werkstoffe' })).toBeNull());
+    });
+
+    const werkstoffAufrufe = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/artikel/werkstoffe')).length;
+
+    it('lädt nach dem Schließen nichts neu, wenn an den Werkstoffen nichts geändert wurde', async () => {
+        const user = userEvent.setup();
+        renderArtikelEditor();
+        await user.click(await screen.findByRole('button', { name: /Werkstoffe pflegen/ }));
+        await screen.findByRole('dialog', { name: 'Werkstoffe' });
+        const vorher = werkstoffAufrufe();
+
+        await user.click(screen.getByRole('button', { name: 'Schließen' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Werkstoffe' })).toBeNull());
+        expect(werkstoffAufrufe()).toBe(vorher);
+    });
+
+    it('lädt nach dem Schließen die Suche neu, wenn ein Werkstoff angelegt wurde, damit er in den Filtern erscheint', async () => {
+        const user = userEvent.setup();
+        renderArtikelEditor();
+        await user.click(await screen.findByRole('button', { name: /Werkstoffe pflegen/ }));
+        const fenster = await screen.findByRole('dialog', { name: 'Werkstoffe' });
+        const vorher = werkstoffAufrufe();
+
+        await user.click(within(fenster).getByRole('button', { name: 'Neuer Werkstoff' }));
+        await user.type(within(fenster).getByLabelText('Name (technisch) *'), 'EN AW-6060');
+        await user.click(within(fenster).getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(within(fenster).queryByTestId('werkstoff-formular')).toBeNull());
+        await user.click(within(fenster).getByRole('button', { name: 'Schließen' }));
+
+        await waitFor(() => expect(werkstoffAufrufe()).toBeGreaterThan(vorher));
     });
 });
