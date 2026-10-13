@@ -10,9 +10,9 @@ import { UngelesenKopfzeile } from '../features/email/UngelesenKopfzeile';
 import { AssignModal } from '../features/email/EmailAssignmentDialog';
 import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
 import {
-    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, getSenderName,
-    getDisplayName, groupEmailThreads, hasFurtherRecipients, isImageAttachment, nutztServerFilterUngelesen,
-    type EmailItem, type EmailThreadRow, type FolderType, type ReadFilter, type ReplyMode,
+    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe,
+    getSenderName, getDisplayName, groupEmailThreads, hasFurtherRecipients, isImageAttachment, nutztServerFilterUngelesen,
+    type DraftItem, type EmailItem, type EmailThreadRow, type FolderType, type ReadFilter, type ReplyMode,
 } from '../features/email/emailCenterModel';
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext } from 'react-router-dom';
@@ -56,7 +56,7 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
-import { stripHtmlTags } from '../lib/htmlSanitizer';
+import { htmlZuEinzeiler } from '../lib/htmlSanitizer';
 import { extractDisplayName, extractEmailAddress, escapeHtml, parseRecipientList } from '../lib/emailAddress';
 import { EMAILS_REFRESH_EVENT, refreshNotifications } from '../lib/notificationRefresh';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -320,7 +320,6 @@ export default function EmailCenter() {
     const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
 
     // Drafts
-    interface DraftItem { id: number; recipient?: string; cc?: string; subject?: string; body?: string; fromAddress?: string; replyEmailId?: number; weitergeleitetVonEmailId?: number | null; projektId?: number; anfrageId?: number; updatedAt?: string; }
     const [drafts, setDrafts] = useState<DraftItem[]>([]);
     const [activeDraftId, setActiveDraftId] = useState<number | undefined>(undefined);
     const [activeDraft, setActiveDraft] = useState<DraftItem | null>(null);
@@ -1410,17 +1409,7 @@ export default function EmailCenter() {
         : (threadRowByEmailId.get(email.id)?.anyUnread ?? !email.isRead);
 
     const filteredDrafts = useMemo(() => {
-        const q = searchQuery.trim().toLowerCase();
-        const base = !q
-            ? drafts
-            : drafts.filter(draft =>
-                draft.subject?.toLowerCase().includes(q) ||
-                draft.recipient?.toLowerCase().includes(q) ||
-                draft.fromAddress?.toLowerCase().includes(q) ||
-                draft.body?.replace(/<[^>]*>/g, ' ').toLowerCase().includes(q)
-            );
-
-        return [...base].sort((a, b) => {
+        return [...filtereEntwuerfe(drafts, searchQuery)].sort((a, b) => {
             const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
             const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
             return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
@@ -2003,7 +1992,7 @@ export default function EmailCenter() {
                                         {draft.subject || '(Kein Betreff)'}
                                     </p>
                                     <p className="text-xs text-slate-400 line-clamp-2">
-                                        {stripHtmlTags(draft.body || '...', ' ').replace(/\s+/g, ' ').trim().substring(0, 150)}
+                                        {(htmlZuEinzeiler(draft.body) || '...').substring(0, 150)}
                                     </p>
 
                                     <div className="flex gap-2 mt-2 flex-wrap">

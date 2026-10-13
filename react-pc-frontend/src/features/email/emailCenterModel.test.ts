@@ -1,9 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, getDisplayName,
-    groupEmailThreads, hasFurtherRecipients, nutztServerFilterUngelesen,
-    type EmailItem,
+    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe,
+    getDisplayName, groupEmailThreads, hasFurtherRecipients, nutztServerFilterUngelesen,
+    type DraftItem, type EmailItem,
 } from './emailCenterModel';
+
+describe('filtereEntwuerfe', () => {
+    const entwuerfe: DraftItem[] = [
+        {
+            id: 1, subject: 'Angebot Treppe', recipient: 'max.mustermann@example.com', fromAddress: 'info@musterbetrieb.example',
+            body: '<p>Maße für die</p><p><strong>Treppe</strong> &amp; Geländer</p>',
+        },
+        { id: 2, subject: 'Rechnung 2026-014', recipient: 'erika.musterfrau@example.com', body: '<p>Anbei die Rechnung.</p>' },
+        { id: 3 },
+    ];
+    const ids = (suchbegriff: string) => filtereEntwuerfe(entwuerfe, suchbegriff).map(e => e.id);
+
+    it('liefert ohne Suchbegriff alle Entwürfe', () => {
+        expect(filtereEntwuerfe(entwuerfe, '   ')).toBe(entwuerfe);
+    });
+
+    it('findet über Betreff, Empfänger und Absender ohne Groß-/Kleinschreibung', () => {
+        expect(ids('RECHNUNG 2026')).toEqual([2]);
+        expect(ids('erika.musterfrau')).toEqual([2]);
+        expect(ids('musterbetrieb')).toEqual([1]);
+    });
+
+    it('sucht im Klartext des HTML-Texts: Wörter über Absätze hinweg und entpackte Sonderzeichen', () => {
+        expect(ids('die treppe')).toEqual([1]);
+        expect(ids('treppe & geländer')).toEqual([1]);
+    });
+
+    it('trifft keine HTML-Tags oder Entitäten', () => {
+        expect(ids('strong')).toEqual([]);
+        expect(ids('&amp;')).toEqual([]);
+    });
+});
 
 describe('Ordnerlisten: Filter „Ungelesen" auf dem Server', () => {
     it('filtert nur bei „Ungelesen" und nur in Ordnern mit Lese-Konzept serverseitig', () => {

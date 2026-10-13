@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { LeistungApiDto, ArbeitszeitartApiDto } from './types';
 import type { ProduktkategorieDto } from '../../types';
 import { cn } from '../../lib/utils';
+import { htmlZuEinzeiler, stripHtmlTags, unescapeHtmlEntities } from '../../lib/htmlSanitizer';
 
 // Re-export des ausgelagerten TextbausteinPickerModal fuer Rueckwaertskompatibilitaet
 export { TextbausteinPickerModal } from '../textbaustein/TextbausteinPickerModal';
@@ -110,19 +111,11 @@ export function AddTypeDialog({
     );
 }
 
-/** Strips HTML tags from a string */
-function stripHtml(html: string): string {
-    let text = html;
-    let prev: string;
-    do { prev = text; text = text.replace(/<[^>]*>/g, ''); } while (text !== prev);
-    return text.trim();
-}
-
 /** Hover preview tooltip for picker items */
 function HoverPreview({ text, visible, anchorRect }: { text: string; visible: boolean; anchorRect: DOMRect | null }) {
     if (!visible || !text || !anchorRect) return null;
 
-    const plain = stripHtml(text);
+    const plain = unescapeHtmlEntities(stripHtmlTags(text)).trim();
     if (!plain) return null;
 
     const viewportH = window.innerHeight;
@@ -717,7 +710,7 @@ export function LeistungPickerModal({
                                         </span>
                                         {l.description && (
                                             <span className="text-xs text-slate-400 block truncate mt-0.5">
-                                                {stripHtml(l.description).slice(0, 80)}
+                                                {htmlZuEinzeiler(l.description).slice(0, 80)}
                                             </span>
                                         )}
                                         {search && l.kategoriePfad && (
@@ -794,7 +787,7 @@ export function StundensatzPickerModal({
                                 </span>
                                 {az.beschreibung && (
                                     <span className="text-xs text-slate-400 block truncate mt-0.5">
-                                        {(() => { let t = az.beschreibung; let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.slice(0, 80); })()}
+                                        {htmlZuEinzeiler(az.beschreibung).slice(0, 80)}
                                     </span>
                                 )}
                             </div>

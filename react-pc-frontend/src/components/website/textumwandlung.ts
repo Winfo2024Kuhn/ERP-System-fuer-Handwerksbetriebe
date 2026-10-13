@@ -1,5 +1,5 @@
 import createDOMPurify from 'dompurify';
-import { stripHtmlTags, unescapeHtmlEntities } from '../../lib/htmlSanitizer';
+import { htmlZuEinzeiler, stripHtmlTags, unescapeHtmlEntities } from '../../lib/htmlSanitizer';
 
 /**
  * Genau die Tags, die die Website in sanitizePostContent zulaesst
@@ -175,9 +175,7 @@ const STANDARD_LAENGE = 160;
  * Tags raus, Leerraum zusammenfalten, an der Wortgrenze kuerzen.
  */
 export function leiteKurzbeschreibungAb(html: string, maxLaenge = STANDARD_LAENGE): string {
-    const ohneTags = stripHtmlTags(html, ' ');
-    const entpackt = unescapeHtmlEntities(ohneTags);
-    const text = entpackt.replace(/\s+/g, ' ').trim();
+    const text = htmlZuEinzeiler(html);
 
     if (text.length <= maxLaenge) return text;
 
