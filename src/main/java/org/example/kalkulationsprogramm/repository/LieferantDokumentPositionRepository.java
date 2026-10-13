@@ -69,6 +69,16 @@ public interface LieferantDokumentPositionRepository extends JpaRepository<Liefe
             + "WHERE p.geschaeftsdokument.id = :geschaeftsdokumentId")
     int entferneZuordnungen(@Param("geschaeftsdokumentId") Long geschaeftsdokumentId);
 
+    /**
+     * Geschäftsdokumente mit KI-Antwort, aber ohne gespeicherte Positionen – für den
+     * einmaligen Nachtrag. Älteste zuerst.
+     */
+    @Query("SELECT gd.id FROM LieferantGeschaeftsdokument gd JOIN gd.dokument d "
+            + "WHERE d.typ IN :typen AND gd.aiRawJson IS NOT NULL "
+            + "AND NOT EXISTS (SELECT p.id FROM LieferantDokumentPosition p WHERE p.geschaeftsdokument = gd) "
+            + "ORDER BY gd.id")
+    List<Long> findeIdsOhnePositionenMitKiAntwort(@Param("typen") Collection<LieferantDokumentTyp> typen);
+
     /** Anzahl der Positionen eines Dokuments. */
     long countByGeschaeftsdokumentId(Long geschaeftsdokumentId);
 }
