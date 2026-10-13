@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     htmlToText,
+    htmlZuEinzeiler,
     parseHtmlInert,
     sanitizeHtml,
     stripHtmlTags,
@@ -122,6 +123,22 @@ describe('htmlSanitizer', () => {
                 nested = `<script>${nested}</script>`;
             }
             expect(stripHtmlTags(nested)).toBe('alert(1)');
+        });
+    });
+
+    describe('htmlZuEinzeiler', () => {
+        it('trennt Woerter aus benachbarten Absaetzen und fasst Leerraum zusammen', () => {
+            expect(htmlZuEinzeiler('<p>Angebot</p><p>Treppe&nbsp;&amp; Gelaender</p>\n<br>  ')).toBe('Angebot Treppe & Gelaender');
+        });
+
+        it('entfernt geschachtelte Tags vollstaendig und entpackt Entitaeten genau einmal', () => {
+            expect(htmlZuEinzeiler('<<script>script>alert(1)</script> &amp;lt;')).toBe('alert(1) &lt;');
+        });
+
+        it('behandelt leere Eingaben sauber', () => {
+            expect(htmlZuEinzeiler('')).toBe('');
+            expect(htmlZuEinzeiler(null)).toBe('');
+            expect(htmlZuEinzeiler(undefined)).toBe('');
         });
     });
 

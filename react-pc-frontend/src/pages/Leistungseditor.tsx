@@ -22,6 +22,7 @@ import { Select } from '../components/ui/select-custom';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
+import { htmlZuEinzeiler } from '../lib/htmlSanitizer';
 import { type LeistungsFolder, type LeistungsService, type ProduktkategorieDto } from '../types';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
@@ -49,7 +50,6 @@ const formatPrice = (value: number | string) => {
   return priceFormatter.format(numeric);
 };
 const getUnitShort = (unitId: string) => BILLING_UNITS.find((u) => u.id === unitId)?.short || '';
-const stripHtml = (value: string) => value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 const getFolderPath = (folder: LeistungsFolder, folders: LeistungsFolder[]): string => {
   const parent = folders.find((f) => f.id === folder.parentId);
@@ -93,7 +93,7 @@ const ServiceForm: React.FC<ServiceFormProps> = ({ service, folders, isCreating,
 
   const handleSave = () => {
     const parsedPrice = Number.parseFloat(price.replace(',', '.'));
-    if (!name.trim() || !description.trim() || !stripHtml(description)) {
+    if (!name.trim() || !description.trim() || !htmlZuEinzeiler(description)) {
       setError('Bitte Name und Beschreibung ausfüllen.');
       return;
     }
@@ -443,7 +443,7 @@ export const Leistungseditor: React.FC = () => {
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return services.filter(
-        (s) => s.name.toLowerCase().includes(q) || stripHtml(s.description).toLowerCase().includes(q)
+        (s) => s.name.toLowerCase().includes(q) || htmlZuEinzeiler(s.description).toLowerCase().includes(q)
       );
     }
     if (selectedFolderId) {

@@ -88,6 +88,18 @@ export function stripHtmlTags(input: string, replacement = ''): string {
 }
 
 /**
+ * Macht aus HTML einen einzeiligen Klartext für Suche und kurze Vorschauen.
+ * Tags werden durch Leerzeichen ersetzt, damit Wörter aus benachbarten Absätzen
+ * getrennt bleiben (`<p>Hallo</p><p>Welt</p>` → `Hallo Welt`, `htmlToText()`
+ * würde `HalloWelt` liefern). Danach Entitäten entpacken und Leerraum
+ * zusammenfassen. Das Ergebnis ist Text, kein HTML: nur als Text anzeigen.
+ */
+export function htmlZuEinzeiler(html?: string | null): string {
+    if (!html) return '';
+    return unescapeHtmlEntities(stripHtmlTags(html, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Wandelt bekannte HTML-Entitäten in einem einzigen Durchlauf um.
  * Ein Single-Pass-Verfahren schließt doppeltes Entpacken (Double-Unescaping)
  * mathematisch aus, da ersetzte Zeichen nicht erneut gescannt werden.
