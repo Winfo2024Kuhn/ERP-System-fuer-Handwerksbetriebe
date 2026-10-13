@@ -3,6 +3,7 @@ import { Palmtree, Scale } from 'lucide-react';
 import { Button } from '../../../ui/button';
 import { Select } from '../../../ui/select-custom';
 import { useToast } from '../../../ui/toast';
+import { useConfirm } from '../../../ui/confirm-dialog';
 import { SaveButton, SectionLoading, SettingsCard } from '../../settingsUi';
 import { cn } from '../../../../lib/utils';
 import { zeiterfassungApi, type UrlaubsverfallRegel } from './zeiterfassungApi';
@@ -28,6 +29,11 @@ function pruefeRegel(regel: UrlaubsverfallRegel): string {
     return '';
 }
 
+/** Liegt der Tag vor dem gesetzlichen 31. März? */
+function vorGesetzlichemTag(regel: UrlaubsverfallRegel): boolean {
+    return regel.monat < 3 || (regel.monat === 3 && regel.tag < 31);
+}
+
 /** Unvollständige Antworten fallen auf den gesetzlichen Standard zurück – wie im Backend. */
 function bereinige(regel: Partial<UrlaubsverfallRegel> | null | undefined): UrlaubsverfallRegel {
     const kandidat = {
@@ -48,6 +54,7 @@ const gleich = (a: UrlaubsverfallRegel, b: UrlaubsverfallRegel) =>
  */
 export function ResturlaubKarte({ onSaved }: { onSaved?: () => void }) {
     const toast = useToast();
+    const confirmDialog = useConfirm();
     const name = useId();
     const [laedt, setLaedt] = useState(true);
     const [ladeFehler, setLadeFehler] = useState('');
@@ -88,6 +95,17 @@ export function ResturlaubKarte({ onSaved }: { onSaved?: () => void }) {
         if (problem) {
             setFehler(problem);
             toast.error(problem);
+            return;
+        }
+        // Vor dem 31. März nur mit Tarifvertrag: bewusst nachfragen, das Backend nimmt es dann an.
+        if (entwurf.verfaellt && vorGesetzlichemTag(entwurf) && !await confirmDialog({
+            title: 'Verfall vor dem 31. März?',
+            message: `Gesetzlich muss Resturlaub bis mindestens 31. März genommen werden können. Ein früheres Datum `
+                + `(hier ${verfallsTagText(entwurf)}) ist nur erlaubt, wenn euer Tarifvertrag das vorsieht. Trotzdem speichern?`,
+            confirmLabel: 'Ja, laut Tarifvertrag',
+            cancelLabel: 'Abbrechen',
+            variant: 'warning',
+        })) {
             return;
         }
         setSpeichert(true);
@@ -181,6 +199,11 @@ export function ResturlaubKarte({ onSaved }: { onSaved?: () => void }) {
                                     </Button>
                                 )}
                             </div>
+                            {vorGesetzlichemTag(entwurf) && (
+                                <p className="mt-2 text-sm text-amber-800">
+                                    Früher als 31. März ist nur erlaubt, wenn euer Tarifvertrag das vorsieht.
+                                </p>
+                            )}
                         </div>
                     )}
 

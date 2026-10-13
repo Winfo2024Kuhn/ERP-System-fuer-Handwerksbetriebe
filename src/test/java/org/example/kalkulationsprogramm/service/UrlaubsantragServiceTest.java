@@ -79,7 +79,9 @@ class UrlaubsantragServiceTest {
         lenient().when(urlaubsverfallEinstellungen.uebertragAbJahr()).thenReturn(2026);
         urlaubskontoService = new UrlaubskontoService(abwesenheitRepository, zeitkontoKorrekturService,
                 tagesSollService, new UrlaubstageRechner(), uebertragRepository, urlaubsverfallEinstellungen,
-                java.time.Clock.systemDefaultZone());
+                // Fester Tag vor allen Antragsdaten der Tests (10.01.2027).
+                java.time.Clock.fixed(LocalDate.of(2027, 1, 10).atStartOfDay(java.time.ZoneId.systemDefault())
+                        .toInstant(), java.time.ZoneId.systemDefault()));
         urlaubsantragService = service(tagesSollService);
         testMitarbeiter = new Mitarbeiter();
         testMitarbeiter.setId(MITARBEITER_ID);
@@ -582,6 +584,26 @@ class UrlaubsantragServiceTest {
                         Urlaubsantrag.Typ.URLAUB));
 
         assertEquals("Nicht genügend Urlaubstage. Verbleibend: 0,5, Beantragt: 2", fehler.getMessage());
+    }
+
+    @Test
+    void antrag_ueberDenVerfallstagHinweg_nutztDenVorjahresrestNurBisZumVerfall() {
+        // 2 Tage Anspruch + 5 Tage aus dem Vorjahr = 7 verfügbar. Antrag 31.03.–07.04.2027
+        // = 6 Arbeitstage: nur der 31.03. darf den Vorjahresrest nutzen, die übrigen 4 Tage
+        // Rest verfallen danach → 2 + 5 − 4 − 6 = −3, also abgelehnt.
+        testMitarbeiter.setJahresUrlaub(2);
+        UrlaubUebertrag rest = new UrlaubUebertrag();
+        rest.setTage(new BigDecimal("5"));
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(uebertragRepository.findByMitarbeiterIdAndJahr(MITARBEITER_ID, 2027)).thenReturn(Optional.of(rest));
+
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.createAntrag(MITARBEITER_ID, LocalDate.of(2027, 3, 31),
+                        LocalDate.of(2027, 4, 7), null, Urlaubsantrag.Typ.URLAUB));
+
+        assertEquals("Nicht genügend Urlaubstage. Verbleibend: 7, Beantragt: 6. "
+                + "Resturlaub aus dem Vorjahr kann nur bis 31.03.2027 genommen werden.", fehler.getMessage());
+        verify(repository, never()).save(any());
     }
 
     @Test

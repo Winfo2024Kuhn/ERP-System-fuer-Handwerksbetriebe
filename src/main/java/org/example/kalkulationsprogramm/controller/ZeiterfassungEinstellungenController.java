@@ -46,7 +46,7 @@ public class ZeiterfassungEinstellungenController {
     @PutMapping("/urlaubsverfall")
     public UrlaubsverfallEinstellung urlaubsverfallSpeichern(@RequestBody UrlaubsverfallEinstellung eingabe) {
         return UrlaubsverfallEinstellung.von(
-                urlaubsverfall.speichern(Boolean.TRUE.equals(eingabe.verfaellt()), eingabe.tag(), eingabe.monat()));
+                urlaubsverfall.speichern(eingabe.verfaellt(), eingabe.tag(), eingabe.monat()));
     }
 
     @GetMapping("/datev")

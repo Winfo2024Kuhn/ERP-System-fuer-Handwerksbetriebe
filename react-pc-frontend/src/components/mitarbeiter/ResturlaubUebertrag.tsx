@@ -113,7 +113,7 @@ export function ResturlaubUebertrag({ mitarbeiterId }: { mitarbeiterId: number }
                 <p className="text-xs text-slate-500">Resturlaub aus dem Vorjahr</p>
                 <InfoButton titel="Resturlaub aus dem Vorjahr">
                     <InfoAbschnitt titel="Was passiert im Hintergrund?">
-                        <p>Das Programm rechnet aus, wie viel Urlaub im Vorjahr übrig war, und nimmt ihn ins neue Jahr mit. Urlaub im neuen Jahr zählt zuerst gegen diesen Rest.</p>
+                        <p>Das Programm rechnet aus, wie viel Urlaub im Vorjahr übrig war, und nimmt ihn ins neue Jahr mit. Urlaub im neuen Jahr zählt zuerst gegen diesen Rest. Ändern Sie später den Jahresurlaub oder tragen Urlaub im Vorjahr nach, ändert sich der ausgerechnete Rest mit. Wurde mehr genommen als da war, ist der Rest 0 – abgezogen wird nichts.</p>
                     </InfoAbschnitt>
                     <InfoAbschnitt titel="Was bewirkt das?">
                         <p>Ein Wert von Hand ersetzt die Rechnung für dieses Jahr – z. B. wenn früher auf Papier geplant wurde. Gebuchte Urlaubstage ändern sich nicht. Ob und wann der Rest verfällt, steht unter Einstellungen → Zeiterfassung.</p>

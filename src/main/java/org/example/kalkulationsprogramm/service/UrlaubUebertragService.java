@@ -54,9 +54,13 @@ public class UrlaubUebertragService {
         return stand(mitarbeiter, pruefeJahr(jahr));
     }
 
-    /** {@code tage == null} entfernt den Handeintrag – dann rechnet das Programm wieder selbst. */
+    /**
+     * {@code tage == null} entfernt den Handeintrag – dann rechnet das Programm wieder selbst.
+     *
+     * @param geaendertVonId Benutzer-Profil, das den Wert festlegt ({@code null}, wenn unbekannt)
+     */
     @Transactional
-    public Stand speichern(Long mitarbeiterId, Integer jahr, BigDecimal tage) {
+    public Stand speichern(Long mitarbeiterId, Integer jahr, BigDecimal tage, Long geaendertVonId) {
         Mitarbeiter mitarbeiter = mitarbeiter(mitarbeiterId);
         int pruefJahr = pruefeJahr(jahr);
         if (Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer())) {
@@ -73,6 +77,7 @@ public class UrlaubUebertragService {
             eintrag.setJahr(pruefJahr);
             eintrag.setTage(pruefeTage(tage));
             eintrag.setGeaendertAm(LocalDateTime.now(clock));
+            eintrag.setGeaendertVonId(geaendertVonId);
             uebertragRepository.save(eintrag);
             log.info("Resturlaub-Übertrag für Mitarbeiter {} in {} von Hand gesetzt", mitarbeiter.getId(), pruefJahr);
         }
@@ -81,12 +86,10 @@ public class UrlaubUebertragService {
     }
 
     private Stand stand(Mitarbeiter mitarbeiter, int jahr) {
-        Urlaubskonto konto = urlaubskontoService.berechne(mitarbeiter, jahr);
-        BigDecimal berechnet = konto.uebertragManuell()
-                ? urlaubskontoService.automatischerUebertrag(mitarbeiter, jahr)
-                : konto.uebertrag();
-        return new Stand(jahr, konto.uebertrag(), berechnet, konto.uebertragManuell(),
-                konto.verfallsdatum() != null ? konto.verfallsdatum().toString() : null);
+        // Rechnet nur das Vorjahr (für den berechneten Wert), nicht das ganze Konto des Jahres.
+        UrlaubskontoService.UebertragStand stand = urlaubskontoService.uebertragStand(mitarbeiter, jahr);
+        return new Stand(jahr, stand.tage(), stand.berechnet(), stand.manuell(),
+                stand.verfallsdatum() != null ? stand.verfallsdatum().toString() : null);
     }
 
     private Mitarbeiter mitarbeiter(Long mitarbeiterId) {

@@ -910,7 +910,7 @@ describe('DashboardPage – Nachrichten-Glocke (#270)', () => {
 
         const sheet = await oeffneGlocke()
         expect(within(sheet).getByText('Dringend: Urlaub verfällt bald')).toBeInTheDocument()
-        expect(within(sheet).getByText(/Du hast noch 3,5 Resturlaubstage vom Vorjahr\. Sie verfallen am 31\.03\.2027 \(in 20 Tagen\)\./)).toBeInTheDocument()
+        expect(within(sheet).getByText(/Du hast noch 3,5 Resturlaubstage vom Vorjahr\. Nimm sie bis 31\.03\.2027, danach verfallen sie \(noch 20 Tage\)\./)).toBeInTheDocument()
         fireEvent.click(within(sheet).getByRole('button', { name: 'Gelesen: Dringend: Urlaub verfällt bald' }))
         expect(await within(sheet).findByText('Keine neuen Nachrichten.')).toBeInTheDocument()
         unmount()

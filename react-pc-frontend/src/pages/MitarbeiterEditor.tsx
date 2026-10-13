@@ -725,7 +725,7 @@ export default function MitarbeiterEditor() {
     // Zeilen der Spalte angewandt, nicht nur auf E-Mail (Befund von Design- und
     // Code-Reviewer aus Abschnitt 5: Abteilung war schon vorher betroffen,
     // Telefon/Festnetz/Adresse tragen dieselbe latente Luecke).
-    const SideInfo = () => (
+    const renderSideInfo = () => (
         <div className="space-y-6">
             <div>
                 <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Persönliche Daten</h3>
@@ -1834,9 +1834,9 @@ export default function MitarbeiterEditor() {
                 <DetailLayout
                     header={<DetailHeader />}
                     mainContent={<MainContent />}
-                    // Als Aufruf statt <SideInfo />: sonst baut React die Seitenleiste bei jedem
+                    // Als Aufruf statt als Komponente: sonst baut React die Seitenleiste bei jedem
                     // Neuzeichnen neu auf, und der Resturlaub darin lädt jedes Mal neu.
-                    sideContent={SideInfo()}
+                    sideContent={renderSideInfo()}
                 />
             )}
         </PageLayout>

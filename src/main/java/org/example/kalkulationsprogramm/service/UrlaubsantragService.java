@@ -53,14 +53,20 @@ public class UrlaubsantragService {
 
         // Urlaubskontingent prüfen (nur für URLAUB-Typ bei normalen Mitarbeitern)
         if (!istGf && typ == Urlaubsantrag.Typ.URLAUB) {
-            // Stichtag = erster Urlaubstag: Liegt er nach dem Verfall, zählt der Vorjahresrest nicht mehr.
-            BigDecimal verbleibend = urlaubskontoService.berechne(mitarbeiter, von.getYear(),
-                    von.isAfter(LocalDate.now()) ? von : LocalDate.now()).verbleibend();
-            long beantragteTage = zaehleArbeitstage(von, bis);
-            if (BigDecimal.valueOf(beantragteTage).compareTo(verbleibend) > 0) {
+            // Probe-Rechnung mit den beantragten Tagen: Tage bis zum Verfallstag dürfen den
+            // Vorjahresrest nutzen, Tage danach nur den Anspruch (Datum „heute“ aus der Clock).
+            List<LocalDate> beantragt = arbeitstage(von, bis);
+            UrlaubskontoService.Antragspruefung pruefung = urlaubskontoService.pruefeAntrag(mitarbeiter,
+                    von.getYear(), beantragt);
+            if (!pruefung.reicht()) {
+                String grund = pruefung.vorjahresrestVerfaellt() && pruefung.verfallsdatum() != null
+                        ? ". Resturlaub aus dem Vorjahr kann nur bis " + pruefung.verfallsdatum().format(TAG_FORMAT)
+                                + " genommen werden."
+                        : "";
                 throw new IllegalStateException(
                         String.format("Nicht genügend Urlaubstage. Verbleibend: %s, Beantragt: %d",
-                                UrlaubstageRechner.formatTage(verbleibend), beantragteTage));
+                                UrlaubstageRechner.formatTage(pruefung.verbleibendVorher()), beantragt.size())
+                                + grund);
             }
         }
 
@@ -461,9 +467,20 @@ public class UrlaubsantragService {
     /** Das ganze Urlaubskonto eines Jahres – mit Übertrag und Verfall für die Anzeige. */
     @Transactional(readOnly = true)
     public Urlaubskonto getUrlaubskonto(Long mitarbeiterId, int jahr) {
+        return getUrlaubskonto(mitarbeiterId, jahr, null);
+    }
+
+    /**
+     * Urlaubskonto zu einem Stichtag (z. B. erster Tag eines Antrags): Liegt er nach
+     * dem Verfallstag, ist der Vorjahresrest schon weg. {@code null} = heutiger Stand.
+     */
+    @Transactional(readOnly = true)
+    public Urlaubskonto getUrlaubskonto(Long mitarbeiterId, int jahr, LocalDate stichtag) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
-        return urlaubskontoService.berechne(mitarbeiter, jahr);
+        return stichtag == null
+                ? urlaubskontoService.berechne(mitarbeiter, jahr)
+                : urlaubskontoService.berechne(mitarbeiter, jahr, stichtag);
     }
 
     /**
@@ -478,15 +495,15 @@ public class UrlaubsantragService {
     }
 
     /**
-     * Zählt Arbeitstage (Mo–Fr, ohne Feiertage) in einem Zeitraum.
+     * Arbeitstage (Mo–Fr, ohne Feiertage) in einem Zeitraum.
      */
-    private long zaehleArbeitstage(LocalDate von, LocalDate bis) {
-        long count = 0;
+    private List<LocalDate> arbeitstage(LocalDate von, LocalDate bis) {
+        List<LocalDate> tage = new java.util.ArrayList<>();
         for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
             if (d.getDayOfWeek() == DayOfWeek.SATURDAY || d.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
             if (feiertagService.istFeiertag(d)) continue;
-            count++;
+            tage.add(d);
         }
-        return count;
+        return tage;
     }
 }

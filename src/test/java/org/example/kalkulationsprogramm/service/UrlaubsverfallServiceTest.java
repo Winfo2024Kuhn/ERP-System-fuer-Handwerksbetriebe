@@ -53,7 +53,7 @@ class UrlaubsverfallServiceTest {
 
     private static Urlaubskonto konto(int jahr, String offen, LocalDate verfall) {
         BigDecimal o = new BigDecimal(offen);
-        return new Urlaubskonto(jahr, 30, o, false, verfall, BigDecimal.ZERO, o, BigDecimal.ZERO, BigDecimal.ZERO,
+        return new Urlaubskonto(jahr, new java.math.BigDecimal("30"), o, false, verfall, BigDecimal.ZERO, o, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, new BigDecimal("30").add(o));
     }
 

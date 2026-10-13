@@ -4,16 +4,16 @@ import { entscheidungsText, formatIsoDatumDe, formatUrlaubstage, statusLabel, ty
 describe('vorjahresHinweis', () => {
     it('nennt offenen Vorjahresrest mit oder ohne Verfall', () => {
         expect(vorjahresHinweis({ ausVorjahrOffen: 2.5, verfallsdatum: '2027-03-31' }))
-            .toBe('davon 2,5 Tage aus dem Vorjahr, verfallen am 31.03.2027')
+            .toBe('davon 2,5 Tage aus dem Vorjahr – bis 31.03.2027 nehmen, danach verfallen sie')
         expect(vorjahresHinweis({ ausVorjahrOffen: 1, verfallsdatum: null }))
             .toBe('davon 1 Tag aus dem Vorjahr, verfallen nicht')
     })
 
     it('meldet verfallene Tage und schweigt ohne Vorjahresrest', () => {
         expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 1, verfallsdatum: '2027-03-31' }))
-            .toBe('1 Tag aus dem Vorjahr ist am 31.03.2027 verfallen')
+            .toBe('1 Tag aus dem Vorjahr ist nach dem 31.03.2027 verfallen')
         expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 3, verfallsdatum: '2027-03-31' }))
-            .toBe('3 Tage aus dem Vorjahr sind am 31.03.2027 verfallen')
+            .toBe('3 Tage aus dem Vorjahr sind nach dem 31.03.2027 verfallen')
         expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 3, verfallsdatum: null })).toBeNull()
         expect(vorjahresHinweis({})).toBeNull()
         expect(vorjahresHinweis(null)).toBeNull()

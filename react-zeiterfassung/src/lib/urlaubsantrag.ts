@@ -61,23 +61,27 @@ function tageMitEinheit(tage: number): string {
 }
 
 /**
- * Ein kurzer Satz zum Vorjahresrest – oder `null`, wenn es keinen gibt:
- * „davon 3 Tage aus dem Vorjahr, verfallen am 31.03.2027",
+ * Ein kurzer Satz zum Vorjahresrest – oder `null`, wenn es keinen gibt.
+ * `verfallsdatum` ist der letzte Tag, an dem der Rest genommen werden kann:
+ * „davon 3 Tage aus dem Vorjahr – bis 31.03.2027 nehmen, danach verfallen sie",
  * „davon 3 Tage aus dem Vorjahr, verfallen nicht" bzw.
- * „2 Tage aus dem Vorjahr sind am 31.03.2027 verfallen".
- * Gegenstück zu `vorjahresHinweis` im PC-Frontend (`lib/urlaubstage.ts`).
+ * „2 Tage aus dem Vorjahr sind nach dem 31.03.2027 verfallen".
+ * Gleicher Wortlaut wie `vorjahresHinweis` im PC-Frontend (`lib/urlaubstage.ts`).
  */
 export function vorjahresHinweis(rest: VorjahresRest | null | undefined): string | null {
     if (!rest) return null
     const offen = Number(rest.ausVorjahrOffen)
     if (Number.isFinite(offen) && offen > 0) {
-        const teil = `davon ${tageMitEinheit(offen)} aus dem Vorjahr`
-        return rest.verfallsdatum ? `${teil}, verfallen am ${formatIsoDatumDe(rest.verfallsdatum)}` : `${teil}, verfallen nicht`
+        const text = tageMitEinheit(offen)
+        const teil = `davon ${text} aus dem Vorjahr`
+        if (!rest.verfallsdatum) return `${teil}, verfallen nicht`
+        const danach = text.endsWith(' Tag') ? 'verfällt er' : 'verfallen sie'
+        return `${teil} – bis ${formatIsoDatumDe(rest.verfallsdatum)} nehmen, danach ${danach}`
     }
     const verfallen = Number(rest.verfallen)
     if (Number.isFinite(verfallen) && verfallen > 0 && rest.verfallsdatum) {
         const text = tageMitEinheit(verfallen)
-        return `${text} aus dem Vorjahr ${text.endsWith(' Tag') ? 'ist' : 'sind'} am ${formatIsoDatumDe(rest.verfallsdatum)} verfallen`
+        return `${text} aus dem Vorjahr ${text.endsWith(' Tag') ? 'ist' : 'sind'} nach dem ${formatIsoDatumDe(rest.verfallsdatum)} verfallen`
     }
     return null
 }

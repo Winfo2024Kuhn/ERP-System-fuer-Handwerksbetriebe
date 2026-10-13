@@ -49,7 +49,7 @@ class UrlaubUebertragControllerTest {
 
     @Test
     void speichernUndZuruecksetzen() throws Exception {
-        when(service.speichern(1L, 2027, new BigDecimal("2.5"))).thenReturn(
+        when(service.speichern(1L, 2027, new BigDecimal("2.5"), null)).thenReturn(
                 new Stand(2027, new BigDecimal("2.5"), new BigDecimal("4"), true, null));
 
         mockMvc.perform(put("/api/urlaub/uebertrag").contentType(MediaType.APPLICATION_JSON)
@@ -60,12 +60,12 @@ class UrlaubUebertragControllerTest {
 
         mockMvc.perform(put("/api/urlaub/uebertrag").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"mitarbeiterId\":1,\"jahr\":2027,\"tage\":null}"));
-        verify(service).speichern(eq(1L), eq(2027), isNull());
+        verify(service).speichern(eq(1L), eq(2027), isNull(), isNull());
     }
 
     @Test
     void fehlerKommenAlsVerstaendlicheMeldung() throws Exception {
-        when(service.speichern(anyLong(), anyInt(), any())).thenThrow(
+        when(service.speichern(anyLong(), anyInt(), any(), any())).thenThrow(
                 new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Resturlaub muss zwischen 0 und 365 Tagen liegen."));
 
         mockMvc.perform(put("/api/urlaub/uebertrag").contentType(MediaType.APPLICATION_JSON)

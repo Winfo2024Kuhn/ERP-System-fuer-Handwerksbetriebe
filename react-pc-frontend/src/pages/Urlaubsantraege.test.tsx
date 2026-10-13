@@ -323,7 +323,7 @@ describe('Urlaubsantraege - Resturlaub mit Vorjahresrest', () => {
         vi.unstubAllGlobals();
     });
 
-    it('zeigt bei offenen Urlaubsanträgen den Resturlaub mit dem Rest aus dem Vorjahr, je Mitarbeiter und Jahr einmal geladen', async () => {
+    it('zeigt bei offenen Urlaubsanträgen den Resturlaub mit dem Rest aus dem Vorjahr, je Mitarbeiter zum ersten Urlaubstag geladen', async () => {
         const fetchMock = vi.fn((url: string) => {
             if (url.startsWith('/api/urlaub/antraege')) {
                 return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([ANTRAG_MIT_HINWEIS, ANTRAG_OHNE_HINWEIS]) });
@@ -342,13 +342,13 @@ describe('Urlaubsantraege - Resturlaub mit Vorjahresrest', () => {
         renderSeite();
 
         expect(await screen.findByText('33,5 Tage')).toBeVisible();
-        expect(screen.getByText('(davon 3,5 Tage aus dem Vorjahr, verfallen am 31.03.2026)')).toBeVisible();
+        expect(screen.getByText('(davon 3,5 Tage aus dem Vorjahr – bis 31.03.2026 nehmen, danach verfallen sie)')).toBeVisible();
         const aufrufe = fetchMock.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/urlaub/resturlaub'));
         expect(aufrufe).toEqual([
-            '/api/urlaub/resturlaub?mitarbeiterId=10&jahr=2026',
-            '/api/urlaub/resturlaub?mitarbeiterId=11&jahr=2026',
+            '/api/urlaub/resturlaub?mitarbeiterId=10&jahr=2026&stichtag=2026-03-10',
+            '/api/urlaub/resturlaub?mitarbeiterId=11&jahr=2026&stichtag=2026-04-01',
         ]);
         // Ein Fehler beim zweiten Mitarbeiter blendet nur dessen Angabe aus.
-        expect(screen.getAllByText(/^Resturlaub 2026:/)).toHaveLength(1);
+        expect(screen.getAllByText(/^Resturlaub zum Urlaubsbeginn:/)).toHaveLength(1);
     });
 });

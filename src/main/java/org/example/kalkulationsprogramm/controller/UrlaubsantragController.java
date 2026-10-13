@@ -149,15 +149,23 @@ public class UrlaubsantragController {
     /**
      * Gibt die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr zurück –
      * dazu, wie viel davon aus dem Vorjahr stammt und wann das verfällt.
+     * Optional {@code stichtag} (ISO-Datum, z. B. erster Tag eines Antrags): Stand
+     * an diesem Tag – nach dem Verfallstag ohne den Vorjahresrest.
      */
     @GetMapping("/api/urlaub/resturlaub")
     public ResponseEntity<?> getResturlaub(
             @RequestParam Long mitarbeiterId,
-            @RequestParam(required = false) Integer jahr) {
+            @RequestParam(required = false) Integer jahr,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
+            LocalDate stichtag) {
         mitarbeiterId = MobilePrincipal.ownMitarbeiterId(mitarbeiterId);
         int targetJahr = (jahr != null) ? jahr : java.time.LocalDate.now().getYear();
+        if (targetJahr < 2000 || targetJahr > 2100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte ein gültiges Jahr angeben.");
+        }
         try {
-            Urlaubskonto konto = service.getUrlaubskonto(mitarbeiterId, targetJahr);
+            Urlaubskonto konto = service.getUrlaubskonto(mitarbeiterId, targetJahr, stichtag);
             // verfallsdatum fehlt bei „Resturlaub verfällt nicht“ – Map.of verträgt kein null.
             Map<String, Object> antwort = new LinkedHashMap<>();
             antwort.put("verbleibend", konto.verbleibend());

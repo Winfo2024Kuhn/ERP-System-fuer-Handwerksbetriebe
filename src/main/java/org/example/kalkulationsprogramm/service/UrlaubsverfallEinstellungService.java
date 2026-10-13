@@ -81,9 +81,16 @@ public class UrlaubsverfallEinstellungService {
     /**
      * Speichert die Regel. Tag und Monat werden auch bei „verfällt nicht“ geprüft
      * und gespeichert, damit sie beim Zurückschalten wieder dastehen.
+     *
+     * <p>Ein Tag vor dem 31. März wird angenommen (Tarifverträge dürfen das
+     * vorsehen); die Oberfläche fragt dafür vorher mit einem Rechtshinweis nach.
      */
     @Transactional
-    public Verfallsregel speichern(boolean verfaellt, Integer tag, Integer monat) {
+    public Verfallsregel speichern(Boolean verfaellt, Integer tag, Integer monat) {
+        if (verfaellt == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Bitte angeben, ob Resturlaub verfällt oder erhalten bleibt.");
+        }
         MonthDay verfallsTag = pruefeTag(tag, monat);
         settings.save(VERFAELLT, Boolean.toString(verfaellt),
                 "Verfällt übertragener Resturlaub (true) oder bleibt er erhalten (false)?");

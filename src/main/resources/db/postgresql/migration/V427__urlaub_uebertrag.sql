@@ -10,6 +10,7 @@
 --   urlaub_uebertrag            von Hand festgelegter Übertrag je Mitarbeiter und Jahr
 --     jahr                      Jahr, in das der Rest übertragen wird
 --     tage                      Tage aus dem Vorjahr, halbe Tage erlaubt (NUMERIC(5,1))
+--     geaendert_von_id          Benutzer, der den Wert zuletzt festgelegt hat
 --   system_setting
 --     urlaub.uebertrag.ab-jahr  erstes Jahr, dessen Rest automatisch weitergegeben wird.
 --                               Davor fehlen oft die Urlaubsdaten; ohne Grenze bekäme jeder
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS urlaub_uebertrag (
     jahr INTEGER NOT NULL,
     tage NUMERIC(5, 1) NOT NULL,
     geaendert_am TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    geaendert_von_id BIGINT REFERENCES frontend_user_profile (id) ON DELETE SET NULL,
     CONSTRAINT uk_urlaub_uebertrag_mitarbeiter_jahr UNIQUE (mitarbeiter_id, jahr)
 );
 

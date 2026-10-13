@@ -73,11 +73,15 @@ Unter **Zeiterfassung → Urlaubsanträge** hat jeder offene und genehmigte Antr
 
 ## Resturlaub
 
-Resturlaub = Jahresurlaub plus Rest aus dem Vorjahr minus verfallene Tage minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Ein halber Urlaubstag zählt als 0,5 Tage, auch Korrekturen dürfen halbe Tage sein. Er steht in **Zeiterfassung → Kalender** („Resturlaub“), bei offenen Anträgen unter **Zeiterfassung → Urlaubsanträge** und in der Handy-App unter „Saldenauswertung“ und im Urlaubsantrag.
+Resturlaub = Jahresurlaub plus Rest aus dem Vorjahr minus verfallene Tage minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Ein halber Urlaubstag zählt als 0,5 Tage, auch Korrekturen dürfen halbe Tage sein. Er steht in **Zeiterfassung → Kalender** („Resturlaub“), bei offenen Anträgen unter **Zeiterfassung → Urlaubsanträge** (Stand zum ersten Urlaubstag) und in der Handy-App unter „Saldenauswertung“ und im Urlaubsantrag.
+
+Im Eintrittsjahr gibt es ein Zwölftel des Jahresurlaubs je vollem Beschäftigungsmonat bis zum 31.12. Bruchteile ab einem halben Tag werden auf einen ganzen Tag aufgerundet, kleinere auf einen halben Tag (§ 5 Abs. 2 BUrlG). Beispiel: 30 Tage, Eintritt 15.03. → 9 volle Monate → 22,5 → 23 Tage.
+
+Ein neuer Urlaubsantrag wird gegen den Resturlaub geprüft: Tage bis zum Verfallstag dürfen den Rest aus dem Vorjahr nutzen, Tage danach nur den Jahresurlaub.
 
 ### Rest aus dem Vorjahr
 
-Was am Jahresende übrig ist, nimmt das Programm von selbst ins neue Jahr mit (erstmals ins Jahr nach dem Update). Urlaub im neuen Jahr zählt zuerst gegen diesen Rest. Wie lange er gilt, steht unter **Einstellungen → Zeiterfassung → Resturlaub ins neue Jahr**: Voreingestellt ist die gesetzliche Regel, nach dem 31. März verfällt der nicht genommene Rest. Der Betrieb kann einen anderen Tag wählen oder „Resturlaub verfällt nicht“ einstellen. Gesetzlich verfällt Resturlaub nur, wenn die Mitarbeiter vorher rechtzeitig darauf hingewiesen wurden; die Handy-App erinnert zwei Monate vor dem Verfallstag unter der Glocke.
+Was am Jahresende übrig ist, nimmt das Programm von selbst ins neue Jahr mit (erstmals ins Jahr nach dem Update). Urlaub im neuen Jahr zählt zuerst gegen diesen Rest. Wie lange er gilt, steht unter **Einstellungen → Zeiterfassung → Resturlaub ins neue Jahr**: Voreingestellt ist die gesetzliche Regel, nach dem 31. März verfällt der nicht genommene Rest. Der Betrieb kann einen anderen Tag wählen oder „Resturlaub verfällt nicht“ einstellen. Ein Tag vor dem 31. März ist nur erlaubt, wenn der Tarifvertrag das vorsieht; das Programm fragt dann vor dem Speichern nach. Der Rest wird immer neu ausgerechnet: Wer im alten Jahr Urlaub nachträgt oder den Jahresurlaub ändert, ändert damit auch den Übertrag. Wurde im alten Jahr mehr genommen als da war, ist der Übertrag 0 – abgezogen wird nichts. Gesetzlich verfällt Resturlaub nur, wenn die Mitarbeiter vorher rechtzeitig darauf hingewiesen wurden; die Handy-App erinnert zwei Monate vor dem Verfallstag unter der Glocke.
 
 Stimmt der ausgerechnete Rest nicht (z. B. weil früher auf Papier geplant wurde), unter **Mitarbeiter → Konditionen → Resturlaub aus dem Vorjahr** den richtigen Wert eintragen. „Wieder ausrechnen lassen“ nimmt den Handwert zurück.
 

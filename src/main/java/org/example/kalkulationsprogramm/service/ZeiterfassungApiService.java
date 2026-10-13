@@ -1025,7 +1025,7 @@ public class ZeiterfassungApiService {
 
         // Gleiche Rechnung wie bei der Antragsprüfung (UrlaubskontoService): halbe Tage
         // zählen 0,5, der Vorjahresrest wird zuerst verbraucht und verfällt nach dem Stichtag.
-        Urlaubskonto konto = urlaubskontoService.berechne(mitarbeiter, currentYear);
+        Urlaubskonto konto = urlaubskontoService.berechne(mitarbeiter, currentYear, abwesenheitenImJahr);
 
         long krankheitsTage = abwesenheitenImJahr.stream()
                 .filter(a -> a.getTyp() == AbwesenheitsTyp.KRANKHEIT)

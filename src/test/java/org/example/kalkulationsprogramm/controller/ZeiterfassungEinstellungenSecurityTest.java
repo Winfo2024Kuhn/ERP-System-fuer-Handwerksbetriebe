@@ -117,6 +117,9 @@ class ZeiterfassungEinstellungenSecurityTest {
    .andExpect(status().isOk()).andExpect(jsonPath("$.verfaellt").value(false)).andExpect(jsonPath("$.tag").value(30)).andExpect(jsonPath("$.monat").value(6));
   verify(settings).save(eq("urlaub.verfall.aktiv"),eq("false"),anyString());
   verify(settings).save(eq("urlaub.verfall.tag"),eq("06-30"),anyString());
+  // Tarifvertrag: ein Tag vor dem 31.03. wird angenommen (die Oberfläche fragt vorher nach).
+  mvc.perform(put(VERFALL).with(csrf()).contentType("application/json").content(verfall(true,15,1)))
+   .andExpect(status().isOk()).andExpect(jsonPath("$.tag").value(15)).andExpect(jsonPath("$.monat").value(1));
  }
  @Test @WithMockUser(roles="ADMIN") void urlaubsverfallUngueltigerTagWirdAbgelehnt() throws Exception {
   mvc.perform(put(VERFALL).with(csrf()).contentType("application/json").content(verfall(true,30,2)))
@@ -127,6 +130,8 @@ class ZeiterfassungEinstellungenSecurityTest {
    .andExpect(status().isBadRequest());
   mvc.perform(put(VERFALL).with(csrf()).contentType("application/json").content(verfall(true,Long.MAX_VALUE,3)))
    .andExpect(status().isBadRequest());
+  mvc.perform(put(VERFALL).with(csrf()).contentType("application/json").content("{\"tag\":31,\"monat\":3}"))
+   .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Bitte angeben, ob Resturlaub verfällt oder erhalten bleibt."));
   verify(settings,never()).save(anyString(),anyString(),anyString());
  }
 }

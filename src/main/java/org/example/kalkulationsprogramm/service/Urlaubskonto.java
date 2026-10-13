@@ -8,7 +8,8 @@ import java.time.LocalDate;
  * und für die Prüfung neuer Urlaubsanträge ({@link UrlaubskontoService}).
  *
  * @param jahr              Jahr des Kontos
- * @param jahresanspruch    Jahresurlaub laut Mitarbeiter (ohne Angabe 30)
+ * @param jahresanspruch    Jahresurlaub laut Mitarbeiter (ohne Angabe 30), im Eintrittsjahr anteilig
+ *                          ({@link UrlaubskontoService#anspruchImJahr})
  * @param uebertrag         Resturlaub aus dem Vorjahr, der in dieses Jahr übertragen wurde
  * @param uebertragManuell  {@code true}, wenn das Büro den Übertrag von Hand festgelegt hat
  * @param verfallsdatum     letzter Tag, an dem der Übertrag genommen werden kann;
@@ -22,7 +23,7 @@ import java.time.LocalDate;
  */
 public record Urlaubskonto(
         int jahr,
-        int jahresanspruch,
+        BigDecimal jahresanspruch,
         BigDecimal uebertrag,
         boolean uebertragManuell,
         LocalDate verfallsdatum,

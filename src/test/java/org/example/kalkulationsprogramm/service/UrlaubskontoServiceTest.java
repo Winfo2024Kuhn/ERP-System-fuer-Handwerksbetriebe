@@ -57,7 +57,7 @@ class UrlaubskontoServiceTest {
 
         private Urlaubskonto rechne(String uebertrag, LocalDate verfallsdatum, List<UrlaubsTag> tage,
                 LocalDate stichtag) {
-            return UrlaubskontoService.rechne(2027, 30, BigDecimal.ZERO, d(uebertrag), false, verfallsdatum, tage,
+            return UrlaubskontoService.rechne(2027, BigDecimal.valueOf(30), BigDecimal.ZERO, d(uebertrag), false, verfallsdatum, tage,
                     stichtag, stichtag);
         }
 
@@ -121,7 +121,7 @@ class UrlaubskontoServiceTest {
 
         @Test
         void heuteTrenntGenommenUndGeplant() {
-            Urlaubskonto konto = UrlaubskontoService.rechne(2027, 30, d("0.5"), BigDecimal.ZERO, false, VERFALL_2027,
+            Urlaubskonto konto = UrlaubskontoService.rechne(2027, BigDecimal.valueOf(30), d("0.5"), BigDecimal.ZERO, false, VERFALL_2027,
                     List.of(tag(2027, 2, 1, "1"), tag(2027, 8, 2, "1")), LocalDate.of(2027, 6, 1),
                     LocalDate.of(2027, 6, 1));
 
@@ -136,7 +136,7 @@ class UrlaubskontoServiceTest {
             for (int i = 1; i <= 28; i++) {
                 tage.add(tag(2027, 6, i, "1"));
             }
-            Urlaubskonto konto = UrlaubskontoService.rechne(2027, 30, d("-10"), d("5"), false, null, tage,
+            Urlaubskonto konto = UrlaubskontoService.rechne(2027, BigDecimal.valueOf(30), d("-10"), d("5"), false, null, tage,
                     LocalDate.of(2027, 7, 1), LocalDate.of(2027, 7, 1));
 
             assertThat(konto.verbleibend()).isEqualByComparingTo("0");
@@ -318,6 +318,124 @@ class UrlaubskontoServiceTest {
                     .isEqualByComparingTo("34");
             assertThat(service.berechne(max, 2027, LocalDate.of(2027, 5, 3)).verbleibend())
                     .isEqualByComparingTo("30");
+        }
+
+        private static List<LocalDate> tage(LocalDate... daten) {
+            return List.of(daten);
+        }
+
+        @Test
+        void antragUeberDenVerfallstagReichtNichtWennDerRestDanachVerfaellt() {
+            // 5 Tage Rest + 2 Tage Anspruch = 7 verfügbar; 6 Arbeitstage 31.03.–07.04.
+            max.setJahresUrlaub(2);
+            UrlaubUebertrag rest = new UrlaubUebertrag();
+            rest.setTage(d("5"));
+            when(uebertragRepository.findByMitarbeiterIdAndJahr(1L, 2027)).thenReturn(Optional.of(rest));
+
+            UrlaubskontoService.Antragspruefung pruefung = service.pruefeAntrag(max, 2027, tage(
+                    LocalDate.of(2027, 3, 31), LocalDate.of(2027, 4, 1), LocalDate.of(2027, 4, 2),
+                    LocalDate.of(2027, 4, 5), LocalDate.of(2027, 4, 6), LocalDate.of(2027, 4, 7)));
+
+            assertThat(pruefung.verbleibendVorher()).isEqualByComparingTo("7");
+            assertThat(pruefung.restDanach()).isEqualByComparingTo("-3");
+            assertThat(pruefung.reicht()).isFalse();
+            assertThat(pruefung.vorjahresrestVerfaellt()).isTrue();
+            assertThat(pruefung.verfallsdatum()).isEqualTo(VERFALL_2027);
+        }
+
+        @Test
+        void antragVorDemVerfallNutztDenRestUndReicht() {
+            max.setJahresUrlaub(2);
+            UrlaubUebertrag rest = new UrlaubUebertrag();
+            rest.setTage(d("5"));
+            when(uebertragRepository.findByMitarbeiterIdAndJahr(1L, 2027)).thenReturn(Optional.of(rest));
+
+            UrlaubskontoService.Antragspruefung pruefung = service.pruefeAntrag(max, 2027, tage(
+                    LocalDate.of(2027, 3, 22), LocalDate.of(2027, 3, 23), LocalDate.of(2027, 3, 24),
+                    LocalDate.of(2027, 3, 25), LocalDate.of(2027, 3, 26), LocalDate.of(2027, 3, 29)));
+
+            assertThat(pruefung.restDanach()).isEqualByComparingTo("1");
+            assertThat(pruefung.reicht()).isTrue();
+            assertThat(pruefung.vorjahresrestVerfaellt()).isFalse();
+        }
+
+        @Test
+        void eintrittsjahrHatAnteiligenAnspruchUndGibtDenRestWeiter() {
+            // Eintritt 15.03.2026 → 9 volle Monate → 30 × 9/12 = 22,5 → 23 Tage (§ 5 Abs. 2 BUrlG).
+            max.setEintrittsdatum(LocalDate.of(2026, 3, 15));
+            bucheUrlaub(LocalDate.of(2026, 7, 1), 20, 0);
+
+            Urlaubskonto konto2026 = service.berechne(max, 2026);
+            assertThat(konto2026.jahresanspruch()).isEqualByComparingTo("23");
+            assertThat(konto2026.uebertrag()).isEqualByComparingTo("0");
+            assertThat(konto2026.verbleibend()).isEqualByComparingTo("3");
+
+            // Startjahr 2025: der Rest aus dem Eintrittsjahr geht normal ins Folgejahr.
+            when(einstellungen.uebertragAbJahr()).thenReturn(2025);
+            Urlaubskonto konto2027 = service.berechne(max, 2027);
+            assertThat(konto2027.jahresanspruch()).isEqualByComparingTo("30");
+            assertThat(konto2027.uebertrag()).isEqualByComparingTo("3");
+        }
+
+        @Test
+        void uebertragStandRechnetNurDasVorjahr() {
+            bucheUrlaub(LocalDate.of(2026, 6, 1), 26, 0);
+            UrlaubUebertrag eintrag = new UrlaubUebertrag();
+            eintrag.setTage(d("1.5"));
+            lenient().when(uebertragRepository.findByMitarbeiterIdAndJahr(1L, 2027)).thenReturn(Optional.of(eintrag));
+
+            UrlaubskontoService.UebertragStand stand = service.uebertragStand(max, 2027);
+
+            assertThat(stand.tage()).isEqualByComparingTo("1.5");
+            assertThat(stand.berechnet()).isEqualByComparingTo("4");
+            assertThat(stand.manuell()).isTrue();
+            assertThat(stand.verfallsdatum()).isEqualTo(VERFALL_2027);
+            verify(abwesenheitRepository, never()).findByMitarbeiterIdAndDatumBetween(1L,
+                    LocalDate.of(2027, 1, 1), LocalDate.of(2027, 12, 31));
+        }
+
+        @Test
+        void vorgeladeneAbwesenheitenWerdenNichtNochmalGelesen() {
+            Abwesenheit tag = new Abwesenheit();
+            tag.setTyp(AbwesenheitsTyp.URLAUB);
+            tag.setDatum(LocalDate.of(2026, 8, 3));
+            tag.setStunden(d("8.00"));
+
+            Urlaubskonto konto = service.berechne(max, 2026, List.of(tag));
+
+            assertThat(konto.genommen()).isEqualByComparingTo("1");
+            verify(abwesenheitRepository, never()).findByMitarbeiterIdAndDatumBetween(any(), any(), any());
+        }
+    }
+
+    /** Anteiliger Anspruch im Eintrittsjahr mit Rundung nach § 5 Abs. 2 BUrlG. */
+    @Nested
+    class AnspruchImEintrittsjahr {
+
+        @Test
+        void vollerAnspruchOhneEintrittOderInSpaeterenJahren() {
+            assertThat(UrlaubskontoService.anspruchImJahr(30, null, 2027)).isEqualByComparingTo("30");
+            assertThat(UrlaubskontoService.anspruchImJahr(30, LocalDate.of(2020, 6, 1), 2027)).isEqualByComparingTo("30");
+            assertThat(UrlaubskontoService.anspruchImJahr(null, null, 2027)).isEqualByComparingTo("30");
+            assertThat(UrlaubskontoService.anspruchImJahr(28, LocalDate.of(2027, 1, 1), 2027)).isEqualByComparingTo("28");
+        }
+
+        @Test
+        void vorDemEintrittsjahrKeinAnspruch() {
+            assertThat(UrlaubskontoService.anspruchImJahr(30, LocalDate.of(2028, 2, 1), 2027)).isEqualByComparingTo("0");
+        }
+
+        @Test
+        void einZwoelftelJeVollemMonatMitRundung() {
+            // ab 0,5 auf ganze Tage auf, kleinere Bruchteile auf einen halben Tag auf
+            assertThat(UrlaubskontoService.anspruchImJahr(30, LocalDate.of(2027, 3, 15), 2027)).isEqualByComparingTo("23");
+            assertThat(UrlaubskontoService.anspruchImJahr(28, LocalDate.of(2027, 11, 1), 2027)).isEqualByComparingTo("5");
+            assertThat(UrlaubskontoService.anspruchImJahr(30, LocalDate.of(2027, 12, 1), 2027)).isEqualByComparingTo("3");
+            assertThat(UrlaubskontoService.anspruchImJahr(20, LocalDate.of(2027, 12, 1), 2027)).isEqualByComparingTo("2");
+            assertThat(UrlaubskontoService.anspruchImJahr(26, LocalDate.of(2027, 12, 1), 2027)).isEqualByComparingTo("2.5");
+            assertThat(UrlaubskontoService.anspruchImJahr(24, LocalDate.of(2027, 7, 1), 2027)).isEqualByComparingTo("12");
+            // Eintritt mitten im Dezember: kein voller Monat
+            assertThat(UrlaubskontoService.anspruchImJahr(30, LocalDate.of(2027, 12, 15), 2027)).isEqualByComparingTo("0");
         }
     }
 }

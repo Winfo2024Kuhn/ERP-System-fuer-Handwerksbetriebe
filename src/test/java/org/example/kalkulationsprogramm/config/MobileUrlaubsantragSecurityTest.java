@@ -126,8 +126,8 @@ class MobileUrlaubsantragSecurityTest {
     @Test
     void eigenerResturlaubIstErreichbar() throws Exception {
         java.math.BigDecimal null0 = java.math.BigDecimal.ZERO;
-        when(service.getUrlaubskonto(7L, 2026)).thenReturn(new org.example.kalkulationsprogramm.service.Urlaubskonto(
-                2026, 30, null0, false, null, null0, null0, null0, null0, null0, new java.math.BigDecimal("12")));
+        when(service.getUrlaubskonto(7L, 2026, null)).thenReturn(new org.example.kalkulationsprogramm.service.Urlaubskonto(
+                2026, new java.math.BigDecimal("30"), null0, false, null, null0, null0, null0, null0, null0, new java.math.BigDecimal("12")));
         mvc.perform(get("/api/urlaub/resturlaub?mitarbeiterId=7&jahr=2026").header("X-Auth-Token", TOKEN))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.verbleibend").value(12));
     }

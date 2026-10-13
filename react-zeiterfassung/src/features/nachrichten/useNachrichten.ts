@@ -54,11 +54,19 @@ export function urlaubsverfallSchluessel(mitarbeiterId: number, w: UrlaubsVerfal
     return `zeiterfassung_nachricht_gelesen:urlaubsverfall:${mitarbeiterId}:${w.verfallsJahr}:${w.resturlaubTage}:${w.verfallsDatum}`
 }
 
-function urlaubsverfallText(w: UrlaubsVerfallWarnung): string {
+/**
+ * „Du hast noch 3,5 Resturlaubstage vom Vorjahr. Nimm sie bis 31.03.2027, danach
+ * verfallen sie (noch 20 Tage)." – verfallsDatum ist der letzte Tag, an dem der
+ * Rest genommen werden kann; am Tag selbst heißt es „bis heute (31.03.2027)".
+ */
+export function urlaubsverfallText(w: UrlaubsVerfallWarnung): string {
     const tage = formatUrlaubstage(w.resturlaubTage)
-    const frist = w.tageVerbleibend > 0 ? ` (in ${w.tageVerbleibend} ${w.tageVerbleibend === 1 ? 'Tag' : 'Tagen'})` : ' (heute)'
-    return `Du hast noch ${tage} ${tage === '1' ? 'Resturlaubstag' : 'Resturlaubstage'} vom Vorjahr. `
-        + `Sie verfallen am ${formatIsoDatumDe(w.verfallsDatum)}${frist}.`
+    const einer = tage === '1'
+    const datum = formatIsoDatumDe(w.verfallsDatum)
+    const bis = w.tageVerbleibend > 0 ? datum : `heute (${datum})`
+    const noch = w.tageVerbleibend > 0 ? ` (noch ${w.tageVerbleibend} ${w.tageVerbleibend === 1 ? 'Tag' : 'Tage'})` : ''
+    return `Du hast noch ${tage} ${einer ? 'Resturlaubstag' : 'Resturlaubstage'} vom Vorjahr. `
+        + `Nimm ${einer ? 'ihn' : 'sie'} bis ${bis}, danach ${einer ? 'verfällt er' : 'verfallen sie'}${noch}.`
 }
 
 async function ladeJson<T>(url: string): Promise<T | null> {

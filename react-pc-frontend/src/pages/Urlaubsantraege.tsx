@@ -295,7 +295,7 @@ export default function Urlaubsantraege() {
                                         const vorjahr = vorjahresHinweis(rest);
                                         return (
                                             <p className="mt-1 text-sm text-slate-600">
-                                                Resturlaub {rest.jahr}: <span className="font-medium text-slate-900">{formatUrlaubstageMitEinheit(rest.verbleibend)}</span>
+                                                Resturlaub zum Urlaubsbeginn: <span className="font-medium text-slate-900">{formatUrlaubstageMitEinheit(rest.verbleibend)}</span>
                                                 {vorjahr && <span className="text-slate-500"> ({vorjahr})</span>}
                                             </p>
                                         );

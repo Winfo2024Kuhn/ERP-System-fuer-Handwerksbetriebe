@@ -143,7 +143,7 @@ it('zeigt den Rest aus dem Vorjahr mit Verfallsdatum getrennt an', async () => {
     })
     renderUrlaubsantrag()
     expect(await screen.findByText('33,5 Urlaubstage übrig')).toBeInTheDocument()
-    expect(screen.getByText('davon 3,5 Tage aus dem Vorjahr, verfallen am 31.03.2026')).toBeInTheDocument()
+    expect(screen.getByText('davon 3,5 Tage aus dem Vorjahr – bis 31.03.2026 nehmen, danach verfallen sie')).toBeInTheDocument()
 })
 
 it('zieht einen offenen Antrag nach Rückfrage über PUT …/storno zurück und zeigt stornierte in Klartext', async () => {

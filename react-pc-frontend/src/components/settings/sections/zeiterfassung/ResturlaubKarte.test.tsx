@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResturlaubKarte } from './ResturlaubKarte';
+import { ConfirmProvider } from '../../../ui/confirm-dialog';
 
 const { toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock('../../../ui/toast', () => ({ useToast: () => toast }));
@@ -36,7 +37,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('ResturlaubKarte', () => {
     it('zeigt den gesetzlichen Standard und den Hinweispflicht-Text', async () => {
-        render(<ResturlaubKarte />);
+        render(<ConfirmProvider><ResturlaubKarte /></ConfirmProvider>);
         expect(await screen.findByText('Gespeichert: Resturlaub verfällt nach dem 31. März des Folgejahres.')).toBeVisible();
         expect(screen.getByRole('radio', { name: /Resturlaub wird übertragen und verfällt/ })).toBeChecked();
         expect(screen.getByText(/Gesetzlich verfällt Resturlaub am 31\. März – aber nur, wenn Sie Ihre Leute vorher/)).toBeVisible();
@@ -45,7 +46,7 @@ describe('ResturlaubKarte', () => {
 
     it('speichert „verfällt nicht" und blendet die Tagauswahl aus', async () => {
         const onSaved = vi.fn();
-        render(<ResturlaubKarte onSaved={onSaved} />);
+        render(<ConfirmProvider><ResturlaubKarte onSaved={onSaved} /></ConfirmProvider>);
         await screen.findByText(/Gespeichert:/);
         expect(screen.getByRole('combobox', { name: 'Verfallsmonat' })).toBeVisible();
 
@@ -61,7 +62,7 @@ describe('ResturlaubKarte', () => {
 
     it('kürzt den Tag beim Wechsel auf einen kürzeren Monat und speichert ihn', async () => {
         const user = userEvent.setup();
-        render(<ResturlaubKarte />);
+        render(<ConfirmProvider><ResturlaubKarte /></ConfirmProvider>);
         await screen.findByText(/Gespeichert:/);
 
         await user.click(screen.getByRole('combobox', { name: 'Verfallsmonat' }));
@@ -75,7 +76,7 @@ describe('ResturlaubKarte', () => {
 
     it('zeigt Serverfehler als Toast und im Feld', async () => {
         putFehler = 'Diesen Tag gibt es nicht. Bitte ein gültiges Datum wählen.';
-        render(<ResturlaubKarte />);
+        render(<ConfirmProvider><ResturlaubKarte /></ConfirmProvider>);
         await screen.findByText(/Gespeichert:/);
 
         fireEvent.click(screen.getByRole('radio', { name: /Resturlaub verfällt nicht/ }));
@@ -87,9 +88,27 @@ describe('ResturlaubKarte', () => {
 
     it('meldet Ladefehler und kann neu laden', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => antwort(500, { message: 'Der Server ist gerade nicht erreichbar.' })));
-        render(<ResturlaubKarte />);
+        render(<ConfirmProvider><ResturlaubKarte /></ConfirmProvider>);
         expect(await screen.findByText('Der Server ist gerade nicht erreichbar.')).toBeVisible();
         expect(toast.error).toHaveBeenCalledWith('Der Server ist gerade nicht erreichbar.');
         expect(screen.getByRole('button', { name: 'Erneut laden' })).toBeVisible();
+    });
+    it('fragt bei einem Tag vor dem 31. März mit Rechtshinweis nach und speichert erst nach Bestätigung', async () => {
+        const user = userEvent.setup();
+        render(<ConfirmProvider><ResturlaubKarte /></ConfirmProvider>);
+        await screen.findByText(/Gespeichert:/);
+
+        await user.click(screen.getByRole('combobox', { name: 'Verfallsmonat' }));
+        await user.click(screen.getByRole('option', { name: 'Januar' }));
+        expect(screen.getByText('Früher als 31. März ist nur erlaubt, wenn euer Tarifvertrag das vorsieht.')).toBeVisible();
+
+        await user.click(screen.getByRole('button', { name: /Regel speichern/ }));
+        expect(await screen.findByText(/Gesetzlich muss Resturlaub bis mindestens 31\. März genommen werden können/)).toBeVisible();
+        await user.click(screen.getByRole('button', { name: 'Abbrechen' }));
+        expect(puts).toHaveLength(0);
+
+        await user.click(screen.getByRole('button', { name: /Regel speichern/ }));
+        await user.click(await screen.findByRole('button', { name: 'Ja, laut Tarifvertrag' }));
+        await waitFor(() => expect(puts).toEqual([{ verfaellt: true, tag: 31, monat: 1 }]));
     });
 });

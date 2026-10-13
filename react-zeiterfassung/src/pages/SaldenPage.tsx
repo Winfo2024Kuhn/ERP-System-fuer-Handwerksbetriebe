@@ -317,7 +317,7 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                             </div>
                             {!zeitkontoStatus?.istGeschaeftsfuehrer && vorjahresHinweis(saldo.urlaub) && (
                                 <p className="px-4 pb-3 -mt-1 text-xs text-slate-500 text-center">
-                                    Frei: {vorjahresHinweis(saldo.urlaub)}
+                                    {formatUrlaubstage(saldo.urlaub.verbleibend)} Tage frei, {vorjahresHinweis(saldo.urlaub)}
                                 </p>
                             )}
                             {/* Krankheit & Fortbildung */}

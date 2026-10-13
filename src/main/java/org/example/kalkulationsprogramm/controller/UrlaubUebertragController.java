@@ -2,8 +2,10 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.math.BigDecimal;
 
+import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.service.UrlaubUebertragService;
 import org.example.kalkulationsprogramm.service.UrlaubUebertragService.Stand;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,8 +33,10 @@ public class UrlaubUebertragController {
     }
 
     @PutMapping("/api/urlaub/uebertrag")
-    public Stand speichern(@RequestBody Eingabe eingabe) {
-        return service.speichern(eingabe.mitarbeiterId(), eingabe.jahr(), eingabe.tage());
+    public Stand speichern(@RequestBody Eingabe eingabe, Authentication authentication) {
+        Long profilId = authentication != null && authentication.getPrincipal() instanceof FrontendUserPrincipal p
+                ? p.getId() : null;
+        return service.speichern(eingabe.mitarbeiterId(), eingabe.jahr(), eingabe.tage(), profilId);
     }
 
     /** tage: {@code null} = wieder automatisch rechnen. */

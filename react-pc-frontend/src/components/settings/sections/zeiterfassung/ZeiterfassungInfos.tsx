@@ -24,6 +24,9 @@ export function ResturlaubInfo() {
                 <ul className="list-disc space-y-0.5 pl-4">
                     <li>Resturlaub, Urlaubsanträge und Kalender rechnen mit dieser Regel. Die Handy-App erinnert zwei Monate vorher an den Verfall.</li>
                     <li>Beim Mitarbeiter können Sie den übernommenen Rest von Hand ändern, z. B. wenn früher auf Papier geplant wurde.</li>
+                    <li>Der Rest wird immer neu ausgerechnet: Wer später Urlaub im alten Jahr nachträgt oder den Jahresurlaub eines Mitarbeiters ändert, ändert damit auch den Übertrag.</li>
+                    <li>Wurde im alten Jahr mehr Urlaub genommen als da war, wird nichts abgezogen – der Übertrag ist dann 0.</li>
+                    <li>Im Eintrittsjahr gibt es ein Zwölftel des Jahresurlaubs je vollem Monat (halbe Tage und mehr werden aufgerundet).</li>
                     <li>Gebuchte Urlaubstage ändern sich nicht. Den ersten Übertrag gibt es ins Jahr nach dem Update.</li>
                 </ul>
             </InfoAbschnitt>

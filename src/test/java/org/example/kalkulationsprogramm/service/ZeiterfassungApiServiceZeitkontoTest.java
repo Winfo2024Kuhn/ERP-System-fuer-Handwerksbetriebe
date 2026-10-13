@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -60,9 +61,9 @@ class ZeiterfassungApiServiceZeitkontoTest {
         mitarbeiter.setEintrittsdatum(LocalDate.of(2020, 10, 1));
         mitarbeiter.setJahresUrlaub(28);
         // Das Urlaubskonto rechnet UrlaubskontoService (eigene Tests); hier nur ein leeres Jahr.
-        lenient().when(urlaubskontoService.berechne(any(Mitarbeiter.class), anyInt())).thenAnswer(inv -> {
+        lenient().when(urlaubskontoService.berechne(any(Mitarbeiter.class), anyInt(), anyList())).thenAnswer(inv -> {
             int jahr = inv.getArgument(1);
-            return new Urlaubskonto(jahr, 28, BigDecimal.ZERO, false, LocalDate.of(jahr, 3, 31), BigDecimal.ZERO,
+            return new Urlaubskonto(jahr, new java.math.BigDecimal("28"), BigDecimal.ZERO, false, LocalDate.of(jahr, 3, 31), BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("28"));
         });
     }

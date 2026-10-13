@@ -47,15 +47,15 @@ class UrlaubUebertragServiceTest {
         lenient().when(mitarbeiterRepository.findById(1L)).thenReturn(Optional.of(max));
     }
 
-    private static Urlaubskonto konto(String uebertrag, boolean manuell, LocalDate verfall) {
-        BigDecimal u = new BigDecimal(uebertrag);
-        return new Urlaubskonto(2027, 30, u, manuell, verfall, BigDecimal.ZERO, u, BigDecimal.ZERO, BigDecimal.ZERO,
-                BigDecimal.ZERO, new BigDecimal("30").add(u));
+    private static UrlaubskontoService.UebertragStand stand(String tage, String berechnet, boolean manuell,
+            LocalDate verfall) {
+        return new UrlaubskontoService.UebertragStand(2027, new BigDecimal(tage), new BigDecimal(berechnet), manuell,
+                verfall);
     }
 
     @Test
     void ladenZeigtBerechnetenWert() {
-        when(urlaubskontoService.berechne(max, 2027)).thenReturn(konto("4", false, LocalDate.of(2027, 3, 31)));
+        when(urlaubskontoService.uebertragStand(max, 2027)).thenReturn(stand("4", "4", false, LocalDate.of(2027, 3, 31)));
 
         UrlaubUebertragService.Stand stand = service.laden(1L, 2027);
 
@@ -68,16 +68,16 @@ class UrlaubUebertragServiceTest {
     @Test
     void speichernLegtHandwertFestUndZeigtDenBerechnetenDaneben() {
         when(uebertragRepository.findByMitarbeiterIdAndJahr(1L, 2027)).thenReturn(Optional.empty());
-        when(urlaubskontoService.berechne(max, 2027)).thenReturn(konto("2.5", true, null));
-        when(urlaubskontoService.automatischerUebertrag(max, 2027)).thenReturn(new BigDecimal("4"));
+        when(urlaubskontoService.uebertragStand(max, 2027)).thenReturn(stand("2.5", "4", true, null));
 
-        UrlaubUebertragService.Stand stand = service.speichern(1L, 2027, new BigDecimal("2.5"));
+        UrlaubUebertragService.Stand stand = service.speichern(1L, 2027, new BigDecimal("2.5"), 3L);
 
         ArgumentCaptor<UrlaubUebertrag> captor = ArgumentCaptor.forClass(UrlaubUebertrag.class);
         verify(uebertragRepository).save(captor.capture());
         assertThat(captor.getValue().getTage()).isEqualByComparingTo("2.5");
         assertThat(captor.getValue().getJahr()).isEqualTo(2027);
         assertThat(captor.getValue().getMitarbeiterId()).isEqualTo(1L);
+        assertThat(captor.getValue().getGeaendertVonId()).isEqualTo(3L);
         assertThat(stand.manuell()).isTrue();
         assertThat(stand.berechnet()).isEqualByComparingTo("4");
         assertThat(stand.verfallsdatum()).isNull();
@@ -87,9 +87,9 @@ class UrlaubUebertragServiceTest {
     void leerSpeichernLoeschtDenHandwert() {
         UrlaubUebertrag eintrag = new UrlaubUebertrag();
         when(uebertragRepository.findByMitarbeiterIdAndJahr(1L, 2027)).thenReturn(Optional.of(eintrag));
-        when(urlaubskontoService.berechne(max, 2027)).thenReturn(konto("4", false, LocalDate.of(2027, 3, 31)));
+        when(urlaubskontoService.uebertragStand(max, 2027)).thenReturn(stand("4", "4", false, LocalDate.of(2027, 3, 31)));
 
-        service.speichern(1L, 2027, null);
+        service.speichern(1L, 2027, null, 3L);
 
         verify(uebertragRepository).delete(eintrag);
         verify(uebertragRepository, never()).save(any());
@@ -97,11 +97,11 @@ class UrlaubUebertragServiceTest {
 
     @Test
     void lehntUngueltigeEingabenAb() {
-        assertThatThrownBy(() -> service.speichern(1L, 2027, new BigDecimal("-1")))
+        assertThatThrownBy(() -> service.speichern(1L, 2027, new BigDecimal("-1"), 3L))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("zwischen 0 und 365");
-        assertThatThrownBy(() -> service.speichern(1L, 2027, new BigDecimal("366")))
+        assertThatThrownBy(() -> service.speichern(1L, 2027, new BigDecimal("366"), 3L))
                 .isInstanceOf(ResponseStatusException.class);
-        assertThatThrownBy(() -> service.speichern(1L, 2027, new BigDecimal("1.3")))
+        assertThatThrownBy(() -> service.speichern(1L, 2027, new BigDecimal("1.3"), 3L))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("halbe Tage");
         assertThatThrownBy(() -> service.laden(1L, 1999)).isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> service.laden(1L, null)).isInstanceOf(ResponseStatusException.class);
@@ -116,7 +116,7 @@ class UrlaubUebertragServiceTest {
     @Test
     void geschaeftsfuehrungBrauchtKeinenUebertrag() {
         max.setIstGeschaeftsfuehrer(true);
-        assertThatThrownBy(() -> service.speichern(1L, 2027, BigDecimal.ONE))
+        assertThatThrownBy(() -> service.speichern(1L, 2027, BigDecimal.ONE, 3L))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("Geschäftsführung");
     }
 }

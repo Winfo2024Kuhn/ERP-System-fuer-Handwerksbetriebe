@@ -43,4 +43,8 @@ public class UrlaubUebertrag {
 
     @Column(name = "geaendert_am", nullable = false)
     private LocalDateTime geaendertAm;
+
+    /** Benutzer-Profil ({@code frontend_user_profile}), das den Wert zuletzt festgelegt hat. */
+    @Column(name = "geaendert_von_id")
+    private Long geaendertVonId;
 }
