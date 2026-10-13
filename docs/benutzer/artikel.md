@@ -22,9 +22,9 @@ Die Liste zeigt 12 Artikel pro Seite mit Bild, „Artikel-Nr.“, „Bezeichnung
 4. Den Einkaufspreis mit „Preis (€)“, „Lieferant (Optional)“ und „Artikelnummer (Extern)“ (die Nummer beim Lieferanten) eintragen. Preis und Lieferanten-Nummer immer zusammen mit dem Lieferanten eintragen – nur dann erscheinen sie in der Liste und beim Artikel.
 5. „Artikel anlegen“.
 
-Name, Einheit, Werkstoff und Kategorie lassen sich danach über „Stammdaten ändern“ (siehe unten) bearbeiten. Artikel lassen sich nicht löschen.
+Name, Einheit, Werkstoff und Kategorie lassen sich danach über „Stammdaten bearbeiten“ (siehe unten) bearbeiten. Artikel lassen sich nicht löschen.
 
-## Stammdaten ändern
+## Stammdaten bearbeiten
 
 Auf der Artikelseite (Klick auf eine Zeile in **Vorlagen & Stammdaten → Artikel**) öffnet „Stammdaten bearbeiten“ die Maske. Dort lassen sich ändern:
 
@@ -38,9 +38,10 @@ Gut zu wissen:
 
 - Speichern ersetzt alle diese Angaben. Was man leert, ist danach leer; nur der Produktname muss bleiben.
 - Artikelnummer und EAN dürfen nur bei einem Artikel vorkommen. Gibt es sie schon, meldet das Programm es mit Klartext. Die EAN wird auf die richtige Prüfziffer kontrolliert (erlaubt sind 8, 12, 13 oder 14 Ziffern).
-- Hat jemand den Artikel inzwischen geändert, wird das Speichern abgelehnt („Bitte die Seite neu laden“), damit keine Änderung unbemerkt überschrieben wird.
+- Die Maske merkt sich den Stand, mit dem sie geladen wurde. Hat jemand den Artikel inzwischen geändert, wird das Speichern abgelehnt („Bitte die Seite neu laden“), damit keine Änderung unbemerkt überschrieben wird.
 - Eine andere Einheit rechnet vorhandene Mengen **nicht** um (Leistungen, Angebote). Die Maske weist darauf hin. Bestehende Angebote und Rechnungen bleiben unverändert.
 - Nicht geändert werden Angebotstexte und Aufschlag („Angebotsfelder“), Lieferanten, Preise und Dokumente. Dafür gibt es weiter die eigenen Bereiche.
+- Die „Beschreibung (intern)“ darf höchstens 255 Zeichen lang sein.
 - Die Suche findet den Artikel nach dem Ändern unter den neuen Angaben, auch über die EAN.
 
 ## Ordner für Artikel anlegen

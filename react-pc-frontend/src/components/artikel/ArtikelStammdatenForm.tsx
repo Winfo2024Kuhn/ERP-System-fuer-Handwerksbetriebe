@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Save, Search, X } from "lucide-react";
+import { Loader2, Save, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { InfoButton } from "../ui/info-button";
@@ -7,6 +7,7 @@ import { Label } from "../ui/label";
 import { Select } from "../ui/select-custom";
 import { useToast } from "../ui/toast";
 import { CategoryTreeModal } from "../CategoryTreeModal";
+import { KategorieAuswahlFeld } from "./KategorieAuswahlFeld";
 import { formatDecimalInput } from "../../lib/numberInput";
 import { validateNumberDrafts } from "../../lib/numberDrafts";
 import type { Artikel } from "../../types";
@@ -88,9 +89,9 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
             .then(d => { if (!abgebrochen) setOptionen(d as Filteroptionen); })
             .catch(() => { if (!abgebrochen) toast.error("Die Auswahllisten für Form, Verfahren und Zustand konnten nicht geladen werden."); });
         fetch("/api/artikel/werkstoffe/details")
-            .then(r => (r.ok ? r.json() : []))
+            .then(r => (r.ok ? r.json() : Promise.reject(new Error("Werkstoffe konnten nicht geladen werden."))))
             .then(d => { if (!abgebrochen) setWerkstoffe(Array.isArray(d) ? d : []); })
-            .catch(() => { /* ohne Liste bleibt der bisherige Werkstoff stehen */ });
+            .catch(() => { if (!abgebrochen) toast.error("Die Liste der Werkstoffe konnte nicht geladen werden. Der bisherige Werkstoff bleibt gewählt."); });
         return () => { abgebrochen = true; };
     }, [toast]);
 
@@ -189,7 +190,7 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
 
                 <div className="space-y-1.5">
                     <Label htmlFor="sd-text">Beschreibung (intern)</Label>
-                    <Input id="sd-text" value={produkttext} onChange={e => setProdukttext(e.target.value)} placeholder="Zusätzliche Infos …" />
+                    <Input id="sd-text" value={produkttext} maxLength={255} onChange={e => setProdukttext(e.target.value)} placeholder="Zusätzliche Infos …" />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -203,17 +204,8 @@ export function ArtikelStammdatenForm({ artikel, onGespeichert, onAbbrechen }: P
                     </div>
                     <div className="space-y-1.5">
                         <Label>Kategorie</Label>
-                        <div className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50"
-                            role="button" tabIndex={0} onClick={() => setZeigeKategorien(true)}
-                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setZeigeKategorien(true); } }}>
-                            <span className="truncate">{kategorieName || "Kategorie wählen"}</span>
-                            {kategorieId != null ? (
-                                <button type="button" aria-label="Kategorie entfernen" className="text-slate-400 hover:text-rose-600"
-                                    onClick={e => { e.stopPropagation(); setKategorieId(null); setKategorieName(""); }}>
-                                    <X className="w-4 h-4" aria-hidden="true" />
-                                </button>
-                            ) : <Search className="w-4 h-4 text-slate-400" aria-hidden="true" />}
-                        </div>
+                        <KategorieAuswahlFeld name={kategorieName} gewaehlt={kategorieId != null} onOeffnen={() => setZeigeKategorien(true)}
+                            onEntfernen={() => { setKategorieId(null); setKategorieName(""); }} />
                         <p className="text-xs text-slate-500">Im Fenster lassen sich neue Kategorien anlegen („Kategorie hinzufügen“).</p>
                     </div>
                 </div>

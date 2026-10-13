@@ -157,4 +157,25 @@ describe('ArtikelStammdatenForm', () => {
         await waitFor(() => expect(onGespeichert).toHaveBeenCalled());
         expect(sendeBody().produktname).toBe('<img src=x onerror=alert(1)> \'; DROP TABLE artikel; --');
     });
+
+    it('meldet per Toast, wenn die Werkstoffliste nicht geladen werden konnte, und behält den bisherigen Werkstoff', async () => {
+        const user = userEvent.setup();
+        fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+            if (url.endsWith('/werkstoffe/details')) return antwort({ message: 'kaputt' }, false, 500);
+            if (url.endsWith('/filteroptionen')) return antwort({ profilform: [], herstellverfahren: [], fertigungszustand: [] });
+            if (init?.method === 'PUT') return antwort({ id: 7 });
+            return antwort({});
+        });
+        zeige();
+
+        expect(await screen.findByText(/Liste der Werkstoffe konnte nicht geladen werden/)).toBeVisible();
+        await user.click(screen.getByRole('button', { name: /^Speichern/ }));
+        await waitFor(() => expect(puts()).toHaveLength(1));
+        expect(sendeBody().werkstoffId).toBe(4);
+    });
+
+    it('begrenzt die interne Beschreibung auf 255 Zeichen wie die Datenbank', async () => {
+        zeige();
+        expect(await screen.findByLabelText('Beschreibung (intern)')).toHaveAttribute('maxlength', '255');
+    });
 });

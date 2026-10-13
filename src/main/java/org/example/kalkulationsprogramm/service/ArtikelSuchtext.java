@@ -13,7 +13,7 @@ import org.example.kalkulationsprogramm.domain.Profilform;
 
 /**
  * Baut den Suchtext eines Artikels: alle Schreibweisen und Synonyme in Kleinbuchstaben, damit zum Beispiel "rundrohr 42.4 x2" und
- * "42,4 rohr" den Artikel finden. Entspricht dem Aufbau aus V348 und wird nach jeder Änderung der Stammdaten neu erzeugt.
+ * "42,4 rohr" den Artikel finden. Entspricht dem Aufbau der vorhandenen Artikel (Seed in der Basis) und wird nach jeder Änderung der Stammdaten neu erzeugt.
  */
 final class ArtikelSuchtext {
 

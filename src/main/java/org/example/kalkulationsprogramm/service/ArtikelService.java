@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
+import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
@@ -44,8 +45,9 @@ public class ArtikelService implements ArtikelServiceContract {
     private static final int MAX_BESCHREIBUNG = 10_000;
     private static final BigDecimal MAX_AUFSCHLAG = new BigDecimal("999.99");
     private static final BigDecimal MAX_MASS = new BigDecimal("100000");
-    private static final String MAX_MASS_TEXT = "100000";
     private static final int MAX_STANDARDLAENGE = 30_000;
+    /** So lang ist die Spalte {@code artikel.produkttext}; längere Texte würden erst in der Datenbank scheitern. */
+    private static final int MAX_PRODUKTTEXT = 255;
 
     /**
      * Tags, die der TiptapEditor fuer die Beschreibung tatsaechlich erzeugt.
@@ -216,7 +218,8 @@ public class ArtikelService implements ArtikelServiceContract {
     public Artikel aktualisiereStammdaten(Long id, ArtikelStammdatenRequest r) {
         Artikel artikel = artikelRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Artikel " + id + " nicht gefunden"));
-        if (r.getVersion() != null && artikel.getVersion() != null && !r.getVersion().equals(artikel.getVersion())) {
+        // Der Stand ist Pflicht, sonst würde ein vollständiges Ersetzen still fremde Änderungen überschreiben
+        if (artikel.getVersion() != null && !artikel.getVersion().equals(r.getVersion())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Der Artikel wurde inzwischen von jemand anderem geändert. Bitte die Seite neu laden und noch einmal versuchen.");
         }
@@ -236,14 +239,13 @@ public class ArtikelService implements ArtikelServiceContract {
 
         artikel.setProduktname(name);
         artikel.setProduktlinie(text(r.getProduktlinie(), 255, "Die Produktlinie"));
-        artikel.setProdukttext(text(r.getProdukttext(), MAX_BESCHREIBUNG, "Der Produkttext"));
+        artikel.setProdukttext(text(r.getProdukttext(), MAX_PRODUKTTEXT, "Die Beschreibung"));
         artikel.setArtikelnummer(nummer);
         artikel.setEan(ean);
         artikel.setVerpackungseinheit(r.getVerpackungseinheit());
         artikel.setPreiseinheit(text(r.getPreiseinheit(), 255, "Die Preiseinheit"));
         artikel.setVerrechnungseinheit(r.getVerrechnungseinheit());
-        artikel.setKategorie(r.getKategorieId() == null ? null : kategorieRepository.findById(Math.toIntExact(r.getKategorieId()))
-                .orElseThrow(() -> ungueltig("Die gewählte Kategorie gibt es nicht.")));
+        artikel.setKategorie(kategorie(r.getKategorieId()));
         artikel.setWerkstoff(r.getWerkstoffId() == null ? null : werkstoffRepository.findById(r.getWerkstoffId())
                 .orElseThrow(() -> ungueltig("Der gewählte Werkstoff gibt es nicht.")));
         artikel.setProfilform(r.getProfilform());
@@ -268,6 +270,18 @@ public class ArtikelService implements ArtikelServiceContract {
         }
         artikel.setSuchtext(ArtikelSuchtext.aufbauen(artikel));
         return artikelRepository.save(artikel);
+    }
+
+    /** Kategorie zur ID; eine unbekannte oder zu große ID ist ein Eingabefehler (400), kein Serverfehler. */
+    private Kategorie kategorie(Long id) {
+        if (id == null) {
+            return null;
+        }
+        if (id < 0 || id > Integer.MAX_VALUE) {
+            throw ungueltig("Die gewählte Kategorie gibt es nicht.");
+        }
+        return kategorieRepository.findById(id.intValue())
+                .orElseThrow(() -> ungueltig("Die gewählte Kategorie gibt es nicht."));
     }
 
     /** Prüft Prüfziffer und Eindeutigkeit einer EAN; {@code eigeneId} ist der Artikel, der sie schon tragen darf. */
@@ -299,7 +313,7 @@ public class ArtikelService implements ArtikelServiceContract {
             return null;
         }
         if (wert.signum() < 0 || wert.compareTo(MAX_MASS) > 0) {
-            throw ungueltig(name + " muss zwischen 0 und " + MAX_MASS_TEXT + " mm liegen.");
+            throw ungueltig(name + " muss zwischen 0 und " + MAX_MASS.toPlainString() + " mm liegen.");
         }
         return wert;
     }

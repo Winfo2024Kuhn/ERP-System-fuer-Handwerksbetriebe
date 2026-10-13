@@ -160,9 +160,43 @@ class ArtikelStammdatenServiceTest {
 
         abgelehnt(() -> service.aktualisiereStammdaten(7L, r), HttpStatus.BAD_REQUEST, "Der Produktname darf höchstens 255");
 
+        // So lang ist die Spalte in der Datenbank: mehr als 255 Zeichen müssen vorher mit Klartext abgelehnt werden
         r.setProduktname("ok");
-        r.setProdukttext("y".repeat(10_001));
-        abgelehnt(() -> service.aktualisiereStammdaten(7L, r), HttpStatus.BAD_REQUEST, "Der Produkttext");
+        r.setProdukttext("y".repeat(256));
+        abgelehnt(() -> service.aktualisiereStammdaten(7L, r), HttpStatus.BAD_REQUEST, "Die Beschreibung darf höchstens 255");
+    }
+
+    @Test
+    void produkttextMitGenau255ZeichenIstErlaubt() {
+        gefunden();
+        speichernAktiv();
+        ArtikelStammdatenRequest r = anfrage();
+        r.setProdukttext("y".repeat(255));
+
+        assertThat(service.aktualisiereStammdaten(7L, r).getProdukttext()).hasSize(255);
+    }
+
+    @Test
+    void ohneStandWirdAbgelehntDamitNichtStillUeberschriebenWird() {
+        gefunden();
+        ArtikelStammdatenRequest r = anfrage();
+        r.setVersion(null);
+
+        abgelehnt(() -> service.aktualisiereStammdaten(7L, r), HttpStatus.CONFLICT, "neu laden");
+        verify(artikelRepository, never()).save(any());
+    }
+
+    @Test
+    void zuGrosseOderNegativeKategorieIdGibt400StattServerfehler() {
+        gefunden();
+        ArtikelStammdatenRequest r = anfrage();
+        r.setKategorieId(Integer.MAX_VALUE + 1L);
+        abgelehnt(() -> service.aktualisiereStammdaten(7L, r), HttpStatus.BAD_REQUEST, "Kategorie");
+
+        r.setKategorieId(-1L);
+        abgelehnt(() -> service.aktualisiereStammdaten(7L, r), HttpStatus.BAD_REQUEST, "Kategorie");
+        r.setKategorieId(Long.MAX_VALUE);
+        abgelehnt(() -> service.aktualisiereStammdaten(7L, r), HttpStatus.BAD_REQUEST, "Kategorie");
     }
 
     @Test
