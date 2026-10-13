@@ -61,7 +61,7 @@ In **Zeiterfassung → Kalender** oben „Korrekturen“ (oder Rechtsklick → �
 3. „Datum“, Anzahl und Vorzeichen (+ oder −).
 4. „Begründung“ eintragen (Pflicht) und „Speichern“.
 
-Stunden-Korrekturen zählen im Monat des Datums, Urlaubs-Korrekturen im Jahr des Datums – so überträgt man z. B. Resturlaub aus dem Vorjahr. Korrekturen werden nicht gelöscht, sondern über den Papierkorb mit Grund storniert.
+Stunden-Korrekturen zählen im Monat des Datums, Urlaubs-Korrekturen im Jahr des Datums. Den Rest aus dem Vorjahr überträgt das Programm selbst; einen abweichenden Wert trägt man beim Mitarbeiter ein (siehe [Arbeitszeit, Urlaub & Feiertage](arbeitszeit-urlaub-feiertage.md)). Korrekturen werden nicht gelöscht, sondern über den Papierkorb mit Grund storniert.
 
 ## Abgeschlossene Monate
 

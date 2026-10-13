@@ -232,12 +232,29 @@ class UrlaubsantragControllerTest {
 
     @Test
     void resturlaub_liefertHalbeTage() throws Exception {
-        when(service.getResturlaub(1L, 2026)).thenReturn(new BigDecimal("12.5"));
+        when(service.getUrlaubskonto(1L, 2026)).thenReturn(new org.example.kalkulationsprogramm.service.Urlaubskonto(
+                2026, 30, new BigDecimal("3.5"), false, java.time.LocalDate.of(2026, 3, 31), BigDecimal.ZERO,
+                new BigDecimal("2.5"), new BigDecimal("21"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("12.5")));
 
         mockMvc.perform(get("/api/urlaub/resturlaub").param("mitarbeiterId", "1").param("jahr", "2026"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.verbleibend").value(12.5))
-                .andExpect(jsonPath("$.jahr").value(2026));
+                .andExpect(jsonPath("$.jahr").value(2026))
+                .andExpect(jsonPath("$.uebertragVorjahr").value(3.5))
+                .andExpect(jsonPath("$.ausVorjahrOffen").value(2.5))
+                .andExpect(jsonPath("$.verfallsdatum").value("2026-03-31"));
+    }
+
+    @Test
+    void resturlaub_ohneVerfallLiefertLeeresVerfallsdatum() throws Exception {
+        when(service.getUrlaubskonto(1L, 2026)).thenReturn(new org.example.kalkulationsprogramm.service.Urlaubskonto(
+                2026, 30, new BigDecimal("4"), true, null, BigDecimal.ZERO, new BigDecimal("4"), BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("34")));
+
+        mockMvc.perform(get("/api/urlaub/resturlaub").param("mitarbeiterId", "1").param("jahr", "2026"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verbleibend").value(34))
+                .andExpect(jsonPath("$.verfallsdatum").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test

@@ -10,6 +10,27 @@ import { InfoAbschnitt, InfoButton } from '../../../ui/info-button';
 const HINTERGRUND = 'Was passiert im Hintergrund?';
 const WIRKUNG = 'Was bewirkt das?';
 
+export function ResturlaubInfo() {
+    return (
+        <InfoButton titel="Resturlaub ins neue Jahr">
+            <InfoAbschnitt titel={HINTERGRUND}>
+                <p>
+                    Zum Jahreswechsel rechnet das Programm für jeden Mitarbeiter aus, wie viel Urlaub im alten Jahr
+                    übrig ist, und nimmt den Rest ins neue Jahr mit. Urlaub im neuen Jahr zählt zuerst gegen diesen
+                    Rest. Was bis zum Verfallstag nicht genommen ist, fällt danach weg.
+                </p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel={WIRKUNG}>
+                <ul className="list-disc space-y-0.5 pl-4">
+                    <li>Resturlaub, Urlaubsanträge und Kalender rechnen mit dieser Regel. Die Handy-App erinnert zwei Monate vorher an den Verfall.</li>
+                    <li>Beim Mitarbeiter können Sie den übernommenen Rest von Hand ändern, z. B. wenn früher auf Papier geplant wurde.</li>
+                    <li>Gebuchte Urlaubstage ändern sich nicht. Den ersten Übertrag gibt es ins Jahr nach dem Update.</li>
+                </ul>
+            </InfoAbschnitt>
+        </InfoButton>
+    );
+}
+
 export function StartDerZeiterfassungInfo() {
     return (
         <InfoButton titel="Start der Zeiterfassung">

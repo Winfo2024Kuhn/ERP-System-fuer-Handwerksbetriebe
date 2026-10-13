@@ -24,6 +24,7 @@ import { useToast } from '../components/ui/toast';
 import { useAuth } from '../auth/AuthContext';
 import { useZeiterfassungSichtbarkeit } from '../features/zeiterfassung/useZeiterfassungSichtbarkeit';
 import { StundenlohnHistorieList } from '../components/mitarbeiter/StundenlohnHistorieList';
+import { ResturlaubUebertrag } from '../components/mitarbeiter/ResturlaubUebertrag';
 import { BeschaeftigungsWizard, type Beschaeftigungsart } from '../components/mitarbeiter/BeschaeftigungsWizard';
 import type { Arbeitszeit, Zeitkontenmodell, ZeitkontoStatus, ZeitkontoWechsel, ZeitkontoWechselErgebnis } from '../types/zeitkonto';
 
@@ -826,6 +827,12 @@ export default function MitarbeiterEditor() {
                             </p>
                         </div>
                     </div>
+                    {/* Urlaubsdaten sind Zeiterfassung: nur mit diesem Recht; die Geschäftsführung führt kein Urlaubskonto. */}
+                    {selectedMitarbeiter && darfZeiterfassung === true && !selectedMitarbeiter.istGeschaeftsfuehrer && (
+                        <div className="pl-7">
+                            <ResturlaubUebertrag key={selectedMitarbeiter.id} mitarbeiterId={selectedMitarbeiter.id} />
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -1827,7 +1834,9 @@ export default function MitarbeiterEditor() {
                 <DetailLayout
                     header={<DetailHeader />}
                     mainContent={<MainContent />}
-                    sideContent={<SideInfo />}
+                    // Als Aufruf statt <SideInfo />: sonst baut React die Seitenleiste bei jedem
+                    // Neuzeichnen neu auf, und der Resturlaub darin lädt jedes Mal neu.
+                    sideContent={SideInfo()}
                 />
             )}
         </PageLayout>

@@ -23,6 +23,7 @@ interface Mitschrift {
     startPuts: { eingefuehrtAm: string | null }[];
     datevPuts: Konfiguration[];
     datevGets: number;
+    verfallPuts: { verfaellt: boolean; tag: number; monat: number }[];
 }
 
 function json(route: Route, body: unknown, status = 200) {
@@ -30,9 +31,10 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 async function stubbe(page: Page, optionen: { start: string | null; config: Konfiguration; konfliktBeimErstenSpeichern?: boolean }): Promise<Mitschrift> {
-    const mitschrift: Mitschrift = { startPuts: [], datevPuts: [], datevGets: 0 };
+    const mitschrift: Mitschrift = { startPuts: [], datevPuts: [], datevGets: 0, verfallPuts: [] };
     let start = optionen.start;
     let config = optionen.config;
+    let verfall = { verfaellt: true, tag: 31, monat: 3 };
     await page.route('**/api/**', async (route) => {
         const anfrage = route.request();
         const pfad = new URL(anfrage.url()).pathname;
@@ -41,6 +43,13 @@ async function stubbe(page: Page, optionen: { start: string | null; config: Konf
             return json(route, { id: 1, displayName: 'Max Mustermann', username: 'max', active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false });
         }
         if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
+        if (pfad === '/api/settings/urlaubsverfall') {
+            if (schreibt) {
+                verfall = anfrage.postDataJSON() as typeof verfall;
+                mitschrift.verfallPuts.push(verfall);
+            }
+            return json(route, verfall);
+        }
         if (pfad === '/api/settings/zeiterfassung') {
             if (schreibt) {
                 const body = anfrage.postDataJSON() as { eingefuehrtAm: string | null };
@@ -125,6 +134,46 @@ test('Start der Zeiterfassung: Datum wählen, speichern und wieder entfernen', a
     await speichern.click();
     await expect(page.getByText('Datum entfernt – es gibt keine Grenze mehr.')).toBeVisible();
     expect(mitschrift.startPuts).toEqual([{ eingefuehrtAm: '2025-03-01' }, { eingefuehrtAm: null }]);
+});
+
+test('Resturlaub: gesetzlicher Standard, eigener Verfallstag und „verfällt nicht“', async ({ page }, info) => {
+    const mitschrift = await stubbe(page, { start: null, config: LEER });
+    await page.goto('/einstellungen#zeiterfassung');
+
+    const ueberschrift = page.getByRole('heading', { name: 'Resturlaub ins neue Jahr' });
+    await ueberschrift.evaluate(el => el.scrollIntoView({ block: 'start' }));
+    await expect(page.getByText('Gespeichert: Resturlaub verfällt nach dem 31. März des Folgejahres.')).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Resturlaub wird übertragen und verfällt/ })).toBeChecked();
+    await expect(page.getByText(/Gesetzlich verfällt Resturlaub am 31\. März – aber nur, wenn Sie Ihre Leute vorher/)).toBeVisible();
+    const speichern = page.getByRole('button', { name: /Regel speichern/ });
+    await expect(speichern).toBeDisabled();
+    await designPruefung(page, info, 'einstellungen-resturlaub-standard', { primaerAktion: page.getByRole('combobox', { name: 'Verfallsmonat' }) });
+
+    // Info-Knopf an der Überschrift erklärt Übertrag und Verfall.
+    await page.getByRole('button', { name: 'Mehr zu: Resturlaub ins neue Jahr' }).click();
+    await expect(page.getByRole('dialog', { name: 'Resturlaub ins neue Jahr' })).toContainText('zuerst gegen diesen Rest');
+    await designPruefung(page, info, 'einstellungen-resturlaub-info');
+    await page.keyboard.press('Escape');
+
+    // Eigener Tag: 30. Juni.
+    await page.getByRole('combobox', { name: 'Verfallsmonat' }).click();
+    await designPruefung(page, info, 'einstellungen-resturlaub-monat');
+    await page.getByRole('option', { name: 'Juni', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Verfallstag' })).toHaveText('30.');
+    await speichern.click();
+    await expect(page.getByText('Regel für Resturlaub gespeichert.')).toBeVisible();
+    await expect(page.getByText('Gespeichert: Resturlaub verfällt nach dem 30. Juni des Folgejahres.')).toBeVisible();
+
+    // „Verfällt nicht“ blendet die Tagauswahl aus.
+    await page.getByRole('radio', { name: /Resturlaub verfällt nicht/ }).check();
+    await expect(page.getByRole('combobox', { name: 'Verfallsmonat' })).toHaveCount(0);
+    await speichern.click();
+    await expect(page.getByText('Gespeichert: Resturlaub verfällt nicht.')).toBeVisible();
+    expect(mitschrift.verfallPuts).toEqual([
+        { verfaellt: true, tag: 30, monat: 6 },
+        { verfaellt: false, tag: 30, monat: 6 },
+    ]);
+    await designPruefung(page, info, 'einstellungen-resturlaub-verfaellt-nicht');
 });
 
 test('DATEV einrichten: Nummern, Soll/Ist für Betrieb und Mitarbeiter, Lohnarten und Versionskonflikt', async ({ page }, info) => {

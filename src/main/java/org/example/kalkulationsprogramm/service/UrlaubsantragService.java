@@ -33,10 +33,9 @@ public class UrlaubsantragService {
     private final FeiertagService feiertagService;
     private final ZeitkontoService zeitkontoService;
     private final MonatsSaldoService monatsSaldoService;
-    private final ZeitkontoKorrekturService zeitkontoKorrekturService;
     private final TagesSollService tagesSollService;
     private final LangzeitkrankmeldungService langzeitkrankmeldungService;
-    private final UrlaubstageRechner urlaubstageRechner;
+    private final UrlaubskontoService urlaubskontoService;
     private final WebPushService webPushService;
 
     private static final DateTimeFormatter TAG_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
@@ -54,8 +53,9 @@ public class UrlaubsantragService {
 
         // Urlaubskontingent prüfen (nur für URLAUB-Typ bei normalen Mitarbeitern)
         if (!istGf && typ == Urlaubsantrag.Typ.URLAUB) {
-            int jahr = von.getYear();
-            BigDecimal verbleibend = getResturlaub(mitarbeiterId, jahr);
+            // Stichtag = erster Urlaubstag: Liegt er nach dem Verfall, zählt der Vorjahresrest nicht mehr.
+            BigDecimal verbleibend = urlaubskontoService.berechne(mitarbeiter, von.getYear(),
+                    von.isAfter(LocalDate.now()) ? von : LocalDate.now()).verbleibend();
             long beantragteTage = zaehleArbeitstage(von, bis);
             if (BigDecimal.valueOf(beantragteTage).compareTo(verbleibend) > 0) {
                 throw new IllegalStateException(
@@ -450,29 +450,20 @@ public class UrlaubsantragService {
     }
 
     /**
-     * Berechnet die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr.
-     * Formel: Jahresanspruch - genommen - geplant + Korrekturen
+     * Verbleibende Urlaubstage eines Mitarbeiters für ein Jahr (heutiger Stand,
+     * inklusive Resturlaub aus dem Vorjahr). Rechnung: {@link UrlaubskontoService}.
      */
     @Transactional(readOnly = true)
     public BigDecimal getResturlaub(Long mitarbeiterId, int jahr) {
+        return getUrlaubskonto(mitarbeiterId, jahr).verbleibend();
+    }
+
+    /** Das ganze Urlaubskonto eines Jahres – mit Übertrag und Verfall für die Anzeige. */
+    @Transactional(readOnly = true)
+    public Urlaubskonto getUrlaubskonto(Long mitarbeiterId, int jahr) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
-
-        int jahresUrlaub = mitarbeiter.getJahresUrlaub() != null ? mitarbeiter.getJahresUrlaub() : 30;
-
-        LocalDate jahresanfang = LocalDate.of(jahr, 1, 1);
-        LocalDate jahresende = LocalDate.of(jahr, 12, 31);
-
-        List<Abwesenheit> abwesenheiten = abwesenheitRepository
-                .findByMitarbeiterIdAndDatumBetween(mitarbeiterId, jahresanfang, jahresende);
-
-        // Halbe Urlaubstage zählen 0,5 – dafür braucht der Rechner das Tagessoll.
-        BigDecimal genommen = urlaubstageRechner.urlaubstage(abwesenheiten,
-                UrlaubstageRechner.sollLader(mitarbeiter, tagesSollService));
-
-        BigDecimal korrektur = zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(mitarbeiterId, jahr);
-
-        return urlaubstageRechner.resturlaub(jahresUrlaub, genommen, BigDecimal.ZERO, korrektur);
+        return urlaubskontoService.berechne(mitarbeiter, jahr);
     }
 
     /**

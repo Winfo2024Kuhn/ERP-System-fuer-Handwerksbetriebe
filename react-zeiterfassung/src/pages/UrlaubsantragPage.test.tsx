@@ -129,6 +129,21 @@ it('zeigt halbe Resturlaubstage mit Komma', async () => {
     mockUebersicht()
     renderUrlaubsantrag()
     expect(await screen.findByText('12,5 Urlaubstage übrig')).toBeInTheDocument()
+    expect(screen.queryByText(/aus dem Vorjahr/)).toBeNull()
+})
+
+it('zeigt den Rest aus dem Vorjahr mit Verfallsdatum getrennt an', async () => {
+    mockUebersicht()
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('resturlaub')) {
+            return new Response(JSON.stringify({ verbleibend: 33.5, jahr: 2026, ausVorjahrOffen: 3.5, verfallen: 0, verfallsdatum: '2026-03-31' }), { status: 200 })
+        }
+        return new Response(JSON.stringify([]), { status: 200 })
+    })
+    renderUrlaubsantrag()
+    expect(await screen.findByText('33,5 Urlaubstage übrig')).toBeInTheDocument()
+    expect(screen.getByText('davon 3,5 Tage aus dem Vorjahr, verfallen am 31.03.2026')).toBeInTheDocument()
 })
 
 it('zieht einen offenen Antrag nach Rückfrage über PUT …/storno zurück und zeigt stornierte in Klartext', async () => {

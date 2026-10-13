@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -46,7 +45,7 @@ class ZeiterfassungApiServiceZeitkontoTest {
     @Mock private UrlaubsverfallService urlaubsverfallService;
     @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
     @Mock private MonatsSaldoService monatsSaldoService;
-    @Spy private UrlaubstageRechner urlaubstageRechner = new UrlaubstageRechner();
+    @Mock private UrlaubskontoService urlaubskontoService;
     @InjectMocks private ZeiterfassungApiService service;
 
     private static final String TOKEN = "test-token-max-mustermann";
@@ -60,6 +59,12 @@ class ZeiterfassungApiServiceZeitkontoTest {
         mitarbeiter.setNachname("Mustermann");
         mitarbeiter.setEintrittsdatum(LocalDate.of(2020, 10, 1));
         mitarbeiter.setJahresUrlaub(28);
+        // Das Urlaubskonto rechnet UrlaubskontoService (eigene Tests); hier nur ein leeres Jahr.
+        lenient().when(urlaubskontoService.berechne(any(Mitarbeiter.class), anyInt())).thenAnswer(inv -> {
+            int jahr = inv.getArgument(1);
+            return new Urlaubskonto(jahr, 28, BigDecimal.ZERO, false, LocalDate.of(jahr, 3, 31), BigDecimal.ZERO,
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("28"));
+        });
     }
 
     private void leseZugang() {

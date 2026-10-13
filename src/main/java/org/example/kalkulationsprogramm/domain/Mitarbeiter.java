@@ -95,13 +95,6 @@ public class Mitarbeiter {
     private Integer jahresUrlaub;
 
     /**
-     * Resturlaub aus dem Vorjahr (in Tagen).
-     * Verfällt am 1. Februar des aktuellen Jahres.
-     */
-    @Column
-    private Integer resturlaubVorjahr;
-
-    /**
      * Manuelle Urlaubskorrektur (in Tagen).
      * Positiv = zusätzliche Tage, Negativ = weniger Tage.
      */

@@ -9,7 +9,8 @@ import { useConfirm } from '../components/ui/confirm-dialog';
 import { useToast } from '../components/ui/toast';
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 import { leseFehlermeldung } from '../lib/apiFehler';
-import { formatUrlaubstage } from '../lib/urlaubstage';
+import { formatUrlaubstage, formatUrlaubstageMitEinheit, vorjahresHinweis } from '../lib/urlaubstage';
+import { resturlaubSchluessel, useResturlaubJeAntrag } from '../hooks/useResturlaubJeAntrag';
 import { stornoRueckfrage, type AntragTyp } from '../lib/antragStorno';
 import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
 
@@ -66,6 +67,8 @@ export default function Urlaubsantraege() {
     // Warnung fürs Büro, keine Sperre -- siehe der Effect weiter unten,
     // der diesen State über /api/langzeitkrankmeldungen/urlaubs-hinweise füllt.
     const [hinweise, setHinweise] = useState<Record<number, string[]>>({});
+    // Resturlaub (mit Vorjahresrest) je Mitarbeiter und Jahr – nur für offene Urlaubsanträge.
+    const resturlaub = useResturlaubJeAntrag(antraege);
 
     // Deep-link: read status + optionalen fokusId aus URL.
     // fokusId wird nach dem Scrollen wieder aus der URL entfernt, damit die Hervorhebung
@@ -287,6 +290,16 @@ export default function Urlaubsantraege() {
                                             </span>
                                         )}
                                     </div>
+                                    {antrag.status === 'OFFEN' && antrag.typ === 'URLAUB' && resturlaub[resturlaubSchluessel(antrag)] && (() => {
+                                        const rest = resturlaub[resturlaubSchluessel(antrag)];
+                                        const vorjahr = vorjahresHinweis(rest);
+                                        return (
+                                            <p className="mt-1 text-sm text-slate-600">
+                                                Resturlaub {rest.jahr}: <span className="font-medium text-slate-900">{formatUrlaubstageMitEinheit(rest.verbleibend)}</span>
+                                                {vorjahr && <span className="text-slate-500"> ({vorjahr})</span>}
+                                            </p>
+                                        );
+                                    })()}
                                     {antrag.bemerkung && (
                                         <div className="mt-2 p-2 bg-slate-50 rounded text-sm text-slate-600 flex gap-2">
                                             <FileText className="w-4 h-4 mt-0.5 text-slate-400" />

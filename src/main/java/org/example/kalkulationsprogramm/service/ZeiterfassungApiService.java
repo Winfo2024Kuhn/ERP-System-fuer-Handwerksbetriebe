@@ -79,7 +79,7 @@ public class ZeiterfassungApiService {
     private final UrlaubsverfallService urlaubsverfallService;
     private final ZeitkontoKorrekturService zeitkontoKorrekturService;
     private final MonatsSaldoService monatsSaldoService;
-    private final UrlaubstageRechner urlaubstageRechner;
+    private final UrlaubskontoService urlaubskontoService;
 
     // ==================== Daten abrufen ====================
 
@@ -1013,12 +1013,7 @@ public class ZeiterfassungApiService {
         int currentYear = (jahr != null) ? jahr : java.time.LocalDate.now().getYear();
         int currentMonth = (monat != null) ? monat : java.time.LocalDate.now().getMonthValue();
 
-        // ========== 1. URLAUB (aus Abwesenheit-Tabelle) ==========
-        Integer jahresUrlaub = mitarbeiter.getJahresUrlaub();
-        if (jahresUrlaub == null)
-            jahresUrlaub = 30; // Default: 30 Tage
-
-        // Zähle Abwesenheiten aus der Abwesenheit-Tabelle
+        // ========== 1. URLAUB (Urlaubskonto inkl. Resturlaub aus dem Vorjahr) ==========
         java.time.LocalDate heute = java.time.LocalDate.now();
         java.time.LocalDate jahresanfang = java.time.LocalDate.of(currentYear, 1, 1);
         java.time.LocalDate jahresende = java.time.LocalDate.of(currentYear, 12, 31);
@@ -1028,22 +1023,9 @@ public class ZeiterfassungApiService {
 
         boolean istGf = Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer());
 
-        // Halbe Urlaubstage zählen 0,5 (Issue #269, Punkt 5). Das Tagessoll wird
-        // einmal für den ganzen Urlaubszeitraum geladen und für genommen und
-        // geplant gemeinsam genutzt (Geschäftsführung: kein Soll, ganze Tage).
-        List<Abwesenheit> urlaubImJahr = abwesenheitenImJahr.stream()
-                .filter(a -> a.getTyp() == AbwesenheitsTyp.URLAUB)
-                .toList();
-        Map<LocalDate, BigDecimal> sollJeTag = urlaubstageRechner.sollFuerUrlaub(urlaubImJahr,
-                UrlaubstageRechner.sollLader(mitarbeiter, tagesSollService));
-
-        BigDecimal urlaubstagGenommen = urlaubstageRechner.urlaubstage(urlaubImJahr.stream()
-                .filter(a -> a.getDatum().isBefore(heute))
-                .toList(), sollJeTag);
-
-        BigDecimal urlaubstagGeplant = urlaubstageRechner.urlaubstage(urlaubImJahr.stream()
-                .filter(a -> !a.getDatum().isBefore(heute))
-                .toList(), sollJeTag);
+        // Gleiche Rechnung wie bei der Antragsprüfung (UrlaubskontoService): halbe Tage
+        // zählen 0,5, der Vorjahresrest wird zuerst verbraucht und verfällt nach dem Stichtag.
+        Urlaubskonto konto = urlaubskontoService.berechne(mitarbeiter, currentYear);
 
         long krankheitsTage = abwesenheitenImJahr.stream()
                 .filter(a -> a.getTyp() == AbwesenheitsTyp.KRANKHEIT)
@@ -1053,24 +1035,20 @@ public class ZeiterfassungApiService {
                 .filter(a -> a.getTyp() == AbwesenheitsTyp.FORTBILDUNG)
                 .count();
 
-        // Manuelle Urlaubskorrekturen (als Tage, gespeichert im Feld 'stunden') – 0,5 bleibt 0,5
-        BigDecimal manuellKorrekturTage = urlaubstageRechner.korrekturTage(
-                zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(mitarbeiter.getId(), currentYear));
-
-        // verbleibend = Anspruch - Genommen - Geplant + Korrekturen
-        BigDecimal urlaubstagVerbleibend = urlaubstageRechner.resturlaub(jahresUrlaub, urlaubstagGenommen,
-                urlaubstagGeplant, manuellKorrekturTage);
-
         Map<String, Object> urlaub = new LinkedHashMap<>();
         if (!istGf) {
-            urlaub.put("jahresanspruch", jahresUrlaub);
-            urlaub.put("genommen", urlaubstagGenommen);
-            urlaub.put("geplant", urlaubstagGeplant);
-            urlaub.put("korrektur", manuellKorrekturTage);
-            urlaub.put("verbleibend", urlaubstagVerbleibend);
+            urlaub.put("jahresanspruch", konto.jahresanspruch());
+            urlaub.put("genommen", konto.genommen());
+            urlaub.put("geplant", konto.geplant());
+            urlaub.put("korrektur", konto.korrektur());
+            urlaub.put("verbleibend", konto.verbleibend());
+            urlaub.put("uebertragVorjahr", konto.uebertrag());
+            urlaub.put("ausVorjahrOffen", konto.ausVorjahrOffen());
+            urlaub.put("verfallen", konto.verfallen());
+            urlaub.put("verfallsdatum", konto.verfallsdatum() != null ? konto.verfallsdatum().toString() : null);
         } else {
-            urlaub.put("genommen", urlaubstagGenommen);
-            urlaub.put("geplant", urlaubstagGeplant);
+            urlaub.put("genommen", konto.genommen());
+            urlaub.put("geplant", konto.geplant());
         }
         urlaub.put("krankheitsTage", krankheitsTage);
         urlaub.put("fortbildungsTage", fortbildungsTage);

@@ -73,7 +73,13 @@ Unter **Zeiterfassung → Urlaubsanträge** hat jeder offene und genehmigte Antr
 
 ## Resturlaub
 
-Resturlaub = Jahresurlaub minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Ein halber Urlaubstag zählt als 0,5 Tage, auch Korrekturen dürfen halbe Tage sein. Er steht in **Zeiterfassung → Kalender** („Resturlaub“) und in der Handy-App unter „Saldenauswertung“. Resturlaub aus dem Vorjahr überträgt das Programm nicht von selbst; dafür unter **Zeiterfassung → Kalender** eine Korrektur „Urlaubstage“ anlegen (siehe [Zeiterfassung](zeiterfassung.md)).
+Resturlaub = Jahresurlaub plus Rest aus dem Vorjahr minus verfallene Tage minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Ein halber Urlaubstag zählt als 0,5 Tage, auch Korrekturen dürfen halbe Tage sein. Er steht in **Zeiterfassung → Kalender** („Resturlaub“), bei offenen Anträgen unter **Zeiterfassung → Urlaubsanträge** und in der Handy-App unter „Saldenauswertung“ und im Urlaubsantrag.
+
+### Rest aus dem Vorjahr
+
+Was am Jahresende übrig ist, nimmt das Programm von selbst ins neue Jahr mit (erstmals ins Jahr nach dem Update). Urlaub im neuen Jahr zählt zuerst gegen diesen Rest. Wie lange er gilt, steht unter **Einstellungen → Zeiterfassung → Resturlaub ins neue Jahr**: Voreingestellt ist die gesetzliche Regel, nach dem 31. März verfällt der nicht genommene Rest. Der Betrieb kann einen anderen Tag wählen oder „Resturlaub verfällt nicht“ einstellen. Gesetzlich verfällt Resturlaub nur, wenn die Mitarbeiter vorher rechtzeitig darauf hingewiesen wurden; die Handy-App erinnert zwei Monate vor dem Verfallstag unter der Glocke.
+
+Stimmt der ausgerechnete Rest nicht (z. B. weil früher auf Papier geplant wurde), unter **Mitarbeiter → Konditionen → Resturlaub aus dem Vorjahr** den richtigen Wert eintragen. „Wieder ausrechnen lassen“ nimmt den Handwert zurück.
 
 ## Lange Krankheit
 

@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { DecimalInput } from '../components/ui/decimal-input';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { leseFehlermeldung } from '../lib/apiFehler';
-import { formatUrlaubstage } from '../lib/urlaubstage';
+import { formatUrlaubstage, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubstage';
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 import { useMonatsabschlussBerechtigung } from '../features/monatsabschluss/useMonatsabschlussBerechtigung';
 
@@ -217,7 +217,9 @@ export default function ZeiterfassungKalender() {
             genommen: number;
             geplant: number;
             verbleibend: number;
-        };
+            /** Resturlaub aus dem Vorjahr, der in dieses Jahr übertragen wurde. */
+            uebertragVorjahr?: number;
+        } & VorjahresRest;
         gesamt: {
             istStunden: number;
             sollStunden: number;
@@ -789,18 +791,25 @@ export default function ZeiterfassungKalender() {
                                                 <InfoButton titel="Resturlaub">
                                                     <InfoAbschnitt titel="Was steckt dahinter?">
                                                         <p>Urlaub vor heute zählt als genommen, Urlaub ab heute als geplant. Halbe Urlaubstage zählen als 0,5 Tage. Korrekturen aus den Zeitkonto-Korrekturen werden dazugerechnet.</p>
+                                                        <p className="mt-1">Urlaub, der im Vorjahr übrig war, wird mitgenommen und zuerst verbraucht. Was bis zum Verfallstag (Einstellungen → Zeiterfassung) nicht genommen ist, fällt weg.</p>
                                                     </InfoAbschnitt>
                                                     <InfoAbschnitt titel="Was bewirkt das?">
-                                                        <p>Der Resturlaub ist Jahresanspruch minus genommen minus geplant plus Korrekturen – genau diese Zahl prüft das Programm, wenn ein neuer Urlaubsantrag kommt.</p>
+                                                        <p>Der Resturlaub ist Jahresanspruch plus Übertrag aus dem Vorjahr minus verfallene, genommene und geplante Tage plus Korrekturen – genau diese Zahl prüft das Programm, wenn ein neuer Urlaubsantrag kommt. Den Übertrag ändern Sie beim Mitarbeiter.</p>
                                                     </InfoAbschnitt>
                                                 </InfoButton>
                                             </p>
                                             <p className="text-2xl font-bold text-green-700 tabular-nums">
                                                 {formatUrlaubstage(jahresSaldo.urlaub.verbleibend)} Tage
                                             </p>
+                                            {vorjahresHinweis(jahresSaldo.urlaub) && (
+                                                <p className="text-xs text-green-700">{vorjahresHinweis(jahresSaldo.urlaub)}</p>
+                                            )}
                                         </div>
                                         <div className="text-right text-xs text-green-600 tabular-nums">
                                             <p>Anspruch: {formatUrlaubstage(jahresSaldo.urlaub.jahresanspruch)}</p>
+                                            {Number(jahresSaldo.urlaub.uebertragVorjahr) > 0 && (
+                                                <p>Aus {jahr - 1}: {formatUrlaubstage(jahresSaldo.urlaub.uebertragVorjahr)}</p>
+                                            )}
                                             <p>Genommen: {formatUrlaubstage(jahresSaldo.urlaub.genommen)}</p>
                                             {jahresSaldo.urlaub.geplant > 0 && (
                                                 <p>Geplant: {formatUrlaubstage(jahresSaldo.urlaub.geplant)}</p>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Sun, Briefcase, Clock, TrendingUp, TrendingDown, Minus, RefreshCw, Stethoscope, GraduationCap, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
-import { formatUrlaubstage } from '../lib/urlaubsantrag'
+import { formatUrlaubstage, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubsantrag'
 
 interface Mitarbeiter {
     id: number
@@ -21,7 +21,7 @@ interface SaldoData {
         korrektur?: number
         krankheitsTage: number
         fortbildungsTage: number
-    }
+    } & VorjahresRest
     monat: {
         name: string
         monatNummer: number
@@ -315,6 +315,11 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                     </div>
                                 )}
                             </div>
+                            {!zeitkontoStatus?.istGeschaeftsfuehrer && vorjahresHinweis(saldo.urlaub) && (
+                                <p className="px-4 pb-3 -mt-1 text-xs text-slate-500 text-center">
+                                    Frei: {vorjahresHinweis(saldo.urlaub)}
+                                </p>
+                            )}
                             {/* Krankheit & Fortbildung */}
                             <div className="px-4 pb-4 grid grid-cols-2 gap-3">
                                 <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">

@@ -6,9 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -59,10 +57,13 @@ class UrlaubsantragServiceTest {
     private LangzeitkrankmeldungService langzeitkrankmeldungService;
     @Mock
     private WebPushService webPushService;
-    @Spy
-    private UrlaubstageRechner urlaubstageRechner = new UrlaubstageRechner();
+    @Mock
+    private UrlaubUebertragRepository uebertragRepository;
+    @Mock
+    private UrlaubsverfallEinstellungService urlaubsverfallEinstellungen;
 
-    @InjectMocks
+    /** Echte Konto-Rechnung auf den Mocks, damit Resturlaub und Antragsprüfung zusammen getestet werden. */
+    private UrlaubskontoService urlaubskontoService;
     private UrlaubsantragService urlaubsantragService;
 
     private static final Long MITARBEITER_ID = 1L;
@@ -73,6 +74,13 @@ class UrlaubsantragServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(urlaubsverfallEinstellungen.regel())
+                .thenReturn(UrlaubsverfallEinstellungService.Verfallsregel.STANDARD);
+        lenient().when(urlaubsverfallEinstellungen.uebertragAbJahr()).thenReturn(2026);
+        urlaubskontoService = new UrlaubskontoService(abwesenheitRepository, zeitkontoKorrekturService,
+                tagesSollService, new UrlaubstageRechner(), uebertragRepository, urlaubsverfallEinstellungen,
+                java.time.Clock.systemDefaultZone());
+        urlaubsantragService = service(tagesSollService);
         testMitarbeiter = new Mitarbeiter();
         testMitarbeiter.setId(MITARBEITER_ID);
         testMitarbeiter.setVorname("Max");
@@ -88,6 +96,12 @@ class UrlaubsantragServiceTest {
         testZeitkonto.setFreitagStunden(new BigDecimal("8.00"));
         testZeitkonto.setSamstagStunden(BigDecimal.ZERO);
         testZeitkonto.setSonntagStunden(BigDecimal.ZERO);
+    }
+
+    private UrlaubsantragService service(TagesSollService soll) {
+        return new UrlaubsantragService(repository, mitarbeiterRepository, abwesenheitRepository, feiertagService,
+                zeitkontoService, monatsSaldoService, soll, langzeitkrankmeldungService, urlaubskontoService,
+                webPushService);
     }
 
     private Urlaubsantrag antrag(LocalDate von, LocalDate bis) {
@@ -298,10 +312,7 @@ class UrlaubsantragServiceTest {
         when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(versionen);
         TagesSollService realesSoll = new TagesSollService(feiertagService,
                 mock(LangzeitkrankmeldungPhaseRepository.class), versionRepository);
-        UrlaubsantragService service = new UrlaubsantragService(repository, mitarbeiterRepository,
-                abwesenheitRepository, feiertagService, zeitkontoService, monatsSaldoService,
-                zeitkontoKorrekturService, realesSoll, langzeitkrankmeldungService, urlaubstageRechner,
-                webPushService);
+        UrlaubsantragService service = service(realesSoll);
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
 
         service.approveAntrag(ANTRAG_ID);

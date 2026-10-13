@@ -177,6 +177,9 @@ async function stubMitarbeiterApi(page: Page) {
         if (pfad === `/api/mitarbeiter/${MITARBEITER_ID}/dokumente`) return json(route, [DUMMY_DOKUMENT]);
         if (pfad === `/api/mitarbeiter/${MITARBEITER_ID}/notizen`) return json(route, []);
         if (pfad === `/api/lohnabrechnungen/mitarbeiter/${MITARBEITER_ID}`) return json(route, [DUMMY_LOHNABRECHNUNG]);
+        if (pfad === '/api/urlaub/uebertrag') {
+            return json(route, { jahr: 2026, tage: 2.5, berechnet: 2.5, manuell: false, verfallsdatum: '2026-03-31' });
+        }
 
         // Standardantwort fuer alles Weitere (z.B. Stundenlohn-Historie):
         // leere Liste statt 404, damit kein Fehlerzustand die Seite fuellt.

@@ -5,7 +5,7 @@ import { useToast } from '../components/ui/toast'
 import { useConfirm } from '../components/ui/confirm-dialog'
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button'
 import { leseFehlermeldung } from '../lib/apiFehler'
-import { formatUrlaubstage, statusLabel, typLabel, zurueckziehenFrage, type AntragStatus, type AntragTyp } from '../lib/urlaubsantrag'
+import { formatUrlaubstage, statusLabel, typLabel, vorjahresHinweis, zurueckziehenFrage, type AntragStatus, type AntragTyp, type VorjahresRest } from '../lib/urlaubsantrag'
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, Send, Loader2, CheckCircle2, Plane, Stethoscope, Calendar, AlertTriangle, X, Clock, RefreshCw, Undo2 } from 'lucide-react'
@@ -69,6 +69,8 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
 
     // Resturlaub State
     const [resturlaub, setResturlaub] = useState<number | null>(null)
+    // Wie viel davon aus dem Vorjahr stammt und wann es verfällt
+    const [vorjahresRest, setVorjahresRest] = useState<VorjahresRest | null>(null)
     const [loadingResturlaub, setLoadingResturlaub] = useState(false)
 
     // Zeitkonto Saldo State
@@ -164,6 +166,7 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
             if (res.ok) {
                 const data = await res.json()
                 setResturlaub(data.verbleibend)
+                setVorjahresRest(data)
             }
         } catch (err) {
             console.error('Fehler beim Laden des Resturlaubs:', err)
@@ -525,6 +528,9 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                                 <span className="font-semibold">
                                                     {formatUrlaubstage(resturlaub)} Urlaubstage übrig
                                                 </span>
+                                                {vorjahresHinweis(vorjahresRest) && (
+                                                    <span className="block text-xs mt-0.5">{vorjahresHinweis(vorjahresRest)}</span>
+                                                )}
                                                 {beantragteTage > 0 && (
                                                     <span className="block mt-0.5">
                                                         Beantragt: {beantragteTage} Arbeitstag{beantragteTage !== 1 ? 'e' : ''}
