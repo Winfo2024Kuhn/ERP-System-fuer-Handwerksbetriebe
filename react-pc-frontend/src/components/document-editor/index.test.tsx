@@ -1534,8 +1534,13 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
         const { container } = renderEditor();
         await ladenAbwarten();
 
-        const pm = container.querySelector('[data-block-id="t1"] .ProseMirror') as (HTMLElement & { editor: Editor }) | null;
-        if (!pm) throw new Error('.ProseMirror für t1 nicht gefunden');
+        // Tiptap haengt den Editor erst nach dem Laden asynchron ein -- unter Last spaeter als
+        // ladenAbwarten(). Deshalb auf Element samt editor-Instanz warten statt sofort abzufragen.
+        const pm = await waitFor(() => {
+            const element = container.querySelector('[data-block-id="t1"] .ProseMirror') as (HTMLElement & { editor?: Editor }) | null;
+            expect(element?.editor, '.ProseMirror für t1 nicht gefunden').toBeDefined();
+            return element as HTMLElement & { editor: Editor };
+        }, { timeout: 3000 });
 
         // Echte Fokussierung zuerst (wie ein Klick des Nutzers) -- sonst greift
         // das Phantom-Gate (Fokus-Nachweis) und die Aenderung wird automatisch
