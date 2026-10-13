@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.example.kalkulationsprogramm.controller.AbwesenheitController;
+import org.example.kalkulationsprogramm.controller.UrlaubUebertragController;
 import org.example.kalkulationsprogramm.controller.UrlaubsantragController;
 import org.example.kalkulationsprogramm.controller.ZeiterfassungSichtbarkeitController;
 import org.example.kalkulationsprogramm.domain.Abteilung;
@@ -25,6 +26,7 @@ import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.AbwesenheitService;
 import org.example.kalkulationsprogramm.service.GesundheitsdatenSichtService;
+import org.example.kalkulationsprogramm.service.UrlaubUebertragService;
 import org.example.kalkulationsprogramm.service.UrlaubsantragService;
 import org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +48,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * Dummy-Daten: Max Mustermann.
  */
 @WebMvcTest(controllers = { UrlaubsantragController.class, AbwesenheitController.class,
-        ZeiterfassungSichtbarkeitController.class },
+        ZeiterfassungSichtbarkeitController.class, UrlaubUebertragController.class },
         excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = ZeiterfassungSecurityFilter.class))
 @Import({ SecurityConfig.class, ZeiterfassungSichtbarkeitService.class, ZeiterfassungZugriffInterceptor.class,
         ZeiterfassungZugriffSecurityTest.FilterBeans.class })
@@ -60,6 +62,7 @@ class ZeiterfassungZugriffSecurityTest {
     @MockBean private UrlaubsantragService urlaubsantragService;
     @MockBean private AbwesenheitService abwesenheitService;
     @MockBean private GesundheitsdatenSichtService gesundheitsdatenSichtService;
+    @MockBean private UrlaubUebertragService urlaubUebertragService;
 
     @TestConfiguration
     static class FilterBeans {
@@ -116,6 +119,34 @@ class ZeiterfassungZugriffSecurityTest {
                 .andExpect(jsonPath("$.darfZeiterfassungSehen").value(false));
 
         verify(urlaubsantragService, never()).getOffeneAntraege();
+    }
+
+    @Test
+    void resturlaubUebertrag_ohneRechtUndVomHandyGesperrt() throws Exception {
+        FrontendUserPrincipal max = pcBenutzer(false);
+
+        mvc.perform(get("/api/urlaub/uebertrag").param("mitarbeiterId", "7").param("jahr", "2027").with(user(max)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value(ZeiterfassungZugriffInterceptor.MELDUNG));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/urlaub/uebertrag")
+                        .with(user(max))
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                        .contentType("application/json").content("{\"mitarbeiterId\":7,\"jahr\":2027,\"tage\":3}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/urlaub/uebertrag").param("mitarbeiterId", "7").param("jahr", "2027")
+                        .header("X-Auth-Token", TOKEN))
+                .andExpect(status().isForbidden());
+
+        org.mockito.Mockito.verifyNoInteractions(urlaubUebertragService);
+    }
+
+    @Test
+    void resturlaubUebertrag_mitRechtErreichbar() throws Exception {
+        FrontendUserPrincipal max = pcBenutzer(true);
+
+        mvc.perform(get("/api/urlaub/uebertrag").param("mitarbeiterId", "7").param("jahr", "2027").with(user(max)))
+                .andExpect(status().isOk());
+        verify(urlaubUebertragService).laden(7L, 2027);
     }
 
     @Test

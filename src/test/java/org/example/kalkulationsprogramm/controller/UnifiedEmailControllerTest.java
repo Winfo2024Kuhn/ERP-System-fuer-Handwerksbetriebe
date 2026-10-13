@@ -78,6 +78,7 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
 
     @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
+    @MockBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
     @MockBean private EmailRepository emailRepository;
     @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
@@ -1319,6 +1320,66 @@ class UnifiedEmailControllerTest {
             mockMvc.perform(multipart("/api/emails/send").file(dto(
                             "{\"geschaeftsdokument\":true,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        void angebotsversandLoestAlteLinksErstNachDemVersandAb() throws Exception {
+            smtpOk();
+            org.example.kalkulationsprogramm.domain.Projekt projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+            projekt.setId(3L);
+            given(projektRepository.findById(3L)).willReturn(Optional.of(projekt));
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"projektId\":3,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+
+            // Projekt der Mail und Links in der Mail gehen mit – der Service bindet die ID daran.
+            verify(freigabeAbloesungService).loeseAbNachVersand(eq(7L), eq(3L), isNull(), any());
+        }
+
+        @Test
+        void ohneBestaetigteAbloesungBleibenAlteLinksUnberuehrt() throws Exception {
+            smtpOk();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+
+            verifyNoInteractions(freigabeAbloesungService);
+        }
+
+        @Test
+        void gewoehnlicheMailLoestKeineLinksAb() throws Exception {
+            smtpOk();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kollege@example.com\"],\"subject\":\"zur Info\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+
+            verifyNoInteractions(freigabeAbloesungService);
+        }
+
+        @Test
+        void versandBleibtErfolgreichWennAbloesungScheitert() throws Exception {
+            smtpOk();
+            org.mockito.Mockito.doThrow(new IllegalStateException("DB weg"))
+                    .when(freigabeAbloesungService).loeseAbNachVersand(any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void scheitertDerVersandWirdNichtsAbgeloest() throws Exception {
+            org.mockito.Mockito.doThrow(new RuntimeException("SMTP weg")).when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"geschaeftsdokument\":true,\"freigabenAbloesenFuerDokumentId\":7,\"recipients\":[\"kunde@example.com\"],\"subject\":\"Angebot\",\"body\":\"b\"}")))
+                    .andExpect(status().is5xxServerError());
+
+            verifyNoInteractions(freigabeAbloesungService);
         }
 
         @Test

@@ -80,7 +80,7 @@ public class FreigabeEmpfaengerService
     }
 
     /** UUIDs aller Links auf die eigene Freigabe-Seite im Mail-Text, ohne Dubletten. */
-    Set<String> freigabeUuidsIn(String htmlBody)
+    public Set<String> freigabeUuidsIn(String htmlBody)
     {
         Set<String> uuids = new LinkedHashSet<>();
         if (htmlBody == null || publicBaseUrl == null || publicBaseUrl.isBlank())

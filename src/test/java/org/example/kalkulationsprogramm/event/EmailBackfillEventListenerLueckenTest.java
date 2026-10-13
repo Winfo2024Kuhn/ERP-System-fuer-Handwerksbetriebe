@@ -253,6 +253,30 @@ class EmailBackfillEventListenerLueckenTest {
     }
 
     @Test
+    @DisplayName("Lieferant mit Freemail-Adresse: nur Mails genau dieser Adresse, nie die ganze Domain (Issue #266)")
+    void lieferantFreemailNurExakteAdresse() {
+        Lieferanten l = new Lieferanten();
+        l.setId(1L);
+        Email eigene = mail(5L);
+        Email anfrage = mail(6L);
+        anfrage.setPotentialInquiry(true);
+        anfrage.setInquiryScore(40);
+        when(lieferantenRepository.findById(1L)).thenReturn(Optional.of(l));
+        when(emailRepository.findUnassignedEingangVonAdresse("max.mustermann@gmail.com")).thenReturn(List.of(eigene));
+        when(emailRepository.findInquiriesVonAdresse("max.mustermann@gmail.com")).thenReturn(List.of(anfrage));
+        when(emailRepository.findByLieferantIdWithAttachments(1L)).thenReturn(List.of());
+
+        listener.handleEmailAddressChanged(event(EntityType.LIEFERANT, List.of("max.mustermann@gmail.com")));
+
+        assertSame(l, eigene.getLieferant());
+        assertFalse(anfrage.isPotentialInquiry());
+        verify(emailRepository, never()).findUnassignedByDomain(anyString());
+        verify(emailRepository, never()).findInquiriesByDomain(anyString());
+        verify(attachmentService).processLieferantAttachments(eigene);
+        verifyNoMoreInteractions(attachmentService);
+    }
+
+    @Test
     @DisplayName("Lieferant: Fehler bei Anhangverarbeitung stoppt den Backfill nicht")
     void lieferantAnhangFehler() {
         Lieferanten l = new Lieferanten();

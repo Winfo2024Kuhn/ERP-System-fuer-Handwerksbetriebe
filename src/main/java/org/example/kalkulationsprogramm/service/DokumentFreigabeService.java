@@ -1484,12 +1484,9 @@ public class DokumentFreigabeService
         {
             if (alt.getStatus() == FreigabeStatus.PENDING)
             {
-                alt.setStatus(FreigabeStatus.REVOKED);
-                // Nur die Verknüpfung lösen, damit der alte Link keine PDF mehr liefert. Die Datei
-                // selbst ist die PDF des Dokuments im ERP (bei Projekt-/Anfrage-Dokumenten dieselbe
-                // Datei wie beim neuen Link) und bleibt liegen.
-                alt.setDokumentDatei(null);
-                alt.setAblaufDatum(jetzt);
+                // Bei Projekt-/Anfrage-Dokumenten ist die PDF dieselbe Datei wie beim neuen
+                // Link – widerrufen() löst nur die Verknüpfung.
+                alt.widerrufen(jetzt);
                 repository.save(alt);
             }
         }

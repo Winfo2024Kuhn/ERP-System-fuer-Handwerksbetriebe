@@ -22,9 +22,9 @@ import org.springframework.stereotype.Component;
  * bekanntes Soll (z. B. Geschäftsführer mit 0-Stunden-Einträgen) zählt jeder
  * Eintrag als ganzer Tag – wie bisher.
  *
- * <p>Gemeinsame Quelle für Resturlaub im Saldo ({@code ZeiterfassungApiService})
- * und bei der Antragsprüfung ({@code UrlaubsantragService}), damit beide
- * Stellen dieselbe Zahl liefern (Issue #269, Punkt 5).
+ * <p>Baustein des Urlaubskontos ({@link UrlaubskontoService}), das Saldo,
+ * Antragsprüfung und Verfall-Hinweis gemeinsam nutzen (Issue #269, Punkt 5;
+ * Issue #270, Punkt 4).
  */
 @Component
 public class UrlaubstageRechner {
@@ -117,15 +117,6 @@ public class UrlaubstageRechner {
      */
     public BigDecimal korrekturTage(BigDecimal korrektur) {
         return korrektur == null ? BigDecimal.ZERO : korrektur;
-    }
-
-    /** Resturlaub = Anspruch − genommen − geplant + Korrekturen, nie unter 0. */
-    public BigDecimal resturlaub(int jahresanspruch, BigDecimal genommen, BigDecimal geplant, BigDecimal korrektur) {
-        BigDecimal rest = BigDecimal.valueOf(jahresanspruch)
-                .subtract(genommen)
-                .subtract(geplant)
-                .add(korrekturTage(korrektur));
-        return rest.max(BigDecimal.ZERO);
     }
 
     /** „12,5" bzw. „12" – für Meldungen an die Nutzer. */

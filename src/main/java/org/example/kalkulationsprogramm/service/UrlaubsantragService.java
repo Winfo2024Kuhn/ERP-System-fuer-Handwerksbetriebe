@@ -33,10 +33,9 @@ public class UrlaubsantragService {
     private final FeiertagService feiertagService;
     private final ZeitkontoService zeitkontoService;
     private final MonatsSaldoService monatsSaldoService;
-    private final ZeitkontoKorrekturService zeitkontoKorrekturService;
     private final TagesSollService tagesSollService;
     private final LangzeitkrankmeldungService langzeitkrankmeldungService;
-    private final UrlaubstageRechner urlaubstageRechner;
+    private final UrlaubskontoService urlaubskontoService;
     private final WebPushService webPushService;
 
     private static final DateTimeFormatter TAG_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
@@ -54,13 +53,20 @@ public class UrlaubsantragService {
 
         // Urlaubskontingent prüfen (nur für URLAUB-Typ bei normalen Mitarbeitern)
         if (!istGf && typ == Urlaubsantrag.Typ.URLAUB) {
-            int jahr = von.getYear();
-            BigDecimal verbleibend = getResturlaub(mitarbeiterId, jahr);
-            long beantragteTage = zaehleArbeitstage(von, bis);
-            if (BigDecimal.valueOf(beantragteTage).compareTo(verbleibend) > 0) {
+            // Probe-Rechnung mit den beantragten Tagen: Tage bis zum Verfallstag dürfen den
+            // Vorjahresrest nutzen, Tage danach nur den Anspruch (Datum „heute“ aus der Clock).
+            List<LocalDate> beantragt = arbeitstage(von, bis);
+            UrlaubskontoService.Antragspruefung pruefung = urlaubskontoService.pruefeAntrag(mitarbeiter,
+                    von.getYear(), beantragt);
+            if (!pruefung.reicht()) {
+                String grund = pruefung.vorjahresrestVerfaellt() && pruefung.verfallsdatum() != null
+                        ? ". Resturlaub aus dem Vorjahr kann nur bis " + pruefung.verfallsdatum().format(TAG_FORMAT)
+                                + " genommen werden."
+                        : "";
                 throw new IllegalStateException(
-                        String.format("Nicht genügend Urlaubstage. Verbleibend: %s, Beantragt: %d",
-                                UrlaubstageRechner.formatTage(verbleibend), beantragteTage));
+                        String.format("Nicht genügend Urlaubstage. Verbleibend: %s, Beantragt: %s",
+                                UrlaubstageRechner.formatTage(pruefung.verbleibendVorher()), UrlaubstageRechner.formatTage(pruefung.beantragteTage()))
+                                + grund);
             }
         }
 
@@ -450,29 +456,31 @@ public class UrlaubsantragService {
     }
 
     /**
-     * Berechnet die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr.
-     * Formel: Jahresanspruch - genommen - geplant + Korrekturen
+     * Verbleibende Urlaubstage eines Mitarbeiters für ein Jahr (heutiger Stand,
+     * inklusive Resturlaub aus dem Vorjahr). Rechnung: {@link UrlaubskontoService}.
      */
     @Transactional(readOnly = true)
     public BigDecimal getResturlaub(Long mitarbeiterId, int jahr) {
+        return getUrlaubskonto(mitarbeiterId, jahr).verbleibend();
+    }
+
+    /** Das ganze Urlaubskonto eines Jahres – mit Übertrag und Verfall für die Anzeige. */
+    @Transactional(readOnly = true)
+    public Urlaubskonto getUrlaubskonto(Long mitarbeiterId, int jahr) {
+        return getUrlaubskonto(mitarbeiterId, jahr, null);
+    }
+
+    /**
+     * Urlaubskonto zu einem Stichtag (z. B. erster Tag eines Antrags): Liegt er nach
+     * dem Verfallstag, ist der Vorjahresrest schon weg. {@code null} = heutiger Stand.
+     */
+    @Transactional(readOnly = true)
+    public Urlaubskonto getUrlaubskonto(Long mitarbeiterId, int jahr, LocalDate stichtag) {
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
-
-        int jahresUrlaub = mitarbeiter.getJahresUrlaub() != null ? mitarbeiter.getJahresUrlaub() : 30;
-
-        LocalDate jahresanfang = LocalDate.of(jahr, 1, 1);
-        LocalDate jahresende = LocalDate.of(jahr, 12, 31);
-
-        List<Abwesenheit> abwesenheiten = abwesenheitRepository
-                .findByMitarbeiterIdAndDatumBetween(mitarbeiterId, jahresanfang, jahresende);
-
-        // Halbe Urlaubstage zählen 0,5 – dafür braucht der Rechner das Tagessoll.
-        BigDecimal genommen = urlaubstageRechner.urlaubstage(abwesenheiten,
-                UrlaubstageRechner.sollLader(mitarbeiter, tagesSollService));
-
-        BigDecimal korrektur = zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(mitarbeiterId, jahr);
-
-        return urlaubstageRechner.resturlaub(jahresUrlaub, genommen, BigDecimal.ZERO, korrektur);
+        return stichtag == null
+                ? urlaubskontoService.berechne(mitarbeiter, jahr)
+                : urlaubskontoService.berechne(mitarbeiter, jahr, stichtag);
     }
 
     /**
@@ -487,15 +495,15 @@ public class UrlaubsantragService {
     }
 
     /**
-     * Zählt Arbeitstage (Mo–Fr, ohne Feiertage) in einem Zeitraum.
+     * Arbeitstage (Mo–Fr, ohne Feiertage) in einem Zeitraum.
      */
-    private long zaehleArbeitstage(LocalDate von, LocalDate bis) {
-        long count = 0;
+    private List<LocalDate> arbeitstage(LocalDate von, LocalDate bis) {
+        List<LocalDate> tage = new java.util.ArrayList<>();
         for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
             if (d.getDayOfWeek() == DayOfWeek.SATURDAY || d.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
             if (feiertagService.istFeiertag(d)) continue;
-            count++;
+            tage.add(d);
         }
-        return count;
+        return tage;
     }
 }

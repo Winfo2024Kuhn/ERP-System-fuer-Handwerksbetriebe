@@ -72,6 +72,7 @@ class UnifiedEmailSichtbarkeitJpaTest {
     @MockBean private EmailDraftService emailDraftService;
 
     @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
+    @MockBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
     @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
     @MockBean private EmailImportService emailImportService;
     @MockBean private EmailAttachmentProcessingService emailAttachmentProcessingService;

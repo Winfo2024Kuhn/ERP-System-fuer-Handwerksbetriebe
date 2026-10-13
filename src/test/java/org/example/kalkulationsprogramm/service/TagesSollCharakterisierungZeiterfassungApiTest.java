@@ -106,7 +106,7 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
                 lieferantenRepository, feiertagService, auditService, tagesSollService,
                 zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
-                new UrlaubstageRechner());
+                org.mockito.Mockito.mock(UrlaubskontoService.class));
 
         // Keine Zeitbuchungen/Abwesenheiten/Korrekturen im Fixture-Zeitraum - isoliert
         // die Zusicherung auf die Feiertagsberechnung. any() fuer den Zeitraum ist hier

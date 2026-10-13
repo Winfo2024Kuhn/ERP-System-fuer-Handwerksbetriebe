@@ -5,13 +5,14 @@ import org.example.kalkulationsprogramm.config.MobilePrincipal;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
 import org.example.kalkulationsprogramm.dto.UrlaubsentscheidungDto;
 import org.example.kalkulationsprogramm.service.UrlaubsantragService;
+import org.example.kalkulationsprogramm.service.Urlaubskonto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -146,17 +147,34 @@ public class UrlaubsantragController {
     }
 
     /**
-     * Gibt die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr zurück.
+     * Gibt die verbleibenden Urlaubstage eines Mitarbeiters für ein Jahr zurück –
+     * dazu, wie viel davon aus dem Vorjahr stammt und wann das verfällt.
+     * Optional {@code stichtag} (ISO-Datum, z. B. erster Tag eines Antrags): Stand
+     * an diesem Tag – nach dem Verfallstag ohne den Vorjahresrest.
      */
     @GetMapping("/api/urlaub/resturlaub")
     public ResponseEntity<?> getResturlaub(
             @RequestParam Long mitarbeiterId,
-            @RequestParam(required = false) Integer jahr) {
+            @RequestParam(required = false) Integer jahr,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
+            LocalDate stichtag) {
         mitarbeiterId = MobilePrincipal.ownMitarbeiterId(mitarbeiterId);
         int targetJahr = (jahr != null) ? jahr : java.time.LocalDate.now().getYear();
+        if (targetJahr < 2000 || targetJahr > 2100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte ein gültiges Jahr angeben.");
+        }
         try {
-            BigDecimal verbleibend = service.getResturlaub(mitarbeiterId, targetJahr);
-            return ResponseEntity.ok(Map.of("verbleibend", verbleibend, "jahr", targetJahr));
+            Urlaubskonto konto = service.getUrlaubskonto(mitarbeiterId, targetJahr, stichtag);
+            // verfallsdatum fehlt bei „Resturlaub verfällt nicht“ – Map.of verträgt kein null.
+            Map<String, Object> antwort = new LinkedHashMap<>();
+            antwort.put("verbleibend", konto.verbleibend());
+            antwort.put("jahr", targetJahr);
+            antwort.put("uebertragVorjahr", konto.uebertrag());
+            antwort.put("ausVorjahrOffen", konto.ausVorjahrOffen());
+            antwort.put("verfallen", konto.verfallen());
+            antwort.put("verfallsdatum", konto.verfallsdatum() != null ? konto.verfallsdatum().toString() : null);
+            return ResponseEntity.ok(antwort);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

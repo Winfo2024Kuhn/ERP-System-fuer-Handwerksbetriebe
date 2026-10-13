@@ -1,5 +1,44 @@
 import { describe, expect, it } from 'vitest'
-import { entscheidungsText, formatIsoDatumDe, formatUrlaubstage, statusLabel, typLabel, zurueckziehenFrage } from './urlaubsantrag'
+import { anspruchHinweis, entscheidungsText, formatIsoDatumDe, formatUrlaubstage, statusLabel, tageMitEinheit, typLabel, vorjahresHinweis, zurueckziehenFrage } from './urlaubsantrag'
+
+describe('anspruchHinweis', () => {
+    it('erklärt abweichende Ansprüche wie am PC', () => {
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', '2027-08-01')).toBe('anteilig wegen Eintritt am 01.08.2027')
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', null)).toBe('anteilig wegen Eintritt im Jahr')
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', '2027-06-01')).toBe('gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)')
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', null)).toBe('gesetzlicher Mindesturlaub')
+        expect(anspruchHinweis('MINDESTURLAUB', null)).toBe('gesetzlicher Mindesturlaub')
+        expect(anspruchHinweis('VOR_EINTRITT', '2028-02-01')).toBe('Eintritt erst am 01.02.2028')
+        expect(anspruchHinweis('VOR_EINTRITT', null)).toBe('vor dem Eintritt')
+        expect(anspruchHinweis('VOLL', null)).toBeNull()
+    })
+})
+
+describe('tageMitEinheit', () => {
+    it('schreibt Tag in der Einzahl', () => {
+        expect(tageMitEinheit(1)).toBe('1 Tag')
+        expect(tageMitEinheit(2.5)).toBe('2,5 Tage')
+    })
+})
+
+describe('vorjahresHinweis', () => {
+    it('nennt offenen Vorjahresrest mit oder ohne Verfall', () => {
+        expect(vorjahresHinweis({ ausVorjahrOffen: 2.5, verfallsdatum: '2027-03-31' }))
+            .toBe('davon 2,5 Tage aus dem Vorjahr – bis 31.03.2027 nehmen, danach verfallen sie')
+        expect(vorjahresHinweis({ ausVorjahrOffen: 1, verfallsdatum: null }))
+            .toBe('davon 1 Tag aus dem Vorjahr, verfallen nicht')
+    })
+
+    it('meldet verfallene Tage und schweigt ohne Vorjahresrest', () => {
+        expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 1, verfallsdatum: '2027-03-31' }))
+            .toBe('1 Tag aus dem Vorjahr ist nach dem 31.03.2027 verfallen')
+        expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 3, verfallsdatum: '2027-03-31' }))
+            .toBe('3 Tage aus dem Vorjahr sind nach dem 31.03.2027 verfallen')
+        expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 3, verfallsdatum: null })).toBeNull()
+        expect(vorjahresHinweis({})).toBeNull()
+        expect(vorjahresHinweis(null)).toBeNull()
+    })
+})
 
 describe('formatUrlaubstage', () => {
     it('zeigt ganze Tage ohne und halbe Tage mit Komma', () => {

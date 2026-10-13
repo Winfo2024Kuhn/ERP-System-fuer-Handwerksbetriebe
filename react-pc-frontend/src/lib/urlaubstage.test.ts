@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { formatUrlaubstage, formatUrlaubstageMitEinheit } from './urlaubstage';
+import { anspruchHinweis, formatIsoDatumDe, formatUrlaubstage, formatUrlaubstageMitEinheit, vorjahresHinweis } from './urlaubstage';
+
+describe('anspruchHinweis', () => {
+    it('erklärt abweichende Ansprüche', () => {
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', '2027-08-01')).toBe('anteilig wegen Eintritt am 01.08.2027');
+        expect(anspruchHinweis('ANTEILIG_EINTRITT', null)).toBe('anteilig wegen Eintritt im Jahr');
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', '2027-06-01')).toBe('gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)');
+        expect(anspruchHinweis('MINDESTURLAUB_EINTRITT', null)).toBe('gesetzlicher Mindesturlaub');
+        expect(anspruchHinweis('MINDESTURLAUB', null)).toBe('gesetzlicher Mindesturlaub');
+        expect(anspruchHinweis('VOR_EINTRITT', '2028-02-01')).toBe('Eintritt erst am 01.02.2028');
+        expect(anspruchHinweis('VOR_EINTRITT', undefined)).toBe('vor dem Eintritt');
+    });
+
+    it('schweigt beim vollen oder unbekannten Anspruch', () => {
+        expect(anspruchHinweis('VOLL', '2020-01-01')).toBeNull();
+        expect(anspruchHinweis(null, null)).toBeNull();
+    });
+});
 
 describe('formatUrlaubstage', () => {
     it('zeigt ganze Tage ohne Nachkomma', () => {
@@ -28,5 +45,37 @@ describe('formatUrlaubstageMitEinheit', () => {
         expect(formatUrlaubstageMitEinheit(1)).toBe('1 Tag');
         expect(formatUrlaubstageMitEinheit(12.5)).toBe('12,5 Tage');
         expect(formatUrlaubstageMitEinheit(0)).toBe('0 Tage');
+    });
+});
+
+describe('vorjahresHinweis', () => {
+    it('nennt offenen Vorjahresrest mit Verfallsdatum', () => {
+        expect(vorjahresHinweis({ ausVorjahrOffen: 2.5, verfallsdatum: '2027-03-31' }))
+            .toBe('davon 2,5 Tage aus dem Vorjahr – bis 31.03.2027 nehmen, danach verfallen sie');
+        expect(vorjahresHinweis({ ausVorjahrOffen: 1, verfallsdatum: '2027-03-31' }))
+            .toBe('davon 1 Tag aus dem Vorjahr – bis 31.03.2027 nehmen, danach verfällt er');
+    });
+
+    it('sagt bei „verfällt nicht" kein Datum', () => {
+        expect(vorjahresHinweis({ ausVorjahrOffen: 3, verfallsdatum: null })).toBe('davon 3 Tage aus dem Vorjahr, verfallen nicht');
+    });
+
+    it('meldet bereits verfallene Tage', () => {
+        expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 2, verfallsdatum: '2027-03-31' }))
+            .toBe('2 Tage aus dem Vorjahr sind nach dem 31.03.2027 verfallen');
+        expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 1, verfallsdatum: '2027-03-31' }))
+            .toBe('1 Tag aus dem Vorjahr ist nach dem 31.03.2027 verfallen');
+    });
+
+    it('liefert null ohne Vorjahresrest oder ohne Daten', () => {
+        expect(vorjahresHinweis(null)).toBeNull();
+        expect(vorjahresHinweis(undefined)).toBeNull();
+        expect(vorjahresHinweis({})).toBeNull();
+        expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 0, verfallsdatum: '2027-03-31' })).toBeNull();
+        expect(vorjahresHinweis({ ausVorjahrOffen: 0, verfallen: 2, verfallsdatum: null })).toBeNull();
+    });
+
+    it('formatiert ISO-Daten deutsch', () => {
+        expect(formatIsoDatumDe('2027-03-31')).toBe('31.03.2027');
     });
 });

@@ -7,6 +7,8 @@
  * `extractEmailAddress()` verwenden.
  */
 
+import { istFreemailDomain } from './freemailDomains';
+
 export interface ParsedEmailRecipient {
     raw: string;
     email: string;
@@ -183,11 +185,16 @@ function domainVon(value?: string): string {
  * einträgt, will Reklamationen und allgemeine Post trotzdem an die Zentrale
  * schicken können. Die Zentrale ist praktisch immer `info@` derselben Domain.
  *
+ * Bei Freemail-Anbietern (gmail.com, gmx.de, …) gibt es keine Zentrale: `info@gmail.com`
+ * gehört nicht dem Lieferanten, und das Backend würde Mails dieser Adresse sonst
+ * bei ihm einsortieren. Dort entsteht deshalb keine `info@`-Adresse.
+ *
  * @returns z.B. `info@meier.de` – oder `''`, wenn keine Domain erkennbar ist
+ *          oder sie einem Freemail-Anbieter gehört
  */
 export function infoAdresseZuDomain(value?: string): string {
     const domain = domainVon(value);
-    return domain ? `info@${domain}` : "";
+    return domain && !istFreemailDomain(domain) ? `info@${domain}` : "";
 }
 
 /** Prüft, ob die Adresse die allgemeine `info@`-Adresse ihrer Domain ist. */

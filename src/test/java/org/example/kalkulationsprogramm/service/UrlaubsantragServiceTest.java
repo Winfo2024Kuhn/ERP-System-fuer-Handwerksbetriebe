@@ -6,9 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -59,10 +57,13 @@ class UrlaubsantragServiceTest {
     private LangzeitkrankmeldungService langzeitkrankmeldungService;
     @Mock
     private WebPushService webPushService;
-    @Spy
-    private UrlaubstageRechner urlaubstageRechner = new UrlaubstageRechner();
+    @Mock
+    private UrlaubUebertragRepository uebertragRepository;
+    @Mock
+    private UrlaubsverfallEinstellungService urlaubsverfallEinstellungen;
 
-    @InjectMocks
+    /** Echte Konto-Rechnung auf den Mocks, damit Resturlaub und Antragsprüfung zusammen getestet werden. */
+    private UrlaubskontoService urlaubskontoService;
     private UrlaubsantragService urlaubsantragService;
 
     private static final Long MITARBEITER_ID = 1L;
@@ -73,6 +74,17 @@ class UrlaubsantragServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(urlaubsverfallEinstellungen.regel())
+                .thenReturn(UrlaubsverfallEinstellungService.Verfallsregel.STANDARD);
+        lenient().when(urlaubsverfallEinstellungen.uebertragAbJahr()).thenReturn(2026);
+        urlaubskontoService = new UrlaubskontoService(abwesenheitRepository, zeitkontoKorrekturService,
+                tagesSollService, new UrlaubstageRechner(), uebertragRepository, urlaubsverfallEinstellungen,
+                // Fester Tag vor allen Antragsdaten der Tests (10.01.2027).
+                java.time.Clock.fixed(LocalDate.of(2027, 1, 10).atStartOfDay(java.time.ZoneId.systemDefault())
+                        .toInstant(), java.time.ZoneId.systemDefault()),
+                // Kein Zeitkonto hinterlegt → 5-Tage-Woche, gesetzlicher Mindesturlaub 20 Tage.
+                mock(ZeitkontoVersionRepository.class));
+        urlaubsantragService = service(tagesSollService);
         testMitarbeiter = new Mitarbeiter();
         testMitarbeiter.setId(MITARBEITER_ID);
         testMitarbeiter.setVorname("Max");
@@ -88,6 +100,12 @@ class UrlaubsantragServiceTest {
         testZeitkonto.setFreitagStunden(new BigDecimal("8.00"));
         testZeitkonto.setSamstagStunden(BigDecimal.ZERO);
         testZeitkonto.setSonntagStunden(BigDecimal.ZERO);
+    }
+
+    private UrlaubsantragService service(TagesSollService soll) {
+        return new UrlaubsantragService(repository, mitarbeiterRepository, abwesenheitRepository, feiertagService,
+                zeitkontoService, monatsSaldoService, soll, langzeitkrankmeldungService, urlaubskontoService,
+                webPushService);
     }
 
     private Urlaubsantrag antrag(LocalDate von, LocalDate bis) {
@@ -298,10 +316,7 @@ class UrlaubsantragServiceTest {
         when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(versionen);
         TagesSollService realesSoll = new TagesSollService(feiertagService,
                 mock(LangzeitkrankmeldungPhaseRepository.class), versionRepository);
-        UrlaubsantragService service = new UrlaubsantragService(repository, mitarbeiterRepository,
-                abwesenheitRepository, feiertagService, zeitkontoService, monatsSaldoService,
-                zeitkontoKorrekturService, realesSoll, langzeitkrankmeldungService, urlaubstageRechner,
-                webPushService);
+        UrlaubsantragService service = service(realesSoll);
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
 
         service.approveAntrag(ANTRAG_ID);
@@ -553,7 +568,10 @@ class UrlaubsantragServiceTest {
 
     @Test
     void antrag_mehrTageAlsHalbeRestTage_wirdMitKommaMeldungAbgelehnt() {
-        testMitarbeiter.setJahresUrlaub(1);
+        // Unter dem gesetzlichen Minimum geht nicht: 20 Tage, davon 19 per Korrektur abgezogen → 1 Tag.
+        testMitarbeiter.setJahresUrlaub(20);
+        when(zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(MITARBEITER_ID, 2026))
+                .thenReturn(new BigDecimal("-19"));
         LocalDate montag = LocalDate.of(2026, 3, 2);
         Abwesenheit halb = new Abwesenheit();
         halb.setTyp(AbwesenheitsTyp.URLAUB);
@@ -571,6 +589,28 @@ class UrlaubsantragServiceTest {
                         Urlaubsantrag.Typ.URLAUB));
 
         assertEquals("Nicht genügend Urlaubstage. Verbleibend: 0,5, Beantragt: 2", fehler.getMessage());
+    }
+
+    @Test
+    void antrag_ueberDenVerfallstagHinweg_nutztDenVorjahresrestNurBisZumVerfall() {
+        // 2 Tage Anspruch (20 − 18 per Korrektur) + 5 Tage aus dem Vorjahr = 7 verfügbar. Antrag
+        // 31.03.–07.04.2027 = 6 Arbeitstage: nur der 31.03. darf den Vorjahresrest nutzen, die
+        // übrigen 4 Tage Rest verfallen danach → 2 + 5 − 4 − 6 = −3, also abgelehnt.
+        testMitarbeiter.setJahresUrlaub(20);
+        when(zeitkontoKorrekturService.summiereAktiveUrlaubsKorrekturen(MITARBEITER_ID, 2027))
+                .thenReturn(new BigDecimal("-18"));
+        UrlaubUebertrag rest = new UrlaubUebertrag();
+        rest.setTage(new BigDecimal("5"));
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(uebertragRepository.findByMitarbeiterIdAndJahr(MITARBEITER_ID, 2027)).thenReturn(Optional.of(rest));
+
+        IllegalStateException fehler = assertThrows(IllegalStateException.class,
+                () -> urlaubsantragService.createAntrag(MITARBEITER_ID, LocalDate.of(2027, 3, 31),
+                        LocalDate.of(2027, 4, 7), null, Urlaubsantrag.Typ.URLAUB));
+
+        assertEquals("Nicht genügend Urlaubstage. Verbleibend: 7, Beantragt: 6. "
+                + "Resturlaub aus dem Vorjahr kann nur bis 31.03.2027 genommen werden.", fehler.getMessage());
+        verify(repository, never()).save(any());
     }
 
     @Test

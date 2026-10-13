@@ -17,3 +17,70 @@ export function formatUrlaubstageMitEinheit(tage: number | null | undefined): st
     const text = formatUrlaubstage(tage);
     return `${text} ${text === '1' ? 'Tag' : 'Tage'}`;
 }
+
+/** Was der Server zum Resturlaub aus dem Vorjahr liefert (Saldo und `/api/urlaub/resturlaub`). */
+export interface VorjahresRest {
+    /** Tage aus dem Vorjahr, die noch offen sind (stecken im Resturlaub). */
+    ausVorjahrOffen?: number | null;
+    /** Tage aus dem Vorjahr, die schon verfallen sind. */
+    verfallen?: number | null;
+    /** Letzter Tag für den Vorjahresrest (ISO); `null` = verfällt nicht. */
+    verfallsdatum?: string | null;
+}
+
+/** „2027-03-31" → „31.03.2027", ohne Zeitzonen-Umweg über Date. */
+export function formatIsoDatumDe(iso: string): string {
+    const [jahr, monat, tag] = iso.slice(0, 10).split('-');
+    return `${tag}.${monat}.${jahr}`;
+}
+
+/**
+ * Ein kurzer Satz zum Vorjahresrest – oder `null`, wenn es keinen gibt.
+ * `verfallsdatum` ist der letzte Tag, an dem der Rest genommen werden kann:
+ * „davon 3 Tage aus dem Vorjahr – bis 31.03.2027 nehmen, danach verfallen sie",
+ * „davon 3 Tage aus dem Vorjahr, verfallen nicht" bzw.
+ * „2 Tage aus dem Vorjahr sind nach dem 31.03.2027 verfallen".
+ * Gleicher Wortlaut wie `vorjahresHinweis` in der Handy-App (`lib/urlaubsantrag.ts`).
+ */
+export function vorjahresHinweis(rest: VorjahresRest | null | undefined): string | null {
+    if (!rest) return null;
+    const offen = Number(rest.ausVorjahrOffen);
+    if (Number.isFinite(offen) && offen > 0) {
+        const text = formatUrlaubstageMitEinheit(offen);
+        const teil = `davon ${text} aus dem Vorjahr`;
+        if (!rest.verfallsdatum) return `${teil}, verfallen nicht`;
+        const danach = text.endsWith(' Tag') ? 'verfällt er' : 'verfallen sie';
+        return `${teil} – bis ${formatIsoDatumDe(rest.verfallsdatum)} nehmen, danach ${danach}`;
+    }
+    const verfallen = Number(rest.verfallen);
+    if (Number.isFinite(verfallen) && verfallen > 0 && rest.verfallsdatum) {
+        const text = formatUrlaubstageMitEinheit(verfallen);
+        return `${text} aus dem Vorjahr ${text.endsWith(' Tag') ? 'ist' : 'sind'} nach dem ${formatIsoDatumDe(rest.verfallsdatum)} verfallen`;
+    }
+    return null;
+}
+
+/** Herkunft des Jahresanspruchs, wie der Server sie liefert (`UrlaubskontoService.Anspruchsart`). */
+export type Anspruchsart = 'VOLL' | 'MINDESTURLAUB' | 'ANTEILIG_EINTRITT' | 'MINDESTURLAUB_EINTRITT' | 'VOR_EINTRITT';
+
+/**
+ * Kurzer Hinweis, warum der Jahresanspruch vom Vertragsurlaub abweicht – oder `null`:
+ * „anteilig wegen Eintritt am 15.03.2027", „gesetzlicher Mindesturlaub (Eintritt am 01.06.2027)",
+ * „gesetzlicher Mindesturlaub" bzw. „Eintritt erst am 01.02.2028".
+ * Gleicher Wortlaut wie `anspruchHinweis` in der Handy-App (`lib/urlaubsantrag.ts`).
+ */
+export function anspruchHinweis(art: string | null | undefined, eintrittsdatum: string | null | undefined): string | null {
+    const eintritt = eintrittsdatum ? formatIsoDatumDe(eintrittsdatum) : null;
+    switch (art) {
+        case 'ANTEILIG_EINTRITT':
+            return eintritt ? `anteilig wegen Eintritt am ${eintritt}` : 'anteilig wegen Eintritt im Jahr';
+        case 'MINDESTURLAUB_EINTRITT':
+            return eintritt ? `gesetzlicher Mindesturlaub (Eintritt am ${eintritt})` : 'gesetzlicher Mindesturlaub';
+        case 'MINDESTURLAUB':
+            return 'gesetzlicher Mindesturlaub';
+        case 'VOR_EINTRITT':
+            return eintritt ? `Eintritt erst am ${eintritt}` : 'vor dem Eintritt';
+        default:
+            return null;
+    }
+}

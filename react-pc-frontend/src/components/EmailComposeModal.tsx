@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { EmailComposeForm } from './EmailComposeForm';
+import { EmailComposeForm, type VorDemSendenErgebnis } from './EmailComposeForm';
 import type { ProjektDetail, ProjektDokument } from '../types';
 import {
     X,
@@ -78,6 +78,16 @@ interface EmailComposeModalProps {
     gueltigkeitTage?: number;
     /** Optional callback after successful email send */
     onSuccess?: () => void;
+    /** Siehe EmailComposeForm: läuft nach Klick auf „Senden“, vor dem Versand (z. B. Buchen). */
+    vorDemSenden?: () => Promise<VorDemSendenErgebnis>;
+    /** Siehe EmailComposeForm: Vorschau/Download der angehängten Datei sperren, Hinweis zeigen. */
+    anhangVorschauGesperrt?: string;
+    /** Siehe EmailComposeForm: `false` = kein automatischer Entwurf. */
+    entwurfSpeichern?: boolean;
+    /** Siehe EmailComposeForm: offene Online-Links anderer Angebote beim Senden ablösen. */
+    freigabenAbloesenFuerDokumentId?: number;
+    /** Siehe EmailComposeForm: automatisch angehängte Dateien sind Pflicht. */
+    pflichtanhangHinweis?: string;
 }
 
 export default function EmailComposeModal({
@@ -95,6 +105,11 @@ export default function EmailComposeModal({
     initialBody,
     gueltigkeitTage,
     onSuccess,
+    vorDemSenden,
+    anhangVorschauGesperrt,
+    entwurfSpeichern,
+    freigabenAbloesenFuerDokumentId,
+    pflichtanhangHinweis,
 }: EmailComposeModalProps) {
     if (!isOpen) return null;
 
@@ -120,6 +135,11 @@ export default function EmailComposeModal({
                     initialBody={initialBody}
                     gueltigkeitTage={gueltigkeitTage}
                     onSuccess={onSuccess || (() => window.location.reload())}
+                    vorDemSenden={vorDemSenden}
+                    anhangVorschauGesperrt={anhangVorschauGesperrt}
+                    entwurfSpeichern={entwurfSpeichern}
+                    freigabenAbloesenFuerDokumentId={freigabenAbloesenFuerDokumentId}
+                    pflichtanhangHinweis={pflichtanhangHinweis}
                     variant="modal"
                 />
             </div>

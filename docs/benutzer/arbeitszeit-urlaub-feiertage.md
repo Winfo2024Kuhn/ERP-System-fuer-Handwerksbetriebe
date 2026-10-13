@@ -73,7 +73,27 @@ Unter **Zeiterfassung → Urlaubsanträge** hat jeder offene und genehmigte Antr
 
 ## Resturlaub
 
-Resturlaub = Jahresurlaub minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Ein halber Urlaubstag zählt als 0,5 Tage, auch Korrekturen dürfen halbe Tage sein. Er steht in **Zeiterfassung → Kalender** („Resturlaub“) und in der Handy-App unter „Saldenauswertung“. Resturlaub aus dem Vorjahr überträgt das Programm nicht von selbst; dafür unter **Zeiterfassung → Kalender** eine Korrektur „Urlaubstage“ anlegen (siehe [Zeiterfassung](zeiterfassung.md)).
+Resturlaub = Jahresurlaub plus Rest aus dem Vorjahr minus verfallene Tage minus genehmigte Urlaubstage des Jahres plus Urlaubs-Korrekturen. Offene Anträge zählen noch nicht. Ein halber Urlaubstag zählt als 0,5 Tage, auch Korrekturen dürfen halbe Tage sein. Er steht in **Zeiterfassung → Kalender** („Resturlaub“), bei offenen Anträgen unter **Zeiterfassung → Urlaubsanträge** (Stand zum ersten Urlaubstag) und in der Handy-App unter „Saldenauswertung“ und im Urlaubsantrag.
+
+Der Jahresurlaub folgt dem Bundesurlaubsgesetz:
+
+- Gesetzlicher Mindesturlaub sind 24 Werktage bei einer 6-Tage-Woche, also 20 Tage bei 5 und 16 Tage bei 4 Arbeitstagen. Die Arbeitstage kommen aus der Arbeitszeit des Mitarbeiters (Tage mit Soll-Stunden), ohne Arbeitszeit gilt die 5-Tage-Woche. Liegt der Jahresurlaub darunter, gilt das Minimum.
+- Wer spätestens am 1. Juli anfängt, erfüllt die Wartezeit von sechs Monaten (§ 4 BUrlG) noch im selben Jahr und bekommt den vollen Jahresurlaub – auch den Teil über dem gesetzlichen Minimum, solange Arbeits- oder Tarifvertrag nichts anderes sagen.
+- Wer später anfängt, bekommt ein Zwölftel des Jahresurlaubs je vollem Beschäftigungsmonat bis zum 31.12. Bruchteile ab einem halben Tag werden auf einen ganzen Tag aufgerundet, kleinere auf einen halben Tag (§ 5 Abs. 2 BUrlG).
+- Sehen Arbeits- oder Tarifvertrag auch bei Eintritt bis 1. Juli Zwölftel vor, unter **Einstellungen → Zeiterfassung** in der Karte „Urlaub im Eintrittsjahr“ „Immer anteilig“ wählen. Dann gibt es ein Zwölftel je Monat, bei Eintritt bis 1. Juli aber mindestens den gesetzlichen Mindesturlaub.
+- Beispiele bei 30 Tagen Jahresurlaub und 5-Tage-Woche: Eintritt 15.03. → 30 Tage („immer anteilig“: 22,5 → 23); Eintritt 01.06. → 30 Tage („immer anteilig“: 17,5 → 18, angehoben auf 20); Eintritt 01.08. → 12,5 → 13 Tage.
+- Die Arbeitstage je Woche nimmt das Programm aus der Arbeitszeit des Jahres; gibt es mehrere, zählt die höchste.
+- Ausscheiden im Jahr und Urlaub, den ein früherer Arbeitgeber im selben Jahr schon gewährt hat (§ 6 BUrlG), rechnet das Programm nicht. Diese Tage als Urlaubs-Korrektur abziehen.
+
+Der Kalender, die Handy-App und **Mitarbeiter → Konditionen** zeigen neben dem Anspruch, warum er abweicht („anteilig wegen Eintritt am …“, „gesetzlicher Mindesturlaub“). Der Info-Button dort erklärt die Regeln.
+
+Ein neuer Urlaubsantrag wird gegen den Resturlaub geprüft: Tage bis zum Verfallstag dürfen den Rest aus dem Vorjahr nutzen, Tage danach nur den Jahresurlaub.
+
+### Rest aus dem Vorjahr
+
+Was am Jahresende übrig ist, nimmt das Programm von selbst ins neue Jahr mit (erstmals ins Jahr nach dem Update). Urlaub im neuen Jahr zählt zuerst gegen diesen Rest. Wie lange er gilt, steht unter **Einstellungen → Zeiterfassung → Resturlaub ins neue Jahr**: Voreingestellt ist die gesetzliche Regel, nach dem 31. März verfällt der nicht genommene Rest. Der Betrieb kann einen anderen Tag wählen oder „Resturlaub verfällt nicht“ einstellen. Ein Tag vor dem 31. März ist nur erlaubt, wenn der Tarifvertrag das vorsieht; das Programm fragt dann vor dem Speichern nach. Der Rest wird immer neu ausgerechnet: Wer im alten Jahr Urlaub nachträgt oder den Jahresurlaub ändert, ändert damit auch den Übertrag. Wurde im alten Jahr mehr genommen als da war, ist der Übertrag 0 – abgezogen wird nichts. Gesetzlich verfällt Resturlaub nur, wenn die Mitarbeiter vorher rechtzeitig darauf hingewiesen wurden; die Handy-App erinnert zwei Monate vor dem Verfallstag unter der Glocke.
+
+Stimmt der ausgerechnete Rest nicht (z. B. weil früher auf Papier geplant wurde), unter **Mitarbeiter → Konditionen → Resturlaub aus dem Vorjahr** den richtigen Wert eintragen. „Wieder ausrechnen lassen“ nimmt den Handwert zurück.
 
 ## Lange Krankheit
 

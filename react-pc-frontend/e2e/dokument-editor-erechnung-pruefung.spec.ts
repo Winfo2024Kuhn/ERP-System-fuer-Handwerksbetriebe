@@ -57,6 +57,9 @@ async function stubbeERechnungExport(page: Page, pruefung: 'ok' | 'unvollstaendi
 async function waehleERechnungImExport(page: Page) {
     await page.getByRole('button', { name: 'PDF', exact: true }).click();
     await page.getByRole('button', { name: /ZUGFeRD PDF/ }).click();
+    // Die Rechnung wird beim Export gebucht: erst nach der Warnung geht es weiter.
+    await page.getByRole('dialog', { name: 'Dokument exportieren?' })
+        .getByRole('button', { name: 'Exportieren & Buchen' }).click();
 }
 
 test.describe('Dokument-Editor – E-Rechnung prüft Firmendaten vor dem Buchen', () => {

@@ -111,6 +111,7 @@ class MobileApiPolicyTest {
             "PUT, /api/urlaub/antraege/42/approve", "PUT, /api/urlaub/antraege/42/reject",
             "GET, /api/urlaub/antraege/hinweise", "PUT, /api/urlaub/antraege/abc/storno",
             "DELETE, /api/urlaub/antraege/42", "PUT, /api/urlaub/antraege/42",
+            "GET, /api/urlaub/uebertrag", "PUT, /api/urlaub/uebertrag",
             "DELETE, /api/reklamationen/42", "PATCH, /api/reklamationen/42/status",
             "POST, /api/zeitverwaltung/feiertage/regenerieren", "POST, /api/zeitverwaltung/feiertage",
             "POST, /api/buchhaltung/belege", "DELETE, /api/buchhaltung/mobile/belege/42",

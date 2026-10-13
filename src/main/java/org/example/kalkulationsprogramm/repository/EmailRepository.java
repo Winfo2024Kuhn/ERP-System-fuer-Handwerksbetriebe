@@ -265,6 +265,60 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       """, nativeQuery = true)
   List<Email> findInquiriesByDomain(@Param("domain") String domain);
 
+  /**
+   * Unzugeordnete eingehende Mails, deren Absender EXAKT diese Adresse ist – als reine
+   * Adresse oder mit Anzeigename ({@code "Max Mustermann <max@gmx.de>"}). Nie über die
+   * Domain. Für den Lieferanten-Backfill bei Freemail-Adressen (gmail.com, gmx.de, …):
+   * Dort sagt die Domain nichts über den Absender aus, siehe {@code FreemailDomains}.
+   */
+  default List<Email> findUnassignedEingangVonAdresse(String address) {
+    String adresse = normalisiereAdresse(address);
+    return findUnassignedEingangVonAdresse(adresse, mitAnzeigename(adresse));
+  }
+
+  @Query("""
+      SELECT e FROM Email e
+      WHERE e.zuordnungTyp = 'KEINE'
+        AND e.direction = 'IN'
+        AND e.deletedAt IS NULL
+        AND (LOWER(TRIM(e.fromAddress)) = :adresse
+          OR LOWER(TRIM(e.fromAddress)) LIKE :mitAnzeigename ESCAPE '!')
+      ORDER BY e.sentAt DESC NULLS LAST
+      """)
+  List<Email> findUnassignedEingangVonAdresse(@Param("adresse") String adresse,
+      @Param("mitAnzeigename") String mitAnzeigename);
+
+  /**
+   * Als mögliche Anfrage markierte Mails, deren Absender EXAKT diese Adresse ist (auch mit
+   * Anzeigename). Gegenstück zu {@link #findInquiriesByDomain} für Freemail-Adressen.
+   */
+  default List<Email> findInquiriesVonAdresse(String address) {
+    String adresse = normalisiereAdresse(address);
+    return findInquiriesVonAdresse(adresse, mitAnzeigename(adresse));
+  }
+
+  @Query("""
+      SELECT e FROM Email e
+      WHERE e.isPotentialInquiry = true
+        AND (LOWER(TRIM(e.fromAddress)) = :adresse
+          OR LOWER(TRIM(e.fromAddress)) LIKE :mitAnzeigename ESCAPE '!')
+      """)
+  List<Email> findInquiriesVonAdresse(@Param("adresse") String adresse,
+      @Param("mitAnzeigename") String mitAnzeigename);
+
+  private static String normalisiereAdresse(String address) {
+    return address == null ? "" : address.trim().toLowerCase(java.util.Locale.ROOT);
+  }
+
+  /**
+   * LIKE-Muster für {@code "Name <adresse>"}. Platzhalter in der Adresse ({@code _}, {@code %})
+   * werden maskiert – sonst träfe {@code max_m@gmx.de} auch {@code maxXm@gmx.de}.
+   */
+  private static String mitAnzeigename(String adresse) {
+    String maskiert = adresse.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    return "%<" + maskiert + ">";
+  }
+
   // ═══════════════════════════════════════════════════════════════
   // THREAD/PARENT BACKFILL
   // ═══════════════════════════════════════════════════════════════

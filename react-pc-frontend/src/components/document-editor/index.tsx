@@ -137,7 +137,7 @@ import '@fontsource/open-sans/latin-400-italic.css';
 import '@fontsource/open-sans/latin-700.css';
 import '@fontsource/open-sans/latin-700-italic.css';
 import '@fontsource/montserrat/latin-600.css';
-import { brauchtAnnahmeLinkAbfrage, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, betragGeaendert, type AbzuloesendeFreigabe, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
 import { fehlermeldungAusAntwort, pruefeFirmendatenFuerERechnung } from './eRechnungPruefung';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
@@ -159,6 +159,8 @@ import { EmailComposeModal } from '../EmailComposeModal';
 import { anredeEnumToText } from '../EmailComposeForm';
 import { EmailFormatDialog, type PdfFormat } from './EmailFormatDialog';
 import { EmailValidityDialog } from './EmailValidityDialog';
+import { OnlineAnnahmeDialog } from './OnlineAnnahmeDialog';
+import type { VorDemSendenErgebnis } from '../EmailComposeForm';
 import { useToast } from '../ui/toast';
 import { useConfirm } from '../ui/confirm-dialog';
 import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
@@ -352,6 +354,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     const [dokument, setDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
     const [showExportWarning, setShowExportWarning] = useState(false);
     const [showExportFormatDialog, setShowExportFormatDialog] = useState(false);
+    /** Gewähltes Exportformat, solange der Buchungs-Warndialog offen ist. */
+    const [pendingExportFormat, setPendingExportFormat] = useState<PdfFormat | null>(null);
     const [exportLoading, setExportLoading] = useState(false);
     const [showPrintOptions, setShowPrintOptions] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
@@ -529,6 +533,21 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     const [showFormatDialog, setShowFormatDialog] = useState(false);
     const [showValidityDialog, setShowValidityDialog] = useState(false);
     const [pendingFormat, setPendingFormat] = useState<PdfFormat | null>(null);
+    /** Angebotsversand: Frage „Soll der Kunde online annehmen können?“ */
+    const [showOnlineAnnahmeDialog, setShowOnlineAnnahmeDialog] = useState(false);
+    /**
+     * Angebotsversand: Der Anwender hat bestätigt, dass offene Online-Links anderer
+     * Angebote im Vorgang ungültig werden. Zurückgezogen werden sie erst beim Senden.
+     */
+    const [freigabenAbloesenFuerDokumentId, setFreigabenAbloesenFuerDokumentId] = useState<number | null>(null);
+    /**
+     * Rechnungsversand: Gebucht wird erst beim Klick auf „E-Mail senden“. Bis dahin
+     * liegt das PDF nur hier; gespeichert (Offene Posten) wird es nach dem Buchen.
+     */
+    const [buchungBeimSenden, setBuchungBeimSenden] = useState(false);
+    const buchungsPdfRef = useRef<Blob | null>(null);
+    /** Nettobetrag laut Server beim Erzeugen dieses PDFs – Vergleich nach dem Buchen. */
+    const buchungsPdfNettoRef = useRef<number | null>(null);
     /** Vom Benutzer im Pop-up gewählte Gültigkeit des Annahme-Links (nur Angebote). */
     const [gueltigkeitTage, setGueltigkeitTage] = useState<number | null>(null);
     const [emailLoading, setEmailLoading] = useState(false);
@@ -1893,7 +1912,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         || showUnsavedWarning || showAddTypeDialog || showTextbausteinPicker
         || showLeistungPicker || showStundensatzPicker || showRabattDialog
         || alternativDialogAnker !== null || pendingLeistungInsert !== null
-        || showFormatDialog || showValidityDialog || showEmailModal || materialDialogOffen;
+        || showFormatDialog || showValidityDialog || showOnlineAnnahmeDialog || showEmailModal || materialDialogOffen;
 
     useVerlaufTastatur({
         aktiv: !isLocked && !einDialogOffen,
@@ -2660,9 +2679,12 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     }, [showPreview]);
 
     /** Hilfsfunktion: Dokument buchen und State sofort aktualisieren (GoBD). */
-    const buchenUndSperren = async (): Promise<boolean> => {
-        if (!dokument?.id) return false;
-        if (dokument.gebucht || dokument.storniert) return true; // bereits gesperrt
+    const buchenUndSperren = async (): Promise<boolean> => (await bucheDokument()) !== null;
+
+    /** Wie buchenUndSperren, liefert aber den gebuchten Stand (oder null bei Fehler). */
+    const bucheDokument = async (): Promise<AusgangsGeschaeftsDokument | null> => {
+        if (!dokument?.id) return null;
+        if (dokument.gebucht || dokument.storniert) return dokument; // bereits gesperrt
         try {
             // Erst unsaved changes speichern, bevor das Dokument gebucht wird.
             // Schlaegt das fehl (Lock-Konflikt, Netz, Server), darf NICHT gebucht
@@ -2670,7 +2692,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // der User so nie gesehen hat — etwa der alten Rechnungsadresse.
             if (hasUnsavedChanges) {
                 const gespeichert = await handleSave();
-                if (!gespeichert) return false;
+                if (!gespeichert) return null;
             }
             const bookRes = await fetch(`/api/ausgangs-dokumente/${dokument.id}/buchen`, { method: 'POST' });
             if (!bookRes.ok) {
@@ -2693,11 +2715,11 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             setAdresseGeaendert(false);
             setZahlungszielGeaendert(false);
             notifyDokumentChanged({ projektId, anfrageId, dokumentId: updated.id });
-            return true;
+            return updated as AusgangsGeschaeftsDokument;
         } catch (err) {
             console.error('Fehler beim Buchen:', err);
             toast.error('Dokument konnte nicht gebucht werden\n' + (err instanceof Error ? 'Antwort vom Server ' + err.message : ''));
-            return false;
+            return null;
         }
     };
 
@@ -2707,14 +2729,37 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     };
 
     const handleExportFormatSelected = async (format: PdfFormat) => {
+        // Rechnungen werden beim PDF-Export gebucht und gesperrt. Wie beim Drucken
+        // vorher deutlich warnen; Abbrechen im Warndialog lässt alles unverändert.
+        if (brauchtBuchungsWarnung(showFinalizationPrompt, dokument)) {
+            setPendingExportFormat(format);
+            setShowExportFormatDialog(false);
+            setShowExportWarning(true);
+            return;
+        }
         setExportLoading(true);
         try {
-            const shouldBook = showFinalizationPrompt;
-            await confirmExport(shouldBook, format);
+            await confirmExport(showFinalizationPrompt, format);
         } finally {
             setExportLoading(false);
             setShowExportFormatDialog(false);
         }
+    };
+
+    const handleExportWarningConfirmed = async () => {
+        setExportLoading(true);
+        try {
+            await confirmExport(true, pendingExportFormat ?? 'pdf');
+        } finally {
+            setExportLoading(false);
+            setShowExportWarning(false);
+            setPendingExportFormat(null);
+        }
+    };
+
+    const handleExportWarningCancelled = () => {
+        setShowExportWarning(false);
+        setPendingExportFormat(null);
     };
 
     const handlePrint = async () => {
@@ -2807,7 +2852,6 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     };
 
     const confirmExport = async (shouldBook: boolean = true, format: PdfFormat = 'pdf') => {
-        setShowExportWarning(false);
         if (!dokument?.id) return;
 
         try {
@@ -2889,17 +2933,84 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         setShowFormatDialog(true);
     };
 
-    const handleFormatSelected = (format: PdfFormat) => {
-        // Bei Angeboten muss vor dem finalen Versand die Gültigkeit des
-        // Annahme-Links gewählt werden — aber nur, wenn überhaupt einer
-        // entsteht (siehe brauchtAnnahmeLinkAbfrage).
+    /**
+     * Angebotsversand: Haben andere Angebote im Vorgang noch offene Online-Links, wird
+     * vorher gefragt – auch wenn das neue Angebot ohne Link rausgeht. Zurückgezogen
+     * werden die alten Links erst beim tatsächlichen Senden (Backend, /api/emails/send).
+     * @returns false, wenn der Versand abgebrochen werden soll.
+     */
+    const pruefeAbloesungAlterLinks = async (): Promise<boolean> => {
+        setFreigabenAbloesenFuerDokumentId(null);
+        // Auch Nachtragsangebote: Ihr eigener älterer Link wird beim erneuten Versand abgelöst
+        // (Links anderer Angebote löst das Backend nur für Angebote ab).
+        if (!istAngebotsTyp(dokumentTyp) || draftSendMode) return true;
+        let dokumentId = dokument?.id ?? null;
+        if (!dokumentId) {
+            const saved = await handleSave();
+            dokumentId = saved?.id ?? null;
+        }
+        if (!dokumentId) return true;
+        let offeneLinks: AbzuloesendeFreigabe[];
+        try {
+            const res = await fetch(`/api/ausgangs-dokumente/${dokumentId}/abzuloesende-freigaben`);
+            if (!res.ok) throw new Error(await fehlermeldungAusAntwort(res, 'Prüfung fehlgeschlagen'));
+            offeneLinks = await res.json() as AbzuloesendeFreigabe[];
+        } catch (err) {
+            console.error('Offene Online-Links konnten nicht geprüft werden:', err);
+            toast.error('Offene Online-Links anderer Angebote konnten nicht geprüft werden. Bitte erneut versuchen.');
+            return false;
+        }
+        if (offeneLinks.length === 0) return true;
+        // Formatauswahl schließen, sonst liegt sie unter der Rückfrage und überdeckt sie.
+        setShowFormatDialog(false);
+        const fortfahren = await confirm({
+            title: 'Alter Online-Link wird ungültig',
+            message: abloesungsFrage(offeneLinks, dokumentTyp === 'NACHTRAGSANGEBOT' ? 'Nachtragsangebot' : 'Angebot'),
+            confirmLabel: 'Trotzdem fortfahren',
+            variant: 'warning',
+        });
+        if (!fortfahren) return false;
+        setFreigabenAbloesenFuerDokumentId(dokumentId);
+        return true;
+    };
+
+    const handleFormatSelected = async (format: PdfFormat) => {
+        setEmailLoading(true);
+        let weiter: boolean;
+        try {
+            weiter = await pruefeAbloesungAlterLinks();
+        } finally {
+            setEmailLoading(false);
+        }
+        if (!weiter) {
+            setShowFormatDialog(false);
+            setDraftSendMode(false);
+            return;
+        }
+        // Bei Angeboten wird vor dem finalen Versand gefragt, ob der Kunde online
+        // annehmen können soll — aber nur, wenn überhaupt ein Link entstehen kann
+        // (siehe brauchtAnnahmeLinkAbfrage). Bei „Ja“ folgt die Gültigkeit.
         if (brauchtAnnahmeLinkAbfrage(dokumentTyp, draftSendMode, dokument?.digitalAngenommen)) {
             setPendingFormat(format);
             setShowFormatDialog(false);
-            setShowValidityDialog(true);
+            setShowOnlineAnnahmeDialog(true);
             return;
         }
         void prepareAndOpenEmail(format, null);
+    };
+
+    const handleOnlineAnnahmeGewaehlt = (mitOnlineAnnahme: boolean) => {
+        setShowOnlineAnnahmeDialog(false);
+        if (mitOnlineAnnahme) {
+            setShowValidityDialog(true);
+            return;
+        }
+        // Ohne Link braucht es keine Gültigkeit: Sie gilt nur für den Annahme-Link.
+        setGueltigkeitTage(null);
+        const format = pendingFormat;
+        if (format) {
+            void prepareAndOpenEmail(format, null, false);
+        }
     };
 
     const handleValidityConfirmed = (tage: number) => {
@@ -2911,7 +3022,65 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         }
     };
 
-    const prepareAndOpenEmail = async (format: PdfFormat, tage: number | null) => {
+    /** Bricht den Versand vor dem Mailfenster ab: nichts gebucht, kein Link abgelöst. */
+    const brecheVersandVorbereitungAb = () => {
+        setShowOnlineAnnahmeDialog(false);
+        setShowValidityDialog(false);
+        setPendingFormat(null);
+        setEmailLoading(false);
+        setDraftSendMode(false);
+        setFreigabenAbloesenFuerDokumentId(null);
+    };
+
+    /**
+     * Läuft nach dem Klick auf „E-Mail senden“ und vor dem Versand: Rechnung buchen.
+     * Scheitert das, geht keine Mail raus (die Meldung zeigt buchenUndSperren). Danach
+     * wird das PDF für die Offenen Posten gespeichert – erst jetzt gibt es den Eintrag.
+     */
+    const bucheVorDemSenden = async (): Promise<VorDemSendenErgebnis> => {
+        const gebucht = await bucheDokument();
+        if (!gebucht) return { weiter: false };
+        // Schlussrechnung: buchen() übernimmt den Betrag zum Buchungszeitpunkt. Hat er sich seit
+        // dem Erzeugen des PDFs geändert (z. B. Abschlagsrechnung inzwischen storniert), passt der
+        // Anhang nicht mehr – dann nicht senden. Das PDF lässt sich hier nicht sauber neu bauen,
+        // weil der Editor dafür den Abrechnungsstand neu laden muss.
+        if (betragGeaendert(buchungsPdfNettoRef.current, gebucht.betragNetto)) {
+            buchungsPdfRef.current = null;
+            toast.error('Der Betrag der Rechnung hat sich beim Buchen geändert (zum Beispiel, weil inzwischen '
+                + 'eine Abschlagsrechnung storniert wurde). Die Rechnung ist jetzt gebucht, die E-Mail wurde aber '
+                + 'nicht gesendet: Das angehängte PDF zeigt noch den alten Betrag. Bitte das Mailfenster schließen, '
+                + 'die Seite neu laden und die E-Mail neu öffnen.');
+            return { weiter: false };
+        }
+        const pdf = buchungsPdfRef.current;
+        if (pdf && gebucht.id) {
+            let gespeichert = false;
+            try {
+                const res = await fetch(`/api/ausgangs-dokumente/${gebucht.id}/pdf-speichern`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/pdf' },
+                    body: await pdf.arrayBuffer(),
+                });
+                gespeichert = res.ok;
+            } catch (e) {
+                console.warn('PDF konnte nicht serverseitig gespeichert werden:', e);
+            }
+            if (gespeichert) {
+                buchungsPdfRef.current = null;
+            } else {
+                // Kein Grund, die Mail aufzuhalten: Die Rechnung ist gebucht, nur der Verweis
+                // in den Offenen Posten fehlt.
+                toast.warning('Die Rechnung ist gebucht, das PDF konnte aber nicht bei den Offenen Posten '
+                    + 'abgelegt werden. Die E-Mail wird trotzdem gesendet.');
+            }
+        }
+        return {
+            weiter: true,
+            hinweisBeiSendefehler: 'Die Rechnung ist bereits gebucht. Bitte die E-Mail erneut senden.',
+        };
+    };
+
+    const prepareAndOpenEmail = async (format: PdfFormat, tage: number | null, mitFreigabe: boolean = true) => {
         const isDraft = draftSendMode;
         setEmailLoading(true);
         try {
@@ -2925,18 +3094,19 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             }
             // 1. Auto-Save wenn nötig – Rückgabewert liefert aktuelle ID (React-State ist async)
             let aktiveDokumentId = dokument?.id ?? null;
+            let gespeicherterStand: AusgangsGeschaeftsDokument | null = dokument;
             if (!dokument?.id || hasUnsavedChanges || !isDraft) {
                 const saved = await handleSave();
                 if (saved?.id) aktiveDokumentId = saved.id;
+                if (saved) gespeicherterStand = saved;
             }
 
-            // 2. Rechnungstypen: sofort buchen & sperren (instant lock vor E-Mail)
-            //    Im Entwurfs-Modus wird NICHT gebucht/gesperrt – das Dokument
-            //    bleibt offen und änderbar.
-            if (showFinalizationPrompt && !isDraft) {
-                const booked = await buchenUndSperren();
-                if (!booked) throw new Error('Buchung fehlgeschlagen');
-            }
+            // 2. Rechnungstypen werden NICHT hier gebucht, sondern erst beim Klick auf
+            //    „E-Mail senden“ (bucheVorDemSenden). Schließt der Anwender das
+            //    Mailfenster ohne Senden, bleibt die Rechnung offen. Das PDF passt
+            //    trotzdem zur gebuchten Fassung: Datum und Nummer stehen nach dem
+            //    Speichern oben fest, das Buchen ändert daran nichts.
+            const buchtBeimSenden = !isDraft && brauchtBuchungsWarnung(showFinalizationPrompt, dokument);
 
             // 2. PDF generieren (normal oder ZUGFeRD); im Entwurfs-Modus mit "ENTWURF"-Wasserzeichen
             const request = await createPdfRequest(false, isDraft);
@@ -2962,7 +3132,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // mit dem späteren finalen Versand verwechselt werden, und ein
             // Freigabe-Link soll nicht auf ein Wasserzeichen-PDF zeigen.
             let pdfDateiname: string | null = null;
-            const brauchtPdfSpeicherung = !isDraft && aktiveDokumentId && (
+            // Eine ungebuchte Rechnung wird erst nach dem Buchen gespeichert (bucheVorDemSenden).
+            buchungsPdfRef.current = buchtBeimSenden ? blob : null;
+            buchungsPdfNettoRef.current = buchtBeimSenden ? gespeicherterStand?.betragNetto ?? null : null;
+            const brauchtPdfSpeicherung = !isDraft && !buchtBeimSenden && aktiveDokumentId && (
                 dokumentTyp === 'ANGEBOT' ||
                 dokumentTyp === 'NACHTRAGSANGEBOT' ||
                 dokumentTyp === 'AUFTRAGSBESTAETIGUNG' ||
@@ -3028,6 +3201,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                         recipient: kontextDaten.kundenEmails?.[0] ?? null,
                         pdfDateiname: pdfDateiname,
                         gueltigkeitTage: tage,
+                        mitFreigabe,
                     })
                 });
                 if (templateRes.ok) {
@@ -3043,6 +3217,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             //    aus dem React-State gelesen werden, weil draftSendMode bis dahin
             //    schon zurückgesetzt sein kann.
             lastSendWasDraftRef.current = isDraft;
+            setBuchungBeimSenden(buchtBeimSenden);
             setEmailAttachments([pdfFile]);
             setEmailBody(generatedBody);
             setShowFormatDialog(false);
@@ -3809,8 +3984,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             {/* Modals */}
             {showExportWarning && (
                 <ExportWarningModal
-                    onCancel={() => setShowExportWarning(false)}
-                    onConfirm={() => confirmExport(true)}
+                    onCancel={handleExportWarningCancelled}
+                    onConfirm={() => { void handleExportWarningConfirmed(); }}
+                    loading={exportLoading}
                 />
             )}
 
@@ -3986,14 +4162,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 loadingText={draftSendMode ? 'Entwurfs-PDF wird erstellt…' : undefined}
             />
 
-            {/* Gültigkeitsdauer-Auswahl (nur Angebote) */}
+            {/* Angebote: Online-Annahme ja/nein */}
+            <OnlineAnnahmeDialog
+                isOpen={showOnlineAnnahmeDialog}
+                dokumentBezeichnung={dokumentTyp === 'NACHTRAGSANGEBOT' ? 'Nachtragsangebot' : 'Angebot'}
+                onClose={brecheVersandVorbereitungAb}
+                onWahl={handleOnlineAnnahmeGewaehlt}
+            />
+
+            {/* Gültigkeitsdauer-Auswahl (nur Angebote mit Online-Annahme) */}
             <EmailValidityDialog
                 isOpen={showValidityDialog}
-                onClose={() => {
-                    setShowValidityDialog(false);
-                    setPendingFormat(null);
-                    setEmailLoading(false);
-                }}
+                onClose={brecheVersandVorbereitungAb}
                 onConfirm={handleValidityConfirmed}
                 defaultTage={gueltigkeitTage ?? 14}
             />
@@ -4007,6 +4187,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setEmailBody('');
                     setDraftSendMode(false);
                     lastSendWasDraftRef.current = false;
+                    setBuchungBeimSenden(false);
+                    buchungsPdfRef.current = null;
+                    setFreigabenAbloesenFuerDokumentId(null);
                 }}
                 projektId={projektId}
                 anfrageId={anfrageId}
@@ -4027,8 +4210,18 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 initialSubject={emailSubject}
                 initialBody={emailBody}
                 gueltigkeitTage={gueltigkeitTage ?? undefined}
+                vorDemSenden={buchungBeimSenden ? bucheVorDemSenden : undefined}
+                anhangVorschauGesperrt={buchungBeimSenden
+                    ? 'Vorschau und Download erst nach dem Senden: Die Rechnung wird beim Senden gebucht.'
+                    : undefined}
+                pflichtanhangHinweis={buchungBeimSenden
+                    ? 'Das Rechnungs-PDF muss angehängt bleiben, denn die Rechnung wird beim Senden gebucht. '
+                        + 'Schließen Sie das Fenster und öffnen Sie die E-Mail neu, um es wieder anzuhängen.'
+                    : undefined}
+                entwurfSpeichern={!buchungBeimSenden && freigabenAbloesenFuerDokumentId === null}
+                freigabenAbloesenFuerDokumentId={freigabenAbloesenFuerDokumentId ?? undefined}
                 onSuccess={async () => {
-                    // Versanddatum setzen (Buchung erfolgte bereits vor E-Mail-Vorbereitung).
+                    // Versanddatum setzen (gebucht wurde beim Klick auf „Senden“, siehe bucheVorDemSenden).
                     // Bei Entwurfs-Versand wird der Endpoint NICHT aufgerufen, damit
                     // emailVersandDatum nicht fälschlich gesetzt wird – der eigentliche
                     // finale Versand kommt später separat.
@@ -4057,6 +4250,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setPendingFormat(null);
                     setDraftSendMode(false);
                     lastSendWasDraftRef.current = false;
+                    setBuchungBeimSenden(false);
+                    buchungsPdfRef.current = null;
+                    setFreigabenAbloesenFuerDokumentId(null);
                 }}
             />
 

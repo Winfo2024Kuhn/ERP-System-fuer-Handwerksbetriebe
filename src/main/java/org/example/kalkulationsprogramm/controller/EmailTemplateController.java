@@ -51,8 +51,13 @@ public class EmailTemplateController {
             // Angebote UND Nachtragsangebote bekommen einen digitalen Freigabe-Link.
             // Auftragsbestätigungen werden vom Büro versendet — der Kunde hat dem Angebot
             // bereits zugestimmt, eine zweite digitale Bestätigung waere irreführend.
+            // Der Anwender kann die Online-Annahme beim Versand abwählen (mitFreigabe=false).
+            // Ein noch offener älterer Link desselben Angebots wird dann erst beim tatsächlichen
+            // Senden zurückgezogen (FreigabeAbloesungService, nach Rückfrage im Editor) – nicht
+            // hier, damit ein abgebrochener Versand nichts verändert.
             if ((dokumentTyp.equals("ANGEBOT") || dokumentTyp.equals("NACHTRAGSANGEBOT"))
-                    && request.getDokumentId() != null) {
+                    && request.getDokumentId() != null
+                    && !Boolean.FALSE.equals(request.getMitFreigabe())) {
                 boolean isAnfrage = Boolean.TRUE.equals(request.getIsAnfrage());
                 String recipient = request.getRecipient() != null ? request.getRecipient() : "";
                 String pdfDateiname = request.getPdfDateiname();
@@ -211,6 +216,11 @@ public class EmailTemplateController {
         private String pdfDateiname;
         /** Vom Anwender gewählte Gültigkeitsdauer des Freigabe-Links in Tagen (nur bei Angebot). */
         private Integer gueltigkeitTage;
+        /**
+         * {@code false} = der Anwender will das Angebot ohne Online-Annahme verschicken: kein
+         * Freigabe-Link. {@code null}/{@code true} = wie bisher mit Link.
+         */
+        private Boolean mitFreigabe;
     }
 
     @Data

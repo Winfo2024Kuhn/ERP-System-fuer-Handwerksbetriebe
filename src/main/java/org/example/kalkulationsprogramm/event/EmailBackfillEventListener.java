@@ -12,6 +12,7 @@ import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.util.FreemailDomains;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -129,13 +130,24 @@ public class EmailBackfillEventListener {
         int attachmentErrors = 0;
         for (String address : event.getNewAddresses()) {
             String domain = extractDomain(address);
-            log.info("[EmailBackfill] Lieferant ID={}: Prüfe Domain '{}' (aus Adresse '{}')",
-                    event.getEntityId(), domain, address);
+            // Freemail (gmail.com, gmx.de, …): Die Domain gehört nicht dem Lieferanten.
+            // Dann nur Mails genau dieser Adresse zuordnen, sonst landeten fremde Mails
+            // samt ihrer Anhänge beim Lieferanten (Issue #266).
+            boolean freemail = FreemailDomains.istFreemailAdresse(address);
+            if (freemail) {
+                // Freemail-Adresse gehört meist einer Privatperson: nicht ins Log schreiben.
+                log.info("[EmailBackfill] Lieferant ID={}: Prüfe Freemail-Adresse (nur exakte Adresse)",
+                        event.getEntityId());
+            } else {
+                log.info("[EmailBackfill] Lieferant ID={}: Prüfe Domain '{}'", event.getEntityId(), domain);
+            }
 
             if (domain != null) {
-                // 1. Finde unzugeordnete Emails mit passender Domain
-                List<Email> emails = emailRepository.findUnassignedByDomain(domain);
-                log.info("[EmailBackfill] Gefunden: {} unzugeordnete Emails für Domain '{}'", emails.size(), domain);
+                // 1. Finde unzugeordnete Emails mit passender Domain bzw. exakter Freemail-Adresse
+                List<Email> emails = freemail
+                        ? emailRepository.findUnassignedEingangVonAdresse(address)
+                        : emailRepository.findUnassignedByDomain(domain);
+                log.info("[EmailBackfill] Gefunden: {} unzugeordnete Emails", emails.size());
 
                 for (Email email : emails) {
                     email.assignToLieferant(lieferant);
@@ -164,13 +176,15 @@ public class EmailBackfillEventListener {
                 }
 
                 // 2. Auch bereits als Anfrage markierte Emails von dieser Domain zurücksetzen
-                List<Email> inquiryEmails = emailRepository.findInquiriesByDomain(domain);
+                List<Email> inquiryEmails = freemail
+                        ? emailRepository.findInquiriesVonAdresse(address)
+                        : emailRepository.findInquiriesByDomain(domain);
                 for (Email email : inquiryEmails) {
                     email.setPotentialInquiry(false);
                     email.setInquiryScore(0);
                     emailRepository.saveAndFlush(email);
-                    log.info("[EmailBackfill] Inquiry-Flag entfernt für Email {} (Lieferant-Domain {})", email.getId(),
-                            domain);
+                    log.info("[EmailBackfill] Inquiry-Flag entfernt für Email {} (Lieferant {})", email.getId(),
+                            lieferant.getId());
                 }
             }
         }
@@ -269,6 +283,6 @@ public class EmailBackfillEventListener {
     private String extractDomain(String email) {
         if (email == null || !email.contains("@"))
             return null;
-        return email.substring(email.lastIndexOf("@") + 1).toLowerCase();
+        return email.substring(email.lastIndexOf("@") + 1).trim().toLowerCase();
     }
 }

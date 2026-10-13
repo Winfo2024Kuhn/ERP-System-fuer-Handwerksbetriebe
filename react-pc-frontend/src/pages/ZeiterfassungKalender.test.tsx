@@ -611,7 +611,17 @@ describe('Resturlaub mit halben Tagen', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Mehr zu: Resturlaub' }));
         const popover = await screen.findByRole('dialog', { name: 'Resturlaub' });
         expect(within(popover).getByText(/Halbe Urlaubstage zählen als 0,5 Tage/)).toBeInTheDocument();
-        expect(within(popover).getByText(/Jahresanspruch minus genommen minus geplant plus Korrekturen/)).toBeInTheDocument();
+        expect(within(popover).getByText(/Jahresanspruch plus Übertrag aus dem Vorjahr minus verfallene, genommene und geplante Tage plus Korrekturen/)).toBeInTheDocument();
+        expect(screen.queryByText(/^davon .* aus dem Vorjahr/)).toBeNull();
+    });
+
+    it('zeigt den Rest aus dem Vorjahr getrennt mit Verfallsdatum', async () => {
+        saldoAntworten = { 1: { urlaub: { jahresanspruch: 30, genommen: 2, geplant: 0, verbleibend: 31.5, uebertragVorjahr: 3.5, ausVorjahrOffen: 1.5, verfallen: 0, verfallsdatum: '2026-03-31' }, gesamt: { istStunden: 100, sollStunden: 90, saldo: 10 } } };
+        mount();
+
+        expect(await screen.findByText('31,5 Tage')).toBeVisible();
+        expect(screen.getByText('davon 1,5 Tage aus dem Vorjahr – bis 31.03.2026 nehmen, danach verfallen sie')).toBeVisible();
+        expect(screen.getByText(/^Aus \d{4}: 3,5$/)).toBeVisible();
     });
 });
 

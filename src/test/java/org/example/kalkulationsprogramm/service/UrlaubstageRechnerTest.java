@@ -71,14 +71,6 @@ class UrlaubstageRechnerTest {
     }
 
     @Test
-    void resturlaub_rechnetKorrekturOhneAbschneiden_undNieUnterNull() {
-        assertEquals(new BigDecimal("28.0"),
-                rechner.resturlaub(30, new BigDecimal("1.5"), BigDecimal.ONE, new BigDecimal("0.5")));
-        assertEquals(new BigDecimal("29.5"), rechner.resturlaub(30, new BigDecimal("0.5"), BigDecimal.ZERO, null));
-        assertEquals(BigDecimal.ZERO, rechner.resturlaub(2, new BigDecimal("5"), BigDecimal.ZERO, null));
-    }
-
-    @Test
     void korrekturTage_nullWirdNull() {
         assertEquals(BigDecimal.ZERO, rechner.korrekturTage(null));
         assertEquals(new BigDecimal("0.5"), rechner.korrekturTage(new BigDecimal("0.5")));

@@ -317,3 +317,38 @@ describe('Urlaubsantraege - Genehmigen, Stornieren und Klartext', () => {
         expect(screen.queryByRole('button', { name: 'Stornieren' })).not.toBeInTheDocument();
     });
 });
+
+describe('Urlaubsantraege - Resturlaub mit Vorjahresrest', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('zeigt bei offenen Urlaubsanträgen den Resturlaub mit dem Rest aus dem Vorjahr, je Mitarbeiter zum ersten Urlaubstag geladen', async () => {
+        const fetchMock = vi.fn((url: string) => {
+            if (url.startsWith('/api/urlaub/antraege')) {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([ANTRAG_MIT_HINWEIS, ANTRAG_OHNE_HINWEIS]) });
+            }
+            if (url.startsWith('/api/urlaub/resturlaub')) {
+                const params = new URL(url, 'http://localhost').searchParams;
+                const gefunden = params.get('mitarbeiterId') === '10';
+                const body = gefunden
+                    ? { verbleibend: 33.5, jahr: 2026, ausVorjahrOffen: 3.5, verfallen: 0, verfallsdatum: '2026-03-31' }
+                    : { error: 'Mitarbeiter nicht gefunden' };
+                return Promise.resolve({ ok: gefunden, status: gefunden ? 200 : 400, json: () => Promise.resolve(body) });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ warnungen: [] }) });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        renderSeite();
+
+        expect(await screen.findByText('33,5 Tage')).toBeVisible();
+        expect(screen.getByText('(davon 3,5 Tage aus dem Vorjahr – bis 31.03.2026 nehmen, danach verfallen sie)')).toBeVisible();
+        const aufrufe = fetchMock.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/urlaub/resturlaub'));
+        expect(aufrufe).toEqual([
+            '/api/urlaub/resturlaub?mitarbeiterId=10&jahr=2026&stichtag=2026-03-10',
+            '/api/urlaub/resturlaub?mitarbeiterId=11&jahr=2026&stichtag=2026-04-01',
+        ]);
+        // Ein Fehler beim zweiten Mitarbeiter blendet nur dessen Angabe aus.
+        expect(screen.getAllByText(/^Resturlaub zum Urlaubsbeginn:/)).toHaveLength(1);
+    });
+});

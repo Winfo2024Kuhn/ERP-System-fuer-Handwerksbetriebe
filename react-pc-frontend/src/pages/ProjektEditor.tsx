@@ -59,6 +59,7 @@ import type { DocBlock } from '../components/document-editor/types';
 import { TeilrechnungPositionRow, getAllServiceBlocks, zeroOutUnselectedBlocks } from '../components/TeilrechnungPositionRow';
 import { serviceLineTotal, nettoNachGlobalRabatt, calculateNettoNachRabatt } from '../components/document-editor/helpers';
 import { onDokumentChanged } from '../lib/dokumentChannel';
+import { basisdokumentSperre } from '../lib/basisdokumente';
 import { appendBildToNotiz, removeBildFromNotiz } from '../lib/optimisticUploads';
 import { stornoHinweiseAus, zeigeStornoHinweise } from '../lib/stornoHinweise';
 import { leseFehlermeldung } from '../lib/apiFehler';
@@ -3319,22 +3320,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             .map((typ) => {
                                 // Basisdokumente sind eigene Wurzel-Vorgänge (ohne vorgaengerId).
                                 // Regel: 1× Angebot zuerst, danach beliebig viele Nachtragsangebote.
-                                // Eigenständige AB/Rechnung nur, solange noch kein Basisdokument existiert.
-                                const roots = ausgangsDokumente.filter(d => !d.vorgaengerId);
-                                const hasAngebotBasis = roots.some(d => d.typ === 'ANGEBOT');
-                                const hasAnyBasis = roots.length > 0;
-                                let disabled: boolean;
-                                let disabledTitle: string;
-                                if (typ.value === 'NACHTRAGSANGEBOT') {
-                                    disabled = !hasAngebotBasis;
-                                    disabledTitle = 'Zuerst ein Angebot anlegen';
-                                } else if (typ.value === 'ANGEBOT') {
-                                    disabled = hasAnyBasis;
-                                    disabledTitle = 'Es existiert bereits ein Basisdokument – weitere nur als Nachtragsangebot';
-                                } else {
-                                    disabled = hasAnyBasis;
-                                    disabledTitle = 'Es existiert bereits ein Basisdokument';
-                                }
+                                // Eigenständige AB/Rechnung nur, solange noch kein aktives
+                                // (nicht storniertes) Basisdokument existiert.
+                                const { gesperrt: disabled, grund: disabledTitle } =
+                                    basisdokumentSperre(typ.value, ausgangsDokumente);
                                 return (
                                     <button
                                         key={typ.value}

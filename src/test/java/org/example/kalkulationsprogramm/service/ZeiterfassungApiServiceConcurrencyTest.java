@@ -85,7 +85,7 @@ class ZeiterfassungApiServiceConcurrencyTest {
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
                 lieferantenRepository, feiertagService, auditService, tagesSollService,
                 zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
-                new UrlaubstageRechner());
+                org.mockito.Mockito.mock(UrlaubskontoService.class));
     }
 
     private Mitarbeiter dummyMitarbeiter() {

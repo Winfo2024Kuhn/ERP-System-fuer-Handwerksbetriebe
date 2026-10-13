@@ -21,6 +21,12 @@ interface LieferantDokumentModalProps {
     dokument: LieferantDokument | null;
     lieferantId: number | string;
     onSave?: (updated: LieferantDokument) => void;
+    /**
+     * „Zuordnen“ im Warnband „Kein Projekt zugeordnet“: Der Aufrufer öffnet seinen
+     * Zuordnungs-Dialog und reicht danach das neu geladene Dokument (gleiche ID) herein.
+     * Ohne diese Prop gibt es keinen Knopf.
+     */
+    onZuordnen?: (dokument: LieferantDokument) => void;
 }
 
 const DOK_TYP_OPTIONS = [
@@ -42,7 +48,8 @@ export default function LieferantDokumentModal({
     onClose,
     dokument,
     lieferantId,
-    onSave
+    onSave,
+    onZuordnen
 }: LieferantDokumentModalProps) {
     const [showPdf, setShowPdf] = useState(true);
     const [loading, setLoading] = useState(false);
@@ -162,7 +169,9 @@ export default function LieferantDokumentModal({
         tatsaechlichGezahlt: "",
     });
 
-    // Reset form when document changes
+    // Formular beim Öffnen bzw. bei einem ANDEREN Dokument neu befüllen. Bewusst nicht
+    // bei jedem neuen Objekt derselben ID: Lädt der Aufrufer nach dem Zuordnen neu,
+    // sollen ungespeicherte Eingaben stehen bleiben.
     useEffect(() => {
         if (dokument) {
             setFormData({
@@ -188,18 +197,22 @@ export default function LieferantDokumentModal({
             setError(null);
             setShowPdf(true);
         }
-    }, [dokument]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dokument?.id, isOpen]);
 
-    // Lade PDF als Blob um X-Frame-Options externer URLs zu umgehen
+    // Lade PDF als Blob um X-Frame-Options externer URLs zu umgehen.
+    // Nur an der ID festgemacht: Ein neu geladenes Objekt desselben Dokuments
+    // (z. B. nach dem Zuordnen) lädt die Vorschau nicht erneut.
+    const dokumentId = dokument?.id;
     useEffect(() => {
-        if (!isOpen || !dokument || !showPdf) {
+        if (!isOpen || dokumentId == null || !showPdf) {
             setPdfBlobUrl(null);
             return;
         }
         const controller = new AbortController();
         let currentUrl: string | null = null;
 
-        fetch(`/api/lieferanten/${lieferantId}/dokumente/${dokument.id}/download`, { signal: controller.signal })
+        fetch(`/api/lieferanten/${lieferantId}/dokumente/${dokumentId}/download`, { signal: controller.signal })
             .then(res => res.blob())
             .then(blob => {
                 currentUrl = URL.createObjectURL(blob);
@@ -212,7 +225,7 @@ export default function LieferantDokumentModal({
             if (currentUrl) URL.revokeObjectURL(currentUrl);
             setPdfBlobUrl(null);
         };
-    }, [dokument?.id, dokument, lieferantId, isOpen, showPdf]);
+    }, [dokumentId, lieferantId, isOpen, showPdf]);
 
     if (!isOpen || !dokument) return null;
 
@@ -741,10 +754,24 @@ export default function LieferantDokumentModal({
                                             <AlertCircle className="w-4 h-4" />
                                             <span>Kein Projekt zugeordnet</span>
                                         </div>
-                                        <Button variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 hover:bg-rose-50">
-                                            <FolderPlus className="w-4 h-4 mr-1" />
-                                            Zuordnen
-                                        </Button>
+                                        {/* Gleicher Dialog wie in Projektmanagement → Bestellungen.
+                                            Ohne ausgelesene Rechnungsdaten (Nummer, Betrag) gibt es
+                                            nichts aufzuteilen – dann ein Hinweis statt Knopf. */}
+                                        {onZuordnen && (dokument.geschaeftsdaten ? (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                                onClick={() => onZuordnen(dokument)}
+                                            >
+                                                <FolderPlus className="w-4 h-4 mr-1" />
+                                                Zuordnen
+                                            </Button>
+                                        ) : (
+                                            <span className="text-xs text-amber-700">
+                                                Erst die Rechnungsdaten eintragen und speichern, dann zuordnen.
+                                            </span>
+                                        ))}
                                     </div>
                                 )}
 

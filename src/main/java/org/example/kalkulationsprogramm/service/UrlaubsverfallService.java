@@ -1,135 +1,85 @@
 package org.example.kalkulationsprogramm.service;
 
-import lombok.RequiredArgsConstructor;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.Month;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 
 /**
- * Service für Urlaubsverfall-Logik.
- * 
- * Regelung: Resturlaub aus dem Vorjahr verfällt am 1. Februar des Folgejahres.
- * Warnung wird 2 Monate vorher angezeigt (ab 1. Dezember).
+ * Hinweis „Resturlaub verfällt bald“ für die Glocke der Handy-App.
+ *
+ * <p>Der Hinweis erscheint {@value #WARN_MONATE} Monate vor dem eingestellten
+ * Verfallstag (Einstellungen → Zeiterfassung → Resturlaub), solange noch Tage
+ * aus dem Vorjahr offen sind. Bei „Resturlaub verfällt nicht“ erscheint er nie.
+ * Die Zahlen kommen aus demselben Urlaubskonto wie Saldo und Antragsprüfung.
  */
 @Service
 @RequiredArgsConstructor
 public class UrlaubsverfallService {
 
+    static final int WARN_MONATE = 2;
+    static final int DRINGEND_TAGE = 30;
+
     private final MitarbeiterRepository mitarbeiterRepository;
+    private final UrlaubskontoService urlaubskontoService;
+    private final UrlaubsverfallEinstellungService einstellungen;
+    private final Clock clock;
 
     /**
-     * Prüft ob ein Mitarbeiter eine Urlaubsverfall-Warnung erhalten sollte.
-     * 
-     * Warnung wird angezeigt wenn:
-     * - Der Mitarbeiter Resturlaub aus dem Vorjahr hat
-     * - Das aktuelle Datum zwischen 1. Dezember und 31. Januar liegt
-     * 
-     * @param mitarbeiterId ID des Mitarbeiters
-     * @return Optional mit Warnungsdaten, oder empty wenn keine Warnung nötig
+     * Prüft, ob ein Mitarbeiter einen Verfall-Hinweis bekommen soll.
+     *
+     * @return Hinweisdaten oder leer, wenn nichts verfällt
      */
     @Transactional(readOnly = true)
     public Optional<Map<String, Object>> pruefeVerfallWarnung(Long mitarbeiterId) {
-        LocalDate heute = LocalDate.now();
-
-        // Prüfe ob wir im Warnzeitraum sind (1. Dezember bis 31. Januar)
-        boolean imWarnzeitraum = isImWarnzeitraum(heute);
-        if (!imWarnzeitraum) {
-            return Optional.empty();
-        }
-
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId).orElse(null);
-        if (mitarbeiter == null) {
-            return Optional.empty();
-        }
-
-        Integer resturlaub = mitarbeiter.getResturlaubVorjahr();
-        if (resturlaub == null || resturlaub <= 0) {
-            return Optional.empty();
-        }
-
-        // Berechne das Verfallsdatum (1. Februar des aktuellen/nächsten Jahres)
-        LocalDate verfallsDatum = berechneVerfallsDatum(heute);
-        long tageVerbleibend = java.time.temporal.ChronoUnit.DAYS.between(heute, verfallsDatum);
-
-        Map<String, Object> warnung = new LinkedHashMap<>();
-        warnung.put("resturlaubTage", resturlaub);
-        warnung.put("verfallsDatum", verfallsDatum.toString());
-        warnung.put("verfallsJahr", verfallsDatum.getYear());
-        warnung.put("tageVerbleibend", tageVerbleibend);
-        warnung.put("dringend", tageVerbleibend <= 30); // Letzte 30 Tage = dringend
-
-        return Optional.of(warnung);
+        return mitarbeiterRepository.findById(mitarbeiterId).flatMap(this::pruefeVerfallWarnung);
     }
 
-    /**
-     * Prüft ob ein Mitarbeiter (per Token) eine Urlaubsverfall-Warnung erhalten
-     * sollte.
-     */
+    /** Wie {@link #pruefeVerfallWarnung(Long)}, aber über den Anmelde-Code der Handy-App. */
     @Transactional(readOnly = true)
     public Optional<Map<String, Object>> pruefeVerfallWarnungByToken(String token) {
-        return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token)
-                .flatMap(m -> pruefeVerfallWarnung(m.getId()));
+        return mitarbeiterRepository.findByLoginTokenAndAktivTrue(token).flatMap(this::pruefeVerfallWarnung);
     }
 
-    /**
-     * Prüft ob das aktuelle Datum im Warnzeitraum liegt.
-     * Warnzeitraum: 1. Dezember bis 31. Januar (2 Monate vor Verfall am 1.2.)
-     */
-    private boolean isImWarnzeitraum(LocalDate datum) {
-        Month monat = datum.getMonth();
-        return monat == Month.DECEMBER || monat == Month.JANUARY;
-    }
-
-    /**
-     * Berechnet das Verfallsdatum des Resturlaubs.
-     * - Im Dezember: 1. Februar des nächsten Jahres
-     * - Im Januar: 1. Februar des aktuellen Jahres
-     */
-    private LocalDate berechneVerfallsDatum(LocalDate datum) {
-        int jahr = datum.getYear();
-        if (datum.getMonth() == Month.DECEMBER) {
-            // Dezember -> Verfall am 1.2. des nächsten Jahres
-            return LocalDate.of(jahr + 1, 2, 1);
-        } else {
-            // Januar -> Verfall am 1.2. des aktuellen Jahres
-            return LocalDate.of(jahr, 2, 1);
+    private Optional<Map<String, Object>> pruefeVerfallWarnung(Mitarbeiter mitarbeiter) {
+        if (Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer())) {
+            return Optional.empty();
         }
-    }
-
-    /**
-     * Führt den jährlichen Urlaubsübertrag durch.
-     * Sollte am 1. Januar ausgeführt werden (z.B. via Scheduler).
-     * 
-     * - Berechnet verbleibenden Urlaubsanspruch des Vorjahres
-     * - Setzt diesen als resturlaubVorjahr
-     * - Dieser verfällt dann am 1.2.
-     */
-    @Transactional
-    public void fuehreJaehrlichenUebertragDurch(Long mitarbeiterId, int verbleibendeTage) {
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
-                .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
-
-        mitarbeiter.setResturlaubVorjahr(verbleibendeTage);
-        mitarbeiterRepository.save(mitarbeiter);
-    }
-
-    /**
-     * Löscht den Resturlaub am 1. Februar (Verfall).
-     * Sollte am 1. Februar ausgeführt werden (z.B. via Scheduler).
-     */
-    @Transactional
-    public void loescheVerfallenenResturlaub(Long mitarbeiterId) {
-        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
-                .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
-
-        mitarbeiter.setResturlaubVorjahr(0);
-        mitarbeiterRepository.save(mitarbeiter);
+        UrlaubsverfallEinstellungService.Verfallsregel regel = einstellungen.regel();
+        if (!regel.verfaellt()) {
+            return Optional.empty();
+        }
+        LocalDate heute = LocalDate.now(clock);
+        // Liegt der Verfallstag früh im Jahr (z. B. 15.01.), beginnt der Warnzeitraum schon im Vorjahr.
+        for (int jahr = heute.getYear(); jahr <= heute.getYear() + 1; jahr++) {
+            LocalDate verfallsdatum = regel.verfallsdatum(jahr).orElseThrow();
+            if (heute.isAfter(verfallsdatum) || heute.isBefore(verfallsdatum.minusMonths(WARN_MONATE))) {
+                continue;
+            }
+            Urlaubskonto konto = urlaubskontoService.berechne(mitarbeiter, jahr);
+            BigDecimal offen = konto.ausVorjahrOffen();
+            if (offen.signum() <= 0) {
+                return Optional.empty();
+            }
+            long tageVerbleibend = ChronoUnit.DAYS.between(heute, verfallsdatum);
+            Map<String, Object> warnung = new LinkedHashMap<>();
+            warnung.put("resturlaubTage", offen);
+            warnung.put("verfallsDatum", verfallsdatum.toString());
+            warnung.put("verfallsJahr", verfallsdatum.getYear());
+            warnung.put("tageVerbleibend", tageVerbleibend);
+            warnung.put("dringend", tageVerbleibend <= DRINGEND_TAGE);
+            return Optional.of(warnung);
+        }
+        return Optional.empty();
     }
 }

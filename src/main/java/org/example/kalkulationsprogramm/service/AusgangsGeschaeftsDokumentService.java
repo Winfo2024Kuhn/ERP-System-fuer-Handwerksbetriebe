@@ -1599,9 +1599,9 @@ public class AusgangsGeschaeftsDokumentService {
         if (typ == AusgangsGeschaeftsDokumentTyp.NACHTRAGSANGEBOT) {
             // Nachtragsangebote bauen auf einem bestehenden Angebot auf.
             boolean hatAngebotBasis = (projektId != null
-                        && dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTyp(projektId, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
+                        && dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndTypAndStorniertFalse(projektId, AusgangsGeschaeftsDokumentTyp.ANGEBOT))
                     || (anfrageId != null
-                        && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndTyp(anfrageId, AusgangsGeschaeftsDokumentTyp.ANGEBOT));
+                        && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndTypAndStorniertFalse(anfrageId, AusgangsGeschaeftsDokumentTyp.ANGEBOT));
             if (!hatAngebotBasis) {
                 throw new IllegalStateException(
                         "Ein Nachtragsangebot benötigt ein bestehendes Angebot als Basisdokument.");
@@ -1612,8 +1612,12 @@ public class AusgangsGeschaeftsDokumentService {
         // Alle übrigen Typen (Angebot, AB, Rechnung, …) sind nur als allererstes
         // Basisdokument erlaubt. Sobald irgendein Basisdokument existiert, ist das
         // einzige zulässige weitere Wurzel-Dokument ein Nachtragsangebot (oben).
-        boolean hatBasis = (projektId != null && dokumentRepository.existsByProjektIdAndVorgaengerIsNull(projektId))
-                || (anfrageId != null && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNull(anfrageId));
+        // Wurzeln mit storniert=true zählen nicht mit, sonst bliebe der Vorgang
+        // blockiert (Issue #262). Nachfolger prüfen wir bewusst nicht: Folgedokumente
+        // entstehen nur an Angebot oder AB, unter einer solchen Wurzel hängen nur
+        // Gegenbuchung und Mahnungen.
+        boolean hatBasis = (projektId != null && dokumentRepository.existsByProjektIdAndVorgaengerIsNullAndStorniertFalse(projektId))
+                || (anfrageId != null && dokumentRepository.existsByAnfrageIdAndVorgaengerIsNullAndStorniertFalse(anfrageId));
         if (hatBasis) {
             if (typ == AusgangsGeschaeftsDokumentTyp.ANGEBOT) {
                 throw new IllegalStateException(

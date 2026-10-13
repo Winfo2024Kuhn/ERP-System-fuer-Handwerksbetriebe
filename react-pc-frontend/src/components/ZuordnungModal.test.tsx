@@ -259,3 +259,27 @@ describe('ZuordnungModal – Netto-Berechnung Regression', () => {
         });
     });
 });
+
+describe('ZuordnungModal – sichere PDF-Adresse', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+    });
+
+    it('übernimmt keine javascript:-Adresse in Vorschau und Download', async () => {
+        render(<ZuordnungModal {...defaultProps} pdfUrl="javascript:alert(1)" />);
+
+        await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+        expect(screen.queryByText('Download')).toBeNull();
+        expect(screen.queryByTestId('pdf-viewer')).toBeNull();
+        expect(document.querySelector('a[href^="javascript"]')).toBeNull();
+    });
+
+    it('zeigt eine relative Adresse als Vorschau mit Download', async () => {
+        render(<ZuordnungModal {...defaultProps} pdfUrl="/api/lieferanten/7/dokumente/42/download" />);
+
+        await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+        expect(screen.getByText('Download').closest('a')).toHaveAttribute('href', '/api/lieferanten/7/dokumente/42/download');
+        expect(screen.getByTestId('pdf-viewer')).toBeInTheDocument();
+    });
+});

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -22,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -46,7 +46,7 @@ class ZeiterfassungApiServiceZeitkontoTest {
     @Mock private UrlaubsverfallService urlaubsverfallService;
     @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
     @Mock private MonatsSaldoService monatsSaldoService;
-    @Spy private UrlaubstageRechner urlaubstageRechner = new UrlaubstageRechner();
+    @Mock private UrlaubskontoService urlaubskontoService;
     @InjectMocks private ZeiterfassungApiService service;
 
     private static final String TOKEN = "test-token-max-mustermann";
@@ -60,6 +60,14 @@ class ZeiterfassungApiServiceZeitkontoTest {
         mitarbeiter.setNachname("Mustermann");
         mitarbeiter.setEintrittsdatum(LocalDate.of(2020, 10, 1));
         mitarbeiter.setJahresUrlaub(28);
+        // Das Urlaubskonto rechnet UrlaubskontoService (eigene Tests); hier nur ein leeres Jahr.
+        lenient().when(urlaubskontoService.anspruch(any(Mitarbeiter.class), anyInt())).thenReturn(
+                new UrlaubskontoService.Anspruch(new BigDecimal("28"), UrlaubskontoService.Anspruchsart.VOLL));
+        lenient().when(urlaubskontoService.berechne(any(Mitarbeiter.class), anyInt(), anyList())).thenAnswer(inv -> {
+            int jahr = inv.getArgument(1);
+            return new Urlaubskonto(jahr, new java.math.BigDecimal("28"), BigDecimal.ZERO, false, LocalDate.of(jahr, 3, 31), BigDecimal.ZERO,
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("28"));
+        });
     }
 
     private void leseZugang() {
@@ -158,7 +166,8 @@ class ZeiterfassungApiServiceZeitkontoTest {
         Map<String, Object> result = service.getSaldo(TOKEN, 2020, 10, false);
 
         assertThat(teil(result, "monat")).containsKeys("sollStunden", "differenz", "festgeschrieben");
-        assertThat(teil(result, "urlaub")).containsKeys("jahresanspruch", "verbleibend", "korrektur");
+        assertThat(teil(result, "urlaub")).containsKeys("jahresanspruch", "verbleibend", "korrektur")
+                .containsEntry("anspruchArt", "VOLL").containsEntry("eintrittsdatum", "2020-10-01");
         assertThat(result).containsKey("gesamt");
     }
 

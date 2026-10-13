@@ -11,6 +11,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsG
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentUpdateDto;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.StornoAntwortDto;
+import org.example.kalkulationsprogramm.dto.Freigabe.AbzuloesendeFreigabeDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto;
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabeStatusKurzDto;
 import org.example.kalkulationsprogramm.domain.Mahnstufe;
@@ -20,6 +21,7 @@ import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditS
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.AutoMahnVersandService;
 import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
+import org.example.kalkulationsprogramm.service.FreigabeAbloesungService;
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -59,6 +61,7 @@ public class AusgangsGeschaeftsDokumentController {
 
     private final AusgangsGeschaeftsDokumentService service;
     private final DokumentFreigabeService dokumentFreigabeService;
+    private final FreigabeAbloesungService freigabeAbloesungService;
     private final AusgangsGeschaeftsDokumentAuditService auditService;
     private final AutoMahnVersandService autoMahnVersandService;
     private final DatensatzLockService dokumentLockService;
@@ -117,6 +120,16 @@ public class AusgangsGeschaeftsDokumentController {
                 .findAuditByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, id)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Offene Online-Links, die beim Versand dieses Angebots ungültig werden: ältere Links
+     * desselben Angebots und Links anderer Angebote im selben Projekt bzw. derselben Anfrage. Der Editor fragt damit vor dem Versand nach;
+     * zurückgezogen werden sie erst beim tatsächlichen Senden ({@code /api/emails/send}).
+     */
+    @GetMapping("/{id}/abzuloesende-freigaben")
+    public ResponseEntity<List<AbzuloesendeFreigabeDto>> abzuloesendeFreigaben(@PathVariable Long id) {
+        return ResponseEntity.ok(freigabeAbloesungService.findeAbzuloesendeFreigaben(id));
     }
 
     /**
