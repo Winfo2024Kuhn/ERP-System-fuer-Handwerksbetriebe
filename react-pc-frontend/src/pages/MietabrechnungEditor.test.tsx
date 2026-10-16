@@ -85,6 +85,20 @@ describe('Mietformulare mit eigenen Eingaben', () => {
         await user.click(screen.getByRole('button', { name: 'Speichern', exact: true }));
         await waitFor(() => expect(api.createKostenposition).toHaveBeenCalledWith(1, expect.objectContaining({ betrag: -12.5 })));
     });
+    it('bietet das Vorjahr ohne vorhandene Kostenpositionen an und behält alte Jahre mit Einträgen', async () => {
+        const vorjahr = new Date().getFullYear() - 1;
+        vi.mocked(api.getKostenstellen).mockResolvedValue([{ id: 1, name: 'Testkosten', kostenpositionen: [
+            { id: 7, kostenstelleId: 1, abrechnungsJahr: 2015, buchungsdatum: '2015-03-01', betrag: 10, berechnung: 'BETRAG', verbrauchsfaktor: null, beschreibung: 'Alt' },
+        ] }]);
+        const user = userEvent.setup(); show(<KostenpositionenView mietobjektId={1} />);
+        await waitFor(() => expect(api.getKostenstellen).toHaveBeenCalled());
+        await user.click(screen.getByRole('combobox', { name: 'Abrechnungsjahr filtern' }));
+        expect(await screen.findByRole('option', { name: '2015' })).toBeVisible();
+        await user.click(screen.getByRole('option', { name: String(vorjahr) }));
+        expect(screen.getByRole('button', { name: `Vom Vorjahr kopieren (${vorjahr - 1} → ${vorjahr})` })).toBeVisible();
+        await user.click(screen.getByRole('button', { name: /Kostenposition$/ }));
+        expect(screen.getByRole('textbox', { name: 'Abrechnungsjahr' })).toHaveValue(String(vorjahr));
+    });
     it('rundet Vorschüsse nicht still und zeigt fehlgeschlagene Speicherung im Dialog', async () => {
         const user = userEvent.setup(); show(<ParteienView mietobjektId={1} />);
         await user.click(screen.getByRole('button', { name: /Partei hinzufügen/ }));

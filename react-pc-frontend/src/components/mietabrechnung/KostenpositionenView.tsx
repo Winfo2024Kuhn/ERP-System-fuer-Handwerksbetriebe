@@ -131,21 +131,18 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
     // Sort by date desc
     filtered.sort((a, b) => new Date(b.buchungsdatum).getTime() - new Date(a.buchungsdatum).getTime());
 
-    // Available years from the positions
-    const years = [...new Set(positions.map(p => p.abrechnungsJahr).filter(Boolean))].sort((a, b) => (b ?? 0) - (a ?? 0));
+    // Recent years are always selectable, even without entries yet – otherwise a
+    // new billing year (e.g. last year in January) could never be picked.
+    const recentYears = Array.from({ length: 7 }, (_, i) => currentYear + 1 - i);
+    const years = [...new Set<number>([
+        ...recentYears,
+        ...positions.map(p => p.abrechnungsJahr).filter((y): y is number => !!y),
+        ...(yearNum ? [yearNum] : []),
+    ])].sort((a, b) => b - a);
     const yearOptions = [
         { value: '', label: 'Alle Jahre' },
         ...years.map(y => ({ value: String(y), label: String(y) })),
     ];
-    // Ensure current filter year is in options
-    if (yearNum && !years.includes(yearNum)) {
-        yearOptions.push({ value: String(yearNum), label: String(yearNum) });
-        yearOptions.sort((a, b) => {
-            if (a.value === '') return -1;
-            if (b.value === '') return 1;
-            return Number(b.value) - Number(a.value);
-        });
-    }
 
     const isVerbrauchsfaktor = editing?.berechnung === 'VERBRAUCHSFAKTOR';
 
