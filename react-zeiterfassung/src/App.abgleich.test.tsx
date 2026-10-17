@@ -83,6 +83,28 @@ describe('App – ein zentraler Abgleich', () => {
         expect(anzeige()).toBe('done|2')
     })
 
+    // Android: Der Service Worker hat Buchungen im Hintergrund gesendet – die App lädt neu.
+    it('gleicht nach einer Meldung des Service Workers ab, ignoriert aber fremde Nachrichten', async () => {
+        const worker = new EventTarget()
+        Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: worker })
+        try {
+            mocked.syncAll.mockResolvedValue(ergebnis(true))
+            await starteApp()
+            expect(anzeige()).toBe('done|1')
+
+            await act(async () => { worker.dispatchEvent(new MessageEvent('message', { data: { type: 'ETWAS_ANDERES' } })) })
+            await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+            expect(mocked.syncAll).toHaveBeenCalledTimes(1)
+
+            await act(async () => { worker.dispatchEvent(new MessageEvent('message', { data: { type: 'BUCHUNGEN_UEBERTRAGEN' } })) })
+            await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+            expect(mocked.syncAll).toHaveBeenCalledTimes(2)
+            expect(anzeige()).toBe('done|2')
+        } finally {
+            Reflect.deleteProperty(navigator, 'serviceWorker')
+        }
+    })
+
     it('gleichzeitige Auslöser teilen sich einen Abgleich und zählen nur einmal', async () => {
         const abgleich = steuerbarerAbgleich()
         await starteApp()

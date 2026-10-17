@@ -8,6 +8,7 @@ import {
     createOperationId,
     istVoruebergehenderFehler,
     OfflineService,
+    hintergrundUebertragungAnmelden,
     sendeBuchung,
     speicherDauerhaftAnfordern,
     startZeitAusErgebnis,
@@ -1175,6 +1176,60 @@ describe('OfflineService', () => {
             expect(startZeitAusErgebnis({ art: 'ok', daten: { startZeit: '2026-10-17T07:01:00' } }, 'ersatz')).toBe('2026-10-17T07:01:00')
             expect(startZeitAusErgebnis({ art: 'ok', daten: {} }, 'ersatz')).toBe('ersatz')
             expect(startZeitAusErgebnis({ art: 'eingereiht' }, 'ersatz')).toBe('ersatz')
+        })
+    })
+
+    // ==================== HINTERGRUND-ÜBERTRAGUNG (Android) ====================
+    describe('hintergrundUebertragungAnmelden', () => {
+        const setzeServiceWorker = (wert: unknown) =>
+            Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: wert })
+
+        afterEach(() => {
+            Reflect.deleteProperty(navigator, 'serviceWorker')
+        })
+
+        it('meldet beim Browser einen Hintergrund-Sync für die Buchungen an', async () => {
+            const register = vi.fn().mockResolvedValue(undefined)
+            setzeServiceWorker({ getRegistration: vi.fn().mockResolvedValue({ sync: { register } }) })
+
+            await expect(hintergrundUebertragungAnmelden()).resolves.toBe(true)
+            expect(register).toHaveBeenCalledWith('buchungen-senden')
+        })
+
+        it('liefert false, wenn der Browser keinen Hintergrund-Sync kann (iPhone)', async () => {
+            setzeServiceWorker({ getRegistration: vi.fn().mockResolvedValue({}) })
+            await expect(hintergrundUebertragungAnmelden()).resolves.toBe(false)
+        })
+
+        it('liefert false ohne Service Worker oder bei Fehlern', async () => {
+            await expect(hintergrundUebertragungAnmelden()).resolves.toBe(false)
+            setzeServiceWorker({ getRegistration: vi.fn().mockRejectedValue(new Error('kaputt')) })
+            await expect(hintergrundUebertragungAnmelden()).resolves.toBe(false)
+        })
+
+        // Handy wird gesperrt, bevor die Antwort da ist: Die Anmeldung muss schon stehen.
+        it('sendeBuchung meldet die Hintergrund-Übertragung schon vor dem Senden an', async () => {
+            const ablauf: string[] = []
+            const register = vi.fn(async () => { ablauf.push('angemeldet') })
+            setzeServiceWorker({ getRegistration: vi.fn().mockResolvedValue({ sync: { register } }) })
+            vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+                await vi.waitFor(() => expect(register).toHaveBeenCalled())
+                ablauf.push('gesendet')
+                return { ok: true, status: 200, json: async () => ({}) } as unknown as Response
+            })
+
+            await sendeBuchung('stop', { token: 'max-mustermann' }, { operationId: 'op-frueh', ablehnungInReparaturListe: true })
+
+            expect(ablauf).toEqual(['angemeldet', 'gesendet'])
+        })
+
+        it('abgleichAnstossen meldet die Hintergrund-Übertragung gleich mit an', async () => {
+            const register = vi.fn().mockResolvedValue(undefined)
+            setzeServiceWorker({ getRegistration: vi.fn().mockResolvedValue({ sync: { register } }) })
+
+            abgleichAnstossen()
+
+            await vi.waitFor(() => expect(register).toHaveBeenCalledWith('buchungen-senden'))
         })
     })
 
