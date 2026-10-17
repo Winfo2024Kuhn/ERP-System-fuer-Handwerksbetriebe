@@ -62,6 +62,12 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class ZeiterfassungApiService {
 
+    /**
+     * So weit darf ein Feierabend vor dem Start der laufenden Buchung liegen, ohne dass er
+     * einer früheren Buchung zugerechnet wird – Handy-Uhren gehen oft ein wenig falsch.
+     */
+    private static final Duration UHR_ABWEICHUNG_TOLERANZ = Duration.ofMinutes(5);
+
     private final ProjektRepository projektRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final ArbeitsgangRepository arbeitsgangRepository;
@@ -379,9 +385,25 @@ public class ZeiterfassungApiService {
         // Endezeit setzen
         LocalDateTime endeZeit = originalEndeZeit != null ? originalEndeZeit : LocalDateTime.now();
 
-        // Sicherheitscheck: endeZeit muss nach startZeit liegen.
-        // Kann durch Offline-Sync Race Conditions passieren (Stop-Entry mit altem Timestamp
-        // trifft auf eine neue Buchung die erst nach dem Original-Stop gestartet wurde).
+        // Ein Feierabend, der VOR dem Start der laufenden Buchung liegt, gehört nicht zu ihr:
+        // Das Handy hat ihn offline gestempelt, er kam aber erst an, nachdem schon eine
+        // neue Buchung lief (z. B. am nächsten Morgen). Früher wurde dann die NEUE Buchung
+        // nach einer Minute beendet und die alte behielt die geschätzte Auto-Stop-Zeit.
+        if (originalEndeZeit != null && !endeZeit.isAfter(buchung.getStartZeit())) {
+            Optional<Map<String, Object>> nachtrag =
+                    nachtragenAufAutomatischBeendeteBuchung(mitarbeiter, originalEndeZeit, idempotencyKey);
+            if (nachtrag.isPresent()) {
+                return nachtrag.get();
+            }
+            if (endeZeit.isBefore(buchung.getStartZeit().minus(UHR_ABWEICHUNG_TOLERANZ))) {
+                log.warn("Verspäteter Stop liegt {} Min. vor Start der laufenden Buchung {} - abgelehnt",
+                        Duration.between(endeZeit, buchung.getStartZeit()).toMinutes(), buchung.getId());
+                throw new RuntimeException("Dieser Feierabend gehört zu einer früheren Buchung und wurde nicht "
+                        + "übernommen. Die laufende Buchung bleibt bestehen. Bitte im Büro nachtragen lassen.");
+            }
+        }
+
+        // Kleine Abweichung (Handy-Uhr geht etwas nach): endeZeit muss trotzdem nach startZeit liegen.
         if (!endeZeit.isAfter(buchung.getStartZeit())) {
             log.warn("endeZeit ({}) <= startZeit ({}) für Buchung {} (Mitarbeiter {}) - korrigiere auf startZeit + 1 Min",
                     endeZeit, buchung.getStartZeit(), buchung.getId(), mitarbeiter.getId());

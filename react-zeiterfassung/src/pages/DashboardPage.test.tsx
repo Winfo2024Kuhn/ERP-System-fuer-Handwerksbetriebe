@@ -3,18 +3,21 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardPage from './DashboardPage'
-import { OfflineService } from '../services/OfflineService'
+import { OfflineService, sendeBuchung, type SendeBuchungErgebnis } from '../services/OfflineService'
 import { ToastProvider } from '../components/ui/toast'
 
 // actual-Spread ist notwendig, weil DashboardPage createOperationId und
-// buildBookingRequestPayload direkt aus dem Modul importiert – die müssen
-// ihre echten Implementierungen behalten.
+// startZeitAusErgebnis direkt aus dem Modul importiert – die müssen ihre
+// echten Implementierungen behalten. sendeBuchung (Senden, Einreihen,
+// Reparatur-Liste) ist in OfflineService.test.ts geprüft; hier zählt nur,
+// wie das Dashboard auf das Ergebnis reagiert.
 vi.mock('../services/OfflineService', async () => {
     const actual = await vi.importActual<typeof import('../services/OfflineService')>(
         '../services/OfflineService',
     )
     return {
         ...actual,
+        sendeBuchung: vi.fn(),
         OfflineService: {
             getFailedEntries: vi.fn(),
             removeFailedEntry: vi.fn(),
@@ -30,6 +33,14 @@ vi.mock('../services/OfflineService', async () => {
 })
 
 const mockedOfflineService = vi.mocked(OfflineService)
+const mockedSendeBuchung = vi.mocked(sendeBuchung)
+
+/** Antwortet je Buchungsart (start/stop/pause) mit dem vorgegebenen Ergebnis. */
+const sendeBuchungAntwortet = (ergebnisse: Partial<Record<'start' | 'stop' | 'pause', SendeBuchungErgebnis>>) =>
+    mockedSendeBuchung.mockImplementation(async (typ) => ergebnisse[typ] ?? { art: 'ok', daten: {} })
+
+const buchungsAufrufe = (typ: 'start' | 'stop' | 'pause') =>
+    mockedSendeBuchung.mock.calls.filter(([t]) => t === typ)
 
 const configuredZeitkonto = { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null }
 
@@ -65,14 +76,15 @@ function createMemoryStorage(): Storage {
     }
 }
 
-const renderDashboard = () =>
-    render(
-        <ToastProvider>
-            <MemoryRouter>
-                <DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />
-            </MemoryRouter>
-        </ToastProvider>,
-    )
+const dashboardMitAbgleich = (abgleichNummer?: number) => (
+    <ToastProvider>
+        <MemoryRouter>
+            <DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} abgleichNummer={abgleichNummer} />
+        </MemoryRouter>
+    </ToastProvider>
+)
+
+const renderDashboard = (abgleichNummer?: number) => render(dashboardMitAbgleich(abgleichNummer))
 
 const buildActiveWorkSession = () => ({
     projektId: 77,
@@ -118,22 +130,12 @@ describe('DashboardPage – Pause-Button', () => {
         vi.unstubAllGlobals()
     })
 
-    it('Pause-Tap zeigt sofort die Pause-Session, auch wenn der Server mit 4xx ablehnt', async () => {
+    it('Pause-Tap zeigt sofort die Pause-Session, auch wenn der Server ablehnt (Reparatur-Liste)', async () => {
         // REGRESSION: zuvor wurde ein Server-4xx in handlePause stumm
         // in die Konsole geloggt – Handwerker sah nichts und konnte die
-        // Pause nicht anstechen. Jetzt: optimistisches UI + Offline-Queue.
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = typeof input === 'string' ? input : input.toString()
-            if (url.includes('/api/zeiterfassung/pause')) {
-                return new Response(
-                    JSON.stringify({ error: 'Bereits laufende Pausenbuchung' }),
-                    { status: 400, headers: { 'Content-Type': 'application/json' } },
-                )
-            }
-            // Andere Fetches (Permissions, Urlaubsverfall, aktiv) freundlich ablehnen
-            return antwortMitZeitkontoStatus(input)
-        })
-        vi.stubGlobal('fetch', fetchMock)
+        // Pause nicht anstechen. Jetzt: optimistisches UI + Reparatur-Liste + Toast.
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        sendeBuchungAntwortet({ pause: { art: 'abgelehnt', status: 400, meldung: 'Bereits laufende Pausenbuchung' } })
 
         const user = userEvent.setup()
         renderDashboard()
@@ -141,14 +143,17 @@ describe('DashboardPage – Pause-Button', () => {
         const pauseButton = await screen.findByRole('button', { name: /pause/i })
         await user.click(pauseButton)
 
-        // 1) Pause wurde lokal eingereiht (Offline-Queue / Reparatur-Pfad)
+        // 1) Pause geht über sendeBuchung – eine Ablehnung landet in der Reparatur-Liste
         await waitFor(() => {
-            expect(mockedOfflineService.addPendingEntryWithOperationId).toHaveBeenCalledWith(
+            expect(mockedSendeBuchung).toHaveBeenCalledWith(
                 'pause',
                 expect.objectContaining({ token: 'tok-test' }),
-                expect.any(String),
-                expect.any(String),
-                expect.any(Number), // workDurationMinutes
+                expect.objectContaining({
+                    ablehnungInReparaturListe: true,
+                    durationMinutes: expect.any(Number), // beendete Arbeitszeit
+                    operationId: expect.any(String),
+                    originalTime: expect.any(String),
+                }),
             )
         })
 
@@ -156,6 +161,7 @@ describe('DashboardPage – Pause-Button', () => {
         //    Präziser Match auf den ☕-Badge, damit der Test nicht zufällig
         //    durch das Wort "Pause" in anderen Strings grün wird.
         expect(await screen.findByText('☕ Pause')).toBeInTheDocument()
+        expect(await screen.findByText('Pause nicht übernommen: Bereits laufende Pausenbuchung')).toBeInTheDocument()
 
         // 3) localStorage hält die Pause-Session (Reload-fest)
         const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
@@ -165,21 +171,14 @@ describe('DashboardPage – Pause-Button', () => {
         //    die optimistische Pause nicht durch eine vom Server weiterhin
         //    aktive Arbeitsbuchung überschreibt (Reviewer-Finding).
         expect(localStorage.getItem('zeiterfassung_start_synced_at')).not.toBeNull()
+        // 5) Reparatur-Liste wird neu gelesen, damit das Banner erscheint
+        expect(mockedOfflineService.getFailedEntries.mock.calls.length).toBeGreaterThan(1)
     })
 
-    it('Pause-Tap zeigt die Pause-Session bei erfolgreichem Server-Response (Happy Path)', async () => {
+    it('Pause-Tap zeigt die Pause-Session mit Serverzeit (Happy Path)', async () => {
         const serverStartZeit = new Date().toISOString()
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = typeof input === 'string' ? input : input.toString()
-            if (url.includes('/api/zeiterfassung/pause')) {
-                return new Response(
-                    JSON.stringify({ id: 42, startZeit: serverStartZeit, typ: 'PAUSE', status: 'gestartet' }),
-                    { status: 200, headers: { 'Content-Type': 'application/json' } },
-                )
-            }
-            return antwortMitZeitkontoStatus(input)
-        })
-        vi.stubGlobal('fetch', fetchMock)
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        sendeBuchungAntwortet({ pause: { art: 'ok', daten: { id: 42, startZeit: serverStartZeit, typ: 'PAUSE', status: 'gestartet' } } })
 
         const user = userEvent.setup()
         renderDashboard()
@@ -195,24 +194,33 @@ describe('DashboardPage – Pause-Button', () => {
 
         // UI rendert die Pause-Session
         expect(await screen.findByText('☕ Pause')).toBeInTheDocument()
+        // Im Happy-Path kein Cooldown und kein Fehler
+        expect(localStorage.getItem('zeiterfassung_start_synced_at')).toBeNull()
+        expect(screen.queryByRole('alert')).toBeNull()
+    })
 
-        // Im Happy-Path NICHT offline einreihen
-        expect(mockedOfflineService.addPendingEntryWithOperationId).not.toHaveBeenCalled()
+    it('Pause wartend: Pause-Session mit eigenem Zeitpunkt, kein Fehler-Toast', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        sendeBuchungAntwortet({ pause: { art: 'eingereiht' } })
+
+        const user = userEvent.setup()
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: /pause/i }))
+
+        expect(await screen.findByText('☕ Pause')).toBeInTheDocument()
+        const [, , optionen] = buchungsAufrufe('pause')[0]
+        const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
+        expect(stored.startTime).toBe(optionen.originalTime)
+        expect(localStorage.getItem('zeiterfassung_start_synced_at')).not.toBeNull()
+        expect(screen.queryByRole('alert')).toBeNull()
     })
 
     it('Pause-Doppeltap erzeugt nur eine Pause-Operation', async () => {
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = typeof input === 'string' ? input : input.toString()
-            if (url.includes('/api/zeiterfassung/pause')) {
-                await new Promise(resolve => setTimeout(resolve, 25))
-                return new Response(
-                    JSON.stringify({ id: 42, startZeit: new Date().toISOString(), typ: 'PAUSE', status: 'gestartet' }),
-                    { status: 200, headers: { 'Content-Type': 'application/json' } },
-                )
-            }
-            return antwortMitZeitkontoStatus(input)
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        mockedSendeBuchung.mockImplementation(async () => {
+            await new Promise(resolve => setTimeout(resolve, 25))
+            return { art: 'ok', daten: { id: 42, startZeit: new Date().toISOString(), typ: 'PAUSE', status: 'gestartet' } }
         })
-        vi.stubGlobal('fetch', fetchMock)
 
         renderDashboard()
 
@@ -222,12 +230,7 @@ describe('DashboardPage – Pause-Button', () => {
 
         await screen.findByText('☕ Pause')
 
-        const pauseCalls = fetchMock.mock.calls.filter(([input]) => {
-            const url = typeof input === 'string' ? input : input.toString()
-            return url.includes('/api/zeiterfassung/pause')
-        })
-        expect(pauseCalls).toHaveLength(1)
-        expect(mockedOfflineService.addPendingEntryWithOperationId).not.toHaveBeenCalled()
+        expect(buchungsAufrufe('pause')).toHaveLength(1)
     })
 })
 
@@ -420,14 +423,8 @@ describe('DashboardPage – Feierabend-Rückmeldung', () => {
         // Karte verschwand – für beide sah es aus wie erledigt. Am Server lief die
         // Buchung weiter, bis der Auto-Stop sie um 20:00 schloss und mehrere
         // Stunden Arbeitszeit erfand. Ohne Rückmeldung merkt das niemand.
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = typeof input === 'string' ? input : input.toString()
-            if (url.includes('/api/zeiterfassung/stop')) {
-                throw new TypeError('Failed to fetch') // kein Empfang
-            }
-            return antwortMitZeitkontoStatus(input)
-        })
-        vi.stubGlobal('fetch', fetchMock)
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        sendeBuchungAntwortet({ stop: { art: 'eingereiht' } })
 
         const user = userEvent.setup()
         renderDashboard()
@@ -435,34 +432,25 @@ describe('DashboardPage – Feierabend-Rückmeldung', () => {
         const gehenButton = await screen.findByRole('button', { name: /feierabend/i })
         await user.click(gehenButton)
 
-        // Stop liegt lokal in der Queue …
+        // Feierabend geht über sendeBuchung, mit Arbeitsdauer für "heute gearbeitet" …
         await waitFor(() => {
-            expect(mockedOfflineService.addPendingEntryWithOperationId).toHaveBeenCalledWith(
+            expect(mockedSendeBuchung).toHaveBeenCalledWith(
                 'stop',
                 expect.objectContaining({ token: 'tok-test' }),
-                expect.any(String),
-                expect.any(String),
-                expect.any(Number),
+                expect.objectContaining({ ablehnungInReparaturListe: true, durationMinutes: expect.any(Number) }),
             )
         })
 
         // … und der Handwerker erfährt davon, statt es nur in der Konsole zu sehen.
-        expect(await screen.findByText(/noch kein Empfang/i)).toBeInTheDocument()
-        expect(screen.getByText(/automatisch nachgetragen/i)).toBeInTheDocument()
+        expect(await screen.findByText(/Feierabend um \d\d:\d\d gespeichert/)).toBeInTheDocument()
+        expect(screen.getByText(/automatisch ans Büro übertragen, sobald die Verbindung steht/i)).toBeInTheDocument()
+        expect(localStorage.getItem('zeiterfassung_active_session')).toBeNull()
+        expect(localStorage.getItem('zeiterfassung_stopped_at')).not.toBeNull()
     })
 
     it('zeigt keinen Hinweis, wenn der Feierabend sauber beim Server ankommt', async () => {
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = typeof input === 'string' ? input : input.toString()
-            if (url.includes('/api/zeiterfassung/stop')) {
-                return new Response(
-                    JSON.stringify({ id: 1, stunden: 7.5, status: 'gestoppt' }),
-                    { status: 200, headers: { 'Content-Type': 'application/json' } },
-                )
-            }
-            return antwortMitZeitkontoStatus(input)
-        })
-        vi.stubGlobal('fetch', fetchMock)
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        sendeBuchungAntwortet({ stop: { art: 'ok', daten: { id: 1, stunden: 7.5, status: 'gestoppt' } } })
 
         const user = userEvent.setup()
         renderDashboard()
@@ -473,8 +461,63 @@ describe('DashboardPage – Feierabend-Rückmeldung', () => {
         await waitFor(() => {
             expect(localStorage.getItem('zeiterfassung_active_session')).toBeNull()
         })
-        expect(screen.queryByText(/noch kein Empfang/i)).not.toBeInTheDocument()
-        expect(mockedOfflineService.addPendingEntryWithOperationId).not.toHaveBeenCalled()
+        expect(screen.queryByText(/automatisch ans Büro übertragen/i)).not.toBeInTheDocument()
+        expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('meldet einen abgelehnten Feierabend per Toast und zeigt die Reparatur-Liste', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        sendeBuchungAntwortet({ stop: { art: 'abgelehnt', status: 400, meldung: 'Keine aktive Buchung gefunden' } })
+        mockedOfflineService.getFailedEntries
+            .mockResolvedValueOnce([])
+            .mockResolvedValue([{
+                id: 'op-1', type: 'stop', data: { token: 'tok-test' }, timestamp: new Date().toISOString(),
+                originalTime: new Date().toISOString(), failedAt: new Date().toISOString(),
+                httpStatus: 400, serverError: 'Keine aktive Buchung gefunden', attemptCount: 1,
+            }])
+
+        const user = userEvent.setup()
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: /feierabend/i }))
+
+        expect(await screen.findByText('Feierabend nicht übernommen: Keine aktive Buchung gefunden')).toBeInTheDocument()
+        expect(await screen.findByText('1 Buchung konnte nicht gespeichert werden')).toBeInTheDocument()
+        expect(localStorage.getItem('zeiterfassung_active_session')).toBeNull()
+    })
+
+    it('behält die Buchung und meldet sich, wenn der Feierabend nicht einmal lokal gespeichert werden kann', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        mockedSendeBuchung.mockRejectedValue(new Error('IndexedDB nicht verfügbar'))
+
+        const user = userEvent.setup()
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: /feierabend/i }))
+
+        expect(await screen.findByText(/Feierabend konnte auf dem Handy nicht gespeichert werden/)).toBeInTheDocument()
+        expect(localStorage.getItem('zeiterfassung_active_session')).not.toBeNull()
+    })
+
+    it('Pause beenden geht über sendeBuchung und öffnet danach die Zeiterfassung', async () => {
+        localStorage.setItem('zeiterfassung_active_session', JSON.stringify({ ...buildActiveWorkSession(), typ: 'PAUSE' }))
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+        sendeBuchungAntwortet({ stop: { art: 'eingereiht' } })
+
+        const user = userEvent.setup()
+        render(
+            <ToastProvider>
+                <MemoryRouter initialEntries={['/']}>
+                    <Routes>
+                        <Route path="/" element={<DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />} />
+                        <Route path="/zeiterfassung" element={<div>Zeiterfassung-Seite</div>} />
+                    </Routes>
+                </MemoryRouter>
+            </ToastProvider>,
+        )
+        await user.click(await screen.findByRole('button', { name: /arbeit fortsetzen|pause beenden|weiter/i }))
+
+        expect(await screen.findByText('Zeiterfassung-Seite')).toBeInTheDocument()
+        expect(mockedSendeBuchung).toHaveBeenCalledWith('stop', { token: 'tok-test' }, expect.objectContaining({ ablehnungInReparaturListe: true }))
+        expect(localStorage.getItem('zeiterfassung_active_session')).toBeNull()
     })
 })
 
@@ -668,11 +711,6 @@ describe('DashboardPage – Tätigkeit wählen mit Projektwechsel', () => {
         vi.unstubAllGlobals()
     })
 
-    const startBodies = (fetchMock: ReturnType<typeof vi.fn>) =>
-        fetchMock.mock.calls
-            .filter(([input]) => String(input).includes('/api/zeiterfassung/start'))
-            .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
-
     const wechsleProjektUndTaetigkeit = async () => {
         const user = userEvent.setup()
         renderDashboard()
@@ -682,27 +720,24 @@ describe('DashboardPage – Tätigkeit wählen mit Projektwechsel', () => {
         await user.click(await screen.findByRole('button', { name: 'Schweißen' }))
     }
 
+    beforeEach(() => {
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+    })
+
     it('startet die neue Buchung auf dem über „Ändern“ gewählten Projekt', async () => {
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = String(input)
-            if (url.includes('/api/zeiterfassung/stop')) {
-                return new Response(JSON.stringify({ status: 'gestoppt' }), { status: 200 })
-            }
-            if (url.includes('/api/zeiterfassung/start')) {
-                return new Response(JSON.stringify({ id: 999 }), { status: 200 })
-            }
-            return antwortMitZeitkontoStatus(input)
-        })
-        vi.stubGlobal('fetch', fetchMock)
+        const serverStart = new Date().toISOString()
+        sendeBuchungAntwortet({ stop: { art: 'ok', daten: { status: 'gestoppt' } }, start: { art: 'ok', daten: { id: 999, startZeit: serverStart } } })
 
         await wechsleProjektUndTaetigkeit()
 
-        await waitFor(() => expect(startBodies(fetchMock)).toHaveLength(1))
-        const body = startBodies(fetchMock)[0]
-        expect(body.projektId).toBe(88)
-        expect(body.arbeitsgangId).toBe(12)
+        await waitFor(() => expect(buchungsAufrufe('start')).toHaveLength(1))
+        const [, daten] = buchungsAufrufe('start')[0]
+        expect(daten.projektId).toBe(88)
+        expect(daten.arbeitsgangId).toBe(12)
         // Kategorien hängen am Projekt – die alte darf nicht mitwandern
-        expect(body.produktkategorieId).toBeNull()
+        expect(daten.produktkategorieId).toBeNull()
+        // Erst beenden, dann starten
+        expect(mockedSendeBuchung.mock.calls.map(([typ]) => typ)).toEqual(['stop', 'start'])
 
         await waitFor(() => {
             const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
@@ -711,54 +746,71 @@ describe('DashboardPage – Tätigkeit wählen mit Projektwechsel', () => {
             expect(stored.kundenName).toBe('Erika Musterfrau')
             expect(stored.auftragsnummer).toBe('A-2')
             expect(stored.produktkategorieId).toBeNull()
+            expect(stored.startTime).toBe(serverStart)
         })
     })
 
     it('reiht offline die neue Buchung ebenfalls auf dem gewählten Projekt ein', async () => {
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = String(input)
-            if (url.includes('/api/zeiterfassung/stop') || url.includes('/api/zeiterfassung/start')) {
-                throw new TypeError('Failed to fetch')
-            }
-            return antwortMitZeitkontoStatus(input)
-        })
-        vi.stubGlobal('fetch', fetchMock)
+        sendeBuchungAntwortet({ stop: { art: 'eingereiht' }, start: { art: 'eingereiht' } })
 
         await wechsleProjektUndTaetigkeit()
 
-        await waitFor(() =>
-            expect(mockedOfflineService.addPendingEntryWithOperationId).toHaveBeenCalledWith(
-                'start',
-                expect.objectContaining({ projektId: 88, arbeitsgangId: 12, produktkategorieId: null }),
-                expect.any(String),
-                expect.any(String),
-            ),
-        )
+        await waitFor(() => expect(buchungsAufrufe('start')).toHaveLength(1))
+        expect(buchungsAufrufe('start')[0][1]).toMatchObject({ projektId: 88, arbeitsgangId: 12, produktkategorieId: null })
+        // Die Dauer der beendeten Arbeit wandert mit dem Stop in die Warteschlange
+        expect(buchungsAufrufe('stop')[0][2]).toMatchObject({ durationMinutes: expect.any(Number), ablehnungInReparaturListe: false })
+        await waitFor(() => {
+            const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
+            expect(stored.projektId).toBe(88)
+            expect(stored.projektName).toBe('Carport Musterweg')
+            expect(String(stored.id)).toMatch(/^offline-/)
+        })
+    })
+
+    it('startet trotzdem, wenn am Server keine Buchung mehr lief (Stop abgelehnt)', async () => {
+        sendeBuchungAntwortet({
+            stop: { art: 'abgelehnt', status: 400, meldung: 'Keine aktive Buchung gefunden' },
+            start: { art: 'ok', daten: { id: 1000 } },
+        })
+
+        await wechsleProjektUndTaetigkeit()
+
+        await waitFor(() => expect(buchungsAufrufe('start')).toHaveLength(1))
+        await waitFor(() => {
+            const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
+            expect(stored.projektId).toBe(88)
+        })
+        expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('stellt die alte Buchung wieder her, wenn der Start nach dem Stop abgelehnt wird', async () => {
+        mockedSendeBuchung.mockImplementation(async (typ, daten) => {
+            if (typ === 'stop') return { art: 'ok', daten: {} }
+            if (daten.projektId === 88) return { art: 'abgelehnt', status: 400, meldung: 'Projekt ist abgeschlossen' }
+            return { art: 'ok', daten: { id: 401 } }
+        })
+
+        await wechsleProjektUndTaetigkeit()
+
+        expect(await screen.findByText('Wechsel nicht möglich: Projekt ist abgeschlossen')).toBeInTheDocument()
+        // Neuer Start, dann Wiederherstellung der alten Buchung auf Projekt 77
+        await waitFor(() => expect(buchungsAufrufe('start')).toHaveLength(2))
+        expect(buchungsAufrufe('start')[1][1]).toMatchObject({ projektId: 77, arbeitsgangId: 11, produktkategorieId: 5 })
         const stored = JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}')
-        expect(stored.projektId).toBe(88)
-        expect(stored.projektName).toBe('Carport Musterweg')
+        expect(stored.projektId).toBe(77)
+        expect(stored.produktkategorieName).toBe('Geländer')
     })
 
     it('behält Projekt und Kategorie, wenn nur die Tätigkeit gewechselt wird', async () => {
-        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-            const url = String(input)
-            if (url.includes('/api/zeiterfassung/stop')) {
-                return new Response(JSON.stringify({ status: 'gestoppt' }), { status: 200 })
-            }
-            if (url.includes('/api/zeiterfassung/start')) {
-                return new Response(JSON.stringify({ id: 999 }), { status: 200 })
-            }
-            return antwortMitZeitkontoStatus(input)
-        })
-        vi.stubGlobal('fetch', fetchMock)
+        sendeBuchungAntwortet({ start: { art: 'ok', daten: { id: 999 } } })
 
         const user = userEvent.setup()
         renderDashboard()
         await user.click(await screen.findByRole('button', { name: /tätigkeit/i }))
         await user.click(await screen.findByRole('button', { name: 'Schweißen' }))
 
-        await waitFor(() => expect(startBodies(fetchMock)).toHaveLength(1))
-        expect(startBodies(fetchMock)[0]).toMatchObject({ projektId: 77, arbeitsgangId: 12, produktkategorieId: 5 })
+        await waitFor(() => expect(buchungsAufrufe('start')).toHaveLength(1))
+        expect(buchungsAufrufe('start')[0][1]).toMatchObject({ projektId: 77, arbeitsgangId: 12, produktkategorieId: 5 })
     })
 })
 
@@ -937,5 +989,49 @@ describe('DashboardPage – Nachrichten-Glocke (#270)', () => {
         const sheet = await oeffneGlocke()
         expect(within(sheet).getByText('Keine neuen Nachrichten.')).toBeInTheDocument()
         expect(within(sheet).queryByRole('button', { name: 'Alle als gelesen markieren' })).not.toBeInTheDocument()
+    })
+})
+
+describe('DashboardPage – Neuladen nach Abgleich', () => {
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', createMemoryStorage())
+        localStorage.setItem('zeiterfassung_token', 'tok-test')
+        mockedOfflineService.getFailedEntries.mockResolvedValue([])
+        mockedOfflineService.getHeuteGearbeitet.mockResolvedValue({ stunden: 0, minuten: 0, fromCache: false })
+        mockedOfflineService.getPendingCount.mockResolvedValue(0)
+        mockedOfflineService.getUnsyncedStopMinutes.mockResolvedValue(0)
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => antwortMitZeitkontoStatus(input)))
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+        localStorage.clear()
+        vi.unstubAllGlobals()
+    })
+
+    const aktivAbrufe = () => vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/api/zeiterfassung/aktiv/')).length
+
+    it('lädt nach jedem erfolgreichen Abgleich neu – auch zweimal hintereinander', async () => {
+        const { rerender } = renderDashboard(3)
+        await screen.findByText('Zeit erfassen')
+        await waitFor(() => expect(aktivAbrufe()).toBe(1))
+        const heuteVorher = mockedOfflineService.getHeuteGearbeitet.mock.calls.length
+
+        rerender(dashboardMitAbgleich(4))
+        await waitFor(() => expect(aktivAbrufe()).toBe(2))
+        expect(mockedOfflineService.getHeuteGearbeitet.mock.calls.length).toBeGreaterThan(heuteVorher)
+
+        rerender(dashboardMitAbgleich(5))
+        await waitFor(() => expect(aktivAbrufe()).toBe(3))
+    })
+
+    it('lädt ohne neuen Abgleich nicht erneut', async () => {
+        const { rerender } = renderDashboard(2)
+        await screen.findByText('Zeit erfassen')
+        await waitFor(() => expect(aktivAbrufe()).toBe(1))
+
+        rerender(dashboardMitAbgleich(2))
+        await screen.findByText('Zeit erfassen')
+        expect(aktivAbrufe()).toBe(1)
     })
 })

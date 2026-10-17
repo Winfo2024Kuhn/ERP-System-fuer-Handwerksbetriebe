@@ -229,6 +229,123 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
         verify(zeitbuchungRepository, never()).save(any());
     }
 
+    /** Am nächsten Morgen läuft schon eine neue Buchung, wenn der alte Feierabend ankommt. */
+    private Zeitbuchung laufendeBuchungAmNaechstenMorgen(Mitarbeiter mitarbeiter) {
+        Zeitbuchung b = new Zeitbuchung();
+        b.setId(1904L);
+        b.setMitarbeiter(mitarbeiter);
+        b.setStartZeit(LocalDateTime.of(2026, 7, 30, 7, 0, 0));
+        b.setVersion(1);
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
+                .thenReturn(Optional.of(mitarbeiter));
+        when(zeitbuchungRepository.findFirstByMitarbeiterIdAndEndeZeitIsNullOrderByStartZeitDesc(MITARBEITER_ID))
+                .thenReturn(Optional.of(b));
+        return b;
+    }
+
+    // Regression 17.10.2026: Der Feierabend vom Vorabend kam erst an, als morgens schon
+    // eine neue Buchung lief. Der Server beendete die NEUE Buchung nach einer Minute,
+    // die alte behielt die geschätzte Auto-Stop-Zeit (lange Buchung im PC-Programm).
+    @Test
+    void traegtAltenFeierabendAufGestrigerBuchungNachStattDieNeueZuBeenden() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        Zeitbuchung gestern = automatischBeendeteBuchung(mitarbeiter);
+        Zeitbuchung heute = laufendeBuchungAmNaechstenMorgen(mitarbeiter);
+        when(zeitbuchungRepository
+                .findFirstByMitarbeiterIdAndAutomatischBeendetTrueAndStartZeitBetweenOrderByStartZeitDesc(
+                        eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(Optional.of(gestern));
+
+        Map<String, Object> result = service.stopZeiterfassung(TOKEN, ECHTER_FEIERABEND, "stop-key-1");
+
+        assertThat(result.get("status")).isEqualTo("nachgetragen");
+        assertThat(gestern.getEndeZeit()).isEqualTo(ECHTER_FEIERABEND);
+        assertThat(heute.getEndeZeit()).isNull();
+        assertThat(heute.getStopIdempotencyKey()).isNull();
+        verify(zeitbuchungRepository).save(gestern);
+        verify(zeitbuchungRepository, never()).save(heute);
+    }
+
+    @Test
+    void lehntAltenFeierabendAbWennEsNichtsNachzutragenGibtUndLaesstNeueBuchungLaufen() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        Zeitbuchung heute = laufendeBuchungAmNaechstenMorgen(mitarbeiter);
+
+        assertThatThrownBy(() -> service.stopZeiterfassung(TOKEN, ECHTER_FEIERABEND, "stop-key-1"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("gehört zu einer früheren Buchung");
+
+        assertThat(heute.getEndeZeit()).isNull();
+        verify(zeitbuchungRepository, never()).save(any());
+    }
+
+    // Eine Handy-Uhr, die zwei Minuten nachgeht, ist kein alter Feierabend: Die laufende
+    // Buchung wird wie bisher beendet (mindestens eine Minute lang).
+    @Test
+    void beendetLaufendeBuchungBeiKleinerUhrAbweichungWieBisher() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        Zeitbuchung heute = laufendeBuchungAmNaechstenMorgen(mitarbeiter);
+
+        service.stopZeiterfassung(TOKEN, heute.getStartZeit().minusMinutes(2), "stop-key-1");
+
+        assertThat(heute.getEndeZeit()).isEqualTo(heute.getStartZeit().plusMinutes(1));
+        assertThat(heute.getStopIdempotencyKey()).isEqualTo("stop-key-1");
+        verify(zeitbuchungRepository).save(heute);
+    }
+
+    @Test
+    void beendetLaufendeBuchungBeiGenauFuenfMinutenAbweichungNochWieBisher() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        Zeitbuchung heute = laufendeBuchungAmNaechstenMorgen(mitarbeiter);
+
+        service.stopZeiterfassung(TOKEN, heute.getStartZeit().minusMinutes(5), "stop-key-1");
+
+        assertThat(heute.getEndeZeit()).isEqualTo(heute.getStartZeit().plusMinutes(1));
+        verify(zeitbuchungRepository).save(heute);
+    }
+
+    // Die gestrige Buchung ist zwar automatisch beendet, aber der Feierabend liegt nach
+    // ihrer geschätzten Endezeit: kein Nachtrag (nie verlängern) und die neue Buchung
+    // bleibt trotzdem unangetastet.
+    @Test
+    void lehntAltenFeierabendAbWennErNichtInDieAutomatischBeendeteBuchungPasst() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        Zeitbuchung gestern = automatischBeendeteBuchung(mitarbeiter);
+        Zeitbuchung heute = laufendeBuchungAmNaechstenMorgen(mitarbeiter);
+        when(zeitbuchungRepository
+                .findFirstByMitarbeiterIdAndAutomatischBeendetTrueAndStartZeitBetweenOrderByStartZeitDesc(
+                        eq(MITARBEITER_ID), any(), any()))
+                .thenReturn(Optional.of(gestern));
+
+        assertThatThrownBy(() -> service.stopZeiterfassung(
+                TOKEN, LocalDateTime.of(2026, 7, 29, 21, 30), "stop-key-1"))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("gehört zu einer früheren Buchung");
+
+        assertThat(gestern.getEndeZeit()).isEqualTo(AUTO_STOP);
+        assertThat(heute.getEndeZeit()).isNull();
+        verify(zeitbuchungRepository, never()).save(any());
+    }
+
+    // Das Handy schickt denselben Feierabend nach einem Nachtrag erneut (Antwort verpasst):
+    // Der Server antwortet idempotent und fasst die laufende Buchung nicht an.
+    @Test
+    void antwortetBeiWiederholtemFeierabendNachNachtragIdempotent() {
+        Mitarbeiter mitarbeiter = dummyMitarbeiter();
+        Zeitbuchung gestern = automatischBeendeteBuchung(mitarbeiter);
+        gestern.setEndeZeit(ECHTER_FEIERABEND);
+        gestern.setAutomatischBeendet(false);
+        gestern.setStopIdempotencyKey("stop-key-1");
+        when(zeitbuchungRepository.findByStopIdempotencyKey("stop-key-1")).thenReturn(Optional.of(gestern));
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrue(TOKEN)).thenReturn(Optional.of(mitarbeiter));
+
+        Map<String, Object> result = service.stopZeiterfassung(TOKEN, ECHTER_FEIERABEND, "stop-key-1");
+
+        assertThat(result.get("id")).isEqualTo(gestern.getId());
+        verify(zeitbuchungRepository, never()).findFirstByMitarbeiterIdAndEndeZeitIsNullOrderByStartZeitDesc(any());
+        verify(zeitbuchungRepository, never()).save(any());
+    }
+
     @Test
     void meldetWeiterhinFehlerWennKeineAutomatischBeendeteBuchungExistiert() {
         Mitarbeiter mitarbeiter = dummyMitarbeiter();
