@@ -57,11 +57,29 @@ describe('EinstellungenPage', () => {
         zeige()
 
         expect(await screen.findByText('Benachrichtigungen')).toBeInTheDocument()
-        expect(screen.getByText('Damit du Termine und Freigaben aufs Handy bekommst')).toBeInTheDocument()
+        expect(screen.getByText('Damit du Termine, Freigaben, Pausen-Erinnerungen und Hinweise bei vergessenem Feierabend aufs Handy bekommst')).toBeInTheDocument()
         expect(screen.getByText('Mikrofon')).toBeInTheDocument()
         expect(screen.getByText('Damit du Einträge diktieren kannst statt sie zu tippen')).toBeInTheDocument()
         expect(screen.getByText('Kamera')).toBeInTheDocument()
         expect(screen.getByText('Für Fotos im Bautagebuch und zum Belege scannen')).toBeInTheDocument()
+    })
+
+    it('erklärt per Info-Knopf, wann das Büro-Programm von sich aus eine Nachricht schickt', async () => {
+        const user = userEvent.setup()
+        zeige()
+
+        const infoKnopf = await screen.findByRole('button', { name: 'Mehr zu: Benachrichtigungen' })
+        // Nur bei den Benachrichtigungen – Mikrofon und Kamera sind selbsterklärend.
+        expect(screen.getAllByRole('button', { name: /^Mehr zu:/ })).toHaveLength(1)
+
+        await user.click(infoKnopf)
+
+        const sheet = await screen.findByRole('dialog')
+        expect(sheet).toHaveTextContent('Was passiert im Hintergrund?')
+        expect(sheet).toHaveTextContent(/6 bzw\. 9 Stunden ohne genug Pause/)
+        expect(sheet).toHaveTextContent(/keinen Feierabend gestempelt/)
+        expect(sheet).toHaveTextContent('Was bewirkt das?')
+        expect(sheet).toHaveTextContent(/An deinen Zeiten ändert die Nachricht nichts/)
     })
 
     it('zeigt die dauerhafte Datenschutz-Zeile beim Mikrofon', async () => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Bell, Camera, ChevronDown, Loader2, Mic } from 'lucide-react'
 import { useToast } from '../components/ui/toast'
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button'
 import {
     leseBenachrichtigungsStatus,
     leseKameraStatus,
@@ -80,7 +81,7 @@ export default function EinstellungenPage() {
     }, [toast, ladeStatus])
 
     const zeilen: { bereich: Bereich; titel: string; erklaerung: string; Icon: typeof Bell }[] = [
-        { bereich: 'benachrichtigungen', titel: 'Benachrichtigungen', erklaerung: 'Damit du Termine und Freigaben aufs Handy bekommst', Icon: Bell },
+        { bereich: 'benachrichtigungen', titel: 'Benachrichtigungen', erklaerung: 'Damit du Termine, Freigaben, Pausen-Erinnerungen und Hinweise bei vergessenem Feierabend aufs Handy bekommst', Icon: Bell },
         { bereich: 'mikrofon', titel: 'Mikrofon', erklaerung: 'Damit du Einträge diktieren kannst statt sie zu tippen', Icon: Mic },
         { bereich: 'kamera', titel: 'Kamera', erklaerung: 'Für Fotos im Bautagebuch und zum Belege scannen', Icon: Camera },
     ]
@@ -120,7 +121,10 @@ export default function EinstellungenPage() {
                                     <Icon aria-hidden="true" className="w-5 h-5 text-rose-600" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <div className="font-medium text-slate-900">{titel}</div>
+                                    <div className="flex items-center gap-1">
+                                        <span className="font-medium text-slate-900">{titel}</span>
+                                        {bereich === 'benachrichtigungen' && <BenachrichtigungenInfo />}
+                                    </div>
                                     <div className="text-sm text-slate-500 mt-0.5">{erklaerung}</div>
                                 </div>
                                 <span className={`text-xs px-2 py-1 rounded-lg border whitespace-nowrap ${abzeichen.klassen}`}>
@@ -168,5 +172,26 @@ export default function EinstellungenPage() {
                 })}
             </main>
         </div>
+    )
+}
+
+/** Erklärt, welche Nachrichten das Büro-Programm von sich aus schickt. */
+function BenachrichtigungenInfo() {
+    return (
+        <InfoButton titel="Benachrichtigungen" className="-my-1.5">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <p>
+                    Das Büro-Programm schaut alle paar Minuten auf deine laufende Zeiterfassung. Hast du bald 6 bzw. 9 Stunden
+                    ohne genug Pause gearbeitet oder wurde deine Zeit automatisch beendet, weil du keinen Feierabend gestempelt
+                    hast, schickt es dir eine Nachricht aufs Handy.
+                </p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <p>
+                    Du bekommst die Nachricht auch, wenn die App zu ist. An deinen Zeiten ändert die Nachricht nichts – sie
+                    erinnert dich nur.
+                </p>
+            </InfoAbschnitt>
+        </InfoButton>
     )
 }

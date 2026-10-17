@@ -420,20 +420,37 @@ self.addEventListener('push', (event) => {
           tag = `freigabe-${payload.timestamp}`
           fallbackUrl = '/zeiterfassung/projekte'
           break
+        case 'zeit-auto-beendet':
+          // Eigene Nachricht je Push: zwei vergessene Feierabende ersetzen sich nicht.
+          icon = '🕗'
+          tag = `zeit-auto-beendet-${payload.timestamp}`
+          fallbackUrl = '/zeiterfassung/tagesbuchungen'
+          break
+        case 'pause':
+          // Fester Tag: eine neue Pausen-Erinnerung (z. B. 9 Std.) ersetzt die alte (6 Std.).
+          icon = '☕'
+          tag = 'pause-erinnerung'
+          fallbackUrl = '/zeiterfassung/zeiterfassung'
+          break
         default:
           icon = '🔔'
           tag = `push-${payload.timestamp}`
           fallbackUrl = '/zeiterfassung/'
       }
 
-      await self.registration.showNotification(`${icon} ${payload.title}`, {
+      // Ersetzt eine Nachricht eine ältere mit gleichem Tag, bleibt sie ohne
+      // `renotify` stumm. Die 9-Stunden-Erinnerung soll aber klingeln, auch wenn
+      // die 6-Stunden-Nachricht noch im Notification Center steht.
+      const optionen: NotificationOptions & { renotify?: boolean } = {
         body: payload.body,
         icon: '/zeiterfassung/pwa-192x192.png',
         badge: '/zeiterfassung/pwa-192x192.png',
         tag,
         requireInteraction: true,
         data: { url: payload.url || fallbackUrl }
-      })
+      }
+      if (payload.type === 'pause') optionen.renotify = true
+      await self.registration.showNotification(`${icon} ${payload.title}`, optionen)
 
       console.log(`[SW] Push notification shown: ${payload.title}`)
     } catch (err) {

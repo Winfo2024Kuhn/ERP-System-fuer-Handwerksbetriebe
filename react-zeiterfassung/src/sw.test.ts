@@ -316,3 +316,83 @@ describe('Hintergrund-Sync für wartende Buchungen', () => {
         expect(send).not.toHaveBeenCalled()
     })
 })
+
+// Push vom Server: erscheint im Notification Center, auch wenn die App zu ist.
+describe('Push-Nachrichten zur Zeiterfassung', () => {
+    function pushDaten(payload: Record<string, unknown>) {
+        return { json: () => payload }
+    }
+
+    function gezeigteNachricht() {
+        const zeige = vi.mocked((self as unknown as ServiceWorkerGlobalScope).registration.showNotification)
+        expect(zeige).toHaveBeenCalledTimes(1)
+        const [titel, optionen] = zeige.mock.calls[0]
+        return { titel, optionen: optionen as NotificationOptions & { data: { url: string } } }
+    }
+
+    it('zeigt einen automatisch beendeten Feierabend mit eigenem Tag je Tag und Link zu den Tagesbuchungen', async () => {
+        await dispatch('push', pushDaten({
+            title: 'Kein Feierabend gestempelt',
+            body: 'Deine Arbeitszeit vom 16.10. wurde automatisch um 20:00 Uhr beendet.',
+            url: '/zeiterfassung/tagesbuchungen',
+            appointmentId: null,
+            type: 'zeit-auto-beendet',
+            timestamp: 1760637600000,
+        }))
+
+        const { titel, optionen } = gezeigteNachricht()
+        expect(titel).toBe('🕗 Kein Feierabend gestempelt')
+        expect(optionen.body).toContain('automatisch um 20:00 Uhr beendet')
+        expect(optionen.tag).toBe('zeit-auto-beendet-1760637600000')
+        expect((optionen as { renotify?: boolean }).renotify).toBeUndefined()
+        expect(optionen.data.url).toBe('/zeiterfassung/tagesbuchungen')
+    })
+
+    it('öffnet beim automatisch beendeten Feierabend ohne Link die Tagesbuchungen', async () => {
+        await dispatch('push', pushDaten({
+            title: 'Kein Feierabend gestempelt', body: 'Bitte prüf die Zeit.', url: '',
+            appointmentId: null, type: 'zeit-auto-beendet', timestamp: 1,
+        }))
+
+        expect(gezeigteNachricht().optionen.data.url).toBe('/zeiterfassung/tagesbuchungen')
+    })
+
+    it('zeigt die Pausen-Erinnerung mit festem Tag, damit eine neue die alte ersetzt', async () => {
+        await dispatch('push', pushDaten({
+            title: 'Zeit für eine Pause',
+            body: 'Du arbeitest heute schon 5:45 Std.',
+            url: '/zeiterfassung/zeiterfassung',
+            appointmentId: null,
+            type: 'pause',
+            timestamp: 1760620000000,
+        }))
+
+        const { titel, optionen } = gezeigteNachricht()
+        expect(titel).toBe('☕ Zeit für eine Pause')
+        expect(optionen.tag).toBe('pause-erinnerung')
+        // Ohne renotify ersetzt die 9-Stunden-Erinnerung die alte stumm.
+        expect((optionen as { renotify?: boolean }).renotify).toBe(true)
+        expect(optionen.data.url).toBe('/zeiterfassung/zeiterfassung')
+    })
+
+    it('öffnet bei der Pausen-Erinnerung ohne Link die Zeiterfassung', async () => {
+        await dispatch('push', pushDaten({
+            title: 'Zeit für eine Pause', body: 'Ab 6 Stunden sind 30 Minuten Pause Pflicht.', url: '',
+            appointmentId: null, type: 'pause', timestamp: 2,
+        }))
+
+        expect(gezeigteNachricht().optionen.data.url).toBe('/zeiterfassung/zeiterfassung')
+    })
+
+    it('lässt allgemeine Mitarbeiter-Nachrichten unverändert', async () => {
+        await dispatch('push', pushDaten({
+            title: 'Urlaub genehmigt', body: 'Dein Urlaub wurde genehmigt.', url: '',
+            appointmentId: null, type: 'mitarbeiter', timestamp: 3,
+        }))
+
+        const { titel, optionen } = gezeigteNachricht()
+        expect(titel).toBe('🔔 Urlaub genehmigt')
+        expect(optionen.tag).toBe('push-3')
+        expect(optionen.data.url).toBe('/zeiterfassung/')
+    })
+})
