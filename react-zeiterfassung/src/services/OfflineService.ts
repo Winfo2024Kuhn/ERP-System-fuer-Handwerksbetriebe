@@ -3,6 +3,7 @@
 // PRINCIPLE: Client ALWAYS wins when pending entries exist.
 // The local session is NEVER deleted by sync logic.
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { leseFehlermeldung } from '../lib/apiFehler'
 
 interface ZeiterfassungDB extends DBSchema {
     pending: {
@@ -64,6 +65,12 @@ interface PendingEntry {
      * Stop offline passiert oder vom Server abgelehnt wird (Reparatur-Liste).
      */
     durationMinutes?: number
+    /**
+     * Nur echte Serverfehler (5xx) zählen hierfür – nicht 429 („zu viele Anfragen“)
+     * und nicht Funklöcher. Grundlage für {@link haengtDauerhaft}.
+     */
+    serverfehlerVersuche?: number
+    ersterServerfehlerAm?: string
 }
 
 /**
@@ -161,23 +168,90 @@ const CACHE_KEYS = {
     lastSync: 'last_sync',
 }
 
-// ==================== SYNC LOCK ====================
-// Prevents multiple sync operations from running in parallel.
-// Without this, online-event + visibilitychange + heartbeat could all fire
-// at once and send duplicate entries.
-let _syncLock = false
+// ==================== EIN ABGLEICH ZUR ZEIT ====================
+// online-Event, visibilitychange, Heartbeat und Anstöße feuern oft gleichzeitig.
+// Früher bekam der zweite Aufrufer sofort ein erfundenes {success:true} – das
+// Dashboard lud dann zu früh neu und nach dem echten Ende gar nicht mehr.
+// Jetzt teilen sich alle Aufrufer den laufenden Abgleich und bekommen dasselbe
+// Ergebnis. Es läuft nie mehr als ein Abgleich gleichzeitig.
+interface LaufenderAbgleich {
+    art: 'alles' | 'warteschlange'
+    ergebnis: Promise<SyncResult>
+}
+let laufenderAbgleich: LaufenderAbgleich | null = null
 
-async function acquireSyncLock(): Promise<boolean> {
-    if (_syncLock) {
-        console.log('🔒 Sync bereits aktiv - überspringe')
-        return false
-    }
-    _syncLock = true
-    return true
+function starteAbgleich(art: LaufenderAbgleich['art'], arbeit: () => Promise<SyncResult>): Promise<SyncResult> {
+    const ergebnis: Promise<SyncResult> = arbeit().finally(() => {
+        if (laufenderAbgleich?.ergebnis === ergebnis) laufenderAbgleich = null
+    })
+    laufenderAbgleich = { art, ergebnis }
+    return ergebnis
 }
 
-function releaseSyncLock() {
-    _syncLock = false
+const KEIN_ABGLEICH: SyncResult = {
+    success: false, pendingSynced: 0, pendingFailed: 0, pendingDiscarded: 0, allPendingCleared: false, startSynced: false,
+}
+
+/**
+ * Abstand zwischen zwei Kategorie-Abfragen beim Vorladen. Das Handy-Gateway
+ * erlaubt pro Internetadresse nur 10 Anfragen pro Sekunde; mit 150 ms bleiben
+ * wir klar darunter und lassen Platz für echte Buchungen (Feierabend-Tipp).
+ */
+export const KATEGORIEN_ABSTAND_MS = 150
+
+const warte = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+/** Höchstens so lange wartet der Abgleich auf eine einzelne Buchungs-Anfrage. */
+export const ABGLEICH_ANFRAGE_ZEITLIMIT_MS = 20_000
+
+/** Ab hier hält ein immer wieder scheiternder Eintrag die Warteschlange nicht mehr auf. */
+const DAUERHAFT_HAENGEND_VERSUCHE = 20
+const DAUERHAFT_HAENGEND_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Antwortet der Server auf genau diesen Eintrag seit über einem Tag mit Serverfehlern?
+ * 408/425/429 und Netzfehler zählen bewusst nicht: Ein Feierabend vom Freitag darf
+ * nicht in der Reparatur-Liste landen, nur weil am Montag früh alle gleichzeitig abgleichen.
+ */
+function haengtDauerhaft(entry: PendingEntry): boolean {
+    if (!entry.ersterServerfehlerAm) return false
+    const dauer = Date.now() - new Date(entry.ersterServerfehlerAm).getTime()
+    return (entry.serverfehlerVersuche ?? 0) >= DAUERHAFT_HAENGEND_VERSUCHE && dauer >= DAUERHAFT_HAENGEND_MS
+}
+
+/** Mindestabstand zwischen zwei Vorlade-Läufen – spart Datenvolumen und Gateway-Kontingent. */
+const VORLADEN_MINDESTABSTAND_MS = 10 * 60 * 1000
+
+let laufendesVorladen: Promise<void> | null = null
+let letztesVorladenAm = 0
+
+/**
+ * Lädt die Kategorien je Projekt nacheinander mit Abstand, damit das Gateway
+ * (10 Anfragen/s je Internetadresse) nicht überläuft. Läuft schon ein Vorladen
+ * oder liegt das letzte keine 10 Minuten zurück, passiert nichts.
+ */
+function kategorienVorladen(projekte: Array<{ id: number }>) {
+    if (laufendesVorladen || Date.now() - letztesVorladenAm < VORLADEN_MINDESTABSTAND_MS) return
+    letztesVorladenAm = Date.now()
+    laufendesVorladen = (async () => {
+        console.log(`📦 Caching Kategorien für ${projekte.length} Projekte...`)
+        for (let i = 0; i < projekte.length; i++) {
+            if (i > 0) await warte(KATEGORIEN_ABSTAND_MS)
+            await OfflineService.getKategorien(projekte[i].id)
+        }
+        console.log('✅ Alle Projekt-Kategorien gecached')
+    })()
+        .catch(err => console.warn('Kategorien konnten nicht vorgeladen werden', err))
+        .finally(() => { laufendesVorladen = null })
+}
+
+/**
+ * Antworten, bei denen ein späterer Versuch klappen kann: Zeitüberschreitung,
+ * „zu früh“, zu viele Anfragen (Gateway oder gesperrte Internetadresse) und
+ * Serverfehler. Alles andere aus dem 4xx-Bereich ist eine echte Ablehnung.
+ */
+export function istVoruebergehenderFehler(status: number): boolean {
+    return status === 408 || status === 425 || status === 429 || status >= 500
 }
 
 function normalizePendingEntry(entry: PendingEntry): PendingEntry {
@@ -192,9 +266,16 @@ function normalizePendingEntry(entry: PendingEntry): PendingEntry {
 
 // ==================== TEST HELPERS ====================
 // These are exported ONLY for use in test files.
-// Resets sync lock only. Call clearCache/clearPending separately to wipe stores.
+// Vergisst den laufenden Abgleich. Stores separat mit clearCache/clearPending leeren.
 export function _resetForTesting() {
-    _syncLock = false
+    laufenderAbgleich = null
+    laufendesVorladen = null
+    letztesVorladenAm = 0
+}
+
+/** Wartet in Tests, bis das Vorladen der Projekt-Kategorien im Hintergrund fertig ist. */
+export async function _warteAufVorladenForTesting() {
+    await laufendesVorladen
 }
 
 export async function _setPendingEntryStatusForTesting(id: string, status: 'pending' | 'inflight') {
@@ -273,14 +354,19 @@ async function fetchWithCache<T>(url: string, cacheKey: string): Promise<T[]> {
 
 export const OfflineService = {
     // ==================== SYNC ALL ====================
-    // Acquires lock, checks reachability, syncs pending, then refreshes cache.
+    // Prüft die Erreichbarkeit, sendet die Warteschlange und frischt die Stammdaten auf.
+    // Läuft schon ein Abgleich, bekommt der Aufrufer dessen Ergebnis (kein zweiter Lauf).
     async syncAll(): Promise<SyncResult> {
-        // Acquire lock - only one sync at a time!
-        if (!await acquireSyncLock()) {
-            console.log('🔒 syncAll übersprungen - Lock aktiv')
-            return { success: true, pendingSynced: 0, pendingFailed: 0, pendingDiscarded: 0, allPendingCleared: false, startSynced: false }
+        if (laufenderAbgleich?.art === 'alles') return laufenderAbgleich.ergebnis
+        if (laufenderAbgleich) {
+            // Ein reiner Warteschlangen-Lauf ist aktiv: abwarten, dann selbst abgleichen.
+            await laufenderAbgleich.ergebnis.catch(() => undefined)
+            return OfflineService.syncAll()
         }
+        return starteAbgleich('alles', () => OfflineService._syncAllInternal())
+    },
 
+    async _syncAllInternal(): Promise<SyncResult> {
         try {
             console.log('🔄 Synchronisiere alle Daten...')
 
@@ -288,17 +374,28 @@ export const OfflineService = {
             const reachable = await isServerReachable()
             if (!reachable) {
                 console.log('📴 Server nicht erreichbar - Sync übersprungen')
-                return { success: false, pendingSynced: 0, pendingFailed: 0, pendingDiscarded: 0, allPendingCleared: false, startSynced: false }
+                return { ...KEIN_ABGLEICH }
             }
 
             // First, sync pending entries
             const syncResult = await OfflineService._syncPendingInternal()
+            if (syncResult.abgebrochen) {
+                // Server ausgelastet oder Verbindung weg: keine Stammdaten nachschieben,
+                // sonst bekommt auch der nächste Feierabend-Tipp nur „zu viele Anfragen“.
+                return {
+                    ...KEIN_ABGLEICH,
+                    pendingSynced: syncResult.synced,
+                    pendingFailed: syncResult.failed,
+                    pendingDiscarded: syncResult.discarded,
+                    startSynced: syncResult.startSynced,
+                }
+            }
 
             // Then refresh all cached data (only if server is reachable)
             const projekte = await OfflineService.getProjekte()
-            
+
             const token = localStorage.getItem('zeiterfassung_token') || undefined
-            
+
             await Promise.all([
                 OfflineService.getKategorien(),
                 OfflineService.getArbeitsgaenge(), // Global
@@ -307,15 +404,18 @@ export const OfflineService = {
                 OfflineService.getLieferanten(),
             ])
 
-            // Pre-cache categories for EACH project
+            // Kategorien je Projekt laufen danach im Hintergrund nach – bei 100 Projekten
+            // dauert das gedrosselt ~15 s. Darauf soll weder die Anzeige noch der nächste
+            // Abgleich warten.
             if (Array.isArray(projekte) && projekte.length > 0) {
-                console.log(`📦 Caching Kategorien für ${projekte.length} Projekte...`)
-                const batchSize = 10
-                for (let i = 0; i < projekte.length; i += batchSize) {
-                    const batch = projekte.slice(i, i + batchSize) as Array<{ id: number }>
-                    await Promise.all(batch.map((p) => OfflineService.getKategorien(p.id)))
-                }
-                console.log('✅ Alle Projekt-Kategorien gecached')
+                kategorienVorladen(projekte as Array<{ id: number }>)
+            }
+
+            // Nachlauf: Was während des Stammdaten-Abrufs eingereiht wurde (z. B. ein
+            // Feierabend, während noch ältere Einträge warteten), gleich mitschicken.
+            let nachlauf = { synced: 0, failed: 0, discarded: 0, startSynced: false, abgebrochen: false }
+            if (await OfflineService.getPendingCount() > 0) {
+                nachlauf = await OfflineService._syncPendingInternal()
             }
 
             // Update last sync timestamp
@@ -329,18 +429,16 @@ export const OfflineService = {
 
             console.log('✅ Synchronisation abgeschlossen')
             return {
-                success: true,
-                pendingSynced: syncResult.synced,
-                pendingFailed: syncResult.failed,
-                pendingDiscarded: syncResult.discarded,
+                success: !nachlauf.abgebrochen,
+                pendingSynced: syncResult.synced + nachlauf.synced,
+                pendingFailed: nachlauf.failed,
+                pendingDiscarded: syncResult.discarded + nachlauf.discarded,
                 allPendingCleared: remainingPending === 0,
-                startSynced: syncResult.startSynced,
+                startSynced: syncResult.startSynced || nachlauf.startSynced,
             }
         } catch (err) {
             console.error('❌ Synchronisation fehlgeschlagen:', err)
-            return { success: false, pendingSynced: 0, pendingFailed: 0, pendingDiscarded: 0, allPendingCleared: false, startSynced: false }
-        } finally {
-            releaseSyncLock()
+            return { ...KEIN_ABGLEICH }
         }
     },
 
@@ -598,43 +696,29 @@ export const OfflineService = {
         }
     },
 
-    // Entfernt alle Pending-Entries eines bestimmten Typs (z.B. 'stop').
-    // Wird genutzt um verwaiste Offline-Stops zu bereinigen, wenn ein Online-Start
-    // beweist, dass der Server den Stop bereits verarbeitet hat.
-    // ATOMIC: Snapshots IDs at read time, only deletes those exact IDs.
-    // This prevents deleting entries that were added AFTER the read.
-    async removePendingEntriesByType(type: 'start' | 'stop' | 'pause') {
-        const db = await initDB()
-        const all = await db.getAll('pending')
-        // Snapshot: collect IDs to delete BEFORE any async work
-        const idsToDelete = all
-            .filter(entry => entry.type === type)
-            .map(entry => entry.id)
-
-        for (const id of idsToDelete) {
-            // Verify entry still exists before deleting (idempotent)
-            const existing = await db.get('pending', id)
-            if (existing) {
-                await db.delete('pending', id)
-                console.log(`🗑️ Pending ${type}-Entry entfernt (${id.substring(0, 8)})`)
-            }
-        }
-    },
-
     // ==================== SYNC PENDING (public wrapper) ====================
-    // Public API - acquires lock and does reachability check.
+    // Sendet nur die Warteschlange. Läuft schon ein Abgleich, wird dessen Ergebnis abgewartet.
     async syncPending() {
-        if (!await acquireSyncLock()) {
-            return { synced: 0, failed: 0, discarded: 0, skipped: true }
-        }
-        try {
-            const reachable = await isServerReachable()
-            if (!reachable) {
-                return { synced: 0, failed: 0, discarded: 0, skipped: true }
-            }
-            return await OfflineService._syncPendingInternal()
-        } finally {
-            releaseSyncLock()
+        const ergebnis = laufenderAbgleich
+            ? await laufenderAbgleich.ergebnis
+            : await starteAbgleich('warteschlange', async () => {
+                if (!await isServerReachable()) return { ...KEIN_ABGLEICH }
+                const r = await OfflineService._syncPendingInternal()
+                return {
+                    success: !r.abgebrochen,
+                    pendingSynced: r.synced,
+                    pendingFailed: r.failed,
+                    pendingDiscarded: r.discarded,
+                    allPendingCleared: await OfflineService.getPendingCount() === 0,
+                    startSynced: r.startSynced,
+                }
+            })
+        return {
+            synced: ergebnis.pendingSynced,
+            failed: ergebnis.pendingFailed,
+            discarded: ergebnis.pendingDiscarded,
+            skipped: !ergebnis.success,
+            startSynced: ergebnis.startSynced,
         }
     },
 
@@ -646,7 +730,7 @@ export const OfflineService = {
     async _syncPendingInternal() {
         await OfflineService._requeueInflightEntries()
         const pending = await OfflineService.getPendingEntries()
-        if (pending.length === 0) return { synced: 0, failed: 0, discarded: 0, startSynced: false }
+        if (pending.length === 0) return { synced: 0, failed: 0, discarded: 0, startSynced: false, abgebrochen: false }
 
         console.log(`🔄 Sync: ${pending.length} ausstehende Einträge`)
 
@@ -654,11 +738,28 @@ export const OfflineService = {
         let failed = 0
         let discarded = 0
         let startSynced = false
+        // true = Schleife wegen Netz-/Serverproblem beendet; Rest bleibt in der Warteschlange
+        let abgebrochen = false
         const db = await initDB()
 
+        // Nur zurückschreiben, wenn der Eintrag noch da ist: sendeBuchung kann dieselbe
+        // Buchung gleichzeitig erfolgreich übertragen und schon gelöscht haben.
+        const zurueckInDieWarteschlange = async (eintrag: PendingEntry) => {
+            if (await db.get('pending', eintrag.id)) await db.put('pending', eintrag)
+        }
+        const mitServerfehler = (eintrag: PendingEntry): PendingEntry => ({
+            ...eintrag,
+            serverfehlerVersuche: (eintrag.serverfehlerVersuche ?? 0) + 1,
+            ersterServerfehlerAm: eintrag.ersterServerfehlerAm ?? new Date().toISOString(),
+        })
 
         // Sort by originalTime to replay actions in chronological order
-        pending.sort((a, b) => new Date(a.originalTime).getTime() - new Date(b.originalTime).getTime())
+        // Bei gleichem Zeitpunkt (Wechsel = Stop + Start in derselben Millisekunde)
+        // zuerst beenden, dann starten.
+        const reihenfolge = { stop: 0, pause: 1, start: 2 } as const
+        pending.sort((a, b) =>
+            new Date(a.originalTime).getTime() - new Date(b.originalTime).getTime()
+            || reihenfolge[a.type] - reihenfolge[b.type])
 
         for (let i = 0; i < pending.length; i++) {
             const entry = pending[i]
@@ -680,11 +781,17 @@ export const OfflineService = {
             }
             await db.put('pending', inflightEntry)
 
+            // Hängt eine Anfrage (z. B. beim Wechsel WLAN → Mobilfunk), würde sonst der
+            // ganze Abgleich und damit jede neue Buchung dahinter warten. Abbrechen ist
+            // gefahrlos: Der nächste Versuch trägt denselben Idempotenz-Schlüssel.
+            const abbruch = new AbortController()
+            const abbruchTimer = setTimeout(() => abbruch.abort(), ABGLEICH_ANFRAGE_ZEITLIMIT_MS)
             try {
                 const res = await fetch(`/api/zeiterfassung/${entry.type}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(buildBookingRequestPayload(entry.data, entry.originalTime, entry.id)),
+                    signal: abbruch.signal,
                 })
 
                 if (res.ok) {
@@ -692,9 +799,41 @@ export const OfflineService = {
                     synced++
                     if (entry.type === 'start') startSynced = true
                     console.log(`✅ Sync OK: ${entry.type} (${entry.id.substring(0, 8)})`)
-                } else if (res.status >= 400 && res.status < 500) {
-                    // Client error (4xx) - dieser Eintrag wird so NIEMALS erfolgreich
-                    // syncen. Statt ihn STILL zu löschen (= Datenverlust für den
+                } else if (res.status >= 500 && haengtDauerhaft(mitServerfehler(inflightEntry))) {
+                    // Antwortet der Server seit über einem Tag immer wieder mit einem Fehler,
+                    // darf dieser eine Eintrag nicht alle späteren Buchungen für immer
+                    // aufhalten. Er wandert (nicht gelöscht!) in die Reparatur-Liste.
+                    console.warn(`🔧 Sync hängt seit über einem Tag (${res.status}), verschiebe in Reparatur-Liste: ${entry.type}`)
+                    await db.put('failed', {
+                        id: entry.id,
+                        type: entry.type,
+                        data: entry.data,
+                        timestamp: entry.timestamp,
+                        originalTime: entry.originalTime,
+                        failedAt: new Date().toISOString(),
+                        httpStatus: res.status,
+                        serverError: 'Der Server hat diese Buchung über einen Tag lang nicht angenommen.',
+                        attemptCount: inflightEntry.attemptCount,
+                        durationMinutes: entry.durationMinutes,
+                    })
+                    await db.delete('pending', entry.id)
+                    discarded++
+                } else if (istVoruebergehenderFehler(res.status)) {
+                    // 408/425/429/5xx: später nochmal. Eintrag bleibt in der Warteschlange
+                    // und die Schleife bricht ab – sonst überholt z. B. ein späterer
+                    // Start einen älteren Feierabend und die Reihenfolge am Server stimmt nicht.
+                    console.warn(`🔁 Sync später erneut (${res.status}): ${entry.type}`)
+                    await zurueckInDieWarteschlange({
+                        ...(res.status >= 500 ? mitServerfehler(inflightEntry) : inflightEntry),
+                        status: 'pending',
+                        lastError: `HTTP ${res.status}`,
+                    })
+                    failed += pending.length - i
+                    abgebrochen = true
+                    break
+                } else {
+                    // Echte Ablehnung (übrige 4xx) - dieser Eintrag wird so NIEMALS
+                    // erfolgreich syncen. Statt ihn STILL zu löschen (= Datenverlust für den
                     // Handwerker!) verschieben wir ihn in die Reparatur-Liste.
                     // Der Handwerker sieht in der App, dass etwas nicht durchkam,
                     // und kann die Buchung manuell verwerfen oder ein Admin daraus
@@ -702,11 +841,10 @@ export const OfflineService = {
                     // WICHTIG: Wir berühren localStorage NIE - die lokale Session
                     // gehört dem User und darf nur durch explizite User-Aktionen
                     // gelöscht werden.
-                    const errorBody = await res.json().catch(() => ({}))
-                    const serverError = String(errorBody.error || errorBody.message || `HTTP ${res.status}`)
+                    const serverError = await leseFehlermeldung(res, `HTTP ${res.status}`)
                     console.warn(`🔧 Sync abgelehnt (${res.status}), verschiebe in Reparatur-Liste: ${entry.type} - ${serverError}`)
 
-                    const failedEntry: FailedEntry = {
+                    await db.put('failed', {
                         id: entry.id,
                         type: entry.type,
                         data: entry.data,
@@ -717,23 +855,13 @@ export const OfflineService = {
                         serverError,
                         attemptCount: inflightEntry.attemptCount,
                         durationMinutes: entry.durationMinutes,
-                    }
-                    await db.put('failed', failedEntry)
+                    })
                     await db.delete('pending', entry.id)
                     discarded++
-                } else {
-                    // Server error (5xx) - transient, keep for retry
-                    console.warn(`🔁 Sync retry later (${res.status}): ${entry.type}`)
-                    await db.put('pending', {
-                        ...inflightEntry,
-                        status: 'pending',
-                        lastError: `HTTP ${res.status}`,
-                    })
-                    failed++
                 }
             } catch {
-                // Network error mid-sync - count ALL remaining entries as failed and stop
-                await db.put('pending', {
+                // Netzwerkfehler mitten im Abgleich: alle übrigen Einträge bleiben stehen
+                await zurueckInDieWarteschlange({
                     ...inflightEntry,
                     status: 'pending',
                     lastError: 'Network error during sync',
@@ -741,12 +869,15 @@ export const OfflineService = {
                 const remaining = pending.length - i
                 console.log(`📴 Netzwerkfehler während Sync - ${remaining} verbleibende Einträge werden übersprungen`)
                 failed += remaining
+                abgebrochen = true
                 break
+            } finally {
+                clearTimeout(abbruchTimer)
             }
         }
 
         console.log(`📊 Sync-Ergebnis: ${synced} OK, ${discarded} verworfen, ${failed} fehlgeschlagen`)
-        return { synced, failed, discarded, startSynced }
+        return { synced, failed, discarded, startSynced, abgebrochen }
     },
 
     // Check online status
@@ -858,4 +989,174 @@ export const OfflineService = {
         return (cached?.value as { buchungStartZeit: string | null; buchungEndeZeit: string | null } | undefined)
             || { buchungStartZeit: null, buchungEndeZeit: null }
     },
+}
+
+// ==================== BUCHUNG SENDEN (Start, Pause, Feierabend) ====================
+
+/** Event, mit dem jede Stelle der App einen Abgleich anstoßen kann (App.tsx hört darauf). */
+export const ABGLEICH_ANSTOSSEN_EVENT = 'zeiterfassung:abgleich-anstossen'
+
+/** Bittet die App, die Warteschlange so bald wie möglich zu übertragen. */
+export function abgleichAnstossen() {
+    window.dispatchEvent(new CustomEvent(ABGLEICH_ANSTOSSEN_EVENT))
+}
+
+/**
+ * Bittet den Browser, die gespeicherten Daten (wartende Buchungen!) bei
+ * Speichermangel nicht zu löschen. Android räumt sonst die IndexedDB ab.
+ * Best effort: Ablehnung oder fehlende Unterstützung sind kein Fehler.
+ */
+export async function speicherDauerhaftAnfordern(): Promise<boolean> {
+    try {
+        const speicher = typeof navigator === 'undefined' ? undefined : navigator.storage
+        if (!speicher?.persist) return false
+        if (await speicher.persisted?.()) return true
+        return await speicher.persist()
+    } catch {
+        return false
+    }
+}
+
+export type BuchungsTyp = 'start' | 'stop' | 'pause'
+
+export interface SendeBuchungOptionen {
+    /** Tatsächlicher Zeitpunkt der Aktion (Standard: jetzt). */
+    originalTime?: string
+    /** Idempotenz-Schlüssel; bleibt beim Einreihen gleich (Standard: neu erzeugt). */
+    operationId?: string
+    /** Dauer der durch Stop/Pause beendeten Arbeit, für „heute gearbeitet“. */
+    durationMinutes?: number
+    /** So lange wartet die Oberfläche auf die Antwort (Standard 5000 ms). Die Anfrage läuft danach weiter. */
+    timeoutMs?: number
+    /**
+     * true: Eine echte Ablehnung (4xx außer 408/425/429) landet sofort in der
+     * Reparatur-Liste („Mobile gewinnt“). false: Es wird nichts gespeichert –
+     * der Aufrufer entscheidet selbst (z. B. Wechsel ohne laufende Buchung).
+     */
+    ablehnungInReparaturListe: boolean
+}
+
+export type SendeBuchungErgebnis =
+    | { art: 'ok'; daten: Record<string, unknown> }
+    | { art: 'eingereiht' }
+    | { art: 'abgelehnt'; status: number; meldung: string }
+
+const STANDARD_WARTEZEIT_MS = 5000
+
+/**
+ * Schickt eine Buchung an den Server – aber nie an der Warteschlange vorbei.
+ *
+ * - Warten noch ältere Einträge, wird die Buchung hinten angestellt (Reihenfolge!).
+ * - Sonst wird sie mit `keepalive` gesendet und nicht abgebrochen: Nach `timeoutMs`
+ *   hört nur die Oberfläche auf zu warten, die Anfrage läuft weiter (auch wenn die
+ *   App gleich geschlossen wird). Kommt sie doppelt an, fängt das der Server über
+ *   den gleichen Idempotenz-Schlüssel ab.
+ * - Zeitlimit, Netzwerkfehler, 408/425/429 und 5xx: einreihen und Abgleich anstoßen.
+ */
+export async function sendeBuchung(
+    type: BuchungsTyp,
+    data: Record<string, unknown>,
+    optionen: SendeBuchungOptionen,
+): Promise<SendeBuchungErgebnis> {
+    const operationId = optionen.operationId ?? createOperationId()
+    const originalTime = optionen.originalTime ?? new Date().toISOString()
+
+    const einreihen = async (): Promise<SendeBuchungErgebnis> => {
+        await OfflineService.addPendingEntryWithOperationId(type, data, originalTime, operationId, optionen.durationMinutes)
+        abgleichAnstossen()
+        return { art: 'eingereiht' }
+    }
+
+    let wartendeEintraege = 0
+    try {
+        wartendeEintraege = await OfflineService.getPendingCount()
+    } catch {
+        // Speicher nicht lesbar: dann wenigstens direkt senden
+    }
+    if (wartendeEintraege > 0) return einreihen()
+
+    // Erst speichern, dann senden: Friert Android die App direkt nach dem Tipp ein
+    // (Handy gesperrt) und scheitert auch die keepalive-Anfrage, steht die Buchung
+    // trotzdem auf dem Handy. Beim nächsten Abgleich wird der Eintrag 'inflight'
+    // wieder freigegeben und erneut gesendet – doppelt ankommen ist dank gleichem
+    // Idempotenz-Schlüssel harmlos.
+    const db = await initDB()
+    const jetztGespeichert = new Date().toISOString()
+    await db.put('pending', {
+        id: operationId,
+        type,
+        data,
+        timestamp: jetztGespeichert,
+        originalTime,
+        status: 'inflight',
+        attemptCount: 1,
+        lastAttemptAt: jetztGespeichert,
+        durationMinutes: optionen.durationMinutes,
+    })
+    const eigenenEintragEntfernen = () => db.delete('pending', operationId)
+    const spaeterNochmal = async (): Promise<SendeBuchungErgebnis> => {
+        // Ein paralleler Abgleich kann den Eintrag schon übertragen und gelöscht haben.
+        const gespeichert = await db.get('pending', operationId)
+        if (gespeichert) await db.put('pending', { ...normalizePendingEntry(gespeichert), status: 'pending' })
+        abgleichAnstossen()
+        return { art: 'eingereiht' }
+    }
+
+    let zeitlimitTimer: ReturnType<typeof setTimeout> | undefined
+    let antwort: Response | 'zeitlimit'
+    try {
+        const anfrage = fetch(`/api/zeiterfassung/${type}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildBookingRequestPayload(data, originalTime, operationId)),
+            keepalive: true,
+        })
+        // Scheitert die Anfrage erst nach dem Zeitlimit, darf das kein unbehandelter Fehler sein.
+        anfrage.catch(() => undefined)
+        const zeitlimit = new Promise<'zeitlimit'>(resolve => {
+            zeitlimitTimer = setTimeout(() => resolve('zeitlimit'), optionen.timeoutMs ?? STANDARD_WARTEZEIT_MS)
+        })
+        antwort = await Promise.race([anfrage, zeitlimit])
+    } catch {
+        return spaeterNochmal()
+    } finally {
+        clearTimeout(zeitlimitTimer)
+    }
+
+    if (antwort === 'zeitlimit') return spaeterNochmal()
+
+    if (antwort.ok) {
+        await eigenenEintragEntfernen()
+        const daten: unknown = await antwort.json().catch(() => ({}))
+        return { art: 'ok', daten: daten && typeof daten === 'object' ? daten as Record<string, unknown> : {} }
+    }
+
+    if (istVoruebergehenderFehler(antwort.status)) return spaeterNochmal()
+
+    await eigenenEintragEntfernen()
+    const meldung = await leseFehlermeldung(antwort, 'Der Server hat die Buchung nicht angenommen.')
+    if (optionen.ablehnungInReparaturListe) {
+        const jetzt = new Date().toISOString()
+        await db.put('failed', {
+            id: operationId,
+            type,
+            data,
+            timestamp: jetztGespeichert,
+            originalTime,
+            failedAt: jetzt,
+            httpStatus: antwort.status,
+            serverError: meldung,
+            attemptCount: 1,
+            durationMinutes: optionen.durationMinutes,
+        })
+    }
+    return { art: 'abgelehnt', status: antwort.status, meldung }
+}
+
+/** Startzeit für die lokale Anzeige: die vom Server, sonst der eigene Zeitpunkt der Aktion. */
+export function startZeitAusErgebnis(ergebnis: SendeBuchungErgebnis, ersatz: string): string {
+    if (ergebnis.art === 'ok' && typeof ergebnis.daten.startZeit === 'string' && ergebnis.daten.startZeit) {
+        return ergebnis.daten.startZeit
+    }
+    return ersatz
 }

@@ -2,9 +2,8 @@ import { useToast } from '../components/ui/toast'
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw } from 'lucide-react'
-import { buildBookingRequestPayload, createOperationId, OfflineService } from '../services/OfflineService'
+import { createOperationId, OfflineService, sendeBuchung, startZeitAusErgebnis } from '../services/OfflineService'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
-import { leseFehlermeldung } from '../lib/apiFehler'
 
 interface Projekt {
     id: number
@@ -151,151 +150,78 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
         setStarting(true)
         const token = localStorage.getItem('zeiterfassung_token')
 
-        // If switching from an existing booking, stop the old one first
-        if (isSwitching) {
-            const oldSessionStr = localStorage.getItem('zeiterfassung_active_session')
-            let oldElapsedMinutes = 0
-            let wasWorkSession = true
-            const stopTime = new Date().toISOString()
-            const stopOperationId = createOperationId()
-
-            if (oldSessionStr) {
-                try {
-                    const oldSession = JSON.parse(oldSessionStr)
-                    const oldStart = new Date(oldSession.startTime)
-                    const now = new Date()
-                    oldElapsedMinutes = Math.floor((now.getTime() - oldStart.getTime()) / 60000)
-                    const isAbwesenheit = ['URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'PAUSE'].includes(oldSession.typ)
-                    wasWorkSession = !isAbwesenheit
-                } catch { /* ignore */ }
-            }
-
-            try {
-                const stopController = new AbortController()
-                const stopTimeout = setTimeout(() => stopController.abort(), 3000)
-
-                const stopRes = await fetch('/api/zeiterfassung/stop', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(buildBookingRequestPayload({ token }, stopTime, stopOperationId)),
-                    signal: stopController.signal
-                })
-                clearTimeout(stopTimeout)
-
-                if (stopRes.ok) {
-                    console.log('Alte Buchung für Projektwechsel gestoppt')
-                } else {
-                    throw new Error('Server error on stop')
-                }
-            } catch {
-                console.log('Offline/Timeout - speichere Stop-Event lokal')
-                // Arbeitszeit der gerade beendeten Buchung im Pending-Eintrag
-                // mitführen, damit "heute gearbeitet" weiterhin stimmt - auch
-                // wenn der Server diesen Stop später ablehnt.
-                const stopDuration = wasWorkSession && oldElapsedMinutes > 0 ? oldElapsedMinutes : undefined
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId, stopDuration)
-            }
-
-            // Clear old session
-            localStorage.removeItem('zeiterfassung_active_session')
-        }
-
-        const startTime = new Date().toISOString()
-        const startOperationId = createOperationId()
-
-        // Hat der Server geantwortet, ist ein späterer Fehler kein Netzproblem:
-        // Die Buchung dann offline einzureihen, würde sie beim Sync doppelt anlegen.
-        let serverHatGeantwortet = false
-
         try {
-            // Online Start Attempt with Timeout
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 5000)
+            // Beim Wechsel zuerst die alte Buchung beenden. Über sendeBuchung geht das
+            // nie an älteren Offline-Einträgen vorbei; wird der Stop eingereiht, reiht
+            // sich der Start unten automatisch dahinter ein. Lehnt der Server den Stop
+            // ab ("keine aktive Buchung"), läuft dort nichts mehr – dann einfach starten.
+            if (isSwitching) {
+                const oldSessionStr = localStorage.getItem('zeiterfassung_active_session')
+                let oldElapsedMinutes = 0
+                let wasWorkSession = true
 
-            const res = await fetch('/api/zeiterfassung/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildBookingRequestPayload({
-                    token,
-                    projektId: selectedProjekt.id,
-                    arbeitsgangId: selectedArbeitsgang.id,
-                    produktkategorieId: selectedKategorie?.id || null
-                }, startTime, startOperationId)),
-                signal: controller.signal
-            })
-            clearTimeout(timeoutId)
-            serverHatGeantwortet = true
-
-            if (res.ok) {
-                const data = await res.json()
-
-                // Wenn wir switchen und der Start online erfolgreich war, bedeutet das:
-                // Der Server hat keine aktive Buchung → der Stop wurde verarbeitet.
-                // Verwaiste Offline-Stop-Entries entfernen, damit sie nicht später
-                // die NEUE Buchung stoppen (Race-Condition-Fix).
-                if (isSwitching) {
-                    await OfflineService.removePendingEntriesByType('stop')
+                if (oldSessionStr) {
+                    try {
+                        const oldSession = JSON.parse(oldSessionStr)
+                        oldElapsedMinutes = Math.floor((Date.now() - new Date(oldSession.startTime).getTime()) / 60000)
+                        wasWorkSession = !['URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'PAUSE'].includes(oldSession.typ)
+                    } catch { /* ignore */ }
                 }
 
-                const session = {
-                    id: data.id,
-                    projektId: selectedProjekt.id,
-                    projektName: selectedProjekt.name,
-                    arbeitsgangId: selectedArbeitsgang.id,
-                    arbeitsgangName: selectedArbeitsgang.beschreibung,
-                    produktkategorieId: selectedKategorie?.id || null,
-                    produktkategorieName: selectedKategorie?.name || null,
-                    startTime: new Date().toISOString(),
-                }
-                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(session))
+                await sendeBuchung('stop', { token }, {
+                    originalTime: new Date().toISOString(),
+                    operationId: createOperationId(),
+                    // Arbeitszeit der beendeten Buchung, damit "heute gearbeitet"
+                    // stimmt, solange der Stop noch wartet.
+                    durationMinutes: wasWorkSession && oldElapsedMinutes > 0 ? oldElapsedMinutes : undefined,
+                    ablehnungInReparaturListe: false,
+                })
 
-            } else {
-                // Server responded with error - DO NOT queue offline, it might be "already running"
-                const meldung = await leseFehlermeldung(res, 'Fehler beim Starten der Buchung')
-                console.error('Server error:', res.status, meldung)
-                toast.error(meldung)
-                setStarting(false)
-                return // Don't navigate, don't queue
+                // Clear old session
+                localStorage.removeItem('zeiterfassung_active_session')
             }
-        } catch (err) {
-            // fetch selbst ist gescheitert (Funkloch, WLAN ohne Internet, Timeout) →
-            // offline einreihen. navigator.onLine taugt dafür nicht: Es meldet oft
-            // "online", obwohl kein Server erreichbar ist; fetch wirft dann sofort
-            // einen TypeError statt in den Timeout zu laufen. Doppelte Übertragung
-            // fängt die Operation-ID beim Sync ab.
-            if (!serverHatGeantwortet) {
-                console.log('Offline oder Timeout - wird später synchronisiert', err)
 
-                // Queue sync job - mit originalem Zeitstempel!
-                await OfflineService.addPendingEntryWithOperationId('start', {
-                    token,
-                    projektId: selectedProjekt.id,
-                    arbeitsgangId: selectedArbeitsgang.id,
-                    produktkategorieId: selectedKategorie?.id || null
-                }, startTime, startOperationId)
+            const startTime = new Date().toISOString()
+            const start = await sendeBuchung('start', {
+                token,
+                projektId: selectedProjekt.id,
+                arbeitsgangId: selectedArbeitsgang.id,
+                produktkategorieId: selectedKategorie?.id || null
+            }, {
+                originalTime: startTime,
+                operationId: createOperationId(),
+                ablehnungInReparaturListe: false,
+            })
 
-                // Set local active session (fake)
-                const session = {
-                    id: 'offline-' + Date.now(),
-                    projektId: selectedProjekt.id,
-                    projektName: selectedProjekt.name,
-                    kundenName: selectedProjekt.kundenName || null,
-                    auftragsnummer: selectedProjekt.projektNummer || null,
-                    arbeitsgangId: selectedArbeitsgang.id,
-                    arbeitsgangName: selectedArbeitsgang.beschreibung,
-                    produktkategorieId: selectedKategorie?.id || null,
-                    produktkategorieName: selectedKategorie?.name || null,
-                    startTime: new Date().toISOString(),
-                }
-                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(session))
-
-            } else {
-                // Some other error - don't queue
-                console.error('Unerwarteter Fehler:', err)
-                toast.error('Fehler beim Starten der Buchung')
+            if (start.art === 'abgelehnt') {
+                // Echte Ablehnung (z. B. "Es läuft bereits eine Buchung") – nicht
+                // einreihen, nicht weiter: Der Handwerker soll es sofort sehen.
+                console.error('Server error:', start.status, start.meldung)
+                toast.error(start.meldung)
                 setStarting(false)
                 return
             }
+
+            // 'ok' oder 'eingereiht' (Funkloch, Zeitlimit, Server ausgelastet):
+            // Die Buchung läuft auf dem Handy, die Warteschlange überträgt sie später.
+            const session = {
+                id: start.art === 'ok' ? start.daten.id ?? null : 'offline-' + Date.now(),
+                projektId: selectedProjekt.id,
+                projektName: selectedProjekt.name,
+                kundenName: selectedProjekt.kundenName || null,
+                auftragsnummer: selectedProjekt.projektNummer || null,
+                arbeitsgangId: selectedArbeitsgang.id,
+                arbeitsgangName: selectedArbeitsgang.beschreibung,
+                produktkategorieId: selectedKategorie?.id || null,
+                produktkategorieName: selectedKategorie?.name || null,
+                startTime: startZeitAusErgebnis(start, startTime),
+            }
+            localStorage.setItem('zeiterfassung_active_session', JSON.stringify(session))
+        } catch (err) {
+            console.error('Buchung konnte nicht gespeichert werden:', err)
+            toast.error('Die Buchung konnte auf dem Handy nicht gespeichert werden. Bitte noch einmal versuchen.')
+            setStarting(false)
+            return
         }
 
         navigate('/')

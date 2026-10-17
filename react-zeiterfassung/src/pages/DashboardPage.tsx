@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, LogOut, Settings, Plane, AlertTriangle, Calendar, Hammer, Receipt, Wrench, Stethoscope } from 'lucide-react'
-import { buildBookingRequestPayload, createOperationId, OfflineService, type FailedEntry } from '../services/OfflineService'
+import { createOperationId, OfflineService, sendeBuchung, startZeitAusErgebnis, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
@@ -99,10 +99,12 @@ interface DashboardPageProps {
     mitarbeiter: Mitarbeiter | null
     onLogout: () => void
     syncStatus?: 'syncing' | 'done' | 'error'
+    /** Wird nach jedem erfolgreichen Abgleich hochgezählt (App.tsx) – Auslöser zum Neuladen. */
+    abgleichNummer?: number
     onSync?: () => void
 }
 
-export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: DashboardPageProps) {
+export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer = 0, onSync }: DashboardPageProps) {
     const navigate = useNavigate()
     const [activeSession, setActiveSession] = useState<Session | null>(null)
     const [elapsedTime, setElapsedTime] = useState('00:00:00')
@@ -426,16 +428,18 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         // um globalen Sync auf allen Seiten zu ermöglichen
     }, [])
 
-    // Reload stats when sync completes (e.g. after offline batch upload)
+    // Nach jedem erfolgreichen Abgleich neu laden (z. B. nachdem wartende Buchungen
+    // übertragen wurden). Der Zähler statt syncStatus === 'done': Ein zweiter Abgleich
+    // direkt nach dem ersten wäre 'done' → 'done' und würde nichts auslösen.
+    const geladenBeiAbgleich = useRef(abgleichNummer)
     useEffect(() => {
-        if (syncStatus === 'done') {
-            // Reload both session and hours from server after successful sync
-            loadActiveSession()
-            loadHeuteGearbeitet()
-            loadFailedEntries()
-            loadZeitkontoStatus()
-        }
-    }, [syncStatus])
+        if (abgleichNummer === geladenBeiAbgleich.current) return
+        geladenBeiAbgleich.current = abgleichNummer
+        loadActiveSession()
+        loadHeuteGearbeitet()
+        loadFailedEntries()
+        loadZeitkontoStatus()
+    }, [abgleichNummer])
 
     useEffect(() => {
         if (!activeSession) return
@@ -491,6 +495,8 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         setActionInProgress(false)
     }
 
+    const uhrzeit = (iso: string) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+
     // Stop current session (Pause/Buchung beenden)
     const handleStopSession = async () => {
         // Beide Guards haben früher stumm abgebrochen. Bei einer Aktion, die für
@@ -505,48 +511,31 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         }
         const token = localStorage.getItem('zeiterfassung_token')
         const stopTime = new Date().toISOString()
-        const stopOperationId = createOperationId()
 
-        // Calculate elapsed minutes for offline tracking (only for work, not pause)
-        const start = new Date(activeSession.startTime)
-        const now = new Date()
-        const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
+        // Dauer der beendeten Arbeit: zählt in "heute gearbeitet", solange der
+        // Server den Feierabend noch nicht kennt (Warteschlange/Reparatur-Liste).
+        const elapsedMinutes = Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 60000)
         const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
 
         try {
-            try {
-                const controller = new AbortController()
-                const timeoutId = setTimeout(() => controller.abort(), 3000)
+            // sendeBuchung reiht hinter älteren Offline-Einträgen ein, bricht die
+            // Anfrage bei langsamem Netz nicht ab und behandelt 429/5xx als "später".
+            const ergebnis = await sendeBuchung('stop', { token }, {
+                originalTime: stopTime,
+                operationId: createOperationId(),
+                durationMinutes: isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined,
+                ablehnungInReparaturListe: true,
+            })
 
-                const res = await fetch('/api/zeiterfassung/stop', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(buildBookingRequestPayload({ token }, stopTime, stopOperationId)),
-                    signal: controller.signal
-                })
-                clearTimeout(timeoutId)
-
-                if (res.ok) {
-                    const data = await res.json()
-                    console.log('Buchung gestoppt:', data.stunden, 'Stunden')
-                } else {
-                    throw new Error('Server error');
-                }
-            } catch {
-                console.log('Offline (oder Timeout) - speichere Stop-Event lokal')
-                // durationMinutes wird im pending-Entry mitgespeichert, damit
-                // "heute gearbeitet" die Minuten weiterhin korrekt zeigt - auch
-                // wenn der Server diesen Eintrag später ablehnt (Reparatur-Liste).
-                const stopDuration = isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId, stopDuration)
-                // Ehrlich bleiben: Der Feierabend ist gespeichert, aber noch nicht
-                // beim Chef angekommen. Ohne diesen Hinweis sieht der Handwerker
-                // nur die verschwundene Karte und geht heim - während die Buchung
-                // am Server weiterläuft.
+            if (ergebnis.art === 'eingereiht') {
+                // Ehrlich bleiben: gespeichert, aber noch nicht im Büro angekommen.
                 zeigeAktionsHinweis(
-                    `Feierabend um ${new Date(stopTime).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} gespeichert, `
-                    + 'aber noch kein Empfang. Er wird automatisch nachgetragen, sobald du wieder online bist.'
+                    `Feierabend um ${uhrzeit(stopTime)} gespeichert. `
+                    + 'Er wird automatisch ans Büro übertragen, sobald die Verbindung steht.'
                 )
+            } else if (ergebnis.art === 'abgelehnt') {
+                toast.error(`Feierabend nicht übernommen: ${ergebnis.meldung}`)
+                loadFailedEntries()
             }
 
             // Stop-Cooldown setzen, damit ein nachfolgendes loadActiveSession()
@@ -558,6 +547,8 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             setElapsedTime('00:00:00')
             // Reload today's hours
             loadHeuteGearbeitet()
+        } catch {
+            toast.error('Der Feierabend konnte auf dem Handy nicht gespeichert werden. Bitte noch einmal tippen.')
         } finally {
             endAction()
         }
@@ -573,7 +564,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             return
         }
         const pauseTime = new Date().toISOString()
-        const pauseOperationId = createOperationId()
 
         // Falls eine Arbeitsbuchung läuft: Dauer der gerade beendeten Arbeit
         // ermitteln, damit "heute gearbeitet" auch offline korrekt bleibt.
@@ -584,69 +574,42 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         }
 
         try {
-            try {
-                const controller = new AbortController()
-                const timeoutId = setTimeout(() => controller.abort(), 3000)
+            const ergebnis = await sendeBuchung('pause', { token }, {
+                originalTime: pauseTime,
+                operationId: createOperationId(),
+                durationMinutes: workDurationMinutes,
+                ablehnungInReparaturListe: true,
+            })
 
-                const res = await fetch('/api/zeiterfassung/pause', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(buildBookingRequestPayload({ token }, pauseTime, pauseOperationId)),
-                    signal: controller.signal
-                })
-                clearTimeout(timeoutId)
-
-                if (res.ok) {
-                    const data = await res.json()
-                    console.log('Pause gestartet:', data)
-                    // Update session to show pause
-                    const pauseSession: Session = {
-                        projektId: null,
-                        projektName: null,
-                        kundenName: null,
-                        auftragsnummer: null,
-                        arbeitsgangId: null,
-                        arbeitsgangName: null,
-                        startTime: data.startZeit,
-                        typ: 'PAUSE',
-                    }
-                    localStorage.setItem('zeiterfassung_active_session', JSON.stringify(pauseSession))
-                    setActiveSession(pauseSession)
-                } else {
-                    // 4xx vom Server: NICHT stumm schlucken. Sonst sieht der
-                    // Handwerker beim Tap auf "Pause" gar nichts (Bug-Symptom:
-                    // "Pause anstechen hat nicht funktioniert"). Wir werfen
-                    // und lassen den Offline-/Reparatur-Pfad uebernehmen:
-                    // optimistisches UI + addPendingEntryWithOperationId; ein
-                    // dauerhaft abgelehnter Eintrag landet in der Reparatur-Liste.
-                    throw new Error('Server error')
-                }
-            } catch {
-                console.log('Offline (oder Server-Fehler) - speichere Pause-Event lokal')
-                await OfflineService.addPendingEntryWithOperationId('pause', { token }, pauseTime, pauseOperationId, workDurationMinutes)
-                // Optimistic UI update for offline pause
-                const pauseSession: Session = {
-                    projektId: null,
-                    projektName: null,
-                    kundenName: null,
-                    auftragsnummer: null,
-                    arbeitsgangId: null,
-                    arbeitsgangName: null,
-                    startTime: pauseTime,
-                    typ: 'PAUSE',
-                }
+            // "Mobile gewinnt": Die Pause wird immer sofort angezeigt – auch wenn sie
+            // noch wartet oder abgelehnt wurde (dann steht sie in der Reparatur-Liste).
+            const pauseSession: Session = {
+                projektId: null,
+                projektName: null,
+                kundenName: null,
+                auftragsnummer: null,
+                arbeitsgangId: null,
+                arbeitsgangName: null,
+                startTime: startZeitAusErgebnis(ergebnis, pauseTime),
+                typ: 'PAUSE',
+            }
+            if (ergebnis.art !== 'ok') {
                 // Cooldown setzen, damit ein nachfolgendes loadActiveSession() die
                 // optimistische Pause nicht durch eine vom Server weiterhin aktive
-                // Arbeitsbuchung ueberschreibt - z.B. wenn das Pause-Event spaeter
-                // in den failed-Store wandert (pendingCount=0) und der Server die
-                // alte Buchung noch liefert. Reuse vom Start-Cooldown-Key, der im
-                // loadActiveSession exakt diese "behalte lokale Session"-Semantik
-                // umsetzt (siehe Zeile 222-231).
+                // Arbeitsbuchung ueberschreibt - z.B. wenn das Pause-Event in der
+                // Reparatur-Liste steht (pendingCount=0) und der Server die alte
+                // Buchung noch liefert.
                 localStorage.setItem('zeiterfassung_start_synced_at', Date.now().toString())
-                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(pauseSession))
-                setActiveSession(pauseSession)
             }
+            if (ergebnis.art === 'abgelehnt') {
+                toast.error(`Pause nicht übernommen: ${ergebnis.meldung}`)
+                loadFailedEntries()
+            }
+            localStorage.setItem('zeiterfassung_active_session', JSON.stringify(pauseSession))
+            setActiveSession(pauseSession)
             loadHeuteGearbeitet()
+        } catch {
+            toast.error('Die Pause konnte auf dem Handy nicht gespeichert werden. Bitte noch einmal tippen.')
         } finally {
             endAction()
         }
@@ -657,29 +620,16 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         if (!beginAction()) return
 
         const token = localStorage.getItem('zeiterfassung_token')
-        const stopTime = new Date().toISOString()
-        const stopOperationId = createOperationId()
 
         try {
-            try {
-                const controller = new AbortController()
-                const timeoutId = setTimeout(() => controller.abort(), 3000)
-
-                const res = await fetch('/api/zeiterfassung/stop', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(buildBookingRequestPayload({ token }, stopTime, stopOperationId)),
-                    signal: controller.signal
-                })
-                clearTimeout(timeoutId)
-
-                if (!res.ok) {
-                    console.warn('Stop-Aufruf nicht erfolgreich, speichere für später')
-                    await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
-                }
-            } catch {
-                console.log('Offline - speichere Stop-Event für Pause lokal')
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopTime, stopOperationId)
+            const ergebnis = await sendeBuchung('stop', { token }, {
+                originalTime: new Date().toISOString(),
+                operationId: createOperationId(),
+                ablehnungInReparaturListe: true,
+            })
+            if (ergebnis.art === 'abgelehnt') {
+                toast.error(`Pausenende nicht übernommen: ${ergebnis.meldung}`)
+                loadFailedEntries()
             }
 
             // Stop-Cooldown setzen (analog zu handleStopSession), damit der Server
@@ -689,6 +639,8 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
             localStorage.removeItem('zeiterfassung_active_session')
             setActiveSession(null)
             navigate('/zeiterfassung')
+        } catch {
+            toast.error('Das Pausenende konnte auf dem Handy nicht gespeichert werden. Bitte noch einmal tippen.')
         } finally {
             endAction()
         }
@@ -728,251 +680,118 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
         setShowKategorieSwitch(true)
     }
 
+    /**
+     * Wechsel = laufende Buchung beenden und neue starten. Beide gehen über
+     * sendeBuchung, also nie an älteren Offline-Einträgen vorbei: Wird der Stop
+     * eingereiht, landet der Start automatisch dahinter.
+     * Eine Ablehnung des Stops ("keine aktive Buchung") heißt: am Server läuft
+     * nichts – dann einfach starten. Lehnt der Server den Start ab, bleibt die
+     * alte Buchung sichtbar und wird – falls der Stop schon durch war – neu gestartet.
+     */
+    const wechsleBuchung = async (
+        neueStartDaten: Record<string, unknown>,
+        neueSession: (startZeit: string, id: unknown) => Session,
+    ) => {
+        if (!activeSession) return
+        const token = localStorage.getItem('zeiterfassung_token')
+        const alteSession = { ...activeSession } // Backup for rollback
+        const elapsedMinutes = Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 60000)
+        const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
+        const stopZeit = new Date().toISOString()
+
+        const stop = await sendeBuchung('stop', { token }, {
+            originalTime: stopZeit,
+            operationId: createOperationId(),
+            durationMinutes: isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined,
+            ablehnungInReparaturListe: false,
+        })
+
+        const startZeit = new Date().toISOString()
+        const start = await sendeBuchung('start', { token, ...neueStartDaten }, {
+            originalTime: startZeit,
+            operationId: createOperationId(),
+            ablehnungInReparaturListe: false,
+        })
+
+        if (start.art === 'abgelehnt') {
+            console.warn('⚠️ Start beim Wechsel abgelehnt - alte Buchung bleibt')
+            if (stop.art === 'ok') {
+                const wiederhergestellt = await sendeBuchung('start', {
+                    token,
+                    projektId: alteSession.projektId,
+                    arbeitsgangId: alteSession.arbeitsgangId,
+                    produktkategorieId: alteSession.produktkategorieId ?? null,
+                }, { ablehnungInReparaturListe: false })
+                if (wiederhergestellt.art === 'abgelehnt') {
+                    console.error('❌ Alte Buchung konnte nicht wiederhergestellt werden')
+                }
+            }
+            toast.error(`Wechsel nicht möglich: ${start.meldung}`)
+            localStorage.setItem('zeiterfassung_active_session', JSON.stringify(alteSession))
+            setActiveSession(alteSession)
+            return
+        }
+
+        const session = neueSession(
+            startZeitAusErgebnis(start, startZeit),
+            start.art === 'ok' ? start.daten.id ?? null : 'offline-' + Date.now(),
+        )
+        localStorage.setItem('zeiterfassung_active_session', JSON.stringify(session))
+        setActiveSession(session)
+    }
+
     // Switch to new Kategorie (stop old, start new with same activity)
     const handleSwitchKategorie = async (newKategorie: { id: number; name: string }) => {
         if (!activeSession) return
         setSwitching(true)
-
-        const token = localStorage.getItem('zeiterfassung_token')
-        const oldSession = { ...activeSession } // Backup for rollback
-
-        // Calculate elapsed minutes for offline tracking
-        const start = new Date(activeSession.startTime)
-        const now = new Date()
-        const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
-        const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
-        const stopOperationTime = new Date().toISOString()
-        const stopOperationId = createOperationId()
-        const startOperationTime = new Date().toISOString()
-        const startOperationId = createOperationId()
-
-        // stopRes vor try deklarieren, damit im catch geprüft werden kann
-        // ob der Stop online bereits erfolgreich war (Race-Condition-Fix)
-        let stopRes: Response | null = null
-
+        const aktuell = activeSession
         try {
-            // Online: Stop old booking, start new with different kategorie
-            const stopController = new AbortController()
-            const stopTimeout = setTimeout(() => stopController.abort(), 3000)
-
-            stopRes = await fetch('/api/zeiterfassung/stop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildBookingRequestPayload({ token }, stopOperationTime, stopOperationId)),
-                signal: stopController.signal
-            })
-            clearTimeout(stopTimeout)
-
-            // Start new booking with same activity but different category
-            const startController = new AbortController()
-            const startTimeout = setTimeout(() => startController.abort(), 3000)
-
-            const res = await fetch('/api/zeiterfassung/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildBookingRequestPayload({
-                    token,
-                    projektId: activeSession.projektId,
-                    arbeitsgangId: activeSession.arbeitsgangId,
-                    produktkategorieId: newKategorie.id
-                }, startOperationTime, startOperationId)),
-                signal: startController.signal
-            })
-            clearTimeout(startTimeout)
-
-            if (res.ok) {
-                const data = await res.json()
-                const newSession = {
-                    ...activeSession,
-                    id: data.id,
-                    produktkategorieId: newKategorie.id,
-                    produktkategorieName: newKategorie.name,
-                    startTime: new Date().toISOString(),
-                }
-                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(newSession))
-                setActiveSession(newSession)
-            } else {
-                // Start failed after stop succeeded - try to restore old booking
-                console.warn('⚠️ Kategorie-Start fehlgeschlagen nach Stop - versuche Wiederherstellung')
-                if (stopRes.ok) {
-                    try {
-                        await fetch('/api/zeiterfassung/start', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(buildBookingRequestPayload({
-                                token,
-                                projektId: oldSession.projektId,
-                                arbeitsgangId: oldSession.arbeitsgangId,
-                                produktkategorieId: oldSession.produktkategorieId ?? null
-                            }, new Date().toISOString(), createOperationId()))
-                        })
-                    } catch { /* best effort */ }
-                }
-                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(oldSession))
-                setActiveSession(oldSession as Session)
-            }
-        } catch {
-            console.log('Offline - Kategorie-Switch wird lokal gespeichert')
-            const stopDuration = isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined
-
-            // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
-            // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
-            // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
-            if (!stopRes || !stopRes.ok) {
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId, stopDuration)
-            }
-            await OfflineService.addPendingEntryWithOperationId('start', {
-                token,
-                projektId: activeSession.projektId,
-                arbeitsgangId: activeSession.arbeitsgangId,
-                produktkategorieId: newKategorie.id
-            }, startOperationTime, startOperationId)
-
-            // Optimistic UI update
-            const newSession = {
-                ...activeSession,
-                id: 'offline-' + Date.now(),
+            await wechsleBuchung({
+                projektId: aktuell.projektId,
+                arbeitsgangId: aktuell.arbeitsgangId,
+                produktkategorieId: newKategorie.id,
+            }, (startZeit, id) => ({
+                ...aktuell,
+                id,
                 produktkategorieId: newKategorie.id,
                 produktkategorieName: newKategorie.name,
-                startTime: new Date().toISOString(),
-            }
-            localStorage.setItem('zeiterfassung_active_session', JSON.stringify(newSession))
-            setActiveSession(newSession)
+                startTime: startZeit,
+            } as Session))
+        } catch {
+            toast.error('Der Wechsel konnte auf dem Handy nicht gespeichert werden. Bitte noch einmal versuchen.')
+        } finally {
+            setSwitching(false)
+            setShowKategorieSwitch(false)
+            loadHeuteGearbeitet()
         }
-
-        setSwitching(false)
-        setShowKategorieSwitch(false)
-        loadHeuteGearbeitet()
     }
 
     // Switch to new Arbeitsgang (stop old, start new) - optional auf einem über "Ändern" gewählten Projekt
     const handleSwitchArbeitsgang = async (newArbeitsgang: Arbeitsgang) => {
         if (!activeSession) return
         setSwitching(true)
-
-        const token = localStorage.getItem('zeiterfassung_token')
-        const oldSession = { ...activeSession } // Backup for rollback
-
-        // Calculate elapsed minutes for offline tracking (only for work, not pause)
-        const start = new Date(activeSession.startTime)
-        const now = new Date()
-        const elapsedMinutes = Math.floor((now.getTime() - start.getTime()) / 60000)
-        const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
-        const stopOperationTime = new Date().toISOString()
-        const stopOperationId = createOperationId()
-        const startOperationTime = new Date().toISOString()
-        const startOperationId = createOperationId()
         const ziel = projektFuerTaetigkeitswechsel(activeSession, projekte, selectedProjektId)
-
-        // stopRes vor try deklarieren, damit im catch geprüft werden kann
-        // ob der Stop online bereits erfolgreich war (Race-Condition-Fix)
-        let stopRes: Response | null = null
-
         try {
-            // Online Switch Attempt
-            // 1. Stop
-            const stopController = new AbortController()
-            const stopTimeout = setTimeout(() => stopController.abort(), 3000)
-
-            stopRes = await fetch('/api/zeiterfassung/stop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildBookingRequestPayload({ token }, stopOperationTime, stopOperationId)),
-                signal: stopController.signal
-            })
-            clearTimeout(stopTimeout)
-
-            // 2. Start mit neuer Tätigkeit – auf dem gewählten Projekt
-            const startController = new AbortController()
-            const startTimeout = setTimeout(() => startController.abort(), 3000)
-
-            const res = await fetch('/api/zeiterfassung/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildBookingRequestPayload({
-                    token,
-                    projektId: ziel.projektId,
-                    arbeitsgangId: newArbeitsgang.id,
-                    produktkategorieId: ziel.produktkategorieId
-                }, startOperationTime, startOperationId)),
-                signal: startController.signal
-            })
-            clearTimeout(startTimeout)
-
-            if (res.ok) {
-                const data = await res.json()
-                const newSession = {
-                    id: data.id,
-                    ...ziel,
-                    arbeitsgangId: newArbeitsgang.id,
-                    arbeitsgangName: newArbeitsgang.beschreibung,
-                    startTime: new Date().toISOString(),
-                    typ: null,
-                }
-                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(newSession))
-                setActiveSession(newSession)
-            } else {
-                // Start failed after stop succeeded - try to restart old booking
-                console.warn('⚠️ Start fehlgeschlagen nach Stop - versuche alte Buchung wiederherzustellen')
-                if (stopRes.ok) {
-                    try {
-                        const restoreRes = await fetch('/api/zeiterfassung/start', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(buildBookingRequestPayload({
-                                token,
-                                projektId: oldSession.projektId,
-                                arbeitsgangId: oldSession.arbeitsgangId,
-                                produktkategorieId: oldSession.produktkategorieId ?? null
-                            }, new Date().toISOString(), createOperationId()))
-                        })
-                        if (restoreRes.ok) {
-                            console.log('✅ Alte Buchung wiederhergestellt')
-                        } else {
-                            console.error('❌ Alte Buchung konnte nicht wiederhergestellt werden')
-                        }
-                    } catch {
-                        console.error('❌ Restore fehlgeschlagen')
-                    }
-                }
-                // Keep old session visible regardless
-                localStorage.setItem('zeiterfassung_active_session', JSON.stringify(oldSession))
-                setActiveSession(oldSession as Session)
-            }
-        } catch {
-            console.log('Offline (oder Timeout) - Switch wird lokal gespeichert')
-            const stopDuration = isWorkSession && elapsedMinutes > 0 ? elapsedMinutes : undefined
-
-            // Nur Stop queuen wenn der online Stop NICHT bereits erfolgreich war.
-            // Wenn stopRes.ok, hat der Server den Stop schon verarbeitet - ein erneuter
-            // offline Stop würde die NEUE Buchung stoppen (Race-Condition).
-            if (!stopRes || !stopRes.ok) {
-                await OfflineService.addPendingEntryWithOperationId('stop', { token }, stopOperationTime, stopOperationId, stopDuration)
-            }
-            await OfflineService.addPendingEntryWithOperationId('start', {
-                token,
+            await wechsleBuchung({
                 projektId: ziel.projektId,
                 arbeitsgangId: newArbeitsgang.id,
-                produktkategorieId: ziel.produktkategorieId
-            }, startOperationTime, startOperationId)
-
-            // Update UI with "Fake" Session (IMMEDIATE optimistic update)
-            const newSession = {
-                id: 'offline-' + Date.now(),
+                produktkategorieId: ziel.produktkategorieId,
+            }, (startZeit, id) => ({
+                id,
                 ...ziel,
                 arbeitsgangId: newArbeitsgang.id,
                 arbeitsgangName: newArbeitsgang.beschreibung,
-                startTime: new Date().toISOString(),
+                startTime: startZeit,
                 typ: null,
-            }
-            localStorage.setItem('zeiterfassung_active_session', JSON.stringify(newSession))
-            setActiveSession(newSession)
+            } as Session))
+        } catch {
+            toast.error('Der Wechsel konnte auf dem Handy nicht gespeichert werden. Bitte noch einmal versuchen.')
+        } finally {
+            setSwitching(false)
+            setShowArbeitsgangSwitch(false)
+            // Refresh heute gearbeitet to include the newly added offline minutes
+            loadHeuteGearbeitet()
         }
-
-        setSwitching(false)
-        setShowArbeitsgangSwitch(false)
-        // Refresh heute gearbeitet to include the newly added offline minutes
-        loadHeuteGearbeitet()
     }
 
     return (
@@ -988,7 +807,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, onSync }: Dashb
                         <p className="text-sm text-slate-500">{formatDate(new Date())}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                        <NachrichtenGlocke mitarbeiterId={mitarbeiter?.id} neuLadenAusloeser={syncStatus} />
+                        <NachrichtenGlocke mitarbeiterId={mitarbeiter?.id} neuLadenAusloeser={abgleichNummer} />
                         <button
                             onClick={() => navigate('/einstellungen')}
                             aria-label="Einstellungen"
