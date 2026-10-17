@@ -4,6 +4,12 @@ import { clientsClaim } from 'workbox-core'
 import { registerRoute } from 'workbox-routing'
 import { NetworkOnly } from 'workbox-strategies'
 import { tokenRetryError } from './auth/mobileTransport'
+import {
+  arbeiteWarteschlangeAb,
+  BUCHUNGEN_UEBERTRAGEN_NACHRICHT,
+  HINTERGRUND_SYNC_TAG,
+  mitWarteschlangenSperre,
+} from './services/buchungsWarteschlange'
 
 declare let self: ServiceWorkerGlobalScope
 
@@ -340,6 +346,34 @@ swSelf.addEventListener('periodicsync', (event: PeriodicSyncEvent) => {
       }
     })())
   }
+})
+
+// ─── Background Sync: wartende Buchungen senden, auch wenn die App geschlossen ist ───
+// Die App meldet nach jedem Einreihen einen Sync an. Chrome auf Android weckt den
+// Service Worker, sobald wieder Netz da ist – so kommt der Feierabend an, ohne dass
+// der Mitarbeiter die App noch einmal öffnen muss. iPhones kennen das nicht.
+interface SyncEvent extends ExtendableEvent {
+  tag: string
+}
+
+async function buchungenImHintergrundSenden(): Promise<void> {
+  const ergebnis = await mitWarteschlangenSperre(() => arbeiteWarteschlangeAb({ frischUnterwegsAbwarten: true }))
+  if (ergebnis.synced > 0 || ergebnis.discarded > 0) {
+    // Offene, eingefrorene App-Fenster sollen beim Aufwachen neu laden.
+    const fenster = await self.clients.matchAll({ type: 'window' })
+    for (const client of fenster) client.postMessage({ type: BUCHUNGEN_UEBERTRAGEN_NACHRICHT })
+  }
+  // Abgebrochen (kein Netz, Server ausgelastet): Fehlschlag melden, damit der Browser
+  // es später noch einmal versucht. Die Einträge bleiben sicher in der Warteschlange.
+  if (ergebnis.abgebrochen) throw new Error('Buchungen werden später erneut gesendet')
+}
+
+const syncSelf = self as ServiceWorkerGlobalScope & {
+  addEventListener(type: 'sync', listener: (event: SyncEvent) => void): void
+}
+syncSelf.addEventListener('sync', (event: SyncEvent) => {
+  if (event.tag !== HINTERGRUND_SYNC_TAG) return
+  event.waitUntil(buchungenImHintergrundSenden())
 })
 
 // ─── Web Push Event: Server-sent push notifications (iOS lock screen support) ───

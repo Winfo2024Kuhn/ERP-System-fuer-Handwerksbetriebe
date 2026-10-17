@@ -2,33 +2,24 @@
 // Caches data locally using IndexedDB and syncs when online
 // PRINCIPLE: Client ALWAYS wins when pending entries exist.
 // The local session is NEVER deleted by sync logic.
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { leseFehlermeldung } from '../lib/apiFehler'
+import {
+    arbeiteWarteschlangeAb,
+    HINTERGRUND_SYNC_TAG,
+    istVoruebergehenderFehler,
+    buildBookingRequestPayload,
+    mitWarteschlangenSperre,
+    leseWartendeEintraege,
+    normalizePendingEntry,
+    oeffneBuchungsDB,
+    type BuchungsTyp,
+    type FailedEntry,
+    type PendingEntry,
+} from './buchungsWarteschlange'
 
-interface ZeiterfassungDB extends DBSchema {
-    pending: {
-        key: string
-        value: PendingEntry
-    }
-    /**
-     * "Reparatur-Liste": Buchungen, die der Server beim Sync mit 4xx
-     * abgelehnt hat (z.B. "keine aktive Buchung gefunden" für ein Stop).
-     * Stille Löschung wäre Datenverlust für den Handwerker - stattdessen
-     * landen sie hier mit Fehlerkontext, bis der User sie manuell verwirft
-     * oder ein Admin sie als Korrekturbuchung übernimmt.
-     */
-    failed: {
-        key: string
-        value: FailedEntry
-    }
-    master_data: {
-        key: string
-        value: {
-            key: string
-            value: unknown
-        }
-    }
-}
+// Für bestehende Importe aus der App weiterhin hier erreichbar.
+export { ABGLEICH_ANFRAGE_ZEITLIMIT_MS, buildBookingRequestPayload, istVoruebergehenderFehler } from './buchungsWarteschlange'
+export type { BuchungsTyp, FailedEntry } from './buchungsWarteschlange'
 
 interface ProjektCacheEntry {
     name: string
@@ -43,54 +34,6 @@ interface LieferantCacheEntry {
 
 interface KundenCacheEntry {
     name: string
-}
-
-interface PendingEntry {
-    id: string // Also used as idempotency key on the server
-    type: 'start' | 'stop' | 'pause'
-    data: Record<string, unknown>
-    timestamp: string
-    originalTime: string // ISO-String des tatsächlichen Zeitpunkts (für Offline-Sync)
-    status: 'pending' | 'inflight'
-    attemptCount: number
-    lastAttemptAt?: string
-    lastError?: string
-    /**
-     * Dauer der durch dieses Event beendeten Buchung in Minuten.
-     * Wird bei 'stop' und 'pause' gesetzt (= Arbeitszeit, die der Mitarbeiter
-     * gerade beendet hat). Bei 'start' bleibt das Feld leer.
-     *
-     * Quelle für die "heute gearbeitet"-Anzeige, solange der Server die Buchung
-     * noch nicht kennt. Damit stimmt die Tagesanzeige auch dann, wenn ein
-     * Stop offline passiert oder vom Server abgelehnt wird (Reparatur-Liste).
-     */
-    durationMinutes?: number
-    /**
-     * Nur echte Serverfehler (5xx) zählen hierfür – nicht 429 („zu viele Anfragen“)
-     * und nicht Funklöcher. Grundlage für {@link haengtDauerhaft}.
-     */
-    serverfehlerVersuche?: number
-    ersterServerfehlerAm?: string
-}
-
-/**
- * Buchung, deren Sync vom Server final abgelehnt wurde (4xx).
- * "Mobile gewinnt": Statt diese Daten zu löschen, behalten wir sie
- * mit vollständigem Fehlerkontext in der Reparatur-Liste, damit der
- * Handwerker (oder Admin) entscheiden kann was passieren soll.
- */
-export interface FailedEntry {
-    id: string
-    type: 'start' | 'stop' | 'pause'
-    data: Record<string, unknown>
-    timestamp: string       // Wann ursprünglich offline eingereiht
-    originalTime: string    // Tatsächlicher Zeitpunkt der Aktion
-    failedAt: string        // Wann der Server final abgelehnt hat
-    httpStatus: number      // 4xx Status-Code
-    serverError: string     // Fehlertext vom Server
-    attemptCount: number    // Wie oft probiert wurde
-    /** Dauer der durch dieses Event beendeten Buchung in Minuten (stop/pause). */
-    durationMinutes?: number
 }
 
 export interface SyncResult {
@@ -117,43 +60,6 @@ export interface HeuteGearbeitetResult {
 
 export function createOperationId() {
     return generateUUID()
-}
-
-export function buildBookingRequestPayload(
-    data: Record<string, unknown>,
-    originalTime: string,
-    operationId: string,
-) {
-    return {
-        ...data,
-        originalZeit: originalTime,
-        idempotencyKey: operationId,
-    }
-}
-
-const DB_NAME = 'zeiterfassung-db'
-// Version 2: 'failed' Store für Reparatur-Liste hinzugefügt (Mobile-First).
-const DB_VERSION = 2
-
-let dbPromise: Promise<IDBPDatabase<ZeiterfassungDB>>
-
-const initDB = () => {
-    if (!dbPromise) {
-        dbPromise = openDB<ZeiterfassungDB>(DB_NAME, DB_VERSION, {
-            upgrade(db) {
-                if (!db.objectStoreNames.contains('pending')) {
-                    db.createObjectStore('pending', { keyPath: 'id' })
-                }
-                if (!db.objectStoreNames.contains('failed')) {
-                    db.createObjectStore('failed', { keyPath: 'id' })
-                }
-                if (!db.objectStoreNames.contains('master_data')) {
-                    db.createObjectStore('master_data', { keyPath: 'key' })
-                }
-            },
-        })
-    }
-    return dbPromise
 }
 
 const CACHE_KEYS = {
@@ -201,24 +107,6 @@ export const KATEGORIEN_ABSTAND_MS = 150
 
 const warte = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
-/** Höchstens so lange wartet der Abgleich auf eine einzelne Buchungs-Anfrage. */
-export const ABGLEICH_ANFRAGE_ZEITLIMIT_MS = 20_000
-
-/** Ab hier hält ein immer wieder scheiternder Eintrag die Warteschlange nicht mehr auf. */
-const DAUERHAFT_HAENGEND_VERSUCHE = 20
-const DAUERHAFT_HAENGEND_MS = 24 * 60 * 60 * 1000
-
-/**
- * Antwortet der Server auf genau diesen Eintrag seit über einem Tag mit Serverfehlern?
- * 408/425/429 und Netzfehler zählen bewusst nicht: Ein Feierabend vom Freitag darf
- * nicht in der Reparatur-Liste landen, nur weil am Montag früh alle gleichzeitig abgleichen.
- */
-function haengtDauerhaft(entry: PendingEntry): boolean {
-    if (!entry.ersterServerfehlerAm) return false
-    const dauer = Date.now() - new Date(entry.ersterServerfehlerAm).getTime()
-    return (entry.serverfehlerVersuche ?? 0) >= DAUERHAFT_HAENGEND_VERSUCHE && dauer >= DAUERHAFT_HAENGEND_MS
-}
-
 /** Mindestabstand zwischen zwei Vorlade-Läufen – spart Datenvolumen und Gateway-Kontingent. */
 const VORLADEN_MINDESTABSTAND_MS = 10 * 60 * 1000
 
@@ -245,25 +133,6 @@ function kategorienVorladen(projekte: Array<{ id: number }>) {
         .finally(() => { laufendesVorladen = null })
 }
 
-/**
- * Antworten, bei denen ein späterer Versuch klappen kann: Zeitüberschreitung,
- * „zu früh“, zu viele Anfragen (Gateway oder gesperrte Internetadresse) und
- * Serverfehler. Alles andere aus dem 4xx-Bereich ist eine echte Ablehnung.
- */
-export function istVoruebergehenderFehler(status: number): boolean {
-    return status === 408 || status === 425 || status === 429 || status >= 500
-}
-
-function normalizePendingEntry(entry: PendingEntry): PendingEntry {
-    return {
-        ...entry,
-        status: entry.status ?? 'pending',
-        attemptCount: entry.attemptCount ?? 0,
-        lastAttemptAt: entry.lastAttemptAt,
-        lastError: entry.lastError,
-    }
-}
-
 // ==================== TEST HELPERS ====================
 // These are exported ONLY for use in test files.
 // Vergisst den laufenden Abgleich. Stores separat mit clearCache/clearPending leeren.
@@ -279,7 +148,7 @@ export async function _warteAufVorladenForTesting() {
 }
 
 export async function _setPendingEntryStatusForTesting(id: string, status: 'pending' | 'inflight') {
-    const db = await initDB()
+    const db = await oeffneBuchungsDB()
     const entry = await db.get('pending', id)
     if (!entry) return
     await db.put('pending', {
@@ -325,7 +194,7 @@ function generateUUID() {
 
 // Generic fetch with IDB cache fallback
 async function fetchWithCache<T>(url: string, cacheKey: string): Promise<T[]> {
-    const db = await initDB()
+    const db = await oeffneBuchungsDB()
     const isOnline = navigator.onLine
 
     if (isOnline) {
@@ -419,7 +288,7 @@ export const OfflineService = {
             }
 
             // Update last sync timestamp
-            const db = await initDB()
+            const db = await oeffneBuchungsDB()
             await db.put('master_data', { key: CACHE_KEYS.lastSync, value: new Date().toISOString() })
 
             // Re-read the queue after the full sync cycle. New offline entries can be
@@ -444,7 +313,7 @@ export const OfflineService = {
 
     // Get last sync time
     async getLastSyncTime(): Promise<Date | null> {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         const entry = await db.get('master_data', CACHE_KEYS.lastSync)
         return entry ? new Date(entry.value as string) : null
     },
@@ -522,7 +391,7 @@ export const OfflineService = {
 
     async getKunden() {
         // Special case for kunden structure
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         if (navigator.onLine) {
             try {
                 const res = await fetch('/api/kunden?size=15')
@@ -557,7 +426,7 @@ export const OfflineService = {
 
     // Heute gearbeitet - cached for offline
     async getHeuteGearbeitet(token: string): Promise<HeuteGearbeitetResult> {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         const cacheKey = `${CACHE_KEYS.heute_gearbeitet}_${token}`
 
         // Always try fetch first (with aggressive timeout) - navigator.onLine is unreliable
@@ -596,7 +465,7 @@ export const OfflineService = {
     },
 
     async getTagesbuchungen(token: string, datum: string): Promise<{ buchungen: Record<string, unknown>[]; fromCache: boolean }> {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         const cacheKey = `${CACHE_KEYS.tagesbuchungen}_${token}_${datum}`
 
         try {
@@ -636,7 +505,7 @@ export const OfflineService = {
         originalTime?: string,
         durationMinutes?: number,
     ) {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         const now = new Date().toISOString()
         const entry: PendingEntry = {
             id: generateUUID(),
@@ -659,7 +528,7 @@ export const OfflineService = {
         operationId: string,
         durationMinutes?: number,
     ) {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         const now = new Date().toISOString()
         const entry: PendingEntry = {
             id: operationId,
@@ -675,25 +544,8 @@ export const OfflineService = {
         return entry
     },
 
-
     async getPendingEntries(): Promise<PendingEntry[]> {
-        const db = await initDB()
-        const entries = await db.getAll('pending')
-        return entries.map(normalizePendingEntry)
-    },
-
-    async _requeueInflightEntries() {
-        const db = await initDB()
-        const entries = (await db.getAll('pending')).map(normalizePendingEntry)
-        for (const entry of entries) {
-            if (entry.status === 'inflight') {
-                await db.put('pending', {
-                    ...entry,
-                    status: 'pending',
-                    lastError: entry.lastError || 'Recovered inflight entry for retry',
-                })
-            }
-        }
+        return leseWartendeEintraege()
     },
 
     // ==================== SYNC PENDING (public wrapper) ====================
@@ -722,162 +574,12 @@ export const OfflineService = {
         }
     },
 
-    // ==================== SYNC PENDING (internal - no lock) ====================
-    // CRITICAL RULE: This method NEVER touches localStorage/zeiterfassung_active_session.
-    // The local session belongs to the user. Only explicit user actions (stop, pause, switch) may clear it.
-    // A sync rejection (4xx) means the SERVER rejected an old queued entry - that's not reason
-    // to destroy the user's current active booking display.
+    // ==================== SYNC PENDING (internal) ====================
+    // Die Sende-Schleife selbst steht in buchungsWarteschlange.ts, damit der Service Worker
+    // (Android, App geschlossen) dieselbe nutzt. Die Sperre verhindert, dass App und
+    // Service Worker gleichzeitig senden.
     async _syncPendingInternal() {
-        await OfflineService._requeueInflightEntries()
-        const pending = await OfflineService.getPendingEntries()
-        if (pending.length === 0) return { synced: 0, failed: 0, discarded: 0, startSynced: false, abgebrochen: false }
-
-        console.log(`🔄 Sync: ${pending.length} ausstehende Einträge`)
-
-        let synced = 0
-        let failed = 0
-        let discarded = 0
-        let startSynced = false
-        // true = Schleife wegen Netz-/Serverproblem beendet; Rest bleibt in der Warteschlange
-        let abgebrochen = false
-        const db = await initDB()
-
-        // Nur zurückschreiben, wenn der Eintrag noch da ist: sendeBuchung kann dieselbe
-        // Buchung gleichzeitig erfolgreich übertragen und schon gelöscht haben.
-        const zurueckInDieWarteschlange = async (eintrag: PendingEntry) => {
-            if (await db.get('pending', eintrag.id)) await db.put('pending', eintrag)
-        }
-        const mitServerfehler = (eintrag: PendingEntry): PendingEntry => ({
-            ...eintrag,
-            serverfehlerVersuche: (eintrag.serverfehlerVersuche ?? 0) + 1,
-            ersterServerfehlerAm: eintrag.ersterServerfehlerAm ?? new Date().toISOString(),
-        })
-
-        // Sort by originalTime to replay actions in chronological order
-        // Bei gleichem Zeitpunkt (Wechsel = Stop + Start in derselben Millisekunde)
-        // zuerst beenden, dann starten.
-        const reihenfolge = { stop: 0, pause: 1, start: 2 } as const
-        pending.sort((a, b) =>
-            new Date(a.originalTime).getTime() - new Date(b.originalTime).getTime()
-            || reihenfolge[a.type] - reihenfolge[b.type])
-
-        for (let i = 0; i < pending.length; i++) {
-            const entry = pending[i]
-
-            // Verify entry still exists in IDB (another sync might have processed it)
-            const storedEntry = await db.get('pending', entry.id)
-            const stillExists = storedEntry ? normalizePendingEntry(storedEntry) : null
-            if (!stillExists) {
-                console.log(`⏭️ Entry bereits verarbeitet: ${entry.type} (${entry.id.substring(0, 8)})`)
-                continue
-            }
-
-            const inflightEntry: PendingEntry = {
-                ...stillExists,
-                status: 'inflight',
-                attemptCount: stillExists.attemptCount + 1,
-                lastAttemptAt: new Date().toISOString(),
-                lastError: undefined,
-            }
-            await db.put('pending', inflightEntry)
-
-            // Hängt eine Anfrage (z. B. beim Wechsel WLAN → Mobilfunk), würde sonst der
-            // ganze Abgleich und damit jede neue Buchung dahinter warten. Abbrechen ist
-            // gefahrlos: Der nächste Versuch trägt denselben Idempotenz-Schlüssel.
-            const abbruch = new AbortController()
-            const abbruchTimer = setTimeout(() => abbruch.abort(), ABGLEICH_ANFRAGE_ZEITLIMIT_MS)
-            try {
-                const res = await fetch(`/api/zeiterfassung/${entry.type}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(buildBookingRequestPayload(entry.data, entry.originalTime, entry.id)),
-                    signal: abbruch.signal,
-                })
-
-                if (res.ok) {
-                    await db.delete('pending', entry.id)
-                    synced++
-                    if (entry.type === 'start') startSynced = true
-                    console.log(`✅ Sync OK: ${entry.type} (${entry.id.substring(0, 8)})`)
-                } else if (res.status >= 500 && haengtDauerhaft(mitServerfehler(inflightEntry))) {
-                    // Antwortet der Server seit über einem Tag immer wieder mit einem Fehler,
-                    // darf dieser eine Eintrag nicht alle späteren Buchungen für immer
-                    // aufhalten. Er wandert (nicht gelöscht!) in die Reparatur-Liste.
-                    console.warn(`🔧 Sync hängt seit über einem Tag (${res.status}), verschiebe in Reparatur-Liste: ${entry.type}`)
-                    await db.put('failed', {
-                        id: entry.id,
-                        type: entry.type,
-                        data: entry.data,
-                        timestamp: entry.timestamp,
-                        originalTime: entry.originalTime,
-                        failedAt: new Date().toISOString(),
-                        httpStatus: res.status,
-                        serverError: 'Der Server hat diese Buchung über einen Tag lang nicht angenommen.',
-                        attemptCount: inflightEntry.attemptCount,
-                        durationMinutes: entry.durationMinutes,
-                    })
-                    await db.delete('pending', entry.id)
-                    discarded++
-                } else if (istVoruebergehenderFehler(res.status)) {
-                    // 408/425/429/5xx: später nochmal. Eintrag bleibt in der Warteschlange
-                    // und die Schleife bricht ab – sonst überholt z. B. ein späterer
-                    // Start einen älteren Feierabend und die Reihenfolge am Server stimmt nicht.
-                    console.warn(`🔁 Sync später erneut (${res.status}): ${entry.type}`)
-                    await zurueckInDieWarteschlange({
-                        ...(res.status >= 500 ? mitServerfehler(inflightEntry) : inflightEntry),
-                        status: 'pending',
-                        lastError: `HTTP ${res.status}`,
-                    })
-                    failed += pending.length - i
-                    abgebrochen = true
-                    break
-                } else {
-                    // Echte Ablehnung (übrige 4xx) - dieser Eintrag wird so NIEMALS
-                    // erfolgreich syncen. Statt ihn STILL zu löschen (= Datenverlust für den
-                    // Handwerker!) verschieben wir ihn in die Reparatur-Liste.
-                    // Der Handwerker sieht in der App, dass etwas nicht durchkam,
-                    // und kann die Buchung manuell verwerfen oder ein Admin daraus
-                    // eine Korrekturbuchung machen.
-                    // WICHTIG: Wir berühren localStorage NIE - die lokale Session
-                    // gehört dem User und darf nur durch explizite User-Aktionen
-                    // gelöscht werden.
-                    const serverError = await leseFehlermeldung(res, `HTTP ${res.status}`)
-                    console.warn(`🔧 Sync abgelehnt (${res.status}), verschiebe in Reparatur-Liste: ${entry.type} - ${serverError}`)
-
-                    await db.put('failed', {
-                        id: entry.id,
-                        type: entry.type,
-                        data: entry.data,
-                        timestamp: entry.timestamp,
-                        originalTime: entry.originalTime,
-                        failedAt: new Date().toISOString(),
-                        httpStatus: res.status,
-                        serverError,
-                        attemptCount: inflightEntry.attemptCount,
-                        durationMinutes: entry.durationMinutes,
-                    })
-                    await db.delete('pending', entry.id)
-                    discarded++
-                }
-            } catch {
-                // Netzwerkfehler mitten im Abgleich: alle übrigen Einträge bleiben stehen
-                await zurueckInDieWarteschlange({
-                    ...inflightEntry,
-                    status: 'pending',
-                    lastError: 'Network error during sync',
-                })
-                const remaining = pending.length - i
-                console.log(`📴 Netzwerkfehler während Sync - ${remaining} verbleibende Einträge werden übersprungen`)
-                failed += remaining
-                abgebrochen = true
-                break
-            } finally {
-                clearTimeout(abbruchTimer)
-            }
-        }
-
-        console.log(`📊 Sync-Ergebnis: ${synced} OK, ${discarded} verworfen, ${failed} fehlgeschlagen`)
-        return { synced, failed, discarded, startSynced, abgebrochen }
+        return mitWarteschlangenSperre(() => arbeiteWarteschlangeAb())
     },
 
     // Check online status
@@ -897,22 +599,22 @@ export const OfflineService = {
     // und kann sie verwerfen oder zur Korrektur freigeben.
 
     async getFailedEntries(): Promise<FailedEntry[]> {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         return db.getAll('failed')
     },
 
     async getFailedCount(): Promise<number> {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         return db.count('failed')
     },
 
     async removeFailedEntry(id: string) {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         await db.delete('failed', id)
     },
 
     async clearFailed() {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         await db.clear('failed')
     },
 
@@ -953,21 +655,21 @@ export const OfflineService = {
     // NOTE: This intentionally does NOT clear pending entries!
     // Pending entries contain unsent bookings that must survive cache clears.
     async clearCache() {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         await db.clear('master_data')
     },
 
     // Clear all pending entries - USE WITH CAUTION!
     // Only call this when you are absolutely sure all entries have been synced.
     async clearPending() {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         await db.clear('pending')
     },
 
     // === BUCHUNGSZEITFENSTER ===
     // Fetches and caches the allowed booking time window for the employee
     async getBuchungszeitfenster(token: string): Promise<{ buchungStartZeit: string | null; buchungEndeZeit: string | null }> {
-        const db = await initDB()
+        const db = await oeffneBuchungsDB()
         const cacheKey = `${CACHE_KEYS.buchungszeitfenster}_${token}`
 
         try {
@@ -999,6 +701,29 @@ export const ABGLEICH_ANSTOSSEN_EVENT = 'zeiterfassung:abgleich-anstossen'
 /** Bittet die App, die Warteschlange so bald wie möglich zu übertragen. */
 export function abgleichAnstossen() {
     window.dispatchEvent(new CustomEvent(ABGLEICH_ANSTOSSEN_EVENT))
+    // Für den Fall, dass die App gleich geschlossen wird: Android sendet dann im Hintergrund.
+    void hintergrundUebertragungAnmelden()
+}
+
+type RegistrierungMitSync = ServiceWorkerRegistration & {
+    sync?: { register(tag: string): Promise<void> }
+}
+
+/**
+ * Bittet den Browser, die Warteschlange zu senden, sobald wieder Netz da ist – auch
+ * wenn die App dann schon geschlossen ist (Background Sync, z. B. Chrome auf Android).
+ * iPhones können das nicht; dort sendet die App beim nächsten Öffnen. Best effort.
+ */
+export async function hintergrundUebertragungAnmelden(): Promise<boolean> {
+    try {
+        if (typeof navigator === 'undefined' || !navigator.serviceWorker?.getRegistration) return false
+        const registrierung = await navigator.serviceWorker.getRegistration() as RegistrierungMitSync | undefined
+        if (!registrierung?.sync) return false
+        await registrierung.sync.register(HINTERGRUND_SYNC_TAG)
+        return true
+    } catch {
+        return false
+    }
 }
 
 /**
@@ -1016,8 +741,6 @@ export async function speicherDauerhaftAnfordern(): Promise<boolean> {
         return false
     }
 }
-
-export type BuchungsTyp = 'start' | 'stop' | 'pause'
 
 export interface SendeBuchungOptionen {
     /** Tatsächlicher Zeitpunkt der Aktion (Standard: jetzt). */
@@ -1080,7 +803,7 @@ export async function sendeBuchung(
     // trotzdem auf dem Handy. Beim nächsten Abgleich wird der Eintrag 'inflight'
     // wieder freigegeben und erneut gesendet – doppelt ankommen ist dank gleichem
     // Idempotenz-Schlüssel harmlos.
-    const db = await initDB()
+    const db = await oeffneBuchungsDB()
     const jetztGespeichert = new Date().toISOString()
     await db.put('pending', {
         id: operationId,
@@ -1093,6 +816,10 @@ export async function sendeBuchung(
         lastAttemptAt: jetztGespeichert,
         durationMinutes: optionen.durationMinutes,
     })
+    // Gleich jetzt beim Browser anmelden, nicht erst nach dem Zeitlimit: Sperrt der
+    // Mitarbeiter das Handy, bevor die Antwort da ist, läuft auf der eingefrorenen Seite
+    // kein Timer mehr. Der Service Worker wartet frische Einträge ab (keine Doppel-Sendung).
+    await hintergrundUebertragungAnmelden()
     const eigenenEintragEntfernen = () => db.delete('pending', operationId)
     const spaeterNochmal = async (): Promise<SendeBuchungErgebnis> => {
         // Ein paralleler Abgleich kann den Eintrag schon übertragen und gelöscht haben.

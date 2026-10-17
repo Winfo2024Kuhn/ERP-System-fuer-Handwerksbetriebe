@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { NotificationService } from './services/NotificationService'
 
@@ -198,5 +199,120 @@ describe('Private API-Antworten werden nicht vom Service Worker zwischengespeich
         expect(handlers.has('activate')).toBe(true)
         await dispatch('activate')
         expect([...cacheNames]).toEqual(['workbox-precache-v2'])
+    })
+})
+
+// Android: Die App ist zu, der Feierabend wartet noch auf dem Handy. Sobald wieder
+// Netz da ist, weckt der Browser den Service Worker mit einem Sync-Ereignis.
+describe('Hintergrund-Sync für wartende Buchungen', () => {
+    const postMessage = vi.fn()
+
+    async function reiheFeierabendEin(id: string, extra: { status?: 'pending' | 'inflight'; lastAttemptAt?: string } = {}) {
+        const { oeffneBuchungsDB } = await import('./services/buchungsWarteschlange')
+        const db = await oeffneBuchungsDB()
+        await db.put('pending', {
+            id, type: 'stop', data: { token: 'max-mustermann-token' },
+            timestamp: '2026-10-17T16:00:00Z', originalTime: '2026-10-17T16:00:00Z',
+            status: 'pending', attemptCount: 0, durationMinutes: 480, ...extra,
+        })
+        return db
+    }
+
+    async function sync(tag: string) {
+        let work: Promise<unknown> | undefined
+        handlers.get('sync')!({ tag, waitUntil: promise => { work = promise } })
+        return work
+    }
+
+    beforeEach(() => {
+        postMessage.mockReset()
+        ;(self as unknown as { clients: unknown }).clients = {
+            matchAll: vi.fn().mockResolvedValue([{ postMessage }]),
+        }
+    })
+
+    it('sendet den Feierabend mit dem Zugang des Mitarbeiters und sagt offenen Fenstern Bescheid', async () => {
+        const db = await reiheFeierabendEin('op-feierabend')
+        send.mockImplementation(async () => new Response('{}'))
+
+        await sync('buchungen-senden')
+
+        expect(send).toHaveBeenCalledTimes(1)
+        const [url, init] = send.mock.calls[0]
+        expect(url).toBe('/api/zeiterfassung/stop')
+        expect(new Headers(init?.headers).get('X-Auth-Token')).toBe('max-mustermann-token')
+        expect(JSON.parse(String(init?.body))).toMatchObject({ idempotencyKey: 'op-feierabend', originalZeit: '2026-10-17T16:00:00Z' })
+        expect(await db.count('pending')).toBe(0)
+        expect(postMessage).toHaveBeenCalledWith({ type: 'BUCHUNGEN_UEBERTRAGEN' })
+    })
+
+    it('meldet bei 429 einen Fehlschlag, damit der Browser es später erneut versucht, und behält den Eintrag', async () => {
+        const db = await reiheFeierabendEin('op-voll')
+        send.mockImplementation(async () => new Response('{"error":"Zu viele Anfragen. Bitte kurz warten."}', { status: 429 }))
+
+        await expect(sync('buchungen-senden')).rejects.toThrow('später erneut')
+
+        expect(await db.count('pending')).toBe(1)
+        expect(await db.count('failed')).toBe(0)
+        expect(postMessage).not.toHaveBeenCalled()
+    })
+
+    it('meldet bei Netzfehler einen Fehlschlag und behält den Eintrag', async () => {
+        const db = await reiheFeierabendEin('op-funkloch')
+        send.mockRejectedValue(new TypeError('Failed to fetch'))
+
+        await expect(sync('buchungen-senden')).rejects.toThrow('später erneut')
+
+        expect(await db.count('pending')).toBe(1)
+    })
+
+    it('zählt bei Serverfehlern mit und versucht es später erneut', async () => {
+        const db = await reiheFeierabendEin('op-500')
+        send.mockImplementation(async () => new Response('{}', { status: 500 }))
+
+        await expect(sync('buchungen-senden')).rejects.toThrow('später erneut')
+
+        expect(await db.get('pending', 'op-500')).toMatchObject({ serverfehlerVersuche: 1, status: 'pending' })
+    })
+
+    // Echte Ablehnung (z. B. widerrufener Zugang): nicht ewig wiederholen, sondern
+    // in die Reparatur-Liste – und die App soll es beim nächsten Öffnen sehen.
+    it.each([400, 401])('legt eine echte Ablehnung (HTTP %i) in die Reparatur-Liste, ohne den Browser erneut versuchen zu lassen', async (status) => {
+        const db = await reiheFeierabendEin('op-abgelehnt')
+        send.mockImplementation(async () => new Response('{"error":"Keine aktive Buchung gefunden"}', { status }))
+
+        await sync('buchungen-senden')
+
+        expect(await db.count('pending')).toBe(0)
+        expect(await db.get('failed', 'op-abgelehnt')).toMatchObject({ httpStatus: status, durationMinutes: 480 })
+        expect(postMessage).toHaveBeenCalledWith({ type: 'BUCHUNGEN_UEBERTRAGEN' })
+    })
+
+    // Handy eben gesperrt, die App sendet gerade selbst (keepalive): nicht doppelt senden.
+    it('wartet eine Buchung ab, die die App gerade erst selbst sendet', async () => {
+        const db = await reiheFeierabendEin('op-unterwegs', { status: 'inflight', lastAttemptAt: new Date().toISOString() })
+
+        await expect(sync('buchungen-senden')).rejects.toThrow('später erneut')
+
+        expect(send).not.toHaveBeenCalled()
+        expect(await db.get('pending', 'op-unterwegs')).toMatchObject({ status: 'inflight' })
+    })
+
+    it('sendet eine liegengebliebene Buchung, wenn die App beim Senden beendet wurde', async () => {
+        const vorZweiMinuten = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+        const db = await reiheFeierabendEin('op-liegengeblieben', { status: 'inflight', lastAttemptAt: vorZweiMinuten })
+        send.mockImplementation(async () => new Response('{}'))
+
+        await sync('buchungen-senden')
+
+        expect(send).toHaveBeenCalledTimes(1)
+        expect(await db.count('pending')).toBe(0)
+    })
+
+    it('ignoriert fremde Sync-Ereignisse', async () => {
+        await reiheFeierabendEin('op-fremd')
+
+        expect(await sync('etwas-anderes')).toBeUndefined()
+        expect(send).not.toHaveBeenCalled()
     })
 })

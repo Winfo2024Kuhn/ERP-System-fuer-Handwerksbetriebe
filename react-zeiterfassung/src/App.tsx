@@ -96,6 +96,7 @@ import { LieferantReklamationDetailPage } from './pages/LieferantReklamationDeta
 import KalenderPage from './pages/KalenderPage'
 import TerminDetailPage from './pages/TerminDetailPage'
 import { ABGLEICH_ANSTOSSEN_EVENT, OfflineService, speicherDauerhaftAnfordern, type SyncResult } from './services/OfflineService'
+import { BUCHUNGEN_UEBERTRAGEN_NACHRICHT } from './services/buchungsWarteschlange'
 import { starteBenachrichtigungenFallsErlaubt, stoppeBenachrichtigungsIntervall } from './services/notificationBootstrap'
 import { NotificationService } from './services/NotificationService'
 
@@ -202,9 +203,15 @@ function App() {
       void abgleichen()
     }
 
+    // Der Service Worker hat Buchungen im Hintergrund gesendet (Android): Anzeige auffrischen.
+    const handleWorkerNachricht = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type === BUCHUNGEN_UEBERTRAGEN_NACHRICHT) void handleAnstoss()
+    }
+
     window.addEventListener('online', handleOnline)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener(ABGLEICH_ANSTOSSEN_EVENT, handleAnstoss)
+    navigator.serviceWorker?.addEventListener('message', handleWorkerNachricht)
 
     // Heartbeat alle 30 Sekunden für "stille" Reconnects – solange Buchungen
     // warten oder der letzte Abgleich gescheitert ist.
@@ -221,6 +228,7 @@ function App() {
       window.removeEventListener('online', handleOnline)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener(ABGLEICH_ANSTOSSEN_EVENT, handleAnstoss)
+      navigator.serviceWorker?.removeEventListener('message', handleWorkerNachricht)
       clearInterval(heartbeat)
       nachfassenAbbrechen()
     }
