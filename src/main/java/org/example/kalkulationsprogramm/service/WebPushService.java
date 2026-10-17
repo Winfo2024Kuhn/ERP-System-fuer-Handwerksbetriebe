@@ -204,13 +204,23 @@ public class WebPushService {
      */
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public void notifyMitarbeiter(Long mitarbeiterId, String title, String body, String url) {
+        notifyMitarbeiter(mitarbeiterId, title, body, url, "mitarbeiter");
+    }
+
+    /**
+     * Wie {@link #notifyMitarbeiter(Long, String, String, String)}, aber mit eigener
+     * Nachrichtenart. Der Service Worker der Handy-App wählt daran Symbol, Zielseite
+     * und ob eine neue Nachricht die vorige ersetzt (z. B. {@code "pause"}).
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void notifyMitarbeiter(Long mitarbeiterId, String title, String body, String url, String typ) {
         if (!isEnabled() || mitarbeiterId == null) {
             log.debug("WebPush nicht aktiv oder kein Mitarbeiter – notifyMitarbeiter wird ignoriert");
             return;
         }
         try {
             for (PushSubscription sub : pushSubscriptionRepository.findByMitarbeiterId(mitarbeiterId)) {
-                sendPush(sub, title, body, url, null, "mitarbeiter");
+                sendPush(sub, title, body, url, null, typ);
             }
         } catch (Exception e) {
             log.warn("notifyMitarbeiter fehlgeschlagen: {}", e.getMessage());
