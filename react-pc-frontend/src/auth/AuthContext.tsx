@@ -41,10 +41,23 @@ interface AuthContextValue {
     logout: () => Promise<void>;
     register: (displayName: string, username: string, password: string) => Promise<RegisterResult>;
     refreshMe: () => Promise<AuthUser | null>;
+    /**
+     * Der Server hat bei der letzten Anmeldeprüfung nicht geantwortet (Funkloch, Zeitüberschreitung).
+     * Dann zeigen die Routen „Server antwortet nicht“ statt auf die Anmeldeseite zu springen.
+     */
+    verbindungsProblem: boolean;
+    /** Anmeldung erneut prüfen – für „Erneut versuchen“. */
+    erneutPruefen: () => Promise<void>;
     hasRole: (role: string) => boolean;
 }
 
 const FRONTEND_USER_STORAGE_KEY = 'frontendUserSelection';
+
+/**
+ * Länger wartet die Anmeldeprüfung nicht auf den Server. Die Antwort ist winzig – kommt sie
+ * so lange nicht, hängt die Verbindung, und ein endlos drehender Kreisel hilft niemandem.
+ */
+export const ANMELDUNG_TIMEOUT_MS = 20_000;
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -85,13 +98,28 @@ async function parseResponseMessage(res: Response, fallback: string): Promise<st
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [loading, setLoading] = useState(true);
+    const [verbindungsProblem, setVerbindungsProblem] = useState(false);
 
     const refreshMe = useCallback(async (): Promise<AuthUser | null> => {
+        const abbruch = new AbortController();
+        const timer = setTimeout(() => abbruch.abort(), ANMELDUNG_TIMEOUT_MS);
+        let res: Response;
         try {
-            const res = await fetch('/api/auth/me', {
+            res = await fetch('/api/auth/me', {
                 credentials: 'same-origin',
+                signal: abbruch.signal,
             });
+        } catch {
+            // Keine Antwort (Funkloch oder Zeitüberschreitung): Ob die Sitzung noch gilt, wissen wir nicht.
+            clearTimeout(timer);
+            setVerbindungsProblem(true);
+            setUser(null);
+            syncFrontendUserSelection(null);
+            return null;
+        }
+        setVerbindungsProblem(false);
 
+        try {
             if (!res.ok) {
                 setUser(null);
                 syncFrontendUserSelection(null);
@@ -103,14 +131,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             syncFrontendUserSelection(data);
             return data;
         } catch {
+            // Der Server hat geantwortet, aber unbrauchbar (z. B. Fehlerseite statt JSON): wie abgemeldet.
             setUser(null);
             syncFrontendUserSelection(null);
             return null;
+        } finally {
+            clearTimeout(timer);
         }
     }, []);
 
     useEffect(() => {
         refreshMe().finally(() => setLoading(false));
+    }, [refreshMe]);
+
+    const erneutPruefen = useCallback(async () => {
+        setLoading(true);
+        try {
+            await refreshMe();
+        } finally {
+            setLoading(false);
+        }
     }, [refreshMe]);
 
     const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
@@ -196,8 +236,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         register,
         refreshMe,
+        verbindungsProblem,
+        erneutPruefen,
         hasRole,
-    }), [user, loading, hasRole, login, logout, register, refreshMe]);
+    }), [user, loading, hasRole, login, logout, register, refreshMe, verbindungsProblem, erneutPruefen]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

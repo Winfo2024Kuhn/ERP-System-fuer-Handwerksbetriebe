@@ -189,8 +189,8 @@ async function stubMitarbeiterApi(page: Page) {
 
 test.describe('Mitarbeiter-Detailseite: Reiterleiste (Task 7) + Kopfzeile (Regressionswaechter)', () => {
     test('Reiterleiste ohne verstecktes Scrollen, Kopf-Knoepfe vollstaendig rechts in der Karte', async ({ page }, testInfo) => {
-        // index.html laedt pdf.js von cdnjs bei jeder Navigation (siehe
-        // playwright-design-pruefung SKILL.md) -- seit Abschnitt 10 automatisch
+        // Fremde Ziele (frueher pdf.js von cdnjs bei jeder Navigation, siehe
+        // playwright-design-pruefung SKILL.md) sind seit Abschnitt 10 automatisch
         // abgeriegelt (e2e/hilfen/test.ts, auf dem context vor jeder
         // Navigation registriert).
         await stubMitarbeiterApi(page);

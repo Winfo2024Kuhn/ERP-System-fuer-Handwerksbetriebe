@@ -5,16 +5,22 @@
     <link rel="icon" type="image/png" href="/firmenlogo_icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kalkulationsprogramm</title>
-    <!-- PDF.js v3 (UMD) für Canvas-basierte PDF-Vorschau -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      }
-    </script>
+    <style>
+      /* Erste Rückmeldung, solange das Programm selbst noch lädt (React ersetzt #root).
+         Nach 8 s der Hinweis auf eine langsame Verbindung – ohne JavaScript, das ja noch lädt. */
+      .start-laden { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #f8fafc; color: #64748b; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      .start-langsam { visibility: hidden; max-width: 24rem; padding: 0 16px; text-align: center; color: #475569; animation: start-zeigen 0s 8s forwards; }
+      .start-langsam a { color: #be123c; font-weight: 600; }
+      @keyframes start-zeigen { to { visibility: visible; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="start-laden" role="status">
+        <p>Programm wird geladen …</p>
+        <p class="start-langsam">Die Verbindung ist gerade langsam – es lädt noch. <a href="">Erneut versuchen</a></p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

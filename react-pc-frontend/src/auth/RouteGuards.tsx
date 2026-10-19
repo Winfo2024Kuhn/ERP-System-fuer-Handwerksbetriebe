@@ -1,24 +1,34 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
 import { useAuth } from './AuthContext';
+import { LadeAnzeige, VerbindungsHinweis } from '../components/ui/lade-anzeige';
 
 function FullscreenLoading() {
+    return <LadeAnzeige vollbild text="Anmeldung wird geprüft …" />;
+}
+
+/** Statt auf die Anmeldeseite zu springen: Die Sitzung gilt vielleicht noch, nur der Server ist nicht erreichbar. */
+function ServerAntwortetNicht() {
+    const { erneutPruefen } = useAuth();
     return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-            <div className="flex items-center gap-2 text-slate-500">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Anmeldung wird geprüft ...
-            </div>
+        <div role="alert" className="min-h-screen bg-slate-50 flex items-center justify-center">
+            <VerbindungsHinweis
+                text="Der Server antwortet gerade nicht. Bitte die Internetverbindung prüfen und es erneut versuchen."
+                onErneut={() => void erneutPruefen()}
+            />
         </div>
     );
 }
 
 export function RequireAuth({ children }: { children: React.ReactElement }) {
-    const { loading, isAuthenticated, user, isAdmin } = useAuth();
+    const { loading, isAuthenticated, user, isAdmin, verbindungsProblem } = useAuth();
     const location = useLocation();
 
     if (loading) {
         return <FullscreenLoading />;
+    }
+
+    if (!isAuthenticated && verbindungsProblem) {
+        return <ServerAntwortetNicht />;
     }
 
     if (!isAuthenticated) {
@@ -33,10 +43,14 @@ export function RequireAuth({ children }: { children: React.ReactElement }) {
 }
 
 export function RequireAdmin({ children }: { children: React.ReactElement }) {
-    const { loading, isAuthenticated, isAdmin } = useAuth();
+    const { loading, isAuthenticated, isAdmin, verbindungsProblem } = useAuth();
 
     if (loading) {
         return <FullscreenLoading />;
+    }
+
+    if (!isAuthenticated && verbindungsProblem) {
+        return <ServerAntwortetNicht />;
     }
 
     if (!isAuthenticated) {
