@@ -19,6 +19,9 @@ name: PR-Automatik (aktualisieren und mergen)
 #     - pr-ci.yml fuer jeden aktualisierten Branch (Check-Runs landen auf dem
 #       neuen Kopf-Commit und zaehlen fuer den PR),
 #     - docker-image.yml nach jedem eigenen Merge.
+#   Ebenso schliesst GitHub bei einem Merge mit dem GITHUB_TOKEN keine Issues,
+#   die der PR mit "Closes/Fixes/Resolves #N" verlinkt (gesehen bei #287 und
+#   #299). Deshalb schliesst dieser Workflow sie nach dem Merge selbst.
 #   Merge-Queue waere die eingebaute Loesung, gibt es aber nur fuer Repos von
 #   Organisationen. Ein eigenes Token (PAT) waere die Alternative.
 #
@@ -60,6 +63,7 @@ jobs:
       pull-requests: write   # merge- und update-branch-API
       actions: write         # pr-ci.yml und docker-image.yml starten
       checks: read           # PR Quality Gate lesen
+      issues: write          # verlinkte Issues nach dem Merge schliessen
     steps:
       - name: PRs durchgehen
         shell: bash
@@ -83,6 +87,35 @@ jobs:
           fi
 
           starte_tests() { gh workflow run pr-ci.yml --ref="$1"; }
+
+          # Verlinkte Issues ("Closes #N") nach dem Merge schliessen - das tut GitHub
+          # bei einem Merge mit dem GITHUB_TOKEN nicht. Nur Issues dieses Repos (ein
+          # "Closes anderer/repo#5" darf nicht #5 hier schliessen). Bereits
+          # geschlossene bleiben unberuehrt; Fehler bremsen den Lauf nicht.
+          schliesse_issues() {
+            local pr="$1" issues issue zustand
+            if ! issues="$(gh pr view "$pr" --json closingIssuesReferences \
+                --jq '.closingIssuesReferences[]
+                  | select(.repository.owner.login + "/" + .repository.name == env.GH_REPO)
+                  | .number')"; then
+              echo "::warning::PR #$pr: verlinkte Issues nicht lesbar - bitte von Hand schliessen."
+              return 0
+            fi
+            for issue in $issues; do
+              [[ "$issue" =~ ^[0-9]+$ ]] || continue
+              if ! zustand="$(gh issue view "$issue" --json state --jq .state)"; then
+                echo "::warning::Issue #$issue: Zustand nicht lesbar - bitte pruefen (PR #$pr)."
+                continue
+              fi
+              [ "$zustand" = "OPEN" ] || continue
+              if gh issue close "$issue" --reason completed \
+                  --comment "Erledigt mit #$pr (automatisch geschlossen, weil der PR es verlinkt)."; then
+                echo "Issue #$issue geschlossen (verlinkt in PR #$pr)."
+              else
+                echo "::warning::Issue #$issue liess sich nicht schliessen - bitte von Hand (PR #$pr)."
+              fi
+            done
+          }
 
           # Eigener Kanal (3): gh in der Schleife darf die Liste nicht von stdin wegessen.
           # Fehler bei einem PR brechen nicht alles ab - die anderen kommen trotzdem dran.
@@ -149,11 +182,14 @@ jobs:
               else
                 echo "::error::PR #$nummer gemergt, aber das Kunden-Image liess sich nicht starten - bitte docker-image.yml von Hand starten."
               fi
+              schliesse_issues "$nummer"
               # Ab jetzt sind alle anderen veraltet - die Schleife aktualisiert sie.
             elif [ "$(gh pr view "$nummer" --json state --jq .state 2>/dev/null || true)" = "MERGED" ]; then
               # GitHubs eigenes Auto-Merge war schneller (mergt im Namen des Users,
               # dann startet docker-image.yml ueber den Push von selbst).
               echo "PR #$nummer wurde inzwischen schon gemergt."
+              # Hat GitHub gemergt, sind die Issues schon zu; sonst holt das hier nach.
+              schliesse_issues "$nummer"
             else
               echo "::warning::PR #$nummer: Merge abgelehnt (Ruleset?) - bitte ansehen."
             fi
