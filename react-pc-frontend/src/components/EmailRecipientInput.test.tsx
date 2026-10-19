@@ -1,4 +1,5 @@
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EmailRecipientInput } from './EmailRecipientInput';
@@ -435,5 +436,132 @@ describe('EmailRecipientInput', () => {
         // X-Button sollte vorhanden sein (für CC-Entfernung)
         const removeButton = screen.getByRole('button');
         expect(removeButton).toBeInTheDocument();
+    });
+
+    describe('mehrere Empfänger als Kärtchen', () => {
+        function Gesteuert({ start = '', suggestions = [] as string[], readOnly = false }) {
+            const [wert, setWert] = useState(start);
+            return (
+                <>
+                    <EmailRecipientInput mehrfach ariaLabel="Empfänger" value={wert} suggestions={suggestions} readOnly={readOnly}
+                        onChange={setWert} placeholder="Name, Firma oder E-Mail eingeben" />
+                    <output data-testid="wert">{wert}</output>
+                    <button type="button">Woanders</button>
+                </>
+            );
+        }
+        const wert = () => screen.getByTestId('wert').textContent;
+        const feld = () => screen.getByRole('textbox', { name: 'Empfänger' });
+
+        it('zeigt jeden Empfänger als Kärtchen, ungültige Adressen markiert', () => {
+            render(<Gesteuert start={'"Max Mustermann" <max@example.org>, kaputt@'} />);
+            const kaertchen = screen.getAllByTestId('empfaenger-kaertchen');
+            expect(kaertchen).toHaveLength(2);
+            expect(kaertchen[0]).toHaveTextContent('Max Mustermann');
+            expect(kaertchen[0]).toHaveTextContent('max@example.org');
+            expect(kaertchen[1]).toHaveAttribute('title', 'kaputt@ – das sieht nicht wie eine E-Mail-Adresse aus');
+            expect(feld()).toHaveAttribute('placeholder', 'Weitere hinzufügen …');
+        });
+
+        it('macht aus Enter, Komma und Tab ein Kärtchen und lässt Doppelte weg', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            render(<Gesteuert />);
+            await user.type(feld(), 'erika@example.org{Enter}');
+            await user.type(feld(), 'max@example.org, ERIKA@example.org;');
+            await user.type(feld(), 'otto@example.org');
+            await user.tab();
+            expect(wert()).toBe('erika@example.org, max@example.org, otto@example.org');
+            expect(feld()).toHaveValue('');
+        });
+
+        it('übernimmt beim Verlassen des Felds, was noch getippt ist', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            render(<Gesteuert />);
+            await user.type(feld(), 'max@example.org');
+            expect(wert()).toBe('');
+            await user.click(screen.getByRole('button', { name: 'Woanders' }));
+            expect(wert()).toBe('max@example.org');
+        });
+
+        it('zeigt doppelte Adressen aus alten Entwürfen nur einmal', () => {
+            render(<Gesteuert start="a@example.org, A@example.org" />);
+            expect(screen.getAllByTestId('empfaenger-kaertchen')).toHaveLength(1);
+        });
+
+        it('entfernt per × und per Rücktaste im leeren Feld', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            render(<Gesteuert start="a@example.org, b@example.org, c@example.org" />);
+            await user.click(screen.getByRole('button', { name: 'b@example.org entfernen' }));
+            expect(wert()).toBe('a@example.org, c@example.org');
+            await user.click(feld());
+            await user.keyboard('{Backspace}');
+            expect(wert()).toBe('a@example.org');
+        });
+
+        it('hängt einen Vorschlag an, statt den bisherigen Empfänger zu ersetzen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            render(<Gesteuert start="max@example.org" suggestions={['max@example.org', 'erika@example.org']} />);
+            await user.click(feld());
+            expect(screen.getByText('Ausgewählt')).toBeInTheDocument();
+            await user.click(screen.getByText('erika@example.org'));
+            expect(wert()).toBe('max@example.org, erika@example.org');
+            expect(feld()).toHaveFocus();
+        });
+
+        it('wählt einen gesuchten Kontakt per Pfeiltaste und Enter', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            mockFetch.mockResolvedValue({ ok: true, json: async () => sampleContacts });
+            render(<Gesteuert start="erika@example.org" />);
+            await user.type(feld(), 'must');
+            await act(async () => { vi.advanceTimersByTime(300); });
+            await waitFor(() => expect(screen.getByText('Muster GmbH')).toBeInTheDocument());
+            expect(mockFetch).toHaveBeenLastCalledWith('/api/emails/contacts?q=must', expect.anything());
+            await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+            expect(wert()).toBe('erika@example.org, "Muster GmbH" <info@muster-gmbh.example.com>');
+            expect(feld()).toHaveValue('');
+        });
+
+        it('zerlegt eingefügte Listen sofort, auch eine Adresse pro Zeile', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            render(<Gesteuert />);
+            await user.click(feld());
+            await user.paste('a@example.org\nb@example.org\r\nc@example.org');
+            expect(wert()).toBe('a@example.org, b@example.org, c@example.org');
+            await user.paste('d@example.org');
+            expect(feld()).toHaveValue('d@example.org');
+        });
+
+        it('fügt per Plus-Knopf hinzu oder öffnet die Vorschläge', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            render(<Gesteuert suggestions={['kunde@example.org']} />);
+            await user.click(screen.getByRole('button', { name: 'Weiteren Empfänger hinzufügen' }));
+            expect(screen.getByText('Verknüpfte E-Mail-Adressen')).toBeInTheDocument();
+            expect(feld()).toHaveFocus();
+            await user.type(feld(), 'max@example.org');
+            fireEvent.click(screen.getByRole('button', { name: '„max@example.org“ als Empfänger hinzufügen' }));
+            expect(wert()).toBe('max@example.org');
+        });
+
+        it('schließt die Vorschläge mit Escape, ohne etwas zu übernehmen', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+            render(<Gesteuert suggestions={['kunde@example.org']} />);
+            await user.type(feld(), 'max');
+            await user.keyboard('{Escape}');
+            expect(screen.queryByText('Verknüpfte E-Mail-Adressen')).not.toBeInTheDocument();
+            expect(wert()).toBe('');
+        });
+
+        it('setzt den Cursor beim Klick auf die freie Fläche ins Feld', () => {
+            render(<Gesteuert start="a@example.org" />);
+            fireEvent.mouseDown(screen.getByRole('list').parentElement!);
+            expect(feld()).toHaveFocus();
+        });
+
+        it('zeigt schreibgeschützt nur die Kärtchen, ohne Eingabe und ohne ×', () => {
+            render(<Gesteuert start="a@example.org, b@example.org" readOnly />);
+            expect(screen.getAllByTestId('empfaenger-kaertchen')).toHaveLength(2);
+            expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /entfernen/ })).not.toBeInTheDocument();
+        });
     });
 });

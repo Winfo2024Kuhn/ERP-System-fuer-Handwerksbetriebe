@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, Users } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { InfoButton } from '../../components/ui/info-button';
 import {
     EINZELVERSAND_HINWEIS_AB, EINZELVERSAND_MAX_EMPFAENGER, EINZELVERSAND_ZU_VIELE,
     type EinzelversandErgebnis,
@@ -16,10 +17,10 @@ interface EinzelversandSchalterProps {
 }
 
 /**
- * Schalter „Einzeln verschicken“: Jeder Empfänger bekommt eine eigene Mail und
- * sieht nur sich selbst. Ab {@link EINZELVERSAND_HINWEIS_AB} Empfängern weist der
- * Schalter von sich aus darauf hin; über {@link EINZELVERSAND_MAX_EMPFAENGER}
- * sagt er, warum nicht gesendet werden kann.
+ * Schalter „Als Rundmail verschicken“: Jeder Empfänger bekommt eine eigene Mail und
+ * sieht nur sich selbst. Ab {@link EINZELVERSAND_HINWEIS_AB} Empfängern ist er von
+ * selbst an (das entscheidet das Formular); ausgeschaltet warnt er, dass sich alle
+ * sehen. Über {@link EINZELVERSAND_MAX_EMPFAENGER} sagt er, warum nicht gesendet werden kann.
  */
 export function EinzelversandSchalter({ id, aktiv, onChange, anzahlEmpfaenger, disabled, className }: EinzelversandSchalterProps) {
     const zuViele = aktiv && anzahlEmpfaenger > EINZELVERSAND_MAX_EMPFAENGER;
@@ -36,26 +37,45 @@ export function EinzelversandSchalter({ id, aktiv, onChange, anzahlEmpfaenger, d
         };
     } else if (anzahlEmpfaenger >= EINZELVERSAND_HINWEIS_AB) {
         hinweis = {
-            text: `${anzahlEmpfaenger} Empfänger sehen sich gegenseitig. Für Rundschreiben besser einzeln verschicken.`,
-            warnung: false,
+            text: `Gemeinsame E-Mail: Alle ${anzahlEmpfaenger} Empfänger sehen die Adressen der anderen.`,
+            // Datenschutz: bewusst auffällig, wenn mehrere sich gegenseitig sehen.
+            warnung: true,
         };
     }
 
     return (
         <div className={cn('flex flex-col gap-1', className)}>
-            <label htmlFor={id} className="inline-flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700 select-none">
-                <input
-                    id={id}
-                    type="checkbox"
-                    checked={aktiv}
-                    disabled={disabled}
-                    onChange={(e) => onChange(e.target.checked)}
-                    aria-describedby={hinweis ? hinweisId : undefined}
-                    className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                />
-                <Users className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                Einzeln verschicken – jeder sieht nur sich selbst
-            </label>
+            <div className="flex items-center gap-1">
+                <label htmlFor={id} className="inline-flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700 select-none">
+                    <input
+                        id={id}
+                        type="checkbox"
+                        checked={aktiv}
+                        disabled={disabled}
+                        onChange={(e) => onChange(e.target.checked)}
+                        aria-describedby={hinweis ? hinweisId : undefined}
+                        className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    <Users className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                    Als Rundmail verschicken – jeder sieht nur sich selbst
+                </label>
+                <InfoButton titel="Rundmail">
+                    <p className="font-semibold text-slate-800">Was passiert im Hintergrund?</p>
+                    <p className="mt-1">
+                        Jeder Empfänger bekommt eine eigene E-Mail mit demselben Betreff, Text und Anhängen.
+                        Die Mails gehen nacheinander über das gewählte Postfach raus und stehen danach einzeln
+                        unter „Gesendet“ – bei einem gewählten Projekt oder einer Anfrage auch dort.
+                    </p>
+                    <p className="mt-3 font-semibold text-slate-800">Was bewirkt das?</p>
+                    <ul className="mt-1 list-disc space-y-1 pl-4">
+                        <li>Niemand sieht die Adressen der anderen – wichtig für den Datenschutz.</li>
+                        <li>Antworten kommen nur von dem Einzelnen zurück, nicht an alle.</li>
+                        <li>Ab zwei Empfängern ist die Rundmail von selbst an. Kopie (CC) geht dabei nicht.</li>
+                        <li>Höchstens {EINZELVERSAND_MAX_EMPFAENGER} Empfänger. Klappt eine Adresse nicht, bekommen die anderen ihre Mail trotzdem; danach sehen Sie, wer fehlt.</li>
+                        <li>Ausgeschaltet geht eine gemeinsame E-Mail raus, in der alle Empfänger einander sehen.</li>
+                    </ul>
+                </InfoButton>
+            </div>
             {hinweis && (
                 <p id={hinweisId} className={cn('text-xs', hinweis.warnung ? 'font-medium text-rose-700' : 'text-slate-500')}>
                     {hinweis.text}

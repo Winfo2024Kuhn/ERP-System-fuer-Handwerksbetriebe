@@ -55,7 +55,7 @@ test('Antworten: Absender steht fest auf dem Postfach, in dem die Mail ankam', a
     await expect(fest).toHaveText('Musterbetrieb <info@musterbetrieb.example>');
     await expect(page.getByRole('combobox', { name: 'Senden von' })).toHaveCount(0);
     await expect(page.getByText('Antworten gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.')).toBeVisible();
-    await expect(page.getByLabel(/Einzeln verschicken/)).toHaveCount(0);
+    await expect(page.getByLabel(/Als Rundmail verschicken/)).toHaveCount(0);
     await designPruefung(page, info, 'absender-postfach-antwort');
 
     await page.getByRole('button', { name: 'E-Mail senden' }).click();
