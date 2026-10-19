@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import {
     arbeiteWarteschlangeAb,
+    gibHaengendeEintraegeFrei,
     mitWarteschlangenSperre,
     oeffneBuchungsDB,
+    schreibeFallsNochWartend,
 } from './buchungsWarteschlange'
 
 const antwort = (status: number, body: unknown = {}) =>
@@ -62,6 +64,96 @@ describe('buchungsWarteschlange', () => {
 
             expect(r).toEqual({ synced: 0, failed: 0, discarded: 0, startSynced: false, abgebrochen: false })
             expect(fetchSpy).not.toHaveBeenCalled()
+        })
+    })
+
+    describe('schreibeFallsNochWartend', () => {
+        it('ändert einen wartenden Eintrag', async () => {
+            await reiheEin('op-da', { token: 'max-mustermann' })
+
+            const geschrieben = await schreibeFallsNochWartend('op-da', e => ({ ...e, status: 'inflight', attemptCount: 3 }))
+
+            expect(geschrieben).toMatchObject({ id: 'op-da', status: 'inflight', attemptCount: 3 })
+            const db = await oeffneBuchungsDB()
+            expect(await db.get('pending', 'op-da')).toMatchObject({ status: 'inflight', attemptCount: 3 })
+        })
+
+        it('legt einen inzwischen übertragenen (gelöschten) Eintrag nicht wieder an', async () => {
+            const aendern = vi.fn()
+
+            const geschrieben = await schreibeFallsNochWartend('op-weg', aendern)
+
+            expect(geschrieben).toBeNull()
+            expect(aendern).not.toHaveBeenCalled()
+            const db = await oeffneBuchungsDB()
+            expect(await db.count('pending')).toBe(0)
+        })
+    })
+
+    describe('arbeiteWarteschlangeAb mit direkt gesendeten Buchungen', () => {
+        it('sendet nichts, solange eine frische Direkt-Sendung wartet', async () => {
+            const db = await oeffneBuchungsDB()
+            const jetzt = new Date().toISOString()
+            await db.put('pending', {
+                id: 'op-direkt', type: 'stop', data: { token: 'max-mustermann' }, timestamp: jetzt, originalTime: jetzt,
+                status: 'inflight', attemptCount: 1, lastAttemptAt: jetzt,
+            })
+            const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+            const r = await arbeiteWarteschlangeAb({ direktUnterwegs: new Set(['op-direkt']) })
+
+            expect(r).toMatchObject({ synced: 0, failed: 0, abgebrochen: true, wartetAufDirektSendung: true })
+            expect(fetchSpy).not.toHaveBeenCalled()
+            expect(await db.get('pending', 'op-direkt')).toMatchObject({ status: 'inflight' })
+        })
+
+        it('hält an, wenn die App einen Eintrag mitten im Abgleich selbst direkt sendet', async () => {
+            await reiheEin('op-zuerst', { token: 'max-mustermann' }, '2026-10-17T15:00:00Z')
+            await reiheEin('op-danach', { token: 'max-mustermann' }, '2026-10-17T16:00:00Z')
+            const direkt = new Set<string>()
+            const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+                // Während der ersten Übertragung schickt die App 'op-danach' direkt los.
+                direkt.add('op-danach')
+                return antwort(200)
+            })
+
+            const r = await arbeiteWarteschlangeAb({ direktUnterwegs: direkt })
+
+            expect(r).toMatchObject({ synced: 1, abgebrochen: true, wartetAufDirektSendung: true })
+            expect(fetchSpy).toHaveBeenCalledTimes(1)
+            const db = await oeffneBuchungsDB()
+            expect(await db.get('pending', 'op-danach')).toBeDefined()
+        })
+
+        it('gibt hängende Einträge frei, lässt aber die gerade direkt gesendeten in Ruhe', async () => {
+            const db = await oeffneBuchungsDB()
+            const alt = new Date(Date.now() - 120_000).toISOString()
+            for (const id of ['op-haengt', 'op-direkt']) {
+                await db.put('pending', {
+                    id, type: 'stop', data: { token: 'max-mustermann' }, timestamp: alt, originalTime: alt,
+                    status: 'inflight', attemptCount: 1, lastAttemptAt: alt,
+                })
+            }
+
+            await gibHaengendeEintraegeFrei(new Set(['op-direkt']))
+
+            expect(await db.get('pending', 'op-haengt')).toMatchObject({ status: 'pending' })
+            expect(await db.get('pending', 'op-direkt')).toMatchObject({ status: 'inflight' })
+        })
+
+        it('sendet eine alte, hängengebliebene Direkt-Sendung trotzdem', async () => {
+            const db = await oeffneBuchungsDB()
+            const vorZweiMinuten = new Date(Date.now() - 120_000).toISOString()
+            await db.put('pending', {
+                id: 'op-alt', type: 'stop', data: { token: 'max-mustermann' }, timestamp: vorZweiMinuten, originalTime: vorZweiMinuten,
+                status: 'inflight', attemptCount: 1, lastAttemptAt: vorZweiMinuten,
+            })
+            vi.spyOn(globalThis, 'fetch').mockResolvedValue(antwort(200))
+
+            const r = await arbeiteWarteschlangeAb({ direktUnterwegs: new Set(['op-alt']) })
+
+            expect(r.synced).toBe(1)
+            expect(await db.count('pending')).toBe(0)
         })
     })
 

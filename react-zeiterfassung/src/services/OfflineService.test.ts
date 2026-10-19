@@ -1106,6 +1106,8 @@ describe('OfflineService', () => {
             void sendeBuchung('stop', { token: 'max-mustermann' }, { operationId: 'op-eingefroren', ablehnungInReparaturListe: true })
             await vi.waitFor(async () => expect(await OfflineService.getPendingCount()).toBe(1))
             vi.restoreAllMocks()
+            // Neustart der App: Was sie gerade direkt sendete, weiß sie danach nicht mehr.
+            _resetForTesting()
 
             const posts: unknown[] = []
             vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
@@ -1116,6 +1118,77 @@ describe('OfflineService', () => {
 
             expect(r.synced).toBe(1)
             expect(posts).toEqual(['op-eingefroren'])
+            expect(await OfflineService.getPendingCount()).toBe(0)
+        })
+
+        it('ein Abgleich während der Direkt-Sendung schickt die Buchung nicht ein zweites Mal', async () => {
+            // CI-Befund 19.10.2026: Der Feierabend ging dreimal raus statt zweimal.
+            const posts: string[] = []
+            let antworten!: (r: Response) => void
+            vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+                posts.push(JSON.parse(String((init as RequestInit).body)).idempotencyKey)
+                return posts.length === 1
+                    ? new Promise<Response>(resolve => { antworten = resolve })
+                    : Promise.resolve(antwort(200, {}))
+            })
+            const anstoesse = vi.fn()
+            window.addEventListener(ABGLEICH_ANSTOSSEN_EVENT, anstoesse)
+
+            const direkt = sendeBuchung('stop', { token: 'max-mustermann' }, {
+                originalTime: '2026-10-17T16:00:00Z', operationId: 'op-feierabend', ablehnungInReparaturListe: true,
+            })
+            await vi.waitFor(() => expect(posts).toHaveLength(1))
+
+            // Online-Ereignis o. Ä. startet mittendrin einen Abgleich – der wartet ab.
+            const abgleich = await OfflineService._syncPendingInternal()
+            expect(abgleich).toMatchObject({ synced: 0, failed: 0, wartetAufDirektSendung: true })
+            expect(posts).toEqual(['op-feierabend'])
+
+            // Während der Sendung tippt der Handwerker schon „Start“: das reiht sich ein.
+            await sendeBuchung('start', { token: 'max-mustermann' }, {
+                originalTime: '2026-10-17T16:01:00Z', operationId: 'op-start', ablehnungInReparaturListe: true,
+            })
+            anstoesse.mockClear()
+
+            antworten(antwort(200, {}))
+            expect(await direkt).toEqual({ art: 'ok', daten: {} })
+            // Danach stößt die App den Abgleich für den Rest selbst an.
+            await vi.waitFor(() => expect(anstoesse).toHaveBeenCalled())
+            window.removeEventListener(ABGLEICH_ANSTOSSEN_EVENT, anstoesse)
+
+            const rest = await OfflineService._syncPendingInternal()
+            expect(rest.synced).toBe(1)
+            expect(posts).toEqual(['op-feierabend', 'op-start'])
+            expect(await OfflineService.getPendingCount()).toBe(0)
+        })
+
+        it('ein Abgleich, der nur auf die Direkt-Sendung wartet, gilt nicht als Fehler', async () => {
+            let antworten!: (r: Response) => void
+            vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+                if (String(url).includes('/api/zeiterfassung/stop')) return new Promise<Response>(resolve => { antworten = resolve })
+                return antwort(200, [])
+            })
+            const direkt = sendeBuchung('stop', { token: 'max-mustermann' }, { operationId: 'op-warten', ablehnungInReparaturListe: true })
+            await vi.waitFor(async () => expect(await OfflineService.getPendingCount()).toBe(1))
+
+            const ergebnis = await OfflineService.syncAll()
+
+            expect(ergebnis).toMatchObject({ success: true, pendingFailed: 0 })
+            antworten(antwort(200, {}))
+            await direkt
+        })
+
+        it('holt eine schon übertragene Buchung nach 429 nicht zurück in die Warteschlange', async () => {
+            let antworten!: (r: Response) => void
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>(resolve => { antworten = resolve }))
+
+            const direkt = sendeBuchung('stop', { token: 'max-mustermann' }, { operationId: 'op-429-spaet', ablehnungInReparaturListe: true })
+            await vi.waitFor(async () => expect(await OfflineService.getPendingCount()).toBe(1))
+            // Ein anderer Weg (z. B. der Hintergrund-Abgleich) hat sie inzwischen übertragen.
+            await OfflineService.clearPending()
+
+            antworten(antwort(429, { error: 'Zu viele Anfragen. Bitte kurz warten.' }))
+            expect(await direkt).toEqual({ art: 'eingereiht' })
             expect(await OfflineService.getPendingCount()).toBe(0)
         })
 
