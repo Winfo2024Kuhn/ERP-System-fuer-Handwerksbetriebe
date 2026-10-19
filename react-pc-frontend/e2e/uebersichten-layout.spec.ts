@@ -30,9 +30,9 @@ import { erwarteteKartenspalten } from './hilfen/testdaten';
  * /api vollstaendig gestubbt (Catch-all + gezielte Overrides je Seite,
  * Vorbild stubbeLieferantApi in e2e/bearbeiten-leiste.spec.ts), kein
  * Backend, nur Fantasienamen (DSGVO). Zusaetzlich blockiereFremdeNetzwerk-
- * zugriffe() (e2e/hilfen/api.ts) vor jeder Navigation -- index.html laedt
- * pdf.js bei jedem Seitenaufruf von cdnjs.cloudflare.com (Befund aus dem
- * Abschnitt-4-Review), unabhaengig von der Route. Diese Spec bleibt bewusst
+ * zugriffe() (e2e/hilfen/api.ts) vor jeder Navigation -- index.html lud
+ * pdf.js frueher bei jedem Seitenaufruf von cdnjs.cloudflare.com (Befund aus
+ * dem Abschnitt-4-Review; seit dem Ladezeit-Umbau lokal und nur bei Bedarf). Diese Spec bleibt bewusst
  * fuer sich lesbar: keine Stub-Funktionen aus den Task-3-6-Specs importiert,
  * auch wenn die Route-Listen dort Vorbild waren.
  */

@@ -1,17 +1,9 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Printer } from 'lucide-react';
+import { ladePdfjs } from '../../lib/pdfjs';
 import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
-/**
- * Prüft ob PDF.js (v3 UMD) als window.pdfjsLib verfügbar ist.
- */
-function getPdfjsLib(): any | null {
-    const lib = (window as any).pdfjsLib;
-    if (lib && typeof lib.getDocument === 'function') return lib;
-    return null;
-}
 
 interface PdfCanvasViewerProps {
     url: string;
@@ -181,8 +173,6 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
                 const viewport = page.getViewport({ scale: fitScale * z });
 
                 const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                if (!ctx) continue;
 
                 const dpr = window.devicePixelRatio || 1;
                 canvas.width = Math.floor(viewport.width * dpr);
@@ -190,7 +180,6 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
                 canvas.style.width = `${Math.floor(viewport.width)}px`;
                 canvas.style.height = `${Math.floor(viewport.height)}px`;
                 canvas.style.display = 'block';
-                ctx.scale(dpr, dpr);
 
                 const wrapper = document.createElement('div');
                 wrapper.style.background = 'white';
@@ -204,7 +193,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
                 wrapper.appendChild(canvas);
                 frag.appendChild(wrapper);
 
-                await page.render({ canvasContext: ctx, viewport }).promise;
+                await page.render({ canvas, viewport, transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0] }).promise;
             }
             container.replaceChildren(frag);
         } catch {
@@ -220,7 +209,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
 
     /** Lädt das Dokument (fetch + parse) und rendert es anschließend. */
     const loadDocument = useCallback(async (pdfUrl: string) => {
-        const pdfjsLib = getPdfjsLib();
+        const pdfjsLib = await ladePdfjs();
         if (!pdfjsLib) {
             setUseFallback(true);
             return;

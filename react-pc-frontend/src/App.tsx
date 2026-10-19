@@ -1,58 +1,61 @@
+import { lazy } from 'react';
 import { createBrowserRouter, createRoutesFromElements, RouterProvider, Outlet, Navigate, Route } from 'react-router-dom';
 import { MainLayout } from './components/layout/MainLayout';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { Seite } from './components/layout/Seite';
 import { ToastProvider } from './components/ui/toast';
 import { ConfirmProvider } from './components/ui/confirm-dialog';
 import { AuthProvider } from './auth/AuthContext';
 import { RequireAdmin, RequireAuth } from './auth/RouteGuards';
 import { SessionGuard } from './auth/SessionGuard';
 import { installSessionInterceptor } from './auth/sessionInterceptor';
-import TextbausteinEditor from './pages/TextbausteinEditor';
-import Leistungseditor from './pages/Leistungseditor';
-import Kundeneditor from './pages/Kundeneditor';
-import LieferantenEditor from './pages/LieferantenEditor';
-import ArtikelEditor from './pages/ArtikelEditor';
-import ArtikelDetail from './pages/ArtikelDetail';
-import ArbeitsgangEditor from './pages/ArbeitsgangEditor';
-import ProduktkategorieEditor from './pages/ProduktkategorieEditor';
-import ProjektEditor from './pages/ProjektEditor';
-import AnfrageEditor from './pages/AnfrageEditor';
-import BestellungenUebersicht from './pages/BestellungenUebersicht';
-import ErfolgsanalyseEditor from './pages/ErfolgsanalyseEditor';
-import KostenstellenControllingEditor from './pages/KostenstellenControllingEditor';
-import FormularwesenEditor from './pages/FormularwesenEditor';
-import OffenePostenEditor from './pages/OffenePostenEditor';
-import EmailCenter from './pages/EmailCenter';
-import EmailTextvorlagenEditor from './pages/EmailTextvorlagenEditor';
-import EmailEinstellungenPage from './pages/EmailEinstellungenPage';
-
-import MietabrechnungEditor from './pages/MietabrechnungEditor';
-import BenutzerEditor from './pages/BenutzerEditor';
-import MitarbeiterEditor from './pages/MitarbeiterEditor';
-import ZeiterfassungKalender from './pages/ZeiterfassungKalender';
-import Monatsabschluss from './pages/Monatsabschluss';
-import ZeiterfassungAuswertung from './pages/ZeiterfassungAuswertung';
-import ZeiterfassungZeitkonten from './pages/ZeiterfassungZeitkonten';
-import ZeiterfassungFeiertage from './pages/ZeiterfassungFeiertage';
-import ZeiterfassungSteuerberater from './pages/ZeiterfassungSteuerberater';
-import Urlaubsantraege from './pages/Urlaubsantraege';
-import Langzeitkrankmeldungen from './pages/Langzeitkrankmeldungen';
-import TerminKalender from './pages/TerminKalender';
-import RechnungsuebersichtEditor from './pages/RechnungsuebersichtEditor';
-import BelegeKasseEditor from './pages/BelegeKasseEditor';
-import DokumentUebersichtEditor from './pages/DokumentUebersichtEditor';
-import FirmaEditor from './pages/FirmaEditor';
-import BestellungEditor from './pages/BestellungEditor';
-import DocumentEditorPage from './pages/DocumentEditorPage';
-import ArbeitszeitartEditor from './pages/ArbeitszeitartEditor';
-import EinstellungenEditor from './pages/EinstellungenEditor';
-import LoginPage from './pages/LoginPage';
-import FirstLoginSetupPage from './pages/FirstLoginSetupPage';
-import WebsiteEditor from './pages/WebsiteEditor';
-import TelefonPage from './pages/TelefonPage';
-import BenachrichtigungenPage from './pages/BenachrichtigungenPage';
 import { AnrufFensterHost } from './features/telefon/AnrufFensterHost';
 import { BESTELLBEDARF_PFAD, istFreigegeben } from './lib/freigaben';
+
+// Jede Seite ist eine eigene Datei und wird erst beim Öffnen geladen – der erste Aufruf
+// (von unterwegs über Tailscale) lädt so nur das Gerüst und die aktuelle Seite.
+const TextbausteinEditor = lazy(() => import('./pages/TextbausteinEditor'));
+const Leistungseditor = lazy(() => import('./pages/Leistungseditor'));
+const Kundeneditor = lazy(() => import('./pages/Kundeneditor'));
+const LieferantenEditor = lazy(() => import('./pages/LieferantenEditor'));
+const ArtikelEditor = lazy(() => import('./pages/ArtikelEditor'));
+const ArtikelDetail = lazy(() => import('./pages/ArtikelDetail'));
+const ArbeitsgangEditor = lazy(() => import('./pages/ArbeitsgangEditor'));
+const ProduktkategorieEditor = lazy(() => import('./pages/ProduktkategorieEditor'));
+const ProjektEditor = lazy(() => import('./pages/ProjektEditor'));
+const AnfrageEditor = lazy(() => import('./pages/AnfrageEditor'));
+const BestellungenUebersicht = lazy(() => import('./pages/BestellungenUebersicht'));
+const ErfolgsanalyseEditor = lazy(() => import('./pages/ErfolgsanalyseEditor'));
+const KostenstellenControllingEditor = lazy(() => import('./pages/KostenstellenControllingEditor'));
+const FormularwesenEditor = lazy(() => import('./pages/FormularwesenEditor'));
+const OffenePostenEditor = lazy(() => import('./pages/OffenePostenEditor'));
+const EmailCenter = lazy(() => import('./pages/EmailCenter'));
+const EmailTextvorlagenEditor = lazy(() => import('./pages/EmailTextvorlagenEditor'));
+const EmailEinstellungenPage = lazy(() => import('./pages/EmailEinstellungenPage'));
+const MietabrechnungEditor = lazy(() => import('./pages/MietabrechnungEditor'));
+const BenutzerEditor = lazy(() => import('./pages/BenutzerEditor'));
+const MitarbeiterEditor = lazy(() => import('./pages/MitarbeiterEditor'));
+const ZeiterfassungKalender = lazy(() => import('./pages/ZeiterfassungKalender'));
+const Monatsabschluss = lazy(() => import('./pages/Monatsabschluss'));
+const ZeiterfassungAuswertung = lazy(() => import('./pages/ZeiterfassungAuswertung'));
+const ZeiterfassungZeitkonten = lazy(() => import('./pages/ZeiterfassungZeitkonten'));
+const ZeiterfassungFeiertage = lazy(() => import('./pages/ZeiterfassungFeiertage'));
+const ZeiterfassungSteuerberater = lazy(() => import('./pages/ZeiterfassungSteuerberater'));
+const Urlaubsantraege = lazy(() => import('./pages/Urlaubsantraege'));
+const Langzeitkrankmeldungen = lazy(() => import('./pages/Langzeitkrankmeldungen'));
+const TerminKalender = lazy(() => import('./pages/TerminKalender'));
+const RechnungsuebersichtEditor = lazy(() => import('./pages/RechnungsuebersichtEditor'));
+const BelegeKasseEditor = lazy(() => import('./pages/BelegeKasseEditor'));
+const DokumentUebersichtEditor = lazy(() => import('./pages/DokumentUebersichtEditor'));
+const FirmaEditor = lazy(() => import('./pages/FirmaEditor'));
+const BestellungEditor = lazy(() => import('./pages/BestellungEditor'));
+const DocumentEditorPage = lazy(() => import('./pages/DocumentEditorPage'));
+const ArbeitszeitartEditor = lazy(() => import('./pages/ArbeitszeitartEditor'));
+const EinstellungenEditor = lazy(() => import('./pages/EinstellungenEditor'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const FirstLoginSetupPage = lazy(() => import('./pages/FirstLoginSetupPage'));
+const WebsiteEditor = lazy(() => import('./pages/WebsiteEditor'));
+const TelefonPage = lazy(() => import('./pages/TelefonPage'));
+const BenachrichtigungenPage = lazy(() => import('./pages/BenachrichtigungenPage'));
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -63,66 +66,66 @@ const router = createBrowserRouter(createRoutesFromElements(
   <Route element={<><SessionGuard /><Outlet /></>}>
 
               {/* Public pages */}
-              <Route path="/login" element={<ErrorBoundary><LoginPage /></ErrorBoundary>} />
+              <Route path="/login" element={<Seite vollbild><LoginPage /></Seite>} />
 
               {/* Fullscreen pages outside MainLayout — still require authentication */}
-              <Route path="/dokument-editor" element={<RequireAuth><><ErrorBoundary><DocumentEditorPage /></ErrorBoundary><AnrufFensterHost akteInNeuemTab /></></RequireAuth>} />
-              <Route path="/onboarding" element={<RequireAdmin><ErrorBoundary><FirstLoginSetupPage /></ErrorBoundary></RequireAdmin>} />
+              <Route path="/dokument-editor" element={<RequireAuth><><Seite vollbild><DocumentEditorPage /></Seite><AnrufFensterHost akteInNeuemTab /></></RequireAuth>} />
+              <Route path="/onboarding" element={<RequireAdmin><Seite vollbild><FirstLoginSetupPage /></Seite></RequireAdmin>} />
 
               <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
                 <Route path="/" element={<Navigate to="/projekte" replace />} />
 
-                <Route path="/textbausteine" element={<ErrorBoundary><TextbausteinEditor /></ErrorBoundary>} />
-                <Route path="/leistungen" element={<ErrorBoundary><Leistungseditor /></ErrorBoundary>} />
-                <Route path="/arbeitszeitarten" element={<ErrorBoundary><ArbeitszeitartEditor /></ErrorBoundary>} />
-                <Route path="/kunden" element={<ErrorBoundary><Kundeneditor /></ErrorBoundary>} />
-                <Route path="/mitarbeiter" element={<ErrorBoundary><MitarbeiterEditor /></ErrorBoundary>} />
-                <Route path="/lieferanten" element={<ErrorBoundary><LieferantenEditor /></ErrorBoundary>} />
-                <Route path="/artikel" element={<ErrorBoundary><ArtikelEditor /></ErrorBoundary>} />
-                <Route path="/artikel/:id" element={<ErrorBoundary><ArtikelDetail /></ErrorBoundary>} />
-                <Route path="/arbeitsgaenge" element={<ErrorBoundary><ArbeitsgangEditor /></ErrorBoundary>} />
-                <Route path="/produktkategorien" element={<ErrorBoundary><ProduktkategorieEditor /></ErrorBoundary>} />
-                <Route path="/projekte" element={<ErrorBoundary><ProjektEditor /></ErrorBoundary>} />
-                <Route path="/anfragen" element={<ErrorBoundary><AnfrageEditor /></ErrorBoundary>} />
-                <Route path="/bestellungen" element={<ErrorBoundary><BestellungenUebersicht /></ErrorBoundary>} />
+                <Route path="/textbausteine" element={<Seite><TextbausteinEditor /></Seite>} />
+                <Route path="/leistungen" element={<Seite><Leistungseditor /></Seite>} />
+                <Route path="/arbeitszeitarten" element={<Seite><ArbeitszeitartEditor /></Seite>} />
+                <Route path="/kunden" element={<Seite><Kundeneditor /></Seite>} />
+                <Route path="/mitarbeiter" element={<Seite><MitarbeiterEditor /></Seite>} />
+                <Route path="/lieferanten" element={<Seite><LieferantenEditor /></Seite>} />
+                <Route path="/artikel" element={<Seite><ArtikelEditor /></Seite>} />
+                <Route path="/artikel/:id" element={<Seite><ArtikelDetail /></Seite>} />
+                <Route path="/arbeitsgaenge" element={<Seite><ArbeitsgangEditor /></Seite>} />
+                <Route path="/produktkategorien" element={<Seite><ProduktkategorieEditor /></Seite>} />
+                <Route path="/projekte" element={<Seite><ProjektEditor /></Seite>} />
+                <Route path="/anfragen" element={<Seite><AnfrageEditor /></Seite>} />
+                <Route path="/bestellungen" element={<Seite><BestellungenUebersicht /></Seite>} />
                 <Route path={BESTELLBEDARF_PFAD} element={istFreigegeben(BESTELLBEDARF_PFAD)
-                    ? <ErrorBoundary><BestellungEditor /></ErrorBoundary>
+                    ? <Seite><BestellungEditor /></Seite>
                     : <Navigate to="/bestellungen" replace />} />
-                <Route path="/kalender" element={<ErrorBoundary><TerminKalender /></ErrorBoundary>} />
-                <Route path="/analyse" element={<ErrorBoundary><ErfolgsanalyseEditor /></ErrorBoundary>} />
-                <Route path="/kostenstellen" element={<ErrorBoundary><KostenstellenControllingEditor /></ErrorBoundary>} />
-                <Route path="/website" element={<RequireAdmin><ErrorBoundary><WebsiteEditor /></ErrorBoundary></RequireAdmin>} />
-                <Route path="/formulare" element={<RequireAdmin><ErrorBoundary><FormularwesenEditor /></ErrorBoundary></RequireAdmin>} />
-                <Route path="/offeneposten" element={<ErrorBoundary><OffenePostenEditor /></ErrorBoundary>} />
-                <Route path="/rechnungsuebersicht" element={<ErrorBoundary><RechnungsuebersichtEditor /></ErrorBoundary>} />
-                <Route path="/belege-kasse" element={<ErrorBoundary><BelegeKasseEditor /></ErrorBoundary>} />
-                <Route path="/dokumentuebersicht" element={<ErrorBoundary><DokumentUebersichtEditor /></ErrorBoundary>} />
+                <Route path="/kalender" element={<Seite><TerminKalender /></Seite>} />
+                <Route path="/analyse" element={<Seite><ErfolgsanalyseEditor /></Seite>} />
+                <Route path="/kostenstellen" element={<Seite><KostenstellenControllingEditor /></Seite>} />
+                <Route path="/website" element={<RequireAdmin><Seite><WebsiteEditor /></Seite></RequireAdmin>} />
+                <Route path="/formulare" element={<RequireAdmin><Seite><FormularwesenEditor /></Seite></RequireAdmin>} />
+                <Route path="/offeneposten" element={<Seite><OffenePostenEditor /></Seite>} />
+                <Route path="/rechnungsuebersicht" element={<Seite><RechnungsuebersichtEditor /></Seite>} />
+                <Route path="/belege-kasse" element={<Seite><BelegeKasseEditor /></Seite>} />
+                <Route path="/dokumentuebersicht" element={<Seite><DokumentUebersichtEditor /></Seite>} />
                 <Route path="/emails" element={<Navigate to="/emails/inbox" replace />} />
-                <Route path="/emails/:folder" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
-                <Route path="/emails/:folder/:emailId" element={<ErrorBoundary><EmailCenter /></ErrorBoundary>} />
-                <Route path="/email-textvorlagen" element={<ErrorBoundary><EmailTextvorlagenEditor /></ErrorBoundary>} />
-                <Route path="/email-einstellungen" element={<ErrorBoundary><EmailEinstellungenPage /></ErrorBoundary>} />
+                <Route path="/emails/:folder" element={<Seite><EmailCenter /></Seite>} />
+                <Route path="/emails/:folder/:emailId" element={<Seite><EmailCenter /></Seite>} />
+                <Route path="/email-textvorlagen" element={<Seite><EmailTextvorlagenEditor /></Seite>} />
+                <Route path="/email-einstellungen" element={<Seite><EmailEinstellungenPage /></Seite>} />
                 <Route path="/telefon" element={<Navigate to="/telefon/anrufe" replace />} />
-                <Route path="/telefon/:reiter" element={<ErrorBoundary><TelefonPage /></ErrorBoundary>} />
+                <Route path="/telefon/:reiter" element={<Seite><TelefonPage /></Seite>} />
                 {/* Ziel der Glocke – für alle Angemeldeten; was jemand sieht, entscheidet der Server. */}
-                <Route path="/benachrichtigungen" element={<ErrorBoundary><BenachrichtigungenPage /></ErrorBoundary>} />
+                <Route path="/benachrichtigungen" element={<Seite><BenachrichtigungenPage /></Seite>} />
 
-                <Route path="/miete" element={<ErrorBoundary><MietabrechnungEditor /></ErrorBoundary>} />
-                <Route path="/benutzer" element={<RequireAdmin><ErrorBoundary><BenutzerEditor /></ErrorBoundary></RequireAdmin>} />
+                <Route path="/miete" element={<Seite><MietabrechnungEditor /></Seite>} />
+                <Route path="/benutzer" element={<RequireAdmin><Seite><BenutzerEditor /></Seite></RequireAdmin>} />
 
                 {/* Zeiterfassung & Admin */}
-                <Route path="/monatsabschluss" element={<ErrorBoundary><Monatsabschluss /></ErrorBoundary>} />
-                <Route path="/zeitbuchungen" element={<ErrorBoundary><ZeiterfassungKalender /></ErrorBoundary>} />
-                <Route path="/auswertung" element={<ErrorBoundary><ZeiterfassungAuswertung /></ErrorBoundary>} />
-                <Route path="/steuerberater" element={<ErrorBoundary><ZeiterfassungSteuerberater /></ErrorBoundary>} />
-                <Route path="/zeitkonten" element={<ErrorBoundary><ZeiterfassungZeitkonten /></ErrorBoundary>} />
-                <Route path="/feiertage" element={<ErrorBoundary><ZeiterfassungFeiertage /></ErrorBoundary>} />
-                <Route path="/urlaubsantraege" element={<ErrorBoundary><Urlaubsantraege /></ErrorBoundary>} />
-                <Route path="/langzeitkrankmeldungen" element={<ErrorBoundary><Langzeitkrankmeldungen /></ErrorBoundary>} />
+                <Route path="/monatsabschluss" element={<Seite><Monatsabschluss /></Seite>} />
+                <Route path="/zeitbuchungen" element={<Seite><ZeiterfassungKalender /></Seite>} />
+                <Route path="/auswertung" element={<Seite><ZeiterfassungAuswertung /></Seite>} />
+                <Route path="/steuerberater" element={<Seite><ZeiterfassungSteuerberater /></Seite>} />
+                <Route path="/zeitkonten" element={<Seite><ZeiterfassungZeitkonten /></Seite>} />
+                <Route path="/feiertage" element={<Seite><ZeiterfassungFeiertage /></Seite>} />
+                <Route path="/urlaubsantraege" element={<Seite><Urlaubsantraege /></Seite>} />
+                <Route path="/langzeitkrankmeldungen" element={<Seite><Langzeitkrankmeldungen /></Seite>} />
                 {/* Die Rechte sind in die Einstellungen umgezogen; alte Links und Lesezeichen landen im Reiter. */}
                 <Route path="/abteilung-berechtigungen" element={<Navigate to="/einstellungen#berechtigungen" replace />} />
-                <Route path="/firma" element={<RequireAdmin><ErrorBoundary><FirmaEditor /></ErrorBoundary></RequireAdmin>} />
-                <Route path="/einstellungen" element={<RequireAdmin><ErrorBoundary><EinstellungenEditor /></ErrorBoundary></RequireAdmin>} />
+                <Route path="/firma" element={<RequireAdmin><Seite><FirmaEditor /></Seite></RequireAdmin>} />
+                <Route path="/einstellungen" element={<RequireAdmin><Seite><EinstellungenEditor /></Seite></RequireAdmin>} />
 
                 <Route path="*" element={<Navigate to="/projekte" replace />} />
               </Route>

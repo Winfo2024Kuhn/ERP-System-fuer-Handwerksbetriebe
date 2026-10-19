@@ -178,8 +178,8 @@ const LIEFERANTEN_LANG = [
 /**
  * Stubbt /api fuer die Lieferanten-Uebersicht mit vier langen Namen. Fremde
  * Ziele sind seit Abschnitt 10 automatisch geblockt (e2e/hilfen/test.ts) --
- * `index.html` laedt `pdf.js` von cdnjs unabhaengig von der Route
- * (Nachbesserung 1, Befund 2).
+ * `index.html` lud `pdf.js` damals von cdnjs unabhaengig von der Route
+ * (Nachbesserung 1, Befund 2; heute lokal und nur bei Bedarf).
  */
 async function stubLieferantenUebersichtApi(page: Page) {
     await page.route('**/api/**', (route) => {
@@ -218,8 +218,8 @@ test.describe('Lieferanten-Detailseite: Kopfzeile mit langem Lieferantennamen (S
         // GoogleMapsEmbed-<iframe>. Ohne den Netz-Riegel (e2e/hilfen/test.ts,
         // seit Abschnitt 10 automatisch auf dem context jeder Spec) ginge das
         // tatsaechlich an google.com/maps, maps.gstatic.com und
-        // maps.googleapis.com raus, dazu index.html laedt pdf.js von
-        // cdnjs.cloudflare.com. Der Riegel sitzt auf dem context noch VOR dem
+        // maps.googleapis.com raus (frueher dazu pdf.js von cdnjs.cloudflare.com
+        // aus index.html). Der Riegel sitzt auf dem context noch VOR dem
         // ersten goto, sonst verpasst er den allerersten Dokument-Request.
         const fremdeAnfragen: string[] = [];
         const fremdeAntworten: string[] = [];

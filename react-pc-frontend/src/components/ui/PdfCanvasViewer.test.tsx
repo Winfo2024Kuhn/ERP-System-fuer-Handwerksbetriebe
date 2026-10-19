@@ -2,6 +2,9 @@ import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PdfCanvasViewer } from './PdfCanvasViewer';
+import { ladePdfjs, type PdfjsLib } from '../../lib/pdfjs';
+
+vi.mock('../../lib/pdfjs', () => ({ ladePdfjs: vi.fn() }));
 
 const pdfBlob = (inhalt: string) => new Blob([inhalt], { type: 'application/pdf' });
 
@@ -11,11 +14,11 @@ function druckFrames(): HTMLIFrameElement[] {
 }
 
 /**
- * Ohne window.pdfjsLib läuft die Komponente im iframe-Fallback. Für den Canvas-Pfad
+ * Ohne PDF.js (Lader liefert null) läuft die Komponente im iframe-Fallback. Für den Canvas-Pfad
  * (und damit für die Prüfung "nie das falsche PDF drucken") muss PDF.js gestubbt werden.
  */
 function stubPdfjs() {
-    vi.stubGlobal('pdfjsLib', {
+    vi.mocked(ladePdfjs).mockResolvedValue({
         getDocument: () => ({
             promise: Promise.resolve({
                 numPages: 1,
@@ -26,7 +29,7 @@ function stubPdfjs() {
                 destroy: () => { },
             }),
         }),
-    });
+    } as unknown as PdfjsLib);
 }
 
 describe('PdfCanvasViewer', () => {
@@ -34,6 +37,7 @@ describe('PdfCanvasViewer', () => {
     let revokeObjectURL: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
+        vi.mocked(ladePdfjs).mockResolvedValue(null);
         let zaehler = 0;
         vi.stubGlobal('fetch', vi.fn(async () => ({
             ok: true,
@@ -53,15 +57,17 @@ describe('PdfCanvasViewer', () => {
 
     /** Wartet, bis die Bytes geladen sind und der Knopf freigeschaltet ist. */
     async function druckKnopf(): Promise<HTMLElement> {
-        const knopf = await screen.findByRole('button', { name: 'Drucken' });
-        await waitFor(() => expect(knopf).toBeEnabled());
-        return knopf;
+        // Erst nach dem Laden steht fest, ob Canvas oder iframe-Fallback – der Knopf kann dabei
+        // neu entstehen. Deshalb bei jedem Versuch frisch suchen.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Drucken' })).toBeEnabled());
+        return screen.getByRole('button', { name: 'Drucken' });
     }
 
     it('bietet standardmäßig einen Drucken-Knopf an', async () => {
         render(<PdfCanvasViewer url="/api/projekte/export-pdf" />);
 
-        expect(await screen.findByRole('button', { name: 'Drucken' })).toBeInTheDocument();
+        await waitFor(() => expect(fetch).toHaveBeenCalled());
+        expect(screen.getByRole('button', { name: 'Drucken' })).toBeInTheDocument();
     });
 
     it('blendet den Drucken-Knopf aus, wenn er nicht gewünscht ist', async () => {
@@ -155,7 +161,7 @@ describe('PdfCanvasViewer', () => {
     });
 
     it('validiert den Blob im Fallback und lehnt HTML-Inhalte ohne iframe-Erzeugung ab (CodeQL DOM-XSS Schutz)', async () => {
-        // Fallback-Modus (kein window.pdfjsLib) mit HTML-Antwort statt PDF
+        // Fallback-Modus (kein PDF.js) mit HTML-Antwort statt PDF
         const htmlBlob = new Blob(['<!DOCTYPE html><html><body><script>alert(1)</script></body></html>'], { type: 'text/html' });
         vi.stubGlobal('fetch', vi.fn(async () => ({
             ok: true,

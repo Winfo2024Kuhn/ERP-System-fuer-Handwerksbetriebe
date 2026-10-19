@@ -51,8 +51,8 @@ function json(route: Route, body: unknown, status = 200) {
  * layout.spec.ts` fing nur `**\/api/**` ab, dadurch gingen echte Anfragen an
  * `google.com/maps`, `maps.gstatic.com`, `maps.googleapis.com` (ausgeloest
  * durch ein GoogleMapsEmbed-<iframe> mit gefuellter Adresse) und
- * `cdnjs.cloudflare.com` (pdf.js, wird in jedem Seitenaufruf aus `index.html`
- * geladen) tatsaechlich raus).
+ * `cdnjs.cloudflare.com` (pdf.js, kam damals in jedem Seitenaufruf aus
+ * `index.html`; heute lokal) tatsaechlich raus).
  *
  * Eine E2E-Spec ist gestubbt und darf nicht wirklich ins Internet: sonst haengt
  * das Ergebnis von einer echten Verbindung ab (fremde Server langsam oder gar

@@ -1,0 +1,1 @@
+const A=8,L=1,Z=365,n="Das Zahlungsziel muss zwischen 1 und 365 Tagen liegen.";function E(s){const t=s.trim();if(!/^\d{1,3}$/.test(t))return{gueltig:!1,meldung:n};const e=Number(t);return e<1||e>365?{gueltig:!1,meldung:n}:{gueltig:!0,tage:e}}export{A as D,L as M,Z as a,E as p};

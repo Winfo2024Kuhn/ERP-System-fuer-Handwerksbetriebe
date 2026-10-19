@@ -376,12 +376,15 @@ test.describe('Schwebende Meldungen bei offenem Dialog', () => {
     test('bei kleiner Fensterhöhe bleiben acht Meldungen begrenzt und verändern den offenen Entwurf nicht', async ({ page }, testInfo) => {
         await page.setViewportSize({ width: page.viewportSize()!.width, height: 540 });
         await page.clock.install({ time: new Date('2026-10-09T09:00:00Z') });
-        // Die acht Meldungen sollen gemeinsam geprüft werden. install() allein
-        // lässt Timer weiterlaufen und ältere Toasts unter Last verschwinden.
-        await page.clock.pauseAt(new Date('2026-10-09T09:00:01Z'));
         await stubbeLieferantApi(page, 'frei');
         await page.route(`**/api/lieferant-dokumente/${DOKUMENT_ID}`, route => route.fulfill({ status: 500, body: '' }));
         await oeffneDokumentModal(page);
+        // Die acht Meldungen sollen gemeinsam geprüft werden. install() allein
+        // lässt Timer weiterlaufen und ältere Toasts unter Last verschwinden.
+        // Erst jetzt anhalten: Die Seite wird nachgeladen (React.lazy), und
+        // Suspense zeigt sie erst nach einem kurzen Timer – bei angehaltener
+        // Uhr bliebe sonst „Seite wird geladen …“ stehen.
+        await page.clock.pauseAt(new Date('2026-10-09T09:01:00Z'));
         const feld = dialog(page).getByRole('textbox').first();
         await feld.fill('RE-2026-TEST');
         const vorher = await dialog(page).boundingBox();

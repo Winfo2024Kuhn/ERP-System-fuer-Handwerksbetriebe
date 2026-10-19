@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AuthProvider, type AuthUser } from './AuthContext';
+import { ANMELDUNG_TIMEOUT_MS, AuthProvider, type AuthUser } from './AuthContext';
 import { RequireAdmin, RequireAuth } from './RouteGuards';
 import { antwort, stubbeFetch } from '../features/telefon/telefonTestdaten';
 import { admin, benutzer } from '../features/ki/kiTestdaten';
@@ -41,7 +42,10 @@ function zeige(pfad: string) {
     );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+});
 
 describe('RequireAuth – Ersteinrichtung', () => {
     it('schickt einen Admin mit unvollständigem Mailserver zur Ersteinrichtung', async () => {
@@ -105,7 +109,7 @@ describe('RequireAuth – Ersteinrichtung', () => {
         stubbeAnmeldung(admin());
         zeige('/projekte');
 
-        expect(screen.getByText('Anmeldung wird geprüft ...')).toBeInTheDocument();
+        expect(screen.getByText('Anmeldung wird geprüft …')).toBeInTheDocument();
         expect(screen.queryByText('Projektliste')).not.toBeInTheDocument();
     });
 });
@@ -131,5 +135,66 @@ describe('RequireAdmin', () => {
         zeige('/onboarding');
 
         expect(await screen.findByText('Anmeldeseite')).toBeInTheDocument();
+    });
+});
+
+describe('Langsame oder fehlende Verbindung beim Start', () => {
+    /** /api/auth/me hängt, bis die Anfrage abgebrochen wird – wie ein Funkloch unterwegs. */
+    function stubbeHaengendeAnmeldung() {
+        vi.stubGlobal('fetch', vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Abgebrochen', 'AbortError')));
+        })));
+    }
+
+    it('zeigt nach 8 Sekunden einen Hinweis auf die langsame Verbindung', async () => {
+        vi.useFakeTimers();
+        stubbeHaengendeAnmeldung();
+        zeige('/projekte');
+
+        expect(screen.queryByText(/Verbindung ist gerade langsam/)).not.toBeInTheDocument();
+        await act(() => vi.advanceTimersByTimeAsync(8000));
+
+        expect(screen.getByText(/Verbindung ist gerade langsam/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Erneut versuchen/ })).toBeInTheDocument();
+    });
+
+    it('bricht die Anmeldeprüfung ab und schickt niemanden zur Anmeldeseite', async () => {
+        vi.useFakeTimers();
+        stubbeHaengendeAnmeldung();
+        zeige('/projekte');
+
+        await act(() => vi.advanceTimersByTimeAsync(ANMELDUNG_TIMEOUT_MS));
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Der Server antwortet gerade nicht');
+        expect(screen.getByTestId('adresse')).toHaveTextContent('/projekte');
+        expect(screen.queryByText('Anmeldeseite')).not.toBeInTheDocument();
+    });
+
+    it('prüft per „Erneut versuchen“ noch einmal und öffnet dann die Seite', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+        zeige('/projekte');
+        const knopf = await screen.findByRole('button', { name: /Erneut versuchen/ });
+
+        stubbeAnmeldung(admin({ requiresInitialSetup: false }));
+        await userEvent.click(knopf);
+
+        expect(await screen.findByText('Projektliste')).toBeInTheDocument();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('schickt zur Anmeldung, wenn der Server antwortet, aber kein JSON liefert', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>Fehler</html>', { status: 200, headers: { 'Content-Type': 'text/html' } })));
+        zeige('/projekte');
+
+        expect(await screen.findByText('Anmeldeseite')).toBeInTheDocument();
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('lässt auch Admin-Seiten bei fehlender Verbindung stehen', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+        zeige('/einstellungen');
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Der Server antwortet gerade nicht');
+        expect(screen.getByTestId('adresse')).toHaveTextContent('/einstellungen');
     });
 });

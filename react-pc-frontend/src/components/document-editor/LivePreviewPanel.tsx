@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { RefreshCw, Download } from 'lucide-react';
+import { ladePdfjs } from '../../lib/pdfjs';
 import { cn } from '../../lib/utils';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -10,15 +11,6 @@ interface LivePreviewPanelProps {
     stale: boolean;
     onRefresh: () => void;
     isOpen: boolean;
-}
-
-/**
- * Prüft ob PDF.js (v3 UMD) als window.pdfjsLib verfügbar ist.
- */
-function getPdfjsLib(): any | null {
-    const lib = (window as any).pdfjsLib;
-    if (lib && typeof lib.getDocument === 'function') return lib;
-    return null;
 }
 
 /**
@@ -63,7 +55,7 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
      * Rendert alle Seiten des PDFs als Canvas-Elemente.
      */
     const renderPdf = useCallback(async (url: string) => {
-        const pdfjsLib = getPdfjsLib();
+        const pdfjsLib = await ladePdfjs();
         if (!pdfjsLib) {
             console.warn('PDF.js nicht verfügbar – verwende iframe Fallback');
             setUseFallback(true);
@@ -122,8 +114,6 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
                 const viewport = page.getViewport({ scale });
 
                 const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                if (!ctx) continue;
 
                 // HiDPI für scharfe Darstellung
                 const dpr = window.devicePixelRatio || 1;
@@ -132,7 +122,6 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
                 canvas.style.width = `${Math.floor(viewport.width)}px`;
                 canvas.style.height = `${Math.floor(viewport.height)}px`;
                 canvas.style.display = 'block';
-                ctx.scale(dpr, dpr);
 
                 // Seiten-Wrapper
                 const wrapper = document.createElement('div');
@@ -145,7 +134,7 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
                 container.appendChild(wrapper);
 
                 // Rendern
-                await page.render({ canvasContext: ctx, viewport }).promise;
+                await page.render({ canvas, viewport, transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0] }).promise;
             }
 
             // Scroll-Position wiederherstellen
