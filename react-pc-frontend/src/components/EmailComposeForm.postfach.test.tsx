@@ -142,7 +142,7 @@ describe('EmailComposeForm – fester Absender bei Antwort und Weiterleitung', (
         expect(screen.getByText('Antworten gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.')).toBeInTheDocument();
         expect(screen.queryByRole('combobox', { name: 'Senden von' })).not.toBeInTheDocument();
         // Antworten können nicht einzeln verschickt werden.
-        expect(screen.queryByLabelText(/Einzeln verschicken/)).not.toBeInTheDocument();
+        expect(screen.queryByLabelText(/Als Rundmail verschicken/)).not.toBeInTheDocument();
         await sende();
         await waitFor(() => expect(gesendet[0]?.url).toBe('/api/emails/5/reply'));
         expect(gesendet[0].dto).toMatchObject({ postfachId: null, einzelversand: false });
@@ -175,7 +175,7 @@ describe('EmailComposeForm – fester Absender bei Antwort und Weiterleitung', (
             antwortPostfach={{ id: 7, emailAdresse: 'max@musterbetrieb.example', anzeigename: null }} />);
         expect(await screen.findByTestId('absender-fest')).toHaveTextContent('max@musterbetrieb.example');
         expect(screen.getByText('Weiterleitungen gehen über das Postfach raus, in dem die Mail ankam – sonst über Ihr eigenes Postfach oder das Hauptpostfach.')).toBeInTheDocument();
-        await userEvent.type(screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben'), 'kollege@example.org');
+        await userEvent.type(screen.getByRole('textbox', { name: 'Empfänger' }), 'kollege@example.org');
         await sende();
         await waitFor(() => expect(gesendet[0]?.url).toBe('/api/emails/send'));
         expect(gesendet[0].dto).toMatchObject({ weitergeleitetVonEmailId: 5, postfachId: null });
@@ -195,16 +195,35 @@ describe('EmailComposeForm – Entwürfe', () => {
             body: '<p>x</p>', postfachId: 3, einzelversand: true, attachments: [] } };
         stubFetch();
         render(<EmailComposeForm onClose={() => {}} draftId={55} />);
-        expect(await screen.findByLabelText(/Einzeln verschicken/)).toBeChecked();
+        expect(await screen.findByLabelText(/Als Rundmail verschicken/)).toBeChecked();
         await waitFor(() => expect(screen.getByRole('combobox', { name: 'Senden von' })).toHaveTextContent('info@musterbetrieb.example'));
         expect(screen.queryByText('CC')).not.toBeInTheDocument();
+    });
+
+    it('lässt eine von Hand ausgeschaltete Rundmail im Entwurf aus', async () => {
+        entwurfAntwort = { body: { id: 55, recipient: 'a@example.org, b@example.org', subject: 'Abstimmung',
+            body: '<p>x</p>', postfachId: 3, einzelversand: false, attachments: [] } };
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} draftId={55} />);
+        await waitFor(() => expect(screen.getAllByTestId('empfaenger-kaertchen')).toHaveLength(2));
+        expect(screen.getByLabelText(/Als Rundmail verschicken/)).not.toBeChecked();
+    });
+
+    it('überlässt bei einem Entwurf mit einem Empfänger die Rundmail wieder der Automatik', async () => {
+        entwurfAntwort = { body: { id: 55, recipient: 'a@example.org', subject: 'Abstimmung',
+            body: '<p>x</p>', postfachId: 3, einzelversand: false, attachments: [] } };
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} draftId={55} />);
+        await waitFor(() => expect(screen.getAllByTestId('empfaenger-kaertchen')).toHaveLength(1));
+        await userEvent.type(screen.getByRole('textbox', { name: 'Empfänger' }), 'b@example.org{Enter}');
+        expect(screen.getByLabelText(/Als Rundmail verschicken/)).toBeChecked();
     });
 
     it('speichert postfachId und einzelversand im Entwurf', async () => {
         const fetchMock = stubFetch();
         render(<EmailComposeForm onClose={() => {}} initialRecipient="a@example.org" initialSubject="Rundschreiben" />);
         await screen.findByRole('combobox', { name: 'Senden von' });
-        await userEvent.click(screen.getByLabelText(/Einzeln verschicken/));
+        await userEvent.click(screen.getByLabelText(/Als Rundmail verschicken/));
         await userEvent.click(screen.getByRole('button', { name: 'Schließen' }));
         await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/emails/drafts' && init?.method === 'POST')).toBe(true));
         const call = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/emails/drafts' && init?.method === 'POST')!;
@@ -215,13 +234,13 @@ describe('EmailComposeForm – Entwürfe', () => {
 describe('EmailComposeForm – Einzelversand', () => {
     const viele = (anzahl: number) => Array.from({ length: anzahl }, (_, i) => `kunde${i + 1}@example.org`).join(', ');
 
-    it('weist ab 4 Empfängern auf den Einzelversand hin und blendet beim Einschalten CC aus', async () => {
+    it('bleibt mit CC aus, warnt dass sich alle sehen, und blendet beim Einschalten CC aus', async () => {
         stubFetch();
         render(<EmailComposeForm onClose={() => {}} initialRecipient={viele(4)} initialSubject="Rundschreiben" initialCc={['kopie@example.org']} />);
-        expect(await screen.findByText(/4 Empfänger sehen sich gegenseitig/)).toBeInTheDocument();
+        expect(await screen.findByText(/Alle 4 Empfänger sehen die Adressen der anderen/)).toBeInTheDocument();
         expect(screen.getByText('CC')).toBeInTheDocument();
 
-        await userEvent.click(screen.getByLabelText(/Einzeln verschicken/));
+        await userEvent.click(screen.getByLabelText(/Als Rundmail verschicken/));
         expect(screen.queryByText('CC')).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /\+ CC/ })).not.toBeInTheDocument();
         expect(screen.getByText(/4 Empfänger bekommen je eine eigene E-Mail/)).toBeInTheDocument();
@@ -232,16 +251,79 @@ describe('EmailComposeForm – Einzelversand', () => {
         expect(gesendet[0].dto.recipients).toHaveLength(4);
     });
 
+    it('schaltet die Rundmail beim zweiten Empfänger von selbst ein und schickt jeden einzeln', async () => {
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} initialSubject="Betriebsurlaub" />);
+        const an = await screen.findByRole('textbox', { name: 'Empfänger' });
+        await userEvent.type(an, 'max@example.org{Enter}');
+        expect(screen.getByLabelText(/Als Rundmail verschicken/)).not.toBeChecked();
+        expect(screen.getByRole('button', { name: /\+ CC/ })).toBeInTheDocument();
+
+        await userEvent.type(an, 'erika@example.org{Enter}');
+        expect(screen.getByLabelText(/Als Rundmail verschicken/)).toBeChecked();
+        expect(screen.getByText(/2 Empfänger bekommen je eine eigene E-Mail/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /\+ CC/ })).not.toBeInTheDocument();
+
+        await sende();
+        await waitFor(() => expect(gesendet).toHaveLength(1));
+        expect(gesendet[0].dto).toMatchObject({ einzelversand: true, recipients: ['max@example.org', 'erika@example.org'], cc: [] });
+    });
+
+    it('bleibt aus, wenn der Anwender die Rundmail selbst ausschaltet – auch bei weiteren Empfängern', async () => {
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} initialRecipient="max@example.org, erika@example.org" initialSubject="Abstimmung" />);
+        const schalter = await screen.findByLabelText(/Als Rundmail verschicken/);
+        await userEvent.click(schalter);
+        await userEvent.type(screen.getByRole('textbox', { name: 'Empfänger' }), 'otto@example.org{Enter}');
+        expect(schalter).not.toBeChecked();
+        expect(screen.getByText('Gemeinsame E-Mail: Alle 3 Empfänger sehen die Adressen der anderen.')).toBeInTheDocument();
+
+        await sende();
+        await waitFor(() => expect(gesendet).toHaveLength(1));
+        expect(gesendet[0].dto).toMatchObject({ einzelversand: false, recipients: ['max@example.org, erika@example.org, otto@example.org'] });
+    });
+
+    it('gibt Senden frei, sobald eine Adresse getippt ist, und nimmt sie beim Klick mit', async () => {
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} initialSubject="Termin" />);
+        const senden = await screen.findByRole('button', { name: /E-Mail senden/ });
+        expect(senden).toBeDisabled();
+        await userEvent.type(screen.getByRole('textbox', { name: 'Empfänger' }), 'max@example.org');
+        expect(senden).toBeEnabled();
+        await sende();
+        await waitFor(() => expect(gesendet).toHaveLength(1));
+        expect(gesendet[0].dto).toMatchObject({ einzelversand: false, recipients: ['max@example.org'] });
+    });
+
+    it('erklärt die Rundmail im Info-Knopf', async () => {
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} initialSubject="Rundschreiben" />);
+        await userEvent.click(await screen.findByRole('button', { name: /Rundmail/ }));
+        expect(screen.getByText('Was passiert im Hintergrund?')).toBeInTheDocument();
+        expect(screen.getByText(/Niemand sieht die Adressen der anderen/)).toBeInTheDocument();
+    });
+
+    it('trägt mehrere CC-Empfänger in ein Feld ein', async () => {
+        stubFetch();
+        render(<EmailComposeForm onClose={() => {}} initialRecipient="max@example.org" initialSubject="Termin" />);
+        await userEvent.click(await screen.findByRole('button', { name: /\+ CC/ }));
+        await userEvent.type(screen.getByRole('textbox', { name: 'Kopie (CC)' }), 'a@example.org, b@example.org{Enter}');
+        await userEvent.click(screen.getByRole('button', { name: 'a@example.org entfernen' }));
+        await sende();
+        await waitFor(() => expect(gesendet).toHaveLength(1));
+        expect(gesendet[0].dto).toMatchObject({ einzelversand: false, cc: ['b@example.org'] });
+    });
+
     it('sperrt das Senden über 50 Empfängern mit Hinweis', async () => {
         stubFetch();
         render(<EmailComposeForm onClose={() => {}} initialRecipient={viele(51)} initialSubject="Rundschreiben" />);
-        await userEvent.click(await screen.findByLabelText(/Einzeln verschicken/));
+        expect(await screen.findByLabelText(/Als Rundmail verschicken/)).toBeChecked();
         expect(screen.getByText(/Höchstens 50 Empfänger pro Sammel-Mail\. Eingetragen sind 51\./)).toBeInTheDocument();
         const senden = screen.getByRole('button', { name: /E-Mail senden/ });
         expect(senden).toBeDisabled();
         expect(senden).toHaveAttribute('title', 'Höchstens 50 Empfänger pro Sammel-Mail.');
         // Ohne Einzelversand gilt die Grenze nicht.
-        await userEvent.click(screen.getByLabelText(/Einzeln verschicken/));
+        await userEvent.click(screen.getByLabelText(/Als Rundmail verschicken/));
         expect(senden).toBeEnabled();
     });
 
@@ -251,7 +333,8 @@ describe('EmailComposeForm – Einzelversand', () => {
         const onClose = vi.fn();
         const onSuccess = vi.fn();
         render(<EmailComposeForm onClose={onClose} onSuccess={onSuccess} initialRecipient={viele(3)} initialSubject="Rundschreiben" />);
-        await userEvent.click(await screen.findByLabelText(/Einzeln verschicken/));
+        // Ab zwei Empfängern ist die Rundmail von selbst an.
+        expect(await screen.findByLabelText(/Als Rundmail verschicken/)).toBeChecked();
         await sende();
         await waitFor(() => expect(onClose).toHaveBeenCalled());
         expect(onSuccess).toHaveBeenCalled();
@@ -267,7 +350,8 @@ describe('EmailComposeForm – Einzelversand', () => {
         const onClose = vi.fn();
         const onSuccess = vi.fn();
         render(<EmailComposeForm onClose={onClose} onSuccess={onSuccess} initialRecipient={viele(30)} initialSubject="Rundschreiben" />);
-        await userEvent.click(await screen.findByLabelText(/Einzeln verschicken/));
+        // Ab zwei Empfängern ist die Rundmail von selbst an.
+        expect(await screen.findByLabelText(/Als Rundmail verschicken/)).toBeChecked();
         await sende();
 
         const ergebnis = await screen.findByTestId('einzelversand-ergebnis');
@@ -287,7 +371,8 @@ describe('EmailComposeForm – Einzelversand', () => {
         stubFetch();
         const onClose = vi.fn();
         render(<EmailComposeForm onClose={onClose} initialRecipient={viele(3)} initialSubject="Rundschreiben" />);
-        await userEvent.click(await screen.findByLabelText(/Einzeln verschicken/));
+        // Ab zwei Empfängern ist die Rundmail von selbst an.
+        expect(await screen.findByLabelText(/Als Rundmail verschicken/)).toBeChecked();
         await sende();
 
         const hinweis = await screen.findByTestId('einzelversand-nicht-abgelegt');
@@ -302,7 +387,8 @@ describe('EmailComposeForm – Einzelversand', () => {
         stubFetch();
         const onClose = vi.fn();
         render(<EmailComposeForm onClose={onClose} initialRecipient={viele(2)} initialSubject="Rundschreiben" />);
-        await userEvent.click(await screen.findByLabelText(/Einzeln verschicken/));
+        // Ab zwei Empfängern ist die Rundmail von selbst an.
+        expect(await screen.findByLabelText(/Als Rundmail verschicken/)).toBeChecked();
         await sende();
 
         const ergebnis = await screen.findByTestId('einzelversand-ergebnis');
@@ -317,7 +403,8 @@ describe('EmailComposeForm – Einzelversand', () => {
         sendeAntwort = { status: 502, body: {} };
         stubFetch();
         render(<EmailComposeForm onClose={() => {}} initialRecipient={viele(2)} initialSubject="Rundschreiben" />);
-        await userEvent.click(await screen.findByLabelText(/Einzeln verschicken/));
+        // Ab zwei Empfängern ist die Rundmail von selbst an.
+        expect(await screen.findByLabelText(/Als Rundmail verschicken/)).toBeChecked();
         await sende();
         expect((await screen.findAllByText('Keine der E-Mails konnte verschickt werden.')).length).toBeGreaterThan(0);
     });
@@ -356,7 +443,7 @@ describe('EmailComposeForm – Sichtbarkeit der Postfächer (Etappe 2)', () => {
         const fetchMock = stubFetch();
         render(<EmailComposeForm onClose={() => {}} weitergeleitetVonEmailId={5} initialSubject="WG: Treppe"
             antwortPostfach={{ id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' }} />);
-        await userEvent.type(screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben'), 'kollege@example.org');
+        await userEvent.type(screen.getByRole('textbox', { name: 'Empfänger' }), 'kollege@example.org');
         await userEvent.click(screen.getByRole('button', { name: 'Schließen' }));
         await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/emails/drafts' && init?.method === 'POST')).toBe(true));
         const call = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/emails/drafts' && init?.method === 'POST')!;

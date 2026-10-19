@@ -146,7 +146,7 @@ describe('EmailComposeForm – Rueckfrage "E-Mail-Adresse speichern?"', () => {
 
         expect(await screen.findByText('E-Mail-Adresse speichern?')).toBeInTheDocument();
         // Angezeigt und gespeichert wird die reine Adresse, nicht `"Name" <Adresse>`
-        expect(screen.getByText(neueAdresse)).toBeInTheDocument();
+        expect(screen.getByText(neueAdresse, { selector: 'span.font-medium' })).toBeInTheDocument();
 
         await userEvent.click(screen.getByRole('button', { name: /Als Projekt-E-Mail speichern/i }));
 
@@ -282,7 +282,7 @@ describe('EmailComposeForm – Projekt/Anfrage verknüpfen', () => {
         await userEvent.click(screen.getByRole('button', { name: /Projekt oder Anfrage suchen/i }));
         await userEvent.click(await screen.findByText('Musterbau'));
 
-        await waitFor(() => expect(screen.getByDisplayValue(BEKANNTE_ADRESSE)).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByTitle(BEKANNTE_ADRESSE)).toBeInTheDocument());
     });
 
     it('laesst einen selbst getippten Empfaenger beim Wechsel der Zuordnung stehen', async () => {
@@ -298,7 +298,7 @@ describe('EmailComposeForm – Projekt/Anfrage verknüpfen', () => {
 
         await waitFor(() => expect(screen.getByDisplayValue('Anfrage Material')).toBeInTheDocument());
         await userEvent.type(
-            screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben'),
+            screen.getByRole('textbox', { name: 'Empfänger' }),
             eigeneAdresse
         );
 
@@ -307,8 +307,8 @@ describe('EmailComposeForm – Projekt/Anfrage verknüpfen', () => {
 
         // Zuordnung ist da, der getippte Empfaenger bleibt aber unveraendert
         expect(await screen.findByText('Musterbau')).toBeInTheDocument();
-        expect(screen.getByDisplayValue(eigeneAdresse)).toBeInTheDocument();
-        expect(screen.queryByDisplayValue(BEKANNTE_ADRESSE)).not.toBeInTheDocument();
+        expect(screen.getByTitle(eigeneAdresse)).toBeInTheDocument();
+        expect(screen.queryByTitle(BEKANNTE_ADRESSE)).not.toBeInTheDocument();
     });
 
     it('zeigt beim Antworten kein Entfernen der Verknuepfung an', async () => {

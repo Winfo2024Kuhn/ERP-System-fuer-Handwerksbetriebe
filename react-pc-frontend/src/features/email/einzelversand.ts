@@ -1,7 +1,7 @@
 import { parseRecipientList } from '../../lib/emailAddress';
 
 /**
- * Regeln für den Einzelversand („Sammel-Mail einzeln verschicken“): Jeder
+ * Regeln für den Einzelversand („Rundmail“): Jeder
  * Empfänger bekommt eine eigene Mail und sieht nur sich selbst.
  *
  * <p>Die Grenzen spiegeln den API-Vertrag (Spec Abschnitt 1.5) – das Backend
@@ -11,8 +11,11 @@ import { parseRecipientList } from '../../lib/emailAddress';
 /** Mehr Empfänger lehnt das Backend ab („Höchstens 50 Empfänger pro Sammel-Mail.“). */
 export const EINZELVERSAND_MAX_EMPFAENGER = 50;
 
-/** Ab so vielen Empfängern im „An“ weisen wir auf den Einzelversand hin. */
-export const EINZELVERSAND_HINWEIS_AB = 4;
+/**
+ * Ab so vielen Empfängern im „An“ schaltet sich die Rundmail von selbst ein – und wer sie
+ * ausschaltet, bekommt den Hinweis, dass sich alle gegenseitig sehen.
+ */
+export const EINZELVERSAND_HINWEIS_AB = 2;
 
 export const EINZELVERSAND_ZU_VIELE = 'Höchstens 50 Empfänger pro Sammel-Mail.';
 

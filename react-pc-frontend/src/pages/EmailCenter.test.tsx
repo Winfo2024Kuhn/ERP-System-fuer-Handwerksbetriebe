@@ -687,9 +687,10 @@ describe('EmailCenter', () => {
             const header = await screen.findByTestId('email-detail-header');
             await user.click(within(header).getByRole('button', { name: /Allen antworten/i }));
             await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
-            expect(screen.getByDisplayValue('max@example.com, erika@example.com')).toBeInTheDocument();
-            expect(screen.getByDisplayValue('architekt@example.org')).toBeInTheDocument();
-            expect(screen.queryByDisplayValue(/handwerk@example\.com/)).not.toBeInTheDocument();
+            expect(screen.getByTitle('max@example.com')).toBeInTheDocument();
+            expect(screen.getByTitle('erika@example.com')).toBeInTheDocument();
+            expect(screen.getByTitle('architekt@example.org')).toBeInTheDocument();
+            expect(screen.queryByTitle(/handwerk@example\.com/)).not.toBeInTheDocument();
         });
     });
 
@@ -742,7 +743,7 @@ describe('EmailCenter', () => {
 
             // Compose-Formular öffnet sich: Empfängerfeld muss den Kunden enthalten und NICHT die eigene Adresse!
             await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
-            expect(screen.getByDisplayValue('kunde@architekt-muster.example')).toBeInTheDocument();
+            expect(screen.getByTitle('kunde@architekt-muster.example')).toBeInTheDocument();
         });
         it('behält beim Antworten auf eine Rundmail alle Empfänger mit ihren jeweiligen Namen', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
@@ -792,7 +793,8 @@ describe('EmailCenter', () => {
             await waitFor(() => expect(screen.getByText('E-Mail senden')).toBeInTheDocument());
 
             // Beide Empfänger müssen mit ihren eigenen Namen enthalten sein
-            expect(screen.getByDisplayValue('"Anna" <anna@example.com>, "Ben" <ben@example.com>')).toBeInTheDocument();
+            expect(screen.getByTitle('"Anna" <anna@example.com>')).toBeInTheDocument();
+            expect(screen.getByTitle('"Ben" <ben@example.com>')).toBeInTheDocument();
         });
 
         it('behält E-Mail-Adresse im Zitatkopf sichtbar dank HTML-Maskierung', async () => {
@@ -901,10 +903,10 @@ describe('EmailCenter', () => {
             expect(await screen.findByText('Kein externer Empfänger gefunden – bitte Empfänger manuell eingeben.')).toBeInTheDocument();
 
             // Eigene Adresse darf keinesfalls im Empfängerfeld stehen!
-            expect(screen.queryByDisplayValue('info@musterbetrieb.example')).not.toBeInTheDocument();
+            expect(screen.queryByTitle('info@musterbetrieb.example')).not.toBeInTheDocument();
 
             // Ohne ermittelbaren Empfänger muss das An-Feld eintragbar sein (sonst Sackgasse)
-            expect(screen.getByPlaceholderText('Name, Firma oder E-Mail eingeben')).not.toHaveAttribute('readonly');
+            expect(screen.getByRole('textbox', { name: 'Empfänger' })).not.toHaveAttribute('readonly');
 
             // Zitatkopf ohne unvollständiges "an :"
             expect(screen.getByText(/schrieben Sie:/i)).toBeInTheDocument();
