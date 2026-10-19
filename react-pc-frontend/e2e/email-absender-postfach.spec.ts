@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
-import { stubbeEmailCenter } from './hilfen/postfaecher';
+import { EINGANG, json, stubbeEmailCenter } from './hilfen/postfaecher';
 
 /**
  * E-Mail-Center: Absender-Postfach beim Schreiben.
@@ -77,6 +77,46 @@ test('Weiterleiten: fester Absender und weitergeleitetVonEmailId im Versand', as
     await expect.poll(() => stub.gesendet.length).toBe(1);
     expect(stub.gesendet[0].pfad).toBe('/api/emails/send');
     expect(stub.gesendet[0].dto).toMatchObject({ weitergeleitetVonEmailId: 701, postfachId: null });
+});
+
+test('Weiterleiten: Anhänge der Original-Mail gehen mit, einzelne lassen sich abwählen', async ({ page }, info) => {
+    const stub = await stubbeEmailCenter(page);
+    const mitAnhaengen = {
+        ...EINGANG,
+        attachments: [
+            { id: 31, originalFilename: 'Aufmass-Balkon.pdf', mimeType: 'application/pdf', fileSize: 320 * 1024, inline: false },
+            { id: 32, originalFilename: 'Foto-Bestand.jpg', mimeType: 'image/jpeg', fileSize: 2 * 1024 * 1024, inline: false },
+            { id: 33, originalFilename: 'signatur-logo.png', mimeType: 'image/png', fileSize: 6 * 1024, contentId: 'logo', inline: true },
+        ],
+    };
+    // Später angemeldete Routen gehen vor: nur die Original-Mail bekommt Anhänge.
+    await page.route('**/api/emails/701', route => json(route, mitAnhaengen));
+    await page.route('**/api/emails/701/thread', route => json(route, { rootEmailId: 701, focusedEmailId: 701, emails: [mitAnhaengen] }));
+
+    await page.goto('/emails/inbox/701');
+    await expect(page.getByRole('heading', { name: 'Anfrage Balkongeländer' })).toBeVisible();
+    await page.getByRole('button', { name: 'Weitere E-Mail-Aktionen' }).click();
+    await page.getByRole('menuitem', { name: 'Weiterleiten' }).click();
+
+    const liste = page.getByTestId('weiterleitung-anhaenge');
+    await expect(liste.getByText('Aufmass-Balkon.pdf')).toBeVisible();
+    await expect(liste.getByText('Foto-Bestand.jpg')).toBeVisible();
+    await expect(liste.getByText('signatur-logo.png')).toHaveCount(0);
+
+    await liste.getByRole('button', { name: /Anhänge der Original-Mail/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Anhänge der Original-Mail' })).toContainText('direkt aus der ursprünglichen E-Mail angehängt');
+    await designPruefung(page, info, 'weiterleiten-anhaenge-info');
+    await page.keyboard.press('Escape');
+
+    await liste.getByRole('button', { name: 'Foto-Bestand.jpg entfernen' }).click();
+    await expect(liste.getByText('1 Anhang wird nicht mitgesendet.')).toBeVisible();
+    await designPruefung(page, info, 'weiterleiten-anhaenge', { primaerAktion: page.getByRole('button', { name: 'E-Mail senden' }) });
+
+    await page.getByPlaceholder('Name, Firma oder E-Mail eingeben').fill('kollege@example.org');
+    await sendenBestaetigen(page);
+
+    await expect.poll(() => stub.gesendet.length).toBe(1);
+    expect(stub.gesendet[0].dto).toMatchObject({ weitergeleitetVonEmailId: 701, weiterleitungsAnhangIds: [31] });
 });
 
 test('Liste: jede Mail trägt ein dezentes Postfach-Schild mit voller Adresse im Tooltip', async ({ page }, info) => {

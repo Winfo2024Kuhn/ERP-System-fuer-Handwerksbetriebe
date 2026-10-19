@@ -11,7 +11,7 @@ import { AssignModal } from '../features/email/EmailAssignmentDialog';
 import { useEmailPaneWidth } from '../features/email/useEmailPaneWidth';
 import {
     buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe,
-    getSenderName, getDisplayName, groupEmailThreads, hasFurtherRecipients, isImageAttachment, nutztServerFilterUngelesen,
+    getSenderName, getDisplayName, groupEmailThreads, hasFurtherRecipients, isImageAttachment, loeschFehlerMeldung, nutztServerFilterUngelesen,
     type DraftItem, type EmailItem, type EmailThreadRow, type FolderType, type ReadFilter, type ReplyMode,
 } from '../features/email/emailCenterModel';
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
@@ -64,6 +64,7 @@ import { EmailComposeForm } from '../components/EmailComposeForm';
 import { ImageViewer } from '../components/ui/image-viewer';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
+import { parseErrorMessage } from '../components/settings/settingsApi';
 import { EmailThreadView } from '../components/EmailThreadView';
 import type { EmailThread } from '../components/EmailThreadView';
 
@@ -480,11 +481,15 @@ export default function EmailCenter() {
     const handleDeleteDraft = async (draftId: number, e?: React.MouseEvent) => {
         if (e) { e.stopPropagation(); e.preventDefault(); }
         try {
-            await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
+            const res = await fetch(`/api/emails/drafts/${draftId}`, { method: 'DELETE' });
+            if (!res.ok) {
+                toast.error(await parseErrorMessage(res, 'Der Entwurf konnte nicht gelöscht werden.'));
+                return;
+            }
             setDrafts(prev => prev.filter(d => d.id !== draftId));
             loadStats();
         } catch {
-            toast.error('Entwurf konnte nicht gelöscht werden');
+            toast.error('Der Entwurf konnte nicht gelöscht werden.');
         }
     };
 
@@ -880,6 +885,8 @@ export default function EmailCenter() {
             setSelectedEmail(null);
         }
 
+        const fehlgeschlagen: number[] = [];
+        let serverMeldung: string | null = null;
         for (const id of currentIds) {
             try {
                 // Im Papierkorb: Permanent löschen (DB + Mailserver)
@@ -887,15 +894,27 @@ export default function EmailCenter() {
                 const endpoint = isPermanentDelete
                     ? `/api/emails/${id}/permanent`
                     : `/api/emails/${id}`;
-                await fetch(endpoint, { method: 'DELETE' });
+                const res = await fetch(endpoint, { method: 'DELETE' });
+                if (!res.ok) {
+                    fehlgeschlagen.push(id);
+                    serverMeldung ??= await parseErrorMessage(res, '');
+                }
             } catch {
-                console.error('Delete failed for', id);
+                fehlgeschlagen.push(id);
             }
         }
 
         // Stats aktualisieren nach Löschung
         folderCacheRef.current.clear();
         loadStats();
+
+        if (fehlgeschlagen.length > 0) {
+            // Nicht gelöschte Mails gehören wieder in die Liste: aus der Sperre nehmen und
+            // die Liste vom Server holen – der Zwischenspeicher ist oben schon geleert.
+            fehlgeschlagen.forEach(id => pendingRemovalsRef.current.delete(id));
+            refreshEmailsSilently();
+            toast.error(loeschFehlerMeldung(fehlgeschlagen.length, currentIds.length, serverMeldung));
+        }
     };
 
     const handleAssign = async (type: 'projekt' | 'anfrage', targetId: number) => {
@@ -1518,6 +1537,9 @@ export default function EmailCenter() {
                     replyEmailId={replyToEmailId}
                     // Weiterleitungs-Entwurf: fester Absender wie bei der Weiterleitung selbst.
                     weitergeleitetVonEmailId={forwardEmail?.id ?? activeDraft?.weitergeleitetVonEmailId ?? undefined}
+                    // Anhänge der Original-Mail zum Mitsenden – nur aus der vollständig geladenen Mail.
+                    // Sonst (Entwurf, Listen-Eintrag) lädt das Formular sie selbst.
+                    weiterleitungsAnhaenge={forwardEmail?.htmlBody ? forwardEmail.attachments ?? [] : undefined}
                     // Antwort-Postfach nur übergeben, wenn es zur beantworteten Mail gehört;
                     // sonst holt das Formular es selbst (z. B. Antwort auf eine ältere Mail im Verlauf).
                     antwortPostfach={forwardEmail

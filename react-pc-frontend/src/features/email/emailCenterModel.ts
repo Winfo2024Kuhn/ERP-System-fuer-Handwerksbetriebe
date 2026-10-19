@@ -311,3 +311,22 @@ export function buildForwardSubject(subject?: string): string {
     const clean = (subject || '').trim();
     return FORWARD_PREFIX.test(clean) ? clean : `Fwd: ${clean}`;
 }
+
+/**
+ * Fehlermeldung nach dem Löschen: eine einzelne Mail mit Server-Begründung (wenn vorhanden),
+ * mehrere als „n von m“, damit klar ist, dass ein Teil durchging.
+ */
+export function loeschFehlerMeldung(fehlgeschlagen: number, gesamt: number, serverMeldung?: string | null): string {
+    const grund = serverMeldung?.trim() || '';
+    if (gesamt <= 1) return grund || 'Die E-Mail konnte nicht gelöscht werden.';
+    const zahl = `${fehlgeschlagen} von ${gesamt} E-Mails konnten nicht gelöscht werden.`;
+    return grund ? `${zahl} ${grund}` : zahl;
+}
+
+/**
+ * Anhänge der Original-Mail, die beim Weiterleiten mitgehen können. Eingebettete Bilder
+ * (z. B. das Logo in der Signatur) stehen im Text der Mail und werden nicht angeboten.
+ */
+export function weiterleitbareAnhaenge(anhaenge: EmailAttachment[] | null | undefined): EmailAttachment[] {
+    return (anhaenge ?? []).filter(anhang => anhang.inline !== true);
+}

@@ -64,6 +64,7 @@ async function stubProjektAusAnfrage(page: Page, anlegeVersuche: unknown[]) {
         if (pfad === '/api/anfragen' && methode === 'GET') return json(route, { anfragen: [ANFRAGE], gesamt: 1 });
         if (pfad === `/api/anfragen/${ANFRAGE.id}/produktkategorien-vorschlag`) return json(route, []);
         if (pfad === `/api/kunden/${KUNDE.id}`) return json(route, KUNDE);
+        if (pfad === '/api/kunden' && methode === 'GET') return json(route, [KUNDE]);
         return json(route, []);
     });
 }
@@ -86,5 +87,30 @@ test.describe('Neues Projekt aus Anfrage', () => {
         expect(anlegeVersuche).toHaveLength(1);
         expect(anlegeVersuche[0]).toMatchObject({ anfrageIds: [ANFRAGE.id] });
         await designPruefung(page, testInfo, 'projekt-aus-anfrage-uebernahme-fehlgeschlagen');
+    });
+
+    test('„Ohne Anfrage anlegen“ nach gewählter Anfrage übernimmt die Anfrage nicht', async ({ page }, testInfo) => {
+        const anlegeVersuche: unknown[] = [];
+        await stubProjektAusAnfrage(page, anlegeVersuche);
+        await page.goto('/projekte');
+
+        await page.getByRole('button', { name: 'Neues Projekt' }).click();
+        await page.getByText(ANFRAGE.bauvorhaben, { exact: true }).click();
+        await expect(page.getByText('Nach dem Anlegen gehört die Anfrage zum Projekt und steht nicht mehr in der Anfragenliste.')).toBeVisible();
+        await expect(page.getByText(`(${KUNDE.kundennummer})`)).toBeVisible();
+        await designPruefung(page, testInfo, 'projekt-aus-anfrage-hinweis');
+
+        await page.getByRole('button', { name: 'Ohne Anfrage anlegen' }).click();
+        await expect(page.getByText('Basierend auf Anfrage')).toHaveCount(0);
+        await expect(page.getByText('Kein Kunde ausgewählt')).toBeVisible();
+
+        await page.getByPlaceholder('z.B. Neubau Einfamilienhaus').fill('Carport Musterweg');
+        await page.getByRole('button', { name: 'Kunde auswählen' }).click();
+        await page.getByText(KUNDE.name, { exact: true }).click();
+        await page.getByRole('button', { name: 'Projekt anlegen' }).click();
+
+        await expect.poll(() => anlegeVersuche.length).toBe(1);
+        expect(anlegeVersuche[0]).not.toHaveProperty('anfrageIds');
+        expect(anlegeVersuche[0]).toMatchObject({ bauvorhaben: 'Carport Musterweg', kundenId: KUNDE.id });
     });
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe,
-    getDisplayName, groupEmailThreads, hasFurtherRecipients, nutztServerFilterUngelesen,
-    type DraftItem, type EmailItem,
+    getDisplayName, groupEmailThreads, hasFurtherRecipients, loeschFehlerMeldung, nutztServerFilterUngelesen,
+    weiterleitbareAnhaenge, type DraftItem, type EmailItem,
 } from './emailCenterModel';
 
 describe('filtereEntwuerfe', () => {
@@ -199,5 +199,33 @@ describe('getDisplayName', () => {
 
     it('hält ohne bekannte eigene Absender keine Adresse für eigene', () => {
         expect(getDisplayName(selbstAntwort)).toBe('Musterbetrieb GmbH');
+    });
+});
+
+describe('loeschFehlerMeldung', () => {
+    it('nennt bei einer Mail den Grund vom Server oder einen eigenen Text', () => {
+        expect(loeschFehlerMeldung(1, 1, 'Der Mailserver ist gerade nicht erreichbar.')).toBe('Der Mailserver ist gerade nicht erreichbar.');
+        expect(loeschFehlerMeldung(1, 1, '  ')).toBe('Die E-Mail konnte nicht gelöscht werden.');
+        expect(loeschFehlerMeldung(1, 1)).toBe('Die E-Mail konnte nicht gelöscht werden.');
+    });
+
+    it('zählt bei mehreren Mails „n von m“ und hängt den Grund an', () => {
+        expect(loeschFehlerMeldung(2, 5, null)).toBe('2 von 5 E-Mails konnten nicht gelöscht werden.');
+        expect(loeschFehlerMeldung(1, 2, 'Keine Berechtigung.')).toBe('1 von 2 E-Mails konnten nicht gelöscht werden. Keine Berechtigung.');
+    });
+});
+
+describe('weiterleitbareAnhaenge', () => {
+    it('lässt eingebettete Bilder weg und behält alles andere', () => {
+        expect(weiterleitbareAnhaenge([
+            { id: 1, originalFilename: 'Angebot.pdf', inline: false },
+            { id: 2, originalFilename: 'Foto.jpg' },
+            { id: 3, originalFilename: 'logo.png', inline: true },
+        ]).map(a => a.id)).toEqual([1, 2]);
+    });
+
+    it('kommt ohne Anhänge mit einer leeren Liste zurück', () => {
+        expect(weiterleitbareAnhaenge(undefined)).toEqual([]);
+        expect(weiterleitbareAnhaenge(null)).toEqual([]);
     });
 });
