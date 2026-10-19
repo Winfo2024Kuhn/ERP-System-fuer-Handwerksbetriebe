@@ -99,6 +99,7 @@ public class UnifiedEmailController {
     private final SteuerberaterKontaktService steuerberaterKontaktService;
     private final EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
     private final org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    private final org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
     private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
     private final org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     private final org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
@@ -1772,11 +1773,39 @@ public class UnifiedEmailController {
                 }
             }
 
+            // 1b. Weiterleitung: gewählte Anhänge der Original-Mail liest der Server selbst.
+            List<org.example.email.EmailService.Attachment> weitergeleiteteAnhaenge = List.of();
+            if (dto.getWeitergeleitetVonEmailId() != null && dto.getWeiterleitungsAnhangIds() != null
+                    && !dto.getWeiterleitungsAnhangIds().isEmpty()) {
+                Email original = findeLesbar(dto.getWeitergeleitetVonEmailId(), authentication).orElse(null);
+                if (original == null) {
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(Map.of(
+                            "message", "Die weitergeleitete E-Mail gibt es nicht mehr."));
+                }
+                // Wie beim Herunterladen eines Anhangs: ohne erkennbare Rechte kein Zugriff.
+                var sichtbareTypen = lieferantDokumentZugriffService.sichtbareTypen(null, authentication);
+                if (sichtbareTypen.isEmpty()) {
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+                }
+                try {
+                    weitergeleiteteAnhaenge = weiterleitungAnhaengeService.lade(original,
+                            dto.getWeiterleitungsAnhangIds(), sichtbareTypen.get(), MAX_SINGLE_ATTACHMENT_BYTES,
+                            MAX_TOTAL_ATTACHMENTS_BYTES - totalAttachmentsSize);
+                } catch (IllegalArgumentException ex) {
+                    return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+                }
+                for (var anhang : weitergeleiteteAnhaenge) {
+                    totalAttachmentsSize += anhang.data().length;
+                }
+            }
+
             if (totalAttachmentsSize > MAX_TOTAL_ATTACHMENTS_BYTES) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "message",
                         "Die Anhänge überschreiten die maximal zulässige Gesamtgröße von 25 MB."));
             }
+
+            attachmentsForEmail.addAll(weitergeleiteteAnhaenge);
 
             // 2. Hochgeladene Dateien als Anhänge
             if (attachments != null) {
@@ -1856,7 +1885,8 @@ public class UnifiedEmailController {
             }
 
             var anhaenge = new org.example.kalkulationsprogramm.service.AusgangsmailService.Anhaenge(
-                    attachedStoredFilename, attachedOriginalFilename, attachedMimeType, attachments);
+                    attachedStoredFilename, attachedOriginalFilename, attachedMimeType, attachments,
+                    weitergeleiteteAnhaenge);
             final org.example.kalkulationsprogramm.domain.EmailAbsender versandPostfach = postfach;
 
             if (dto.isEinzelversand()) {

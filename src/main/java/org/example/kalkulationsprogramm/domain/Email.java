@@ -285,6 +285,13 @@ public class Email {
     @Column(nullable = false)
     private boolean isNewsletter = false;
 
+    /**
+     * Vom ERP selbst verschickte Eingangsbestätigung einer Webseiten-Anfrage.
+     * Sie sperrt das Löschen der Anfrage nicht (Issue #272).
+     */
+    @Column(name = "automatische_bestaetigung", nullable = false)
+    private boolean automatischeBestaetigung = false;
+
     // ═══════════════════════════════════════════════════════════════
     // ATTACHMENTS (1:n)
     // ═══════════════════════════════════════════════════════════════

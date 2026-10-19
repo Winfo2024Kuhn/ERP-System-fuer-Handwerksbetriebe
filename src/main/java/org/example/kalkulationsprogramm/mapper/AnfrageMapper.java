@@ -20,7 +20,7 @@ public class AnfrageMapper {
         dto.setId(a.getId());
         if (a.getKunde() != null) {
             dto.setKundenId(a.getKunde().getId());
-            dto.setKundenName(sanitize(a.getKunde().getName()));
+            dto.setKundenName(a.getKunde().getName());
             dto.setKundennummer(a.getKunde().getKundennummer());
 
             List<String> allEmails = new ArrayList<>();
@@ -43,12 +43,6 @@ public class AnfrageMapper {
         }
 
         return dto;
-    }
-
-    private String sanitize(String s) {
-        if (s == null)
-            return null;
-        return s.replace("�", "ss").replace("?", "ss").replace("?", "");
     }
 
 }

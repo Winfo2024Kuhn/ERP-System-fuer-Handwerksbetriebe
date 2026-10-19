@@ -172,6 +172,8 @@ public class AnfrageBestaetigungVersandService {
                 email.setBody(EmailHtmlSanitizer.htmlToPlainText(htmlBody));
                 email.setSentAt(LocalDateTime.now());
                 email.setRead(true);
+                // Sperrt das Löschen der Anfrage nicht – siehe AnfrageService.loescheAnfrage.
+                email.setAutomatischeBestaetigung(true);
                 // Rein lokaler Ausgangsdatensatz: kein IMAP-Ordner und keine
                 // serverseitige Sent-Kopie. Der Gesendet-Filter nutzt direction=OUT.
                 outboundPersistenceService.speichereOutEmail(email);

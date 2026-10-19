@@ -136,6 +136,7 @@ class UnifiedEmailAntwortPostfachTest {
     @MockBean private AusgangsmailService ausgangsmailService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
     @MockBean private LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    @MockBean private org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
 
     @org.junit.jupiter.api.BeforeEach
     void gelesenWieBisher() {

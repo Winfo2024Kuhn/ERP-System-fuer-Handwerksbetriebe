@@ -49,6 +49,19 @@ class AnfrageMapperTest {
         assertThat(dto.getKundenAnrede()).isEqualTo("HERR");
     }
 
+    /** Früher wurde aus "ß" bzw. "?" ein "ss" – der Name kam verfälscht zurück (Issue #272). */
+    @Test
+    void kundennameBehaeltSzUndFragezeichen() {
+        Kunde kunde = new Kunde();
+        kunde.setName("Schlosserei Weiß & Groß?");
+        Anfrage anfrage = new Anfrage();
+        anfrage.setKunde(kunde);
+
+        AnfrageResponseDto dto = mapper.toAnfrageResponseDto(anfrage);
+
+        assertThat(dto.getKundenName()).isEqualTo("Schlosserei Weiß & Groß?");
+    }
+
     @Test
     void gibtNullZurueckBeiNullAnfrage() {
         AnfrageResponseDto dto = mapper.toAnfrageResponseDto(null);

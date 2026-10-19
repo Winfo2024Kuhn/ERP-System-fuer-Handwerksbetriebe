@@ -146,6 +146,31 @@ describe('EmailCenter', () => {
             expect(screen.getByText(/Weiterleitungen gehen über das Postfach raus/)).toBeInTheDocument();
         });
 
+        it('bietet beim Weiterleiten die Anhänge der Original-Mail an, ohne eingebettete Bilder', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const original = {
+                ...mockEmails[0], htmlBody: '<p>Hallo, hier ist das Angebot.</p>',
+                antwortPostfach: { id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb' },
+                attachments: [
+                    { id: 21, originalFilename: 'Angebot-Treppe.pdf', fileSize: 120 * 1024, inline: false },
+                    { id: 22, originalFilename: 'signatur-logo.png', fileSize: 4 * 1024, inline: true },
+                ],
+            };
+            global.fetch = mockFetchResponses({
+                '/api/emails/inbox': [{ ...mockEmails[0], attachments: [] }],
+                '/api/emails/1': original,
+                '/api/emails/1/thread': { rootEmailId: 1, focusedEmailId: 1, emails: [original] },
+            }) as unknown as typeof fetch;
+            renderEmailCenter();
+            await user.click(await screen.findByText('Angebot für Treppe'));
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await user.click(await screen.findByRole('menuitem', { name: /Weiterleiten/ }));
+
+            const liste = await screen.findByTestId('weiterleitung-anhaenge');
+            expect(within(liste).getByText('Angebot-Treppe.pdf')).toBeInTheDocument();
+            expect(within(liste).queryByText('signatur-logo.png')).not.toBeInTheDocument();
+        });
+
         it('öffnet einen Weiterleitungs-Entwurf mit festem Absender statt „Senden von“', async () => {
             const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
             const entwurf = {
@@ -914,5 +939,75 @@ describe('EmailCenter', () => {
         });
 
 
+    });
+
+    describe('Löschen mit Fehlerprüfung', () => {
+        /** Lässt DELETE auf den genannten Adressen scheitern, alles andere wie gehabt. */
+        function mitLoeschFehlern(basis: ReturnType<typeof mockFetchResponses>, fehler: Record<string, () => Response>) {
+            const mock = vi.fn((url: string, options?: RequestInit) => {
+                if (options?.method === 'DELETE' && fehler[url]) return Promise.resolve(fehler[url]());
+                return basis(url, options);
+            });
+            vi.stubGlobal('fetch', mock);
+            return mock;
+        }
+
+        it('zeigt die Mail wieder an und meldet den Grund vom Server, wenn das Löschen scheitert', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            mitLoeschFehlern(mockFetchResponses({
+                '/api/emails/1': mockEmails[0],
+                '/api/emails/1/thread': { rootEmailId: 1, focusedEmailId: 1, emails: [mockEmails[0]] },
+            }), {
+                '/api/emails/1': () => new Response(JSON.stringify({ message: 'Der Mailserver ist gerade nicht erreichbar.' }), { status: 503 }),
+            });
+            renderEmailCenter();
+            await user.click(await screen.findByText('Angebot für Treppe'));
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await user.click(await screen.findByText('In Papierkorb'));
+
+            expect(await screen.findByText('Der Mailserver ist gerade nicht erreichbar.')).toBeInTheDocument();
+            // Die Liste kommt neu vom Server – die Mail steht wieder drin.
+            expect(await screen.findByText('Angebot für Treppe')).toBeInTheDocument();
+        });
+
+        it('meldet „n von m“, wenn nur ein Teil eines Verlaufs gelöscht werden konnte', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            const anfrage = {
+                id: 16, type: 'EMAIL', direction: 'IN' as const, subject: 'Anfrage Terrasse',
+                fromAddress: 'max@example.com', body: 'Ich hätte gerne ein Angebot.',
+                sentAt: '2026-09-16T09:00:00', isRead: true, zuordnungTyp: 'KEINE', attachments: [], threadRootId: 16,
+            };
+            const nachfrage = { ...anfrage, id: 17, subject: 'Re: Anfrage Terrasse', parentEmailId: 16, sentAt: '2026-09-17T09:00:00' };
+            const mock = mitLoeschFehlern(mockFetchResponses({
+                '/api/emails/inbox': [nachfrage, anfrage],
+                '/api/emails/16': anfrage, '/api/emails/17': nachfrage,
+                '/api/emails/17/thread': { rootEmailId: 16, focusedEmailId: 17, emails: [anfrage, nachfrage] },
+            }), {
+                '/api/emails/17': () => new Response('', { status: 500 }),
+            });
+            renderEmailCenter();
+            await user.click(await screen.findByText('Re: Anfrage Terrasse'));
+            await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+            await user.click(await screen.findByText('In Papierkorb'));
+
+            expect(await screen.findByText('1 von 2 E-Mails konnten nicht gelöscht werden.')).toBeInTheDocument();
+            expect(mock).toHaveBeenCalledWith('/api/emails/16', { method: 'DELETE' });
+            expect(await screen.findByText('Re: Anfrage Terrasse')).toBeInTheDocument();
+        });
+
+        it('lässt einen Entwurf stehen und meldet den Fehler, wenn er nicht gelöscht werden konnte', async () => {
+            const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+            mitLoeschFehlern(mockFetchResponses({
+                '/api/emails/drafts': [{ id: 71, recipient: 'max.mustermann@example.com', subject: 'Angebot Treppe', body: '<p>Hallo</p>', updatedAt: '2026-10-10T09:00:00' }],
+            }), {
+                '/api/emails/drafts/71': () => new Response('', { status: 500 }),
+            });
+            renderEmailCenter('drafts');
+            await screen.findByText('Angebot Treppe');
+            await user.click(screen.getByRole('button', { name: 'Entwurf löschen' }));
+
+            expect(await screen.findByText('Der Entwurf konnte nicht gelöscht werden.')).toBeInTheDocument();
+            expect(screen.getByText('Angebot Treppe')).toBeInTheDocument();
+        });
     });
 });

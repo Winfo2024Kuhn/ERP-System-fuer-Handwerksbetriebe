@@ -211,11 +211,13 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 description={
                     <p>
                         Wenn aktiv, prüft ein Sprachmodell jede neue Anfrage über das Webseiten-Formular
-                        und blockiert offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen,
-                        kaputte E-Mail-Adressen). Dafür braucht es keinen Gemini-Schlüssel: Das Modell
-                        läuft standardmäßig auf dem eigenen Server, die Anfragen verlassen den Betrieb
-                        dabei nicht. Ist es nicht eingerichtet oder gerade nicht erreichbar, gehen alle
-                        Anfragen durch – eine echte Anfrage wird nie wegen eines Fehlers abgewiesen.
+                        auf offensichtliche Spaß-Eingaben (z.B. „Test 123", Beleidigungen, kaputte
+                        E-Mail-Adressen). Die Anfrage wird trotzdem immer gespeichert, und der Kunde
+                        bekommt seine Eingangsbestätigung – geprüft wird erst danach. Spaß-Anfragen
+                        löschen Sie von Hand unter „Anfragen“. Dafür braucht es keinen
+                        Gemini-Schlüssel: Das Modell läuft standardmäßig auf dem eigenen Server, die
+                        Anfragen verlassen den Betrieb dabei nicht. Ist es nicht eingerichtet oder
+                        gerade nicht erreichbar, entfällt nur die Prüfung.
                     </p>
                 }
             >
@@ -229,12 +231,12 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                     />
                     <span>
                         <span className="font-medium text-slate-900">
-                            Spaß-Anfragen automatisch aussortieren
+                            Spaß-Anfragen automatisch prüfen
                         </span>
                         <span className="block text-xs text-slate-500">
-                            Erkennt z.B. „asdf", „leck mich", Test-Eingaben oder unsinnige
-                            E-Mail-Adressen und meldet der Webseite, dass die Anfrage nicht gesendet
-                            werden konnte.
+                            Achtet z.B. auf „asdf", „leck mich", Test-Eingaben oder unsinnige
+                            E-Mail-Adressen. Abgewiesen oder in der Anfragenliste markiert wird
+                            dabei noch nichts.
                         </span>
                     </span>
                 </label>

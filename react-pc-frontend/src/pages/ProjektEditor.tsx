@@ -37,6 +37,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
+import { BESTELLBEDARF_AKTIV } from "../lib/freigaben";
 import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel, ArtikelInProjekt, Materialkosten } from "../types";
 import { canCreateEinfacheRechnung, istRechnungAmVorgaengerGesperrt, hatAktiveAuftragsbestaetigung } from "../lib/abrechnungsverlauf";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
@@ -3186,7 +3187,9 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     <DialogHeader>
                         <DialogTitle>Artikel aus Lager hinzufügen</DialogTitle>
                         <p className="text-sm text-slate-500">
-                            Suchen wie in der Materialverwaltung — Menge eintragen und festlegen, ob der Artikel aus dem Lager kommt oder bestellt werden muss.
+                            {BESTELLBEDARF_AKTIV
+                                ? 'Suchen wie in der Materialverwaltung — Menge eintragen und festlegen, ob der Artikel aus dem Lager kommt oder bestellt werden muss.'
+                                : 'Suchen wie in der Materialverwaltung — Artikel anhaken und Menge eintragen.'}
                         </p>
                     </DialogHeader>
 
@@ -3252,7 +3255,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                             Faelle, und ein aufklappendes Menue in jeder der
                                             15 Zeilen waere ein Klick mehr fuer dieselbe
                                             Entscheidung. Gleiche Bauart wie die
-                                            Oberflaechen-Schalter in der Suche darueber. */}
+                                            Oberflaechen-Schalter in der Suche darueber.
+                                            Solange das Bestellwesen gesperrt ist, kommt alles
+                                            aus dem Lager (Vorgabe 'lager'), der Schalter fehlt. */}
+                                        {BESTELLBEDARF_AKTIV && (
                                         <div className="flex rounded-lg border border-slate-300 overflow-hidden" role="group"
                                              aria-label={`Bezug für ${name}`}>
                                             {([
@@ -3277,6 +3283,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                 </button>
                                             ))}
                                         </div>
+                                        )}
                                     </div>
                                 );
                             }}

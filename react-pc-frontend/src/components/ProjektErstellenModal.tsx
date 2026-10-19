@@ -31,6 +31,24 @@ interface ProjektErstellenPayload {
     projektArt?: string;
 }
 
+const LEERES_FORMULAR: ProjektErstellenPayload = {
+    bauvorhaben: '',
+    kunde: '',
+    kundennummer: '',
+    auftragsnummer: '',
+    strasse: '',
+    plz: '',
+    ort: '',
+    projektArt: 'PAUSCHAL', // Default: Pauschalpreis
+};
+
+/** Formular ohne Verknüpfung zu einer Anfrage (Kopie, das Original bleibt unverändert). */
+function ohneAnfrage(form: ProjektErstellenPayload): ProjektErstellenPayload {
+    const kopie = { ...form };
+    delete kopie.anfrageIds;
+    return kopie;
+}
+
 interface ProjektErstellenModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -202,16 +220,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
     const [zusaetzlicheEmails, setZusaetzlicheEmails] = useState<string[]>([]);
 
     // Manual form fields
-    const [formData, setFormData] = useState<ProjektErstellenPayload>({
-        bauvorhaben: '',
-        kunde: '',
-        kundennummer: '',
-        auftragsnummer: '',
-        strasse: '',
-        plz: '',
-        ort: '',
-        projektArt: 'PAUSCHAL', // Default: Pauschalpreis
-    });
+    const [formData, setFormData] = useState<ProjektErstellenPayload>({ ...LEERES_FORMULAR });
 
     // Nächste Auftragsnummer laden. Mit kundeId folgt der Vorschlag der Kunden-Syntax
     // (YYYY/MM/NNNCC) und wir erklären dem Benutzer darunter, wie sie zustande kommt.
@@ -337,16 +346,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
             setPrefixMonat('');
             setAbgeschlossen(false);
             setZusaetzlicheEmails([]);
-            setFormData({
-                bauvorhaben: '',
-                kunde: '',
-                kundennummer: '',
-                auftragsnummer: '',
-                strasse: '',
-                plz: '',
-                ort: '',
-                projektArt: 'PAUSCHAL',
-            });
+            setFormData({ ...LEERES_FORMULAR });
             setError(null);
         } else if (editProjekt) {
             // Edit-Modus: Daten aus bestehendem Projekt laden
@@ -471,6 +471,9 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
 
     // When Anfrage is selected, prefill form including Kunde
     useEffect(() => {
+        // Wechselt der Benutzer vor der Antwort auf „Ohne Anfrage anlegen“, darf der
+        // nachgeladene Kunde der verworfenen Anfrage nicht mehr im Formular landen.
+        let verworfen = false;
         if (selectedAnfrage) {
             // Vollständige Kundendaten laden (inkl. Adresse)
             const kundeId = selectedAnfrage.kundenId;
@@ -478,6 +481,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 fetch(`/api/kunden/${kundeId}`)
                     .then(res => res.ok ? res.json() : null)
                     .then((kunde: Kunde | null) => {
+                        if (verworfen) return;
                         if (kunde) {
                             setSelectedKunde(kunde);
                         } else {
@@ -489,6 +493,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                         }
                     })
                     .catch(() => {
+                        if (verworfen) return;
                         setSelectedKunde({
                             id: kundeId,
                             name: selectedAnfrage.kundenName || '',
@@ -521,7 +526,27 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                 anfrageIds: [selectedAnfrage.id],
             });
         }
+        return () => { verworfen = true; };
     }, [selectedAnfrage]);
+
+    // „Ohne Anfrage anlegen“: Alles, was aus der gewählten Anfrage stammt, wieder leeren.
+    // Sonst bliebe die Anfrage im Formular hängen, und das Projekt würde sie beim Speichern
+    // doch übernehmen – sie verschwände dann aus der Anfragenliste.
+    const wechsleZuOhneAnfrage = () => {
+        setMode('manual');
+        if (!selectedAnfrage) {
+            setFormData(ohneAnfrage);
+            return;
+        }
+        setSelectedAnfrage(null);
+        setSelectedKunde(null);
+        setSelectedCategories([]);
+        setUseKundeAdresse(false);
+        setFormData({ ...LEERES_FORMULAR });
+        setAuftragsnummerError(null);
+        // Die vorgeschlagene Nummer folgte dem Kunden der Anfrage – ohne Kunden neu vorschlagen.
+        if (!manuelleAuftragsnummer) loadNaechsteAuftragsnummer();
+    };
 
     // When Kunde is selected manually, update formData
     const handleKundeSelect = (kunde: Kunde) => {
@@ -602,8 +627,13 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
         setError(null);
 
         try {
+            // Die Anfrage geht nur mit, wenn sie jetzt wirklich gewählt ist – nie als Rest
+            // aus einem früheren Klick (siehe wechsleZuOhneAnfrage).
             const payload = {
-                ...formData,
+                ...ohneAnfrage(formData),
+                ...(!isEditMode && mode === 'select' && selectedAnfrage
+                    ? { anfrageIds: [selectedAnfrage.id] }
+                    : {}),
                 auftragsnummer: fullAuftragsnummer, // Volle Auftragsnummer verwenden
                 kunde: selectedKunde!.name,
                 kundennummer: selectedKunde!.kundennummer,
@@ -700,7 +730,7 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                 Von Anfrage übernehmen
                             </button>
                             <button
-                                onClick={() => { setMode('manual'); setSelectedAnfrage(null); }}
+                                onClick={wechsleZuOhneAnfrage}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${mode === 'manual'
                                     ? 'bg-rose-600 text-white'
                                     : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -806,8 +836,11 @@ export const ProjektErstellenModal: React.FC<ProjektErstellenModalProps> = ({
                                         <FileText className="w-4 h-4 inline-block mr-2" />
                                         Basierend auf Anfrage: <strong>{selectedAnfrage.anfragesnummer}</strong> – {selectedAnfrage.bauvorhaben}
                                     </p>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Nach dem Anlegen gehört die Anfrage zum Projekt und steht nicht mehr in der Anfragenliste.
+                                    </p>
                                     <button onClick={() => { setSelectedAnfrage(null); setSelectedKunde(null); }} className="text-sm text-rose-600 underline mt-1">
-                                        Anderes Anfrage wählen
+                                        Andere Anfrage wählen
                                     </button>
                                 </div>
                             )}

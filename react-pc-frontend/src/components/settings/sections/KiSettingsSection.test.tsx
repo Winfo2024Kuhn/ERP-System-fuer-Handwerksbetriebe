@@ -116,12 +116,15 @@ describe('KiSettingsSection – Wortwahl und Spam-Filter', () => {
         expect(screen.queryByText(/API Key|API testen|Gemini Key/)).not.toBeInTheDocument();
     });
 
-    it('erklärt beim Spam-Filter, dass er ohne Gemini-Schlüssel läuft und bei Ausfall alles durchlässt', async () => {
+    it('erklärt beim Spam-Filter, dass er ohne Gemini-Schlüssel läuft und keine Anfrage abweist', async () => {
         stubbeServer(false);
         zeige();
 
         const beschreibung = await screen.findByText(/prüft ein Sprachmodell jede neue Anfrage/);
         expect(beschreibung).toHaveTextContent('Dafür braucht es keinen Gemini-Schlüssel');
-        expect(beschreibung).toHaveTextContent('gehen alle Anfragen durch');
+        // Ehrlich zum tatsächlichen Ablauf: gespeichert und bestätigt wird immer, geprüft erst danach.
+        expect(beschreibung).toHaveTextContent('Die Anfrage wird trotzdem immer gespeichert');
+        expect(beschreibung).toHaveTextContent('löschen Sie von Hand unter „Anfragen“');
+        expect(screen.queryByText(/nicht gesendet werden konnte|blockiert/)).not.toBeInTheDocument();
     });
 });

@@ -20,6 +20,7 @@ import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
+import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
@@ -655,7 +656,10 @@ public class AnfrageService {
             return new AnfrageGeloescht(new LoeschResult(LoeschGrund.EMAIL_VERSENDET, false,
                     "Es wurde bereits eine E-Mail zu dieser Anfrage versendet."), null);
         }
-        if (!emailRepository.findByAnfrageOrderBySentAtDesc(anfrage).isEmpty()) {
+        // Die automatische Eingangsbestätigung einer Webseiten-Anfrage ist keine Korrespondenz:
+        // Sie sperrt das Löschen nicht und bleibt danach unter „Gesendet“ stehen (Issue #272).
+        List<Email> emails = emailRepository.findByAnfrageOrderBySentAtDesc(anfrage);
+        if (emails.stream().anyMatch(e -> !e.isAutomatischeBestaetigung())) {
             return new AnfrageGeloescht(new LoeschResult(LoeschGrund.EMAIL_VORHANDEN, false,
                     "An dieser Anfrage hängen bereits E-Mails – nicht löschbar."), null);
         }
@@ -705,6 +709,10 @@ public class AnfrageService {
                         }
                     });
         }
+        for (Email bestaetigung : emails) {
+            bestaetigung.clearAssignment();
+            emailRepository.save(bestaetigung);
+        }
         deleteEmailAttachmentsDirectory(anfrage.getId());
         anfrageRepository.delete(anfrage);
         anfrageRepository.flush();
@@ -749,7 +757,7 @@ public class AnfrageService {
         dto.setId(a.getId());
         if (a.getKunde() != null) {
             dto.setKundenId(a.getKunde().getId());
-            dto.setKundenName(sanitize(a.getKunde().getName()));
+            dto.setKundenName(a.getKunde().getName());
             dto.setKundennummer(a.getKunde().getKundennummer());
             dto.setKundenEmails(a.getKunde().getKundenEmails());
             // Merge Anfrage-spezifische E-Mails dazu
@@ -768,7 +776,7 @@ public class AnfrageService {
             // Anrede als String-Name des Enum übertragen
             dto.setKundenAnrede(a.getKunde().getAnrede() != null ? a.getKunde().getAnrede().name() : null);
         }
-        dto.setBauvorhaben(sanitize(a.getBauvorhaben()));
+        dto.setBauvorhaben(a.getBauvorhaben());
         // dto values already set above based on getKunde()
 
         dto.setBetrag(a.getBetrag());
@@ -801,12 +809,6 @@ public class AnfrageService {
 
         // Legacy lookup code removed
         return dto;
-    }
-
-    private String sanitize(String s) {
-        if (s == null)
-            return null;
-        return s.replace("ß", "ss").replace("\uFFFD", "ss").replace("?", "");
     }
 
     // resolveKundenId removed
