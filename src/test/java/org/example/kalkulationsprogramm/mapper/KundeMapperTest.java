@@ -29,6 +29,7 @@ class KundeMapperTest {
         kunde.setTelefon("089 12345");
         kunde.setMobiltelefon("0171 12345");
         kunde.setKundenEmails(List.of("info@mueller-bau.de", "buchhaltung@mueller-bau.de"));
+        kunde.setZahlungsziel(14);
         return kunde;
     }
 
@@ -52,6 +53,7 @@ class KundeMapperTest {
             assertThat(dto.getTelefon()).isEqualTo("089 12345");
             assertThat(dto.getMobiltelefon()).isEqualTo("0171 12345");
             assertThat(dto.getKundenEmails()).containsExactly("info@mueller-bau.de", "buchhaltung@mueller-bau.de");
+            assertThat(dto.getZahlungsziel()).isEqualTo(14);
         }
 
         @Test
