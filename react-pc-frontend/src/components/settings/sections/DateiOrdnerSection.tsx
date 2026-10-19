@@ -107,8 +107,9 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
             title="Wo sollen Zeichnungen und Dateien liegen?"
             description={
                 <p>
-                    Dieser Ordner ist der gemeinsame Ablageort für HiCAD- und Tenado-Zeichnungen,
-                    Excel-Dateien und alles, was das Team teilt. Ein lokaler Ordner
+                    In diesen Ordner legt das Programm Zeichnungen aus HiCAD (.sza) und Tenado (.tcd) sowie
+                    Tabellen (Excel, CSV, OpenOffice), die Sie an Projekten hochladen. Andere Dateien wie PDFs
+                    und Fotos speichert das Programm an seinem eigenen Ablageort. Ein lokaler Ordner
                     (C:\Zeichnungen), ein Netzlaufwerk (Z:\Zeichnungen) oder eine Netzwerk-Adresse
                     (\\server\zeichnungen) funktionieren.
                 </p>
@@ -156,13 +157,13 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
                 onClick={() => setAnleitungOffen((prev) => !prev)}
             >
                 {anleitungOffen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                So gibst du den Ordner im Netzwerk frei
+                So geben Sie den Ordner im Netzwerk frei
             </button>
             {anleitungOffen && (
                 <div className="mt-2 p-4 rounded-lg bg-slate-50 text-sm text-slate-700 space-y-2">
                     <p>1. Im Windows-Explorer mit der rechten Maustaste auf den Ordner klicken → <strong>Eigenschaften</strong>.</p>
                     <p>2. Reiter <strong>Freigabe</strong> → <strong>Freigeben...</strong> → Kollegen oder „Jeder" hinzufügen → <strong>Freigeben</strong>.</p>
-                    <p>3. Die angezeigte Adresse (z. B. \\DEIN-PC\Zeichnungen) oben als Netzwerk-Adresse eintragen.</p>
+                    <p>3. Die angezeigte Adresse (z. B. \\BUERO-PC\Zeichnungen) oben als Netzwerk-Adresse eintragen.</p>
                     <div className="pt-2">
                         <Button variant="outline" onClick={handleFreigeben} disabled={freigebend || !pfad.trim()}>
                             {freigebend ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}

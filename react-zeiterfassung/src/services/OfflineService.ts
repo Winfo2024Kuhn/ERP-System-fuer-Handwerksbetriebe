@@ -12,6 +12,7 @@ import {
     leseWartendeEintraege,
     normalizePendingEntry,
     oeffneBuchungsDB,
+    schreibeFallsNochWartend,
     type BuchungsTyp,
     type FailedEntry,
     type PendingEntry,
@@ -86,6 +87,12 @@ interface LaufenderAbgleich {
 }
 let laufenderAbgleich: LaufenderAbgleich | null = null
 
+/**
+ * Buchungen, die sendeBuchung in diesem Moment selbst direkt sendet. Der Abgleich lässt
+ * sie in Ruhe, bis die Antwort da ist – sonst gingen sie ein zweites Mal raus.
+ */
+const direktUnterwegs = new Set<string>()
+
 function starteAbgleich(art: LaufenderAbgleich['art'], arbeit: () => Promise<SyncResult>): Promise<SyncResult> {
     const ergebnis: Promise<SyncResult> = arbeit().finally(() => {
         if (laufenderAbgleich?.ergebnis === ergebnis) laufenderAbgleich = null
@@ -138,6 +145,7 @@ function kategorienVorladen(projekte: Array<{ id: number }>) {
 // Vergisst den laufenden Abgleich. Stores separat mit clearCache/clearPending leeren.
 export function _resetForTesting() {
     laufenderAbgleich = null
+    direktUnterwegs.clear()
     laufendesVorladen = null
     letztesVorladenAm = 0
 }
@@ -248,6 +256,17 @@ export const OfflineService = {
 
             // First, sync pending entries
             const syncResult = await OfflineService._syncPendingInternal()
+            if (syncResult.wartetAufDirektSendung) {
+                // Kein Fehler: Die App sendet gerade selbst und stößt danach neu an.
+                // Stammdaten jetzt nicht nachschieben – das Gateway bremst gerade womöglich.
+                return {
+                    ...KEIN_ABGLEICH,
+                    success: true,
+                    pendingSynced: syncResult.synced,
+                    pendingDiscarded: syncResult.discarded,
+                    startSynced: syncResult.startSynced,
+                }
+            }
             if (syncResult.abgebrochen) {
                 // Server ausgelastet oder Verbindung weg: keine Stammdaten nachschieben,
                 // sonst bekommt auch der nächste Feierabend-Tipp nur „zu viele Anfragen“.
@@ -557,7 +576,7 @@ export const OfflineService = {
                 if (!await isServerReachable()) return { ...KEIN_ABGLEICH }
                 const r = await OfflineService._syncPendingInternal()
                 return {
-                    success: !r.abgebrochen,
+                    success: !r.abgebrochen || r.wartetAufDirektSendung === true,
                     pendingSynced: r.synced,
                     pendingFailed: r.failed,
                     pendingDiscarded: r.discarded,
@@ -579,7 +598,7 @@ export const OfflineService = {
     // (Android, App geschlossen) dieselbe nutzt. Die Sperre verhindert, dass App und
     // Service Worker gleichzeitig senden.
     async _syncPendingInternal() {
-        return mitWarteschlangenSperre(() => arbeiteWarteschlangeAb())
+        return mitWarteschlangenSperre(() => arbeiteWarteschlangeAb({ direktUnterwegs }))
     },
 
     // Check online status
@@ -805,26 +824,49 @@ export async function sendeBuchung(
     // Idempotenz-Schlüssel harmlos.
     const db = await oeffneBuchungsDB()
     const jetztGespeichert = new Date().toISOString()
-    await db.put('pending', {
-        id: operationId,
-        type,
-        data,
-        timestamp: jetztGespeichert,
-        originalTime,
-        status: 'inflight',
-        attemptCount: 1,
-        lastAttemptAt: jetztGespeichert,
-        durationMinutes: optionen.durationMinutes,
-    })
+    // Vor dem Speichern vormerken: Sonst könnte ein Abgleich den frisch gespeicherten
+    // Eintrag in der Lücke bis zur Vormerkung schon parallel losschicken.
+    direktUnterwegs.add(operationId)
+    try {
+        await db.put('pending', {
+            id: operationId,
+            type,
+            data,
+            timestamp: jetztGespeichert,
+            originalTime,
+            status: 'inflight',
+            attemptCount: 1,
+            lastAttemptAt: jetztGespeichert,
+            durationMinutes: optionen.durationMinutes,
+        })
+    } catch (fehler) {
+        direktUnterwegs.delete(operationId)
+        throw fehler
+    }
     // Gleich jetzt beim Browser anmelden, nicht erst nach dem Zeitlimit: Sperrt der
     // Mitarbeiter das Handy, bevor die Antwort da ist, läuft auf der eingefrorenen Seite
     // kein Timer mehr. Der Service Worker wartet frische Einträge ab (keine Doppel-Sendung).
     await hintergrundUebertragungAnmelden()
-    const eigenenEintragEntfernen = () => db.delete('pending', operationId)
+    const direktFertig = () => {
+        direktUnterwegs.delete(operationId)
+        // Hat ein Abgleich während der Sendung gewartet, jetzt weitermachen.
+        void OfflineService.getPendingCount().then(n => { if (n > 0) abgleichAnstossen() }).catch(() => undefined)
+    }
+    const eigenenEintragEntfernen = async () => {
+        try {
+            await db.delete('pending', operationId)
+        } finally {
+            direktFertig()
+        }
+    }
     const spaeterNochmal = async (): Promise<SendeBuchungErgebnis> => {
-        // Ein paralleler Abgleich kann den Eintrag schon übertragen und gelöscht haben.
-        const gespeichert = await db.get('pending', operationId)
-        if (gespeichert) await db.put('pending', { ...normalizePendingEntry(gespeichert), status: 'pending' })
+        // Ein paralleler Abgleich kann den Eintrag schon übertragen und gelöscht haben –
+        // dann darf er nicht zurückkommen (ein Schritt, siehe schreibeFallsNochWartend).
+        try {
+            await schreibeFallsNochWartend(operationId, gespeichert => ({ ...gespeichert, status: 'pending' }))
+        } finally {
+            direktUnterwegs.delete(operationId)
+        }
         abgleichAnstossen()
         return { art: 'eingereiht' }
     }

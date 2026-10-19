@@ -835,6 +835,15 @@ public class ProjektController {
         return ResponseEntity.ok(dtos);
     }
 
+    /** Bezahlte Kundenrechnungen der letzten 12 Monate, damit ein Haken „Bezahlt“ zurückgenommen werden kann. */
+    @GetMapping("/offene-posten/bezahlt")
+    public ResponseEntity<List<ProjektDokumentResponseDto>> bezahlteRechnungen() {
+        List<ProjektDokumentResponseDto> dtos = dateiSpeicherService.holeBezahlteRechnungen().stream()
+                .map(this::mappeDokumentZuDto)
+                .toList();
+        return ResponseEntity.ok(dtos);
+    }
+
     @GetMapping("/umsatz")
     public ResponseEntity<List<ProjektDokumentResponseDto>> umsatzAuswertung(@RequestParam int jahr,
             @RequestParam(required = false) Integer monat,

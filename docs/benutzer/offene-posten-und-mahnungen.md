@@ -4,7 +4,7 @@ Unter **Finanzen & Controlling → Offene Posten** stehen alle Rechnungen, die n
 
 ## Welche Kundenrechnungen stehen in den offenen Posten?
 
-Unter **Finanzen & Controlling → Offene Posten**, Reiter „Ausgangsrechnungen“, steht jede Rechnung, Abschlags-, Teil- und Schlussrechnung, sobald sie gebucht ist – also gedruckt, als PDF gespeichert oder per E-Mail verschickt (siehe [Rechnungen schreiben und stornieren](rechnungen.md)). Entwürfe stehen hier nicht. Eine stornierte Rechnung verschwindet von selbst, Stornorechnungen erscheinen nicht. Bezahlte Kundenrechnungen zeigt die Seite nicht mehr.
+Unter **Finanzen & Controlling → Offene Posten**, Reiter „Ausgangsrechnungen“, steht jede Rechnung, Abschlags-, Teil- und Schlussrechnung, sobald sie gebucht ist – also gedruckt, als PDF gespeichert oder per E-Mail verschickt (siehe [Rechnungen schreiben und stornieren](rechnungen.md)). Entwürfe stehen hier nicht. Eine stornierte Rechnung verschwindet von selbst, Stornorechnungen erscheinen nicht. Bezahlte Kundenrechnungen blendet die Seite aus; der Schalter „Bezahlte anzeigen“ holt die der letzten 12 Monate dazu.
 
 Oben stehen „Offene Summe“, „Rechnungen“, „Überfällig“ und „Mit Mahnung“. Die Tabelle zeigt „Projekt“ (Klick öffnet das Projekt), „Kunde“, „Rechnungsnr.“, „Datum“, „Versandt“, „Fällig“, „Tage“, „Betrag“, „Dokument“ und „Status“. Die neuesten Rechnungen stehen oben. Suche und Filter gibt es hier nicht.
 
@@ -21,7 +21,7 @@ In **Finanzen & Controlling → Offene Posten** zeigt die Spalte „Tage“, wie
 
 Die Rechnung verschwindet sofort aus der Liste. Es gibt keine Rückfrage.
 
-**Achtung:** Ein versehentlich gesetztes „Bezahlt“ lässt sich auf dieser Seite nicht zurücknehmen, weil bezahlte Kundenrechnungen nicht mehr angezeigt werden.
+Ein versehentlich gesetztes „Bezahlt“ nimmt man zurück, indem man „Bezahlte anzeigen“ einschaltet und bei der Rechnung das Häkchen „Bezahlt“ wieder entfernt. Die Rechnung steht dann wieder in den offenen Posten und kann wieder gemahnt werden; ein Projekt, das dadurch nicht mehr voll bezahlt ist, gilt wieder als offen. Stornierte Rechnungen erscheinen dort nicht und bleiben erledigt.
 
 Teilzahlungen, ein Zahlungsdatum und Skonto gibt es bei Kundenrechnungen nicht – eine Rechnung ist entweder offen oder bezahlt. Einen Abgleich mit dem Bankkonto oder einen Kontoauszug-Import gibt es nicht.
 

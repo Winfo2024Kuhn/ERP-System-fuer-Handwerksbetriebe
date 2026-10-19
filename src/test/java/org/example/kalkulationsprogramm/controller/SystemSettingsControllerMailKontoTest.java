@@ -35,6 +35,16 @@ class SystemSettingsControllerMailKontoTest {
     @MockBean private PostfachUmzugService postfachUmzugService;
 
     @Test
+    void kiSchluesselEntfernen() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/settings/gemini"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.message")
+                        .value("KI-Schlüssel entfernt."));
+
+        verify(settingsService).entferneGeminiApiKey();
+    }
+
+    @Test
     void smtpSpeichernGleichtVersandAb() throws Exception {
         mockMvc.perform(put("/api/settings/smtp").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"host\":\"mail.example.com\",\"port\":465,\"username\":\"info@example.com\",\"password\":\"pw\"}"))

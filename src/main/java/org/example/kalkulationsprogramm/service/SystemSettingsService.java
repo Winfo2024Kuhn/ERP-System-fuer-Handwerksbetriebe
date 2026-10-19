@@ -705,6 +705,13 @@ public class SystemSettingsService {
         log.info("Gemini API Key aktualisiert");
     }
 
+    /** Löscht den Schlüssel: leer gespeichert, damit auch ein Wert aus den Properties nicht mehr greift. */
+    @Transactional
+    public void entferneGeminiApiKey() {
+        save("ai.gemini.api-key", "", "Google Gemini API Key");
+        log.info("Gemini API Key entfernt");
+    }
+
     // ==================== Tests ====================
 
     /**

@@ -177,6 +177,27 @@ export async function leseWartendeEintraege(): Promise<PendingEntry[]> {
 }
 
 /**
+ * Schreibt einen wartenden Eintrag zurück – aber nur, wenn es ihn noch gibt. Lesen und
+ * Schreiben laufen in EINEM Datenbankschritt: Sonst kann ein paralleler Abgleich den
+ * Eintrag dazwischen übertragen und löschen, und er stünde danach wieder in der
+ * Warteschlange (und ginge ein weiteres Mal raus).
+ *
+ * @returns der geschriebene Eintrag, oder null, wenn es ihn nicht mehr gab
+ */
+export async function schreibeFallsNochWartend(
+    id: string,
+    aendern: (gespeichert: PendingEntry) => PendingEntry,
+): Promise<PendingEntry | null> {
+    const db = await oeffneBuchungsDB()
+    const tx = db.transaction('pending', 'readwrite')
+    const gespeichert = await tx.store.get(id)
+    const neu = gespeichert ? aendern(normalizePendingEntry(gespeichert)) : null
+    if (neu) await tx.store.put(neu)
+    await tx.done
+    return neu
+}
+
+/**
  * So lange gilt eine Buchung, die die App gerade selbst sendet, als „noch unterwegs“.
  * Der Service Worker fasst sie in dieser Zeit nicht an (sonst ginge sie doppelt raus).
  */
@@ -193,18 +214,22 @@ function istFrischUnterwegs(entry: PendingEntry): boolean {
  * Gibt Einträge frei, die noch als „wird gerade gesendet“ markiert sind – etwa weil
  * die App mitten im Senden eingefroren oder beendet wurde.
  */
-export async function gibHaengendeEintraegeFrei() {
+export async function gibHaengendeEintraegeFrei(ausnehmen: ReadonlySet<string> = new Set()) {
+    // Ein Datenbankschritt: Ein gerade gelöschter (übertragener) Eintrag kommt nicht zurück.
     const db = await oeffneBuchungsDB()
-    const entries = await leseWartendeEintraege()
-    for (const entry of entries) {
-        if (entry.status === 'inflight') {
-            await db.put('pending', {
+    const tx = db.transaction('pending', 'readwrite')
+    for (let cursor = await tx.store.openCursor(); cursor; cursor = await cursor.continue()) {
+        const entry = normalizePendingEntry(cursor.value)
+        // Was die App gerade selbst direkt sendet, ist nicht hängengeblieben.
+        if (entry.status === 'inflight' && !ausnehmen.has(entry.id)) {
+            await cursor.update({
                 ...entry,
                 status: 'pending',
                 lastError: entry.lastError || 'Recovered inflight entry for retry',
             })
         }
     }
+    await tx.done
 }
 
 export interface WarteschlangenErgebnis {
@@ -214,6 +239,11 @@ export interface WarteschlangenErgebnis {
     startSynced: boolean
     /** true = wegen Netz-/Serverproblem beendet; der Rest bleibt in der Warteschlange */
     abgebrochen: boolean
+    /**
+     * true = nur gewartet, weil die App eine Buchung gerade selbst direkt sendet. Kein
+     * Fehler: Nach der Antwort stößt sendeBuchung den nächsten Abgleich an.
+     */
+    wartetAufDirektSendung?: boolean
 }
 
 /**
@@ -228,7 +258,15 @@ export interface WarteschlangenErgebnis {
  * Ohne Sperre: Aufrufer nutzen {@link mitWarteschlangenSperre}.
  */
 export async function arbeiteWarteschlangeAb(
-    optionen: { frischUnterwegsAbwarten?: boolean } = {},
+    optionen: {
+        frischUnterwegsAbwarten?: boolean
+        /**
+         * IDs, die die App in diesem Moment selbst direkt sendet (sendeBuchung). Solange
+         * eine davon wartet, sendet der Abgleich gar nichts: Er würde sie sonst doppelt
+         * schicken – oder eine spätere Buchung an ihr vorbei.
+         */
+        direktUnterwegs?: ReadonlySet<string>
+    } = {},
 ): Promise<WarteschlangenErgebnis> {
     // Service Worker: Sendet die App gerade selbst (Handy eben erst gesperrt), nicht
     // dazwischenfunken – abbrechen, der Browser versucht es später erneut.
@@ -239,7 +277,22 @@ export async function arbeiteWarteschlangeAb(
             return { synced: 0, failed: unterwegs.length, discarded: 0, startSynced: false, abgebrochen: true }
         }
     }
-    await gibHaengendeEintraegeFrei()
+    const direktUnterwegs = optionen.direktUnterwegs ?? new Set<string>()
+    // Nur frische zählen: Friert Android die Seite mitten im Senden ein, soll eine solche
+    // Buchung nach spätestens FRISCH_UNTERWEGS_MS wieder vom Abgleich gesendet werden.
+    const veralteteDirektSendungen = new Set<string>()
+    if (direktUnterwegs.size > 0) {
+        const vorgemerkt = (await leseWartendeEintraege()).filter(e => direktUnterwegs.has(e.id))
+        for (const e of vorgemerkt) if (!istFrischUnterwegs(e)) veralteteDirektSendungen.add(e.id)
+        const unterwegs = vorgemerkt.filter(e => !veralteteDirektSendungen.has(e.id))
+        if (unterwegs.length > 0) {
+            // Nach der Direkt-Sendung stößt sendeBuchung den nächsten Abgleich selbst an.
+            console.log(`⏳ ${unterwegs.length} Buchung(en) werden gerade direkt gesendet - danach weiter`)
+            return { synced: 0, failed: 0, discarded: 0, startSynced: false, abgebrochen: true, wartetAufDirektSendung: true }
+        }
+    }
+    const wirdDirektGesendet = (id: string) => direktUnterwegs.has(id) && !veralteteDirektSendungen.has(id)
+    await gibHaengendeEintraegeFrei(new Set([...direktUnterwegs].filter(wirdDirektGesendet)))
     const db = await oeffneBuchungsDB()
     const pending = await leseWartendeEintraege()
     if (pending.length === 0) return { synced: 0, failed: 0, discarded: 0, startSynced: false, abgebrochen: false }
@@ -251,11 +304,12 @@ export async function arbeiteWarteschlangeAb(
     let discarded = 0
     let startSynced = false
     let abgebrochen = false
+    let wartetAufDirektSendung = false
 
     // Nur zurückschreiben, wenn der Eintrag noch da ist: sendeBuchung kann dieselbe
     // Buchung gleichzeitig erfolgreich übertragen und schon gelöscht haben.
     const zurueckInDieWarteschlange = async (eintrag: PendingEntry) => {
-        if (await db.get('pending', eintrag.id)) await db.put('pending', eintrag)
+        await schreibeFallsNochWartend(eintrag.id, () => eintrag)
     }
     const mitServerfehler = (eintrag: PendingEntry): PendingEntry => ({
         ...eintrag,
@@ -290,22 +344,27 @@ export async function arbeiteWarteschlangeAb(
     for (let i = 0; i < pending.length; i++) {
         const entry = pending[i]
 
-        // Verify entry still exists in IDB (another sync might have processed it)
-        const storedEntry = await db.get('pending', entry.id)
-        const stillExists = storedEntry ? normalizePendingEntry(storedEntry) : null
-        if (!stillExists) {
+        // Hat die App diese Buchung inzwischen selbst direkt losgeschickt: anhalten, damit
+        // sie nicht doppelt rausgeht und nichts Späteres an ihr vorbeizieht.
+        if (wirdDirektGesendet(entry.id)) {
+            wartetAufDirektSendung = true
+            abgebrochen = true
+            break
+        }
+
+        // Nur senden, wenn der Eintrag noch da ist (ein anderer Weg kann ihn schon
+        // übertragen haben) – prüfen und als „wird gesendet“ markieren in einem Schritt.
+        const inflightEntry = await schreibeFallsNochWartend(entry.id, gespeichert => ({
+            ...gespeichert,
+            status: 'inflight',
+            attemptCount: gespeichert.attemptCount + 1,
+            lastAttemptAt: new Date().toISOString(),
+            lastError: undefined,
+        }))
+        if (!inflightEntry) {
             console.log(`⏭️ Entry bereits verarbeitet: ${entry.type} (${entry.id.substring(0, 8)})`)
             continue
         }
-
-        const inflightEntry: PendingEntry = {
-            ...stillExists,
-            status: 'inflight',
-            attemptCount: stillExists.attemptCount + 1,
-            lastAttemptAt: new Date().toISOString(),
-            lastError: undefined,
-        }
-        await db.put('pending', inflightEntry)
 
         // Der Service Worker läuft ohne den Token-Zusatz der App (auth/mobileTransport),
         // deshalb den Zugang hier selbst mitschicken. In der App setzt der Zusatz ihn erneut.
@@ -380,7 +439,7 @@ export async function arbeiteWarteschlangeAb(
     }
 
     console.log(`📊 Sync-Ergebnis: ${synced} OK, ${discarded} verworfen, ${failed} fehlgeschlagen`)
-    return { synced, failed, discarded, startSynced, abgebrochen }
+    return { synced, failed, discarded, startSynced, abgebrochen, wartetAufDirektSendung }
 }
 
 // ==================== HINTERGRUND-ÜBERTRAGUNG (Android) ====================

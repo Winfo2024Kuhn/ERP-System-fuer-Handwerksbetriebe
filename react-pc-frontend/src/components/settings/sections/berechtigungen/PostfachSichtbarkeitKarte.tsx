@@ -120,7 +120,7 @@ export function PostfachSichtbarkeitKarte() {
             title="E-Mail-Postfächer – wer sieht welches Postfach?"
             description={
                 <p>
-                    Hier legst du fest, wer im E-Mail-Center die Mails eines Postfachs sieht. Das Hauptpostfach
+                    Hier legen Sie fest, wer im E-Mail-Center die Mails eines Postfachs sieht. Das Hauptpostfach
                     sieht jeder. Der Inhaber eines Postfachs und Admins sehen es immer. Mails, die einem Projekt,
                     einer Anfrage oder einem Lieferanten zugeordnet sind, sieht jeder in diesen Reitern.
                 </p>
@@ -144,9 +144,9 @@ export function PostfachSichtbarkeitKarte() {
                     <Inbox className="h-8 w-8 text-slate-400" aria-hidden="true" />
                     <p className="font-medium text-slate-700">Noch kein Postfach eingerichtet.</p>
                     <p className="max-w-md text-sm text-slate-500">
-                        Postfächer legst du unter{' '}
+                        Postfächer legen Sie unter{' '}
                         <a href="#email" className={reiterLink}>Einstellungen → E-Mail</a>{' '}
-                        an. Danach stellst du hier ein, wer sie sehen darf.
+                        an. Danach stellen Sie hier ein, wer sie sehen darf.
                     </p>
                 </div>
             ) : (

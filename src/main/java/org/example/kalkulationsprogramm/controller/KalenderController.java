@@ -5,7 +5,9 @@ import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.KalenderService;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -54,9 +56,10 @@ public class KalenderController {
             String anfrageBetreff,
             Long erstellerId,
             String erstellerName,
-            List<TeilnehmerDto> teilnehmer) {
+            List<TeilnehmerDto> teilnehmer,
+            boolean darfBearbeiten) {
 
-        static KalenderEintragDto fromEntity(KalenderEintrag e) {
+        static KalenderEintragDto fromEntity(KalenderEintrag e, boolean darfBearbeiten) {
             List<TeilnehmerDto> teilnehmerDtos = new ArrayList<>();
             if (e.getTeilnehmer() != null) {
                 teilnehmerDtos = e.getTeilnehmer().stream()
@@ -84,32 +87,32 @@ public class KalenderController {
                     e.getErsteller() != null ? e.getErsteller().getId() : null,
                     e.getErsteller() != null ? e.getErsteller().getVorname() + " " + e.getErsteller().getNachname()
                             : null,
-                    teilnehmerDtos);
+                    teilnehmerDtos,
+                    darfBearbeiten);
         }
     }
 
     /**
-     * Lädt alle Einträge für einen Monat.
-     * Optional: Wenn mitarbeiterId angegeben, werden nur relevante Einträge für
-     * diesen Mitarbeiter gezeigt.
+     * Lädt die Termine eines Zeitraums ({@code von}/{@code bis}, z. B. die sichtbare Woche)
+     * oder eines Monats ({@code jahr}/{@code monat}). Welche Termine man sieht, entscheidet
+     * die Anmeldung; {@code mitarbeiterId} wirkt nur für Admins.
      */
     @GetMapping
     public ResponseEntity<List<KalenderEintragDto>> getEintraege(
-            @RequestParam int jahr,
-            @RequestParam int monat,
-            @RequestParam(required = false) Long mitarbeiterId) {
-        List<KalenderEintrag> eintraege;
-        if (mitarbeiterId != null) {
-            // Gefilterte Ansicht: Nur Termine für diesen Mitarbeiter
-            eintraege = kalenderService.getEintraegeForMitarbeiter(mitarbeiterId, jahr, monat);
-        } else {
-            // Keine Filterung: Alle Termine (für Admin-Ansicht etc.)
-            eintraege = kalenderService.getEintraegeForMonat(jahr, monat);
+            @RequestParam(required = false) Integer jahr,
+            @RequestParam(required = false) Integer monat,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate von,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate bis,
+            @RequestParam(required = false) Long mitarbeiterId,
+            Authentication authentication) {
+        if (von == null && bis == null && jahr != null && monat != null) {
+            LocalDate[] zeitraum = KalenderService.monatsZeitraum(jahr, monat);
+            von = zeitraum[0];
+            bis = zeitraum[1];
         }
-        List<KalenderEintragDto> dtos = eintraege.stream()
-                .map(KalenderEintragDto::fromEntity)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(dtos);
+        KalenderService.KalenderBetrachter betrachter = kalenderService.betrachter(authentication);
+        List<KalenderEintrag> eintraege = kalenderService.sichtbareEintraege(betrachter, von, bis, mitarbeiterId);
+        return ResponseEntity.ok(alsDtos(eintraege, betrachter));
     }
 
     // ==================== MOBILE ENDPOINTS (Token-basiert) ====================
@@ -128,10 +131,7 @@ public class KalenderController {
         }
 
         List<KalenderEintrag> eintraege = kalenderService.getEintraegeForMitarbeiter(mitarbeiter.getId(), jahr, monat);
-        List<KalenderEintragDto> dtos = eintraege.stream()
-                .map(KalenderEintragDto::fromEntity)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(dtos);
+        return ResponseEntity.ok(alsDtos(eintraege, handyBetrachter(mitarbeiter)));
     }
 
     /**
@@ -148,26 +148,23 @@ public class KalenderController {
 
         LocalDate localDate = LocalDate.parse(datum);
         List<KalenderEintrag> eintraege = kalenderService.getEintraegeForMitarbeiterTag(mitarbeiter.getId(), localDate);
-        List<KalenderEintragDto> dtos = eintraege.stream()
-                .map(KalenderEintragDto::fromEntity)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(dtos);
+        return ResponseEntity.ok(alsDtos(eintraege, handyBetrachter(mitarbeiter)));
     }
 
     /**
-     * Lädt einen einzelnen Eintrag.
+     * Lädt einen einzelnen Eintrag – 404, wenn er nicht sichtbar ist.
      */
     @GetMapping("/{id}")
-    public ResponseEntity<KalenderEintragDto> getEintrag(@PathVariable Long id) {
-        KalenderEintrag eintrag = kalenderService.getEintragWithTeilnehmer(id);
-        if (eintrag == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(KalenderEintragDto.fromEntity(eintrag));
+    public ResponseEntity<KalenderEintragDto> getEintrag(@PathVariable Long id, Authentication authentication) {
+        KalenderService.KalenderBetrachter betrachter = kalenderService.betrachter(authentication);
+        KalenderEintrag eintrag = kalenderService.sichtbarerEintrag(id, betrachter);
+        return ResponseEntity.ok(KalenderEintragDto.fromEntity(eintrag, kalenderService.darfBearbeiten(eintrag, betrachter)));
     }
 
     /**
-     * Request-Body für Erstellen/Aktualisieren.
+     * Request-Body für Erstellen/Aktualisieren. {@code erstellerId} wird ignoriert –
+     * der Ersteller kommt aus der Anmeldung; das Feld bleibt nur für ältere Aufrufer.
+     * {@code teilnehmerIds}: {@code null} = unverändert, leere Liste = alle entfernen.
      */
     public record KalenderEintragRequest(
             String titel,
@@ -183,70 +180,54 @@ public class KalenderController {
             Long anfrageId,
             List<Long> teilnehmerIds,
             Long erstellerId) {
+
+        KalenderService.TerminDaten alsDaten() {
+            return new KalenderService.TerminDaten(titel, beschreibung, datum, startZeit, endeZeit, ganztaegig,
+                    farbe, projektId, kundeId, lieferantId, anfrageId, teilnehmerIds);
+        }
     }
 
     /**
      * Erstellt einen neuen Kalendereintrag (PC-Frontend).
      */
     @PostMapping
-    public ResponseEntity<KalenderEintragDto> createEintrag(@RequestBody KalenderEintragRequest request) {
-        KalenderEintrag eintrag = new KalenderEintrag();
-        eintrag.setTitel(request.titel());
-        eintrag.setBeschreibung(request.beschreibung());
-        eintrag.setDatum(request.datum());
-        eintrag.setStartZeit(request.startZeit());
-        eintrag.setEndeZeit(request.endeZeit());
-        eintrag.setGanztaegig(request.ganztaegig());
-        eintrag.setFarbe(request.farbe());
-
-        KalenderEintrag saved = kalenderService.saveEintrag(
-                eintrag,
-                request.projektId(),
-                request.kundeId(),
-                request.lieferantId(),
-                request.anfrageId(),
-                request.erstellerId(),
-                request.teilnehmerIds());
-        return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved));
+    public ResponseEntity<KalenderEintragDto> createEintrag(@RequestBody KalenderEintragRequest request,
+            Authentication authentication) {
+        KalenderService.KalenderBetrachter betrachter = kalenderService.betrachter(authentication);
+        KalenderEintrag saved = kalenderService.erstellen(request.alsDaten(), betrachter);
+        return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved, kalenderService.darfBearbeiten(saved, betrachter)));
     }
 
     /**
-     * Aktualisiert einen bestehenden Kalendereintrag.
+     * Aktualisiert einen bestehenden Kalendereintrag (Ersteller, Teilnehmer, Admins).
      */
     @PutMapping("/{id}")
     public ResponseEntity<KalenderEintragDto> updateEintrag(
             @PathVariable Long id,
-            @RequestBody KalenderEintragRequest request) {
-        KalenderEintrag existing = kalenderService.getEintrag(id);
-        if (existing == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        existing.setTitel(request.titel());
-        existing.setBeschreibung(request.beschreibung());
-        existing.setDatum(request.datum());
-        existing.setStartZeit(request.startZeit());
-        existing.setEndeZeit(request.endeZeit());
-        existing.setGanztaegig(request.ganztaegig());
-        existing.setFarbe(request.farbe());
-
-        KalenderEintrag saved = kalenderService.saveEintrag(
-                existing,
-                request.projektId(),
-                request.kundeId(),
-                request.lieferantId(),
-                request.anfrageId(),
-                null,
-                request.teilnehmerIds());
-        return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved));
+            @RequestBody KalenderEintragRequest request,
+            Authentication authentication) {
+        KalenderService.KalenderBetrachter betrachter = kalenderService.betrachter(authentication);
+        KalenderEintrag saved = kalenderService.aktualisieren(id, request.alsDaten(), betrachter);
+        return ResponseEntity.ok(KalenderEintragDto.fromEntity(saved, kalenderService.darfBearbeiten(saved, betrachter)));
     }
 
     /**
-     * Löscht einen Kalendereintrag.
+     * Löscht einen Kalendereintrag (Ersteller, Teilnehmer, Admins).
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Boolean>> deleteEintrag(@PathVariable Long id) {
-        kalenderService.deleteEintrag(id);
+    public ResponseEntity<Map<String, Boolean>> deleteEintrag(@PathVariable Long id, Authentication authentication) {
+        kalenderService.loeschen(id, kalenderService.betrachter(authentication));
         return ResponseEntity.ok(Map.of("deleted", true));
+    }
+
+    private List<KalenderEintragDto> alsDtos(List<KalenderEintrag> eintraege, KalenderService.KalenderBetrachter betrachter) {
+        return eintraege.stream()
+                .map(e -> KalenderEintragDto.fromEntity(e, kalenderService.darfBearbeiten(e, betrachter)))
+                .collect(Collectors.toList());
+    }
+
+    /** In der Handy-App ändert niemand Termine; der Wert sagt nur, ob man beteiligt ist. */
+    private static KalenderService.KalenderBetrachter handyBetrachter(Mitarbeiter mitarbeiter) {
+        return new KalenderService.KalenderBetrachter(mitarbeiter.getId(), false);
     }
 }

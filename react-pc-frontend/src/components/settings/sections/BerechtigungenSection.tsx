@@ -233,7 +233,7 @@ export function BerechtigungenSection() {
                     title="Rechte pro Abteilung"
                     description={
                         <>
-                            <p>Hier legst du fest, was die Mitarbeiter einer Abteilung sehen und tun dürfen.</p>
+                            <p>Hier legen Sie fest, was die Mitarbeiter einer Abteilung sehen und tun dürfen.</p>
                             <p>
                                 <strong className="font-medium text-slate-700">Sehen:</strong> Der Mitarbeiter sieht diese Dokumente in der App.{' '}
                                 <strong className="font-medium text-slate-700">Scannen:</strong> Er darf sie auch hochladen – das schließt „Sehen“ mit ein.
@@ -249,7 +249,7 @@ export function BerechtigungenSection() {
                     )}
                     {!loadError && abteilungen.length === 0 && (
                         <p className="text-sm text-slate-500">
-                            Noch keine Abteilungen angelegt. Abteilungen legst du im Mitarbeiter-Bereich an.
+                            Noch keine Abteilungen angelegt. Abteilungen legen Sie unter Vorlagen & Stammdaten → Arbeitsgänge mit „Abteilung anlegen“ an. Beim Mitarbeiter weisen Sie die Abteilung danach nur noch zu.
                         </p>
                     )}
                 </SettingsCard>

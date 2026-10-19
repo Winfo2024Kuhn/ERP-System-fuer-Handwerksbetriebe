@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { RefreshCw, FileText, AlertTriangle, Building2, ArrowUpRight, Clock, BadgeAlert, Wallet } from 'lucide-react';
+import { RefreshCw, FileText, AlertTriangle, Building2, ArrowUpRight, Clock, BadgeAlert, Wallet, CheckCircle2 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import type { OffenerPosten, Mahnstufe } from '../types';
 import EingangsrechnungenTab from '../components/EingangsrechnungenTab';
@@ -11,6 +11,8 @@ import { scrolleMittigInDenBlick } from '../lib/scrollInDenBlick';
 import { useHakenSpeichern } from '../hooks/useHakenSpeichern';
 import { cn } from '../lib/utils';
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
+import { useToast } from '../components/ui/toast';
+import { leseFehlermeldung } from '../lib/apiFehler';
 
 
 // Mahnstufe labels
@@ -62,10 +64,22 @@ const beschreibeFaelligkeit = (isoText: string | undefined | null): {
 function BezahltInfo() {
     return <InfoButton titel="Haken „Bezahlt“">
         <InfoAbschnitt titel="Was passiert im Hintergrund?">
-            <p>Die Rechnung wird als bezahlt gespeichert und verschwindet aus dieser Liste. Danach prüft das Programm das ganze Projekt: Sind alle Rechnungen geschrieben und gebucht, ist keine mehr offen und deckt das bezahlte Geld den Auftragspreis, gilt das Projekt als bezahlt und wird automatisch beendet.</p>
+            <p>Die Rechnung wird als bezahlt gespeichert und verschwindet aus den offenen Posten (über „Bezahlte anzeigen“ sehen Sie sie weiter). Danach prüft das Programm das ganze Projekt: Sind alle Rechnungen geschrieben und gebucht, ist keine mehr offen und deckt das bezahlte Geld den Auftragspreis, gilt das Projekt als bezahlt und wird automatisch beendet.</p>
         </InfoAbschnitt>
         <InfoAbschnitt titel="Was bewirkt das?">
             <p>Die Rechnung selbst (Betrag, PDF) ändert sich nicht, und der Kunde bekommt nichts geschickt. Haben Sie das Projekt von Hand beendet oder wieder geöffnet, bleibt es dabei.</p>
+        </InfoAbschnitt>
+    </InfoButton>;
+}
+
+/** Erklärt den Schalter „Bezahlte anzeigen“ und was das Herausnehmen des Hakens bewirkt. */
+function BezahlteAnzeigenInfo() {
+    return <InfoButton titel="Bezahlte anzeigen">
+        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+            <p>Zeigt zusätzlich die Kundenrechnungen der letzten 12 Monate, die schon als bezahlt markiert sind. Stornierte Rechnungen erscheinen hier nicht.</p>
+        </InfoAbschnitt>
+        <InfoAbschnitt titel="Was bewirkt das?">
+            <p>Nehmen Sie den Haken „Bezahlt“ heraus, ist die Rechnung wieder offen: Sie steht wieder in den offenen Posten, kann wieder gemahnt werden, und ein Projekt, das dadurch nicht mehr voll bezahlt ist, gilt wieder als offen. Die Rechnung selbst und ihre Nummer bleiben unverändert.</p>
         </InfoAbschnitt>
     </InfoButton>;
 }
@@ -76,9 +90,44 @@ interface InvoiceWithReminders {
     mahnungen: OffenerPosten[];
 }
 
+/** Ordnet Mahnungen ihrer Rechnung zu; Rechnungen neueste zuerst, Mahnungen in Versandreihenfolge. */
+function gruppiereRechnungen(items: OffenerPosten[]): InvoiceWithReminders[] {
+    const childrenByParent = new Map<number, OffenerPosten[]>();
+    const invoices: OffenerPosten[] = [];
+
+    items.forEach(doc => {
+        if (doc.mahnung && doc.referenzDokumentId) {
+            const list = childrenByParent.get(doc.referenzDokumentId) || [];
+            list.push(doc);
+            childrenByParent.set(doc.referenzDokumentId, list);
+        } else {
+            invoices.push(doc);
+        }
+    });
+
+    invoices.sort((a, b) => {
+        const dateA = a.rechnungsdatum ? new Date(a.rechnungsdatum).getTime() : 0;
+        const dateB = b.rechnungsdatum ? new Date(b.rechnungsdatum).getTime() : 0;
+        return dateB - dateA;
+    });
+
+    return invoices.map(invoice => ({
+        invoice,
+        mahnungen: (childrenByParent.get(invoice.id) || []).sort((a, b) => {
+            const dateA = a.uploadDatum ? new Date(a.uploadDatum).getTime() : 0;
+            const dateB = b.uploadDatum ? new Date(b.uploadDatum).getTime() : 0;
+            return dateA - dateB;
+        })
+    }));
+}
+
 export default function OffenePostenEditor() {
+    const toast = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
     const [items, setItems] = useState<OffenerPosten[]>([]);
+    // Bezahlte Kundenrechnungen (letzte 12 Monate) – nur geladen, solange „Bezahlte anzeigen“ an ist.
+    const [showBezahlt, setShowBezahlt] = useState(false);
+    const [bezahlteItems, setBezahlteItems] = useState<OffenerPosten[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
@@ -142,41 +191,42 @@ export default function OffenePostenEditor() {
         }
     }, []);
 
+    // Bezahlte Rechnungen laden. Fehler zeigt ein Toast; die offenen Posten bleiben davon unberührt.
+    const loadBezahlte = useCallback(async () => {
+        try {
+            const res = await fetch('/api/projekte/offene-posten/bezahlt');
+            if (!res.ok) {
+                toast.error(await leseFehlermeldung(res, 'Die bezahlten Rechnungen konnten nicht geladen werden.'));
+                return;
+            }
+            const data: unknown = await res.json();
+            setBezahlteItems(Array.isArray(data) ? data as OffenerPosten[] : []);
+        } catch {
+            toast.error('Die bezahlten Rechnungen konnten nicht geladen werden. Bitte die Verbindung prüfen.');
+        }
+    }, [toast]);
+
     useEffect(() => {
         loadData();
     }, [loadData]);
 
-    // Group invoices with their reminders
-    const groupedInvoices = useMemo((): InvoiceWithReminders[] => {
-        const childrenByParent = new Map<number, OffenerPosten[]>();
-        const invoices: OffenerPosten[] = [];
+    useEffect(() => {
+        if (showBezahlt) void loadBezahlte();
+        else setBezahlteItems([]);
+    }, [showBezahlt, loadBezahlte]);
 
-        items.forEach(doc => {
-            if (doc.mahnung && doc.referenzDokumentId) {
-                const list = childrenByParent.get(doc.referenzDokumentId) || [];
-                list.push(doc);
-                childrenByParent.set(doc.referenzDokumentId, list);
-            } else {
-                invoices.push(doc);
-            }
-        });
+    // Nach einem Haken beide Listen neu laden, damit die Rechnung in die richtige Liste wandert.
+    const neuLaden = useCallback(async () => {
+        await Promise.all([loadData(), showBezahlt ? loadBezahlte() : Promise.resolve()]);
+    }, [loadData, loadBezahlte, showBezahlt]);
 
-        // Sort invoices by date descending
-        invoices.sort((a, b) => {
-            const dateA = a.rechnungsdatum ? new Date(a.rechnungsdatum).getTime() : 0;
-            const dateB = b.rechnungsdatum ? new Date(b.rechnungsdatum).getTime() : 0;
-            return dateB - dateA;
-        });
-
-        return invoices.map(invoice => ({
-            invoice,
-            mahnungen: (childrenByParent.get(invoice.id) || []).sort((a, b) => {
-                const dateA = a.uploadDatum ? new Date(a.uploadDatum).getTime() : 0;
-                const dateB = b.uploadDatum ? new Date(b.uploadDatum).getTime() : 0;
-                return dateA - dateB;
-            })
-        }));
-    }, [items]);
+    // Group invoices with their reminders – nur die offenen zählen für Summen und Kennzahlen.
+    const groupedInvoices = useMemo(() => gruppiereRechnungen(items), [items]);
+    const bezahlteGruppen = useMemo(() => {
+        if (!showBezahlt) return [];
+        const offeneIds = new Set(items.map(i => i.id));
+        return gruppiereRechnungen(bezahlteItems.filter(i => !offeneIds.has(i.id)));
+    }, [items, bezahlteItems, showBezahlt]);
 
     // Calculate total sum
     const totalSum = useMemo(() => {
@@ -211,22 +261,37 @@ export default function OffenePostenEditor() {
     }, [groupedInvoices]);
 
     // Haken „Bezahlt“: Zeile während des Speicherns gesperrt, Fehler als Toast, danach neu laden.
-    const { inArbeit: bezahltWirdGespeichert, speichern } = useHakenSpeichern(loadData);
+    const { inArbeit: bezahltWirdGespeichert, speichern } = useHakenSpeichern(neuLaden);
 
-    const toggleBezahlt = (id: number, currentValue: boolean) => speichern({
-        id,
-        senden: () => fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${!currentValue}`, { method: 'PATCH' }),
-        fehlertext: currentValue
-            ? 'Die Rechnung konnte nicht wieder auf offen gesetzt werden.'
-            : 'Die Rechnung konnte nicht als bezahlt markiert werden.',
-    });
+    const toggleBezahlt = async (id: number, currentValue: boolean) => {
+        let gespeichert = false;
+        await speichern({
+            id,
+            senden: async () => {
+                const res = await fetch(`/api/projekte/dokumente/${id}/bezahlt?bezahlt=${!currentValue}`, { method: 'PATCH' });
+                gespeichert = res.ok;
+                return res;
+            },
+            fehlertext: currentValue
+                ? 'Die Rechnung konnte nicht wieder auf offen gesetzt werden.'
+                : 'Die Rechnung konnte nicht als bezahlt markiert werden.',
+        });
+        if (!gespeichert) return;
+        // Der Toast kann keine Knöpfe – deshalb der Hinweis, wo man den Haken zurücknimmt.
+        if (currentValue) toast.success('Die Rechnung ist wieder offen.');
+        else toast.success('Als bezahlt markiert. Über „Bezahlte anzeigen“ können Sie den Haken wieder herausnehmen.', 6000);
+    };
 
     const navigate = useNavigate();
 
     // Render invoice row
-    const renderInvoiceRow = (item: InvoiceWithReminders) => {
-        const { invoice, mahnungen } = item;
-        const faelligInfo = beschreibeFaelligkeit(invoice.faelligkeitsdatum);
+    const renderInvoiceRow = (item: InvoiceWithReminders, erledigt = false) => {
+        const { invoice } = item;
+        // Bei bezahlten Rechnungen sind Mahnungen und Fälligkeit erledigt.
+        const mahnungen = erledigt ? [] : item.mahnungen;
+        const faelligInfo = erledigt
+            ? { label: 'Bezahlt', className: 'text-slate-400', diffTage: null }
+            : beschreibeFaelligkeit(invoice.faelligkeitsdatum);
         const tageBis = faelligInfo.diffTage;
         const tageBisText = tageBis != null ? (tageBis > 0 ? `+${tageBis}` : `${tageBis}`) : '–';
         const letzteMahnung = mahnungen.length > 0 ? mahnungen[mahnungen.length - 1] : null;
@@ -236,8 +301,13 @@ export default function OffenePostenEditor() {
                 {/* Main invoice row */}
                 <tr
                     data-dokument-id={invoice.id}
+                    data-bezahlt={erledigt || undefined}
                     aria-busy={bezahltWirdGespeichert.has(invoice.id) || undefined}
-                    className={`align-top transition-all ${mahnungen.length > 0 ? 'border-l-4 border-amber-300 bg-white hover:bg-rose-50/30' : 'bg-white hover:bg-slate-50/80'}`}
+                    className={cn(
+                        'align-top transition-all',
+                        erledigt ? 'bg-slate-50/70 text-slate-500 hover:bg-slate-100/70'
+                            : mahnungen.length > 0 ? 'border-l-4 border-amber-300 bg-white hover:bg-rose-50/30' : 'bg-white hover:bg-slate-50/80',
+                    )}
                 >
                     {/* Projekt */}
                     <td className="px-4 py-3 text-sm">
@@ -276,7 +346,7 @@ export default function OffenePostenEditor() {
                         {tageBisText}
                     </td>
                     {/* Betrag */}
-                    <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900 whitespace-nowrap">
+                    <td className={cn('px-4 py-3 text-right text-sm font-semibold whitespace-nowrap', erledigt ? 'text-slate-500' : 'text-slate-900')}>
                         {invoice.rechnungsbetrag != null ? `${formatEuro(invoice.rechnungsbetrag)} €` : '–'}
                     </td>
                     {/* Dokument */}
@@ -302,7 +372,8 @@ export default function OffenePostenEditor() {
                         <label
                             title={bezahltWirdGespeichert.has(invoice.id) ? 'Wird gespeichert …' : undefined}
                             className={cn(
-                                'inline-flex items-center gap-2 text-sm font-medium text-slate-600',
+                                'inline-flex items-center gap-2 text-sm font-medium',
+                                erledigt ? 'text-slate-500' : 'text-slate-600',
                                 bezahltWirdGespeichert.has(invoice.id) ? 'cursor-wait opacity-60' : 'cursor-pointer'
                             )}
                         >
@@ -461,6 +532,20 @@ export default function OffenePostenEditor() {
                         </Card>
                     </div>
 
+                    {/* Controls – wie bei den Eingangsrechnungen */}
+                    <div className="flex items-center justify-end gap-1 mb-3 animate-fadeInUp delay-1">
+                        <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={showBezahlt}
+                                onChange={(e) => setShowBezahlt(e.target.checked)}
+                                className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                            />
+                            Bezahlte anzeigen
+                        </label>
+                        <BezahlteAnzeigenInfo />
+                    </div>
+
                     {/* Content */}
                     <div className="animate-fadeInUp delay-2">
                         {loading ? (
@@ -473,7 +558,7 @@ export default function OffenePostenEditor() {
                                 <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-red-300" />
                                 <p className="text-sm">{error}</p>
                             </Card>
-                        ) : groupedInvoices.length === 0 ? (
+                        ) : groupedInvoices.length === 0 && bezahlteGruppen.length === 0 ? (
                             <Card className="p-8 text-center border-0 shadow-sm rounded-xl">
                                 <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300" />
                                 <p className="text-sm font-medium text-slate-600">Keine offenen Rechnungen vorhanden</p>
@@ -503,8 +588,27 @@ export default function OffenePostenEditor() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {groupedInvoices.map(renderInvoiceRow)}
+                                            {groupedInvoices.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={10} className="px-4 py-6 text-center text-sm text-slate-500">
+                                                        Keine offenen Rechnungen vorhanden
+                                                    </td>
+                                                </tr>
+                                            ) : groupedInvoices.map(gruppe => renderInvoiceRow(gruppe))}
                                         </tbody>
+                                        {bezahlteGruppen.length > 0 && (
+                                            <tbody className="divide-y divide-slate-100 border-t-2 border-slate-200" aria-label="Bezahlte Rechnungen">
+                                                <tr className="bg-slate-50">
+                                                    <th colSpan={10} scope="colgroup" className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                                                            Bezahlt (letzte 12 Monate) – zählt nicht zu den offenen Posten
+                                                        </span>
+                                                    </th>
+                                                </tr>
+                                                {bezahlteGruppen.map(gruppe => renderInvoiceRow(gruppe, true))}
+                                            </tbody>
+                                        )}
                                     </table>
                                 </div>
                             </Card>

@@ -130,10 +130,10 @@ describe('PostfachSettings – Anlegen', () => {
         expect(within(dialog).getByRole('checkbox', { name: /^Hauptpostfach/ })).not.toBeChecked();
         expect(within(dialog).getByRole('button', { name: 'Speichern' })).toBeDisabled();
 
-        await user.click(within(dialog).getByRole('button', { name: /Server-Einstellungen/ }));
+        await user.click(within(dialog).getByRole('button', { name: /^Server-Einstellungen/ }));
         expect(within(dialog).getByLabelText('Server für den Versand (SMTP)')).toHaveValue('mail.your-server.de');
         expect(within(dialog).getByLabelText('Server für den Abruf (IMAP)')).toHaveValue('mail.your-server.de');
-        await user.click(within(dialog).getByRole('button', { name: /Server-Einstellungen/ }));
+        await user.click(within(dialog).getByRole('button', { name: /^Server-Einstellungen/ }));
         expect(within(dialog).getByText(/mail\.your-server\.de · Ports 465 \/ 993/)).toBeInTheDocument();
 
         await user.type(within(dialog).getByLabelText(/E-Mail-Adresse/), 'max@musterbetrieb.example');
@@ -177,13 +177,26 @@ describe('PostfachSettings – Anlegen', () => {
         expect(within(dialog).getByRole('checkbox', { name: /^Eingeschaltet/ })).toBeDisabled();
 
         await user.type(within(dialog).getByLabelText(/E-Mail-Adresse/), 'info@musterbetrieb.example');
-        await user.click(within(dialog).getByRole('button', { name: /Server-Einstellungen/ }));
+        // Ohne Hauptpostfach gibt es nichts zu übernehmen: Server-Felder sind offen und Pflicht.
+        expect(within(dialog).getByRole('button', { name: /^Server-Einstellungen/ })).toHaveAttribute('aria-expanded', 'true');
+        expect(within(dialog).queryByText(/vom Hauptpostfach/)).not.toBeInTheDocument();
+        await user.click(within(dialog).getByRole('button', { name: 'Mehr zu: Server-Einstellungen' }));
+        expect(screen.getByRole('dialog', { name: 'Server-Einstellungen' })).toHaveTextContent('Ohne diese Angaben werden keine E-Mails abgerufen oder verschickt.');
+        await user.keyboard('{Escape}');
         await user.type(within(dialog).getByLabelText('Benutzername'), 'login@musterbetrieb.example');
+        await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+        expect(within(dialog).getByRole('alert')).toHaveTextContent('Server und Port für den Versand (SMTP)');
+        expect(bodyVon(fetchMock, '/api/postfaecher', 'POST')).toBeUndefined();
+
+        await user.type(within(dialog).getByLabelText(/Server für den Versand/), 'mail.your-server.de');
+        await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+        expect(within(dialog).getByRole('alert')).toHaveTextContent('Server und Port für den Abruf (IMAP)');
+        await user.type(within(dialog).getByLabelText(/Server für den Abruf/), 'mail.your-server.de');
         await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
 
         await waitFor(() => expect(bodyVon(fetchMock, '/api/postfaecher', 'POST')).toMatchObject({
             hauptpostfach: true, aktiv: true, benutzername: 'login@musterbetrieb.example', passwort: null,
-            smtpHost: null, smtpPort: 465, imapHost: null, imapPort: 993, anzeigename: null,
+            smtpHost: 'mail.your-server.de', smtpPort: 465, imapHost: 'mail.your-server.de', imapPort: 993, anzeigename: null,
         }));
     });
 
@@ -200,7 +213,7 @@ describe('PostfachSettings – Anlegen', () => {
 
         await user.clear(within(dialog).getByLabelText(/E-Mail-Adresse/));
         await user.type(within(dialog).getByLabelText(/E-Mail-Adresse/), 'max@musterbetrieb.example');
-        await user.click(within(dialog).getByRole('button', { name: /Server-Einstellungen/ }));
+        await user.click(within(dialog).getByRole('button', { name: /^Server-Einstellungen/ }));
         const smtpPort = within(dialog).getAllByLabelText('Port')[0];
         await user.clear(smtpPort);
         await user.type(smtpPort, '70000');
@@ -273,7 +286,7 @@ describe('PostfachSettings – Bearbeiten', () => {
         expect(within(dialog).getByText('Postfach bearbeiten')).toBeInTheDocument();
         expect(within(dialog).getByLabelText(/Passwort/, { selector: 'input' })).toHaveAttribute('placeholder', '✓ gesetzt – leer lassen = unverändert');
         expect(within(dialog).getByRole('checkbox', { name: /Für Rechnungen & Mahnungen/ })).toBeChecked();
-        await user.click(within(dialog).getByRole('button', { name: /Server-Einstellungen/ }));
+        await user.click(within(dialog).getByRole('button', { name: /^Server-Einstellungen/ }));
         // Abweichender Benutzername bleibt sichtbar.
         expect(within(dialog).getByLabelText('Benutzername')).toHaveValue('buchhaltung@musterbetrieb.example');
 
@@ -299,7 +312,7 @@ describe('PostfachSettings – Bearbeiten', () => {
         expect(within(dialog).getByRole('checkbox', { name: /^Eingeschaltet/ })).toBeDisabled();
         expect(within(dialog).getByText(/ein anderes Postfach als Hauptpostfach markieren/)).toBeInTheDocument();
         // Benutzername gleich Adresse bleibt leer (Standard).
-        await user.click(within(dialog).getByRole('button', { name: /Server-Einstellungen/ }));
+        await user.click(within(dialog).getByRole('button', { name: /^Server-Einstellungen/ }));
         expect(within(dialog).getByLabelText('Benutzername')).toHaveValue('');
     });
 

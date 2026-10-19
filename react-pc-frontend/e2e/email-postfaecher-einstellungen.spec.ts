@@ -113,7 +113,7 @@ test('Postfächer: Liste mit Schildern und Abruf-Status, neues Postfach anlegen 
     await dialog.getByLabel('Passwort', { exact: true }).fill('Dummy-Passwort-123');
     // Server-Angaben sind aus dem Hauptpostfach übernommen und eingeklappt.
     await expect(dialog.getByText('mail.your-server.de · Ports 465 / 993')).toBeVisible();
-    await dialog.getByRole('button', { name: /Server-Einstellungen/ }).click();
+    await dialog.getByRole('button', { name: /^Server-Einstellungen/ }).click();
     await expect(dialog.getByLabel('Server für den Versand (SMTP)')).toHaveValue('mail.your-server.de');
 
     await dialog.getByRole('button', { name: 'Verbindung testen' }).click();

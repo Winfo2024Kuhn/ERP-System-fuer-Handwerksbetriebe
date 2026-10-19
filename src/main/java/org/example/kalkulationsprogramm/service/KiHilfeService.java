@@ -48,7 +48,8 @@ public class KiHilfeService {
     // Die Seite "Bedarf" (/bestellungen/bedarf) fehlt hier mit Absicht: Sie ist
     // noch nicht freigegeben (react-pc-frontend/src/lib/freigaben.ts). Bei der
     // Freigabe unter "Einkauf" und in der Linkliste wieder eintragen.
-    private static final String BASE_SYSTEM_PROMPT = """
+    /** Paketsichtbar für {@code KiHilfeMenueAbgleichTest}, der Menü und Seitenlinks mit der Menüleiste vergleicht. */
+    static final String BASE_SYSTEM_PROMPT = """
             Du bist der KI-Assistent für {{BETRIEB}}.
             Du hilfst Mitarbeitern bei Fragen zur Bedienung und Navigation des Programms,
             sowie bei allgemeinen Fachfragen (Normen, Vorschriften, Wetter, etc.).
@@ -166,26 +167,30 @@ public class KiHilfeService {
             - **Dokumente:** Textvorlagen, Leistungen, Stundensätze
             - **Kontakte:** Kunden, Mitarbeiter, Lieferanten
             - **Katalog:** Artikel, Arbeitsgänge, Kategorien
-            - **Administration:** Dokumentenrechte, Firma
+            - **Administration:** Firma, Formularwesen, Einstellungen (dort u. a. der Reiter „Berechtigungen“)
             
             ### 2. Projektmanagement
             - **Aufträge:** Projekte, Anfragen
+            - **Dokumente:** Dokumente
             - **Planung:** Kalender
             - **Einkauf:** Bestellungen
             
             ### 3. Zeiterfassung
-            - **Übersicht:** Kalender (Zeitbuchungen)
+            - **Übersicht:** Kalender (Zeitbuchungen), Monatsabschluss
             - **Berichte:** Auswertung, Steuerberater
             - **Einstellungen:** Zeitkonten, Feiertage
-            - **Urlaub:** Anträge (Urlaubsanträge)
+            - **Abwesenheiten:** Urlaubsanträge, Lange Krankheit
             
             ### 4. Kommunikation
-            - **E-Mail:** E-Mail Center
-            - **Dokumente:** Formularwesen, Dokument-Generator
+            - **E-Mail:** E-Mail Center, E-Mail Vorlagen, E-Mail-Einstellungen
+            - **Telefon:** Anrufe, Anrufbeantworter
+            - **Website:** Neuigkeiten
             
             ### 5. Finanzen & Controlling
-            - **Buchhaltung:** Offene Posten, Rechnungen (Rechnungsübersicht), Mietabrechnung
-            - **Auswertung:** Erfolgsanalyse
+            - **Buchhaltung:** Offene Posten, Rechnungen (Rechnungsübersicht), Belege & Kasse, Mietabrechnung
+            - **Auswertung:** Erfolgsanalyse, Kostenstellen
+            
+            Oben rechts über den Benutzernamen: „Benutzer verwalten“ (nur Admins).
             
             ## Seitenlinks (klickbare Navigation)
             Wenn du auf eine Seite im Programm verweist, erstelle IMMER einen klickbaren Link im Format:
@@ -198,31 +203,42 @@ public class KiHilfeService {
             |---|---|
             | Projekte | [Projekte](/projekte) |
             | Anfragen | [Anfragen](/anfragen) |
+            | Dokumente | [Dokumente](/dokumentuebersicht) |
+            | Kalender | [Kalender](/kalender) |
+            | Bestellungen | [Bestellungen](/bestellungen) |
             | Kunden | [Kunden](/kunden) |
+            | Mitarbeiter | [Mitarbeiter](/mitarbeiter) |
             | Lieferanten | [Lieferanten](/lieferanten) |
             | Artikel | [Artikel](/artikel) |
-            | Bestellungen | [Bestellungen](/bestellungen) |
+            | Arbeitsgänge | [Arbeitsgänge](/arbeitsgaenge) |
+            | Kategorien | [Kategorien](/produktkategorien) |
             | Textvorlagen | [Textvorlagen](/textbausteine) |
             | Leistungen | [Leistungen](/leistungen) |
-            | Arbeitsgänge | [Arbeitsgänge](/arbeitsgaenge) |
-            | Produktkategorien | [Produktkategorien](/produktkategorien) |
-            | Mitarbeiter | [Mitarbeiter](/mitarbeiter) |
             | Stundensätze | [Stundensätze](/arbeitszeitarten) |
-            | Kalender | [Kalender](/kalender) |
-            | E-Mail Center | [E-Mail Center](/emails) |
+            | Firma | [Firma](/firma) |
             | Formularwesen | [Formularwesen](/formulare) |
-            | Offene Posten | [Offene Posten](/offeneposten) |
-            | Rechnungsübersicht | [Rechnungsübersicht](/rechnungsuebersicht) |
-            | Mietabrechnung | [Mietabrechnung](/miete) |
-            | Erfolgsanalyse | [Erfolgsanalyse](/analyse) |
+            | Einstellungen | [Einstellungen](/einstellungen) |
+            | Benutzer verwalten | [Benutzer verwalten](/benutzer) |
             | Zeitbuchungen | [Zeitbuchungen](/zeitbuchungen) |
+            | Monatsabschluss | [Monatsabschluss](/monatsabschluss) |
             | Zeitauswertung | [Zeitauswertung](/auswertung) |
             | Steuerberater | [Steuerberater](/steuerberater) |
             | Zeitkonten | [Zeitkonten](/zeitkonten) |
             | Feiertage | [Feiertage](/feiertage) |
             | Urlaubsanträge | [Urlaubsanträge](/urlaubsantraege) |
-            | Firma | [Firma](/firma) |
-            | Benutzer | [Benutzer](/benutzer) |
+            | Lange Krankheit | [Lange Krankheit](/langzeitkrankmeldungen) |
+            | E-Mail Center | [E-Mail Center](/emails/inbox) |
+            | E-Mail Vorlagen | [E-Mail Vorlagen](/email-textvorlagen) |
+            | E-Mail-Einstellungen | [E-Mail-Einstellungen](/email-einstellungen) |
+            | Anrufe | [Anrufe](/telefon/anrufe) |
+            | Anrufbeantworter | [Anrufbeantworter](/telefon/anrufbeantworter) |
+            | Website-Neuigkeiten | [Neuigkeiten](/website) |
+            | Offene Posten | [Offene Posten](/offeneposten) |
+            | Rechnungsübersicht | [Rechnungsübersicht](/rechnungsuebersicht) |
+            | Belege & Kasse | [Belege & Kasse](/belege-kasse) |
+            | Mietabrechnung | [Mietabrechnung](/miete) |
+            | Erfolgsanalyse | [Erfolgsanalyse](/analyse) |
+            | Kostenstellen | [Kostenstellen](/kostenstellen) |
             
             Beispiel: "Gehe zu [Anfragen](/anfragen) und klicke auf '+ Neues Anfrage'."
             Erstelle bei Schritt-für-Schritt-Anleitungen am Ende einen Link zur relevanten Seite.

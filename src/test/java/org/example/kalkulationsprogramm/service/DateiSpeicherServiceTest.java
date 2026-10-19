@@ -910,6 +910,54 @@ class DateiSpeicherServiceTest {
     }
 
     @Test
+    void stornierteRechnungLaesstSichNichtWiederOeffnen() throws IOException {
+        ServiceSetup setup = createMahnungService();
+
+        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
+        rechnung.setId(102L);
+        rechnung.setDokumentid("RE-2026-0042");
+        rechnung.setBezahlt(true);
+
+        when(setup.dokumentRepository.findById(102L)).thenReturn(Optional.of(rechnung));
+        when(setup.dokumentRepository.istStorniert("RE-2026-0042")).thenReturn(true);
+
+        ResponseStatusException fehler = assertThrows(ResponseStatusException.class,
+                () -> setup.service.setzeGeschaeftsdokumentBezahlt(102L, false));
+        assertEquals(HttpStatus.BAD_REQUEST, fehler.getStatusCode());
+        assertEquals("Diese Rechnung wurde storniert und bleibt deshalb erledigt.", fehler.getReason());
+        verify(setup.preisAutomatik, never()).setzeOffenenPostenBezahlt(any(), anyBoolean());
+    }
+
+    @Test
+    void stornierteRechnungDarfWeiterAlsBezahltMarkiertWerden() throws IOException {
+        ServiceSetup setup = createMahnungService();
+
+        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
+        rechnung.setId(103L);
+        rechnung.setDokumentid("RE-2026-0043");
+
+        when(setup.dokumentRepository.findById(103L)).thenReturn(Optional.of(rechnung));
+
+        setup.service.setzeGeschaeftsdokumentBezahlt(103L, true);
+
+        verify(setup.preisAutomatik).setzeOffenenPostenBezahlt(rechnung, true);
+        verify(setup.dokumentRepository, never()).istStorniert(any());
+    }
+
+    @Test
+    void bezahlteRechnungenDerLetztenZwoelfMonate() throws IOException {
+        ServiceSetup setup = createMahnungService();
+        ProjektGeschaeftsdokument rechnung = new ProjektGeschaeftsdokument();
+        when(setup.dokumentRepository.findBezahlteRechnungenSeit(any())).thenReturn(List.of(rechnung));
+
+        assertEquals(List.of(rechnung), setup.service.holeBezahlteRechnungen());
+
+        org.mockito.ArgumentCaptor<java.time.LocalDate> seit = org.mockito.ArgumentCaptor.forClass(java.time.LocalDate.class);
+        verify(setup.dokumentRepository).findBezahlteRechnungenSeit(seit.capture());
+        assertEquals(java.time.LocalDate.now().minusMonths(12), seit.getValue());
+    }
+
+    @Test
     void setzeGeschaeftsdokumentBezahltWirftExceptionFuerNichtGeschaeftsdokument() throws IOException {
         ServiceSetup setup = createMahnungService();
 

@@ -22,7 +22,7 @@ Termine über mehrere Tage, Serientermine und einen Ort gibt es nicht.
 
 ## Termin ändern oder löschen
 
-In **Projektmanagement → Kalender** auf den Termin klicken. Im Fenster „Termin bearbeiten“ ändern und „Speichern“ – oder „Löschen“ und bestätigen. Verschieben geht nur über das Feld „Datum“, nicht per Ziehen. Ein Klick neben das Fenster schließt es ohne zu speichern.
+In **Projektmanagement → Kalender** auf den Termin klicken. Im Fenster „Termin bearbeiten“ ändern und „Speichern“ – oder „Löschen“ und bestätigen. Verschieben geht nur über das Feld „Datum“, nicht per Ziehen. Ein Klick neben das Fenster schließt es ohne zu speichern. Das Ende darf nicht vor dem Beginn liegen. Hakt man alle Teilnehmer ab, verschwindet der Termin aus deren Kalender.
 
 ## Mitarbeiter einladen und erinnern
 
@@ -38,7 +38,9 @@ Diese Einträge kommen aus der Zeiterfassung und lassen sich im Kalender nicht �
 
 ## Wer sieht welche Termine?
 
-Ist der eigene Benutzer einem Mitarbeiter zugeordnet, zeigt **Projektmanagement → Kalender** die eigenen Termine, die Termine, zu denen man eingeladen ist, und allgemeine Termine ohne Ersteller und Teilnehmer. Benutzer ohne Mitarbeiter-Zuordnung sehen alle Termine. Wer einen Termin sieht, darf ihn auch ändern und löschen.
+Ist der eigene Benutzer einem Mitarbeiter zugeordnet, zeigt **Projektmanagement → Kalender** die eigenen Termine, die Termine, zu denen man eingeladen ist, und Firmentermine (ohne Ersteller und ohne Teilnehmer). Das gilt auch für Admins mit Mitarbeiter-Zuordnung; ein Admin ohne Zuordnung sieht alle Termine. Andere Benutzer ohne Mitarbeiter-Zuordnung sehen nur die Firmentermine. Termine ohne Teilnehmer (Firmentermine) legen nur Admins an. Wer eigene Termine anlegen und sehen will, braucht einen zugeordneten Mitarbeiter (oben rechts unter „Benutzer verwalten“).
+
+Ändern und löschen dürfen den Termin der Ersteller, die Teilnehmer und Admins; Firmentermine nur Admins. Alle anderen sehen den Termin im Fenster nur zum Lesen. Das prüft das Programm auch im Hintergrund, nicht nur in der Oberfläche.
 
 ## Termine auf dem Handy
 
