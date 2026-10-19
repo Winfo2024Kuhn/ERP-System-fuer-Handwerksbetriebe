@@ -191,6 +191,69 @@ class KundeControllerTest {
     }
 
     @Test
+    @DisplayName("Ändern: das Zahlungsziel wird gespeichert (#289)")
+    void updateKundeSpeichertZahlungsziel() throws Exception {
+        Kunde bestehend = bestehenderKunde(21);
+        var payload = new java.util.HashMap<String, Object>();
+        payload.put("kundennummer", "K-12");
+        payload.put("name", "Max Mustermann");
+        payload.put("zahlungsziel", 14);
+
+        mockMvc.perform(put("/api/kunden/12")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk());
+
+        assertThat(bestehend.getZahlungsziel()).isEqualTo(14);
+    }
+
+    @Test
+    @DisplayName("Ändern ohne Zahlungsziel lässt den gespeicherten Wert stehen")
+    void updateKundeOhneZahlungszielBehaeltWert() throws Exception {
+        Kunde bestehend = bestehenderKunde(21);
+        var payload = new java.util.HashMap<String, Object>();
+        payload.put("kundennummer", "K-12");
+        payload.put("name", "Max Mustermann");
+
+        mockMvc.perform(put("/api/kunden/12")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk());
+
+        assertThat(bestehend.getZahlungsziel()).isEqualTo(21);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {0, -5, 366, Integer.MAX_VALUE})
+    @DisplayName("Zahlungsziel außerhalb von 1 bis 365 Tagen wird abgelehnt")
+    void zahlungszielAusserhalbDerGrenzen(int tage) throws Exception {
+        Kunde bestehend = bestehenderKunde(21);
+        var payload = new java.util.HashMap<String, Object>();
+        payload.put("kundennummer", "K-12");
+        payload.put("name", "Max Mustermann");
+        payload.put("zahlungsziel", tage);
+
+        mockMvc.perform(put("/api/kunden/12")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest());
+
+        assertThat(bestehend.getZahlungsziel()).isEqualTo(21);
+    }
+
+    private Kunde bestehenderKunde(int zahlungsziel) {
+        Kunde bestehend = new Kunde();
+        bestehend.setId(12L);
+        bestehend.setKundennummer("K-12");
+        bestehend.setName("Max Mustermann");
+        bestehend.setZahlungsziel(zahlungsziel);
+        given(kundeRepository.findById(12L)).willReturn(Optional.of(bestehend));
+        given(kundeRepository.save(any(Kunde.class))).willAnswer(invocation -> invocation.getArgument(0));
+        given(kundeMapper.toListItem(any(Kunde.class))).willReturn(new KundeListItemDto());
+        return bestehend;
+    }
+
+    @Test
     @DisplayName("Konflikt bei bestehender Kundennummer wird sauber zurückgegeben")
     void createKundeFailsOnDuplicateNumber() throws Exception {
         given(kundeRepository.findByKundennummerIgnoreCase(eq("K-99"))).willReturn(Optional.of(new Kunde()));

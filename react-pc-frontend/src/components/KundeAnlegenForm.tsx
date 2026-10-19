@@ -52,7 +52,8 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
         telefon: '',
         mobiltelefon: '',
         email: '',
-        zahlungsziel: 8,
+        // Als Text: Beim Tippen darf das Feld kurz leer sein, ohne auf 8 zu springen.
+        zahlungsziel: '8',
     });
 
     useEffect(() => {
@@ -74,6 +75,11 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
             setError('Bitte Kundennummer angeben oder "Automatisch" aktivieren');
             return;
         }
+        const zahlungsziel = formData.zahlungsziel.trim();
+        if (!/^\d{1,3}$/.test(zahlungsziel) || Number(zahlungsziel) < 1 || Number(zahlungsziel) > 365) {
+            setError('Das Zahlungsziel muss zwischen 1 und 365 Tagen liegen.');
+            return;
+        }
 
         setSaving(true);
         setError(null);
@@ -89,7 +95,7 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
                 ort: formData.ort.trim() || null,
                 telefon: ohneReineVorwahl(formData.telefon) || null,
                 mobiltelefon: ohneReineVorwahl(formData.mobiltelefon) || null,
-                zahlungsziel: formData.zahlungsziel || 8,
+                zahlungsziel: Number(zahlungsziel),
                 kundenEmails: formData.email.trim() ? [formData.email.trim()] : [],
             };
 
@@ -303,12 +309,14 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
 
                 {/* Zahlungsziel */}
                 <div className="md:w-1/3">
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Zahlungsziel (Tage)</label>
+                    <label htmlFor="kunde-anlegen-zahlungsziel" className="block text-sm font-medium text-slate-700 mb-1">Zahlungsziel (Tage)</label>
                     <input
-                        type="number"
-                        min="0"
+                        id="kunde-anlegen-zahlungsziel"
+                        type="text"
+                        inputMode="numeric"
                         value={formData.zahlungsziel}
-                        onChange={e => setFormData(prev => ({ ...prev, zahlungsziel: parseInt(e.target.value) || 8 }))}
+                        onChange={e => setFormData(prev => ({ ...prev, zahlungsziel: e.target.value }))}
+                        placeholder="8"
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
                     />
                 </div>
