@@ -27,6 +27,7 @@ import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { cn } from '../lib/utils';
+import { pruefeZahlungszielTage } from '../lib/zahlungsziel';
 import { useToast } from '../components/ui/toast';
 import { type KundeDetail, type KundeProjektKurz, type KundeAnfrageKurz, type AusgangsGeschaeftsDokument } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
@@ -668,9 +669,9 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
             }
         }
 
-        const zahlungsziel = zahlungszielText.trim();
-        if (!/^\d{1,3}$/.test(zahlungsziel) || Number(zahlungsziel) < 1 || Number(zahlungsziel) > 365) {
-            setError('Das Zahlungsziel muss zwischen 1 und 365 Tagen liegen.');
+        const zahlungsziel = pruefeZahlungszielTage(zahlungszielText);
+        if (!zahlungsziel.gueltig) {
+            setError(zahlungsziel.meldung);
             return;
         }
 
@@ -682,7 +683,7 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
             telefon: ohneReineVorwahl(formData.telefon),
             mobiltelefon: ohneReineVorwahl(formData.mobiltelefon),
             kundenEmails: uniqueEmails,
-            zahlungsziel: Number(zahlungsziel)
+            zahlungsziel: zahlungsziel.tage
         };
 
         setSaving(true);

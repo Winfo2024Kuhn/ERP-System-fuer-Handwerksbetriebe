@@ -8,6 +8,7 @@ import { ohneReineVorwahl } from '../lib/phoneUtils';
 import { KundeDuplikatHinweis, type KundeDuplikatTreffer } from './KundeDuplikatHinweis';
 import { KundeDuplikatBestaetigungModal } from './KundeDuplikatBestaetigungModal';
 import type { Kunde } from '../types';
+import { pruefeZahlungszielTage } from '../lib/zahlungsziel';
 
 interface KundeAnlegenFormProps {
     onSuccess: (kunde: Kunde) => void;
@@ -75,9 +76,9 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
             setError('Bitte Kundennummer angeben oder "Automatisch" aktivieren');
             return;
         }
-        const zahlungsziel = formData.zahlungsziel.trim();
-        if (!/^\d{1,3}$/.test(zahlungsziel) || Number(zahlungsziel) < 1 || Number(zahlungsziel) > 365) {
-            setError('Das Zahlungsziel muss zwischen 1 und 365 Tagen liegen.');
+        const zahlungsziel = pruefeZahlungszielTage(formData.zahlungsziel);
+        if (!zahlungsziel.gueltig) {
+            setError(zahlungsziel.meldung);
             return;
         }
 
@@ -95,7 +96,7 @@ export const KundeAnlegenForm: React.FC<KundeAnlegenFormProps> = ({
                 ort: formData.ort.trim() || null,
                 telefon: ohneReineVorwahl(formData.telefon) || null,
                 mobiltelefon: ohneReineVorwahl(formData.mobiltelefon) || null,
-                zahlungsziel: Number(zahlungsziel),
+                zahlungsziel: zahlungsziel.tage,
                 kundenEmails: formData.email.trim() ? [formData.email.trim()] : [],
             };
 

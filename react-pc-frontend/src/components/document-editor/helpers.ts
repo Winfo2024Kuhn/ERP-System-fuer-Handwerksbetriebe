@@ -1,5 +1,6 @@
 import { CLOSURE_BLOCK_ID } from './blockOps';
 import type { DocBlock } from './types';
+import { DEFAULT_ZAHLUNGSZIEL_TAGE } from '../../lib/zahlungsziel';
 
 interface AdresseKundeLike {
     name?: string;
@@ -39,18 +40,10 @@ export const extractBoldFromHtml = (html: string): boolean => {
 export const ZAHLUNGSZIEL_PLACEHOLDER = '{{ZAHLUNGSZIEL}}';
 export const ZAHLUNGSZIEL_TAGE_PLACEHOLDER = '{{ZAHLUNGSZIEL_TAGE}}';
 
-/**
- * Fallback-Zahlungsziel in Tagen, wenn weder Dokument noch Kunde/Anfrage eines
- * gepflegt haben. Historischer Standardwert des Dokument-Editors (§ 286 BGB
- * lässt freie Vereinbarung zu; 8 Tage waren hier schon immer der Default).
- */
-export const DEFAULT_ZAHLUNGSZIEL_TAGE = 8;
-
-/** Kleinstes Zahlungsziel, das der Editor annimmt. */
-export const MIN_ZAHLUNGSZIEL_TAGE = 1;
-
-/** Groesstes Zahlungsziel, das der Editor annimmt (ein Jahr). */
-export const MAX_ZAHLUNGSZIEL_TAGE = 365;
+// Standard (8 Tage, § 286 BGB laesst freie Vereinbarung zu) und Grenzen
+// 1-365 Tage gelten fuer alle Zahlungsziel-Eingaben; sie liegen in
+// lib/zahlungsziel.ts und werden hier fuer den Editor weitergereicht.
+export { DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE } from '../../lib/zahlungsziel';
 
 /**
  * Ab welcher Tageszahl der Editor nachfragt, ob das wirklich so gewollt ist
