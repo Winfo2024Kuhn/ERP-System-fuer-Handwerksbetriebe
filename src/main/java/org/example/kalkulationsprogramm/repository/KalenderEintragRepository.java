@@ -27,6 +27,20 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
         List<KalenderEintrag> findByDatumBetween(@Param("von") LocalDate von, @Param("bis") LocalDate bis);
 
         /**
+         * Nur Firmenkalender-Einträge (ohne Ersteller und ohne Teilnehmer) – für
+         * Benutzer ohne zugeordneten Mitarbeiter.
+         */
+        @Query("SELECT k FROM KalenderEintrag k " +
+                        "LEFT JOIN FETCH k.projekt " +
+                        "LEFT JOIN FETCH k.kunde " +
+                        "LEFT JOIN FETCH k.lieferant " +
+                        "LEFT JOIN FETCH k.anfrage " +
+                        "WHERE k.datum BETWEEN :von AND :bis " +
+                        "AND k.ersteller IS NULL AND SIZE(k.teilnehmer) = 0 " +
+                        "ORDER BY k.datum, k.startZeit NULLS FIRST")
+        List<KalenderEintrag> findFirmenEintraegeBetween(@Param("von") LocalDate von, @Param("bis") LocalDate bis);
+
+        /**
          * Findet alle Einträge für einen Mitarbeiter in einem Datumsbereich.
          * Zeigt Einträge, wo der Mitarbeiter Ersteller ODER Teilnehmer ist.
          * Firmenkalender-Einträge (ersteller = null UND keine Teilnehmer) werden allen

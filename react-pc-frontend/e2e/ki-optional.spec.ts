@@ -201,3 +201,39 @@ test('Webseiten-Beitrag ohne KI-Schlüssel: KI-Weg gesperrt mit Grund, Textschri
     await expect(page.getByText(KI_AUS_ERKLAERUNG)).toBeVisible();
     await assistentPruefung(page, info, 'ki-optional-beitrag-text');
 });
+
+test('Einstellungen → KI-Funktionen: „Schlüssel entfernen“ fragt nach und schaltet die KI aus', async ({ page }, info) => {
+    await stubbeAdminOhneKi(page);
+    // Nach stubbeAdminOhneKi registriert, damit diese Routen zuerst greifen: Schlüssel ist hinterlegt.
+    let schluesselDa = true;
+    const loeschungen: string[] = [];
+    await page.route('**/api/settings/gemini', route => {
+        if (route.request().method() === 'DELETE') {
+            loeschungen.push(route.request().url());
+            schluesselDa = false;
+            return json(route, { message: 'KI-Schlüssel entfernt.' });
+        }
+        return json(route, { apiKeySet: schluesselDa });
+    });
+    await page.route('**/api/auth/me', route => json(route, {
+        id: 1, displayName: 'Erika Mustermann', username: 'erika', active: true,
+        roles: ['ADMIN'], admin: true, requiresInitialSetup: false, kiAktiv: schluesselDa,
+    }));
+    await page.goto('/einstellungen#ki');
+
+    await expect(page.getByRole('region', { name: 'KI-Funktionen sind an' })).toBeVisible();
+    const entfernen = page.getByRole('button', { name: 'Schlüssel entfernen', exact: true });
+    await entfernen.click();
+    const rueckfrage = page.getByRole('dialog', { name: 'KI-Schlüssel entfernen?' });
+    await expect(rueckfrage).toContainText('Schon ausgelesene Daten bleiben erhalten.');
+    await designPruefung(page, info, 'ki-schluessel-entfernen-rueckfrage');
+
+    const loeschung = page.waitForRequest(req => req.method() === 'DELETE' && new URL(req.url()).pathname === '/api/settings/gemini');
+    await rueckfrage.getByRole('button', { name: 'Schlüssel entfernen', exact: true }).click();
+    await loeschung;
+
+    await expect(page.getByRole('region', { name: 'Meldungen' }).getByText('KI-Schlüssel entfernt.')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'KI-Funktionen sind aus' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Schlüssel entfernen', exact: true })).toHaveCount(0);
+    expect(loeschungen).toHaveLength(1);
+});

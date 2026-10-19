@@ -6,6 +6,7 @@ import java.util.Map;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService.TestResult;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -179,6 +180,16 @@ public class SystemSettingsController {
     public ResponseEntity<Map<String, String>> saveGemini(@RequestBody GeminiSettingsRequest req) {
         settingsService.saveGeminiApiKey(req.apiKey());
         return ResponseEntity.ok(Map.of("message", "Gemini API Key gespeichert."));
+    }
+
+    /**
+     * Entfernt den KI-Schlüssel (Issue #274). Ein leerer Wert überdeckt auch einen
+     * Schlüssel aus den Properties – danach sind alle KI-Funktionen aus.
+     */
+    @DeleteMapping("/gemini")
+    public ResponseEntity<Map<String, String>> deleteGemini() {
+        settingsService.entferneGeminiApiKey();
+        return ResponseEntity.ok(Map.of("message", "KI-Schlüssel entfernt."));
     }
 
     @PostMapping("/gemini/test")

@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.repository;
 
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Mahnstufe;
 import org.example.kalkulationsprogramm.domain.Projekt;
@@ -26,6 +28,9 @@ class ProjektDokumentRepositoryTest {
 
     @Autowired
     private KundeRepository kundeRepository;
+
+    @Autowired
+    private AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
 
     @Test
     void findDokumentIdsByProjektIdsReturnsPairs() {
@@ -140,6 +145,43 @@ class ProjektDokumentRepositoryTest {
         assertThat(projektDokumentRepository.existsOffenePostenByProjektId(abgehakt.getId())).isFalse();
         assertThat(projektDokumentRepository.existsOffenePostenByProjektId(offen.getId())).isTrue();
         assertThat(projektDokumentRepository.existsOffenePostenByProjektId(alteMahnung.getId())).isTrue();
+    }
+
+    @Test
+    void bezahlteRechnungenOhneStornoMahnungUndAlteRechnungen() {
+        Projekt projekt = createProjekt("AN9");
+        projektRepository.saveAndFlush(projekt);
+        LocalDate heute = LocalDate.now();
+
+        ProjektGeschaeftsdokument bezahlt = geschaeftsdokument(projekt, "RE-B1", "Rechnung", true);
+        bezahlt.setRechnungsdatum(heute.minusMonths(2));
+        ProjektGeschaeftsdokument schluss = geschaeftsdokument(projekt, "RE-B2", "Schlussrechnung", true);
+        schluss.setRechnungsdatum(heute.minusDays(3));
+        ProjektGeschaeftsdokument offen = geschaeftsdokument(projekt, "RE-O1", "Rechnung", false);
+        offen.setRechnungsdatum(heute);
+        ProjektGeschaeftsdokument alt = geschaeftsdokument(projekt, "RE-ALT", "Rechnung", true);
+        alt.setRechnungsdatum(heute.minusMonths(13));
+        ProjektGeschaeftsdokument mahnung = geschaeftsdokument(projekt, "MA-1", "Mahnung 1", true);
+        mahnung.setRechnungsdatum(heute);
+        ProjektGeschaeftsdokument storniert = geschaeftsdokument(projekt, "RE-S1", "Rechnung", true);
+        storniert.setRechnungsdatum(heute);
+        projektDokumentRepository.saveAll(List.of(bezahlt, schluss, offen, alt, mahnung, storniert));
+
+        AusgangsGeschaeftsDokument stornoQuelle = new AusgangsGeschaeftsDokument();
+        stornoQuelle.setDokumentNummer("RE-S1");
+        stornoQuelle.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+        stornoQuelle.setDatum(heute);
+        stornoQuelle.setGebucht(true);
+        stornoQuelle.setStorniert(true);
+        stornoQuelle.setProjekt(projekt);
+        ausgangsGeschaeftsDokumentRepository.saveAndFlush(stornoQuelle);
+        projektDokumentRepository.flush();
+
+        assertThat(projektDokumentRepository.findBezahlteRechnungenSeit(heute.minusMonths(12)))
+                .extracting(ProjektGeschaeftsdokument::getDokumentid)
+                .containsExactly("RE-B2", "RE-B1");
+        assertThat(projektDokumentRepository.istStorniert("RE-S1")).isTrue();
+        assertThat(projektDokumentRepository.istStorniert("RE-B1")).isFalse();
     }
 
     private ProjektGeschaeftsdokument geschaeftsdokument(Projekt projekt, String nummer, String art, boolean bezahlt) {

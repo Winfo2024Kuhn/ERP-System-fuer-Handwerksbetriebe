@@ -23,8 +23,8 @@ function stubFetch(postfaecherOk = true, speichernOk = true) {
         const url = String(input);
         const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
         if (url === '/api/frontend-users' && !init?.method) return json([benutzer, { ...benutzer, id: 8, displayName: 'Erika Musterfrau', username: null, shortCode: null, roles: ['ADMIN'], active: false, emailAbsender: null }]);
-        if (url === '/api/frontend-users') return json(benutzer, speichernOk ? 200 : 400);
-        if (url.startsWith('/api/frontend-users/')) return json({}, speichernOk ? 200 : 500);
+        if (url === '/api/frontend-users') return speichernOk ? json(benutzer) : json({ status: 400, message: 'Benutzername ist bereits vergeben.' }, 400);
+        if (url.startsWith('/api/frontend-users/')) return speichernOk ? json({}) : json({ status: 400, message: 'Mindestens ein aktiver Admin muss bestehen bleiben.' }, 400);
         if (url === '/api/mitarbeiter') return json([{ id: 2, vorname: 'Max', nachname: 'Mustermann' }]);
         if (url === '/api/postfaecher') {
             return postfaecherOk
@@ -116,7 +116,26 @@ describe('BenutzerEditor – Anlegen und Löschen', () => {
         renderEditor();
         await user.click(await screen.findByText('Max Mustermann'));
         await user.click(screen.getByRole('button', { name: 'Speichern' }));
-        expect(await screen.findByText('Fehler beim Speichern.')).toBeInTheDocument();
+        // Die Meldung vom Server statt eines allgemeinen „Fehler beim Speichern.“
+        expect(await screen.findByText('Benutzername ist bereits vergeben.')).toBeInTheDocument();
+    });
+
+    it('prüft beim Ändern die Mindestlänge des neuen Passworts und bestätigt das Speichern', async () => {
+        const user = userEvent.setup();
+        const fetchMock = stubFetch();
+        renderEditor();
+        await user.click(await screen.findByText('Max Mustermann'));
+        await user.type(screen.getByLabelText(/Passwort/), 'kurz');
+        expect(screen.getByText('Das Passwort muss mindestens 8 Zeichen lang sein.')).toBeInTheDocument();
+        expect(screen.getByLabelText(/Passwort/)).toHaveAttribute('aria-invalid', 'true');
+        expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled();
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+
+        await user.type(screen.getByLabelText(/Passwort/), '-genug');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        expect(await screen.findByText('Benutzer gespeichert.')).toBeInTheDocument();
+        const call = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/frontend-users' && init?.method === 'POST')!;
+        expect(JSON.parse(String(call[1]?.body))).toMatchObject({ id: 7, password: 'kurz-genug' });
     });
 
     it('löscht nach Bestätigung und meldet Fehler', async () => {
@@ -127,7 +146,7 @@ describe('BenutzerEditor – Anlegen und Löschen', () => {
         await user.click(screen.getAllByTitle('Benutzer löschen')[1]);
         await user.click(await screen.findByRole('button', { name: 'Löschen' }));
         await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/frontend-users/8' && init?.method === 'DELETE')).toBe(true));
-        expect(await screen.findByText('Fehler beim Löschen des Benutzers.')).toBeInTheDocument();
+        expect(await screen.findByText('Mindestens ein aktiver Admin muss bestehen bleiben.')).toBeInTheDocument();
     });
 });
 
@@ -151,6 +170,6 @@ describe('BenutzerEditor – Laden und erfolgreiches Löschen', () => {
         await user.click(screen.getAllByTitle('Benutzer löschen')[1]);
         await user.click(await screen.findByRole('button', { name: 'Löschen' }));
         await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/frontend-users/8' && init?.method === 'DELETE')).toBe(true));
-        expect(screen.queryByText('Fehler beim Löschen des Benutzers.')).not.toBeInTheDocument();
+        expect(await screen.findByText('Benutzer gelöscht.')).toBeInTheDocument();
     });
 });

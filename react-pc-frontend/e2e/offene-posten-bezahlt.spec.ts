@@ -22,8 +22,8 @@ const rechnung = {
 };
 
 /** Stubbt die Seite; `bezahltAntwort` beantwortet den PATCH auf den Haken. */
-async function stubbeApi(page: Page, bezahltAntwort: { status: number; body?: unknown }) {
-    let bezahlt = false;
+async function stubbeApi(page: Page, bezahltAntwort: { status: number; body?: unknown }, startBezahlt = false) {
+    let bezahlt = startBezahlt;
     await page.route('**/api/**', async (route) => {
         const url = new URL(route.request().url());
         const json = (body: unknown, status = 200) =>
@@ -33,6 +33,8 @@ async function stubbeApi(page: Page, bezahltAntwort: { status: number; body?: un
         if (url.pathname === '/api/firma') return json({});
         // Wie das Backend: Die Liste enthält nur unbezahlte Rechnungen.
         if (url.pathname === '/api/projekte/offene-posten') return json(bezahlt ? [] : [rechnung]);
+        // Bezahlte Kundenrechnungen der letzten 12 Monate (nur mit „Bezahlte anzeigen“).
+        if (url.pathname === '/api/projekte/offene-posten/bezahlt') return json(bezahlt ? [{ ...rechnung, bezahlt: true }] : []);
         if (url.pathname === '/api/projekte/dokumente/7/bezahlt' && route.request().method() === 'PATCH') {
             if (bezahltAntwort.status < 300) bezahlt = url.searchParams.get('bezahlt') === 'true';
             return bezahltAntwort.body === undefined
@@ -48,12 +50,12 @@ test('zeigt bei einem Konflikt die Meldung und lässt den Haken offen', async ({
     await stubbeApi(page, { status: 409, body: { status: 409, message: meldung, fields: [] } });
     await page.goto('/offeneposten');
 
-    const haken = page.getByRole('checkbox', { name: 'Bezahlt' });
+    const haken = page.getByRole('checkbox', { name: 'Bezahlt', exact: true });
     await haken.click();
 
     await expect(page.getByRole('region', { name: 'Meldungen' }).getByText(meldung)).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: 'Bezahlt' })).not.toBeChecked();
-    await expect(page.getByRole('checkbox', { name: 'Bezahlt' })).toBeEnabled();
+    await expect(page.getByRole('checkbox', { name: 'Bezahlt', exact: true })).not.toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Bezahlt', exact: true })).toBeEnabled();
     await designPruefung(page, testInfo, 'offene-posten-bezahlt-konflikt');
 });
 
@@ -61,11 +63,42 @@ test('nimmt die Rechnung aus der Liste, wenn das Speichern klappt', async ({ pag
     await stubbeApi(page, { status: 204 });
     await page.goto('/offeneposten');
 
-    await page.getByRole('checkbox', { name: 'Bezahlt' }).click();
+    await page.getByRole('checkbox', { name: 'Bezahlt', exact: true }).click();
 
     await expect(page.getByText('Alle Rechnungen wurden bezahlt.')).toBeVisible();
     await expect(page.getByText('RE-2026-001')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Meldungen' }).getByText(/konnte nicht/)).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Meldungen' }).getByText(/Über „Bezahlte anzeigen“/)).toBeVisible();
+});
+
+test('Bezahlte anzeigen: ein versehentlicher Haken lässt sich zurücknehmen', async ({ page }, testInfo) => {
+    await stubbeApi(page, { status: 204 }, true);
+    await page.goto('/offeneposten');
+    await expect(page.getByText('Alle Rechnungen wurden bezahlt.')).toBeVisible();
+
+    const bezahlteGeladen = page.waitForResponse(res => new URL(res.url()).pathname === '/api/projekte/offene-posten/bezahlt');
+    await page.getByRole('checkbox', { name: 'Bezahlte anzeigen' }).check();
+    await bezahlteGeladen;
+    const zeile = page.locator('tr[data-bezahlt]', { hasText: 'RE-2026-001' });
+    await expect(zeile).toBeVisible();
+    await expect(zeile.getByRole('checkbox', { name: 'Bezahlt', exact: true })).toBeChecked();
+    // Die bezahlte Rechnung zählt nicht zu den offenen Posten.
+    await expect(page.getByText('Offene Summe').locator('xpath=following-sibling::p')).toHaveText('0,00 €');
+
+    await page.getByRole('button', { name: 'Mehr zu: Bezahlte anzeigen' }).click();
+    await expect(page.getByRole('dialog', { name: 'Bezahlte anzeigen' })).toContainText('Stornierte Rechnungen erscheinen hier nicht.');
+    await designPruefung(page, testInfo, 'offene-posten-bezahlte-anzeigen');
+    await page.keyboard.press('Escape');
+
+    const zurueck = page.waitForRequest(req => req.method() === 'PATCH' && req.url().includes('/api/projekte/dokumente/7/bezahlt?bezahlt=false'));
+    await zeile.getByRole('checkbox', { name: 'Bezahlt', exact: true }).click();
+    await zurueck;
+
+    await expect(page.getByRole('region', { name: 'Meldungen' }).getByText('Die Rechnung ist wieder offen.')).toBeVisible();
+    const offeneZeile = page.locator('tr[data-dokument-id="7"]:not([data-bezahlt])');
+    await expect(offeneZeile).toBeVisible();
+    await expect(offeneZeile.getByRole('checkbox', { name: 'Bezahlt', exact: true })).not.toBeChecked();
+    await expect(page.getByText('Offene Summe').locator('xpath=following-sibling::p')).toHaveText('1.190,00 €');
 });
 
 test('erklärt am Status, was der Haken im Hintergrund auslöst', async ({ page }, testInfo) => {

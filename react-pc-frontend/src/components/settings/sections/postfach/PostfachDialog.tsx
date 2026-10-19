@@ -7,6 +7,7 @@ import { Label } from '../../../ui/label';
 import { useToast } from '../../../ui/toast';
 import { useConfirm } from '../../../ui/confirm-dialog';
 import { PasswordField, TestResultBanner } from '../../settingsUi';
+import { InfoAbschnitt, InfoButton } from '../../../ui/info-button';
 import { parseErrorMessage } from '../../settingsApi';
 import { cn } from '../../../../lib/utils';
 import type {
@@ -121,7 +122,12 @@ export function PostfachDialog({
     const [formular, setFormular] = useState<Formular>(() => startwerte(postfach, vorlage, erstesPostfach));
     /** Ausgangsstand, um ungespeicherte Änderungen zu erkennen. */
     const [ausgangsstand] = useState<Formular>(() => startwerte(postfach, vorlage, erstesPostfach));
-    const [serverOffen, setServerOffen] = useState(false);
+    /**
+     * Ohne Vorlage (allererstes Postfach oder Hauptpostfach ohne Server-Angaben) gibt es
+     * nichts zu übernehmen: Dann sind die Server-Felder Pflicht und gleich aufgeklappt.
+     */
+    const serverPflicht = !postfach && !(vorlage?.smtpHost?.trim() || vorlage?.imapHost?.trim());
+    const [serverOffen, setServerOffen] = useState(serverPflicht);
     const [testEmpfaenger, setTestEmpfaenger] = useState('');
     const [speichert, setSpeichert] = useState(false);
     const [testet, setTestet] = useState(false);
@@ -149,6 +155,10 @@ export function PostfachDialog({
     const pruefe = (): string | null => {
         if (!adresse) return 'Bitte die E-Mail-Adresse des Postfachs eintragen.';
         if (!siehtWieAdresseAus(adresse)) return 'Bitte eine gültige E-Mail-Adresse eintragen, z. B. info@ihre-firma.de.';
+        if (serverPflicht) {
+            if (!formular.smtpHost.trim() || !formular.smtpPort.trim()) return 'Bitte Server und Port für den Versand (SMTP) eintragen.';
+            if (!formular.imapHost.trim() || !formular.imapPort.trim()) return 'Bitte Server und Port für den Abruf (IMAP) eintragen.';
+        }
         if (lesePort(formular.smtpPort) === undefined) return 'Der Port für den Versand muss eine Zahl zwischen 1 und 65535 sein.';
         if (lesePort(formular.imapPort) === undefined) return 'Der Port für den Abruf muss eine Zahl zwischen 1 und 65535 sein.';
         return null;
@@ -303,7 +313,9 @@ export function PostfachDialog({
                     <p className="text-sm text-slate-500">
                         {bearbeiten
                             ? postfach.emailAdresse
-                            : 'Meist genügen Adresse und Passwort – die Server-Angaben übernehmen wir vom Hauptpostfach.'}
+                            : serverPflicht
+                                ? 'Tragen Sie Adresse, Passwort und die Server-Angaben Ihres E-Mail-Anbieters ein.'
+                                : 'Meist genügen Adresse und Passwort – die Server-Angaben sind vom Hauptpostfach vorausgefüllt.'}
                     </p>
                 </DialogHeader>
 
@@ -452,24 +464,35 @@ export function PostfachDialog({
                     </p>
 
                     <div className="rounded-xl border border-slate-200">
-                        <button
-                            type="button"
-                            aria-expanded={serverOffen}
-                            aria-controls={feldId('server')}
-                            onClick={() => setServerOffen(offen => !offen)}
-                            className="flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left hover:bg-rose-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
-                        >
-                            <span className="flex min-w-0 items-center gap-2">
-                                <Server className="h-4 w-4 shrink-0 text-rose-600" aria-hidden="true" />
-                                <span className="font-medium text-slate-900">Server-Einstellungen</span>
-                                {!serverOffen && serverZusammenfassung && (
-                                    <span className="truncate text-xs text-slate-500">{serverZusammenfassung}</span>
-                                )}
-                            </span>
-                            {serverOffen
-                                ? <ChevronUp className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-                                : <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />}
-                        </button>
+                        <div className="flex items-center gap-1 pr-2">
+                            <button
+                                type="button"
+                                aria-expanded={serverOffen}
+                                aria-controls={feldId('server')}
+                                onClick={() => setServerOffen(offen => !offen)}
+                                className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-xl px-4 py-3 text-left hover:bg-rose-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
+                            >
+                                <span className="flex min-w-0 items-center gap-2">
+                                    <Server className="h-4 w-4 shrink-0 text-rose-600" aria-hidden="true" />
+                                    <span className="font-medium text-slate-900">Server-Einstellungen{serverPflicht ? ' *' : ''}</span>
+                                    {!serverOffen && serverZusammenfassung && (
+                                        <span className="truncate text-xs text-slate-500">{serverZusammenfassung}</span>
+                                    )}
+                                </span>
+                                {serverOffen
+                                    ? <ChevronUp className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                                    : <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />}
+                            </button>
+                            <InfoButton titel="Server-Einstellungen">
+                                <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                    <p>Mit diesen Angaben holt das Programm regelmäßig neue E-Mails ab (Posteingang, IMAP) und verschickt Ihre E-Mails (Postausgang, SMTP).</p>
+                                </InfoAbschnitt>
+                                <InfoAbschnitt titel="Was bewirkt das?">
+                                    <p>Ohne diese Angaben werden keine E-Mails abgerufen oder verschickt. Die Werte nennt Ihr E-Mail-Anbieter (oft auf seiner Hilfeseite unter „IMAP/SMTP“).</p>
+                                    <p className="mt-1">Legen Sie später weitere Postfächer an, sind dort die Angaben des Hauptpostfachs schon eingetragen. Liegt ein Postfach bei einem anderen Anbieter, ändern Sie sie dort einfach.</p>
+                                </InfoAbschnitt>
+                            </InfoButton>
+                        </div>
                         {serverOffen && (
                             <div id={feldId('server')} className="grid grid-cols-1 gap-4 border-t border-slate-100 p-4 md:grid-cols-[minmax(0,1fr)_7rem]">
                                 <div className="md:col-span-2">
@@ -486,7 +509,7 @@ export function PostfachDialog({
                                     </p>
                                 </div>
                                 <div>
-                                    <Label htmlFor={feldId('smtpHost')}>Server für den Versand (SMTP)</Label>
+                                    <Label htmlFor={feldId('smtpHost')}>Server für den Versand (SMTP){serverPflicht ? ' *' : ''}</Label>
                                     <Input
                                         id={feldId('smtpHost')}
                                         placeholder="z. B. mail.your-server.de"
@@ -495,7 +518,7 @@ export function PostfachDialog({
                                     />
                                 </div>
                                 <div>
-                                    <Label htmlFor={feldId('smtpPort')}>Port</Label>
+                                    <Label htmlFor={feldId('smtpPort')}>Port{serverPflicht ? ' *' : ''}</Label>
                                     <Input
                                         id={feldId('smtpPort')}
                                         inputMode="numeric"
@@ -505,7 +528,7 @@ export function PostfachDialog({
                                     />
                                 </div>
                                 <div>
-                                    <Label htmlFor={feldId('imapHost')}>Server für den Abruf (IMAP)</Label>
+                                    <Label htmlFor={feldId('imapHost')}>Server für den Abruf (IMAP){serverPflicht ? ' *' : ''}</Label>
                                     <Input
                                         id={feldId('imapHost')}
                                         placeholder="z. B. mail.your-server.de"
@@ -514,7 +537,7 @@ export function PostfachDialog({
                                     />
                                 </div>
                                 <div>
-                                    <Label htmlFor={feldId('imapPort')}>Port</Label>
+                                    <Label htmlFor={feldId('imapPort')}>Port{serverPflicht ? ' *' : ''}</Label>
                                     <Input
                                         id={feldId('imapPort')}
                                         inputMode="numeric"

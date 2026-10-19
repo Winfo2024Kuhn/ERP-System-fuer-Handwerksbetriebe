@@ -189,7 +189,7 @@ export function PostfachSichtbarkeit({
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {([
                     { alle: true, titel: 'Alle im Betrieb', text: 'Jeder, der sich im Programm anmeldet, sieht die Mails.' },
-                    { alle: false, titel: 'Nur bestimmte', text: 'Nur die Abteilungen und Benutzer, die du anhakst.' },
+                    { alle: false, titel: 'Nur bestimmte', text: 'Nur die Abteilungen und Benutzer, die Sie anhaken.' },
                 ] as const).map(option => {
                     const an = wert.sichtbarFuerAlle === option.alle;
                     return (

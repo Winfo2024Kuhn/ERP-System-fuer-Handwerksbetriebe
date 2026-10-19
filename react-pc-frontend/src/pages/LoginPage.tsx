@@ -27,6 +27,22 @@ export default function LoginPage() {
     const [registerName, setRegisterName] = useState('');
     const [registerUsername, setRegisterUsername] = useState('');
     const [registerPassword, setRegisterPassword] = useState('');
+    /**
+     * „Konto anlegen“ geht nur, solange es noch keinen Benutzer mit Anmeldung gibt
+     * (erster Admin). Bis die Antwort da ist – oder wenn sie ausbleibt –, nur „Anmelden“.
+     */
+    const [kontoAnlegenMoeglich, setKontoAnlegenMoeglich] = useState(false);
+
+    useEffect(() => {
+        let abgebrochen = false;
+        fetch('/api/auth/bootstrap-status')
+            .then(res => (res.ok ? res.json() : null))
+            .then((daten: { hasLoginUsers?: unknown } | null) => {
+                if (!abgebrochen) setKontoAnlegenMoeglich(daten?.hasLoginUsers === false);
+            })
+            .catch(() => { /* Ohne Antwort bleibt es beim Anmelden. */ });
+        return () => { abgebrochen = true; };
+    }, []);
 
     useEffect(() => {
         if (!loading && isAuthenticated) {
@@ -76,7 +92,8 @@ export default function LoginPage() {
             return;
         }
 
-        toast.success('Benutzer angelegt. Bitte jetzt einloggen.');
+        toast.success('Benutzer angelegt. Bitte jetzt anmelden.');
+        setKontoAnlegenMoeglich(false);
         setMode('login');
         setUsername(registerUsername.trim());
         setPassword('');
@@ -107,8 +124,10 @@ export default function LoginPage() {
                 )}
 
                 <Card className="p-6 border-rose-100 shadow-lg">
+                    {kontoAnlegenMoeglich && (
                     <div className="flex gap-1 bg-slate-100 p-1 rounded-lg mb-5">
                         <button
+                            type="button"
                             onClick={() => setMode('login')}
                             className={cn(
                                 'flex-1 px-3 py-2 rounded-md text-sm font-medium transition',
@@ -119,6 +138,7 @@ export default function LoginPage() {
                             Login
                         </button>
                         <button
+                            type="button"
                             onClick={() => setMode('register')}
                             className={cn(
                                 'flex-1 px-3 py-2 rounded-md text-sm font-medium transition',
@@ -129,8 +149,9 @@ export default function LoginPage() {
                             Konto anlegen
                         </button>
                     </div>
+                    )}
 
-                    {mode === 'login' ? (
+                    {mode === 'login' || !kontoAnlegenMoeglich ? (
                         <form className="space-y-4" onSubmit={handleLogin}>
                             <div>
                                 <Label>Benutzername</Label>

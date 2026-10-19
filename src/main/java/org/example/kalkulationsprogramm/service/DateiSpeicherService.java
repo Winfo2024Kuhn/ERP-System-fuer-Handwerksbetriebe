@@ -643,6 +643,11 @@ public class DateiSpeicherService {
         return dokumentRepository.findOffeneGeschaeftsdokumente();
     }
 
+    /** Bezahlte Kundenrechnungen der letzten 12 Monate, ohne stornierte (Offene Posten, Issue #263). */
+    public List<ProjektGeschaeftsdokument> holeBezahlteRechnungen() {
+        return dokumentRepository.findBezahlteRechnungenSeit(java.time.LocalDate.now().minusMonths(12));
+    }
+
     public List<ProjektGeschaeftsdokument> holeRechnungenZuProjekt(Long projektId) {
         return dokumentRepository.findRechnungenByProjektId(projektId);
     }
@@ -1367,6 +1372,12 @@ public class DateiSpeicherService {
         if (!(dokument instanceof ProjektGeschaeftsdokument geschaeftsdokument)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Dieses Dokument ist keine Rechnung und kann nicht als bezahlt markiert werden.");
+        }
+        // Stornierte Rechnungen gelten als erledigt; wieder öffnen würde sie erneut mahnen.
+        if (!bezahlt && geschaeftsdokument.getDokumentid() != null
+                && dokumentRepository.istStorniert(geschaeftsdokument.getDokumentid())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Diese Rechnung wurde storniert und bleibt deshalb erledigt.");
         }
         // Ob das Projekt damit bezahlt und beendet ist, entscheidet allein die
         // zentrale Regel in AusgangsGeschaeftsDokumentService – sonst laufen zwei

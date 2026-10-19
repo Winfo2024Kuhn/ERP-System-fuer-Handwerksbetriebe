@@ -42,6 +42,31 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
   List<ProjektGeschaeftsdokument> findOffeneGeschaeftsdokumente();
 
   /**
+   * Bezahlte Kundenrechnungen ab {@code seit} (Offene Posten, „Bezahlte anzeigen“).
+   * Ohne Mahnungen und ohne stornierte Rechnungen – die gelten bei der Stornierung
+   * als bezahlt und dürfen nicht wieder geöffnet werden.
+   */
+  @Query("""
+      SELECT g FROM ProjektGeschaeftsdokument g
+      WHERE g.bezahlt = true
+        AND LOWER(g.geschaeftsdokumentart) LIKE '%rechnung%'
+        AND g.rechnungsdatum >= :seit
+        AND NOT EXISTS (
+              SELECT a.id FROM AusgangsGeschaeftsDokument a
+              WHERE a.dokumentNummer = g.dokumentid AND a.storniert = true
+        )
+      ORDER BY g.rechnungsdatum DESC NULLS LAST
+      """)
+  List<ProjektGeschaeftsdokument> findBezahlteRechnungenSeit(@Param("seit") java.time.LocalDate seit);
+
+  /** Wurde die Rechnung mit dieser Nummer storniert? */
+  @Query("""
+      SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END FROM AusgangsGeschaeftsDokument a
+      WHERE a.dokumentNummer = :dokumentNummer AND a.storniert = true
+      """)
+  boolean istStorniert(@Param("dokumentNummer") String dokumentNummer);
+
+  /**
    * Wie {@link #findOffeneGeschaeftsdokumente()}, aber mit JOIN FETCH auf
    * alle Beziehungen, die der taegliche Auto-Mahn-Lauf braucht (mahnungen,
    * projekt, kunde). Der Scheduler-Thread arbeitet ohne Transaktion und ohne

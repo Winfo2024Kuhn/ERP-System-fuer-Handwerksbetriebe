@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.domain;
 
+import org.hibernate.annotations.BatchSize;
+
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -57,6 +59,8 @@ public class KalenderEintrag {
      * Eingeladene Mitarbeiter (Teilnehmer). Termin erscheint auch in deren Kalendern.
      */
     @ManyToMany(fetch = FetchType.LAZY)
+    // Kalenderansicht lädt bis zu 100 Tage: Teilnehmer gesammelt nachladen statt je Termin einzeln.
+    @BatchSize(size = 50)
     @JoinTable(
         name = "kalender_eintrag_teilnehmer",
         joinColumns = @JoinColumn(name = "kalender_eintrag_id"),

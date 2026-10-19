@@ -325,6 +325,36 @@ class ProjektControllerTest {
                                                 "Zusammenführen nicht möglich, da im Projekt bereits Ausgangsgeschäftsdokumente vorhanden sind."));
         }
 
+        // --- Tests: GET /api/projekte/offene-posten/bezahlt (Issue #263) ---
+
+        @Test
+        void bezahlteRechnungenLiefertDieBezahltenAusDemService() throws Exception {
+                org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument rechnung =
+                                new org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument();
+                rechnung.setId(77L);
+                rechnung.setDokumentid("RE-2026-0042");
+                rechnung.setBezahlt(true);
+                rechnung.setGespeicherterDateiname("rechnung-77.pdf");
+                when(dateiSpeicherService.holeBezahlteRechnungen()).thenReturn(java.util.List.of(rechnung));
+
+                mockMvc.perform(get("/api/projekte/offene-posten/bezahlt"))
+                                .andExpect(status().isOk())
+                                .andExpect(jsonPath("$.length()").value(1))
+                                .andExpect(jsonPath("$[0].id").value(77))
+                                .andExpect(jsonPath("$[0].bezahlt").value(true));
+        }
+
+        @Test
+        void stornierteRechnungZuruecknehmenGibt400MitMeldung() throws Exception {
+                doThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "Diese Rechnung wurde storniert und bleibt deshalb erledigt."))
+                                .when(dateiSpeicherService).setzeGeschaeftsdokumentBezahlt(43L, false);
+
+                mockMvc.perform(patch("/api/projekte/dokumente/43/bezahlt").param("bezahlt", "false"))
+                                .andExpect(status().isBadRequest())
+                                .andExpect(jsonPath("$.message").value("Diese Rechnung wurde storniert und bleibt deshalb erledigt."));
+        }
+
         // --- Tests: PATCH /api/projekte/dokumente/{id}/bezahlt ---
 
         @Test

@@ -4,7 +4,7 @@ Die Grundeinrichtung des Programms darf nur ein Admin vornehmen. Er findet sie u
 
 ## Ersteinrichtung
 
-1. Auf der Anmeldeseite im Reiter „Konto anlegen“ das erste Konto erstellen. Es wird automatisch Admin. Weitere Konten entstehen danach nur noch über „Benutzer verwalten“.
+1. Auf der Anmeldeseite im Reiter „Konto anlegen“ das erste Konto erstellen. Es wird automatisch Admin. Danach verschwindet der Reiter; weitere Konten entstehen nur noch über „Benutzer verwalten“.
 2. Nach der Anmeldung öffnet sich die Seite „SYSTEM EINRICHTEN“. Mindestens das E-Mail-Postfach einrichten (siehe nächster Abschnitt), die KI ist freiwillig.
 3. „Einrichtung abschließen“. Solange das E-Mail-Postfach unvollständig ist, kommt der Admin immer wieder auf diese Seite.
 
@@ -13,7 +13,7 @@ Die Grundeinrichtung des Programms darf nur ein Admin vornehmen. Er findet sie u
 Unter **Einstellungen → E-Mail**, Karte „Postfächer“ → „Neues Postfach“:
 
 1. „E-Mail-Adresse“ und „Passwort“ eintragen, optional „Angezeigter Name“ (den sieht der Empfänger).
-2. Beim **ersten** Postfach „Server-Einstellungen“ aufklappen und „Server für den Versand (SMTP)“ und „Server für den Abruf (IMAP)“ von Hand eintragen (Ports 465 und 993). Weitere Postfächer übernehmen die Server vom Hauptpostfach.
+2. Beim **ersten** Postfach sind die „Server-Einstellungen“ schon aufgeklappt: „Server für den Versand (SMTP)“ und „Server für den Abruf (IMAP)“ sind Pflicht (meist Ports 465 und 993). Weitere Postfächer übernehmen die Server vom Hauptpostfach.
 3. Mit „Verbindung testen“ prüfen (optional mit einer Adresse für eine Test-Mail).
 4. „Speichern“.
 
@@ -48,7 +48,7 @@ Unter **Einstellungen → Dateien**, Karte „Wo sollen Zeichnungen und Dateien 
 
 ## KI-Funktionen einschalten
 
-Unter **Einstellungen → KI-Funktionen** einen Schlüssel von Google Gemini eintragen, mit „Schlüssel testen“ prüfen und „Schlüssel speichern“. Die KI ist freiwillig. Ohne Schlüssel fehlen die KI-Hilfe in der Menüleiste, die Text-Verbesserung beim E-Mail-Schreiben, das automatische Auslesen von Belegen (E-Rechnungen liest das Programm trotzdem) und die Spracheingabe in der Handy-App. Mit Schlüssel gehen Belege, Texte und Sprachaufnahmen zur Verarbeitung an Google.
+Unter **Einstellungen → KI-Funktionen** einen Schlüssel von Google Gemini eintragen, mit „Schlüssel testen“ prüfen und „Schlüssel speichern“. Die KI ist freiwillig. Ohne Schlüssel fehlen die KI-Hilfe in der Menüleiste, die Text-Verbesserung beim E-Mail-Schreiben, das automatische Auslesen von Belegen (E-Rechnungen liest das Programm trotzdem) und die Spracheingabe in der Handy-App. Mit Schlüssel gehen Belege, Texte und Sprachaufnahmen zur Verarbeitung an Google. „Schlüssel entfernen“ löscht den gespeicherten Schlüssel; danach sind alle KI-Funktionen aus, schon ausgelesene Daten bleiben erhalten.
 
 Auf derselben Seite sortiert „Spaß-Anfragen automatisch aussortieren“ offensichtlichen Unsinn aus dem Anfrageformular der Webseite aus.
 
