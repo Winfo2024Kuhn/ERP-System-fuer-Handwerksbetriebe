@@ -14,7 +14,7 @@ Hintergründe und alle Einstellungen stehen im [README](README.md).
 | Jede Nacht 2 Uhr | **Sicherung:** die Datenbank auf den PC, die externe Festplatte und in OneDrive, dazu alle hochgeladenen Dateien auf die Festplatte und in OneDrive | nichts |
 | Jede Nacht 3 Uhr | **Update:** neue Version holen, vorher sichern, bei Problemen automatisch zurück zur alten | nichts |
 | Auf Klick | **Jetzt aktualisieren:** in Docker Desktop beim Container `erp-jetzt-aktualisieren` auf **Start** klicken – derselbe Ablauf wie nachts, sofort ([README](README.md#update-per-klick-docker-desktop)) | ERP ist während eines Updates ein paar Minuten weg |
-| Alle 5 Minuten | **Docker-Wächter:** Hängt Docker Desktop (z. B. nach einem Windows-Update), startet er es neu | ERP ist höchstens ein paar Minuten weg |
+| Alle 5 Minuten | **Docker-Wächter:** Hängt Docker Desktop (z. B. nach einem Windows-Update), startet er es neu. Hat Docker die Verbindung zur Sicherungsplatte verloren, startet er es in der Stunde vor der Sicherung neu | ERP ist höchstens ein paar Minuten weg |
 | Wenn etwas schiefgeht | Meldung im ERP für Admins (Glocke → Benachrichtigungen → „Sicherung & Updates“), auf Wunsch zusätzlich aufs Handy | Admin sieht die Meldung |
 
 Der PC muss dafür **nachts eingeschaltet** bleiben.
@@ -125,6 +125,24 @@ einfachen Anführungszeichen.
       Option „Automatisch entsperren“ anhaken). Wiederherstellungsschlüssel in den
       Passwortmanager. So wird ein Diebstahl der Platte keine Datenpanne.
 - [ ] Auf der Platte den Ordner **`S:\ERP-Sicherung`** anlegen.
+- [ ] **Windows soll die Platte nie abschalten.** Sonst trennt Windows sie beim Energiesparen
+      kurz, und Docker verliert die Verbindung (der Docker-Wächter repariert das zwar in der
+      Nacht vor der Sicherung, aber besser, es passiert gar nicht). PowerShell **als
+      Administrator** öffnen:
+
+  ```powershell
+  # Festplatten nie ausschalten (am Netzstrom)
+  powercfg /change disk-timeout-ac 0
+  # USB-Energiesparen aus (am Netzstrom)
+  powercfg /setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0
+  powercfg /setactive SCHEME_CURRENT
+  ```
+
+  Das gilt für den gerade aktiven Energiesparplan. Wird später ein anderer Plan gewählt,
+  die Befehle wiederholen.
+  Dazu im *Geräte-Manager* unter „USB-Controller“ bei jedem **USB-Root-Hub** →
+  *Eigenschaften* → *Energieverwaltung* den Haken „Computer kann das Gerät ausschalten, um
+  Energie zu sparen“ entfernen.
 
 ### 6.2 OneDrive
 
@@ -253,7 +271,8 @@ So erfährst du als Betreuer von Problemen, auch wenn beim Kunden niemand ins ER
 
 | Meldung im ERP | Was tun |
 | --- | --- |
-| „Externe Festplatte nicht gefunden“ | Platte anschließen, PC neu starten. |
+| „Externe Festplatte nicht gefunden“ | Platte anschließen. Der Docker-Wächter bindet sie in der Stunde vor der nächsten Sicherung selbst ein. Eilt es: `docker desktop restart`. Ist die Platte neu, fehlt ihr noch die Markierung: Schritt 6.4 (`--ziele-einrichten`). |
+| „Externe Festplatte: Die Verbindung ist abgerissen“ | Nichts, wenn die Platte steckt: Der Docker-Wächter startet Docker Desktop vor der nächsten Sicherung neu. Eilt es: `docker desktop restart`. Kommt das öfter vor, die Energiespar-Einstellungen aus Schritt 6.1 prüfen. |
 | „… ist in der .env eingetragen, aber noch nicht eingebunden“ | Im ERP-Ordner `docker compose up -d updater`. |
 | „Cloud-Ordner nicht gefunden“ | Ist OneDrive angemeldet und der Ordner `ERP-Sicherung` noch da? Danach PC neu starten. |
 | „Seit über einem Tag keine Sicherung“ | War der PC nachts aus? Läuft Docker Desktop? `docker compose ps` prüfen. |
@@ -271,6 +290,8 @@ Nachrichten vom Docker-Wächter und wenn das ERP im Browser nicht aufgeht:
 | --- | --- |
 | „ERP war kurz nicht erreichbar“ | Nichts. Der Docker-Wächter hat Docker Desktop neu gestartet, das ERP läuft wieder. |
 | „ERP nicht erreichbar“ (dringend) | Der automatische Neustart hat nicht geholfen. Der Wächter versucht es weiter, nach dem zweiten Fehlschlag nur noch alle 4 Stunden, und schickt keine weitere Nachricht. Am PC nachsehen: Zeigt Docker Desktop eine Frage (Lizenz, Anmeldung)? `docker compose ps`, Log `C:\ERP-Handwerk\logs\docker-waechter.log`. Hilft das nicht, den PC neu starten. |
+| „ERP-Sicherung: … wieder verbunden“ | Nichts. Die Verbindung zur Platte (oder zum Cloud-Ordner) war abgerissen, der Wächter hat Docker Desktop vor der Sicherung neu gestartet. |
+| „ERP-Sicherung: … nicht erreichbar“ (dringend) | Windows sieht die Platte, Docker auch nach einem Neustart nicht. Den PC neu starten. |
 | ERP lässt sich im Browser nicht öffnen | Bis zu 10 Minuten warten, der Docker-Wächter startet Docker Desktop selbst neu. Eilt es: im Terminal `docker desktop restart`. |
 
 ### Eine gelöschte Datei zurückholen

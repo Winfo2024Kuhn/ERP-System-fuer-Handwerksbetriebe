@@ -24,8 +24,14 @@
 # Hoechstens ein Neustart pro 30 Minuten; nach 2 erfolglosen Neustarts nur
 # noch alle 4 Stunden und nur EINE dringende Handy-Nachricht.
 #
+# Ausserdem haelt er die Sicherungsziele erreichbar (siehe "Sicherungsziele"
+# unten): Sieht Windows die externe Festplatte, der Updater aber nicht mehr,
+# startet er Docker Desktop kurz vor der Sicherung neu (15 bis 60 Minuten vorher).
+#
 # Aufgabe einrichten (macht Einrichten.cmd mit, kann gefahrlos wiederholt werden):
 #   powershell -ExecutionPolicy Bypass -File docker-waechter.ps1 -Einrichten
+# Nur pruefen, nichts neu starten, keine Handy-Nachricht (zum Ausprobieren):
+#   powershell -ExecutionPolicy Bypass -File docker-waechter.ps1 -Probelauf
 # Abschalten: Aufgabenplanung > "ERP Handwerk Docker-Waechter" > Deaktivieren.
 # Log: logs\docker-waechter.log
 #
@@ -34,7 +40,8 @@
 # Handy-Nachrichten daher ueber [char]-Codes.
 # =============================================================================
 
-param([switch]$Einrichten)
+# -UpdaterContainer nur zum Testen (anderer Container als erp-updater)
+param([switch]$Einrichten, [switch]$Probelauf, [string]$UpdaterContainer = 'erp-updater')
 
 $ErrorActionPreference = 'Stop'
 $Ordner = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -43,6 +50,12 @@ $StandardDockerExe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.e
 $LogOrdner = Join-Path $Ordner 'logs'
 $LogDatei = Join-Path $LogOrdner 'docker-waechter.log'
 $NeustartMerker = Join-Path $LogOrdner 'docker-waechter-letzter-neustart.txt'
+# Lebenszeichen fuer sicherung.sh (sieht den Ordner als /erp/logs): Laeuft der
+# Waechter, verspricht die Meldung "wird von selbst wieder eingebunden"
+$Lebenszeichen = Join-Path $LogOrdner 'docker-waechter-lebt.txt'
+$ZielMerker = Join-Path $LogOrdner 'docker-waechter-sicherungsziel.txt'
+$ZielNeustartMerker = Join-Path $LogOrdner 'docker-waechter-sicherungsziel-neustart.txt'
+$Markierung = 'ERP-SICHERUNGSZIEL.txt'
 
 function Log($text) {
     if (-not (Test-Path $LogOrdner)) { New-Item -ItemType Directory -Path $LogOrdner | Out-Null }
@@ -152,6 +165,7 @@ function Erp-Zustand {
 # Handy-Nachricht ueber dieselbe WEBHOOK_URL wie Sicherung und Nachtupdate
 # (gemeinsam.sh). Ohne WEBHOOK_URL steht die Meldung nur im Log.
 function Benachrichtigen([ValidateSet('dringend', 'leise')]$stufe, $titel, $text) {
+    if ($Probelauf) { Log "PROBELAUF: Handy-Nachricht ($stufe) '$titel' wuerde gesendet."; return }
     $url = Env-Wert 'WEBHOOK_URL' ''
     if (-not $url) { return }
     if ($url -notmatch '^https://' -and $url -notmatch '^http://(127\.0\.0\.1|localhost)[:/]') {
@@ -194,6 +208,161 @@ function Schreibe-Merker([datetime]$zeit, [int]$fehlversuche) {
     [IO.File]::WriteAllText($NeustartMerker, ('{0}|{1}' -f $zeit.ToString('o'), $fehlversuche))
 }
 
+# Zeitpunkt aus einer Merker-Datei (erste Zeile) oder $null
+function Lies-Zeit($datei) {
+    if (-not (Test-Path $datei)) { return $null }
+    $zeit = [datetime]::MinValue
+    if ([datetime]::TryParse(([IO.File]::ReadAllText($datei)).Trim(), [ref]$zeit)) { return $zeit }
+    return $null
+}
+
+function Schreibe-Zeit($datei) {
+    if (-not (Test-Path $LogOrdner)) { New-Item -ItemType Directory -Path $LogOrdner | Out-Null }
+    [IO.File]::WriteAllText($datei, (Get-Date).ToString('o'))
+}
+
+# Docker Desktop neu starten; klappt das nicht, hart beenden und neu starten
+function Docker-Neustarten {
+    if ($Probelauf) { Log 'PROBELAUF: Docker Desktop wuerde jetzt neu gestartet.'; return }
+    if ($null -eq (Docker-Befehl 'desktop restart --timeout 240' 300)) {
+        Log "'docker desktop restart' hat nicht geklappt - beende Docker Desktop und starte es neu."
+        Get-Process -Name 'Docker Desktop', 'com.docker.backend' -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 15
+        Start-Process $DockerExe
+    }
+}
+
+# --- Sicherungsziele -------------------------------------------------------------
+# Verschwindet ein Sicherungsziel kurz (Windows schaltet die USB-Platte beim
+# Energiesparen ab, sie wird ab- und wieder angesteckt ...), ist es unter
+# Windows danach wieder da. Docker Desktop haelt aber an der alten, toten
+# Verbindung fest, bis es selbst neu startet: Die Sicherung meldet jede Nacht
+# "nur teilweise" (so geschehen am 18. und 19.10.2026). Ein Neustart nur des
+# Updaters hilft nicht - er scheitert und laesst den Updater gestoppt zurueck.
+# Gleiches gilt fuer eine Platte, die beim Start von Docker noch fehlte.
+#
+# Darum: Sieht Windows die Markierung eines Ziels, der Updater aber nicht,
+# startet der Waechter Docker Desktop neu. Nur 15 bis 60 Minuten vor der Sicherung
+# (SICHERUNG_ZEITPLAN, nachts - das ERP ist dabei 1-2 Minuten weg), nicht
+# waehrend eines Nachtupdates und hoechstens einmal in 12 Stunden.
+
+# /run/desktop/mnt/host/f/Ordner -> F:\Ordner; $null fuer andere Pfade
+function Windows-Pfad($dockerPfad) {
+    if ($dockerPfad -notmatch '^/run/desktop/mnt/host/([a-zA-Z])(/.*)?$') { return $null }
+    $rest = if ($Matches[2]) { $Matches[2] -replace '/', '\' } else { '\' }
+    return $Matches[1].ToUpper() + ':' + $rest
+}
+
+# "<Status>|<Fehler>" des Updaters; $null, wenn Docker oder der Updater nicht
+# antwortet (dann ist unbekannt, ob die Ziele erreichbar sind)
+function Updater-Zustand {
+    return Docker-Befehl "inspect --format ""{{.State.Status}}|{{.State.Error}}"" $UpdaterContainer"
+}
+
+# Namen der Ziele, die Windows sieht, der Updater aber nicht
+# Abgerissene-Ziele <Ergebnis von Updater-Zustand>
+function Abgerissene-Ziele([string]$zustand) {
+    $status, $fehler = $zustand -split '\|', 2
+    $umgebung = Docker-Befehl "inspect --format ""{{range .Config.Env}}{{println .}}{{end}}"" $UpdaterContainer"
+    $umgebung = if ($umgebung) { @($umgebung -split "`r?`n") } else { @() }
+    $abgerissen = @()
+    $ziele = @(
+        @{ Name = 'Externe Festplatte'; Env = 'SICHERUNG_PLATTE'; Innen = '/sicherungsziele/platte' },
+        @{ Name = 'Cloud-Ordner'; Env = 'SICHERUNG_CLOUD'; Innen = '/sicherungsziele/cloud' })
+    foreach ($ziel in $ziele) {
+        $eingetragen = Env-Wert $ziel.Env ''
+        $windows = Windows-Pfad $eingetragen
+        if (-not $windows) { continue }
+        # Auch unter Windows weg (Platte nicht angesteckt): Das meldet die
+        # Sicherung, ein Neustart braechte nichts
+        # Nicht Join-Path: Das scheitert, wenn es das Laufwerk gerade nicht gibt
+        if (-not (Test-Path -LiteralPath ($windows.TrimEnd('\') + '\' + $Markierung))) { continue }
+        # Neu eingetragen, aber noch nicht eingebunden: hilft nur
+        # "docker compose up -d updater", das meldet die Sicherung
+        if ($umgebung -cnotcontains "$($ziel.Env)_EINGEBUNDEN=$eingetragen") { continue }
+        if ($status -eq 'running') {
+            if ($null -eq (Docker-Befehl "exec $UpdaterContainer test -f $($ziel.Innen)/$Markierung")) {
+                $abgerissen += $ziel.Name
+            }
+        } elseif ($fehler -and $fehler.Contains($eingetragen)) {
+            # Updater startet nicht mehr: "error while creating mount source path ..."
+            $abgerissen += $ziel.Name
+        }
+    }
+    return $abgerissen
+}
+
+# Minuten bis zur naechsten Sicherung laut SICHERUNG_ZEITPLAN ("M H * * *");
+# $null, wenn der Zeitplan anders aussieht (dann lieber nicht eingreifen)
+function Minuten-Bis-Sicherung {
+    $plan = Env-Wert 'SICHERUNG_ZEITPLAN' '0 2 * * *'
+    if ($plan -notmatch '^(\d{1,2}) (\d{1,2}) \* \* \*$') { return $null }
+    $minute = [int]$Matches[1]; $stunde = [int]$Matches[2]
+    if ($minute -gt 59 -or $stunde -gt 23) { return $null }
+    $jetzt = Get-Date
+    $naechste = $jetzt.Date.AddHours($stunde).AddMinutes($minute)
+    if ($naechste -le $jetzt) { $naechste = $naechste.AddDays(1) }
+    return ($naechste - $jetzt).TotalMinutes
+}
+
+function Sicherungsziele-Pruefen {
+    $zustand = Updater-Zustand
+    if ($null -eq $zustand) { return }
+    $abgerissen = @(Abgerissene-Ziele $zustand)
+    if ($abgerissen.Count -eq 0) {
+        if (Test-Path $ZielMerker) {
+            Log 'Sicherungsziele sind wieder erreichbar.'
+            Remove-Item $ZielMerker -Force
+        }
+        return
+    }
+    $namen = $abgerissen -join ' und '
+    $minuten = Minuten-Bis-Sicherung
+    if (-not (Test-Path $ZielMerker)) {
+        if (-not $Probelauf) { Schreibe-Zeit $ZielMerker }
+        if ($null -eq $minuten) {
+            Log "Docker kommt nicht mehr an: $namen (unter Windows vorhanden). SICHERUNG_ZEITPLAN ist kein einfaches 'Minute Stunde * * *' - kein automatischer Neustart, bitte Docker Desktop von Hand neu starten."
+        } else {
+            Log "Docker kommt nicht mehr an: $namen (unter Windows vorhanden). Docker Desktop wird 15 bis 60 Minuten vor der naechsten Sicherung neu gestartet."
+        }
+    }
+    # Spaetestens 15 Minuten vorher: Neustart von Docker Desktop und Updater
+    # dauern ein paar Minuten, sonst fiele die Sicherung ganz aus
+    if ($null -eq $minuten -or $minuten -lt 15 -or $minuten -gt 60) { return }
+    $letzter = Lies-Zeit $ZielNeustartMerker
+    if ($letzter -and ((Get-Date) - $letzter).TotalHours -lt 12) { return }
+    if ($null -ne (Docker-Befehl "exec $UpdaterContainer pgrep -f nachtupdate.sh")) {
+        Log 'Sicherungsziel abgerissen, aber gerade laeuft ein Nachtupdate - warte.'
+        return
+    }
+    if (-not (Test-Path $DockerExe)) {
+        Log "Sicherungsziel abgerissen, Docker Desktop aber nicht gefunden ($DockerExe) - kein Eingriff."
+        return
+    }
+
+    Log "Starte Docker Desktop neu, damit die Sicherung wieder an $namen kommt."
+    # Ein Probelauf darf den echten Neustart dieser Nacht nicht sperren
+    if ($Probelauf) { Docker-Neustarten; return }
+    Schreibe-Zeit $ZielNeustartMerker
+    Docker-Neustarten
+    $bis = (Get-Date).AddMinutes(8)
+    while ((Get-Date) -lt $bis) {
+        Start-Sleep -Seconds 15
+        $zustand = Updater-Zustand
+        if ((Erp-Zustand) -eq 'ok' -and $null -ne $zustand -and @(Abgerissene-Ziele $zustand).Count -eq 0) {
+            Log "$namen wieder eingebunden."
+            Remove-Item $ZielMerker -Force -ErrorAction SilentlyContinue
+            Benachrichtigen leise "ERP-Sicherung: $namen wieder verbunden - $Kunde" `
+                "Die Verbindung von Docker zu: $namen war abgerissen (z. B. nach dem Energiesparen). Der Docker-W${ae}chter hat Docker Desktop neu gestartet, die Sicherung heute Nacht l${ae}uft normal. Nichts zu tun."
+            return
+        }
+    }
+    Log "$namen auch nach dem Neustart von Docker Desktop nicht erreichbar. Bitte den PC neu starten."
+    Benachrichtigen dringend "ERP-Sicherung: $namen nicht erreichbar - $Kunde" `
+        "Unter Windows ist $namen da, Docker kommt aber nicht heran. Auch ein Neustart von Docker Desktop hat nicht geholfen. Bitte den PC neu starten, sonst sichert die Nacht nur teilweise."
+}
+
 # --- Einstellungen pruefen --------------------------------------------------------
 # Im Zweifel nicht eingreifen: Mit einer kaputten Adresse galte das ERP nie als
 # erreichbar, und der Waechter wuerde grundlos immer wieder neu starten.
@@ -212,6 +381,13 @@ $HealthUrl = "http://$($adresse):$port/actuator/health"
 $Kunde = Env-Wert 'KUNDE_NAME' $env:COMPUTERNAME
 
 # --- Pruefen --------------------------------------------------------------------
+if (-not $Probelauf) {
+    if (-not (Test-Path $LogOrdner)) { New-Item -ItemType Directory -Path $LogOrdner | Out-Null }
+    [IO.File]::WriteAllText($Lebenszeichen, (Get-Date).ToString('o'))
+}
+$dockerProzess = Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Select-Object -First 1
+$DockerExe = if ($dockerProzess -and $dockerProzess.Path) { $dockerProzess.Path } else { $StandardDockerExe }
+
 $merker = Lies-Merker
 $zustand = Erp-Zustand
 # Kurze Aussetzer (z. B. Neustart der App) nicht gleich als Absturz werten
@@ -226,11 +402,11 @@ if ($zustand -ne 'weg') {
         Log 'ERP antwortet wieder.'
         Schreibe-Merker $merker.Zeit 0
     }
+    # Nur bei gesundem ERP: Antwortet es mit Fehler, startet es vielleicht
+    # gerade neu (Nachtupdate) - dann nicht dazwischenfunken
+    if ($zustand -eq 'ok') { Sicherungsziele-Pruefen }
     exit 0
 }
-
-$dockerProzess = Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Select-Object -First 1
-$DockerExe = if ($dockerProzess -and $dockerProzess.Path) { $dockerProzess.Path } else { $StandardDockerExe }
 
 # Nach dem Anmelden braucht Docker Desktop ein paar Minuten - nicht beim
 # Hochfahren dazwischenfunken (auch nicht, wenn es sich gerade aktualisiert).
@@ -278,17 +454,12 @@ if ($merker -and ((Get-Date) - $merker.Zeit).TotalMinutes -lt $sperreMinuten) {
     Log "ERP weiter nicht erreichbar, letzter Neustart vor weniger als $sperreMinuten Minuten - warte. Grund: $grund"
     exit 0
 }
+Log "Starte Docker Desktop neu. Grund: $grund"
+# Ein Probelauf darf den echten Waechter nicht sperren
+if ($Probelauf) { Docker-Neustarten; exit 0 }
 $fehlversuche = if ($merker) { $merker.Fehlversuche } else { 0 }
 Schreibe-Merker (Get-Date) $fehlversuche
-
-Log "Starte Docker Desktop neu. Grund: $grund"
-if ($null -eq (Docker-Befehl 'desktop restart --timeout 240' 300)) {
-    Log "'docker desktop restart' hat nicht geklappt - beende Docker Desktop und starte es neu."
-    Get-Process -Name 'Docker Desktop', 'com.docker.backend' -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 15
-    Start-Process $DockerExe
-}
+Docker-Neustarten
 
 $bis = (Get-Date).AddMinutes(8)
 while ((Get-Date) -lt $bis) {
