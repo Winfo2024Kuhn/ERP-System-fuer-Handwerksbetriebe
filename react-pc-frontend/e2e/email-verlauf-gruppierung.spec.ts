@@ -89,9 +89,10 @@ test('"Allen antworten" belegt An und CC vor und schickt beide mit', async ({ pa
     const kopf = page.getByTestId('email-detail-header');
     await kopf.getByRole('button', { name: 'Allen antworten' }).click();
 
-    await expect(page.getByPlaceholder('Name, Firma oder E-Mail eingeben')).toHaveValue('info@example.org, max@example.com');
-    await expect(page.getByPlaceholder('CC Empfänger hinzufügen')).toHaveValue('architekt@example.net');
-    await expect(page.getByPlaceholder('CC Empfänger hinzufügen')).toHaveCount(1);
+    // Antwort-Empfänger stehen fest (ohne ×), CC bleibt änderbar.
+    await expect(page.getByTestId('empfaenger-kaertchen')).toHaveText(['info@example.org', 'max@example.com', /architekt@example\.net/]);
+    await expect(page.getByRole('button', { name: 'architekt@example.net entfernen' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'info@example.org entfernen' })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('allen-antworten.png'), animations: 'disabled' });
 
     await page.getByRole('button', { name: 'E-Mail senden' }).click();

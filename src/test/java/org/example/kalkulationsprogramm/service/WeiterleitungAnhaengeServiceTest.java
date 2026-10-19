@@ -68,8 +68,8 @@ class WeiterleitungAnhaengeServiceTest {
 
     @Test
     void ohneIds_keineAnhaenge() {
-        assertThat(service.lade(original, null, ALLE, 100)).isEmpty();
-        assertThat(service.lade(original, List.of(), ALLE, 100)).isEmpty();
+        assertThat(service.lade(original, null, ALLE, 100, 1000)).isEmpty();
+        assertThat(service.lade(original, List.of(), ALLE, 100, 1000)).isEmpty();
     }
 
     @Test
@@ -78,7 +78,7 @@ class WeiterleitungAnhaengeServiceTest {
         anhang(2L, "Skizze.pdf", "zwei");
         anhang(3L, "logo.png", "drei");
 
-        List<EmailService.Attachment> ergebnis = service.lade(original, Arrays.asList(2L, 1L, 2L, null), ALLE, 100);
+        List<EmailService.Attachment> ergebnis = service.lade(original, Arrays.asList(2L, 1L, 2L, null), ALLE, 100, 1000);
 
         assertThat(ergebnis).extracting(EmailService.Attachment::filename)
                 .containsExactly("Skizze.pdf", "Angebot Max Mustermann.pdf");
@@ -90,7 +90,7 @@ class WeiterleitungAnhaengeServiceTest {
     void fremderAnhang_wirdAbgelehnt() throws Exception {
         anhang(1L, "a.pdf", "eins");
 
-        assertThatThrownBy(() -> service.lade(original, List.of(1L, 99L), ALLE, 100))
+        assertThatThrownBy(() -> service.lade(original, List.of(1L, 99L), ALLE, 100, 1000))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Ein Anhang gehört nicht zur weitergeleiteten E-Mail.");
     }
@@ -100,7 +100,7 @@ class WeiterleitungAnhaengeServiceTest {
         anhang(1L, "Rechnung.pdf", "eins");
         when(zugriff.istAnhangSichtbar(eq(1L), any())).thenReturn(false);
 
-        assertThatThrownBy(() -> service.lade(original, List.of(1L), Set.of(), 100))
+        assertThatThrownBy(() -> service.lade(original, List.of(1L), Set.of(), 100, 1000))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Ein Anhang gehört nicht zur weitergeleiteten E-Mail.");
     }
@@ -109,7 +109,7 @@ class WeiterleitungAnhaengeServiceTest {
     void fehlendeDatei_klareMeldung() throws Exception {
         anhang(1L, "weg.pdf", null);
 
-        assertThatThrownBy(() -> service.lade(original, List.of(1L), ALLE, 100))
+        assertThatThrownBy(() -> service.lade(original, List.of(1L), ALLE, 100, 1000))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Der Anhang 'weg.pdf' ist nicht mehr vorhanden.");
     }
@@ -118,7 +118,7 @@ class WeiterleitungAnhaengeServiceTest {
     void zuGrosserAnhang_wirdAbgelehnt() throws Exception {
         anhang(1L, "gross.pdf", "0123456789");
 
-        assertThatThrownBy(() -> service.lade(original, List.of(1L), ALLE, 5))
+        assertThatThrownBy(() -> service.lade(original, List.of(1L), ALLE, 5, 1000))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("'gross.pdf' überschreitet");
     }
@@ -129,9 +129,19 @@ class WeiterleitungAnhaengeServiceTest {
         anhang(2L, null, "y");
         anhang(3L, "ordner/", "z");
 
-        List<EmailService.Attachment> ergebnis = service.lade(original, List.of(1L, 2L, 3L), ALLE, 100);
+        List<EmailService.Attachment> ergebnis = service.lade(original, List.of(1L, 2L, 3L), ALLE, 100, 1000);
 
         assertThat(ergebnis).extracting(EmailService.Attachment::filename)
                 .containsExactly("pass_wd_.pdf", "anhang", "anhang");
+    }
+
+    @Test
+    void gesamtGroesseWirdVorDemLesenGeprueft() throws Exception {
+        anhang(1L, "a.pdf", "123456");
+        anhang(2L, "b.pdf", "123456");
+
+        assertThatThrownBy(() -> service.lade(original, List.of(1L, 2L), ALLE, 100, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Die Anhänge überschreiten die maximal zulässige Gesamtgröße von 25 MB.");
     }
 }

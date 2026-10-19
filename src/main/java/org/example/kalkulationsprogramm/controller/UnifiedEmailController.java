@@ -1782,11 +1782,15 @@ public class UnifiedEmailController {
                     return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(Map.of(
                             "message", "Die weitergeleitete E-Mail gibt es nicht mehr."));
                 }
-                var sichtbareTypen = lieferantDokumentZugriffService.sichtbareTypen(null, authentication)
-                        .orElse(java.util.Set.of());
+                // Wie beim Herunterladen eines Anhangs: ohne erkennbare Rechte kein Zugriff.
+                var sichtbareTypen = lieferantDokumentZugriffService.sichtbareTypen(null, authentication);
+                if (sichtbareTypen.isEmpty()) {
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+                }
                 try {
                     weitergeleiteteAnhaenge = weiterleitungAnhaengeService.lade(original,
-                            dto.getWeiterleitungsAnhangIds(), sichtbareTypen, MAX_SINGLE_ATTACHMENT_BYTES);
+                            dto.getWeiterleitungsAnhangIds(), sichtbareTypen.get(), MAX_SINGLE_ATTACHMENT_BYTES,
+                            MAX_TOTAL_ATTACHMENTS_BYTES - totalAttachmentsSize);
                 } catch (IllegalArgumentException ex) {
                     return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
                 }

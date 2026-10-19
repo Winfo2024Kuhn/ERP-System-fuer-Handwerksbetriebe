@@ -290,12 +290,11 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
 
         // Compose-Formular oeffnet sich: Empfaenger muss der Kunde sein!
         await expect(page.getByText('E-Mail senden')).toBeVisible();
-        const recipientInput = page.locator('input[value*="kunde@architekt-muster.example"]');
-        await expect(recipientInput).toBeVisible();
+        const empfaenger = page.getByTestId('empfaenger-kaertchen');
+        await expect(empfaenger.filter({ hasText: 'kunde@architekt-muster.example' })).toBeVisible();
 
         // Eigene Firmenadresse darf NICHT im Empfaenger stehen
-        const ownRecipientInput = page.locator('input[value*="info@musterbetrieb.example"]');
-        await expect(ownRecipientInput).not.toBeVisible();
+        await expect(empfaenger.filter({ hasText: 'info@musterbetrieb.example' })).toHaveCount(0);
     });
     test('4. Antworten auf Ausgangs-Rundmail behaelt alle Empfaenger und maskiert spitze Klammern im Zitat', async ({ page }) => {
         await stubEmailApi(page);
@@ -310,11 +309,10 @@ test.describe('E-Mail-Center: Resizable Layout, Rundmail-Dropdown & Antwort-Logi
         await expect(page.getByText('E-Mail senden')).toBeVisible();
 
         // Beide Empfaenger muessen im Empfaengerfeld stehen! (Weder Anna verloren noch Bens Name ueberschrieben)
-        const recipientInput = page.locator('input[value*="anna@example.com"]');
-        await expect(recipientInput).toBeVisible();
-        const value = await recipientInput.inputValue();
-        expect(value).toContain('anna@example.com');
-        expect(value).toContain('ben@example.com');
+        const empfaenger = page.getByTestId('empfaenger-kaertchen');
+        await expect(empfaenger).toHaveCount(2);
+        await expect(empfaenger.filter({ hasText: 'anna@example.com' })).toBeVisible();
+        await expect(empfaenger.filter({ hasText: 'ben@example.com' })).toBeVisible();
 
         // Zitatkopf muss dank HTML-Escaping die Adresse als Text sichtbar darstellen
         await expect(page.locator('.email-quote')).toBeVisible();

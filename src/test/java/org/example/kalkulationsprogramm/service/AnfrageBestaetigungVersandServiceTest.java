@@ -121,6 +121,8 @@ class AnfrageBestaetigungVersandServiceTest {
         assertThat(gespeichert.isRead()).isTrue();
         assertThat(gespeichert.getSentAt()).isNotNull();
         assertThat(gespeichert.getImapFolder()).isNull();
+        // Sonst sperrt die Bestätigung das Löschen der Webseiten-Anfrage (Issue #272).
+        assertThat(gespeichert.isAutomatischeBestaetigung()).isTrue();
     }
 
     @Test

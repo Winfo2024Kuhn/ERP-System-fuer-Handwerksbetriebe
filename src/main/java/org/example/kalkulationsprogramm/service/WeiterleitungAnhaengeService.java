@@ -37,15 +37,17 @@ public class WeiterleitungAnhaengeService {
 
     /**
      * Anhänge der Original-Mail in der gewählten Reihenfolge, doppelte IDs nur einmal.
+     * Erst werden alle Größen geprüft, dann gelesen – zu große Auswahl lädt nichts in den Speicher.
      *
      * @param sichtbareTypen Lieferanten-Dokumenttypen, die der Benutzer sehen darf – als
      *                       Lieferanten-Dokument eines gesperrten Typs abgelegte Anhänge gehen
      *                       nicht mit (sonst umginge das Weiterleiten die Dokumentrechte)
      * @param maxBytesJeAnhang Grenze je Datei
+     * @param maxBytesGesamt   noch freier Platz für alle weitergeleiteten Anhänge zusammen
      * @throws IllegalArgumentException mit einer Meldung für den Benutzer
      */
     public List<EmailService.Attachment> lade(Email original, List<Long> anhangIds,
-            Set<LieferantDokumentTyp> sichtbareTypen, long maxBytesJeAnhang) {
+            Set<LieferantDokumentTyp> sichtbareTypen, long maxBytesJeAnhang, long maxBytesGesamt) {
         if (anhangIds == null || anhangIds.isEmpty()) {
             return List.of();
         }
@@ -53,29 +55,53 @@ public class WeiterleitungAnhaengeService {
                 .filter(a -> a.getId() != null)
                 .collect(Collectors.toMap(EmailAttachment::getId, Function.identity(), (a, b) -> a));
 
-        List<EmailService.Attachment> ergebnis = new ArrayList<>();
+        List<EmailAttachment> gewaehlt = new ArrayList<>();
+        List<Path> pfade = new ArrayList<>();
+        long gesamt = 0;
         for (Long id : new LinkedHashSet<>(anhangIds.stream().filter(Objects::nonNull).toList())) {
             EmailAttachment anhang = anhaengeDerMail.get(id);
             if (anhang == null || !lieferantDokumentZugriffService.istAnhangSichtbar(id, sichtbareTypen)) {
                 throw new IllegalArgumentException("Ein Anhang gehört nicht zur weitergeleiteten E-Mail.");
             }
-            ergebnis.add(lies(anhang, maxBytesJeAnhang));
+            Path pfad = pfad(anhang);
+            long groesse = groesse(pfad);
+            if (groesse > maxBytesJeAnhang) {
+                throw new IllegalArgumentException("Der Anhang '" + anzeigeName(anhang)
+                        + "' überschreitet die maximal zulässige Einzelgröße von 15 MB.");
+            }
+            gesamt += groesse;
+            if (gesamt > maxBytesGesamt) {
+                throw new IllegalArgumentException(
+                        "Die Anhänge überschreiten die maximal zulässige Gesamtgröße von 25 MB.");
+            }
+            gewaehlt.add(anhang);
+            pfade.add(pfad);
+        }
+
+        List<EmailService.Attachment> ergebnis = new ArrayList<>();
+        for (int i = 0; i < gewaehlt.size(); i++) {
+            EmailAttachment anhang = gewaehlt.get(i);
+            try {
+                ergebnis.add(new EmailService.Attachment(Files.readAllBytes(pfade.get(i)), anzeigeName(anhang),
+                        anhang.getMimeType()));
+            } catch (IOException e) {
+                throw new UncheckedIOException("Anhang konnte nicht gelesen werden.", e);
+            }
         }
         return ergebnis;
     }
 
-    private EmailService.Attachment lies(EmailAttachment anhang, long maxBytesJeAnhang) {
-        String name = anzeigeName(anhang);
+    private Path pfad(EmailAttachment anhang) {
         Path pfad = anhangDateien.resolveAttachmentPath(anhang);
         if (pfad == null || !Files.isRegularFile(pfad)) {
-            throw new IllegalArgumentException("Der Anhang '" + name + "' ist nicht mehr vorhanden.");
+            throw new IllegalArgumentException("Der Anhang '" + anzeigeName(anhang) + "' ist nicht mehr vorhanden.");
         }
+        return pfad;
+    }
+
+    private static long groesse(Path pfad) {
         try {
-            if (Files.size(pfad) > maxBytesJeAnhang) {
-                throw new IllegalArgumentException("Der Anhang '" + name
-                        + "' überschreitet die maximal zulässige Einzelgröße von 15 MB.");
-            }
-            return new EmailService.Attachment(Files.readAllBytes(pfad), name, anhang.getMimeType());
+            return Files.size(pfad);
         } catch (IOException e) {
             throw new UncheckedIOException("Anhang konnte nicht gelesen werden.", e);
         }

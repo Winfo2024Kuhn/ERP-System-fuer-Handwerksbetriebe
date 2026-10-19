@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-    Loader2, Paperclip, X, Plus, Mail, Upload, Eye, Save, Send, FolderOpen,
+    Loader2, Paperclip, X, Mail, Upload, Eye, Save, Send, FolderOpen,
     Link2, Briefcase, FileText, AlertTriangle
 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -28,6 +28,7 @@ import {
     parseEinzelversandErgebnis, brauchtAufmerksamkeit, type EinzelversandErgebnis,
 } from '../features/email/einzelversand';
 import { EinzelversandErgebnisAnzeige, EinzelversandSchalter } from '../features/email/EinzelversandSchalter';
+import { fuegeEmpfaengerHinzu, verbindeEmpfaenger, zerlegeEmpfaenger } from '../features/email/empfaengerListe';
 import { parseErrorMessage } from './settings/settingsApi';
 import { InfoAbschnitt, InfoButton } from './ui/info-button';
 import { weiterleitbareAnhaenge, type EmailAttachment } from '../features/email/emailCenterModel';
@@ -294,8 +295,11 @@ export function EmailComposeForm({
      * Text = Rückfall, wenn die Original-Mail nicht geladen werden konnte.
      */
     const [festesPostfach, setFestesPostfach] = useState<PostfachKurz | string | null | undefined>(bekanntesAntwortPostfach);
-    /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail. */
-    const [einzelversand, setEinzelversand] = useState(false);
+    /**
+     * Rundmail (jeder Empfänger bekommt eine eigene Mail): `null` = automatisch –
+     * an ab zwei Empfängern ohne CC –, sonst die bewusste Wahl des Anwenders.
+     */
+    const [einzelversandWahl, setEinzelversandWahl] = useState<boolean | null>(null);
     /** Ergebnis des letzten Einzelversands mit Teil- oder Totalfehler. */
     const [einzelversandErgebnis, setEinzelversandErgebnis] = useState<EinzelversandErgebnis | null>(null);
     /**
@@ -521,8 +525,15 @@ export function EmailComposeForm({
 
     // Einzelversand gibt es nicht bei Antworten – die gehen an genau den Verlauf.
     const einzelversandMoeglich = !replyEmailId;
+    // Ohne Doppelte gezählt – so wie die Kärtchen sie zeigen und das Backend sie verschickt.
+    const anEmpfaenger = useMemo(() => fuegeEmpfaengerHinzu([], einzelneEmpfaenger(recipient)), [recipient]);
+    /** Im An-Feld ist eine Adresse getippt, aber noch kein Kärtchen (wird es beim Klick auf Senden). */
+    const [anEntwurfVorhanden, setAnEntwurfVorhanden] = useState(false);
+    const ccEingetragen = ccRecipients.some(c => c.trim());
+    // Mehrere Empfänger sollen sich nicht versehentlich gegenseitig sehen (Datenschutz).
+    // Wer CC einträgt, will eine gemeinsame Mail – dann schaltet sich nichts von selbst ein.
+    const einzelversand = einzelversandWahl ?? (anEmpfaenger.length >= 2 && !ccEingetragen);
     const einzelversandAktiv = einzelversandMoeglich && einzelversand;
-    const anEmpfaenger = useMemo(() => einzelneEmpfaenger(recipient), [recipient]);
     const zuVieleEmpfaenger = einzelversandAktiv && anEmpfaenger.length > EINZELVERSAND_MAX_EMPFAENGER;
     // Solange der Empfänger nur automatisch vorgeschlagen wurde, darf ein Wechsel der
     // Zuordnung ihn mitziehen. Sobald der User selbst tippt, bleibt seine Eingabe stehen.
@@ -575,7 +586,11 @@ export function EmailComposeForm({
             const cc = gespeicherterEinzelversand ? [] : parseRecipientList(content.cc).map(recipient => recipient.raw);
             setCcRecipients(cc);
             setShowCc(cc.length > 0);
-            setEinzelversand(gespeicherterEinzelversand);
+            // Aus bei mehreren Empfängern ohne CC kann nur von Hand ausgeschaltet worden sein –
+            // diese Wahl bleibt. Sonst entscheidet wieder die Automatik.
+            const handAusgeschaltet = !gespeicherterEinzelversand && cc.length === 0
+                && einzelneEmpfaenger(content.recipient ?? initialRecipient).length >= 2;
+            setEinzelversandWahl(gespeicherterEinzelversand ? true : handAusgeschaltet ? false : null);
             if (content.postfachId != null) setPostfachId(content.postfachId);
             setReplyEmailId(content.replyEmailId ?? initialReplyEmailId);
             setWeitergeleitetVonEmailId(content.weitergeleitetVonEmailId ?? initialWeitergeleitetVonEmailId ?? undefined);
@@ -1234,13 +1249,16 @@ export function EmailComposeForm({
                                             variant="ghost"
                                             size="sm"
                                             className={inline ? "h-6 min-h-6 px-1 text-xs text-rose-600" : "min-h-11 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-3"}
-                                            onClick={() => { setShowCc(true); setCcRecipients(['']); }}
+                                            onClick={() => { setShowCc(true); setCcRecipients([]); }}
                                         >
                                             {inline ? '+ CC' : '+ CC hinzufügen'}
                                         </Button>
                                     )}
                                 </div>
                                 <EmailRecipientInput
+                                    mehrfach
+                                    ariaLabel="Empfänger"
+                                    onEntwurfChange={setAnEntwurfVorhanden}
                                     value={recipient}
                                     onChange={handleRecipientChange}
                                     suggestions={availableEmails}
@@ -1257,7 +1275,7 @@ export function EmailComposeForm({
                                     aktiv={einzelversand}
                                     onChange={(an) => {
                                         markDirty();
-                                        setEinzelversand(an);
+                                        setEinzelversandWahl(an);
                                         setEinzelversandErgebnis(null);
                                         // Beim Einzelversand gibt es keine Kopie-Empfänger.
                                         if (an) { setShowCc(false); setCcRecipients([]); }
@@ -1396,39 +1414,17 @@ export function EmailComposeForm({
                                             Keine
                                         </Button>
                                     </div>
-                                    <div className="space-y-2">
-                                        {ccRecipients.map((cc, idx) => (
-                                            <EmailRecipientInput
-                                                key={idx}
-                                                value={cc}
-                                                onChange={(val) => {
-                                                    markDirty();
-                                                    const newCcs = [...ccRecipients];
-                                                    newCcs[idx] = val;
-                                                    setCcRecipients(newCcs);
-                                                }}
-                                                onRemove={() => {
-                                                    markDirty();
-                                                    const newCcs = [...ccRecipients];
-                                                    newCcs.splice(idx, 1);
-                                                    setCcRecipients(newCcs);
-                                                    if (newCcs.length === 0) setShowCc(false);
-                                                }}
-                                                suggestions={availableEmails}
-                                                placeholder="CC Empfänger hinzufügen"
-                                            />
-                                        ))}
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setCcRecipients([...ccRecipients, ''])}
-                                            className="text-xs min-h-11"
-                                        >
-                                            <Plus className="w-3 h-3 mr-1" />
-                                            CC hinzufügen
-                                        </Button>
-                                    </div>
+                                    <EmailRecipientInput
+                                        mehrfach
+                                        ariaLabel="Kopie (CC)"
+                                        value={verbindeEmpfaenger(ccRecipients)}
+                                        onChange={(val) => {
+                                            markDirty();
+                                            setCcRecipients(zerlegeEmpfaenger(val));
+                                        }}
+                                        suggestions={availableEmails}
+                                        placeholder="Kopie an: Name, Firma oder E-Mail"
+                                    />
                                 </div>
                             )}
                         </div>
@@ -1641,6 +1637,10 @@ export function EmailComposeForm({
                                                     was er nicht bekommen soll; die Original-Mail bleibt unverändert.
                                                 </p>
                                                 <p>
+                                                    Diese Auswahl wird nicht im Entwurf gespeichert: Öffnen Sie den Entwurf später
+                                                    wieder, sind alle Anhänge erneut ausgewählt.
+                                                </p>
+                                                <p>
                                                     Die Anhänge zählen zur Größengrenze unten: zusammen mit eigenen Anhängen
                                                     höchstens {formatFileSize(MAX_ATTACHMENT_BYTES)}.
                                                 </p>
@@ -1768,7 +1768,7 @@ export function EmailComposeForm({
                     </Button>
                     <Button
                         onClick={handleSend}
-                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || originalAnhaengeLaden || !recipient.trim() || !subject.trim() || attachmentLimitExceeded || zuVieleEmpfaenger || pflichtanhangFehlt}
+                        disabled={sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0 || originalAnhaengeLaden || (!recipient.trim() && !anEntwurfVorhanden) || !subject.trim() || attachmentLimitExceeded || zuVieleEmpfaenger || pflichtanhangFehlt}
                         title={zuVieleEmpfaenger ? EINZELVERSAND_ZU_VIELE
                             : pflichtanhangFehlt ? pflichtanhangHinweis
                             : originalAnhaengeLaden ? 'Die Anhänge der Original-Mail werden noch geladen.'

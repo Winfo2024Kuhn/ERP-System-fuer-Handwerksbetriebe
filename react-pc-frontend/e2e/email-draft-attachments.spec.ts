@@ -125,7 +125,7 @@ test('Fehlgeschlagenes Speichern bleibt sichtbar und hält den Entwurf für Wied
 test('CC mit Komma im Namen wird wiederhergestellt; CC entfernen wird allein gespeichert', async ({ page }) => {
     const state = await setup(page, existingDraft());
     await page.getByText('Entwurf mit Plan', { exact: true }).click();
-    await expect(page.getByPlaceholder('CC Empfänger hinzufügen')).toHaveValue('"Mustermann, Max" <kopie@example.com>');
+    await expect(page.getByTitle('"Mustermann, Max" <kopie@example.com>')).toContainText('Mustermann, Max');
     await page.getByRole('button', { name: 'Keine', exact: true }).click();
     await expect.poll(() => state.draft?.cc).toBe('');
     expect(state.draft!.attachments[0].bytes.equals(plan)).toBe(true);
