@@ -27,6 +27,8 @@ import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { cn } from '../lib/utils';
+import { pruefeZahlungszielTage } from '../lib/zahlungsziel';
+import { useToast } from '../components/ui/toast';
 import { type KundeDetail, type KundeProjektKurz, type KundeAnfrageKurz, type AusgangsGeschaeftsDokument } from '../types';
 import GoogleMapsEmbed from '../components/GoogleMapsEmbed';
 import { AddressAutocomplete } from '../components/AddressAutocomplete';
@@ -599,10 +601,14 @@ interface KundenFormularProps {
     isCreating: boolean;
     onSave: (kunde: KundeDetail) => void;
     onCancel: () => void;
+    /** Duplikat-Treffer gewählt: Formular schließen und den vorhandenen Kunden öffnen. */
+    onBestehendenOeffnen: (kundeId: number) => void;
 }
 
-const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSave, onCancel }) => {
+const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSave, onCancel, onBestehendenOeffnen }) => {
     const [formData, setFormData] = useState<KundeDetail>(kunde);
+    // Als Text: Beim Tippen darf das Feld kurz leer sein, ohne auf 8 zu springen.
+    const [zahlungszielText, setZahlungszielText] = useState(String(kunde.zahlungsziel ?? 8));
     const [emails, setEmails] = useState<string[]>(kunde.kundenEmails || ['']);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
@@ -612,6 +618,7 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
     useEffect(() => {
         setFormData(kunde);
         setEmails(kunde.kundenEmails?.length ? kunde.kundenEmails : ['']);
+        setZahlungszielText(String(kunde.zahlungsziel ?? 8));
         setError('');
     }, [kunde]);
 
@@ -662,6 +669,12 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
             }
         }
 
+        const zahlungsziel = pruefeZahlungszielTage(zahlungszielText);
+        if (!zahlungsziel.gueltig) {
+            setError(zahlungsziel.meldung);
+            return;
+        }
+
         const uniqueEmails = [...new Set(emails.map(e => e.trim()).filter(Boolean))];
         const payload = {
             ...formData,
@@ -670,7 +683,7 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
             telefon: ohneReineVorwahl(formData.telefon),
             mobiltelefon: ohneReineVorwahl(formData.mobiltelefon),
             kundenEmails: uniqueEmails,
-            zahlungsziel: formData.zahlungsziel || 8
+            zahlungsziel: zahlungsziel.tage
         };
 
         setSaving(true);
@@ -712,18 +725,9 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
 
     const handleSubmit = () => speichern(false);
 
-    const handleBestehendenWaehlen = async (treffer: KundeDuplikatTreffer) => {
+    const handleBestehendenWaehlen = (treffer: KundeDuplikatTreffer) => {
         setDuplikatModal(null);
-        try {
-            const res = await fetch(`/api/kunden/${treffer.id}`);
-            if (res.ok) {
-                const detail = await res.json();
-                onSave(detail);
-                return;
-            }
-        } catch (err) {
-            console.error('Kunden-Detail konnte nicht geladen werden:', err);
-        }
+        onBestehendenOeffnen(treffer.id);
     };
 
     return (
@@ -835,7 +839,7 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <Label htmlFor="zahlungsziel">Zahlungsziel (Tage)</Label>
-                            <Input id="zahlungsziel" type="number" min={0} value={formData.zahlungsziel ?? 8} onChange={e => handleChange('zahlungsziel', parseInt(e.target.value, 10) || 8)} placeholder="8" />
+                            <Input id="zahlungsziel" type="text" inputMode="numeric" value={zahlungszielText} onChange={e => setZahlungszielText(e.target.value)} placeholder="8" />
                         </div>
                     </div>
 
@@ -1008,6 +1012,7 @@ const TYP_OPTIONS = [
 type ViewMode = 'list' | 'detail';
 
 export const Kundeneditor: React.FC = () => {
+    const toast = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
     const [viewMode, setViewMode] = useState<ViewMode>('list');
     const [selectedKunde, setSelectedKunde] = useState<KundeDetail | null>(null);
@@ -1121,31 +1126,45 @@ export const Kundeneditor: React.FC = () => {
         setIsCreating(true);
     };
 
+    const zeigeDetail = (kunde: KundeDetail) => {
+        setSelectedKunde(kunde);
+        setViewMode('detail');
+        lastDeepLinkId.current = String(kunde.id);
+        setSearchParams({ kundeId: String(kunde.id) }, { replace: true });
+    };
+
+    /** Lädt die vollständige Kundenakte (Projekte, Dokumente, E-Mails, Kennzahlen). */
+    const ladeDetail = async (kundeId: number | string): Promise<KundeDetail | null> => {
+        try {
+            const res = await fetch(`/api/kunden/${kundeId}`);
+            return res.ok ? await res.json() : null;
+        } catch {
+            return null;
+        }
+    };
+
     const handleOpenDetail = async (kunde: KundeDetail) => {
-        // Fetch full details including communication history
         setLoading(true);
         try {
-            const res = await fetch(`/api/kunden/${kunde.id}`);
-            if (res.ok) {
-                const fullDetails = await res.json();
-                setSelectedKunde(fullDetails);
-                setViewMode('detail');
-                lastDeepLinkId.current = String(fullDetails.id);
-                setSearchParams({ kundeId: String(fullDetails.id) }, { replace: true });
+            // Ohne volle Akte zeigen wir wenigstens die Daten aus der Liste.
+            zeigeDetail((await ladeDetail(kunde.id)) ?? kunde);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleBestehendenOeffnen = async (kundeId: number) => {
+        setLoading(true);
+        try {
+            const detail = await ladeDetail(kundeId);
+            if (detail) {
+                // Formular erst jetzt schließen: Klappt das Laden nicht, bleibt das Eingetippte stehen.
+                setEditingKunde(null);
+                setIsCreating(false);
+                zeigeDetail(detail);
             } else {
-                console.error('Failed to load full customer details');
-                // Fallback to list data if fetch fails
-                setSelectedKunde(kunde);
-                setViewMode('detail');
-                lastDeepLinkId.current = String(kunde.id);
-                setSearchParams({ kundeId: String(kunde.id) }, { replace: true });
+                toast.error('Der vorhandene Kunde konnte nicht geöffnet werden.');
             }
-        } catch (err) {
-            console.error('Error loading customer details', err);
-            setSelectedKunde(kunde);
-            setViewMode('detail');
-            lastDeepLinkId.current = String(kunde.id);
-            setSearchParams({ kundeId: String(kunde.id) }, { replace: true });
         } finally {
             setLoading(false);
         }
@@ -1165,14 +1184,18 @@ export const Kundeneditor: React.FC = () => {
         }
     };
 
-    const handleSave = (saved: KundeDetail) => {
+    const handleSave = async (saved: KundeDetail) => {
         setEditingKunde(null);
         setIsCreating(false);
-        if (viewMode === 'detail') {
-            setSelectedKunde(saved);
-        }
         if (isCreating) setPage(0);
         fetchKunden();
+        if (viewMode === 'detail') {
+            // Die Antwort aufs Speichern enthält nur die Stammdaten. Damit Projekte,
+            // Dokumente und Kennzahlen stehen bleiben, die ganze Akte neu laden.
+            const detail = await ladeDetail(saved.id);
+            // Hat der Nutzer inzwischen eine andere Akte geöffnet, bleibt die stehen.
+            setSelectedKunde(prev => (prev && prev.id !== saved.id) ? prev : (detail ?? { ...(prev ?? saved), ...saved }));
+        }
     };
 
     const handleCancel = () => {
@@ -1203,6 +1226,7 @@ export const Kundeneditor: React.FC = () => {
                         isCreating={isCreating}
                         onSave={handleSave}
                         onCancel={handleCancel}
+                        onBestehendenOeffnen={handleBestehendenOeffnen}
                     />
                 )}
             </>
@@ -1238,7 +1262,7 @@ export const Kundeneditor: React.FC = () => {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Kundennummer</label>
-                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="z.B. K-1005" value={filters.nummer} onChange={e => handleFilterChange('nummer', e.target.value)} />
+                        <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="z.B. 1005" value={filters.nummer} onChange={e => handleFilterChange('nummer', e.target.value)} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Ort</label>
@@ -1296,7 +1320,7 @@ export const Kundeneditor: React.FC = () => {
 
             {/* Modal für Neuanlage */}
             {editingKunde && (
-                <KundenFormular kunde={editingKunde} isCreating={isCreating} onSave={handleSave} onCancel={handleCancel} />
+                <KundenFormular kunde={editingKunde} isCreating={isCreating} onSave={handleSave} onCancel={handleCancel} onBestehendenOeffnen={handleBestehendenOeffnen} />
             )}
         </PageLayout>
     );

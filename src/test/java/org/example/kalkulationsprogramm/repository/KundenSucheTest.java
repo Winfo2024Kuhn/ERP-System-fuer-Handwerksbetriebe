@@ -79,6 +79,14 @@ class KundenSucheTest {
         assertThat(suche("muster", "max", "k-1", "WÜRZBURG", "rechnung@", "KUNDE")).containsExactly("Max Mustermann");
     }
 
+    @Test
+    @DisplayName("Freitext findet auch E-Mail-Adressen, ohne doppelte Zeilen")
+    void freitextFindetEmail() {
+        assertThat(suche("RECHNUNG@example", null, null, null, null, null)).containsExactly("Max Mustermann");
+        assertThat(suche("@example.com", null, null, null, null, null))
+                .containsExactly("Erika Musterfrau", "Max Mustermann");
+    }
+
     private static Kunde kunde(String name, String nummer, String ort, String... emails) {
         Kunde kunde = new Kunde();
         kunde.setName(name);

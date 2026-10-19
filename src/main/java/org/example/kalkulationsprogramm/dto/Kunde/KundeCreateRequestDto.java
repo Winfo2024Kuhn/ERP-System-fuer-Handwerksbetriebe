@@ -1,6 +1,8 @@
 package org.example.kalkulationsprogramm.dto.Kunde;
 
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -40,6 +42,9 @@ public class KundeCreateRequestDto {
     @Size(max = 50, message = "Mobiltelefon ist zu lang.")
     private String mobiltelefon;
 
+    /** Zahlungsziel in Tagen; leer = bisheriger Wert bleibt (neue Kunden: 8 Tage). */
+    @Min(value = 1, message = "Das Zahlungsziel muss mindestens 1 Tag sein.")
+    @Max(value = 365, message = "Das Zahlungsziel darf höchstens 365 Tage sein.")
     private Integer zahlungsziel;
 
     private List<@Email(message = "Ungültige E-Mail-Adresse.") @Size(max = 255, message = "E-Mail ist zu lang.") String> kundenEmails;

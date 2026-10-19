@@ -19,6 +19,7 @@ public class KundeDetailDto {
     private String ort;
     private String telefon;
     private String mobiltelefon;
+    private Integer zahlungsziel;
     private List<String> kundenEmails;
     private KundeStatistikDto statistik;
     private List<KundeAggregierteEmailDto> aggregierteEmails;

@@ -113,6 +113,7 @@ class KundenDetailServiceTest {
         @Test
         void mapptKundeGrunddaten() {
             Kunde kunde = erstelleKunde(1L);
+            kunde.setZahlungsziel(30);
             when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
             when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of());
             setupAnfrageMocks(kunde, List.of(), List.of());
@@ -121,6 +122,7 @@ class KundenDetailServiceTest {
 
             assertThat(result).isPresent();
             KundeDetailDto dto = result.get();
+            assertThat(dto.getZahlungsziel()).isEqualTo(30);
             assertThat(dto.getId()).isEqualTo(1L);
             assertThat(dto.getName()).isEqualTo("Max Mustermann");
             assertThat(dto.getKundennummer()).isEqualTo("K-001");

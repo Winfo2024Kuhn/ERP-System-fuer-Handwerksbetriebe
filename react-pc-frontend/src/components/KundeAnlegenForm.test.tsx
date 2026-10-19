@@ -67,3 +67,29 @@ describe('KundeAnlegenForm – vorgeschlagene Ortsvorwahl', () => {
         expect(gesendet[0].telefon).toBe('0931 123456');
     });
 });
+
+describe('KundeAnlegenForm – Zahlungsziel', () => {
+    it('übernimmt ein frei eingetipptes Zahlungsziel', async () => {
+        const { onSuccess } = await fuelleKundeAus();
+        const feld = screen.getByLabelText('Zahlungsziel (Tage)');
+        fireEvent.change(feld, { target: { value: '' } });
+        expect(feld).toHaveValue('');
+        fireEvent.change(feld, { target: { value: '30' } });
+
+        await userEvent.click(screen.getByRole('button', { name: 'Kunde anlegen' }));
+
+        await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+        expect(gesendet[0].zahlungsziel).toBe(30);
+    });
+
+    it('legt mit leerem Zahlungsziel nichts an', async () => {
+        const { onSuccess } = await fuelleKundeAus();
+        fireEvent.change(screen.getByLabelText('Zahlungsziel (Tage)'), { target: { value: '' } });
+
+        await userEvent.click(screen.getByRole('button', { name: 'Kunde anlegen' }));
+
+        expect(await screen.findByText('Das Zahlungsziel muss zwischen 1 und 365 Tagen liegen.')).toBeInTheDocument();
+        expect(onSuccess).not.toHaveBeenCalled();
+        expect(gesendet).toHaveLength(0);
+    });
+});

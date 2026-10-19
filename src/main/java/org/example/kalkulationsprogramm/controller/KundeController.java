@@ -231,6 +231,9 @@ public class KundeController {
         kunde.setTelefon(Telefonnummer.ohneReineVorwahl(request.getTelefon()));
         kunde.setMobiltelefon(Telefonnummer.ohneReineVorwahl(request.getMobiltelefon()));
         kunde.setKundenEmails(new ArrayList<>(normalizeEmails(request.getKundenEmails())));
+        if (request.getZahlungsziel() != null) {
+            kunde.setZahlungsziel(request.getZahlungsziel());
+        }
     }
 
     private String trimToNull(String value) {
