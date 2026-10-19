@@ -7,8 +7,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
+import org.example.email.EmailService;
 import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAbsender;
@@ -61,7 +63,16 @@ public class AusgangsmailService {
 
     /** Anhänge einer Ausgangsmail: verknüpftes Dokument und hochgeladene Dateien. */
     public record Anhaenge(String dokumentGespeichert, String dokumentOriginal, String dokumentMimeType,
-            MultipartFile[] dateien) {
+            MultipartFile[] dateien, List<EmailService.Attachment> weitergeleitet) {
+
+        public Anhaenge {
+            weitergeleitet = weitergeleitet == null ? List.of() : List.copyOf(weitergeleitet);
+        }
+
+        public Anhaenge(String dokumentGespeichert, String dokumentOriginal, String dokumentMimeType,
+                MultipartFile[] dateien) {
+            this(dokumentGespeichert, dokumentOriginal, dokumentMimeType, dateien, List.of());
+        }
 
         public static Anhaenge keine() {
             return new Anhaenge(null, null, null, null);
@@ -213,6 +224,18 @@ public class AusgangsmailService {
                 att.setMimeType(file.getContentType());
                 email.addAttachment(att);
             }
+        }
+        // Mitgeschickte Anhänge einer weitergeleiteten Mail: eigene Kopie je Mail.
+        for (EmailService.Attachment anhang : anhaenge.weitergeleitet()) {
+            Path dst = sichererZielpfad(baseDir, anhang.filename());
+            Files.write(dst, anhang.data());
+            EmailAttachment att = new EmailAttachment();
+            att.setEmail(email);
+            att.setOriginalFilename(anhang.filename());
+            att.setStoredFilename(dst.getFileName().toString());
+            att.setSizeBytes((long) anhang.data().length);
+            att.setMimeType(anhang.mimeType());
+            email.addAttachment(att);
         }
     }
 

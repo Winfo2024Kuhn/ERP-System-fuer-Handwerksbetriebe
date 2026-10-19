@@ -88,6 +88,7 @@ class UnifiedEmailSichtbarkeitJpaTest {
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
     @MockBean private EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
     @MockBean private LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    @MockBean private org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
 
     private static final Authentication ADMIN = new UsernamePasswordAuthenticationToken("chefin", null,
             AuthorityUtils.createAuthorityList("ROLE_ADMIN"));

@@ -73,6 +73,12 @@ public class ProjektEmailDto {
      */
     private Long weitergeleitetVonEmailId;
 
+    /**
+     * Weiterleitung: Anhänge der Original-Mail, die mitgehen sollen. Der Server liest sie
+     * selbst aus der Original-Mail; ohne {@link #weitergeleitetVonEmailId} wirkungslos.
+     */
+    private List<Long> weiterleitungsAnhangIds;
+
     /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail und sieht nur sich selbst. */
     private boolean einzelversand;
 

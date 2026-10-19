@@ -658,7 +658,12 @@ public class EmailAttachmentProcessingService {
         return lower.endsWith(".pdf") || lower.endsWith(".xml");
     }
 
-    private Path resolveAttachmentPath(EmailAttachment attachment) {
+    /**
+     * Pfad der Datei eines Mail-Anhangs; sucht in allen bisherigen Ablage-Strukturen und
+     * bleibt immer im Anhang-Ordner. Wird die Datei nicht gefunden, kommt der Pfad zurück,
+     * an dem sie liegen sollte – Aufrufer prüfen {@code Files.exists}.
+     */
+    public Path resolveAttachmentPath(EmailAttachment attachment) {
         if (attachment.getStoredFilename() == null) {
             return null;
         }

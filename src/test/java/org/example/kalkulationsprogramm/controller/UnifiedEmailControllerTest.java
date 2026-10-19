@@ -105,6 +105,7 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
     @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    @MockBean private org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
     @MockBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
@@ -1135,6 +1136,119 @@ class UnifiedEmailControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.fromAddress").value("rechnungen@example.com"));
             verify(postfachVersandService, never()).postfachFuerNeueMail(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+        }
+
+        private void versandUeberRechnungsPostfach() throws Exception {
+            var rechnungen = postfach(2L, "rechnungen@example.com");
+            given(postfachVersandService.versandUeber(any())).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachVersandService.Versand(
+                            new org.example.email.EmailService("h", 465, "u", "p"), "rechnungen@example.com", rechnungen));
+            org.mockito.Mockito.doReturn("<fw@example.com>").when(unifiedEmailController)
+                    .sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+            given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.of(java.util.Set.of()));
+        }
+
+        @Test
+        @DisplayName("Weiterleiten: gewählte Anhänge der Original-Mail gehen mit und werden mit abgelegt")
+        void weiterleitenMitAnhaengen() throws Exception {
+            Email original = createTestEmail(5L, "Rechnung 4711", "lieferant@example.com");
+            given(emailRepository.findById(5L)).willReturn(Optional.of(original));
+            var pdf = new org.example.email.EmailService.Attachment(
+                    "pdf".getBytes(StandardCharsets.UTF_8), "Rechnung 4711.pdf", "application/pdf");
+            given(weiterleitungAnhaengeService.lade(eq(original), eq(List.of(11L)), any(),
+                    eq(UnifiedEmailController.MAX_SINGLE_ATTACHMENT_BYTES),
+                    eq(UnifiedEmailController.MAX_TOTAL_ATTACHMENTS_BYTES))).willReturn(List.of(pdf));
+            versandUeberRechnungsPostfach();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weitergeleitetVonEmailId\":5,\"weiterleitungsAnhangIds\":[11],\"recipients\":[\"buero@example.com\"],\"subject\":\"WG: Rechnung 4711\",\"body\":\"b\"}")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.attachments[0].originalFilename").value("Rechnung 4711.pdf"));
+            verify(unifiedEmailController).sendeSmtpMail(any(), eq("buero@example.com"), any(), any(), any(), any(),
+                    eq(List.of(pdf)));
+        }
+
+        @Test
+        @DisplayName("Weiterleiten: Anhang einer anderen Mail -> 400 mit Meldung, nichts verschickt")
+        void weiterleitenFremderAnhang() throws Exception {
+            Email original = createTestEmail(5L, "Rechnung 4711", "lieferant@example.com");
+            given(emailRepository.findById(5L)).willReturn(Optional.of(original));
+            given(weiterleitungAnhaengeService.lade(any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong()))
+                    .willThrow(new IllegalArgumentException("Ein Anhang gehört nicht zur weitergeleiteten E-Mail."));
+            versandUeberRechnungsPostfach();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weitergeleitetVonEmailId\":5,\"weiterleitungsAnhangIds\":[-1,0," + Long.MAX_VALUE + "],\"recipients\":[\"buero@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Ein Anhang gehört nicht zur weitergeleiteten E-Mail."));
+            verify(unifiedEmailController, never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Weiterleiten: Anhänge über 25 MB zusammen -> 400")
+        void weiterleitenZuGrosseAnhaenge() throws Exception {
+            Email original = createTestEmail(5L, "Pläne", "kunde@example.com");
+            given(emailRepository.findById(5L)).willReturn(Optional.of(original));
+            byte[] vierzehnMb = new byte[14 * 1024 * 1024];
+            given(weiterleitungAnhaengeService.lade(any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong()))
+                    .willReturn(List.of(
+                            new org.example.email.EmailService.Attachment(vierzehnMb, "a.pdf", "application/pdf"),
+                            new org.example.email.EmailService.Attachment(vierzehnMb, "b.pdf", "application/pdf")));
+            versandUeberRechnungsPostfach();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weitergeleitetVonEmailId\":5,\"weiterleitungsAnhangIds\":[1,2],\"recipients\":[\"buero@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("25 MB")));
+        }
+
+        @Test
+        @DisplayName("Weiterleiten: Original-Mail im fremden Postfach -> 404, kein Anhang wird gelesen")
+        void weiterleitenNichtLesbareMail() throws Exception {
+            Email original = createTestEmail(5L, "Lohnabrechnung", "steuerbuero@example.com");
+            original.ordnePostfachZu(postfach(9L, "chef@example.com"), null, null);
+            given(emailRepository.findById(5L)).willReturn(Optional.of(original));
+            given(postfachSichtbarkeitService.fuer(any())).willReturn(
+                    new org.example.kalkulationsprogramm.service.PostfachSichtbarkeit(false, java.util.Set.of(1L)));
+            versandUeberRechnungsPostfach();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weitergeleitetVonEmailId\":5,\"weiterleitungsAnhangIds\":[11],\"recipients\":[\"buero@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isNotFound());
+            verify(weiterleitungAnhaengeService, never()).lade(any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong());
+            verify(unifiedEmailController, never()).sendeSmtpMail(any(), any(), any(), any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("Weiterleiten mit Anhängen ohne erkennbare Rechte -> 401")
+        void weiterleitenOhneRechte() throws Exception {
+            Email original = createTestEmail(5L, "Rechnung 4711", "lieferant@example.com");
+            given(emailRepository.findById(5L)).willReturn(Optional.of(original));
+            versandUeberRechnungsPostfach();
+            given(lieferantDokumentZugriffService.sichtbareTypen(any(), any())).willReturn(Optional.empty());
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weitergeleitetVonEmailId\":5,\"weiterleitungsAnhangIds\":[11],\"recipients\":[\"buero@example.com\"],\"subject\":\"s\",\"body\":\"b\"}")))
+                    .andExpect(status().isUnauthorized());
+            verify(weiterleitungAnhaengeService, never()).lade(any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong());
+        }
+
+        @Test
+        @DisplayName("Anhang-IDs ohne Weiterleitung werden ignoriert")
+        void anhangIdsOhneWeiterleitungWirkungslos() throws Exception {
+            var info = postfach(1L, "info@example.com");
+            given(postfachVersandService.postfachFuerNeueMail(any(), any(), eq(false))).willReturn(info);
+            versandUeberRechnungsPostfach();
+
+            mockMvc.perform(multipart("/api/emails/send").file(dto(
+                            "{\"weiterleitungsAnhangIds\":[11],\"recipients\":[\"kunde@example.com\"],\"subject\":\"s\",\"body\":\"<script>alert(1)</script>\"}")))
+                    .andExpect(status().isOk());
+            verify(weiterleitungAnhaengeService, never()).lade(any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(),
+                    org.mockito.ArgumentMatchers.anyLong());
         }
 
         @Test

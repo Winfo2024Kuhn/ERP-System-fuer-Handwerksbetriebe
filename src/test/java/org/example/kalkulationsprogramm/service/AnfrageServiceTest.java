@@ -55,19 +55,20 @@ class AnfrageServiceTest {
         });
 
         AnfrageErstellenDto dto = new AnfrageErstellenDto();
-        dto.setBauvorhaben("Bau?");
+        // ß und Fragezeichen bleiben erhalten – früher wurde daraus "ss" bzw. nichts (Issue #272).
+        dto.setBauvorhaben("Geländer Straße 5 – auch Tor?");
         dto.setKundenId(99L);
         dto.setAnlegedatum(LocalDate.of(2024, 1, 2));
 
         Kunde k = new Kunde();
         k.setId(99L);
-        k.setName("Test");
+        k.setName("Max Weiß");
         when(kundeRepository.findById(99L)).thenReturn(Optional.of(k));
         AnfrageResponseDto result = service.erstelleAnfrage(dto);
 
         assertThat(result.getId()).isEqualTo(42L);
-        assertThat(result.getBauvorhaben()).isEqualTo("Bau");
-        assertThat(result.getKundenName()).isEqualTo("Test");
+        assertThat(result.getBauvorhaben()).isEqualTo("Geländer Straße 5 – auch Tor?");
+        assertThat(result.getKundenName()).isEqualTo("Max Weiß");
         assertThat(result.getAnlegedatum()).isEqualTo(LocalDate.of(2024, 1, 2));
 
         verify(anfrageRepository, atLeastOnce()).save(any(Anfrage.class));
@@ -669,5 +670,67 @@ class AnfrageServiceTest {
         assertThat(ergebnis.ok()).isTrue();
         assertThat(ergebnis.kundeMitgeloescht()).isTrue();
         verify(kundeRepository).delete(kunde);
+    }
+
+    private static org.example.kalkulationsprogramm.domain.Email anfrageMail(Anfrage anfrage, boolean automatisch) {
+        org.example.kalkulationsprogramm.domain.Email mail = new org.example.kalkulationsprogramm.domain.Email();
+        mail.assignToAnfrage(anfrage);
+        mail.setDirection(org.example.kalkulationsprogramm.domain.EmailDirection.OUT);
+        mail.setAutomatischeBestaetigung(automatisch);
+        return mail;
+    }
+
+    private static AnfrageService serviceMitMails(AnfrageRepository anfrageRepository,
+            org.example.kalkulationsprogramm.repository.EmailRepository emailRepository) {
+        return new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
+                mock(AnfrageDokumentRepository.class), mock(KundeRepository.class), emailRepository,
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
+    }
+
+    /** Webseiten-Anfrage mit nur der automatischen Eingangsbestätigung lässt sich löschen (Issue #272). */
+    @Test
+    void loeschen_nurAutomatischeBestaetigung_anfrageGeloeschtMailBleibtOhneZuordnung() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        var emailRepository = mock(org.example.kalkulationsprogramm.repository.EmailRepository.class);
+        AnfrageService service = serviceMitMails(anfrageRepository, emailRepository);
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(42L);
+        var bestaetigung = anfrageMail(anfrage, true);
+        when(anfrageRepository.findById(42L)).thenReturn(Optional.of(anfrage));
+        when(emailRepository.findByAnfrageOrderBySentAtDesc(anfrage)).thenReturn(List.of(bestaetigung));
+
+        AnfrageService.LoeschResult ergebnis = service.loescheMitPruefung(42L, false);
+
+        assertThat(ergebnis.ok()).isTrue();
+        verify(anfrageRepository).delete(anfrage);
+        verify(emailRepository).save(bestaetigung);
+        assertThat(bestaetigung.getAnfrage()).isNull();
+        assertThat(bestaetigung.getZuordnungTyp())
+                .isEqualTo(org.example.kalkulationsprogramm.domain.EmailZuordnungTyp.KEINE);
+    }
+
+    /** Echte Korrespondenz sperrt das Löschen weiterhin – auch neben der Bestätigung. */
+    @Test
+    void loeschen_echteMailNebenBestaetigung_bleibtGesperrt() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        var emailRepository = mock(org.example.kalkulationsprogramm.repository.EmailRepository.class);
+        AnfrageService service = serviceMitMails(anfrageRepository, emailRepository);
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(42L);
+        var bestaetigung = anfrageMail(anfrage, true);
+        when(anfrageRepository.findById(42L)).thenReturn(Optional.of(anfrage));
+        when(emailRepository.findByAnfrageOrderBySentAtDesc(anfrage))
+                .thenReturn(List.of(anfrageMail(anfrage, false), bestaetigung));
+
+        AnfrageService.LoeschResult ergebnis = service.loescheMitPruefung(42L, false);
+
+        assertThat(ergebnis.ok()).isFalse();
+        assertThat(ergebnis.grund()).isEqualTo(AnfrageService.LoeschGrund.EMAIL_VORHANDEN);
+        verify(anfrageRepository, never()).delete(any(Anfrage.class));
+        assertThat(bestaetigung.getAnfrage()).isSameAs(anfrage);
     }
 }

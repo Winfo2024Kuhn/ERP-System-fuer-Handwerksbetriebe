@@ -295,6 +295,16 @@ schreibt nur in Ordner, in denen diese Datei liegt. Grund: Fehlt die Festplatte 
 von Docker, bindet Docker an ihrer Stelle einen leeren Ordner ein, und die Sicherung landete
 unbemerkt im Nirgendwo. Stattdessen kommt die Meldung „Externe Festplatte nicht gefunden“.
 Nach dem Anschließen den Rechner neu starten (oder `docker compose up -d --force-recreate updater`).
+Unter Windows erledigt das der [Docker-Wächter](#docker-wächter-windows) von selbst in der
+Stunde vor der nächsten Sicherung.
+
+**Abgerissene Verbindung (Windows):** Trennt Windows die Platte kurz, etwa beim
+Energiesparen, ist sie unter Windows gleich wieder da. Docker Desktop hält aber an der alten
+Verbindung fest: Im Updater endet jeder Zugriff mit „No such device“, und die Sicherung meldet
+„Die Verbindung ist abgerissen“. Ein Neustart nur des Updaters hilft dann **nicht**, er
+scheitert („mkdir /run/desktop/mnt/host/f: file exists“) und lässt den Updater gestoppt
+zurück. Erst `docker desktop restart` bindet die Platte neu ein. Das macht der Docker-Wächter
+selbst. Vorbeugen: Energiesparen für die Platte abschalten (EINRICHTEN.md, Schritt 6.1).
 
 Eingebunden werden die Ziele beim **Erstellen** des Updaters. Wer `SICHERUNG_PLATTE` oder
 `SICHERUNG_CLOUD` ändert und `docker compose up -d updater` vergisst, bekommt deshalb die
@@ -449,8 +459,23 @@ Docker-Waechter“ alle 5 Minuten im angemeldeten Benutzer, unsichtbar im Hinter
 7. Mit `WEBHOOK_URL` kommt eine Handy-Nachricht: leise, wenn der Neustart geholfen hat,
    dringend beim **ersten** erfolglosen Neustart (danach keine weiteren, bis es wieder
    geht).
+8. **Sicherungsziele:** Antwortet das ERP gesund, prüft er auch die Ziele aus
+   `SICHERUNG_PLATTE` und `SICHERUNG_CLOUD` (nur Windows-Pfade `/run/desktop/mnt/host/…`).
+   Liegt die Datei `ERP-SICHERUNGSZIEL.txt` unter Windows im Ziel, der Updater sieht sie aber
+   nicht (abgerissene Verbindung, siehe [Tägliche Sicherung](#tägliche-sicherung), oder
+   Platte erst nach dem Start von Docker angesteckt), startet er Docker Desktop neu. Und zwar
+   nur 15 bis 60 Minuten vor der Sicherung (`SICHERUNG_ZEITPLAN` der Form `Minute Stunde * * *`),
+   nicht während eines Nachtupdates und höchstens einmal in 12 Stunden. Danach kommt eine
+   leise Handy-Nachricht, hilft der Neustart nicht, eine dringende. Fehlt die Platte auch
+   unter Windows, oder ist ein Ziel neu eingetragen und noch nicht eingebunden, greift er
+   nicht ein, das meldet die Sicherung selbst.
 
-Was er tut, steht in `logs/docker-waechter.log`. Einen Neustart von Hand löst
+Bei jedem Lauf frischt er `logs/docker-waechter-lebt.txt` auf. Daran erkennt
+`sicherung.sh`, dass der Wächter läuft, und schreibt in die Meldung „wird von selbst wieder
+eingebunden“ statt „Rechner neu starten“.
+
+Was er tut, steht in `logs/docker-waechter.log`. Zum Ausprobieren ohne Neustart und ohne
+Handy-Nachricht: `powershell -ExecutionPolicy Bypass -File docker-waechter.ps1 -Probelauf`. Einen Neustart von Hand löst
 `docker desktop restart` aus. Sind `APP_PORT` oder `APP_ADRESSE` in der `.env` ungültig,
 pausiert der Wächter und schreibt das ins Log. Im Zweifel greift er also nicht ein.
 
