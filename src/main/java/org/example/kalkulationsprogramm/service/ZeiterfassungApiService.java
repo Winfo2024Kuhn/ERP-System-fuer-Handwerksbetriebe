@@ -980,7 +980,7 @@ public class ZeiterfassungApiService {
     }
 
     /**
-     * Gibt alle Feiertage für ein Jahr zurück (Bayern).
+     * Gibt die aktiven Feiertage eines Jahres im eingestellten Bundesland zurück.
      */
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getFeiertage(int jahr) {
@@ -989,6 +989,8 @@ public class ZeiterfassungApiService {
                     Map<String, Object> map = new LinkedHashMap<>();
                     map.put("datum", f.getDatum().toString());
                     map.put("bezeichnung", f.getBezeichnung());
+                    map.put("halbTag", f.isHalbTag());
+                    map.put("bundesland", f.getBundesland());
                     return map;
                 })
                 .collect(Collectors.toList());

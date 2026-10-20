@@ -44,7 +44,7 @@ export const NAVIGATION: NavCategory[] = [
                 items: [
                     { name: 'Artikel', href: '/artikel', icon: Package },
                     { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
-                    { name: 'Kategorien', href: '/produktkategorien', icon: Layers },
+                    { name: 'Projekt-Kategorien', href: '/produktkategorien', icon: Layers },
                 ]
             },
             {

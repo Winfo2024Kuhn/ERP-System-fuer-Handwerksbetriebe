@@ -1,10 +1,12 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.dto.Feiertag.FeiertageVorschauDto;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.dto.KostenstelleDto;
 import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.domain.KostenstellenTyp;
+import org.example.kalkulationsprogramm.service.FeiertageVorschauService;
 import org.example.kalkulationsprogramm.service.FirmeninformationService;
 import org.example.kalkulationsprogramm.service.KostenstelleService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
@@ -28,6 +30,7 @@ public class FirmaController {
     private final FirmeninformationService firmeninformationService;
     private final KostenstelleService kostenstelleService;
     private final SteuerberaterKontaktService steuerberaterKontaktService;
+    private final FeiertageVorschauService feiertageVorschauService;
 
     // ==================== FIRMENINFORMATION ====================
 
@@ -39,6 +42,18 @@ public class FirmaController {
     @PutMapping
     public ResponseEntity<FirmeninformationDto> speichernFirmeninformation(@RequestBody FirmeninformationDto dto) {
         return ResponseEntity.ok(firmeninformationService.speichern(dto));
+    }
+
+    /**
+     * Vorschlag für das Bundesland aus der Postleitzahl und die Feiertage, die dort gelten
+     * (Issue #222). Speichert nichts.
+     */
+    @GetMapping("/feiertage-vorschau")
+    public ResponseEntity<FeiertageVorschauDto> feiertageVorschau(
+            @RequestParam(required = false) String plz,
+            @RequestParam(required = false) String bundesland,
+            @RequestParam(required = false) Integer jahr) {
+        return ResponseEntity.ok(feiertageVorschauService.vorschau(plz, bundesland, jahr));
     }
 
     // ==================== FIRMENLOGO ====================

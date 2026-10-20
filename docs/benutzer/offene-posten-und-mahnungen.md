@@ -4,7 +4,7 @@ Unter **Finanzen & Controlling → Offene Posten** stehen alle Rechnungen, die n
 
 ## Welche Kundenrechnungen stehen in den offenen Posten?
 
-Unter **Finanzen & Controlling → Offene Posten**, Reiter „Ausgangsrechnungen“, steht jede Rechnung, Abschlags-, Teil- und Schlussrechnung, sobald sie gebucht ist – also gedruckt, als PDF gespeichert oder per E-Mail verschickt (siehe [Rechnungen schreiben und stornieren](rechnungen.md)). Entwürfe stehen hier nicht. Eine stornierte Rechnung verschwindet von selbst, Stornorechnungen erscheinen nicht. Bezahlte Kundenrechnungen blendet die Seite aus; der Schalter „Bezahlte anzeigen“ holt die der letzten 12 Monate dazu.
+Unter **Finanzen & Controlling → Offene Posten**, Reiter „Ausgangsrechnungen“, steht jede Rechnung, Abschlags-, Teil- und Schlussrechnung, sobald sie gebucht ist – also gedruckt, als PDF gespeichert oder per E-Mail verschickt (siehe [Rechnungen schreiben und stornieren](rechnungen.md)). Entwürfe stehen hier nicht. Eine stornierte Rechnung verschwindet von selbst, Stornorechnungen erscheinen nicht. Gutschriften erscheinen nicht als eigene Zeile: Sie mindern den Betrag ihrer Rechnung. Die Spalte „Betrag“ zeigt dann den Rest, darunter klein „Rechnung … · Gutschrift −…“, und die „Offene Summe“ rechnet mit dem Rest. Eine Gutschrift über die ganze Rechnung erledigt sie. Bezahlte Kundenrechnungen blendet die Seite aus; der Schalter „Bezahlte anzeigen“ holt die der letzten 12 Monate dazu.
 
 Oben stehen „Offene Summe“, „Rechnungen“, „Überfällig“ und „Mit Mahnung“. Die Tabelle zeigt „Projekt“ (Klick öffnet das Projekt), „Kunde“, „Rechnungsnr.“, „Datum“, „Versandt“, „Fällig“, „Tage“, „Betrag“, „Dokument“ und „Status“. Die neuesten Rechnungen stehen oben. Suche und Filter gibt es hier nicht.
 

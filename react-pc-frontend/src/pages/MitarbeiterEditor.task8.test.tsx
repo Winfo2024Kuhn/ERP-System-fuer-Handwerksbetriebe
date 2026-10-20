@@ -178,12 +178,13 @@ describe('MitarbeiterEditor Task 8 – atomare Arbeitszeit', () => {
         await user.clear(samstag);await user.type(samstag,'8,5');await user.tab();
         const sonntag=screen.getByRole('textbox',{name:'Sonntag Stunden'});expect(sonntag).toHaveFocus();expect(sonntag).toHaveValue('');
         await user.type(sonntag,'0');
-        const start=screen.getByRole('textbox',{name:'Früheste Buchung – optional'});
+        expect(screen.queryByRole('textbox',{name:'Früheste Buchung – optional'})).not.toBeInTheDocument();
+        const start=screen.getByRole('textbox',{name:'Späteste Buchung – optional'});
         await user.type(start,'25:99');await user.click(screen.getByRole('button',{name:'Vorschau anzeigen'}));
         expect(requests.some(r=>r.url.endsWith('/vorschau'))).toBe(false);
-        await user.clear(start);await user.type(start,'09:05');await user.click(screen.getByRole('button',{name:'Vorschau anzeigen'}));
+        await user.clear(start);await user.type(start,'17:30');await user.click(screen.getByRole('button',{name:'Vorschau anzeigen'}));
         const req=requests.find(r=>r.url.endsWith('/vorschau'));
-        expect(JSON.parse(String(req?.init?.body))).toMatchObject({arbeitszeit:{samstagStunden:8.5,sonntagStunden:0,buchungStartZeit:'09:05'}});
+        expect(JSON.parse(String(req?.init?.body))).toMatchObject({arbeitszeit:{samstagStunden:8.5,sonntagStunden:0,buchungEndeZeit:'17:30'}});
     });
 
     it('erklärt für Geschäftsführer die optionale Arbeitszeit und zeigt Button Arbeitszeit optional einrichten', async () => {

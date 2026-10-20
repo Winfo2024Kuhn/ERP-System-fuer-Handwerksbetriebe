@@ -21,7 +21,7 @@ describe('ZeiterfassungZeitkonten Task 9b', () => {
     it('liest die aktuelle Arbeitszeit aus dem versionierten Status und zeigt die Historie an', async () => {
         renderSeite();
         expect(await screen.findByText('Max Mustermann')).toBeInTheDocument();
-        expect(screen.getByText(/Gültig ab 2026-01-01/)).toBeInTheDocument();
+        expect(screen.getByText(/Gültig ab 1\.1\.2026/)).toBeInTheDocument();
         expect(screen.getByText(/2 Zeitabschnitt/)).toBeInTheDocument();
         expect(screen.getByText('Werkstatt Vollzeit')).toBeInTheDocument();
     });

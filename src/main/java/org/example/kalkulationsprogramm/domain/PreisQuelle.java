@@ -23,9 +23,9 @@ public enum PreisQuelle {
      * gefasst: Preise aus einem hochgeladenen Angebots-PDF tragen dieselbe Quelle,
      * "Angebots-Mail" waere dort falsch.
      */
-    ANGEBOT_EMAIL("Aus einem Angebot uebernommen"),
+    ANGEBOT_EMAIL("Aus einem Angebot übernommen"),
     CSV_IMPORT("Aus Preisliste importiert"),
-    RECHNUNG("Aus einer Rechnung uebernommen"),
+    RECHNUNG("Aus einer Rechnung übernommen"),
     SYSTEM("Vom System angelegt"),
     UNBEKANNT("Herkunft nicht erfasst");
 

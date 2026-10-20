@@ -141,4 +141,63 @@ class LieferantArtikelpreisServiceTest {
         assertThat(service.anlegen(LIEFERANT_ID, null, new BigDecimal("12.50"), "ABC-123")).isEmpty();
         verify(artikelPreiseRepository, never()).save(any(LieferantenArtikelPreise.class));
     }
+
+    // ==================== Preis ändern ohne Nummer (Issue #265) ====================
+
+    @Test
+    void neuerPreisOhneNummer_behaeltDieBisherigeLieferantenNummer() {
+        LieferantenArtikelPreise bisher = new LieferantenArtikelPreise();
+        bisher.setPreis(new BigDecimal("12.50"));
+        bisher.setExterneArtikelnummer("ABC-123");
+        bisher.setAktuell(true);
+        when(artikelPreiseRepository.findByArtikel_IdAndLieferant_IdAndAktuellTrue(ARTIKEL_ID, LIEFERANT_ID))
+                .thenReturn(Optional.of(bisher));
+        when(lieferantenRepository.findById(LIEFERANT_ID)).thenReturn(Optional.of(erstelleLieferant()));
+        when(artikelRepository.findById(ARTIKEL_ID)).thenReturn(Optional.of(erstelleArtikel()));
+        when(artikelPreiseRepository.save(any(LieferantenArtikelPreise.class)))
+                .thenAnswer(aufruf -> aufruf.getArgument(0));
+        when(mapper.toDto(any(LieferantenArtikelPreise.class))).thenReturn(new LieferantArtikelpreisDto());
+
+        service.anlegen(LIEFERANT_ID, ARTIKEL_ID, new BigDecimal("13.90"), "   ");
+
+        org.mockito.ArgumentCaptor<LieferantenArtikelPreise> gespeichert =
+                org.mockito.ArgumentCaptor.forClass(LieferantenArtikelPreise.class);
+        verify(artikelPreiseRepository).save(gespeichert.capture());
+        assertThat(gespeichert.getValue().getPreis()).isEqualByComparingTo("13.90");
+        assertThat(gespeichert.getValue().getExterneArtikelnummer()).isEqualTo("ABC-123");
+        assertThat(gespeichert.getValue().getPreisAenderungsdatum()).isNotNull();
+        assertThat(gespeichert.getValue().getQuelle()).isEqualTo(org.example.kalkulationsprogramm.domain.PreisQuelle.MANUELL);
+    }
+
+    @Test
+    void gleicherPreisOhneNummer_loeschtDieNummerNicht() {
+        LieferantenArtikelPreise bisher = new LieferantenArtikelPreise();
+        bisher.setPreis(new BigDecimal("12.50"));
+        bisher.setExterneArtikelnummer("ABC-123");
+        bisher.setAktuell(true);
+        when(artikelPreiseRepository.findByArtikel_IdAndLieferant_IdAndAktuellTrue(ARTIKEL_ID, LIEFERANT_ID))
+                .thenReturn(Optional.of(bisher));
+        when(artikelPreiseRepository.save(bisher)).thenReturn(bisher);
+        when(mapper.toDto(bisher)).thenReturn(new LieferantArtikelpreisDto());
+
+        service.aktualisiere(LIEFERANT_ID, ARTIKEL_ID, new BigDecimal("12.50"), null);
+
+        assertThat(bisher.getExterneArtikelnummer()).isEqualTo("ABC-123");
+    }
+
+    @Test
+    void eingegebeneNummer_ersetztDieBisherige() {
+        LieferantenArtikelPreise bisher = new LieferantenArtikelPreise();
+        bisher.setPreis(new BigDecimal("12.50"));
+        bisher.setExterneArtikelnummer("ALT-1");
+        bisher.setAktuell(true);
+        when(artikelPreiseRepository.findByArtikel_IdAndLieferant_IdAndAktuellTrue(ARTIKEL_ID, LIEFERANT_ID))
+                .thenReturn(Optional.of(bisher));
+        when(artikelPreiseRepository.save(bisher)).thenReturn(bisher);
+        when(mapper.toDto(bisher)).thenReturn(new LieferantArtikelpreisDto());
+
+        service.aktualisiere(LIEFERANT_ID, ARTIKEL_ID, new BigDecimal("12.50"), "NEU-2");
+
+        assertThat(bisher.getExterneArtikelnummer()).isEqualTo("NEU-2");
+    }
 }

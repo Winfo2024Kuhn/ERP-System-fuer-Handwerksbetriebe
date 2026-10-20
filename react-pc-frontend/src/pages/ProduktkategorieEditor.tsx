@@ -351,9 +351,9 @@ export default function ProduktkategorieEditor() {
 
     return (
         <PageLayout
-            ribbonCategory="Artikelverwaltung"
-            title="Produktkategorien"
-            subtitle="Verwaltung der hierarchischen Kategoriestruktur."
+            ribbonCategory="Katalog"
+            title="Projekt-Kategorien"
+            subtitle="Gewerke, nach denen Projekte eingeordnet werden – nicht die Ordner der Artikel."
             actions={
                 <>
                     {selectedKategorie && (

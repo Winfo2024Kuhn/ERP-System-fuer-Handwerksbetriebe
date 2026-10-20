@@ -28,7 +28,7 @@ class ZeitkontenmodellControllerTest {
     }
     ZeitkontenmodellDto dto(String name) {
         return new ZeitkontenmodellDto(1L, 0L, name, new ZeitkontenmodellDto.Arbeitszeit(BigDecimal.ZERO,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, null));
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null, null), false);
     }
     @Test void alleCrudRoutenVerwendenDtoVertrag() throws Exception {
         when(service.alle()).thenReturn(List.of(dto("Werkstatt")));

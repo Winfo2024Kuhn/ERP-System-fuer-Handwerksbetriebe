@@ -574,7 +574,7 @@ export function ArtikelSuche({
                                     <th className="px-2 py-3 w-12" scope="col">
                                         <span className="sr-only">Vorschaubild</span>
                                     </th>
-                                    <SortableHeader label="Artikel-Nr." column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
+                                    <SortableHeader label="Artikel-Nr." column="artikelnummer" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Bezeichnung" column="produktname" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <SortableHeader label="Werkstoff" column="werkstoffName" currentSort={sortColumn} direction={sortDirection} onSort={handleSort} />
                                     <th className="px-4 py-3">Ausführung</th>
@@ -761,6 +761,8 @@ export function ArtikelSuche({
             {/* Modals */}
             {showSupplierModal && (
                 <SupplierSelectModal
+                    kategorieId={filters.kategorieId || undefined}
+                    kategorieName={filters.kategorieName || undefined}
                     onSelect={handleSupplierSelect}
                     onClose={() => setShowSupplierModal(false)}
                 />

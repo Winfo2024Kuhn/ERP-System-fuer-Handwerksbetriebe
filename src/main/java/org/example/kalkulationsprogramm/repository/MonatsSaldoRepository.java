@@ -69,6 +69,21 @@ public interface MonatsSaldoRepository extends JpaRepository<MonatsSaldo, Long>,
     @Query("UPDATE MonatsSaldo ms SET ms.gueltig = false, ms.version = ms.version + 1 WHERE ms.festgeschrieben = false AND ms.mitarbeiter.id = :mitarbeiterId")
     void invalidiereAlle(@Param("mitarbeiterId") Long mitarbeiterId);
 
+    /** Feiertag geändert: diesen Monat für alle Mitarbeiter neu berechnen (festgeschriebene bleiben). */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE MonatsSaldo ms SET ms.gueltig = false, ms.version = ms.version + 1 WHERE ms.festgeschrieben = false AND ms.jahr = :jahr AND ms.monat = :monat")
+    void invalidiereMonatFuerAlle(@Param("jahr") int jahr, @Param("monat") int monat);
+
+    /** Feiertage eines Jahres neu geladen: das Jahr für alle Mitarbeiter neu berechnen. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE MonatsSaldo ms SET ms.gueltig = false, ms.version = ms.version + 1 WHERE ms.festgeschrieben = false AND ms.jahr = :jahr")
+    void invalidiereJahrFuerAlle(@Param("jahr") int jahr);
+
+    /** Bundesland gewechselt: alle nicht festgeschriebenen Monate aller Mitarbeiter neu berechnen. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE MonatsSaldo ms SET ms.gueltig = false, ms.version = ms.version + 1 WHERE ms.festgeschrieben = false")
+    void invalidiereAlleOffenen();
+
     interface OffenerMonat {
         Integer getJahr();
         Integer getMonat();

@@ -282,7 +282,7 @@ public class ZeiterfassungApiController {
     }
 
     /**
-     * Gibt alle Feiertage für ein Jahr zurück (Bayern).
+     * Gibt die aktiven Feiertage eines Jahres im eingestellten Bundesland zurück.
      */
     @GetMapping("/feiertage")
     public ResponseEntity<List<Map<String, Object>>> getFeiertage(@RequestParam int jahr) {

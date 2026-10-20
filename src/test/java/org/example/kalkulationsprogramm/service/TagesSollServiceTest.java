@@ -366,26 +366,9 @@ class TagesSollServiceTest {
         assertEquals(0, new BigDecimal("8.00").compareTo(feiertagsGutschrift));
     }
 
-    @Test
-    void periodenSollSumme_feiertagAusAnderemBundesland_wirdIgnoriert() {
-        // FeiertagService.getFeiertageZwischen filtert (anders als
-        // istFeiertag/istHalberFeiertag) NICHT nach Bundesland - ohne den
-        // Filter in TagesSollService wuerde dieser "halbe Feiertag" aus NRW
-        // die Sollstunden am Montag faelschlich halbieren.
-        when(phaseRepository.findImZeitraum(MITARBEITER_ID, MONTAG_NORMAL, MONTAG_NORMAL))
-                .thenReturn(Collections.emptyList());
-        when(feiertagService.getFeiertageZwischen(MONTAG_NORMAL, MONTAG_NORMAL))
-                .thenReturn(List.of(new Feiertag(MONTAG_NORMAL, "Fronleichnam", "NW", true)));
-
-        BigDecimal periodenSoll = tagesSollService.periodenSollSumme(MITARBEITER_ID, MONTAG_NORMAL,
-                MONTAG_NORMAL);
-        BigDecimal feiertagsGutschrift = tagesSollService.feiertagsGutschriftSumme(MITARBEITER_ID,
-                MONTAG_NORMAL, MONTAG_NORMAL);
-
-        assertEquals(0, new BigDecimal("8.00").compareTo(periodenSoll),
-                "Feiertag aus einem anderen Bundesland darf die Sollstunden nicht halbieren");
-        assertEquals(0, BigDecimal.ZERO.compareTo(feiertagsGutschrift));
-    }
+    // Feiertage anderer Bundesländer und abgeschaltete filtert seit Issue #222 schon
+    // FeiertagService.getFeiertageZwischen (FeiertagServiceTest); TagesSollService rechnet,
+    // was er bekommt.
 
     // ---- (j) Einzeltag: istFeiertag/istHalberFeiertag zusammengelegt ----
 
@@ -514,9 +497,8 @@ class TagesSollServiceTest {
                 .thenReturn(List.of(wiedereingliederungsPhase(new BigDecimal("3.5"), von)));
         Feiertag halb = new Feiertag(); halb.setDatum(von.plusDays(3)); halb.setBundesland("BY"); halb.setHalbTag(true);
         Feiertag voll = new Feiertag(); voll.setDatum(von.plusDays(4)); voll.setBundesland("BY");
-        Feiertag fremd = new Feiertag(); fremd.setDatum(von); fremd.setBundesland("HE");
         Feiertag wochenende = new Feiertag(); wochenende.setDatum(bis); wochenende.setBundesland("BY");
-        when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(List.of(halb, voll, fremd, wochenende));
+        when(feiertagService.getFeiertageZwischen(von, bis)).thenReturn(List.of(halb, voll, wochenende));
         assertEquals(0, new BigDecimal("17.50").compareTo(tagesSollService.periodenSollSumme(1L, von, bis)));
         assertEquals(0, new BigDecimal("5.25").compareTo(tagesSollService.feiertagsGutschriftSumme(1L, von, bis)));
         assertEquals(0, new BigDecimal("12.25").compareTo(tagesSollService.arbeitsSollSumme(1L, von, bis)));

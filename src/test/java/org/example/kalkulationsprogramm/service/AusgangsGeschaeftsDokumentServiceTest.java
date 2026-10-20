@@ -86,6 +86,19 @@ class AusgangsGeschaeftsDokumentServiceTest {
                 auditService);
     }
 
+    /** Gutschriften gehören zu einer gebuchten Rechnung (Issue #223). */
+    private void gebuchteRechnungAlsVorgaenger(AusgangsGeschaeftsDokumentErstellenDto dto) {
+        AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+        rechnung.setId(99L);
+        rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+        rechnung.setDokumentNummer("RE-2026/01/00001");
+        rechnung.setBetragNetto(new BigDecimal("100.00"));
+        rechnung.setBetragBrutto(new BigDecimal("119.00"));
+        rechnung.setGebucht(true);
+        when(dokumentRepository.findById(99L)).thenReturn(Optional.of(rechnung));
+        dto.setVorgaengerId(99L);
+    }
+
     private void mockCounterForNummer() {
         AusgangsGeschaeftsDokumentCounter counter = new AusgangsGeschaeftsDokumentCounter();
         counter.setZaehler(0L);
@@ -666,6 +679,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT);
             dto.setKundeId(7L);
+            gebuchteRechnungAlsVorgaenger(dto);
             dto.setBetreff("Gutschrift");
             dto.setDatum(LocalDate.of(2027, 3, 1));
 
@@ -688,6 +702,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT);
             dto.setKundeId(7L);
+            gebuchteRechnungAlsVorgaenger(dto);
 
             assertThatThrownBy(() -> service.erstellen(dto))
                     .isInstanceOfSatisfying(org.springframework.web.server.ResponseStatusException.class,
@@ -709,6 +724,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT);
             dto.setKundeId(7L);
+            gebuchteRechnungAlsVorgaenger(dto);
             dto.setDatum(LocalDate.of(2024, 3, 1));
 
             service.erstellen(dto);
@@ -738,6 +754,9 @@ class AusgangsGeschaeftsDokumentServiceTest {
             AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
             dto.setTyp(typ);
             dto.setBetreff("Test");
+            if (typ == AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT) {
+                gebuchteRechnungAlsVorgaenger(dto);
+            }
 
             AusgangsGeschaeftsDokument result = service.erstellen(dto);
 
@@ -1834,6 +1853,9 @@ class AusgangsGeschaeftsDokumentServiceTest {
             when(dokumentRepository.findById(2L)).thenReturn(Optional.of(gebuchteSchluss));
             when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(10L))
                     .thenReturn(List.of(abschlag, gebuchteSchluss, schlussEntwurf));
+            // Keine Gutschriften an den Rechnungen (Storno-Sperre, Issue #223)
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L)).thenReturn(List.of());
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(2L)).thenReturn(List.of());
             mockCounterForNummer();
             when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
@@ -1870,6 +1892,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
             when(dokumentRepository.findById(1L)).thenReturn(Optional.of(abschlag));
             when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(10L))
                     .thenReturn(List.of(abschlag, stornierteSchluss));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L)).thenReturn(List.of());
             mockCounterForNummer();
             when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(projektDokumentRepository.findAllGeschaeftsdokumente()).thenReturn(Collections.emptyList());
@@ -1900,7 +1923,10 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
             assertThat(ergebnis.storno().getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.STORNO);
             assertThat(ergebnis.hinweise()).isEmpty();
-            verify(dokumentRepository, never()).findByVorgaengerIdOrderByErstelltAmAsc(any());
+            // Die Geschwister unter der AB werden nicht abgefragt; nur die Gutschriften der
+            // Rechnung selbst (Storno-Sperre, Issue #223).
+            verify(dokumentRepository, never()).findByVorgaengerIdOrderByErstelltAmAsc(10L);
+            verify(dokumentRepository).findByVorgaengerIdOrderByErstelltAmAsc(1L);
         }
 
         private AusgangsGeschaeftsDokument rechnung(Long id, AusgangsGeschaeftsDokumentTyp typ, boolean gebucht) {

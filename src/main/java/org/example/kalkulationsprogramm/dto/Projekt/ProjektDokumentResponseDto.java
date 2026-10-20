@@ -30,6 +30,10 @@ public class ProjektDokumentResponseDto {
     private String referenzDokumentNummer;
     private boolean mahnung;
     private BigDecimal rechnungsbetrag;
+    /** Brutto der gebuchten Kunden-Gutschriften zu dieser Rechnung (Issue #223), 0 = keine. */
+    private BigDecimal gutgeschrieben;
+    /** Rechnungsbetrag minus Gutschriften; null ohne Rechnungsbetrag. */
+    private BigDecimal offenerBetrag;
     private boolean bezahlt;
     private Long projektId;
     private String projektAuftragsnummer;

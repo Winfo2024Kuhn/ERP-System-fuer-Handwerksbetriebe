@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Sun, Briefcase, Clock, TrendingUp, TrendingDown, Minus, RefreshCw, Stethoscope, GraduationCap, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
 import { anspruchHinweis, formatUrlaubstage, tageMitEinheit, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubsantrag'
+import { feiertageAnzahlText } from '../lib/bundeslaender'
 
 interface Mitarbeiter {
     id: number
@@ -54,6 +55,10 @@ interface SaldenPageProps {
 interface Feiertag {
     datum: string
     bezeichnung: string
+    /** Halber Feiertag (z. B. Heiligabend): Soll bleibt, gutgeschrieben wird die Hälfte. */
+    halbTag?: boolean
+    /** Kürzel des eingestellten Bundeslands, z. B. "BY". */
+    bundesland?: string
 }
 
 export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
@@ -476,7 +481,7 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                 </div>
                                 <div>
                                     <h2 className="font-bold text-slate-900">Feiertage {saldo.jahr}</h2>
-                                    <p className="text-xs text-slate-500">{feiertage.length} Feiertage in Bayern</p>
+                                    <p className="text-xs text-slate-500">{feiertageAnzahlText(feiertage.length, feiertage[0]?.bundesland)}</p>
                                 </div>
                             </div>
                             <div className="p-4 space-y-2">
@@ -510,6 +515,7 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                                                     <div>
                                                         <p className={`font-medium text-sm ${vergangen ? 'text-slate-500' : 'text-slate-900'}`}>
                                                             {f.bezeichnung}
+                                                            {f.halbTag && <span className="ml-1 font-normal text-slate-500">(halber Tag)</span>}
                                                         </p>
                                                         <p className="text-xs text-slate-400">
                                                             {formatDateShort(f.datum)}

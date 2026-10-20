@@ -28,7 +28,14 @@ Alle ausgehenden Geschäftsdokumente werden in der Entity `AusgangsGeschaeftsDok
 | `STORNO` | Stornorechnung | `ST` | Sofort bei Erstellung | Immer gesperrt |
 | `ZAHLUNGSERINNERUNG`, `ERSTE_MAHNUNG`, `ZWEITE_MAHNUNG` | Zahlungserinnerung, 1. Mahnung, 2. Mahnung | – | – | **Nur virtuell**: Mahnungen werden als `ProjektGeschaeftsdokument` gespeichert und nur zur Anzeige unter der Rechnung eingeblendet |
 
-Stornierte Dokumente sind immer gesperrt. Gutschriften kennt das System als Typ, der Dialog „Dokument erstellen“ bietet sie derzeit aber nicht an.
+Stornierte Dokumente sind immer gesperrt.
+
+**Gutschriften** entstehen nur als Folgedokument einer gebuchten, nicht stornierten Rechnung (`RECHNUNG`, `TEILRECHNUNG`, `ABSCHLAGSRECHNUNG`, `SCHLUSSRECHNUNG`). Der Dialog „Dokument erstellen“ bietet sie bewusst nicht an; der Weg führt über das Aktionsmenü der Rechnung → „Gutschrift erstellen“ (Projekt-Dokumentliste und Dokumentbaum). Der Dialog lädt `GET /api/ausgangs-dokumente/{rechnungId}/gutschrift-rahmen` (Rechnungsbetrag, bereits gutgeschrieben, höchstens noch möglich) und legt per `POST /api/ausgangs-dokumente` mit `typ: GUTSCHRIFT` und `vorgaengerId` an:
+
+- **Ganze Rechnung:** ohne `positionenJson` – der Server übernimmt Positionen und Text der Rechnung, im Editor anpassbar.
+- **Teilbetrag:** das Frontend schickt `positionenJson` mit genau einer Leistungsposition „Gutschrift zu Rechnung RE-…: Grund“ (Menge 1, Einheit `psch`, Einzelpreis = Netto-Betrag, positiv).
+
+Positionen werden positiv erfasst; der Server speichert `betragNetto`/`betragBrutto` der Gutschrift negativ (wie beim Storno), Listen zeigen sie deshalb mit Minus. Mehr als der noch offene Rechnungsbetrag lässt sich nicht gutschreiben (Prüfung beim Anlegen, Speichern und Buchen). Die gebuchte Gutschrift ist wie eine Rechnung gesperrt und lässt sich stornieren. Sie mindert den Offenen Posten der Rechnung (`gutgeschrieben`, `offenerBetrag`); Mahnungen fordern nur den Rest, eine Gutschrift über den vollen Betrag erledigt den Posten. Die E-Rechnung wird als Gutschrift (Typ 381) mit Bezug auf die Rechnung erzeugt. Der Auftragswert des Projekts bleibt unverändert.
 
 ---
 
@@ -40,7 +47,7 @@ Stornierte Dokumente sind immer gesperrt. Gutschriften kennt das System als Typ,
 {KÜRZEL}-JJJJ/MM/NNNNN
 ```
 
-Beispiele: `AG-2026/10/00001`, `AB-2026/10/00002`, `RE-2026/10/00042`, `ST-2026/10/00043`
+Beispiele: `AG-2026/10/00001`, `AB-2026/10/00002`, `RE-2026/10/00042`, `ST-2026/10/00043`, `GU-2026/10/00044` (Gutschrift)
 
 Die Nummer wird beim ersten Speichern vergeben. Das Kürzel zeigt den Typ (siehe Tabelle oben).
 

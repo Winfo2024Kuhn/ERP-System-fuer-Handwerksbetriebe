@@ -84,6 +84,15 @@ function BezahlteAnzeigenInfo() {
     </InfoButton>;
 }
 
+/**
+ * Was der Kunde noch zahlen muss: der offene Betrag nach Gutschriften. Kennt der
+ * Server ihn nicht (ältere Antwort, Mahnung), gilt der Rechnungsbetrag.
+ */
+function offenerBetragVon(posten: OffenerPosten): number | undefined {
+    const betrag = posten.offenerBetrag ?? posten.rechnungsbetrag;
+    return betrag != null && Number.isFinite(betrag) ? betrag : undefined;
+}
+
 // Group invoices with their reminders
 interface InvoiceWithReminders {
     invoice: OffenerPosten;
@@ -230,10 +239,7 @@ export default function OffenePostenEditor() {
 
     // Calculate total sum
     const totalSum = useMemo(() => {
-        return groupedInvoices.reduce((sum, { invoice }) => {
-            const betrag = invoice.rechnungsbetrag;
-            return sum + (betrag != null && Number.isFinite(betrag) ? betrag : 0);
-        }, 0);
+        return groupedInvoices.reduce((sum, { invoice }) => sum + (offenerBetragVon(invoice) ?? 0), 0);
     }, [groupedInvoices]);
 
     // KPI stats for Ausgangsrechnungen
@@ -256,7 +262,7 @@ export default function OffenePostenEditor() {
                 d.setHours(0, 0, 0, 0);
                 return d.getTime() < heute.getTime();
             })
-            .reduce((sum, { invoice }) => sum + (invoice.rechnungsbetrag ?? 0), 0);
+            .reduce((sum, { invoice }) => sum + (offenerBetragVon(invoice) ?? 0), 0);
         return { overdue, mitMahnung, overdueSum };
     }, [groupedInvoices]);
 
@@ -347,7 +353,20 @@ export default function OffenePostenEditor() {
                     </td>
                     {/* Betrag */}
                     <td className={cn('px-4 py-3 text-right text-sm font-semibold whitespace-nowrap', erledigt ? 'text-slate-500' : 'text-slate-900')}>
-                        {invoice.rechnungsbetrag != null ? `${formatEuro(invoice.rechnungsbetrag)} €` : '–'}
+                        {(() => {
+                            const offen = offenerBetragVon(invoice);
+                            const gutschrift = invoice.gutgeschrieben ?? 0;
+                            return (
+                                <>
+                                    {offen != null ? `${formatEuro(offen)} €` : '–'}
+                                    {gutschrift > 0 && invoice.rechnungsbetrag != null && (
+                                        <span className="block text-xs font-normal text-slate-500">
+                                            Rechnung {formatEuro(invoice.rechnungsbetrag)} € · Gutschrift −{formatEuro(gutschrift)} €
+                                        </span>
+                                    )}
+                                </>
+                            );
+                        })()}
                     </td>
                     {/* Dokument */}
                     <td className="px-4 py-3 text-center">

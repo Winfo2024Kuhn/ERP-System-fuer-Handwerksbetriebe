@@ -38,6 +38,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -198,6 +199,9 @@ public class AusgangsGeschaeftsDokumentController {
         try {
             // Ersteller kommt aus der Anmeldung, nie aus dem Request (GoBD-Audit).
             created = service.erstellen(dto, FrontendUserPrincipal.idAus(authentication), clientIp(request));
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -251,6 +255,9 @@ public class AusgangsGeschaeftsDokumentController {
             // RestExceptionHandler durchreichen -- der macht daraus sauber 409
             // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
             throw e;
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Aktualisieren von Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -274,6 +281,9 @@ public class AusgangsGeschaeftsDokumentController {
             // RestExceptionHandler durchreichen -- der macht daraus sauber 409
             // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
             throw e;
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -294,6 +304,9 @@ public class AusgangsGeschaeftsDokumentController {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
             // RestExceptionHandler durchreichen -- der macht daraus sauber 409
             // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
             throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -317,6 +330,9 @@ public class AusgangsGeschaeftsDokumentController {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
             // RestExceptionHandler durchreichen -- der macht daraus sauber 409
             // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
             throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Speichern der PDF für Dokument {}: {}", id, e.getMessage(), e);
@@ -353,6 +369,9 @@ public class AusgangsGeschaeftsDokumentController {
             // RestExceptionHandler durchreichen -- der macht daraus sauber 409
             // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
             throw e;
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
+            throw e;
         } catch (RuntimeException e) {
             log.error("Fehler beim Stornieren von Dokument {}: {}", id, e.getMessage(), e);
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -383,6 +402,9 @@ public class AusgangsGeschaeftsDokumentController {
             // Versionskonflikt: NICHT hier abfangen, sondern an den globalen
             // RestExceptionHandler durchreichen -- der macht daraus sauber 409
             // mit der Handwerker-Meldung statt 400 wie ein gewoehnlicher Fehler.
+            throw e;
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
             throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -418,6 +440,21 @@ public class AusgangsGeschaeftsDokumentController {
         return request == null ? null : clientIpResolver.resolve(request);
     }
 
+    // --- Kunden-Gutschrift ---
+
+    /**
+     * Rahmen für „Gutschrift erstellen“: Rechnungsbetrag, schon gutgeschrieben und was
+     * höchstens noch geht (Issue #223).
+     */
+    @GetMapping("/{id}/gutschrift-rahmen")
+    public ResponseEntity<AusgangsGeschaeftsDokumentService.GutschriftRahmenDto> getGutschriftRahmen(
+            @PathVariable Long id) {
+        if (id == null || id <= 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Die Rechnung wurde nicht gefunden.");
+        }
+        return ResponseEntity.ok(service.gutschriftRahmen(id));
+    }
+
     // --- Abrechnungsverlauf ---
 
     /**
@@ -428,6 +465,9 @@ public class AusgangsGeschaeftsDokumentController {
     public ResponseEntity<?> getAbrechnungsverlauf(@PathVariable Long id) {
         try {
             return ResponseEntity.ok(service.getAbrechnungsverlauf(id));
+        } catch (ResponseStatusException e) {
+            // Fachliche Meldung mit Status (z. B. Gutschrift-Regeln): als JSON {message} über den RestExceptionHandler.
+            throw e;
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }

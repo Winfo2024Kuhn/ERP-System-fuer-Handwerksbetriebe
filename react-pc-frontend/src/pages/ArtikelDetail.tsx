@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
-    ArrowLeft, Minus, Package, RefreshCw, Save, ShieldCheck, ShieldX,
+    ArrowLeft, Minus, Package, Pencil, RefreshCw, Save, ShieldCheck, ShieldX,
     TrendingDown, TrendingUp
 } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -17,7 +17,9 @@ import { ArtikelDokumente } from "../components/artikel/ArtikelDokumente";
 // zusaetzlichen Nachkommastellen bei Kleinstpreisen (Schrauben, Muttern).
 import { formatCurrency as formatEuro } from "../components/artikel/formatCurrency";
 import { stripHtmlTags } from "../lib/htmlSanitizer";
-import type { Artikel, ArtikelDetail as ArtikelDetailData, ArtikelPreisstand } from "../types";
+import { parseDecimal } from "../components/verrechnungslohnFormat";
+import { leseFehlermeldung } from "../lib/apiFehler";
+import type { Artikel, ArtikelDetail as ArtikelDetailData, ArtikelLieferantEintrag, ArtikelPreisstand } from "../types";
 
 /** Wie in der Liste - nur steht hier ein Strich, wo gar kein Preis gepflegt ist. */
 const formatCurrency = (val?: number) =>
@@ -45,6 +47,13 @@ function richtextOderNull(html: string): string | null {
         .trim();
     return sichtbarerText === "" ? null : html;
 }
+
+/** Aufschlag als Eingabetext im deutschen Format ("12,5") - ohne Tausenderpunkte. */
+const aufschlagAlsText = (wert?: number | null) =>
+    wert == null ? "" : String(wert).replace(".", ",");
+
+/** Letzter Teil des Kategorie-Pfads ("Werkstoffe > Rohre" -> "Rohre"). */
+const letzteKategorie = (pfad?: string) => pfad?.split(">").pop()?.trim() || undefined;
 
 /**
  * Detailseite eines Artikels.
@@ -89,6 +98,13 @@ export default function ArtikelDetail() {
         notiz: "",
     });
     const [speichert, setSpeichert] = useState(false);
+    const preisFeldRef = useRef<HTMLInputElement>(null);
+    /**
+     * Nummer, die dieser Lieferant schon fuer den Artikel hat. Steht sie
+     * unveraendert im Feld, wird sie nicht mitgeschickt - der Server behaelt
+     * die gespeicherte Nummer dann ohnehin.
+     */
+    const [bisherigeNummer, setBisherigeNummer] = useState<string | null>(null);
 
     // Angebotsfelder
     const [kurzbeschreibung, setKurzbeschreibung] = useState("");
@@ -136,26 +152,44 @@ export default function ArtikelDetail() {
         vorbelegteArtikelId.current = daten.artikel.id;
         setKurzbeschreibung(daten.artikel.kurzbeschreibung ?? "");
         setBeschreibung(daten.artikel.beschreibung ?? "");
-        setAufschlag(
-            daten.artikel.verkaufsaufschlagProzent == null
-                ? ""
-                : String(daten.artikel.verkaufsaufschlagProzent),
-        );
+        setAufschlag(aufschlagAlsText(daten.artikel.verkaufsaufschlagProzent));
     }, [daten]);
 
     const artikel = daten?.artikel;
     const hinweis = (daten?.artikel.preisHinweis ?? "KEIN_PREIS") as PreisHinweis;
+
+    /**
+     * Uebernimmt einen Lieferanten ins Formular. Hat er den Artikel schon,
+     * steht seine Nummer gleich im Feld - man muss sie nicht noch einmal
+     * heraussuchen, nur um einen neuen Preis einzutragen.
+     */
+    const lieferantUebernehmen = (lieferantId: number, lieferantName: string) => {
+        const vorhanden = daten?.lieferanten.find((l) => l.lieferantId === lieferantId);
+        const nummer = vorhanden?.externeArtikelnummer ?? "";
+        setBisherigeNummer(vorhanden ? nummer : null);
+        setNeuerPreis((p) => ({ ...p, lieferantId, lieferantName, externeArtikelnummer: nummer }));
+    };
+
+    const preisAendern = (eintrag: ArtikelLieferantEintrag) => {
+        lieferantUebernehmen(eintrag.lieferantId, eintrag.lieferantName);
+        setNeuerPreis((p) => ({ ...p, preis: "" }));
+        // Erst nach dem Rendern fokussieren; focus() holt das Feld dabei ins Bild.
+        requestAnimationFrame(() => preisFeldRef.current?.focus());
+    };
 
     const preisSpeichern = async () => {
         if (!id || !neuerPreis.lieferantId) {
             toast.error("Bitte zuerst einen Lieferanten auswählen.");
             return;
         }
-        const betrag = Number(neuerPreis.preis.replace(",", "."));
-        if (!Number.isFinite(betrag) || betrag < 0) {
+        const betrag = parseDecimal(neuerPreis.preis);
+        if (betrag === null || !Number.isFinite(betrag) || betrag < 0) {
             toast.error("Bitte einen gültigen Preis eingeben.");
             return;
         }
+        // Leer oder unveraendert: nichts schicken, der Server behaelt die bisherige Nummer.
+        const nummer = neuerPreis.externeArtikelnummer.trim();
+        const neueNummer = nummer === "" || nummer === bisherigeNummer ? null : nummer;
         setSpeichert(true);
         try {
             const res = await fetch(
@@ -166,17 +200,18 @@ export default function ArtikelDetail() {
                     body: JSON.stringify({
                         artikelId: Number(id),
                         preis: betrag,
-                        externeArtikelnummer: neuerPreis.externeArtikelnummer || null,
+                        externeArtikelnummer: neueNummer,
                     }),
                 },
             );
-            if (!res.ok) throw new Error("Speichern fehlgeschlagen");
+            if (!res.ok) throw new Error(await leseFehlermeldung(res, "Der Preis konnte nicht gespeichert werden."));
             toast.success("Preis gespeichert. Der bisherige Preis bleibt im Verlauf erhalten.");
             setNeuerPreis({ lieferantId: 0, lieferantName: "", externeArtikelnummer: "", preis: "", notiz: "" });
+            setBisherigeNummer(null);
             await laden();
         } catch (err) {
             console.error(err);
-            toast.error("Der Preis konnte nicht gespeichert werden.");
+            toast.error(err instanceof Error ? err.message : "Der Preis konnte nicht gespeichert werden.");
         } finally {
             setSpeichert(false);
         }
@@ -184,6 +219,11 @@ export default function ArtikelDetail() {
 
     const speichereAngebotsfelder = async () => {
         if (!id) return;
+        const aufschlagWert = parseDecimal(aufschlag);
+        if (aufschlag.trim() !== "" && (aufschlagWert === null || aufschlagWert < 0 || aufschlagWert > 999.99)) {
+            toast.error("Bitte einen Aufschlag zwischen 0 und 999,99 % eingeben.");
+            return;
+        }
         setSpeichern(true);
         try {
             const res = await fetch(`/api/artikel/${encodeURIComponent(id)}/dokumenttexte`, {
@@ -192,7 +232,7 @@ export default function ArtikelDetail() {
                 body: JSON.stringify({
                     kurzbeschreibung: kurzbeschreibung || null,
                     beschreibung: richtextOderNull(beschreibung),
-                    verkaufsaufschlagProzent: aufschlag === "" ? null : Number(aufschlag),
+                    verkaufsaufschlagProzent: aufschlagWert,
                 }),
             });
             if (!res.ok) throw new Error("Speichern fehlgeschlagen");
@@ -205,11 +245,7 @@ export default function ArtikelDetail() {
             vorbelegteArtikelId.current = aktualisiert.id;
             setKurzbeschreibung(aktualisiert.kurzbeschreibung ?? "");
             setBeschreibung(aktualisiert.beschreibung ?? "");
-            setAufschlag(
-                aktualisiert.verkaufsaufschlagProzent == null
-                    ? ""
-                    : String(aktualisiert.verkaufsaufschlagProzent),
-            );
+                setAufschlag(aufschlagAlsText(aktualisiert.verkaufsaufschlagProzent));
             toast.success("Die Angebotsfelder sind aktualisiert.");
             await laden();
         } catch (err) {
@@ -347,10 +383,8 @@ export default function ArtikelDetail() {
                         <div className="relative">
                             <Input
                                 id="aufschlag"
-                                type="number"
-                                min={0}
-                                max={999.99}
-                                step={0.01}
+                                inputMode="decimal"
+                                placeholder="z. B. 15"
                                 value={aufschlag}
                                 onChange={(e) => setAufschlag(e.target.value)}
                                 className="pr-8"
@@ -412,7 +446,10 @@ export default function ArtikelDetail() {
                                     <th scope="col" className="py-2 pr-4 font-medium text-right">Preis</th>
                                     <th scope="col" className="py-2 pr-4 font-medium text-right">Unterschied</th>
                                     <th scope="col" className="py-2 pr-4 font-medium">Stand</th>
-                                    <th scope="col" className="py-2 font-medium">Herkunft</th>
+                                    <th scope="col" className="py-2 pr-4 font-medium">Herkunft</th>
+                                    <th scope="col" className="py-2 font-medium">
+                                        <span className="sr-only">Aktion</span>
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -441,7 +478,16 @@ export default function ArtikelDetail() {
                                                     : "—"}
                                         </td>
                                         <td className="py-3 pr-4 text-slate-600">{formatDate(l.preisDatum)}</td>
-                                        <td className="py-3 text-slate-500">{l.quelle?.anzeigename ?? "—"}</td>
+                                        <td className="py-3 pr-4 text-slate-500">{l.quelle?.anzeigename ?? "—"}</td>
+                                        <td className="py-3 text-right">
+                                            <Button variant="ghost" size="sm"
+                                                className="whitespace-nowrap"
+                                                aria-label={`Preis ändern bei ${l.lieferantName}`}
+                                                onClick={() => preisAendern(l)}>
+                                                <Pencil className="w-4 h-4 mr-1.5" aria-hidden="true" />
+                                                Preis ändern
+                                            </Button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -451,8 +497,10 @@ export default function ArtikelDetail() {
 
                 {/* ---- Preis von Hand nachtragen ---- */}
                 <div className="mt-6 pt-5 border-t border-slate-200">
-                    <h3 className="text-sm font-semibold text-slate-900 mb-3">Preis nachtragen</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                    <h3 className="text-sm font-semibold text-slate-900 mb-3">
+                        {bisherigeNummer !== null ? "Preis ändern" : "Preis nachtragen"}
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-start">
                         <div>
                             <Label htmlFor="lieferant-wahl">Lieferant</Label>
                             <Button
@@ -470,11 +518,15 @@ export default function ArtikelDetail() {
                             <Input id="externe-nr" className="min-h-[44px]"
                                 value={neuerPreis.externeArtikelnummer}
                                 onChange={(e) => setNeuerPreis((p) => ({ ...p, externeArtikelnummer: e.target.value }))}
+                                aria-describedby="externe-nr-hinweis"
                                 placeholder="z. B. 100234" />
+                            <p id="externe-nr-hinweis" className="text-xs text-slate-500 mt-1">
+                                Leer lassen = die bisherige Nummer bleibt.
+                            </p>
                         </div>
                         <div>
                             <Label htmlFor="preis-eingabe">Preis in Euro</Label>
-                            <Input id="preis-eingabe" inputMode="decimal" className="min-h-[44px]"
+                            <Input id="preis-eingabe" ref={preisFeldRef} inputMode="decimal" className="min-h-[44px]"
                                 value={neuerPreis.preis}
                                 onChange={(e) => setNeuerPreis((p) => ({ ...p, preis: e.target.value }))}
                                 placeholder="z. B. 12,50" />
@@ -482,17 +534,22 @@ export default function ArtikelDetail() {
                                 Der bisherige Preis bleibt im Verlauf erhalten.
                             </p>
                         </div>
-                        <Button
-                            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700 min-h-[44px]"
-                            size="sm"
-                            disabled={speichert}
-                            onClick={preisSpeichern}
-                        >
-                            {speichert
-                                ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
-                                : <Save className="w-4 h-4 mr-2" aria-hidden="true" />}
-                            Speichern
-                        </Button>
+                        <div>
+                            {/* Unsichtbare Beschriftung: haelt den Knopf auf Hoehe der Felder,
+                                auch wenn darunter Hinweiszeilen stehen. */}
+                            <Label aria-hidden="true" className="invisible hidden md:block">Speichern</Label>
+                            <Button
+                                className="w-full bg-rose-600 text-white border border-rose-600 hover:bg-rose-700 min-h-[44px]"
+                                size="sm"
+                                disabled={speichert}
+                                onClick={preisSpeichern}
+                            >
+                                {speichert
+                                    ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" aria-hidden="true" />
+                                    : <Save className="w-4 h-4 mr-2" aria-hidden="true" />}
+                                Speichern
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -508,9 +565,11 @@ export default function ArtikelDetail() {
 
             {zeigeLieferantenWahl && (
                 <SupplierSelectModal
+                    kategorieId={artikel.kategorieId}
+                    kategorieName={letzteKategorie(artikel.kategoriePfad)}
                     onClose={() => setZeigeLieferantenWahl(false)}
                     onSelect={(lieferant: { id: number; name: string }) => {
-                        setNeuerPreis((p) => ({ ...p, lieferantId: lieferant.id, lieferantName: lieferant.name }));
+                        lieferantUebernehmen(lieferant.id, lieferant.name);
                         setZeigeLieferantenWahl(false);
                     }}
                 />
@@ -520,6 +579,7 @@ export default function ArtikelDetail() {
 }
 
 // ==================== Bausteine ====================
+
 
 function Merkmalchip({ text, titel }: { text: string; titel?: string }) {
     return (

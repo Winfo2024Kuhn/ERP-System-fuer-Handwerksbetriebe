@@ -30,3 +30,21 @@ it('zeigt halbe Urlaubstage mit Komma statt Dezimalpunkt', async () => {
     expect(screen.queryByText('10.5')).not.toBeInTheDocument()
     expect(screen.queryByText('12.5')).not.toBeInTheDocument()
 })
+
+it('nennt das eingestellte Bundesland und kennzeichnet halbe Feiertage', async () => {
+    const saldoFetch = vi.mocked(fetch).getMockImplementation()!
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).startsWith('/api/zeiterfassung/feiertage')) {
+            return new Response(JSON.stringify([
+                { datum: '2026-12-24', bezeichnung: 'Heiligabend', halbTag: true, bundesland: 'HH' },
+                { datum: '2026-01-01', bezeichnung: 'Neujahr', halbTag: false, bundesland: 'HH' },
+            ]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        }
+        return saldoFetch(input, init)
+    }))
+    render(<ToastProvider><MemoryRouter><SaldenPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} /></MemoryRouter></ToastProvider>)
+    expect(await screen.findByText('2 Feiertage in Hamburg')).toBeInTheDocument()
+    expect(screen.queryByText(/Bayern/)).not.toBeInTheDocument()
+    expect(screen.getByText('(halber Tag)')).toBeInTheDocument()
+    expect(screen.getAllByText('(halber Tag)')).toHaveLength(1)
+})

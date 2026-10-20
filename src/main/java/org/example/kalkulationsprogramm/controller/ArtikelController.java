@@ -79,6 +79,9 @@ public class ArtikelController {
     private static final int MAX_PAGE_SIZE = 50;
     private static final Map<String, SortField> SORT_FIELDS = Map.ofEntries(
             Map.entry("externeArtikelnummer", new SortField("artikelpreis.externeArtikelnummer", true)),
+            Map.entry("artikelnummer", new SortField("artikelnummer", true)),
+            // Gewicht je Meter liegt an der Unterklasse ArtikelWerkstoffe (JOINED); Hibernate verbindet sie selbst.
+            Map.entry("kgProMeter", new SortField("masse", false)),
             Map.entry("produktlinie", new SortField("produktlinie", true)),
             Map.entry("produktname", new SortField("produktname", true)),
             Map.entry("produkttext", new SortField("produkttext", true)),

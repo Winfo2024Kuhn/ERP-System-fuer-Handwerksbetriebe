@@ -11,6 +11,8 @@ public class FirmeninformationDto {
     private String strasse;
     private String plz;
     private String ort;
+    /** Amtliches Kürzel (BY, BW, …). Null beim Speichern = unverändert. */
+    private String bundesland;
     private String telefon;
     private String fax;
     private String email;

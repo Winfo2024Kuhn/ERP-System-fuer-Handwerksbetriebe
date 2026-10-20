@@ -181,6 +181,31 @@ public class UrlaubsantragController {
     }
 
     /**
+     * Schätzung für den Urlaubsantrag (Handy-App): wie viele Urlaubstage der Zeitraum
+     * wirklich kostet (ohne Feiertage und Tage ohne Soll) und ob der Resturlaub reicht.
+     * Am Handy gilt immer der eigene Mitarbeiter.
+     */
+    @GetMapping("/api/urlaub/vorschau")
+    public ResponseEntity<?> getVorschau(
+            @RequestParam Long mitarbeiterId,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate von,
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate bis) {
+        Long eigeneId = MobilePrincipal.ownMitarbeiterId(mitarbeiterId);
+        try {
+            UrlaubsantragService.UrlaubsVorschau vorschau = service.vorschau(eigeneId, von, bis);
+            Map<String, Object> antwort = new LinkedHashMap<>();
+            antwort.put("arbeitstage", vorschau.arbeitstage());
+            antwort.put("verbleibend", vorschau.verbleibend());
+            antwort.put("reicht", vorschau.reicht());
+            return ResponseEntity.ok(antwort);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /**
      * Liefert einen Hinweis, wenn der angefragte Urlaubszeitraum in eine
      * laufende Krankmeldung fällt. Reine Warnung fürs Büro, keine Sperre —
      * der Antrag selbst (POST /api/urlaub/antraege, auch von der Handy-App

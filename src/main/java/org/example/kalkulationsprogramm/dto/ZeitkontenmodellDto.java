@@ -7,7 +7,12 @@ import java.time.LocalTime;
 import org.example.kalkulationsprogramm.domain.Zeitkontenmodell;
 import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
 
-public record ZeitkontenmodellDto(Long id, Long version, String bezeichnung, Arbeitszeit arbeitszeit) {
+/**
+ * Arbeitszeit-Vorlage. {@code zugewiesen}: war schon einem Mitarbeiter zugewiesen und gehört
+ * damit zur Arbeitszeit-Historie – Löschen geht dann nicht (Issue #270).
+ */
+public record ZeitkontenmodellDto(Long id, Long version, String bezeichnung, Arbeitszeit arbeitszeit,
+        boolean zugewiesen) {
     public record Create(@NotBlank @Size(max = 255) String bezeichnung,
             @NotNull @Valid Arbeitszeit arbeitszeit) {}
     public record Update(@NotNull @PositiveOrZero Long expectedVersion,
@@ -52,6 +57,9 @@ public record ZeitkontenmodellDto(Long id, Long version, String bezeichnung, Arb
         }
     }
     public static ZeitkontenmodellDto from(Zeitkontenmodell v) {
-        return new ZeitkontenmodellDto(v.getId(), v.getVersion(), v.getBezeichnung(), Arbeitszeit.from(v));
+        return from(v, false);
+    }
+    public static ZeitkontenmodellDto from(Zeitkontenmodell v, boolean zugewiesen) {
+        return new ZeitkontenmodellDto(v.getId(), v.getVersion(), v.getBezeichnung(), Arbeitszeit.from(v), zugewiesen);
     }
 }

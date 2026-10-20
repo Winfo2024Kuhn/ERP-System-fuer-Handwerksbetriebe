@@ -32,9 +32,14 @@ interface SummenFooterProps {
      * Liefert zurück, ob der Wert übernommen wurde. Fehlt = read-only.
      */
     onZahlungszielChange?: (tage: number) => Promise<boolean>;
+    /**
+     * Gutschrift: Positionen werden positiv erfasst, der Server speichert die
+     * Beträge aber als Minus. Der Hinweis erklärt, warum hier kein Minus steht.
+     */
+    istGutschrift?: boolean;
 }
 
-export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag, zahlungsziel, zahlungszielDatum, onZahlungszielChange }: SummenFooterProps) {
+export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, kundennummer, projektnummer, betreff, isLocked, onDatumChange, globalRabatt, istRestbetrag, zahlungsziel, zahlungszielDatum, onZahlungszielChange, istGutschrift }: SummenFooterProps) {
     const hasGlobalRabatt = (globalRabatt ?? 0) > 0;
     // Zentrale Rundung wie im PDF und beim Speichern — sonst zeigt der Footer einen
     // anderen Cent-Betrag als das versendete Dokument.
@@ -206,6 +211,14 @@ export function SummenFooter({ nettosumme, blockCount, dokumentTypLabel, datum, 
 
             {/* Right: summen */}
             <div className="flex items-center gap-4 flex-shrink-0">
+                {istGutschrift && (
+                    <span
+                        className="font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px]"
+                        title="Beträge hier positiv eintragen. Beim Speichern zählt die Gutschrift als Minus und mindert den offenen Betrag der Rechnung."
+                    >
+                        Wird als Gutschrift (Minus) gebucht
+                    </span>
+                )}
                 <div className="flex items-center gap-1.5">
                     <span className="text-slate-400">Netto{istRestbetrag ? ' (Rest)' : ''}:</span>
                     <span className="font-medium text-slate-600">{formatCurrency(nettosumme)} €</span>
