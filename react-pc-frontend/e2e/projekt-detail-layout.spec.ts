@@ -875,7 +875,7 @@ test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nachar
         await expect(popover).toBeVisible();
         // Kein Verlauf mit Rechnungen in der Fixture -> einfache Rechnung wird angeboten und erklaert.
         await expect(popover).toContainText('Einfache Rechnung');
-        await expect(popover).toContainText('Schon gebuchte Rechnungen bleiben, wie sie sind.');
+        await expect(popover).toContainText('zieht Berechnetes ab');
 
         // (i) steht in derselben Zeile wie die Ueberschrift.
         const h = (await ueberschrift.boundingBox())!;

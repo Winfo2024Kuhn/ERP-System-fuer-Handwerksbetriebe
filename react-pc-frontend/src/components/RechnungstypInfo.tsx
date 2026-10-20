@@ -32,9 +32,6 @@ export function RechnungstypInfo({ mitEinfacherRechnung }: RechnungstypInfoProps
             <InfoAbschnitt titel="Schlussrechnung">
                 <p>Schließt den Auftrag nach Teil- oder Abschlagsrechnungen ab und zieht Berechnetes ab.</p>
             </InfoAbschnitt>
-            <InfoAbschnitt titel="Gut zu wissen">
-                <p>Schon gebuchte Rechnungen bleiben, wie sie sind.</p>
-            </InfoAbschnitt>
         </InfoButton>
     );
 }

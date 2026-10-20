@@ -15,7 +15,7 @@ describe('RechnungstypInfo', () => {
         expect(popover).toHaveTextContent('Teilrechnung');
         expect(popover).toHaveTextContent('Abschlagsrechnung');
         expect(popover).toHaveTextContent('Schlussrechnung');
-        expect(popover).toHaveTextContent('Schon gebuchte Rechnungen bleiben, wie sie sind.');
+        expect(popover).toHaveTextContent('zieht Berechnetes ab');
     });
 
     it('lässt die einfache Rechnung weg, wo sie nicht zur Auswahl steht', () => {
@@ -25,6 +25,6 @@ describe('RechnungstypInfo', () => {
         const popover = screen.getByRole('dialog', { name: 'Welche Rechnung passt?' });
         expect(popover).not.toHaveTextContent('Einfache Rechnung');
         expect(popover).toHaveTextContent('Teilrechnung');
-        expect(popover).toHaveTextContent('Schon gebuchte Rechnungen bleiben, wie sie sind.');
+        expect(popover).toHaveTextContent('zieht Berechnetes ab');
     });
 });
