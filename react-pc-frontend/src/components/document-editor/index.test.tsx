@@ -1944,3 +1944,179 @@ describe('DocumentEditor – Als neue Leistung speichern', () => {
         expect(screen.queryByRole('dialog', { name: 'Als neue Leistung speichern' })).not.toBeInTheDocument();
     });
 });
+
+describe('DocumentEditor – einfache Rechnung schliesst den Auftrag ab', () => {
+    // DSGVO: ausschliesslich Dummy-Daten. Die Rechnung erbt die Bloecke des
+    // Angebots samt IDs; "Rüstkosten" ist nicht angefallen und wird geloescht.
+    const ANGEBOT_ID = 10;
+    const BLOECKE = [
+        { id: 's1', type: 'SERVICE', title: 'Geländer montieren', quantity: 1, unit: 'Stk', price: 9000, fontSize: 10 },
+        { id: 's2', type: 'SERVICE', title: 'Anfahrt', quantity: 1, unit: 'psch', price: 600, fontSize: 10 },
+        { id: 's3', type: 'SERVICE', title: 'Rüstkosten', quantity: 1, unit: 'psch', price: 400, fontSize: 10 },
+    ];
+
+    function verlaufAntwort(weiterePositionen: unknown[] = []) {
+        return {
+            basisdokumentId: ANGEBOT_ID,
+            basisdokumentNummer: 'AN-2026-0010',
+            basisdokumentTyp: 'ANGEBOT',
+            basisdokumentBetragNetto: 10000,
+            positionen: [
+                { id: 1, dokumentNummer: 'RE-2026/08/00001', typ: 'RECHNUNG', datum: HEUTE_ISO, betragNetto: 10000, storniert: false },
+                ...weiterePositionen,
+            ],
+            bereitsAbgerechnet: 10000,
+            restbetrag: 0,
+            basisdokumentPositionenJson: JSON.stringify({ blocks: BLOECKE, globalRabatt: 0 }),
+        };
+    }
+
+    function mockFetchMitVerlauf(dokumentAbweichung: Record<string, unknown>, verlauf: unknown) {
+        const basis = mockFetch({
+            vorgaengerId: ANGEBOT_ID,
+            positionenJson: JSON.stringify({ blocks: BLOECKE, globalRabatt: 0 }),
+            ...dokumentAbweichung,
+        });
+        return vi.fn((url: string, init?: RequestInit) => {
+            if (url === `/api/ausgangs-dokumente/${ANGEBOT_ID}/abrechnungsverlauf`) return jsonAntwort(verlauf);
+            return basis(url, init);
+        });
+    }
+
+    /** Abrechnungsstand aus den Vorschau-Requests, juengster zuletzt. */
+    function vorschauVerlaeufe(fetchMock: ReturnType<typeof vi.fn>): Array<Record<string, unknown>> {
+        return fetchMock.mock.calls
+            .filter(call => call[0] === '/api/dokument-generator/preview')
+            .map(call => JSON.parse((call[1] as RequestInit).body as string).abrechnungsverlauf)
+            .filter(Boolean);
+    }
+
+    function muelleimer(container: HTMLElement, blockId: string): HTMLButtonElement {
+        const treffer = Array.from(
+            container.querySelectorAll<HTMLButtonElement>(`[data-block-id="${blockId}"] button`)
+        ).find(b => b.querySelector('svg.lucide-trash2'));
+        if (!treffer) throw new Error(`Kein Löschen-Knopf für Block ${blockId} gefunden`);
+        return treffer;
+    }
+
+    beforeEach(() => {
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+        window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('meldet ohne andere Rechnung den Abschluss und nennt die entfallene Leistung', async () => {
+        const fetchMock = mockFetchMitVerlauf({}, verlaufAntwort());
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const { container } = renderEditor();
+        await waitFor(() => expect(screen.getByDisplayValue('Rüstkosten')).toBeInTheDocument(), { timeout: 3000 });
+        await waitFor(() => expect(fetchMock.mock.calls.some(c => c[0] === `/api/ausgangs-dokumente/${ANGEBOT_ID}/abrechnungsverlauf`)).toBe(true));
+
+        fireEvent.click(muelleimer(container, 's3'));
+
+        await waitFor(() => {
+            const letzter = vorschauVerlaeufe(fetchMock).at(-1);
+            expect(letzter?.differenzHinweis).toBe('Rüstkosten');
+            expect(letzter?.schliesstAuftragAb).toBe(true);
+            expect(letzter?.positionen).toEqual([]);
+        }, { timeout: 5000 });
+    });
+
+    it('meldet keinen Abschluss, wenn am Angebot schon eine andere Rechnung haengt', async () => {
+        const fetchMock = mockFetchMitVerlauf({}, verlaufAntwort([
+            { id: 2, dokumentNummer: 'RE-2026/08/00002', typ: 'TEILRECHNUNG', datum: HEUTE_ISO, betragNetto: 2000, storniert: false },
+        ]));
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => {
+            const letzter = vorschauVerlaeufe(fetchMock).at(-1);
+            expect(letzter?.schliesstAuftragAb).toBe(false);
+            expect(letzter?.differenzHinweis).toBeNull();
+        }, { timeout: 5000 });
+    });
+
+    it('laesst eine gebuchte Bestandsrechnung ohne gespeichertes Kennzeichen wie bisher', async () => {
+        const fetchMock = mockFetchMitVerlauf({
+            gebucht: true,
+            positionenJson: JSON.stringify({ blocks: BLOECKE.slice(0, 2), globalRabatt: 0 }),
+        }, verlaufAntwort());
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => {
+            const letzter = vorschauVerlaeufe(fetchMock).at(-1);
+            expect(letzter?.schliesstAuftragAb).toBe(false);
+            expect(letzter?.differenzHinweis).toBeNull();
+        }, { timeout: 5000 });
+    });
+
+    it('druckt eine gebuchte Rechnung mit gespeichertem Kennzeichen weiter als abschliessend', async () => {
+        const fetchMock = mockFetchMitVerlauf({
+            gebucht: true,
+            positionenJson: JSON.stringify({ blocks: BLOECKE.slice(0, 2), globalRabatt: 0, schliesstAuftragAb: true }),
+        }, verlaufAntwort());
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => {
+            const letzter = vorschauVerlaeufe(fetchMock).at(-1);
+            expect(letzter?.schliesstAuftragAb).toBe(true);
+        }, { timeout: 5000 });
+    });
+
+    it('schickt bei gebuchter abschliessender Rechnung keine spaeter angelegten Rechnungen als Vorrechnungen', async () => {
+        const fetchMock = mockFetchMitVerlauf({
+            gebucht: true,
+            positionenJson: JSON.stringify({ blocks: BLOECKE.slice(0, 2), globalRabatt: 0, schliesstAuftragAb: true }),
+        }, verlaufAntwort([
+            { id: 2, dokumentNummer: 'RE-2026/09/00002', typ: 'RECHNUNG', datum: HEUTE_ISO, betragNetto: 500, storniert: false },
+        ]));
+        global.fetch = fetchMock as unknown as typeof fetch;
+        renderEditor();
+
+        await waitFor(() => {
+            const letzter = vorschauVerlaeufe(fetchMock).at(-1);
+            expect(letzter?.schliesstAuftragAb).toBe(true);
+            expect(letzter?.positionen).toEqual([]);
+        }, { timeout: 5000 });
+    });
+
+    it('schreibt das Kennzeichen beim Speichern ins positionenJson', async () => {
+        const fetchMock = mockFetchMitVerlauf({}, verlaufAntwort());
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await waitFor(() => expect(screen.getByDisplayValue('Rüstkosten')).toBeInTheDocument(), { timeout: 3000 });
+        await waitFor(() => expect(fetchMock.mock.calls.some(c => c[0] === `/api/ausgangs-dokumente/${ANGEBOT_ID}/abrechnungsverlauf`)).toBe(true));
+
+        fireEvent.click(muelleimer(container, 's3'));
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+
+        await waitFor(() => expect(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).length).toBeGreaterThan(0));
+        const gespeichert = JSON.parse(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).at(-1)!.positionenJson as string);
+        expect(gespeichert.schliesstAuftragAb).toBe(true);
+    });
+
+    it('schreibt kein Kennzeichen, wenn am Angebot schon eine andere Rechnung haengt', async () => {
+        const fetchMock = mockFetchMitVerlauf({}, verlaufAntwort([
+            { id: 2, dokumentNummer: 'RE-2026/08/00002', typ: 'TEILRECHNUNG', datum: HEUTE_ISO, betragNetto: 2000, storniert: false },
+        ]));
+        global.fetch = fetchMock as unknown as typeof fetch;
+        const user = userEvent.setup();
+        const { container } = renderEditor();
+        await waitFor(() => expect(screen.getByDisplayValue('Rüstkosten')).toBeInTheDocument(), { timeout: 3000 });
+        await waitFor(() => expect(fetchMock.mock.calls.some(c => c[0] === `/api/ausgangs-dokumente/${ANGEBOT_ID}/abrechnungsverlauf`)).toBe(true));
+
+        fireEvent.click(muelleimer(container, 's3'));
+        await user.click(screen.getByRole('button', { name: /Speichern/i }));
+
+        await waitFor(() => expect(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).length).toBeGreaterThan(0));
+        const gespeichert = JSON.parse(speicherAufrufe(fetchMock as unknown as ReturnType<typeof mockFetch>).at(-1)!.positionenJson as string);
+        expect(gespeichert).not.toHaveProperty('schliesstAuftragAb');
+    });
+});

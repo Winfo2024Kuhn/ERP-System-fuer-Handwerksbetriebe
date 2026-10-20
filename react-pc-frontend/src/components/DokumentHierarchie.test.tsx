@@ -193,3 +193,34 @@ describe('DokumentHierarchie – stornierte Basisdokumente', () => {
         expect(screen.getByRole('button', { name: /Dokument erstellen/ })).toBeDisabled();
     });
 });
+
+describe('DokumentHierarchie – Info zum Rechnungstyp', () => {
+    beforeEach(() => {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string) => {
+            if (url === '/api/ausgangs-dokumente/1/abrechnungsverlauf') {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        basisdokumentId: 1, basisdokumentNummer: '2026/01/00001', basisdokumentTyp: 'ANGEBOT',
+                        basisdokumentBetragNetto: 10000, positionen: [], bereitsAbgerechnet: 0, restbetrag: 10000,
+                    }),
+                } as unknown as Response);
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as unknown as Response);
+        });
+    });
+
+    it('zeigt neben "Rechnungstyp" ein (i) ohne Absatz zur einfachen Rechnung', async () => {
+        renderBaum([dok(1, 'ANGEBOT', '2026/01/00001')]);
+        await oeffneAktionsmenue('2026/01/00001');
+        fireEvent.click(screen.getByText('→ Rechnung erstellen'));
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Mehr zu: Welche Rechnung passt?' }));
+
+        const popover = screen.getByRole('dialog', { name: 'Welche Rechnung passt?' });
+        expect(popover).toHaveTextContent('Abschlagsrechnung');
+        expect(popover).toHaveTextContent('Schlussrechnung');
+        expect(popover).not.toHaveTextContent('Einfache Rechnung');
+    });
+});

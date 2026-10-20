@@ -61,3 +61,34 @@ export function canCreateEinfacheRechnung(
     if (!abrechnungsverlauf) return false;
     return abrechnungsverlauf.positionen.every(p => p.storniert);
 }
+
+/**
+ * Schliesst diese einfache Rechnung den Auftrag ab?
+ *
+ * Eine einfache Rechnung (Typ `RECHNUNG`) ohne andere aktive Rechnung am
+ * Basisdokument rechnet alles auf einmal ab — was darin fehlt, ist nicht
+ * angefallen und nicht "noch offen". Das PDF rechnet sie dann wie eine
+ * Schlussrechnung: Balken 100 %, Differenzzeile "Nicht angefallen" bzw.
+ * "Zusätzliche Leistungen", Rest 0,00 €.
+ *
+ * Offene Rechnungen entscheiden live. Gesperrte (gebucht, storniert, digital
+ * angenommen) nur noch über das beim Speichern im positionenJson abgelegte
+ * Kennzeichen: So druckt eine neue Rechnung auch nach dem Buchen weiter
+ * "abgeschlossen", während Bestandsrechnungen das Feld nicht haben und beim
+ * Nachdruck genau so aussehen wie das damals verschickte PDF.
+ *
+ * @param andereAktiveRechnungen Anzahl der nicht stornierten Rechnungen am
+ *        Basisdokument ohne die aktuelle (nur bei offenen Rechnungen relevant)
+ * @param gespeichert Kennzeichen `schliesstAuftragAb` aus dem positionenJson
+ */
+export function schliesstEinfacheRechnungAuftragAb(
+    dokumentTyp: AusgangsGeschaeftsDokumentTyp,
+    andereAktiveRechnungen: number,
+    isLocked: boolean,
+    gespeichert: boolean = false,
+): boolean {
+    if (dokumentTyp !== 'RECHNUNG') return false;
+    // Gesperrt zaehlt allein das Gespeicherte: Entsteht spaeter doch noch eine
+    // Rechnung am Angebot, darf der Nachdruck nicht kippen.
+    return isLocked ? gespeichert : andereAktiveRechnungen === 0;
+}

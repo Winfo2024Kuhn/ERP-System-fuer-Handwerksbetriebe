@@ -2131,6 +2131,61 @@ class AusgangsGeschaeftsDokumentServiceTest {
 
             assertThat(verlauf.getBasisdokumentPositionenJson()).isEqualTo(positionen);
         }
+
+        /** Angebot über 10.000 € netto mit einer einfachen Rechnung über 9.600 € (Rüstkosten entfallen). */
+        private void angebotMitEinfacherRechnung(String rechnungPositionenJson, boolean storniert) {
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setDokumentNummer("2026/10/00001");
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            basis.setBetragNetto(new BigDecimal("10000.00"));
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setId(2L);
+            rechnung.setDokumentNummer("2026/10/00002");
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setBetragNetto(new BigDecimal("9600.00"));
+            rechnung.setPositionenJson(rechnungPositionenJson);
+            rechnung.setStorniert(storniert);
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L)).thenReturn(List.of(rechnung));
+        }
+
+        @Test
+        void abschliessendeEinfacheRechnungLaesstNichtsOffen() {
+            angebotMitEinfacherRechnung("{\"blocks\":[],\"schliesstAuftragAb\":true}", false);
+
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getBereitsAbgerechnet()).isEqualByComparingTo(new BigDecimal("9600.00"));
+            assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(BigDecimal.ZERO);
+        }
+
+        @Test
+        void bestandsrechnungOhneKennzeichenBehaeltIhrenRest() {
+            angebotMitEinfacherRechnung("{\"blocks\":[]}", false);
+
+            assertThat(service.getAbrechnungsverlauf(1L).getRestbetrag())
+                    .isEqualByComparingTo(new BigDecimal("400.00"));
+        }
+
+        @Test
+        void stornierteAbschliessendeRechnungGibtDenAuftragWiederFrei() {
+            angebotMitEinfacherRechnung("{\"blocks\":[],\"schliesstAuftragAb\":true}", true);
+
+            assertThat(service.getAbrechnungsverlauf(1L).getRestbetrag())
+                    .isEqualByComparingTo(new BigDecimal("10000.00"));
+        }
+
+        @Test
+        void kennzeichenLesenIstRobust() {
+            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb(null)).isFalse();
+            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb(" ")).isFalse();
+            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("kein json")).isFalse();
+            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("[]")).isFalse();
+            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("{\"schliesstAuftragAb\":false}")).isFalse();
+            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("{\"schliesstAuftragAb\":true}")).isTrue();
+        }
     }
 
     /**
