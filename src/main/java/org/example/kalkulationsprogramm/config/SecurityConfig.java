@@ -143,9 +143,10 @@ public class SecurityConfig {
                 .addFilterBefore(new SitzungsRechteFilter(frontendUserDetailsService), AuthorizationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/zeiterfassung", "/zeiterfassung/**").permitAll()
-                    // Kunden löschen bzw. aus Datenschutzgründen sperren: nur Admins (Issue #264).
+                    // Kunden löschen, aus Datenschutzgründen sperren oder anonymisieren: nur Admins (Issue #264).
                     .requestMatchers(HttpMethod.DELETE, "/api/kunden/*").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/api/kunden/*/datenschutz-sperre").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.POST, "/api/kunden/*/anonymisieren").hasRole("ADMIN")
                     .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                     .authenticationEntryPoint((request, response, exception) -> writeJson(response, 401, Map.of("error", "Anmeldung erforderlich.")))

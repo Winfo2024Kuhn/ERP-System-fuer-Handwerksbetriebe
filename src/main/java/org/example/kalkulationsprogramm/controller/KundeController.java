@@ -227,6 +227,12 @@ public class KundeController {
         // Nur Admins dürfen löschen/sperren – nur für sie lohnen die zusätzlichen Abfragen.
         if (PostfachSichtbarkeitService.istAdmin(authentication)) {
             detail.setLoeschPruefung(kundeDatenschutzService.pruefe(id));
+            if (detail.isGesperrt()) {
+                detail.setAufbewahrenBis(detail.getLoeschPruefung().aufbewahrenBis());
+            }
+        } else if (detail.isGesperrt()) {
+            // Spätere Mahnungen o. Ä. verlängern die Frist: immer das aktuelle Fristende zeigen.
+            detail.setAufbewahrenBis(kundeDatenschutzService.aktuellesFristende(id));
         }
         return detail;
     }
@@ -251,6 +257,16 @@ public class KundeController {
             Authentication authentication) {
         kundeDatenschutzService.sperre(id, request != null ? request.grund() : null,
                 authentication != null ? authentication.getName() : null);
+        return getKundeDetail(id, authentication);
+    }
+
+    /**
+     * Gesperrten Kunden nach Ablauf der Aufbewahrungsfrist anonymisieren (nur Admins, siehe
+     * {@code SecurityConfig}). Vorher bzw. ohne Sperre 409.
+     */
+    @PostMapping("/{id}/anonymisieren")
+    public KundeDetailDto anonymisieren(@PathVariable Long id, Authentication authentication) {
+        kundeDatenschutzService.anonymisiere(id, authentication != null ? authentication.getName() : null);
         return getKundeDetail(id, authentication);
     }
 

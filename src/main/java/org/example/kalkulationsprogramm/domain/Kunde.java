@@ -63,12 +63,24 @@ public class Kunde {
     @Column(name = "gesperrt_am")
     private LocalDateTime gesperrtAm;
 
-    /** Ende der längsten Aufbewahrungsfrist der Unterlagen; danach endgültig löschbar. */
+    /**
+     * Ende der längsten Aufbewahrungsfrist der Unterlagen beim Sperren; danach anonymisierbar. Ein späteres
+     * Storno oder eine spätere Gutschrift zieht es nach. Maßgeblich (Anzeige, Anonymisieren) ist immer das
+     * frisch aus allen Unterlagen berechnete Fristende, siehe {@code KundeDatenschutzService}.
+     */
     @Column(name = "aufbewahren_bis")
     private LocalDate aufbewahrenBis;
 
+    /** Nach Fristende anonymisiert (Name/Anschrift entfernt). {@code null} = nicht anonymisiert. */
+    @Column(name = "anonymisiert_am")
+    private LocalDateTime anonymisiertAm;
+
     public boolean istGesperrt() {
         return gesperrtAm != null;
+    }
+
+    public boolean istAnonymisiert() {
+        return anonymisiertAm != null;
     }
 
 }

@@ -1,5 +1,5 @@
 import React, { useId, useState } from 'react';
-import { Lock, Trash2 } from 'lucide-react';
+import { Lock, Trash2, UserX } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Label } from '../../components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
@@ -21,7 +21,7 @@ function formatiereDatumDE(wert?: string | null): string {
     const nurDatum = /^(\d{4})-(\d{2})-(\d{2})$/.exec(wert);
     if (nurDatum) return `${nurDatum[3]}.${nurDatum[2]}.${nurDatum[1]}`;
     const datum = new Date(wert);
-    return Number.isNaN(datum.getTime()) ? '–' : datum.toLocaleDateString('de-DE');
+    return Number.isNaN(datum.getTime()) ? '–' : datum.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 async function fehlermeldung(res: Response, rueckfall: string): Promise<string> {
@@ -45,31 +45,173 @@ const LoeschenInfo: React.FC = () => (
 const GesperrtInfo: React.FC = () => (
     <InfoButton titel="Gesperrter Kunde">
         <InfoAbschnitt titel="Was passiert im Hintergrund?">
-            <p>Der Kunde hat die Löschung seiner Daten verlangt. Was nicht aufbewahrt werden muss, ist bereits gelöscht.</p>
+            <p>Der Kunde hat die Löschung seiner Daten verlangt. Was nicht aufbewahrt werden muss, ist bereits gelöscht. Kommt nach der Sperre noch eine Gutschrift, ein Storno oder eine Mahnung dazu, verlängert sich die Aufbewahrungsfrist automatisch.</p>
         </InfoAbschnitt>
         <InfoAbschnitt titel="Was bewirkt das?">
-            <p>Die Unterlagen bleiben für Finanzamt und Prüfungen erhalten und dürfen nur noch dafür genutzt werden. Nach Ablauf der Frist kann der Kunde endgültig gelöscht werden.</p>
+            <p>Die Unterlagen bleiben für Finanzamt und Prüfungen erhalten und dürfen nur noch dafür genutzt werden. Nach Ablauf der Frist kann ein Admin den Kunden anonymisieren. Nichts davon passiert automatisch.</p>
+        </InfoAbschnitt>
+    </InfoButton>
+);
+
+const AnonymisierenInfo: React.FC = () => (
+    <InfoButton titel="Kunde anonymisieren">
+        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+            <p>Der Name wird durch „Gelöschter Kunde“ und die Kundennummer ersetzt, Anrede und Anschrift werden geleert. Bei seinen Projekten und Anfragen wird die Baustellen-Anschrift geleert, die Bezeichnung bleibt. In Freigabe-Links wird der Name entfernt, die E-Mail-Adresse bei nicht angenommenen Links ebenfalls. Online angenommene Angebote behalten E-Mail-Adresse und Unterschrift als Auftragsnachweis. Der Vorgang wird mit Datum und Person protokolliert, ohne Kundendaten.</p>
+        </InfoAbschnitt>
+        <InfoAbschnitt titel="Was bewirkt das?">
+            <p>Der Kunde ist in den Stammdaten nicht mehr zu erkennen. Das lässt sich nicht rückgängig machen. Rechnungen, Angebote und E-Mails bleiben unverändert erhalten, in diesen alten Unterlagen stehen Name und Anschrift weiterhin. Kundennummer, Projekte und Beträge bleiben, damit die Buchhaltung stimmt.</p>
         </InfoAbschnitt>
     </InfoButton>
 );
 
 // ==================== GESPERRT-BAND ====================
 
-/** Ruhiges Band oben in der Akte eines gesperrten Kunden. */
-export const KundeGesperrtBand: React.FC<{ kunde: KundeDetail }> = ({ kunde }) => (
-    <div
-        role="status"
-        data-testid="kunde-gesperrt-band"
-        className="mb-4 flex items-start gap-3 rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-700"
-    >
-        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-        <p className="min-w-0 flex-1">
-            Aus Datenschutzgründen gesperrt seit {formatiereDatumDE(kunde.gesperrtAm)}. Unterlagen werden bis{' '}
-            {formatiereDatumDE(kunde.aufbewahrenBis)} aufbewahrt, danach kann der Kunde endgültig gelöscht werden.
-        </p>
-        <GesperrtInfo />
-    </div>
-);
+interface GesperrtBandProps {
+    kunde: KundeDetail;
+    /** Kunde wurde anonymisiert; die Antwort ist die aktualisierte Akte. */
+    onAnonymisiert: (kunde: KundeDetail) => void;
+}
+
+/**
+ * Ruhiges Band oben in der Akte eines gesperrten Kunden. Ist die
+ * Aufbewahrungsfrist abgelaufen, bekommt ein Admin hier „Anonymisieren…“
+ * (das Backend befüllt `loeschPruefung` nur für Admins).
+ */
+export const KundeGesperrtBand: React.FC<GesperrtBandProps> = ({ kunde, onAnonymisiert }) => {
+    const [dialogOffen, setDialogOffen] = useState(false);
+    // Frisch berechnetes Fristende hat Vorrang: eine spätere Gutschrift verlängert die Frist.
+    const frist = kunde.loeschPruefung?.aufbewahrenBis ?? kunde.aufbewahrenBis;
+    const anonymisierbar = !kunde.anonymisiertAm && kunde.loeschPruefung?.anonymisierbar === true;
+
+    return (
+        <div
+            role="status"
+            data-testid="kunde-gesperrt-band"
+            className="mb-4 flex flex-wrap items-start gap-3 rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-700"
+        >
+            <div className="flex min-w-0 flex-1 basis-72 items-start gap-3">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                <p className="min-w-0 flex-1">
+                    {kunde.anonymisiertAm ? (
+                        <>Anonymisiert am {formatiereDatumDE(kunde.anonymisiertAm)}. Name und Anschrift wurden entfernt, die Unterlagen bleiben erhalten.</>
+                    ) : (
+                        <>
+                            Aus Datenschutzgründen gesperrt seit {formatiereDatumDE(kunde.gesperrtAm)}. Unterlagen werden bis{' '}
+                            {formatiereDatumDE(frist)} aufbewahrt, danach kann der Kunde anonymisiert werden.
+                        </>
+                    )}
+                </p>
+                <GesperrtInfo />
+            </div>
+            {anonymisierbar && (
+                <>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDialogOffen(true)}
+                        className="shrink-0 border-red-200 bg-white text-red-700 hover:bg-red-50 focus-visible:ring-red-500"
+                    >
+                        <UserX className="h-4 w-4" /> Anonymisieren…
+                    </Button>
+                    <KundeAnonymisierenDialog
+                        kunde={kunde}
+                        open={dialogOffen}
+                        onClose={() => setDialogOffen(false)}
+                        onAnonymisiert={aktualisiert => {
+                            setDialogOffen(false);
+                            onAnonymisiert(aktualisiert);
+                        }}
+                    />
+                </>
+            )}
+        </div>
+    );
+};
+
+// ==================== ANONYMISIEREN-DIALOG ====================
+
+interface AnonymisierenDialogProps {
+    kunde: KundeDetail;
+    open: boolean;
+    onClose: () => void;
+    onAnonymisiert: (kunde: KundeDetail) => void;
+}
+
+const KundeAnonymisierenDialog: React.FC<AnonymisierenDialogProps> = ({ kunde, open, onClose, onAnonymisiert }) => {
+    const toast = useToast();
+    const titelId = useId();
+    const [laeuft, setLaeuft] = useState(false);
+
+    const schliessen = () => {
+        if (!laeuft) onClose();
+    };
+
+    const anonymisieren = async () => {
+        setLaeuft(true);
+        try {
+            const res = await fetch(`/api/kunden/${kunde.id}/anonymisieren`, { method: 'POST' });
+            if (!res.ok) {
+                toast.error(await fehlermeldung(res, 'Der Kunde konnte nicht anonymisiert werden.'));
+                return;
+            }
+            const aktualisiert = await res.json() as KundeDetail;
+            onAnonymisiert(aktualisiert);
+            toast.success('Kunde wurde anonymisiert.');
+        } catch {
+            toast.error('Der Kunde konnte nicht anonymisiert werden. Bitte die Verbindung prüfen.');
+        } finally {
+            setLaeuft(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={offen => { if (!offen) schliessen(); }} className="w-full max-w-xl" aria-labelledby={titelId}>
+            <DialogContent className="overflow-y-auto">
+                <DialogHeader className="pr-10">
+                    <div className="flex items-center gap-2">
+                        <DialogTitle id={titelId} className="text-slate-900">Kunde anonymisieren?</DialogTitle>
+                        <AnonymisierenInfo />
+                    </div>
+                    <DialogDescription>
+                        {kunde.kundennummer} · {kunde.name}
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 text-sm text-slate-700">
+                    <div>
+                        <p className="font-semibold text-slate-900">Das passiert</p>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                            <li>Der Name wird zu „Gelöschter Kunde {kunde.kundennummer}“, Anrede und Anschrift werden geleert.</li>
+                            <li>Die Baustellen-Anschrift seiner Projekte und Anfragen wird geleert, die Bezeichnung bleibt.</li>
+                            <li>Name in Freigabe-Links wird entfernt (angenommene Angebote behalten den Auftragsnachweis).</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <p className="font-semibold text-slate-900">Bleibt erhalten</p>
+                        <p className="mt-1">Rechnungen, Angebote und E-Mails bleiben unverändert.</p>
+                    </div>
+                    <p className="rounded-lg border border-red-200 bg-red-50 p-3 font-medium text-red-800">
+                        Das lässt sich nicht rückgängig machen.
+                    </p>
+                </div>
+
+                <DialogFooter className="gap-2">
+                    <Button variant="outline" onClick={schliessen} disabled={laeuft}>
+                        Abbrechen
+                    </Button>
+                    <Button
+                        onClick={anonymisieren}
+                        disabled={laeuft}
+                        className="border-red-600 bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500"
+                    >
+                        <UserX className="h-4 w-4" />
+                        {laeuft ? 'Wird anonymisiert…' : 'Endgültig anonymisieren'}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
 
 // ==================== DATENSCHUTZ-DIALOG ====================
 
@@ -160,7 +302,7 @@ const KundeDatenschutzDialog: React.FC<DatenschutzDialogProps> = ({ kunde, open,
                         <p className="mt-1">
                             Name, Anschrift und Kundennummer sowie Projekte, Angebote und Rechnungen, bis{' '}
                             <span className="font-medium text-slate-900">{formatiereDatumDE(pruefung?.aufbewahrenBis)}</span>.
-                            Danach kann der Kunde endgültig gelöscht werden.
+                            Danach kann der Kunde anonymisiert werden.
                         </p>
                     </div>
 
