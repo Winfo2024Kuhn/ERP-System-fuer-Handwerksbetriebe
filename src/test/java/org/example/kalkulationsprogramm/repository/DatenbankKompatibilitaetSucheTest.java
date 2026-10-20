@@ -147,7 +147,10 @@ class DatenbankKompatibilitaetSucheTest {
         kunden(fehler, "alle Filter", k -> k.sucheKunden("muster", kennung, "K-" + gross, "würzburg",
                 "rechnung." + kennung, "KUNDE", false, 0, 50, null), "Max Mustermann");
         // Datenschutz-Sperre (Issue #264): keiner der Testkunden ist gesperrt
-        kunden(fehler, "nur gesperrte", k -> k.sucheKunden(null, kennung, null, null, null, null, true, 0, 50, null));
+        // Nur Admins dürfen gesperrte Kunden auflisten (Issue #264)
+        var admin = new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("chef", null,
+                org.springframework.security.core.authority.AuthorityUtils.createAuthorityList("ROLE_ADMIN"));
+        kunden(fehler, "nur gesperrte", k -> k.sucheKunden(null, kennung, null, null, null, null, true, 0, 50, admin));
         assertThat(fehler).as("Kundensuchen, die auf dieser Datenbank scheitern oder anderes finden").isEmpty();
     }
 
