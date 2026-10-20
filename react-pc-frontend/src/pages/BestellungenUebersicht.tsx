@@ -1,15 +1,21 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 import { RefreshCw, FileText, FilePlus2, Package, Clock, CheckCircle, AlertCircle, X, FolderOpen, EyeOff, Eye, Archive, Search, ChevronDown, ChevronRight, Check, Sparkles } from 'lucide-react';
 import { useToast } from '../components/ui/toast';
 import { ZuordnungModal as BelegZuordnungModal } from '../components/ZuordnungModal';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { DokumentSuchenDialog } from '../features/bestellungen/DokumentSuchenDialog';
 import type { VorschlagsTyp } from '../features/bestellungen/kettenVorschlag';
-import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, passtZurSuche, teileNachAlter, type KettenDokumentTyp } from '../features/bestellungen/bestellungenListe';
+import { formatiereAlter, fortschrittsStufe, kettenBetrag, letzteBewegung, teileNachAlter, type KettenDokumentTyp } from '../features/bestellungen/bestellungenListe';
+import {
+    SEITEN_GROESSE, SUCHE_MAX_LAENGE, SUCHE_MIN_LAENGE, SUCHE_VERZOEGERUNG_MS,
+    ausblendenOptimistisch, einblendenOptimistisch, gesamtJeGruppe, inLadeBloecke, ladeStand, normalisiereUebersicht, uebersichtUrl, wirksameSuche,
+    type GruppenSchluessel, type LadeParameter, type UebersichtListen,
+} from '../features/bestellungen/bestellungenNachladen';
 import { TREFFER_KLASSEN, formatiereQuote, rechnungVerknuepfen, rueckfrage, trefferStufe, type RechnungsVorschlag } from '../features/bestellungen/rechnungsVorschlag';
 import { KettenLinie } from '../features/bestellungen/KettenLinie';
 import { KettenZuordnung } from '../features/bestellungen/KettenZuordnung';
@@ -50,12 +56,27 @@ interface DokumentenKette {
 
 type TabKey = 'offen' | 'laufend' | 'abgeschlossen' | 'zugeordnet' | 'ausgeblendet';
 
-interface BestellungsUebersicht {
-    offeneAnfragen: DokumentenKette[];
-    laufendeBestellungen: DokumentenKette[];
-    abgeschlossen: DokumentenKette[];
-    zugeordnet: DokumentenKette[];
-    ausgeblendet: DokumentenKette[];
+type BestellungsUebersicht = UebersichtListen<DokumentenKette>;
+
+/** Reiter → Gruppe in der Server-Antwort. */
+const GRUPPE_JE_TAB: Record<TabKey, GruppenSchluessel> = {
+    offen: 'offeneAnfragen',
+    laufend: 'laufendeBestellungen',
+    abgeschlossen: 'abgeschlossen',
+    zugeordnet: 'zugeordnet',
+    ausgeblendet: 'ausgeblendet',
+};
+
+/** Wie die Liste geladen wird: entscheidet, welcher Ladezustand sichtbar ist. */
+type LadeModus = 'voll' | 'still' | 'suche' | 'mehr';
+
+/** Nächster scrollbarer Vorfahre (im Programm scrollt der Hauptbereich, nicht das Fenster). */
+function scrollBereich(element: HTMLElement): HTMLElement | null {
+    for (let el = element.parentElement; el; el = el.parentElement) {
+        const { overflowY } = window.getComputedStyle(el);
+        if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+    }
+    return (document.scrollingElement as HTMLElement | null) ?? null;
 }
 
 interface BelegZuordnungRef {
@@ -147,7 +168,7 @@ function KetteCard({ kette, heute, onOpenPdf, showZuordnenButton, onZuordnen, on
     const offeneRechnungen = anzahlOffeneRechnungen(kette.dokumente);
 
     return (
-        <Card className={`p-4 mb-4 break-inside-avoid flex flex-col gap-3 hover:shadow-md transition-shadow ${ohneRechnungHinweis ? 'border-amber-300' : ''}`}>
+        <Card data-kette-id={kette.id} className={`p-4 mb-4 break-inside-avoid flex flex-col gap-3 hover:shadow-md transition-shadow ${ohneRechnungHinweis ? 'border-amber-300' : ''}`}>
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-slate-900 truncate">
@@ -425,20 +446,52 @@ export default function BestellungenUebersicht() {
     // Zuordnung Modal State
     const [zuordnungKette, setZuordnungKette] = useState<DokumentenKette | null>(null);
 
-    const loadData = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true);
-        setError(null);
+    /** Suchbegriff und Anzahl der letzten Anfrage – Neuladen nach Aktionen behält beides bei. */
+    const parameterRef = useRef<LadeParameter>({ anzahl: SEITEN_GROESSE, suche: '' });
+    /** Laufende Anfrage: Eine neue bricht die alte ab, damit keine veraltete Antwort die Liste überschreibt. */
+    const anfrageRef = useRef<AbortController | null>(null);
+    /** Suchbegriff, zu dem die angezeigte Liste gehört (kann beim Tippen kurz vom Eingabefeld abweichen). */
+    const [geladeneSuche, setGeladeneSuche] = useState('');
+    const [sucheLaedt, setSucheLaedt] = useState(false);
+    const [mehrLaedt, setMehrLaedt] = useState(false);
+
+    const loadData = useCallback(async (modus: LadeModus = 'voll') => {
+        anfrageRef.current?.abort();
+        const anfrage = new AbortController();
+        anfrageRef.current = anfrage;
+        const parameter = { ...parameterRef.current };
+        if (modus === 'voll') setLoading(true);
+        if (modus === 'suche') setSucheLaedt(true);
+        if (modus === 'mehr') setMehrLaedt(true);
         try {
-            const res = await fetch('/api/bestellungen-uebersicht');
-            if (!res.ok) throw new Error('Fehler beim Laden');
+            const res = await fetch(uebersichtUrl(parameter), { signal: anfrage.signal });
+            if (!res.ok) {
+                const body = await res.json().catch(() => null) as { message?: unknown } | null;
+                throw new Error(typeof body?.message === 'string' && body.message ? body.message : 'Bestellungen konnten nicht geladen werden.');
+            }
             const json = await res.json();
-            setData(json);
+            if (anfrageRef.current !== anfrage) return; // inzwischen neuere Anfrage unterwegs
+            setData(normalisiereUebersicht<DokumentenKette>(json));
+            setGeladeneSuche(parameter.suche);
+            setError(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Unbekannter Fehler');
+            // Abgebrochen (neuere Anfrage oder Seite verlassen): kein Fehler für den Nutzer
+            if (anfrage.signal.aborted || anfrageRef.current !== anfrage) return;
+            const meldung = err instanceof Error ? err.message : 'Bestellungen konnten nicht geladen werden.';
+            // Ohne angezeigte Liste ersetzt der Fehler die Liste, sonst bleibt sie stehen und ein Toast meldet es
+            if (modus === 'voll') setError(meldung);
+            else toast.error(meldung);
         } finally {
-            if (!silent) setLoading(false);
+            if (anfrageRef.current === anfrage) {
+                anfrageRef.current = null;
+                setLoading(false);
+                setSucheLaedt(false);
+                setMehrLaedt(false);
+            }
         }
-    }, []);
+    }, [toast]);
+
+    useEffect(() => () => anfrageRef.current?.abort(), []);
 
     const loadOffeneBelege = useCallback(async () => {
         setOffeneBelegeLoading(true);
@@ -460,11 +513,50 @@ export default function BestellungenUebersicht() {
     }, [toast]);
 
     useEffect(() => {
-        loadData();
+        void loadData();
         void loadOffeneBelege();
     }, [loadData, loadOffeneBelege]);
 
-    const neuLadenNachAenderung = useCallback(() => { void loadData(true); }, [loadData]);
+    // Suche fragt den Server (alle Bestellungen, nicht nur die geladenen) – entprellt, Löschen sofort
+    useEffect(() => {
+        // Unter 2 Zeichen gilt wie keine Suche (der Server sieht es genauso)
+        const begriff = wirksameSuche(suche);
+        if (begriff === parameterRef.current.suche) return;
+        const timer = window.setTimeout(() => {
+            parameterRef.current = { anzahl: SEITEN_GROESSE, suche: begriff };
+            void loadData('suche');
+        }, begriff === '' ? 0 : SUCHE_VERZOEGERUNG_MS);
+        return () => window.clearTimeout(timer);
+    }, [suche, loadData]);
+
+    const neuLadenNachAenderung = useCallback(() => { void loadData('still'); }, [loadData]);
+
+    /** Letzte Karte vor „Mehr laden“ – bleibt nach dem Nachladen an derselben Stelle im Bild. */
+    const listeRef = useRef<HTMLDivElement>(null);
+    const scrollAnkerRef = useRef<{ id: string; top: number } | null>(null);
+
+    const mehrLaden = () => {
+        const karten = listeRef.current?.querySelectorAll<HTMLElement>('[data-kette-id]');
+        const letzte = karten && karten.length > 0 ? karten[karten.length - 1] : null;
+        scrollAnkerRef.current = letzte?.dataset.ketteId
+            ? { id: letzte.dataset.ketteId, top: letzte.getBoundingClientRect().top }
+            : null;
+        parameterRef.current = { ...parameterRef.current, anzahl: parameterRef.current.anzahl + SEITEN_GROESSE };
+        void loadData('mehr');
+    };
+
+    // Kommen ältere Karten in einem Abschnitt weiter oben dazu, Ansicht entsprechend nachziehen
+    useLayoutEffect(() => {
+        const anker = scrollAnkerRef.current;
+        if (!anker || mehrLaedt) return;
+        scrollAnkerRef.current = null;
+        const karte = Array.from(listeRef.current?.querySelectorAll<HTMLElement>('[data-kette-id]') ?? [])
+            .find(el => el.dataset.ketteId === anker.id);
+        if (!karte) return;
+        const verschoben = karte.getBoundingClientRect().top - anker.top;
+        const bereich = verschoben !== 0 ? scrollBereich(karte) : null;
+        if (bereich && typeof bereich.scrollBy === 'function') bereich.scrollBy(0, verschoben);
+    }, [data, mehrLaedt]);
 
     const handleOpenPdf = (url: string, title: string) => {
         setPreviewUrl(url);
@@ -490,15 +582,8 @@ export default function BestellungenUebersicht() {
         if (!ok) return;
 
         setBulkBusy(true);
-        const ids = new Set(ketten.map(k => k.id));
-        // Optimistic Update: Ketten sofort in „Ausgeblendet“ verschieben
-        setData(prev => prev ? {
-            offeneAnfragen: prev.offeneAnfragen.filter(k => !ids.has(k.id)),
-            laufendeBestellungen: prev.laufendeBestellungen.filter(k => !ids.has(k.id)),
-            abgeschlossen: prev.abgeschlossen.filter(k => !ids.has(k.id)),
-            zugeordnet: prev.zugeordnet.filter(k => !ids.has(k.id)),
-            ausgeblendet: [...ketten, ...prev.ausgeblendet],
-        } : prev);
+        // Optimistic Update: Ketten sofort in „Ausgeblendet“ verschieben, Zähler ziehen mit
+        setData(prev => prev ? ausblendenOptimistisch(prev, ketten, heute) : prev);
 
         const allDokumentIds = ketten.flatMap(k => k.dokumente.map(d => d.id));
         const CHUNK_SIZE = 500; // Backend-Limit aus AusblendenRequest
@@ -513,15 +598,15 @@ export default function BestellungenUebersicht() {
                 });
                 if (!res.ok) throw new Error('Fehler');
             }
-            await loadData(true);
+            await loadData('still');
             toast.success(erfolg);
         } catch {
             toast.error('Ausblenden fehlgeschlagen. Der aktuelle Stand wird neu geladen.');
-            await loadData(true);
+            await loadData('still');
         } finally {
             setBulkBusy(false);
         }
-    }, [confirm, loadData, toast]);
+    }, [confirm, heute, loadData, toast]);
 
     const vorschlagUebernehmen = useCallback(async (kette: DokumentenKette) => {
         const vorschlag = kette.rechnungsVorschlag;
@@ -532,7 +617,7 @@ export default function BestellungenUebersicht() {
         try {
             await rechnungVerknuepfen(vorschlag.bestellDokumentId, vorschlag.rechnung.id);
             toast.success(vorschlag.rechnung.dokumentNummer ? `Rechnung ${vorschlag.rechnung.dokumentNummer} zugeordnet.` : 'Rechnung zugeordnet.');
-            await loadData(true);
+            await loadData('still');
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Rechnung konnte nicht zugeordnet werden.');
         } finally {
@@ -543,22 +628,10 @@ export default function BestellungenUebersicht() {
     const setKetteAusgeblendet = useCallback(async (kette: DokumentenKette, ausblenden: boolean) => {
         setBusyKetteId(kette.id);
 
-        // Optimistic Update: Kette sofort verschieben, damit kein Ganzseiten-Spinner nötig ist
+        // Optimistic Update: Kette sofort verschieben (samt Zählern), damit kein Ganzseiten-Spinner nötig ist
         setData(prev => {
             if (!prev) return prev;
-            if (ausblenden) {
-                return {
-                    offeneAnfragen: prev.offeneAnfragen.filter(k => k.id !== kette.id),
-                    laufendeBestellungen: prev.laufendeBestellungen.filter(k => k.id !== kette.id),
-                    abgeschlossen: prev.abgeschlossen.filter(k => k.id !== kette.id),
-                    zugeordnet: prev.zugeordnet.filter(k => k.id !== kette.id),
-                    ausgeblendet: [kette, ...prev.ausgeblendet.filter(k => k.id !== kette.id)],
-                };
-            }
-            return {
-                ...prev,
-                ausgeblendet: prev.ausgeblendet.filter(k => k.id !== kette.id),
-            };
+            return ausblenden ? ausblendenOptimistisch(prev, [kette], heute) : einblendenOptimistisch(prev, kette, heute);
         });
 
         try {
@@ -569,48 +642,52 @@ export default function BestellungenUebersicht() {
             });
             if (!res.ok) throw new Error('Fehler');
             // Silent reload, damit beim Einblenden die Kette in die richtige Liste rutscht
-            await loadData(true);
+            await loadData('still');
             toast.success(ausblenden ? 'Ausgeblendet' : 'Wieder eingeblendet');
         } catch {
             toast.error('Aktion fehlgeschlagen');
             // Server-Stand wiederherstellen, falls Optimistic Update falsch lag
-            await loadData(true);
+            await loadData('still');
         } finally {
             setBusyKetteId(null);
         }
-    }, [loadData, toast]);
+    }, [heute, loadData, toast]);
 
-    // Suche wirkt auf alle Tabs gleichzeitig
-    const sucheAktiv = suche.trim() !== '';
-    const gefiltert = useMemo(() => {
-        const filter = (liste: DokumentenKette[] | undefined) => (liste ?? []).filter(k => passtZurSuche(k, suche));
-        return {
-            offen: filter(data?.offeneAnfragen),
-            laufend: filter(data?.laufendeBestellungen),
-            abgeschlossen: filter(data?.abgeschlossen),
-            zugeordnet: filter(data?.zugeordnet),
-            ausgeblendet: filter(data?.ausgeblendet),
-        } satisfies Record<TabKey, DokumentenKette[]>;
-    }, [data, suche]);
+    // Die Suche filtert der Server über alle Bestellungen; sie wirkt auf alle Reiter gleichzeitig
+    const sucheAktiv = geladeneSuche !== '';
+    const gefiltert = useMemo(() => ({
+        offen: data?.offeneAnfragen ?? [],
+        laufend: data?.laufendeBestellungen ?? [],
+        abgeschlossen: data?.abgeschlossen ?? [],
+        zugeordnet: data?.zugeordnet ?? [],
+        ausgeblendet: data?.ausgeblendet ?? [],
+    } satisfies Record<TabKey, DokumentenKette[]>), [data]);
+    const gesamt = useMemo(() => gesamtJeGruppe(data ?? normalisiereUebersicht<DokumentenKette>(null), heute), [data, heute]);
+    const gesamtImTab = (key: TabKey) => gesamt[GRUPPE_JE_TAB[key]];
 
     const offeneTeile = useMemo(() => teileNachAlter(gefiltert.offen, heute), [gefiltert.offen, heute]);
     const laufendeTeile = useMemo(() => teileNachAlter(gefiltert.laufend, heute), [gefiltert.laufend, heute]);
 
     const tabs: { key: TabKey; label: string; icon: React.ReactNode; erklaerung: string; leer: string; zaehler: number; attention?: boolean }[] = [
-        { key: 'offen', label: 'Angebote', icon: <AlertCircle className="w-4 h-4" />, zaehler: offeneTeile.aktuell.length,
+        { key: 'offen', label: 'Angebote', icon: <AlertCircle className="w-4 h-4" />, zaehler: gesamt.offeneAnfragenAktuell,
             erklaerung: 'Angebote von Lieferanten, zu denen noch keine Bestellung kam.', leer: 'Keine offenen Angebote vorhanden.' },
-        { key: 'laufend', label: 'Bestellt', icon: <Package className="w-4 h-4" />, zaehler: gefiltert.laufend.length,
+        { key: 'laufend', label: 'Bestellt', icon: <Package className="w-4 h-4" />, zaehler: gesamt.laufendeBestellungen,
             erklaerung: 'Bestellt oder geliefert – die Rechnung fehlt noch.', leer: 'Keine laufenden Bestellungen vorhanden.' },
-        { key: 'abgeschlossen', label: 'Rechnung zuordnen', icon: <CheckCircle className="w-4 h-4" />, zaehler: gefiltert.abgeschlossen.length, attention: true,
+        { key: 'abgeschlossen', label: 'Rechnung zuordnen', icon: <CheckCircle className="w-4 h-4" />, zaehler: gesamt.abgeschlossen, attention: true,
             erklaerung: 'Die Rechnung ist da – ordne die Kosten jetzt einem Projekt oder einer Kostenstelle zu.', leer: 'Keine Bestellungen zum Zuordnen.' },
-        { key: 'zugeordnet', label: 'Erledigt', icon: <FolderOpen className="w-4 h-4" />, zaehler: gefiltert.zugeordnet.length,
+        { key: 'zugeordnet', label: 'Erledigt', icon: <FolderOpen className="w-4 h-4" />, zaehler: gesamt.zugeordnet,
             erklaerung: 'Bestellungen, deren Kosten schon zugeordnet sind.', leer: 'Noch keine Bestellungen zugeordnet.' },
-        { key: 'ausgeblendet', label: 'Ausgeblendet', icon: <Archive className="w-4 h-4" />, zaehler: gefiltert.ausgeblendet.length,
+        { key: 'ausgeblendet', label: 'Ausgeblendet', icon: <Archive className="w-4 h-4" />, zaehler: gesamt.ausgeblendet,
             erklaerung: 'Ausgeblendete Einträge. Sie lassen sich jederzeit wieder einblenden.', leer: 'Keine ausgeblendeten Einträge.' },
     ];
     const aktiverTab = tabs.find(t => t.key === tab) ?? tabs[0];
     const currentList = gefiltert[tab];
-    const trefferWoanders = tabs.filter(t => t.key !== tab && gefiltert[t.key].length > 0);
+    const trefferWoanders = tabs.filter(t => t.key !== tab && gesamtImTab(t.key) > 0);
+    const stand = data ? ladeStand(data, GRUPPE_JE_TAB[tab], heute) : { geladen: 0, gesamt: 0, vollstaendig: true, alt: null };
+    const geladenImTab = stand.geladen;
+    const gesamtAktiverTab = stand.gesamt;
+    const alleGeladen = stand.vollstaendig;
+    const zuKurzeSuche = suche.trim().length > 0 && suche.trim().length < SUCHE_MIN_LAENGE;
     const aelterAufgeklappt = aelterManuell ?? (sucheAktiv && offeneTeile.aelter.length > 0);
 
     const renderKarte = (kette: DokumentenKette, optionen: { ohneRechnungHinweis?: boolean } = {}) => {
@@ -641,6 +718,16 @@ export default function BestellungenUebersicht() {
     };
     // Mauerwerk: Karten unterschiedlicher Höhe ohne Lücken (Tastatur-Reihenfolge spaltenweise)
     const kartenGitter = 'columns-1 md:columns-2 xl:columns-3 gap-4';
+    /** Ein Mauerwerk je Lade-Runde, damit „Mehr laden“ die sichtbaren Karten nicht umsortiert. */
+    const renderBloecke = (teil: DokumentenKette[], optionen: { ohneRechnungHinweis?: boolean } = {}) =>
+        inLadeBloecke(teil).map(block => (
+            <div key={block[0].id} className={kartenGitter}>{block.map(k => renderKarte(k, optionen))}</div>
+        ));
+    const aelterGesamt = Math.max(gesamt.offeneAnfragen - gesamt.offeneAnfragenAktuell, offeneTeile.aelter.length);
+    const aelterAlleGeladen = offeneTeile.aelter.length >= aelterGesamt;
+    const ueberfaelligGesamt = Math.max(gesamt.laufendeBestellungen - gesamt.laufendeBestellungenAktuell, laufendeTeile.aelter.length);
+    /** „(n)“, wenn alles geladen ist, sonst „(n von m)“. */
+    const anzahlText = (geladen: number, insgesamt: number) => (geladen >= insgesamt ? `${geladen}` : `${geladen} von ${insgesamt}`);
 
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
@@ -684,25 +771,39 @@ export default function BestellungenUebersicht() {
             </div>
 
             {/* Suche */}
-            <div className="relative max-w-xl">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
-                <Input
-                    type="text"
-                    value={suche}
-                    onChange={e => setSuche(e.target.value)}
-                    placeholder="Lieferant, Nummer, Betrag oder Datum suchen …"
-                    aria-label="Bestellungen durchsuchen"
-                    className="h-10 pl-9 pr-10 bg-white rounded-lg border-slate-300"
-                />
-                {suche && (
-                    <button
-                        type="button"
-                        onClick={() => setSuche('')}
-                        aria-label="Suche löschen"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-slate-400 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                    >
-                        <X className="w-4 h-4" />
-                    </button>
+            <div className="max-w-xl space-y-1.5">
+                <div className="relative">
+                    {sucheLaedt ? (
+                        <RefreshCw className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 motion-safe:animate-spin" aria-hidden="true" />
+                    ) : (
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+                    )}
+                    <Input
+                        type="text"
+                        value={suche}
+                        maxLength={SUCHE_MAX_LAENGE}
+                        onChange={e => setSuche(e.target.value)}
+                        placeholder="Lieferant, Nummer, Betrag oder Datum suchen …"
+                        aria-label="Bestellungen durchsuchen"
+                        aria-busy={sucheLaedt}
+                        aria-describedby={zuKurzeSuche ? 'bestellungen-suche-hinweis' : undefined}
+                        className="h-10 pl-9 pr-10 bg-white rounded-lg border-slate-300"
+                    />
+                    {suche && (
+                        <button
+                            type="button"
+                            onClick={() => setSuche('')}
+                            aria-label="Suche löschen"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-slate-400 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
+                {zuKurzeSuche && (
+                    <p id="bestellungen-suche-hinweis" className="text-xs text-slate-500 pl-1">
+                        Bitte mindestens {SUCHE_MIN_LAENGE} Zeichen eingeben.
+                    </p>
                 )}
             </div>
 
@@ -740,27 +841,30 @@ export default function BestellungenUebersicht() {
                     <AlertCircle className="w-8 h-8 mx-auto mb-2" />
                     {error}
                 </Card>
-            ) : (tab === 'offen' ? gefiltert.offen.length === 0 : currentList.length === 0) ? (
+            ) : currentList.length === 0 ? (
                 <Card className="p-12 text-center text-slate-500 border-dashed">
                     <FileText className="w-12 h-12 mx-auto mb-4 text-slate-300" />
                     {sucheAktiv ? (
-                        <>
-                            <p className="text-lg font-medium">Keine Treffer in „{aktiverTab.label}“</p>
-                            {trefferWoanders.length > 0 ? (
+                        trefferWoanders.length > 0 ? (
+                            <>
+                                <p className="text-lg font-medium">Keine Treffer in „{aktiverTab.label}“</p>
                                 <div className="mt-3 space-y-2">
-                                    <p className="text-sm">Zu „{suche.trim()}“ gibt es Treffer in:</p>
+                                    <p className="text-sm">Zu „{geladeneSuche}“ gibt es Treffer in:</p>
                                     <div className="flex flex-wrap justify-center gap-2">
                                         {trefferWoanders.map(t => (
                                             <Button key={t.key} size="sm" variant="outline" onClick={() => setTab(t.key)}>
-                                                {t.label} ({gefiltert[t.key].length})
+                                                {t.label} ({gesamtImTab(t.key)})
                                             </Button>
                                         ))}
                                     </div>
                                 </div>
-                            ) : (
-                                <p className="text-sm mt-1">Auch in den anderen Reitern gibt es nichts dazu.</p>
-                            )}
-                        </>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-lg font-medium">Keine Bestellung passt zu „{geladeneSuche}“.</p>
+                                <p className="text-sm mt-1">Durchsucht wurden alle Bestellungen in allen Reitern – auch die noch nicht geladenen.</p>
+                            </>
+                        )
                     ) : (
                         <>
                             <p className="text-lg font-medium">Keine Einträge</p>
@@ -769,13 +873,15 @@ export default function BestellungenUebersicht() {
                     )}
                 </Card>
             ) : (
-                <div className="space-y-4">
+                <div ref={listeRef} className="space-y-4 [overflow-anchor:none]">
                     {tab === 'zugeordnet' && (
                         <div className="flex justify-end">
                             <Button
                                 onClick={() => void kettenAusblenden(
                                     currentList,
-                                    `Wirklich alle ${currentList.length} erledigten Bestellungen ausblenden? Sie stehen danach unter „Ausgeblendet“.`,
+                                    alleGeladen
+                                        ? `Wirklich alle ${currentList.length} erledigten Bestellungen ausblenden? Sie stehen danach unter „Ausgeblendet“.`
+                                        : `Wirklich die ${currentList.length} angezeigten erledigten Bestellungen ausblenden? Sie stehen danach unter „Ausgeblendet“. Die ${gesamtAktiverTab - currentList.length} noch nicht geladenen bleiben hier.`,
                                     `${currentList.length} Bestellungen ausgeblendet`,
                                 )}
                                 disabled={bulkBusy}
@@ -788,7 +894,7 @@ export default function BestellungenUebersicht() {
                                 ) : (
                                     <EyeOff className="w-4 h-4" />
                                 )}
-                                Alle ausblenden ({currentList.length})
+                                {alleGeladen ? 'Alle ausblenden' : 'Angezeigte ausblenden'} ({currentList.length})
                             </Button>
                         </div>
                     )}
@@ -796,7 +902,7 @@ export default function BestellungenUebersicht() {
                     {tab === 'offen' && (
                         <>
                             {offeneTeile.aktuell.length > 0 ? (
-                                <div className={kartenGitter}>{offeneTeile.aktuell.map(k => renderKarte(k))}</div>
+                                renderBloecke(offeneTeile.aktuell)
                             ) : (
                                 <p className="text-sm text-slate-500">Keine neueren Angebote{sucheAktiv ? ' zur Suche' : ''}.</p>
                             )}
@@ -811,7 +917,7 @@ export default function BestellungenUebersicht() {
                                             className="flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-slate-700 rounded hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                                         >
                                             {aelterAufgeklappt ? <ChevronDown className="w-4 h-4" aria-hidden="true" /> : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
-                                            Ältere Angebote ohne Bestellung ({offeneTeile.aelter.length})
+                                            Ältere Angebote ohne Bestellung ({anzahlText(offeneTeile.aelter.length, aelterGesamt)})
                                         </button>
                                         <Button
                                             size="sm"
@@ -819,17 +925,19 @@ export default function BestellungenUebersicht() {
                                             disabled={bulkBusy}
                                             onClick={() => void kettenAusblenden(
                                                 offeneTeile.aelter,
-                                                `Wirklich ${offeneTeile.aelter.length} ältere Angebote ausblenden? Sie stehen danach unter „Ausgeblendet“.`,
+                                                aelterAlleGeladen
+                                                    ? `Wirklich ${offeneTeile.aelter.length} ältere Angebote ausblenden? Sie stehen danach unter „Ausgeblendet“.`
+                                                    : `Wirklich die ${offeneTeile.aelter.length} angezeigten älteren Angebote ausblenden? Sie stehen danach unter „Ausgeblendet“. Die ${aelterGesamt - offeneTeile.aelter.length} noch nicht geladenen bleiben hier.`,
                                                 `${offeneTeile.aelter.length} ältere Angebote ausgeblendet`,
                                             )}
                                         >
                                             {bulkBusy ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" /> : <EyeOff className="w-4 h-4" />}
-                                            Alle ausblenden
+                                            {aelterAlleGeladen ? 'Alle ausblenden' : 'Angezeigte ausblenden'}
                                         </Button>
                                     </div>
                                     {aelterAufgeklappt && (
-                                        <div id="aeltere-angebote" className={`${kartenGitter} p-4 pt-2 border-t border-slate-100`}>
-                                            {offeneTeile.aelter.map(k => renderKarte(k))}
+                                        <div id="aeltere-angebote" className="p-4 pt-2 border-t border-slate-100">
+                                            {renderBloecke(offeneTeile.aelter)}
                                         </div>
                                     )}
                                 </section>
@@ -843,11 +951,9 @@ export default function BestellungenUebersicht() {
                                 <section aria-label="Seit über 2 Monaten keine Rechnung" className="space-y-3">
                                     <h2 className="text-sm font-semibold text-amber-800 flex items-center gap-2">
                                         <AlertCircle className="w-4 h-4" aria-hidden="true" />
-                                        Seit über 2 Monaten keine Rechnung ({laufendeTeile.aelter.length})
+                                        Seit über 2 Monaten keine Rechnung ({anzahlText(laufendeTeile.aelter.length, ueberfaelligGesamt)})
                                     </h2>
-                                    <div className={kartenGitter}>
-                                        {laufendeTeile.aelter.map(k => renderKarte(k, { ohneRechnungHinweis: true }))}
-                                    </div>
+                                    <div>{renderBloecke(laufendeTeile.aelter, { ohneRechnungHinweis: true })}</div>
                                 </section>
                             )}
                             {laufendeTeile.aktuell.length > 0 && (
@@ -855,14 +961,38 @@ export default function BestellungenUebersicht() {
                                     {laufendeTeile.aelter.length > 0 && (
                                         <h2 className="text-sm font-semibold text-slate-700">Aktuell ({laufendeTeile.aktuell.length})</h2>
                                     )}
-                                    <div className={kartenGitter}>{laufendeTeile.aktuell.map(k => renderKarte(k))}</div>
+                                    <div>{renderBloecke(laufendeTeile.aktuell)}</div>
                                 </section>
                             )}
                         </>
                     )}
 
                     {tab !== 'offen' && tab !== 'laufend' && (
-                        <div className={kartenGitter}>{currentList.map(k => renderKarte(k))}</div>
+                        <div>{renderBloecke(currentList)}</div>
+                    )}
+
+                    {!alleGeladen && (
+                        <div className="flex flex-col items-center gap-1.5 pt-2">
+                            <div className="flex items-center gap-1">
+                                <Button variant="outline" size="sm" onClick={mehrLaden} disabled={mehrLaedt}>
+                                    {mehrLaedt
+                                        ? <RefreshCw className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
+                                        : <ChevronDown className="w-4 h-4" aria-hidden="true" />}
+                                    {mehrLaedt ? 'Lädt …' : 'Mehr laden'}
+                                </Button>
+                                <InfoButton titel="Mehr laden">
+                                    <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                        <p>Damit die Seite schnell bleibt, lädt sie pro Reiter zuerst nur die 25 neuesten Bestellungen – bei „Angebote“ und „Bestellt“ zusätzlich bis zu 25 ältere, damit Überfälliges sofort sichtbar ist. Die Suche durchsucht dagegen immer alle Bestellungen.</p>
+                                    </InfoAbschnitt>
+                                    <InfoAbschnitt titel="Was bewirkt das?">
+                                        <p>„Mehr laden“ holt die nächsten 25. Es geht nichts verloren – ältere Bestellungen sind nur noch nicht geladen.</p>
+                                    </InfoAbschnitt>
+                                </InfoButton>
+                            </div>
+                            <p className="text-xs text-slate-500 tabular-nums" aria-live="polite">
+                                {geladenImTab} von {gesamtAktiverTab} angezeigt
+                            </p>
+                        </div>
                     )}
                 </div>
             )}
@@ -898,7 +1028,7 @@ export default function BestellungenUebersicht() {
                     onSuccess={() => {
                         setSelectedBeleg(null);
                         void loadOffeneBelege();
-                        void loadData(true);
+                        void loadData('still');
                     }}
                 />
             )}
@@ -910,7 +1040,7 @@ export default function BestellungenUebersicht() {
                     onClose={() => setDokumentSuche(null)}
                     onVerknuepft={() => {
                         setDokumentSuche(null);
-                        void loadData(true);
+                        void loadData('still');
                     }}
                 />
             )}

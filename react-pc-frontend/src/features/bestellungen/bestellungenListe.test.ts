@@ -143,6 +143,12 @@ describe('kettenBetrag', () => {
 });
 
 describe('passtZurSuche', () => {
+    it('findet unbekannte Arten vom Server (BELEG) als „Sonstiges“', () => {
+        const beleg = kette([dok({ typ: 'BELEG' as never, dokumentNummer: 'B-1' })]);
+        expect(passtZurSuche(beleg, 'sonstiges')).toBe(true);
+        expect(passtZurSuche(beleg, 'undefined')).toBe(false);
+    });
+
     const k = kette([
         dok({ typ: 'ANGEBOT', dokumentNummer: 'AN-2026-17', dokumentDatum: '2026-03-04', betragBrutto: 1234.5, dateiname: 'Stahltraeger.pdf' }),
         dok({ typ: 'LIEFERSCHEIN', eingangsDatum: '2026-03-10', dateiname: 'ls.pdf' }),
