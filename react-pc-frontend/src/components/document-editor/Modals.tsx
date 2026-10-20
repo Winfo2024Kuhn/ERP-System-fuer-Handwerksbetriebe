@@ -1,4 +1,4 @@
-import { AlertTriangle, Search, Wrench, Clock, X, Printer, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2, Eye, FileText } from 'lucide-react';
+import { AlertTriangle, Search, Wrench, Clock, X, Printer, Folder, FolderOpen, ChevronDown, ChevronRight, Loader2, Eye, FileText, Check } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { LeistungApiDto, ArbeitszeitartApiDto } from './types';
@@ -359,9 +359,9 @@ function PickerModal({
     );
 }
 
-// ─── Kategorie-Baum für Leistungspicker ────────────────────────────────────
+// ─── Kategorie-Baum (Leistungspicker + "Als neue Leistung speichern") ──────
 
-interface KategorieNode {
+export interface KategorieNode {
     id: number;
     bezeichnung: string;
     isLeaf: boolean;
@@ -373,66 +373,137 @@ interface KategorieTreeNodeProps {
     selectedId: number | null;
     onSelect: (id: number) => void;
     onChildrenLoaded: (children: KategorieNode[]) => void;
+    /**
+     * Ordner, die sich von selbst aufklappen (samt Nachladen der Unterordner),
+     * sobald sie im Baum auftauchen – z. B. der Pfad zum Ordner der
+     * Ursprungs-Leistung. Nur einmal je Knoten; danach klappt der Bediener
+     * frei. Ist die Prop gesetzt, scrollt der ausgewaehlte Knoten ins Bild.
+     */
+    aufgeklappteIds?: ReadonlySet<number>;
+    /**
+     * Nur Ordner der untersten Ebene sind waehlbar. Ein Klick auf einen
+     * Ordner mit Unterordnern klappt ihn dann nur auf/zu.
+     */
+    nurBlaetterWaehlbar?: boolean;
 }
 
-function KategorieTreeNode({ node, selectedId, onSelect, onChildrenLoaded }: KategorieTreeNodeProps) {
+export function KategorieTreeNode({
+    node,
+    selectedId,
+    onSelect,
+    onChildrenLoaded,
+    aufgeklappteIds,
+    nurBlaetterWaehlbar = false,
+}: KategorieTreeNodeProps) {
     const [expanded, setExpanded] = useState(false);
     const [children, setChildren] = useState<KategorieNode[]>([]);
     const [loading, setLoading] = useState(false);
     const loaded = useRef(false);
+    const automatischAufgeklappt = useRef(false);
+    const zeileRef = useRef<HTMLDivElement>(null);
 
     const isSelected = selectedId === node.id;
+    const waehlbar = !nurBlaetterWaehlbar || node.isLeaf;
 
-    const handleToggle = async (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const ladeKinder = useCallback(async () => {
+        if (loaded.current) return;
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/produktkategorien/${node.id}/unterkategorien?light=true`);
+            if (res.ok) {
+                const data: ProduktkategorieDto[] = await res.json();
+                const childNodes: KategorieNode[] = (Array.isArray(data) ? data : []).map(cat => ({
+                    id: Number(cat.id),
+                    bezeichnung: cat.bezeichnung || cat.pfad || 'Kategorie',
+                    isLeaf: cat.leaf ?? true,
+                    parentId: node.id,
+                }));
+                setChildren(childNodes);
+                onChildrenLoaded(childNodes);
+                loaded.current = true;
+            }
+        } catch { /* ignore */ } finally {
+            setLoading(false);
+        }
+    }, [node.id, onChildrenLoaded]);
+
+    const umschalten = () => {
         if (node.isLeaf) return;
         if (expanded) { setExpanded(false); return; }
         setExpanded(true);
-        if (!loaded.current) {
-            setLoading(true);
-            try {
-                const res = await fetch(`/api/produktkategorien/${node.id}/unterkategorien?light=true`);
-                if (res.ok) {
-                    const data: ProduktkategorieDto[] = await res.json();
-                    const childNodes: KategorieNode[] = (Array.isArray(data) ? data : []).map(cat => ({
-                        id: Number(cat.id),
-                        bezeichnung: cat.bezeichnung || cat.pfad || 'Kategorie',
-                        isLeaf: cat.leaf ?? true,
-                        parentId: node.id,
-                    }));
-                    setChildren(childNodes);
-                    onChildrenLoaded(childNodes);
-                    loaded.current = true;
-                }
-            } catch { /* ignore */ } finally {
-                setLoading(false);
-            }
-        }
+        void ladeKinder();
     };
+
+    // Pfad vorab aufklappen: reagiert auch, wenn die Ids erst nach dem
+    // ersten Rendern ankommen (Pfad wird asynchron ermittelt).
+    useEffect(() => {
+        if (node.isLeaf || automatischAufgeklappt.current || !aufgeklappteIds?.has(node.id)) return;
+        automatischAufgeklappt.current = true;
+        setExpanded(true);
+        void ladeKinder();
+    }, [aufgeklappteIds, node.id, node.isLeaf, ladeKinder]);
+
+    // Vorausgewaehlten Ordner nach dem Aufklappen ins Bild holen.
+    useEffect(() => {
+        if (!aufgeklappteIds || !isSelected) return;
+        zeileRef.current?.scrollIntoView?.({ block: 'nearest' });
+    }, [aufgeklappteIds, isSelected]);
+
+    const pfeil = loading ? (
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+    ) : expanded ? (
+        <ChevronDown className="w-3.5 h-3.5" />
+    ) : (
+        <ChevronRight className="w-3.5 h-3.5" />
+    );
+
+    const zeileAktivieren = () => {
+        if (waehlbar) onSelect(node.id);
+        else umschalten();
+    };
+
+    // Im Ordner-Dialog ist die ganze Zeile der Knopf (waehlen bzw. auf-/zuklappen).
+    // Im Leistungspicker bleibt es wie bisher: Zeile per Maus waehlbar, der Pfeil
+    // ist ein eigener Knopf. Nie beides zugleich – kein Knopf im Knopf.
+    const zeileIstKnopf = nurBlaetterWaehlbar;
 
     return (
         <div>
             <div
+                ref={zeileRef}
+                role={zeileIstKnopf ? 'button' : undefined}
+                aria-pressed={zeileIstKnopf && waehlbar ? isSelected : undefined}
+                aria-expanded={zeileIstKnopf && !node.isLeaf ? expanded : undefined}
+                tabIndex={zeileIstKnopf ? 0 : undefined}
+                data-kategorie-id={node.id}
                 className={cn(
                     'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all duration-150',
                     'border-slate-200 bg-white hover:border-rose-200 hover:bg-rose-50/60',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40',
                     isSelected && 'border-rose-500 bg-rose-50 shadow-sm'
                 )}
-                onClick={() => onSelect(node.id)}
+                onClick={zeileAktivieren}
+                onKeyDown={zeileIstKnopf ? (e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        zeileAktivieren();
+                    }
+                } : undefined}
             >
-                {!node.isLeaf ? (
+                {!node.isLeaf && zeileIstKnopf ? (
+                    // Die ganze Zeile klappt auf/zu – kein zweiter Knopf im Knopf.
+                    <span className="p-0.5 text-slate-400 flex-shrink-0" aria-hidden="true">
+                        {pfeil}
+                    </span>
+                ) : !node.isLeaf ? (
                     <button
                         type="button"
+                        aria-label={expanded ? `${node.bezeichnung} zuklappen` : `${node.bezeichnung} aufklappen`}
                         className="p-0.5 rounded text-slate-400 hover:text-rose-600 flex-shrink-0"
-                        onClick={handleToggle}
+                        onClick={(e) => { e.stopPropagation(); umschalten(); }}
                     >
-                        {loading ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : expanded ? (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                        ) : (
-                            <ChevronRight className="w-3.5 h-3.5" />
-                        )}
+                        {pfeil}
                     </button>
                 ) : (
                     <span className="w-5 flex-shrink-0" />
@@ -447,6 +518,9 @@ function KategorieTreeNode({ node, selectedId, onSelect, onChildrenLoaded }: Kat
                 )}>
                     {node.bezeichnung}
                 </span>
+                {isSelected && nurBlaetterWaehlbar && (
+                    <Check className="ml-auto w-3.5 h-3.5 text-rose-600 flex-shrink-0" aria-hidden="true" />
+                )}
             </div>
             {expanded && children.length > 0 && (
                 <div className="mt-1 space-y-1 pl-3">
@@ -457,6 +531,8 @@ function KategorieTreeNode({ node, selectedId, onSelect, onChildrenLoaded }: Kat
                             selectedId={selectedId}
                             onSelect={onSelect}
                             onChildrenLoaded={onChildrenLoaded}
+                            aufgeklappteIds={aufgeklappteIds}
+                            nurBlaetterWaehlbar={nurBlaetterWaehlbar}
                         />
                     ))}
                 </div>

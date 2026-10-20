@@ -73,11 +73,16 @@ public class ProduktkategorieService {
     }
 
     public ProduktkategorieResponseDto findeKategorieById(Long id) {
-        Map<Long, Long> counts = berechneProjektAnzahlen();
+        return findeKategorieById(id, false);
+    }
+
+    /** {@code light = true} spart die teure Projektzaehlung (z. B. fuer den Ordnerpfad im Dokumenteditor). */
+    public ProduktkategorieResponseDto findeKategorieById(Long id, boolean light) {
+        Map<Long, Long> counts = light ? Map.of() : berechneProjektAnzahlen();
         return produktkategorieRepository.findById(id)
                 .map(kat -> {
                     ProduktkategorieResponseDto dto = produktkategorieMapper.toProduktkategorieResponseDto(kat);
-                    dto.setProjektAnzahl(counts.getOrDefault(kat.getId(), 0L));
+                    if (!light) dto.setProjektAnzahl(counts.getOrDefault(kat.getId(), 0L));
                     return dto;
                 })
                 .orElseThrow(() -> new RuntimeException("Kategorie mit ID " + id + " nicht gefunden."));

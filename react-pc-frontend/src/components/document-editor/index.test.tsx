@@ -1851,3 +1851,96 @@ describe('DocumentEditor – data-block-id-Vertrag (SortableBlock)', () => {
         expect(within(wrapper as HTMLElement).getByDisplayValue('Dachrinne reinigen')).toBeInTheDocument();
     });
 });
+
+describe('DocumentEditor – Als neue Leistung speichern', () => {
+    // DSGVO: Dummy-Daten. Position stammt aus Leistung 7, Kurztext wurde geaendert.
+    const URSPRUNG = {
+        id: 7, name: 'Geländer montieren', description: '<p>Montage inkl. Befestigung</p>', price: 120,
+        unit: { name: 'LAUFENDE_METER', anzeigename: 'Laufende Meter' }, folderId: 12,
+    };
+    const ORDNER: Record<string, unknown> = {
+        '/api/produktkategorien/haupt?light=true': [{ id: 1, bezeichnung: 'Geländer', parentId: null, leaf: false }],
+        '/api/produktkategorien/1/unterkategorien?light=true': [{ id: 12, bezeichnung: 'Edelstahl', parentId: 1, leaf: true }],
+        '/api/produktkategorien/12?light=true': { id: 12, bezeichnung: 'Edelstahl', parentId: 1 },
+        '/api/produktkategorien/1?light=true': { id: 1, bezeichnung: 'Geländer', parentId: null },
+    };
+    const geaendert = JSON.stringify({
+        blocks: [{
+            id: 'pos-1', type: 'SERVICE', title: 'Geländer montieren, V4A', description: '<p>Montage inkl. Befestigung</p>',
+            quantity: 3, unit: 'lfm', price: 120, fontSize: 10, leistungId: 7, kategorieId: 12,
+        }],
+        globalRabatt: 0,
+    });
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        const basis = mockFetch({ positionenJson: geaendert });
+        fetchMock = vi.fn((url: string, init?: RequestInit) => {
+            if (url === '/api/leistungen' && init?.method === 'POST') {
+                const body = JSON.parse(init.body as string);
+                return jsonAntwort({ ...URSPRUNG, ...body, id: 99, unit: { name: body.unit, anzeigename: 'Laufende Meter' } });
+            }
+            if (url === '/api/leistungen') return jsonAntwort([URSPRUNG]);
+            if (url in ORDNER) return jsonAntwort(ORDNER[url]);
+            return basis(url, init);
+        });
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+        Element.prototype.scrollIntoView = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    const knopf = () => screen.queryByRole('button', { name: 'Als neue Leistung speichern' });
+
+    it('verknuepft die Position nach dem Speichern mit der neuen Leistung; Rückgängig holt den Knopf zurück', async () => {
+        const user = userEvent.setup();
+        renderEditor();
+
+        await waitFor(() => expect(knopf()).toBeInTheDocument(), { timeout: 3000 });
+        await user.click(knopf()!);
+        const dialog = await screen.findByRole('dialog', { name: 'Als neue Leistung speichern' });
+        await waitFor(() => expect(within(dialog).getByTestId('speicherziel')).toHaveTextContent('Geländer › Edelstahl'));
+        await user.click(within(dialog).getByRole('button', { name: /^Speichern$/ }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Als neue Leistung speichern' })).not.toBeInTheDocument());
+        expect(knopf()).not.toBeInTheDocument();
+        expect(await screen.findByText(/Neue Leistung „Geländer montieren, V4A“ im Ordner „Geländer › Edelstahl“ gespeichert/)).toBeInTheDocument();
+
+        // Kein haengender "Dialog offen"-Zustand: Rückgängig ist bedienbar und
+        // nimmt genau die Verknuepfung zurueck.
+        const rueckgaengig = screen.getByRole('button', { name: 'Rückgängig' });
+        expect(rueckgaengig).toHaveAttribute('title', 'Rückgängig: Als neue Leistung gespeichert (Strg+Z)');
+        await user.click(rueckgaengig);
+        await waitFor(() => expect(knopf()).toBeInTheDocument());
+        // Der Dialog oeffnet sich dabei nicht von selbst wieder.
+        expect(screen.queryByRole('dialog', { name: 'Als neue Leistung speichern' })).not.toBeInTheDocument();
+    });
+
+    it('schliesst den Dialog bei Sperre und oeffnet ihn danach nicht von selbst wieder', async () => {
+        const user = userEvent.setup();
+        const { rerender } = renderEditor();
+
+        await waitFor(() => expect(knopf()).toBeInTheDocument(), { timeout: 3000 });
+        await user.click(knopf()!);
+        expect(await screen.findByRole('dialog', { name: 'Als neue Leistung speichern' })).toBeInTheDocument();
+
+        const mitProps = (readOnly: boolean) => (
+            <MemoryRouter initialEntries={['/dokumente/1']}>
+                <ConfirmProvider>
+                    <ToastProvider>
+                        <DocumentEditor dokumentId={1} onClose={() => { }} readOnly={readOnly} />
+                    </ToastProvider>
+                </ConfirmProvider>
+            </MemoryRouter>
+        );
+        rerender(mitProps(true));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Als neue Leistung speichern' })).not.toBeInTheDocument());
+        rerender(mitProps(false));
+        await waitFor(() => expect(knopf()).toBeInTheDocument());
+        expect(screen.queryByRole('dialog', { name: 'Als neue Leistung speichern' })).not.toBeInTheDocument();
+    });
+});

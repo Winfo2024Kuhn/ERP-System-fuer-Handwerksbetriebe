@@ -191,3 +191,28 @@ describe('ServiceBlock Verlaufsmodus (DOM-Vertraege fuer "Stelle zeigen")', () =
         expect(screen.getByTestId('tiptap')).toHaveAttribute('data-verlaufsmodus', 'true');
     });
 });
+
+describe('ServiceBlock Knopf "Als neue Leistung speichern"', () => {
+    const knopf = () => screen.queryByRole('button', { name: 'Als neue Leistung speichern' });
+
+    it('zeigt den Knopf schon zugeklappt, wenn die Position abweicht', () => {
+        const onAlsNeueLeistungSpeichern = vi.fn();
+        render(<ServiceBlock {...props} kannAlsNeueLeistungSpeichern onAlsNeueLeistungSpeichern={onAlsNeueLeistungSpeichern} />);
+
+        expect(screen.queryByLabelText('Menge')).not.toBeInTheDocument();
+        fireEvent.click(knopf()!);
+        expect(onAlsNeueLeistungSpeichern).toHaveBeenCalledWith('b1');
+        // Klick faellt nicht auf die Karte durch.
+        expect(props.onFocus).not.toHaveBeenCalledWith('b1');
+    });
+
+    it('zeigt keinen Knopf, wenn nichts abweicht', () => {
+        render(<ServiceBlock {...props} kannAlsNeueLeistungSpeichern={false} onAlsNeueLeistungSpeichern={vi.fn()} />);
+        expect(knopf()).not.toBeInTheDocument();
+    });
+
+    it('zeigt keinen Knopf, wenn das Dokument gesperrt ist', () => {
+        render(<ServiceBlock {...props} isLocked kannAlsNeueLeistungSpeichern onAlsNeueLeistungSpeichern={vi.fn()} />);
+        expect(knopf()).not.toBeInTheDocument();
+    });
+});
