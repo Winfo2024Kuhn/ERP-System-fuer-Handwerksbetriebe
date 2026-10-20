@@ -183,4 +183,33 @@ describe('EmailComposeForm – Versand aus dem Dokument-Editor', () => {
         expect(vorDemSenden).not.toHaveBeenCalled();
         expect(sendeAufrufe()).toHaveLength(0);
     });
+
+    it('meldet nach dem Senden einmal „E-Mail wurde gesendet.“', async () => {
+        const onSuccess = vi.fn();
+        renderFormular({ onSuccess });
+
+        await sendeAb();
+
+        await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+        expect(await screen.findAllByText('E-Mail wurde gesendet.')).toHaveLength(1);
+    });
+
+    it('nimmt einen eigenen Text für die Erfolgsmeldung', async () => {
+        renderFormular({ erfolgsMeldung: 'Reklamation an Musterstahl GmbH verschickt.' });
+
+        await sendeAb();
+
+        expect(await screen.findByText('Reklamation an Musterstahl GmbH verschickt.')).toBeInTheDocument();
+        expect(screen.queryByText('E-Mail wurde gesendet.')).toBeNull();
+    });
+
+    it('meldet bei einem Sendefehler keinen Erfolg', async () => {
+        sendeAntwort = () => jsonResponse({ message: 'Postfach nicht erreichbar.' }, 500);
+        renderFormular();
+
+        await sendeAb();
+
+        expect((await screen.findAllByText(/Postfach nicht erreichbar\./)).length).toBeGreaterThan(0);
+        expect(screen.queryByText('E-Mail wurde gesendet.')).toBeNull();
+    });
 });

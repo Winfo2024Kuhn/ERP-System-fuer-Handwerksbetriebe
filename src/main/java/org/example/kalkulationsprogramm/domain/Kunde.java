@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,5 +54,21 @@ public class Kunde {
 
     @OneToMany(mappedBy = "kundenId", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Projekt> projekts = new ArrayList<>();
+
+    /**
+     * Aus Datenschutzgründen gesperrt (Art. 18 DSGVO, Issue #264): Was nicht aufbewahrt werden
+     * muss, ist gelöscht; der Kunde erscheint nicht mehr in Listen und lässt sich nicht mehr
+     * ändern. {@code null} = nicht gesperrt.
+     */
+    @Column(name = "gesperrt_am")
+    private LocalDateTime gesperrtAm;
+
+    /** Ende der längsten Aufbewahrungsfrist der Unterlagen; danach endgültig löschbar. */
+    @Column(name = "aufbewahren_bis")
+    private LocalDate aufbewahrenBis;
+
+    public boolean istGesperrt() {
+        return gesperrtAm != null;
+    }
 
 }

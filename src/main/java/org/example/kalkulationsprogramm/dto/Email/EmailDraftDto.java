@@ -9,12 +9,26 @@ import java.util.List;
  * @param postfachId               gewähltes Absender-Postfach einer neuen Mail ({@code null} = Vorbelegung)
  * @param einzelversand            Sammel-Mail: jeder Empfänger bekommt eine eigene Mail
  * @param weitergeleitetVonEmailId Weiterleitung: die weitergeleitete Mail (fester Absender), sonst {@code null}
+ * @param besitzerId               Benutzer, der den Entwurf angelegt hat ({@code null} = für alle sichtbar).
+ *                                 Nur Ausgabe: Der Server setzt ihn selbst aus der Anmeldung.
+ * @param erstelltVon              Anzeigename des Besitzers, sonst {@code null}; nur Ausgabe
  */
 public record EmailDraftDto(Long id, String recipient, String cc, String subject, String body,
         String fromAddress, Long replyEmailId, Long projektId, Long anfrageId,
         Boolean geschaeftsdokument, Long postfachId, Boolean einzelversand, Long weitergeleitetVonEmailId,
         LocalDateTime createdAt, LocalDateTime updatedAt,
-        List<Attachment> attachments) {
+        List<Attachment> attachments, Long besitzerId, String erstelltVon) {
+
+    /** Entwurf ohne Besitzer-Angaben (wie vor Issue #271). */
+    public EmailDraftDto(Long id, String recipient, String cc, String subject, String body,
+            String fromAddress, Long replyEmailId, Long projektId, Long anfrageId,
+            Boolean geschaeftsdokument, Long postfachId, Boolean einzelversand, Long weitergeleitetVonEmailId,
+            LocalDateTime createdAt, LocalDateTime updatedAt,
+            List<Attachment> attachments) {
+        this(id, recipient, cc, subject, body, fromAddress, replyEmailId, projektId, anfrageId,
+                geschaeftsdokument, postfachId, einzelversand, weitergeleitetVonEmailId, createdAt, updatedAt,
+                attachments, null, null);
+    }
 
     /** Entwurf ohne Weiterleitungs-Bezug (wie in Etappe 1). */
     public EmailDraftDto(Long id, String recipient, String cc, String subject, String body,

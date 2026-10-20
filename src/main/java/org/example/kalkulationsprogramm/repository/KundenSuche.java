@@ -39,7 +39,20 @@ public final class KundenSuche {
      */
     public static Specification<Kunde> spezifikation(String freitext, String name, String kundennummer, String ort,
             String email, String typ) {
-        Specification<Kunde> spec = Specification.where(null);
+        return spezifikation(freitext, name, kundennummer, ort, email, typ, false);
+    }
+
+    /**
+     * Wie {@link #spezifikation(String, String, String, String, String, String)}. Aus Datenschutzgründen
+     * gesperrte Kunden (Issue #264) erscheinen nur auf ausdrücklichen Wunsch.
+     *
+     * @param gesperrte {@code true} = nur gesperrte Kunden, {@code false} = nur nicht gesperrte
+     */
+    public static Specification<Kunde> spezifikation(String freitext, String name, String kundennummer, String ort,
+            String email, String typ, boolean gesperrte) {
+        Specification<Kunde> spec = Specification.where((root, cq, cb) -> gesperrte
+                ? cb.isNotNull(root.get("gesperrtAm"))
+                : cb.isNull(root.get("gesperrtAm")));
         if (StringUtils.hasText(freitext)) {
             final String muster = muster(freitext);
             spec = spec.and((root, cq, cb) -> cb.or(

@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.CreateReklamationRequest;
 import org.example.kalkulationsprogramm.dto.LieferantReklamationDto;
 import org.example.kalkulationsprogramm.repository.*;
+import org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService;
 import org.example.kalkulationsprogramm.service.LieferantDateiablage;
 import org.example.kalkulationsprogramm.controller.LieferantenController.LieferantBildDto;
 import static org.example.kalkulationsprogramm.controller.LieferantenController.bildPfadSegment;
@@ -31,6 +32,7 @@ public class LieferantReklamationController {
     private final MitarbeiterRepository mitarbeiterRepository;
     private final LieferantBildRepository bildRepository;
     private final LieferantDateiablage dateiablage;
+    private final AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
 
     @GetMapping("/lieferant/{lieferantId}")
     public ResponseEntity<List<LieferantReklamationDto>> getByLieferant(@PathVariable Long lieferantId) {
@@ -77,14 +79,18 @@ public class LieferantReklamationController {
     public ResponseEntity<LieferantReklamationDto> create(
             @PathVariable Long lieferantId,
             @RequestBody CreateReklamationRequest request,
-            @RequestParam(required = false) String token) {
+            @RequestParam(required = false) String token,
+            org.springframework.security.core.Authentication authentication) {
 
         var lieferant = lieferantenRepository.findById(lieferantId).orElse(null);
         if (lieferant == null) {
             return ResponseEntity.notFound().build();
         }
 
-        var mitarbeiter = mitarbeiterByToken(token);
+        // Handy-App: Token; PC: angemeldeter Benutzer (sonst bliebe "Erstellt von" leer).
+        var mitarbeiter = StringUtils.hasText(token)
+                ? mitarbeiterByToken(token)
+                : angemeldeterMitarbeiter.handelnderMitarbeiter(authentication).orElse(null);
 
         LieferantReklamation reklamation = new LieferantReklamation();
         reklamation.setLieferant(lieferant);

@@ -24,13 +24,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class EmailDraftControllerTest {
     private final EmailDraftRepository repository = mock(EmailDraftRepository.class);
     private final org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository attachments = mock(org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository.class);
+    private final org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository benutzer =
+            mock(org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository.class);
     private final org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService sichtbarkeit =
             mock(org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setup() {
-        mvc = MockMvcBuilders.standaloneSetup(new EmailDraftController(new org.example.kalkulationsprogramm.service.EmailDraftService(repository, attachments), sichtbarkeit)).build();
+        mvc = MockMvcBuilders.standaloneSetup(new EmailDraftController(new org.example.kalkulationsprogramm.service.EmailDraftService(repository, attachments, benutzer), sichtbarkeit)).build();
         when(repository.save(any())).thenAnswer(invocation -> {
             EmailDraft draft = invocation.getArgument(0);
             draft.setId(42L);

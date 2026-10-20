@@ -34,6 +34,8 @@ public class LieferantDokumentDto {
         private List<ProjektAnteilRef> projektAnteile;
         private List<VerknuepftesDoc> verknuepfteDokumente;
         private GeschaeftsdatenRef geschaeftsdaten;
+        /** Auf der Seite Bestellungen als erledigt ausgeblendet; der Beleg bleibt vollständig erhalten. */
+        private boolean ausgeblendet;
     }
 
     @Data

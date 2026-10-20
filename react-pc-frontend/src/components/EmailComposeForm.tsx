@@ -180,6 +180,8 @@ export interface EmailComposeFormProps {
      * gebucht wird). Fehlt eine, ist „Senden“ gesperrt und dieser Hinweis erscheint.
      */
     pflichtanhangHinweis?: string;
+    /** Text der Erfolgsmeldung nach dem Senden. Standard: „E-Mail wurde gesendet.“ */
+    erfolgsMeldung?: string;
 }
 
 export interface VorDemSendenErgebnis {
@@ -256,6 +258,7 @@ export function EmailComposeForm({
     entwurfSpeichern = true,
     freigabenAbloesenFuerDokumentId,
     pflichtanhangHinweis,
+    erfolgsMeldung = 'E-Mail wurde gesendet.',
 }: EmailComposeFormProps) {
     const inline = variant !== 'modal';
     const toast = useToast();
@@ -1065,6 +1068,8 @@ export function EmailComposeForm({
                 onClose();
                 return;
             }
+
+            toast.success(erfolgsMeldung);
 
             // Check if the recipient email is new (not in known emails).
             // Beim Antworten steht im Feld `"Name" <adresse>` – verglichen und

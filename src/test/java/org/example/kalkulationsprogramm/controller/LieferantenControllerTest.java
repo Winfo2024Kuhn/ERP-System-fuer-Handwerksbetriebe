@@ -142,6 +142,23 @@ class LieferantenControllerTest {
   }
 
   @Test
+  @DisplayName("Filter nach Rolle (Issue #266): gültige Rolle 200, unbekannte 400 ohne Datenbankabfrage")
+  void sucheLieferantenNachRolle() throws Exception {
+    Page<Lieferanten> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 12), 0);
+    when(lieferantenRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(emptyPage);
+
+    mockMvc.perform(get("/api/lieferanten").param("rolle", "beschichtung_verzinken"))
+        .andExpect(status().isOk());
+    for (String falsch : List.of("GIBTSNICHT", "'; DROP TABLE lieferanten; --", "<script>alert(1)</script>")) {
+      mockMvc.perform(get("/api/lieferanten").param("rolle", falsch))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.message").value("Diese Rolle gibt es nicht."));
+    }
+    org.mockito.Mockito.verify(lieferantenRepository, org.mockito.Mockito.times(1))
+        .findAll(any(Specification.class), any(Pageable.class));
+  }
+
+  @Test
   @DisplayName("Freitext-Suche nach Telefonnummer liefert 200 und ruft Repository auf")
   void sucheLieferantenMitTelefonnummerLiefert200() throws Exception {
     Page<Lieferanten> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 12), 0);

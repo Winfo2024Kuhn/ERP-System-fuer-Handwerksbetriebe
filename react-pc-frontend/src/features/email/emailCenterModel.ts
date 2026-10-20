@@ -80,6 +80,22 @@ export interface DraftItem {
     projektId?: number;
     anfrageId?: number;
     updatedAt?: string;
+    /** Anzeigename des Benutzers, der den Entwurf angelegt hat; `null` bei älteren Entwürfen ohne Besitzer. */
+    erstelltVon?: string | null;
+}
+
+/**
+ * Name des fremden Besitzers eines Entwurfs – nur wenn er nicht der eigene ist.
+ * Normale Benutzer sehen ohnehin nur ihre Entwürfe; Admins sehen alle und
+ * erkennen so, wem ein Entwurf gehört. Ohne Besitzer (ältere Entwürfe) oder
+ * ohne bekannten eigenen Namen: `null`.
+ */
+export function fremderEntwurfVon(draft: Pick<DraftItem, 'erstelltVon'>, eigenerName: string | null | undefined): string | null {
+    const besitzer = draft.erstelltVon?.trim();
+    if (!besitzer) return null;
+    const ich = eigenerName?.trim();
+    if (!ich) return null;
+    return besitzer.toLocaleLowerCase('de-DE') === ich.toLocaleLowerCase('de-DE') ? null : besitzer;
 }
 
 /**

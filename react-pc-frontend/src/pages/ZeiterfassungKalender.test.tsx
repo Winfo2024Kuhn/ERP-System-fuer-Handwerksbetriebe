@@ -257,6 +257,7 @@ describe('Tageserfassung und smarte Buchungslogik', () => {
             buchungen: [1, 2].map(id => ({
                 id,
                 projektId: 1,
+                arbeitsgangId: 1,
                 projektName: 'Testprojekt',
                 arbeitsgangName: '',
                 startZeit: '08:00:15',
@@ -298,6 +299,7 @@ describe('Tageserfassung und smarte Buchungslogik', () => {
             buchungen: [1, 2].map(id => ({
                 id,
                 projektId: 1,
+                arbeitsgangId: 1,
                 projektName: 'Testprojekt',
                 arbeitsgangName: '',
                 startZeit: '08:00:00',
@@ -627,7 +629,7 @@ describe('Resturlaub mit halben Tagen', () => {
 
 describe('Tageserfassung: Kategorie und Speichern (#269)', () => {
     const buchung = {
-        id: 1, projektId: 1, projektName: 'Testprojekt', arbeitsgangName: '',
+        id: 1, projektId: 1, arbeitsgangId: 1, projektName: 'Testprojekt', arbeitsgangName: 'Montage',
         startZeit: '08:00:00', endeZeit: '16:00:00', dauerMinuten: 480, dauerFormatiert: '8:00', notiz: ''
     };
 
@@ -671,5 +673,152 @@ describe('Tageserfassung: Kategorie und Speichern (#269)', () => {
         expect(mockFetch.mock.calls.filter(call => call[1]?.method === 'PUT')).toHaveLength(1);
         // Die Anzeige bleibt beim gespeicherten Wert.
         expect(screen.getByRole('textbox', { name: 'Von Buchung 1' })).toHaveValue('09:00');
+    });
+});
+
+describe('Tageserfassung: Schließen, Uhrzeiten, Vorbelegung, Verlauf (#269)', () => {
+    const gespeichert = {
+        id: 1, projektId: 1, arbeitsgangId: 1, projektName: 'Testprojekt', arbeitsgangName: 'Montage',
+        startZeit: '08:00:00', endeZeit: '12:00:00', dauerMinuten: 240, dauerFormatiert: '4:00', notiz: ''
+    };
+    const oeffneTag = async () => {
+        mount();
+        fireEvent.doubleClick(await screen.findByText('3', { selector: 'span' }));
+        return screen.getByRole('dialog', { name: 'Tageserfassung' });
+    };
+
+    it('schließt ohne Rückfrage, solange nichts geändert wurde', async () => {
+        tage = [arbeitstag(3, 1, [gespeichert])];
+        await oeffneTag();
+        fireEvent.click(screen.getByRole('button', { name: 'Tageserfassung schließen' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tageserfassung' })).not.toBeInTheDocument());
+        expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('fragt bei ungespeicherten Änderungen nach und schließt erst nach „Verwerfen“', async () => {
+        tage = [arbeitstag(3, 1, [gespeichert])];
+        await oeffneTag();
+        fireEvent.change(screen.getByRole('textbox', { name: 'Von Buchung 1' }), { target: { value: '07:30' } });
+
+        confirm.mockResolvedValueOnce(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+        await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+            title: 'Ungespeicherte Änderungen verwerfen?', confirmLabel: 'Verwerfen', variant: 'danger'
+        })));
+        expect(screen.getByRole('dialog', { name: 'Tageserfassung' })).toBeVisible();
+
+        confirm.mockResolvedValueOnce(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Tageserfassung schließen' }));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tageserfassung' })).not.toBeInTheDocument());
+    });
+
+    it('fragt auch bei einer neuen, noch nicht gespeicherten Buchung nach', async () => {
+        tage = [arbeitstag(3, 1)];
+        await oeffneTag();
+        fireEvent.click(screen.getByRole('button', { name: /Neue Buchung/ }));
+        confirm.mockResolvedValueOnce(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+        await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+        expect(screen.getByRole('dialog', { name: 'Tageserfassung' })).toBeVisible();
+    });
+
+    it('markiert „Ende vor Beginn“, rechnet nicht über Mitternacht und sperrt das Speichern', async () => {
+        tage = [arbeitstag(3, 1, [gespeichert])];
+        await oeffneTag();
+        fireEvent.change(screen.getByRole('textbox', { name: 'Bis Buchung 1' }), { target: { value: '07:00' } });
+
+        expect(screen.getByText('Ende vor Beginn')).toBeVisible();
+        expect(screen.queryByText('23:00h')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Alle Speichern' }));
+        expect(toast.error).toHaveBeenCalledWith('Bei einer Buchung liegt das Ende vor dem Beginn. Buchungen über Mitternacht bitte auf zwei Tage aufteilen.');
+        expect(mockFetch.mock.calls.filter(call => call[1]?.method === 'PUT')).toHaveLength(0);
+
+        // Gleiche Uhrzeit zählt ebenfalls als ungültig.
+        fireEvent.change(screen.getByRole('textbox', { name: 'Bis Buchung 1' }), { target: { value: '08:00' } });
+        expect(screen.getByText('Ende vor Beginn')).toBeVisible();
+        fireEvent.change(screen.getByRole('textbox', { name: 'Bis Buchung 1' }), { target: { value: '12:15' } });
+        expect(screen.queryByText('Ende vor Beginn')).not.toBeInTheDocument();
+        expect(screen.getByText('4:15h')).toBeVisible();
+    });
+
+    it('zeigt die Ablehnung des Servers (400) als Meldung', async () => {
+        tage = [arbeitstag(3, 1, [gespeichert])];
+        const meldung = 'Das Ende der Buchung muss nach dem Beginn liegen.';
+        const standard = mockFetch.getMockImplementation()!;
+        mockFetch.mockImplementation(async (input: string, init?: RequestInit) => init?.method === 'PUT'
+            ? { ok: false, status: 400, json: async () => ({ status: 400, message: meldung }) }
+            : standard(input, init));
+        await oeffneTag();
+        fireEvent.change(screen.getByRole('textbox', { name: 'Von Buchung 1' }), { target: { value: '09:00' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Alle Speichern' }));
+        await waitFor(() => expect(toast.error).toHaveBeenCalledWith(meldung));
+    });
+
+    it('belegt eine neue Buchung nicht mit Projekt und Tätigkeit vor und verlangt beides vor dem Speichern', async () => {
+        tage = [arbeitstag(3, 1)];
+        const standard = mockFetch.getMockImplementation()!;
+        mockFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+            if (input.startsWith('/api/projekte/simple')) return { ok: true, json: async () => [{ id: 9, bauvorhaben: 'Treppe Musterweg', auftragsnummer: 'A-1' }] };
+            if (input === '/api/arbeitsgaenge') return { ok: true, json: async () => [{ id: 4, beschreibung: 'Schweißen' }] };
+            return standard(input, init);
+        });
+        await oeffneTag();
+        fireEvent.click(screen.getByRole('button', { name: /Neue Buchung/ }));
+
+        expect(screen.getByText('Projekt wählen…')).toBeVisible();
+        expect(screen.getByRole('combobox', { name: 'Tätigkeit Buchung 1' })).toHaveTextContent('Tätigkeit wählen…');
+        fireEvent.click(screen.getByRole('button', { name: 'Alle Speichern' }));
+        expect(toast.error).toHaveBeenCalledWith('Bitte für jede geänderte Buchung ein Projekt und eine Tätigkeit wählen.');
+        expect(mockFetch.mock.calls.filter(call => call[1]?.method === 'POST')).toHaveLength(0);
+    });
+
+    it('bucht Fortbildung direkt aus der Tageserfassung', async () => {
+        tage = [arbeitstag(3, 1)];
+        await oeffneTag();
+        fireEvent.click(screen.getByRole('button', { name: /Fortbildung/ }));
+        await waitFor(() => {
+            const post = mockFetch.mock.calls.find(call => call[0] === '/api/abwesenheit' && call[1]?.method === 'POST');
+            expect(JSON.parse(String(post![1].body))).toMatchObject({ typ: 'FORTBILDUNG', datum: `${year}-08-03` });
+        });
+        expect(await screen.findByText('Fortbildung', { selector: 'p' })).toBeVisible();
+        expect(toast.success).toHaveBeenCalledWith('Fortbildung hinzugefügt.');
+    });
+
+    it('öffnet den Verlauf nur für gespeicherte Buchungen', async () => {
+        tage = [arbeitstag(3, 1, [gespeichert])];
+        const standard = mockFetch.getMockImplementation()!;
+        mockFetch.mockImplementation(async (input: string, init?: RequestInit) => input === '/api/zeitverwaltung/buchungen/1/historie'
+            ? { ok: true, json: async () => [{ id: 11, version: 1, aktion: 'ERSTELLT', startZeit: `${year}-08-03T08:00:00`, endeZeit: `${year}-08-03T12:00:00`, anzahlInStunden: 4, notiz: null, geaendertVon: 'Max Mustermann', geaendertAm: `${year}-08-03T12:01:00`, geaendertVia: 'MOBILE_APP', aenderungsgrund: null }] }
+            : standard(input, init));
+        await oeffneTag();
+        fireEvent.click(screen.getByRole('button', { name: /Neue Buchung/ }));
+        expect(screen.getAllByRole('button', { name: /Verlauf Buchung/ })).toHaveLength(1);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Verlauf Buchung 1' }));
+        expect(await screen.findByText('Angelegt')).toBeVisible();
+        expect(screen.getByText(/über Handy-App/)).toBeVisible();
+    });
+
+    it('bucht per Rechtsklick auch einen Samstag mit Soll-Stunden, überspringt freie Tage', async () => {
+        tage = [arbeitstag(7, 5), { ...arbeitstag(8, 6), sollStunden: 4 }, arbeitstag(9, 7)];
+        mount();
+        await screen.findByText('7', { selector: 'span' });
+        fireEvent.mouseDown(tagZelle('7'), { button: 0 });
+        fireEvent.mouseEnter(tagZelle('8'));
+        fireEvent.mouseEnter(tagZelle('9'));
+        fireEvent.mouseUp(tagZelle('9'));
+        fireEvent.contextMenu(tagZelle('8'));
+        fireEvent.click(await screen.findByRole('button', { name: 'Urlaub (2 Tage)' }));
+        await waitFor(() => {
+            const posts = mockFetch.mock.calls.filter(call => call[0] === '/api/abwesenheit' && call[1]?.method === 'POST');
+            expect(posts.map(call => JSON.parse(String(call[1].body)).datum)).toEqual([`${year}-08-07`, `${year}-08-08`]);
+        });
+    });
+
+    it('erklärt die Mehrfachauswahl über den Info-Knopf am Kalender', async () => {
+        mount();
+        fireEvent.click(await screen.findByRole('button', { name: 'Mehr zu: Tipps zur Bedienung' }));
+        expect(screen.getByText(/mit gedrückter Umschalttaste/)).toBeVisible();
+        expect(screen.getByText(/Tage ohne Soll-Stunden/)).toBeVisible();
     });
 });

@@ -27,6 +27,20 @@ export function lieferantDokumentUrl(lieferantId: number, dokumentId: number): s
     return `/api/lieferanten/${lieferantId}/dokumente/${dokumentId}/download`;
 }
 
+/** Klartext für die Stati aus `ReklamationStatus` im Backend. */
+const REKLAMATION_STATUS_TEXT: Record<string, string> = {
+    OFFEN: 'Offen',
+    IN_BEARBEITUNG: 'In Bearbeitung',
+    ABGESCHLOSSEN: 'Abgeschlossen',
+    STORNIERT: 'Storniert',
+};
+
+/** Anzeigetext eines Reklamations-Status; ein unbekannter Wert erscheint unverändert. */
+export function reklamationStatusText(status: string | null | undefined): string {
+    if (!status) return '';
+    return REKLAMATION_STATUS_TEXT[status] ?? status;
+}
+
 /** Vorbereitete Reklamations-Mail, die im Compose-Formular geöffnet wird. */
 interface ReklamationsMail {
     empfaenger: string;
@@ -320,10 +334,10 @@ export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferan
                                     <div>
                                         <div className="flex items-center gap-3 mb-1">
                                             <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${rek.status === 'OFFEN' ? 'bg-red-100 text-red-700' :
-                                                rek.status === 'ABGESCHLOSSEN' ? 'bg-slate-100 text-slate-600' :
-                                                    'bg-blue-100 text-blue-700'
+                                                rek.status === 'ABGESCHLOSSEN' || rek.status === 'STORNIERT' ? 'bg-slate-100 text-slate-600' :
+                                                    'bg-amber-100 text-amber-800'
                                                 }`}>
-                                                {rek.status}
+                                                {reklamationStatusText(rek.status)}
                                             </span>
                                             <span className="text-sm text-slate-500 flex items-center gap-1">
                                                 <Calendar className="w-3 h-3" />
@@ -448,10 +462,9 @@ export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferan
                     initialSubject={reklamationsMail.betreff}
                     initialBody={reklamationsMail.text}
                     initialAttachments={reklamationsMail.anhaenge}
-                    onSuccess={() => {
-                        setReklamationsMail(null);
-                        toast.success(`Reklamation an ${lieferantName || 'den Lieferanten'} verschickt.`);
-                    }}
+                    // Die Erfolgsmeldung zeigt das Formular selbst – hier nur der passende Text.
+                    erfolgsMeldung={`Reklamation an ${lieferantName || 'den Lieferanten'} verschickt.`}
+                    onSuccess={() => setReklamationsMail(null)}
                 />
             )}
 

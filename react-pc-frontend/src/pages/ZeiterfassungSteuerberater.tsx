@@ -3,6 +3,7 @@ import { Mail, Loader2, Check, BarChart3, AlertCircle, Lock, Clock, ExternalLink
 import { Select } from '../components/ui/select-custom';
 import { Button } from '../components/ui/button';
 import { SteuerberaterEmailModal } from '../components/SteuerberaterEmailModal';
+import { useToast } from '../components/ui/toast';
 import type { Arbeitszeit, ZeitkontoStatus } from '../types/zeitkonto';
 
 interface MitarbeiterStunden {
@@ -18,7 +19,13 @@ interface MitarbeiterStunden {
     festgeschrieben: boolean;
 }
 
+/** Wählbare Jahre: vier Jahre zurück bis ein Jahr voraus, ausgehend vom aktuellen Jahr. */
+function waehlbareJahre(aktuellesJahr: number): number[] {
+    return Array.from({ length: 6 }, (_, index) => aktuellesJahr - 4 + index);
+}
+
 export default function ZeiterfassungSteuerberater() {
+    const toast = useToast();
     const [zeitkonten, setZeitkonten] = useState<ZeitkontoStatus[]>([]);
     const [stundenDaten, setStundenDaten] = useState<MitarbeiterStunden[]>([]);
     const [selectedMitarbeiter, setSelectedMitarbeiter] = useState<number[]>([]);
@@ -234,7 +241,7 @@ export default function ZeiterfassungSteuerberater() {
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Jahr</label>
                         <Select aria-label="Jahr" value={String(jahr)} onChange={value => setJahr(Number(value))}
-                            className="w-32" options={[2024, 2025, 2026, 2027].map(value => ({ value: String(value), label: String(value) }))} />
+                            className="w-32" options={waehlbareJahre(today.getFullYear()).map(value => ({ value: String(value), label: String(value) }))} />
                     </div>
                     <Button
                         onClick={loadStundenDaten}
@@ -395,6 +402,7 @@ export default function ZeiterfassungSteuerberater() {
                     jahr={jahr}
                     onSuccess={() => {
                         setShowEmailModal(false);
+                        toast.success('E-Mail an den Steuerberater wurde gesendet.');
                     }}
                 />
             )}

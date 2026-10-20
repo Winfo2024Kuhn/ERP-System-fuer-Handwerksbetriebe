@@ -125,3 +125,41 @@ describe('ImageViewer', () => {
         expect(screen.getByText('100%')).toBeInTheDocument();
     });
 });
+
+describe('ImageViewer – Herunterladen', () => {
+    it('bietet das aktuelle Bild mit seinem Dateinamen zum Herunterladen an', async () => {
+        const user = userEvent.setup();
+        const images = [
+            { url: '/api/bilder/1', name: 'Gelaender-vorher.jpg' },
+            { url: '/api/bilder/2', name: 'Gelaender-nachher.jpg' },
+        ];
+        render(<ImageViewer src="/api/bilder/1" images={images} startIndex={0} onClose={() => {}} />);
+
+        const link = screen.getByRole('link', { name: 'Bild herunterladen' });
+        expect(link).toHaveAttribute('href', '/api/bilder/1');
+        expect(link).toHaveAttribute('download', 'Gelaender-vorher.jpg');
+
+        await user.click(screen.getByTitle('Nächstes Bild (→)'));
+        expect(screen.getByRole('link', { name: 'Bild herunterladen' })).toHaveAttribute('download', 'Gelaender-nachher.jpg');
+    });
+
+    it('nimmt ohne Namen den letzten Teil der Adresse als Dateinamen', () => {
+        render(<ImageViewer src="/uploads/tor%20vorne.png?v=2" images={[{ url: '/uploads/tor%20vorne.png?v=2' }]} onClose={() => {}} />);
+        expect(screen.getByRole('link', { name: 'Bild herunterladen' })).toHaveAttribute('download', 'tor vorne.png');
+    });
+
+    it('bietet keinen Download für unsichere Adressen an', () => {
+        render(<ImageViewer src="javascript:alert(1)" alt="Bild" onClose={() => {}} />);
+        expect(screen.queryByRole('link', { name: 'Bild herunterladen' })).toBeNull();
+    });
+
+    it('schließt den Betrachter nicht beim Klick auf Herunterladen', async () => {
+        const handleClose = vi.fn();
+        const user = userEvent.setup();
+        render(<ImageViewer src="/bild.jpg" alt="bild.jpg" onClose={handleClose} />);
+        const link = screen.getByRole('link', { name: 'Bild herunterladen' });
+        link.addEventListener('click', e => e.preventDefault());
+        await user.click(link);
+        expect(handleClose).not.toHaveBeenCalled();
+    });
+});

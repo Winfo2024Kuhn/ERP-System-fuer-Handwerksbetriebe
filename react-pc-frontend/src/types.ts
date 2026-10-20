@@ -104,6 +104,22 @@ export interface KundeDetail {
   anfragen?: KundeAnfrageKurz[];
   geschaeftsdokumente?: AusgangsGeschaeftsDokument[];
   notizen?: KundeNotiz[];
+  /** Aus Datenschutzgründen gesperrt (Löschwunsch, Unterlagen müssen noch aufbewahrt werden). */
+  gesperrt?: boolean;
+  /** Zeitpunkt der Sperre (ISO-DateTime), nur bei gesperrt. */
+  gesperrtAm?: string | null;
+  /** Bis zu diesem Tag (ISO-Date) werden die Unterlagen aufbewahrt, nur bei gesperrt. */
+  aufbewahrenBis?: string | null;
+  /** Ob der Kunde direkt gelöscht werden darf oder gesperrt werden muss (nur in der Akte). */
+  loeschPruefung?: KundeLoeschPruefung;
+}
+
+export interface KundeLoeschPruefung {
+  loeschbar: boolean;
+  /** Fertige Klartexte wie „2 Projekte“, „3 Angebote/Rechnungen“. */
+  hindernisse: string[];
+  /** Aufbewahrungsende bei einer Sperre (ISO-Date), null wenn löschbar. */
+  aufbewahrenBis: string | null;
 }
 
 export interface LieferantStatistik {
@@ -176,6 +192,8 @@ export interface LieferantDokument {
   projektAnteile: LieferantProjektAnteil[];
   verknuepfteDokumente: LieferantDokumentRef[];
   uploadedByName?: string;
+  /** Auf der Seite Bestellungen als erledigt ausgeblendet – der Beleg bleibt erhalten. */
+  ausgeblendet?: boolean;
 }
 
 // Dokumentenkette (gruppierte verknüpfte Dokumente)

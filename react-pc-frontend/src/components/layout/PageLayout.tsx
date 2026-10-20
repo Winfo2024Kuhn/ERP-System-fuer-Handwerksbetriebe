@@ -8,6 +8,8 @@ interface PageLayoutProps {
     title?: string;
     /** Optional subtitle or description text */
     subtitle?: string;
+    /** Optionaler Info-Knopf (`<InfoButton>`) direkt rechts neben dem Titel. */
+    titelInfo?: React.ReactNode;
     /** Optional action buttons displayed on the right side of the header */
     actions?: React.ReactNode;
     /** The content of the page */
@@ -24,6 +26,7 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
     ribbonCategory,
     title,
     subtitle,
+    titelInfo,
     actions,
     children,
     className
@@ -39,9 +42,18 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
                                 {ribbonCategory}
                             </p>
                         )}
-                        <h1 className="text-3xl font-bold text-slate-900 uppercase">
-                            {title}
-                        </h1>
+                        {titelInfo ? (
+                            <div className="flex items-center gap-1.5">
+                                <h1 className="text-3xl font-bold text-slate-900 uppercase">
+                                    {title}
+                                </h1>
+                                {titelInfo}
+                            </div>
+                        ) : (
+                            <h1 className="text-3xl font-bold text-slate-900 uppercase">
+                                {title}
+                            </h1>
+                        )}
                         {subtitle && (
                             <p className="text-slate-500 mt-1">
                                 {subtitle}

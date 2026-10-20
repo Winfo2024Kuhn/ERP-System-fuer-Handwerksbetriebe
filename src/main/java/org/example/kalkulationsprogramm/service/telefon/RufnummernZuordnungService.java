@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.repository.KontaktRufnummerRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.SteuerberaterKontaktRepository;
+import org.example.kalkulationsprogramm.service.KundeDatenschutzService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -234,6 +235,7 @@ public class RufnummernZuordnungService {
         }
         KontaktRufnummer r = new KontaktRufnummer();
         if (kundeId != null) {
+            kundeRepository.findById(kundeId).ifPresent(KundeDatenschutzService::pruefeNichtGesperrt);
             r.setKunde(entityManager.getReference(Kunde.class, kundeId));
         } else if (lieferantId != null) {
             r.setLieferant(entityManager.getReference(Lieferanten.class, lieferantId));
@@ -323,6 +325,7 @@ public class RufnummernZuordnungService {
         if (kundeId != null) {
             Kunde k = kundeRepository.findById(kundeId)
                     .orElseThrow(() -> new IllegalArgumentException("Kunde nicht gefunden."));
+            KundeDatenschutzService.pruefeNichtGesperrt(k);
             return new KontaktKurzDto(KontaktKurzDto.KUNDE, k.getId(), k.getName(), k.getKundennummer(), k.getOrt());
         }
         Lieferanten l = lieferantenRepository.findById(lieferantId)

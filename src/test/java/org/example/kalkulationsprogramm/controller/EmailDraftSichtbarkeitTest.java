@@ -38,6 +38,8 @@ class EmailDraftSichtbarkeitTest {
     private static final PostfachSichtbarkeit NUR_INFO = new PostfachSichtbarkeit(false, Set.of(1L));
     private static final long FREMDE_MAIL = 20L;
 
+    private static final EmailDraftService.Leser LESER = new EmailDraftService.Leser(null, false);
+
     private final EmailDraftService service = mock(EmailDraftService.class);
     private final PostfachSichtbarkeitService sichtbarkeit = mock(PostfachSichtbarkeitService.class);
     private MockMvc mvc;
@@ -73,11 +75,12 @@ class EmailDraftSichtbarkeitTest {
             java.util.Collection<Long> ids = inv.getArgument(0);
             return ids.contains(8L) ? Set.of(8L) : Set.of();
         });
-        when(service.list()).thenReturn(List.of(ohneBezug, antwortAufEigene, antwortAufFremde, weiterleitungFremder,
+        when(service.leserFuer(any())).thenReturn(LESER);
+        when(service.list(LESER)).thenReturn(List.of(ohneBezug, antwortAufEigene, antwortAufFremde, weiterleitungFremder,
                 ausFremdemPostfach, ausGeloeschtemPostfach));
         for (EmailDraftDto d : List.of(ohneBezug, antwortAufEigene, antwortAufFremde, weiterleitungFremder,
                 ausFremdemPostfach, ausGeloeschtemPostfach)) {
-            when(service.get(d.id())).thenReturn(d);
+            when(service.get(d.id(), LESER)).thenReturn(d);
         }
     }
 
@@ -96,7 +99,7 @@ class EmailDraftSichtbarkeitTest {
 
     @Test
     void ohneBezuegeKeinePruefung() throws Exception {
-        when(service.list()).thenReturn(List.of(ohneBezug));
+        when(service.list(LESER)).thenReturn(List.of(ohneBezug));
 
         mvc.perform(get("/api/emails/drafts")).andExpect(jsonPath("$.length()").value(1));
         mvc.perform(get("/api/emails/drafts/count")).andExpect(jsonPath("$.count").value(1));
@@ -130,14 +133,14 @@ class EmailDraftSichtbarkeitTest {
                     .andExpect(status().isNotFound());
         }
         verify(service, never()).download(any(), any());
-        verify(service, never()).delete(any());
-        verify(service, never()).save(any(), any(), any());
+        verify(service, never()).delete(any(), any());
+        verify(service, never()).save(any(), any(), any(), any());
     }
 
     @Test
     void eigeneEntwuerfeBleibenNutzbar() throws Exception {
         when(service.download(2L, 7L)).thenReturn(new EmailDraftService.Download("plan.pdf", "application/pdf", new byte[] { 1 }));
-        when(service.save(eq(2L), any(), any())).thenReturn(antwortAufEigene);
+        when(service.save(eq(2L), any(), any(), any())).thenReturn(antwortAufEigene);
 
         mvc.perform(get("/api/emails/drafts/2")).andExpect(status().isOk()).andExpect(jsonPath("$.replyEmailId").value(10));
         mvc.perform(get("/api/emails/drafts/1")).andExpect(status().isOk());
@@ -146,7 +149,7 @@ class EmailDraftSichtbarkeitTest {
         mvc.perform(put("/api/emails/drafts/2").contentType(MediaType.APPLICATION_JSON).content("{\"subject\":\"neu\"}"))
                 .andExpect(status().isOk());
         mvc.perform(delete("/api/emails/drafts/2")).andExpect(status().isOk());
-        verify(service).delete(2L);
+        verify(service).delete(2L, LESER);
         verify(sichtbarkeit, org.mockito.Mockito.atLeastOnce())
                 .nichtLesbareEmailIds(argThat(ids -> ids.contains(10L)), eq(NUR_INFO));
     }

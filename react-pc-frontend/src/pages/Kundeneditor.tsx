@@ -20,6 +20,7 @@ import {
     X,
     CreditCard,
     Edit2,
+    Lock,
     Smartphone
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -45,6 +46,8 @@ import { KontaktAnrufeTab } from '../features/telefon/KontaktAnrufeTab';
 import { WeitereRufnummern } from '../features/telefon/WeitereRufnummern';
 import { useKontaktAnrufAnzahl } from '../features/telefon/useKontaktAnrufAnzahl';
 import { useTelefonBerechtigung } from '../features/telefon/useTelefonBerechtigung';
+import { KundeGesperrtBand, KundeLoeschenKnopf } from '../features/kunden/KundeDatenschutz';
+import { useOptionalAuth } from '../auth/AuthContext';
 
 const ANREDE_OPTIONS = [
     { value: '', label: 'Bitte wählen' },
@@ -256,16 +259,27 @@ interface KundenDetailViewProps {
     kunde: KundeDetail;
     onBack: () => void;
     onEdit: () => void;
+    /** Nur Admins sehen „Löschen…“. */
+    istAdmin: boolean;
+    onGeloescht: () => void;
+    onGesperrt: (kunde: KundeDetail) => void;
 }
 
-const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEdit }) => {
+const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEdit, istAdmin, onGeloescht, onGesperrt }) => {
     const navigate = useNavigate();
+    // Gesperrt (Datenschutz): nur noch lesen, nichts Neues am Kunden anlegen.
+    const gesperrt = kunde.gesperrt === true;
     const initials = kunde.name.slice(0, 2).toUpperCase();
     const [gewaehlterTab, setActiveTab] = useState<KundeDetailTab>('emails');
     // Reiter "Anrufe" nur mit dem Abteilungs-Recht "Anrufe & Anrufbeantworter".
     const darfTelefon = useTelefonBerechtigung() === true;
-    const anrufAnzahl = useKontaktAnrufAnzahl('KUNDE', kunde.id, darfTelefon);
-    const activeTab: KundeDetailTab = gewaehlterTab === 'anrufe' && !darfTelefon ? 'emails' : gewaehlterTab;
+    // Bei gesperrten Kunden sind Anrufe vom Kunden gelöst und Notizen gelöscht --
+    // die Reiter entfallen, damit dort auch nichts Neues angelegt werden kann.
+    const zeigeAnrufe = darfTelefon && !gesperrt;
+    const anrufAnzahl = useKontaktAnrufAnzahl('KUNDE', kunde.id, zeigeAnrufe);
+    const ausgeblendet = (tab: KundeDetailTab) =>
+        (tab === 'anrufe' && !zeigeAnrufe) || (tab === 'notizen' && gesperrt);
+    const activeTab: KundeDetailTab = ausgeblendet(gewaehlterTab) ? 'emails' : gewaehlterTab;
 
     const projekte = kunde.projekte || [];
     const anfragen = kunde.anfragen || [];
@@ -277,15 +291,16 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const tabs: { key: KundeDetailTab; label: string; icon: React.ReactNode; count: number }[] = [
         { key: 'emails', label: 'E-Mails', icon: <Mail className="w-4 h-4" />, count: emailCount },
-        ...(darfTelefon ? [{ key: 'anrufe' as const, label: 'Anrufe', icon: <Phone className="w-4 h-4" />, count: anrufAnzahl }] : []),
+        ...(zeigeAnrufe ? [{ key: 'anrufe' as const, label: 'Anrufe', icon: <Phone className="w-4 h-4" />, count: anrufAnzahl }] : []),
         { key: 'projekte', label: 'Projekte', icon: <Briefcase className="w-4 h-4" />, count: projekte.length },
         { key: 'anfragen', label: 'Anfragen', icon: <FileText className="w-4 h-4" />, count: anfragen.length },
         { key: 'dokumente', label: 'Dokumente', icon: <Receipt className="w-4 h-4" />, count: dokumente.length },
-        { key: 'notizen', label: 'Notizen', icon: <StickyNote className="w-4 h-4" />, count: kunde.notizen?.length || 0 },
+        ...(gesperrt ? [] : [{ key: 'notizen' as const, label: 'Notizen', icon: <StickyNote className="w-4 h-4" />, count: kunde.notizen?.length || 0 }]),
     ];
 
     const header = (
         <Card className="p-6">
+            {gesperrt && <KundeGesperrtBand kunde={kunde} />}
             {/* Spec-Befund 2 (Kunde, docs/superpowers/specs/2026-09-04-layout-14-zoll.md):
                 Bei einem langen Kundennamen nahm sich die Kennzahlen-Reihe ("flex-1
                 max-w-md") den Platz, den der Titelblock eigentlich brauchte -- die
@@ -353,11 +368,16 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     ergaenzt, um exakt der Rezeptur (Projekt/Anfrage) zu
                     entsprechen -- heute unsichtbar, weil nur ein Knopf hier
                     steht, faellt aber auf, sobald ein zweiter dazukommt. */}
-                <div className="flex flex-wrap items-start shrink-0 ml-auto gap-2">
-                    <Button variant="outline" onClick={onEdit}>
-                        <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
-                    </Button>
-                </div>
+                {!gesperrt && (
+                    <div className="flex flex-wrap items-start shrink-0 ml-auto gap-2">
+                        <Button variant="outline" onClick={onEdit}>
+                            <Edit2 className="w-4 h-4 mr-2" /> Bearbeiten
+                        </Button>
+                        {istAdmin && (
+                            <KundeLoeschenKnopf kunde={kunde} onGeloescht={onGeloescht} onGesperrt={onGesperrt} />
+                        )}
+                    </div>
+                )}
             </div>
         </Card>
     );
@@ -515,7 +535,7 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                     </div>
                 </div>
                 {/* Beim Zuordnen von Anrufen gemerkte Nummern (erscheint nur, wenn es welche gibt). */}
-                <WeitereRufnummern typ="KUNDE" kontaktId={kunde.id} darfLoeschen={darfTelefon} />
+                {!gesperrt && <WeitereRufnummern typ="KUNDE" kontaktId={kunde.id} darfLoeschen={darfTelefon} />}
                 <div className="p-3 bg-slate-50 rounded-lg flex items-center gap-3">
                     <div className="p-2 bg-white rounded-md shadow-sm text-slate-400 shrink-0">
                         <Mail className="w-4 h-4" />
@@ -928,6 +948,11 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                 <div>
                     <div className="flex items-center justify-between">
                         <p className="text-xs uppercase text-slate-500 tracking-wide">{kunde.kundennummer || 'ohne Nr.'}</p>
+                        {kunde.gesperrt ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-300">
+                                <Lock className="w-3 h-3" aria-hidden="true" /> Gesperrt
+                            </span>
+                        ) : (
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${
                             kunde.hatProjekte
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -935,6 +960,7 @@ const KundenKarte: React.FC<KundenKarteProps> = ({ kunde, onSelect }) => {
                         }`}>
                             {kunde.hatProjekte ? 'Kunde' : 'Anfrager'}
                         </span>
+                        )}
                     </div>
                     {/* line-clamp-2 statt truncate (Spec E.3, Kartentitel-Ausnahme):
                         ein langer Kundenname (Spec-Befund 4) bricht auf zwei Zeilen um
@@ -999,7 +1025,11 @@ interface FilterState {
     nummer: string;
     ort: string;
     typ: string;
+    /** 'true' = nur gesperrte Kunden (nur Admins), sonst leer. */
+    gesperrte: string;
 }
+
+const LEERE_FILTER: FilterState = { q: '', nummer: '', ort: '', typ: '', gesperrte: '' };
 
 const TYP_OPTIONS = [
     { value: '', label: 'Alle (Kunden & Anfrager)' },
@@ -1020,9 +1050,10 @@ export const Kundeneditor: React.FC = () => {
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
     const [loading, setLoading] = useState(false);
-    const [filters, setFilters] = useState<FilterState>({ q: '', nummer: '', ort: '', typ: '' });
+    const [filters, setFilters] = useState<FilterState>(LEERE_FILTER);
     const [editingKunde, setEditingKunde] = useState<KundeDetail | null>(null);
     const [isCreating, setIsCreating] = useState(false);
+    const istAdmin = useOptionalAuth()?.isAdmin === true;
 
     // Deep-link: restore detail view from URL param ?kundeId=123
     // Merkt sich die zuletzt geoeffnete Kennung statt nur "schon einmal
@@ -1117,7 +1148,7 @@ export const Kundeneditor: React.FC = () => {
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: '', nummer: '', ort: '', typ: '' });
+        setFilters(LEERE_FILTER);
         setPage(0);
     };
 
@@ -1177,6 +1208,16 @@ export const Kundeneditor: React.FC = () => {
         setSearchParams({}, { replace: true });
     };
 
+    const handleGeloescht = () => {
+        handleBackToList();
+        fetchKunden();
+    };
+
+    const handleGesperrt = (aktualisiert: KundeDetail) => {
+        setSelectedKunde(prev => (prev && prev.id !== aktualisiert.id) ? prev : aktualisiert);
+        fetchKunden();
+    };
+
     const handleEditFromDetail = () => {
         if (selectedKunde) {
             setEditingKunde(selectedKunde);
@@ -1219,6 +1260,9 @@ export const Kundeneditor: React.FC = () => {
                     kunde={selectedKunde}
                     onBack={handleBackToList}
                     onEdit={handleEditFromDetail}
+                    istAdmin={istAdmin}
+                    onGeloescht={handleGeloescht}
+                    onGesperrt={handleGesperrt}
                 />
                 {editingKunde && (
                     <KundenFormular
@@ -1283,7 +1327,22 @@ export const Kundeneditor: React.FC = () => {
                         <button type="button" className="btn-secondary flex-1 px-4 py-2 border rounded-lg hover:bg-slate-50" onClick={handleResetFilters}>Filter zurücksetzen</button>
                     </div>
                 </form>
-                <p className="text-xs text-gray-500 mt-3">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
+                    <p className="text-xs text-gray-500">Für Performance werden immer nur {PAGE_SIZE} Einträge auf einmal geladen.</p>
+                    {/* Gesperrte Kunden (Datenschutz) erscheinen sonst nirgends -- nur Admins dürfen sie gezielt aufrufen. */}
+                    {istAdmin && (
+                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={filters.gesperrte === 'true'}
+                                onChange={e => handleFilterChange('gesperrte', e.target.checked ? 'true' : '')}
+                                className="accent-rose-600 w-4 h-4"
+                            />
+                            <Lock className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                            Nur gesperrte Kunden
+                        </label>
+                    )}
+                </div>
             </div>
 
             {/* Kunden-Grid */}

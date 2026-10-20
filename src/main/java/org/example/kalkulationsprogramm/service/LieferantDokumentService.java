@@ -540,6 +540,7 @@ public class LieferantDokumentService {
                                 .gespeicherterDateiname(dok.getEffektiverGespeicherterDateiname())
                                 .uploadDatum(dok.getUploadDatum())
                                 .url(url)
+                                .ausgeblendet(dok.isAusgeblendet())
                                 .uploadedByName(dok.getUploadedBy() != null
                                                 ? dok.getUploadedBy().getVorname() + " "
                                                                 + dok.getUploadedBy().getNachname()
@@ -626,9 +627,10 @@ public class LieferantDokumentService {
 
                 if (LieferantDokumentTyp.RECHNUNG == dokument.getTyp()
                         || LieferantDokumentTyp.GUTSCHRIFT == dokument.getTyp()) {
+                        String art = LieferantDokumentTyp.RECHNUNG == dokument.getTyp() ? "Rechnung" : "Gutschrift";
                         throw new IllegalArgumentException(
-                                "Dokument vom Typ " + dokument.getTyp() + " kann nicht gelöscht werden (GoBD-Aufbewahrungspflicht). "
-                                + "Falls es eine Fehlklassifikation ist, bitte zuerst den Typ auf 'Sonstiges' ändern.");
+                                "Eine " + art + " muss aufbewahrt werden und kann deshalb nicht gelöscht werden. "
+                                + "Ist das Dokument gar keine " + art + ", bitte zuerst die Art auf „Sonstiges“ ändern.");
                 }
 
                 log.info("Admin '{}' löscht Lieferantendokument ID={}", adminUsername, id);

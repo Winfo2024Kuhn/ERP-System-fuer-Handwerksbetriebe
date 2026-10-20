@@ -5,8 +5,10 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.repository.ZeitkontoKorrekturAuditRepository;
 import org.example.kalkulationsprogramm.repository.ZeitkontoKorrekturRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -58,6 +60,7 @@ public class ZeitkontoKorrekturService {
 
         Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden: " + mitarbeiterId));
+        pruefeMonatOffen(mitarbeiterId, datum);
 
         Mitarbeiter erstelltVon = mitarbeiterRepository.findById(erstelltVonId)
                 .orElseThrow(() -> new IllegalArgumentException("Bearbeiter nicht gefunden: " + erstelltVonId));
@@ -117,6 +120,7 @@ public class ZeitkontoKorrekturService {
         if (korrektur.getStorniert()) {
             throw new IllegalStateException("Stornierte Korrekturen können nicht mehr geändert werden");
         }
+        pruefeMonatOffen(korrektur.getMitarbeiter().getId(), korrektur.getDatum());
 
         Mitarbeiter bearbeiter = mitarbeiterRepository.findById(bearbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Bearbeiter nicht gefunden: " + bearbeiterId));
@@ -167,6 +171,7 @@ public class ZeitkontoKorrekturService {
         if (korrektur.getStorniert()) {
             throw new IllegalStateException("Korrektur ist bereits storniert");
         }
+        pruefeMonatOffen(korrektur.getMitarbeiter().getId(), korrektur.getDatum());
 
         Mitarbeiter bearbeiter = mitarbeiterRepository.findById(bearbeiterId)
                 .orElseThrow(() -> new IllegalArgumentException("Bearbeiter nicht gefunden: " + bearbeiterId));
@@ -190,6 +195,22 @@ public class ZeitkontoKorrekturService {
         // MonatsSaldo-Cache invalidieren
         monatsSaldoService.invalidiereFuerDatum(
                 korrektur.getMitarbeiter().getId(), korrektur.getDatum());
+    }
+
+
+    /**
+     * Ein abgeschlossener (festgeschriebener) Monat ist gecacht und ändert sich nicht mehr. Eine
+     * Korrektur dort würde gespeichert, aber nie wirken – deshalb wie bei Buchungen und
+     * Abwesenheiten ablehnen (409).
+     */
+    private void pruefeMonatOffen(Long mitarbeiterId, LocalDate datum) {
+        if (datum != null && monatsSaldoService.isMonatFestgeschrieben(mitarbeiterId, datum.getYear(),
+                datum.getMonthValue())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, String.format(
+                    "Der Monat %02d/%d ist abgeschlossen. Korrekturen sind dort nicht mehr möglich. "
+                            + "Bitte zuerst den Monatsabschluss zurücksetzen oder die Korrektur im laufenden Monat eintragen.",
+                    datum.getMonthValue(), datum.getYear()));
+        }
     }
 
     /**
