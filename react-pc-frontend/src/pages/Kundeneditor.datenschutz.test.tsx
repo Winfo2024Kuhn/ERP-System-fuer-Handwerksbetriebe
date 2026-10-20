@@ -64,6 +64,19 @@ beforeEach(() => {
     fetchMock = vi.fn((url: string, init?: RequestInit) => {
         if (url === '/api/kunden/7' && init?.method === 'DELETE') return json(deleteAntwort);
         if (url === '/api/kunden/7/datenschutz-sperre') return json(sperreAntwort);
+        if (url === '/api/kunden/7/anonymisieren') return json({ status: 200, body: akte({
+            ...NICHT_LOESCHBAR,
+            name: 'Gelöschter Kunde 1007',
+            ansprechspartner: '',
+            strasse: '',
+            plz: '',
+            ort: '',
+            kundenEmails: [],
+            gesperrt: true,
+            gesperrtAm: '2026-02-03T09:30:00',
+            aufbewahrenBis: '2025-12-31',
+            anonymisiertAm: '2026-10-20T09:15:00',
+        }) });
         if (url === '/api/kunden/7') return json({ status: 200, body: aktenAntwort });
         if (url.startsWith('/api/kunden?')) return json({ status: 200, body: { kunden: [], gesamt: 0 } });
         return json({ status: 404 });
@@ -191,6 +204,28 @@ describe('Kundeneditor – Kunde löschen (Datenschutz)', () => {
         expect(screen.queryByRole('button', { name: /Bearbeiten/ })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Löschen…/ })).not.toBeInTheDocument();
         expect(within(screen.getByTestId('kunde-reiterleiste')).queryByText('Notizen')).not.toBeInTheDocument();
+    });
+
+    it('anonymisiert einen gesperrten Kunden nach Fristende und aktualisiert die Akte', async () => {
+        const user = userEvent.setup();
+        aktenAntwort = akte({
+            gesperrt: true,
+            ansprechspartner: '',
+            kundenEmails: [],
+            gesperrtAm: '2026-02-03T09:30:00',
+            aufbewahrenBis: '2025-12-31',
+            anonymisiertAm: null,
+            loeschPruefung: { loeschbar: false, hindernisse: ['1 Projekt'], aufbewahrenBis: '2025-12-31', anonymisierbar: true },
+        });
+        renderAkte();
+        await user.click(await screen.findByRole('button', { name: /Anonymisieren…/ }));
+        await user.click(await screen.findByRole('button', { name: /Endgültig anonymisieren/ }));
+
+        await waitFor(() => expect(aufrufe('POST', '/api/kunden/7/anonymisieren')).toHaveLength(1));
+        const band = await screen.findByTestId('kunde-gesperrt-band');
+        await waitFor(() => expect(band).toHaveTextContent('Anonymisiert am 20.10.2026.'));
+        expect(screen.getAllByText('Gelöschter Kunde 1007').length).toBeGreaterThan(0);
+        expect(screen.queryByRole('button', { name: /Anonymisieren…/ })).not.toBeInTheDocument();
     });
 });
 

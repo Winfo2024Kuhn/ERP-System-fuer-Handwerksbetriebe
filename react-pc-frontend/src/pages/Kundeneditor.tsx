@@ -262,6 +262,7 @@ interface KundenDetailViewProps {
     /** Nur Admins sehen „Löschen…“. */
     istAdmin: boolean;
     onGeloescht: () => void;
+    /** Gesperrt oder anonymisiert: die Antwort ist die aktualisierte Akte. */
     onGesperrt: (kunde: KundeDetail) => void;
 }
 
@@ -300,7 +301,7 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
 
     const header = (
         <Card className="p-6">
-            {gesperrt && <KundeGesperrtBand kunde={kunde} />}
+            {gesperrt && <KundeGesperrtBand kunde={kunde} onAnonymisiert={onGesperrt} />}
             {/* Spec-Befund 2 (Kunde, docs/superpowers/specs/2026-09-04-layout-14-zoll.md):
                 Bei einem langen Kundennamen nahm sich die Kennzahlen-Reihe ("flex-1
                 max-w-md") den Platz, den der Titelblock eigentlich brauchte -- die

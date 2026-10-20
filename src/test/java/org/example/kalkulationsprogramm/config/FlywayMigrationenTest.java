@@ -72,7 +72,8 @@ class FlywayMigrationenTest {
             Map.entry("V428__zeit_hinweis_gesendet.sql", -727890757),
             Map.entry("V429__email_automatische_bestaetigung.sql", 854429120),
             Map.entry("V430__email_draft_besitzer.sql", 617604519),
-            Map.entry("V431__kunde_datenschutz_sperre.sql", -1464614437));
+            Map.entry("V431__kunde_datenschutz_sperre.sql", -1464614437),
+            Map.entry("V432__kunde_anonymisiert.sql", 755312716));
 
     private static final char BOM = 0xFEFF;
 

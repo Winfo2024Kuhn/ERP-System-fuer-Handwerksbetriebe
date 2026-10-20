@@ -73,6 +73,7 @@ public class KundenDetailService {
         dto.setGesperrt(kunde.istGesperrt());
         dto.setGesperrtAm(kunde.getGesperrtAm());
         dto.setAufbewahrenBis(kunde.getAufbewahrenBis());
+        dto.setAnonymisiertAm(kunde.getAnonymisiertAm());
         dto.setProjekte(mapProjekte(projekte));
         dto.setAnfragen(mapAnfragen(anfragen));
         dto.setGeschaeftsdokumente(mapGeschaeftsdokumente(projekte, anfragen));
