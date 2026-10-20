@@ -40,7 +40,7 @@ import { Card } from "../components/ui/card";
 import { cn } from "../lib/utils";
 import { BESTELLBEDARF_AKTIV } from "../lib/freigaben";
 import type { Projekt, ProjektDetail, Anfrage, AusgangsGeschaeftsDokument, AusgangsGeschaeftsDokumentTyp, AbrechnungsverlaufDto, AbrechnungspositionDto, Artikel, ArtikelInProjekt, Materialkosten } from "../types";
-import { canCreateEinfacheRechnung, istRechnungAmVorgaengerGesperrt, hatAktiveAuftragsbestaetigung } from "../lib/abrechnungsverlauf";
+import { canCreateEinfacheRechnung, istRechnungAmVorgaengerGesperrt, hatAktiveAuftragsbestaetigung, keineWeitereRechnungHinweis } from "../lib/abrechnungsverlauf";
 import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from "../types";
 import { DetailLayout } from "../components/DetailLayout";
 import { ProjektErstellenModal } from "../components/ProjektErstellenModal";
@@ -304,6 +304,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
     const [rechnungBasisDok, setRechnungBasisDok] = useState<AusgangsGeschaeftsDokument | null>(null);
     const [abrechnungsverlauf, setAbrechnungsverlauf] = useState<AbrechnungsverlaufDto | null>(null);
+    const keineRechnungMehr = keineWeitereRechnungHinweis(abrechnungsverlauf);
     const [rechnungTyp, setRechnungTyp] = useState<AusgangsGeschaeftsDokumentTyp>('TEILRECHNUNG');
     const [abschlagsBetrag, setAbschlagsBetrag] = useState<string>('');
     const [rechnungLoading, setRechnungLoading] = useState(false);
@@ -2587,16 +2588,16 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                         </div>
                                     </div>
 
-                                    {abrechnungsverlauf.restbetrag <= 0 && (
-                                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-                                            Der Basisbetrag ist vollständig abgerechnet. Es kann keine weitere Rechnung erstellt werden.
+                                    {keineRechnungMehr && (
+                                        <div role="status" className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                                            {keineRechnungMehr}
                                         </div>
                                     )}
                                 </div>
                             )}
 
                             {/* Rechnungstyp-Auswahl */}
-                            {(!abrechnungsverlauf || abrechnungsverlauf.restbetrag > 0) && (
+                            {!keineRechnungMehr && (
                                 <div className="space-y-4">
                                     <div className="flex items-center gap-1.5">
                                         <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Rechnungstyp wählen</h4>
@@ -2992,7 +2993,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                         }}>
                             Abbrechen
                         </Button>
-                        {(!abrechnungsverlauf || abrechnungsverlauf.restbetrag > 0) && (
+                        {!keineRechnungMehr && (
                             <Button
                                 className="bg-rose-600 text-white hover:bg-rose-700"
                                 disabled={

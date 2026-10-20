@@ -1300,6 +1300,132 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(result.getVorgaenger()).isEqualTo(angebot);
         }
 
+        /** Rechnung mit Nummer, z. B. die einfache Rechnung am Angebot. */
+        private AusgangsGeschaeftsDokument rechnung(AusgangsGeschaeftsDokumentTyp typ, String nummer, boolean storniert) {
+            AusgangsGeschaeftsDokument dok = nachfolger(typ, "9600.00", storniert);
+            dok.setDokumentNummer(nummer);
+            return dok;
+        }
+
+        private AusgangsGeschaeftsDokumentErstellenDto rechnungAn(long vorgaengerId, AusgangsGeschaeftsDokumentTyp typ) {
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(typ);
+            dto.setVorgaengerId(vorgaengerId);
+            dto.setBetragNetto(new BigDecimal("100.00"));
+            return dto;
+        }
+
+        @Test
+        void einfacheRechnungSchliesstDenVorgangFuerWeitereRechnungenAb() {
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    80L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "AN-2026/10/00001");
+            when(dokumentRepository.findById(80L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(80L)).thenReturn(
+                    List.of(rechnung(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-2026/10/00002", false)));
+
+            for (AusgangsGeschaeftsDokumentTyp typ : List.of(
+                    AusgangsGeschaeftsDokumentTyp.RECHNUNG,
+                    AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG,
+                    AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG,
+                    AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG)) {
+                assertThatThrownBy(() -> service.erstellen(rechnungAn(80L, typ)))
+                        .as("Typ %s", typ)
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("RE-2026/10/00002")
+                        .hasMessageContaining("storniert");
+            }
+        }
+
+        @Test
+        void schlussrechnungSchliesstDenVorgangEbenfallsAb() {
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    81L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "AN-2026/10/00003");
+            when(dokumentRepository.findById(81L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(81L)).thenReturn(List.of(
+                    rechnung(AusgangsGeschaeftsDokumentTyp.ABSCHLAGSRECHNUNG, "AR-2026/10/00004", false),
+                    rechnung(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, "SR-2026/10/00005", false)));
+
+            assertThatThrownBy(() -> service.erstellen(rechnungAn(81L, AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("SR-2026/10/00005");
+        }
+
+        @Test
+        void nachStornoDerEinfachenRechnungGehtWiederEineRechnung() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    82L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "AN-2026/10/00006");
+            when(dokumentRepository.findById(82L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(82L)).thenReturn(
+                    List.of(rechnung(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-2026/10/00007", true)));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(83L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokument result = service.erstellen(rechnungAn(82L, AusgangsGeschaeftsDokumentTyp.RECHNUNG));
+
+            assertThat(result.getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+        }
+
+        @Test
+        void auftragsbestaetigungBleibtNachDerEinfachenRechnungMoeglich() {
+            mockCounterForNummer();
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    84L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "AN-2026/10/00008");
+            when(dokumentRepository.findById(84L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(84L)).thenReturn(
+                    List.of(rechnung(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-2026/10/00009", false)));
+            when(dokumentRepository.save(any())).thenAnswer(inv -> {
+                AusgangsGeschaeftsDokument d = inv.getArgument(0);
+                d.setId(85L);
+                return d;
+            });
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            dto.setVorgaengerId(84L);
+
+            assertThat(service.erstellen(dto).getTyp()).isEqualTo(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        }
+
+        @Test
+        void keineZweiteRechnungUeberDieNachtraeglicheAuftragsbestaetigung() {
+            // Rechnung am Angebot, danach eine AB am Angebot: An der AB darf keine
+            // zweite Rechnung ueber denselben Auftrag entstehen.
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    86L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "AN-2026/10/00010");
+            AusgangsGeschaeftsDokument ab = basisdokument(
+                    87L, AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-2026/10/00011");
+            ab.setVorgaenger(angebot);
+            when(dokumentRepository.findById(87L)).thenReturn(Optional.of(ab));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(87L)).thenReturn(Collections.emptyList());
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(86L)).thenReturn(List.of(
+                    rechnung(AusgangsGeschaeftsDokumentTyp.RECHNUNG, "RE-2026/10/00012", false), ab));
+
+            assertThatThrownBy(() -> service.erstellen(rechnungAn(87L, AusgangsGeschaeftsDokumentTyp.RECHNUNG)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("RE-2026/10/00012");
+        }
+
+        @Test
+        void keineRechnungAmAngebotWennDieABschonAbgeschlossenIst() {
+            AusgangsGeschaeftsDokument angebot = basisdokument(
+                    88L, AusgangsGeschaeftsDokumentTyp.ANGEBOT, "AN-2026/10/00013");
+            AusgangsGeschaeftsDokument ab = basisdokument(
+                    89L, AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG, "AB-2026/10/00014");
+            when(dokumentRepository.findById(88L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(88L)).thenReturn(List.of(
+                    rechnung(AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG, "TR-2026/10/00015", false), ab));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(89L)).thenReturn(
+                    List.of(rechnung(AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG, "SR-2026/10/00016", false)));
+
+            assertThatThrownBy(() -> service.erstellen(rechnungAn(88L, AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("SR-2026/10/00016");
+        }
+
         @Test
         void setztAbschlagsnummerKorrekt() {
             mockCounterForNummer();
@@ -2178,39 +2304,80 @@ class AusgangsGeschaeftsDokumentServiceTest {
         }
 
         @Test
-        void abschliessendeEinfacheRechnungLaesstNichtsOffen() {
+        void einfacheRechnungLaesstNichtsOffen() {
             angebotMitEinfacherRechnung("{\"blocks\":[],\"schliesstAuftragAb\":true}", false);
 
             var verlauf = service.getAbrechnungsverlauf(1L);
 
             assertThat(verlauf.getBereitsAbgerechnet()).isEqualByComparingTo(new BigDecimal("9600.00"));
             assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(verlauf.getAbschliessendeRechnungNummer()).isEqualTo("2026/10/00002");
         }
 
         @Test
-        void bestandsrechnungOhneKennzeichenBehaeltIhrenRest() {
+        void auchBestandsrechnungOhneKennzeichenSchliesstDenVorgangAb() {
+            // Das Kennzeichen steuert nur die PDF-Darstellung. Abgeschlossen ist der
+            // Vorgang mit jeder aktiven einfachen Rechnung, wie bei einer Schlussrechnung.
             angebotMitEinfacherRechnung("{\"blocks\":[]}", false);
 
-            assertThat(service.getAbrechnungsverlauf(1L).getRestbetrag())
-                    .isEqualByComparingTo(new BigDecimal("400.00"));
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(BigDecimal.ZERO);
+            assertThat(verlauf.getAbschliessendeRechnungNummer()).isEqualTo("2026/10/00002");
         }
 
         @Test
-        void stornierteAbschliessendeRechnungGibtDenAuftragWiederFrei() {
+        void stornierteEinfacheRechnungGibtDenAuftragWiederFrei() {
             angebotMitEinfacherRechnung("{\"blocks\":[],\"schliesstAuftragAb\":true}", true);
 
-            assertThat(service.getAbrechnungsverlauf(1L).getRestbetrag())
-                    .isEqualByComparingTo(new BigDecimal("10000.00"));
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(new BigDecimal("10000.00"));
+            assertThat(verlauf.getAbschliessendeRechnungNummer()).isNull();
         }
 
         @Test
-        void kennzeichenLesenIstRobust() {
-            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb(null)).isFalse();
-            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb(" ")).isFalse();
-            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("kein json")).isFalse();
-            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("[]")).isFalse();
-            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("{\"schliesstAuftragAb\":false}")).isFalse();
-            assertThat(AusgangsGeschaeftsDokumentService.schliesstAuftragAb("{\"schliesstAuftragAb\":true}")).isTrue();
+        void abschlussAnDerABZeigtSichAuchAmAngebot() {
+            AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+            angebot.setId(1L);
+            angebot.setDokumentNummer("AN-2026/10/00020");
+            angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            angebot.setBetragNetto(new BigDecimal("10000.00"));
+            AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+            ab.setId(2L);
+            ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+            AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+            rechnung.setId(3L);
+            rechnung.setDokumentNummer("RE-2026/10/00021");
+            rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+            rechnung.setBetragNetto(new BigDecimal("10000.00"));
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(angebot));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L)).thenReturn(List.of(ab));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(2L)).thenReturn(List.of(rechnung));
+
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getAbschliessendeRechnungNummer()).isEqualTo("RE-2026/10/00021");
+            assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(BigDecimal.ZERO);
+        }
+
+        @Test
+        void teilrechnungSchliesstNichtAb() {
+            AusgangsGeschaeftsDokument basis = new AusgangsGeschaeftsDokument();
+            basis.setId(1L);
+            basis.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            basis.setBetragNetto(new BigDecimal("10000.00"));
+            AusgangsGeschaeftsDokument teil = new AusgangsGeschaeftsDokument();
+            teil.setId(2L);
+            teil.setTyp(AusgangsGeschaeftsDokumentTyp.TEILRECHNUNG);
+            teil.setBetragNetto(new BigDecimal("4000.00"));
+            when(dokumentRepository.findById(1L)).thenReturn(Optional.of(basis));
+            when(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(1L)).thenReturn(List.of(teil));
+
+            var verlauf = service.getAbrechnungsverlauf(1L);
+
+            assertThat(verlauf.getAbschliessendeRechnungNummer()).isNull();
+            assertThat(verlauf.getRestbetrag()).isEqualByComparingTo(new BigDecimal("6000.00"));
         }
     }
 

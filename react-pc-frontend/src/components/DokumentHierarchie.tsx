@@ -21,7 +21,7 @@ import { GutschriftErstellenDialog } from './GutschriftErstellenDialog';
 import { DokumentVerlaufDrawer } from './dokument/DokumentVerlaufDrawer';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
-import { istRechnungAmVorgaengerGesperrt } from '../lib/abrechnungsverlauf';
+import { istRechnungAmVorgaengerGesperrt, keineWeitereRechnungHinweis } from '../lib/abrechnungsverlauf';
 import { hatAktivesBasisdokument } from '../lib/basisdokumente';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Input } from './ui/input';
@@ -109,6 +109,7 @@ export function DokumentHierarchie({
     const [showRechnungDialog, setShowRechnungDialog] = useState(false);
     const [rechnungBasisDok, setRechnungBasisDok] = useState<AusgangsGeschaeftsDokument | null>(null);
     const [abrechnungsverlauf, setAbrechnungsverlauf] = useState<AbrechnungsverlaufDto | null>(null);
+    const keineRechnungMehr = keineWeitereRechnungHinweis(abrechnungsverlauf);
     const [rechnungTyp, setRechnungTyp] = useState<AusgangsGeschaeftsDokumentTyp>('ABSCHLAGSRECHNUNG');
     const [abschlagsBetrag, setAbschlagsBetrag] = useState('');
     const [rechnungLoading, setRechnungLoading] = useState(false);
@@ -806,6 +807,14 @@ export function DokumentHierarchie({
                             </div>
                         )}
 
+                        {/* Auftrag abgeschlossen bzw. Restbetrag aufgebraucht: Hinweis statt Auswahl. */}
+                        {keineRechnungMehr && (
+                            <div role="status" className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                                {keineRechnungMehr}
+                            </div>
+                        )}
+
+                        {!keineRechnungMehr && (<>
                         {/* Rechnungstyp-Auswahl */}
                         <div className="space-y-2">
                             <div className="flex items-center gap-1.5">
@@ -1053,6 +1062,7 @@ export function DokumentHierarchie({
                                 )}
                             </div>
                         )}
+                        </>)}
                     </div>
 
                     <DialogFooter>
@@ -1064,6 +1074,7 @@ export function DokumentHierarchie({
                             onClick={handleCreateRechnung}
                             disabled={
                                 rechnungLoading ||
+                                !!keineRechnungMehr ||
                                 (rechnungTyp === 'ABSCHLAGSRECHNUNG' && berechneterAbschlagNetto <= 0) ||
                                 (rechnungTyp === 'ABSCHLAGSRECHNUNG' && !!abrechnungsverlauf && berechneterAbschlagNetto > abrechnungsverlauf.restbetrag) ||
                                 (rechnungTyp === 'SCHLUSSRECHNUNG' && abrechnungsverlauf != null && abrechnungsverlauf.restbetrag <= 0) ||

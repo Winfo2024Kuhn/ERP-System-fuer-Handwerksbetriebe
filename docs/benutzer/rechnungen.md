@@ -4,7 +4,7 @@ Rechnungen entstehen immer in einem Projekt unter **Projektmanagement → Projek
 
 ## Welche Rechnungsarten gibt es?
 
-- **Einfache Rechnung:** der ganze Auftrag in einer Rechnung.
+- **Einfache Rechnung:** der ganze Auftrag in einer Rechnung. Sie gilt als Schlussrechnung: Positionen, die nicht angefallen sind (z. B. Rüstkosten), einfach löschen. Sie stehen dann als „Nicht angefallen“ auf der Rechnung, und der Auftrag ist zu 100 % abgerechnet.
 - **Abschlagsrechnung:** ein fester Betrag oder Prozentsatz vom Auftrag, z. B. 30 % bei Auftragsbeginn.
 - **Teilrechnung:** einzelne fertige Leistungen aus dem Angebot oder der Auftragsbestätigung abrechnen. Geht erst ab zwei Leistungen.
 - **Schlussrechnung:** rechnet den Rest ab, nachdem es schon eine Abschlags- oder Teilrechnung gab. Die bisherigen Rechnungen werden automatisch abgezogen.
@@ -25,6 +25,8 @@ Ein einfacher Klick auf eine Dokumentkarte öffnet das Menü, ein Doppelklick ö
 Das Fenster öffnet sich über „Rechnung erstellen“ an einem Angebot oder einer Auftragsbestätigung im Projekt (Reiter „Geschäftsdokumente“).
 
 - Oben im Kasten „Abrechnungsverlauf“ stehen die bisherigen Rechnungen, „Bereits abgerechnet:“ und „Restbetrag:“. Ist alles abgerechnet, lässt sich keine weitere Rechnung anlegen.
+- Nach einer einfachen Rechnung oder einer Schlussrechnung ist der Auftrag abgeschlossen. Das Fenster zeigt dann „Dieser Auftrag ist mit Rechnung … abgeschlossen“. Eine weitere Rechnung geht erst, wenn diese Rechnung storniert oder ihr Entwurf gelöscht wird. Das gilt auch für eine Auftragsbestätigung, die erst danach angelegt wurde. Eine Auftragsbestätigung lässt sich weiterhin anlegen.
+- Das (i) neben „Rechnungstyp wählen“ erklärt kurz, welche Rechnungsart wofür passt.
 - Unter „Rechnungstyp wählen“ eine Karte anklicken: „Teilrechnung“, „Abschlagsrechnung“, „Schlussrechnung“ oder „Einfache Rechnung“. Ausgegraute Karten gehen gerade nicht – der Hinweis beim Drüberfahren sagt, warum.
 - „Einfache Rechnung“ gibt es nur, solange an diesem Angebot bzw. dieser Auftragsbestätigung keine Rechnung hängt (oder alle bisherigen storniert sind).
 - Bei **Teilrechnung** unter „Leistungen auswählen“ die fertigen Leistungen anhaken („Alle auswählen“ geht auch). Schon abgerechnete Leistungen sind nicht mehr wählbar. Dann „Erstellen & im Editor bearbeiten“.

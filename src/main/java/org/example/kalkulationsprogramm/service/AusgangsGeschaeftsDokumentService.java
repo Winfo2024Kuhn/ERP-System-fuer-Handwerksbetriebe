@@ -130,6 +130,12 @@ public class AusgangsGeschaeftsDokumentService {
             AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
     );
 
+    /** Rechnungstypen, die einen Vorgang abschliessen: danach kommt keine Rechnung mehr. */
+    private static final Set<AusgangsGeschaeftsDokumentTyp> ABSCHLIESSENDE_RECHNUNGSTYPEN = EnumSet.of(
+            AusgangsGeschaeftsDokumentTyp.RECHNUNG,
+            AusgangsGeschaeftsDokumentTyp.SCHLUSSRECHNUNG
+    );
+
     /**
      * Buchhaltungsrelevante Typen, für die ein GoBD-konformer Audit-Trail (§147 AO,
      * 10-Jahres-Aufbewahrung) zwingend ist. Angebot/AB sind nur Geschäftsbriefe
@@ -292,6 +298,7 @@ public class AusgangsGeschaeftsDokumentService {
                 if (RECHNUNGSTYPEN.contains(dto.getTyp())) {
                     // Rechnungen gehören an das unterste Dokument des Vorgangs
                     validiereAbrechnungsbasis(vorgaenger);
+                    validiereVorgangNichtAbgeschlossen(vorgaenger);
 
                     // Rechnungsbetrag darf Restbetrag nicht übersteigen
                     BigDecimal zuPruefenderBetrag = dto.getBetragNetto();
@@ -1650,17 +1657,13 @@ public class AusgangsGeschaeftsDokumentService {
 
         verlauf.setPositionen(positionen);
         verlauf.setBereitsAbgerechnet(bereitsAbgerechnet);
-        // Eine einfache Rechnung, die den Auftrag abschliesst (Kennzeichen im
-        // positionenJson, setzt der Editor seit 2026-10), laesst nichts offen: was
-        // darin fehlt, ist nicht angefallen. Sonst boete das Projekt eine weitere
-        // Rechnung ueber die nicht angefallenen Positionen an, waehrend auf dem PDF
-        // "Noch offen 0,00 €" steht. Bestandsrechnungen ohne Kennzeichen behalten
-        // ihren bisherigen Rest.
-        boolean auftragAbgeschlossen = nachfolger.stream().anyMatch(dok ->
-                dok.getTyp() == AusgangsGeschaeftsDokumentTyp.RECHNUNG
-                        && !dok.isStorniert()
-                        && schliesstAuftragAb(dok.getPositionenJson()));
-        verlauf.setRestbetrag(auftragAbgeschlossen
+        // Eine einfache Rechnung oder eine Schlussrechnung schliesst den Vorgang ab:
+        // was darin fehlt, ist nicht angefallen, und es kommt keine Rechnung mehr.
+        // Sonst boete das Projekt eine weitere Rechnung ueber die nicht angefallenen
+        // Positionen an, waehrend auf dem PDF "Noch offen 0,00 €" steht.
+        AusgangsGeschaeftsDokument abschliessend = findeAbschliessendeRechnung(basis, nachfolger).orElse(null);
+        verlauf.setAbschliessendeRechnungNummer(abschliessend != null ? abschliessend.getDokumentNummer() : null);
+        verlauf.setRestbetrag(abschliessend != null
                 ? BigDecimal.ZERO
                 : verlauf.getBasisdokumentBetragNetto().subtract(bereitsAbgerechnet));
 
@@ -1853,18 +1856,50 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
-     * Liest das Kennzeichen {@code schliesstAuftragAb} aus dem positionenJson einer
-     * einfachen Rechnung. Fehlt es oder ist das JSON unlesbar: nein.
+     * Sucht die nicht stornierte einfache Rechnung bzw. Schlussrechnung, die den
+     * Vorgang dieses Basisdokuments abschliesst.
+     *
+     * <p>Angebot und Auftragsbestaetigung zaehlen als ein Vorgang: Eine AB darf auch
+     * nach der Rechnung am Angebot noch entstehen. Ohne den Blick ueber die Kette
+     * liesse sich an dieser AB eine zweite Rechnung ueber denselben Auftrag stellen.
+     * Geloeschte Entwuerfe tauchen hier nicht mehr auf, stornierte zaehlen nicht.
+     *
+     * @param nachfolger die bereits geladenen direkten Nachfolger von {@code basis}
      */
-    static boolean schliesstAuftragAb(String positionenJson) {
-        if (positionenJson == null || positionenJson.isBlank()) return false;
-        try {
-            JsonNode root = POSITIONEN_MAPPER.readTree(positionenJson);
-            return root != null && root.isObject() && root.path("schliesstAuftragAb").asBoolean(false);
-        } catch (Exception e) {
-            log.warn("Abschluss-Kennzeichen nicht lesbar: {}", e.getMessage());
-            return false;
+    private Optional<AusgangsGeschaeftsDokument> findeAbschliessendeRechnung(
+            AusgangsGeschaeftsDokument basis, List<AusgangsGeschaeftsDokument> nachfolger) {
+        List<AusgangsGeschaeftsDokument> kandidaten = new ArrayList<>(nachfolger);
+        AusgangsGeschaeftsDokument oben = basis.getVorgaenger();
+        if (basis.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG && oben != null) {
+            // AB unter einem Angebot: dort gestellte Rechnungen gehoeren zum selben Vorgang.
+            kandidaten.addAll(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(oben.getId()));
         }
+        for (AusgangsGeschaeftsDokument dok : nachfolger) {
+            if (dok.getTyp() == AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG && !dok.isStorniert()) {
+                // Angebot mit AB: an der AB gestellte Rechnungen gehoeren zum selben Vorgang.
+                kandidaten.addAll(dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(dok.getId()));
+            }
+        }
+        return kandidaten.stream()
+                .filter(dok -> ABSCHLIESSENDE_RECHNUNGSTYPEN.contains(dok.getTyp()) && !dok.isStorniert())
+                .findFirst();
+    }
+
+    /**
+     * Nach einer einfachen Rechnung oder Schlussrechnung ist der Vorgang
+     * abgerechnet. Eine weitere Rechnung gibt es erst wieder, wenn diese
+     * storniert oder ihr Entwurf geloescht wurde. Eine AB bleibt moeglich.
+     */
+    private void validiereVorgangNichtAbgeschlossen(AusgangsGeschaeftsDokument vorgaenger) {
+        List<AusgangsGeschaeftsDokument> nachfolger =
+                dokumentRepository.findByVorgaengerIdOrderByErstelltAmAsc(vorgaenger.getId());
+        findeAbschliessendeRechnung(vorgaenger, nachfolger).ifPresent(rechnung -> {
+            throw new IllegalStateException(
+                    "Zu " + vorgaenger.getDokumentNummer() + " gibt es schon die Rechnung "
+                            + rechnung.getDokumentNummer() + ", die den Auftrag abschließt. "
+                            + "Eine weitere Rechnung ist erst möglich, wenn diese storniert "
+                            + "oder ihr Entwurf gelöscht wurde.");
+        });
     }
 
     /**

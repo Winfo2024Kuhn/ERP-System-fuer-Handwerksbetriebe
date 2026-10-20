@@ -25,16 +25,19 @@ class KiHilfeSuchqualitaetTest {
     private static final int PLAETZE = 10;
     private static final double MIN_TREFFERQUOTE = 0.75;
 
-    /** Frage -> Teil des Dateipfads, der unter den ersten Treffern sein soll. */
-    private static final Map<String, String> FRAGEN = Map.of(
-            "Wie storniere ich eine Rechnung?", "pages/ProjektEditor.tsx",
-            "Wie mache ich den Monatsabschluss?", "docs/benutzer/monatsabschluss.md",
-            "Wo genehmige ich einen Urlaubsantrag?", "pages/Urlaubsantraege.tsx",
-            "Mahnung verschicken offene Posten", "pages/OffenePostenEditor.tsx",
-            "Arbeitszeit buchen im Zeiterfassung Kalender", "pages/ZeiterfassungKalender.tsx",
-            "Stundensatz ändern Arbeitszeitart", "pages/ArbeitszeitartEditor.tsx",
-            "Feiertage für die Zeiterfassung eintragen", "pages/ZeiterfassungFeiertage.tsx",
-            "Lieferanten bearbeiten", "pages/LieferantenEditor.tsx");
+    /**
+     * Frage -> Teile von Dateipfaden, von denen einer unter den ersten Treffern sein soll.
+     * Mehrere Pfade, wo die Benutzer-Anleitung die Frage genauso gut beantwortet wie die Seite.
+     */
+    private static final Map<String, List<String>> FRAGEN = Map.of(
+            "Wie storniere ich eine Rechnung?", List.of("pages/ProjektEditor.tsx", "docs/benutzer/rechnungen.md"),
+            "Wie mache ich den Monatsabschluss?", List.of("docs/benutzer/monatsabschluss.md"),
+            "Wo genehmige ich einen Urlaubsantrag?", List.of("pages/Urlaubsantraege.tsx"),
+            "Mahnung verschicken offene Posten", List.of("pages/OffenePostenEditor.tsx"),
+            "Arbeitszeit buchen im Zeiterfassung Kalender", List.of("pages/ZeiterfassungKalender.tsx"),
+            "Stundensatz ändern Arbeitszeitart", List.of("pages/ArbeitszeitartEditor.tsx"),
+            "Feiertage für die Zeiterfassung eintragen", List.of("pages/ZeiterfassungFeiertage.tsx"),
+            "Lieferanten bearbeiten", List.of("pages/LieferantenEditor.tsx"));
 
     @Test
     @DisplayName("Typische Fragen finden ihre Seite unter den ersten 10 Treffern")
@@ -48,12 +51,12 @@ class KiHilfeSuchqualitaetTest {
 
         List<String> plaetze = new ArrayList<>();
         int verfehlt = 0;
-        for (Map.Entry<String, String> fall : FRAGEN.entrySet()) {
+        for (Map.Entry<String, List<String>> fall : FRAGEN.entrySet()) {
             List<String> pfade = index.suchen(fall.getKey(), PLAETZE).stream()
                     .map(t -> abschnitte.get(t.position()).filePath())
                     .toList();
-            int platz = pfade.stream().filter(p -> p.contains(fall.getValue())).findFirst().map(pfade::indexOf).orElse(-1);
-            plaetze.add(fall.getKey() + " -> " + (platz < 0 ? "verfehlt (" + fall.getValue() + ")" : "Platz " + (platz + 1)));
+            int platz = pfade.stream().filter(p -> fall.getValue().stream().anyMatch(p::contains)).findFirst().map(pfade::indexOf).orElse(-1);
+            plaetze.add(fall.getKey() + " -> " + (platz < 0 ? "verfehlt (" + String.join(" oder ", fall.getValue()) + ")" : "Platz " + (platz + 1)));
             if (platz < 0) verfehlt++;
         }
 

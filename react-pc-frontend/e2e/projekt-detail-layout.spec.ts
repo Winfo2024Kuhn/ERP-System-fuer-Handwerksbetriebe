@@ -762,7 +762,7 @@ test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nachar
         ],
     });
 
-    async function apiStubben(page: Page) {
+    async function apiStubben(page: Page, abschliessendeRechnungNummer: string | null = null) {
         await page.route('**/api/**', (route) => {
             const request = route.request();
             const pfad = new URL(request.url()).pathname;
@@ -793,7 +793,8 @@ test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nachar
                 // "!abrechnungsverlauf || abrechnungsverlauf.restbetrag > 0").
                 return json(route, {
                     bereitsAbgerechneteBlockIds: [], positionen: [],
-                    restbetrag: 1000, basisdokumentBetragNetto: 1000,
+                    restbetrag: abschliessendeRechnungNummer ? 0 : 1000, basisdokumentBetragNetto: 1000,
+                    abschliessendeRechnungNummer,
                 });
             }
             if (pfad === `/api/ausgangs-dokumente/${ANGEBOT_ID}`) {
@@ -901,6 +902,25 @@ test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nachar
         expect(obenauf).toBe(true);
 
         await page.screenshot({ path: test.info().outputPath('rechnungstyp-info.png') });
+    });
+
+
+    test('abgeschlossener Auftrag: Hinweis mit Rechnungsnummer statt Auswahl', async ({ page }) => {
+        await apiStubben(page, 'RE-2026-0042');
+        await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
+        await page.getByText(DOK_FUER_RECHNUNG.dokumentNummer).click();
+        await page.getByRole('button', { name: 'Rechnung erstellen' }).click();
+
+        const dialogTitel = page.getByRole('heading', { name: 'Rechnung erstellen' });
+        await expect(dialogTitel).toBeVisible();
+        const dialogPanel = dialogTitel.locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]');
+        const hinweis = dialogPanel.getByRole('status');
+        await expect(hinweis).toContainText('Dieser Auftrag ist mit Rechnung RE-2026-0042 abgeschlossen.');
+        await expect(dialogPanel.getByRole('heading', { name: 'Rechnungstyp wählen' })).toHaveCount(0);
+        await expect(dialogPanel.getByRole('button', { name: /^Rechnung erstellen$/ })).toHaveCount(0);
+        // Hinweis bricht um und laeuft nicht ueber.
+        const ueberstand = await hinweis.evaluate((el) => el.scrollWidth - el.clientWidth);
+        expect(ueberstand).toBeLessThanOrEqual(1);
     });
 
 });

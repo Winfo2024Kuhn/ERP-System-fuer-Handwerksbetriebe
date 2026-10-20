@@ -11,7 +11,7 @@ describe('RechnungstypInfo', () => {
 
         const popover = screen.getByRole('dialog', { name: 'Welche Rechnung passt?' });
         expect(popover).toHaveTextContent('Einfache Rechnung');
-        expect(popover).toHaveTextContent('danach sind 100 % abgerechnet');
+        expect(popover).toHaveTextContent('danach kommt keine Rechnung mehr');
         expect(popover).toHaveTextContent('Teilrechnung');
         expect(popover).toHaveTextContent('Abschlagsrechnung');
         expect(popover).toHaveTextContent('Schlussrechnung');
