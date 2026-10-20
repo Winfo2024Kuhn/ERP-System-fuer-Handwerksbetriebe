@@ -91,6 +91,38 @@ class BestellungsUebersichtSecurityTest {
         given(zugriffService.istSichtbar(any(), any())).willReturn(true);
     }
 
+    @Test
+    @DisplayName("Übersicht ohne Anmeldung: 401")
+    void uebersichtOhneLogin() throws Exception {
+        mockMvc.perform(get("/api/bestellungen-uebersicht")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(bestellungsUebersichtService);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("Übersicht: Standard 25 je Gruppe, Anzahl begrenzt, Suche wird durchgereicht, zu lange Suche 400")
+    void uebersichtMehrLadenUndSuche() throws Exception {
+        mockMvc.perform(get("/api/bestellungen-uebersicht")).andExpect(status().isOk());
+        org.mockito.Mockito.verify(bestellungsUebersichtService).ladeUebersicht(any(), eq(25), eq(null));
+
+        mockMvc.perform(get("/api/bestellungen-uebersicht").param("anzahl", "999999").param("suche", "<script>x</script>"))
+                .andExpect(status().isOk());
+        org.mockito.Mockito.verify(bestellungsUebersichtService).ladeUebersicht(any(), eq(1000), eq("<script>x</script>"));
+
+        mockMvc.perform(get("/api/bestellungen-uebersicht").param("anzahl", "-5")).andExpect(status().isOk());
+        org.mockito.Mockito.verify(bestellungsUebersichtService).ladeUebersicht(any(), eq(1), eq(null));
+
+        // ein Zeichen grenzt nichts sinnvoll ein: wie ohne Suche
+        mockMvc.perform(get("/api/bestellungen-uebersicht").param("suche", " x ")).andExpect(status().isOk());
+        org.mockito.Mockito.verify(bestellungsUebersichtService, org.mockito.Mockito.times(2))
+                .ladeUebersicht(any(), eq(25), eq(null));
+
+        mockMvc.perform(get("/api/bestellungen-uebersicht").param("anzahl", "abc")).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/bestellungen-uebersicht").param("suche", "x".repeat(201)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Der Suchbegriff ist zu lang (höchstens 200 Zeichen)."));
+    }
+
     private static final String ABHAENGEN = "/api/bestellungen-uebersicht/abhaengen";
     private static final String HOCHLADEN = "/api/bestellungen-uebersicht/rechnung-hochladen";
 

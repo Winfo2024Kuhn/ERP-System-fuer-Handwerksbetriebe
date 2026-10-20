@@ -265,7 +265,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         rechnung.setAusgeblendet(true);
         speichern();
 
-        var dto = uebersichtController.getUebersicht(null, null).getBody();
+        var dto = uebersichtController.getUebersicht(null, org.example.kalkulationsprogramm.controller.BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -286,7 +286,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         offen.getVerknuepfteDokumente().add(ab);
         speichern();
 
-        var dto = uebersichtController.getUebersicht(null, null).getBody();
+        var dto = uebersichtController.getUebersicht(null, org.example.kalkulationsprogramm.controller.BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.abgeschlossen()).hasSize(1);
@@ -305,13 +305,13 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         LieferantDokument rechnung = dokument(LieferantDokumentTyp.RECHNUNG, "RE-1", LocalDate.of(2026, 5, 31));
         rechnung.getVerknuepfteDokumente().add(ls1);
         speichern();
-        assertThat(uebersichtController.getUebersicht(null, null).getBody().laufendeBestellungen()).hasSize(1);
+        assertThat(uebersichtController.getUebersicht(null, org.example.kalkulationsprogramm.controller.BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody().laufendeBestellungen()).hasSize(1);
         speichern();
 
         vorschlagService.verknuepfe(ls2.getId(), rechnung.getId(), null);
         speichern();
 
-        var dto = uebersichtController.getUebersicht(null, null).getBody();
+        var dto = uebersichtController.getUebersicht(null, org.example.kalkulationsprogramm.controller.BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
         assertThat(dto.laufendeBestellungen()).isEmpty();
         assertThat(dto.abgeschlossen()).hasSize(1);
         assertThat(dto.abgeschlossen().get(0).dokumente()).hasSize(3);
