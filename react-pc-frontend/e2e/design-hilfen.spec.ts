@@ -702,4 +702,59 @@ test.describe('keineUeberschneidungen (Abschnitt 10)', () => {
         `);
         await expect(keineUeberschneidungen(page)).rejects.toThrow();
     });
+
+    // Vollbild-Seiten wie der Dokumenteditor sind selbst "fixed inset-0".
+    // Ihre Knoepfe zaehlen bei offenem Dialog nur dann nicht, wenn der Dialog
+    // bzw. seine Abdunklung sie wirklich verdeckt (Aufbau wie ui/dialog.tsx).
+    const vollbildMitDialog = (zusatz: string) => `
+        <style>
+            html, body { margin: 0; padding: 0; }
+            .seite { position: fixed; inset: 0; }
+            .seite button { position: absolute; top: 20px; width: 100px; height: 40px; }
+            .seite .a { left: 20px; } .seite .b { left: 60px; }
+            .abdunklung { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.5); }
+            .huelle { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
+            [role="dialog"] { width: 200px; height: 100px; background: white; }
+            [role="dialog"] button { width: 100px; height: 40px; }
+        </style>
+        <div class="seite"><button class="a">Hinten A</button><button class="b">Hinten B</button></div>
+        <div class="abdunklung"></div>
+        <div class="huelle"><div role="dialog" aria-modal="true"><button>Speichern</button></div></div>
+        ${zusatz}
+    `;
+
+    test('fester Seiten-Hintergrund unter Dialog samt Abdunklung zaehlt nicht mit', async ({ page }) => {
+        await page.setContent(vollbildMitDialog(''));
+        await keineUeberschneidungen(page);
+    });
+
+    test('zwei ueberlappende feste Elemente UEBER der Abdunklung bleiben bei offenem Dialog ein Fehler', async ({ page }) => {
+        await page.setContent(vollbildMitDialog(`
+            <style>
+                .oben { position: fixed; top: 300px; width: 100px; height: 40px; z-index: 60; }
+                .oben.c { left: 20px; } .oben.d { left: 60px; }
+            </style>
+            <button class="oben c">Oben C</button><button class="oben d">Oben D</button>
+        `));
+        await expect(keineUeberschneidungen(page)).rejects.toThrow(/Oben C.*Oben D/);
+    });
+
+    test('eine pointer-events:none-Ebene gilt nicht als Abdeckung', async ({ page }) => {
+        // Kein Abdunkeln, nur ein kleiner Dialog woanders; ueber den beiden
+        // festen Knoepfen liegt eine durchklickbare Ebene. elementFromPoint
+        // trifft dann die Knoepfe selbst -- sie werden normal geprueft.
+        await page.setContent(`
+            <style>
+                html, body { margin: 0; padding: 0; }
+                .fest { position: fixed; top: 20px; width: 100px; height: 40px; }
+                .fest.a { left: 20px; } .fest.b { left: 60px; }
+                .schleier { position: fixed; inset: 0; z-index: 40; pointer-events: none; background: rgba(0,0,0,.1); }
+                [role="dialog"] { position: fixed; right: 0; bottom: 0; width: 200px; height: 100px; z-index: 50; }
+            </style>
+            <button class="fest a">Fest A</button><button class="fest b">Fest B</button>
+            <div class="schleier"></div>
+            <div role="dialog"><button>OK</button></div>
+        `);
+        await expect(keineUeberschneidungen(page)).rejects.toThrow(/Fest A.*Fest B/);
+    });
 });

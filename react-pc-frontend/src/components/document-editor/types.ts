@@ -136,9 +136,10 @@ export interface LeistungApiDto {
     name: string;
     description: string;
     price: number;
-    unit: { name: string; anzeigename: string };
-    folderId?: number;
-    kategoriePfad?: string;
+    /** Kann vom Server `null` kommen (Leistung ohne eigene Einheit). */
+    unit: { name: string; anzeigename: string } | null;
+    folderId?: number | null;
+    kategoriePfad?: string | null;
 }
 
 export interface ArbeitszeitartApiDto {

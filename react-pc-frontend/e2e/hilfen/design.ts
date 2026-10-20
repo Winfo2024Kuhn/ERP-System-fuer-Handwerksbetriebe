@@ -486,6 +486,34 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
             const fest = istFestPositioniert(el);
             // Hintergrund hinter einem Dialog ist absichtlich verdeckt -- ausser er ist fest positioniert.
             if (dialog && !dialog.contains(el) && !fest) continue;
+            // Fest positionierter Hintergrund, den der oberste Dialog samt
+            // Abdunklung tatsaechlich ueberdeckt (z. B. der Vollbild-
+            // Dokumenteditor, der selbst "fixed inset-0" ist), ist ebenso
+            // absichtlich weg. Uebersprungen wird NUR, wenn in der Mitte des
+            // Elements der Dialog oder seine Abdunklung liegt:
+            //  - Treffer im Dialog,
+            //  - Treffer ist eine Huelle um den Dialog (Container von
+            //    ui/dialog.tsx, Overlay eigener Modale), oder
+            //  - Treffer ist die Abdunklung von ui/dialog.tsx (Geschwister
+            //    direkt vor dem Container).
+            // Die Toast-Ebene zaehlt nie als Abdeckung. pointer-events:none-
+            // Ebenen liefert elementFromPoint gar nicht erst -- dann ist der
+            // Treffer weder Dialog noch Abdunklung und es wird normal geprueft.
+            if (dialog && !dialog.contains(el) && fest) {
+                const mitteX = sichtbar.x + sichtbar.breite / 2;
+                const mitteY = sichtbar.y + sichtbar.hoehe / 2;
+                const treffer = document.elementFromPoint(mitteX, mitteY);
+                // body/html sind keine Abdeckung (sonst "enthielte" jeder
+                // Durchgriff den Dialog); die Huelle darf nicht body selbst sein.
+                const seitenWurzel = treffer === document.body || treffer === document.documentElement;
+                const huelle = dialog.parentElement && dialog.parentElement !== document.body ? dialog.parentElement : null;
+                const vomDialogVerdeckt = !!treffer && !seitenWurzel
+                    && !treffer.closest('[data-pc-toasts]')
+                    && (dialog.contains(treffer)
+                        || treffer.contains(dialog)
+                        || (huelle != null && treffer === huelle.previousElementSibling));
+                if (vomDialogVerdeckt) continue;
+            }
             // Darunterliegende Dialoge sind vom obersten verdeckt, auch wenn sie fest positioniert sind.
             if (dialog && !dialog.contains(el) && el.closest('[role="dialog"]')) continue;
             if (el === dialog) continue;

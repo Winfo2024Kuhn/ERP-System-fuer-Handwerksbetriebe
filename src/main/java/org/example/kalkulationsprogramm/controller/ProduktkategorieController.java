@@ -46,9 +46,11 @@ public class ProduktkategorieController {
 
     // NEU: Endpunkt, um eine einzelne Kategorie anhand ihrer ID abzurufen
     @GetMapping("/{id}")
-    public ResponseEntity<ProduktkategorieResponseDto> getKategorieById(@PathVariable Long id) {
+    public ResponseEntity<ProduktkategorieResponseDto> getKategorieById(
+            @PathVariable Long id,
+            @RequestParam(value = "light", required = false, defaultValue = "false") boolean light) {
         try {
-            ProduktkategorieResponseDto dto = produktkategorieService.findeKategorieById(id);
+            ProduktkategorieResponseDto dto = produktkategorieService.findeKategorieById(id, light);
             return ResponseEntity.ok(dto);
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
