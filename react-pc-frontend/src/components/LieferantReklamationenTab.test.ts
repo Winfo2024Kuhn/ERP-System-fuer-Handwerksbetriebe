@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baueMailText, lieferantDokumentUrl } from './LieferantReklamationenTab';
+import { baueMailText, lieferantDokumentUrl, reklamationStatusText } from './LieferantReklamationenTab';
 import type { LieferantReklamation } from '../types';
 
 /** Dummy-Reklamation (DSGVO: keine echten Personen- oder Firmendaten). */
@@ -111,5 +111,22 @@ describe('lieferantDokumentUrl', () => {
     it('adressiert das Dokument über Lieferant und Dokument-ID', () => {
         expect(lieferantDokumentUrl(3, 1473))
             .toBe('/api/lieferanten/3/dokumente/1473/download');
+    });
+});
+
+describe('reklamationStatusText', () => {
+    it.each([
+        ['OFFEN', 'Offen'],
+        ['IN_BEARBEITUNG', 'In Bearbeitung'],
+        ['ABGESCHLOSSEN', 'Abgeschlossen'],
+        ['STORNIERT', 'Storniert'],
+    ])('zeigt %s als „%s“', (status, text) => {
+        expect(reklamationStatusText(status)).toBe(text);
+    });
+
+    it('zeigt einen unbekannten Status unverändert und nichts bei fehlendem Status', () => {
+        expect(reklamationStatusText('NEU_IM_BACKEND')).toBe('NEU_IM_BACKEND');
+        expect(reklamationStatusText(null)).toBe('');
+        expect(reklamationStatusText(undefined)).toBe('');
     });
 });

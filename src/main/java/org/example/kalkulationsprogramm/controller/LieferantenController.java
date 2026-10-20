@@ -20,6 +20,7 @@ import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantNotiz;
+import org.example.kalkulationsprogramm.domain.LieferantRolle;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisCreateRequest;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantArtikelpreisDto;
@@ -123,6 +124,7 @@ public class LieferantenController {
     public LieferantSearchResponseDto sucheLieferanten(@RequestParam(value = "q", required = false) String query,
             @RequestParam(value = "name", required = false) String name,
             @RequestParam(value = "typ", required = false) String typ,
+            @RequestParam(value = "rolle", required = false) String rolle,
             @RequestParam(value = "ort", required = false) String ort,
             @RequestParam(value = "email", required = false) String email,
             @RequestParam(value = "page", defaultValue = "0") int page,
@@ -131,7 +133,7 @@ public class LieferantenController {
         int pageSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
 
         Page<Lieferanten> result = lieferantenRepository.findAll(
-                LieferantenSuche.spezifikation(query, name, typ, ort, email),
+                LieferantenSuche.spezifikation(query, name, typ, ort, email, rolleAusParameter(rolle)),
                 PageRequest.of(pageIndex, pageSize, LieferantenSuche.SORTIERUNG));
 
         LieferantSearchResponseDto response = new LieferantSearchResponseDto();
@@ -140,6 +142,17 @@ public class LieferantenController {
         response.setSeite(pageIndex);
         response.setSeitenGroesse(pageSize);
         return response;
+    }
+
+    private static LieferantRolle rolleAusParameter(String rolle) {
+        if (!StringUtils.hasText(rolle)) {
+            return null;
+        }
+        try {
+            return LieferantRolle.valueOf(rolle.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Diese Rolle gibt es nicht.");
+        }
     }
 
     @PostMapping

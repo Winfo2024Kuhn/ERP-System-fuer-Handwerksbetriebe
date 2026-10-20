@@ -366,6 +366,7 @@ ProjektManagementService {
         Kunde ausgewaehlterKunde = prepareProjektKunde(dto);
 
         if (ausgewaehlterKunde != null) {
+            KundeDatenschutzService.pruefeNichtGesperrt(ausgewaehlterKunde);
             neuesProjekt.setKundenId(ausgewaehlterKunde);
         }
 
@@ -504,6 +505,10 @@ ProjektManagementService {
 
         Kunde aktualisierterKunde = prepareProjektKunde(dto);
         if (aktualisierterKunde != null) {
+            // Nur der Wechsel auf einen gesperrten Kunden zählt; das aufbewahrte Projekt bleibt bearbeitbar.
+            if (projekt.getKundenId() == null || !aktualisierterKunde.getId().equals(projekt.getKundenId().getId())) {
+                KundeDatenschutzService.pruefeNichtGesperrt(aktualisierterKunde);
+            }
             projekt.setKundenId(aktualisierterKunde);
         }
 

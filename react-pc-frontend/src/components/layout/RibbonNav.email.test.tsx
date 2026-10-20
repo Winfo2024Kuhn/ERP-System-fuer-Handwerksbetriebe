@@ -36,7 +36,7 @@ describe('Menüleiste – E-Mail-Einstellungen', () => {
 
         const link = await screen.findByRole('link', { name: /E-Mail-Einstellungen/ });
         expect(link).toHaveAttribute('href', '/email-einstellungen');
-        const emailLinks = screen.getAllByRole('link').filter((l) => /E-Mail/.test(l.textContent ?? ''));
+        const emailLinks = screen.getAllByRole('link').filter((l) => /E-Mail|Mailtexte/.test(l.textContent ?? ''));
         expect(emailLinks.map((l) => l.getAttribute('href'))).toEqual(['/emails/inbox', '/email-textvorlagen', '/email-einstellungen']);
     });
 
@@ -45,6 +45,6 @@ describe('Menüleiste – E-Mail-Einstellungen', () => {
         zeige('/email-einstellungen');
         const link = await screen.findByRole('link', { name: /E-Mail-Einstellungen/ });
         expect(link).toHaveClass('ring-1');
-        expect(screen.getByRole('link', { name: /E-Mail Vorlagen/ })).not.toHaveClass('ring-1');
+        expect(screen.getByRole('link', { name: /Mailtexte für Dokumente/ })).not.toHaveClass('ring-1');
     });
 });

@@ -163,7 +163,7 @@ public class PostfachSichtbarkeitService {
                 .collect(Collectors.toSet());
     }
 
-    static boolean istAdmin(Authentication authentication) {
+    public static boolean istAdmin(Authentication authentication) {
         if (authentication == null || authentication instanceof AnonymousAuthenticationToken
                 || authentication.getAuthorities() == null) {
             return false;

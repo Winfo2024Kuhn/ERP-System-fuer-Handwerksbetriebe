@@ -58,6 +58,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class ZeitverwaltungController {
 
+    static final String ENDE_VOR_BEGINN = "Das Ende der Buchung muss nach dem Beginn liegen. "
+            + "Buchungen über Mitternacht bitte auf zwei Tage aufteilen.";
+
     private final ZeitbuchungRepository zeitbuchungRepository;
     private final AbwesenheitRepository abwesenheitRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
@@ -186,6 +189,8 @@ public class ZeitverwaltungController {
                     .ifPresent(buchung::setArbeitsgang);
         }
 
+        pruefeEndeNachBeginn(buchung);
+
         // anzahlInStunden neu berechnen wenn Start- und Endezeit vorhanden
         if (buchung.getStartZeit() != null && buchung.getEndeZeit() != null) {
             java.time.Duration dauer = java.time.Duration.between(buchung.getStartZeit(), buchung.getEndeZeit());
@@ -305,6 +310,19 @@ public class ZeitverwaltungController {
     }
 
     /**
+     * Buchungen über Mitternacht gibt es nicht: Ein Ende vor (oder gleich) dem Beginn ergäbe
+     * eine negative Dauer am selben Tag. Wirft eine Exception statt eine Antwort zu liefern,
+     * damit {@code @Transactional} die schon gesetzten Felder zurückrollt.
+     */
+    static void pruefeEndeNachBeginn(Zeitbuchung buchung) {
+        if (buchung.getStartZeit() != null && buchung.getEndeZeit() != null
+                && !buchung.getEndeZeit().isAfter(buchung.getStartZeit())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, ENDE_VOR_BEGINN);
+        }
+    }
+
+    /**
      * Erstellt eine neue Zeitbuchung.
      */
     @PostMapping("/buchungen")
@@ -403,6 +421,8 @@ public class ZeitverwaltungController {
         if (data.containsKey("notiz")) {
             buchung.setNotiz((String) data.get("notiz"));
         }
+
+        pruefeEndeNachBeginn(buchung);
 
         // anzahlInStunden berechnen wenn Start- und Endezeit vorhanden
         if (buchung.getStartZeit() != null && buchung.getEndeZeit() != null) {
@@ -679,11 +699,12 @@ public class ZeitverwaltungController {
             @PathVariable Long projektId,
             @RequestParam(required = false) LocalDate von,
             @RequestParam(required = false) LocalDate bis,
+            @RequestParam(required = false) Long mitarbeiterId,
             @RequestParam(required = false, defaultValue = "datum") String sortField,
             @RequestParam(required = false, defaultValue = "asc") String sortDir,
             @RequestParam(required = false, defaultValue = "arbeitsgang") String groupBy) {
 
-        java.nio.file.Path pdfPath = projektAuswertungPdfService.generatePdf(projektId, von, bis, sortField, sortDir, groupBy);
+        java.nio.file.Path pdfPath = projektAuswertungPdfService.generatePdf(projektId, von, bis, mitarbeiterId, sortField, sortDir, groupBy);
 
         try {
             org.springframework.core.io.UrlResource resource = new org.springframework.core.io.UrlResource(
@@ -702,10 +723,13 @@ public class ZeitverwaltungController {
     public ResponseEntity<Map<String, Object>> getProjektAuswertung(
             @PathVariable Long projektId,
             @RequestParam(required = false) LocalDate von,
-            @RequestParam(required = false) LocalDate bis) {
+            @RequestParam(required = false) LocalDate bis,
+            @RequestParam(required = false) Long mitarbeiterId) {
 
         // Alle Buchungen für das Projekt aus ZeitbuchungRepository
         List<Zeitbuchung> alleBuchungen = zeitbuchungRepository.findByProjektId(projektId).stream()
+                .filter(b -> mitarbeiterId == null
+                        || (b.getMitarbeiter() != null && mitarbeiterId.equals(b.getMitarbeiter().getId())))
                 .filter(b -> {
                     if (von == null && bis == null)
                         return true;

@@ -63,8 +63,9 @@ async function stubbeApi(page: Page, aufrufe: Aufruf[]) {
                     buchungen: [1, 2].map(id => ({
                         id,
                         projektId: 1,
+                        arbeitsgangId: 1,
                         projektName: 'Testprojekt',
-                        arbeitsgangName: '',
+                        arbeitsgangName: 'Montage',
                         startZeit: id === 1 ? '08:00:00' : '12:30:00',
                         endeZeit: id === 1 ? '12:00:00' : '16:00:00',
                         dauerMinuten: 240,

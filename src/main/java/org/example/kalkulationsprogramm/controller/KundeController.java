@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.KundeNotiz;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeCreateRequestDto;
+import org.example.kalkulationsprogramm.dto.Kunde.KundeDatenschutzSperreRequestDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDetailDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeNotizDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeDuplikatResponseDto;
@@ -17,9 +18,11 @@ import org.example.kalkulationsprogramm.mapper.KundeMapper;
 import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.KundenSuche;
+import org.example.kalkulationsprogramm.service.KundeDatenschutzService;
 import org.example.kalkulationsprogramm.service.KundeDuplikatService;
 import org.example.kalkulationsprogramm.service.KundenDetailService;
 import org.example.kalkulationsprogramm.service.KundennummerService;
+import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
 import org.example.kalkulationsprogramm.util.Telefonnummer;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +30,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -61,6 +65,7 @@ public class KundeController {
     private final KundennummerService kundennummerService;
     private final KundeDuplikatService kundeDuplikatService;
     private final KundeNotizRepository kundeNotizRepository;
+    private final KundeDatenschutzService kundeDatenschutzService;
 
     @GetMapping
     public KundeSearchResponseDto sucheKunden(@RequestParam(value = "q", required = false) String query,
@@ -69,13 +74,19 @@ public class KundeController {
                                               @RequestParam(value = "ort", required = false) String ort,
                                               @RequestParam(value = "email", required = false) String email,
                                               @RequestParam(value = "typ", required = false) String typ,
+                                              @RequestParam(value = "gesperrte", defaultValue = "false") boolean gesperrte,
                                               @RequestParam(value = "page", defaultValue = "0") int page,
-                                              @RequestParam(value = "size", defaultValue = "50") int size) {
+                                              @RequestParam(value = "size", defaultValue = "50") int size,
+                                              Authentication authentication) {
+        if (gesperrte && !PostfachSichtbarkeitService.istAdmin(authentication)) {
+            // Gesperrte Daten dürfen nur noch für die Aufbewahrung genutzt werden (Art. 18 DSGVO).
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Nur Admins sehen gesperrte Kunden.");
+        }
         int pageIndex = Math.max(page, 0);
         int pageSize = Math.min(Math.max(size, 1), 50);
 
         Page<Kunde> result = kundeRepository.findAll(
-                KundenSuche.spezifikation(query, name, kundennummer, ort, email, typ),
+                KundenSuche.spezifikation(query, name, kundennummer, ort, email, typ, gesperrte),
                 PageRequest.of(pageIndex, pageSize, KundenSuche.SORTIERUNG)
         );
 
@@ -153,6 +164,7 @@ public class KundeController {
                                         @Valid @RequestBody KundeUpdateRequestDto request) {
         Kunde existing = kundeRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Kunde wurde nicht gefunden."));
+        KundeDatenschutzService.pruefeNichtGesperrt(existing);
         
         // Speichere alte E-Mails für Vergleich
         Set<String> oldEmails = existing.getKundenEmails() != null 
@@ -209,9 +221,37 @@ public class KundeController {
     }
 
     @GetMapping("/{id}")
-    public KundeDetailDto getKundeDetail(@PathVariable Long id) {
-        return kundenDetailService.loadDetails(id)
+    public KundeDetailDto getKundeDetail(@PathVariable Long id, Authentication authentication) {
+        KundeDetailDto detail = kundenDetailService.loadDetails(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Kunde wurde nicht gefunden."));
+        // Nur Admins dürfen löschen/sperren – nur für sie lohnen die zusätzlichen Abfragen.
+        if (PostfachSichtbarkeitService.istAdmin(authentication)) {
+            detail.setLoeschPruefung(kundeDatenschutzService.pruefe(id));
+        }
+        return detail;
+    }
+
+    /**
+     * Löscht einen Kunden ohne Projekte, Anfragen, Angebote und Rechnungen (nur Admins, siehe
+     * {@code SecurityConfig}). Sonst 409 – dann {@link #datenschutzSperre}.
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> loescheKunde(@PathVariable Long id, Authentication authentication) {
+        kundeDatenschutzService.loesche(id, authentication != null ? authentication.getName() : null);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Löschwunsch eines Kunden mit aufbewahrungspflichtigen Unterlagen: löscht, was nicht
+     * aufbewahrt werden muss, und sperrt den Kunden bis zum Fristende (nur Admins).
+     */
+    @PostMapping("/{id}/datenschutz-sperre")
+    public KundeDetailDto datenschutzSperre(@PathVariable Long id,
+            @Valid @RequestBody(required = false) KundeDatenschutzSperreRequestDto request,
+            Authentication authentication) {
+        kundeDatenschutzService.sperre(id, request != null ? request.grund() : null,
+                authentication != null ? authentication.getName() : null);
+        return getKundeDetail(id, authentication);
     }
 
     private String generateNextKundennummer() {
@@ -256,6 +296,7 @@ public class KundeController {
         email = email.trim().toLowerCase(Locale.GERMAN);
         Kunde kunde = kundeRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Kunde nicht gefunden"));
+        KundeDatenschutzService.pruefeNichtGesperrt(kunde);
         if (kunde.getKundenEmails() == null) {
             kunde.setKundenEmails(new ArrayList<>());
         }
@@ -316,6 +357,7 @@ public class KundeController {
         if (kunde == null) {
             return ResponseEntity.notFound().build();
         }
+        KundeDatenschutzService.pruefeNichtGesperrt(kunde);
         String text = body.get("text");
         if (!StringUtils.hasText(text)) {
             return ResponseEntity.badRequest().build();

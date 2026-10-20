@@ -76,4 +76,13 @@ public interface SprachnachrichtRepository extends JpaRepository<Sprachnachricht
             ORDER BY s.zeitpunkt DESC
             """)
     List<Sprachnachricht> findeNeue();
+
+    /** Datenschutz-Sperre eines Kunden: Sprachnachrichten verlieren den Bezug zum Kunden. */
+    @Modifying
+    @Query("""
+            UPDATE Sprachnachricht s SET s.kunde = NULL,
+                s.zuordnung = org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
+            WHERE s.kunde.id = :kundeId
+            """)
+    int loeseVonKunde(@Param("kundeId") Long kundeId);
 }

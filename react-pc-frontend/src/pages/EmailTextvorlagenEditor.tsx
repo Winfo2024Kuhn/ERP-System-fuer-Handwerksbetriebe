@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Eye,
+  Lock,
   FileText,
   Mail,
   Pencil,
@@ -23,9 +24,15 @@ import { htmlToText, sanitizeHtml } from '../lib/htmlSanitizer';
 import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
 import { useToast } from '../components/ui/toast';
+import { useConfirm } from '../components/ui/confirm-dialog';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
+import { useOptionalAuth } from '../auth/AuthContext';
 import { ersetzeAdressPlatzhalterFuerVorschau } from '../features/email/emailButton';
 
 type Kategorie = 'DOKUMENT' | 'MAHNWESEN' | 'WEBSITE' | 'SYSTEM';
+
+/** Das Backend lässt nur Admins Mailtexte anlegen, ändern und löschen (403 für alle anderen). */
+const NUR_ADMINS_HINWEIS = 'Nur Admins können Mailtexte ändern.';
 
 interface EmailTemplate {
   id?: number | string;
@@ -154,8 +161,9 @@ function TemplateCard({
   active: boolean;
   dokumenttypLabel: string;
   onSelect: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  /** Fehlt bei Nicht-Admins – dann gibt es keine Knöpfe zum Ändern. */
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const preview = htmlToText(template.htmlBody).trim();
   return (
@@ -188,35 +196,37 @@ function TemplateCard({
             )}
           </div>
         </div>
-        <div
-          className={cn(
-            'flex items-center gap-0.5 flex-shrink-0 transition-opacity',
-            active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          )}
-        >
-          <button
-            type="button"
-            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-            onClick={(event) => {
-              event.stopPropagation();
-              onEdit();
-            }}
-            title="Bearbeiten"
+        {onEdit && onDelete && (
+          <div
+            className={cn(
+              'flex items-center gap-0.5 flex-shrink-0 transition-opacity',
+              active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            )}
           >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-            onClick={(event) => {
-              event.stopPropagation();
-              onDelete();
-            }}
-            title="Löschen"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
+            <button
+              type="button"
+              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit();
+              }}
+              title="Bearbeiten"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete();
+              }}
+              title="Löschen"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -458,8 +468,9 @@ function TemplateView({
   onToggleSample: () => void;
   copied: 'text' | 'html' | null;
   onCopy: (type: 'text' | 'html', content: string) => Promise<void>;
-  onEdit: () => void;
-  onDelete: () => void;
+  /** Fehlt bei Nicht-Admins – dann steht dort ein Hinweis statt der Knöpfe. */
+  onEdit?: () => void;
+  onDelete?: () => void;
   kategorie: Kategorie;
 }) {
   const subjectPreview = useMemo(
@@ -504,24 +515,33 @@ function TemplateView({
               </div>
             </div>
           </div>
-          <div className="flex gap-2 flex-shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-rose-300 text-rose-700 hover:bg-rose-50"
-              onClick={onEdit}
-            >
-              <Pencil className="w-4 h-4" /> Bearbeiten
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-red-500 hover:text-red-700 hover:bg-red-50"
-              onClick={onDelete}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
+          {onEdit && onDelete ? (
+            <div className="flex gap-2 flex-shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                onClick={onEdit}
+              >
+                <Pencil className="w-4 h-4" /> Bearbeiten
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                onClick={onDelete}
+                aria-label="Vorlage löschen"
+                title="Vorlage löschen"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          ) : (
+            <p className="flex items-center gap-1.5 text-xs text-slate-500 flex-shrink-0">
+              <Lock className="w-3.5 h-3.5" aria-hidden="true" />
+              {NUR_ADMINS_HINWEIS}
+            </p>
+          )}
         </div>
       </Card>
 
@@ -616,6 +636,8 @@ function TemplateView({
 
 export default function EmailTextvorlagenEditor() {
   const toast = useToast();
+  const confirmDialog = useConfirm();
+  const darfAendern = useOptionalAuth()?.isAdmin ?? false;
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedId, setSelectedId] = useState<number | string | null>(null);
   const [editing, setEditing] = useState<EmailTemplate | null>(null);
@@ -710,7 +732,9 @@ export default function EmailTextvorlagenEditor() {
         body: JSON.stringify(payload)
       });
       if (!response.ok) {
-        if (response.status === 409 || response.status === 500) {
+        if (response.status === 403) {
+          toast.error(NUR_ADMINS_HINWEIS);
+        } else if (response.status === 409 || response.status === 500) {
           toast.error(
             'Speichern fehlgeschlagen. Möglicherweise existiert bereits eine Vorlage für diesen Dokumenttyp.'
           );
@@ -732,21 +756,27 @@ export default function EmailTextvorlagenEditor() {
 
   const deleteTemplate = async (template: EmailTemplate) => {
     if (!template.id) return;
-    if (!window.confirm(`Vorlage "${template.name}" wirklich löschen?`)) return;
+    const bestaetigt = await confirmDialog({
+      title: 'Mailtext löschen',
+      message: `Mailtext „${template.name}“ wirklich löschen? Danach startet die E-Mail für diesen Dokumenttyp ohne vorbereiteten Text.`,
+      variant: 'danger',
+      confirmLabel: 'Löschen'
+    });
+    if (!bestaetigt) return;
     try {
       const response = await fetch(
         `/api/email-textvorlagen/${encodeURIComponent(String(template.id))}`,
         { method: 'DELETE' }
       );
       if (!response.ok) {
-        toast.error('Die Vorlage konnte nicht gelöscht werden.');
+        toast.error(response.status === 403 ? NUR_ADMINS_HINWEIS : 'Die Vorlage konnte nicht gelöscht werden.');
         return;
       }
       if (selectedId === template.id) setSelectedId(null);
       await fetchTemplates();
       toast.success('Vorlage gelöscht.');
-    } catch (error) {
-      console.error('Löschen fehlgeschlagen', error);
+    } catch {
+      toast.error('Die Vorlage konnte nicht gelöscht werden.');
     }
   };
 
@@ -824,22 +854,39 @@ export default function EmailTextvorlagenEditor() {
   return (
     <PageLayout
       ribbonCategory="Kommunikation"
-      title="E-MAIL-TEXTVORLAGEN"
-      subtitle="Verwalten Sie die E-Mail-Texte für Rechnungen, Aufträge, Mahnungen und automatische Webseiten-Bestätigungen — gruppiert nach Verwendungszweck."
+      title="Mailtexte für Dokumente"
+      subtitle="Vorlagen für den Text, der beim Versand von Angeboten, Rechnungen, Mahnungen usw. in die E-Mail kommt – auch für die automatische Antwort auf Anfragen von der Webseite."
+      titelInfo={
+        <InfoButton titel="Mailtexte für Dokumente">
+          <InfoAbschnitt titel="Was passiert im Hintergrund?">
+            <p>Diese Texte werden automatisch in die E-Mail eingesetzt, wenn du ein Angebot, eine Rechnung, eine Mahnung o. Ä. verschickst. Pro Dokumenttyp gibt es genau einen Text; Platzhalter wie Kundenname oder Betrag füllt das Programm beim Versand aus.</p>
+          </InfoAbschnitt>
+          <InfoAbschnitt titel="Was bewirkt das?">
+            <p>Änderungen gelten für alle künftigen Mails. Bereits verschickte Mails bleiben unverändert. Nur Admins können die Texte ändern.</p>
+          </InfoAbschnitt>
+        </InfoButton>
+      }
       actions={
-        <Button
-          size="sm"
-          className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-          onClick={startNewTemplate}
-          disabled={availableDokumentTypenForNew.length === 0}
-          title={
-            availableDokumentTypenForNew.length === 0
-              ? 'Für jeden Dokumenttyp existiert bereits eine Vorlage.'
-              : undefined
-          }
-        >
-          <Plus className="w-4 h-4" /> Neue Vorlage
-        </Button>
+        darfAendern ? (
+          <Button
+            size="sm"
+            className="bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
+            onClick={startNewTemplate}
+            disabled={availableDokumentTypenForNew.length === 0}
+            title={
+              availableDokumentTypenForNew.length === 0
+                ? 'Für jeden Dokumenttyp existiert bereits eine Vorlage.'
+                : undefined
+            }
+          >
+            <Plus className="w-4 h-4" /> Neue Vorlage
+          </Button>
+        ) : (
+          <p className="flex items-center gap-1.5 text-sm text-slate-500">
+            <Lock className="w-4 h-4" aria-hidden="true" />
+            {NUR_ADMINS_HINWEIS}
+          </p>
+        )
       }
     >
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr] gap-6">
@@ -909,8 +956,8 @@ export default function EmailTextvorlagenEditor() {
                             setSelectedId(template.id ?? null);
                             setEditing(null);
                           }}
-                          onEdit={() => setEditing({ ...template })}
-                          onDelete={() => deleteTemplate(template)}
+                          onEdit={darfAendern ? () => setEditing({ ...template }) : undefined}
+                          onDelete={darfAendern ? () => deleteTemplate(template) : undefined}
                         />
                       ))}
                     </div>
@@ -939,7 +986,7 @@ export default function EmailTextvorlagenEditor() {
 
         {/* Main */}
         <div>
-          {editing ? (
+          {editing && darfAendern ? (
             <TemplateEditorPanel
               template={editing}
               onChange={(tpl) => setEditing(tpl)}
@@ -977,14 +1024,16 @@ export default function EmailTextvorlagenEditor() {
               onToggleSample={() => setUseSampleData((v) => !v)}
               copied={copied}
               onCopy={handleCopy}
-              onEdit={() => setEditing({ ...activeTemplate })}
-              onDelete={() => deleteTemplate(activeTemplate)}
+              onEdit={darfAendern ? () => setEditing({ ...activeTemplate }) : undefined}
+              onDelete={darfAendern ? () => deleteTemplate(activeTemplate) : undefined}
             />
           ) : (
             <Card className="p-16 text-center border-dashed border-slate-200 shadow-inner">
               <Mail className="w-12 h-12 text-slate-200 mx-auto mb-3" />
               <p className="text-slate-500">
-                Wählen Sie eine Vorlage aus oder erstellen Sie eine neue.
+                {darfAendern
+                  ? 'Wählen Sie eine Vorlage aus oder erstellen Sie eine neue.'
+                  : 'Wählen Sie eine Vorlage aus.'}
               </p>
             </Card>
           )}

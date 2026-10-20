@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download } from 'lucide-react';
+import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
 
 interface ImageViewerProps {
     src: string | null;
@@ -9,6 +10,22 @@ interface ImageViewerProps {
     images?: { url: string; name?: string }[];
     /** Starting index in the images array */
     startIndex?: number;
+}
+
+/**
+ * Dateiname für den Download: der mitgegebene Name, sonst der letzte Teil der
+ * Adresse (ohne Abfrage), sonst „Bild“.
+ */
+function downloadName(url: string, name?: string): string {
+    const vorgegeben = name?.trim();
+    if (vorgegeben) return vorgegeben;
+    const pfad = url.split(/[?#]/, 1)[0];
+    const letzterTeil = pfad.substring(pfad.lastIndexOf('/') + 1);
+    try {
+        return decodeURIComponent(letzterTeil) || 'Bild';
+    } catch {
+        return letzterTeil || 'Bild';
+    }
 }
 
 const MIN_SCALE = 1;
@@ -177,6 +194,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
     if (!src && (!images || images.length === 0)) return null;
     if (!currentImage) return null;
 
+    const sichereUrl = toSafeResourceUrl(currentImage.url);
+
     const handleImageMouseDown = (e: React.MouseEvent) => {
         if (!isZoomed) return;
         e.stopPropagation();
@@ -200,14 +219,28 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
             className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-8 animate-in fade-in duration-200 select-none"
             onClick={onClose}
         >
-            {/* Close button */}
-            <button
-                onClick={onClose}
-                className="absolute top-6 right-6 p-2 bg-black/50 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-sm z-10"
-                title="Schließen (ESC)"
-            >
-                <X className="w-6 h-6" />
-            </button>
+            {/* Herunterladen + Schließen */}
+            <div className="absolute top-6 right-6 z-10 flex items-center gap-2">
+                {sichereUrl && (
+                    <a
+                        href={sichereUrl}
+                        download={downloadName(currentImage.url, currentImage.name)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-2 bg-black/50 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                        title="Bild herunterladen"
+                        aria-label="Bild herunterladen"
+                    >
+                        <Download className="w-6 h-6" />
+                    </a>
+                )}
+                <button
+                    onClick={onClose}
+                    className="p-2 bg-black/50 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-sm"
+                    title="Schließen (ESC)"
+                >
+                    <X className="w-6 h-6" />
+                </button>
+            </div>
 
             {/* Image counter */}
             {hasMultiple && (
@@ -270,7 +303,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
 
             {/* Image */}
             <img
-                src={currentImage.url}
+                src={sichereUrl}
                 alt={currentImage.name || alt || 'Vollbild'}
                 draggable={false}
                 className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-200"

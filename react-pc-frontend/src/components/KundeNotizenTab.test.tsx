@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ConfirmProvider } from './ui/confirm-dialog';
+import { ToastProvider } from './ui/toast';
 import { KundeNotizenTab } from './KundeNotizenTab';
 
 // Debounce-Wartezeit der Suche plus etwas Puffer.
@@ -19,9 +20,11 @@ function notizenRequests(): string[] {
 function renderNotizenTab() {
     // DSGVO: Dummy-Kunde ohne echte Personendaten.
     return render(
-        <ConfirmProvider>
-            <KundeNotizenTab kundeId={1} notizen={[]} />
-        </ConfirmProvider>
+        <ToastProvider>
+            <ConfirmProvider>
+                <KundeNotizenTab kundeId={1} notizen={[]} />
+            </ConfirmProvider>
+        </ToastProvider>
     );
 }
 
@@ -61,5 +64,39 @@ describe('KundeNotizenTab – Suche', () => {
         await new Promise(resolve => setTimeout(resolve, DEBOUNCE_MS * 2));
 
         expect(notizenRequests()).toHaveLength(0);
+    });
+});
+
+describe('KundeNotizenTab – Fehlermeldungen', () => {
+    beforeEach(() => {
+        fetchMock = vi.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) }));
+        vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+    });
+
+    it('meldet, wenn die Notiz nicht gespeichert werden konnte', async () => {
+        const user = userEvent.setup();
+        renderNotizenTab();
+
+        await user.click(screen.getByRole('button', { name: /Neue Notiz/ }));
+        await user.type(screen.getByPlaceholderText('Notiztext eingeben...'), 'Termin vereinbaren');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+
+        expect(await screen.findByText('Die Notiz konnte nicht gespeichert werden.')).toBeInTheDocument();
+    });
+
+    it('meldet, wenn die Suche die Notizen nicht laden konnte', async () => {
+        const user = userEvent.setup();
+        renderNotizenTab();
+
+        await user.type(screen.getByPlaceholderText('Notizen durchsuchen...'), 'blech');
+
+        await waitFor(() => {
+            expect(screen.getByText('Die Notizen konnten nicht geladen werden.')).toBeInTheDocument();
+        });
     });
 });

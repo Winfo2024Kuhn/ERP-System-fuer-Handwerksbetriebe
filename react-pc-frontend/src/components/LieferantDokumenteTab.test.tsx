@@ -8,7 +8,8 @@ import { ConfirmProvider } from './ui/confirm-dialog';
 import type { LieferantDokument, LieferantDokumentTyp } from '../types';
 
 // useOptionalAuth: der eingebettete Import-Dialog fragt über useKiAktiv(), ob die KI an ist (ohne Rahmen: an).
-vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ isAdmin: false }), useOptionalAuth: () => null }));
+const auth = vi.hoisted(() => ({ isAdmin: false }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ isAdmin: auth.isAdmin }), useOptionalAuth: () => null }));
 vi.mock('./ui/PdfCanvasViewer', () => ({
     PdfCanvasViewer: ({ url }: { url: string }) => <div data-testid="pdf">{url}</div>,
 }));
@@ -349,5 +350,61 @@ describe('LieferantDokumenteTab – Kette als gerade Linie', () => {
 
         await userEvent.click(within(liste).getByRole('button', { name: /^Lieferschein LS-2/ }));
         expect(await screen.findByRole('dialog', { name: 'Dokument bearbeiten' })).toBeInTheDocument();
+    });
+});
+
+describe('LieferantDokumenteTab – Beleg löschen und Ausgeblendet', () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        auth.isAdmin = true;
+    });
+
+    afterEach(() => {
+        auth.isAdmin = false;
+        vi.unstubAllGlobals();
+    });
+
+    it('fragt vor dem Löschen nach und entfernt den Beleg erst nach Bestätigung', async () => {
+        fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+        vi.stubGlobal('fetch', fetchMock);
+        const user = userEvent.setup();
+        rendere([dokument(4, 'SONSTIG', 'SO-4004')]);
+
+        await user.click(screen.getByRole('button', { name: 'Beleg löschen' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText(/SO-4004/)).toBeInTheDocument();
+
+        await user.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+        expect(fetchMock).not.toHaveBeenCalled();
+
+        await user.click(screen.getByRole('button', { name: 'Beleg löschen' }));
+        await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Löschen' }));
+
+        await waitFor(() => expect(screen.queryByText('SO-4004')).not.toBeInTheDocument());
+        expect(fetchMock).toHaveBeenCalledWith('/api/lieferant-dokumente/4', { method: 'DELETE' });
+    });
+
+    it('zeigt die Begründung des Servers, wenn der Beleg nicht gelöscht werden darf', async () => {
+        const meldung = 'Eine Rechnung kann nach GoBD nicht gelöscht werden.';
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(antwort({ message: meldung }, 422))));
+        const user = userEvent.setup();
+        rendere([dokument(3, 'RECHNUNG', 'RE-3003')]);
+
+        await user.click(screen.getByRole('button', { name: 'Beleg löschen' }));
+        await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Löschen' }));
+
+        expect(await screen.findByText(meldung)).toBeInTheDocument();
+        expect(screen.getByText('RE-3003')).toBeInTheDocument();
+    });
+
+    it('kennzeichnet ausgeblendete Belege und erklärt das Kennzeichen', async () => {
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(antwort([]))));
+        const user = userEvent.setup();
+        rendere([{ ...dokument(5, 'LIEFERSCHEIN', 'LS-5005'), ausgeblendet: true }, dokument(6, 'LIEFERSCHEIN', 'LS-6006')]);
+
+        expect(screen.getAllByText('Ausgeblendet')).toHaveLength(1);
+        await user.click(screen.getByRole('button', { name: /Ausgeblendet/ }));
+        expect(await screen.findByText(/als erledigt ausgeblendet/)).toBeInTheDocument();
     });
 });

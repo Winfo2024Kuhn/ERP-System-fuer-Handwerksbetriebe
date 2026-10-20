@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     ArrowDown, ArrowUp, ArrowUpDown,
     BarChart3, Calendar, FileText, Layers, Loader2,
@@ -6,6 +6,11 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { ProjectSelectModal } from '../components/ProjectSelectModal';
+import { DatePicker } from '../components/ui/datepicker';
+import { Select } from '../components/ui/select-custom';
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
+import { useToast } from '../components/ui/toast';
+import { leseFehlermeldung } from '../lib/apiFehler';
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +78,34 @@ function sumStunden(buchungen: AuswertungBuchung[]): number {
     return buchungen.reduce((s, b) => s + (b.dauerMinuten ?? 0), 0) / 60;
 }
 
+/** Stunden im deutschen Format mit Komma und zwei Nachkommastellen, z. B. „7,50“. */
+function formatStunden(wert: number): string {
+    return wert.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Filter der Auswertung: Zeitraum (ISO-Datum) und optional ein Mitarbeiter. */
+interface AuswertungFilter {
+    von: string;
+    bis: string;
+    mitarbeiterId: string;
+}
+
+/** Hängt nur gesetzte Filter als Query-Parameter an (gleich für Anzeige und PDF). */
+function filterParameter(filter: AuswertungFilter): URLSearchParams {
+    const params = new URLSearchParams();
+    if (filter.von) params.set('von', filter.von);
+    if (filter.bis) params.set('bis', filter.bis);
+    if (filter.mitarbeiterId) params.set('mitarbeiterId', filter.mitarbeiterId);
+    return params;
+}
+
+interface MitarbeiterKurz {
+    id: number;
+    vorname: string;
+    nachname: string;
+    aktiv?: boolean;
+}
+
 // ─── PDF-Gruppierungsdialog ───────────────────────────────────────────────────
 
 function PdfGroupDialog({
@@ -80,6 +113,7 @@ function PdfGroupDialog({
     sortField,
     sortDir,
     projektId,
+    filter,
     hasData,
     onClose,
 }: {
@@ -87,14 +121,18 @@ function PdfGroupDialog({
     sortField: SortField;
     sortDir: SortDir;
     projektId: number;
+    filter: AuswertungFilter;
     hasData: boolean;
     onClose: () => void;
 }) {
     const [selected, setSelected] = useState<GroupBy>(defaultGroupBy);
 
     const handleExport = () => {
-        const url = `/api/zeitverwaltung/auswertung/projekt/${projektId}/pdf`
-            + `?sortField=${sortField}&sortDir=${sortDir}&groupBy=${selected}`;
+        const params = filterParameter(filter);
+        params.set('sortField', sortField);
+        params.set('sortDir', sortDir);
+        params.set('groupBy', selected);
+        const url = `/api/zeitverwaltung/auswertung/projekt/${encodeURIComponent(String(projektId))}/pdf?${params.toString()}`;
         window.open(url, '_blank');
         onClose();
     };
@@ -161,6 +199,27 @@ export default function ZeiterfassungAuswertung() {
     const [auswertung, setAuswertung]               = useState<Auswertung | null>(null);
     const [loading, setLoading]                     = useState(false);
     const [showPdfDialog, setShowPdfDialog]         = useState(false);
+    const [filter, setFilter]                       = useState<AuswertungFilter>({ von: '', bis: '', mitarbeiterId: '' });
+    // Filter, mit dem die angezeigte Auswertung geladen wurde – das PDF zeigt genau denselben Stand.
+    const [geladenerFilter, setGeladenerFilter]     = useState<AuswertungFilter>(filter);
+    const [mitarbeiter, setMitarbeiter]             = useState<MitarbeiterKurz[]>([]);
+    const toast = useToast();
+
+    useEffect(() => {
+        const controller = new AbortController();
+        fetch('/api/mitarbeiter', { signal: controller.signal })
+            .then(res => { if (!res.ok) throw new Error('Mitarbeiter konnten nicht geladen werden.'); return res.json(); })
+            .then((daten: unknown) => {
+                if (controller.signal.aborted) return;
+                const liste = Array.isArray(daten) ? daten as MitarbeiterKurz[] : [];
+                setMitarbeiter(liste.filter(m => m.aktiv !== false));
+            })
+            .catch((err: unknown) => {
+                if (controller.signal.aborted) return;
+                toast.error(err instanceof Error ? err.message : 'Mitarbeiter konnten nicht geladen werden.');
+            });
+        return () => controller.abort();
+    }, [toast]);
 
     const [sortField, setSortField] = useState<SortField>('datum');
     const [sortDir, setSortDir]     = useState<SortDir>('asc');
@@ -239,20 +298,33 @@ export default function ZeiterfassungAuswertung() {
         }));
     }, [alleBuchungen, groupBy, sortField, sortDir]);
 
+    const zeitraumFehler = filter.von && filter.bis && filter.von > filter.bis
+        ? 'Das Ende des Zeitraums liegt vor dem Anfang.'
+        : '';
+
     const loadAuswertung = async () => {
         if (!selectedProjekt) return;
+        if (zeitraumFehler) {
+            toast.error(zeitraumFehler);
+            return;
+        }
         setLoading(true);
+        const angefragterFilter = filter;
         try {
-            const res  = await fetch(`/api/zeitverwaltung/auswertung/projekt/${selectedProjekt.id}`);
+            const params = filterParameter(angefragterFilter).toString();
+            const res  = await fetch(`/api/zeitverwaltung/auswertung/projekt/${encodeURIComponent(String(selectedProjekt.id))}${params ? `?${params}` : ''}`);
+            if (!res.ok) throw new Error(await leseFehlermeldung(res, 'Auswertung konnte nicht geladen werden.'));
             const data = await res.json();
             if (data && typeof data === 'object') {
                 data.taetigkeiten = Array.isArray(data.taetigkeiten) ? data.taetigkeiten : [];
                 setAuswertung(data);
+                setGeladenerFilter(angefragterFilter);
             } else {
                 setAuswertung(null);
             }
         } catch (err) {
             console.error('Fehler beim Laden der Auswertung:', err);
+            toast.error(err instanceof Error && err.message ? err.message : 'Auswertung konnte nicht geladen werden.');
             setAuswertung(null);
         }
         setLoading(false);
@@ -300,6 +372,54 @@ export default function ZeiterfassungAuswertung() {
                                 </button>
                             )}
                         </div>
+                    </div>
+
+                    {/* Zeitraum */}
+                    <div>
+                        <label className="mb-1 flex items-center gap-1 text-sm font-medium text-slate-700">
+                            Zeitraum
+                            <InfoButton titel="Zeitraum">
+                                <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                    <p>Es werden nur Buchungen berücksichtigt, deren Tag im gewählten Zeitraum liegt.</p>
+                                </InfoAbschnitt>
+                                <InfoAbschnitt titel="Was bewirkt das?">
+                                    <p>Ohne Zeitraum zeigt die Auswertung alle Buchungen des Projekts. Der Zeitraum gilt auch für das PDF.</p>
+                                </InfoAbschnitt>
+                            </InfoButton>
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <DatePicker
+                                aria-label="Zeitraum von"
+                                placeholder="von"
+                                value={filter.von}
+                                onChange={von => setFilter(f => ({ ...f, von }))}
+                                className="w-40"
+                            />
+                            <span className="text-slate-400">–</span>
+                            <DatePicker
+                                aria-label="Zeitraum bis"
+                                placeholder="bis"
+                                value={filter.bis}
+                                onChange={bis => setFilter(f => ({ ...f, bis }))}
+                                error={zeitraumFehler || undefined}
+                                className="w-40"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Mitarbeiter */}
+                    <div className="w-56">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Mitarbeiter</label>
+                        <Select
+                            aria-label="Mitarbeiter"
+                            value={filter.mitarbeiterId}
+                            onChange={mitarbeiterId => setFilter(f => ({ ...f, mitarbeiterId }))}
+                            options={[
+                                { value: '', label: 'Alle Mitarbeiter' },
+                                ...mitarbeiter.map(m => ({ value: String(m.id), label: `${m.vorname} ${m.nachname}` })),
+                            ]}
+                            placeholder="Alle Mitarbeiter"
+                        />
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -370,8 +490,7 @@ export default function ZeiterfassungAuswertung() {
                             <p className="text-slate-500 text-sm">
                                 Gesamt:{' '}
                                 <span className="font-medium text-rose-600">
-                                    {typeof auswertung.gesamtStunden === 'number'
-                                        ? auswertung.gesamtStunden.toFixed(2) : '0.00'}h
+                                    {formatStunden(typeof auswertung.gesamtStunden === 'number' ? auswertung.gesamtStunden : 0)}h
                                 </span>{' '}
                                 ({auswertung.anzahlBuchungen} Buchungen) ·{' '}
                                 <span className="text-slate-400">
@@ -390,7 +509,7 @@ export default function ZeiterfassungAuswertung() {
                                     <div className="flex justify-between items-center mb-3">
                                         <h4 className="font-semibold text-slate-800">{key}</h4>
                                         <div className="text-sm font-bold text-slate-700">
-                                            {sumStunden(buchungen).toFixed(2)}h
+                                            {formatStunden(sumStunden(buchungen))}h
                                             <span className="text-slate-400 font-normal ml-1">
                                                 ({buchungen.length} Buchungen)
                                             </span>
@@ -433,7 +552,7 @@ export default function ZeiterfassungAuswertung() {
                                                         {b.startZeit} – {b.endeZeit}
                                                     </td>
                                                     <td className="p-2 text-right">
-                                                        {b.dauerMinuten ? (b.dauerMinuten / 60).toFixed(2) + 'h' : '–'}
+                                                        {b.dauerMinuten ? formatStunden(b.dauerMinuten / 60) + 'h' : '–'}
                                                     </td>
                                                     <td className="p-2 italic text-slate-400">{b.notiz}</td>
                                                 </tr>
@@ -472,6 +591,7 @@ export default function ZeiterfassungAuswertung() {
                     sortField={sortField}
                     sortDir={sortDir}
                     projektId={selectedProjekt.id}
+                    filter={geladenerFilter}
                     hasData={hasData}
                     onClose={() => setShowPdfDialog(false)}
                 />

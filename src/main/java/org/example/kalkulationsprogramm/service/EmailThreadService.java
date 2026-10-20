@@ -67,6 +67,16 @@ public class EmailThreadService {
      */
     @Transactional(readOnly = true)
     public EmailThreadDto loadThreadFor(Long emailId, java.util.function.Predicate<Email> zeigen) {
+        return loadThreadFor(emailId, zeigen, entwurf -> true);
+    }
+
+    /**
+     * Wie {@link #loadThreadFor(Long, java.util.function.Predicate)}, hängt aber nur Entwürfe an,
+     * die {@code entwurfZeigen} erlaubt (Entwürfe sind persönlich, Issue #271).
+     */
+    @Transactional(readOnly = true)
+    public EmailThreadDto loadThreadFor(Long emailId, java.util.function.Predicate<Email> zeigen,
+            java.util.function.Predicate<EmailDraft> entwurfZeigen) {
         Email focusedEmail = emailRepository.findById(emailId)
                 .filter(zeigen)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -85,7 +95,8 @@ public class EmailThreadService {
         Set<Long> threadEmailIds = allInThread.stream()
                 .map(Email::getId)
                 .collect(Collectors.toSet());
-        List<EmailDraft> threadDrafts = emailDraftRepository.findByReplyEmailIdIn(threadEmailIds);
+        List<EmailDraft> threadDrafts = new java.util.ArrayList<>(
+                emailDraftRepository.findByReplyEmailIdIn(threadEmailIds).stream().filter(entwurfZeigen).toList());
         threadDrafts.sort((left, right) -> {
             if (left.getUpdatedAt() == null && right.getUpdatedAt() == null) return 0;
             if (left.getUpdatedAt() == null) return -1;

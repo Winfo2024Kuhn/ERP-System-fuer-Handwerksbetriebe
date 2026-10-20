@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.repository;
 
 import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -110,4 +111,9 @@ public interface KalenderEintragRepository extends JpaRepository<KalenderEintrag
          */
         @Query("SELECT k FROM KalenderEintrag k LEFT JOIN FETCH k.teilnehmer WHERE k.id = :id")
         KalenderEintrag findByIdWithTeilnehmer(@Param("id") Long id);
+
+    /** Datenschutz-Sperre eines Kunden: Termine bleiben, verlieren nur den Bezug zum Kunden. */
+    @Modifying
+    @Query("UPDATE KalenderEintrag k SET k.kunde = NULL WHERE k.kunde.id = :kundeId")
+    int loeseVonKunde(@Param("kundeId") Long kundeId);
 }

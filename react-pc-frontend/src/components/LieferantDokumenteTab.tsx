@@ -14,6 +14,8 @@ import { prependUniqueById } from "../lib/optimisticUploads";
 import { useAuth } from "../auth/AuthContext";
 import { PositionsTrefferZeile } from "./PositionsTrefferZeile";
 import { useToast } from "./ui/toast";
+import { useConfirm } from "./ui/confirm-dialog";
+import { InfoAbschnitt, InfoButton } from "./ui/info-button";
 import { positionsSucheAktiv, trefferNachDokument, vereinigeTreffer, type PositionsTreffer } from "../lib/positionsTreffer";
 import { DokumentSuchenDialog } from "../features/bestellungen/DokumentSuchenDialog";
 import { istVorschlagsTyp, lieferantDokumentAlsBeleg } from "../features/bestellungen/kettenVorschlag";
@@ -63,6 +65,29 @@ function kettenVerbindungen(dokumente: LieferantDokument[]): KettenVerbindung[] 
         .map(ref => ({ vonId: dok.id, zuId: ref.id })));
 }
 
+/** Kennzeichen für Belege, die auf der Seite Bestellungen als erledigt ausgeblendet sind. */
+function AusgeblendetBadge() {
+    return (
+        <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+            Ausgeblendet
+        </span>
+    );
+}
+
+/** Erklärt das Kennzeichen „Ausgeblendet“. */
+function AusgeblendetInfo() {
+    return (
+        <InfoButton titel="Ausgeblendet">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <p>Auf der Seite Bestellungen wurde dieser Beleg als erledigt ausgeblendet.</p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <p>Der Beleg bleibt vollständig erhalten und zählt weiter. Er erscheint nur nicht mehr in der offenen Liste der Bestellungen.</p>
+            </InfoAbschnitt>
+        </InfoButton>
+    );
+}
+
 /** So lange wartet die Positionssuche nach dem letzten Tastendruck. */
 const POSITIONSSUCHE_VERZOEGERUNG_MS = 300;
 
@@ -80,6 +105,8 @@ interface LieferantDokumenteTabProps {
 export default function LieferantDokumenteTab({ lieferantId, lieferantName, dokumente: initialDokumente }: LieferantDokumenteTabProps) {
     const navigate = useNavigate();
     const { isAdmin } = useAuth();
+    const toast = useToast();
+    const confirmDialog = useConfirm();
     const [dokumente, setDokumente] = useState<LieferantDokument[]>(initialDokumente || []);
     const [loading, setLoading] = useState(!initialDokumente);
     const [searchQuery, setSearchQuery] = useState("");
@@ -125,15 +152,27 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
 
     const handleLoescheDokument = async (dok: LieferantDokument) => {
         const label = dok.geschaeftsdaten?.dokumentNummer || dok.originalDateiname || `ID ${dok.id}`;
-        if (!window.confirm(`Dokument „${label}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
-        const res = await fetch(`/api/lieferant-dokumente/${dok.id}`, { method: 'DELETE' });
-        if (res.ok) {
-            setDokumente(prev => prev.filter(d => d.id !== dok.id));
-        } else if (res.status === 422) {
+        const bestaetigt = await confirmDialog({
+            title: 'Beleg löschen',
+            message: `Beleg „${label}“ wirklich löschen? Das lässt sich nicht rückgängig machen.`,
+            variant: 'danger',
+            confirmLabel: 'Löschen',
+        });
+        if (!bestaetigt) return;
+        try {
+            const res = await fetch(`/api/lieferant-dokumente/${dok.id}`, { method: 'DELETE' });
+            if (res.ok) {
+                setDokumente(prev => prev.filter(d => d.id !== dok.id));
+                toast.success('Beleg wurde gelöscht.');
+                return;
+            }
+            // Der Server sagt in Klartext, warum es nicht geht (z. B. Rechnung nach GoBD).
             const body = await res.json().catch(() => ({}));
-            alert(body.message || 'Dieses Dokument kann aus GoBD-Gründen nicht gelöscht werden. Bitte Typ zuerst auf "Sonstiges" ändern.');
-        } else {
-            alert('Löschen fehlgeschlagen. Bitte Seite neu laden und erneut versuchen.');
+            toast.error(typeof body?.message === 'string' && body.message
+                ? body.message
+                : 'Der Beleg konnte nicht gelöscht werden. Bitte Seite neu laden und erneut versuchen.');
+        } catch {
+            toast.error('Der Beleg konnte nicht gelöscht werden. Bitte Verbindung prüfen und erneut versuchen.');
         }
     };
 
@@ -167,7 +206,6 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
         }
     }, [lieferantId]);
 
-    const toast = useToast();
     // Fehler der Positionssuche nur einmal melden – sonst käme bei jedem Tastendruck ein neuer Toast
     const positionsFehlerGemeldet = useRef(false);
 
@@ -701,6 +739,13 @@ function DokumentenKette({ kette, formatCurrency, onSelect, onNavigate, onBearbe
                 <span className="text-sm font-medium text-slate-700">
                     Kette: {kette.hauptDokumentNummer || `#${kette.id}`}
                 </span>
+                {/* Die Zeilen sind Klickflächen – das (i) zum Kennzeichen steht deshalb hier im Kopf. */}
+                {kette.dokumente.some(dok => dok.ausgeblendet) && (
+                    <span className="inline-flex items-center gap-0.5">
+                        <AusgeblendetBadge />
+                        <AusgeblendetInfo />
+                    </span>
+                )}
                 {kette.gesamtBetrag && (
                     <span className="ml-auto text-sm font-semibold text-slate-900">
                         {formatCurrency(kette.gesamtBetrag)}
@@ -718,9 +763,10 @@ function DokumentenKette({ kette, formatCurrency, onSelect, onNavigate, onBearbe
                 zeilenZusatz={linie => {
                     const dok = nachId.get(linie.id);
                     const referenz = dok?.geschaeftsdaten?.referenzNummer;
-                    if (!referenz && !dok?.uploadedByName) return null;
+                    if (!referenz && !dok?.uploadedByName && !dok?.ausgeblendet) return null;
                     return (
                         <span className="flex items-center gap-2 min-w-0">
+                            {dok?.ausgeblendet && <AusgeblendetBadge />}
                             {referenz && (
                                 <span className="truncate" title={referenz} data-kuerzung-erlaubt="">Ref: {referenz}</span>
                             )}
@@ -858,6 +904,12 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNaviga
                     {config.label}
                 </span>
                 <div className="flex items-center gap-1">
+                    {dokument.ausgeblendet && (
+                        <span className="inline-flex items-center gap-0.5">
+                            <AusgeblendetBadge />
+                            <AusgeblendetInfo />
+                        </span>
+                    )}
                     {confidence !== undefined && (
                         <span className={cn(
                             "text-xs px-1.5 py-0.5 rounded",
@@ -871,7 +923,8 @@ function DokumentCard({ dokument, formatDate, formatCurrency, onSelect, onNaviga
                     {onDelete && (
                         <button
                             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                            title="Dokument löschen (nur Admin)"
+                            title="Beleg löschen (nur Admin)"
+                            aria-label="Beleg löschen"
                             className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                             <Trash2 className="w-3.5 h-3.5" />

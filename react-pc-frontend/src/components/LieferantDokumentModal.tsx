@@ -55,6 +55,8 @@ export default function LieferantDokumentModal({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+    /** Text statt Ladeanzeige, wenn die Vorschau nicht kommt – sonst dreht der Spinner endlos. */
+    const [pdfFehler, setPdfFehler] = useState<string | null>(null);
 
     const toast = useToast();
     const { pruefeAntwort } = useKonfliktMeldung("Dokument");
@@ -207,18 +209,30 @@ export default function LieferantDokumentModal({
     useEffect(() => {
         if (!isOpen || dokumentId == null || !showPdf) {
             setPdfBlobUrl(null);
+            setPdfFehler(null);
             return;
         }
         const controller = new AbortController();
         let currentUrl: string | null = null;
+        setPdfFehler(null);
 
         fetch(`/api/lieferanten/${lieferantId}/dokumente/${dokumentId}/download`, { signal: controller.signal })
-            .then(res => res.blob())
+            .then(res => {
+                if (res.status === 404) throw new Error('Die Datei wurde nicht gefunden.');
+                if (!res.ok) throw new Error('Vorschau konnte nicht geladen werden.');
+                return res.blob();
+            })
             .then(blob => {
                 currentUrl = URL.createObjectURL(blob);
                 setPdfBlobUrl(currentUrl);
             })
-            .catch(() => { /* AbortError bei Cleanup ignorieren */ });
+            .catch((err: unknown) => {
+                // Abbruch beim Schließen/Wechseln ist kein Fehler.
+                if (controller.signal.aborted) return;
+                setPdfFehler(err instanceof Error && err.message === 'Die Datei wurde nicht gefunden.'
+                    ? err.message
+                    : 'Vorschau konnte nicht geladen werden.');
+            });
 
         return () => {
             controller.abort();
@@ -441,6 +455,11 @@ export default function LieferantDokumentModal({
                                         className="w-full h-full border-0"
                                         title="PDF Vorschau"
                                     />
+                                ) : pdfFehler ? (
+                                    <div role="alert" className="flex flex-col items-center justify-center gap-2 h-full px-6 text-center text-slate-200 text-sm">
+                                        <AlertCircle className="w-6 h-6 text-slate-400" aria-hidden="true" />
+                                        {pdfFehler}
+                                    </div>
                                 ) : (
                                     <div className="flex items-center justify-center h-full text-white text-sm">
                                         <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-3" />

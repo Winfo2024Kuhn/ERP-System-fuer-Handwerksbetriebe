@@ -131,21 +131,23 @@ class DatenbankKompatibilitaetSucheTest {
         String gross = kennung.toUpperCase(Locale.ROOT);
         List<String> fehler = new ArrayList<>();
         // Freitext ohne Gross-/Kleinschreibung
-        kunden(fehler, "Freitext", k -> k.sucheKunden("MUSTERMANN " + gross, null, null, null, null, null, 0, 50),
+        kunden(fehler, "Freitext", k -> k.sucheKunden("MUSTERMANN " + gross, null, null, null, null, null, false, 0, 50, null),
                 "Max Mustermann");
-        kunden(fehler, "Name + Ort mit Umlaut", k -> k.sucheKunden(null, gross, null, "WÜRZBURG", null, null, 0, 50),
+        kunden(fehler, "Name + Ort mit Umlaut", k -> k.sucheKunden(null, gross, null, "WÜRZBURG", null, null, false, 0, 50, null),
                 "Erika Musterfrau", "Max Mustermann");
-        kunden(fehler, "Kundennummer", k -> k.sucheKunden(null, null, "k-" + kennung, null, null, null, 0, 50),
+        kunden(fehler, "Kundennummer", k -> k.sucheKunden(null, null, "k-" + kennung, null, null, null, false, 0, 50, null),
                 "Erika Musterfrau", "Max Mustermann");
         // Zwei passende Adressen beim selben Kunden: trotzdem nur eine Zeile
-        kunden(fehler, "E-Mail", k -> k.sucheKunden(null, null, null, null, kennung + "@EXAMPLE", null, 0, 50),
+        kunden(fehler, "E-Mail", k -> k.sucheKunden(null, null, null, null, kennung + "@EXAMPLE", null, false, 0, 50, null),
                 "Erika Musterfrau", "Max Mustermann");
-        kunden(fehler, "Typ Kunde", k -> k.sucheKunden(null, kennung, null, null, null, "KUNDE", 0, 50),
+        kunden(fehler, "Typ Kunde", k -> k.sucheKunden(null, kennung, null, null, null, "KUNDE", false, 0, 50, null),
                 "Max Mustermann");
-        kunden(fehler, "Typ Anfrager", k -> k.sucheKunden(null, kennung, null, null, null, "ANFRAGER", 0, 50),
+        kunden(fehler, "Typ Anfrager", k -> k.sucheKunden(null, kennung, null, null, null, "ANFRAGER", false, 0, 50, null),
                 "Erika Musterfrau");
         kunden(fehler, "alle Filter", k -> k.sucheKunden("muster", kennung, "K-" + gross, "würzburg",
-                "rechnung." + kennung, "KUNDE", 0, 50), "Max Mustermann");
+                "rechnung." + kennung, "KUNDE", false, 0, 50, null), "Max Mustermann");
+        // Datenschutz-Sperre (Issue #264): keiner der Testkunden ist gesperrt
+        kunden(fehler, "nur gesperrte", k -> k.sucheKunden(null, kennung, null, null, null, null, true, 0, 50, null));
         assertThat(fehler).as("Kundensuchen, die auf dieser Datenbank scheitern oder anderes finden").isEmpty();
     }
 

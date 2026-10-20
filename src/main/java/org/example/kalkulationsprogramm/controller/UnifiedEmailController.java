@@ -1030,7 +1030,8 @@ public class UnifiedEmailController {
     public ResponseEntity<EmailThreadDto> getEmailThread(@PathVariable Long emailId, org.springframework.security.core.Authentication authentication) {
         log.debug("Thread requested for emailId={}", emailId);
         var sicht = sichtbarkeit(authentication);
-        EmailThreadDto thread = emailThreadService.loadThreadFor(emailId, sicht::darfLesen);
+        EmailThreadDto thread = emailThreadService.loadThreadFor(emailId, sicht::darfLesen,
+                emailDraftService.leserFuer(authentication)::darfSehen);
         return ResponseEntity.ok(thread);
     }
 
@@ -1670,7 +1671,7 @@ public class UnifiedEmailController {
             @RequestPart(value = "dokumentId", required = false) String dokumentIdStr,
             org.springframework.security.core.Authentication authentication) {
 
-        emailDraftService.validateForSending(dto.getDraftId(), null);
+        emailDraftService.validateForSending(dto.getDraftId(), null, emailDraftService.leserFuer(authentication));
         try {
             // Prüfung der Upload-Limits VOR dem Laden von Dateien in den Heap (Heap-Schutz)
             long totalAttachmentsSize = 0L;
@@ -2025,7 +2026,7 @@ public class UnifiedEmailController {
         if (parentEmail == null) {
             return ResponseEntity.notFound().build();
         }
-        emailDraftService.validateForSending(dto.getDraftId(), emailId);
+        emailDraftService.validateForSending(dto.getDraftId(), emailId, emailDraftService.leserFuer(authentication));
 
         try {
             // Antworten gehen fest aus dem Postfach raus, in dem die Mail ankam (bzw. aus dem

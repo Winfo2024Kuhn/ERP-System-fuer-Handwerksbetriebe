@@ -13,13 +13,17 @@ import org.jsoup.nodes.Element;
 
 import org.example.kalkulationsprogramm.domain.EmailDraft;
 import org.example.kalkulationsprogramm.domain.EmailDraftAttachment;
+import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.dto.Email.EmailDraftDto;
 import org.example.kalkulationsprogramm.repository.EmailDraftRepository;
 import org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository;
+import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -55,10 +59,45 @@ public class EmailDraftService {
             "application/step", "model/step", "model/iges", "model/stl", "model/obj", "application/x-step", "application/x-iges");
     private final EmailDraftRepository repository;
     private final EmailDraftAttachmentRepository attachmentRepository;
+    private final FrontendUserProfileRepository benutzerRepository;
+
+    /**
+     * Wer Entwürfe liest (Issue #271): Jeder sieht seine eigenen und die alten ohne Besitzer,
+     * Admins sehen alle. Der Benutzer kommt nur aus der Anmeldung, nie vom Client.
+     *
+     * @param benutzer angemeldeter Benutzer, {@code null} ohne Benutzerprofil
+     */
+    public record Leser(FrontendUserProfile benutzer, boolean admin) {
+        public boolean darfSehen(EmailDraft draft) {
+            return admin || draft.getBesitzer() == null
+                    || (benutzer != null && benutzer.getId() != null
+                            && benutzer.getId().equals(draft.getBesitzer().getId()));
+        }
+    }
 
     @Transactional(readOnly = true)
+    public Leser leserFuer(Authentication authentication) {
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken
+                || authentication.getName() == null || authentication.getName().isBlank()) {
+            return new Leser(null, false);
+        }
+        FrontendUserProfile benutzer = benutzerRepository.findByUsernameIgnoreCase(authentication.getName().trim())
+                .orElse(null);
+        return new Leser(benutzer, PostfachSichtbarkeitService.istAdmin(authentication));
+    }
+
+    /** Alle Entwürfe ohne Besitzerprüfung (Wartung, Tests). Endpunkte nutzen {@link #list(Leser)}. */
+    @Transactional(readOnly = true)
     public List<EmailDraftDto> list() {
-        List<EmailDraft> drafts = repository.findAllByOrderByUpdatedAtDesc();
+        return list(new Leser(null, true));
+    }
+
+    /** Die Entwürfe, die {@code leser} sehen darf, neueste zuerst. */
+    @Transactional(readOnly = true)
+    public List<EmailDraftDto> list(Leser leser) {
+        List<EmailDraft> drafts = repository.findAllByOrderByUpdatedAtDesc().stream()
+                .filter(leser::darfSehen)
+                .toList();
         if (drafts.isEmpty()) return List.of();
         Map<Long, List<EmailDraftDto.Attachment>> metadata = attachmentRepository
                 .findMetadata(drafts.stream().map(EmailDraft::getId).toList()).stream().collect(Collectors.groupingBy(
@@ -70,17 +109,34 @@ public class EmailDraftService {
     @Transactional(readOnly = true)
     public long count() { return repository.count(); }
 
+    /** Ohne Besitzerprüfung (Wartung, Tests). Endpunkte nutzen {@link #get(Long, Leser)}. */
     @Transactional(readOnly = true)
     public EmailDraftDto get(Long id) {
-        EmailDraft draft = requireDraft(id);
+        return get(id, new Leser(null, true));
+    }
+
+    /** Entwurf, wenn {@code leser} ihn sehen darf – sonst 404 wie „gibt es nicht“. */
+    @Transactional(readOnly = true)
+    public EmailDraftDto get(Long id, Leser leser) {
+        EmailDraft draft = requireDraft(id, leser);
         return toDto(draft, attachmentRepository.findMetadata(List.of(id)).stream().map(this::toAttachmentDto).toList());
     }
 
+    /** Ohne Besitzer und ohne Besitzerprüfung (Wartung, Tests). Endpunkte nutzen die Variante mit {@link Leser}. */
     public EmailDraftDto save(Long id, EmailDraftDto dto, List<MultipartFile> files) {
+        return save(id, dto, files, new Leser(null, true));
+    }
+
+    /**
+     * Legt einen Entwurf an ({@code id == null}, Besitzer = {@code leser}) oder ändert einen, den
+     * {@code leser} sehen darf. Der Besitzer ändert sich beim Bearbeiten nie, auch nicht durch Admins.
+     */
+    public EmailDraftDto save(Long id, EmailDraftDto dto, List<MultipartFile> files, Leser leser) {
         validate(dto);
         // Read and validate every file before mutating the existing draft.
         List<EmailDraftAttachment> attachments = files == null ? null : readAttachments(files);
-        EmailDraft draft = id == null ? new EmailDraft() : requireDraft(id);
+        EmailDraft draft = id == null ? new EmailDraft() : requireDraft(id, leser);
+        if (id == null) draft.setBesitzer(leser.benutzer());
         draft.setRecipient(dto.recipient());
         draft.setCc(dto.cc());
         draft.setSubject(dto.subject());
@@ -101,12 +157,21 @@ public class EmailDraftService {
         return toDto(repository.save(draft));
     }
 
-    public void delete(Long id) { repository.delete(requireDraft(id)); }
+    /** Ohne Besitzerprüfung (Wartung, Tests). */
+    public void delete(Long id) { delete(id, new Leser(null, true)); }
+
+    public void delete(Long id, Leser leser) { repository.delete(requireDraft(id, leser)); }
 
     @Transactional(readOnly = true)
     public void validateForSending(Long draftId, Long replyEmailId) {
+        validateForSending(draftId, replyEmailId, new Leser(null, true));
+    }
+
+    /** Wie {@link #validateForSending(Long, Long)}; ein fremder Entwurf zählt als „gibt es nicht“ (404). */
+    @Transactional(readOnly = true)
+    public void validateForSending(Long draftId, Long replyEmailId, Leser leser) {
         if (draftId == null) return;
-        EmailDraft draft = requireDraft(draftId);
+        EmailDraft draft = requireDraft(draftId, leser);
         if (!java.util.Objects.equals(draft.getReplyEmailId(), replyEmailId))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Entwurf gehört zu einer anderen Antwort. Bitte erneut öffnen.");
     }
@@ -131,9 +196,9 @@ public class EmailDraftService {
 
     public record Download(String filename, String contentType, byte[] data) { }
 
-    private EmailDraft requireDraft(Long id) {
+    private EmailDraft requireDraft(Long id, Leser leser) {
         requirePositive(id);
-        return repository.findById(id).orElseThrow(() ->
+        return repository.findById(id).filter(leser::darfSehen).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "Entwurf nicht gefunden."));
     }
 
@@ -239,6 +304,8 @@ public class EmailDraftService {
         return new EmailDraftDto(draft.getId(), draft.getRecipient(), draft.getCc(), draft.getSubject(),
                 draft.getBody(), draft.getFromAddress(), draft.getReplyEmailId(), draft.getProjektId(),
                 draft.getAnfrageId(), draft.isGeschaeftsdokument(), draft.getPostfachId(), draft.isEinzelversand(),
-                draft.getWeitergeleitetVonEmailId(), draft.getCreatedAt(), draft.getUpdatedAt(), attachments);
+                draft.getWeitergeleitetVonEmailId(), draft.getCreatedAt(), draft.getUpdatedAt(), attachments,
+                draft.getBesitzer() != null ? draft.getBesitzer().getId() : null,
+                draft.getBesitzer() != null ? draft.getBesitzer().getDisplayName() : null);
     }
 }

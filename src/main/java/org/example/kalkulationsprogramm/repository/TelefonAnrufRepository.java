@@ -84,4 +84,13 @@ public interface TelefonAnrufRepository extends JpaRepository<TelefonAnruf, Long
               AND a.kunde IS NULL AND a.lieferant IS NULL AND a.steuerberater IS NULL
             """)
     int setzeVerwaisteZuordnungenZurueck();
+
+    /** Datenschutz-Sperre eines Kunden: Anrufe verlieren den Bezug zum Kunden und gelten als unbekannt. */
+    @Modifying
+    @Query("""
+            UPDATE TelefonAnruf a SET a.kunde = NULL,
+                a.zuordnung = org.example.kalkulationsprogramm.domain.TelefonZuordnung.KEINE
+            WHERE a.kunde.id = :kundeId
+            """)
+    int loeseVonKunde(@Param("kundeId") Long kundeId);
 }
