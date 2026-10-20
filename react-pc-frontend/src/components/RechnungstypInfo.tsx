@@ -20,7 +20,7 @@ export function RechnungstypInfo({ mitEinfacherRechnung }: RechnungstypInfoProps
         <InfoButton titel="Welche Rechnung passt?">
             {mitEinfacherRechnung && (
                 <InfoAbschnitt titel="Einfache Rechnung">
-                    <p>Rechnet alles auf einmal ab und gilt als Schlussrechnung: Gelöschte Positionen (z. B. Rüstkosten) stehen als „Nicht angefallen“ darauf, danach sind 100 % abgerechnet.</p>
+                    <p>Rechnet alles auf einmal ab und gilt als Schlussrechnung: Gelöschtes (z. B. Rüstkosten) steht als „Nicht angefallen“ darauf, danach kommt keine Rechnung mehr.</p>
                 </InfoAbschnitt>
             )}
             <InfoAbschnitt titel="Teilrechnung">

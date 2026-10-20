@@ -1156,6 +1156,12 @@ export interface AbrechnungsverlaufDto {
    * welche Leistungen in einer Schlussrechnung entfallen bzw. dazugekommen sind.
    */
   basisdokumentPositionenJson?: string | null;
+  /**
+   * Nummer der nicht stornierten Rechnung oder Schlussrechnung, die den Auftrag
+   * abschliesst (ueber die Kette Angebot <-> AB). Gesetzt = keine weitere Rechnung
+   * moeglich, restbetrag ist dann 0. Fehlt bei aelteren Backends.
+   */
+  abschliessendeRechnungNummer?: string | null;
 }
 
 // ===== Belege & Kasse =====

@@ -224,3 +224,50 @@ describe('DokumentHierarchie – Info zum Rechnungstyp', () => {
         expect(popover).not.toHaveTextContent('Einfache Rechnung');
     });
 });
+
+describe('DokumentHierarchie – Rechnungs-Dialog bei abgeschlossenem Auftrag', () => {
+    function verlaufMock(abschliessendeRechnungNummer: string | null) {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation((url: string) => {
+            if (url === '/api/ausgangs-dokumente/1/abrechnungsverlauf') {
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        basisdokumentId: 1, basisdokumentNummer: '2026/01/00001', basisdokumentTyp: 'ANGEBOT',
+                        basisdokumentBetragNetto: 10000, positionen: [],
+                        bereitsAbgerechnet: abschliessendeRechnungNummer ? 10000 : 0,
+                        restbetrag: abschliessendeRechnungNummer ? 0 : 10000,
+                        abschliessendeRechnungNummer,
+                    }),
+                } as unknown as Response);
+            }
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as unknown as Response);
+        });
+    }
+
+    async function oeffneDialog() {
+        renderBaum([dok(1, 'ANGEBOT', '2026/01/00001')]);
+        await oeffneAktionsmenue('2026/01/00001');
+        fireEvent.click(screen.getByText('→ Rechnung erstellen'));
+        return screen.findByRole('heading', { name: 'Rechnung erstellen' });
+    }
+
+    it('zeigt den Hinweis mit Rechnungsnummer, keine Auswahl, Erstellen gesperrt', async () => {
+        verlaufMock('RE-2026-0042');
+        await oeffneDialog();
+
+        expect(await screen.findByRole('status')).toHaveTextContent('Dieser Auftrag ist mit Rechnung RE-2026-0042 abgeschlossen.');
+        expect(screen.queryByText('Rechnungstyp')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Abschlagsrechnung/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Rechnung erstellen' })).toBeDisabled();
+    });
+
+    it('bietet ohne abschliessende Rechnung die Auswahl wie bisher an', async () => {
+        verlaufMock(null);
+        await oeffneDialog();
+
+        expect(await screen.findByRole('button', { name: /Abschlagsrechnung/ })).toBeEnabled();
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        expect(screen.getByText('Rechnungstyp')).toBeInTheDocument();
+    });
+});

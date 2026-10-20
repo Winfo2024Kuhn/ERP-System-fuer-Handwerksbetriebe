@@ -37,8 +37,18 @@ public class AbrechnungsverlaufDto {
     /** Summe aller bereits abgerechneten Beträge (nicht-storniert) */
     private BigDecimal bereitsAbgerechnet;
 
-    /** Verbleibender Restbetrag = basisdokumentBetragNetto - bereitsAbgerechnet */
+    /**
+     * Verbleibender Restbetrag = basisdokumentBetragNetto - bereitsAbgerechnet.
+     * 0, sobald eine einfache Rechnung oder Schlussrechnung den Vorgang abschliesst.
+     */
     private BigDecimal restbetrag;
+
+    /**
+     * Nummer der nicht stornierten einfachen Rechnung bzw. Schlussrechnung, die den
+     * Vorgang abschliesst (auch wenn sie an der zugehoerigen AB bzw. am Angebot
+     * haengt). {@code null}, solange noch abgerechnet werden kann.
+     */
+    private String abschliessendeRechnungNummer;
 
     /** Block-IDs aus positionenJson, die bereits in nicht-stornierten Teilrechnungen abgerechnet wurden */
     private Set<String> bereitsAbgerechneteBlockIds;
