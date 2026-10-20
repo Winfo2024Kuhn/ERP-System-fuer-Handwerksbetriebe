@@ -82,14 +82,70 @@ public class BestellungsUebersichtService {
      *                       Vorschlägen auf
      */
     public BestellungsUebersichtDto ladeUebersicht(Set<LieferantDokumentTyp> sichtbareTypen) {
+        return ladeUebersicht(sichtbareTypen, Integer.MAX_VALUE, null);
+    }
+
+    /**
+     * Wie {@link #ladeUebersicht(Set)}, aber je Gruppe nur die {@code anzahl} neuesten Ketten
+     * (Seite „Bestellungen“: „Mehr laden“). Die Suche gilt für alle Ketten, auch die nicht
+     * geladenen. Rechnungsvorschläge – der teure Teil – nur für die ausgelieferten Ketten.
+     *
+     * @param anzahl höchstens so viele Ketten je Gruppe (mindestens 1)
+     * @param suche  Suchwörter, {@code null}/leer = alle
+     */
+    public BestellungsUebersichtDto ladeUebersicht(Set<LieferantDokumentTyp> sichtbareTypen, int anzahl, String suche) {
+        int max = Math.max(anzahl, 1);
         Dokumentbestand bestand = ladeDokumente(sichtbareTypen);
-        BestellungsUebersichtDto dto = gruppiereKetten(bestand);
+        BestellungsUebersichtDto alle = gruppiereKetten(bestand);
+        List<DokumentenKette> offen = gefiltert(alle.offeneAnfragen(), suche);
+        List<DokumentenKette> laufend = gefiltert(alle.laufendeBestellungen(), suche);
+        List<DokumentenKette> abgeschlossen = gefiltert(alle.abgeschlossen(), suche);
+        List<DokumentenKette> zugeordnet = gefiltert(alle.zugeordnet(), suche);
+        List<DokumentenKette> ausgeblendet = gefiltert(alle.ausgeblendet(), suche);
+        LocalDate heute = LocalDate.now();
+        // Angebote und laufende Bestellungen zeigt die Seite getrennt nach aktuell und alt (alt =
+        // eingeklappt bzw. „Seit über 2 Monaten keine Rechnung“). Beide Teile je für sich kürzen –
+        // sonst kämen die alten, die nach Datum ganz hinten stehen, erst nach vielen „Mehr laden“.
+        List<DokumentenKette> offenGekuerzt = jeAlterGekuerzt(offen, max, heute);
+        List<DokumentenKette> laufendGekuerzt = jeAlterGekuerzt(laufend, max, heute);
+        var gesamt = new BestellungsUebersichtDto.Gesamt(offen.size(), anzahlAktuell(offen, heute),
+                laufend.size(), anzahlAktuell(laufend, heute), abgeschlossen.size(), zugeordnet.size(),
+                ausgeblendet.size());
+
         var speicher = rechnungsVorschlagService.neuerSpeicher();
-        List<DokumentenKette> laufendMitVorschlag = dto.laufendeBestellungen().stream()
+        List<DokumentenKette> laufendMitVorschlag = laufendGekuerzt.stream()
                 .map(kette -> kette.mitVorschlag(besterVorschlag(kette, bestand, speicher)))
                 .toList();
-        return new BestellungsUebersichtDto(
-                dto.offeneAnfragen(), laufendMitVorschlag, dto.abgeschlossen(), dto.zugeordnet(), dto.ausgeblendet());
+        return new BestellungsUebersichtDto(offenGekuerzt, laufendMitVorschlag, gekuerzt(abgeschlossen, max),
+                gekuerzt(zugeordnet, max), gekuerzt(ausgeblendet, max), gesamt);
+    }
+
+    private static int anzahlAktuell(List<DokumentenKette> ketten, LocalDate heute) {
+        return (int) ketten.stream().filter(k -> !BestellungsKettenSuche.istAlt(k, heute)).count();
+    }
+
+    /** Die {@code max} neuesten aktuellen und die {@code max} neuesten alten Ketten, Reihenfolge bleibt. */
+    private static List<DokumentenKette> jeAlterGekuerzt(List<DokumentenKette> ketten, int max, LocalDate heute) {
+        int aktuell = 0;
+        int alt = 0;
+        List<DokumentenKette> ergebnis = new ArrayList<>();
+        for (DokumentenKette kette : ketten) {
+            if (BestellungsKettenSuche.istAlt(kette, heute) ? alt++ < max : aktuell++ < max) {
+                ergebnis.add(kette);
+            }
+        }
+        return ergebnis;
+    }
+
+    private static List<DokumentenKette> gefiltert(List<DokumentenKette> ketten, String suche) {
+        if (suche == null || suche.isBlank()) {
+            return ketten;
+        }
+        return ketten.stream().filter(k -> BestellungsKettenSuche.passt(k, suche)).toList();
+    }
+
+    private static List<DokumentenKette> gekuerzt(List<DokumentenKette> ketten, int max) {
+        return ketten.size() <= max ? ketten : List.copyOf(ketten.subList(0, max));
     }
 
     /**

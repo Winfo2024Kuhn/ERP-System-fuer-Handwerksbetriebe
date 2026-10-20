@@ -90,7 +90,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         LieferantDokument lieferschein = dokument(1L, LieferantDokumentTyp.LIEFERSCHEIN);
         when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).hasSize(1);
@@ -105,7 +105,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         angebot.setVerknuepfteDokumente(new HashSet<>(List.of(lieferschein)));
         when(dokumentRepository.findAll()).thenReturn(List.of(angebot, lieferschein));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).hasSize(1);
@@ -120,7 +120,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         lieferschein.setVerknuepfteDokumente(new HashSet<>(List.of(rechnung)));
         when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein, rechnung));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.abgeschlossen()).hasSize(1);
@@ -131,7 +131,7 @@ class BestellungsUebersichtControllerEinordnungTest {
     void nurAngebotBleibtOffeneAnfrage() {
         when(dokumentRepository.findAll()).thenReturn(List.of(dokument(1L, LieferantDokumentTyp.ANGEBOT)));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.offeneAnfragen()).hasSize(1);
@@ -146,7 +146,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         neu.setUploadDatum(LocalDateTime.of(2026, 9, 1, 9, 0));
         when(dokumentRepository.findAll()).thenReturn(List.of(alt, neu));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.offeneAnfragen()).hasSize(2);
@@ -165,7 +165,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         frueherEingegangen.setUploadDatum(LocalDateTime.of(2026, 9, 1, 9, 0));
         when(dokumentRepository.findAll()).thenReturn(List.of(spaetEingegangen, frueherEingegangen));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.offeneAnfragen().get(0).dokumente().get(0).id).isEqualTo(2L);
@@ -181,7 +181,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         // AB zuerst – genau diese Reihenfolge erzeugte früher eine zweite Kette ohne Rechnung
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, rechnung));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -200,7 +200,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         rechnung.getGeschaeftsdaten().setReferenzNummer("AB 77001");
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, rechnung));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         var vorschlag = dto.laufendeBestellungen().get(0).rechnungsVorschlag();
@@ -244,7 +244,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         fremd.getGeschaeftsdaten().setReferenzNummer("AB-77001");
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, fremd));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
@@ -304,7 +304,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(rechnung, lieferschein);
         when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein, rechnung));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen()).isEmpty();
@@ -325,7 +325,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(teilrechnung, ab);
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, bezahlt, teilrechnung));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.abgeschlossen()).hasSize(1);
@@ -349,7 +349,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(sichtbarerLs, halbVersteckt);
         when(dokumentRepository.findAll()).thenReturn(List.of(ls, rechnung, versteckteAnfrage, halbVersteckt, sichtbarerLs));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.zugeordnet()).hasSize(1);
@@ -372,7 +372,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(gutschrift, rechnung);
         when(dokumentRepository.findAll()).thenReturn(List.of(ls1, ls2, rechnung, gutschrift));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         var kette = dto.abgeschlossen().get(0);
@@ -395,7 +395,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         // Ohne Verknüpfung steht die AB laufend, die bezahlte Rechnung allein erledigt
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, bezahlt));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         var vorschlag = dto.laufendeBestellungen().get(0).rechnungsVorschlag();
@@ -416,7 +416,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         vielSpaeter.getGeschaeftsdaten().setReferenzNummer("AB 77001");
         when(dokumentRepository.findAll()).thenReturn(List.of(ab, vielSpaeter));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.laufendeBestellungen().get(0).rechnungsVorschlag()).isNull();
@@ -456,7 +456,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         }
         when(dokumentRepository.findAll()).thenReturn(alle);
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto.laufendeBestellungen()).hasSize(1);
         assertThat(dto.laufendeBestellungen().get(0).dokumente()).hasSize(20_000);
@@ -606,7 +606,7 @@ class BestellungsUebersichtControllerEinordnungTest {
     void uebersichtOhneAnmeldungGibt401() {
         when(zugriffService.sichtbareTypen(any(), any())).thenReturn(Optional.empty());
 
-        assertThat(controller.getUebersicht("unbekannt", null).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(controller.getUebersicht("unbekannt", BestellungsUebersichtController.ANZAHL_MAX, null, null).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(controller.getKettenVorschlaege(List.of(1L), false, null, null, null).getStatusCode())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
         verifyNoInteractions(dokumentRepository);
@@ -620,7 +620,7 @@ class BestellungsUebersichtControllerEinordnungTest {
         verknuepfe(rechnung, lieferschein);
         when(dokumentRepository.findAll()).thenReturn(List.of(lieferschein, rechnung));
 
-        var dto = controller.getUebersicht(null, null).getBody();
+        var dto = controller.getUebersicht(null, BestellungsUebersichtController.ANZAHL_MAX, null, null).getBody();
 
         assertThat(dto).isNotNull();
         assertThat(dto.abgeschlossen()).isEmpty();
