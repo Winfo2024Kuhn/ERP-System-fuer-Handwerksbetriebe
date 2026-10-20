@@ -97,7 +97,24 @@ public class DokumentGeneratorController {
              * auf {@link #DIFFERENZ_HINWEIS_MAX_LAENGE} gekuerzt. Das Frontend begrenzt
              * die Liste zwar auf vier Namen, das ist aber keine Zusicherung.
              */
-            String differenzHinweis) {
+            String differenzHinweis,
+            /**
+             * Diese einfache Rechnung rechnet den ganzen Auftrag auf einmal ab. Dann
+             * gilt der Auftrag wie nach einer Schlussrechnung als zu 100 % abgerechnet,
+             * und nicht angefallene Positionen erscheinen als eigene Zeile statt als
+             * offener Rest. Fehlt der Wert (gebuchte Rechnungen, aeltere Clients):
+             * nein, damit sich an bestehenden Rechnungen nichts aendert.
+             */
+            Boolean schliesstAuftragAb) {
+
+        /** Ohne Abschluss-Kennzeichen: Verhalten wie vor der einfachen Rechnung mit 100 %. */
+        public AbrechnungsverlaufRequest(String basisdokumentNummer, String basisdokumentTyp,
+                                         String basisdokumentDatum, Double basisdokumentBetragNetto,
+                                         List<AbrechnungspositionRequest> positionen,
+                                         Boolean balkenAnzeigen, String differenzHinweis) {
+            this(basisdokumentNummer, basisdokumentTyp, basisdokumentDatum, basisdokumentBetragNetto,
+                 positionen, balkenAnzeigen, differenzHinweis, null);
+        }
     }
 
     public record AbrechnungspositionRequest(
@@ -423,7 +440,8 @@ public class DokumentGeneratorController {
                     // Fehlendes Flag = Balken an: Bestandsdokumente und aeltere
                     // Clients sollen aussehen wie bisher.
                     avReq.balkenAnzeigen() == null || avReq.balkenAnzeigen(),
-                    kuerzeDifferenzHinweis(avReq.differenzHinweis())
+                    kuerzeDifferenzHinweis(avReq.differenzHinweis()),
+                    Boolean.TRUE.equals(avReq.schliesstAuftragAb())
             );
         }
 

@@ -1650,7 +1650,19 @@ public class AusgangsGeschaeftsDokumentService {
 
         verlauf.setPositionen(positionen);
         verlauf.setBereitsAbgerechnet(bereitsAbgerechnet);
-        verlauf.setRestbetrag(verlauf.getBasisdokumentBetragNetto().subtract(bereitsAbgerechnet));
+        // Eine einfache Rechnung, die den Auftrag abschliesst (Kennzeichen im
+        // positionenJson, setzt der Editor seit 2026-10), laesst nichts offen: was
+        // darin fehlt, ist nicht angefallen. Sonst boete das Projekt eine weitere
+        // Rechnung ueber die nicht angefallenen Positionen an, waehrend auf dem PDF
+        // "Noch offen 0,00 €" steht. Bestandsrechnungen ohne Kennzeichen behalten
+        // ihren bisherigen Rest.
+        boolean auftragAbgeschlossen = nachfolger.stream().anyMatch(dok ->
+                dok.getTyp() == AusgangsGeschaeftsDokumentTyp.RECHNUNG
+                        && !dok.isStorniert()
+                        && schliesstAuftragAb(dok.getPositionenJson()));
+        verlauf.setRestbetrag(auftragAbgeschlossen
+                ? BigDecimal.ZERO
+                : verlauf.getBasisdokumentBetragNetto().subtract(bereitsAbgerechnet));
 
         // Block-IDs aus nicht-stornierten Teilrechnungen sammeln
         Set<String> abgerechneteBlockIds = new HashSet<>();
@@ -1838,6 +1850,21 @@ public class AusgangsGeschaeftsDokumentService {
         if (block == null || !block.isObject()) return false;
         JsonNode rolle = block.get("textbausteinRolle");
         return rolle != null && !rolle.isNull() && !rolle.asText().isBlank();
+    }
+
+    /**
+     * Liest das Kennzeichen {@code schliesstAuftragAb} aus dem positionenJson einer
+     * einfachen Rechnung. Fehlt es oder ist das JSON unlesbar: nein.
+     */
+    static boolean schliesstAuftragAb(String positionenJson) {
+        if (positionenJson == null || positionenJson.isBlank()) return false;
+        try {
+            JsonNode root = POSITIONEN_MAPPER.readTree(positionenJson);
+            return root != null && root.isObject() && root.path("schliesstAuftragAb").asBoolean(false);
+        } catch (Exception e) {
+            log.warn("Abschluss-Kennzeichen nicht lesbar: {}", e.getMessage());
+            return false;
+        }
     }
 
     /**

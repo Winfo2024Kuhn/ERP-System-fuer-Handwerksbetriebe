@@ -1350,6 +1350,123 @@ class RechnungPdfServiceTest {
     }
 
     /**
+     * Einfache Rechnung über den ganzen Auftrag: Wurde eine nicht angefallene
+     * Position (z. B. Rüstkosten) gelöscht, schließt die Rechnung den Auftrag
+     * trotzdem ab, genau wie eine Schlussrechnung. Vorher stand im PDF
+     * "96 % abgerechnet" und ein offener Rest, obwohl nichts mehr nachkommt.
+     */
+    @Nested
+    @DisplayName("Einfache Rechnung über den ganzen Auftrag")
+    class EinfacheRechnungSchliesstAuftragAb {
+
+        /** Angebot über 10.000 € netto, Rüstkosten 400 € sind nicht angefallen. */
+        private AbrechnungsverlaufPdfDto verlauf(List<AbrechnungspositionPdfDto> vorher, boolean schliesstAuftragAb) {
+            return new AbrechnungsverlaufPdfDto(
+                    "AN-2026/01/00003",
+                    "Angebot",
+                    LocalDate.of(2026, 1, 15),
+                    BigDecimal.valueOf(10000),
+                    vorher,
+                    true,
+                    "Rüstkosten",
+                    schliesstAuftragAb);
+        }
+
+        private String rendere(long betrag, AbrechnungsverlaufPdfDto verlauf) {
+            return rendere("Rechnung", betrag, null, verlauf);
+        }
+
+        private String rendere(String typ, long betrag, BigDecimal abschlagNetto, AbrechnungsverlaufPdfDto verlauf) {
+            KopfdatenDto kopf = new KopfdatenDto(
+                    "RE-2026/10/00040",
+                    LocalDate.of(2026, 10, 20),
+                    LocalDate.of(2026, 10, 15),
+                    "Max Mustermann",
+                    "Max Mustermann\nMusterweg 1\n12345 Musterstadt",
+                    "Rechnung Bauvorhaben Musterweg",
+                    "KD-MUSTER",
+                    typ,
+                    "AN-2026-MUSTER",
+                    "PRJ-2026-MUSTER",
+                    "Bauvorhaben Musterweg");
+            List<ContentBlockDto> contentBlocks = List.of(
+                    new ContentBlockDto("SERVICE", null, false, 0,
+                            "1", "Geländer montieren", null,
+                            BigDecimal.ONE, "psch", BigDecimal.valueOf(betrag), BigDecimal.valueOf(betrag),
+                            false, null, null, null),
+                    new ContentBlockDto("CLOSURE", null, false, 0,
+                            null, null, null, null, null, null, null, false, null, null, null));
+            List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
+            LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+            return generateAndExtractText(new RechnungDto(
+                    layout, kopf, contentBlocks, formBlocks,
+                    null, null, null, null, verlauf, abschlagNetto, null));
+        }
+
+        @Test
+        @DisplayName("Gelöschte Rüstkosten: 100 % abgerechnet, Zeile 'Nicht angefallen', nichts mehr offen")
+        void geloeschtePositionSchliesstAuftragTrotzdemAb() {
+            String text = rendere(9600, verlauf(List.of(), true));
+
+            assertTrue(text.contains("100 % des Auftrags abgerechnet"),
+                    "Die einfache Rechnung muss den Auftrag zu 100 % abschließen. Text:\n" + text);
+            assertTrue(text.contains("Nicht angefallen"),
+                    "Differenzzeile 'Nicht angefallen' fehlt. Text:\n" + text);
+            assertTrue(text.contains("Rüstkosten"),
+                    "Der Name der entfallenen Position fehlt. Text:\n" + text);
+            // Differenz netto 400 -> brutto 476
+            assertTrue(text.contains("476,00"),
+                    "Differenzbetrag brutto '476,00' fehlt. Text:\n" + text);
+            // Der Rechnungsbetrag bleibt, was in der Rechnung steht: 9.600 netto, 11.424 brutto
+            assertTrue(text.contains("11.424,00"),
+                    "Zahlbetrag brutto '11.424,00' fehlt. Text:\n" + text);
+            assertFalse(text.contains("96 % des Auftrags"),
+                    "Alter Prozentwert steht noch im PDF. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Ohne Abschluss-Kennzeichen (gebuchte Rechnungen) bleibt alles wie bisher")
+        void ohneKennzeichenBleibtAltesVerhalten() {
+            String text = rendere(9600, verlauf(List.of(), false));
+
+            assertTrue(text.contains("96 % des Auftrags abgerechnet"),
+                    "Ohne Kennzeichen muss der bisherige Prozentwert stehen bleiben. Text:\n" + text);
+            assertFalse(text.contains("Nicht angefallen"),
+                    "Ohne Kennzeichen darf keine Differenzzeile erscheinen. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Mit Vorrechnungen schließt eine Rechnung den Auftrag nicht ab")
+        void mitVorrechnungenKeinAbschluss() {
+            List<AbrechnungspositionPdfDto> vorher = List.of(new AbrechnungspositionPdfDto(
+                    "RE-2026/03/00011", "TEILRECHNUNG", LocalDate.of(2026, 3, 1),
+                    BigDecimal.valueOf(4000), null));
+            String text = rendere(4000, verlauf(vorher, true));
+
+            assertTrue(text.contains("80 % des Auftrags abgerechnet"),
+                    "Mit Vorrechnungen gilt der normale Anteil (4.000 + 4.000 von 10.000). Text:\n" + text);
+            assertFalse(text.contains("Nicht angefallen"),
+                    "Mit Vorrechnungen darf keine Differenzzeile erscheinen. Text:\n" + text);
+        }
+
+        @Test
+        @DisplayName("Abschlagsrechnung und Teilrechnung ignorieren das Kennzeichen")
+        void nurDieEinfacheRechnungSchliesstAb() {
+            String abschlag = rendere("Abschlagsrechnung", 9600, BigDecimal.valueOf(3000), verlauf(List.of(), true));
+            assertTrue(abschlag.contains("30 % des Auftrags abgerechnet"),
+                    "Ein Abschlag darf den Auftrag nicht abschließen. Text:\n" + abschlag);
+            assertFalse(abschlag.contains("Nicht angefallen"),
+                    "Ein Abschlag darf keine Differenzzeile zeigen. Text:\n" + abschlag);
+
+            String teil = rendere("Teilrechnung", 9600, null, verlauf(List.of(), true));
+            assertTrue(teil.contains("96 % des Auftrags abgerechnet"),
+                    "Eine Teilrechnung darf den Auftrag nicht abschließen. Text:\n" + teil);
+            assertFalse(teil.contains("Nicht angefallen"),
+                    "Eine Teilrechnung darf keine Differenzzeile zeigen. Text:\n" + teil);
+        }
+    }
+
+    /**
      * Wahlpositionen im PDF: bewusst nüchtern. Das PDF ist ein Angebot, kein
      * Formular — die Entscheidung trifft der Kunde über die Freigabe-Seite.
      */

@@ -762,7 +762,7 @@ test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nachar
         ],
     });
 
-    test('Betreff und Bauabschnitt werden umgebrochen statt still abgeschnitten', async ({ page }) => {
+    async function apiStubben(page: Page) {
         await page.route('**/api/**', (route) => {
             const request = route.request();
             const pfad = new URL(request.url()).pathname;
@@ -801,6 +801,10 @@ test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nachar
             }
             return json(route, []);
         });
+    }
+
+    test('Betreff und Bauabschnitt werden umgebrochen statt still abgeschnitten', async ({ page }) => {
+        await apiStubben(page);
         await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
 
         await expect(page.getByText(DOK_FUER_RECHNUNG.dokumentNummer)).toBeVisible();
@@ -855,4 +859,48 @@ test.describe('ProjektEditor: zwei stille Kuerzungen im Rechnungs-Dialog (Nachar
         await expect(betreffElement.locator('xpath=ancestor-or-self::*[@data-kuerzung-erlaubt]')).toHaveCount(0);
         await expect(bauabschnittSpan.locator('xpath=ancestor-or-self::*[@data-kuerzung-erlaubt]')).toHaveCount(0);
     });
+
+    test('Info zum Rechnungstyp oeffnet vollstaendig sichtbar neben der Ueberschrift', async ({ page }) => {
+        await apiStubben(page);
+        await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
+        await page.getByText(DOK_FUER_RECHNUNG.dokumentNummer).click();
+        await page.getByRole('button', { name: 'Rechnung erstellen' }).click();
+
+        const ueberschrift = page.getByRole('heading', { name: 'Rechnungstyp wählen' });
+        const knopf = page.getByRole('button', { name: 'Mehr zu: Welche Rechnung passt?' });
+        await expect(ueberschrift).toBeVisible();
+        await knopf.click();
+
+        const popover = page.getByRole('dialog', { name: 'Welche Rechnung passt?' });
+        await expect(popover).toBeVisible();
+        // Kein Verlauf mit Rechnungen in der Fixture -> einfache Rechnung wird angeboten und erklaert.
+        await expect(popover).toContainText('Einfache Rechnung');
+        await expect(popover).toContainText('zieht Berechnetes ab');
+
+        // (i) steht in derselben Zeile wie die Ueberschrift.
+        const h = (await ueberschrift.boundingBox())!;
+        const k = (await knopf.boundingBox())!;
+        expect(Math.abs((k.y + k.height / 2) - (h.y + h.height / 2))).toBeLessThanOrEqual(4);
+
+        // Popover liegt komplett im Fenster und ist nicht abgeschnitten.
+        const box = (await popover.boundingBox())!;
+        const fenster = page.viewportSize()!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(fenster.width);
+        expect(box.y + box.height).toBeLessThanOrEqual(fenster.height);
+        // Kurzer Text: passt in allen drei PC-Groessen ohne inneres Scrollen.
+        const ueberstand = await popover.evaluate((el) => el.scrollHeight - el.clientHeight);
+        expect(ueberstand, `Popover scrollt ${ueberstand}px in sich -- Text kuerzen`).toBeLessThanOrEqual(0);
+        // Popover liegt obenauf: der Mittelpunkt trifft das Popover selbst, nicht den Dialog dahinter.
+        const obenauf = await popover.evaluate((el) => {
+            const r = el.getBoundingClientRect();
+            const treffer = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return !!treffer && el.contains(treffer);
+        });
+        expect(obenauf).toBe(true);
+
+        await page.screenshot({ path: test.info().outputPath('rechnungstyp-info.png') });
+    });
+
 });

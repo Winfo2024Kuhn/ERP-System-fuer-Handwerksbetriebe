@@ -138,6 +138,7 @@ import '@fontsource/open-sans/latin-700.css';
 import '@fontsource/open-sans/latin-700-italic.css';
 import '@fontsource/montserrat/latin-600.css';
 import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, betragGeaendert, type AbzuloesendeFreigabe, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur, weichtVonLeistungAb, anzeigeEinheitDerLeistung } from './helpers';
+import { schliesstEinfacheRechnungAuftragAb } from '../../lib/abrechnungsverlauf';
 import { fehlermeldungAusAntwort, pruefeFirmendatenFuerERechnung } from './eRechnungPruefung';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
@@ -187,6 +188,11 @@ type PdfAbrechnungsverlauf = Pick<AbrechnungsverlaufDto, 'basisdokumentNummer' |
     balkenAnzeigen: boolean;
     /** Leistungen hinter der Differenzzeile der Schlussrechnung, kommasepariert. */
     differenzHinweis: string | null;
+    /**
+     * Einfache Rechnung, die den Auftrag abschliesst: das PDF rechnet sie wie
+     * eine Schlussrechnung (100 %, "Nicht angefallen", Rest 0,00 €).
+     */
+    schliesstAuftragAb: boolean;
 };
 
 /** Inline-editable Rechnungsadresse – changes only the document, not the customer table */
@@ -487,6 +493,22 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
      * der Differenzbetrag selbst wird nicht daraus gerechnet.
      */
     const [basisdokumentBlocks, setBasisdokumentBlocks] = useState<DocBlock[]>([]);
+    // Anzahl anderer aktiver Rechnungen am Basisdokument, nur fuer die einfache
+    // Rechnung: entscheidet, ob sie den Auftrag abschliesst (Differenzzeile).
+    // null = nicht geladen, dann gibt es auch keinen Positionsvergleich.
+    const [andereAktiveRechnungen, setAndereAktiveRechnungen] = useState<number | null>(null);
+    // Kennzeichen "schliesst Auftrag ab" aus dem positionenJson. Zaehlt nur bei
+    // gesperrten Rechnungen (Nachdruck nach dem Buchen); fehlt es, bleibt eine
+    // Bestandsrechnung wie bisher.
+    const [gespeichertSchliesstAuftragAb, setGespeichertSchliesstAuftragAbState] = useState(false);
+    // Ref-Spiegel fuer bucheDokument: Export, Druck und Mail speichern im selben
+    // Klick direkt vorher. Der State aus dieser Closure waere dann noch der alte
+    // und loeste ein zweites, ueberfluessiges Speichern aus.
+    const gespeichertSchliesstAuftragAbRef = useRef(false);
+    const setGespeichertSchliesstAuftragAb = useCallback((wert: boolean) => {
+        gespeichertSchliesstAuftragAbRef.current = wert;
+        setGespeichertSchliesstAuftragAbState(wert);
+    }, []);
     /**
      * Fortschrittsbalken im Abrechnungsstand auf der Rechnung zeigen. Liegt in
      * positionenJson, Standard an — Bestandsrechnungen sehen aus wie bisher.
@@ -1213,6 +1235,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                 // Fehlendes Flag = an: Bestandsrechnungen behalten ihren Balken.
                                 geladenerBalken = parsed.abrechnungsstandBalkenAnzeigen !== false;
                                 setzeBalkenAnzeigen(geladenerBalken);
+                                setGespeichertSchliesstAuftragAb(parsed.schliesstAuftragAb === true);
                                 if (parsed.abschlagInfo) {
                                     setAbschlagInfo(parsed.abschlagInfo);
                                 }
@@ -1290,6 +1313,27 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                                         abschlagsNummer: pos.abschlagsNummer,
                                     }));
                                 setAbrechnungsPositionen(anderePosDetails);
+                            }
+                        } catch (e) {
+                            console.error('Abrechnungsverlauf konnte nicht geladen werden:', e);
+                        }
+                    } else if (data.vorgaengerId && data.typ === 'RECHNUNG') {
+                        // Einfache Rechnung: nur Basisbetrag und Basis-Bloecke fuer den
+                        // Positionsvergleich der Differenzzeile. Bewusst KEIN
+                        // bereitsAbgerechnetDurchAndere — das zieht bei der
+                        // Schlussrechnung Betraege ab und kippt istRestbetrag; die
+                        // einfache Rechnung zeigt ihre Nettosumme unveraendert.
+                        try {
+                            const verlaufRes = await fetch(`/api/ausgangs-dokumente/${data.vorgaengerId}/abrechnungsverlauf`);
+                            if (verlaufRes.ok) {
+                                const verlauf: AbrechnungsverlaufDto = await verlaufRes.json();
+                                if (verlauf.basisdokumentBetragNetto != null) {
+                                    setBasisdokumentBetragNetto(verlauf.basisdokumentBetragNetto);
+                                }
+                                setBasisdokumentBlocks(parseBlocksAusPositionenJson(verlauf.basisdokumentPositionenJson));
+                                setAndereAktiveRechnungen((verlauf.positionen || [])
+                                    .filter((pos: AbrechnungspositionDto) => pos.id !== data.id && !pos.storniert)
+                                    .length);
                             }
                         } catch (e) {
                             console.error('Abrechnungsverlauf konnte nicht geladen werden:', e);
@@ -1579,10 +1623,16 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 // Abschlagsrechnung: benutzerdefinierten Abschlagsbetrag verwenden
                 betragNetto = abschlagBetragNetto;
             }
+            // Abgeleitetes Kennzeichen mitspeichern, damit die Rechnung auch nach
+            // dem Buchen (gesperrt) weiter als abschliessend druckt. Unbekannte
+            // Zahl anderer Rechnungen (Verlauf nicht geladen) = weglassen statt raten.
+            const schliesstAuftragAbSpeichern = !isLocked && andereAktiveRechnungen !== null
+                && schliesstEinfacheRechnungAuftragAb(dokumentTyp, andereAktiveRechnungen, false);
             const positionenData = JSON.stringify({
                 blocks: persistedBlocks,
                 globalRabatt,
                 abrechnungsstandBalkenAnzeigen: balkenAnzeigen,
+                ...(schliesstAuftragAbSpeichern ? { schliesstAuftragAb: true } : {}),
                 ...(abschlagInfo ? { abschlagInfo } : {})
             });
 
@@ -1640,6 +1690,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
+                    // Gespeicherten Stand spiegeln: wird direkt danach gebucht, stimmt
+                    // der Nachdruck im gesperrten Zustand ohne Neuladen.
+                    setGespeichertSchliesstAuftragAb(schliesstAuftragAbSpeichern);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
@@ -1701,6 +1754,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     const currentState = baueDokumentSignatur({ blocks: persistedBlocks, datum: datumRef.current, betreff, dokumentTyp, globalRabatt, balkenAnzeigen });
                     lastSavedStateRef.current = currentState;
                     setHasUnsavedChanges(false);
+                    // Gespeicherten Stand spiegeln: wird direkt danach gebucht, stimmt
+                    // der Nachdruck im gesperrten Zustand ohne Neuladen.
+                    setGespeichertSchliesstAuftragAb(schliesstAuftragAbSpeichern);
                     setSaveSuccess(true);
                     setTimeout(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
@@ -1728,7 +1784,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         }
         return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, konfliktMeldung, bereitsAbgerechnetDurchAndere, globalRabatt, balkenAnzeigen]);
+    }, [dokument, dokumentTyp, datum, betreff, blocks, projektId, anfrageId, isLocked, syncDocumentIdInUrl, konfliktMeldung, bereitsAbgerechnetDurchAndere, globalRabatt, balkenAnzeigen, andereAktiveRechnungen]);
 
     // Imperatives Handle fuer die Seite (Task 7a, Issue #82): der
     // Untaetigkeits-Timer der Seite (useIdleTimer + useDatensatzLock) darf
@@ -2758,7 +2814,13 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             // Schlaegt das fehl (Lock-Konflikt, Netz, Server), darf NICHT gebucht
             // werden: das Dokument waere sonst GoBD-gesperrt mit einem Stand, den
             // der User so nie gesehen hat — etwa der alten Rechnungsadresse.
-            if (hasUnsavedChanges) {
+            // Auch ohne Aenderung speichern, wenn das Kennzeichen "schliesst
+            // Auftrag ab" noch fehlt (z. B. vor diesem Stand angelegte Rechnung):
+            // nach dem Buchen zaehlt nur noch der gespeicherte Wert.
+            const kennzeichenNachtragen = andereAktiveRechnungen !== null
+                && schliesstEinfacheRechnungAuftragAb(dokumentTyp, andereAktiveRechnungen, false)
+                && !gespeichertSchliesstAuftragAbRef.current;
+            if (hasUnsavedChanges || kennzeichenNachtragen) {
                 const gespeichert = await handleSave();
                 if (!gespeichert) return null;
             }
@@ -3401,12 +3463,19 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
      * ergibt sich unabhaengig davon als Ausgleichsgroesse.
      */
     const differenzHinweis = useMemo(() => {
-        if (dokumentTyp !== 'SCHLUSSRECHNUNG' || basisdokumentBlocks.length === 0) return '';
+        // Die einfache Rechnung, die den Auftrag abschliesst, bekommt im PDF
+        // dieselbe Differenzzeile wie die Schlussrechnung (siehe
+        // schliesstEinfacheRechnungAuftragAb, gesperrt zaehlt nur das gespeicherte Kennzeichen).
+        // Gesperrt braucht es die Zahl anderer Rechnungen nicht (nur das Gespeicherte zaehlt).
+        const mitDifferenzzeile = dokumentTyp === 'SCHLUSSRECHNUNG'
+            || ((isLocked || andereAktiveRechnungen !== null)
+                && schliesstEinfacheRechnungAuftragAb(dokumentTyp, andereAktiveRechnungen ?? 0, isLocked, gespeichertSchliesstAuftragAb));
+        if (!mitDifferenzzeile || basisdokumentBlocks.length === 0) return '';
         const differenzNetto = (basisdokumentBetragNetto ?? 0) - calculateNettoNachRabatt(blocks, globalRabatt);
         if (Math.abs(differenzNetto) < 0.01) return '';
         const { entfallen, zusaetzlich } = vergleicheLeistungen(basisdokumentBlocks, blocks);
         return formatiereDifferenzHinweis(differenzNetto > 0 ? entfallen : zusaetzlich);
-    }, [dokumentTyp, basisdokumentBlocks, blocks, basisdokumentBetragNetto, globalRabatt]);
+    }, [dokumentTyp, basisdokumentBlocks, blocks, basisdokumentBetragNetto, globalRabatt, andereAktiveRechnungen, isLocked, gespeichertSchliesstAuftragAb]);
 
     const createPdfRequest = async (isPreview: boolean, withDraftWatermark: boolean = false) => {
         const { layoutBlocks, backgroundImage, backgroundImagePage2 } = await fetchTemplateData(dokumentTyp);
@@ -3556,12 +3625,17 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     // Always send abrechnungsverlauf when basisdokument exists
                     // (even with 0 other positions, to show Gesamtauftragssumme on first Abschlagsrechnung)
                     if (verlauf.basisdokumentBetragNetto != null && verlauf.basisdokumentBetragNetto > 0) {
+                        const schliesstAuftragAb = schliesstEinfacheRechnungAuftragAb(dokumentTyp, otherPositions.length, isLocked, gespeichertSchliesstAuftragAb);
+                        // Gesperrt und abschliessend: keine Vorrechnungen mitschicken. Das
+                        // Backend wertet das Kennzeichen nur ohne Vorrechnungen aus, und
+                        // spaeter angelegte Rechnungen sind keine Vorrechnungen dieser Rechnung.
+                        const vorrechnungen = schliesstAuftragAb && isLocked ? [] : otherPositions;
                         abrechnungsverlauf = {
                             basisdokumentNummer: verlauf.basisdokumentNummer,
                             basisdokumentTyp: verlauf.basisdokumentTyp,
                             basisdokumentDatum: verlauf.basisdokumentDatum,
                             basisdokumentBetragNetto: verlauf.basisdokumentBetragNetto,
-                            positionen: otherPositions.map((pos: AbrechnungspositionDto) => ({
+                            positionen: vorrechnungen.map((pos: AbrechnungspositionDto) => ({
                                 dokumentNummer: pos.dokumentNummer,
                                 typ: pos.typ,
                                 datum: pos.datum,
@@ -3570,6 +3644,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             })),
                             balkenAnzeigen,
                             differenzHinweis: differenzHinweis || null,
+                            // Ohne andere aktive Rechnung rechnet die einfache Rechnung
+                            // alles ab; was fehlt, ist "nicht angefallen" statt "noch offen".
+                            // Gesperrt zaehlt nur das gespeicherte Kennzeichen.
+                            schliesstAuftragAb,
                         };
                     }
                 }

@@ -50,6 +50,7 @@ import { Select } from "../components/ui/select-custom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { RechnungstypInfo } from "../components/RechnungstypInfo";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import { PageLayout } from "../components/layout/PageLayout";
 
@@ -2597,7 +2598,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                             {/* Rechnungstyp-Auswahl */}
                             {(!abrechnungsverlauf || abrechnungsverlauf.restbetrag > 0) && (
                                 <div className="space-y-4">
-                                    <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Rechnungstyp wählen</h4>
+                                    <div className="flex items-center gap-1.5">
+                                        <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Rechnungstyp wählen</h4>
+                                        <RechnungstypInfo mitEinfacherRechnung={canCreateEinfacheRechnung(abrechnungsverlauf)} />
+                                    </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         {/* Teilrechnung – nur wenn mindestens 2 Leistungspositionen */}
                                         {(() => {

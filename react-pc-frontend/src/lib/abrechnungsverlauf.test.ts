@@ -3,6 +3,7 @@ import {
     canCreateEinfacheRechnung,
     istRechnungAmVorgaengerGesperrt,
     hatAktiveAuftragsbestaetigung,
+    schliesstEinfacheRechnungAuftragAb,
 } from './abrechnungsverlauf';
 import type { AbrechnungsverlaufDto, AbrechnungspositionDto, AusgangsGeschaeftsDokumentTyp } from '../types';
 
@@ -123,5 +124,40 @@ describe('istRechnungAmVorgaengerGesperrt', () => {
 
     it('behandelt fehlendes storniert-Flag als aktiv', () => {
         expect(istRechnungAmVorgaengerGesperrt([{ typ: 'AUFTRAGSBESTAETIGUNG' }])).toBe(true);
+    });
+});
+
+describe('schliesstEinfacheRechnungAuftragAb', () => {
+    it('ist true für eine offene einfache Rechnung ohne andere Rechnungen', () => {
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 0, false)).toBe(true);
+    });
+
+    it('ist false, sobald es am Basisdokument andere aktive Rechnungen gibt', () => {
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 1, false)).toBe(false);
+    });
+
+    it('ist false für gesperrte Bestandsrechnungen ohne gespeichertes Kennzeichen', () => {
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 0, true)).toBe(false);
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 0, true, false)).toBe(false);
+    });
+
+    it('ist true für gesperrte Rechnungen mit gespeichertem Kennzeichen (Nachdruck)', () => {
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 0, true, true)).toBe(true);
+    });
+
+    it('vertraut bei gesperrten Rechnungen dem gespeicherten Kennzeichen, auch wenn spaeter Rechnungen dazukamen', () => {
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 1, true, true)).toBe(true);
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 1, true, false)).toBe(false);
+    });
+
+    it('ignoriert das gespeicherte Kennzeichen bei offenen Rechnungen', () => {
+        expect(schliesstEinfacheRechnungAuftragAb('RECHNUNG', 0, false, false)).toBe(true);
+    });
+
+    it.each<AusgangsGeschaeftsDokumentTyp>([
+        'SCHLUSSRECHNUNG', 'ABSCHLAGSRECHNUNG', 'TEILRECHNUNG', 'ANGEBOT', 'AUFTRAGSBESTAETIGUNG',
+    ])('ist false für den Typ %s', (typ) => {
+        expect(schliesstEinfacheRechnungAuftragAb(typ, 0, false)).toBe(false);
+        expect(schliesstEinfacheRechnungAuftragAb(typ, 0, true, true)).toBe(false);
     });
 });
