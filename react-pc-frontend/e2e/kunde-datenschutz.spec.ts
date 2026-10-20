@@ -9,6 +9,8 @@ import { designPruefung } from './hilfen/design';
  * - Kunde mit Rechnungen: „Löschen…“ öffnet den Datenschutz-Dialog, die Sperre
  *   löscht das Nicht-Nötige, die Akte zeigt danach das Gesperrt-Band.
  * - Kunde ohne Unterlagen: Rückfrage, endgültig löschen, zurück zur Liste.
+ * - Gesperrter Kunde nach Fristende: „Anonymisieren…“ im Band, Bestätigung,
+ *   danach zeigt das Band „Anonymisiert am …“.
  *
  * /api komplett gestubbt, Admin angemeldet, nur Dummy-Daten.
  */
@@ -84,6 +86,48 @@ async function stubbeApi(page: Page, loeschbar: boolean): Promise<Mitschrift> {
     return mitschrift;
 }
 
+/** Gesperrter Kunde, Frist abgelaufen; nach dem POST anonymisiert. */
+function abgelaufeneAkte(anonymisiert: boolean) {
+    return {
+        ...akte(false, true),
+        name: anonymisiert ? 'Gelöschter Kunde 1007' : 'Max Mustermann',
+        strasse: anonymisiert ? '' : 'Musterweg 1',
+        plz: anonymisiert ? '' : '12345',
+        ort: anonymisiert ? '' : 'Musterstadt',
+        gesperrtAm: '2026-02-03T09:30:00',
+        aufbewahrenBis: '2025-12-31',
+        anonymisiertAm: anonymisiert ? '2026-10-20T09:15:00' : null,
+        loeschPruefung: { loeschbar: false, hindernisse: ['1 Projekt'], aufbewahrenBis: '2025-12-31', anonymisierbar: !anonymisiert },
+    };
+}
+
+async function stubbeAnonymisieren(page: Page): Promise<{ anonymisiert: number }> {
+    const mitschrift = { anonymisiert: 0 };
+    await page.route('**/api/**', (route) => {
+        const pfad = new URL(route.request().url()).pathname;
+        const methode = route.request().method();
+        if (pfad === '/api/auth/me') {
+            return json(route, {
+                id: 1, username: 'max.admin', displayName: 'Max Mustermann',
+                active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false,
+            });
+        }
+        if (pfad === '/api/notifications/summary') {
+            return json(route, { totalCount: 0, categories: [], recentItems: [] });
+        }
+        if (pfad === '/api/kunden' && methode === 'GET') {
+            return json(route, { kunden: [abgelaufeneAkte(mitschrift.anonymisiert > 0)], gesamt: 1 });
+        }
+        if (pfad === `/api/kunden/${KUNDE_ID}/anonymisieren` && methode === 'POST') {
+            mitschrift.anonymisiert++;
+            return json(route, abgelaufeneAkte(true));
+        }
+        if (pfad === `/api/kunden/${KUNDE_ID}`) return json(route, abgelaufeneAkte(mitschrift.anonymisiert > 0));
+        return json(route, []);
+    });
+    return mitschrift;
+}
+
 test.describe('Kunde löschen (Datenschutz, #264)', () => {
     test('Kunde mit Rechnungen wird gesperrt statt gelöscht', async ({ page }, testInfo) => {
         const mitschrift = await stubbeApi(page, false);
@@ -131,5 +175,32 @@ test.describe('Kunde löschen (Datenschutz, #264)', () => {
         await expect(page.getByRole('heading', { name: /Kundenübersicht/i })).toBeVisible();
         await expect(page.getByText('Keine Kunden gefunden.').first()).toBeVisible();
         expect(mitschrift.geloescht).toBe(1);
+    });
+
+    test('Gesperrter Kunde wird nach Fristende anonymisiert', async ({ page }, testInfo) => {
+        const mitschrift = await stubbeAnonymisieren(page);
+        await page.goto(`/kunden?kundeId=${KUNDE_ID}`);
+        const band = page.getByTestId('kunde-gesperrt-band');
+        await expect(band).toContainText('bis 31.12.2025 aufbewahrt, danach kann der Kunde anonymisiert werden');
+
+        await designPruefung(page, testInfo, 'kunde-gesperrt-band-anonymisierbar');
+        await band.getByRole('button', { name: /Anonymisieren…/ }).click();
+        const dialog = page.getByRole('dialog', { name: 'Kunde anonymisieren?' });
+        await expect(dialog).toContainText('1007 · Max Mustermann');
+        await expect(dialog).toContainText('Der Name wird zu „Gelöschter Kunde 1007“');
+
+        // Info-Button im Dialog: öffnet sich und wird nicht abgeschnitten.
+        await dialog.getByRole('button', { name: /Mehr zu/ }).click();
+        await expect(page.getByText(/Der Kunde ist in den Stammdaten nicht mehr zu erkennen/)).toBeInViewport();
+        await page.keyboard.press('Escape');
+
+        await designPruefung(page, testInfo, 'kunde-anonymisieren-dialog');
+        await dialog.getByRole('button', { name: /Endgültig anonymisieren/ }).click();
+
+        await expect(page.getByText('Kunde wurde anonymisiert.')).toBeVisible();
+        await expect(band).toContainText('Anonymisiert am 20.10.2026. Name und Anschrift wurden entfernt');
+        await expect(page.getByText('Gelöschter Kunde 1007').first()).toBeVisible();
+        await expect(band.getByRole('button', { name: /Anonymisieren…/ })).toHaveCount(0);
+        expect(mitschrift.anonymisiert).toBe(1);
     });
 });

@@ -110,6 +110,8 @@ export interface KundeDetail {
   gesperrtAm?: string | null;
   /** Bis zu diesem Tag (ISO-Date) werden die Unterlagen aufbewahrt, nur bei gesperrt. */
   aufbewahrenBis?: string | null;
+  /** Zeitpunkt der Anonymisierung (ISO-DateTime), null = nicht anonymisiert. */
+  anonymisiertAm?: string | null;
   /** Ob der Kunde direkt gelöscht werden darf oder gesperrt werden muss (nur in der Akte). */
   loeschPruefung?: KundeLoeschPruefung;
 }
@@ -118,8 +120,14 @@ export interface KundeLoeschPruefung {
   loeschbar: boolean;
   /** Fertige Klartexte wie „2 Projekte“, „3 Angebote/Rechnungen“. */
   hindernisse: string[];
-  /** Aufbewahrungsende bei einer Sperre (ISO-Date), null wenn löschbar. */
+  /**
+   * Aufbewahrungsende bei einer Sperre (ISO-Date), null wenn löschbar. Bei
+   * gesperrten Kunden frisch berechnet, kann also nach einer späteren
+   * Gutschrift über `KundeDetail.aufbewahrenBis` hinausgehen.
+   */
   aufbewahrenBis: string | null;
+  /** Gesperrt, noch nicht anonymisiert und die Frist ist abgelaufen. */
+  anonymisierbar?: boolean;
 }
 
 export interface LieferantStatistik {

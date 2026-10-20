@@ -46,6 +46,24 @@ public interface DokumentFreigabeRepository extends JpaRepository<DokumentFreiga
     List<DokumentFreigabe> findByQuelle(@Param("quellTyp") FreigabeQuellTyp quellTyp,
                                         @Param("ids") List<Long> ids);
 
+    /** Freigaben zu Geschäftsdokumenten dieser Projekte (Kunde anonymisieren). */
+    @Query("""
+            SELECT f FROM DokumentFreigabe f
+            WHERE f.quellTyp = org.example.kalkulationsprogramm.domain.FreigabeQuellTyp.PROJEKT
+              AND f.quellDokumentId IN (
+                  SELECT d.id FROM ProjektGeschaeftsdokument d WHERE d.projekt.id IN :projektIds)
+            """)
+    List<DokumentFreigabe> findFuerProjekte(@Param("projektIds") List<Long> projektIds);
+
+    /** Freigaben zu Geschäftsdokumenten dieser Anfragen (Kunde anonymisieren). */
+    @Query("""
+            SELECT f FROM DokumentFreigabe f
+            WHERE f.quellTyp = org.example.kalkulationsprogramm.domain.FreigabeQuellTyp.ANFRAGE
+              AND f.quellDokumentId IN (
+                  SELECT d.id FROM AnfrageGeschaeftsdokument d WHERE d.anfrage.id IN :anfrageIds)
+            """)
+    List<DokumentFreigabe> findFuerAnfragen(@Param("anfrageIds") List<Long> anfrageIds);
+
     /**
      * Liefert alle Freigaben, die seit dem angegebenen Zeitpunkt akzeptiert wurden,
      * neueste zuerst. Wird vom NotificationController genutzt.

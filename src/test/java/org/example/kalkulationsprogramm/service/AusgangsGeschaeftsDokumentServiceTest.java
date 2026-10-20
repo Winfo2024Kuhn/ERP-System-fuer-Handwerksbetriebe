@@ -651,6 +651,72 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(result.getBetreff()).isEqualTo("Testanfrage");
         }
 
+        @Test
+        @org.junit.jupiter.api.DisplayName("Gutschrift nach der Datenschutz-Sperre verlängert die Aufbewahrungsfrist des Kunden")
+        void gutschriftVerlaengertFristGesperrterKunde() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            Kunde kunde = new Kunde();
+            kunde.setId(7L);
+            kunde.setName("Max Mustermann");
+            kunde.setGesperrtAm(java.time.LocalDateTime.of(2026, 1, 5, 9, 0));
+            kunde.setAufbewahrenBis(LocalDate.of(2033, 12, 31));
+            when(kundeRepository.findById(7L)).thenReturn(Optional.of(kunde));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT);
+            dto.setKundeId(7L);
+            dto.setBetreff("Gutschrift");
+            dto.setDatum(LocalDate.of(2027, 3, 1));
+
+            service.erstellen(dto);
+
+            // Gutschrift ist Buchungsbeleg: 2027 + 8 Jahre
+            assertThat(kunde.getAufbewahrenBis()).isEqualTo(LocalDate.of(2035, 12, 31));
+            verify(kundeRepository).save(kunde);
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Anonymisierter Kunde: auch Gutschrift wird abgelehnt (409), nichts gespeichert")
+        void gutschriftFuerAnonymisiertenKundenAbgelehnt() {
+            Kunde kunde = new Kunde();
+            kunde.setId(7L);
+            kunde.setGesperrtAm(java.time.LocalDateTime.of(2016, 1, 5, 9, 0));
+            kunde.setAnonymisiertAm(java.time.LocalDateTime.of(2026, 1, 5, 9, 0));
+            when(kundeRepository.findById(7L)).thenReturn(Optional.of(kunde));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT);
+            dto.setKundeId(7L);
+
+            assertThatThrownBy(() -> service.erstellen(dto))
+                    .isInstanceOfSatisfying(org.springframework.web.server.ResponseStatusException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(org.springframework.http.HttpStatus.CONFLICT));
+            verify(dokumentRepository, never()).save(any());
+        }
+
+        @Test
+        @org.junit.jupiter.api.DisplayName("Gutschrift mit früherem Fristende lässt das Fristende des gesperrten Kunden stehen")
+        void fruehereGutschriftVerkuerztFristNicht() {
+            mockCounterForNummer();
+            when(dokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            Kunde kunde = new Kunde();
+            kunde.setId(7L);
+            kunde.setGesperrtAm(java.time.LocalDateTime.of(2026, 1, 5, 9, 0));
+            kunde.setAufbewahrenBis(LocalDate.of(2034, 12, 31));
+            when(kundeRepository.findById(7L)).thenReturn(Optional.of(kunde));
+
+            AusgangsGeschaeftsDokumentErstellenDto dto = new AusgangsGeschaeftsDokumentErstellenDto();
+            dto.setTyp(AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT);
+            dto.setKundeId(7L);
+            dto.setDatum(LocalDate.of(2024, 3, 1));
+
+            service.erstellen(dto);
+
+            assertThat(kunde.getAufbewahrenBis()).isEqualTo(LocalDate.of(2034, 12, 31));
+            verify(kundeRepository, never()).save(any(Kunde.class));
+        }
+
         @org.junit.jupiter.params.ParameterizedTest
         @org.junit.jupiter.params.provider.CsvSource({
                 "ANGEBOT, AG",
@@ -1586,6 +1652,29 @@ class AusgangsGeschaeftsDokumentServiceTest {
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Storniert");
         }
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("Rechnung eines anonymisierten Kunden kann nicht mehr storniert werden (409)")
+    void stornoFuerAnonymisiertenKundenAbgelehnt() {
+        Kunde kunde = new Kunde();
+        kunde.setGesperrtAm(java.time.LocalDateTime.of(2016, 1, 5, 9, 0));
+        kunde.setAnonymisiertAm(java.time.LocalDateTime.of(2026, 1, 5, 9, 0));
+        AusgangsGeschaeftsDokument rechnung = new AusgangsGeschaeftsDokument();
+        rechnung.setId(1L);
+        rechnung.setTyp(AusgangsGeschaeftsDokumentTyp.RECHNUNG);
+        rechnung.setGebucht(true);
+        // Altbeleg: Kunde hängt nur über das Projekt dran.
+        Projekt projekt = new Projekt();
+        projekt.setKundenId(kunde);
+        rechnung.setProjekt(projekt);
+        when(dokumentRepository.findById(1L)).thenReturn(Optional.of(rechnung));
+
+        assertThatThrownBy(() -> service.stornierenMitHinweisen(1L, null, null, "Fehler"))
+                .isInstanceOfSatisfying(org.springframework.web.server.ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(org.springframework.http.HttpStatus.CONFLICT));
+        assertThat(rechnung.isStorniert()).isFalse();
+        verify(dokumentRepository, never()).save(any());
     }
 
     @Test

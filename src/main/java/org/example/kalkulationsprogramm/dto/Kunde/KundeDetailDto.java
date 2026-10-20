@@ -33,5 +33,7 @@ public class KundeDetailDto {
     private java.time.LocalDateTime gesperrtAm;
     /** Nur bei gesperrten Kunden: Ende der Aufbewahrungsfrist. */
     private java.time.LocalDate aufbewahrenBis;
+    /** Nur bei anonymisierten Kunden: Zeitpunkt der Anonymisierung. */
+    private java.time.LocalDateTime anonymisiertAm;
     private KundeLoeschPruefungDto loeschPruefung;
 }

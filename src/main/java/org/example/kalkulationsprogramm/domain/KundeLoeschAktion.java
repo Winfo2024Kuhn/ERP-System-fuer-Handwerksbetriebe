@@ -5,5 +5,7 @@ public enum KundeLoeschAktion {
     /** Kunde ohne aufbewahrungspflichtige Unterlagen wurde komplett gelöscht. */
     GELOESCHT,
     /** Nicht nötige Daten gelöscht, Kunde bis zum Fristende gesperrt. */
-    GESPERRT
+    GESPERRT,
+    /** Gesperrter Kunde nach Fristende anonymisiert: Name und Anschrift entfernt. */
+    ANONYMISIERT
 }
