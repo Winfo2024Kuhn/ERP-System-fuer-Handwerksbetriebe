@@ -24,6 +24,7 @@ import { hatAktivesBasisdokument } from '../lib/basisdokumente';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { RechnungstypInfo } from './RechnungstypInfo';
 import type {
     AusgangsGeschaeftsDokument,
     AusgangsGeschaeftsDokumentTyp,
@@ -785,7 +786,11 @@ export function DokumentHierarchie({
 
                         {/* Rechnungstyp-Auswahl */}
                         <div className="space-y-2">
-                            <Label className="text-sm font-semibold text-slate-700">Rechnungstyp</Label>
+                            <div className="flex items-center gap-1.5">
+                                <Label className="text-sm font-semibold text-slate-700">Rechnungstyp</Label>
+                                {/* Hier gibt es keine einfache Rechnung zur Auswahl, siehe Optionen unten. */}
+                                <RechnungstypInfo mitEinfacherRechnung={false} />
+                            </div>
                             <div className="grid grid-cols-3 gap-2">
                                 {([
                                     { value: 'ABSCHLAGSRECHNUNG' as const, label: 'Abschlagsrechnung', desc: 'Pauschaler Abschlag' },

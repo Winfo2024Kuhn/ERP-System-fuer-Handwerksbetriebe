@@ -383,3 +383,62 @@ describe('E-Mail-Versand eines Angebots', () => {
         expect(aufrufeAn('/api/email/template')).toHaveLength(0);
     });
 });
+
+describe('Buchen einer einfachen Rechnung, die den Auftrag abschliesst', () => {
+    // Abrechnungsverlauf am Angebot 10: nur die Rechnung selbst, keine Vorrechnungen.
+    const VERLAUF = {
+        basisdokumentId: 10, basisdokumentNummer: 'AN-2026-0010', basisdokumentTyp: 'ANGEBOT',
+        basisdokumentBetragNetto: 1000, bereitsAbgerechnet: 1000, restbetrag: 0,
+        positionen: [{ id: 1, dokumentNummer: 'RE-2026-0001', typ: 'RECHNUNG', datum: HEUTE_ISO, betragNetto: 1000, storniert: false }],
+        basisdokumentPositionenJson: JSON.stringify({ blocks: [], globalRabatt: 0 }),
+    };
+
+    function starteMitVerlauf(positionenJson: string) {
+        const basis = mockFetch({ dokument: { vorgaengerId: 10, positionenJson } });
+        fetchMock = vi.fn((url: string, init?: RequestInit) => (
+            url === '/api/ausgangs-dokumente/10/abrechnungsverlauf' ? jsonAntwort(VERLAUF) : basis(url, init)
+        )) as unknown as ReturnType<typeof mockFetch>;
+        global.fetch = fetchMock as unknown as typeof fetch;
+        return render(
+            <MemoryRouter initialEntries={['/dokumente/1']}>
+                <ConfirmProvider>
+                    <ToastProvider>
+                        <DocumentEditor dokumentId={1} onClose={() => { }} />
+                    </ToastProvider>
+                </ConfirmProvider>
+            </MemoryRouter>
+        );
+    }
+
+    async function exportierenUndBuchen(user: ReturnType<typeof userEvent.setup>) {
+        await warteAufEditor();
+        await waitFor(() => expect(aufrufeAn('/api/ausgangs-dokumente/10/abrechnungsverlauf').length).toBeGreaterThan(0));
+        await user.click(screen.getByRole('button', { name: 'PDF', exact: true }));
+        await user.click(await screen.findByText('Standard PDF-Datei herunterladen'));
+        const warnung = await screen.findByRole('dialog', { name: 'Dokument exportieren?' });
+        await user.click(within(warnung).getByRole('button', { name: 'Exportieren & Buchen' }));
+        await waitFor(() => expect(aufrufeAn('/api/ausgangs-dokumente/1/buchen')).toHaveLength(1));
+    }
+
+    function puts(): Array<Record<string, unknown>> {
+        return aufrufeAn('/api/ausgangs-dokumente/1')
+            .filter(init => init?.method === 'PUT')
+            .map(init => JSON.parse(init!.body as string));
+    }
+
+    it('traegt das fehlende Kennzeichen vor dem Buchen nach, auch ohne Aenderung', async () => {
+        const user = userEvent.setup();
+        starteMitVerlauf(JSON.stringify({ blocks: [], globalRabatt: 0 }));
+        await exportierenUndBuchen(user);
+
+        expect(puts().length).toBeGreaterThan(0);
+        expect(JSON.parse(puts().at(-1)!.positionenJson as string).schliesstAuftragAb).toBe(true);
+        const letzterPut = fetchMock.mock.calls.map((c, i) => [c, i] as const)
+            .filter(([c]) => c[0] === '/api/ausgangs-dokumente/1' && (c[1] as RequestInit | undefined)?.method === 'PUT')
+            .at(-1)![1];
+        expect(letzterPut).toBeLessThan(index('/api/ausgangs-dokumente/1/buchen'));
+        // Export speichert schon selbst vor dem Buchen; das Nachtragen darf
+        // kein zweites Speichern ausloesen.
+        expect(puts()).toHaveLength(1);
+    });
+});
