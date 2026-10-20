@@ -63,6 +63,10 @@ public class KundeDuplikatService {
         boolean harterTreffer = false;
 
         for (Kunde kunde : kandidaten) {
+            if (kunde.istGesperrt()) {
+                // Gesperrt = Kunde hat Löschung verlangt; als „Diesen verwenden“ taugt er nicht mehr.
+                continue;
+            }
             EnumSet<KundeDuplikatGrund> gruende = ermittleGruende(
                     kunde, emailNorm, telDigits, mobilDigits, nameNorm, plzNorm, strasseNorm);
             if (gruende.isEmpty()) {

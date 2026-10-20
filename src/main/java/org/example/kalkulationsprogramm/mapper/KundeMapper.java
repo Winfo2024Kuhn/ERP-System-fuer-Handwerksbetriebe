@@ -25,6 +25,7 @@ public class KundeMapper {
         dto.setKundenEmails(kunde.getKundenEmails());
         dto.setZahlungsziel(kunde.getZahlungsziel());
         dto.setHatProjekte(kunde.getProjekts() != null && !kunde.getProjekts().isEmpty());
+        dto.setGesperrt(kunde.istGesperrt());
         return dto;
     }
 

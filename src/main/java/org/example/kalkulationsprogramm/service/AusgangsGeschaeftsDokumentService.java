@@ -67,6 +67,12 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class AusgangsGeschaeftsDokumentService {
 
+    /** Belegarten, die auch bei aus Datenschutzgründen gesperrten Kunden angelegt werden dürfen. */
+    private static final java.util.Set<AusgangsGeschaeftsDokumentTyp> ERLAUBT_BEI_GESPERRTEM_KUNDEN =
+            java.util.EnumSet.of(AusgangsGeschaeftsDokumentTyp.STORNO, AusgangsGeschaeftsDokumentTyp.GUTSCHRIFT,
+                    AusgangsGeschaeftsDokumentTyp.ZAHLUNGSERINNERUNG, AusgangsGeschaeftsDokumentTyp.ERSTE_MAHNUNG,
+                    AusgangsGeschaeftsDokumentTyp.ZWEITE_MAHNUNG);
+
     private final Path dokumentenSpeicherplatz;
 
     private final AusgangsGeschaeftsDokumentRepository dokumentRepository;
@@ -298,6 +304,13 @@ public class AusgangsGeschaeftsDokumentService {
             if (geerbt != null) {
                 dokument.setRechnungsadresseOverride(geerbt);
             }
+        }
+
+        // Gesperrter Kunde (Datenschutz): keine neuen Angebote/Rechnungen. Erlaubt bleibt, was sich
+        // auf aufbewahrte Belege bezieht: Storno und Gutschrift berichtigen sie, Mahnungen setzen
+        // offene Forderungen durch (Art. 18 Abs. 2 DSGVO).
+        if (!ERLAUBT_BEI_GESPERRTEM_KUNDEN.contains(dokument.getTyp())) {
+            KundeDatenschutzService.pruefeNichtGesperrt(dokument.getKunde());
         }
 
         // Zahlungsziel aus Kunde übernehmen falls nicht explizit gesetzt

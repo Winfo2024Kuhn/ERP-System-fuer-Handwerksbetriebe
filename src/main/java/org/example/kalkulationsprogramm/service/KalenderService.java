@@ -261,6 +261,7 @@ public class KalenderService {
 
         eintrag.setProjekt(daten.projektId() != null ? projektRepository.findById(daten.projektId()).orElse(null) : null);
         eintrag.setKunde(daten.kundeId() != null ? kundeRepository.findById(daten.kundeId()).orElse(null) : null);
+        KundeDatenschutzService.pruefeNichtGesperrt(eintrag.getKunde());
         eintrag.setLieferant(daten.lieferantId() != null
                 ? lieferantenRepository.findById(daten.lieferantId()).orElse(null)
                 : null);

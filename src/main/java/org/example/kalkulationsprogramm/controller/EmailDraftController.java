@@ -28,20 +28,22 @@ public class EmailDraftController {
     private final PostfachSichtbarkeitService sichtbarkeitService;
 
     /**
+     * Entwürfe sind persönlich: Jeder sieht nur seine eigenen (und alte ohne Besitzer), Admins alle
+     * ({@link EmailDraftService.Leser}). Zusätzlich gilt:
      * Entwürfe zu einer Antwort oder Weiterleitung enthalten meist den zitierten Text der Mail.
      * Wer die Mail nicht öffnen darf, sieht auch den Entwurf nicht. Ebenso Entwürfe einer neuen
      * Mail aus einem Postfach, das er nicht sieht (z. B. chef@). Entwürfe ohne Bezug bleiben frei.
      */
     @GetMapping
     public List<EmailDraftDto> getAllDrafts(Authentication authentication) {
-        List<EmailDraftDto> drafts = service.list();
+        List<EmailDraftDto> drafts = service.list(service.leserFuer(authentication));
         Sperren sperren = sperren(drafts, authentication);
         return sperren.keine() ? drafts : drafts.stream().filter(d -> !sperren.betrifft(d)).toList();
     }
 
     @GetMapping("/count")
     public Map<String, Long> getDraftCount(Authentication authentication) {
-        List<EmailDraftDto> drafts = service.list();
+        List<EmailDraftDto> drafts = service.list(service.leserFuer(authentication));
         Sperren sperren = sperren(drafts, authentication);
         long anzahl = sperren.keine() ? drafts.size() : drafts.stream().filter(d -> !sperren.betrifft(d)).count();
         return Map.of("count", anzahl);
@@ -49,7 +51,7 @@ public class EmailDraftController {
 
     @GetMapping("/{id}")
     public EmailDraftDto getDraft(@PathVariable Long id, Authentication authentication) {
-        return pruefeZugriff(service.get(id), authentication);
+        return pruefeZugriff(service.get(id, service.leserFuer(authentication)), authentication);
     }
 
     /** Entwurf nur, wenn der Benutzer Mail und Postfach dazu sieht – sonst 404 wie „gibt es nicht“. */
@@ -95,33 +97,39 @@ public class EmailDraftController {
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    public EmailDraftDto createDraft(@RequestBody EmailDraftDto draft) { return service.save(null, draft, null); }
+    public EmailDraftDto createDraft(@RequestBody EmailDraftDto draft, Authentication authentication) {
+        return service.save(null, draft, null, service.leserFuer(authentication));
+    }
 
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public EmailDraftDto updateDraft(@PathVariable Long id, @RequestBody EmailDraftDto draft,
             Authentication authentication) {
-        pruefeZugriff(service.get(id), authentication);
-        return service.save(id, draft, null);
+        EmailDraftService.Leser leser = service.leserFuer(authentication);
+        pruefeZugriff(service.get(id, leser), authentication);
+        return service.save(id, draft, null, leser);
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public EmailDraftDto createWithAttachments(@RequestPart("dto") EmailDraftDto draft,
-            @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments) {
-        return service.save(null, draft, attachments == null ? List.of() : attachments);
+            @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
+            Authentication authentication) {
+        return service.save(null, draft, attachments == null ? List.of() : attachments,
+                service.leserFuer(authentication));
     }
 
     @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public EmailDraftDto updateWithAttachments(@PathVariable Long id, @RequestPart("dto") EmailDraftDto draft,
             @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
             Authentication authentication) {
-        pruefeZugriff(service.get(id), authentication);
-        return service.save(id, draft, attachments == null ? List.of() : attachments);
+        EmailDraftService.Leser leser = service.leserFuer(authentication);
+        pruefeZugriff(service.get(id, leser), authentication);
+        return service.save(id, draft, attachments == null ? List.of() : attachments, leser);
     }
 
     @GetMapping("/{id}/attachments/{attachmentId}")
     public ResponseEntity<byte[]> download(@PathVariable Long id, @PathVariable Long attachmentId,
             Authentication authentication) {
-        pruefeZugriff(service.get(id), authentication);
+        pruefeZugriff(service.get(id, service.leserFuer(authentication)), authentication);
         var file = service.download(id, attachmentId);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
@@ -133,8 +141,9 @@ public class EmailDraftController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteDraft(@PathVariable Long id, Authentication authentication) {
-        pruefeZugriff(service.get(id), authentication);
-        service.delete(id);
+        EmailDraftService.Leser leser = service.leserFuer(authentication);
+        pruefeZugriff(service.get(id, leser), authentication);
+        service.delete(id, leser);
         return ResponseEntity.ok().build();
     }
     @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)

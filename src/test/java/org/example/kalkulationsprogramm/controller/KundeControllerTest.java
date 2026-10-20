@@ -72,6 +72,9 @@ class KundeControllerTest {
     @MockBean
     private KundeNotizRepository kundeNotizRepository;
 
+    @MockBean
+    private org.example.kalkulationsprogramm.service.KundeDatenschutzService kundeDatenschutzService;
+
     @BeforeEach
     void setupDuplikatService() {
         // Default: keine Duplikate, damit der "Happy Path" funktioniert.

@@ -80,6 +80,7 @@ class UnifiedEmailControllerTest {
     @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
     @MockBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
     @MockBean private EmailRepository emailRepository;
+    @MockBean private org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
     @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
     @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
@@ -785,7 +786,7 @@ class UnifiedEmailControllerTest {
                     makeEntry(2L, "Re: Anfrage Sanierung Bad", "OUT")
             ));
 
-            given(emailThreadService.loadThreadFor(eq(2L), any())).willReturn(dto);
+            given(emailThreadService.loadThreadFor(eq(2L), any(), any())).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/2/thread"))
                     .andExpect(status().isOk())
@@ -807,7 +808,7 @@ class UnifiedEmailControllerTest {
             dto.setFocusedEmailId(5L);
             dto.setEmails(List.of(makeEntry(5L, "Einzelnachricht", "IN")));
 
-            given(emailThreadService.loadThreadFor(eq(5L), any())).willReturn(dto);
+            given(emailThreadService.loadThreadFor(eq(5L), any(), any())).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/5/thread"))
                     .andExpect(status().isOk())
@@ -819,7 +820,7 @@ class UnifiedEmailControllerTest {
         @Test
         @DisplayName("Nicht existierende E-Mail gibt 404")
         void getThread_notFound() throws Exception {
-            given(emailThreadService.loadThreadFor(eq(999L), any()))
+            given(emailThreadService.loadThreadFor(eq(999L), any(), any()))
                     .willThrow(new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.NOT_FOUND, "Email not found: 999"));
 
@@ -845,7 +846,7 @@ class UnifiedEmailControllerTest {
             dto.setFocusedEmailId(1L);
             dto.setEmails(List.of(entry));
 
-            given(emailThreadService.loadThreadFor(eq(1L), any())).willReturn(dto);
+            given(emailThreadService.loadThreadFor(eq(1L), any(), any())).willReturn(dto);
 
             mockMvc.perform(get("/api/emails/1/thread"))
                     .andExpect(status().isOk())
@@ -857,7 +858,7 @@ class UnifiedEmailControllerTest {
         @Test
         @DisplayName("Ungültige ID (negativ) gibt 404")
         void getThread_negativeId() throws Exception {
-            given(emailThreadService.loadThreadFor(eq(-1L), any()))
+            given(emailThreadService.loadThreadFor(eq(-1L), any(), any()))
                     .willThrow(new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.NOT_FOUND, "Email not found: -1"));
 

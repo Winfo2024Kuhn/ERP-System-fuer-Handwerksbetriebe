@@ -515,6 +515,11 @@ public class AnfrageService {
             // wurde, einfach fortfahren.
             return;
         }
+        // Neue Anfrage oder Wechsel auf einen gesperrten Kunden ablehnen; bestehende,
+        // aufbewahrte Anfragen dieses Kunden bleiben bearbeitbar.
+        if (anfrage.getKunde() == null || !kunde.getId().equals(anfrage.getKunde().getId())) {
+            KundeDatenschutzService.pruefeNichtGesperrt(kunde);
+        }
         // Setze die Kunde-Beziehung auf dem Anfrage (foreign key)
         anfrage.setKunde(kunde);
 

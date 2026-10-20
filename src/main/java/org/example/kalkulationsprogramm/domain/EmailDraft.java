@@ -9,9 +9,12 @@ import jakarta.persistence.OrderBy;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -77,6 +80,14 @@ public class EmailDraft {
     /** Sammel-Mail: jeder Empfänger bekommt eine eigene Mail. */
     @Column(nullable = false)
     private boolean einzelversand;
+
+    /**
+     * Wer den Entwurf angelegt hat. Nur er (und Admins) sieht ihn. {@code null} = alter Entwurf
+     * von vor Issue #271 oder Besitzer gelöscht: für alle sichtbar.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "besitzer_id")
+    private FrontendUserProfile besitzer;
 
     @OneToMany(mappedBy = "draft", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id ASC")

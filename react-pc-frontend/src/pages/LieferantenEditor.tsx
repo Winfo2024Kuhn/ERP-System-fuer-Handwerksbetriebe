@@ -18,6 +18,7 @@ import { DetailLayout } from "../components/DetailLayout";
 import { PageLayout } from "../components/layout/PageLayout";
 import { Select } from "../components/ui/select-custom";
 import { useToast } from '../components/ui/toast';
+import { InfoAbschnitt, InfoButton } from "../components/ui/info-button";
 import { KostenstelleSelectModal } from "../components/KostenstelleSelectModal";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { PhoneInput } from "../components/PhoneInput";
@@ -27,13 +28,6 @@ import { KontaktAnrufeTab } from "../features/telefon/KontaktAnrufeTab";
 import { WeitereRufnummern } from "../features/telefon/WeitereRufnummern";
 import { useKontaktAnrufAnzahl } from "../features/telefon/useKontaktAnrufAnzahl";
 import { useTelefonBerechtigung } from "../features/telefon/useTelefonBerechtigung";
-
-const LIEFERANT_TYPES = [
-    { value: "STAHL", label: "Stahl" },
-    { value: "ALUMINIUM", label: "Aluminium" },
-    { value: "LACKIERER", label: "Lackierer" },
-    { value: "SONSTIGER", label: "Sonstiger" },
-];
 
 const PAGE_SIZE = 12;
 
@@ -522,7 +516,7 @@ export default function LieferantenEditor() {
     const [filters, setFilters] = useState({
         q: "",
         name: "",
-        typ: "",
+        rolle: "",
         ort: "",
         email: "",
     });
@@ -601,7 +595,7 @@ export default function LieferantenEditor() {
             params.set("size", String(PAGE_SIZE));
             if (filters.q) params.set("q", filters.q);
             if (filters.name) params.set("name", filters.name);
-            if (filters.typ) params.set("typ", filters.typ);
+            if (filters.rolle) params.set("rolle", filters.rolle);
             if (filters.ort) params.set("ort", filters.ort);
             if (filters.email) params.set("email", filters.email);
 
@@ -645,7 +639,7 @@ export default function LieferantenEditor() {
     };
 
     const handleResetFilters = () => {
-        setFilters({ q: "", name: "", typ: "", ort: "", email: "" });
+        setFilters({ q: "", name: "", rolle: "", ort: "", email: "" });
         setPage(0);
     };
 
@@ -841,16 +835,27 @@ export default function LieferantenEditor() {
                         <input type="text" className="filter-input w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Lieferantenname" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Typ</label>
+                        <div className="flex items-center gap-1">
+                            <label className="block text-sm font-medium text-gray-700">Rolle</label>
+                            <InfoButton titel="Rolle">
+                                <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                    <p>Jeder Lieferant hat eine oder mehrere Rollen, z. B. Stahlhandel oder Verzinkerei.</p>
+                                </InfoAbschnitt>
+                                <InfoAbschnitt titel="Was bewirkt das?">
+                                    <p>Der Filter zeigt nur Lieferanten mit dieser Rolle. Die Rollen steuern auch, welche Lieferanten beim Eintragen von Artikelpreisen vorgeschlagen werden.</p>
+                                </InfoAbschnitt>
+                            </InfoButton>
+                        </div>
                         <Select
-                            value={filters.typ}
-                            onChange={(value) => handleFilterChange("typ", value)}
+                            value={filters.rolle}
+                            onChange={(value) => handleFilterChange("rolle", value)}
                             options={[
-                                { value: "", label: "Alle Typen" },
-                                ...LIEFERANT_TYPES
+                                { value: "", label: "Alle Rollen" },
+                                ...LIEFERANT_ROLLEN
                             ]}
-                            placeholder="Typ filtern"
+                            placeholder="Rolle filtern"
                             className="mt-1"
+                            aria-label="Rolle"
                         />
                     </div>
                     <div>
@@ -1025,13 +1030,17 @@ function mitInfoAdresse(vorhandene: string[] | undefined, neueAdresse: string): 
     return liste;
 }
 
-function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; onClose: () => void; onSave: (l: Lieferant) => void }) {
+export function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; onClose: () => void; onSave: (l: Lieferant) => void }) {
     const [formData, setFormData] = useState<Lieferant>({ ...lieferant });
     const [newEmail, setNewEmail] = useState("");
     const [showKostenstelleModal, setShowKostenstelleModal] = useState(false);
+    const [nameFehler, setNameFehler] = useState<string | null>(null);
+    const nameRef = useRef<HTMLInputElement>(null);
+    const toast = useToast();
 
     const handleChange = (field: keyof Lieferant, value: Lieferant[keyof Lieferant]) => {
         setFormData(prev => ({ ...prev, [field]: value }));
+        if (field === "lieferantenname" && nameFehler) setNameFehler(null);
     };
 
     const addEmail = () => {
@@ -1065,10 +1074,17 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                             <Label htmlFor="lieferant-name">Name *</Label>
                             <Input
                                 id="lieferant-name"
+                                ref={nameRef}
                                 value={formData.lieferantenname || ""}
                                 onChange={(e) => handleChange("lieferantenname", e.target.value)}
                                 required
+                                aria-invalid={nameFehler ? true : undefined}
+                                aria-describedby={nameFehler ? "lieferant-name-fehler" : undefined}
+                                className={cn(nameFehler && "border-red-500 focus-visible:ring-red-500")}
                             />
+                            {nameFehler && (
+                                <p id="lieferant-name-fehler" className="text-sm text-red-600">{nameFehler}</p>
+                            )}
                         </div>
                         <div className="space-y-1.5">
                             <Label htmlFor="lieferant-alias">Zweiter Name (optional)</Label>
@@ -1259,6 +1275,15 @@ function LieferantModal({ lieferant, onClose, onSave }: { lieferant: Lieferant; 
                 <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 rounded-b-xl">
                     <Button variant="ghost" onClick={onClose}>Abbrechen</Button>
                     <Button onClick={() => {
+                        // Ohne Namen lässt sich der Lieferant später nicht wiederfinden –
+                        // gar nicht erst ans Backend schicken.
+                        if (!formData.lieferantenname?.trim()) {
+                            const meldung = "Bitte einen Namen für den Lieferanten eingeben.";
+                            setNameFehler(meldung);
+                            toast.error(meldung);
+                            nameRef.current?.focus();
+                            return;
+                        }
                         // Wenn noch Text im E-Mail-Feld steht, diesen automatisch hinzufügen
                         const finalData = {
                             ...formData,

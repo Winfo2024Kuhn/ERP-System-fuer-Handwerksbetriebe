@@ -143,6 +143,9 @@ public class SecurityConfig {
                 .addFilterBefore(new SitzungsRechteFilter(frontendUserDetailsService), AuthorizationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/zeiterfassung", "/zeiterfassung/**").permitAll()
+                    // Kunden löschen bzw. aus Datenschutzgründen sperren: nur Admins (Issue #264).
+                    .requestMatchers(HttpMethod.DELETE, "/api/kunden/*").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.POST, "/api/kunden/*/datenschutz-sperre").hasRole("ADMIN")
                     .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                     .authenticationEntryPoint((request, response, exception) -> writeJson(response, 401, Map.of("error", "Anmeldung erforderlich.")))
@@ -265,6 +268,10 @@ public class SecurityConfig {
                 // weil der Dokument-Editor die Vorlagen beim Erstellen von Angeboten und Rechnungen lädt.
                 // Die Dokumentnummer vergibt das System beim Erstellen eines Dokuments – bleibt offen.
                 .requestMatchers(HttpMethod.POST, "/api/formulare/dokumentnummer").authenticated()
+                // Mailtexte für Dokumente gelten für alle künftigen Mails: lesen alle, ändern nur Admins (Issue #271).
+                .requestMatchers(HttpMethod.POST, "/api/email-textvorlagen", "/api/email-textvorlagen/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/email-textvorlagen", "/api/email-textvorlagen/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/email-textvorlagen", "/api/email-textvorlagen/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/formulare/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/formulare/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/formulare/**").hasRole("ADMIN")

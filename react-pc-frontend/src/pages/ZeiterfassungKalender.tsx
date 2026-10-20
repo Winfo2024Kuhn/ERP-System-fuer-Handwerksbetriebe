@@ -16,6 +16,7 @@ import { leseFehlermeldung } from '../lib/apiFehler';
 import { anspruchHinweis, formatUrlaubstage, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubstage';
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button';
 import { useMonatsabschlussBerechtigung } from '../features/monatsabschluss/useMonatsabschlussBerechtigung';
+import { BuchungVerlaufDialog } from '../features/zeiterfassung/BuchungVerlaufDialog';
 
 // Types
 interface Mitarbeiter {
@@ -424,7 +425,7 @@ export default function ZeiterfassungKalender() {
         if (!selectionStart || !selectionEnd || !kalenderData) return 0;
         let count = 0;
         for (const tag of kalenderData.tage) {
-            if (isInSelection(tag.datum) && !tag.istFeiertag && tag.wochentag < 6) {
+            if (isInSelection(tag.datum) && !tag.istFeiertag && tag.sollStunden > 0) {
                 count++;
             }
         }
@@ -462,12 +463,16 @@ export default function ZeiterfassungKalender() {
         setSelectionEnd(null);
     };
 
-    /** Buchbare Tage im markierten Zeitraum: Arbeitstage mit Soll, keine Feiertage, kein Wochenende. */
+    /**
+     * Buchbare Tage im markierten Zeitraum: alle Tage mit Soll-Stunden, keine Feiertage.
+     * Maßgeblich ist allein das Soll aus dem Arbeitszeitmodell – ein Samstag mit Soll
+     * (z. B. Samstagsdienst) wird mitgebucht, ein freier Samstag oder Sonntag nicht.
+     */
     const buchbareTageDerAuswahl = (): string[] => {
         if (!kalenderData) return [];
         if (selectionStart && selectionEnd) {
             return kalenderData.tage
-                .filter(tag => isInSelection(tag.datum) && !tag.istFeiertag && tag.wochentag < 6 && tag.sollStunden > 0)
+                .filter(tag => isInSelection(tag.datum) && !tag.istFeiertag && tag.sollStunden > 0)
                 .map(tag => tag.datum);
         }
         return contextMenu ? [contextMenu.tag.datum] : [];
@@ -542,8 +547,16 @@ export default function ZeiterfassungKalender() {
                     <h1 className="text-3xl font-bold text-slate-900">
                         ZEITERFASSUNG KALENDER
                     </h1>
-                    <p className="text-slate-500 mt-1">
+                    <p className="text-slate-500 mt-1 flex items-center gap-1">
                         Doppelklick auf einen Tag, um Zeiten zu bearbeiten
+                        <InfoButton titel="Tipps zur Bedienung">
+                            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                <p>Du kannst mehrere Tage auf einmal markieren: Mit gedrückter Maustaste über die Tage ziehen – oder den ersten Tag anklicken und den letzten mit gedrückter Umschalttaste anklicken.</p>
+                            </InfoAbschnitt>
+                            <InfoAbschnitt titel="Was bewirkt das?">
+                                <p>Rechtsklick auf einen Tag oder die Markierung bucht Urlaub, Krankheit, Fortbildung oder Zeitausgleich für alle markierten Arbeitstage. Tage ohne Soll-Stunden (z. B. freie Samstage, Feiertage) werden übersprungen.</p>
+                            </InfoAbschnitt>
+                        </InfoButton>
                     </p>
                 </div>
             </div>
@@ -1164,6 +1177,19 @@ export default function ZeiterfassungKalender() {
 // DAY EDITOR MODAL COMPONENT
 // =========================================================================
 
+const ABWESENHEIT_LABEL = {
+    URLAUB: 'Urlaub',
+    KRANKHEIT: 'Krankheit',
+    FORTBILDUNG: 'Fortbildung',
+    ZEITAUSGLEICH: 'Zeitausgleich',
+} as const;
+
+const ENDE_VOR_BEGINN_MELDUNG = 'Bei einer Buchung liegt das Ende vor dem Beginn. Buchungen über Mitternacht bitte auf zwei Tage aufteilen.';
+
+function istAbwesenheitTyp(typ: Buchung['typ']): boolean {
+    return !!typ && typ !== 'PAUSE';
+}
+
 let nextTempBookingCounter = 0;
 function getNextTempBookingId(): number {
     nextTempBookingCounter += 1;
@@ -1427,6 +1453,7 @@ function DayEditorModal({
     const [projektModalForBuchungId, setProjektModalForBuchungId] = useState<number | null>(null);
     const [showUrlaubModal, setShowUrlaubModal] = useState(false);
     const [showZeitausgleichModal, setShowZeitausgleichModal] = useState(false);
+    const [verlaufBuchung, setVerlaufBuchung] = useState<{ id: number; beschreibung: string } | null>(null);
 
     const datumFormatted = new Date(tag.datum).toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -1461,8 +1488,9 @@ function DayEditorModal({
                 if (clipboard) {
                     const newBooking: Buchung = {
                         id: getNextTempBookingId(),
-                        projektId: clipboard.projektId || (projekte.length > 0 ? projekte[0].id : 0),
-                        arbeitsgangId: clipboard.arbeitsgangId || (arbeitsgaenge.length > 0 ? arbeitsgaenge[0].id : 0),
+                        // Nur übernehmen, was kopiert wurde – nie stillschweigend das erste Projekt vorbelegen.
+                        projektId: clipboard.projektId || 0,
+                        arbeitsgangId: clipboard.arbeitsgangId || 0,
                         startZeit: clipboard.startZeit ?? '08:00',
                         endeZeit: clipboard.endeZeit ?? '16:00',
                         projektName: '',
@@ -1499,7 +1527,7 @@ function DayEditorModal({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [buchungen, focusedIndex, clipboard, projekte, arbeitsgaenge, zeitEntwurf]);
+    }, [buchungen, focusedIndex, clipboard, zeitEntwurf]);
 
     // Parse "HH:MM" zu Minuten seit Mitternacht
     const parseTime = (time: string | null | undefined): number => {
@@ -1647,8 +1675,9 @@ function DayEditorModal({
         const newId = getNextTempBookingId();
         const newBooking: Buchung = {
             id: newId,
-            projektId: projekte.length > 0 ? projekte[0].id : 0,
-            arbeitsgangId: arbeitsgaenge.length > 0 ? arbeitsgaenge[0].id : 0,
+            // Projekt und Tätigkeit wählt der Nutzer bewusst selbst (keine Vorbelegung).
+            projektId: 0,
+            arbeitsgangId: 0,
             startZeit: defaultStart,
             endeZeit: defaultEnd,
             projektName: '',
@@ -1693,8 +1722,8 @@ function DayEditorModal({
         setBuchungen(sliced);
     };
 
-    // Add Abwesenheit (Urlaub, Krankheit, Zeitausgleich)
-    const handleAddAbwesenheit = async (typ: 'URLAUB' | 'KRANKHEIT' | 'ZEITAUSGLEICH', halberTag = false, customStunden?: number) => {
+    // Add Abwesenheit (Urlaub, Krankheit, Fortbildung, Zeitausgleich)
+    const handleAddAbwesenheit = async (typ: 'URLAUB' | 'KRANKHEIT' | 'FORTBILDUNG' | 'ZEITAUSGLEICH', halberTag = false, customStunden?: number) => {
         try {
             const res = await fetch('/api/abwesenheit', {
                 method: 'POST',
@@ -1709,7 +1738,7 @@ function DayEditorModal({
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                toast.error(err.error || err.message || `${typ} konnte nicht gebucht werden.`);
+                toast.error(err.error || err.message || `${ABWESENHEIT_LABEL[typ]} konnte nicht gebucht werden.`);
                 return;
             }
             const data = await res.json();
@@ -1731,7 +1760,7 @@ function DayEditorModal({
                 typ: typ,
             };
             setBuchungen(prev => [...prev, newAbwesenheit]);
-            const label = typ === 'URLAUB' ? 'Urlaub' : typ === 'KRANKHEIT' ? 'Krankheit' : 'Zeitausgleich';
+            const label = ABWESENHEIT_LABEL[typ];
             toast.success(`${label} hinzugefügt.`);
         } catch (e) {
             console.error(e);
@@ -1874,13 +1903,12 @@ function DayEditorModal({
     // Globaler Speichern-Button
     const handleSaveAll = async () => {
         // Erst sämtliche Änderungen prüfen, bevor die erste Buchung geschrieben wird.
-        let hasValidationError = false;
+        // Gleiche Meldungen (z. B. bei mehreren Buchungen ohne Tätigkeit) nur einmal zeigen.
+        const pruefMeldungen = new Set<string>();
         const normalisierteBuchungen = buchungen.map((buchung) => {
-            const istAbwesenheit = !!buchung.typ && ['URLAUB', 'KRANKHEIT', 'FORTBILDUNG', 'ZEITAUSGLEICH'].includes(buchung.typ);
-            if (istAbwesenheit || (buchung.id > 0 && !dirtyBuchungIds.has(buchung.id))) return buchung;
-            if (buchung.typ !== 'PAUSE' && (!buchung.projektId || buchung.projektId <= 0)) {
-                toast.error('Bitte für jede geänderte Buchung ein Projekt wählen.');
-                hasValidationError = true;
+            if (istAbwesenheitTyp(buchung.typ) || (buchung.id > 0 && !dirtyBuchungIds.has(buchung.id))) return buchung;
+            if (buchung.typ !== 'PAUSE' && (!buchung.projektId || buchung.projektId <= 0 || !buchung.arbeitsgangId || buchung.arbeitsgangId <= 0)) {
+                pruefMeldungen.add('Bitte für jede geänderte Buchung ein Projekt und eine Tätigkeit wählen.');
                 return buchung;
             }
             const startEntwurfKey = `${buchung.id}:startZeit`;
@@ -1892,8 +1920,12 @@ function DayEditorModal({
             const start = validateTimeInput(startZuPruefen, { label: 'Beginn', required: true, forgiving: true });
             const ende = validateTimeInput(endeZuPruefen, { label: 'Ende', forgiving: true });
             if (!start.valid || !ende.valid) {
-                toast.error(!start.valid ? start.message : !ende.valid ? ende.message : 'Bitte Uhrzeiten prüfen.');
-                hasValidationError = true;
+                pruefMeldungen.add(!start.valid ? start.message : !ende.valid ? ende.message : 'Bitte Uhrzeiten prüfen.');
+                return buchung;
+            }
+            // Nachtschichten über Mitternacht gibt es nicht: Ende muss nach dem Beginn liegen.
+            if (start.value && ende.value && parseTime(ende.value) <= parseTime(start.value)) {
+                pruefMeldungen.add(ENDE_VOR_BEGINN_MELDUNG);
                 return buchung;
             }
             const originalStartOhneSekunden = buchung.startZeit.substring(0, 5);
@@ -1909,7 +1941,10 @@ function DayEditorModal({
                 ...(endeGeaendert ? { endeZeit: normalisierteEnde } : {})
             };
         });
-        if (hasValidationError) return;
+        if (pruefMeldungen.size > 0) {
+            pruefMeldungen.forEach(meldung => toast.error(meldung));
+            return;
+        }
         setBuchungen(normalisierteBuchungen);
         // Hinweis bei Überschneidung
         if (hasOverlaps()) {
@@ -2002,6 +2037,42 @@ function DayEditorModal({
         }
     };
 
+    /** Ende liegt nicht nach dem Beginn (beide Zeiten gültig) – Nachtschichten werden nicht unterstützt. */
+    const endeVorBeginn = (b: Buchung): boolean => {
+        if (istAbwesenheitTyp(b.typ)) return false;
+        const start = parseTime(zeitEntwurf(b, 'startZeit'));
+        const ende = parseTime(zeitEntwurf(b, 'endeZeit'));
+        return start >= 0 && ende >= 0 && ende <= start;
+    };
+
+    /** Gibt es geänderte, neue oder halb getippte Buchungen, die noch nicht gespeichert sind? */
+    const hatUngespeicherteAenderungen = (): boolean => {
+        if (readOnly) return false;
+        if (dirtyBuchungIds.size > 0) return true;
+        // Abwesenheiten tragen ebenfalls negative Anzeige-IDs, sind aber schon gespeichert.
+        if (buchungen.some(b => b.id < 0 && !istAbwesenheitTyp(b.typ))) return true;
+        return buchungen.some(b => (['startZeit', 'endeZeit'] as const).some(feld => {
+            const schluessel = `${b.id}:${feld}`;
+            if (!Object.prototype.hasOwnProperty.call(zeitEntwuerfe, schluessel)) return false;
+            return zeitEntwuerfe[schluessel].substring(0, 5) !== (b[feld] ?? '').substring(0, 5);
+        }));
+    };
+
+    /** Schließen über X oder „Schließen“: bei ungespeicherten Änderungen erst nachfragen. */
+    const requestClose = async () => {
+        if (hatUngespeicherteAenderungen()) {
+            const verwerfen = await confirmDialog({
+                title: 'Ungespeicherte Änderungen verwerfen?',
+                message: 'Es gibt Buchungen, die noch nicht gespeichert sind. Beim Schließen gehen diese Änderungen verloren.',
+                confirmLabel: 'Verwerfen',
+                cancelLabel: 'Weiter bearbeiten',
+                variant: 'danger',
+            });
+            if (!verwerfen) return;
+        }
+        onClose();
+    };
+
     return (
         <>
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -2012,7 +2083,7 @@ function DayEditorModal({
                             <h2 className="text-xl font-bold text-slate-800">Tageserfassung</h2>
                             <p className="text-rose-600 font-medium">{datumFormatted}</p>
                         </div>
-                        <button aria-label="Tageserfassung schließen" onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                        <button aria-label="Tageserfassung schließen" onClick={requestClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                             <X className="w-6 h-6 text-slate-500" />
                         </button>
                     </div>
@@ -2090,11 +2161,13 @@ function DayEditorModal({
                                         </div>
                                     );
                                 }
+                                const zeitFehler = endeVorBeginn(b);
                                 return (
                                 <div
                                     key={b.id}
                                     onClick={() => setFocusedIndex(index)}
-                                    className={`bg-white rounded-lg border shadow-sm p-4 animate-in slide-in-from-bottom-2 duration-300 fill-mode-backwards cursor-pointer transition-all ${focusedIndex === index ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200 hover:border-slate-300'}`}
+                                    data-ende-vor-beginn={zeitFehler || undefined}
+                                    className={`bg-white rounded-lg border shadow-sm p-4 animate-in slide-in-from-bottom-2 duration-300 fill-mode-backwards cursor-pointer transition-all ${zeitFehler ? 'border-red-400 ring-2 ring-red-100' : focusedIndex === index ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200 hover:border-slate-300'}`}
                                     style={{ animationDelay: `${index * 50}ms` }}
                                 >
                                     <div className="grid grid-cols-12 gap-4 items-start">
@@ -2121,6 +2194,7 @@ function DayEditorModal({
                                                 <div className="flex-1">
                                                     <label className="block text-xs font-semibold text-slate-500 mb-1">Bis</label>
                                                     <TimeInput aria-label={`Bis Buchung ${index + 1}`}
+                                                        aria-invalid={zeitFehler || undefined}
                                                         className="w-full border border-slate-300 rounded-md px-3 py-1.5 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-500"
                                                         value={zeitEntwurf(b, 'endeZeit')}
                                                         onChange={value => handleUpdateBooking(b.id, { endeZeit: value })}
@@ -2129,19 +2203,17 @@ function DayEditorModal({
                                                 </div>
                                                 <div className="flex-1">
                                                     <label className="block text-xs font-semibold text-slate-400 mb-1">Dauer</label>
-                                                    <div className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-slate-600 text-sm">
-                                                        {/* Calc duration if both times present */}
+                                                    <div className={`px-3 py-1.5 border rounded-md text-sm ${zeitFehler ? 'bg-red-50 border-red-200 text-red-700 font-medium' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                                                        {/* Dauer nur, wenn Ende nach Beginn liegt – über Mitternacht wird nicht gerechnet. */}
                                                         {(() => {
-                                                            if (b.startZeit && b.endeZeit && validateTimeInput(zeitEntwurf(b, 'startZeit'), { label: 'Beginn' }).valid && validateTimeInput(zeitEntwurf(b, 'endeZeit'), { label: 'Ende' }).valid) {
-                                                                const start = new Date(`2000-01-01T${b.startZeit.length === 5 ? b.startZeit + ':00' : b.startZeit}`);
-                                                                const end = new Date(`2000-01-01T${b.endeZeit.length === 5 ? b.endeZeit + ':00' : b.endeZeit}`);
-                                                                let diff = (end.getTime() - start.getTime()) / 60000;
-                                                                if (diff < 0) diff += 24 * 60; // Over midnight
-                                                                const h = Math.floor(diff / 60);
-                                                                const m = Math.round(diff % 60);
-                                                                return `${h}:${m.toString().padStart(2, '0')}h`;
-                                                            }
-                                                            return '--';
+                                                            if (zeitFehler) return 'Ende vor Beginn';
+                                                            const start = parseTime(zeitEntwurf(b, 'startZeit'));
+                                                            const ende = parseTime(zeitEntwurf(b, 'endeZeit'));
+                                                            if (start < 0 || ende < 0) return '–';
+                                                            const diff = ende - start;
+                                                            const h = Math.floor(diff / 60);
+                                                            const m = diff % 60;
+                                                            return `${h}:${m.toString().padStart(2, '0')}h`;
                                                         })()}
                                                     </div>
                                                 </div>
@@ -2165,9 +2237,9 @@ function DayEditorModal({
                                                                         const p = projekte.find(pr => pr.id === b.projektId);
                                                                         return p
                                                                             ? `${p.auftragsnummer || ''} - ${p.bauvorhaben}${p.kunde ? ` (${p.kunde})` : ''}`
-                                                                            : 'Projekt auswählen...';
+                                                                            : (b.projektName || 'Projekt wählen…');
                                                                     })()
-                                                                    : 'Projekt auswählen...'
+                                                                    : <span className="text-slate-400">Projekt wählen…</span>
                                                                 }
                                                             </span>
                                                         </button>
@@ -2175,10 +2247,11 @@ function DayEditorModal({
                                                     <div className="col-span-2 md:col-span-1">
                                                         <label className="block text-xs font-semibold text-slate-500 mb-1">Tätigkeit</label>
                                                         <Select
-                                                            value={b.arbeitsgangId?.toString() || ''}
+                                                            aria-label={`Tätigkeit Buchung ${index + 1}`}
+                                                            value={b.arbeitsgangId ? b.arbeitsgangId.toString() : ''}
                                                             onChange={val => handleUpdateBooking(b.id, { arbeitsgangId: Number(val) })}
                                                             options={arbeitsgaenge.map(a => ({ value: a.id.toString(), label: a.beschreibung }))}
-                                                            placeholder="Tätigkeit wählen..."
+                                                            placeholder="Tätigkeit wählen…"
                                                             className="w-full"
                                                             disabled={readOnly}
                                                         />
@@ -2227,6 +2300,20 @@ function DayEditorModal({
 
                                         {/* Actions */}
                                         <div className="col-span-1 flex flex-col gap-2 pt-6">
+                                            {b.id > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setVerlaufBuchung({
+                                                        id: b.id,
+                                                        beschreibung: `${datumFormatted} · ${zeitEntwurf(b, 'startZeit') || '–'} – ${zeitEntwurf(b, 'endeZeit') || 'offen'}`,
+                                                    })}
+                                                    className="p-2 bg-slate-50 text-slate-400 rounded hover:bg-rose-50 hover:text-rose-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                                    title="Verlauf"
+                                                    aria-label={`Verlauf Buchung ${index + 1}`}
+                                                >
+                                                    <History className="w-5 h-5" />
+                                                </button>
+                                            )}
                                             {!readOnly && (
                                                 <button
                                                     onClick={() => handleDelete(b)}
@@ -2258,6 +2345,9 @@ function DayEditorModal({
                                 <Button onClick={() => handleAddAbwesenheit('KRANKHEIT')} variant="outline" className="border-red-400 text-red-700 hover:bg-red-50 px-4">
                                     <Plus className="w-5 h-5 mr-1" /> Krankheit
                                 </Button>
+                                <Button onClick={() => handleAddAbwesenheit('FORTBILDUNG')} variant="outline" className="border-blue-400 text-blue-700 hover:bg-blue-50 px-4">
+                                    <Plus className="w-5 h-5 mr-1" /> Fortbildung
+                                </Button>
                                 <Button onClick={() => setShowZeitausgleichModal(true)} variant="outline" className="border-amber-500 text-amber-800 hover:bg-amber-50 px-4">
                                     <Plus className="w-5 h-5 mr-1" /> Zeitausgleich
                                 </Button>
@@ -2281,7 +2371,7 @@ function DayEditorModal({
                             </span>
                         )}
                         <div className="flex gap-2">
-                            <Button variant="outline" onClick={onClose} size="default">
+                            <Button variant="outline" onClick={requestClose} size="default">
                                 Schließen
                             </Button>
                             {!readOnly && (
@@ -2328,6 +2418,14 @@ function DayEditorModal({
                     onClose={() => setProjektModalForBuchungId(null)}
                 />
             )}
+
+            {/* Änderungsverlauf einer gespeicherten Buchung */}
+            <BuchungVerlaufDialog
+                open={!!verlaufBuchung}
+                onOpenChange={offen => { if (!offen) setVerlaufBuchung(null); }}
+                buchungId={verlaufBuchung?.id ?? null}
+                beschreibung={verlaufBuchung?.beschreibung}
+            />
 
             {/* Urlaub buchen Modal (Ganzer Tag / Halber Tag) */}
             {showUrlaubModal && (

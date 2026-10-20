@@ -31,6 +31,12 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
      */
     List<AusgangsGeschaeftsDokument> findByKundeIdOrderByDatumDesc(Long kundeId);
 
+    /** Datenschutz-Prüfung eines Kunden: Dokumente aller seiner Projekte in einer Abfrage. */
+    List<AusgangsGeschaeftsDokument> findByProjektIdIn(java.util.Collection<Long> projektIds);
+
+    /** Datenschutz-Prüfung eines Kunden: Dokumente aller seiner Anfragen in einer Abfrage. */
+    List<AusgangsGeschaeftsDokument> findByAnfrageIdIn(java.util.Collection<Long> anfrageIds);
+
     /**
      * Findet Dokument anhand der Dokumentnummer
      */

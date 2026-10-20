@@ -541,4 +541,70 @@ class ZeitverwaltungControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("Dieser Monat ist bereits festgeschrieben. Bitte setzen Sie zuerst den Monatsabschluss zurück."));
     }
+
+    // ==================== Issue #269: Ende vor Beginn, Auswertung je Mitarbeiter ====================
+
+    @Test
+    void createBuchung_EndeVorBeginnGibt400UndLegtNichtsAn() throws Exception {
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(mitarbeiter(7L, "Max", "Mustermann"));
+        given(mitarbeiterRepository.findById(3L)).willReturn(Optional.of(mitarbeiter(3L, "Erika", "Musterfrau")));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/zeitverwaltung/buchungen")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mitarbeiterId\":3,\"projektId\":-1,\"typ\":\"PAUSE\","
+                                + "\"startZeit\":\"2026-09-01T22:00:00\",\"endeZeit\":\"2026-09-01T06:00:00\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(ZeitverwaltungController.ENDE_VOR_BEGINN));
+
+        verify(zeitbuchungRepository, never()).save(any());
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void updateBuchung_EndeGleichBeginnGibt400UndProtokolliertNichts() throws Exception {
+        Mitarbeiter m = mitarbeiter(1L, "Max", "Mustermann");
+        Zeitbuchung b = new Zeitbuchung();
+        b.setId(100L);
+        b.setMitarbeiter(m);
+        b.setStartZeit(LocalDateTime.of(2026, 9, 1, 8, 0));
+        b.setEndeZeit(LocalDateTime.of(2026, 9, 1, 12, 0));
+        given(angemeldeterMitarbeiter.bearbeiter(any())).willReturn(m);
+        given(zeitbuchungRepository.findById(100L)).willReturn(Optional.of(b));
+
+        mockMvc.perform(put("/api/zeitverwaltung/buchungen/100")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aenderungsgrund\":\"Test\",\"endeZeit\":\"2026-09-01T08:00:00\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(ZeitverwaltungController.ENDE_VOR_BEGINN));
+
+        verify(zeitbuchungRepository, never()).save(any());
+        verifyNoInteractions(auditService);
+    }
+
+    @Test
+    void projektAuswertung_FiltertNachMitarbeiterUndReichtFilterAnsPdfWeiter() throws Exception {
+        org.example.kalkulationsprogramm.domain.Projekt projekt = new org.example.kalkulationsprogramm.domain.Projekt();
+        projekt.setId(5L);
+        projekt.setBauvorhaben("Geländer Musterstraße");
+        Zeitbuchung vonMax = new Zeitbuchung();
+        vonMax.setProjekt(projekt);
+        vonMax.setMitarbeiter(mitarbeiter(1L, "Max", "Mustermann"));
+        vonMax.setStartZeit(LocalDateTime.of(2026, 9, 1, 8, 0));
+        vonMax.setAnzahlInStunden(new BigDecimal("2.00"));
+        Zeitbuchung vonErika = new Zeitbuchung();
+        vonErika.setProjekt(projekt);
+        vonErika.setMitarbeiter(mitarbeiter(2L, "Erika", "Musterfrau"));
+        vonErika.setStartZeit(LocalDateTime.of(2026, 9, 1, 8, 0));
+        vonErika.setAnzahlInStunden(new BigDecimal("3.00"));
+        given(zeitbuchungRepository.findByProjektId(5L)).willReturn(List.of(vonMax, vonErika));
+
+        mockMvc.perform(get("/api/zeitverwaltung/auswertung/projekt/5").param("mitarbeiterId", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taetigkeiten.length()").value(1))
+                .andExpect(jsonPath("$.taetigkeiten[0].anzahlBuchungen").value(1));
+
+        mockMvc.perform(get("/api/zeitverwaltung/auswertung/projekt/5/pdf").param("mitarbeiterId", "abc"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(projektAuswertungPdfService);
+    }
 }

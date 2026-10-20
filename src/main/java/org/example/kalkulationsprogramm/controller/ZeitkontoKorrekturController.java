@@ -67,6 +67,8 @@ public class ZeitkontoKorrekturController {
             return ResponseEntity.status(HttpStatus.CREATED).body(korrekturToMap(korrektur));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e; // z. B. 409 "Monat abgeschlossen": nicht im 500er-Fang verschlucken
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Fehler beim Erstellen: " + e.getMessage()));

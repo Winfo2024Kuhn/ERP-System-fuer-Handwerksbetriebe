@@ -31,11 +31,12 @@ class EmailDraftServiceLueckenTest {
 
     @Mock EmailDraftRepository repository;
     @Mock EmailDraftAttachmentRepository attachmentRepository;
+    @Mock org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository benutzerRepository;
     EmailDraftService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailDraftService(repository, attachmentRepository);
+        service = new EmailDraftService(repository, attachmentRepository, benutzerRepository);
     }
 
     private static EmailDraftDto dto(String recipient, String subject, String body, Long reply, Long projekt,

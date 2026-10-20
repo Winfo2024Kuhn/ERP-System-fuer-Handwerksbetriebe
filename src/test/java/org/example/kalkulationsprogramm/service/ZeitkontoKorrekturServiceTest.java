@@ -431,4 +431,55 @@ class ZeitkontoKorrekturServiceTest {
             assertThat(result).hasSize(2);
         }
     }
+
+    /** Issue #269: Ein abgeschlossener Monat ist gecacht – Korrekturen dort würden nie wirken. */
+    @Nested
+    class AbgeschlossenerMonat {
+
+        private ZeitkontoKorrektur korrektur(Mitarbeiter mitarbeiter) {
+            ZeitkontoKorrektur k = new ZeitkontoKorrektur();
+            k.setId(10L);
+            k.setMitarbeiter(mitarbeiter);
+            k.setDatum(LocalDate.of(2026, 3, 15));
+            k.setStunden(new BigDecimal("2"));
+            k.setStorniert(false);
+            return k;
+        }
+
+        private void pruefe409(org.assertj.core.api.ThrowableAssert.ThrowingCallable aufruf) {
+            assertThatThrownBy(aufruf).isInstanceOfSatisfying(org.springframework.web.server.ResponseStatusException.class,
+                    e -> {
+                        assertThat(e.getStatusCode().value()).isEqualTo(409);
+                        assertThat(e.getReason()).startsWith("Der Monat 03/2026 ist abgeschlossen.");
+                    });
+            verify(korrekturRepository, never()).save(any());
+            verifyNoInteractions(auditRepository);
+        }
+
+        @Test
+        void anlegenAbgelehnt() {
+            when(mitarbeiterRepository.findById(1L)).thenReturn(Optional.of(erstelleMitarbeiter(1L, "Max", "Mustermann")));
+            when(monatsSaldoService.isMonatFestgeschrieben(1L, 2026, 3)).thenReturn(true);
+
+            pruefe409(() -> service.erstelleKorrektur(1L, new BigDecimal("2"), LocalDate.of(2026, 3, 15),
+                    "Überstunden", 2L, ErfassungsQuelle.DESKTOP, KorrekturTyp.STUNDEN));
+        }
+
+        @Test
+        void aendernAbgelehnt() {
+            when(korrekturRepository.findById(10L)).thenReturn(Optional.of(korrektur(erstelleMitarbeiter(1L, "Max", "Mustermann"))));
+            when(monatsSaldoService.isMonatFestgeschrieben(1L, 2026, 3)).thenReturn(true);
+
+            pruefe409(() -> service.aendereKorrektur(10L, new BigDecimal("3"), "neu", 2L, "Tippfehler",
+                    ErfassungsQuelle.DESKTOP));
+        }
+
+        @Test
+        void stornierenAbgelehnt() {
+            when(korrekturRepository.findById(10L)).thenReturn(Optional.of(korrektur(erstelleMitarbeiter(1L, "Max", "Mustermann"))));
+            when(monatsSaldoService.isMonatFestgeschrieben(1L, 2026, 3)).thenReturn(true);
+
+            pruefe409(() -> service.storniereKorrektur(10L, 2L, "doppelt", ErfassungsQuelle.DESKTOP));
+        }
+    }
 }

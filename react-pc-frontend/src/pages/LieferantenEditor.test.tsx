@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import { AuthProvider } from '../auth/AuthContext';
-import LieferantenEditor from './LieferantenEditor';
+import LieferantenEditor, { LieferantModal } from './LieferantenEditor';
 
 // PAGE_SIZE im LieferantenEditor ist 12 – bei 40 Treffern also 4 Seiten.
 const PAGE_SIZE = 12;
@@ -351,5 +351,75 @@ describe('LieferantenEditor – Reiter in der Adresszeile', () => {
             expect(screen.queryByRole('tab')).not.toBeInTheDocument();
         });
         expect(screen.getByTestId('adresse')).toHaveTextContent('/lieferanten');
+    });
+});
+
+describe('LieferantenEditor – Filter nach Rolle', () => {
+    beforeEach(() => {
+        gesamtTreffer = GESAMT;
+        fetchMock = mockLieferantenApi();
+        global.fetch = fetchMock as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('filtert nach Rolle und schickt den Parameter rolle statt typ', async () => {
+        const user = userEvent.setup();
+        renderLieferantenEditor();
+        await waitFor(() => expect(listenRequests().length).toBeGreaterThan(0));
+
+        await user.click(screen.getByRole('combobox', { name: 'Rolle' }));
+        await user.click(screen.getByRole('option', { name: 'Edelstahl' }));
+
+        await waitFor(() => expect(letzterListenRequest().get('rolle')).toBe('EDELSTAHL'));
+        expect(letzterListenRequest().has('typ')).toBe(false);
+        expect(letzterListenRequest().get('page')).toBe('0');
+
+        await user.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }));
+        await waitFor(() => expect(letzterListenRequest().has('rolle')).toBe(false));
+    });
+
+    it('erklärt den Rollen-Filter per Info-Knopf', async () => {
+        const user = userEvent.setup();
+        renderLieferantenEditor();
+
+        await user.click(screen.getByRole('button', { name: 'Mehr zu: Rolle' }));
+        expect(await screen.findByText(/beim Eintragen von Artikelpreisen vorgeschlagen/)).toBeInTheDocument();
+    });
+});
+
+describe('LieferantModal – Name ist Pflicht', () => {
+    function renderModal(lieferantenname: string) {
+        const onSave = vi.fn();
+        render(
+            <ToastProvider>
+                <LieferantModal
+                    lieferant={{ id: '', lieferantenTyp: '', lieferantenname, aliasName: '', eigeneKundennummer: '', kundenEmails: [] }}
+                    onClose={vi.fn()}
+                    onSave={onSave}
+                />
+            </ToastProvider>
+        );
+        return onSave;
+    }
+
+    it('speichert ohne Namen nicht, markiert das Feld und sagt warum', async () => {
+        const user = userEvent.setup();
+        const onSave = renderModal('   ');
+
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+
+        expect(onSave).not.toHaveBeenCalled();
+        const feld = screen.getByLabelText('Name *');
+        expect(feld).toHaveAttribute('aria-invalid', 'true');
+        expect(feld).toHaveFocus();
+        expect(screen.getAllByText('Bitte einen Namen für den Lieferanten eingeben.').length).toBeGreaterThan(0);
+
+        await user.type(feld, 'Musterstahl GmbH');
+        expect(feld).not.toHaveAttribute('aria-invalid');
+        await user.click(screen.getByRole('button', { name: 'Speichern' }));
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ lieferantenname: '   Musterstahl GmbH' }));
     });
 });

@@ -157,6 +157,9 @@ class UnifiedEmailSichtbarkeitSecurityTest {
                 ausgangsmailService, emailBlacklistRepository, emailImportService, frontendUserProfileService,
                 projektRepository, emailDraftRepository, spamBayesService, emailAutoAssignmentService,
                 lieferantDokumentZugriffService, anfrageRepository, lieferantenRepository);
+        // Entwürfe sind persönlich (Issue #271); hier geht es nur um die Mails selbst.
+        given(emailDraftService.leserFuer(org.mockito.ArgumentMatchers.any()))
+                .willReturn(new EmailDraftService.Leser(null, true));
         info = postfach(1L, "info@example.com", true, true);
         max = postfach(3L, "max@example.com", false, false);
         given(postfachRepository.findByAktivTrueOrderBySortierungAscIdAsc()).willReturn(List.of(info, max));

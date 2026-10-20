@@ -128,7 +128,7 @@ export const NAVIGATION: NavCategory[] = [
                 label: 'E-Mail',
                 items: [
                     { name: 'E-Mail Center', href: '/emails/inbox', icon: Mail },
-                    { name: 'E-Mail Vorlagen', href: '/email-textvorlagen', icon: MailPlus },
+                    { name: 'Mailtexte für Dokumente', href: '/email-textvorlagen', icon: MailPlus },
                     { name: 'E-Mail-Einstellungen', href: '/email-einstellungen', icon: Settings2 },
                 ]
             },

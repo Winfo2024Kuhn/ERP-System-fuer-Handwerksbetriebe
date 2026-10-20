@@ -50,3 +50,15 @@ it('schickt keinen Bearbeiter mit und zeigt die Server-Meldung, wenn der Benutze
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(JSON.parse(post![1].body)).not.toHaveProperty('erstelltVonId');
 });
+it('zeigt die Server-Meldung, wenn der Monat der Korrektur abgeschlossen ist (409)', async () => {
+    const meldung = 'Der Monat 08/2026 ist abgeschlossen. Korrekturen sind dort nicht mehr möglich.';
+    fetchMock.mockImplementation(async (_url, init) => init?.method === 'POST' || init?.method === 'DELETE'
+        ? { ok: false, status: 409, json: async () => ({ status: 409, message: meldung }) }
+        : { ok: true, json: async () => [{ id: 1, mitarbeiterId: 1, datum: '2026-08-01', erstelltAm: '2026-08-01', stunden: 8, grund: 'Testkorrektur', typ: 'STUNDEN' }] });
+    const user = userEvent.setup();
+    render(<ZeitkontoKorrekturenModal mitarbeiterId={1} mitarbeiterName="Max Mustermann" onClose={vi.fn()} onUpdate={vi.fn()} />);
+    await user.click(await screen.findByTitle('Stornieren'));
+    await user.type(screen.getByRole('textbox', { name: 'Stornierungsgrund' }), 'Doppelt erfasst');
+    await user.click(screen.getByRole('button', { name: 'Stornierung bestätigen' }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(meldung));
+});

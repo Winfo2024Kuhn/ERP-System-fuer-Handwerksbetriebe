@@ -21,4 +21,6 @@ public class KundeListItemDto {
     private Integer zahlungsziel;
     private List<String> kundenEmails;
     private boolean hatProjekte;
+    /** Aus Datenschutzgründen gesperrt (Issue #264). */
+    private boolean gesperrt;
 }

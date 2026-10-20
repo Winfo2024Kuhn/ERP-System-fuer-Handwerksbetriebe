@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe,
+    buildEmailListUrl, buildForwardSubject, buildReplyAddressing, buildReplySubject, emailListCacheKey, filtereEntwuerfe, fremderEntwurfVon,
     getDisplayName, groupEmailThreads, hasFurtherRecipients, loeschFehlerMeldung, nutztServerFilterUngelesen,
     weiterleitbareAnhaenge, type DraftItem, type EmailItem,
 } from './emailCenterModel';
@@ -227,5 +227,21 @@ describe('weiterleitbareAnhaenge', () => {
     it('kommt ohne Anhänge mit einer leeren Liste zurück', () => {
         expect(weiterleitbareAnhaenge(undefined)).toEqual([]);
         expect(weiterleitbareAnhaenge(null)).toEqual([]);
+    });
+});
+
+describe('fremderEntwurfVon', () => {
+    it('nennt den Besitzer nur, wenn es nicht der eigene Entwurf ist', () => {
+        expect(fremderEntwurfVon({ erstelltVon: 'Erika Musterfrau' }, 'Max Mustermann')).toBe('Erika Musterfrau');
+        expect(fremderEntwurfVon({ erstelltVon: 'Max Mustermann' }, 'Max Mustermann')).toBeNull();
+        expect(fremderEntwurfVon({ erstelltVon: ' max mustermann ' }, 'Max Mustermann')).toBeNull();
+    });
+
+    it('zeigt nichts bei älteren Entwürfen ohne Besitzer oder ohne eigenen Namen', () => {
+        expect(fremderEntwurfVon({ erstelltVon: null }, 'Max Mustermann')).toBeNull();
+        expect(fremderEntwurfVon({}, 'Max Mustermann')).toBeNull();
+        expect(fremderEntwurfVon({ erstelltVon: '  ' }, 'Max Mustermann')).toBeNull();
+        expect(fremderEntwurfVon({ erstelltVon: 'Erika Musterfrau' }, null)).toBeNull();
+        expect(fremderEntwurfVon({ erstelltVon: 'Erika Musterfrau' }, '')).toBeNull();
     });
 });

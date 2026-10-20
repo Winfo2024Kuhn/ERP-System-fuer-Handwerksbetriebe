@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ZeiterfassungSteuerberater from './ZeiterfassungSteuerberater';
 
+const { toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
+vi.mock('../components/ui/toast', () => ({ useToast: () => toast }));
+
 const alt = { montagStunden: 8, dienstagStunden: 8, mittwochStunden: 8, donnerstagStunden: 8, freitagStunden: 8, samstagStunden: 0, sonntagStunden: 0, buchungStartZeit: '06:00', buchungEndeZeit: '18:00' };
 const neu = { ...alt, freitagStunden: 4 };
 const konto = { mitarbeiterId: 7, mitarbeiterVersion: 2, mitarbeiterName: 'Max Mustermann', fuehrtZeitkonto: true, eingerichtet: true, hinweis: null, aktuell: { id: 2, version: 2, mitarbeiterId: 7, gueltigVon: '2026-09-01', gueltigBis: null, vorlageId: 3, arbeitszeit: neu }, letzteVersion: { id: 2, version: 2, mitarbeiterId: 7, gueltigVon: '2026-09-01', gueltigBis: null, vorlageId: 3, arbeitszeit: neu }, historie: [{ id: 1, version: 1, mitarbeiterId: 7, gueltigVon: '2026-01-01', gueltigBis: '2026-08-31', vorlageId: 3, arbeitszeit: alt }] };
@@ -80,5 +83,16 @@ describe('ZeiterfassungSteuerberater Task 10', () => {
         await user.click(await screen.findByRole('button', { name: 'Vorschau laden' }));
         expect(await screen.findByText('Max Mustermann')).toBeInTheDocument();
         expect(screen.queryByText('Chef Boss')).not.toBeInTheDocument();
+    });
+
+    it('bietet die Jahre ab dem aktuellen Jahr minus vier bis plus eins an', async () => {
+        const user = userEvent.setup();
+        render(<ZeiterfassungSteuerberater />);
+        await screen.findByRole('button', { name: 'Vorschau laden' });
+        const [, jahrAuswahl] = screen.getAllByRole('combobox');
+        await user.click(jahrAuswahl);
+        const jetzt = new Date().getFullYear();
+        expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(
+            [jetzt - 4, jetzt - 3, jetzt - 2, jetzt - 1, jetzt, jetzt + 1].map(String));
     });
 });

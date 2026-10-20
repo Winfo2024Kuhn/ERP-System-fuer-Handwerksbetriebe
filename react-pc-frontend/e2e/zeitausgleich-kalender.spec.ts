@@ -200,7 +200,9 @@ test('Kalender: Smarter Startzeit-Standard und automatisches Einschneiden von Pa
 
     await designPruefung(page, info, 'kalender-pausenschnitt-smartstart');
 
+    // Ungespeicherte Pause und neue Buchung: Schließen fragt nach (#269).
     await modal.getByRole('button', { name: 'Schließen', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Ungespeicherte Änderungen verwerfen?' }).getByRole('button', { name: 'Verwerfen' }).click();
     await expect(modal).toBeHidden();
 });
 

@@ -337,6 +337,17 @@ class ProjektAuswertungPdfServiceTest {
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Keine Buchungen");
         }
+
+        @Test
+        @DisplayName("Filter auf einen Mitarbeiter ohne Buchungen im Projekt → RuntimeException (Issue #269)")
+        void mitarbeiterFilterOhneTreffer() {
+            when(zeitbuchungRepository.findByProjektId(1L)).thenReturn(List.of(
+                    buchungMitMitarbeiter(mitarbeiter("Max", "Mustermann", Qualifikation.MEISTER))));
+
+            assertThatThrownBy(() -> service.generatePdf(1L, null, null, Long.MAX_VALUE, "datum", "asc", "arbeitsgang"))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessageContaining("Keine Buchungen");
+        }
     }
 
     // ─── generatePdf – Kopfbereich & Verbindlichkeitshinweis ─────────────────

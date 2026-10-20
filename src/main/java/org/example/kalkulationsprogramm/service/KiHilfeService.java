@@ -182,7 +182,7 @@ public class KiHilfeService {
             - **Abwesenheiten:** Urlaubsanträge, Lange Krankheit
             
             ### 4. Kommunikation
-            - **E-Mail:** E-Mail Center, E-Mail Vorlagen, E-Mail-Einstellungen
+            - **E-Mail:** E-Mail Center, Mailtexte für Dokumente, E-Mail-Einstellungen
             - **Telefon:** Anrufe, Anrufbeantworter
             - **Website:** Neuigkeiten
             
@@ -228,7 +228,7 @@ public class KiHilfeService {
             | Urlaubsanträge | [Urlaubsanträge](/urlaubsantraege) |
             | Lange Krankheit | [Lange Krankheit](/langzeitkrankmeldungen) |
             | E-Mail Center | [E-Mail Center](/emails/inbox) |
-            | E-Mail Vorlagen | [E-Mail Vorlagen](/email-textvorlagen) |
+            | Mailtexte für Dokumente | [Mailtexte für Dokumente](/email-textvorlagen) |
             | E-Mail-Einstellungen | [E-Mail-Einstellungen](/email-einstellungen) |
             | Anrufe | [Anrufe](/telefon/anrufe) |
             | Anrufbeantworter | [Anrufbeantworter](/telefon/anrufbeantworter) |

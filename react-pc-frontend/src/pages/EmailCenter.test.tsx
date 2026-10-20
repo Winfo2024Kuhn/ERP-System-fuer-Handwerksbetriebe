@@ -6,6 +6,13 @@ import { ToastProvider } from '../components/ui/toast';
 import { ConfirmProvider } from '../components/ui/confirm-dialog';
 import EmailCenter from './EmailCenter';
 
+// Eigener Benutzer für die Kennzeichnung fremder Entwürfe; Standard: keine Anmeldung.
+const anmeldung = vi.hoisted(() => ({ wert: null as null | { user: { displayName: string }; isAdmin: boolean } }));
+vi.mock('../auth/AuthContext', async (original) => ({
+    ...(await original<typeof import('../auth/AuthContext')>()),
+    useOptionalAuth: () => anmeldung.wert,
+}));
+
 // ---- Mock data ----
 const mockEmails = [
     {
@@ -1009,5 +1016,111 @@ describe('EmailCenter', () => {
             expect(await screen.findByText('Der Entwurf konnte nicht gelöscht werden.')).toBeInTheDocument();
             expect(screen.getByText('Angebot Treppe')).toBeInTheDocument();
         });
+    });
+});
+
+describe('EmailCenter – Zuordnen, Entwürfe und Ordner-Hinweise', () => {
+    beforeEach(() => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    afterEach(() => {
+        anmeldung.wert = null;
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    it('ordnet eine Mail einem Lieferanten zu', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        const basis = mockFetchResponses({
+            '/api/emails/1': mockEmails[0],
+            '/api/emails/1/thread': { rootEmailId: 1, focusedEmailId: 1, emails: [mockEmails[0]] },
+            '/api/emails/1/possible-assignments': { projekte: [], anfragen: [] },
+        });
+        const mock = vi.fn((url: string, options?: RequestInit) => {
+            if (url.startsWith('/api/lieferanten?')) {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve({ lieferanten: [{ id: 33, lieferantenname: 'Musterstahl GmbH' }], gesamt: 1 }) });
+            }
+            return basis(url, options);
+        });
+        vi.stubGlobal('fetch', mock);
+        renderEmailCenter();
+
+        await user.click(await screen.findByText('Angebot für Treppe'));
+        await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Zuordnen' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).queryByRole('button', { name: 'Zuordnung aufheben' })).toBeNull();
+
+        await user.click(within(dialog).getByRole('button', { name: 'Lieferant' }));
+        await user.type(within(dialog).getByPlaceholderText('Lieferant suchen...'), 'muster');
+        await act(async () => { vi.advanceTimersByTime(400); });
+        await user.click(await within(dialog).findByRole('button', { name: /Musterstahl GmbH/ }));
+
+        await waitFor(() => expect(mock).toHaveBeenCalledWith('/api/emails/1/assign/lieferant/33', { method: 'POST' }));
+    });
+
+    it('hebt die Zuordnung einer zugeordneten Mail auf', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        const zugeordnet = { ...mockEmails[0], zuordnungTyp: 'PROJEKT', projektId: 5, projektName: 'Garagentor', projektAuftragsnummer: '2026-001' };
+        const mock = mockFetchResponses({
+            '/api/emails/inbox': [zugeordnet, mockEmails[1]],
+            '/api/emails/1': zugeordnet,
+            '/api/emails/1/thread': { rootEmailId: 1, focusedEmailId: 1, emails: [zugeordnet] },
+            '/api/emails/1/possible-assignments': { projekte: [], anfragen: [] },
+        });
+        vi.stubGlobal('fetch', mock);
+        renderEmailCenter();
+
+        await user.click(await screen.findByText('Angebot für Treppe'));
+        await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Zuordnen' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByText('Projekt 2026-001 · Garagentor')).toBeInTheDocument();
+
+        await user.click(within(dialog).getByRole('button', { name: 'Zuordnung aufheben' }));
+
+        await waitFor(() => expect(mock).toHaveBeenCalledWith('/api/emails/1/unassign', { method: 'POST' }));
+        expect(await screen.findByText('Zuordnung wurde aufgehoben.')).toBeInTheDocument();
+    });
+
+    it('kennzeichnet fremde Entwürfe mit „von …“ und erklärt die Entwürfe per Info-Knopf', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        anmeldung.wert = { user: { displayName: 'Max Mustermann' }, isAdmin: true };
+        vi.stubGlobal('fetch', mockFetchResponses({
+            '/api/emails/drafts': [
+                { id: 71, recipient: 'kunde@example.com', subject: 'Eigener Entwurf', body: '<p>Hallo</p>', updatedAt: '2026-10-10T09:00:00', erstelltVon: 'Max Mustermann' },
+                { id: 72, recipient: 'kunde@example.com', subject: 'Fremder Entwurf', body: '<p>Hallo</p>', updatedAt: '2026-10-11T09:00:00', erstelltVon: 'Erika Musterfrau' },
+                { id: 73, recipient: 'kunde@example.com', subject: 'Alter Entwurf', body: '<p>Hallo</p>', updatedAt: '2026-10-09T09:00:00', erstelltVon: null },
+            ],
+        }));
+        renderEmailCenter('drafts');
+
+        await screen.findByText('Fremder Entwurf');
+        expect(screen.getByText('von Erika Musterfrau')).toBeInTheDocument();
+        expect(screen.queryByText('von Max Mustermann')).toBeNull();
+        expect(screen.getAllByText(/^von /)).toHaveLength(1);
+
+        await user.click(screen.getByRole('button', { name: 'Mehr zu: Entwürfe' }));
+        expect(await screen.findByText(/Du siehst nur deine eigenen Entwürfe/)).toBeInTheDocument();
+    });
+
+    it.each(['trash', 'spam', 'newsletter'])('zeigt im Ordner %s den 30-Tage-Hinweis', async (ordner) => {
+        vi.stubGlobal('fetch', mockFetchResponses());
+        renderEmailCenter(ordner);
+        expect(await screen.findByText('E-Mails in diesem Ordner werden nach 30 Tagen automatisch endgültig gelöscht.')).toBeInTheDocument();
+    });
+
+    it('zeigt den 30-Tage-Hinweis nicht im Posteingang und erklärt „Nicht zugeordnet“', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        vi.stubGlobal('fetch', mockFetchResponses({ '/api/emails/unassigned': [] }));
+        renderEmailCenter('inbox');
+        await screen.findByText('Angebot für Treppe');
+        expect(screen.queryByText(/nach 30 Tagen automatisch/)).toBeNull();
+
+        await user.click(screen.getByText('Nicht zugeordnet'));
+        await user.click(await screen.findByRole('button', { name: 'Mehr zu: Nicht zugeordnet' }));
+        expect(await screen.findByText(/Mails von unbekannten Absendern bleiben im Posteingang/)).toBeInTheDocument();
     });
 });

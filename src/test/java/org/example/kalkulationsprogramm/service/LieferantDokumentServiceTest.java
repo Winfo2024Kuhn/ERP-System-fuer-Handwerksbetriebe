@@ -389,9 +389,11 @@ class LieferantDokumentServiceTest {
             dokument.setTyp(LieferantDokumentTyp.RECHNUNG);
             given(dokumentRepository.findById(1L)).willReturn(Optional.of(dokument));
 
+            // Klartext statt Rohwert „RECHNUNG“ (Issue #266)
             assertThatThrownBy(() -> service.loescheDokument(1L, "admin"))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("GoBD");
+                    .hasMessage("Eine Rechnung muss aufbewahrt werden und kann deshalb nicht gelöscht werden. "
+                            + "Ist das Dokument gar keine Rechnung, bitte zuerst die Art auf „Sonstiges“ ändern.");
         }
 
         @Test

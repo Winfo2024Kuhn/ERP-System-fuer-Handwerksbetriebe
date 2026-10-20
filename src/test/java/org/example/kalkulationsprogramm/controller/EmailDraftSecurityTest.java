@@ -59,7 +59,9 @@ class EmailDraftSecurityTest {
     @Test
     @WithMockUser
     void authenticatedUserCanDownloadTheirTeamsDraftAttachment() throws Exception {
-        when(service.get(42L)).thenReturn(new org.example.kalkulationsprogramm.dto.Email.EmailDraftDto(42L, null, null,
+        EmailDraftService.Leser leser = new EmailDraftService.Leser(null, false);
+        when(service.leserFuer(org.mockito.ArgumentMatchers.any())).thenReturn(leser);
+        when(service.get(42L, leser)).thenReturn(new org.example.kalkulationsprogramm.dto.Email.EmailDraftDto(42L, null, null,
                 "Plan", null, null, null, null, null, false, null, false, null, null, null, java.util.List.of()));
         when(service.download(42L, 7L)).thenReturn(new EmailDraftService.Download("plan.pdf", "application/pdf", new byte[] {1, 2, 3}));
         mvc.perform(get("/api/emails/drafts/42/attachments/7"))

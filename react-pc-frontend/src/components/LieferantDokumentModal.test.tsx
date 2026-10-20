@@ -55,6 +55,8 @@ function lockResponse(
 }
 
 interface FetchSzenario {
+    /** Antwort auf den PDF-Download; Standard: ein Dummy-PDF. */
+    download?: () => Response | Promise<Response>;
     /** aufrufNummer beginnt bei 1 -- so kann ein Test den 1. (Mount) vom 2. (Retry-Klick) Acquire unterscheiden. */
     acquire?: (aufrufNummer: number) => Response | Promise<Response>;
     put?: () => Response | Promise<Response>;
@@ -66,6 +68,7 @@ function buildFetchMock(szenario: FetchSzenario = {}) {
         const methode = options?.method ?? 'GET';
 
         if (typeof url === 'string' && url.includes('/download')) {
+            if (szenario.download) return Promise.resolve(szenario.download());
             return Promise.resolve(new Response('dummy', { headers: { 'Content-Type': 'application/pdf' } }));
         }
         if (typeof url === 'string' && url.endsWith('/acquire')) {
@@ -593,6 +596,31 @@ describe('LieferantDokumentModal', () => {
 
             expect(screen.queryByText('Kein Projekt zugeordnet')).toBeNull();
             expect(screen.getByPlaceholderText('RE-2024-001')).toHaveValue('RE-2026-999');
+        });
+    });
+
+    describe('PDF-Vorschau', () => {
+        it('zeigt „Die Datei wurde nicht gefunden.“ statt eines endlosen Spinners, wenn die Datei fehlt', async () => {
+            global.fetch = buildFetchMock({ download: () => new Response(null, { status: 404 }) }) as unknown as typeof fetch;
+            renderModal();
+
+            expect(await screen.findByText('Die Datei wurde nicht gefunden.')).toBeInTheDocument();
+            expect(screen.queryByText('PDF wird geladen...')).toBeNull();
+            expect(screen.queryByTitle('PDF Vorschau')).toBeNull();
+        });
+
+        it('zeigt „Vorschau konnte nicht geladen werden.“ bei einem Serverfehler', async () => {
+            global.fetch = buildFetchMock({ download: () => new Response(null, { status: 500 }) }) as unknown as typeof fetch;
+            renderModal();
+
+            expect(await screen.findByText('Vorschau konnte nicht geladen werden.')).toBeInTheDocument();
+        });
+
+        it('zeigt die Vorschau, wenn die Datei da ist', async () => {
+            global.fetch = buildFetchMock() as unknown as typeof fetch;
+            renderModal();
+
+            expect(await screen.findByTitle('PDF Vorschau')).toBeInTheDocument();
         });
     });
 });
