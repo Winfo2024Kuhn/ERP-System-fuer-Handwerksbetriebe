@@ -1,4 +1,4 @@
-import { Trash2, Clock, BarChart3, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Trash2, Clock, BarChart3, ChevronRight, AlertTriangle, BookmarkPlus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { TiptapEditor } from '../TiptapEditor';
 import { hatKundentext } from '../artikel/kundentext';
@@ -38,6 +38,14 @@ interface ServiceBlockProps {
     defaultCollapsed?: boolean;
     /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
     verlaufsModus?: boolean;
+    /**
+     * true, wenn die Position aus einer gespeicherten Leistung stammt und
+     * inzwischen davon abweicht (Name, Text, Preis oder Einheit). Dann zeigt die
+     * Karte den Knopf „Als neue Leistung speichern“ – auch zugeklappt.
+     */
+    kannAlsNeueLeistungSpeichern?: boolean;
+    /** Oeffnet den Dialog „Als neue Leistung speichern“ fuer diese Position. */
+    onAlsNeueLeistungSpeichern?: (id: string) => void;
 }
 
 export function ServiceBlock({
@@ -56,6 +64,8 @@ export function ServiceBlock({
     onAddBelow,
     defaultCollapsed = true,
     verlaufsModus,
+    kannAlsNeueLeistungSpeichern = false,
+    onAlsNeueLeistungSpeichern,
 }: ServiceBlockProps) {
     const total = serviceLineTotal(block);
     const hasDiscount = (block.discount ?? 0) > 0;
@@ -189,6 +199,21 @@ export function ServiceBlock({
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* In der Kopfzeile statt im aufgeklappten Teil: Karten starten
+                        zugeklappt, der Hinweis "weicht ab" muss trotzdem sichtbar sein. */}
+                    {kannAlsNeueLeistungSpeichern && !isLocked && onAlsNeueLeistungSpeichern && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); onAlsNeueLeistungSpeichern(block.id); }}
+                            aria-label="Als neue Leistung speichern"
+                            title="Geändert gegenüber der gespeicherten Leistung – als neue Leistung speichern"
+                            className="h-7 px-2 gap-1 text-xs font-medium text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-md"
+                        >
+                            <BookmarkPlus className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Neue Leistung</span>
+                        </Button>
+                    )}
                     <WahlpositionMenu
                         block={block}
                         isLocked={isLocked}

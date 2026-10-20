@@ -39,6 +39,10 @@ interface SectionHeaderBlockProps {
     onGruppeAufloesen?: (name: string) => void;
     /** Standard false. Siehe TiptapEditorProps.verlaufsModus. */
     verlaufsModus?: boolean;
+    /** Ob eine Leistung des Bauabschnitts als neue Leistung gespeichert werden kann (siehe ServiceBlock). */
+    kannAlsNeueLeistungSpeichern?: (child: DocBlock) => boolean;
+    /** Oeffnet den Dialog „Als neue Leistung speichern“ fuer eine Leistung des Bauabschnitts. */
+    onAlsNeueLeistungSpeichern?: (childId: string) => void;
 }
 
 export function SectionHeaderBlock({
@@ -63,6 +67,8 @@ export function SectionHeaderBlock({
     onGruppeUmbenennen,
     onGruppeAufloesen,
     verlaufsModus,
+    kannAlsNeueLeistungSpeichern,
+    onAlsNeueLeistungSpeichern,
 }: SectionHeaderBlockProps) {
     const [editing, setEditing] = useState(false);
     const [localLabel, setLocalLabel] = useState(block.sectionLabel || '');
@@ -140,6 +146,8 @@ export function SectionHeaderBlock({
                     onEditorFocus={onEditorFocus}
                     onAddBelow={onAddBelow}
                     verlaufsModus={verlaufsModus}
+                    kannAlsNeueLeistungSpeichern={kannAlsNeueLeistungSpeichern?.(child) ?? false}
+                    onAlsNeueLeistungSpeichern={onAlsNeueLeistungSpeichern}
                 />
             )}
             {/* Eject button */}

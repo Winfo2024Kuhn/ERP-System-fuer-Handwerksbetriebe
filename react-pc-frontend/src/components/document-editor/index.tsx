@@ -137,7 +137,7 @@ import '@fontsource/open-sans/latin-400-italic.css';
 import '@fontsource/open-sans/latin-700.css';
 import '@fontsource/open-sans/latin-700-italic.css';
 import '@fontsource/montserrat/latin-600.css';
-import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, betragGeaendert, type AbzuloesendeFreigabe, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, unitMap, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur } from './helpers';
+import { brauchtAnnahmeLinkAbfrage, brauchtBuchungsWarnung, istAngebotsTyp, abloesungsFrage, betragGeaendert, type AbzuloesendeFreigabe, buildAdresse, buildAdresseFromAnfrage, blocksToHtml, calculateNetto, calculateNettoNachRabatt, extractBoldFromHtml, getAllServiceBlocks, findBlockContainer, flattenBlocksForPdf, buildPositionMap, gruppiereFuerAnzeige, computeClosureSummary, zahlungszielPlaceholderToChipHtml, chipHtmlToZahlungszielPlaceholder, berechneZahlungszielDatum, DEFAULT_ZAHLUNGSZIEL_TAGE, MIN_ZAHLUNGSZIEL_TAGE, MAX_ZAHLUNGSZIEL_TAGE, ZAHLUNGSZIEL_NACHFRAGE_AB_TAGEN, buildBezugsdokumentKontext, defaultsLabelKandidaten, mussAufBezugsdokumentWarten, mussAufKontextWarten, repariereLeeresBezugsdatumInStandardtext, parseBlocksAusPositionenJson, vergleicheLeistungen, formatiereDifferenzHinweis, baueDokumentSignatur, weichtVonLeistungAb, anzeigeEinheitDerLeistung } from './helpers';
 import { fehlermeldungAusAntwort, pruefeFirmendatenFuerERechnung } from './eRechnungPruefung';
 import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
@@ -153,6 +153,7 @@ import { SummenFooter } from './SummenFooter';
 import { ZahlungszielTageEingabe } from './ZahlungszielTageEingabe';
 import { LivePreviewPanel } from './LivePreviewPanel';
 import { ExportWarningModal, UnsavedChangesModal, PrintOptionsModal, TextbausteinPickerModal, LeistungPickerModal, StundensatzPickerModal, AddTypeDialog } from './Modals';
+import { LeistungNeuSpeichernDialog, type GewaehlterOrdner } from './LeistungNeuSpeichernDialog';
 import { RabattDialog } from './RabattDialog';
 import { KategorieBestaetigenDialog } from './KategorieBestaetigenDialog';
 import { EmailComposeModal } from '../EmailComposeModal';
@@ -422,6 +423,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // Picker Modal State
     const [showTextbausteinPicker, setShowTextbausteinPicker] = useState(false);
     const [showLeistungPicker, setShowLeistungPicker] = useState(false);
+    // Block-id der Position, die gerade als neue Leistung gespeichert wird (Dialog offen).
+    const [neueLeistungBlockId, setNeueLeistungBlockId] = useState<string | null>(null);
     const [showStundensatzPicker, setShowStundensatzPicker] = useState(false);
     // Vollbild-Auswahlfenster fuer Material aus den Artikel-Stammdaten.
     // Wird UNCONDITIONAL gemountet (siehe Rendering weiter unten) - der Dialog
@@ -1873,6 +1876,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         setShowLeistungPicker(false);
         setShowStundensatzPicker(false);
         setShowAddTypeDialog(false);
+        setNeueLeistungBlockId(null);
         // Defense-in-Depth: bei Lock-Uebernahme alle UI-Anker zuruecksetzen,
         // damit beim Entsperren kein stale Anker aus einem abgebrochenen
         // Picker-Flow im Ref haengen bleibt.
@@ -1908,9 +1912,44 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // eigene [aria-modal]-Suche (die deckt nur AddTypeDialog,
     // AlternativGruppeDialog, ArtikelAuswahlDialog und den globalen
     // Bestaetigungsdialog ab).
+    // --- Als neue Leistung speichern ---
+    const leistungenNachId = useMemo(() => new Map(leistungen.map(l => [l.id, l])), [leistungen]);
+
+    /** Knopf nur, wenn die Position aus einer (noch vorhandenen) Leistung stammt und davon abweicht. */
+    const kannAlsNeueLeistungSpeichern = useCallback((b: DocBlock): boolean => {
+        if (isLocked || b.leistungId == null) return false;
+        return weichtVonLeistungAb(b, leistungenNachId.get(b.leistungId));
+    }, [isLocked, leistungenNachId]);
+
+    /** Sucht eine Position auf oberster Ebene oder in einem Bauabschnitt. */
+    const findePosition = (id: string): { block: DocBlock; sectionId?: string } | null => {
+        for (const b of blocks) {
+            if (b.id === id) return { block: b };
+            const kind = b.type === 'SECTION_HEADER' ? b.children?.find(c => c.id === id) : undefined;
+            if (kind) return { block: kind, sectionId: b.id };
+        }
+        return null;
+    };
+
+    const neueLeistungPosition = neueLeistungBlockId ? findePosition(neueLeistungBlockId) : null;
+    const neueLeistungUrsprung = neueLeistungPosition?.block.leistungId != null
+        ? leistungenNachId.get(neueLeistungPosition.block.leistungId)
+        : undefined;
+    /** Tatsaechliche Render-Bedingung des Dialogs – Grundlage fuer einDialogOffen. */
+    const neueLeistungDialogOffen = !!neueLeistungPosition && !!neueLeistungUrsprung && !isLocked;
+
+    // Verschwindet die Position (Rueckgaengig, Loeschen) oder die Ursprungs-
+    // Leistung, waehrend die Id gesetzt ist, die Id verwerfen. Sonst bliebe ein
+    // unsichtbarer "offener Dialog" haengen und spaeteres Wiederauftauchen
+    // oeffnete das Fenster ungefragt.
+    useEffect(() => {
+        if (neueLeistungBlockId !== null && !neueLeistungDialogOffen) setNeueLeistungBlockId(null);
+    }, [neueLeistungBlockId, neueLeistungDialogOffen]);
+
+
     const einDialogOffen = showExportWarning || showExportFormatDialog || showPrintOptions
         || showUnsavedWarning || showAddTypeDialog || showTextbausteinPicker
-        || showLeistungPicker || showStundensatzPicker || showRabattDialog
+        || showLeistungPicker || showStundensatzPicker || showRabattDialog || neueLeistungDialogOffen
         || alternativDialogAnker !== null || pendingLeistungInsert !== null
         || showFormatDialog || showValidityDialog || showOnlineAnnahmeDialog || showEmailModal || materialDialogOffen;
 
@@ -2559,6 +2598,35 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             buendelSchluessel: null,
             ziel: null,
         });
+    };
+
+    /**
+     * Nach erfolgreichem Anlegen: neue Leistung in die Liste, Position mit ihr
+     * verknuepfen. Damit weicht nichts mehr ab und der Knopf verschwindet.
+     */
+    const alsNeueLeistungGespeichert = (neu: LeistungApiDto, ordner: GewaehlterOrdner) => {
+        const id = neueLeistungBlockId;
+        setNeueLeistungBlockId(null);
+        setLeistungen(prev => [...prev.filter(l => l.id !== neu.id), neu]);
+        if (id && !isLocked) {
+            const sectionId = findePosition(id)?.sectionId;
+            const updates: Partial<DocBlock> = { leistungId: neu.id, kategorieId: ordner.id };
+            verlauf.aendern({
+                bezeichnung: 'Als neue Leistung gespeichert',
+                berechne: stand => ({
+                    blocks: stand.blocks.map(b => {
+                        if (b.id === id) return { ...b, ...updates };
+                        if (b.type === 'SECTION_HEADER' && b.children?.some(c => c.id === id)) {
+                            return { ...b, children: b.children.map(c => c.id === id ? { ...c, ...updates } : c) };
+                        }
+                        return b;
+                    }),
+                }),
+                buendelSchluessel: null,
+                ziel: sectionId ? { blockId: id, sectionId } : { blockId: id },
+            });
+        }
+        toast.success(`Neue Leistung „${neu.name}“ im Ordner „${ordner.pfad}“ gespeichert`);
     };
 
     // --- Preview & Export ---
@@ -3595,6 +3663,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     onGruppeUmbenennen={gruppeUmbenennen}
                     onGruppeAufloesen={gruppeAufloesen}
                     verlaufsModus
+                    kannAlsNeueLeistungSpeichern={kannAlsNeueLeistungSpeichern}
+                    onAlsNeueLeistungSpeichern={setNeueLeistungBlockId}
                 />
             )}
             {block.type === 'TEXT' && (
@@ -3631,6 +3701,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     onEditorFocus={markiereEditorFokussiert}
                     onAddBelow={handleAddBelow}
                     verlaufsModus
+                    kannAlsNeueLeistungSpeichern={kannAlsNeueLeistungSpeichern(block)}
+                    onAlsNeueLeistungSpeichern={setNeueLeistungBlockId}
                 />
             )}
             {block.type === 'CLOSURE' && closureSummary.gesamtNetto > 0 && (
@@ -4065,7 +4137,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                             title: l.name,
                             description: descHtml,
                             quantity: 1,
-                            unit: unitMap[l.unit?.name || 'STUECK'] || 'Stk',
+                            unit: anzeigeEinheitDerLeistung(l),
                             price: l.price,
                             fett: extractBoldFromHtml(descHtml),
                             leistungId: l.id,
@@ -4080,6 +4152,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                         pendingAnchorRef.current = DEFAULT_ANCHOR;
                         setShowLeistungPicker(false);
                     }}
+                />
+            )}
+            {neueLeistungDialogOffen && neueLeistungPosition && neueLeistungUrsprung && (
+                <LeistungNeuSpeichernDialog
+                    block={neueLeistungPosition.block}
+                    ursprungsLeistung={neueLeistungUrsprung}
+                    onGespeichert={alsNeueLeistungGespeichert}
+                    onClose={() => setNeueLeistungBlockId(null)}
                 />
             )}
             {showStundensatzPicker && (

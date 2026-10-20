@@ -19,6 +19,9 @@ public interface ProduktkategorieRepository extends JpaRepository<Produktkategor
     @EntityGraph(attributePaths = {"unterkategorien"})
     List<Produktkategorie> findByUebergeordneteKategorieId(Long parentId);
 
+    // true, wenn die Kategorie Unterkategorien hat (also kein Blatt ist).
+    boolean existsByUebergeordneteKategorieId(Long parentId);
+
     // Lädt alle Kategorien mit Parent in einer Query (kein N+1 bei bauePfad / parentId)
     @Query("SELECT k FROM Produktkategorie k LEFT JOIN FETCH k.uebergeordneteKategorie")
     List<Produktkategorie> findAllWithParent();

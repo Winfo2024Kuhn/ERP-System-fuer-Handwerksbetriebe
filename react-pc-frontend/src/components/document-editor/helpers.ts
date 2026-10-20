@@ -1,6 +1,7 @@
 import { CLOSURE_BLOCK_ID } from './blockOps';
-import type { DocBlock } from './types';
+import type { DocBlock, LeistungApiDto } from './types';
 import { DEFAULT_ZAHLUNGSZIEL_TAGE } from '../../lib/zahlungsziel';
+import { htmlZuEinzeiler } from '../../lib/htmlSanitizer';
 
 interface AdresseKundeLike {
     name?: string;
@@ -22,6 +23,63 @@ export const unitMap: Record<string, string> = {
     'KILOGRAMM': 'kg',
     'STUECK': 'Stk'
 };
+
+/** Einheit, wie sie eine eingefuegte Leistung im Block anzeigt (siehe LeistungPickerModal-onSelect). */
+export function anzeigeEinheitDerLeistung(leistung: Pick<LeistungApiDto, 'unit'>): string {
+    return unitMap[leistung.unit?.name || 'STUECK'] || 'Stk';
+}
+
+/**
+ * Umkehrung von {@link unitMap}: Anzeige-Einheit des Blocks ("lfm") zurueck
+ * auf den Enum-Namen der Leistung ("LAUFENDE_METER"). Frei getippte Einheiten
+ * ("m", "h", "Psch") lassen sich nicht abbilden → `null`; das Backend nimmt
+ * dann die Einheit des Ordners.
+ */
+export function einheitZuLeistungsEinheit(anzeige: string | null | undefined): string | null {
+    const gesucht = (anzeige ?? '').trim();
+    if (!gesucht) return null;
+    for (const [enumName, kurz] of Object.entries(unitMap)) {
+        if (kurz === gesucht) return enumName;
+    }
+    return null;
+}
+
+/** Cent-genauer Vergleichswert; fehlender Preis zaehlt wie 0 (so fuegt der Editor ihn auch ein). */
+function centWert(preis: number | null | undefined): number {
+    return typeof preis === 'number' && Number.isFinite(preis) ? Math.round(preis * 100) : 0;
+}
+
+/**
+ * Prueft, ob eine Leistungsposition von der gespeicherten Leistung abweicht,
+ * aus der sie eingefuegt wurde – also ob es sich lohnt, sie als neue Leistung
+ * zu speichern.
+ *
+ * Der Text wird bewusst als Klartext verglichen (Tags weg, Entities entpackt,
+ * Leerraum zusammengefasst): Der Tiptap-Editor schreibt eingefuegtes HTML beim
+ * Laden um (`<b>` → `<strong>`, Klartext → `<p>…</p>`, leere Absaetze), ohne
+ * dass der Bediener etwas geaendert hat. Ein HTML-Vergleich wuerde den Knopf
+ * dann schon direkt nach dem Einfuegen zeigen. Reine Formatierungs-Aenderungen
+ * (nur fett gesetzt) zaehlen dadurch nicht als Abweichung.
+ *
+ * Ohne Ursprungs-Leistung (geloescht oder nie verknuepft) gibt es nichts zu
+ * vergleichen → `false`.
+ */
+export function weichtVonLeistungAb(
+    block: Pick<DocBlock, 'title' | 'description' | 'price' | 'unit'>,
+    leistung: Pick<LeistungApiDto, 'name' | 'description' | 'price' | 'unit'> | null | undefined,
+): boolean {
+    if (!leistung) return false;
+    if ((block.title ?? '').trim() !== (leistung.name ?? '').trim()) return true;
+    if (htmlZuEinzeiler(block.description) !== htmlZuEinzeiler(leistung.description)) return true;
+    if (centWert(block.price) !== centWert(leistung.price)) return true;
+    // Frei getippte Einheiten ("Psch", "m") kennt die Leistung nicht – beim
+    // Speichern ginge sie als null raus und das Backend naehme die Einheit des
+    // Ordners. Danach wiche die Position weiter ab, der Knopf bliebe stehen und
+    // jeder weitere Klick legte eine doppelte Leistung an. Deshalb zaehlt die
+    // Einheit nur, wenn sie sich auch speichern laesst.
+    if (einheitZuLeistungsEinheit(block.unit || 'Stk') == null) return false;
+    return (block.unit || 'Stk').trim() !== anzeigeEinheitDerLeistung(leistung);
+}
 
 /**
  * Checks if HTML content contains bold formatting.

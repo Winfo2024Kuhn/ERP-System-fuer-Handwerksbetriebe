@@ -13,8 +13,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -150,6 +152,25 @@ class LeistungControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(dto)))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Ungültige Angaben geben 400 mit verständlicher Meldung")
+        void ungueltigeAngabenGeben400() throws Exception {
+            given(leistungService.createLeistung(any(LeistungCreateDto.class)))
+                    .willThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Leistungen können nur in der untersten Ordnerebene gespeichert werden."));
+
+            LeistungCreateDto dto = new LeistungCreateDto();
+            dto.setName("Geländer montieren");
+            dto.setFolderId(3L);
+
+            mockMvc.perform(post("/api/leistungen")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(dto)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message")
+                            .value("Leistungen können nur in der untersten Ordnerebene gespeichert werden."));
         }
 
         @Test
