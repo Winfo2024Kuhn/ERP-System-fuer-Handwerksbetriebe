@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -81,6 +82,75 @@ class BestellungsUebersichtServiceTest {
         lenient().when(geschaeftsdokumentRepository.findAll()).thenReturn(List.of());
         lenient().when(rechnungsVorschlagService.besterVorschlag(anyCollection(), anyCollection(), anyCollection(), any()))
                 .thenReturn(Optional.empty());
+    }
+
+    /** Seite „Bestellungen“: je Gruppe nur die neuesten Ketten, Suche über alle. */
+    @Nested
+    class MehrLaden {
+
+        private List<LieferantDokument> lieferscheine(int anzahl) {
+            List<LieferantDokument> liste = new java.util.ArrayList<>();
+            for (int i = 1; i <= anzahl; i++) {
+                liste.add(dokument(i, LieferantDokumentTyp.LIEFERSCHEIN, LocalDate.of(2026, 1, 1).plusDays(i)));
+            }
+            return liste;
+        }
+
+        @Test
+        void kuerztJeGruppeUndRechnetVorschlaegeNurFuerGeladene() {
+            when(dokumentRepository.findAll()).thenReturn(lieferscheine(30));
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN, 25, null);
+
+            assertThat(dto.laufendeBestellungen()).hasSize(25);
+            assertThat(dto.gesamt().laufendeBestellungen()).isEqualTo(30);
+            // neueste zuerst: Lieferschein 30 vorne, 1–5 sind nicht geladen
+            assertThat(dto.laufendeBestellungen().getFirst().dokumente().getFirst().id).isEqualTo(30L);
+            verify(rechnungsVorschlagService, times(25))
+                    .besterVorschlag(anyCollection(), anyCollection(), anyCollection(), any());
+        }
+
+        @Test
+        void aktuelleUndUeberfaelligeWerdenGetrenntGekuerzt() {
+            List<LieferantDokument> alle = lieferscheine(30); // Januar 2026: alle überfällig
+            LocalDate heute = LocalDate.now();
+            for (int i = 1; i <= 3; i++) {
+                alle.add(dokument(100 + i, LieferantDokumentTyp.LIEFERSCHEIN, heute.minusDays(i)));
+            }
+            when(dokumentRepository.findAll()).thenReturn(alle);
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN, 25, null);
+
+            // 3 aktuelle + 25 überfällige – die überfälligen hängen nicht hinter „Mehr laden“
+            assertThat(dto.laufendeBestellungen()).hasSize(28);
+            assertThat(dto.gesamt().laufendeBestellungen()).isEqualTo(33);
+            assertThat(dto.gesamt().laufendeBestellungenAktuell()).isEqualTo(3);
+            assertThat(dto.laufendeBestellungen().getFirst().dokumente().getFirst().id).isEqualTo(101L);
+        }
+
+        @Test
+        void sucheGiltFuerAlleKetten() {
+            List<LieferantDokument> alle = lieferscheine(30);
+            alle.getFirst().setLieferant(andererLieferant); // der älteste, wäre ohne Suche nicht geladen
+            when(dokumentRepository.findAll()).thenReturn(alle);
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN, 25, "  erika  MUSTERFRAU ");
+
+            assertThat(dto.laufendeBestellungen()).singleElement()
+                    .satisfies(k -> assertThat(k.lieferantName()).isEqualTo("Erika Musterfrau KG"));
+            assertThat(dto.gesamt().laufendeBestellungen()).isEqualTo(1);
+        }
+
+        @Test
+        void ohneKuerzungEntsprechenDieZahlenDenListen() {
+            when(dokumentRepository.findAll()).thenReturn(lieferscheine(3));
+
+            BestellungsUebersichtDto dto = service.ladeUebersicht(ALLE_TYPEN);
+
+            assertThat(dto.laufendeBestellungen()).hasSize(3);
+            assertThat(dto.gesamt().laufendeBestellungen()).isEqualTo(3);
+            assertThat(dto.gesamt().offeneAnfragen()).isZero();
+        }
     }
 
     @Nested

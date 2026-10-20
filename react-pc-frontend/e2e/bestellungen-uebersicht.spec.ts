@@ -1,6 +1,7 @@
 import type { Locator, Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
 import { designPruefung, keinHorizontalerUeberlauf } from './hilfen/design';
+import { bestellungenAntwort } from './hilfen/bestellungen';
 
 /**
  * Bestellungen: Suche über alle Reiter, ältere Angebote eingeklappt, alte
@@ -140,8 +141,10 @@ interface StubOptionen {
     eigenerLieferantOhneRechnung?: boolean;
 }
 
+const HEUTE = new Date('2026-10-05T10:00:00');
+
 async function stubApi(page: Page, mitschrift: Mitschrift, optionen: StubOptionen = {}) {
-    await page.clock.setFixedTime(new Date('2026-10-05T10:00:00'));
+    await page.clock.setFixedTime(HEUTE);
     await page.route('**/api/**', (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -153,7 +156,7 @@ async function stubApi(page: Page, mitschrift: Mitschrift, optionen: StubOptione
         if (pfad.startsWith('/api/test-pdf/')) {
             return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF' });
         }
-        if (pfad === '/api/bestellungen-uebersicht' && request.method() === 'GET') return json(route, UEBERSICHT);
+        if (pfad === '/api/bestellungen-uebersicht' && request.method() === 'GET') return json(route, bestellungenAntwort(UEBERSICHT, url, HEUTE));
         if (pfad === '/api/bestellungen-uebersicht/belege-offen') return json(route, []);
         const positionen = /^\/api\/bestellungen-uebersicht\/positionen\/(\d+)$/.exec(pfad);
         if (positionen) {

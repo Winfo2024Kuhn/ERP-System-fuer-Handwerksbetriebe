@@ -26,6 +26,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -64,19 +65,36 @@ public class BestellungsUebersichtController {
     private static final int MAX_KETTEN_DOKUMENTE = 50;
 
 
+    /** Standard und Obergrenze für „Ketten je Gruppe“ (Seite „Bestellungen“: „Mehr laden“). */
+    static final int ANZAHL_STANDARD = 25;
+    public static final int ANZAHL_MAX = 1000;
+    static final int SUCHE_MAX_LAENGE = 200;
+    static final int SUCHE_MIN_LAENGE = 2;
+
     /**
-     * Gibt alle Dokumenten-Ketten gruppiert nach Status zurück.
+     * Dokumenten-Ketten gruppiert nach Status, je Gruppe die {@code anzahl} neuesten. Die Suche
+     * gilt für alle Ketten; {@code gesamt} nennt die Anzahl je Gruppe nach der Suche.
      */
     @GetMapping
     public ResponseEntity<BestellungsUebersichtDto> getUebersicht(
             @RequestParam(value = "token", required = false) String token,
+            @RequestParam(value = "anzahl", defaultValue = "" + ANZAHL_STANDARD) int anzahl,
+            @RequestParam(value = "suche", required = false) String suche,
             Authentication auth) {
+        if (suche != null && suche.trim().length() < SUCHE_MIN_LAENGE) {
+            suche = null; // ein Zeichen grenzt nichts sinnvoll ein – kein eigener Suchlauf
+        }
+        if (suche != null && suche.length() > SUCHE_MAX_LAENGE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Der Suchbegriff ist zu lang (höchstens " + SUCHE_MAX_LAENGE + " Zeichen).");
+        }
         // Nur Dokumenttypen, die der Angemeldete laut Abteilungsrechten sehen darf (Admin: alle).
         var sichtbareTypen = zugriffService.sichtbareTypen(token, auth);
         if (sichtbareTypen.isEmpty()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        return ResponseEntity.ok(bestellungsUebersichtService.ladeUebersicht(sichtbareTypen.get()));
+        return ResponseEntity.ok(bestellungsUebersichtService.ladeUebersicht(sichtbareTypen.get(),
+                Math.clamp(anzahl, 1, ANZAHL_MAX), suche));
     }
 
     /**

@@ -112,6 +112,7 @@ function bestellungen(dokumente: ReturnType<typeof rechnung>[]) {
     return {
         offeneAnfragen: [], laufendeBestellungen: [], zugeordnet: [], ausgeblendet: [],
         abgeschlossen: [{ id: 'a1', lieferantId: 1, lieferantName: 'Musterstahl Handel GmbH', rechnungsVorschlag: null, verbindungen: [], dokumente }],
+        gesamt: { offeneAnfragen: 0, offeneAnfragenAktuell: 0, laufendeBestellungen: 0, laufendeBestellungenAktuell: 0, abgeschlossen: 1, zugeordnet: 0, ausgeblendet: 0 },
     };
 }
 
