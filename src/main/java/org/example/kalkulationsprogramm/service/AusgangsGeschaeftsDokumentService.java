@@ -312,6 +312,7 @@ public class AusgangsGeschaeftsDokumentService {
         if (!ERLAUBT_BEI_GESPERRTEM_KUNDEN.contains(dokument.getTyp())) {
             KundeDatenschutzService.pruefeNichtGesperrt(dokument.getKunde());
         }
+        KundeDatenschutzService.pruefeNichtAnonymisiert(dokument.getKunde());
 
         // Zahlungsziel aus Kunde übernehmen falls nicht explizit gesetzt
         if (dokument.getZahlungszielTage() == null && dokument.getKunde() != null
@@ -330,6 +331,7 @@ public class AusgangsGeschaeftsDokumentService {
 
         normalisiereStornobetraege(dokument);
         AusgangsGeschaeftsDokument saved = dokumentRepository.save(dokument);
+        verlaengereAufbewahrungBeiGesperrtemKunden(saved);
 
         // Projekt-Preis aktualisieren
         if (saved.getProjekt() != null) {
@@ -354,6 +356,13 @@ public class AusgangsGeschaeftsDokumentService {
         }
 
         return saved;
+    }
+
+    /** Storno, Gutschrift oder Mahnung für einen gesperrten Kunden verlängern dessen Aufbewahrungsfrist. */
+    private void verlaengereAufbewahrungBeiGesperrtemKunden(AusgangsGeschaeftsDokument dokument) {
+        if (KundeDatenschutzService.verlaengereAufbewahrung(dokument.getKunde(), dokument)) {
+            kundeRepository.save(dokument.getKunde());
+        }
     }
 
     /**
@@ -768,6 +777,10 @@ public class AusgangsGeschaeftsDokumentService {
     public StornoErgebnis stornierenMitHinweisen(Long id, Long bearbeiterId, String ipAdresse, String grund) {
         AusgangsGeschaeftsDokument original = dokumentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Dokument nicht gefunden: " + id));
+        // Altbelege tragen den Kunden teils nur über Projekt bzw. Anfrage.
+        KundeDatenschutzService.pruefeNichtAnonymisiert(original.getKunde() != null ? original.getKunde()
+                : original.getProjekt() != null ? original.getProjekt().getKundenId()
+                : original.getAnfrage() != null ? original.getAnfrage().getKunde() : null);
 
         if (original.isStorniert()) {
             throw new RuntimeException("Dokument ist bereits storniert.");
@@ -826,6 +839,7 @@ public class AusgangsGeschaeftsDokumentService {
         storno.setGebuchtAm(LocalDate.now());
 
         AusgangsGeschaeftsDokument savedStorno = dokumentRepository.save(storno);
+        verlaengereAufbewahrungBeiGesperrtemKunden(savedStorno);
 
         // Offenen-Posten-Eintrag des Originals als bezahlt markieren (storniert)
         markiereOffenenPostenAlsBezahlt(original);

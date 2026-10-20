@@ -30,6 +30,10 @@ public interface ProjektDokumentRepository extends JpaRepository<ProjektDokument
   @Query("SELECT g FROM ProjektGeschaeftsdokument g")
   List<ProjektGeschaeftsdokument> findAllGeschaeftsdokumente();
 
+  /** Geschäftsdokumente (Rechnungen, Mahnungen …) dieser Projekte – für die Aufbewahrungsfrist. */
+  @Query("SELECT g FROM ProjektGeschaeftsdokument g WHERE g.projekt.id IN :projektIds")
+  List<ProjektGeschaeftsdokument> findGeschaeftsdokumenteByProjektIdIn(@Param("projektIds") List<Long> projektIds);
+
   @Query("""
       SELECT g FROM ProjektGeschaeftsdokument g
       WHERE g.bezahlt = false
