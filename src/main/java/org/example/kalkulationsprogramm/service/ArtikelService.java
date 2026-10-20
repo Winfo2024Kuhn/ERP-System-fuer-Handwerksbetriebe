@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -69,14 +72,49 @@ public class ArtikelService implements ArtikelServiceContract {
     private static final Pattern GEFAEHRLICHES_CSS_MUSTER = Pattern.compile(
             "url\\(|expression\\(|position|@import|javascript:", Pattern.CASE_INSENSITIVE);
 
+    private static final int MAX_ARTIKELNUMMER = 64;
+
     private final ArtikelRepository artikelRepository;
     private final KategorieRepository kategorieRepository;
     private final WerkstoffRepository werkstoffRepository;
     private final LieferantenRepository lieferantenRepository;
 
+    /**
+     * Legt einen Artikel an. Preis und Lieferanten-Artikelnummer gehören immer zu einem
+     * Lieferanten: Ohne Lieferant gingen sie verloren, weil Liste und „Wer liefert das?“ nur
+     * Lieferantenpreise zeigen (Issue #265). Der erste Preis bekommt Datum und Herkunft und
+     * steht damit im Preisverlauf.
+     */
     @Transactional
     public Artikel erstelleArtikel(ArtikelCreateDto dto) {
+        String externeNummer = leerAlsNull(dto.getExterneArtikelnummer());
+        String artikelnummer = leerAlsNull(dto.getArtikelnummer());
+        if ((dto.getPreis() != null || externeNummer != null) && dto.getLieferantId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Für Preis und Lieferanten-Artikelnummer bitte auch den Lieferanten wählen.");
+        }
+        if (dto.getPreis() != null && dto.getPreis().signum() < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Preis darf nicht negativ sein.");
+        }
+        if (artikelnummer != null) {
+            if (artikelnummer.length() > MAX_ARTIKELNUMMER) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Die Artikelnummer darf höchstens " + MAX_ARTIKELNUMMER + " Zeichen lang sein.");
+            }
+            if (artikelRepository.existsByArtikelnummerIgnoreCase(artikelnummer)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Die Artikelnummer „" + artikelnummer + "“ ist schon vergeben.");
+            }
+        }
+        Lieferanten lieferant = null;
+        if (dto.getLieferantId() != null) {
+            lieferant = lieferantenRepository.findById(dto.getLieferantId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Der gewählte Lieferant wurde nicht gefunden."));
+        }
+
         Artikel artikel = new Artikel();
+        artikel.setArtikelnummer(artikelnummer);
         artikel.setProduktname(dto.getProduktname());
         artikel.setProduktlinie(dto.getProduktlinie());
         artikel.setProdukttext(dto.getProdukttext());
@@ -96,19 +134,24 @@ public class ArtikelService implements ArtikelServiceContract {
 
         Artikel saved = artikelRepository.save(artikel);
 
-        if (dto.getPreis() != null || (dto.getExterneArtikelnummer() != null && !dto.getExterneArtikelnummer().isBlank())) {
+        if (lieferant != null && (dto.getPreis() != null || externeNummer != null)) {
             LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
             preis.setArtikel(saved);
+            preis.setLieferant(lieferant);
             preis.setPreis(dto.getPreis());
-            preis.setExterneArtikelnummer(dto.getExterneArtikelnummer());
-            if (dto.getLieferantId() != null) {
-                lieferantenRepository.findById(dto.getLieferantId()).ifPresent(preis::setLieferant);
-            }
+            preis.setExterneArtikelnummer(externeNummer);
+            preis.setPreisAenderungsdatum(new java.util.Date());
+            preis.setQuelle(PreisQuelle.MANUELL);
+            preis.setAktuell(true);
             saved.getArtikelpreis().add(preis);
             artikelRepository.save(saved);
         }
 
         return saved;
+    }
+
+    private static String leerAlsNull(String text) {
+        return text == null || text.isBlank() ? null : text.strip();
     }
 
     @Transactional(readOnly = true)

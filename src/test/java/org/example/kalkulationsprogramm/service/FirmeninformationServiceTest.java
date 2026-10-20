@@ -32,6 +32,7 @@ class FirmeninformationServiceTest {
 
     private FirmeninformationRepository repository;
     private GewerkRepository gewerkRepository;
+    private FeiertagService feiertagService;
     private FirmeninformationService service;
     private Firmeninformation firma;
 
@@ -52,6 +53,7 @@ class FirmeninformationServiceTest {
     void setUp() {
         repository = mock(FirmeninformationRepository.class);
         gewerkRepository = mock(GewerkRepository.class);
+        feiertagService = mock(FeiertagService.class);
         firma = new Firmeninformation();
         firma.setId(1L);
         firma.setFirmenname("Musterbetrieb");
@@ -59,7 +61,7 @@ class FirmeninformationServiceTest {
         when(repository.findFirmeninformation()).thenReturn(Optional.of(firma));
         when(repository.save(any(Firmeninformation.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service = new FirmeninformationService(repository, gewerkRepository);
+        service = new FirmeninformationService(repository, gewerkRepository, feiertagService);
         ReflectionTestUtils.setField(service, "logoUploadDir", tmp.toString());
     }
 
@@ -191,5 +193,58 @@ class FirmeninformationServiceTest {
     @Test
     void firmenangabenFuerEmail_ohneGepflegteDatenSindLeer() {
         assertEquals(org.example.email.EmailService.Firmenangaben.keine(), service.firmenangabenFuerEmail());
+    }
+
+    // ==================== Bundesland (Issue #222) ====================
+
+    @Test
+    void speichern_neuesBundesland_meldetEsDemFeiertagService() {
+        org.example.kalkulationsprogramm.dto.FirmeninformationDto dto = new org.example.kalkulationsprogramm.dto.FirmeninformationDto();
+        dto.setFirmenname("Musterbetrieb");
+        dto.setBundesland("he");
+
+        org.example.kalkulationsprogramm.dto.FirmeninformationDto ergebnis = service.speichern(dto);
+
+        assertEquals("HE", firma.getBundesland());
+        assertEquals("HE", ergebnis.getBundesland());
+        verify(feiertagService).bundeslandGeaendert("HE");
+    }
+
+    @Test
+    void speichern_ohneBundesland_bleibtEsUnveraendert() {
+        firma.setBundesland("BW");
+        org.example.kalkulationsprogramm.dto.FirmeninformationDto dto = new org.example.kalkulationsprogramm.dto.FirmeninformationDto();
+        dto.setFirmenname("Musterbetrieb");
+
+        service.speichern(dto);
+
+        assertEquals("BW", firma.getBundesland());
+        verify(feiertagService, never()).bundeslandGeaendert(any());
+    }
+
+    @Test
+    void speichern_gleichesBundesland_loestNichtsAus() {
+        org.example.kalkulationsprogramm.dto.FirmeninformationDto dto = new org.example.kalkulationsprogramm.dto.FirmeninformationDto();
+        dto.setFirmenname("Musterbetrieb");
+        dto.setBundesland("BY");
+
+        service.speichern(dto);
+
+        verify(feiertagService, never()).bundeslandGeaendert(any());
+    }
+
+    @Test
+    void speichern_ungueltigesBundesland_gibt400() {
+        org.example.kalkulationsprogramm.dto.FirmeninformationDto dto = new org.example.kalkulationsprogramm.dto.FirmeninformationDto();
+        dto.setFirmenname("Musterbetrieb");
+        dto.setBundesland("'; DROP TABLE firmeninformation; --");
+
+        org.springframework.web.server.ResponseStatusException fehler = assertThrows(
+                org.springframework.web.server.ResponseStatusException.class, () -> service.speichern(dto));
+
+        assertEquals(400, fehler.getStatusCode().value());
+        assertEquals("Bitte ein gültiges Bundesland wählen.", fehler.getReason());
+        assertEquals("BY", firma.getBundesland());
+        verify(repository, never()).save(any());
     }
 }

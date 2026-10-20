@@ -2,7 +2,9 @@ package org.example.kalkulationsprogramm.repository;
 
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -46,6 +48,15 @@ public interface AusgangsGeschaeftsDokumentRepository extends JpaRepository<Ausg
      * Findet alle Nachfolger-Dokumente eines Vorgängers, sortiert nach Erstellungszeitpunkt
      */
     List<AusgangsGeschaeftsDokument> findByVorgaengerIdOrderByErstelltAmAsc(Long vorgaengerId);
+
+    /**
+     * Sperrt die Rechnung, solange eine Gutschrift zu ihr angelegt, geändert oder gebucht wird
+     * oder die Rechnung storniert wird: Zwei gleichzeitige Vorgänge dürfen den Rechnungsbetrag
+     * nicht gemeinsam überschreiten bzw. eine neue Gutschrift übersehen.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT d FROM AusgangsGeschaeftsDokument d WHERE d.id = :id")
+    Optional<AusgangsGeschaeftsDokument> sperreZumGutschreiben(@Param("id") Long id);
 
     /**
      * Zählt Abschlagsrechnungen zu einem Vorgänger-Dokument (für Nummerierung)

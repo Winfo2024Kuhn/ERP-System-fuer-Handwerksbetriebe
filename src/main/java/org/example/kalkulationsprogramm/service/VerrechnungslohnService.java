@@ -36,7 +36,6 @@ import org.example.kalkulationsprogramm.repository.ArbeitsgangRepository;
 import org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository;
 import org.example.kalkulationsprogramm.repository.BelegKostenstellenAnteilRepository;
 import org.example.kalkulationsprogramm.repository.BelegRepository;
-import org.example.kalkulationsprogramm.repository.FeiertagRepository;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.example.kalkulationsprogramm.repository.LangzeitkrankmeldungPhaseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAnteilRepository;
@@ -77,7 +76,6 @@ public class VerrechnungslohnService {
     private static final BigDecimal STUNDEN_PRO_TAG_DEFAULT = new BigDecimal("8.00");
     private static final BigDecimal KRANKHEITSTAGE_DEFAULT = new BigDecimal("8.00");
     private static final BigDecimal INTERNE_QUOTE_DEFAULT = new BigDecimal("0.05");
-    private static final String BUNDESLAND_DEFAULT = "BY";
     private static final List<ProjektArt> PRODUKTIVE_PROJEKTARTEN =
             Arrays.stream(ProjektArt.values()).filter(ProjektArt::isProduktiv).toList();
     private static final List<ProjektArt> UNPRODUKTIVE_PROJEKTARTEN =
@@ -89,7 +87,7 @@ public class VerrechnungslohnService {
     private final ZeitbuchungRepository zeitbuchungRepository;
     private final ZeitkontoVersionRepository zeitkontoVersionRepository;
     private final AbwesenheitRepository abwesenheitRepository;
-    private final FeiertagRepository feiertagRepository;
+    private final FeiertagService feiertagService;
     private final SvSatzRepository svSatzRepository;
     private final FirmeninformationRepository firmeninformationRepository;
     private final LieferantDokumentProjektAnteilRepository anteilRepository;
@@ -630,7 +628,8 @@ public class VerrechnungslohnService {
     }
 
     private Set<LocalDate> ladeFeiertage(int jahr) {
-        List<Feiertag> feiertage = feiertagRepository.findByJahrAndBundesland(jahr, BUNDESLAND_DEFAULT);
+        // Aktive Feiertage des eingestellten Bundeslands; fehlt das Jahr noch, lädt der Service es.
+        List<Feiertag> feiertage = feiertagService.getFeiertageForJahr(jahr);
         Set<LocalDate> resultat = new HashSet<>();
         for (Feiertag f : feiertage) {
             DayOfWeek dow = f.getDatum().getDayOfWeek();

@@ -9,7 +9,7 @@ export type PreisHinweis = 'OK' | 'KEIN_AUFSCHLAG' | 'KEIN_PREIS' | 'KEIN_GEWICH
 export const preisHinweisText: Record<Exclude<PreisHinweis, 'OK'>, string> = {
     KEIN_AUFSCHLAG: 'Kein Aufschlag hinterlegt — der Preis entspricht dem Einkauf.',
     KEIN_PREIS: 'Kein Preis hinterlegt — bitte selbst eintragen.',
-    KEIN_GEWICHT: 'Gewicht je Meter fehlt — bitte in den Artikel-Details pflegen.',
+    KEIN_GEWICHT: 'Gewicht je Meter fehlt – der Preis je Meter lässt sich deshalb nicht berechnen.',
 };
 
 /** Kurzform für enge Stellen wie eine Trefferzeile. */

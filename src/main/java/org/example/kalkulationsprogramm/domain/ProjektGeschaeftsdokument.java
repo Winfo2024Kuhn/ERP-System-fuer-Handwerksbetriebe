@@ -48,4 +48,16 @@ public class ProjektGeschaeftsdokument extends ProjektDokument
     @Column(name = "system_generiert", nullable = false)
     private boolean systemGeneriert = false;
 
+    /** Brutto der gebuchten Kunden-Gutschriften zu dieser Rechnung (Issue #223); 0 = keine. */
+    @Column(name = "gutgeschrieben", nullable = false, precision = 38, scale = 2)
+    private BigDecimal gutgeschrieben = BigDecimal.ZERO;
+
+    /** Was der Kunde noch schuldet: Rechnungsbetrag minus Gutschriften; null ohne Betrag. */
+    public BigDecimal getOffenerBetrag() {
+        if (bruttoBetrag == null) {
+            return null;
+        }
+        return gutgeschrieben == null ? bruttoBetrag : bruttoBetrag.subtract(gutgeschrieben);
+    }
+
 }

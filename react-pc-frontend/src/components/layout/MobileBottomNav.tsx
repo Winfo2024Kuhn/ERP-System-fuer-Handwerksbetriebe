@@ -72,7 +72,7 @@ const MORE_SECTIONS: NavSection[] = [
         label: 'Katalog',
         items: [
             { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
-            { name: 'Kategorien', href: '/produktkategorien', icon: Layers },
+            { name: 'Projekt-Kategorien', href: '/produktkategorien', icon: Layers },
         ]
     },
     {

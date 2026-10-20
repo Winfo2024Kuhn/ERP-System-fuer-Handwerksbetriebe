@@ -74,7 +74,8 @@ public class LieferantArtikelpreisService {
      * <p>Aendert sich am Preis nichts, wird kein neuer Eintrag erzeugt - sonst
      * wuerde jeder Speichervorgang den Verlauf mit Wiederholungen aufblaehen.
      * Eine reine Aenderung der Lieferanten-Artikelnummer wird am bestehenden
-     * Eintrag nachgezogen, weil sie kein Preisereignis ist.
+     * Eintrag nachgezogen, weil sie kein Preisereignis ist. Ohne Nummer bleibt
+     * die bisherige stehen.
      */
     @Transactional
     public Optional<LieferantArtikelpreisDto> schreibePreisstand(Long lieferantId, Long artikelId, BigDecimal preis,
@@ -83,9 +84,14 @@ public class LieferantArtikelpreisService {
             return Optional.empty();
         }
 
-        String nummer = normalizeExterneArtikelnummer(externeArtikelnummer);
         Optional<LieferantenArtikelPreise> bisher =
                 artikelPreiseRepository.findByArtikel_IdAndLieferant_IdAndAktuellTrue(artikelId, lieferantId);
+        // Leer gelassene Lieferanten-Artikelnummer = die bisherige behalten. So reicht beim
+        // Preis ändern der neue Preis (Issue #265); nur eine eingegebene Nummer ersetzt sie.
+        String nummer = normalizeExterneArtikelnummer(externeArtikelnummer);
+        if (nummer == null && bisher.isPresent()) {
+            nummer = bisher.get().getExterneArtikelnummer();
+        }
 
         if (bisher.isPresent() && Objects.equals(normalisiert(bisher.get().getPreis()), normalisiert(preis))) {
             LieferantenArtikelPreise unveraendert = bisher.get();

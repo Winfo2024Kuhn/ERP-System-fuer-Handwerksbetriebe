@@ -258,6 +258,11 @@ public class SecurityConfig {
                         "/api/firma/steuerberater",
                         "/api/firma/steuerberater/*").authenticated()
                 .requestMatchers(HttpMethod.PUT, "/api/abteilungen/*/berechtigungen").hasRole("ADMIN")
+                // Feiertage anlegen, anpassen, löschen wirkt auf Soll und Lohn aller Mitarbeiter (Issue #222).
+                .requestMatchers(HttpMethod.POST, "/api/zeitverwaltung/feiertage",
+                        "/api/zeitverwaltung/feiertage/regenerieren").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/zeitverwaltung/feiertage/*").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/zeitverwaltung/feiertage/*").hasRole("ADMIN")
                 .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**", "/api/postfaecher", "/api/postfaecher/**").hasRole("ADMIN")
                 // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
                 // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.

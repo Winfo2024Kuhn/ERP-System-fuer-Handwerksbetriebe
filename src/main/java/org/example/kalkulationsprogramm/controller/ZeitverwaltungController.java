@@ -22,6 +22,9 @@ import org.example.kalkulationsprogramm.domain.Feiertag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.MonatsSaldo;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
+import org.example.kalkulationsprogramm.dto.Feiertag.FeiertagAendernRequest;
+import org.example.kalkulationsprogramm.dto.Feiertag.FeiertagAnlegenRequest;
+import org.example.kalkulationsprogramm.dto.Feiertag.FeiertagDto;
 import org.example.kalkulationsprogramm.dto.ZeitkontoStatusDto;
 import org.example.kalkulationsprogramm.dto.ZeitkontoWechselDto;
 import org.example.kalkulationsprogramm.dto.ZeitkontoWechselErgebnisDto;
@@ -34,6 +37,7 @@ import org.example.kalkulationsprogramm.service.FeiertagService;
 import org.example.kalkulationsprogramm.service.TagesSollService;
 import org.example.kalkulationsprogramm.service.ZeitbuchungAuditService;
 import org.example.kalkulationsprogramm.service.ZeitkontoService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +50,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -619,13 +624,16 @@ public class ZeitverwaltungController {
 
     // ==================== Feiertage ====================
 
+    /** Alle Feiertage des eingestellten Bundeslands, auch abgeschaltete (Feiertage-Seite). */
     @GetMapping("/feiertage")
-    public ResponseEntity<List<Feiertag>> getFeiertage(@RequestParam int jahr) {
-        return ResponseEntity.ok(feiertagService.getFeiertageForJahr(jahr));
+    public ResponseEntity<List<FeiertagDto>> getFeiertage(@RequestParam int jahr) {
+        return ResponseEntity.ok(feiertagService.getFeiertageZurVerwaltung(jahr).stream()
+                .map(FeiertagDto::von)
+                .toList());
     }
 
     /**
-     * Gibt Feiertage in einem Datumsbereich zurück.
+     * Aktive Feiertage in einem Datumsbereich.
      * Für die mobile App: Prüfung vor Urlaubsantrag.
      */
     @GetMapping("/feiertage/zwischen")
@@ -639,17 +647,53 @@ public class ZeitverwaltungController {
         List<Map<String, String>> result = feiertage.stream()
                 .map(f -> Map.of(
                         "datum", f.getDatum().toString(),
-                        "bezeichnung", f.getBezeichnung()))
+                        "bezeichnung", f.getBezeichnung(),
+                        "halbTag", String.valueOf(f.isHalbTag())))
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(result);
     }
 
+    /** Lädt die gesetzlichen Feiertage neu; eigene Feiertage und Anpassungen bleiben. */
     @PostMapping("/feiertage/regenerieren")
-    public ResponseEntity<List<Feiertag>> regeneriereFeiertage(
+    public ResponseEntity<List<FeiertagDto>> regeneriereFeiertage(
             @RequestParam int vonJahr,
             @RequestParam int bisJahr) {
-        return ResponseEntity.ok(feiertagService.regeneriereFeiertage(vonJahr, bisJahr));
+        if (vonJahr < 2000 || bisJahr > 2100 || bisJahr < vonJahr || bisJahr - vonJahr > 10) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bitte einen gültigen Zeitraum angeben.");
+        }
+        return ResponseEntity.ok(feiertagService.regeneriereFeiertage(vonJahr, bisJahr).stream()
+                .map(FeiertagDto::von)
+                .toList());
+    }
+
+    /** Eigenen Feiertag anlegen (nur Admin, siehe SecurityConfig). */
+    @PostMapping("/feiertage")
+    public ResponseEntity<FeiertagDto> legeFeiertagAn(@RequestBody FeiertagAnlegenRequest request) {
+        return ResponseEntity.ok(FeiertagDto.von(
+                feiertagService.anlegen(request.datum(), request.bezeichnung(), request.halbTag())));
+    }
+
+    /** Halber Tag / abgeschaltet setzen (nur Admin). */
+    @PutMapping("/feiertage/{id}")
+    public ResponseEntity<FeiertagDto> aendereFeiertag(@PathVariable Long id,
+            @RequestBody FeiertagAendernRequest request) {
+        return ResponseEntity.ok(FeiertagDto.von(
+                feiertagService.aendern(gueltigeId(id), request.halbTag(), request.aktiv())));
+    }
+
+    /** Eigenen Feiertag löschen (nur Admin). */
+    @DeleteMapping("/feiertage/{id}")
+    public ResponseEntity<Void> loescheFeiertag(@PathVariable Long id) {
+        feiertagService.loeschen(gueltigeId(id));
+        return ResponseEntity.noContent().build();
+    }
+
+    private static Long gueltigeId(Long id) {
+        if (id == null || id <= 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Feiertag nicht gefunden.");
+        }
+        return id;
     }
 
     // ==================== Zeitkonten ====================

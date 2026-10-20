@@ -17,19 +17,18 @@ it.each(['montagStunden', 'dienstagStunden', 'mittwochStunden', 'donnerstagStund
 it.each(['8,', '8.5', '-1', '24,01', 'abc'])('verhindert ungültige Stunden %s', wert => {
  expect(() => pruefeArbeitszeit({ ...entwurf, montagStunden: wert })).toThrow(/Montag Stunden/);
 });
-it('belässt leere oder einseitige optionale Zeitfenster', () => {
+it('belässt ein leeres Ende und reicht den gespeicherten Beginn unverändert durch', () => {
  expect(pruefeArbeitszeit({ ...entwurf, buchungStartZeit: '', buchungEndeZeit: '' })).toMatchObject({ buchungStartZeit: null, buchungEndeZeit: null });
  expect(pruefeArbeitszeit({ ...entwurf, buchungEndeZeit: '' })).toMatchObject({ buchungStartZeit: '06:00', buchungEndeZeit: null });
 });
+it('prüft die Reihenfolge Beginn/Ende nicht mehr, weil es den Beginn in der Oberfläche nicht gibt', () => {
+ expect(pruefeArbeitszeit({ ...entwurf, buchungStartZeit: '19:00', buchungEndeZeit: '18:00' })).toMatchObject({ buchungStartZeit: '19:00', buchungEndeZeit: '18:00' });
+});
 describe.each([
- [BUCHUNGSZEIT_LABELS, 'Früheste Buchung', 'Späteste Buchung', 'Späteste Buchung muss nach der frühesten Buchung liegen.'],
- [ZEITFENSTER_LABELS, 'Frühester Start', 'Spätestes Ende', 'Spätestes Ende muss nach dem frühesten Start liegen.'],
-] as const)('Zeitfenster mit seitenspezifischen Meldungen', (labels, start, ende, reihenfolge) => {
- it('prüft beide Uhrzeiten', () => {
-  expect(() => pruefeArbeitszeit({ ...entwurf, buchungStartZeit: '25:00' }, labels)).toThrow(start);
-  expect(() => pruefeArbeitszeit({ ...entwurf, buchungEndeZeit: '8:00' }, labels)).toThrow(ende);
- });
- it.each(['06:00', '05:00'])('weist gleiches oder früheres Ende %s zurück', value => {
-  expect(() => pruefeArbeitszeit({ ...entwurf, buchungEndeZeit: value }, labels)).toThrow(reihenfolge);
+ [BUCHUNGSZEIT_LABELS, 'Späteste Buchung'],
+ [ZEITFENSTER_LABELS, 'Spätestes Ende'],
+] as const)('Zeitfenster mit seitenspezifischen Meldungen', (labels, ende) => {
+ it.each(['8:00', '25:00', '12:60'])('weist ungültiges Ende %s zurück', wert => {
+  expect(() => pruefeArbeitszeit({ ...entwurf, buchungEndeZeit: wert }, labels)).toThrow(ende);
  });
 });

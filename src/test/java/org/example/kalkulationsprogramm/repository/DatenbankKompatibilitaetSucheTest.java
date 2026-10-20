@@ -246,7 +246,10 @@ class DatenbankKompatibilitaetSucheTest {
         wuerth.setLieferantenname("Würth " + kennung);
         em.persist(wuerth);
 
-        Artikel a = new Artikel();
+        // Werkstoff-Artikel: „kg/m“ (masse) liegt an der Unterklasse und wird mitsortiert (Issue #265)
+        org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe a = new org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe();
+        a.setArtikelnummer("AN-" + kennung);
+        a.setMasse(new BigDecimal("2.3400"));
         a.setProduktname("Rundrohr " + kennung + " A");
         a.setProduktlinie("Rohr");
         a.setProdukttext("Rundrohr geschweisst");

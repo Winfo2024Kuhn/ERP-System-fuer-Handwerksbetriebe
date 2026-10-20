@@ -18,8 +18,8 @@ Die Liste zeigt 12 Artikel pro Seite mit Bild, „Artikel-Nr.“, „Bezeichnung
 
 1. **Vorlagen & Stammdaten → Artikel** → „Neu“.
 2. Im Fenster „Neuen Artikel anlegen“ den „Produktname“ eintragen, z. B. „Quadratrohr 40x40x2“ (Pflicht).
-3. Bei Bedarf „Produktlinie“, „Beschreibung / Text“, „Kategorie“, „Werkstoff“ und „Verrechnungseinheit“ (Laufende Meter, Quadratmeter, Kilogramm oder Stück) wählen.
-4. Den Einkaufspreis mit „Preis (€)“, „Lieferant (Optional)“ und „Artikelnummer (Extern)“ (die Nummer beim Lieferanten) eintragen. Preis und Lieferanten-Nummer immer zusammen mit dem Lieferanten eintragen – nur dann erscheinen sie in der Liste und beim Artikel.
+3. Bei Bedarf „Produktlinie“, „Beschreibung / Text“, „Eigene Artikel-Nr.“, „Kategorie“, „Werkstoff“ und „Verrechnungseinheit“ (Laufende Meter, Quadratmeter, Kilogramm oder Stück) wählen. Die „Eigene Artikel-Nr.“ ist die Nummer des Betriebs, sie steht in der Liste unter „Artikel-Nr.“ und darf nur einmal vorkommen.
+4. Für den Einkaufspreis zuerst „Lieferant (optional)“ wählen. Erst dann lassen sich „Artikelnummer beim Lieferanten“ und „Preis in Euro“ (z. B. 1.234,50) eintragen – beides gehört immer zu einem Lieferanten. Bleibt der Preis leer, hat der Artikel noch keinen Preis.
 5. „Artikel anlegen“.
 
 Name, Einheit, Werkstoff und Kategorie lassen sich nach dem Anlegen derzeit nicht mehr ändern. Artikel lassen sich nicht löschen.
@@ -28,7 +28,7 @@ Name, Einheit, Werkstoff und Kategorie lassen sich nach dem Anlegen derzeit nich
 
 In **Vorlagen & Stammdaten → Artikel** öffnet „Kategorien anlegen“ das Fenster „Kategorien verwalten“. Links steht die Ordnerstruktur. Ohne Auswahl entsteht mit „Hauptkategorie anlegen“ ein neuer Hauptordner; ist links ein Ordner gewählt, entsteht mit „Unterkategorie anlegen“ ein Unterordner darin. Umbenennen oder löschen lassen sich Ordner nicht.
 
-Der Menüpunkt **Vorlagen & Stammdaten → Kategorien** ist etwas anderes: Dort stehen die Gewerke (Produktkategorien), die man Projekten und Leistungen zuordnet.
+Der Menüpunkt **Vorlagen & Stammdaten → Projekt-Kategorien** ist etwas anderes: Dort stehen die Gewerke (Produktkategorien), die man Projekten und Leistungen zuordnet.
 
 ## Was zeigt ein Artikel?
 
@@ -44,8 +44,9 @@ Ein Klick auf einen Artikel unter **Vorlagen & Stammdaten → Artikel** öffnet 
 ## Preis eines Lieferanten eintragen oder ändern
 
 1. Den Artikel unter **Vorlagen & Stammdaten → Artikel** öffnen.
-2. Im Abschnitt „Wer liefert das?“ unter „Preis nachtragen“ mit „Lieferant auswählen“ den Lieferanten wählen.
-3. „Dessen Artikelnummer“ (die Nummer beim Lieferanten) und den „Preis in Euro“ eintragen, z. B. 12,50.
+2. Hat der Lieferant schon einen Preis: im Abschnitt „Wer liefert das?“ in seiner Zeile „Preis ändern“ klicken. Lieferant und seine Nummer sind dann schon eingetragen.
+   Neuer Lieferant: unter „Preis nachtragen“ mit „Lieferant auswählen“ den Lieferanten wählen.
+3. Den „Preis in Euro“ eintragen, z. B. 12,50. „Dessen Artikelnummer“ nur ändern, wenn sich die Nummer beim Lieferanten geändert hat – leer gelassen bleibt die bisherige Nummer.
 4. „Speichern“.
 
 Der bisherige Preis bleibt im „Preisverlauf“ erhalten. Preise aus Angeboten und Rechnungen von Lieferanten, die per E-Mail kommen, trägt das Programm oft selbst ein; im Preisverlauf steht dann die Herkunft.

@@ -5,6 +5,8 @@ export interface Arbeitszeit {
 }
 export interface Zeitkontenmodell {
     id: number; version: number; bezeichnung: string; arbeitszeit: Arbeitszeit;
+    /** true = war schon einem Mitarbeiter zugewiesen und gehört zur Historie; Löschen geht dann nicht. */
+    zugewiesen?: boolean;
 }
 export interface ZeitkontoVersion {
     id: number; version: number; mitarbeiterId: number;

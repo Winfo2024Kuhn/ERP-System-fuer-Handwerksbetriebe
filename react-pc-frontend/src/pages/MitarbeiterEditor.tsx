@@ -240,9 +240,10 @@ export default function MitarbeiterEditor() {
             ? { ...m, fuehrtZeitkonto: status.fuehrtZeitkonto } : m));
     };
 
+    // Der Beginn (buchungStartZeit) ist nicht mehr sichtbar (Issue #270) und zählt
+    // deshalb nicht als Abweichung von der Vorlage.
     const arbeitszeitenGleich = (links: Arbeitszeit, rechts: Arbeitszeit) => WOCHENTAGE.every(tag => links[tag.key] === rechts[tag.key])
-        && links.buchungStartZeit === rechts.buchungStartZeit
-        && links.buchungEndeZeit === rechts.buchungEndeZeit;
+        && (links.buchungEndeZeit?.slice(0, 5) ?? null) === (rechts.buchungEndeZeit?.slice(0, 5) ?? null);
 
     const invalidiereVorschau = () => {
         vorschauRequestId.current += 1;
@@ -577,6 +578,19 @@ export default function MitarbeiterEditor() {
         } finally {
             setRegenerating(false);
         }
+    };
+
+    // Ersetzt einen bestehenden Code: Das alte Handy meldet sich danach nicht mehr an.
+    const handleNeuenQrCodeErstellen = async () => {
+        if (!selectedMitarbeiter) return;
+        const name = selectedMitarbeiter.vorname?.trim() || 'Der Mitarbeiter';
+        if (!await confirmDialog({
+            title: 'Neuen QR-Code erstellen?',
+            message: `Der bisherige QR-Code funktioniert danach nicht mehr. ${name} muss die Handy-App mit dem neuen Code neu einrichten.`,
+            variant: 'warning',
+            confirmLabel: 'Neuen Code erstellen',
+        })) return;
+        await handleRegenerateToken();
     };
 
     const handleDownloadQr = () => {
@@ -1648,7 +1662,7 @@ export default function MitarbeiterEditor() {
                     <DialogFooter className="flex-col sm:flex-row gap-2">
                         <Button
                             variant="outline"
-                            onClick={handleRegenerateToken}
+                            onClick={() => void handleNeuenQrCodeErstellen()}
                             disabled={regenerating}
                             className="w-full sm:w-auto"
                         >

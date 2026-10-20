@@ -91,10 +91,10 @@ ENTWURF ──[E-Mail]──► VERSENDET (versandDatum gesetzt, weiter bearbeit
 | `TEILRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
 | `ABSCHLAGSRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
 | `SCHLUSSRECHNUNG` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
-| `GUTSCHRIFT` | ✅ | Buchung | ❌ | ✅ nur als Entwurf |
+| `GUTSCHRIFT` | ✅ | Buchung | ✅ (nur gebucht) | ✅ nur als Entwurf |
 | `STORNO` | sofort gebucht | immer | ❌ | ❌ nie |
 
-Stornierte Dokumente sind immer gesperrt und nie löschbar. Wird eine **Abschlagsrechnung** storniert, werden zugehörige gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen. Beides meldet die Oberfläche nach dem Stornieren als Hinweis.
+Stornierte Dokumente sind immer gesperrt und nie löschbar. Eine **Gutschrift** entsteht nur über „Gutschrift erstellen“ an einer gebuchten, nicht stornierten Rechnung; ihr Storno erhöht den offenen Betrag der Rechnung wieder um die Gutschrift. Wird eine **Abschlagsrechnung** storniert, werden zugehörige gebuchte Schlussrechnungen am selben Vorgänger automatisch mitstorniert; ein Schlussrechnungs-Entwurf bleibt stehen. Beides meldet die Oberfläche nach dem Stornieren als Hinweis.
 
 ### 1.4 Anzeige in der Oberfläche
 

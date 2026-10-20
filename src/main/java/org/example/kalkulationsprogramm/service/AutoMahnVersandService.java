@@ -477,7 +477,8 @@ public class AutoMahnVersandService
         daten.setRechnungsnummer(mahnNummer);
         daten.setRechnungsdatum(heute);
         daten.setFaelligkeitsdatum(neuesFaelligkeitsdatum);
-        daten.setBetrag(rechnung.getBruttoBetrag());
+        // Gefordert wird nur, was nach Gutschriften noch offen ist (Issue #223).
+        daten.setBetrag(rechnung.getOffenerBetrag());
         daten.setGeschaeftsdokumentart("Mahnung");
         daten.setMahnstufe(stufe.name());
         daten.setReferenzDokumentId(rechnung.getId());
@@ -842,7 +843,7 @@ public class AutoMahnVersandService
                                                   long tageUeberfaellig,
                                                   LocalDate neuesFaelligkeitsdatum)
     {
-        String betrag = formatBetrag(rechnung.getBruttoBetrag());
+        String betrag = formatBetrag(rechnung.getOffenerBetrag());
         String rdat = rechnung.getRechnungsdatum() != null
                 ? rechnung.getRechnungsdatum().format(DATUM_FORMAT) : "—";
         String fdat = rechnung.getFaelligkeitsdatum() != null
@@ -910,7 +911,7 @@ public class AutoMahnVersandService
         ctx.put("RECHNUNGSNUMMER", nullSafe(rechnung.getDokumentid()));
         ctx.put("DOKUMENTTYP", typLabel);
         ctx.put("DATUM", heute.format(DATUM_FORMAT));
-        ctx.put("BETRAG", formatBetrag(rechnung.getBruttoBetrag()));
+        ctx.put("BETRAG", formatBetrag(rechnung.getOffenerBetrag()));
         ctx.put("BETREFF", typLabel + " — Rechnung " + nullSafe(rechnung.getDokumentid()));
         // Zahlungsziel = neue Mahn-Frist (so verstanden der Empfänger das Wort)
         long zielTage = ChronoUnit.DAYS.between(heute, neuesFaelligkeitsdatum);

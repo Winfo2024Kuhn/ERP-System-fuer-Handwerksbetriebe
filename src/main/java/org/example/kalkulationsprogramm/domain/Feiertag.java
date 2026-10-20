@@ -9,9 +9,9 @@ import java.time.LocalDate;
 
 /**
  * Entity für Feiertage.
- * Feiertage werden automatisch für Bayern (inkl. Mariä Himmelfahrt) generiert.
- * Halbe Feiertage (z.B. Heiligabend, Silvester) werden mit halbTag=true
- * markiert.
+ * Gesetzliche Feiertage lädt {@code FeiertagService} für das Bundesland aus den
+ * Firmendaten. Der Betrieb kann sie anpassen (halber Tag, abgeschaltet) und eigene
+ * Feiertage anlegen; beides überlebt das Neu-Laden.
  */
 @Getter
 @Setter
@@ -31,7 +31,7 @@ public class Feiertag {
     private String bezeichnung;
 
     @Column(nullable = false, length = 10)
-    private String bundesland = "BY"; // Bayern als Standard
+    private String bundesland = Bundesland.STANDARD.name();
 
     /**
      * True wenn nur halber Arbeitstag frei (z.B. Heiligabend, Silvester).
@@ -40,10 +40,22 @@ public class Feiertag {
     @Column(nullable = false)
     private boolean halbTag = false;
 
+    /** False = abgeschaltet (gilt in der Gemeinde nicht); zählt dann nirgends als Feiertag. */
+    @Column(nullable = false)
+    private boolean aktiv = true;
+
+    /** Vom Betrieb selbst angelegt (z. B. Heiligabend als halber Tag). Nur solche lassen sich löschen. */
+    @Column(nullable = false)
+    private boolean eigener = false;
+
+    /** Vom Betrieb geändert (halber Tag / abgeschaltet). Neu-Laden lässt die Zeile stehen. */
+    @Column(nullable = false)
+    private boolean angepasst = false;
+
     public Feiertag(LocalDate datum, String bezeichnung) {
         this.datum = datum;
         this.bezeichnung = bezeichnung;
-        this.bundesland = "BY";
+        this.bundesland = Bundesland.STANDARD.name();
         this.halbTag = false;
     }
 
@@ -62,9 +74,9 @@ public class Feiertag {
     }
 
     /**
-     * Convenience-Konstruktor für halbe Feiertage in Bayern.
+     * Convenience-Konstruktor für halbe Feiertage im Standard-Bundesland.
      */
     public static Feiertag halberFeiertag(LocalDate datum, String bezeichnung) {
-        return new Feiertag(datum, bezeichnung, "BY", true);
+        return new Feiertag(datum, bezeichnung, Bundesland.STANDARD.name(), true);
     }
 }

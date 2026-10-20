@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.service;
 
 import com.lowagie.text.Image;
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.Bundesland;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Gewerk;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
@@ -10,10 +11,12 @@ import org.example.kalkulationsprogramm.repository.GewerkRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -46,6 +49,7 @@ public class FirmeninformationService {
 
     private final FirmeninformationRepository repository;
     private final GewerkRepository gewerkRepository;
+    private final FeiertagService feiertagService;
 
     /** Basis-Verzeichnis fuer Firmen-Uploads (Logo). Ueberschreibbar fuer Tests. */
     @Value("${firma.logo.upload-dir:uploads/firma/logo}")
@@ -77,6 +81,13 @@ public class FirmeninformationService {
         fi.setStrasse(dto.getStrasse());
         fi.setPlz(dto.getPlz());
         fi.setOrt(dto.getOrt());
+        String bisherigesBundesland = fi.getBundesland();
+        if (dto.getBundesland() != null) {
+            Bundesland land = Bundesland.ausKuerzel(dto.getBundesland())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Bitte ein gültiges Bundesland wählen."));
+            fi.setBundesland(land.name());
+        }
         fi.setTelefon(dto.getTelefon());
         fi.setFax(dto.getFax());
         fi.setEmail(dto.getEmail());
@@ -110,6 +121,9 @@ public class FirmeninformationService {
         fi.setBgSatzOverride(dto.getBgSatzOverride());
 
         fi = repository.save(fi);
+        if (!fi.getBundesland().equals(bisherigesBundesland)) {
+            feiertagService.bundeslandGeaendert(fi.getBundesland());
+        }
         return toDto(fi);
     }
 
@@ -309,6 +323,7 @@ public class FirmeninformationService {
         dto.setStrasse(fi.getStrasse());
         dto.setPlz(fi.getPlz());
         dto.setOrt(fi.getOrt());
+        dto.setBundesland(fi.getBundesland());
         dto.setTelefon(fi.getTelefon());
         dto.setFax(fi.getFax());
         dto.setEmail(fi.getEmail());

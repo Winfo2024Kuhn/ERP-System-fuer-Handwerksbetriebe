@@ -8,6 +8,7 @@ import {
     Edit2,
     FileText,
     GitBranch,
+    HandCoins,
     Lock,
     Mail,
     Plus,
@@ -16,6 +17,7 @@ import {
     X,
 } from 'lucide-react';
 import { DokumentLoeschenDialog } from './dokument/DokumentLoeschenDialog';
+import { GutschriftErstellenDialog } from './GutschriftErstellenDialog';
 import { DokumentVerlaufDrawer } from './dokument/DokumentVerlaufDrawer';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -90,6 +92,8 @@ export function DokumentHierarchie({
     // Payload-Felder für die Dokumenterstellung
     const createPayloadIds = projektId ? { projektId } : { anfrageId };
     const [actionMenuId, setActionMenuId] = useState<number | null>(null);
+    /** Rechnung, zu der gerade eine Gutschrift angelegt wird (Dialog offen). */
+    const [gutschriftRechnung, setGutschriftRechnung] = useState<AusgangsGeschaeftsDokument | null>(null);
     const [collapsedIds, setCollapsedIds] = useState<Set<number>>(new Set());
 
     // Lösch-Dialog mit GoBD-konformer Begründung
@@ -544,6 +548,24 @@ export function DokumentHierarchie({
                                                 Rechnung bitte an der Auftragsbestätigung anlegen
                                             </span>
                                         )}
+                                    </button>
+                                </>
+                            )}
+
+                            {/* Gutschrift — nur zu gebuchten, nicht stornierten Rechnungen */}
+                            {dok.gebucht && !dok.storniert
+                                && ['RECHNUNG', 'TEILRECHNUNG', 'ABSCHLAGSRECHNUNG', 'SCHLUSSRECHNUNG'].includes(dok.typ) && (
+                                <>
+                                    <hr className="my-1 border-slate-100" />
+                                    <button
+                                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
+                                        onClick={() => {
+                                            setActionMenuId(null);
+                                            setGutschriftRechnung(dok);
+                                        }}
+                                    >
+                                        <HandCoins className="w-4 h-4" />
+                                        Gutschrift erstellen
                                     </button>
                                 </>
                             )}
@@ -1048,6 +1070,14 @@ export function DokumentHierarchie({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <GutschriftErstellenDialog
+                rechnung={gutschriftRechnung}
+                projektId={projektId}
+                anfrageId={anfrageId}
+                onClose={() => setGutschriftRechnung(null)}
+                onErstellt={() => onRefresh()}
+            />
 
             {/* GoBD-konformer Lösch-Dialog (Dropdown + Pflicht-Begründung) */}
             <DokumentLoeschenDialog

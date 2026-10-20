@@ -9,6 +9,7 @@ import { ColorInput } from '../components/ui/color-input';
 import { formatDecimalInput, validateDecimalInput } from '../lib/numberInput';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
+import { BundeslandAuswahl } from '../components/firma/BundeslandAuswahl';
 import { PageLayout } from '../components/layout/PageLayout';
 import { cn } from '../lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
@@ -47,6 +48,8 @@ interface Firmeninformation {
     tageBisErsteMahnung: number;
     tageBisZweiteMahnung: number;
     mahnverfahrenNeuesZahlungszielTage: number;
+    /** Kürzel des Bundeslands (z. B. "BY"); bestimmt die gesetzlichen Feiertage. */
+    bundesland?: string;
     gewerkId?: number | null;
     gewerkName?: string | null;
     bgName?: string | null;
@@ -665,6 +668,11 @@ export default function FirmaEditor() {
                                             />
                                         </div>
                                     </div>
+                                    <BundeslandAuswahl
+                                        value={firma.bundesland}
+                                        plz={firma.plz}
+                                        onChange={bundesland => setFirma({ ...firma, bundesland })}
+                                    />
                                 </div>
 
                                 {/* Kontakt */}
@@ -728,7 +736,7 @@ export default function FirmaEditor() {
                                                 aria-label="Firmenfarbe wählen"
                                                 value={/^#[0-9a-fA-F]{6}$/.test(firma.firmenfarbe || '') ? firma.firmenfarbe : '#500010'}
                                                 onChange={value => setFirma({ ...firma, firmenfarbe: value })}
-                                                className="h-9 w-12 rounded border border-slate-200 bg-white p-1 cursor-pointer"
+                                                className="shrink-0"
                                             />
                                             <Input
                                                 aria-label="Firmenfarbe als Hex-Wert"

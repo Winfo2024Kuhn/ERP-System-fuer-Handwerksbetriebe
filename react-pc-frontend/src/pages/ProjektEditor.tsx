@@ -17,6 +17,7 @@ import {
     FolderOpen,
     Hammer,
     GitMerge,
+    HandCoins,
     Lock,
     Mail,
     MapPin,
@@ -70,6 +71,7 @@ import { validateMoneyDraft } from '../features/finanzen/moneyDrafts';
 import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { ZuordnungModal } from '../components/ZuordnungModal';
 import { DokumentLoeschenDialog } from '../components/dokument/DokumentLoeschenDialog';
+import { GutschriftErstellenDialog } from '../components/GutschriftErstellenDialog';
 import { DokumentVerlaufDrawer } from '../components/dokument/DokumentVerlaufDrawer';
 import { AnfrageSearchModal } from '../components/AnfrageSearchModal';
 import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
@@ -488,6 +490,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [auditDaten, setAuditDaten] = useState<FreigabeAuditData | null>(null);
     const [auditLoading, setAuditLoading] = useState(false);
     const [actionMenuDokument, setActionMenuDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
+    /** Rechnung, zu der gerade eine Gutschrift angelegt wird (Dialog offen). */
+    const [gutschriftRechnung, setGutschriftRechnung] = useState<AusgangsGeschaeftsDokument | null>(null);
 
     // Dateien (Dokumente) Anzahl
     const [dokumenteCount, setDokumenteCount] = useState(0);
@@ -2154,17 +2158,37 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                             </>
                                                         )}
 
-                                                        {/* Stornieren - nur für gebuchte Rechnungstypen die nicht schon storniert sind */}
+                                                        {/* Gutschrift erstellen - nur zu gebuchten, nicht stornierten Rechnungen */}
                                                         {dok.gebucht && !dok.storniert && ['RECHNUNG', 'TEILRECHNUNG', 'ABSCHLAGSRECHNUNG', 'SCHLUSSRECHNUNG'].includes(dok.typ) && (
+                                                            <>
+                                                                <hr className="my-1 border-slate-100" />
+                                                                <button
+                                                                    className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2"
+                                                                    onClick={() => {
+                                                                        setActionMenuDokument(null);
+                                                                        setGutschriftRechnung(dok);
+                                                                    }}
+                                                                >
+                                                                    <HandCoins className="w-4 h-4" />
+                                                                    Gutschrift erstellen
+                                                                </button>
+                                                            </>
+                                                        )}
+
+                                                        {/* Stornieren - nur für gebuchte Rechnungstypen und Gutschriften, die nicht schon storniert sind */}
+                                                        {dok.gebucht && !dok.storniert && ['RECHNUNG', 'TEILRECHNUNG', 'ABSCHLAGSRECHNUNG', 'SCHLUSSRECHNUNG', 'GUTSCHRIFT'].includes(dok.typ) && (
                                                             <>
                                                                 <hr className="my-1 border-slate-100" />
                                                                 <button
                                                                     className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                                                     onClick={async () => {
                                                                         setActionMenuDokument(null);
+                                                                        const istGutschrift = dok.typ === 'GUTSCHRIFT';
                                                                         if (await confirmDialog({
-                                                                            title: 'Rechnung stornieren',
-                                                                            message: `Möchten Sie ${dok.dokumentNummer} wirklich stornieren? Es wird automatisch eine Stornorechnung erstellt. Dieser Vorgang kann nicht rückgängig gemacht werden.`,
+                                                                            title: istGutschrift ? 'Gutschrift stornieren' : 'Rechnung stornieren',
+                                                                            message: istGutschrift
+                                                                                ? `Möchten Sie ${dok.dokumentNummer} wirklich stornieren? Es wird automatisch ein Stornobeleg erstellt, und der offene Betrag der Rechnung steigt wieder um die Gutschrift. Dieser Vorgang kann nicht rückgängig gemacht werden.`
+                                                                                : `Möchten Sie ${dok.dokumentNummer} wirklich stornieren? Es wird automatisch eine Stornorechnung erstellt. Dieser Vorgang kann nicht rückgängig gemacht werden.`,
                                                                             variant: 'danger',
                                                                             confirmLabel: 'Stornieren'
                                                                         })) {
@@ -2174,12 +2198,21 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                                                                                 });
                                                                                 if (response.ok) {
                                                                                     const stornoDok = await response.json();
-                                                                                    toast.success(`Stornorechnung ${stornoDok.dokumentNummer} wurde erstellt`);
+                                                                                    toast.success(istGutschrift
+                                                                                        ? `Storno ${stornoDok.dokumentNummer} zur Gutschrift wurde erstellt`
+                                                                                        : `Stornorechnung ${stornoDok.dokumentNummer} wurde erstellt`);
                                                                                     zeigeStornoHinweise(toast, stornoHinweiseAus(stornoDok));
                                                                                     loadAusgangsDokumente();
                                                                                 } else {
-                                                                                    const errText = await response.text();
-                                                                                    toast.error('Stornierung fehlgeschlagen: ' + errText);
+                                                                                    // Gutschrift-Regeln antworten mit JSON { message },
+                                                                                    // ältere Fehler als reiner Text – beides lesen.
+                                                                                    const errText = (await response.text()).trim();
+                                                                                    let meldung = errText;
+                                                                                    try {
+                                                                                        const daten = JSON.parse(errText) as { message?: unknown };
+                                                                                        meldung = typeof daten?.message === 'string' ? daten.message : '';
+                                                                                    } catch { /* reiner Text */ }
+                                                                                    toast.error(meldung ? 'Stornierung fehlgeschlagen: ' + meldung : 'Stornierung fehlgeschlagen');
                                                                                 }
                                                                             } catch (e) {
                                                                                 console.error('Storno error:', e);
@@ -3041,6 +3074,13 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            <GutschriftErstellenDialog
+                rechnung={gutschriftRechnung}
+                projektId={projekt.id}
+                onClose={() => setGutschriftRechnung(null)}
+                onErstellt={() => loadAusgangsDokumente()}
+            />
 
             {/* GoBD-konformer Lösch-Dialog mit Dropdown + Freitext */}
             <DokumentLoeschenDialog

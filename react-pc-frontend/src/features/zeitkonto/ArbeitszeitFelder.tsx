@@ -11,10 +11,9 @@ interface Props {
 }
 export function ArbeitszeitFelder({ value, onChange, zeitfenster = ZEITFENSTER_LABELS, optionalHinweis = false, kompakt = false }: Props) {
     const labelClass = kompakt ? 'text-xs font-medium text-slate-700' : 'text-sm font-medium text-slate-700';
-    const zeitfelder = [
-        { key: 'buchungStartZeit', label: zeitfenster.start },
-        { key: 'buchungEndeZeit', label: zeitfenster.ende },
-    ] as const;
+    // Nur noch das Ende: „Frühester Start“ wurde entfernt (Issue #270). Der Beginn
+    // bleibt im Entwurf und wird beim Speichern unverändert durchgereicht.
+    const endeLabel = `${zeitfenster.ende}${optionalHinweis ? ' – optional' : ''}`;
     return <>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {WOCHENTAGE.map(tag => <label key={tag.key} className={labelClass}>
@@ -28,12 +27,12 @@ export function ArbeitszeitFelder({ value, onChange, zeitfenster = ZEITFENSTER_L
             </label>)}
         </div>
         <div className={kompakt ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'grid grid-cols-2 gap-3 border-t border-slate-100 pt-4'}>
-            {zeitfelder.map(feld => <label key={feld.key} className={labelClass}>
-                {feld.label}{optionalHinweis ? ' – optional' : ''}
-                <TimeInput aria-label={`${feld.label}${optionalHinweis ? ' – optional' : ''}`}
-                    value={value[feld.key]} onChange={draft => onChange({ ...value, [feld.key]: draft })}
+            <label className={labelClass}>
+                {endeLabel}
+                <TimeInput aria-label={endeLabel}
+                    value={value.buchungEndeZeit} onChange={draft => onChange({ ...value, buchungEndeZeit: draft })}
                     className={kompakt ? 'mt-1' : 'mt-1 h-10 w-full rounded-lg border border-slate-200 px-3'} />
-            </label>)}
+            </label>
         </div>
     </>;
 }

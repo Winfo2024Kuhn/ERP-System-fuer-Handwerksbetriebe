@@ -200,18 +200,47 @@ class UrlaubsantragServiceTest {
     }
 
     @Test
-    void approveAntrag_wochenendeWirdUebersprungenTrotzWertInDerMap() {
-        // Fr 2026-06-05 bis Mo 2026-06-08: dazwischen liegt ein ganzes Wochenende.
+    void approveAntrag_samstagMitSollKostetUrlaub_sonntagOhneSollNicht() {
+        // Fr 2026-06-05 bis Mo 2026-06-08: Samstag hat Soll (Samstagsarbeit), Sonntag nicht (Issue #270).
         LocalDate von = LocalDate.of(2026, 6, 5);
         LocalDate bis = LocalDate.of(2026, 6, 8);
         stubApproveGrunddaten();
         when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
         when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
-        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis))
-                .thenReturn(jeTag(von, bis, new BigDecimal("8.00")));
+        Map<LocalDate, BigDecimal> soll = jeTag(von, bis, new BigDecimal("8.00"));
+        soll.put(LocalDate.of(2026, 6, 6), new BigDecimal("4.00"));
+        soll.put(LocalDate.of(2026, 6, 7), BigDecimal.ZERO);
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis)).thenReturn(soll);
 
         urlaubsantragService.approveAntrag(ANTRAG_ID);
 
+        ArgumentCaptor<Abwesenheit> captor = ArgumentCaptor.forClass(Abwesenheit.class);
+        verify(abwesenheitRepository, times(3)).save(captor.capture());
+        assertEquals(List.of(LocalDate.of(2026, 6, 5), LocalDate.of(2026, 6, 6), LocalDate.of(2026, 6, 8)),
+                captor.getAllValues().stream().map(Abwesenheit::getDatum).toList());
+        assertEquals(new BigDecimal("4.00"), captor.getAllValues().get(1).getStunden());
+    }
+
+    @Test
+    void approveAntrag_wochenendeOhneArbeitszeitIstKeinFehler() {
+        // Arbeitszeit endet Freitag, die nächste beginnt Montag: das Wochenende dazwischen sperrt nichts.
+        LocalDate von = LocalDate.of(2026, 6, 5);
+        LocalDate bis = LocalDate.of(2026, 6, 8);
+        testZeitkonto.setGueltigBis(LocalDate.of(2026, 6, 5));
+        ZeitkontoVersion naechste = new ZeitkontoVersion();
+        naechste.setGueltigVon(LocalDate.of(2026, 6, 8));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(List.of(testZeitkonto, naechste));
+        when(abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(anyLong(), any(), any())).thenReturn(false);
+        when(abwesenheitRepository.save(any(Abwesenheit.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.save(any(Urlaubsantrag.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findById(ANTRAG_ID)).thenReturn(Optional.of(antrag(von, bis)));
+        when(feiertagService.istFeiertag(any(LocalDate.class))).thenReturn(false);
+        Map<LocalDate, BigDecimal> soll = jeTag(von, bis, BigDecimal.ZERO);
+        soll.put(von, new BigDecimal("8.00"));
+        soll.put(bis, new BigDecimal("8.00"));
+        when(tagesSollService.arbeitsSollJeTag(MITARBEITER_ID, von, bis)).thenReturn(soll);
+
+        assertDoesNotThrow(() -> urlaubsantragService.approveAntrag(ANTRAG_ID));
         verify(abwesenheitRepository, times(2)).save(any(Abwesenheit.class));
     }
 
@@ -698,5 +727,71 @@ class UrlaubsantragServiceTest {
         } finally {
             org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    // ==================== Vorschau für die Handy-App (Issue #270) ====================
+
+    @Test
+    void vorschau_samstagMitSollZaehlt_feiertagUndTagOhneSollNicht() {
+        // Mi 03.03. bis So 07.03.2027: Do ist Feiertag, Sa hat 4 h Soll, So keins.
+        LocalDate von = LocalDate.of(2027, 3, 3);
+        LocalDate bis = LocalDate.of(2027, 3, 7);
+        testMitarbeiter.setJahresUrlaub(30);
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+        when(zeitkontoService.versionenImZeitraum(MITARBEITER_ID, von, bis)).thenReturn(List.of(testZeitkonto));
+        Map<LocalDate, BigDecimal> soll = jeTag(von, bis, new BigDecimal("8.00"));
+        soll.put(LocalDate.of(2027, 3, 6), new BigDecimal("4.00"));
+        soll.put(LocalDate.of(2027, 3, 7), BigDecimal.ZERO);
+        when(tagesSollService.arbeitsSollJeTag(eq(MITARBEITER_ID), any(), any())).thenReturn(soll);
+        when(feiertagService.getFeiertageZwischen(von, bis))
+                .thenReturn(List.of(new Feiertag(LocalDate.of(2027, 3, 4), "Testfeiertag", "BY")));
+
+        UrlaubsantragService.UrlaubsVorschau vorschau = urlaubsantragService.vorschau(MITARBEITER_ID, von, bis);
+
+        assertEquals(0, new BigDecimal("3").compareTo(vorschau.arbeitstage()), "Mi, Fr und Sa kosten Urlaub");
+        assertNotNull(vorschau.verbleibend());
+        assertTrue(vorschau.reicht());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void vorschau_reichtNicht_wennMehrAlsDerResturlaub() {
+        // Zwei Monate Mo–Fr (ohne Arbeitszeit-Version gilt Mo–Fr) sind mehr als ein Jahresurlaub.
+        LocalDate von = LocalDate.of(2027, 3, 1);
+        LocalDate bis = LocalDate.of(2027, 4, 30);
+        testMitarbeiter.setJahresUrlaub(20);
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+
+        UrlaubsantragService.UrlaubsVorschau vorschau = urlaubsantragService.vorschau(MITARBEITER_ID, von, bis);
+
+        assertFalse(vorschau.reicht(), vorschau.toString());
+        assertEquals(0, new BigDecimal("45").compareTo(vorschau.arbeitstage()), vorschau.toString());
+        assertTrue(vorschau.arbeitstage().compareTo(vorschau.verbleibend()) > 0);
+    }
+
+    @Test
+    void vorschau_geschaeftsfuehrer_ohneKontingent() {
+        testMitarbeiter.setIstGeschaeftsfuehrer(true);
+        when(mitarbeiterRepository.findById(MITARBEITER_ID)).thenReturn(Optional.of(testMitarbeiter));
+
+        UrlaubsantragService.UrlaubsVorschau vorschau = urlaubsantragService.vorschau(MITARBEITER_ID,
+                LocalDate.of(2027, 3, 5), LocalDate.of(2027, 3, 8));
+
+        assertEquals(0, new BigDecimal("2").compareTo(vorschau.arbeitstage()));
+        assertNull(vorschau.verbleibend());
+        assertTrue(vorschau.reicht());
+        verifyNoInteractions(tagesSollService);
+    }
+
+    @Test
+    void vorschau_ungueltigeZeitraeume() {
+        LocalDate tag = LocalDate.of(2027, 3, 5);
+        assertEquals("Das Ende darf nicht vor dem Beginn liegen.", assertThrows(IllegalArgumentException.class,
+                () -> urlaubsantragService.vorschau(MITARBEITER_ID, tag, tag.minusDays(1))).getMessage());
+        assertEquals("Ein Antrag darf höchstens ein Jahr umfassen.", assertThrows(IllegalArgumentException.class,
+                () -> urlaubsantragService.vorschau(MITARBEITER_ID, tag, tag.plusYears(2))).getMessage());
+        assertThrows(IllegalArgumentException.class, () -> urlaubsantragService.vorschau(MITARBEITER_ID, null, tag));
+        when(mitarbeiterRepository.findById(Long.MAX_VALUE)).thenReturn(Optional.empty());
+        assertThrows(IllegalArgumentException.class, () -> urlaubsantragService.vorschau(Long.MAX_VALUE, tag, tag));
     }
 }

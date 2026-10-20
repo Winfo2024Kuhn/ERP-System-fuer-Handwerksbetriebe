@@ -102,7 +102,7 @@ public class TagesSollService {
             throw new IllegalArgumentException("Bitte eine gültige Arbeitszeit und einen gültigen Zeitraum angeben.");
         }
         var phasen = phaseRepository.findImZeitraum(mitarbeiterId, von, bis);
-        var feiertage = feiertageNachBundeslandBY(von, bis);
+        var feiertage = feiertageImZeitraum(von, bis);
         BigDecimal periodenSoll = BigDecimal.ZERO;
         BigDecimal feiertagsGutschrift = BigDecimal.ZERO;
         for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
@@ -121,7 +121,7 @@ public class TagesSollService {
         }
         var versionen = versionRepository.findImZeitraum(id, von, bis);
         var phasen = phaseRepository.findImZeitraum(id, von, bis);
-        var feiertage = feiertageNachBundeslandBY(von, bis);
+        var feiertage = feiertageImZeitraum(von, bis);
         Map<LocalDate, BigDecimal> result = new LinkedHashMap<>();
         int index = 0;
         for (LocalDate tag = von; !tag.isAfter(bis); tag = tag.plusDays(1)) {
@@ -137,16 +137,12 @@ public class TagesSollService {
     }
 
     /**
-     * Laedt Feiertage im Zeitraum und filtert auf Bayern.
-     * {@link FeiertagService#getFeiertageZwischen} filtert - anders als
-     * {@code istFeiertag}/{@code istHalberFeiertag}, die intern auf "BY"
-     * filtern - NICHT nach Bundesland. Ohne diesen Filter wuerden die
-     * Summenmethoden bei einem Datensatz mit mehreren Bundeslaendern anders
-     * rechnen als die Einzeltag-Methoden.
+     * Laedt die aktiven Feiertage im Zeitraum. {@link FeiertagService#getFeiertageZwischen}
+     * liefert wie {@code istFeiertag} nur das eingestellte Bundesland und keine
+     * abgeschalteten Feiertage, so rechnen Summen- und Einzeltag-Methoden gleich.
      */
-    private Map<LocalDate, Feiertag> feiertageNachBundeslandBY(LocalDate von, LocalDate bis) {
+    private Map<LocalDate, Feiertag> feiertageImZeitraum(LocalDate von, LocalDate bis) {
         return feiertagService.getFeiertageZwischen(von, bis).stream()
-                .filter(f -> "BY".equals(f.getBundesland()))
                 .collect(Collectors.toMap(Feiertag::getDatum, Function.identity(), (a, b) -> a));
     }
 

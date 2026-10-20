@@ -36,6 +36,10 @@ public class Firmeninformation {
     private String plz;
     private String ort;
 
+    /** Amtliches Kürzel (BY, BW, …); bestimmt die gesetzlichen Feiertage (Issue #222). */
+    @Column(name = "bundesland", nullable = false, length = 2)
+    private String bundesland = Bundesland.STANDARD.name();
+
     private String telefon;
     private String fax;
     private String email;

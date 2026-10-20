@@ -13,15 +13,13 @@ export const WOCHENTAGE: ReadonlyArray<{ key: StundenKey; label: string }> = [
     { key: 'samstagStunden', label: 'Samstag' },
     { key: 'sonntagStunden', label: 'Sonntag' },
 ];
-export interface ZeitfensterBeschriftung { start: string; ende: string; reihenfolgeFehler: string }
-export const ZEITFENSTER_LABELS: ZeitfensterBeschriftung = {
-    start: 'Frühester Start', ende: 'Spätestes Ende',
-    reihenfolgeFehler: 'Spätestes Ende muss nach dem frühesten Start liegen.',
-};
-export const BUCHUNGSZEIT_LABELS: ZeitfensterBeschriftung = {
-    start: 'Früheste Buchung', ende: 'Späteste Buchung',
-    reihenfolgeFehler: 'Späteste Buchung muss nach der frühesten Buchung liegen.',
-};
+/**
+ * Beschriftung des Zeitfensters. Seit Issue #270 gibt es nur noch das Ende:
+ * „Frühester Start“ hatte keine Wirkung und wurde aus der Oberfläche entfernt.
+ */
+export interface ZeitfensterBeschriftung { ende: string }
+export const ZEITFENSTER_LABELS: ZeitfensterBeschriftung = { ende: 'Spätestes Ende' };
+export const BUCHUNGSZEIT_LABELS: ZeitfensterBeschriftung = { ende: 'Späteste Buchung' };
 export function leereArbeitszeit(): Arbeitszeit {
     return { montagStunden: 0, dienstagStunden: 0, mittwochStunden: 0, donnerstagStunden: 0,
         freitagStunden: 0, samstagStunden: 0, sonntagStunden: 0,
@@ -42,16 +40,13 @@ export function pruefeArbeitszeit(entwurf: ArbeitszeitEntwurf, labels = ZEITFENS
         if (!parsed.valid || parsed.value === null) throw new Error(!parsed.valid ? parsed.message : `Bitte ${tag.label} Stunden eingeben.`);
         result[tag.key] = parsed.value;
     }
-    const rawStart = (entwurf.buchungStartZeit ?? '').trim();
     const rawEnde = (entwurf.buchungEndeZeit ?? '').trim();
     const strictTime = /^([01]\d|2[0-3]):[0-5]\d$/;
-    const invalidTimeMessage = (label: string) => `Bitte ${label} als gültige Uhrzeit von 00:00 bis 23:59 eingeben (HH:mm).`;
-    const start = validateTimeInput(entwurf.buchungStartZeit, { label: labels.start });
     const ende = validateTimeInput(entwurf.buchungEndeZeit, { label: labels.ende });
-    if (rawStart && !strictTime.test(rawStart)) throw new Error(invalidTimeMessage(labels.start));
-    if (rawEnde && !strictTime.test(rawEnde)) throw new Error(invalidTimeMessage(labels.ende));
-    if (!start.valid) throw new Error(start.message);
+    if (rawEnde && !strictTime.test(rawEnde)) throw new Error(`Bitte ${labels.ende} als gültige Uhrzeit von 00:00 bis 23:59 eingeben (HH:mm).`);
     if (!ende.valid) throw new Error(ende.message);
-    if (start.value && ende.value && start.value >= ende.value) throw new Error(labels.reihenfolgeFehler);
-    return { ...result, buchungStartZeit: start.value, buchungEndeZeit: ende.value };
+    // Den Beginn gibt es in der Oberfläche nicht mehr. Ein gespeicherter Wert wird
+    // unverändert durchgereicht, damit Speichern ihn weder löscht noch neu erfindet.
+    const start = (entwurf.buchungStartZeit ?? '').trim() || null;
+    return { ...result, buchungStartZeit: start, buchungEndeZeit: ende.value };
 }

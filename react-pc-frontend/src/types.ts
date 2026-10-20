@@ -993,6 +993,10 @@ export interface OffenerPosten {
   rechnungsdatum?: string;
   faelligkeitsdatum?: string;
   rechnungsbetrag?: number;
+  /** Brutto der gebuchten Gutschriften zu dieser Rechnung (0 ohne Gutschrift). */
+  gutgeschrieben?: number;
+  /** Rechnungsbetrag minus Gutschriften; null, wenn der Server ihn nicht kennt. */
+  offenerBetrag?: number | null;
   geschaeftsdokumentart?: string;
   bezahlt: boolean;
   mahnung: boolean;
@@ -1078,6 +1082,23 @@ export interface AusgangsGeschaeftsDokument {
   erstelltVonName?: string;
   /** Direkter PDF-URL — derzeit nur für virtuelle Mahn-Einträge gesetzt. */
   pdfUrl?: string;
+}
+
+/**
+ * Rahmen fuer eine Gutschrift zu einer gebuchten Rechnung
+ * (`GET /api/ausgangs-dokumente/{rechnungId}/gutschrift-rahmen`). Alle Betraege positiv.
+ */
+export interface GutschriftRahmen {
+  rechnungId: number;
+  rechnungNummer: string;
+  rechnungBrutto: number;
+  rechnungNetto: number;
+  /** Gebuchte und Entwurfs-Gutschriften zu dieser Rechnung, ohne stornierte. */
+  bereitsGutgeschriebenBrutto: number;
+  bereitsGutgeschriebenNetto: number;
+  hoechstensNetto: number;
+  hoechstensBrutto: number;
+  mwstSatz: number;
 }
 
 export interface AusgangsGeschaeftsDokumentErstellen {

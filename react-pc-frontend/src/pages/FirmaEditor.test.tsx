@@ -52,3 +52,24 @@ it('verweist für Postfächer auf Einstellungen → E-Mail statt eigener Absende
     expect(screen.queryByRole('button', { name: /E-Mail-Absender/ })).not.toBeInTheDocument();
     expect(fetcher.mock.calls.some(([url]) => String(url).includes('/api/firma/email-absender'))).toBe(false);
 });
+
+it('zeigt das Bundesland im Klartext mit Info-Knopf und speichert das Kürzel', async () => {
+    const user = userEvent.setup();
+    const firma = { id: 1, firmenname: 'Testbetrieb', bundesland: 'BY', tageBisZahlungserinnerung: 7, tageBisErsteMahnung: 7, tageBisZweiteMahnung: 7, mahnverfahrenNeuesZahlungszielTage: 7 };
+    const fetcher = vi.fn().mockImplementation(async (url, init) => ({ ok: true, json: async () => url === '/api/firma' ? init ? JSON.parse(init.body) : firma : [] }));
+    vi.stubGlobal('fetch', fetcher);
+    render(<MemoryRouter><ToastProvider><ConfirmProvider><FirmaEditor /></ConfirmProvider></ToastProvider></MemoryRouter>);
+    const auswahl = await screen.findByRole('combobox', { name: 'Bundesland' });
+    expect(auswahl).toHaveTextContent('Bayern');
+
+    await user.click(screen.getByRole('button', { name: 'Mehr zu: Bundesland' }));
+    expect(await screen.findByText(/holt die gesetzlichen Feiertage für dieses Bundesland aus dem Internet/)).toBeVisible();
+    expect(screen.getByText(/Abgeschlossene Monate bleiben unverändert/)).toBeVisible();
+    await user.keyboard('{Escape}');
+
+    await user.click(auswahl);
+    await user.click(await screen.findByRole('option', { name: 'Nordrhein-Westfalen' }));
+    expect(auswahl).toHaveTextContent('Nordrhein-Westfalen');
+    await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT' && JSON.parse(init.body).bundesland === 'NW')).toBe(true));
+});

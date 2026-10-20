@@ -43,6 +43,9 @@ class FirmaControllerLogoTest {
     private SteuerberaterKontaktService steuerberaterKontaktService;
 
     @MockBean
+    private org.example.kalkulationsprogramm.service.FeiertageVorschauService feiertageVorschauService;
+
+    @MockBean
     private EmailAbsenderService emailAbsenderService;
 
     @Test

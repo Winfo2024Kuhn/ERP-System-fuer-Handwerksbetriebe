@@ -9,6 +9,7 @@ Rechnungen entstehen immer in einem Projekt unter **Projektmanagement → Projek
 - **Teilrechnung:** einzelne fertige Leistungen aus dem Angebot oder der Auftragsbestätigung abrechnen. Geht erst ab zwei Leistungen.
 - **Schlussrechnung:** rechnet den Rest ab, nachdem es schon eine Abschlags- oder Teilrechnung gab. Die bisherigen Rechnungen werden automatisch abgezogen.
 - **Stornorechnung:** entsteht von selbst, wenn eine Rechnung storniert wird.
+- **Gutschrift:** schreibt dem Kunden einen Teil oder die ganze Rechnung gut, z. B. einen Preisnachlass nach einer Reklamation. Entsteht immer an einer gebuchten Rechnung (siehe unten).
 
 ## Rechnung schreiben
 
@@ -91,7 +92,29 @@ Eine Rechnung, die noch nicht gebucht oder verschickt ist, lässt sich löschen:
 
 Danach ist die Rechnung als „Storniert“ markiert, und unter ihr hängt eine Stornorechnung (Nummer mit ST) mit Minusbetrag. Die Stornorechnung ist sofort gebucht. Die stornierte Rechnung verschwindet aus den offenen Posten.
 
-Stornieren geht nur bei gebuchten Rechnungen. Einen Entwurf löscht man stattdessen. Stornorechnungen selbst lassen sich nicht stornieren. Einen anderen Weg zum Stornieren gibt es nicht – weder im Editor noch in den Übersichten.
+Stornieren geht nur bei gebuchten Rechnungen und Gutschriften. Einen Entwurf löscht man stattdessen. Stornorechnungen selbst lassen sich nicht stornieren. Einen anderen Weg zum Stornieren gibt es nicht – weder im Editor noch in den Übersichten.
+
+## Gutschrift erstellen
+
+Eine Gutschrift gehört immer zu einer Rechnung. Über „Dokument erstellen“ gibt es sie deshalb nicht.
+
+1. Unter **Projektmanagement → Projekte** das Projekt öffnen, Reiter „Geschäftsdokumente“.
+2. Die gebuchte Rechnung anklicken und im Menü „Gutschrift erstellen“ wählen.
+3. Im Fenster „Gutschrift erstellen“ stehen „Rechnungsbetrag“, „Bereits gutgeschrieben“ und „Höchstens noch möglich“. Dann wählen:
+   - **„Ganze Rechnung gutschreiben“:** alle Positionen der Rechnung werden übernommen. Im Editor lassen sich Positionen noch löschen oder ändern. Gibt es zur Rechnung schon eine Gutschrift, geht nur noch ein Teilbetrag.
+   - **„Teilbetrag gutschreiben“:** „Betrag netto in Euro“ (z. B. 100,00) und „Grund“ eintragen. Der Grund steht auf der Gutschrift („Gutschrift zu Rechnung RE-…: Grund“).
+4. „Gutschrift anlegen“. Die Gutschrift (Nummer mit GU) öffnet sich im Dokument-Editor.
+5. Im Editor die Beträge **positiv** lassen – unten steht „Wird als Gutschrift (Minus) gebucht“. Dann wie eine Rechnung festschreiben und verschicken.
+
+Was die Gutschrift bewirkt:
+
+- Der offene Betrag der Rechnung sinkt um die Gutschrift. In **Finanzen & Controlling → Offene Posten** steht dann der Restbetrag, darunter klein „Rechnung … · Gutschrift −…“. Mahnungen fordern nur noch den Rest.
+- Eine Gutschrift über die ganze Rechnung erledigt den offenen Posten.
+- Die E-Rechnung (ZUGFeRD) wird als Gutschrift mit Bezug auf die Rechnung erzeugt.
+- Der Auftragswert des Projekts ändert sich nicht.
+- Mehr als noch offen ist, lässt sich nicht gutschreiben.
+
+Eine gebuchte Gutschrift lässt sich wie eine Rechnung über „Stornieren“ aufheben. Danach ist der Betrag der Rechnung wieder offen. Einen Gutschrift-Entwurf löscht man stattdessen.
 
 ## Was passiert mit der Schlussrechnung, wenn ein Abschlag storniert wird?
 

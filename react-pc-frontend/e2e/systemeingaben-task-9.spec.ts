@@ -65,16 +65,17 @@ test('Systemeingaben Task9: Arbeitszeit mit Kommawerten und eigener Zeitauswahl'
     await saturday.fill('8,5'); await saturday.press('Tab');
     const sunday = dialog.getByRole('textbox', { name: 'Sonntag Stunden' });
     await expect(sunday).toBeFocused(); await expect(sunday).toHaveValue(''); await sunday.fill('0');
-    const start = dialog.getByRole('textbox', { name: 'Früheste Buchung – optional' });
+    await expect(dialog.getByRole('textbox', { name: 'Früheste Buchung – optional' })).toHaveCount(0);
+    const start = dialog.getByRole('textbox', { name: 'Späteste Buchung – optional' });
     await start.fill('25:99'); await dialog.getByRole('button', { name: 'Vorschau anzeigen' }).click();
     expect(previews).toHaveLength(0);
-    await start.fill('09:05');
+    await start.fill('17:30');
     await expect(dialog.locator('input[type="time"],input[type="number"],select')).toHaveCount(0);
     for (const close of await page.getByRole('button', { name: 'Benachrichtigung schließen' }).all()) await close.click();
     await designPruefung(page, testInfo, 'systemeingaben-task9-arbeitszeit', { primaerAktion: dialog.getByRole('button', { name: 'Vorschau anzeigen' }) });
     await dialog.getByRole('button', { name: 'Vorschau anzeigen' }).click();
     await expect.poll(() => previews.length).toBe(1);
-    expect(previews[0]).toMatchObject({ arbeitszeit: { samstagStunden: 8.5, sonntagStunden: 0, buchungStartZeit: '09:05' } });
+    expect(previews[0]).toMatchObject({ arbeitszeit: { samstagStunden: 8.5, sonntagStunden: 0, buchungEndeZeit: '17:30' } });
     expect(nativeDialogs).toEqual([]);
 });
 

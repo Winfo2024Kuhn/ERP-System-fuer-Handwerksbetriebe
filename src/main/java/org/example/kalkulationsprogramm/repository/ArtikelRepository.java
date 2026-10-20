@@ -15,6 +15,9 @@ public interface ArtikelRepository extends JpaRepository<Artikel, Long>, JpaSpec
     @Query("select a from Artikel a join a.artikelpreis n where lower(trim(n.externeArtikelnummer)) = lower(trim(:nummer))")
     Optional<Artikel> findByExterneArtikelnummer(@Param("nummer") String nummer);
 
+    /** Ist die betriebseigene Artikelnummer schon vergeben (Groß-/Kleinschreibung egal)? */
+    boolean existsByArtikelnummerIgnoreCase(String artikelnummer);
+
     /**
      * Laedt den Artikel mit einem PESSIMISTIC_WRITE-Lock auf die Zeile.
      *

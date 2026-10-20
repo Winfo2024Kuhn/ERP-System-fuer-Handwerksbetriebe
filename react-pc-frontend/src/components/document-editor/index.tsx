@@ -4025,6 +4025,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 }}
                 globalRabatt={globalRabatt}
                 istRestbetrag={bereitsAbgerechnetDurchAndere !== null && bereitsAbgerechnetDurchAndere > 0}
+                istGutschrift={dokumentTyp === 'GUTSCHRIFT'}
                 zahlungsziel={zahlungszielTage}
                 zahlungszielDatum={zahlungszielDatumDisplay}
                 onZahlungszielChange={isLocked ? undefined : handleZahlungszielChange}

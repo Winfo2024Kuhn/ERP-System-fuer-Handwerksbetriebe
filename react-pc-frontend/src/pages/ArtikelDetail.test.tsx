@@ -302,7 +302,7 @@ describe('ArtikelDetail', () => {
             expect(screen.getByLabelText('Kurzbeschreibung')).toHaveValue('T-Stahl 40x40 Lager'));
         // Aufschlag und Beschreibung setzt derselbe Effekt im selben Batch -
         // ist die Kurzbeschreibung da, sind sie es auch.
-        expect(screen.getByLabelText('Aufschlag auf den Einkaufspreis')).toHaveValue(40);
+        expect(screen.getByLabelText('Aufschlag auf den Einkaufspreis')).toHaveValue('40');
         expect(screen.getByText(/8,40/)).toBeInTheDocument();
     });
 
@@ -484,5 +484,107 @@ describe('ArtikelDetail', () => {
         const patchAufruf = fetchMock.mock.calls.find(([, options]) => options?.method === 'PATCH');
         const gesendet = JSON.parse(String(patchAufruf?.[1]?.body));
         expect(gesendet.beschreibung).toBeNull();
+    });
+    describe('Preis ändern je Lieferant', () => {
+        /** Fetch-Mock mit zwei Lieferanten; merkt sich die POSTs auf .../artikelpreise. */
+        function mockMitPreisPost(postAntwort?: { ok: boolean; status: number; body: unknown }) {
+            fetchMock = vi.fn((url: string, options?: RequestInit) => {
+                if (options?.method === 'POST' && url.includes('/artikelpreise')) {
+                    const a = postAntwort ?? { ok: true, status: 200, body: {} };
+                    return Promise.resolve({ ok: a.ok, status: a.status, json: () => Promise.resolve(a.body) });
+                }
+                if (url.includes('/dokumente')) {
+                    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
+                }
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(detailAntwort) });
+            });
+            vi.stubGlobal('fetch', fetchMock);
+        }
+
+        const postBody = () => {
+            const aufruf = fetchMock.mock.calls.find(([url, o]) => o?.method === 'POST' && String(url).includes('/artikelpreise'));
+            return aufruf ? { url: String(aufruf[0]), body: JSON.parse(String(aufruf[1]?.body)) } : null;
+        };
+
+        it('belegt das Formular mit Lieferant und dessen Nummer vor und setzt den Fokus ins Preisfeld', async () => {
+            mockMitPreisPost();
+            renderSeite();
+
+            await userEvent.click(await screen.findByRole('button', { name: 'Preis ändern bei Beispiel Metall GmbH' }));
+
+            expect(screen.getByRole('heading', { name: 'Preis ändern' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Lieferant' })).toHaveTextContent('Beispiel Metall GmbH');
+            expect(screen.getByLabelText('Dessen Artikelnummer')).toHaveValue('B-2000');
+            await waitFor(() => expect(screen.getByLabelText('Preis in Euro')).toHaveFocus());
+            expect(screen.getByText('Leer lassen = die bisherige Nummer bleibt.')).toBeInTheDocument();
+        });
+
+        it('liest "1.234,50" richtig und schickt die unveränderte Nummer nicht noch einmal mit', async () => {
+            mockMitPreisPost();
+            renderSeite();
+
+            await userEvent.click(await screen.findByRole('button', { name: 'Preis ändern bei Muster Stahlhandel' }));
+            await userEvent.type(screen.getByLabelText('Preis in Euro'), '1.234,50');
+            await userEvent.click(screen.getByRole('button', { name: /^Speichern$/ }));
+
+            await waitFor(() => expect(postBody()).not.toBeNull());
+            const gesendet = postBody()!;
+            expect(gesendet.url).toBe('/api/lieferanten/1/artikelpreise');
+            expect(gesendet.body).toEqual({ artikelId: 1, preis: 1234.5, externeArtikelnummer: null });
+        });
+
+        it('schickt eine geänderte Nummer mit', async () => {
+            mockMitPreisPost();
+            renderSeite();
+
+            await userEvent.click(await screen.findByRole('button', { name: 'Preis ändern bei Muster Stahlhandel' }));
+            const nummer = screen.getByLabelText('Dessen Artikelnummer');
+            await userEvent.clear(nummer);
+            await userEvent.type(nummer, 'M-1001');
+            await userEvent.type(screen.getByLabelText('Preis in Euro'), '9,90');
+            await userEvent.click(screen.getByRole('button', { name: /^Speichern$/ }));
+
+            await waitFor(() => expect(postBody()).not.toBeNull());
+            expect(postBody()!.body).toEqual({ artikelId: 1, preis: 9.9, externeArtikelnummer: 'M-1001' });
+        });
+
+        it('zeigt die Meldung des Servers, wenn das Speichern abgelehnt wird', async () => {
+            mockMitPreisPost({ ok: false, status: 400, body: { status: 400, message: 'Der Preis darf nicht negativ sein.' } });
+            renderSeite();
+
+            await userEvent.click(await screen.findByRole('button', { name: 'Preis ändern bei Muster Stahlhandel' }));
+            await userEvent.type(screen.getByLabelText('Preis in Euro'), '5');
+            await userEvent.click(screen.getByRole('button', { name: /^Speichern$/ }));
+
+            expect(await screen.findByText('Der Preis darf nicht negativ sein.')).toBeInTheDocument();
+        });
+
+        it('lehnt einen unlesbaren Preis ab, ohne zu speichern', async () => {
+            mockMitPreisPost();
+            renderSeite();
+
+            await userEvent.click(await screen.findByRole('button', { name: 'Preis ändern bei Muster Stahlhandel' }));
+            await userEvent.type(screen.getByLabelText('Preis in Euro'), 'abc');
+            await userEvent.click(screen.getByRole('button', { name: /^Speichern$/ }));
+
+            expect(await screen.findByText('Bitte einen gültigen Preis eingeben.')).toBeInTheDocument();
+            expect(postBody()).toBeNull();
+        });
+    });
+
+    it('liest den Aufschlag im deutschen Zahlenformat', async () => {
+        mockFetchDetail({
+            artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        await userEvent.type(await screen.findByLabelText('Aufschlag auf den Einkaufspreis'), '12,5');
+        await userEvent.click(screen.getByRole('button', { name: /Angebotsfelder speichern/ }));
+
+        await waitFor(() => expect(fetchMock.mock.calls.some(([, o]) => o?.method === 'PATCH')).toBe(true));
+        const patch = fetchMock.mock.calls.find(([, o]) => o?.method === 'PATCH');
+        expect(JSON.parse(String(patch?.[1]?.body)).verkaufsaufschlagProzent).toBe(12.5);
     });
 });

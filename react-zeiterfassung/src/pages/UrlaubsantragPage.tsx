@@ -28,9 +28,21 @@ interface Urlaubsantrag {
     entscheidungGesehen?: boolean
 }
 
+/** Antwort von `GET /api/urlaub/vorschau` (API-Vertrag #270). */
+interface UrlaubVorschau {
+    arbeitstage: number
+    verbleibend: number | null
+    reicht: boolean
+}
+
+/** Wartezeit nach der letzten Datumsänderung, bevor die genaue Zahl abgefragt wird. */
+const URLAUB_VORSCHAU_VERZOEGERUNG_MS = 300
+
 interface Feiertag {
     datum: string
     bezeichnung: string
+    /** Von `/feiertage/zwischen` als Text "true"/"false" geliefert. */
+    halbTag?: string | boolean
 }
 
 const STATUS_FILTER_OPTIONS = [
@@ -194,8 +206,41 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
         return count
     }
 
-    const beantragteTage = zaehleArbeitstage(von, bis)
-    const ueberschritten = !istGeschaeftsfuehrer && typ === 'URLAUB' && resturlaub !== null && beantragteTage > resturlaub
+    // Genaue Urlaubstage vom Server (zieht Feiertage und Tage ohne Soll ab). Kommt keine
+    // Antwort (offline, Fehler), bleibt es bei der lokalen Schätzung – dann „ungefähr“
+    // und der Knopf bleibt frei; der Server prüft beim Absenden ohnehin.
+    const zeitraum = von && bis && von <= bis ? `${von}|${bis}` : null
+    const mitarbeiterId = mitarbeiter?.id
+    const [urlaubVorschau, setUrlaubVorschau] = useState<{ zeitraum: string; daten: UrlaubVorschau } | null>(null)
+    const [vorschauLaedt, setVorschauLaedt] = useState(false)
+    useEffect(() => {
+        if (typ !== 'URLAUB' || mitarbeiterId === undefined || !zeitraum) { setVorschauLaedt(false); return }
+        let abgebrochen = false
+        setVorschauLaedt(true)
+        const timer = setTimeout(async () => {
+            const [vonDatum, bisDatum] = zeitraum.split('|')
+            try {
+                const res = await fetch(`/api/urlaub/vorschau?mitarbeiterId=${encodeURIComponent(mitarbeiterId)}&von=${encodeURIComponent(vonDatum)}&bis=${encodeURIComponent(bisDatum)}`)
+                if (!res.ok) throw new Error(String(res.status))
+                const daten = await res.json() as UrlaubVorschau
+                if (!abgebrochen && typeof daten?.arbeitstage === 'number') setUrlaubVorschau({ zeitraum, daten })
+            } catch {
+                // Offline oder Serverfehler: lokale Schätzung bleibt stehen.
+            } finally {
+                if (!abgebrochen) setVorschauLaedt(false)
+            }
+        }, URLAUB_VORSCHAU_VERZOEGERUNG_MS)
+        return () => { abgebrochen = true; clearTimeout(timer) }
+    }, [typ, mitarbeiterId, zeitraum])
+    const vorschauAktuell = typ === 'URLAUB' && urlaubVorschau && urlaubVorschau.zeitraum === zeitraum ? urlaubVorschau.daten : null
+
+    const geschaetzteTage = zaehleArbeitstage(von, bis)
+    const beantragteTage = vorschauAktuell ? vorschauAktuell.arbeitstage : geschaetzteTage
+    const tageUngefaehr = typ === 'URLAUB' && !vorschauAktuell
+    // Sperren nur mit der genauen Antwort des Servers, nie wegen der Schätzung.
+    const ueberschritten = !istGeschaeftsfuehrer && typ === 'URLAUB' && vorschauAktuell?.reicht === false
+    const vielleichtZuViel = !istGeschaeftsfuehrer && typ === 'URLAUB' && !vorschauAktuell && !vorschauLaedt
+        && resturlaub !== null && geschaetzteTage > resturlaub
 
     const fetchAntraege = async () => {
         if (!mitarbeiter) return
@@ -531,11 +576,16 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                                                 {vorjahresHinweis(vorjahresRest) && (
                                                     <span className="block text-xs mt-0.5">{vorjahresHinweis(vorjahresRest)}</span>
                                                 )}
-                                                {beantragteTage > 0 && (
+                                                {zeitraum && vorschauLaedt && !vorschauAktuell ? (
+                                                    <span className="block mt-0.5">Urlaubstage werden berechnet…</span>
+                                                ) : beantragteTage > 0 && (
                                                     <span className="block mt-0.5">
-                                                        Beantragt: {beantragteTage} Arbeitstag{beantragteTage !== 1 ? 'e' : ''}
+                                                        Beantragt: {tageUngefaehr ? 'ungefähr ' : ''}{formatUrlaubstage(beantragteTage)} Urlaubstag{beantragteTage !== 1 ? 'e' : ''}
                                                         {ueberschritten && (
                                                             <span className="font-semibold"> — Nicht genügend Urlaubstage!</span>
+                                                        )}
+                                                        {vielleichtZuViel && (
+                                                            <span className="block text-xs">Die genaue Zahl prüft das Büro beim Absenden.</span>
                                                         )}
                                                     </span>
                                                 )}
@@ -731,7 +781,10 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
                             <div className="bg-slate-50 rounded-xl p-3 space-y-2 max-h-48 overflow-y-auto">
                                 {gefundeneFeiertage.map((f, idx) => (
                                     <div key={idx} className="flex items-center justify-between text-sm">
-                                        <span className="font-medium text-slate-900">{f.bezeichnung}</span>
+                                        <span className="font-medium text-slate-900">
+                                            {f.bezeichnung}
+                                            {(f.halbTag === true || f.halbTag === 'true') && <span className="ml-1 font-normal text-slate-500">(halber Tag)</span>}
+                                        </span>
                                         <span className="text-slate-500">{formatDate(f.datum)}</span>
                                     </div>
                                 ))}

@@ -970,6 +970,9 @@ public class ProjektController {
             dto.setRechnungsdatum(geschaeftsdokument.getRechnungsdatum());
             dto.setFaelligkeitsdatum(geschaeftsdokument.getFaelligkeitsdatum());
             dto.setRechnungsbetrag(geschaeftsdokument.getBruttoBetrag());
+            dto.setGutgeschrieben(geschaeftsdokument.getGutgeschrieben() != null
+                    ? geschaeftsdokument.getGutgeschrieben() : java.math.BigDecimal.ZERO);
+            dto.setOffenerBetrag(geschaeftsdokument.getOffenerBetrag());
             dto.setGeschaeftsdokumentart(geschaeftsdokument.getGeschaeftsdokumentart());
             dto.setBezahlt(geschaeftsdokument.isBezahlt());
             boolean istMahnung = geschaeftsdokument.getGeschaeftsdokumentart() != null

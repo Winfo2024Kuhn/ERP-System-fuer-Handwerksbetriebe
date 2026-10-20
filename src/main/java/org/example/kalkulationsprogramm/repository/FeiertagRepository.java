@@ -21,6 +21,11 @@ public interface FeiertagRepository extends JpaRepository<Feiertag, Long> {
 
     boolean existsByDatumAndBundesland(LocalDate datum, String bundesland);
 
+    boolean existsByDatumAndBundeslandAndAktivTrue(LocalDate datum, String bundesland);
+
+    @Query("SELECT f FROM Feiertag f WHERE f.datum BETWEEN :von AND :bis AND f.bundesland = :bundesland ORDER BY f.datum")
+    List<Feiertag> findByDatumBetweenAndBundesland(LocalDate von, LocalDate bis, String bundesland);
+
     @Query("SELECT f FROM Feiertag f WHERE f.datum BETWEEN :von AND :bis ORDER BY f.datum")
     List<Feiertag> findByDatumBetween(LocalDate von, LocalDate bis);
 

@@ -1,0 +1,1 @@
+const e={KEIN_AUFSCHLAG:"Kein Aufschlag hinterlegt — der Preis entspricht dem Einkauf.",KEIN_PREIS:"Kein Preis hinterlegt — bitte selbst eintragen.",KEIN_GEWICHT:"Gewicht je Meter fehlt – der Preis je Meter lässt sich deshalb nicht berechnen."},i={KEIN_AUFSCHLAG:"ohne Aufschlag",KEIN_PREIS:"kein Preis",KEIN_GEWICHT:"kein Gewicht"};export{i as a,e as p};

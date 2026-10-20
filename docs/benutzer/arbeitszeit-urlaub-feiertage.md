@@ -18,7 +18,7 @@ Abteilungen selbst legt man unter **Vorlagen & Stammdaten → Arbeitsgänge** an
 
 ## Handy-App einrichten (QR-Code)
 
-Beim Mitarbeiter (**Vorlagen & Stammdaten → Mitarbeiter**, Mitarbeiter öffnen) oben auf „Token erstellen“ klicken, bzw. auf „QR-Code“, wenn schon einer besteht. Der Mitarbeiter öffnet die Handy-App, tippt „Kamera öffnen & QR-Code scannen“ und scannt den Code – danach bleibt er angemeldet. „Neu generieren“ erzeugt einen neuen Code; der alte gilt dann nicht mehr. Den QR-Code sehen nur Admins und der Mitarbeiter selbst.
+Beim Mitarbeiter (**Vorlagen & Stammdaten → Mitarbeiter**, Mitarbeiter öffnen) oben auf „Token erstellen“ klicken, bzw. auf „QR-Code“, wenn schon einer besteht. Der Mitarbeiter öffnet die Handy-App, tippt „Kamera öffnen & QR-Code scannen“ und scannt den Code – danach bleibt er angemeldet. „Neu generieren“ erzeugt nach einer Rückfrage („Neuen Code erstellen“) einen neuen Code; der alte gilt dann nicht mehr, und der Mitarbeiter muss die Handy-App mit dem neuen Code neu einrichten. Den QR-Code sehen nur Admins und der Mitarbeiter selbst.
 
 Die Adresse der Handy-App steht unter **Einstellungen → Zeiterfassung**, Karte „Mobile Zeiterfassung“.
 
@@ -27,7 +27,7 @@ Die Adresse der Handy-App steht unter **Einstellungen → Zeiterfassung**, Karte
 Unter **Zeiterfassung → Zeitkonten**, Karte „Arbeitszeit-Vorlagen“ → „Vorlage anlegen“:
 - „Bezeichnung“, z. B. „Werkstatt Vollzeit“,
 - Stunden für „Montag“ bis „Sonntag“,
-- optional „Spätestes Ende“: Läuft eine Buchung darüber hinaus, beendet das Programm sie automatisch und meldet das in der Glocke („Kein Feierabend gestempelt“). „Frühester Start“ lässt sich ebenfalls eintragen.
+- optional „Spätestes Ende“: Läuft eine Buchung darüber hinaus, beendet das Programm sie automatisch und meldet das in der Glocke („Kein Feierabend gestempelt“).
 
 Eine geänderte Vorlage gilt nicht von selbst: Nach dem Speichern öffnet sich „Vorlagenänderung übernehmen“. Dort „Gültig ab“ wählen, bei den betroffenen Mitarbeitern „Vorschau“ laden, anhaken und „Für Auswahl übernehmen“. Eine Vorlage, die schon einmal jemandem zugewiesen war, lässt sich nicht mehr löschen.
 
@@ -46,7 +46,14 @@ Ausschalten lässt sich die Arbeitszeit beim Mitarbeiter mit „Arbeitszeit auss
 
 ## Feiertage
 
-Unter **Zeiterfassung → Feiertage** stehen die Feiertage des gewählten Jahres. Das Programm lädt sie selbst – derzeit immer die bayerischen, einschließlich Mariä Himmelfahrt. Ein anderes Bundesland, eigene Betriebsfeiertage oder halbe Feiertage (Heiligabend, Silvester) lassen sich nicht eintragen. „Feiertage neu generieren“ lädt das angezeigte und das folgende Jahr neu.
+Unter **Zeiterfassung → Feiertage** stehen die Feiertage des gewählten Jahres für das Bundesland aus den Firmendaten (**Vorlagen & Stammdaten → Firma**, Feld „Bundesland“). Dort schlägt das Programm das Bundesland anhand der Postleitzahl vor („Übernehmen“) und zeigt aufklappbar, welche Feiertage damit gelten. Die gesetzlichen Feiertage lädt das Programm selbst. Nach einem Wechsel des Bundeslands rechnet es alle noch nicht abgeschlossenen Monate neu; abgeschlossene Monate bleiben unverändert.
+
+Administratoren können je Feiertag:
+- „Halber Tag“ einschalten: Der Tag bleibt ein Arbeitstag mit vollem Soll, gutgeschrieben wird die Hälfte (z. B. Heiligabend, Silvester).
+- „Gilt bei uns“ ausschalten: für Feiertage, die nur in einem Teil des Bundeslands gelten (z. B. Mariä Himmelfahrt). Der Tag zählt dann als normaler Arbeitstag und ist mit „Abgeschaltet“ markiert.
+- mit „Eigenen Feiertag hinzufügen“ einen Betriebsfeiertag anlegen (Datum, Bezeichnung, optional halber Tag). Eigene Feiertage lassen sich wieder löschen, gesetzliche nur abschalten.
+
+„Feiertage neu generieren“ lädt das angezeigte und das folgende Jahr neu; eigene Feiertage und Einstellungen wie „Halber Tag“ oder „Abgeschaltet“ bleiben erhalten.
 
 Feiertage zählen im Zeitkonto als bezahlter Tag mit dem vollen Tagessoll. An Feiertagen lässt sich kein Urlaub buchen, und sie zählen nicht als Urlaubstage.
 
@@ -65,7 +72,7 @@ Wird ein Antrag genehmigt oder abgelehnt, bekommt der Mitarbeiter eine Push-Nach
 
 Unter **Zeiterfassung → Urlaubsanträge** zeigt die Auswahl oben zuerst „Offene Anträge“; umschaltbar auf „Genehmigte Anträge“, „Abgelehnte Anträge“ und „Stornierte Anträge“. Jeder Antrag zeigt Art, Name, Zeitraum, Jahresurlaub und Bemerkung. „Genehmigen“ oder „Ablehnen“ wählen und bestätigen. Die Glocke oben rechts meldet neue Anträge.
 
-Beim Genehmigen bucht das Programm für jeden Arbeitstag (Montag bis Freitag, ohne Feiertage) die Abwesenheit mit dem Tagessoll. Läuft für den Mitarbeiter gerade eine lange Krankheit, weist ein gelber Kasten darauf hin. Hat der Mitarbeiter für einen der Tage keine Arbeitszeit oder liegt ein Tag in einem abgeschlossenen Monat, klappt das Genehmigen nicht; das Programm sagt dann, woran es liegt.
+Beim Genehmigen bucht das Programm für jeden Tag, an dem der Mitarbeiter laut Arbeitszeit Sollstunden hat, die Abwesenheit mit dem Tagessoll – also auch den Samstag, wenn samstags gearbeitet wird. Feiertage und freie Tage (z. B. ein freier Mittwoch) kosten keinen Urlaub. Geschäftsführer ohne Arbeitszeit: Montag bis Freitag. Läuft für den Mitarbeiter gerade eine lange Krankheit, weist ein gelber Kasten darauf hin. Hat der Mitarbeiter für einen der Tage keine Arbeitszeit oder liegt ein Tag in einem abgeschlossenen Monat, klappt das Genehmigen nicht; das Programm sagt dann, woran es liegt.
 
 ## Genehmigten Urlaub zurücknehmen
 

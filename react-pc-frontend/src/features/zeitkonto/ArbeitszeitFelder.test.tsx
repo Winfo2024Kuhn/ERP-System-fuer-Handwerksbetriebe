@@ -12,5 +12,6 @@ it.each([false, true])('bewahrt Textentwürfe und leert Nullstunden per Klick un
  const monday = screen.getByRole('textbox', { name: 'Montag Stunden' }); await user.click(monday); expect(monday).toHaveValue('8');
  const saturday = screen.getByRole('textbox', { name: 'Samstag Stunden' }); expect(saturday).toHaveValue('0'); await user.click(saturday); expect(saturday).toHaveValue(''); await user.type(saturday, '7,5'); expect(saturday).toHaveValue('7,5');
  await user.tab(); const sunday = screen.getByRole('textbox', { name: 'Sonntag Stunden' }); expect(sunday).toHaveFocus(); expect(sunday).toHaveValue(''); await user.type(sunday, '0'); expect(sunday).toHaveValue('0');
- const start = screen.getByRole('textbox', { name: kompakt ? 'Früheste Buchung – optional' : 'Frühester Start' }); await user.type(start, '09:05'); expect(start).toHaveValue('09:05');
+ const ende = screen.getByRole('textbox', { name: kompakt ? 'Späteste Buchung – optional' : 'Spätestes Ende' }); await user.type(ende, '17:30'); expect(ende).toHaveValue('17:30');
+ expect(screen.queryByRole('textbox', { name: /Früheste|Frühester/ })).not.toBeInTheDocument();
 });

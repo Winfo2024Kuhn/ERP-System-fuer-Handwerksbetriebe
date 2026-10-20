@@ -55,7 +55,7 @@ public class UrlaubsantragService {
         if (!istGf && typ == Urlaubsantrag.Typ.URLAUB) {
             // Probe-Rechnung mit den beantragten Tagen: Tage bis zum Verfallstag dürfen den
             // Vorjahresrest nutzen, Tage danach nur den Anspruch (Datum „heute“ aus der Clock).
-            List<LocalDate> beantragt = arbeitstage(von, bis);
+            List<LocalDate> beantragt = urlaubstage(mitarbeiterId, von, bis);
             UrlaubskontoService.Antragspruefung pruefung = urlaubskontoService.pruefeAntrag(mitarbeiter,
                     von.getYear(), beantragt);
             if (!pruefung.reicht()) {
@@ -92,10 +92,7 @@ public class UrlaubsantragService {
         // Bei Geschäftsführern wird der Urlaub direkt genehmigt und Abwesenheiten mit 0 Stunden erfasst
         if (istGf) {
             AbwesenheitsTyp abwesenheitsTyp = toAbwesenheitsTyp(savedAntrag.getTyp());
-            List<LocalDate> buchungstage = von.datesUntil(bis.plusDays(1))
-                    .filter(tag -> tag.getDayOfWeek() != DayOfWeek.SATURDAY && tag.getDayOfWeek() != DayOfWeek.SUNDAY)
-                    .filter(tag -> !feiertagService.istFeiertag(tag))
-                    .toList();
+            List<LocalDate> buchungstage = werktageOhneFeiertage(von, bis);
 
             for (LocalDate date : buchungstage) {
                 if (!abwesenheitRepository.existsByMitarbeiterIdAndDatumAndTyp(
@@ -153,20 +150,23 @@ public class UrlaubsantragService {
 
         boolean istGf = Boolean.TRUE.equals(antrag.getMitarbeiter().getIstGeschaeftsfuehrer());
 
-        List<LocalDate> buchungstage = antrag.getVonDatum().datesUntil(antrag.getBisDatum().plusDays(1))
-                .filter(tag -> tag.getDayOfWeek() != DayOfWeek.SATURDAY && tag.getDayOfWeek() != DayOfWeek.SUNDAY)
-                .filter(tag -> !feiertagService.istFeiertag(tag))
-                .toList();
+        // Geschäftsführer haben keine Arbeitszeit: Mo–Fr. Alle anderen: jeder Tag mit Soll,
+        // also auch der Samstag, aber nicht der freie Mittwoch (Issue #270). Welche Tage Soll
+        // haben, entscheidet unten die Soll-Map; hier fallen nur die Feiertage heraus.
+        List<LocalDate> buchungstage = istGf
+                ? werktageOhneFeiertage(antrag.getVonDatum(), antrag.getBisDatum())
+                : antrag.getVonDatum().datesUntil(antrag.getBisDatum().plusDays(1))
+                        .filter(tag -> !feiertagService.istFeiertag(tag))
+                        .toList();
 
         if (!istGf) {
             // Vertragsdaten einmal laden und alle Buchungstage vor der ersten Änderung prüfen.
-            // Der heutige Kontoschalter darf historische Buchungen nicht verhindern.
+            // Der heutige Kontoschalter darf historische Buchungen nicht verhindern. Ein
+            // Wochenende ohne Arbeitszeit kostet ohnehin keinen Urlaub.
             List<ZeitkontoVersion> versionen = zeitkontoService.versionenImZeitraum(
                     antrag.getMitarbeiter().getId(), antrag.getVonDatum(), antrag.getBisDatum());
             for (LocalDate tag : buchungstage) {
-                boolean konfiguriert = versionen.stream().anyMatch(v -> !v.getGueltigVon().isAfter(tag)
-                        && (v.getGueltigBis() == null || !v.getGueltigBis().isBefore(tag)));
-                if (!konfiguriert) {
+                if (!hatArbeitszeit(versionen, tag) && istWerktag(tag)) {
                     throw new IllegalStateException("Für den " + tag
                             + " ist noch keine Arbeitszeit hinterlegt. Bitte zuerst Arbeitszeit zuweisen.");
                 }
@@ -495,15 +495,76 @@ public class UrlaubsantragService {
     }
 
     /**
-     * Arbeitstage (Mo–Fr, ohne Feiertage) in einem Zeitraum.
+     * Was kostet ein Urlaub von … bis an Urlaubstagen, und reicht der Resturlaub?
+     * Rechnet wie {@link #createAntrag}: Feiertage und Tage ohne Soll zählen nicht,
+     * schon gebuchter Urlaub nicht doppelt. Für die Schätzung in der Handy-App.
      */
-    private List<LocalDate> arbeitstage(LocalDate von, LocalDate bis) {
+    @Transactional(readOnly = true)
+    public UrlaubsVorschau vorschau(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        if (von == null || bis == null) {
+            throw new IllegalArgumentException("Bitte Beginn und Ende angeben.");
+        }
+        if (bis.isBefore(von)) {
+            throw new IllegalArgumentException("Das Ende darf nicht vor dem Beginn liegen.");
+        }
+        if (von.plusYears(1).isBefore(bis)) {
+            throw new IllegalArgumentException("Ein Antrag darf höchstens ein Jahr umfassen.");
+        }
+        Mitarbeiter mitarbeiter = mitarbeiterRepository.findById(mitarbeiterId)
+                .orElseThrow(() -> new IllegalArgumentException("Mitarbeiter nicht gefunden"));
+        if (Boolean.TRUE.equals(mitarbeiter.getIstGeschaeftsfuehrer())) {
+            return new UrlaubsVorschau(BigDecimal.valueOf(werktageOhneFeiertage(von, bis).size()), null, true);
+        }
+        UrlaubskontoService.Antragspruefung pruefung = urlaubskontoService.pruefeAntrag(mitarbeiter,
+                von.getYear(), urlaubstage(mitarbeiterId, von, bis));
+        return new UrlaubsVorschau(pruefung.beantragteTage(), pruefung.verbleibendVorher(), pruefung.reicht());
+    }
+
+    /** Ergebnis von {@link #vorschau}; {@code verbleibend} ist null bei Geschäftsführern (kein Kontingent). */
+    public record UrlaubsVorschau(BigDecimal arbeitstage, BigDecimal verbleibend, boolean reicht) {
+    }
+
+    /**
+     * Tage, die Urlaub kosten: ohne Feiertage und nur, wo der Mitarbeiter laut Arbeitszeit
+     * Sollstunden hat (auch Samstag). Für Tage ohne hinterlegte Arbeitszeit gilt Mo–Fr; die
+     * Genehmigung lehnt solche Tage ohnehin mit „keine Arbeitszeit hinterlegt“ ab.
+     */
+    private List<LocalDate> urlaubstage(Long mitarbeiterId, LocalDate von, LocalDate bis) {
+        List<ZeitkontoVersion> versionen = zeitkontoService.versionenImZeitraum(mitarbeiterId, von, bis);
+        Map<LocalDate, BigDecimal> soll = versionen.isEmpty()
+                ? Map.of()
+                : tagesSollService.arbeitsSollJeTag(mitarbeiterId, von, bis);
+        // Feiertage einmal für den ganzen Zeitraum laden statt zwei Abfragen je Tag.
+        java.util.Set<LocalDate> feiertage = feiertagService.getFeiertageZwischen(von, bis).stream()
+                .map(Feiertag::getDatum)
+                .collect(java.util.stream.Collectors.toSet());
         List<LocalDate> tage = new java.util.ArrayList<>();
         for (LocalDate d = von; !d.isAfter(bis); d = d.plusDays(1)) {
-            if (d.getDayOfWeek() == DayOfWeek.SATURDAY || d.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
-            if (feiertagService.istFeiertag(d)) continue;
-            tage.add(d);
+            LocalDate tag = d;
+            boolean kostetUrlaub = hatArbeitszeit(versionen, tag)
+                    ? soll.getOrDefault(tag, BigDecimal.ZERO).signum() > 0
+                    : istWerktag(tag);
+            if (kostetUrlaub && !feiertage.contains(tag)) {
+                tage.add(tag);
+            }
         }
         return tage;
+    }
+
+    private static boolean hatArbeitszeit(List<ZeitkontoVersion> versionen, LocalDate tag) {
+        return versionen.stream().anyMatch(v -> !v.getGueltigVon().isAfter(tag)
+                && (v.getGueltigBis() == null || !v.getGueltigBis().isBefore(tag)));
+    }
+
+    /** Mo–Fr ohne Feiertage (Geschäftsführer ohne Arbeitszeit). */
+    private List<LocalDate> werktageOhneFeiertage(LocalDate von, LocalDate bis) {
+        return von.datesUntil(bis.plusDays(1))
+                .filter(UrlaubsantragService::istWerktag)
+                .filter(tag -> !feiertagService.istFeiertag(tag))
+                .toList();
+    }
+
+    private static boolean istWerktag(LocalDate tag) {
+        return tag.getDayOfWeek() != DayOfWeek.SATURDAY && tag.getDayOfWeek() != DayOfWeek.SUNDAY;
     }
 }

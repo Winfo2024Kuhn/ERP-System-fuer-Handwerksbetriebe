@@ -14,6 +14,10 @@ public interface ZeitkontoVersionRepository extends JpaRepository<ZeitkontoVersi
     Optional<ZeitkontoVersion> findFirstByMitarbeiterIdOrderByGueltigVonDesc(Long mitarbeiterId);
     boolean existsByVorlageId(Long vorlageId);
 
+    /** IDs der Vorlagen, die schon einmal einem Mitarbeiter zugewiesen wurden. */
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT v.vorlage.id FROM ZeitkontoVersion v WHERE v.vorlage IS NOT NULL")
+    java.util.Set<Long> findZugewieseneVorlageIds();
+
     /** Inklusive Grenzen; Herkunft mitladen, um spätere Vergleiche ohne N+1 zu erlauben. */
     @Query("""
             SELECT v FROM ZeitkontoVersion v LEFT JOIN FETCH v.vorlage

@@ -87,6 +87,15 @@ describe('ArtikelSuche', () => {
     // Ohne den Parameter stehen auch Artikel ohne Preis in der Liste. Fuer die
     // Materialkosten im Projekt waeren die unbrauchbar: Ohne Lieferant und
     // Preis laesst sich die Position nicht buchen.
+    it('sortiert die Spalte "Artikel-Nr." nach der eigenen Nummer, nicht nach dem Namen', async () => {
+        zeigeSuche(<ArtikelSuche />);
+        await screen.findByText('T-Stahl');
+
+        await userEvent.click(screen.getByRole('columnheader', { name: /Artikel-Nr\./ }));
+
+        await waitFor(() => expect(letzterListenRequest().get('sort')).toBe('artikelnummer'));
+    });
+
     it('fragt ohne nurMitLieferantenpreis alle Artikel ab', async () => {
         zeigeSuche(<ArtikelSuche />);
 

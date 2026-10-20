@@ -25,8 +25,9 @@ public class ZeitkontenmodellService {
     private final Validator validator;
 
     public List<ZeitkontenmodellDto> alle() {
+        java.util.Set<Long> zugewiesen = versionRepository.findZugewieseneVorlageIds();
         return repository.findAll(org.springframework.data.domain.Sort.by("bezeichnung", "id"))
-                .stream().map(ZeitkontenmodellDto::from).toList();
+                .stream().map(m -> ZeitkontenmodellDto.from(m, zugewiesen.contains(m.getId()))).toList();
     }
 
     @Transactional
@@ -45,7 +46,7 @@ public class ZeitkontenmodellService {
         pruefeVersion(modell, request.expectedVersion());
         modell.setBezeichnung(request.bezeichnung().trim());
         request.arbeitszeit().kopiereNach(modell);
-        return ZeitkontenmodellDto.from(repository.saveAndFlush(modell));
+        return ZeitkontenmodellDto.from(repository.saveAndFlush(modell), versionRepository.existsByVorlageId(id));
     }
 
     @Transactional

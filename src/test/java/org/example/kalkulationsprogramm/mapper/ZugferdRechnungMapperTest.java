@@ -392,4 +392,48 @@ class ZugferdRechnungMapperTest {
             assertThat(daten.getKundenStrasse()).isEqualTo("'; DROP TABLE x; --");
         }
     }
+
+    @Nested
+    class GutschriftBezug {
+
+        private KopfdatenDto kopfMitBezug(String typ, String bezug, String bezugDatum) {
+            return new KopfdatenDto("GU-2026/10/00001", RECHNUNGSDATUM, LEISTUNGSDATUM, "Max Mustermann", null,
+                    "Gutschrift", "K-1001", typ, bezug, null, null, "Rechnung", bezugDatum, null);
+        }
+
+        private final List<ContentBlockDto> nachlass = List.of(
+                leistung("1", "Preisnachlass", null, "1", "psch", "100", "100", false, null));
+
+        @Test
+        void gutschriftVerweistAufDieRechnung_BT25() {
+            ZugferdDaten deutsch = MAPPER.ausRechnung(rechnung(
+                    kopfMitBezug("Gutschrift", " RE-2026/10/00001 ", "01.10.2026"), nachlass, null, null, null));
+            assertThat(deutsch.getVorrechnungen())
+                    .containsExactly(new ZugferdBelegverweis("RE-2026/10/00001", LocalDate.of(2026, 10, 1)));
+
+            ZugferdDaten iso = MAPPER.ausRechnung(rechnung(
+                    kopfMitBezug("Stornorechnung", "RE-2026/10/00002", "2026-10-02"), nachlass, null, null, null));
+            assertThat(iso.getVorrechnungen())
+                    .containsExactly(new ZugferdBelegverweis("RE-2026/10/00002", LocalDate.of(2026, 10, 2)));
+        }
+
+        @Test
+        void unlesbaresDatum_verweisOhneDatum_rechnungOhneBezug() {
+            ZugferdDaten kaputt = MAPPER.ausRechnung(rechnung(
+                    kopfMitBezug("Gutschrift", "RE-1", "irgendwann"), nachlass, null, null, null));
+            assertThat(kaputt.getVorrechnungen()).containsExactly(new ZugferdBelegverweis("RE-1", null));
+
+            ZugferdDaten ohneDatum = MAPPER.ausRechnung(rechnung(
+                    kopfMitBezug("Gutschrift", "RE-1", "  "), nachlass, null, null, null));
+            assertThat(ohneDatum.getVorrechnungen()).containsExactly(new ZugferdBelegverweis("RE-1", null));
+
+            ZugferdDaten rechnungMitBezug = MAPPER.ausRechnung(rechnung(
+                    kopfMitBezug("Rechnung", "AB-2026-0007", "01.09.2026"), nachlass, null, null, null));
+            assertThat(rechnungMitBezug.getVorrechnungen()).isEmpty();
+
+            ZugferdDaten ohneBezug = MAPPER.ausRechnung(rechnung(
+                    kopfMitBezug("Gutschrift", null, null), nachlass, null, null, null));
+            assertThat(ohneBezug.getVorrechnungen()).isEmpty();
+        }
+    }
 }

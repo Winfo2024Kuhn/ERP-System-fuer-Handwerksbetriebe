@@ -195,3 +195,28 @@ it('erklärt „Bezahlte anzeigen“ per Info-Knopf', async () => {
     expect(info).toHaveTextContent('Stornierte Rechnungen erscheinen hier nicht.');
     expect(info).toHaveTextContent('Die Rechnung selbst und ihre Nummer bleiben unverändert.');
 });
+
+it('zeigt bei einer Gutschrift den offenen Betrag und rechnet die Summe damit', async () => {
+    const mitGutschrift: OffenerPosten = {
+        ...offeneRechnung, gutgeschrieben: 119, offenerBetrag: 1071,
+    };
+    const ohneOffenenBetrag: OffenerPosten = {
+        id: 8, rechnungsnummer: 'RE-2026-003', rechnungsdatum: '2026-10-02', rechnungsbetrag: 500,
+        bezahlt: false, mahnung: false, projektKunde: 'Musterfirma GmbH', gutgeschrieben: 0, offenerBetrag: null,
+    };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        if (url === '/api/projekte/offene-posten') return { ok: true, json: async () => [mitGutschrift, ohneOffenenBetrag] };
+        return { ok: true, json: async () => [] };
+    }));
+    zeigeSeite();
+
+    const zeile = (await screen.findByText('RE-2026-001')).closest('tr')!;
+    expect(within(zeile).getByText('1.071,00 €', { exact: false })).toBeInTheDocument();
+    expect(within(zeile).getByText('Rechnung 1.190,00 € · Gutschrift −119,00 €')).toBeInTheDocument();
+    // Ohne Gutschrift keine Zusatzzeile; offenerBetrag null -> Rechnungsbetrag
+    const zweite = screen.getByText('RE-2026-003').closest('tr')!;
+    expect(within(zweite).queryByText(/Gutschrift/)).not.toBeInTheDocument();
+    expect(within(zweite).getByText('500,00 €')).toBeInTheDocument();
+    // 1.071 + 500
+    expect(screen.getByText('Offene Summe').nextElementSibling).toHaveTextContent('1.571,00 €');
+});

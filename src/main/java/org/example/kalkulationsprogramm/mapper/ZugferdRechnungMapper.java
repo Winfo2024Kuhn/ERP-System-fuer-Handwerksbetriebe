@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.mapper;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -53,6 +54,8 @@ public class ZugferdRechnungMapper {
 
     /** Dokumentarten mit Zahlungsziel – Angebot, Auftragsbestätigung, Gutschrift und Storno fordern nichts. */
     private static final Set<String> RECHNUNGSARTEN = Set.of("rechnung", "teilrechnung", "abschlagsrechnung", "schlussrechnung");
+    /** Dokumentarten, die eine frühere Rechnung berichtigen (TypeCode 381, siehe ZugferdErstellService). */
+    private static final Set<String> BERICHTIGUNGSARTEN = Set.of("gutschrift", "stornorechnung", "storno");
 
     /** Zahlungsbedingung auf Belegen, die nichts fordern. */
     static final String KEINE_ZAHLUNG = "Keine Zahlung fällig.";
@@ -124,6 +127,14 @@ public class ZugferdRechnungMapper {
                     daten.getVorrechnungen().add(new ZugferdBelegverweis(vorher.dokumentNummer().trim(), vorher.datum()));
                 }
             }
+        }
+
+        // Gutschrift und Stornorechnung nennen die Rechnung, die sie berichtigen (BT-25, Issue #223).
+        if (kopf.dokumentTyp() != null
+                && BERICHTIGUNGSARTEN.contains(kopf.dokumentTyp().trim().toLowerCase(Locale.ROOT))
+                && !istLeer(kopf.bezugsdokument())) {
+            daten.getVorrechnungen().add(new ZugferdBelegverweis(kopf.bezugsdokument().trim(),
+                    leseDatum(kopf.bezugsdokumentDatum())));
         }
 
         // Ein Zahlungsziel nur, wo etwas zu zahlen ist: nicht auf Angebot oder Gutschrift und nicht,
@@ -306,5 +317,18 @@ public class ZugferdRechnungMapper {
 
     private static boolean istLeer(String wert) {
         return wert == null || wert.isBlank();
+    }
+
+    /** Datum aus den Kopfdaten: deutsch (31.12.2026) oder ISO (2026-12-31); sonst null. */
+    private static LocalDate leseDatum(String text) {
+        if (istLeer(text)) {
+            return null;
+        }
+        String wert = text.trim();
+        try {
+            return wert.contains(".") ? LocalDate.parse(wert, DATUM) : LocalDate.parse(wert);
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
     }
 }
