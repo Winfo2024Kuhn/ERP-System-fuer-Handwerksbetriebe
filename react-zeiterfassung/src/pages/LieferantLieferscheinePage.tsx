@@ -66,6 +66,9 @@ export default function LieferantLieferscheinePage() {
     const [analyzing, setAnalyzing] = useState(false)
     const [verifying, setVerifying] = useState(false)
     const [currentFile, setCurrentFile] = useState<File | null>(null)
+    // Bei Scans: erste Seite als Bild. Ein eingebettetes PDF braucht auf dem
+    // iPhone so viel Speicher, dass iOS die App neu lädt und der Prüfen-Schritt verschwindet.
+    const [vorschauBild, setVorschauBild] = useState<Blob | null>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     // Form State for Verification
@@ -76,17 +79,18 @@ export default function LieferantLieferscheinePage() {
     // Vorschau-URL fuer das gescannte/hochgeladene Dokument, damit der User die
     // KI-Werte direkt mit dem Beleg vergleichen kann. URL wird per Effekt sauber
     // freigegeben, sobald der File wechselt oder die Komponente unmountet.
+    const vorschauQuelle = vorschauBild ?? currentFile
     const previewUrl = useMemo(
-        () => (currentFile ? URL.createObjectURL(currentFile) : null),
-        [currentFile],
+        () => (vorschauQuelle ? URL.createObjectURL(vorschauQuelle) : null),
+        [vorschauQuelle],
     )
     useEffect(() => {
         if (!previewUrl) return
         return () => URL.revokeObjectURL(previewUrl)
     }, [previewUrl])
-    const previewIsPdf = currentFile?.type === 'application/pdf'
-        || currentFile?.name.toLowerCase().endsWith('.pdf')
-    const previewIsImage = currentFile?.type.startsWith('image/')
+    const previewIsPdf = !vorschauBild && (currentFile?.type === 'application/pdf'
+        || currentFile?.name.toLowerCase().endsWith('.pdf'))
+    const previewIsImage = !!vorschauBild || currentFile?.type.startsWith('image/')
 
     useEffect(() => {
         if (lieferantId) {
@@ -95,9 +99,10 @@ export default function LieferantLieferscheinePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lieferantId])
 
-    // Beim Verlassen der Page Kamera-Tracks freigeben. Innerhalb der Page
-    // bleibt der MediaStream im cameraStreamService gecacht — so wird bei
-    // iOS PWA pro Page-Besuch nur EIN Permission-Prompt ausgeloest.
+    // Beim Verlassen der Page Kamera-Tracks freigeben (falls der Scanner nur
+    // geschlossen wurde). Nach einem fertigen Scan stoppt handleScanComplete die
+    // Kamera schon selbst – ein weiterer Scan kann auf dem iPhone daher erneut
+    // nach der Kamera-Freigabe fragen. Speicher geht hier vor.
     useEffect(() => {
         return () => { releaseCameraStream() }
     }, [])
@@ -143,13 +148,24 @@ export default function LieferantLieferscheinePage() {
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
+            setVorschauBild(null)
             startAnalysis(e.target.files[0])
         }
     }
 
-    const handleScanComplete = async (file: File) => {
+    const handleScanComplete = async (file: File, vorschau: Blob) => {
         setShowScanner(false)
+        // Kamera sofort stoppen: Der 4K-Stream lief sonst während KI-Analyse und
+        // Prüfen weiter und trieb das iPhone in den Speichermangel.
+        releaseCameraStream()
+        setVorschauBild(vorschau)
         startAnalysis(file)
+    }
+
+    /** Beleg und Vorschau loslassen, damit das Handy den Speicher sofort zurückbekommt. */
+    const belegVerwerfen = () => {
+        setCurrentFile(null)
+        setVorschauBild(null)
     }
 
     const startAnalysis = async (file: File) => {
@@ -182,13 +198,16 @@ export default function LieferantLieferscheinePage() {
                     })
                     setVerifying(true)
                 } else {
+                    belegVerwerfen()
                     toast.error('Keine Daten erkannt.')
                 }
             } else {
+                belegVerwerfen()
                 toast.error('Fehler bei der Analyse.')
             }
         } catch (err) {
             console.error(err)
+            belegVerwerfen()
             toast.error('Netzwerkfehler.')
         } finally {
             setAnalyzing(false)
@@ -213,7 +232,7 @@ export default function LieferantLieferscheinePage() {
 
             if (res.ok) {
                 setVerifying(false)
-                setCurrentFile(null)
+                belegVerwerfen()
                 if (token) NotificationService.onLieferscheinUploaded(token)
                 loadData() // Reload list
             } else {
@@ -261,7 +280,7 @@ export default function LieferantLieferscheinePage() {
             <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col safe-area-top overflow-hidden">
                 {/* Header */}
                 <div className="bg-white border-b border-slate-200 p-4 shrink-0 z-10 flex items-center justify-between">
-                    <button onClick={() => setVerifying(false)} className="p-2 hover:bg-slate-100 rounded-full">
+                    <button onClick={() => { setVerifying(false); belegVerwerfen() }} className="p-2 hover:bg-slate-100 rounded-full">
                         <X className="w-6 h-6 text-slate-500" />
                     </button>
                     <h2 className="font-bold text-lg">Prüfen & Speichern</h2>
@@ -280,7 +299,7 @@ export default function LieferantLieferscheinePage() {
                             ) : (
                                 <img
                                     src={previewUrl}
-                                    alt={currentFile?.name || 'Beleg'}
+                                    alt={vorschauBild ? 'Gescannter Lieferschein, Seite 1' : (currentFile?.name || 'Beleg')}
                                     className="w-full max-h-72 object-contain bg-slate-50"
                                 />
                             )}

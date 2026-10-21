@@ -24,6 +24,17 @@ async function vorbereiten(page: Page): Promise<Request[]> {
     await page.addInitScript(() => {
         localStorage.setItem('zeiterfassung_token', 'test-token')
         localStorage.setItem('zeiterfassung_mitarbeiter', JSON.stringify({ id: 1, name: 'Max Mustermann', vorname: 'Max', nachname: 'Mustermann' }))
+        // Kamerastreams merken, damit der Test prüfen kann, ob die Kamera nach dem Scan aus ist.
+        const streams: MediaStream[] = []
+        ;(window as unknown as { kameraStreams: MediaStream[] }).kameraStreams = streams
+        if (navigator.mediaDevices) {
+            const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+            navigator.mediaDevices.getUserMedia = async constraints => {
+                const stream = await original(constraints)
+                streams.push(stream)
+                return stream
+            }
+        }
     })
     // Erkennung nicht laden (siehe oben) – der Scanner fällt dann auf „von Hand“ zurück.
     await page.route(/\/(\.vite\/deps\/scanic\.js|node_modules\/scanic\/|assets\/scanic[-.][^/]*\.js)/, route => route.abort())
@@ -34,7 +45,7 @@ async function vorbereiten(page: Page): Promise<Request[]> {
         if (pfad === '/api/lieferanten/3') return route.fulfill({ json: { id: 3, lieferantenname: 'Musterbaustoffe GmbH' } })
         if (pfad === '/api/lieferanten/3/dokumente/analyze' && anfrage.method() === 'POST') {
             analysen.push(anfrage)
-            return route.fulfill({ json: [] })
+            return route.fulfill({ json: [{ pageRange: '1', analyzeResponse: { dokumentTyp: 'LIEFERSCHEIN', dokumentNummer: 'LS-4711' } }] })
         }
         return route.fulfill({ json: [] })
     })
@@ -98,6 +109,18 @@ test('Seite von Hand scannen, Filter wählen und als PDF übergeben', async ({ p
     expect(inhalt).toMatch(/filename="Scan_[^"]+\.pdf"/)
     expect(inhalt).toContain('%PDF-')
     await expect(page.getByRole('button', { name: 'Foto von Hand aufnehmen' })).toBeHidden()
+
+    // Prüfen-Schritt: Seite als Bild statt eingebettetem PDF, Kamera aus – sonst lädt iOS die App
+    // wegen Speichermangel neu und der Prüfen-Schritt verschwindet nach wenigen Sekunden.
+    await expect(page.getByText('Prüfen & Speichern')).toBeVisible()
+    await expect(page.getByPlaceholder('Lieferschein-Nr.')).toHaveValue('LS-4711')
+    await expect(page.getByRole('img', { name: 'Gescannter Lieferschein, Seite 1' })).toBeVisible()
+    await expect(page.locator('iframe')).toHaveCount(0)
+    expect(await page.evaluate(() => (window as unknown as { kameraStreams: MediaStream[] }).kameraStreams.length)).toBeGreaterThan(0)
+    const kameraLaeuft = await page.evaluate(() => (window as unknown as { kameraStreams: MediaStream[] }).kameraStreams
+        .some(s => s.getTracks().some(t => t.readyState === 'live')))
+    expect(kameraLaeuft).toBe(false)
+    await designPruefung(page, testInfo, 'lieferschein-pruefen-nach-scan', { primaerAktion: page.getByRole('button', { name: 'Speichern' }) })
 })
 
 test('Seiten bearbeiten, löschen und den Scan verwerfen', async ({ page }, testInfo) => {

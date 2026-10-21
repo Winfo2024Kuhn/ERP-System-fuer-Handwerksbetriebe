@@ -303,7 +303,8 @@ describe('Fertig', () => {
         expect(bilder).toHaveLength(2)
         // Maße der zugeschnittenen Seiten (Attrappe: leere Canvas 300 × 150)
         expect(bilder[0]).toEqual({ bild: expect.any(Blob), breite: 300, hoehe: 150 })
-        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'Scan_test.pdf', type: 'application/pdf' }))
+        // Zweites Argument: die erste Seite als Bild für eine speicherschonende Vorschau
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'Scan_test.pdf', type: 'application/pdf' }), bilder[0].bild)
     })
 
     it('sperrt während PDF und Übergabe alle Änderungen und erklärt warum', async () => {
