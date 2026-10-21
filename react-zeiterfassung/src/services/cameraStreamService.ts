@@ -11,6 +11,9 @@
  * Scanner-Page lebendig: nur EIN getUserMedia-Aufruf pro Page-Besuch, alle
  * Modal-Oeffnungen wiederverwenden denselben Stream. Erst beim Verlassen der
  * Scanner-Page (`releaseCameraStream`) werden die Tracks gestoppt.
+ * Ausnahme Lieferscheine: Dort stoppt ein fertiger Scan die Kamera sofort, weil
+ * der weiterlaufende 4K-Stream neben der Pruefen-Ansicht das iPhone in den
+ * Speichermangel trieb (iOS hat die App dann neu geladen).
  */
 
 let cachedStream: MediaStream | null = null

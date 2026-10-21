@@ -18,7 +18,8 @@ import { PDF_LAEUFT } from './scanner/texte'
 
 interface ScannerModalProps {
     onClose: () => void
-    onSave: (file: File) => Promise<void>
+    /** `vorschau` ist die erste Seite als JPEG – auf dem Handy viel leichter anzuzeigen als das PDF. */
+    onSave: (file: File, vorschau: Blob) => Promise<void>
 }
 
 type Schritt = 'KAMERA' | 'ZUSCHNEIDEN' | 'SEITEN'
@@ -215,7 +216,7 @@ export default function ScannerModal({ onClose, onSave }: ScannerModalProps) {
                 return
             }
             const datei = await erstelleScanPdf(alle.map(s => ({ bild: s.bild as Blob, breite: s.breite ?? 0, hoehe: s.hoehe ?? 0 })))
-            await onSave(datei)
+            await onSave(datei, alle[0].bild as Blob)
             onClose()
         } catch (err) {
             console.error('[Scanner] PDF konnte nicht erstellt werden', err)
