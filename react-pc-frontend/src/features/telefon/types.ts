@@ -172,6 +172,37 @@ export interface TelefonEinstellungen {
     anrufmonitorVerbunden: boolean;
 }
 
+/** Stand der Übertragung ins FRITZ!Box-Telefonbuch (nur Administratoren). */
+export interface TelefonbuchStatus {
+    /** Schalter „Kontakte ins FRITZ!Box-Telefonbuch übertragen“. */
+    aktiv: boolean;
+    /** Nur wenn auch die Telefon-Anbindung an ist, wird wirklich übertragen. */
+    telefonAnbindungAktiv: boolean;
+    telefonbuchName: string;
+    zuletztAbgeglichen: string | null;
+    anzahlEintraege: number;
+    letzterFehler: string | null;
+    /** Ausgeschaltet, aber das Telefonbuch ist noch nicht aus der FRITZ!Box gelöscht. */
+    loeschungOffen: boolean;
+    /** Ein Lauf ist angefordert oder läuft gerade. */
+    laeuftGerade: boolean;
+    /** Ergebnis des letzten Laufs seit dem Serverstart. */
+    letztesErgebnis: TelefonbuchAbgleichErgebnis | null;
+}
+
+export interface TelefonbuchAbgleichErgebnis {
+    erfolgreich: boolean;
+    /** Es lief gerade schon ein Abgleich – nichts getan. */
+    laeuftSchon: boolean;
+    meldung: string;
+    neu: number;
+    geaendert: number;
+    geloescht: number;
+    /** Einträge, die die FRITZ!Box abgelehnt hat. */
+    abgelehnt: number;
+    eintraege: number;
+}
+
 export interface TelefonVerbindungstest {
     erfolgreich: boolean;
     meldung: string;

@@ -16,6 +16,7 @@ import {
 import { formatWann } from '../../../features/telefon/format';
 import type { AbholErgebnis, Anrufbeantworter, TelefonEinstellungen } from '../../../features/telefon/types';
 import { WaehlTelefonEinstellung } from '../../../features/telefon/WaehlTelefonEinstellung';
+import { TelefonbuchAbgleichEinstellung } from '../../../features/telefon/TelefonbuchAbgleichEinstellung';
 
 /**
  * Einstellungen der Telefon-Anbindung (FRITZ!Box) – nur für Administratoren.
@@ -353,6 +354,8 @@ export function TelefonSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 </SettingsCard>
 
                 <WaehlTelefonEinstellung />
+
+                <TelefonbuchAbgleichEinstellung telefonAnbindungAktiv={stand?.aktiv} />
 
                 <SettingsCard icon={<Activity className="h-5 w-5 text-rose-600" />} title="Stand">
                     <dl className="grid gap-3 text-sm sm:grid-cols-3">

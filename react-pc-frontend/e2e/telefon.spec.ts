@@ -567,6 +567,42 @@ test.describe('Telefon – Zurückrufen', () => {
         await expect(inhalt(page).getByRole('button', { name: 'Telefon an diesem Rechner auswählen' })).toHaveText('Auswählen');
     });
 
+    test('Einstellungen: Kontakte ins FRITZ!Box-Telefonbuch übertragen, abgleichen und beim Ausschalten löschen', async ({ page }, info) => {
+        const stub = await stubbeTelefonApi(page);
+        await page.goto('/einstellungen#telefon');
+        const karte = page.locator('div')
+            .filter({ has: page.getByRole('heading', { name: 'FRITZ!Box-Telefonbuch' }) })
+            .filter({ has: page.getByRole('checkbox', { name: /Kontakte ins FRITZ!Box-Telefonbuch übertragen/ }) }).last();
+        const schalter = karte.getByRole('checkbox', { name: /Kontakte ins FRITZ!Box-Telefonbuch übertragen/ });
+        await expect(schalter).not.toBeChecked();
+        await expect(karte.getByRole('button', { name: 'Jetzt abgleichen' })).toBeDisabled();
+        await expect(karte.getByText('noch nie')).toBeVisible();
+
+        await schalter.check();
+        await expect(page.getByText('Die Kontakte werden jetzt ins FRITZ!Box-Telefonbuch übertragen.')).toBeVisible();
+        expect(stub.mitschrift.find((m) => m.pfad === '/api/telefon/einstellungen/telefonbuch')?.body).toEqual({ aktiv: true });
+        await expect(karte.getByText('Abgeglichen: 128 neu. Jetzt 128 Einträge.')).toBeVisible();
+
+        await karte.getByRole('button', { name: 'Jetzt abgleichen' }).click();
+        await expect(karte.getByRole('button', { name: 'Wird abgeglichen …' })).toBeDisabled();
+        await expect(karte.getByText('Das Telefonbuch ist schon aktuell (128 Einträge).')
+            .or(karte.getByText('Abgeglichen: 128 neu. Jetzt 128 Einträge.'))).toBeVisible();
+        await expect(karte.getByText('128', { exact: true })).toBeVisible();
+
+        await karte.getByRole('button', { name: /Mehr zu: Kontakte ins FRITZ!Box-Telefonbuch übertragen/ }).click();
+        await expect(page.getByText(/Von Hand angelegte Einträge in „ERP-Kontakte“ werden beim nächsten\s+Abgleich gelöscht/)).toBeVisible();
+        await designPruefung(page, info, 'telefon-einstellungen-telefonbuch', { ganzeSeite: true });
+        await page.keyboard.press('Escape');
+
+        await schalter.click();
+        const dialog = page.getByRole('dialog');
+        await expect(dialog).toContainText('Das Telefonbuch „ERP-Kontakte“ wird dabei aus der FRITZ!Box gelöscht.');
+        await designPruefung(page, info, 'telefon-einstellungen-telefonbuch-ausschalten');
+        await dialog.getByRole('button', { name: 'Ausschalten und löschen' }).click();
+        await expect(karte.getByText('Das Telefonbuch „ERP-Kontakte“ ist aus der FRITZ!Box gelöscht.')).toBeVisible();
+        await expect(schalter).not.toBeChecked();
+    });
+
     test('Einstellungen: Telefon an diesem Rechner wählen, ändern und zurücksetzen', async ({ page }, info) => {
         await stubbeTelefonApi(page);
         await page.goto('/einstellungen#telefon');

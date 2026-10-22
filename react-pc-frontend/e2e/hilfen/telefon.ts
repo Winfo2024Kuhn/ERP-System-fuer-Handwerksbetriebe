@@ -140,6 +140,20 @@ export async function stubbeTelefonApi(page: Page, optionen: {
         aufbewahrungAnrufeMonate: 12, aufbewahrungSprachnachrichtenMonate: 12, landesvorwahl: '49', ortsvorwahl: '931',
         letzteAbholung: heute('11:58'), letzterFehler: null as string | null, anrufmonitorVerbunden: true,
     };
+    let telefonbuch = {
+        aktiv: false, telefonAnbindungAktiv: true, telefonbuchName: 'ERP-Kontakte',
+        zuletztAbgeglichen: null as string | null, anzahlEintraege: 0, letzterFehler: null as string | null,
+        loeschungOffen: false, laeuftGerade: false, letztesErgebnis: null as Record<string, unknown> | null,
+    };
+    /** Ein gestarteter Lauf endet mit der nächsten Status-Abfrage. */
+    const beendeLauf = () => {
+        if (!telefonbuch.laeuftGerade) return;
+        telefonbuch = telefonbuch.aktiv
+            ? { ...telefonbuch, laeuftGerade: false, zuletztAbgeglichen: heute('12:01'), anzahlEintraege: 128, letzterFehler: null,
+                letztesErgebnis: { erfolgreich: true, laeuftSchon: false, meldung: 'Telefonbuch abgeglichen.', neu: 128, geaendert: 0, geloescht: 0, abgelehnt: 0, eintraege: 128 } }
+            : { ...telefonbuch, laeuftGerade: false, loeschungOffen: false, anzahlEintraege: 0,
+                letztesErgebnis: { erfolgreich: true, laeuftSchon: false, meldung: 'Das Telefonbuch „ERP-Kontakte“ ist aus der FRITZ!Box gelöscht.', neu: 0, geaendert: 0, geloescht: 128, abgelehnt: 0, eintraege: 0 } };
+    };
 
     const json = (route: Route, body: unknown, status = 200) =>
         route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -269,6 +283,20 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             return json(route, { message: 'Kunde nicht gefunden' }, 404);
         }
         if (pfad === '/api/telefon/kontakt-rufnummern') return json(route, [{ id: 5, nummer: '0931 5555555' }]);
+        if (pfad === '/api/telefon/einstellungen/telefonbuch') {
+            if (!admin) return json(route, { message: 'Nur für Administratoren' }, 403);
+            if (methode === 'PUT') {
+                const aktiv = !!(anfrage.postDataJSON() as { aktiv: boolean }).aktiv;
+                telefonbuch = { ...telefonbuch, aktiv, loeschungOffen: !aktiv, laeuftGerade: true };
+            } else {
+                beendeLauf();
+            }
+            return json(route, telefonbuch);
+        }
+        if (pfad === '/api/telefon/einstellungen/telefonbuch/abgleichen') {
+            telefonbuch = { ...telefonbuch, laeuftGerade: true };
+            return json(route, telefonbuch, 202);
+        }
         if (pfad === '/api/telefon/einstellungen/test') {
             return json(route, {
                 erfolgreich: true, meldung: 'Verbindung zur FRITZ!Box steht.',

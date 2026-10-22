@@ -102,8 +102,9 @@ public final class RufnummerNormalisierer {
         return stamm;
     }
 
-    private static boolean istDeutscherMobilfunk(String e164) {
-        return e164.startsWith("+4915") || e164.startsWith("+4916") || e164.startsWith("+4917");
+    /** Deutsche Handynummer (015x/016x/017x) in E.164-Schreibweise? */
+    public static boolean istDeutscherMobilfunk(String e164) {
+        return e164 != null && (e164.startsWith("+4915") || e164.startsWith("+4916") || e164.startsWith("+4917"));
     }
 
     /** "+49 (0) 931" → "+49  931": die deutsche Konvention "(0)" wird verworfen. */

@@ -75,7 +75,8 @@ class FlywayMigrationenTest {
             Map.entry("V431__kunde_datenschutz_sperre.sql", -1464614437),
             Map.entry("V432__kunde_anonymisiert.sql", 755312716),
             Map.entry("V433__feiertage_bundesland.sql", 907020182),
-            Map.entry("V434__offener_posten_gutschrift.sql", -1881398446));
+            Map.entry("V434__offener_posten_gutschrift.sql", -1881398446),
+            Map.entry("V435__telefonbuch_zuordnung.sql", 1166440287));
 
     private static final char BOM = 0xFEFF;
 

@@ -75,4 +75,13 @@ public interface LieferantenRepository extends JpaRepository<Lieferanten, Long>,
     @Query("SELECT l.id, l.lieferantenname, l.ort, l.telefon, l.mobiltelefon FROM Lieferanten l "
             + "WHERE (l.telefon IS NOT NULL AND l.telefon <> '') OR (l.mobiltelefon IS NOT NULL AND l.mobiltelefon <> '')")
     List<Object[]> findeTelefonverzeichnis();
+
+    /**
+     * Aktive Lieferanten (ohne Angabe gilt als aktiv) für das FRITZ!Box-Telefonbuch, nur mit Nummer.
+     * Je Zeile {@code [id, lieferantenname, telefon, mobiltelefon]}.
+     */
+    @Query("SELECT l.id, l.lieferantenname, l.telefon, l.mobiltelefon FROM Lieferanten l "
+            + "WHERE (l.istAktiv IS NULL OR l.istAktiv = true) "
+            + "AND ((l.telefon IS NOT NULL AND l.telefon <> '') OR (l.mobiltelefon IS NOT NULL AND l.mobiltelefon <> ''))")
+    List<Object[]> findeFuerTelefonbuch();
 }

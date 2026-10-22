@@ -1,0 +1,1 @@
+import{j as a}from"./react-Clr3WKlN.js";import{c as e}from"./index-CNaGPgQU.js";const l=({className:s,...t})=>a.jsx("label",{className:e("block text-sm text-slate-800 mb-1.5",s),...t});export{l as L};
