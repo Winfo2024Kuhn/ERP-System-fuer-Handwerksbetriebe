@@ -57,6 +57,8 @@ public class TelefonbuchAbgleichService {
     private final ReentrantLock lauf = new ReentrantLock();
     private final AtomicBoolean angefordert = new AtomicBoolean();
     private volatile TelefonbuchAbgleichErgebnisDto letztesErgebnis;
+    /** Zuletzt gewarnte abgelehnte Löschungen (Anzahl + Detail) – dieselbe Warnung nicht jeden Lauf wiederholen. */
+    private String letzteLoeschWarnung;
 
     public TelefonbuchAbgleichService(TelefonbuchAnlage anlage,
                                       TelefonEinstellungenService telefonEinstellungen,
@@ -157,8 +159,9 @@ public class TelefonbuchAbgleichService {
                             ergebnis.eintraege());
                 }
                 // Abgelehnte Einträge nur melden, wenn sich der Grund geändert hat – nicht jede Nacht erneut.
-                if (ergebnis.abgelehnt() > 0 && !ergebnis.meldung().equals(vorherigerFehler)) {
-                    log.warn("Telefonbuch: {}", ergebnis.meldung());
+                String gemerkterFehler = einstellungen.letzterFehler();
+                if (ergebnis.abgelehnt() > 0 && gemerkterFehler != null && !gemerkterFehler.equals(vorherigerFehler)) {
+                    log.warn("Telefonbuch: {}", gemerkterFehler);
                 }
             } else {
                 ergebnis = loescheTelefonbuch(zugang);
@@ -220,18 +223,24 @@ public class TelefonbuchAbgleichService {
             uebertrage(zugang, buch.id(), e.getKey(), e.getValue(), ist.remove(e.getKey()), zaehler);
         }
         for (TelefonbuchZuordnung weg : ist.values()) {
-            anlage.loescheEintrag(zugang, buch.id(), weg.getEintragId());
-            zuordnungen.delete(weg);
-            zaehler.geloescht++;
+            // Lässt die Box den Eintrag nicht löschen, bleibt die Zuordnung – der nächste Lauf versucht es wieder.
+            if (loescheOderUeberspringe(zugang, buch.id(), weg.getEintragId(), zaehler)) {
+                zuordnungen.delete(weg);
+            }
         }
+        meldeNichtGeloeschte(zaehler);
         String fehler = zaehler.abgelehnt == 0 ? null
                 : (zaehler.abgelehnt == 1 ? "1 Eintrag hat die FRITZ!Box abgelehnt"
                 : zaehler.abgelehnt + " Einträge hat die FRITZ!Box abgelehnt")
                 + (zaehler.letzteAblehnung == null ? "." : " (zuletzt " + zaehler.letzteAblehnung + ").");
         einstellungen.merkeAbgleich(LocalDateTime.now(clock), soll.size() - zaehler.abgelehnt, fehler);
-        String meldung = fehler != null ? fehler
+        String meldung = (fehler != null ? fehler
                 : zaehler.neu + zaehler.geaendert + zaehler.geloescht == 0 ? "Das Telefonbuch ist schon aktuell."
-                : "Telefonbuch abgeglichen.";
+                : "Telefonbuch abgeglichen.")
+                + (zaehler.nichtGeloescht == 0 ? ""
+                : (zaehler.nichtGeloescht == 1 ? " 1 alter Eintrag ließ sich in der FRITZ!Box nicht löschen."
+                : " " + zaehler.nichtGeloescht + " alte Einträge ließen sich in der FRITZ!Box nicht löschen.")
+                + (fehler == null ? " Das schadet nicht, die Kontakte sind übertragen." : ""));
         return new TelefonbuchAbgleichErgebnisDto(fehler == null, false, meldung, zaehler.neu, zaehler.geaendert,
                 zaehler.geloescht, zaehler.abgelehnt, soll.size() - zaehler.abgelehnt);
     }
@@ -256,9 +265,58 @@ public class TelefonbuchAbgleichService {
         }
         for (String fremd : inDerBox) {
             if (!bekannt.contains(fremd)) {
-                anlage.loescheEintrag(zugang, telefonbuchId, fremd);
-                zaehler.geloescht++;
+                loescheOderUeberspringe(zugang, telefonbuchId, fremd, zaehler);
             }
+        }
+    }
+
+    /**
+     * Löscht einen Eintrag aus der Box. Lehnt die Box das ab (z. B. Fehlercode 820 bei einem
+     * Eintrag, den ihr Export noch nennt, den es aber nicht mehr gibt), wird er übersprungen und
+     * der Abgleich läuft weiter. Hat die Box in diesem Lauf schon
+     * {@link #MAX_ABGELEHNT_OHNE_ERFOLG} Löschungen abgelehnt und keine angenommen, wird es nicht
+     * weiter versucht; die übrigen Einträge zählen dann ohne Versuch als nicht gelöscht.
+     * Fehlende Rechte oder eine nicht erreichbare Box brechen den Lauf weiter ab.
+     *
+     * @return {@code true}, wenn der Eintrag gelöscht ist
+     */
+    private boolean loescheOderUeberspringe(TelefonZugang zugang, String telefonbuchId, String eintragsId,
+                                            Zaehler zaehler) {
+        if (zaehler.nichtGeloescht >= MAX_ABGELEHNT_OHNE_ERFOLG && zaehler.geloescht == 0) {
+            zaehler.nichtGeloescht++;
+            return false;
+        }
+        try {
+            anlage.loescheEintrag(zugang, telefonbuchId, eintragsId);
+        } catch (TelefonAnlageException e) {
+            if (e.getGrund() != TelefonAnlageException.Grund.UNERWARTETE_ANTWORT) {
+                throw e;
+            }
+            zaehler.nichtGeloescht++;
+            zaehler.letzteLoeschAblehnung = e.getDetail();
+            return false;
+        }
+        zaehler.geloescht++;
+        return true;
+    }
+
+    /**
+     * Warnt über nicht löschbare Einträge nur, wenn sich Anzahl oder Detail geändert haben –
+     * Geister-Einträge der Box blieben sonst jeden Lauf im Log.
+     */
+    private void meldeNichtGeloeschte(Zaehler zaehler) {
+        if (zaehler.nichtGeloescht == 0) {
+            letzteLoeschWarnung = null;
+            return;
+        }
+        String detail = zaehler.letzteLoeschAblehnung == null ? "ohne Detail" : zaehler.letzteLoeschAblehnung;
+        String warnung = (zaehler.nichtGeloescht == 1 ? "1 Eintrag konnte"
+                : zaehler.nichtGeloescht + " Einträge konnte") + " die FRITZ!Box nicht löschen (" + detail + ")";
+        if (warnung.equals(letzteLoeschWarnung)) {
+            log.debug("Telefonbuch: {}", warnung);
+        } else {
+            log.warn("Telefonbuch: {}", warnung);
+            letzteLoeschWarnung = warnung;
         }
     }
 
@@ -306,5 +364,9 @@ public class TelefonbuchAbgleichService {
         int abgelehnt;
         /** Detail (Schritt, Fehlercode) der letzten Ablehnung durch die Box oder {@code null}. */
         String letzteAblehnung;
+        /** Einträge, die die Box nicht löschen ließ – übersprungen, der Abgleich lief weiter. */
+        int nichtGeloescht;
+        /** Detail der letzten abgelehnten Löschung oder {@code null}. */
+        String letzteLoeschAblehnung;
     }
 }

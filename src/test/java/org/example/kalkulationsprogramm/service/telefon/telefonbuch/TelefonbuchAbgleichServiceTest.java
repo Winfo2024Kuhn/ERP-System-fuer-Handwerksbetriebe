@@ -444,4 +444,130 @@ class TelefonbuchAbgleichServiceTest {
         box.abgelehnteNamen.add("Max Mustermann (Kunde)");
         assertThat(service.abgleichen(false).abgelehnt()).isEqualTo(1);
     }
+
+    /** Telefonbuch „ERP-Kontakte“ mit Geister-Einträgen, die der Export nennt, die Box aber nicht löschen lässt. */
+    private void buchMitGeistern(String... uids) {
+        box.buecher.put("1", TelefonbuchAbgleichService.TELEFONBUCH_NAME);
+        Map<String, TelefonbuchEintrag> geister = new LinkedHashMap<>();
+        for (String uid : uids) {
+            geister.put(uid, eintrag("Geist", "0123000000"));
+            box.unloeschbar.add(uid);
+        }
+        box.eintraege.put("1", geister);
+    }
+
+    @Test
+    @DisplayName("Fremde Einträge, die die Box nicht löschen lässt, werden übersprungen – Kontakte kommen trotzdem an")
+    void nichtLoeschbareFremdeUeberspringen() {
+        buchMitGeistern("10", "11");
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(true);
+
+        assertThat(e.erfolgreich()).isTrue();
+        assertThat(e.neu()).isEqualTo(2);
+        assertThat(e.geloescht()).isZero();
+        assertThat(e.meldung()).isEqualTo("Telefonbuch abgeglichen. 2 alte Einträge ließen sich in der FRITZ!Box "
+                + "nicht löschen. Das schadet nicht, die Kontakte sind übertragen.");
+        assertThat(box.aufrufe).contains("loeschen:10", "loeschen:11");
+        assertThat(tabelle).hasSize(2);
+        assertThat(service.status().letzterFehler()).isNull();
+    }
+
+    @Test
+    @DisplayName("Ein einzelner nicht löschbarer Eintrag: Meldung in der Einzahl, löschbare werden gelöscht")
+    void einNichtLoeschbarerEintrag() {
+        buchMitGeistern("10");
+        box.eintraege.get("1").put("12", eintrag("Fremd", "0123000001"));
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(true);
+
+        assertThat(e.erfolgreich()).isTrue();
+        assertThat(e.geloescht()).isEqualTo(1);
+        assertThat(e.meldung()).contains(" 1 alter Eintrag ließ sich in der FRITZ!Box nicht löschen.");
+        assertThat(box.eintraege.get("1")).containsKey("10").doesNotContainKey("12");
+    }
+
+    @Test
+    @DisplayName("Nach 5 abgelehnten Löschungen ohne Erfolg versucht der Lauf keine weiteren")
+    void loeschenNachFuenfAblehnungenNichtMehrVersucht() {
+        buchMitGeistern("3", "4", "5", "6", "7", "8", "9");
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(true);
+
+        assertThat(box.aufrufe.stream().filter(a -> a.startsWith("loeschen:"))).hasSize(5);
+        assertThat(e.meldung()).contains("7 alte Einträge");
+        assertThat(e.neu()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Hat die Box schon eine Löschung angenommen, gilt die 5er-Grenze nicht – alle werden versucht")
+    void nachErfolgreicherLoeschungKeineGrenze() {
+        buchMitGeistern();
+        Map<String, TelefonbuchEintrag> buch = box.eintraege.get("1");
+        buch.put("2", eintrag("Fremd", "0123000001"));
+        for (String uid : List.of("3", "4", "5", "6", "7", "8")) {
+            buch.put(uid, eintrag("Geist", "0123000000"));
+            box.unloeschbar.add(uid);
+        }
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(true);
+
+        // Der Fake liefert die IDs in Einfüge-Reihenfolge, „2“ (löschbar) also zuerst.
+        assertThat(box.aufrufe.stream().filter(a -> a.startsWith("loeschen:"))).hasSize(7);
+        assertThat(e.geloescht()).isEqualTo(1);
+        assertThat(e.meldung()).contains("6 alte Einträge");
+    }
+
+    @Test
+    @DisplayName("Abgelehnte und nicht löschbare Einträge im selben Lauf: Fehler bleibt gemerkt, kein „schadet nicht“")
+    void abgelehntUndNichtLoeschbar() {
+        buchMitGeistern("10");
+        box.abgelehnteNamen.add("Max Mustermann (Kunde)");
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(true);
+
+        assertThat(e.erfolgreich()).isFalse();
+        assertThat(e.meldung()).startsWith("1 Eintrag hat die FRITZ!Box abgelehnt")
+                .contains("1 alter Eintrag ließ sich").doesNotContain("schadet nicht");
+        assertThat(service.status().letzterFehler()).startsWith("1 Eintrag hat die FRITZ!Box abgelehnt")
+                .doesNotContain("alter Eintrag");
+        assertThat(service.abgleichen(true).meldung()).isEqualTo(e.meldung());
+    }
+
+    @Test
+    @DisplayName("Weggefallener eigener Eintrag nicht löschbar: Zuordnung bleibt, der nächste Lauf versucht es wieder")
+    void weggefallenNichtLoeschbarBleibtGemerkt() {
+        service.abgleichen(false);
+        String maxUid = tabelle.values().stream()
+                .filter(z -> z.getQuelleTyp() == MAX.quelle() && z.getQuelleId().equals(MAX.id()))
+                .findFirst().orElseThrow().getEintragId();
+        soll.remove(MAX);
+        box.unloeschbar.add(maxUid);
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(false);
+
+        assertThat(e.erfolgreich()).isTrue();
+        assertThat(e.geloescht()).isZero();
+        assertThat(e.meldung()).contains("1 alter Eintrag");
+        assertThat(tabelle).hasSize(2);
+
+        box.unloeschbar.clear();
+        TelefonbuchAbgleichErgebnisDto zweiter = service.abgleichen(false);
+        assertThat(zweiter.geloescht()).isEqualTo(1);
+        assertThat(zweiter.meldung()).isEqualTo("Telefonbuch abgeglichen.");
+        assertThat(tabelle).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Fehlende Rechte beim Löschen brechen den Lauf weiter ab")
+    void fehlendeRechteBeimLoeschenBrechenAb() {
+        buchMitGeistern("10");
+        box.loeschFehler = new TelefonAnlageException(Grund.TELEFONBUCH_KEINE_RECHTE);
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(true);
+
+        assertThat(e.erfolgreich()).isFalse();
+        assertThat(e.meldung()).isEqualTo(Grund.TELEFONBUCH_KEINE_RECHTE.text());
+        assertThat(box.aufrufe).noneMatch(a -> a.startsWith("neu:"));
+    }
 }
