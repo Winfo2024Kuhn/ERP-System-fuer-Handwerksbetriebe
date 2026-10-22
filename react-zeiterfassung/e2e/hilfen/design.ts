@@ -408,8 +408,13 @@ export async function keineUeberschneidungen(page: Page): Promise<void> {
         const ergebnis: Rahmen[] = [];
         const dialog = document.querySelector('[role="dialog"]');
 
+        // #root selbst ist fest am Fenster verankert (index.css, Balken unten bei alten
+        // iOS-Installationen). Er ist der Seitenrahmen, keine schwebende Ebene -- sonst
+        // galte jedes Element der App als "fest" und Dialoge oder Toasts wuerden mit
+        // dem Seiteninhalt darunter verglichen.
+        const appRahmen = document.getElementById('root');
         const istFestPositioniert = (el: HTMLElement): boolean => {
-            for (let k: HTMLElement | null = el; k != null && k !== document.body; k = k.parentElement) {
+            for (let k: HTMLElement | null = el; k != null && k !== document.body && k !== appRahmen; k = k.parentElement) {
                 if (getComputedStyle(k).position === 'fixed') return true;
             }
             return false;
