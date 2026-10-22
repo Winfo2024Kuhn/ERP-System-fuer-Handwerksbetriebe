@@ -70,7 +70,7 @@ class ArtikelDokumenttexteControllerTest {
         // Neutraler Default, damit diese Tests den Preisvorschlag nicht extra
         // stubben muessen - siehe ArtikelSuchePreisvorschlagTest fuer den
         // tatsaechlich berechneten Vorschlag.
-        when(artikelPositionsPreisService.berechne(any(), any()))
+        when(artikelPositionsPreisService.berechne(any(), any(), any()))
                 .thenReturn(new ArtikelPositionsPreisService.ArtikelPositionsVorschlag(
                         "Stk", null, ArtikelPreisHinweis.KEIN_PREIS));
     }
@@ -115,7 +115,7 @@ class ArtikelDokumenttexteControllerTest {
         // Nur der mappeArtikelZuDto-Weg reicht den guenstigsten
         // Lieferantenpreis in die Vorschlagsrechnung - toDto(artikel, null)
         // bliebe beim KEIN_PREIS-Default aus dem setUp haengen.
-        when(artikelPositionsPreisService.berechne(any(), same(preis)))
+        when(artikelPositionsPreisService.berechne(any(), same(preis), any()))
                 .thenReturn(new ArtikelPositionsPreisService.ArtikelPositionsVorschlag(
                         "lfm", new BigDecimal("5.75"), ArtikelPreisHinweis.OK));
 

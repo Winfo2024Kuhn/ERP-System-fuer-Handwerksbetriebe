@@ -59,6 +59,31 @@ class ArtikelRepositoryTest {
     // ==================== Issue #265 ====================
 
     @Test
+    void hoechsteAutomatischeArtikelnummer_ignoriertVonHandVergebene() {
+        for (String nummer : java.util.List.of("A-004142", "A-009999", "A-010000", "A-Schraube-M8x40", "AL-FL-x100-20")) {
+            Artikel a = new Artikel();
+            a.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+            a.setArtikelnummer(nummer);
+            artikelRepository.saveAndFlush(a);
+        }
+
+        assertThat(artikelRepository.findeHoechsteAutomatischeArtikelnummern(
+                org.springframework.data.domain.PageRequest.of(0, 3)))
+                .containsExactly("A-010000", "A-009999", "A-004142");
+    }
+
+    @Test
+    void existsByArtikelnummerIgnoreCaseAndIdNot_zaehltNurAndere() {
+        Artikel artikel = new Artikel();
+        artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);
+        artikel.setArtikelnummer("A-000001");
+        artikelRepository.saveAndFlush(artikel);
+
+        assertThat(artikelRepository.existsByArtikelnummerIgnoreCaseAndIdNot("a-000001", artikel.getId())).isFalse();
+        assertThat(artikelRepository.existsByArtikelnummerIgnoreCaseAndIdNot("a-000001", artikel.getId() + 1)).isTrue();
+    }
+
+    @Test
     void existsByArtikelnummerIgnoreCase() {
         Artikel artikel = new Artikel();
         artikel.setVerrechnungseinheit(Verrechnungseinheit.STUECK);

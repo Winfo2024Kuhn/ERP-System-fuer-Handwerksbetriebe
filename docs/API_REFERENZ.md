@@ -92,7 +92,7 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 `@PreAuthorize` wird nirgends verwendet. Feinere Rechte prüfen die Controller
 bzw. Services selbst, meist über die Abteilungsrechte: Belege und Kasse,
 sichtbare Lieferanten-Dokumenttypen, Eingangsrechnungen sehen/genehmigen,
-Telefon (`darfTelefonSehen`), Monatsabschluss, sichtbare Postfächer und
+Telefon (`darfTelefonSehen`), Aufschläge ändern (`darfAufschlaegeAendern`, Administratoren immer), Monatsabschluss, sichtbare Postfächer und
 Anmeldecodes der Mitarbeiter.
 
 **Mit Handy-Token erlaubt** (`MobileApiPolicy`, abschließende Liste):
@@ -638,7 +638,8 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| `POST` | `/` | Artikel anlegen |
+| `POST` | `/` | Artikel anlegen; ohne `artikelnummer` vergibt der Server die nächste freie (`A-` + sechs Ziffern) |
+| `GET` | `/naechste-artikelnummer` | Vorschau der nächsten automatischen Artikelnummer (`{"artikelnummer": "A-004143"}`), reserviert nichts |
 | `POST` | `/import/headers` | Spaltenköpfe einer Importdatei lesen |
 | `POST` | `/import/analyze` | Import mit Spaltenzuordnung vorab prüfen |
 | `POST` | `/import` | Artikel importieren (Lieferant, optional Kategorie und Preiskorrektur) |
@@ -647,15 +648,38 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `GET` | `/werkstoffe` | Alle Werkstoffe |
 | `GET` | `/werkstoffe/details` | Werkstoffe mit Details |
 | `GET` | `/match` | Passende Artikel zu Produktname und Produktlinie |
-| `GET` | `/` | Artikel suchen und filtern (seitenweise, sortierbar) |
+| `GET` | `/` | Artikel suchen und filtern (seitenweise, sortierbar); im Freitext `q` zählen Zahlen als ganze Zahl („20“ trifft nicht „120“), Komma = Punkt, Umlaut = Umschreibung |
 | `POST` | `/{id}/externe-nummer` | Artikelnummer eines Lieferanten hinterlegen |
 | `PATCH` | `/{id}/dokumenttexte` | Kurzbeschreibung, Kundentext und Verkaufsaufschlag ändern |
+| `PUT` | `/{id}/stammdaten` | Stammdaten ersetzen (Name, Nummern, EAN, Einheit, Kategorie, Werkstoff, Normen, Maße); 400 bei ungültigen Werten, 409 bei doppelter Nummer/EAN oder veraltetem Stand (`version`) |
 | `GET` | `/{id}/detail` | Artikel mit allen Lieferantenpreisen und Preisverlauf |
 | `POST` | `/{id}/dokumente` | Vorschaubild oder Zusatzdokument (Zulassung, Zeichnung, Datenblatt …) hochladen |
 | `GET` | `/{id}/dokumente` | Dokumente eines Artikels |
 | `GET` | `/dokumente/{dokumentId}/datei` | Datei eines Artikel-Dokuments |
 | `DELETE` | `/dokumente/{dokumentId}` | Artikel-Dokument löschen |
 | `GET` | `/filteroptionen` | Auswahlwerte für die Filterleiste mit Klartext |
+
+### AufschlagController
+
+**Basis-URL:** `/api/aufschlaege`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/berechtigung` | Darf der angemeldete Benutzer die Aufschläge ändern? (`{“darfAendern”: true/false}`, für jeden angemeldeten Benutzer) |
+| `GET` | `/` | Allgemeiner Aufschlag und je Artikelkategorie der eigene und der geltende Aufschlag *(Recht „Aufschläge ändern” oder Admin, sonst 403)* |
+| `PUT` | `/allgemein` | Allgemeinen Aufschlag setzen, `prozent` leer = keiner (0 bis 999,99; 400 sonst) *(Recht oder Admin)* |
+| `PUT` | `/kategorien/{id}` | Aufschlag einer Kategorie setzen, `prozent` leer = keiner; 404 bei unbekannter Kategorie *(Recht oder Admin)* |
+
+### WerkstoffController
+
+**Basis-URL:** `/api/werkstoffe`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Alle Werkstoffe mit der Zahl der Artikel, die sie benutzen |
+| `POST` | `/` | Werkstoff anlegen (Name Pflicht und eindeutig, Dichte 0,1 bis 25 kg/dm³); 400 bei ungültigen Werten, 409 bei doppeltem Namen |
+| `PUT` | `/{id}` | Werkstoff ändern; 400 bei ungültigen Werten, 404 bei unbekannter ID, 409 bei doppeltem Namen |
+| `DELETE` | `/{id}` | Werkstoff löschen; 409, solange Artikel ihn benutzen |
 
 ### ArtikelKategorieController
 
@@ -1728,7 +1752,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 5 | `AnfrageFunnelController` | `/api/internal/anfrage` | 2 | 20 |
 | 6 | `ArbeitsgangController` | `/api/abteilungen`, `/api/arbeitsgaenge` (Klassen-Mapping nur `/api`) | 8 | 8 |
 | 7 | `ArbeitszeitartController` | `/api/arbeitszeitarten` | 7 | 8 |
-| 8 | `ArtikelController` | `/api/artikel` | 18 | 8 |
+| 8 | `ArtikelController` | `/api/artikel` | 21 | 8 |
 | 9 | `ArtikelKategorieController` | `/api/artikel/kategorien` | 6 | 8 |
 | 10 | `AusgangsGeschaeftsDokumentAuditController` | `/api/ausgangs-dokumente/audit` | 4 | 5 |
 | 11 | `AusgangsGeschaeftsDokumentController` | `/api/ausgangs-dokumente` | 19 | 5 |

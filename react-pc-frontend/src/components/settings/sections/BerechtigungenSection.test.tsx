@@ -108,3 +108,27 @@ it('erklärt "Zeiterfassung im Menü sehen" im Info-Popover, ohne den Haken zu v
     expect(within(info).getByText(/Das Stempeln und Urlaub-Beantragen in der Handy-App bleibt davon unberührt\. Ein PC-Zugang ohne verknüpften Mitarbeiter sieht den Bereich nur als Administrator/)).toBeInTheDocument();
     expect(haken).toBeChecked();
 });
+it('lädt das Recht "Aufschläge ändern", erklärt es im Info-Popover und speichert es mit', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfAufschlaegeAendern: undefined }] });
+    render(<BerechtigungenSection />);
+    const checkbox = await screen.findByRole('checkbox', { name: /Aufschläge ändern/ });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getByText(/den allgemeinen Aufschlag und den Aufschlag je Kategorie einstellen/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Mehr zu: Aufschläge ändern/ }));
+    expect(await screen.findByText(/Der Aufschlag direkt am Artikel kann weiterhin jeder Benutzer/)).toBeVisible();
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')![1].body)).toMatchObject({ darfAufschlaegeAendern: true, darfMonatAbschliessen: false });
+});
+it('ein schon gesetztes Recht "Aufschläge ändern" bleibt beim Speichern erhalten', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfAufschlaegeAendern: true }] });
+    render(<BerechtigungenSection />);
+    expect(await screen.findByRole('checkbox', { name: /Aufschläge ändern/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')![1].body)).toMatchObject({ darfAufschlaegeAendern: true });
+});

@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
@@ -28,16 +29,20 @@ import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDetailDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumentDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelResponseDto;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelStammdatenRequest;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ExterneNummerDto;
 import org.example.kalkulationsprogramm.dto.Artikel.LieferantPreisDto;
+import org.example.kalkulationsprogramm.dto.Artikel.NaechsteArtikelnummerDto;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.WerkstoffRepository;
 import org.example.kalkulationsprogramm.service.ArtikelDokumentService;
+import org.example.kalkulationsprogramm.service.ArtikelFreitextSuche;
 import org.example.kalkulationsprogramm.service.ArtikelImportService;
 import org.example.kalkulationsprogramm.service.ArtikelMatchingService;
 import org.example.kalkulationsprogramm.service.ArtikelPositionsPreisService;
 import org.example.kalkulationsprogramm.service.ArtikelServiceContract;
+import org.example.kalkulationsprogramm.service.AufschlagService;
 import org.example.kalkulationsprogramm.service.KategorieService;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
@@ -56,6 +61,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -106,6 +112,12 @@ public class ArtikelController {
             @RequestBody org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto dto) {
         Artikel erstellt = artikelService.erstelleArtikel(dto);
         return ResponseEntity.ok(toDto(erstellt, null));
+    }
+
+    /** Vorschau fuer den Anlegen-Dialog: die Nummer, die der Artikel ohne eigene Nummer bekaeme. */
+    @GetMapping("/naechste-artikelnummer")
+    public NaechsteArtikelnummerDto naechsteArtikelnummer() {
+        return new NaechsteArtikelnummerDto(artikelService.naechsteArtikelnummer());
     }
 
     @PostMapping("/import/headers")
@@ -176,6 +188,8 @@ public class ArtikelController {
                     map.put("id", w.getId());
                     map.put("name", w.getName());
                     map.put("werkstattname", w.getWerkstattname());
+                    map.put("verzinkungsgeeignet", w.isVerzinkungsgeeignet());
+                    map.put("pulverbeschichtungsgeeignet", w.isPulverbeschichtungsgeeignet());
                     return map;
                 })
                 .sorted(Comparator.comparing(m -> (String) m.get("name"), String.CASE_INSENSITIVE_ORDER))
@@ -220,8 +234,10 @@ public class ArtikelController {
 
         // Eine Zeile je Artikel. Die Sortierung nach Preis wird hier nachgezogen,
         // weil der guenstigste Preis erst beim Zusammenstellen feststeht.
+        // Den allgemeinen Aufschlag nur einmal fuer die ganze Trefferseite lesen, nicht je Zeile.
+        Function<Artikel, AufschlagService.Wirksam> aufschlag = artikelPositionsPreisService.aufschlagFuerListe();
         List<ArtikelResponseDto> daten = result.stream()
-                .map(a -> mappeArtikelZuDto(a, lieferant))
+                .map(a -> mappeArtikelZuDto(a, lieferant, aufschlag))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(ArrayList::new));
         if ("preis".equals(sort)) {
@@ -246,6 +262,11 @@ public class ArtikelController {
     }
 
     private ArtikelResponseDto toDto(Artikel artikel, LieferantenArtikelPreise preis) {
+        return toDto(artikel, preis, artikelPositionsPreisService::geltenderAufschlag);
+    }
+
+    private ArtikelResponseDto toDto(Artikel artikel, LieferantenArtikelPreise preis,
+            Function<Artikel, AufschlagService.Wirksam> aufschlag) {
         ArtikelResponseDto dto = new ArtikelResponseDto();
         dto.setId(artikel.getId());
         Lieferanten lieferant = preis != null ? preis.getLieferant() : null;
@@ -276,6 +297,8 @@ public class ArtikelController {
             dto.setHoehe(aw.getHoehe());
             dto.setBreite(aw.getBreite());
             dto.setWandstaerke(aw.getWandstaerke());
+            dto.setStegdicke(aw.getStegdicke());
+            dto.setFlanschdicke(aw.getFlanschdicke());
             dto.setStandardlaenge(aw.getStandardlaenge());
             dto.setAbmessung(aw.getAbmessungText());
         }
@@ -284,6 +307,8 @@ public class ArtikelController {
         // damit die Oberflaeche "geschweisst, kaltgefertigt" anzeigen kann statt
         // nur "EN 10219-2" - danach laesst sich ausserdem filtern.
         dto.setArtikelnummer(artikel.getArtikelnummer());
+        dto.setEan(artikel.getEan());
+        dto.setVersion(artikel.getVersion());
         dto.setProfilform(artikel.getProfilform());
         dto.setHerstellverfahren(artikel.getHerstellverfahren());
         dto.setFertigungszustand(artikel.getFertigungszustand());
@@ -291,8 +316,12 @@ public class ArtikelController {
         dto.setWerkstoffnorm(artikel.getWirksameWerkstoffnorm());
         dto.setVerzinkungsgeeignet(artikel.istVerzinkungsgeeignet());
         dto.setPulverbeschichtungsgeeignet(artikel.istPulverbeschichtungsgeeignet());
+        dto.setVerzinkungsgeeignetEigen(artikel.getVerzinkungsgeeignet());
+        dto.setPulverbeschichtungsgeeignetEigen(artikel.getPulverbeschichtungsgeeignet());
         if (artikel.getWerkstoff() != null) {
             dto.setBeschichtungshinweis(artikel.getWerkstoff().getBeschichtungshinweis());
+            dto.setWerkstoffVerzinkungsgeeignet(artikel.getWerkstoff().isVerzinkungsgeeignet());
+            dto.setWerkstoffPulverbeschichtungsgeeignet(artikel.getWerkstoff().isPulverbeschichtungsgeeignet());
         }
         if (preis != null) {
             dto.setPreis(preis.getPreis());
@@ -334,6 +363,12 @@ public class ArtikelController {
         dto.setKurzbeschreibung(artikel.getKurzbeschreibung());
         dto.setBeschreibung(artikel.getBeschreibung());
         dto.setVerkaufsaufschlagProzent(artikel.getVerkaufsaufschlagProzent());
+        AufschlagService.Wirksam wirksam = aufschlag.apply(artikel);
+        if (wirksam != null) {
+            dto.setWirksamProzent(wirksam.prozent());
+            dto.setWirksamQuelle(wirksam.quelle().name());
+            dto.setWirksamVon(wirksam.quellenName());
+        }
 
         // Derselbe Preis, der oben in der Preisspalte steht - nicht irgendeiner.
         // mappeArtikelZuDto hat ihn unter Beruecksichtigung des
@@ -343,7 +378,7 @@ public class ArtikelController {
         // Lieferanten - immer dem guenstigsten, also mit zu kleiner Marge auf
         // einem verbindlichen Angebot.
         ArtikelPositionsPreisService.ArtikelPositionsVorschlag vorschlag =
-                artikelPositionsPreisService.berechne(artikel, preis);
+                artikelPositionsPreisService.berechne(artikel, preis, wirksam);
         dto.setPositionsEinheit(vorschlag.einheit());
         dto.setPositionsEinzelpreis(vorschlag.einzelpreis());
         dto.setPreisHinweis(vorschlag.hinweis().name());
@@ -390,6 +425,19 @@ public class ArtikelController {
             // Unzulaessige Eingabe (Grenzwerte, Aufschlag ausserhalb des Bereichs).
             return ResponseEntity.badRequest().build();
         }
+    }
+
+    /**
+     * Ändert alle Stammdaten eines Artikels (vollständiges Ersetzen). Fehler kommen mit Klartext: 400 bei ungültigen Werten, 404 bei
+     * unbekannter ID, 409 bei doppelter Artikelnummer/EAN oder wenn der Artikel zwischendurch geändert wurde.
+     */
+    @PutMapping("/{id}/stammdaten")
+    @Transactional
+    public ResponseEntity<ArtikelResponseDto> aktualisiereStammdaten(
+            @PathVariable Long id,
+            @RequestBody ArtikelStammdatenRequest request) {
+        Artikel aktualisiert = artikelService.aktualisiereStammdaten(id, request);
+        return ResponseEntity.ok(mappeArtikelZuDto(aktualisiert, null));
     }
 
     /**
@@ -586,6 +634,11 @@ public class ArtikelController {
      * <p>Ist nach einem Lieferanten gefiltert, zaehlt nur dessen Preis.
      */
     private ArtikelResponseDto mappeArtikelZuDto(Artikel artikel, String lieferantFilter) {
+        return mappeArtikelZuDto(artikel, lieferantFilter, artikelPositionsPreisService::geltenderAufschlag);
+    }
+
+    private ArtikelResponseDto mappeArtikelZuDto(Artikel artikel, String lieferantFilter,
+            Function<Artikel, AufschlagService.Wirksam> aufschlag) {
         List<LieferantenArtikelPreise> aktuelle = artikel.getArtikelpreis().stream()
                 .filter(LieferantenArtikelPreise::isAktuell)
                 .filter(p -> p.getPreis() != null)
@@ -598,7 +651,7 @@ public class ArtikelController {
                 .min(Comparator.comparing(LieferantenArtikelPreise::getPreis))
                 .orElse(null);
 
-        ArtikelResponseDto dto = toDto(artikel, guenstigster);
+        ArtikelResponseDto dto = toDto(artikel, guenstigster, aufschlag);
         dto.setAnzahlLieferanten(aktuelle.size());
         if (guenstigster != null) {
             dto.setGuenstigsterPreis(guenstigster.getPreis());
@@ -621,29 +674,6 @@ public class ArtikelController {
         return dto;
     }
 
-    /**
-     * Zerlegt eine Sucheingabe in die Woerter, die alle vorkommen muessen.
-     *
-     * <p>Neben Leerzeichen trennt auch das Malzeichen zwischen zwei Zahlen, damit
-     * "42.4x2" zu "42.4" und "2" wird - Anwender schreiben Abmessungen mal mit
-     * und mal ohne Leerzeichen. Ebenso wird ein dem Mass vorangestelltes "x"
-     * abgetrennt, denn "42.4 x2" ist eine ebenso uebliche Schreibweise. Ein
-     * allein stehendes "x" faellt weg.
-     */
-    static List<String> zerlegeSuchbegriff(String query) {
-        if (!StringUtils.hasText(query)) {
-            return List.of();
-        }
-        return java.util.Arrays.stream(query.trim().toLowerCase(Locale.GERMAN).split("[\\s,;]+"))
-                .flatMap(teil -> java.util.Arrays.stream(teil.split("(?<=\\d)[x*](?=\\d)")))
-                // "x2" als eigenes Wort: das Malzeichen gehoert nicht zur Zahl.
-                .map(w -> w.replaceFirst("^[x*](?=\\d)", ""))
-                .map(String::trim)
-                .filter(w -> !w.isEmpty() && !"x".equals(w) && !"*".equals(w))
-                .distinct()
-                .toList();
-    }
-
     private Specification<Artikel> buildArtikelSpecification(String query,
             String lieferant,
             String produktlinie,
@@ -659,38 +689,7 @@ public class ArtikelController {
         Specification<Artikel> specification = Specification.where((root, cq, cb) -> cb.conjunction());
 
         if (StringUtils.hasText(query)) {
-            // Die Eingabe wird in einzelne Woerter zerlegt, von denen jedes
-            // vorkommen muss. "rundrohr 42.4 x2" trifft damit genau den
-            // richtigen Artikel, statt alles zu liefern, was irgendein Wort
-            // enthaelt. Trennzeichen sind Leerzeichen und das Malzeichen "x",
-            // damit "42.4x2" wie "42.4 2" behandelt wird.
-            for (String wort : zerlegeSuchbegriff(query)) {
-                final String likeValue = wrapLike(wort).toLowerCase(Locale.GERMAN);
-                specification = specification.and((root, cq, cb) -> {
-                    Join<Artikel, Werkstoff> werkstoffJoin = root.join("werkstoff", JoinType.LEFT);
-                    Subquery<Long> preisSubquery = cq.subquery(Long.class);
-                    Root<LieferantenArtikelPreise> subRoot = preisSubquery.from(LieferantenArtikelPreise.class);
-                    Join<LieferantenArtikelPreise, Lieferanten> subLieferant = subRoot.join("lieferant", JoinType.LEFT);
-                    preisSubquery.select(cb.literal(1L));
-                    preisSubquery.where(
-                            cb.equal(subRoot.get("artikel"), root),
-                            cb.or(
-                                    cb.like(cb.lower(subRoot.get("externeArtikelnummer")), likeValue),
-                                    cb.like(cb.lower(subLieferant.get("lieferantenname")), likeValue)));
-                    return cb.or(
-                            // Der Suchtext buendelt alle Schreibweisen und Synonyme.
-                            cb.like(cb.lower(root.get("suchtext")), likeValue),
-                            cb.like(cb.lower(root.get("artikelnummer")), likeValue),
-                            cb.like(cb.lower(root.get("produktname")), likeValue),
-                            cb.like(cb.lower(root.get("produktlinie")), likeValue),
-                            cb.like(cb.lower(root.get("produkttext")), likeValue),
-                            cb.like(cb.lower(werkstoffJoin.get("name")), likeValue),
-                            // "V2A" statt "1.4301": in der Werkstatt wird der
-                            // Kurzname getippt, nicht die Werkstoffnummer.
-                            cb.like(cb.lower(werkstoffJoin.get("werkstattname")), likeValue),
-                            cb.exists(preisSubquery));
-                });
-            }
+            specification = specification.and(ArtikelFreitextSuche.fuer(query));
         }
 
         if (StringUtils.hasText(lieferant)) {

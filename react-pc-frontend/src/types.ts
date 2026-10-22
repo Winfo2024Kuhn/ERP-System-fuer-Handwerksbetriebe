@@ -379,6 +379,7 @@ export interface Artikel {
   lieferantenname?: string;
   kategorieId?: number;
   kategoriePfad?: string;
+  werkstoffId?: number;
   werkstoffName?: string;
   kgProMeter?: number;
 
@@ -392,6 +393,10 @@ export interface Artikel {
 
   // Technische Stammdaten
   artikelnummer?: string;
+  /** Strichcode (EAN-8, UPC-A, EAN-13, GTIN-14), nur bei einem Teil der Artikel vorhanden. */
+  ean?: string | null;
+  /** Stand des Datensatzes: Beim Ändern der Stammdaten mitschicken, damit parallele Änderungen auffallen. */
+  version?: number | null;
   profilform?: Merkmal;
   herstellverfahren?: Merkmal;
   fertigungszustand?: Merkmal;
@@ -401,6 +406,8 @@ export interface Artikel {
   hoehe?: number;
   breite?: number;
   wandstaerke?: number;
+  stegdicke?: number;
+  flanschdicke?: number;
   abmessung?: string;
   kgProQm?: number;
   mantelflaeche?: number;
@@ -409,6 +416,9 @@ export interface Artikel {
   // Eignungen fuer die Kalkulation
   verzinkungsgeeignet?: boolean;
   pulverbeschichtungsgeeignet?: boolean;
+  /** Nur für diesen Artikel festgelegte Eignung; leer = vom Werkstoff übernommen. */
+  verzinkungsgeeignetEigen?: boolean | null;
+  pulverbeschichtungsgeeignetEigen?: boolean | null;
   beschichtungshinweis?: string;
 
   // Angebotsfelder - was der Kunde auf Angebot/Rechnung liest
@@ -418,6 +428,10 @@ export interface Artikel {
   beschreibung?: string;
   /** Aufschlag auf den Einkaufspreis in Prozent. */
   verkaufsaufschlagProzent?: number;
+  /** Der Aufschlag, der tatsächlich gilt (Artikel, sonst Kategorie, sonst allgemein), und woher er kommt. */
+  wirksamProzent?: number | null;
+  wirksamQuelle?: 'ARTIKEL' | 'KATEGORIE' | 'ALLGEMEIN' | 'KEINER';
+  wirksamVon?: string | null;
   /** Einheit der Dokumentposition: lfm, m², kg oder Stk. */
   positionsEinheit?: string;
   /** Vorgeschlagener Einzelpreis inklusive Aufschlag. */

@@ -11,12 +11,14 @@ export interface DecimalInputProps extends Omit<InputHTMLAttributes<HTMLInputEle
     max?: number;
     integer?: boolean;
     error?: string;
+    /** Eine gespeicherte 0 bleibt beim Anklicken stehen (wenn 0 ein eigener Wert ist und "leer" etwas anderes heißt). */
+    nullBehalten?: boolean;
 }
 
 /** Ein Entwurf, der nur aus Nullen besteht: `0`, `-0`, `0,00`. */
 const istNullEntwurf = (entwurf: string) => /^[+-]?0+(?:,0+)?$/.test(entwurf.trim());
 
-export function DecimalInput({ value, onChange, label, id, min, max, integer, error, required, onFocus, onInvalid, ...props }: DecimalInputProps) {
+export function DecimalInput({ value, onChange, label, id, min, max, integer, error, required, nullBehalten, onFocus, onInvalid, ...props }: DecimalInputProps) {
     const generatedId = useId();
     const inputId = id ?? generatedId;
     const ref = useRef<HTMLInputElement>(null);
@@ -30,9 +32,9 @@ export function DecimalInput({ value, onChange, label, id, min, max, integer, er
     useEffect(() => {
         const eigen = eigeneEingabe.current;
         eigeneEingabe.current = false;
-        if (eigen || props.readOnly || props.disabled) return;
+        if (eigen || nullBehalten || props.readOnly || props.disabled) return;
         if (document.activeElement === ref.current && istNullEntwurf(value)) onChange('');
-    }, [value, onChange, props.readOnly, props.disabled]);
+    }, [value, onChange, nullBehalten, props.readOnly, props.disabled]);
     const result = validateDecimalInput(value, { label: label ?? props['aria-label'] ?? 'Wert', min, max, integer, required });
     const validationMessage = result.valid ? '' : result.message;
     const shownError = error || (attempted ? validationMessage : '');
@@ -44,7 +46,7 @@ export function DecimalInput({ value, onChange, label, id, min, max, integer, er
             aria-describedby={[props['aria-describedby'], shownError ? `${inputId}-error` : undefined].filter(Boolean).join(' ') || undefined}
             onChange={event => { eigeneEingabe.current = true; onChange(event.target.value); }}
             onFocus={event => {
-                if (!props.readOnly && !props.disabled && istNullEntwurf(value)) onChange('');
+                if (!nullBehalten && !props.readOnly && !props.disabled && istNullEntwurf(value)) onChange('');
                 onFocus?.(event);
             }}
             onInvalid={event => { event.preventDefault(); setAttempted(true); onInvalid?.(event); }} />
