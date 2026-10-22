@@ -78,10 +78,10 @@ public class Email {
     @Column(length = 255)
     private String senderDomain;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String recipient;
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String cc;
 
     /**
@@ -101,7 +101,7 @@ public class Email {
     // INHALT
     // ═══════════════════════════════════════════════════════════════
 
-    @Column(length = 1000)
+    @Column(columnDefinition = "TEXT")
     private String subject;
 
     @JdbcTypeCode(SqlTypes.LONG32VARCHAR)

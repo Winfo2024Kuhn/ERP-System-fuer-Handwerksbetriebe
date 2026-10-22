@@ -1070,4 +1070,155 @@ class EmailImportServiceTest {
             assertThat(service.eigeneAdressen()).contains("info@musterbetrieb.example", "postfach@musterbetrieb.example");
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Nachricht, die sich nicht speichern lässt
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class FehlschlagendeNachricht {
+
+        private final EmailImportService selbst = mock(EmailImportService.class);
+        private final jakarta.mail.Store store = mock(jakarta.mail.Store.class);
+        private final IMAPFolder ordner = mock(IMAPFolder.class);
+        private final Message nachricht = mock(Message.class);
+
+        @BeforeEach
+        void setUp() throws Exception {
+            service.setSelf(selbst);
+            when(store.getFolder("INBOX")).thenReturn(ordner);
+            when(ordner.exists()).thenReturn(true);
+            when(ordner.getMessages()).thenReturn(new Message[] { nachricht });
+            lenient().when(ordner.getUID(nachricht)).thenReturn(42L);
+            lenient().when(ordner.getUIDValidity()).thenReturn(7L);
+        }
+
+        private RuntimeException zuLangeSpalte() {
+            return new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                    new IllegalStateException("ERROR: value too long for type character varying(1000)\n"
+                            + "  Detail: Max Mustermann <max.mustermann@example.com>"));
+        }
+
+        private void importiereMehrmals(int anzahl) {
+            for (int lauf = 0; lauf < anzahl; lauf++) {
+                service.importFromFolder(store, "INBOX", EmailDirection.IN, 5L);
+            }
+        }
+
+        @Test
+        void wirdNachDreiFehlschlaegenNichtMehrVersucht() throws Exception {
+            when(ordner.isOpen()).thenReturn(true);
+            when(selbst.importMessage(nachricht, ordner, EmailDirection.IN, 5L)).thenThrow(zuLangeSpalte());
+
+            List<String> log = org.example.kalkulationsprogramm.testsupport.LogMitschnitt.von(EmailImportService.class,
+                    () -> importiereMehrmals(5));
+
+            verify(selbst, times(EmailImportFehlversuche.MAX_VERSUCHE))
+                    .importMessage(nachricht, ordner, EmailDirection.IN, 5L);
+            assertThat(log).hasSize(EmailImportFehlversuche.MAX_VERSUCHE);
+            assertThat(log).allMatch(z -> z.contains("UID 42") && z.contains("INBOX"));
+            assertThat(log.get(log.size() - 1)).contains("übersprungen", "value too long");
+        }
+
+        @Test
+        void logEnthaeltWederBetreffNochAbsender() throws Exception {
+            when(ordner.isOpen()).thenReturn(true);
+            when(selbst.importMessage(nachricht, ordner, EmailDirection.IN, 5L)).thenThrow(zuLangeSpalte());
+
+            List<String> log = org.example.kalkulationsprogramm.testsupport.LogMitschnitt.von(EmailImportService.class,
+                    () -> importiereMehrmals(1));
+
+            assertThat(log).singleElement().satisfies(z -> assertThat(z)
+                    .contains("DataIntegrityViolationException / IllegalStateException")
+                    .doesNotContain("Mustermann", "max.mustermann@example.com", "Detail"));
+            verify(nachricht, never()).getSubject();
+            verify(nachricht, never()).getFrom();
+        }
+
+        @Test
+        void erfolgVergisstFruehereFehlschlaege() throws Exception {
+            when(ordner.isOpen()).thenReturn(true);
+            when(selbst.importMessage(nachricht, ordner, EmailDirection.IN, 5L))
+                    .thenThrow(zuLangeSpalte()).thenThrow(zuLangeSpalte())
+                    .thenReturn(false)
+                    .thenThrow(zuLangeSpalte()).thenThrow(zuLangeSpalte()).thenReturn(false);
+
+            importiereMehrmals(6);
+
+            // Ohne Zurücksetzen wäre nach dem dritten Fehlschlag (Lauf 4) Schluss gewesen.
+            verify(selbst, times(6)).importMessage(nachricht, ordner, EmailDirection.IN, 5L);
+        }
+
+        @Test
+        void getrennteVerbindungZaehltNichtAlsFehlschlag() throws Exception {
+            when(ordner.isOpen()).thenReturn(false);
+            when(selbst.importMessage(nachricht, ordner, EmailDirection.IN, 5L))
+                    .thenThrow(new IllegalStateException("Ordner geschlossen"));
+
+            importiereMehrmals(5);
+
+            verify(selbst, times(5)).importMessage(nachricht, ordner, EmailDirection.IN, 5L);
+        }
+
+        @Test
+        void datenbankAusfallZaehltNichtAlsFehlschlag() throws Exception {
+            when(ordner.isOpen()).thenReturn(true);
+            when(selbst.importMessage(nachricht, ordner, EmailDirection.IN, 5L))
+                    .thenThrow(new org.springframework.transaction.CannotCreateTransactionException("DB weg"));
+
+            importiereMehrmals(5);
+
+            verify(selbst, times(5)).importMessage(nachricht, ordner, EmailDirection.IN, 5L);
+        }
+
+        @Test
+        void ohneUidWirdJedesMalVersucht() throws Exception {
+            when(ordner.getUID(nachricht)).thenThrow(new jakarta.mail.MessagingException("keine UID"));
+            when(ordner.isOpen()).thenReturn(true);
+            when(selbst.importMessage(nachricht, ordner, EmailDirection.IN, 5L)).thenThrow(zuLangeSpalte());
+
+            importiereMehrmals(5);
+
+            verify(selbst, times(5)).importMessage(nachricht, ordner, EmailDirection.IN, 5L);
+        }
+    }
+
+    @Nested
+    class FehlerKurz {
+
+        @Test
+        void nenntNurDieErsteZeileDerUrsache() {
+            var fehler = new RuntimeException("außen", new IllegalStateException("Zeile eins\nDetail: Max Mustermann"));
+            assertThat(EmailImportService.fehlerKurz(fehler))
+                    .isEqualTo("RuntimeException / IllegalStateException: Zeile eins");
+        }
+
+        @Test
+        void ohneUrsacheUndOhneMeldungNurDieArt() {
+            assertThat(EmailImportService.fehlerKurz(new IllegalStateException())).isEqualTo("IllegalStateException");
+        }
+
+        @Test
+        void ungueltigeAdresseNurMitArt() {
+            var fehler = new RuntimeException(new jakarta.mail.internet.AddressException(
+                    "Illegal address in string ``max.mustermann@example''"));
+            assertThat(EmailImportService.fehlerKurz(fehler)).isEqualTo("RuntimeException / AddressException");
+        }
+
+        @Test
+        void erkenntVoruebergehendeStoerungenInDerUrsachenkette() {
+            assertThat(EmailImportService.istVoruebergehend(new RuntimeException(
+                    new java.sql.SQLTransientConnectionException("Verbindung weg")))).isTrue();
+            assertThat(EmailImportService.istVoruebergehend(
+                    new org.springframework.dao.QueryTimeoutException("zu langsam"))).isTrue();
+            assertThat(EmailImportService.istVoruebergehend(
+                    new org.springframework.dao.DataIntegrityViolationException("zu lang"))).isFalse();
+        }
+
+        @Test
+        void kuerztSehrLangeMeldungen() {
+            String text = EmailImportService.fehlerKurz(new IllegalStateException("x".repeat(500)));
+            assertThat(text).hasSize("IllegalStateException: ".length() + 201).endsWith("…");
+        }
+    }
 }
