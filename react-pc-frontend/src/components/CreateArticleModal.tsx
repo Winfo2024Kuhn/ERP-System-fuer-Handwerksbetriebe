@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, FileText, ImagePlus, Loader2, Paperclip, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight, FileText, ImageOff, ImagePlus, Loader2, Paperclip, Plus, Search, Trash2, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { DecimalInput } from "./ui/decimal-input";
@@ -14,7 +14,6 @@ import { useToast } from './ui/toast';
 import { InfoButton } from './ui/info-button';
 import { parseDecimal } from './verrechnungslohnFormat';
 import { leseFehlermeldung } from '../lib/apiFehler';
-import { toSafeResourceUrl } from '../lib/htmlSanitizer';
 import { ARTIKEL_DOKUMENT_TYPEN, type Artikel, type ArtikelDokumentTyp } from '../types';
 
 interface CreateArticleModalProps {
@@ -124,10 +123,6 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
             .catch(() => { if (!abgebrochen) setVorschau({ status: "fehler" }); });
         return () => { abgebrochen = true; };
     }, []);
-
-    // Kleine Vorschau des gewaehlten Bildes; die Objekt-Adresse wird beim Wechsel wieder freigegeben.
-    const bildVorschau = useMemo(() => (bild ? URL.createObjectURL(bild) : null), [bild]);
-    useEffect(() => () => { if (bildVorschau) URL.revokeObjectURL(bildVorschau); }, [bildVorschau]);
 
     const mitLieferant = lieferant !== null;
     const anzahlDateien = (bild ? 1 : 0) + unterlagen.length;
@@ -478,10 +473,9 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                                 {/* ---- Vorschaubild ---- */}
                                 <div className="space-y-2">
                                     <p className="text-sm font-medium text-slate-800">Vorschaubild</p>
-                                    {bild && bildVorschau ? (
+                                    {bild ? (
                                         <div className="relative">
-                                            <img src={toSafeResourceUrl(bildVorschau)} alt={`Gewähltes Bild: ${bild.name}`}
-                                                className="w-full aspect-square rounded-lg border border-slate-200 bg-white object-contain" />
+                                            <BildVorschau datei={bild} label={`Gewähltes Bild: ${bild.name}`} />
                                             <Button type="button" variant="ghost" size="sm" onClick={() => setBild(null)}
                                                 aria-label="Bild entfernen" title="Bild entfernen"
                                                 className="absolute top-1.5 right-1.5 p-1.5 bg-white/90 text-slate-500 hover:text-rose-600 hover:bg-white rounded-full shadow-sm border border-slate-200">
@@ -621,5 +615,54 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                 />
             )}
         </Dialog>
+    );
+}
+
+/**
+ * Vorschau des gewaehlten Bildes, gezeichnet auf eine Zeichenflaeche statt ueber eine
+ * Bild-Adresse. So fliesst nichts aus der Dateiauswahl in ein src-Attribut
+ * (CodeQL js/xss-through-dom), und es bleibt keine Objekt-Adresse zum Freigeben liegen.
+ * Kann der Browser das Bild nicht lesen, steht dort ein ruhiger Platzhalter.
+ */
+function BildVorschau({ datei, label }: { datei: File; label: string }) {
+    const flaecheRef = useRef<HTMLCanvasElement>(null);
+    // Bei welcher Datei das Lesen gescheitert ist - so gilt ein Fehler nie fuer das naechste Bild.
+    const [unlesbar, setUnlesbar] = useState<File | null>(null);
+    const kannLesen = typeof createImageBitmap === "function";
+    const lesbar = kannLesen && unlesbar !== datei;
+
+    useEffect(() => {
+        if (!kannLesen) return;
+        let abgebrochen = false;
+        createImageBitmap(datei)
+            .then((bitmap) => {
+                const flaeche = flaecheRef.current;
+                if (abgebrochen || !flaeche) {
+                    bitmap.close();
+                    return;
+                }
+                // Fuer die kleine Kachel reicht eine Seitenlaenge von hoechstens 640 Pixeln.
+                const massstab = Math.min(1, 640 / Math.max(bitmap.width, bitmap.height));
+                flaeche.width = Math.max(1, Math.round(bitmap.width * massstab));
+                flaeche.height = Math.max(1, Math.round(bitmap.height * massstab));
+                flaeche.getContext("2d")?.drawImage(bitmap, 0, 0, flaeche.width, flaeche.height);
+                bitmap.close();
+            })
+            .catch(() => { if (!abgebrochen) setUnlesbar(datei); });
+        return () => { abgebrochen = true; };
+    }, [datei, kannLesen]);
+
+    if (!lesbar) {
+        return (
+            <div role="img" aria-label={label}
+                className="flex flex-col items-center justify-center gap-2 w-full aspect-square rounded-lg border border-slate-200 bg-slate-50 text-slate-400">
+                <ImageOff className="w-8 h-8" aria-hidden="true" />
+                <span className="text-xs">Keine Vorschau</span>
+            </div>
+        );
+    }
+    return (
+        <canvas ref={flaecheRef} role="img" aria-label={label}
+            className="w-full aspect-square rounded-lg border border-slate-200 bg-white object-contain" />
     );
 }

@@ -68,9 +68,6 @@ describe('CreateArticleModal', () => {
             return antwort(true, []);
         });
         vi.stubGlobal('fetch', fetchMock);
-        // jsdom kennt keine Objekt-Adressen fuer Dateien
-        URL.createObjectURL = vi.fn(() => 'blob:http://localhost/vorschau');
-        URL.revokeObjectURL = vi.fn();
     });
 
     afterEach(() => vi.unstubAllGlobals());
@@ -248,7 +245,9 @@ describe('CreateArticleModal', () => {
 
         await user.click(screen.getByRole('tab', { name: /Bilder & Unterlagen/ }));
         await user.upload(screen.getByLabelText('Bild auswählen', { selector: 'input' }), new File(['bild'], 'flachstahl.jpg', { type: 'image/jpeg' }));
-        expect(screen.getByRole('img', { name: 'Gewähltes Bild: flachstahl.jpg' })).toHaveAttribute('src', 'blob:http://localhost/vorschau');
+        // jsdom kann keine Bilder lesen: Statt der Zeichenflaeche steht der Platzhalter mit demselben Namen da.
+        expect(screen.getByRole('img', { name: 'Gewähltes Bild: flachstahl.jpg' })).toBeInTheDocument();
+        expect(screen.getByText('Keine Vorschau')).toBeInTheDocument();
 
         // Erst als Datenblatt, dann als Zulassung
         await user.upload(screen.getByLabelText('Unterlage auswählen'), new File(['pdf'], 'datenblatt.pdf', { type: 'application/pdf' }));
