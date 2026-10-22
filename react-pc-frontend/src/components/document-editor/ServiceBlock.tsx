@@ -7,11 +7,62 @@ import { formatCurrency, serviceLineTotal } from './helpers';
 import type { TiptapAenderungsArt } from '../tiptapVerlauf';
 import type { DocBlock, EditorInstance } from './types';
 import type { ZeitprognoseDto } from '../../types';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { KategorieAnalyseModal } from '../KategorieAnalyseModal';
 import { AddBelowButton } from './TextBlock';
 import { WahlpositionMenu } from './WahlpositionMenu';
+import { DecimalInput } from '../ui/decimal-input';
+import { formatDecimalInput, validateDecimalInput } from '../../lib/numberInput';
+
+const alsEntwurf = (wert: number | undefined) => (wert ? formatDecimalInput(wert) : '');
+
+/**
+ * Haelt den getippten Text eines Zahlenfelds (Menge, EP) und gibt nur
+ * vollstaendige Zahlen an den Editor weiter. Zwischenstaende wie „0“ oder
+ * „0,“ bleiben stehen, statt dass das Feld sie beim naechsten Render wieder
+ * leert. Aendert sich der Wert von aussen (Rueckgaengig, Leistung gewechselt),
+ * uebernimmt das Feld ihn.
+ */
+function useZahlEntwurf(wert: number | undefined, label: string, uebernehmen: (zahl: number) => void) {
+    const [entwurf, setEntwurf] = useState(() => alsEntwurf(wert));
+    const [bekannterWert, setBekannterWert] = useState(wert);
+
+    // Wert von aussen geaendert: im Render nachziehen (React-Muster
+    // „State bei geaenderten Props anpassen“), nicht per Effekt.
+    if (!Object.is(wert, bekannterWert)) {
+        setBekannterWert(wert);
+        const pruefung = validateDecimalInput(entwurf, { label, min: 0 });
+        const passt = pruefung.valid && (pruefung.value ?? 0) === (wert ?? 0);
+        if (!passt) setEntwurf(alsEntwurf(wert));
+    }
+
+    // `aendern` muss ueber Renders hinweg dieselbe Funktion bleiben: DecimalInput
+    // leert eine fokussierte „0“, sobald sich onChange aendert und die Aenderung
+    // nicht vom Tippen kam. Der Editor rendert nach jeder Eingabe mehrfach – mit
+    // wechselnder Funktion verschwand die gerade getippte 0 dann doch wieder.
+    // Aktuelle Werte deshalb in einer Ref spiegeln (Vorbild useVerlaufTastatur).
+    const aktuell = useRef({ wert, label, uebernehmen });
+    useEffect(() => {
+        aktuell.current = { wert, label, uebernehmen };
+    });
+
+    const aendern = useCallback((text: string) => {
+        setEntwurf(text);
+        const { wert: geltend, label: name, uebernehmen: weitergeben } = aktuell.current;
+        const pruefung = validateDecimalInput(text, { label: name, min: 0 });
+        if (!pruefung.valid) return;
+        const zahl = pruefung.value ?? 0;
+        if (zahl !== (geltend ?? 0)) weitergeben(zahl);
+    }, []);
+
+    // Unvollstaendiges („0,“) oder Ungueltiges beim Verlassen auf den geltenden Wert zuruecksetzen.
+    const verlassen = () => {
+        if (!validateDecimalInput(entwurf, { label, min: 0 }).valid) setEntwurf(alsEntwurf(wert));
+    };
+
+    return { entwurf, aendern, verlassen };
+}
 
 interface ServiceBlockProps {
     block: DocBlock;
@@ -85,6 +136,8 @@ export function ServiceBlock({
     const [prognoseLoading, setPrognoseLoading] = useState(false);
     const [showAnalyse, setShowAnalyse] = useState(false);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const menge = useZahlEntwurf(block.quantity, 'Menge', (quantity) => onUpdate(block.id, { quantity }));
+    const preis = useZahlEntwurf(block.price, 'Einzelpreis', (price) => onUpdate(block.id, { price }));
 
     // Fetch time prediction when leistungId or quantity changes
     useEffect(() => {
@@ -261,18 +314,12 @@ export function ServiceBlock({
                     <div className="flex items-center gap-1.5">
                         <div>
                             <label className="block text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Menge</label>
-                            <input
-                                type="number"
-                                min="0"
+                            <DecimalInput
+                                min={0}
                                 aria-label="Menge"
-                                value={block.quantity || ''}
-                                onFocus={(e) => { if (e.target.value === '0') e.target.value = ''; }}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === '' || val === '-') { onUpdate(block.id, { quantity: 0 }); return; }
-                                    const num = parseFloat(val);
-                                    if (!isNaN(num) && num >= 0) onUpdate(block.id, { quantity: num });
-                                }}
+                                value={menge.entwurf}
+                                onChange={menge.aendern}
+                                onBlur={menge.verlassen}
                                 disabled={isLocked}
                                 data-verlauf-feld="quantity"
                                 className="w-16 text-center text-sm font-semibold bg-white border border-slate-200 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 disabled:text-slate-400 transition-all"
@@ -297,19 +344,12 @@ export function ServiceBlock({
                     <div>
                         <label className="block text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">EP</label>
                         <div className="relative">
-                            <input
-                                type="number"
-                                step="0.01"
-                                min="0"
+                            <DecimalInput
+                                min={0}
                                 aria-label="Einzelpreis"
-                                value={block.price || ''}
-                                onFocus={(e) => { if (e.target.value === '0') e.target.value = ''; }}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === '' || val === '-') { onUpdate(block.id, { price: 0 }); return; }
-                                    const num = parseFloat(val);
-                                    if (!isNaN(num) && num >= 0) onUpdate(block.id, { price: num });
-                                }}
+                                value={preis.entwurf}
+                                onChange={preis.aendern}
+                                onBlur={preis.verlassen}
                                 disabled={isLocked}
                                 data-verlauf-feld="price"
                                 className="w-24 text-right text-sm font-semibold bg-white border border-slate-200 rounded-md pl-2 pr-6 py-1.5 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-300 disabled:bg-slate-100 disabled:text-slate-400 transition-all"

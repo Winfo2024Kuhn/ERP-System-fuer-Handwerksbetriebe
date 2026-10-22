@@ -1523,10 +1523,10 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
         const mengenfeld = container.querySelector<HTMLInputElement>('[data-block-id="s1"] [data-verlauf-feld="quantity"]')!;
         await user.clear(mengenfeld);
         await user.type(mengenfeld, '9');
-        await waitFor(() => expect(mengenfeld).toHaveValue(9));
+        await waitFor(() => expect(mengenfeld).toHaveValue('9'));
 
         strgZ();
-        await waitFor(() => expect(mengenfeld).toHaveValue(2));
+        await waitFor(() => expect(mengenfeld).toHaveValue('2'));
         expect(titelfeld).toHaveValue('Dachrinne reinigenX');
     });
 
