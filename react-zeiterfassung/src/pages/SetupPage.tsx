@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { QrCode, Smartphone, AlertCircle, Keyboard, Camera, X } from 'lucide-react'
+import { QrCode, Smartphone, AlertCircle, Keyboard, Camera, X, Eye, EyeOff } from 'lucide-react'
 import { Html5Qrcode } from 'html5-qrcode'
 
 interface SetupPageProps {
@@ -23,6 +23,7 @@ export default function SetupPage({ error, retryAt = 0, onTokenScanned }: SetupP
     const zeigeSpinner = processing && !error && secondsRemaining === 0
     const [showManualInput, setShowManualInput] = useState(false)
     const [manualToken, setManualToken] = useState('')
+    const [tokenSichtbar, setTokenSichtbar] = useState(false)
     const [scanning, setScanning] = useState(false)
     const [scanError, setScanError] = useState<string | null>(null)
     const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -183,16 +184,31 @@ export default function SetupPage({ error, retryAt = 0, onTokenScanned }: SetupP
 
             {showManualInput && (
                 <div className="w-full max-w-sm mb-8">
-                    <input
-                        type="password"
-                        autoComplete="off"
-                        aria-label="Persönlicher Anmelde-Token"
-                        value={manualToken}
-                        onChange={(e) => setManualToken(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
-                        placeholder="Token eingeben..."
-                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500 mb-3"
-                    />
+                    {/* Der Code ist 36 Zeichen lang: Beim Abtippen muss man ihn sehen können, um Tippfehler zu finden. */}
+                    <div className="relative mb-3">
+                        <input
+                            type={tokenSichtbar ? 'text' : 'password'}
+                            autoComplete="off"
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            aria-label="Persönlicher Anmelde-Token"
+                            value={manualToken}
+                            onChange={(e) => setManualToken(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleManualSubmit()}
+                            placeholder="Token eingeben..."
+                            className="w-full pl-4 pr-12 py-3 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setTokenSichtbar(sichtbar => !sichtbar)}
+                            aria-label={tokenSichtbar ? 'Token verbergen' : 'Token anzeigen'}
+                            aria-pressed={tokenSichtbar}
+                            className="absolute inset-y-0 right-0 w-12 flex items-center justify-center rounded-r-xl text-slate-500 hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-rose-500"
+                        >
+                            {tokenSichtbar ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+                    </div>
                     <button
                         onClick={handleManualSubmit}
                         disabled={!manualToken.trim() || secondsRemaining > 0}

@@ -21,3 +21,27 @@ describe('Anmeldesperre', () => {
     expect(login).toHaveBeenCalledWith('test-token')
   })
 })
+describe('Token manuell eingeben', () => {
+  it('blendet den Token per Augen-Symbol ein und wieder aus, damit Tippfehler sichtbar sind', () => {
+    render(<SetupPage onTokenScanned={vi.fn()} />)
+    fireEvent.click(screen.getByText('Token manuell eingeben'))
+    const input = screen.getByPlaceholderText('Token eingeben...')
+    expect(input).toHaveAttribute('type', 'password')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Token anzeigen' }))
+    expect(input).toHaveAttribute('type', 'text')
+    expect(screen.getByRole('button', { name: 'Token verbergen' })).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Token verbergen' }))
+    expect(input).toHaveAttribute('type', 'password')
+  })
+
+  it('löst mit dem Augen-Symbol keine Anmeldung aus', () => {
+    const login = vi.fn()
+    render(<SetupPage onTokenScanned={login} />)
+    fireEvent.click(screen.getByText('Token manuell eingeben'))
+    fireEvent.change(screen.getByPlaceholderText('Token eingeben...'), { target: { value: 'test-token' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Token anzeigen' }))
+    expect(login).not.toHaveBeenCalled()
+  })
+})
