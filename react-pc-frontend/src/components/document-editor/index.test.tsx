@@ -2120,3 +2120,41 @@ describe('DocumentEditor – einfache Rechnung schliesst den Auftrag ab', () => 
         expect(gespeichert).not.toHaveProperty('schliesstAuftragAb');
     });
 });
+
+describe('DocumentEditor – Timer nach dem Schließen', () => {
+    // Regression (CI-Lauf zu PR #317): Nach erfolgreichem Speichern zeigt der
+    // Knopf 2 s lang „Gespeichert“. Der Timer dafür wurde beim Schließen des
+    // Editors nicht abgeräumt und feuerte nach Testende, als jsdom schon
+    // abgebaut war („window is not defined“) – der ganze Testlauf brach ab.
+    let fetchMock: ReturnType<typeof mockFetch>;
+
+    beforeEach(() => {
+        fetchMock = mockFetch();
+        global.fetch = fetchMock as unknown as typeof fetch;
+        global.URL.createObjectURL = vi.fn(() => `blob:vorschau-${Math.random()}`);
+        global.URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('lässt nach dem Schließen keinen „Gespeichert“-Timer zurück', async () => {
+        vi.useFakeTimers();
+        const { unmount } = renderEditor();
+        await warteMitFakeTimern(() => expect(zahlungszielFeld()).toHaveValue('14'));
+
+        zahlungszielEingeben('5');
+        // Auto-Save prueft alle 10 s.
+        await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+        await warteMitFakeTimern(() => expect(screen.getByRole('button', { name: /Gespeichert/ })).toBeInTheDocument());
+
+        // Schließen, bevor die 2 s um sind.
+        unmount();
+
+        expect(vi.getTimerCount()).toBe(0);
+        // Auch ein Vorspulen darf nichts mehr auslösen.
+        expect(() => vi.advanceTimersByTime(2_000)).not.toThrow();
+    });
+});

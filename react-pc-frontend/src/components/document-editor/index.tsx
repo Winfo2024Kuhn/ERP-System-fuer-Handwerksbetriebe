@@ -168,6 +168,7 @@ import { useConfirm } from '../ui/confirm-dialog';
 import { TabSchliessenHinweis } from '../lock/TabSchliessenHinweis';
 import { useKonfliktMeldung } from '../lock/useKonfliktMeldung';
 import { scrolleMittigInDenBlick } from '../../lib/scrollInDenBlick';
+import { useEinmalTimer } from '../../hooks/useEinmalTimer';
 
 interface ImportedGaebBlock {
     type: string;
@@ -368,6 +369,9 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
+    const saveSuccessTimer = useEinmalTimer();
+    // Setzt nach dem Laden den gespeicherten Stand zurueck (siehe Lade-Effekt).
+    const geladenTimer = useEinmalTimer();
     const lastSavedStateRef = useRef<string>('');
     // Die Rechnungsadresse liegt in `kontextDaten` und damit ausserhalb der
     // State-Signatur, gegen die `lastSavedStateRef` vergleicht. Sie kann dort
@@ -593,7 +597,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // GAEB Import
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [importToast, setImportToast] = useState<{ type: 'success' | 'error'; message: string; details?: string } | null>(null);
-    const importToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const importToastTimer = useEinmalTimer();
 
     /** Alle Rechnungstypen die nach GoBD beim Export/Druck gesperrt werden müssen */
     const invoiceTypes: AusgangsGeschaeftsDokumentTyp[] = [
@@ -962,9 +966,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
 
     // --- Import Toast Helper ---
     const showImportToast = (type: 'success' | 'error', message: string, details?: string) => {
-        if (importToastTimer.current) clearTimeout(importToastTimer.current);
         setImportToast({ type, message, details });
-        importToastTimer.current = setTimeout(() => setImportToast(null), 5000);
+        importToastTimer.starte(() => setImportToast(null), 5000);
     };
 
     // --- Load Kontext ---
@@ -1266,7 +1269,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     // Reset saved-state ref so loaded data doesn't count as "unsaved".
                     // CLOSURE-Marker ausschliessen, da er per useEffect zur Laufzeit
                     // eingefuegt wird und nicht Teil der persistierten Daten ist.
-                    setTimeout(() => {
+                    geladenTimer.starte(() => {
                         const persistedLoaded = loadedBlocks.filter(b => b.id !== CLOSURE_BLOCK_ID && b.type !== 'CLOSURE');
                         lastSavedStateRef.current = baueDokumentSignatur({
                             blocks: persistedLoaded,
@@ -1694,7 +1697,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     // der Nachdruck im gesperrten Zustand ohne Neuladen.
                     setGespeichertSchliesstAuftragAb(schliesstAuftragAbSpeichern);
                     setSaveSuccess(true);
-                    setTimeout(() => setSaveSuccess(false), 2000);
+                    saveSuccessTimer.starte(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
                     // Bezugswert auf den tatsaechlich persistierten Wert setzen --
                     // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
@@ -1758,7 +1761,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     // der Nachdruck im gesperrten Zustand ohne Neuladen.
                     setGespeichertSchliesstAuftragAb(schliesstAuftragAbSpeichern);
                     setSaveSuccess(true);
-                    setTimeout(() => setSaveSuccess(false), 2000);
+                    saveSuccessTimer.starte(() => setSaveSuccess(false), 2000);
                     if (adresseUnveraendert()) setAdresseGeaendert(false);
                     // Bezugswert auf den tatsaechlich persistierten Wert setzen --
                     // auch wenn der Nutzer waehrend des Roundtrips erneut geaendert
