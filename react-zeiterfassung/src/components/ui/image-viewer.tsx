@@ -322,12 +322,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose, ima
 
     return createPortal(
         <div
-            className={`fixed inset-0 bg-slate-50 z-[9999] flex flex-col touch-none transition-opacity duration-300 ${fadeIn ? 'opacity-100' : 'opacity-0'}`}
+            className={`fixed inset-0 bg-white z-[9999] flex flex-col touch-none transition-opacity duration-300 ${fadeIn ? 'opacity-100' : 'opacity-0'}`}
             role="dialog"
             aria-modal="true"
             aria-label={currentImage.name || alt || 'Bildansicht'}
         >
-            {/* Kopfleiste: hell wie die Statusleiste, mit Sockel unter dem iOS-Weichzeichner */}
+            {/* Kopfleiste: weiss wie die Statusleiste (body-Farbe), mit Sockel unter dem iOS-Weichzeichner */}
             <div className="flex items-center justify-between gap-2 px-4 pb-3 safe-area-top z-10">
                 <button
                     type="button"

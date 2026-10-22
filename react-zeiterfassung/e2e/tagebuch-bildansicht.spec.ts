@@ -100,8 +100,8 @@ for (const art of ['projekte', 'anfragen'] as const) {
         await expect(dialog.getByRole('status')).toHaveCount(0)
         await expect(foto).toHaveCSS('opacity', '1')
 
-        // Hell wie die Statusleiste und die App – kein schwarzer Kasten mit grauem Verlauf oben
-        await expect(dialog).toHaveCSS('background-color', 'oklch(0.984 0.003 247.858)') // slate-50
+        // Weiß wie die Statusleiste (iOS färbt sie in der Seitenfarbe) – kein Farbsprung oben
+        await expect(dialog).toHaveCSS('background-color', 'rgb(255, 255, 255)')
         // Bedienelemente stehen unterhalb des iOS-Weichzeichners (oberste ~35 pt)
         const schliessen = await dialog.getByRole('button', { name: 'Schließen' }).boundingBox()
         expect(schliessen!.y).toBeGreaterThanOrEqual(36)
