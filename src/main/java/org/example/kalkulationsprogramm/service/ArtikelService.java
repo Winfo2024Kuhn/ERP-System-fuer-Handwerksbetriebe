@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
@@ -28,6 +29,8 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.safety.Safelist;
 import org.springframework.data.domain.Page;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
@@ -82,11 +85,58 @@ public class ArtikelService implements ArtikelServiceContract {
             "url\\(|expression\\(|position|@import|javascript:", Pattern.CASE_INSENSITIVE);
 
     private static final int MAX_ARTIKELNUMMER = 64;
+    private static final String AUTO_NUMMER_PRAEFIX = "A-";
+    /** Automatische Nummer: "A-" und nur Ziffern (hoechstens 12, damit die Zahl in ein long passt). */
+    private static final Pattern AUTO_NUMMER = Pattern.compile("A-(\\d{1,12})");
+    /** So viele Nummern nach der hoechsten werden hoechstens ausprobiert, falls sie anders geschrieben schon vergeben sind. */
+    private static final int MAX_NUMMER_VERSUCHE = 100;
 
     private final ArtikelRepository artikelRepository;
     private final KategorieRepository kategorieRepository;
     private final WerkstoffRepository werkstoffRepository;
     private final LieferantenRepository lieferantenRepository;
+
+    /**
+     * Die naechste freie automatische Artikelnummer: "A-" und die um eins hoehere
+     * Zahl der bisher hoechsten, sechsstellig ("A-004142" -> "A-004143"). Eigene
+     * Nummern in anderem Muster ("AL-FL-x100-20") zaehlen nicht mit.
+     *
+     * <p>Dient auch als Vorschau im Anlegen-Dialog; reserviert wird nichts.
+     */
+    @Transactional(readOnly = true)
+    public String naechsteArtikelnummer() {
+        long hoechste = artikelRepository.findeHoechsteAutomatischeArtikelnummern(PageRequest.of(0, 1)).stream()
+                .map(AUTO_NUMMER::matcher)
+                .filter(Matcher::matches)
+                .mapToLong(m -> Long.parseLong(m.group(1)))
+                .max()
+                .orElse(0L);
+        // Falls die naechste Nummer anders geschrieben schon vergeben ist (z. B. "a-004143"), weiterzaehlen.
+        for (int versuch = 1; versuch <= MAX_NUMMER_VERSUCHE; versuch++) {
+            String nummer = String.format("%s%06d", AUTO_NUMMER_PRAEFIX, hoechste + versuch);
+            if (!artikelRepository.existsByArtikelnummerIgnoreCase(nummer)) {
+                return nummer;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Es konnte keine freie Artikelnummer gefunden werden. Bitte eine eigene Nummer eintragen.");
+    }
+
+    /**
+     * Speichert den neuen Artikel sofort, damit eine gleichzeitig vergebene Nummer hier auffaellt
+     * und nicht erst beim Abschluss als unverstaendlicher Datenbankfehler.
+     */
+    private Artikel speichereMitNummer(Artikel artikel, boolean automatisch) {
+        try {
+            return artikelRepository.saveAndFlush(artikel);
+        } catch (DataIntegrityViolationException e) {
+            String grund = automatisch
+                    ? "Die Artikelnummer " + artikel.getArtikelnummer()
+                            + " wurde gerade für einen anderen Artikel vergeben. Bitte noch einmal auf „Artikel anlegen“ klicken."
+                    : "Die Artikelnummer „" + artikel.getArtikelnummer() + "“ ist schon vergeben.";
+            throw new ResponseStatusException(HttpStatus.CONFLICT, grund, e);
+        }
+    }
 
     /**
      * Legt einen Artikel an. Preis und Lieferanten-Artikelnummer gehören immer zu einem
@@ -97,7 +147,7 @@ public class ArtikelService implements ArtikelServiceContract {
     @Transactional
     public Artikel erstelleArtikel(ArtikelCreateDto dto) {
         String externeNummer = leerAlsNull(dto.getExterneArtikelnummer());
-        String artikelnummer = leerAlsNull(dto.getArtikelnummer());
+        String eigeneNummer = leerAlsNull(dto.getArtikelnummer());
         if ((dto.getPreis() != null || externeNummer != null) && dto.getLieferantId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Für Preis und Lieferanten-Artikelnummer bitte auch den Lieferanten wählen.");
@@ -105,16 +155,18 @@ public class ArtikelService implements ArtikelServiceContract {
         if (dto.getPreis() != null && dto.getPreis().signum() < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Preis darf nicht negativ sein.");
         }
-        if (artikelnummer != null) {
-            if (artikelnummer.length() > MAX_ARTIKELNUMMER) {
+        if (eigeneNummer != null) {
+            if (eigeneNummer.length() > MAX_ARTIKELNUMMER) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Die Artikelnummer darf höchstens " + MAX_ARTIKELNUMMER + " Zeichen lang sein.");
             }
-            if (artikelRepository.existsByArtikelnummerIgnoreCase(artikelnummer)) {
+            if (artikelRepository.existsByArtikelnummerIgnoreCase(eigeneNummer)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Die Artikelnummer „" + artikelnummer + "“ ist schon vergeben.");
+                        "Die Artikelnummer „" + eigeneNummer + "“ ist schon vergeben.");
             }
         }
+        // Ohne eigene Nummer vergibt das Programm die naechste freie.
+        String artikelnummer = eigeneNummer != null ? eigeneNummer : naechsteArtikelnummer();
         Lieferanten lieferant = null;
         if (dto.getLieferantId() != null) {
             lieferant = lieferantenRepository.findById(dto.getLieferantId())
@@ -140,8 +192,10 @@ public class ArtikelService implements ArtikelServiceContract {
             werkstoffRepository.findById(dto.getWerkstoffId())
                     .ifPresent(artikel::setWerkstoff);
         }
+        // Wie nach dem Bearbeiten: sonst findet die Suche den neuen Artikel nur ueber den Namen.
+        artikel.setSuchtext(ArtikelSuchtext.aufbauen(artikel));
 
-        Artikel saved = artikelRepository.save(artikel);
+        Artikel saved = speichereMitNummer(artikel, eigeneNummer == null);
 
         if (lieferant != null && (dto.getPreis() != null || externeNummer != null)) {
             LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
@@ -271,7 +325,8 @@ public class ArtikelService implements ArtikelServiceContract {
             throw ungueltig("Bitte einen Produktnamen eingeben.");
         }
         String nummer = text(r.getArtikelnummer(), 64, "Die Artikelnummer");
-        if (nummer != null && artikelRepository.findByArtikelnummer(nummer).filter(a -> !a.getId().equals(id)).isPresent()) {
+        // Wie beim Anlegen: Gross-/Kleinschreibung zaehlt nicht ("a-004143" = "A-004143").
+        if (nummer != null && artikelRepository.existsByArtikelnummerIgnoreCaseAndIdNot(nummer, id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Die Artikelnummer " + nummer + " gibt es schon bei einem anderen Artikel.");
         }
         String ean = EanPruefung.normalisiert(r.getEan());

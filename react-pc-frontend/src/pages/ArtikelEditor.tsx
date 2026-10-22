@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { RefreshCw, FolderPlus, Plus, Percent, Cuboid } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
@@ -14,6 +15,7 @@ import { WerkstoffPflege } from "../components/artikel/WerkstoffPflege";
 // ==================== MAIN COMPONENT ====================
 
 export default function ArtikelEditor() {
+    const navigate = useNavigate();
     // Filterleiste und Trefferliste stecken in ArtikelSuche - dieselbe Suche nutzt
     // das Auswahlfenster im Dokument-Editor. Hier bleibt nur das Seitengeruest.
     const sucheRef = useRef<ArtikelSucheHandle>(null);
@@ -101,7 +103,12 @@ export default function ArtikelEditor() {
             {showCreateModal && (
                 <CreateArticleModal
                     onClose={() => setShowCreateModal(false)}
-                    onSave={() => { sucheRef.current?.neuLaden(); setShowCreateModal(false); }}
+                    // Gleich auf die Seite des neuen Artikels: Dort geht es mit Preisen und
+                    // Angebotstexten weiter. "Zurueck" fuehrt wieder auf die Liste mit ihrer Suche.
+                    onSave={(artikel) => {
+                        setShowCreateModal(false);
+                        navigate(`/artikel/${encodeURIComponent(artikel.id)}`, { state: { vonListe: true } });
+                    }}
                 />
             )}
             {showCategoryManagerModal && (

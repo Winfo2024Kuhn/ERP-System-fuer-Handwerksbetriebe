@@ -217,9 +217,8 @@ class ArtikelStammdatenServiceTest {
     @Test
     void doppelteArtikelnummerGibt409() {
         gefunden();
-        Artikel anderer = new Artikel();
-        anderer.setId(8L);
-        when(artikelRepository.findByArtikelnummer("A-1")).thenReturn(Optional.of(anderer));
+        // Ein anderer Artikel hat "a-1" - Gross-/Kleinschreibung zaehlt nicht.
+        when(artikelRepository.existsByArtikelnummerIgnoreCaseAndIdNot("A-1", 7L)).thenReturn(true);
         ArtikelStammdatenRequest r = anfrage();
         r.setArtikelnummer("A-1");
 
@@ -230,7 +229,7 @@ class ArtikelStammdatenServiceTest {
     void eigeneArtikelnummerUndEanDuerfenStehenBleiben() {
         gefunden();
         speichernAktiv();
-        when(artikelRepository.findByArtikelnummer("A-1")).thenReturn(Optional.of(artikel));
+        when(artikelRepository.existsByArtikelnummerIgnoreCaseAndIdNot("A-1", 7L)).thenReturn(false);
         when(artikelRepository.findByEan("4006381333931")).thenReturn(Optional.of(artikel));
         ArtikelStammdatenRequest r = anfrage();
         r.setArtikelnummer("A-1");

@@ -13,7 +13,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
 public interface ArtikelServiceContract {
+    /** Legt einen Artikel an; ohne eigene Artikelnummer wird die naechste freie vergeben. */
     Artikel erstelleArtikel(ArtikelCreateDto dto);
+
+    /** Die Nummer, die ein neuer Artikel ohne eigene Nummer bekaeme ("A-004143"). Reserviert nichts. */
+    String naechsteArtikelnummer();
 
     List<Artikel> findeAlleByIds(List<Long> ids);
 

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
@@ -52,13 +53,34 @@ public class AufschlagService {
 
     @Transactional(readOnly = true)
     public Wirksam wirksamer(Artikel artikel) {
+        return wirksamer(artikel, this::allgemein);
+    }
+
+    /**
+     * Für Listen: Der allgemeine Aufschlag wird nur einmal gelesen und für alle Artikel der Liste verwendet, statt je Zeile neu aus den Einstellungen.
+     * Gedacht für die Dauer einer Anfrage, nicht zum Aufheben.
+     */
+    public Function<Artikel, Wirksam> fuerListe() {
+        BigDecimal[] gemerkt = new BigDecimal[1];
+        boolean[] gelesen = {false};
+        Supplier<BigDecimal> einmal = () -> {
+            if (!gelesen[0]) {
+                gemerkt[0] = allgemein();
+                gelesen[0] = true;
+            }
+            return gemerkt[0];
+        };
+        return artikel -> wirksamer(artikel, einmal);
+    }
+
+    private Wirksam wirksamer(Artikel artikel, Supplier<BigDecimal> allgemein) {
         if (artikel == null) {
             return new Wirksam(null, Quelle.KEINER, null);
         }
         if (artikel.getVerkaufsaufschlagProzent() != null) {
             return new Wirksam(artikel.getVerkaufsaufschlagProzent(), Quelle.ARTIKEL, null);
         }
-        return ausKategorieOderAllgemein(artikel.getKategorie(), this::allgemein);
+        return ausKategorieOderAllgemein(artikel.getKategorie(), allgemein);
     }
 
     @Transactional(readOnly = true)

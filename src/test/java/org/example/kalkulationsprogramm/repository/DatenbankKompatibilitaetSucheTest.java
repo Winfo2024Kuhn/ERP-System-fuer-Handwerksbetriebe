@@ -228,6 +228,33 @@ class DatenbankKompatibilitaetSucheTest {
         assertThat(fehler).as("Artikelsuchen, die auf dieser Datenbank scheitern oder anders sortieren").isEmpty();
     }
 
+    @Test
+    @DisplayName("Artikelsuche: Zahlen zählen als ganze Zahl, Komma gleich Punkt (regulärer Ausdruck in SQL)")
+    void artikelsucheZahlenAlsGanzeZahl() {
+        List<String> fehler = new ArrayList<>();
+        pruefen(fehler, "Artikel q=flachstahl 20x10", () -> {
+            for (String name : List.of("Flachstahl " + kennung + " 20 x 10", "Flachstahl " + kennung + " 120 x 10",
+                    "Flachstahl " + kennung + " 100 x 20", "Flachstahl " + kennung + " 20,5 x 10")) {
+                Artikel a = new Artikel();
+                a.setProduktname(name);
+                em.persist(a);
+            }
+            em.flush();
+            em.clear();
+            List<String> treffer = artikelSuche(k -> k.sucheArtikel("FLACHSTAHL " + kennung.toUpperCase(Locale.ROOT) + " 20x10",
+                    null, null, null, null, false, null, null, null, null, null, 0, 50, "produktname", "asc"));
+            List<String> komma = artikelSuche(k -> k.sucheArtikel("flachstahl " + kennung + " 20.5",
+                    null, null, null, null, false, null, null, null, null, null, 0, 50, "produktname", "asc"));
+            // Hochkomma im Zahlenpfad: darf weder scheitern noch etwas finden
+            List<String> hochkomma = artikelSuche(k -> k.sucheArtikel("flachstahl " + kennung + " 20' or '1'='1",
+                    null, null, null, null, false, null, null, null, null, null, 0, 50, "produktname", "asc"));
+            return treffer.equals(List.of("Flachstahl 20 x 10")) && komma.equals(List.of("Flachstahl 20,5 x 10"))
+                    && hochkomma.isEmpty()
+                    ? null : "gefunden " + treffer + " / " + komma + " / " + hochkomma;
+        });
+        assertThat(fehler).as("Zahlensuche, die auf dieser Datenbank scheitert").isEmpty();
+    }
+
     private List<String> artikelSuche(
             Function<ArtikelController, org.example.kalkulationsprogramm.dto.Artikel.ArtikelSearchResponseDto> suche) {
         return suche.apply(bauen(ArtikelController.class)).getArtikel().stream()

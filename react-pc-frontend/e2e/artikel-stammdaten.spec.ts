@@ -47,6 +47,9 @@ test('Artikelseite: Stammdaten ändern und Fehler vom Server verstehen', async (
     const mit = await stubApi(page, { doppelteNummer: true });
     await page.goto('/artikel/1');
 
+    // Bearbeitet wird im Reiter „Angaben zum Teil“
+    await page.getByRole('tab', { name: /Angaben zum Teil/ }).click();
+    await expect(page).toHaveURL(/#angaben$/);
     await page.getByRole('button', { name: 'Stammdaten bearbeiten' }).click();
     const form = page.getByTestId('artikel-stammdaten-form');
     await expect(form).toBeVisible();

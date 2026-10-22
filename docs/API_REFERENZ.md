@@ -638,7 +638,8 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| `POST` | `/` | Artikel anlegen |
+| `POST` | `/` | Artikel anlegen; ohne `artikelnummer` vergibt der Server die nächste freie (`A-` + sechs Ziffern) |
+| `GET` | `/naechste-artikelnummer` | Vorschau der nächsten automatischen Artikelnummer (`{"artikelnummer": "A-004143"}`), reserviert nichts |
 | `POST` | `/import/headers` | Spaltenköpfe einer Importdatei lesen |
 | `POST` | `/import/analyze` | Import mit Spaltenzuordnung vorab prüfen |
 | `POST` | `/import` | Artikel importieren (Lieferant, optional Kategorie und Preiskorrektur) |
@@ -647,7 +648,7 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `GET` | `/werkstoffe` | Alle Werkstoffe |
 | `GET` | `/werkstoffe/details` | Werkstoffe mit Details |
 | `GET` | `/match` | Passende Artikel zu Produktname und Produktlinie |
-| `GET` | `/` | Artikel suchen und filtern (seitenweise, sortierbar) |
+| `GET` | `/` | Artikel suchen und filtern (seitenweise, sortierbar); im Freitext `q` zählen Zahlen als ganze Zahl („20“ trifft nicht „120“), Komma = Punkt, Umlaut = Umschreibung |
 | `POST` | `/{id}/externe-nummer` | Artikelnummer eines Lieferanten hinterlegen |
 | `PATCH` | `/{id}/dokumenttexte` | Kurzbeschreibung, Kundentext und Verkaufsaufschlag ändern |
 | `PUT` | `/{id}/stammdaten` | Stammdaten ersetzen (Name, Nummern, EAN, Einheit, Kategorie, Werkstoff, Normen, Maße); 400 bei ungültigen Werten, 409 bei doppelter Nummer/EAN oder veraltetem Stand (`version`) |
@@ -1751,7 +1752,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 5 | `AnfrageFunnelController` | `/api/internal/anfrage` | 2 | 20 |
 | 6 | `ArbeitsgangController` | `/api/abteilungen`, `/api/arbeitsgaenge` (Klassen-Mapping nur `/api`) | 8 | 8 |
 | 7 | `ArbeitszeitartController` | `/api/arbeitszeitarten` | 7 | 8 |
-| 8 | `ArtikelController` | `/api/artikel` | 18 | 8 |
+| 8 | `ArtikelController` | `/api/artikel` | 21 | 8 |
 | 9 | `ArtikelKategorieController` | `/api/artikel/kategorien` | 6 | 8 |
 | 10 | `AusgangsGeschaeftsDokumentAuditController` | `/api/ausgangs-dokumente/audit` | 4 | 5 |
 | 11 | `AusgangsGeschaeftsDokumentController` | `/api/ausgangs-dokumente` | 19 | 5 |

@@ -72,7 +72,7 @@ class ArtikelStammdatenControllerTest {
         // Neutraler Default, damit diese Tests den Preisvorschlag nicht extra
         // stubben muessen - siehe ArtikelSuchePreisvorschlagTest fuer den
         // tatsaechlich berechneten Vorschlag.
-        when(artikelPositionsPreisService.berechne(any(), any()))
+        when(artikelPositionsPreisService.berechne(any(), any(), any()))
                 .thenReturn(new ArtikelPositionsPreisService.ArtikelPositionsVorschlag(
                         "Stk", null, ArtikelPreisHinweis.KEIN_PREIS));
     }

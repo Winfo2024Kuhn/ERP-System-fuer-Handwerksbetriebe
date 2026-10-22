@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.function.Function;
 import java.math.RoundingMode;
 
 /**
@@ -65,6 +66,14 @@ public class ArtikelPositionsPreisService {
                 : new AufschlagService.Wirksam(p, AufschlagService.Quelle.ARTIKEL, null);
     }
 
+    /**
+     * Fuer Listen: rechnet den geltenden Aufschlag je Artikel, liest den allgemeinen Aufschlag aber nur einmal.
+     * Nur fuer die Dauer einer Anfrage verwenden.
+     */
+    public Function<Artikel, AufschlagService.Wirksam> aufschlagFuerListe() {
+        return aufschlaege != null ? aufschlaege.fuerListe() : this::geltenderAufschlag;
+    }
+
     /** Vorschlag fuer eine Dokumentposition. {@code einzelpreis} ist {@code null}, wenn er nicht ermittelbar war. */
     public record ArtikelPositionsVorschlag(String einheit, BigDecimal einzelpreis, ArtikelPreisHinweis hinweis) {}
 
@@ -98,6 +107,14 @@ public class ArtikelPositionsPreisService {
      *              diese Zeile keinen gibt - dann {@link ArtikelPreisHinweis#KEIN_PREIS}
      */
     public ArtikelPositionsVorschlag berechne(Artikel artikel, LieferantenArtikelPreise preis) {
+        return berechne(artikel, preis, artikel == null ? null : geltenderAufschlag(artikel));
+    }
+
+    /**
+     * Wie {@link #berechne(Artikel, LieferantenArtikelPreise)}, mit schon ermitteltem Aufschlag -
+     * damit er je Artikel nur einmal bestimmt wird, wenn der Aufrufer ihn ohnehin braucht.
+     */
+    public ArtikelPositionsVorschlag berechne(Artikel artikel, LieferantenArtikelPreise preis, AufschlagService.Wirksam wirksam) {
         if (artikel == null) {
             return new ArtikelPositionsVorschlag("Stk", null, ArtikelPreisHinweis.KEIN_PREIS);
         }
@@ -121,7 +138,7 @@ public class ArtikelPositionsPreisService {
 
         BigDecimal basis = einkauf.multiply(faktor);
         // Das Genauere gewinnt: Artikel vor Kategorie vor allgemeinem Aufschlag (AufschlagService)
-        BigDecimal aufschlag = aufschlaege == null ? artikel.getVerkaufsaufschlagProzent() : aufschlaege.wirksamer(artikel).prozent();
+        BigDecimal aufschlag = wirksam == null ? null : wirksam.prozent();
         if (aufschlag == null) {
             return new ArtikelPositionsVorschlag(
                     positionsEinheit(artikel, einheit),
