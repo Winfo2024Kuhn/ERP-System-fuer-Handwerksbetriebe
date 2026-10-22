@@ -49,5 +49,29 @@ describe('MitarbeiterEditor – QR-Code neu erstellen', () => {
         await user.click(screen.getByRole('button', { name: 'Neu generieren' }));
         await user.click(await screen.findByRole('button', { name: 'Neuen Code erstellen' }));
         await waitFor(() => expect(regenerierungen()).toHaveLength(1));
+        expect(await screen.findByText('neuer-code')).toBeVisible();
+    });
+
+    it('zeigt den Code zum Abtippen und kopiert ihn, falls das Scannen nicht klappt', async () => {
+        const user = userEvent.setup();
+        const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+        render(<MemoryRouter><ConfirmProvider><ToastProvider><MitarbeiterEditor /></ToastProvider></ConfirmProvider></MemoryRouter>);
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await user.click(await screen.findByRole('button', { name: /QR-Code/ }));
+
+        expect(await screen.findByText('alter-code')).toBeVisible();
+        await user.click(screen.getByRole('button', { name: 'Code kopieren' }));
+        expect(writeText).toHaveBeenCalledWith('alter-code');
+    });
+
+    it('meldet, wenn der Browser das Kopieren verweigert', async () => {
+        const user = userEvent.setup();
+        vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('verweigert'));
+        render(<MemoryRouter><ConfirmProvider><ToastProvider><MitarbeiterEditor /></ToastProvider></ConfirmProvider></MemoryRouter>);
+        await user.click(await screen.findByText('Mustermann', { exact: true }));
+        await user.click(await screen.findByRole('button', { name: /QR-Code/ }));
+        await user.click(await screen.findByRole('button', { name: 'Code kopieren' }));
+
+        expect(await screen.findByText('Code konnte nicht kopiert werden. Bitte von Hand markieren und kopieren.')).toBeVisible();
     });
 });
