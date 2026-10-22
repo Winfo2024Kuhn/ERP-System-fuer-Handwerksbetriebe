@@ -7,12 +7,17 @@ import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelStammdatenRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
 public interface ArtikelServiceContract {
+    /** Legt einen Artikel an; ohne eigene Artikelnummer wird die naechste freie vergeben. */
     Artikel erstelleArtikel(ArtikelCreateDto dto);
+
+    /** Die Nummer, die ein neuer Artikel ohne eigene Nummer bekaeme ("A-004143"). Reserviert nichts. */
+    String naechsteArtikelnummer();
 
     List<Artikel> findeAlleByIds(List<Long> ids);
 
@@ -34,4 +39,12 @@ public interface ArtikelServiceContract {
      * @throws IllegalArgumentException bei unzulaessigen Werten
      */
     Artikel aktualisiereDokumenttexte(Long id, ArtikelDokumenttexteRequest request);
+
+    /**
+     * Ändert alle Stammdaten eines Artikels (vollständiges Ersetzen) und baut den Suchtext neu auf.
+     *
+     * @throws org.example.kalkulationsprogramm.exception.NotFoundException bei unbekannter ID
+     * @throws org.springframework.web.server.ResponseStatusException 400 bei ungültigen Werten, 409 bei Doppelung oder veraltetem Stand
+     */
+    Artikel aktualisiereStammdaten(Long id, ArtikelStammdatenRequest request);
 }

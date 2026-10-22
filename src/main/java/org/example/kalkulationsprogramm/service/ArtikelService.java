@@ -7,13 +7,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
+import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
+import org.example.kalkulationsprogramm.domain.Kategorie;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
+import org.example.kalkulationsprogramm.dto.Artikel.ArtikelStammdatenRequest;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.example.kalkulationsprogramm.repository.ArtikelRepository;
 import org.example.kalkulationsprogramm.repository.KategorieRepository;
@@ -25,10 +29,14 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.safety.Safelist;
 import org.springframework.data.domain.Page;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.stream.Collectors;
@@ -42,6 +50,10 @@ public class ArtikelService implements ArtikelServiceContract {
     private static final int MAX_KURZBESCHREIBUNG = 255;
     private static final int MAX_BESCHREIBUNG = 10_000;
     private static final BigDecimal MAX_AUFSCHLAG = new BigDecimal("999.99");
+    private static final BigDecimal MAX_MASS = new BigDecimal("100000");
+    private static final int MAX_STANDARDLAENGE = 30_000;
+    /** So lang ist die Spalte {@code artikel.produkttext}; längere Texte würden erst in der Datenbank scheitern. */
+    private static final int MAX_PRODUKTTEXT = 255;
 
     /**
      * Tags, die der TiptapEditor fuer die Beschreibung tatsaechlich erzeugt.
@@ -73,11 +85,58 @@ public class ArtikelService implements ArtikelServiceContract {
             "url\\(|expression\\(|position|@import|javascript:", Pattern.CASE_INSENSITIVE);
 
     private static final int MAX_ARTIKELNUMMER = 64;
+    private static final String AUTO_NUMMER_PRAEFIX = "A-";
+    /** Automatische Nummer: "A-" und nur Ziffern (hoechstens 12, damit die Zahl in ein long passt). */
+    private static final Pattern AUTO_NUMMER = Pattern.compile("A-(\\d{1,12})");
+    /** So viele Nummern nach der hoechsten werden hoechstens ausprobiert, falls sie anders geschrieben schon vergeben sind. */
+    private static final int MAX_NUMMER_VERSUCHE = 100;
 
     private final ArtikelRepository artikelRepository;
     private final KategorieRepository kategorieRepository;
     private final WerkstoffRepository werkstoffRepository;
     private final LieferantenRepository lieferantenRepository;
+
+    /**
+     * Die naechste freie automatische Artikelnummer: "A-" und die um eins hoehere
+     * Zahl der bisher hoechsten, sechsstellig ("A-004142" -> "A-004143"). Eigene
+     * Nummern in anderem Muster ("AL-FL-x100-20") zaehlen nicht mit.
+     *
+     * <p>Dient auch als Vorschau im Anlegen-Dialog; reserviert wird nichts.
+     */
+    @Transactional(readOnly = true)
+    public String naechsteArtikelnummer() {
+        long hoechste = artikelRepository.findeHoechsteAutomatischeArtikelnummern(PageRequest.of(0, 1)).stream()
+                .map(AUTO_NUMMER::matcher)
+                .filter(Matcher::matches)
+                .mapToLong(m -> Long.parseLong(m.group(1)))
+                .max()
+                .orElse(0L);
+        // Falls die naechste Nummer anders geschrieben schon vergeben ist (z. B. "a-004143"), weiterzaehlen.
+        for (int versuch = 1; versuch <= MAX_NUMMER_VERSUCHE; versuch++) {
+            String nummer = String.format("%s%06d", AUTO_NUMMER_PRAEFIX, hoechste + versuch);
+            if (!artikelRepository.existsByArtikelnummerIgnoreCase(nummer)) {
+                return nummer;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Es konnte keine freie Artikelnummer gefunden werden. Bitte eine eigene Nummer eintragen.");
+    }
+
+    /**
+     * Speichert den neuen Artikel sofort, damit eine gleichzeitig vergebene Nummer hier auffaellt
+     * und nicht erst beim Abschluss als unverstaendlicher Datenbankfehler.
+     */
+    private Artikel speichereMitNummer(Artikel artikel, boolean automatisch) {
+        try {
+            return artikelRepository.saveAndFlush(artikel);
+        } catch (DataIntegrityViolationException e) {
+            String grund = automatisch
+                    ? "Die Artikelnummer " + artikel.getArtikelnummer()
+                            + " wurde gerade für einen anderen Artikel vergeben. Bitte noch einmal auf „Artikel anlegen“ klicken."
+                    : "Die Artikelnummer „" + artikel.getArtikelnummer() + "“ ist schon vergeben.";
+            throw new ResponseStatusException(HttpStatus.CONFLICT, grund, e);
+        }
+    }
 
     /**
      * Legt einen Artikel an. Preis und Lieferanten-Artikelnummer gehören immer zu einem
@@ -88,7 +147,7 @@ public class ArtikelService implements ArtikelServiceContract {
     @Transactional
     public Artikel erstelleArtikel(ArtikelCreateDto dto) {
         String externeNummer = leerAlsNull(dto.getExterneArtikelnummer());
-        String artikelnummer = leerAlsNull(dto.getArtikelnummer());
+        String eigeneNummer = leerAlsNull(dto.getArtikelnummer());
         if ((dto.getPreis() != null || externeNummer != null) && dto.getLieferantId() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Für Preis und Lieferanten-Artikelnummer bitte auch den Lieferanten wählen.");
@@ -96,16 +155,18 @@ public class ArtikelService implements ArtikelServiceContract {
         if (dto.getPreis() != null && dto.getPreis().signum() < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Der Preis darf nicht negativ sein.");
         }
-        if (artikelnummer != null) {
-            if (artikelnummer.length() > MAX_ARTIKELNUMMER) {
+        if (eigeneNummer != null) {
+            if (eigeneNummer.length() > MAX_ARTIKELNUMMER) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Die Artikelnummer darf höchstens " + MAX_ARTIKELNUMMER + " Zeichen lang sein.");
             }
-            if (artikelRepository.existsByArtikelnummerIgnoreCase(artikelnummer)) {
+            if (artikelRepository.existsByArtikelnummerIgnoreCase(eigeneNummer)) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Die Artikelnummer „" + artikelnummer + "“ ist schon vergeben.");
+                        "Die Artikelnummer „" + eigeneNummer + "“ ist schon vergeben.");
             }
         }
+        // Ohne eigene Nummer vergibt das Programm die naechste freie.
+        String artikelnummer = eigeneNummer != null ? eigeneNummer : naechsteArtikelnummer();
         Lieferanten lieferant = null;
         if (dto.getLieferantId() != null) {
             lieferant = lieferantenRepository.findById(dto.getLieferantId())
@@ -131,8 +192,10 @@ public class ArtikelService implements ArtikelServiceContract {
             werkstoffRepository.findById(dto.getWerkstoffId())
                     .ifPresent(artikel::setWerkstoff);
         }
+        // Wie nach dem Bearbeiten: sonst findet die Suche den neuen Artikel nur ueber den Namen.
+        artikel.setSuchtext(ArtikelSuchtext.aufbauen(artikel));
 
-        Artikel saved = artikelRepository.save(artikel);
+        Artikel saved = speichereMitNummer(artikel, eigeneNummer == null);
 
         if (lieferant != null && (dto.getPreis() != null || externeNummer != null)) {
             LieferantenArtikelPreise preis = new LieferantenArtikelPreise();
@@ -238,6 +301,126 @@ public class ArtikelService implements ArtikelServiceContract {
         }
 
         return artikelRepository.save(artikel);
+    }
+
+    /**
+     * Ändert alle Stammdaten eines Artikels (vollständiges Ersetzen: Was fehlt, wird geleert). Texte für Angebote, Aufschlag,
+     * Lieferanten, Preise und Dokumente bleiben unberührt. Der Suchtext wird neu aufgebaut.
+     *
+     * @throws NotFoundException bei unbekannter ID
+     * @throws ResponseStatusException 400 bei ungültigen Werten, 409 bei doppelter Artikelnummer/EAN oder veraltetem Stand
+     */
+    @Override
+    @Transactional
+    public Artikel aktualisiereStammdaten(Long id, ArtikelStammdatenRequest r) {
+        Artikel artikel = artikelRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Artikel " + id + " nicht gefunden"));
+        // Der Stand ist Pflicht, sonst würde ein vollständiges Ersetzen still fremde Änderungen überschreiben
+        if (artikel.getVersion() != null && !artikel.getVersion().equals(r.getVersion())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Der Artikel wurde inzwischen von jemand anderem geändert. Bitte die Seite neu laden und noch einmal versuchen.");
+        }
+        String name = text(r.getProduktname(), 255, "Der Produktname");
+        if (name == null) {
+            throw ungueltig("Bitte einen Produktnamen eingeben.");
+        }
+        String nummer = text(r.getArtikelnummer(), 64, "Die Artikelnummer");
+        // Wie beim Anlegen: Gross-/Kleinschreibung zaehlt nicht ("a-004143" = "A-004143").
+        if (nummer != null && artikelRepository.existsByArtikelnummerIgnoreCaseAndIdNot(nummer, id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Die Artikelnummer " + nummer + " gibt es schon bei einem anderen Artikel.");
+        }
+        String ean = EanPruefung.normalisiert(r.getEan());
+        pruefeEan(ean, id);
+        if (r.getVerpackungseinheit() != null && r.getVerpackungseinheit() < 0) {
+            throw ungueltig("Die Verpackungseinheit darf nicht negativ sein.");
+        }
+
+        artikel.setProduktname(name);
+        artikel.setProduktlinie(text(r.getProduktlinie(), 255, "Die Produktlinie"));
+        artikel.setProdukttext(text(r.getProdukttext(), MAX_PRODUKTTEXT, "Die Beschreibung"));
+        artikel.setArtikelnummer(nummer);
+        artikel.setEan(ean);
+        artikel.setVerpackungseinheit(r.getVerpackungseinheit());
+        artikel.setPreiseinheit(text(r.getPreiseinheit(), 255, "Die Preiseinheit"));
+        artikel.setVerrechnungseinheit(r.getVerrechnungseinheit());
+        artikel.setKategorie(kategorie(r.getKategorieId()));
+        artikel.setWerkstoff(r.getWerkstoffId() == null ? null : werkstoffRepository.findById(r.getWerkstoffId())
+                .orElseThrow(() -> ungueltig("Der gewählte Werkstoff gibt es nicht.")));
+        artikel.setProfilform(r.getProfilform());
+        artikel.setHerstellverfahren(r.getHerstellverfahren());
+        artikel.setFertigungszustand(r.getFertigungszustand());
+        artikel.setMassnorm(text(r.getMassnorm(), 64, "Die Maßnorm"));
+        artikel.setWerkstoffnorm(text(r.getWerkstoffnorm(), 64, "Die Werkstoffnorm"));
+        // Leer = vom Werkstoff übernehmen; sonst gilt die Eignung nur für diesen Artikel
+        artikel.setVerzinkungsgeeignet(r.getVerzinkungsgeeignet());
+        artikel.setPulverbeschichtungsgeeignet(r.getPulverbeschichtungsgeeignet());
+
+        // Maße gibt es nur bei Halbzeug; andere Artikel ignorieren sie
+        if (artikel instanceof ArtikelWerkstoffe aw) {
+            aw.setDurchmesser(mass(r.getDurchmesser(), "Der Durchmesser"));
+            aw.setHoehe(mass(r.getHoehe(), "Die Höhe"));
+            aw.setBreite(mass(r.getBreite(), "Die Breite"));
+            aw.setWandstaerke(mass(r.getWandstaerke(), "Die Wandstärke"));
+            aw.setStegdicke(mass(r.getStegdicke(), "Die Stegdicke"));
+            aw.setFlanschdicke(mass(r.getFlanschdicke(), "Die Flanschdicke"));
+            Integer laenge = r.getStandardlaenge();
+            if (laenge != null && (laenge < 1 || laenge > MAX_STANDARDLAENGE)) {
+                throw ungueltig("Die Standardlänge muss zwischen 1 und " + MAX_STANDARDLAENGE + " mm liegen.");
+            }
+            aw.setStandardlaenge(laenge);
+        }
+        artikel.setSuchtext(ArtikelSuchtext.aufbauen(artikel));
+        return artikelRepository.save(artikel);
+    }
+
+    /** Kategorie zur ID; eine unbekannte oder zu große ID ist ein Eingabefehler (400), kein Serverfehler. */
+    private Kategorie kategorie(Long id) {
+        if (id == null) {
+            return null;
+        }
+        if (id < 0 || id > Integer.MAX_VALUE) {
+            throw ungueltig("Die gewählte Kategorie gibt es nicht.");
+        }
+        return kategorieRepository.findById(id.intValue())
+                .orElseThrow(() -> ungueltig("Die gewählte Kategorie gibt es nicht."));
+    }
+
+    /** Prüft Prüfziffer und Eindeutigkeit einer EAN; {@code eigeneId} ist der Artikel, der sie schon tragen darf. */
+    private void pruefeEan(String ean, Long eigeneId) {
+        String fehler = EanPruefung.fehler(ean);
+        if (fehler != null) {
+            throw ungueltig(fehler);
+        }
+        if (ean != null && artikelRepository.findByEan(ean).filter(a -> !a.getId().equals(eigeneId)).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Die EAN " + ean + " gehört schon zu einem anderen Artikel.");
+        }
+    }
+
+    /** Text bereinigen: leer wird {@code null}, zu lang wird abgelehnt. */
+    private static String text(String wert, int max, String name) {
+        if (wert == null || wert.isBlank()) {
+            return null;
+        }
+        String s = wert.strip();
+        if (s.length() > max) {
+            throw ungueltig(name + " darf höchstens " + max + " Zeichen lang sein.");
+        }
+        return s;
+    }
+
+    /** Maß in mm: leer ist erlaubt, sonst muss es zwischen 0 und 100000 liegen. */
+    private static BigDecimal mass(BigDecimal wert, String name) {
+        if (wert == null) {
+            return null;
+        }
+        if (wert.signum() < 0 || wert.compareTo(MAX_MASS) > 0) {
+            throw ungueltig(name + " muss zwischen 0 und " + MAX_MASS.toPlainString() + " mm liegen.");
+        }
+        return wert;
+    }
+
+    private static ResponseStatusException ungueltig(String text) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, text);
     }
 
     /** Laesst nur die Formatierung durch, die der TiptapEditor erzeugt. */

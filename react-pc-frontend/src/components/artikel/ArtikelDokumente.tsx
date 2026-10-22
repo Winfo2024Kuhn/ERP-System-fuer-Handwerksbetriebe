@@ -12,6 +12,8 @@ import { ARTIKEL_DOKUMENT_TYPEN, type ArtikelDokument, type ArtikelDokumentTyp }
 
 interface ArtikelDokumenteProps {
     artikelId: number;
+    /** Nach Hochladen oder Löschen - z. B. damit die Übersicht das neue Vorschaubild zeigt. */
+    onGeaendert?: () => void;
 }
 
 const BILD_ENDUNGEN = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
@@ -55,7 +57,7 @@ async function leseFehlermeldung(res: Response, fallback: string): Promise<strin
  * Fuer Zukaufteile wie Handlaufhalter oder Glasklemmen zeigt das Bild, welches
  * Teil gemeint ist - Zulassung und Zeichnung braucht der Monteur beim Einbau.
  */
-export function ArtikelDokumente({ artikelId }: ArtikelDokumenteProps) {
+export function ArtikelDokumente({ artikelId, onGeaendert }: ArtikelDokumenteProps) {
     const toast = useToast();
     const confirm = useConfirm();
 
@@ -114,6 +116,7 @@ export function ArtikelDokumente({ artikelId }: ArtikelDokumenteProps) {
             throw new Error(await leseFehlermeldung(res, "Die Datei konnte nicht hochgeladen werden."));
         }
         await laden();
+        onGeaendert?.();
     };
 
     const bildAuswaehlen = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,6 +175,7 @@ export function ArtikelDokumente({ artikelId }: ArtikelDokumenteProps) {
             if (!res.ok) throw new Error(await leseFehlermeldung(res, "Die Datei konnte nicht gelöscht werden."));
             setDokumente((prev) => prev.filter((d) => d.id !== dok.id));
             toast.success("Die Datei ist gelöscht.");
+            onGeaendert?.();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Die Datei konnte nicht gelöscht werden.");
         } finally {

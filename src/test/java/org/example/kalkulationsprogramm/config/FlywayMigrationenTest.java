@@ -76,7 +76,10 @@ class FlywayMigrationenTest {
             Map.entry("V432__kunde_anonymisiert.sql", 755312716),
             Map.entry("V433__feiertage_bundesland.sql", 907020182),
             Map.entry("V434__offener_posten_gutschrift.sql", -1881398446),
-            Map.entry("V435__telefonbuch_zuordnung.sql", 1166440287));
+            Map.entry("V435__telefonbuch_zuordnung.sql", 1166440287),
+            Map.entry("V436__artikel_ean.sql", 368622790),
+            Map.entry("V437__abteilung_darf_aufschlaege_aendern.sql", -1027148804),
+            Map.entry("V438__kategorie_aufschlag.sql", 361623221));
 
     private static final char BOM = 0xFEFF;
 
