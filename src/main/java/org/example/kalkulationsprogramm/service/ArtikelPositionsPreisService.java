@@ -5,6 +5,8 @@ import org.example.kalkulationsprogramm.domain.ArtikelPreisHinweis;
 import org.example.kalkulationsprogramm.domain.ArtikelWerkstoffe;
 import org.example.kalkulationsprogramm.domain.LieferantenArtikelPreise;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -22,13 +24,46 @@ import java.math.RoundingMode;
  * <p>Bleche sind der eine Sonderfall: Sie tragen kein Gewicht je Meter, sondern
  * je Quadratmeter, und rechnen deshalb in m2.
  *
- * <p>Der Service ist bewusst zustandslos und ohne Abhaengigkeiten - er rechnet
- * nur. Dadurch laesst er sich ohne Spring-Kontext testen.
+ * <p>Der Service rechnet nur und haelt keinen Zustand. Er kennt hoechstens die
+ * {@link AufschlagService Aufschlagsregeln} und laesst sich auch ohne sie (ohne
+ * Spring-Kontext) testen: dann zaehlt nur der Aufschlag am Artikel.
  */
 @Service
 public class ArtikelPositionsPreisService {
 
     private static final BigDecimal HUNDERT = new BigDecimal("100");
+
+    /** Wer den allgemeinen und den Kategorie-Aufschlag kennt; {@code null} (ohne Spring, in Tests): nur der Aufschlag am Artikel zaehlt. */
+    private final AufschlagService aufschlaege;
+
+    /** Ohne Aufschlagsregeln: nur der Aufschlag am Artikel zaehlt. */
+    public ArtikelPositionsPreisService() {
+        this((AufschlagService) null);
+    }
+
+    /** Mit bekannten Aufschlagsregeln (für Tests und direkte Aufrufer). */
+    public ArtikelPositionsPreisService(AufschlagService aufschlaege) {
+        this.aufschlaege = aufschlaege;
+    }
+
+    /**
+     * Konstruktor für Spring: Die Aufschlagsregeln sind im laufenden Programm immer da. Kontexte ohne sie (zum Beispiel Tests, die nur einen Ausschnitt laden)
+     * bekommen keinen Fehler, sondern rechnen wie früher nur mit dem Aufschlag am Artikel.
+     */
+    @Autowired
+    public ArtikelPositionsPreisService(ObjectProvider<AufschlagService> aufschlaege) {
+        this(aufschlaege.getIfAvailable());
+    }
+
+    /** Der Aufschlag, der fuer den Artikel gilt, und woher er kommt. Ohne Aufschlagsregeln zaehlt nur der am Artikel. */
+    public AufschlagService.Wirksam geltenderAufschlag(Artikel artikel) {
+        if (aufschlaege != null) {
+            return aufschlaege.wirksamer(artikel);
+        }
+        BigDecimal p = artikel.getVerkaufsaufschlagProzent();
+        return p == null ? new AufschlagService.Wirksam(null, AufschlagService.Quelle.KEINER, null)
+                : new AufschlagService.Wirksam(p, AufschlagService.Quelle.ARTIKEL, null);
+    }
 
     /** Vorschlag fuer eine Dokumentposition. {@code einzelpreis} ist {@code null}, wenn er nicht ermittelbar war. */
     public record ArtikelPositionsVorschlag(String einheit, BigDecimal einzelpreis, ArtikelPreisHinweis hinweis) {}
@@ -85,7 +120,8 @@ public class ArtikelPositionsPreisService {
         }
 
         BigDecimal basis = einkauf.multiply(faktor);
-        BigDecimal aufschlag = artikel.getVerkaufsaufschlagProzent();
+        // Das Genauere gewinnt: Artikel vor Kategorie vor allgemeinem Aufschlag (AufschlagService)
+        BigDecimal aufschlag = aufschlaege == null ? artikel.getVerkaufsaufschlagProzent() : aufschlaege.wirksamer(artikel).prozent();
         if (aufschlag == null) {
             return new ArtikelPositionsVorschlag(
                     positionsEinheit(artikel, einheit),

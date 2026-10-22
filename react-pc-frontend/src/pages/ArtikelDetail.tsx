@@ -13,6 +13,7 @@ import { useToast } from "../components/ui/toast";
 import { TiptapEditor } from "../components/TiptapEditor";
 import { preisHinweisText, type PreisHinweis } from "../components/artikel/preisHinweis";
 import { ArtikelDokumente } from "../components/artikel/ArtikelDokumente";
+import { ArtikelStammdatenForm } from "../components/artikel/ArtikelStammdatenForm";
 // Dieselbe Waehrungsformatierung wie in der Trefferliste - inklusive der
 // zusaetzlichen Nachkommastellen bei Kleinstpreisen (Schrauben, Muttern).
 import { formatCurrency as formatEuro } from "../components/artikel/formatCurrency";
@@ -62,6 +63,14 @@ const letzteKategorie = (pfad?: string) => pfad?.split(">").pop()?.trim() || und
  * den Preisverlauf. Preise koennen hier von Hand nachgetragen werden - etwa nach
  * einem Telefonat, wenn kein Angebot per Mail vorliegt.
  */
+/** Was gilt, wenn am Artikel selbst kein Aufschlag steht: der der Kategorie, sonst der allgemeine. */
+function geltenderAufschlagText(a: Artikel): string {
+    const prozent = a.wirksamProzent == null ? "" : `${formatZahl(a.wirksamProzent, 2)} %`;
+    if (a.wirksamQuelle === "KATEGORIE") return `Leer: es gilt ${prozent} von „${a.wirksamVon || "Kategorie"}“.`;
+    if (a.wirksamQuelle === "ALLGEMEIN") return `Leer: es gilt der allgemeine Aufschlag von ${prozent}.`;
+    return "Leer: es gilt kein Aufschlag, der Preis ist der Einkaufspreis.";
+}
+
 export default function ArtikelDetail() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
@@ -111,6 +120,8 @@ export default function ArtikelDetail() {
     const [beschreibung, setBeschreibung] = useState("");
     const [aufschlag, setAufschlag] = useState<string>("");
     const [speichern, setSpeichern] = useState(false);
+    // Stammdaten bearbeiten (Name, Nummern, Einheit, Kategorie, Maße ...)
+    const [stammdatenBearbeiten, setStammdatenBearbeiten] = useState(false);
 
     const laden = useCallback(async () => {
         if (!id) return;
@@ -302,9 +313,25 @@ export default function ArtikelDetail() {
                         <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
                         Aktualisieren
                     </Button>
+                    {!stammdatenBearbeiten && (
+                        <Button size="sm" onClick={() => setStammdatenBearbeiten(true)}>
+                            <Pencil className="w-4 h-4 mr-2" aria-hidden="true" />
+                            Stammdaten bearbeiten
+                        </Button>
+                    )}
                 </div>
             }
         >
+            {/* ============ Stammdaten bearbeiten ============ */}
+            {stammdatenBearbeiten && (
+                <ArtikelStammdatenForm
+                    key={`${artikel.id}-${artikel.version ?? 0}`}
+                    artikel={artikel}
+                    onAbbrechen={() => setStammdatenBearbeiten(false)}
+                    onGespeichert={() => { setStammdatenBearbeiten(false); void laden(); }}
+                />
+            )}
+
             {/* ============ Was ist das für ein Teil? ============ */}
             <section className="bg-white border border-slate-200 rounded-lg p-5">
                 <h2 className="text-lg font-semibold text-slate-900 mb-4">Was ist das für ein Teil?</h2>
@@ -317,6 +344,8 @@ export default function ArtikelDetail() {
                 </div>
 
                 <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm">
+                    <Datenfeld label="Artikelnummer" wert={artikel.artikelnummer} />
+                    <Datenfeld label="EAN / Strichcode" wert={artikel.ean ?? undefined} />
                     <Datenfeld label="Abmessung" wert={artikel.abmessung} />
                     <Datenfeld label="Durchmesser" wert={artikel.durchmesser ? `${formatZahl(artikel.durchmesser, 1)} mm` : undefined} />
                     <Datenfeld label="Wandstärke" wert={artikel.wandstaerke ? `${formatZahl(artikel.wandstaerke, 1)} mm` : undefined} />
@@ -342,8 +371,8 @@ export default function ArtikelDetail() {
                     Was mit diesem Werkstoff möglich ist — wichtig für die Kalkulation.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
-                    <Eignung ok={!!artikel.verzinkungsgeeignet} text="Feuerverzinken" />
-                    <Eignung ok={!!artikel.pulverbeschichtungsgeeignet} text="Pulverbeschichten" />
+                    <Eignung ok={!!artikel.verzinkungsgeeignet} text="Feuerverzinken" quelle={eignungsQuelle(artikel.verzinkungsgeeignetEigen)} />
+                    <Eignung ok={!!artikel.pulverbeschichtungsgeeignet} text="Pulverbeschichten" quelle={eignungsQuelle(artikel.pulverbeschichtungsgeeignetEigen)} />
                 </div>
                 {artikel.beschichtungshinweis && (
                     <p className="text-sm text-slate-600 mt-3">{artikel.beschichtungshinweis}</p>
@@ -391,6 +420,9 @@ export default function ArtikelDetail() {
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">%</span>
                         </div>
+                        {aufschlag === "" && (
+                            <p className="text-xs text-slate-500" data-testid="aufschlag-wirksam">{geltenderAufschlagText(daten.artikel)}</p>
+                        )}
                     </div>
 
                     {hinweis === "OK" ? (
@@ -602,7 +634,10 @@ function Datenfeld({ label, wert, hinweis }: { label: string; wert?: string | nu
 }
 
 /** Eignung mit Symbol UND Text - Farbe allein darf die Aussage nicht tragen. */
-function Eignung({ ok, text }: { ok: boolean; text: string }) {
+/** Woher die Eignung kommt: vom Werkstoff oder für diesen Artikel festgelegt. */
+const eignungsQuelle = (eigen?: boolean | null) => (eigen == null ? "vom Werkstoff" : "für diesen Artikel festgelegt");
+
+function Eignung({ ok, text, quelle }: { ok: boolean; text: string; quelle?: string }) {
     return (
         <div className={`flex items-center gap-2 rounded-lg border px-4 py-3 ${
             ok ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"
@@ -613,7 +648,8 @@ function Eignung({ ok, text }: { ok: boolean; text: string }) {
             <div>
                 <p className={`text-sm font-semibold ${ok ? "text-emerald-800" : "text-slate-700"}`}>{text}</p>
                 <p className={`text-xs ${ok ? "text-emerald-700" : "text-slate-500"}`}>
-                    {ok ? "möglich" : "nicht möglich"}
+                    <span>{ok ? "möglich" : "nicht möglich"}</span>
+                    {quelle && <span className="text-slate-500" data-testid="eignung-quelle"> ({quelle})</span>}
                 </p>
             </div>
         </div>

@@ -92,7 +92,7 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 `@PreAuthorize` wird nirgends verwendet. Feinere Rechte prüfen die Controller
 bzw. Services selbst, meist über die Abteilungsrechte: Belege und Kasse,
 sichtbare Lieferanten-Dokumenttypen, Eingangsrechnungen sehen/genehmigen,
-Telefon (`darfTelefonSehen`), Monatsabschluss, sichtbare Postfächer und
+Telefon (`darfTelefonSehen`), Aufschläge ändern (`darfAufschlaegeAendern`, Administratoren immer), Monatsabschluss, sichtbare Postfächer und
 Anmeldecodes der Mitarbeiter.
 
 **Mit Handy-Token erlaubt** (`MobileApiPolicy`, abschließende Liste):
@@ -650,12 +650,35 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `GET` | `/` | Artikel suchen und filtern (seitenweise, sortierbar) |
 | `POST` | `/{id}/externe-nummer` | Artikelnummer eines Lieferanten hinterlegen |
 | `PATCH` | `/{id}/dokumenttexte` | Kurzbeschreibung, Kundentext und Verkaufsaufschlag ändern |
+| `PUT` | `/{id}/stammdaten` | Stammdaten ersetzen (Name, Nummern, EAN, Einheit, Kategorie, Werkstoff, Normen, Maße); 400 bei ungültigen Werten, 409 bei doppelter Nummer/EAN oder veraltetem Stand (`version`) |
 | `GET` | `/{id}/detail` | Artikel mit allen Lieferantenpreisen und Preisverlauf |
 | `POST` | `/{id}/dokumente` | Vorschaubild oder Zusatzdokument (Zulassung, Zeichnung, Datenblatt …) hochladen |
 | `GET` | `/{id}/dokumente` | Dokumente eines Artikels |
 | `GET` | `/dokumente/{dokumentId}/datei` | Datei eines Artikel-Dokuments |
 | `DELETE` | `/dokumente/{dokumentId}` | Artikel-Dokument löschen |
 | `GET` | `/filteroptionen` | Auswahlwerte für die Filterleiste mit Klartext |
+
+### AufschlagController
+
+**Basis-URL:** `/api/aufschlaege`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/berechtigung` | Darf der angemeldete Benutzer die Aufschläge ändern? (`{“darfAendern”: true/false}`, für jeden angemeldeten Benutzer) |
+| `GET` | `/` | Allgemeiner Aufschlag und je Artikelkategorie der eigene und der geltende Aufschlag *(Recht „Aufschläge ändern” oder Admin, sonst 403)* |
+| `PUT` | `/allgemein` | Allgemeinen Aufschlag setzen, `prozent` leer = keiner (0 bis 999,99; 400 sonst) *(Recht oder Admin)* |
+| `PUT` | `/kategorien/{id}` | Aufschlag einer Kategorie setzen, `prozent` leer = keiner; 404 bei unbekannter Kategorie *(Recht oder Admin)* |
+
+### WerkstoffController
+
+**Basis-URL:** `/api/werkstoffe`
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Alle Werkstoffe mit der Zahl der Artikel, die sie benutzen |
+| `POST` | `/` | Werkstoff anlegen (Name Pflicht und eindeutig, Dichte 0,1 bis 25 kg/dm³); 400 bei ungültigen Werten, 409 bei doppeltem Namen |
+| `PUT` | `/{id}` | Werkstoff ändern; 400 bei ungültigen Werten, 404 bei unbekannter ID, 409 bei doppeltem Namen |
+| `DELETE` | `/{id}` | Werkstoff löschen; 409, solange Artikel ihn benutzen |
 
 ### ArtikelKategorieController
 

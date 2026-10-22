@@ -55,6 +55,10 @@ public class ArtikelResponseDto {
     // Technische Stammdaten
     // ------------------------------------------------------------------
     private String artikelnummer;
+    /** Strichcode, nur bei einem Teil der Artikel vorhanden. */
+    private String ean;
+    /** Stand des Datensatzes für das Ändern der Stammdaten. */
+    private Long version;
     private Profilform profilform;
     private Herstellverfahren herstellverfahren;
     private Fertigungszustand fertigungszustand;
@@ -65,6 +69,8 @@ public class ArtikelResponseDto {
     private BigDecimal hoehe;
     private BigDecimal breite;
     private BigDecimal wandstaerke;
+    private BigDecimal stegdicke;
+    private BigDecimal flanschdicke;
     /** Kurzform der Abmessung fuer die Anzeige, z.B. "42,4 x 2". */
     private String abmessung;
 
@@ -78,6 +84,15 @@ public class ArtikelResponseDto {
 
     /** Aufschlag auf den Einkaufspreis in Prozent. */
     private BigDecimal verkaufsaufschlagProzent;
+
+    /** Der Aufschlag, der tatsaechlich gilt (Artikel, sonst Kategorie, sonst allgemein); {@code null} = keiner. */
+    private BigDecimal wirksamProzent;
+
+    /** Woher er kommt: ARTIKEL, KATEGORIE, ALLGEMEIN oder KEINER. */
+    private String wirksamQuelle;
+
+    /** Bei {@code KATEGORIE}: Name der Kategorie, deren Aufschlag gilt. */
+    private String wirksamVon;
 
     // --- Preisvorschlag fuer die Dokumentposition ----------------------
     // Diese drei versorgen das Auswahlfenster im DocumentEditor. Sie stehen
@@ -106,6 +121,12 @@ public class ArtikelResponseDto {
     private boolean verzinkungsgeeignet;
     /** Pulverbeschichten moeglich. */
     private boolean pulverbeschichtungsgeeignet;
+    /** Nur für diesen Artikel festgelegte Eignung (leer = vom Werkstoff übernommen). */
+    private Boolean verzinkungsgeeignetEigen;
+    private Boolean pulverbeschichtungsgeeignetEigen;
+    /** Was der Werkstoff vorgibt (leer = der Artikel hat keinen Werkstoff). */
+    private Boolean werkstoffVerzinkungsgeeignet;
+    private Boolean werkstoffPulverbeschichtungsgeeignet;
     /** Erklaerung, warum eine Beschichtung geht oder nicht. */
     private String beschichtungshinweis;
 

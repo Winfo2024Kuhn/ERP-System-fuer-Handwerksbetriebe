@@ -36,6 +36,7 @@ Unter **Einstellungen → Berechtigungen**, Karte „Rechte pro Abteilung“, f�
 - **„Dokumente & Belege“:** je Belegart (Angebot, Auftragsbestätigung, Lieferschein, Rechnung, Gutschrift, Sonstiges, Belege für Kasse und Bank, Werkstoffzeugnis) „Sehen“ und „Scannen“ (mit dem Handy hochladen).
 - **„Eingangsrechnungen“:** „Rechnungen genehmigen“ oder „Genehmigte Rechnungen sehen“.
 - **„Zeiterfassung, Monatsabschluss & Telefon“:** „Zeiterfassung im Menü sehen“, „Monate abschließen und wieder öffnen“ sowie „Anrufe & Anrufbeantworter“.
+- **„Preise“:** „Aufschläge ändern“. Wer das Recht hat (die Abteilung angehakt oder Admin), sieht in der Artikelübersicht den Knopf „Aufschläge“. Alle anderen sehen den Knopf nicht. Der Aufschlag direkt am Artikel („Angebotsfelder“) bleibt davon unberührt und kann weiterhin jeder ändern. Neue Abteilungen haben das Recht zunächst nicht.
 - **„Push-Nachrichten aufs Handy“:** „Kunde hat angenommen“ und „Neue Anfrage über Webseite“.
 
 Die Rechte wirken über den Mitarbeiter, mit dem ein Benutzer verknüpft ist. Ein Benutzer ohne verknüpften Mitarbeiter bekommt diese Rechte nicht – auch ein Admin braucht für Monatsabschluss und Telefon ein solches Abteilungsrecht.

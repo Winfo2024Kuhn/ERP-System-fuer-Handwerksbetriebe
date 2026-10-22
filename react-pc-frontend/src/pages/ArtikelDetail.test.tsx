@@ -324,6 +324,40 @@ describe('ArtikelDetail', () => {
         expect(await screen.findByText(/Kein Aufschlag hinterlegt/)).toBeInTheDocument();
     });
 
+    it('erklärt bei leerem Aufschlag am Artikel, welcher stattdessen gilt', async () => {
+        mockFetchDetail({
+            artikel: { id: 9, produktname: 'Rundrohr', positionsEinheit: 'lfm', positionsEinzelpreis: 12.5, preisHinweis: 'OK',
+                wirksamProzent: 25, wirksamQuelle: 'KATEGORIE', wirksamVon: 'Stahl' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+
+        expect(await screen.findByTestId('aufschlag-wirksam')).toHaveTextContent('Leer: es gilt 25 % von „Stahl“.');
+    });
+
+    it('nennt den allgemeinen Aufschlag und schweigt, wenn der Artikel einen eigenen hat', async () => {
+        mockFetchDetail({
+            artikel: { id: 9, produktname: 'Rundrohr', preisHinweis: 'OK', wirksamProzent: 20, wirksamQuelle: 'ALLGEMEIN' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+        const { unmount } = render(<ArtikelDetail />, { wrapper: Wrapper });
+        expect(await screen.findByTestId('aufschlag-wirksam')).toHaveTextContent('Leer: es gilt der allgemeine Aufschlag von 20 %.');
+        unmount();
+
+        mockFetchDetail({
+            artikel: { id: 9, produktname: 'Rundrohr', preisHinweis: 'OK', verkaufsaufschlagProzent: 40, wirksamProzent: 40, wirksamQuelle: 'ARTIKEL' },
+            lieferanten: [],
+            preisverlauf: [],
+        });
+        render(<ArtikelDetail />, { wrapper: Wrapper });
+        const feld = await screen.findByLabelText('Aufschlag auf den Einkaufspreis');
+        await waitFor(() => expect(feld).toHaveValue(40));
+        expect(screen.queryByTestId('aufschlag-wirksam')).not.toBeInTheDocument();
+    });
+
     it('speichert die Angebotsfelder über den PATCH-Endpunkt', async () => {
         mockFetchDetail({
             artikel: { id: 7, produktname: 'T-Stahl', preisHinweis: 'KEIN_AUFSCHLAG' },
@@ -586,5 +620,46 @@ describe('ArtikelDetail', () => {
         await waitFor(() => expect(fetchMock.mock.calls.some(([, o]) => o?.method === 'PATCH')).toBe(true));
         const patch = fetchMock.mock.calls.find(([, o]) => o?.method === 'PATCH');
         expect(JSON.parse(String(patch?.[1]?.body)).verkaufsaufschlagProzent).toBe(12.5);
+    });
+
+    it('zeigt Artikelnummer und EAN bei den Angaben zum Teil', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve(url.includes('/dokumente') ? [] : { ...detailAntwort, artikel: { ...detailAntwort.artikel, ean: '4006381333931' } }),
+        })));
+        renderSeite();
+
+        expect(await screen.findByText('EAN / Strichcode')).toBeVisible();
+        expect(screen.getByText('4006381333931')).toBeVisible();
+    });
+
+    it('öffnet und schließt die Maske zum Bearbeiten der Stammdaten', async () => {
+        const user = userEvent.setup();
+        renderSeite();
+
+        await user.click(await screen.findByRole('button', { name: /Stammdaten bearbeiten/ }));
+        const maske = await screen.findByTestId('artikel-stammdaten-form');
+        expect(within(maske).getByLabelText('Produktname *')).toHaveValue('42.4x2');
+        // Solange die Maske offen ist, gibt es den Knopf nicht ein zweites Mal
+        expect(screen.queryByRole('button', { name: /Stammdaten bearbeiten/ })).toBeNull();
+
+        await user.click(within(maske).getByRole('button', { name: 'Abbrechen' }));
+        expect(screen.queryByTestId('artikel-stammdaten-form')).toBeNull();
+        expect(screen.getByRole('button', { name: /Stammdaten bearbeiten/ })).toBeVisible();
+    });
+
+    it('zeigt bei der Eignung, ob sie vom Werkstoff kommt oder für den Artikel festgelegt ist', async () => {
+        vi.stubGlobal('fetch', vi.fn((url: string) => Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve(url.includes('/dokumente') ? [] : {
+                ...detailAntwort,
+                artikel: { ...detailAntwort.artikel, verzinkungsgeeignet: false, verzinkungsgeeignetEigen: false, pulverbeschichtungsgeeignet: true, pulverbeschichtungsgeeignetEigen: null },
+            }),
+        })));
+        renderSeite();
+
+        const quellen = await screen.findAllByTestId('eignung-quelle');
+        expect(quellen.map(q => q.textContent?.trim())).toEqual(['(für diesen Artikel festgelegt)', '(vom Werkstoff)']);
+        expect(screen.getByText('nicht möglich')).toBeVisible();
     });
 });

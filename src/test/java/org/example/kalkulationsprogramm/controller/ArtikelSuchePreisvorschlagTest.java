@@ -36,9 +36,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * eine Dokumentposition mitbringt - siehe {@link ArtikelPositionsPreisService}.
  *
  * <p>Der Service wird hier bewusst NICHT gemockt, sondern als echter Bean
- * importiert: Er ist zustandslos und ohne Abhaengigkeiten, und diese Tests
- * wollen den tatsaechlich berechneten Preis pruefen, nicht nur, dass
- * irgendein Wert durchgereicht wird.
+ * importiert: Er ist zustandslos, und diese Tests wollen den tatsaechlich
+ * berechneten Preis pruefen, nicht nur, dass irgendein Wert durchgereicht
+ * wird. Die Aufschlagsregeln (AufschlagService) fehlen in diesem Ausschnitt;
+ * dann zaehlt wie bisher nur der Aufschlag am Artikel.
  */
 @WebMvcTest(ArtikelController.class)
 @AutoConfigureMockMvc(addFilters = false)

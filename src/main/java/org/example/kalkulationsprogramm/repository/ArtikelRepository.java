@@ -12,6 +12,10 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ArtikelRepository extends JpaRepository<Artikel, Long>, JpaSpecificationExecutor<Artikel> {
+    Optional<Artikel> findByArtikelnummer(String artikelnummer);
+
+    Optional<Artikel> findByEan(String ean);
+
     @Query("select a from Artikel a join a.artikelpreis n where lower(trim(n.externeArtikelnummer)) = lower(trim(:nummer))")
     Optional<Artikel> findByExterneArtikelnummer(@Param("nummer") String nummer);
 
