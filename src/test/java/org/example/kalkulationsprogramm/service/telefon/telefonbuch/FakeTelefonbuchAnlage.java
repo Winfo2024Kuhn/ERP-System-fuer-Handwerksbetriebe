@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.service.telefon.TelefonZugang;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,6 +23,10 @@ class FakeTelefonbuchAnlage implements TelefonbuchAnlage {
     /** Detail, mit dem die Box abgelehnte Einträge zurückweist (z.B. „SetPhonebookEntryUID: Fehlercode 402“). */
     String ablehnungsDetail;
     TelefonAnlageException fehler;
+    /** Eintrags-IDs, deren Löschung die Box ablehnt (wie Fehlercode 820 bei Geister-Einträgen im Export). */
+    final Set<String> unloeschbar = new HashSet<>();
+    /** Fehler, mit dem jede Löschung scheitert, z.B. fehlende Rechte. */
+    TelefonAnlageException loeschFehler;
     CountDownLatch angehalten;
     CountDownLatch weiter;
     private int naechsteId = 1;
@@ -52,7 +57,7 @@ class FakeTelefonbuchAnlage implements TelefonbuchAnlage {
     @Override
     public synchronized Set<String> ladeEintragsIds(TelefonZugang zugang, String telefonbuchId) {
         aufrufe.add("lesen");
-        return new HashSet<>(eintraege.get(telefonbuchId).keySet());
+        return new LinkedHashSet<>(eintraege.get(telefonbuchId).keySet());
     }
 
     @Override
@@ -74,6 +79,13 @@ class FakeTelefonbuchAnlage implements TelefonbuchAnlage {
     @Override
     public synchronized void loescheEintrag(TelefonZugang zugang, String telefonbuchId, String eintragsId) {
         aufrufe.add("loeschen:" + eintragsId);
+        if (loeschFehler != null) {
+            throw loeschFehler;
+        }
+        if (unloeschbar.contains(eintragsId)) {
+            throw new TelefonAnlageException(TelefonAnlageException.Grund.UNERWARTETE_ANTWORT,
+                    "DeletePhonebookEntryUID: Fehlercode 820", null);
+        }
         eintraege.get(telefonbuchId).remove(eintragsId);
     }
 
