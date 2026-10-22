@@ -156,15 +156,23 @@ public class TelefonbuchAbgleichService {
                             ergebnis.neu(), ergebnis.geaendert(), ergebnis.geloescht(), ergebnis.abgelehnt(),
                             ergebnis.eintraege());
                 }
+                // Abgelehnte Einträge nur melden, wenn sich der Grund geändert hat – nicht jede Nacht erneut.
+                if (ergebnis.abgelehnt() > 0 && !ergebnis.meldung().equals(vorherigerFehler)) {
+                    log.warn("Telefonbuch: {}", ergebnis.meldung());
+                }
             } else {
                 ergebnis = loescheTelefonbuch(zugang);
             }
         } catch (TelefonAnlageException e) {
-            if (!e.getMessage().equals(vorherigerFehler)) {
-                log.warn("Telefonbuch-Lauf fehlgeschlagen: {}", e.getGrund());
+            // Mit Schritt und Fehlercode der Box (z. B. „SetPhonebookEntryUID: Fehlercode 402“) –
+            // nur technische Angaben, keine Namen oder Nummern.
+            String fehler = e.textMitDetail();
+            if (!fehler.equals(vorherigerFehler)) {
+                log.warn("Telefonbuch-Lauf fehlgeschlagen: {} ({})", e.getGrund(),
+                        e.getDetail() == null ? "ohne Detail" : e.getDetail());
             }
-            einstellungen.merkeFehler(e.getMessage());
-            ergebnis = TelefonbuchAbgleichErgebnisDto.nichtGelaufen(e.getMessage());
+            einstellungen.merkeFehler(fehler);
+            ergebnis = TelefonbuchAbgleichErgebnisDto.nichtGelaufen(fehler);
         } catch (RuntimeException e) {
             // Unerwartetes (z. B. Datenbank): nur der Klassenname ins Log – keine Namen, keine Nummern.
             log.warn("Telefonbuch-Lauf unerwartet abgebrochen: {}", e.getClass().getSimpleName());
@@ -217,8 +225,9 @@ public class TelefonbuchAbgleichService {
             zaehler.geloescht++;
         }
         String fehler = zaehler.abgelehnt == 0 ? null
-                : zaehler.abgelehnt == 1 ? "1 Eintrag hat die FRITZ!Box abgelehnt."
-                : zaehler.abgelehnt + " Einträge hat die FRITZ!Box abgelehnt.";
+                : (zaehler.abgelehnt == 1 ? "1 Eintrag hat die FRITZ!Box abgelehnt"
+                : zaehler.abgelehnt + " Einträge hat die FRITZ!Box abgelehnt")
+                + (zaehler.letzteAblehnung == null ? "." : " (zuletzt " + zaehler.letzteAblehnung + ").");
         einstellungen.merkeAbgleich(LocalDateTime.now(clock), soll.size() - zaehler.abgelehnt, fehler);
         String meldung = fehler != null ? fehler
                 : zaehler.neu + zaehler.geaendert + zaehler.geloescht == 0 ? "Das Telefonbuch ist schon aktuell."
@@ -270,6 +279,7 @@ public class TelefonbuchAbgleichService {
                 throw e;
             }
             zaehler.abgelehnt++;
+            zaehler.letzteAblehnung = e.getDetail();
             if (zaehler.abgelehnt >= MAX_ABGELEHNT_OHNE_ERFOLG && zaehler.neu + zaehler.geaendert == 0) {
                 throw e; // Box nimmt gar nichts an – nicht noch hunderte Male versuchen
             }
@@ -294,5 +304,7 @@ public class TelefonbuchAbgleichService {
         int geaendert;
         int geloescht;
         int abgelehnt;
+        /** Detail (Schritt, Fehlercode) der letzten Ablehnung durch die Box oder {@code null}. */
+        String letzteAblehnung;
     }
 }

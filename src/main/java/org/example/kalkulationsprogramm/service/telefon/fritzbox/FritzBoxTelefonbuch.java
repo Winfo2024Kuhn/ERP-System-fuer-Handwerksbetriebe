@@ -66,7 +66,8 @@ public class FritzBoxTelefonbuch implements TelefonbuchAnlage {
             argumente.put("NewPhonebookName", name);
             client.aktion(zugang, ONTEL_URL, ONTEL, "AddPhonebook", argumente);
             String neu = sucheNachName(zugang, telefonbuchIds(zugang), name)
-                    .orElseThrow(() -> new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT));
+                    .orElseThrow(() -> new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT,
+                            "AddPhonebook: neues Telefonbuch danach nicht gefunden", null));
             return new Telefonbuch(neu, true);
         });
     }
@@ -78,9 +79,14 @@ public class FritzBoxTelefonbuch implements TelefonbuchAnlage {
                     Map.of("NewPhonebookID", pruefeTelefonbuchId(telefonbuchId)));
             String url = antwort.get("NewPhonebookURL");
             if (url == null || url.isBlank()) {
-                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, "GetPhonebook: keine Download-Adresse", null);
             }
-            return TelefonbuchXml.eintragsIds(client.laden(zugang, url));
+            byte[] export = client.laden(zugang, url);
+            try {
+                return TelefonbuchXml.eintragsIds(export);
+            } catch (TelefonAnlageException e) {
+                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, "Telefonbuch-Export nicht lesbar", e);
+            }
         });
     }
 
@@ -151,7 +157,12 @@ public class FritzBoxTelefonbuch implements TelefonbuchAnlage {
         argumente.put("NewPhonebookID", pruefeTelefonbuchId(telefonbuchId));
         argumente.put("NewPhonebookEntryData", TelefonbuchXml.eintrag(eintrag, eintragsId));
         Map<String, String> antwort = client.aktion(zugang, ONTEL_URL, ONTEL, "SetPhonebookEntryUID", argumente);
-        return TelefonbuchXml.pruefeId(antwort.get("NewPhonebookEntryUniqueID"));
+        try {
+            return TelefonbuchXml.pruefeId(antwort.get("NewPhonebookEntryUniqueID"));
+        } catch (TelefonAnlageException e) {
+            throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT,
+                    "SetPhonebookEntryUID: keine gültige Eintrags-Kennung zurück", e);
+        }
     }
 
     /** "0,1,2" → [0, 1, 2]; nur Ziffern-IDs. */
@@ -196,12 +207,12 @@ public class FritzBoxTelefonbuch implements TelefonbuchAnlage {
             return aufruf.get();
         } catch (SoapFehler e) {
             if (e.code() >= ZWEITER_FAKTOR_VON && e.code() <= ZWEITER_FAKTOR_BIS) {
-                throw new TelefonAnlageException(Grund.TELEFONBUCH_BESTAETIGUNG, e);
+                throw new TelefonAnlageException(Grund.TELEFONBUCH_BESTAETIGUNG, e.getDetail(), e);
             }
             throw e;
         } catch (TelefonAnlageException e) {
             if (e.getGrund() == Grund.KEINE_RECHTE) {
-                throw new TelefonAnlageException(Grund.TELEFONBUCH_KEINE_RECHTE, e);
+                throw new TelefonAnlageException(Grund.TELEFONBUCH_KEINE_RECHTE, e.getDetail(), e);
             }
             throw e;
         }

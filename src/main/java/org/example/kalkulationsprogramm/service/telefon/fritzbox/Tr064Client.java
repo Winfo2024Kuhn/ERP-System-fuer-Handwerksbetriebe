@@ -31,6 +31,9 @@ class Tr064Client {
     static final int STANDARD_PORT = 49000;
     private static final int MAX_ANTWORT_BYTES = 50 * 1024 * 1024;
     private static final Pattern SOAP_FEHLERCODE = Pattern.compile("<errorCode>(\\d{1,5})</errorCode>");
+    private static final Pattern SOAP_FEHLERTEXT = Pattern.compile("<errorDescription>([^<]{1,200})</errorDescription>");
+    /** Höchstlänge für Texte der Box im Fehler-Detail (Dateiname, Fehlerbeschreibung). */
+    private static final int MAX_DETAIL_TEXT = 60;
 
     private final int port;
     private final Duration antwortTimeout;
@@ -60,11 +63,16 @@ class Tr064Client {
                 + " s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body>"
                 + "<u:" + aktion + " xmlns:u=\"" + serviceTyp + "\">" + args + "</u:" + aktion + ">"
                 + "</s:Body></s:Envelope>";
-        byte[] antwort = ausfuehren(zugang, "POST", controlUrl, body, serviceTyp + "#" + aktion);
-        Document doc = SicheresXml.parse(antwort);
+        byte[] antwort = ausfuehren(zugang, "POST", controlUrl, body, serviceTyp + "#" + aktion, aktion);
+        Document doc;
+        try {
+            doc = SicheresXml.parse(antwort);
+        } catch (TelefonAnlageException e) {
+            throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, aktion + ": Antwort nicht lesbar", e);
+        }
         List<Element> treffer = SicheresXml.elemente(doc, aktion + "Response");
         if (treffer.isEmpty()) {
-            throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+            throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, aktion + ": Antwort ohne Ergebnis", null);
         }
         return SicheresXml.kinder(treffer.getFirst());
     }
@@ -74,7 +82,27 @@ class Tr064Client {
      * Nur Pfad und Query werden übernommen, Host und Port sind immer die eingestellten.
      */
     byte[] laden(TelefonZugang zugang, String urlOderPfad) {
-        return ausfuehren(zugang, "GET", pfadUndQuery(urlOderPfad), null, null);
+        String pfad;
+        try {
+            pfad = pfadUndQuery(urlOderPfad);
+        } catch (TelefonAnlageException e) {
+            throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, "Datei laden: Adresse ungültig", e);
+        }
+        return ausfuehren(zugang, "GET", pfad, null, null, dateiname(pfad) + " laden");
+    }
+
+    /**
+     * "/phonebook.lua?sid=1&pbid=0" → "phonebook.lua". Ohne Query, weil dort die
+     * Sitzungs-ID der Box steht – die gehört weder ins Log noch auf die Einstellungsseite.
+     */
+    static String dateiname(String pfadUndQuery) {
+        int frage = pfadUndQuery.indexOf('?');
+        String pfad = frage < 0 ? pfadUndQuery : pfadUndQuery.substring(0, frage);
+        String name = pfad.substring(pfad.lastIndexOf('/') + 1).replaceAll("[^A-Za-z0-9._-]", "");
+        if (name.length() > MAX_DETAIL_TEXT) {
+            name = name.substring(0, MAX_DETAIL_TEXT);
+        }
+        return name.isEmpty() ? "Datei" : name;
     }
 
     /** "https://fritz.box:49443/calllist.lua?sid=1" → "/calllist.lua?sid=1". */
@@ -127,7 +155,8 @@ class Tr064Client {
         return uri;
     }
 
-    private byte[] ausfuehren(TelefonZugang zugang, String methode, String pfad, String body, String soapAction) {
+    private byte[] ausfuehren(TelefonZugang zugang, String methode, String pfad, String body, String soapAction,
+                              String schritt) {
         URI uri = zielAdresse(zugang.host(), pfad);
         try {
             HttpResponse<InputStream> erste = http.send(request(uri, methode, body, soapAction, null),
@@ -137,7 +166,8 @@ class Tr064Client {
                 erste.body().close();
                 String challenge = erste.headers().firstValue("WWW-Authenticate").orElse(null);
                 if (challenge == null || !challenge.regionMatches(true, 0, "Digest", 0, 6)) {
-                    throw new TelefonAnlageException(Grund.ANMELDUNG_FEHLGESCHLAGEN);
+                    throw new TelefonAnlageException(Grund.ANMELDUNG_FEHLGESCHLAGEN,
+                            schritt + ": HTTP 401 ohne Digest-Anmeldung", null);
                 }
                 String auth = DigestAnmeldung.header(challenge, methode, pfad,
                         zugang.benutzer() == null ? "" : zugang.benutzer(),
@@ -145,14 +175,14 @@ class Tr064Client {
                 antwort = http.send(request(uri, methode, body, soapAction, auth),
                         HttpResponse.BodyHandlers.ofInputStream());
             }
-            return auswerten(antwort);
+            return auswerten(antwort, schritt);
         } catch (TelefonAnlageException e) {
             throw e;
         } catch (IOException e) {
-            throw new TelefonAnlageException(Grund.NICHT_ERREICHBAR, e);
+            throw new TelefonAnlageException(Grund.NICHT_ERREICHBAR, schritt + ": keine Verbindung", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new TelefonAnlageException(Grund.NICHT_ERREICHBAR, e);
+            throw new TelefonAnlageException(Grund.NICHT_ERREICHBAR, schritt + ": abgebrochen", e);
         }
     }
 
@@ -173,33 +203,52 @@ class Tr064Client {
         return b.build();
     }
 
-    private static byte[] auswerten(HttpResponse<InputStream> antwort) throws IOException {
+    /** @param schritt Aktion bzw. Datei („SetPhonebookEntryUID“, „phonebook.lua laden“) für das Fehler-Detail */
+    private static byte[] auswerten(HttpResponse<InputStream> antwort, String schritt) throws IOException {
         try (InputStream in = antwort.body()) {
             int status = antwort.statusCode();
             if (status == 401) {
-                throw new TelefonAnlageException(Grund.ANMELDUNG_FEHLGESCHLAGEN);
+                throw new TelefonAnlageException(Grund.ANMELDUNG_FEHLGESCHLAGEN, schritt + ": HTTP 401", null);
             }
             if (status == 403) {
-                throw new TelefonAnlageException(Grund.KEINE_RECHTE);
+                throw new TelefonAnlageException(Grund.KEINE_RECHTE, schritt + ": HTTP 403", null);
             }
             byte[] inhalt = in.readNBytes(MAX_ANTWORT_BYTES + 1);
             if (inhalt.length > MAX_ANTWORT_BYTES) {
-                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, schritt + ": Antwort zu groß", null);
             }
             if (status == 500) {
                 // SOAP-Fehler: 606/607 = Aktion für diesen Benutzer nicht erlaubt
-                Matcher m = SOAP_FEHLERCODE.matcher(new String(inhalt, StandardCharsets.UTF_8));
+                String text = new String(inhalt, StandardCharsets.UTF_8);
+                Matcher m = SOAP_FEHLERCODE.matcher(text);
                 int code = m.find() ? Integer.parseInt(m.group(1)) : 0;
+                String detail = soapFehlerDetail(schritt, code, text);
                 if (code == 606 || code == 607) {
-                    throw new TelefonAnlageException(Grund.KEINE_RECHTE);
+                    throw new TelefonAnlageException(Grund.KEINE_RECHTE, detail, null);
                 }
-                throw new SoapFehler(code);
+                throw new SoapFehler(code, detail);
             }
             if (status < 200 || status >= 300) {
-                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT);
+                throw new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, schritt + ": HTTP " + status, null);
             }
             return inhalt;
         }
+    }
+
+    /**
+     * „SetPhonebookEntryUID: Fehlercode 402 „Invalid Args““. Die Beschreibung der Box wird auf
+     * harmlose Zeichen und {@value #MAX_DETAIL_TEXT} Zeichen gekürzt, bevor sie in Log und Oberfläche geht.
+     */
+    static String soapFehlerDetail(String schritt, int code, String antwortText) {
+        if (code == 0) {
+            return schritt + ": HTTP 500 ohne Fehlercode";
+        }
+        Matcher m = SOAP_FEHLERTEXT.matcher(antwortText);
+        String beschreibung = m.find() ? m.group(1).replaceAll("[^A-Za-z0-9 .,:_()-]", "").trim() : "";
+        if (beschreibung.length() > MAX_DETAIL_TEXT) {
+            beschreibung = beschreibung.substring(0, MAX_DETAIL_TEXT).trim();
+        }
+        return schritt + ": Fehlercode " + code + (beschreibung.isEmpty() ? "" : " „" + beschreibung + "“");
     }
 
     private static String xmlEscape(String s) {

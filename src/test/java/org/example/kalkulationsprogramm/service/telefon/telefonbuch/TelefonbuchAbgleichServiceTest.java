@@ -205,6 +205,47 @@ class TelefonbuchAbgleichServiceTest {
     }
 
     @Test
+    @DisplayName("Fehler mit Schritt und Fehlercode der Box: beides steht in der gemerkten Meldung")
+    void fehlerMitDetail() {
+        box.fehler = new TelefonAnlageException(Grund.UNERWARTETE_ANTWORT, "AddPhonebook: Fehlercode 820", null);
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(true);
+
+        assertThat(e.erfolgreich()).isFalse();
+        assertThat(e.meldung()).isEqualTo("Unerwartete Antwort der FRITZ!Box (AddPhonebook: Fehlercode 820)");
+        assertThat(service.status().letzterFehler())
+                .isEqualTo("Unerwartete Antwort der FRITZ!Box (AddPhonebook: Fehlercode 820)");
+    }
+
+    @Test
+    @DisplayName("Abgelehnter Eintrag mit Fehlercode: die Meldung nennt den letzten Grund der Box")
+    void einzelnerEintragAbgelehntMitDetail() {
+        box.abgelehnteNamen.add("Max Mustermann (Kunde)");
+        box.ablehnungsDetail = "SetPhonebookEntryUID: Fehlercode 402 „Invalid Args“";
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(false);
+
+        assertThat(e.meldung()).isEqualTo(
+                "1 Eintrag hat die FRITZ!Box abgelehnt (zuletzt SetPhonebookEntryUID: Fehlercode 402 „Invalid Args“).");
+        assertThat(service.status().letzterFehler()).isEqualTo(e.meldung());
+    }
+
+    @Test
+    @DisplayName("Nimmt die Box gar nichts an, steht der Fehlercode in der Meldung")
+    void boxNimmtNichtsAnMitDetail() {
+        soll.clear();
+        for (long i = 1; i <= 20; i++) {
+            soll.put(new Schluessel(TelefonbuchQuelle.KUNDE, i), eintrag("Kunde " + i, "0123456789"));
+            box.abgelehnteNamen.add("Kunde " + i);
+        }
+        box.ablehnungsDetail = "SetPhonebookEntryUID: Fehlercode 820";
+
+        TelefonbuchAbgleichErgebnisDto e = service.abgleichen(false);
+
+        assertThat(e.meldung()).isEqualTo("Unerwartete Antwort der FRITZ!Box (SetPhonebookEntryUID: Fehlercode 820)");
+    }
+
+    @Test
     @DisplayName("Keine Rechte: Meldung im Klartext gemerkt, nach Erfolg wieder gelöscht")
     void keineRechte() {
         box.fehler = new TelefonAnlageException(Grund.TELEFONBUCH_KEINE_RECHTE);

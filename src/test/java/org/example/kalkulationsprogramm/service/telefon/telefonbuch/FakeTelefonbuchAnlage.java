@@ -19,6 +19,8 @@ class FakeTelefonbuchAnlage implements TelefonbuchAnlage {
     final Map<String, Map<String, TelefonbuchEintrag>> eintraege = new LinkedHashMap<>();
     final List<String> aufrufe = new ArrayList<>();
     final Set<String> abgelehnteNamen = new HashSet<>();
+    /** Detail, mit dem die Box abgelehnte Einträge zurückweist (z.B. „SetPhonebookEntryUID: Fehlercode 402“). */
+    String ablehnungsDetail;
     TelefonAnlageException fehler;
     CountDownLatch angehalten;
     CountDownLatch weiter;
@@ -57,7 +59,7 @@ class FakeTelefonbuchAnlage implements TelefonbuchAnlage {
     public synchronized String speichereEintrag(TelefonZugang zugang, String telefonbuchId, TelefonbuchEintrag eintrag,
                                                 String eintragsId) {
         if (abgelehnteNamen.contains(eintrag.name())) {
-            throw new TelefonAnlageException(TelefonAnlageException.Grund.UNERWARTETE_ANTWORT);
+            throw new TelefonAnlageException(TelefonAnlageException.Grund.UNERWARTETE_ANTWORT, ablehnungsDetail, null);
         }
         if (fehler != null) {
             throw fehler;
