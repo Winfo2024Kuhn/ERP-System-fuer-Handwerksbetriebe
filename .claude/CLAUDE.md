@@ -90,3 +90,13 @@ Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht
 - Backend: `./mvnw spring-boot:run` (Port 8080)
 - Frontend PC: `cd react-pc-frontend && npm run dev`
 - Frontend Mobile: `cd react-zeiterfassung && npm run dev`
+
+## 🧪 Testserver mit echten Daten (Prod-Kopie, abgeschottet)
+
+Für Tests mit echten Daten (Abnahme vor dem Push, Bugs, die nur mit Prod-Daten auftreten, iOS-Simulator):
+
+`scripts/prodkopie/prodkopie-starten.sh --neu` – spielt die neueste nächtliche Sicherung ein, schottet sie ab und startet das Backend aus **dem aktuellen Checkout/Worktree** auf Port 8080. Ohne `--neu` wird die vorhandene Kopie weiterverwendet, `--nur-db` startet kein Backend, `--loeschen` entfernt die Kopie samt Daten-Volume restlos. Code ist damit immer auf dem eigenen Git-Stand, die Daten höchstens einen Tag alt – ein Mirror-Repo ist nicht nötig.
+
+- **Daten:** Die Prod-Datenbank ist über Tailscale nicht direkt erreichbar. Quelle ist die nächtliche `pg_dump`-Sicherung (02:00), die per OneDrive auf den Mac synct; der Ordner steht in `~/.config/erp-prodkopie/sicherungen-pfad` (oder `PRODKOPIE_SICHERUNGEN`). Container `erp-prodkopie-db` auf `127.0.0.1:5434`, Passwort nur in `~/.config/erp-prodkopie/`.
+- **Nichts geht nach außen:** keine Mahnung, keine E-Mail, kein FRITZ!Box-Abgleich, keine KI, kein Push, keine Website. `scripts/prodkopie/abschotten.sql` leert vor und nach dem Start (also auch nach neuen Migrationen) alle Zugänge und schaltet die Automatiken ab; das Backend startet zusätzlich mit leeren Zugängen als Startparameter (Vorrang vor `.env` und `application-local.properties`), ohne Außen-Funktionen, mit totem HTTP(S)-Proxy und lauscht nur auf `127.0.0.1` (nicht im WLAN/Tailnet erreichbar). Die Abschottung gilt nur fürs Backend: Der Browser lädt weiterhin Google-Maps-Karten mit Kundenadressen und externe Bilder aus echten E-Mails. Erzeugte PDFs landen in `uploads/` des Checkouts – vor `git worktree remove` löschen. **Kommt eine neue Außen-Verbindung ins ERP** (neuer `system_setting`-Zugang, neuer `@Scheduled`-Dienst, neue Schnittstelle), muss `abschotten.sql` bzw. das Startskript im selben PR nachgezogen werden.
+- **DSGVO:** Die Kopie enthält echte Personendaten. Nur lokal abfragen, nichts daraus in Code, Tests, Logs, Commits oder Screenshots für PRs übernehmen. Anmelden in der App tut der Nutzer selbst mit seinem Token.
