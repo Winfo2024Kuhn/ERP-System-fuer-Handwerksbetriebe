@@ -84,4 +84,13 @@ public interface KundeRepository extends JpaRepository<Kunde, Long>, JpaSpecific
     @Query("SELECT k.id, k.name, k.kundennummer, k.ort, k.telefon, k.mobiltelefon FROM Kunde k "
             + "WHERE (k.telefon IS NOT NULL AND k.telefon <> '') OR (k.mobiltelefon IS NOT NULL AND k.mobiltelefon <> '')")
     List<Object[]> findeTelefonverzeichnis();
+
+    /**
+     * Kunden für das FRITZ!Box-Telefonbuch: ohne gesperrte und anonymisierte, nur mit Nummer.
+     * Je Zeile {@code [id, name, anrede, telefon, mobiltelefon]}.
+     */
+    @Query("SELECT k.id, k.name, k.anrede, k.telefon, k.mobiltelefon FROM Kunde k "
+            + "WHERE k.anonymisiertAm IS NULL AND k.gesperrtAm IS NULL "
+            + "AND ((k.telefon IS NOT NULL AND k.telefon <> '') OR (k.mobiltelefon IS NOT NULL AND k.mobiltelefon <> ''))")
+    List<Object[]> findeFuerTelefonbuch();
 }

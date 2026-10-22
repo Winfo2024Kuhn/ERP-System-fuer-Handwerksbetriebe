@@ -10,6 +10,7 @@ import type {
     TelefonAnruf,
     TelefonEinstellungen,
     TelefonStatus,
+    TelefonbuchStatus,
     TelefonVerbindungstest,
     WaehlTelefon,
     ZuordnenZiel,
@@ -296,4 +297,22 @@ export function holeAeltereNach(tage: number): Promise<AbholErgebnis> {
     return holeJson<AbholErgebnis>(
         `${BASIS}/admin/nachholen?tage=${encodeURIComponent(String(tage))}`,
         'Ältere Anrufe konnten nicht nachgeholt werden.', jsonInit('POST'));
+}
+
+// ── FRITZ!Box-Telefonbuch (nur Administratoren) ─────────────────────────
+
+const TELEFONBUCH = `${BASIS}/einstellungen/telefonbuch`;
+
+export function ladeTelefonbuchStatus(): Promise<TelefonbuchStatus> {
+    return holeJson<TelefonbuchStatus>(TELEFONBUCH, 'Der Stand des FRITZ!Box-Telefonbuchs konnte nicht geladen werden.');
+}
+
+export function schalteTelefonbuch(aktiv: boolean): Promise<TelefonbuchStatus> {
+    return holeJson<TelefonbuchStatus>(TELEFONBUCH, 'Die Einstellung konnte nicht gespeichert werden.', jsonInit('PUT', { aktiv }));
+}
+
+/** Startet den Abgleich (bzw. eine offene Löschung) im Hintergrund; Antwort ist der Stand mit „läuft“. */
+export function gleicheTelefonbuchAb(): Promise<TelefonbuchStatus> {
+    return holeJson<TelefonbuchStatus>(`${TELEFONBUCH}/abgleichen`,
+        'Das FRITZ!Box-Telefonbuch konnte nicht abgeglichen werden.', jsonInit('POST'));
 }

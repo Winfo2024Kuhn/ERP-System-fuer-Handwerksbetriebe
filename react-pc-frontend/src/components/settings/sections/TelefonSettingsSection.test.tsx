@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../ui/toast';
+import { ConfirmProvider } from '../../ui/confirm-dialog';
 import { TelefonSettingsSection } from './TelefonSettingsSection';
 import { antwort, aufrufe, stubbeFetch } from '../../../features/telefon/telefonTestdaten';
 import type { TelefonEinstellungen } from '../../../features/telefon/types';
@@ -43,6 +44,9 @@ function stubbe(stand: Partial<TelefonEinstellungen> = {}) {
                 ortsvorwahl: '931',
             })
             : undefined),
+        (url) => (url.pathname === '/api/telefon/einstellungen/telefonbuch'
+            ? antwort({ aktiv: false, telefonAnbindungAktiv: true, telefonbuchName: 'ERP-Kontakte', zuletztAbgeglichen: null, anzahlEintraege: 0, letzterFehler: null, loeschungOffen: false, laeuftGerade: false, letztesErgebnis: null })
+            : undefined),
         (url) => (url.pathname === '/api/telefon/admin/nachholen'
             ? antwort({ erfolgreich: true, meldung: 'ok', neueAnrufe: 120, neueSprachnachrichten: 4, nachtraeglichZugeordnet: 2 })
             : undefined),
@@ -50,7 +54,7 @@ function stubbe(stand: Partial<TelefonEinstellungen> = {}) {
 }
 
 function zeige() {
-    return render(<ToastProvider><TelefonSettingsSection /></ToastProvider>);
+    return render(<ToastProvider><ConfirmProvider><TelefonSettingsSection /></ConfirmProvider></ToastProvider>);
 }
 
 describe('TelefonSettingsSection', () => {
@@ -151,5 +155,11 @@ describe('TelefonSettingsSection', () => {
         const anleitung = await screen.findByRole('complementary', { name: 'So richten Sie die FRITZ!Box ein' });
         expect(within(anleitung).getByText('#96*5*')).toBeInTheDocument();
         expect(within(anleitung).getByText(/Zugriff für Anwendungen zulassen/)).toBeInTheDocument();
+    });
+
+    it('enthält den Bereich „FRITZ!Box-Telefonbuch“', async () => {
+        stubbe();
+        zeige();
+        expect(await screen.findByRole('checkbox', { name: /Kontakte ins FRITZ!Box-Telefonbuch übertragen/ })).not.toBeChecked();
     });
 });

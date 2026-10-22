@@ -14,7 +14,13 @@ public class TelefonAnlageException extends RuntimeException {
         NICHT_EINGERICHTET("Telefon-Anbindung ist nicht eingerichtet"),
         WAEHLHILFE_AUS("Die FRITZ!Box konnte nicht wählen. Bitte prüfen, ob die Wählhilfe eingeschaltet ist "
                 + "(FRITZ!Box: Telefonie → Anrufe → Wählhilfe)."),
-        BESCHAEFTIGT("Es wird gerade schon ein Anruf aufgebaut. Bitte gleich noch einmal versuchen.");
+        BESCHAEFTIGT("Es wird gerade schon ein Anruf aufgebaut. Bitte gleich noch einmal versuchen."),
+        TELEFONBUCH_KEINE_RECHTE("Der FRITZ!Box-Benutzer des ERP darf das Telefonbuch nicht ändern. Bitte in der FRITZ!Box "
+                + "unter System › FRITZ!Box-Benutzer dem Benutzer das Recht „Sprachnachrichten, Faxnachrichten, "
+                + "FRITZ!App Fon und Anrufliste“ geben."),
+        TELEFONBUCH_BESTAETIGUNG("Die FRITZ!Box verlangt für Änderungen am Telefonbuch eine zusätzliche Bestätigung, "
+                + "die das ERP nicht geben kann. Bitte in der FRITZ!Box unter System › FRITZ!Box-Benutzer › "
+                + "Anmeldung im Heimnetz die zusätzliche Bestätigung für Anwendungen abschalten.");
 
         private final String text;
 

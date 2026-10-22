@@ -3,8 +3,10 @@ package org.example.kalkulationsprogramm.repository;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,4 +43,22 @@ public interface SteuerberaterKontaktRepository extends JpaRepository<Steuerbera
     @Query("SELECT DISTINCT s FROM SteuerberaterKontakt s LEFT JOIN FETCH s.ansprechpartnerListe "
             + "ORDER BY s.aktiv DESC, s.name ASC")
     List<SteuerberaterKontakt> findAllMitAnsprechpartnernFuerAuswahl();
+
+    /**
+     * Aktive, nicht abgelaufene Kanzleien mit Telefonnummer für das FRITZ!Box-Telefonbuch:
+     * je Zeile {@code [id, name, telefon]}.
+     */
+    @Query("SELECT s.id, s.name, s.telefon FROM SteuerberaterKontakt s "
+            + "WHERE s.aktiv = true AND (s.gueltigBis IS NULL OR s.gueltigBis >= :heute) "
+            + "AND s.telefon IS NOT NULL AND s.telefon <> ''")
+    List<Object[]> findeFuerTelefonbuch(@Param("heute") LocalDate heute);
+
+    /**
+     * Ansprechpartner mit Telefonnummer aktiver, nicht abgelaufener Kanzleien für das
+     * FRITZ!Box-Telefonbuch: je Zeile {@code [id, vorname, nachname, telefon, kanzleiName]}.
+     */
+    @Query("SELECT a.id, a.vorname, a.nachname, a.telefon, s.name FROM SteuerberaterAnsprechpartner a "
+            + "JOIN a.steuerberater s WHERE s.aktiv = true AND (s.gueltigBis IS NULL OR s.gueltigBis >= :heute) "
+            + "AND a.telefon IS NOT NULL AND a.telefon <> ''")
+    List<Object[]> findeAnsprechpartnerFuerTelefonbuch(@Param("heute") LocalDate heute);
 }
