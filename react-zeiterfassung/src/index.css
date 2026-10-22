@@ -20,7 +20,12 @@ body {
   padding: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #0f172a;
-  background: #f8fafc; /* slate-50 - passend zum App-Hintergrund */
+  /* Weiss wie die Kopfleisten, NICHT slate-50: In der installierten iOS-PWA
+     (status-bar-style "default") faerbt iOS 26/27 die Statusleiste in der
+     Seitenfarbe und blendet sie mit einem Verlauf in die Kopfleiste ueber.
+     Mit slate-50 stand oben ein grauer Streifen mit Verlauf ueber der weissen
+     Kopfleiste. Den App-Hintergrund (slate-50) setzt jede Seite selbst. */
+  background: #ffffff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -48,14 +53,20 @@ body,
 }
 
 #root {
-  /* Bewusst KEIN 100dvh: in der installierten iOS-PWA (standalone, viewport-fit=cover)
-     laesst dvh die Home-Indicator-Zone am unteren Rand aus. #root endete dadurch vor
-     der Geraetekante und der Seitenhintergrund schien darunter als grauer Balken
-     durch, der die letzte Karte anschnitt. html/body stehen auf 100% mit
-     -webkit-fill-available und reichen bis ganz unten - 100% erbt das korrekt.
-     Siehe [[mobile-pwa-native-feel-keine-bottom-safe-area]]: nach unten schliesst die
-     App direkt mit der Geraetekante ab. */
-  height: 100%;
+  /* An den Viewport geheftet statt 100% zu erben: So reicht #root immer genau bis zur
+     Geraetekante, egal was iOS fuer 100% rechnet.
+     - Bewusst KEIN 100dvh: In der installierten iOS-PWA (viewport-fit=cover) laesst dvh
+       die Home-Indicator-Zone aus, unten schien ein grauer Balken durch.
+     - Bewusst nicht mehr height: 100%: Installationen von vor dem 20.09.2026 laufen weiter
+       mit dem Statusleisten-Stil "black-translucent" (iOS liest ihn nur beim Hinzufuegen
+       zum Home-Bildschirm). Dort rechnet iOS 27 100% um die Statusleiste zu kurz
+       (iPhone 17: 812 statt 874 pt), unten blieb ein Balken in Statusleisten-Hoehe.
+       inset: 0 folgt dem echten Fenster (874) und kann nicht ueber die Kante schiessen.
+     Gemessen im iOS-Simulator, alter und neuer Stil. Siehe
+     [[mobile-pwa-native-feel-keine-bottom-safe-area]]: nach unten schliesst die App direkt
+     mit der Geraetekante ab. */
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
 }
