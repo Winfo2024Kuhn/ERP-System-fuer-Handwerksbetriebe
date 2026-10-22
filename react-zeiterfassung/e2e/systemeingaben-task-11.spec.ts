@@ -128,6 +128,10 @@ test('Scanner: Kamerafehler bleibt sichtbar, Schließen bleibt erreichbar', asyn
     await page.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Permission denied', 'NotAllowedError') } })
     await page.goto('lieferanten/1/lieferscheine'); await page.getByRole('button', { name: 'Scannen', exact: true }).tap()
     await expect(page.getByRole('alert')).toContainText('Zugriff auf die Kamera')
-    const close = page.locator('button').filter({ has: page.locator('svg.lucide-x') }).first()
-    await close.click({ trial: true }); await photo(page, info, 'scanner-kamerafehler', close)
+    // Die schwebende Fehlermeldung liegt über dem oberen Rand des Scanners. Wie in
+    // FRONTEND_UI.md beschrieben: erst per X schließen, dann den Scanner bedienen.
+    // (Vorher traf `.first()` versehentlich das X der Meldung statt den Scanner-Knopf.)
+    const close = page.getByRole('button', { name: 'Scanner schließen' })
+    await photo(page, info, 'scanner-kamerafehler', close)
+    await meldungenSchliessen(page); await close.click({ trial: true })
 })

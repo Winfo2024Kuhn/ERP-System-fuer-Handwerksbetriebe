@@ -277,9 +277,9 @@ export default function LieferantLieferscheinePage() {
 
     if (verifying) {
         return (
-            <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col safe-area-top overflow-hidden">
+            <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="bg-white border-b border-slate-200 p-4 shrink-0 z-10 flex items-center justify-between">
+                <div className="bg-white border-b border-slate-200 p-4 safe-area-top shrink-0 z-10 flex items-center justify-between">
                     <button onClick={() => { setVerifying(false); belegVerwerfen() }} className="p-2 hover:bg-slate-100 rounded-full">
                         <X className="w-6 h-6 text-slate-500" />
                     </button>

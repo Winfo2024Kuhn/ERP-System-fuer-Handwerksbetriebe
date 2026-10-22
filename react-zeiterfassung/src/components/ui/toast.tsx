@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AlertTriangle, CheckCircle, Info, X, XCircle } from 'lucide-react'
+import { createPortal } from 'react-dom'
 
 type Kind = 'success' | 'error' | 'warning' | 'info'
 type ToastApi = Record<Kind, (message: string, duration?: number) => void>
@@ -80,8 +81,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     }, [dismiss, setMessages])
     const sichtbar = messages.slice(-MAX_SICHTBAR)
     const verborgen = messages.length - sichtbar.length
+    // Per Portal an <body>, nicht in #root: #root ist fest am Fenster verankert und
+    // bildet damit eine eigene Stapelebene. Darin laege die Meldungsflaeche immer
+    // unter Sheets und Dialogen, die selbst per Portal an <body> haengen.
     return <Context.Provider value={api}>
-        <div data-mobile-toasts role="region" aria-label="Meldungen" hidden={messages.length === 0}
+        {createPortal(<div data-mobile-toasts role="region" aria-label="Meldungen" hidden={messages.length === 0}
             style={{ top: 'calc(var(--sa-base-top, 2.5rem) + var(--sat, 0px))' }}
             className={messages.length ? 'pointer-events-none fixed inset-x-3 z-[10030] mx-auto flex max-w-md flex-col gap-2' : 'hidden'}>
             {verborgen > 0 && <p className="pointer-events-none self-center rounded-full bg-slate-900/80 px-3 py-1 text-xs font-medium text-white shadow">
@@ -96,7 +100,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     <button type="button" aria-label="Meldung schließen" onClick={() => dismiss(id)} className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-rose-500"><X aria-hidden="true" className="h-5 w-5" /></button>
                 </div>
             })}
-        </div>
+        </div>, document.body)}
         <div className="h-full min-h-0 overflow-auto">{children}</div>
     </Context.Provider>
 }
