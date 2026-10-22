@@ -14,7 +14,7 @@ import { DatePicker } from '../components/ui/datepicker';
 import { DetailLayout } from '../components/DetailLayout';
 import {
     Plus, User, Trash2, ArrowLeft,
-    FileText, Upload, Calendar, Euro, File, Building2, QrCode, RefreshCw, Download, Loader2, Eye, Phone, GraduationCap, Home, StickyNote, Receipt
+    FileText, Upload, Calendar, Euro, File, Building2, QrCode, RefreshCw, Download, Loader2, Copy, Check, Eye, Phone, GraduationCap, Home, StickyNote, Receipt
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Select } from '../components/ui/select-custom';
@@ -151,6 +151,7 @@ export default function MitarbeiterEditor() {
     // QR-Code States
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
     const [regenerating, setRegenerating] = useState(false);
+    const [codeKopiert, setCodeKopiert] = useState(false);
 
     // Dokument Preview States
     const [previewDoc, setPreviewDoc] = useState<MitarbeiterDokument | null>(null);
@@ -566,6 +567,7 @@ export default function MitarbeiterEditor() {
             if (!res.ok) throw new Error('Zugangscode konnte nicht erneuert werden.');
             if (res.ok) {
                 const newToken = await res.text();
+                setCodeKopiert(false);
                 setSelectedMitarbeiter({ ...selectedMitarbeiter, loginToken: newToken });
                 // Update in list too
                 setMitarbeiter(prev => prev.map(m =>
@@ -591,6 +593,17 @@ export default function MitarbeiterEditor() {
             confirmLabel: 'Neuen Code erstellen',
         })) return;
         await handleRegenerateToken();
+    };
+
+    // Fallback, wenn die Handy-Kamera den QR-Code nicht lesen kann: Code abtippen oder weiterschicken.
+    const handleCodeKopieren = async (code: string) => {
+        try {
+            await navigator.clipboard.writeText(code);
+            setCodeKopiert(true);
+            setTimeout(() => setCodeKopiert(false), 2000);
+        } catch {
+            toast.error('Code konnte nicht kopiert werden. Bitte von Hand markieren und kopieren.');
+        }
     };
 
     const handleDownloadQr = () => {
@@ -1642,13 +1655,40 @@ export default function MitarbeiterEditor() {
                             {selectedMitarbeiter?.vorname} {selectedMitarbeiter?.nachname}
                         </p>
                         {selectedMitarbeiter?.loginToken ? (
-                            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                                <img
-                                    src={`${BASE_API}/${selectedMitarbeiter.id}/qr-code?width=250&height=250`}
-                                    alt="QR-Code für Zeiterfassung"
-                                    className="w-[250px] h-[250px]"
-                                />
-                            </div>
+                            <>
+                                <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                                    <img
+                                        src={`${BASE_API}/${selectedMitarbeiter.id}/qr-code?width=250&height=250`}
+                                        alt="QR-Code für Zeiterfassung"
+                                        className="w-[250px] h-[250px]"
+                                    />
+                                </div>
+                                <div className="mt-5 w-full max-w-sm">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                                        Code zum Abtippen
+                                    </p>
+                                    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                        <code className="flex-1 select-all break-all font-mono text-sm text-slate-900">
+                                            {selectedMitarbeiter.loginToken}
+                                        </code>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => void handleCodeKopieren(selectedMitarbeiter.loginToken!)}
+                                            aria-label="Code kopieren"
+                                            title="Code kopieren"
+                                            className="shrink-0"
+                                        >
+                                            {codeKopiert
+                                                ? <Check className="w-4 h-4" />
+                                                : <Copy className="w-4 h-4" />}
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-1.5">
+                                        Klappt das Scannen nicht? In der App auf „Token manuell eingeben“ tippen und diesen Code eingeben.
+                                    </p>
+                                </div>
+                            </>
                         ) : (
                             <div className="text-center text-slate-500 py-8">
                                 <QrCode className="w-16 h-16 mx-auto mb-3 text-slate-300" />
