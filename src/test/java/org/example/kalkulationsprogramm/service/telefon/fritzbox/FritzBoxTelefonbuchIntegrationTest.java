@@ -47,6 +47,14 @@ class FritzBoxTelefonbuchIntegrationTest {
     private final List<String> aktionen = new CopyOnWriteArrayList<>();
     private volatile int schreibFehler;
     private volatile int loeschFehler;
+    /** Antwort der Box auf phonebook.lua: 0 = normaler Export, sonst dieser HTTP-Status ohne Inhalt. */
+    private volatile int exportStatus;
+    private volatile boolean exportKaputt;
+    private volatile boolean ohneEintragsKennung;
+    private volatile boolean ohneDownloadAdresse;
+    private volatile boolean anlegenOhneWirkung;
+    /** Diese Aktion bekommt HTTP 200 mit einer Antwort ohne passendes Ergebnis-Element. */
+    private volatile String ohneErgebnisFuer;
 
     private HttpServer server;
     private FritzBoxTelefonbuch telefonbuch;
@@ -184,6 +192,128 @@ class FritzBoxTelefonbuchIntegrationTest {
     }
 
     @Test
+    @DisplayName("SOAP-Fehler: Detail nennt Aktion, Fehlercode und Beschreibung der Box")
+    void soapFehlerMitDetail() {
+        String id = telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null).id();
+        schreibFehler = 820;
+
+        assertThatThrownBy(() -> telefonbuch.speichereEintrag(zugang, id, eintrag("Max Mustermann (Kunde)"), null))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e -> {
+                    assertThat(e.getDetail()).isEqualTo("SetPhonebookEntryUID: Fehlercode 820 „Internal Error“");
+                    assertThat(e.textMitDetail()).isEqualTo(
+                            "Unerwartete Antwort der FRITZ!Box (SetPhonebookEntryUID: Fehlercode 820 „Internal Error“)");
+                    assertThat(e.textMitDetail()).doesNotContain("Mustermann");
+                });
+        assertThatThrownBy(() -> telefonbuch.loescheEintrag(zugang, id, "1"))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e ->
+                        assertThat(e.getDetail()).startsWith("DeletePhonebookEntryUID: Fehlercode 820"));
+    }
+
+    @Test
+    @DisplayName("Fehlendes Schreibrecht: Detail nennt den Schritt, an dem die Box es verweigert hat")
+    void keineSchreibrechteMitDetail() {
+        String id = telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null).id();
+        schreibFehler = 606;
+
+        assertThatThrownBy(() -> telefonbuch.speichereEintrag(zugang, id, eintrag("Max Mustermann (Kunde)"), null))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e ->
+                        assertThat(e.getDetail()).startsWith("SetPhonebookEntryUID: Fehlercode 606"));
+    }
+
+    @Test
+    @DisplayName("Telefonbuch-Export mit HTTP-Fehler: Detail nennt Datei und Status, aber nie die Sitzungs-ID")
+    void exportHttpFehler() {
+        String id = telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null).id();
+        exportStatus = 404;
+
+        assertThatThrownBy(() -> telefonbuch.ladeEintragsIds(zugang, id))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e -> {
+                    assertThat(e.getGrund()).isEqualTo(Grund.UNERWARTETE_ANTWORT);
+                    assertThat(e.getDetail()).isEqualTo("phonebook.lua laden: HTTP 404");
+                    assertThat(e.textMitDetail()).doesNotContain("sid", "0123abcd");
+                });
+    }
+
+    @Test
+    @DisplayName("Telefonbuch-Export nicht lesbar → eigenes Detail")
+    void exportNichtLesbar() {
+        String id = telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null).id();
+        exportKaputt = true;
+
+        assertThatThrownBy(() -> telefonbuch.ladeEintragsIds(zugang, id))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e ->
+                        assertThat(e.getDetail()).isEqualTo("Telefonbuch-Export nicht lesbar"));
+    }
+
+    @Test
+    @DisplayName("Zweiter Faktor: Detail mit Schritt bleibt erhalten, Meldung endet mit Punkt hinter der Klammer")
+    void zweiterFaktorMitDetail() {
+        String id = telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null).id();
+        schreibFehler = 866;
+
+        assertThatThrownBy(() -> telefonbuch.loescheEintrag(zugang, id, "1"))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e -> {
+                    assertThat(e.getGrund()).isEqualTo(Grund.TELEFONBUCH_BESTAETIGUNG);
+                    assertThat(e.getDetail()).startsWith("DeletePhonebookEntryUID: Fehlercode 866");
+                    assertThat(e.textMitDetail()).endsWith("abschalten (" + e.getDetail() + ").");
+                });
+    }
+
+    @Test
+    @DisplayName("Antwort ohne Ergebnis-Element → Detail nennt die Aktion")
+    void antwortOhneErgebnis() {
+        ohneErgebnisFuer = "GetPhonebookList";
+
+        assertThatThrownBy(() -> telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e ->
+                        assertThat(e.getDetail()).isEqualTo("GetPhonebookList: Antwort ohne Ergebnis"));
+    }
+
+    @Test
+    @DisplayName("GetPhonebook ohne Download-Adresse → eigenes Detail")
+    void ohneDownloadAdresse() {
+        String id = telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null).id();
+        ohneDownloadAdresse = true;
+
+        assertThatThrownBy(() -> telefonbuch.ladeEintragsIds(zugang, id))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e ->
+                        assertThat(e.getDetail()).isEqualTo("GetPhonebook: keine Download-Adresse"));
+    }
+
+    @Test
+    @DisplayName("AddPhonebook ohne Wirkung → Detail „danach nicht gefunden“")
+    void anlegenOhneWirkung() {
+        anlegenOhneWirkung = true;
+
+        assertThatThrownBy(() -> telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e ->
+                        assertThat(e.getDetail()).isEqualTo("AddPhonebook: neues Telefonbuch danach nicht gefunden"));
+    }
+
+    @Test
+    @DisplayName("Box nicht erreichbar → Detail nennt den Schritt")
+    void nichtErreichbarMitDetail() {
+        server.stop(0);
+
+        assertThatThrownBy(() -> telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e -> {
+                    assertThat(e.getGrund()).isEqualTo(Grund.NICHT_ERREICHBAR);
+                    assertThat(e.getDetail()).isEqualTo("GetPhonebookList: keine Verbindung");
+                });
+    }
+
+    @Test
+    @DisplayName("Box schreibt den Eintrag, liefert aber keine Kennung → eigenes Detail")
+    void ohneEintragsKennungMitDetail() {
+        String id = telefonbuch.stelleTelefonbuchBereit(zugang, "ERP-Kontakte", null).id();
+        ohneEintragsKennung = true;
+
+        assertThatThrownBy(() -> telefonbuch.speichereEintrag(zugang, id, eintrag("Max Mustermann (Kunde)"), null))
+                .isInstanceOfSatisfying(TelefonAnlageException.class, e ->
+                        assertThat(e.getDetail()).isEqualTo("SetPhonebookEntryUID: keine gültige Eintrags-Kennung zurück"));
+    }
+
+    @Test
     @DisplayName("Falsches Passwort → ANMELDUNG_FEHLGESCHLAGEN")
     void falschesPasswort() {
         TelefonZugang falsch = new TelefonZugang("127.0.0.1", BENUTZER, "falsch");
@@ -270,6 +400,14 @@ class FritzBoxTelefonbuchIntegrationTest {
             String action = ex.getRequestHeaders().getFirst("SOAPACTION").replace("\"", "");
             antworteSoap(ex, action.substring(action.indexOf('#') + 1), ex.getRequestBody().readAllBytes());
         } else if (pfad.startsWith("/phonebook.lua")) {
+            if (exportStatus != 0) {
+                antworte(ex, exportStatus, "");
+                return;
+            }
+            if (exportKaputt) {
+                antworte(ex, 200, "<html>Sitzung abgelaufen");
+                return;
+            }
             String id = pfad.substring(pfad.indexOf("pbid=") + 5);
             StringBuilder export = new StringBuilder("<?xml version=\"1.0\" encoding=\"utf-8\"?><phonebooks><phonebook>");
             eintraege.getOrDefault(id, Map.of()).values().forEach(export::append);
@@ -281,7 +419,12 @@ class FritzBoxTelefonbuchIntegrationTest {
 
     private void antworteSoap(HttpExchange ex, String aktion, byte[] body) throws IOException {
         aktionen.add(aktion);
-        Map<String, String> a = SicheresXml.kinder(SicheresXml.elemente(SicheresXml.parse(body), aktion).getFirst());
+        if (aktion.equals(ohneErgebnisFuer)) {
+            antworte(ex, 200, "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">"
+                    + "<s:Body></s:Body></s:Envelope>");
+            return;
+        }
+        Map<String, String> a =SicheresXml.kinder(SicheresXml.elemente(SicheresXml.parse(body), aktion).getFirst());
         Map<String, String> werte;
         switch (aktion) {
             case "GetPhonebookList" -> werte = Map.of("NewPhonebookList", String.join(",", buecher.keySet().stream().sorted().toList()));
@@ -292,13 +435,15 @@ class FritzBoxTelefonbuchIntegrationTest {
                     return;
                 }
                 werte = Map.of("NewPhonebookName", buecher.get(id), "NewPhonebookExtraID", "",
-                        "NewPhonebookURL", "https://fritz.box:49443/phonebook.lua?sid=0123abcd&pbid=" + id);
+                        "NewPhonebookURL", ohneDownloadAdresse ? "" : "https://fritz.box:49443/phonebook.lua?sid=0123abcd&pbid=" + id);
             }
             case "AddPhonebook" -> {
                 assertThat(a).containsKeys("NewPhonebookExtraID", "NewPhonebookName");
-                String id = String.valueOf(buecher.size() + 5);
-                buecher.put(id, a.get("NewPhonebookName"));
-                eintraege.put(id, new ConcurrentHashMap<>());
+                if (!anlegenOhneWirkung) {
+                    String id = String.valueOf(buecher.size() + 5);
+                    buecher.put(id, a.get("NewPhonebookName"));
+                    eintraege.put(id, new ConcurrentHashMap<>());
+                }
                 werte = Map.of();
             }
             case "DeletePhonebook" -> {
@@ -337,7 +482,7 @@ class FritzBoxTelefonbuchIntegrationTest {
                 }
                 xml = xml.substring(xml.indexOf("<contact>"));
                 buch.put(uid, uidElemente.isEmpty() ? xml.replace("</contact>", "<uniqueid>" + uid + "</uniqueid></contact>") : xml);
-                werte = Map.of("NewPhonebookEntryUniqueID", uid);
+                werte = ohneEintragsKennung ? Map.of() : Map.of("NewPhonebookEntryUniqueID", uid);
             }
             case "DeletePhonebookEntryUID" -> {
                 if (schreibFehler != 0) {
@@ -364,7 +509,8 @@ class FritzBoxTelefonbuchIntegrationTest {
 
     private static void soapFehler(HttpExchange ex, int code) throws IOException {
         antworte(ex, 500, "<s:Envelope><s:Body><s:Fault><detail><UPnPError><errorCode>" + code
-                + "</errorCode></UPnPError></detail></s:Fault></s:Body></s:Envelope>");
+                + "</errorCode><errorDescription>" + (code == 820 ? "Internal Error" : "Invalid Action")
+                + "</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>");
     }
 
     private static boolean digestKorrekt(String header, String methode, String uri) {
