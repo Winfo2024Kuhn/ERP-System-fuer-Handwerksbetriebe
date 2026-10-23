@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.service.pdf;
 
-import com.lowagie.text.pdf.BaseFont;
+import org.openpdf.text.pdf.BaseFont;
 import java.util.ArrayList;
 import java.util.List;
 

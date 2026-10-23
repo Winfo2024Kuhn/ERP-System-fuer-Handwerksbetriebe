@@ -317,7 +317,7 @@ Unbezahlte Rechnungen können automatisch gemahnt werden (Zahlungserinnerung →
 
 ### 10.1 Architektur
 
-Die PDF-Generierung verwendet **OpenPDF** (Fork von iText 2, Paket `com.lowagie`) mit dem **ColumnText-„Schütten“-Prinzip** (`generatePdfBytes(RechnungDto)`):
+Die PDF-Generierung verwendet **OpenPDF** (Fork von iText 2, Paket `org.openpdf`) mit dem **ColumnText-„Schütten“-Prinzip** (`generatePdfBytes(RechnungDto)`):
 1. Inhalt wird in einen ColumnText-Container geschrieben
 2. Bei Seitenüberlauf wird automatisch eine neue Seite angelegt
 3. Folgeseiten erhalten einen eigenen Kopf (`renderFolgeSeitenKopf`)

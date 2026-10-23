@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.pdf.PdfReader;
-import com.lowagie.text.pdf.parser.PdfTextExtractor;
+import org.openpdf.text.pdf.PdfReader;
+import org.openpdf.text.pdf.parser.PdfTextExtractor;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.*;
 
@@ -211,6 +212,18 @@ class RechnungPdfServiceTest {
     }
 
     // ======================= Tests =======================
+
+    @Test
+    @DisplayName("Datei-Kopf ist PDF 1.7, wie es die E-Rechnung (PDF/A-3) verlangt")
+    void dateiKopfIstPdf17() {
+        KopfdatenDto kopf = createTestKopfdaten();
+        List<FormBlockDto> formBlocks = createRealisticFormBlocks(kopf, false);
+        LayoutDto layout = RechnungPdfService.createLayoutFromFormBlocks(formBlocks, 595f, 842f);
+        byte[] pdf = service.generatePdfBytes(
+                new RechnungDto(layout, kopf, createTestContentBlocks(), formBlocks, "Danke!", null, null));
+
+        assertEquals("%PDF-1.7\n", new String(pdf, 0, 9, StandardCharsets.ISO_8859_1));
+    }
 
     @Nested
     @DisplayName("Minimalistisches Dokument-Design")
@@ -535,14 +548,14 @@ class RechnungPdfServiceTest {
         @Test
         @DisplayName("Sonderzeichen werden genau einmal entpackt")
         void entpacktSonderzeichenGenauEinmal() {
-            List<com.lowagie.text.Element> elemente = service.parseHtmlToElements(
+            List<org.openpdf.text.Element> elemente = service.parseHtmlToElements(
                     "<p>Max &amp; Erika&nbsp;&quot;Treppe&quot; &amp;lt;Gel&auml;nder&amp;gt;</p>",
                     java.awt.Color.BLACK, 10f, false);
 
             StringBuilder text = new StringBuilder();
-            for (com.lowagie.text.Element element : elemente) {
-                for (com.lowagie.text.Element chunk : element.getChunks()) {
-                    text.append(((com.lowagie.text.Chunk) chunk).getContent());
+            for (org.openpdf.text.Element element : elemente) {
+                for (org.openpdf.text.Element chunk : element.getChunks()) {
+                    text.append(((org.openpdf.text.Chunk) chunk).getContent());
                 }
             }
 
@@ -677,11 +690,11 @@ class RechnungPdfServiceTest {
     class SchriftgroessenTests {
 
         /** Liefert die Schriftgröße des ersten nicht-leeren Text-Chunks. */
-        private float ersteChunkSchriftgroesse(List<com.lowagie.text.Element> elements) {
-            for (com.lowagie.text.Element el : elements) {
-                if (el instanceof com.lowagie.text.Phrase phrase) {
+        private float ersteChunkSchriftgroesse(List<org.openpdf.text.Element> elements) {
+            for (org.openpdf.text.Element el : elements) {
+                if (el instanceof org.openpdf.text.Phrase phrase) {
                     for (Object o : phrase.getChunks()) {
-                        com.lowagie.text.Chunk chunk = (com.lowagie.text.Chunk) o;
+                        org.openpdf.text.Chunk chunk = (org.openpdf.text.Chunk) o;
                         if (!chunk.getContent().isBlank()) {
                             return chunk.getFont().getSize();
                         }
@@ -696,7 +709,7 @@ class RechnungPdfServiceTest {
         @DisplayName("Schriftgröße im HTML wird ignoriert: Rich-Text hat eine einheitliche Größe")
         void schriftgroesseImHtmlWirdIgnoriert() {
             for (String groesse : new String[] {"12px", "24pt", "1pt"}) {
-                List<com.lowagie.text.Element> elements = service.parseHtmlToElements(
+                List<org.openpdf.text.Element> elements = service.parseHtmlToElements(
                         "<p><span style=\"font-size: " + groesse + "\">Text</span></p>",
                         java.awt.Color.BLACK, 10f, false);
 

@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.Image;
+import org.openpdf.text.Image;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Bundesland;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
