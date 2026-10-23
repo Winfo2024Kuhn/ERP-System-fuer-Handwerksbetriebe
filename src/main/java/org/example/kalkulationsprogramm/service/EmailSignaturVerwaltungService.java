@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
@@ -16,6 +16,7 @@ import org.example.kalkulationsprogramm.util.SignaturHtmlPruefung;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,7 +49,7 @@ public class EmailSignaturVerwaltungService {
     private final OutOfOfficeScheduleRepository abwesenheitRepository;
     private final EmailSignatureService signaturService;
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = JsonMapper.builderWithJackson2Defaults().build();
 
     /**
      * Angaben zur Person im Formularzustand des Studios. Die Telefonnummer gehört nicht dazu –
@@ -387,7 +388,7 @@ public class EmailSignaturVerwaltungService {
             }
             PERSOENLICHE_FELDER.forEach(feld -> daten.put(feld, ""));
             return JSON.writeValueAsString(daten);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return null;
         }
     }

@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -110,7 +110,7 @@ public class GeminiScannerService {
 
             // Parse
             JsonNode root = objectMapper.readTree(response.body());
-            String text = root.path("candidates").get(0).path("content").path("parts").get(0).path("text").asText()
+            String text = root.path("candidates").get(0).path("content").path("parts").get(0).path("text").asString("")
                     .trim();
 
             // Cleanup

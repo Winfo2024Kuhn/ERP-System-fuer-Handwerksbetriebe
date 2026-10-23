@@ -15,7 +15,7 @@ import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
@@ -31,7 +31,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Pageable;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class LieferantDokumentSucheServiceTest {
@@ -42,7 +42,7 @@ class LieferantDokumentSucheServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new LieferantDokumentSucheService(positionRepository, new ObjectMapper());
+        service = new LieferantDokumentSucheService(positionRepository, JsonMapper.builderWithJackson2Defaults().build());
     }
 
     private static PositionsSuchtreffer treffer(long dokumentId, int nr, String bezeichnung) {

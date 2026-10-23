@@ -5,20 +5,22 @@ import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.*;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import jakarta.persistence.EntityManager;
 import java.util.*;
 import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
 import org.junit.jupiter.api.BeforeEach;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
 @WebMvcTest(MonatsabschlussUebersichtController.class)
 @Import({SecurityConfig.class,MonatsabschlussBerechtigungService.class,MonatsabschlussUebersichtService.class,MonatsabschlussSammelService.class,MonatsabschlussUebersichtSecurityTest.Filters.class})
 class MonatsabschlussUebersichtSecurityTest {
@@ -26,14 +28,14 @@ class MonatsabschlussUebersichtSecurityTest {
         @org.springframework.context.annotation.Bean CloudflareAccessJwtFilter cloudflareAccessJwtFilter(){return new CloudflareAccessJwtFilter();}
     }
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService details;
-    @MockBean FrontendUserProfileRepository profiles;
-    @MockBean MonatsabschlussUebersichtRepository repo;
-    @MockBean MonatsSaldoService saldo;
-    @MockBean MonatsSaldoRepository salden;
-    @MockBean AbwesenheitRepository abwesenheiten;
-    @MockBean EntityManager em;
-    @MockBean PlatformTransactionManager tm;
+    @MockitoBean FrontendUserDetailsService details;
+    @MockitoBean FrontendUserProfileRepository profiles;
+    @MockitoBean MonatsabschlussUebersichtRepository repo;
+    @MockitoBean MonatsSaldoService saldo;
+    @MockitoBean MonatsSaldoRepository salden;
+    @MockitoBean AbwesenheitRepository abwesenheiten;
+    @MockitoBean EntityManager em;
+    @MockitoBean PlatformTransactionManager tm;
     static final String B="/api/zeitverwaltung/monatsabschluesse";
     FrontendUserPrincipal principal() {
         var m=new Mitarbeiter();m.setId(1L);var a=new Abteilung();a.setDarfMonatAbschliessen(true);m.setAbteilungen(Set.of(a));var p=new FrontendUserProfile();p.setMitarbeiter(m);when(profiles.findById(70L)).thenReturn(Optional.of(p));return new FrontendUserPrincipal(70L,"test@example.com","Max Mustermann","",true,Set.of());

@@ -7,11 +7,11 @@ import org.example.kalkulationsprogramm.dto.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,8 +30,8 @@ class ZeitkontoWechselIntegrationTest {
     @Autowired MonatsSaldoRepository monate;
     @Autowired AbwesenheitRepository abwesenheiten;
     @Autowired EntityManager em;
-    @MockBean FeiertagService feiertage;
-    @MockBean MonatsabschlussBerechtigungService rechte;
+    @MockitoBean FeiertagService feiertage;
+    @MockitoBean MonatsabschlussBerechtigungService rechte;
     @TestConfiguration static class ValidationConfig {
         @Bean Validator validator() { return new LocalValidatorFactoryBean(); }
     }

@@ -25,7 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Flow;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,8 +42,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class KiHilfeServiceTest {
@@ -59,7 +59,7 @@ class KiHilfeServiceTest {
     @Mock
     private HttpClient httpClient;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
     private KiHilfeService service;
 
     @BeforeEach
@@ -264,19 +264,19 @@ class KiHilfeServiceTest {
         JsonNode erste = anfragen.get(0);
         assertThat(erste.path("systemInstruction").toString()).contains("Selbst nachschlagen", "AUTOMATISCHER-KONTEXT");
         assertThat(erste.path("tools").toString()).contains("googleSearch", KiHilfeWerkzeuge.SUCHEN, KiHilfeWerkzeuge.LESEN);
-        assertThat(erste.path("toolConfig").path("includeServerSideToolInvocations").asBoolean()).isTrue();
+        assertThat(erste.path("toolConfig").path("includeServerSideToolInvocations").asBoolean(false)).isTrue();
         assertThat(erste.path("toolConfig").has("functionCallingConfig")).isFalse();
 
         JsonNode verlauf = anfragen.get(1).path("contents");
         assertThat(verlauf).hasSize(3);
-        assertThat(verlauf.get(0).path("parts").get(0).path("text").asText())
+        assertThat(verlauf.get(0).path("parts").get(0).path("text").asString(""))
                 .startsWith("Wie storniere ich eine Rechnung?").contains("Seite: /projekte/7");
         // Modell-Zug unveraendert zurueck, inkl. Gedanken-Signatur
-        assertThat(verlauf.get(1).path("role").asText()).isEqualTo("model");
-        assertThat(verlauf.get(1).path("parts").get(0).path("thoughtSignature").asText()).isEqualTo("sig-a1");
+        assertThat(verlauf.get(1).path("role").asString("")).isEqualTo("model");
+        assertThat(verlauf.get(1).path("parts").get(0).path("thoughtSignature").asString("")).isEqualTo("sig-a1");
         JsonNode antwortTeil = verlauf.get(2).path("parts").get(0).path("functionResponse");
-        assertThat(antwortTeil.path("id").asText()).isEqualTo("a1");
-        assertThat(antwortTeil.path("response").path("treffer").get(0).path("inhalt").asText()).contains("Stornieren");
+        assertThat(antwortTeil.path("id").asString("")).isEqualTo("a1");
+        assertThat(antwortTeil.path("response").path("treffer").get(0).path("inhalt").asString("")).contains("Stornieren");
     }
 
     @Test
@@ -296,7 +296,7 @@ class KiHilfeServiceTest {
             assertThat(anfragen.get(i).path("toolConfig").has("functionCallingConfig")).isFalse();
         }
         JsonNode letzte = anfragen.get(KiHilfeService.MAX_NACHSCHLAGE_RUNDEN);
-        assertThat(letzte.path("toolConfig").path("functionCallingConfig").path("mode").asText()).isEqualTo("NONE");
+        assertThat(letzte.path("toolConfig").path("functionCallingConfig").path("mode").asString("")).isEqualTo("NONE");
         assertThat(letzte.path("tools").toString()).contains(KiHilfeWerkzeuge.SUCHEN);
     }
 
@@ -317,7 +317,7 @@ class KiHilfeServiceTest {
         assertThat(anfragen.get(0).path("tools").toString()).doesNotContain("googleSearch");
         assertThat(anfragen.get(0).has("toolConfig")).isFalse();
         assertThat(anfragen.get(4).path("toolConfig").has("includeServerSideToolInvocations")).isFalse();
-        assertThat(anfragen.get(4).path("toolConfig").path("functionCallingConfig").path("mode").asText()).isEqualTo("NONE");
+        assertThat(anfragen.get(4).path("toolConfig").path("functionCallingConfig").path("mode").asString("")).isEqualTo("NONE");
     }
 
     @Test
@@ -338,8 +338,8 @@ class KiHilfeServiceTest {
         verify(localRagService, times(KiHilfeService.MAX_AUFRUFE_JE_RUNDE)).suchen(anyString(), any(), anyInt(), any());
         JsonNode antworten = gesendeteAnfragen(2).get(1).path("contents").get(2).path("parts");
         assertThat(antworten).hasSize(4);
-        assertThat(antworten.get(3).path("functionResponse").path("id").asText()).isEqualTo("c4");
-        assertThat(antworten.get(3).path("functionResponse").path("response").path("hinweis").asText())
+        assertThat(antworten.get(3).path("functionResponse").path("id").asString("")).isEqualTo("c4");
+        assertThat(antworten.get(3).path("functionResponse").path("response").path("hinweis").asString(""))
                 .startsWith("Zu viele Suchen");
     }
 
@@ -447,12 +447,12 @@ class KiHilfeServiceTest {
 
         JsonNode contents = gesendeteAnfragen(1).get(0).path("contents");
         assertThat(contents).hasSize(20);
-        assertThat(contents.get(19).path("role").asText()).isEqualTo("user");
-        String letzte = contents.get(19).path("parts").get(0).path("text").asText();
+        assertThat(contents.get(19).path("role").asString("")).isEqualTo("user");
+        String letzte = contents.get(19).path("parts").get(0).path("text").asString("");
         assertThat(letzte).startsWith("Letzte Frage").contains("[Aktueller Bildschirmkontext]", "Titel: Projekte",
                 "Fehlermeldungen: Pflichtfeld fehlt", "Breitengrad 52.5", "x".repeat(2_000) + "…")
                 .doesNotContain("x".repeat(2_001));
-        assertThat(contents.get(18).path("role").asText()).isEqualTo("model");
+        assertThat(contents.get(18).path("role").asString("")).isEqualTo("model");
     }
 
     @Test
@@ -561,7 +561,7 @@ class KiHilfeServiceTest {
 
         assertThat(service.chat(FRAGE, null).reply()).isEqualTo("Trotzdem eine Antwort");
         List<JsonNode> anfragen = gesendeteAnfragen(2);
-        assertThat(anfragen.get(1).path("toolConfig").path("functionCallingConfig").path("mode").asText()).isEqualTo("NONE");
+        assertThat(anfragen.get(1).path("toolConfig").path("functionCallingConfig").path("mode").asString("")).isEqualTo("NONE");
     }
 
     @Test
@@ -572,7 +572,7 @@ class KiHilfeServiceTest {
         geminiAntwortet(text("Kurze Antwort"));
 
         assertThat(service.chat(FRAGE, null).reply()).isEqualTo("Kurze Antwort");
-        assertThat(gesendeteAnfragen(1).get(0).path("toolConfig").path("functionCallingConfig").path("mode").asText())
+        assertThat(gesendeteAnfragen(1).get(0).path("toolConfig").path("functionCallingConfig").path("mode").asString(""))
                 .isEqualTo("NONE");
     }
 }

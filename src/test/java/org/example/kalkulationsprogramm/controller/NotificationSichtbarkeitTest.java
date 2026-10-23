@@ -47,10 +47,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -71,33 +71,33 @@ class NotificationSichtbarkeitTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
-    @MockBean private EmailRepository emailRepository;
-    @MockBean private UrlaubsantragRepository urlaubsantragRepository;
-    @MockBean private ProjektNotizRepository projektNotizRepository;
-    @MockBean private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
-    @MockBean private ProjektDokumentRepository projektDokumentRepository;
-    @MockBean private KalenderEintragRepository kalenderEintragRepository;
-    @MockBean private LieferantDokumentRepository lieferantDokumentRepository;
-    @MockBean private LieferantReklamationRepository lieferantReklamationRepository;
-    @MockBean private DokumentFreigabeRepository dokumentFreigabeRepository;
-    @MockBean private AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
-    @MockBean private AnfrageDokumentRepository anfrageDokumentRepository;
-    @MockBean private AnfrageRepository anfrageRepository;
-    @MockBean private ZeitbuchungRepository zeitbuchungRepository;
-    @MockBean private MonatsSaldoRepository monatsSaldoRepository;
-    @MockBean private MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
-    @MockBean private TelefonBerechtigungService telefonBerechtigungService;
-    @MockBean private org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
-    @MockBean private TelefonBenachrichtigungService telefonBenachrichtigungService;
-    @MockBean private EmailAbsenderRepository postfachRepository;
-    @MockBean private EmailPostfachZuordnungRepository zuordnungRepository;
-    @MockBean private FrontendUserProfileService frontendUserProfileService;
-    @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
-    @MockBean private BenachrichtigungErledigtService erledigtService;
-    @MockBean private BetriebsstatusService betriebsstatusService;
-    @MockBean private org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
+    @MockitoBean private EmailRepository emailRepository;
+    @MockitoBean private UrlaubsantragRepository urlaubsantragRepository;
+    @MockitoBean private ProjektNotizRepository projektNotizRepository;
+    @MockitoBean private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
+    @MockitoBean private ProjektDokumentRepository projektDokumentRepository;
+    @MockitoBean private KalenderEintragRepository kalenderEintragRepository;
+    @MockitoBean private LieferantDokumentRepository lieferantDokumentRepository;
+    @MockitoBean private LieferantReklamationRepository lieferantReklamationRepository;
+    @MockitoBean private DokumentFreigabeRepository dokumentFreigabeRepository;
+    @MockitoBean private AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
+    @MockitoBean private AnfrageDokumentRepository anfrageDokumentRepository;
+    @MockitoBean private AnfrageRepository anfrageRepository;
+    @MockitoBean private ZeitbuchungRepository zeitbuchungRepository;
+    @MockitoBean private MonatsSaldoRepository monatsSaldoRepository;
+    @MockitoBean private MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
+    @MockitoBean private TelefonBerechtigungService telefonBerechtigungService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
+    @MockitoBean private TelefonBenachrichtigungService telefonBenachrichtigungService;
+    @MockitoBean private EmailAbsenderRepository postfachRepository;
+    @MockitoBean private EmailPostfachZuordnungRepository zuordnungRepository;
+    @MockitoBean private FrontendUserProfileService frontendUserProfileService;
+    @MockitoBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
+    @MockitoBean private BenachrichtigungErledigtService erledigtService;
+    @MockitoBean private BetriebsstatusService betriebsstatusService;
+    @MockitoBean private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @org.junit.jupiter.api.BeforeEach
     void gelesenWieBisher() {

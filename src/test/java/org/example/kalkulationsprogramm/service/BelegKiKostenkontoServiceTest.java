@@ -1,7 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.Kostenstelle;
 import org.example.kalkulationsprogramm.domain.Sachkonto;
@@ -74,7 +75,7 @@ class BelegKiKostenkontoServiceTest {
                 sachkontoRepository,
                 Mockito.mock(BelegRepository.class),
                 systemSettingsService,
-                new ObjectMapper());
+                JsonMapper.builderWithJackson2Defaults().build());
     }
 
     @Test
@@ -234,13 +235,13 @@ class BelegKiKostenkontoServiceTest {
 
         ObjectNode turn = svc.buildInitialTurn(beleg);
 
-        assertThat(turn.path("role").asText()).isEqualTo("user");
+        assertThat(turn.path("role").asString("")).isEqualTo("user");
         assertThat(turn.path("parts").size()).isEqualTo(2);
-        assertThat(turn.path("parts").path(0).path("text").asText()).contains("BELEG-DATEN:");
-        assertThat(turn.path("parts").path(1).path("inline_data").path("mime_type").asText())
+        assertThat(turn.path("parts").path(0).path("text").asString("")).contains("BELEG-DATEN:");
+        assertThat(turn.path("parts").path(1).path("inline_data").path("mime_type").asString(""))
                 .isEqualTo(mimeType);
         assertThat(Base64.getDecoder().decode(
-                turn.path("parts").path(1).path("inline_data").path("data").asText()))
+                turn.path("parts").path(1).path("inline_data").path("data").asString("")))
                 .isEqualTo(dummyDatei);
     }
 
@@ -299,7 +300,7 @@ class BelegKiKostenkontoServiceTest {
     @Test
     void positionslisteErgaenztPromptMitHoechstensFuenfzehnZeilen() throws Exception {
         BelegKiKostenkontoService svc = service();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
         ObjectNode extraktion = mapper.createObjectNode();
         var positionen = extraktion.putArray("positionen");
         for (int i = 1; i <= 16; i++) {
@@ -310,7 +311,7 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setKiExtraktionJson(mapper.writeValueAsString(extraktion));
 
-        String text = svc.buildInitialTurn(beleg).path("parts").path(0).path("text").asText();
+        String text = svc.buildInitialTurn(beleg).path("parts").path(0).path("text").asString("");
 
         assertThat(text).contains("1,5 × Musterartikel 1 — 12,50", "1,5 × Musterartikel 15 — 12,50");
         assertThat(text).doesNotContain("Musterartikel 16");
@@ -331,7 +332,7 @@ class BelegKiKostenkontoServiceTest {
 
     private static void assertNurText(ObjectNode turn) {
         assertThat(turn.path("parts").size()).isEqualTo(1);
-        assertThat(turn.path("parts").path(0).path("text").asText()).contains("BELEG-DATEN:");
+        assertThat(turn.path("parts").path(0).path("text").asString("")).contains("BELEG-DATEN:");
         assertThat(turn.path("parts").path(0).has("inline_data")).isFalse();
     }
 
@@ -505,17 +506,17 @@ class BelegKiKostenkontoServiceTest {
 
         ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
         Mockito.verify(client, Mockito.times(2)).send(anfragen.capture(), Mockito.any());
-        var contents = new ObjectMapper().readTree(anfrageKoerper(anfragen.getAllValues().get(1))).path("contents");
+        var contents = JsonMapper.builderWithJackson2Defaults().build().readTree(anfrageKoerper(anfragen.getAllValues().get(1))).path("contents");
         assertThat(contents).hasSize(3);
-        assertThat(contents.get(1).path("parts").get(0).path("thoughtSignature").asText()).isEqualTo("sig");
+        assertThat(contents.get(1).path("parts").get(0).path("thoughtSignature").asString("")).isEqualTo("sig");
         var antworten = contents.get(2).path("parts");
-        assertThat(contents.get(2).path("role").asText()).isEqualTo("user");
+        assertThat(contents.get(2).path("role").asString("")).isEqualTo("user");
         assertThat(antworten).hasSize(2);
-        assertThat(antworten.get(0).path("functionResponse").path("id").asText()).isEqualTo("a1");
-        assertThat(antworten.get(0).path("functionResponse").path("response").path("name").asText())
+        assertThat(antworten.get(0).path("functionResponse").path("id").asString("")).isEqualTo("a1");
+        assertThat(antworten.get(0).path("functionResponse").path("response").path("name").asString(""))
                 .isEqualTo("liste_kostenstellen");
-        assertThat(antworten.get(1).path("functionResponse").path("id").asText()).isEqualTo("a2");
-        assertThat(antworten.get(1).path("functionResponse").path("response").path("name").asText())
+        assertThat(antworten.get(1).path("functionResponse").path("id").asString("")).isEqualTo("a2");
+        assertThat(antworten.get(1).path("functionResponse").path("response").path("name").asString(""))
                 .isEqualTo("liste_sachkonten");
         Mockito.verify(kostenstelleRepository).findByAktivTrueOrderBySortierungAsc();
         Mockito.verify(sachkontoRepository).findByAktivTrueOrderBySortierungAscBezeichnungAsc();

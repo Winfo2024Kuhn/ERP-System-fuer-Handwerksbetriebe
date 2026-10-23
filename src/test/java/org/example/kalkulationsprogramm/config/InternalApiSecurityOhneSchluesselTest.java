@@ -10,14 +10,14 @@ import org.example.kalkulationsprogramm.service.DokumentFreigabeService;
 import org.example.kalkulationsprogramm.service.FreigabeCodeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Fail-closed: Ohne konfigurierten Schlüssel ist /api/internal/** komplett gesperrt. */
@@ -33,11 +33,11 @@ class InternalApiSecurityOhneSchluesselTest {
     }
 
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService users;
-    @MockBean MitarbeiterRepository mitarbeiter;
-    @MockBean DokumentFreigabeService freigabeService;
-    @MockBean FreigabeCodeService freigabeCodeService;
-    @MockBean DateiSpeicherService dateiSpeicherService;
+    @MockitoBean FrontendUserDetailsService users;
+    @MockitoBean MitarbeiterRepository mitarbeiter;
+    @MockitoBean DokumentFreigabeService freigabeService;
+    @MockitoBean FreigabeCodeService freigabeCodeService;
+    @MockitoBean DateiSpeicherService dateiSpeicherService;
 
     @Test void leererSchluesselLaesstKeinenZu() throws Exception {
         mvc.perform(get("/api/internal/freigabe/abc")).andExpect(status().isUnauthorized());

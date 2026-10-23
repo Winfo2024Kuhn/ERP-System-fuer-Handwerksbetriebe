@@ -6,10 +6,10 @@ import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import java.util.*;
 import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
@@ -28,10 +28,10 @@ class DatevKonfigurationSecurityTest {
   @org.springframework.context.annotation.Bean CloudflareAccessJwtFilter cloudflareAccessJwtFilter() { return new CloudflareAccessJwtFilter(); }
  }
  @Autowired MockMvc mvc;
- @MockBean FrontendUserDetailsService users;
- @MockBean FrontendUserProfileRepository profiles;
- @MockBean DatevKonfigurationRepository configs;
- @MockBean DatevPersonalnummerRepository nummern;
+ @MockitoBean FrontendUserDetailsService users;
+ @MockitoBean FrontendUserProfileRepository profiles;
+ @MockitoBean DatevKonfigurationRepository configs;
+ @MockitoBean DatevPersonalnummerRepository nummern;
  static final String URL="/api/zeitverwaltung/monatsabschluesse/datev/konfiguration";
  static final String BODY="{\"version\":0,\"ziel\":\"LODAS\",\"beraterNr\":\"\",\"mandantenNr\":\"\",\"stundenart\":\"SOLL\",\"zuordnungen\":[],\"personalnummern\":[]}";
  FrontendUserPrincipal principal() {

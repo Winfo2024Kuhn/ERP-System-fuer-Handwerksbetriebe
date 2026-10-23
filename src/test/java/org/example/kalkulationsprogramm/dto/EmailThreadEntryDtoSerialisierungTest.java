@@ -1,11 +1,11 @@
 package org.example.kalkulationsprogramm.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Sichert den JSON-Vertrag von {@link EmailThreadEntryDto} ab.
@@ -20,7 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 class EmailThreadEntryDtoSerialisierungTest
 {
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMapper.builderWithJackson2Defaults().build();
 
     private static JsonNode serialisiere() throws Exception
     {
@@ -43,7 +43,7 @@ class EmailThreadEntryDtoSerialisierungTest
         assertThat(json.get("isDraft").isBoolean())
                 .as("'isDraft' muss ein Boolean sein — ein String bricht die Thread-Ansicht")
                 .isTrue();
-        assertThat(json.get("isDraft").asBoolean()).isFalse();
+        assertThat(json.get("isDraft").asBoolean(false)).isFalse();
     }
 
     @Test
@@ -51,7 +51,7 @@ class EmailThreadEntryDtoSerialisierungTest
     {
         JsonNode json = serialisiere();
 
-        assertThat(json.get("zustellStatus").asText()).isEqualTo("UNZUSTELLBAR");
-        assertThat(json.get("zustellFehler").asText()).isEqualTo("unknown user");
+        assertThat(json.get("zustellStatus").asString("")).isEqualTo("UNZUSTELLBAR");
+        assertThat(json.get("zustellFehler").asString("")).isEqualTo("unknown user");
     }
 }

@@ -10,7 +10,7 @@ import org.example.kalkulationsprogramm.domain.KalenderEintrag;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 
 /** Sichtbarkeit im Termin-Kalender auf Datenbank-Ebene (Issue #267). Dummy-Daten: Max Mustermann. */
 @DataJpaTest

@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.core.JacksonException;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -178,7 +179,7 @@ public class BeitragKiService {
         JsonNode wurzel;
         try {
             wurzel = objectMapper.readTree(gewaehlt.get().getPositionenJson());
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             // Nur die Fehlerart: Jackson-Meldungen zitieren den Inhalt.
             log.warn("[BeitragKi] positionenJson unlesbar, Leistungen bleiben leer: {}", e.getClass().getSimpleName());
             return "";
@@ -205,20 +206,20 @@ public class BeitragKiService {
      * Einheit duerfen in den Text.
      */
     private void schreibeBlock(StringBuilder sb, JsonNode block) {
-        String typ = block.path("type").asText();
+        String typ = block.path("type").asString("");
         if ("SECTION_HEADER".equals(typ)) {
-            sb.append("\n").append(sicher(block.path("sectionLabel").asText())).append("\n");
+            sb.append("\n").append(sicher(block.path("sectionLabel").asString(""))).append("\n");
             for (JsonNode kind : block.path("children")) {
                 schreibeBlock(sb, kind);
             }
         } else if ("SERVICE".equals(typ)) {
-            sb.append("- ").append(sicher(block.path("title").asText()));
-            String menge = block.path("quantity").isMissingNode() ? "" : block.path("quantity").asText();
-            String einheit = sicher(block.path("unit").asText());
+            sb.append("- ").append(sicher(block.path("title").asString("")));
+            String menge = block.path("quantity").isMissingNode() ? "" : block.path("quantity").asString("");
+            String einheit = sicher(block.path("unit").asString(""));
             if (!menge.isBlank() && !einheit.isBlank()) {
                 sb.append(" (").append(menge).append(" ").append(einheit).append(")");
             }
-            String beschreibung = sicher(block.path("description").asText());
+            String beschreibung = sicher(block.path("description").asString(""));
             if (!beschreibung.isBlank()) {
                 sb.append(". ").append(beschreibung);
             }
@@ -353,7 +354,7 @@ public class BeitragKiService {
                     .POST(HttpRequest.BodyPublishers.ofString(
                             objectMapper.writeValueAsString(koerper), StandardCharsets.UTF_8))
                     .build();
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Anfrage an die KI konnte nicht gebaut werden.", e);
         }
 
@@ -375,14 +376,14 @@ public class BeitragKiService {
         try {
             JsonNode wurzel = objectMapper.readTree(antwort.body());
             String text = wurzel.path("candidates").path(0).path("content")
-                    .path("parts").path(0).path("text").asText("");
+                    .path("parts").path(0).path("text").asString("");
             JsonNode entwurf = objectMapper.readTree(text);
             return new BeitragKiEntwurf(
-                    entwurf.path("titel").asText(""),
-                    entwurf.path("kurzbeschreibung").asText(""),
-                    entwurf.path("text").asText(""),
-                    entwurf.path("antwort").asText("Vorschlag erstellt."));
-        } catch (IOException e) {
+                    entwurf.path("titel").asString(""),
+                    entwurf.path("kurzbeschreibung").asString(""),
+                    entwurf.path("text").asString(""),
+                    entwurf.path("antwort").asString("Vorschlag erstellt."));
+        } catch (JacksonException e) {
             throw new IllegalStateException("Die Antwort der KI war nicht lesbar.", e);
         }
     }

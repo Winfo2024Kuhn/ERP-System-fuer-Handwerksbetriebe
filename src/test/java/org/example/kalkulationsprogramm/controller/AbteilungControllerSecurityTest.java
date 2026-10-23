@@ -17,13 +17,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -56,13 +56,13 @@ class AbteilungControllerSecurityTest {
     }
 
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean AbteilungRepository abteilungen;
-    @MockBean MitarbeiterRepository mitarbeiter;
-    @MockBean ArbeitsgangRepository arbeitsgangRepository;
-    @MockBean AbteilungDokumentBerechtigungRepository dokumentRechte;
-    @MockBean ArbeitsgangManagementService arbeitsgangService;
-    @MockBean ArbeitsgangMapper arbeitsgangMapper;
+    @MockitoBean FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean AbteilungRepository abteilungen;
+    @MockitoBean MitarbeiterRepository mitarbeiter;
+    @MockitoBean ArbeitsgangRepository arbeitsgangRepository;
+    @MockitoBean AbteilungDokumentBerechtigungRepository dokumentRechte;
+    @MockitoBean ArbeitsgangManagementService arbeitsgangService;
+    @MockitoBean ArbeitsgangMapper arbeitsgangMapper;
 
     private static final String NAME_MONTAGE = "{\"name\":\"Montage\"}";
 

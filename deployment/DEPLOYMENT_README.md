@@ -17,7 +17,7 @@ Produktions-Server, inklusive automatischer Backups und Scheduled Tasks. Die ein
 ### Software-Anforderungen
 
 - **Windows Server** oder Windows 10/11
-- **Java 23** (JRE oder JDK, siehe `pom.xml`)
+- **Java 25** (JRE oder JDK, siehe `pom.xml`)
 - **Docker Desktop** mit PostgreSQL. Die Sicherung läuft per `pg_dump` direkt im
   Datenbank-Container – zusätzliche Datenbank-Programme braucht der Rechner nicht.
   **Achtung:** Die Datenbank des docker-server (Container `erp-postgres`) ist von außen nicht

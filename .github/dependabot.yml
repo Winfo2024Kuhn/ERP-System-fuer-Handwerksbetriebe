@@ -30,7 +30,7 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      # Spring Boot (3.2 -> 3.x) ist ein grosser Schritt und kommt allein, damit
+      # Spring Boot (auch 4.1 -> 4.x) kommt allein, damit
       # ein Fehlschlag dort die kleinen Updates nicht aufhaelt.
       spring-boot:
         patterns: ["org.springframework.boot:*"]

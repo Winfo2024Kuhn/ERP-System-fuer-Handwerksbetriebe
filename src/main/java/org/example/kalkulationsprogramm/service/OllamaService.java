@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -130,11 +130,11 @@ public class OllamaService {
         JsonNode responseJson = objectMapper.readTree(response.body());
         JsonNode messageNode = responseJson.path("message").path("content");
 
-        if (messageNode.isMissingNode() || messageNode.asText().isBlank()) {
+        if (messageNode.isMissingNode() || messageNode.asString("").isBlank()) {
             throw new IOException("Ollama: Leere Antwort erhalten");
         }
 
-        String result = messageNode.asText().trim();
+        String result = messageNode.asString("").trim();
         log.debug("[Ollama] Antwort erhalten: {} Zeichen", result.length());
         return result;
     }

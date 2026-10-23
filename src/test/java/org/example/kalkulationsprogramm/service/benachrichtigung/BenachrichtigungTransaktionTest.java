@@ -23,13 +23,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,13 +79,13 @@ class BenachrichtigungTransaktionTest {
     @Autowired private org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
     @Autowired private org.example.kalkulationsprogramm.repository.EmailAbsenderRepository postfachRepository;
 
-    @MockBean private MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
-    @MockBean private TelefonBerechtigungService telefonBerechtigungService;
-    @MockBean private org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
-    @MockBean private PostfachSichtbarkeitService postfachSichtbarkeitService;
-    @MockBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
-    @MockBean private FrontendUserProfileService frontendUserProfileService;
-    @MockBean private BetriebsstatusService betriebsstatusService;
+    @MockitoBean private MonatsabschlussBerechtigungService monatsabschlussBerechtigungService;
+    @MockitoBean private TelefonBerechtigungService telefonBerechtigungService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
+    @MockitoBean private PostfachSichtbarkeitService postfachSichtbarkeitService;
+    @MockitoBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
+    @MockitoBean private FrontendUserProfileService frontendUserProfileService;
+    @MockitoBean private BetriebsstatusService betriebsstatusService;
 
     private final Authentication max = UsernamePasswordAuthenticationToken.authenticated("max", null, List.of());
 

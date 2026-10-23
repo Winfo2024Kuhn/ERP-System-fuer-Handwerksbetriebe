@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -130,7 +130,7 @@ public class ExternalSpamFilterChatBackend implements SpamFilterChatBackend {
         JsonNode root = objectMapper.readTree(response.body());
         JsonNode choices = root.path("choices");
         if (choices.isArray() && !choices.isEmpty()) {
-            String content = choices.get(0).path("message").path("content").asText("");
+            String content = choices.get(0).path("message").path("content").asString("");
             if (StringUtils.hasText(content)) {
                 return content;
             }

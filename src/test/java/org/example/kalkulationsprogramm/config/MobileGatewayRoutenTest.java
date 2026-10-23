@@ -3,10 +3,11 @@ package org.example.kalkulationsprogramm.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectReader;
+import tools.jackson.databind.json.JsonMapper;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
+import tools.jackson.core.JacksonException;
 
 /**
  * Das öffentliche Handy-Gateway (deployment/mobile-public) lässt nur die Routen aus
@@ -28,7 +30,7 @@ class MobileGatewayRoutenTest {
     /** Fester Eintrag für die PWA-Oberfläche selbst, kein API-Pfad; muss zu render() in sync_routes.py passen. */
     private static final String PWA_OBERFLAECHE = "GET:/zeiterfassung(?:/.*)?";
     private static final Pattern WEITERLEITUNG = Pattern.compile("\\b(?:proxy|grpc|fastcgi|uwsgi|scgi)_pass\\b");
-    private static final ObjectReader JSON_TEXT = new ObjectMapper().readerFor(String.class)
+    private static final ObjectReader JSON_TEXT = JsonMapper.builderWithJackson2Defaults().build().readerFor(String.class)
             .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     @Test
@@ -119,7 +121,7 @@ class MobileGatewayRoutenTest {
     private static String jsonText(String literal) {
         try {
             return JSON_TEXT.readValue(literal);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalArgumentException("Kein gültiger Eintrag in mobile-routes.conf: " + literal, e);
         }
     }

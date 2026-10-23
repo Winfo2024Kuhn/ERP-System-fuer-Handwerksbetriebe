@@ -2,7 +2,7 @@
 
 ## Test-Anforderungen
 - **Service-Schicht:** JUnit 5 + Mockito (`@ExtendWith(MockitoExtension.class)`). Ziel: ≥ 80 % Branch-Coverage je neuer Klasse. `./mvnw test` schreibt den JaCoCo-Bericht nach `target/site/jacoco/`. Eine projektweite Schwelle gibt es bewusst nicht.
-- **Controller-Schicht:** MockMvc (`@WebMvcTest`), Abhängigkeiten per `@MockBean`. Das Projekt läuft auf Spring Boot 3.2, dort gibt es `@MockitoBean` noch nicht. Ziel: Alle Endpoints (Happy-Path + Fehlerfall).
+- **Controller-Schicht:** MockMvc (`@WebMvcTest`), Abhängigkeiten per `@MockitoBean` (`org.springframework.test.context.bean.override.mockito.MockitoBean`). `@MockBean` gibt es seit Spring Boot 4 nicht mehr. Test-Annotationen liegen in den Boot-4-Modulen, z. B. `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` und `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`. Ziel: Alle Endpoints (Happy-Path + Fehlerfall).
 - **Repository-Schicht:** H2 In-Memory (`@DataJpaTest`, Konfiguration `src/test/resources/application.properties`, Flyway aus).
 - **Gegen echtes PostgreSQL:** Das prüfen `repository/DatenbankKompatibilitaet*Test` und `service/*PostgresTest`. Sie laufen nur mit System-Properties (`-Dkompat.db.url=…`, Befehl siehe `BACKEND_ARCH.md`), sonst werden sie übersprungen. Testcontainers gibt es nicht; lokal einen Wegwerf-Container `postgres:16` starten. In der CI laufen sie im Job „Datenbank-Kompatibilitaet (PostgreSQL)“, der auch prüft, dass sie wirklich liefen.
 - **Frontend Unit/Komponenten-Tests:** Vitest + Testing Library + jsdom (neben Quell-Datei als `*.test.tsx`/`*.test.ts`). Befehle: `npm test`, Coverage mit `npm run test:coverage`.

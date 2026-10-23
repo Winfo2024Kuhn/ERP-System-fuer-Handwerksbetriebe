@@ -7,8 +7,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -52,7 +52,7 @@ public class CodebaseIndexService {
 
     private void rebuildIndex() {
         try {
-            Path root = Paths.get(projectRoot).toAbsolutePath().normalize();
+            Path root = Path.of(projectRoot).toAbsolutePath().normalize();
             StringBuilder sb = new StringBuilder();
 
             // ── 1) Frontend Pages (most important for user navigation) ──
@@ -162,7 +162,7 @@ public class CodebaseIndexService {
      */
     private void appendFileContent(StringBuilder sb, Path root, Path file) {
         try {
-            String content = Files.readString(file, StandardCharsets.UTF_8);
+            String content = Files.readString(file);
 
             // Sanitize sensitive values
             content = SECRET_PATTERN.matcher(content).replaceAll("$1***REDACTED***");

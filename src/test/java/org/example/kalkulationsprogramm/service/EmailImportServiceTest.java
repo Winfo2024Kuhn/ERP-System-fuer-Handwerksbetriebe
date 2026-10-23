@@ -1095,8 +1095,9 @@ class EmailImportServiceTest {
 
         private RuntimeException zuLangeSpalte() {
             return new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
-                    new IllegalStateException("ERROR: value too long for type character varying(1000)\n"
-                            + "  Detail: Max Mustermann <max.mustermann@example.com>"));
+                    new IllegalStateException("""
+                            ERROR: value too long for type character varying(1000)
+                              Detail: Max Mustermann <max.mustermann@example.com>"""));
         }
 
         private void importiereMehrmals(int anzahl) {

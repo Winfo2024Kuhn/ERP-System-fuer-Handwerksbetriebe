@@ -18,7 +18,7 @@
 - Note: Surefire runs only its default patterns (`*Test.java`, `*Tests.java`, `Test*.java`, `*TestCase.java`); no Failsafe plugin is configured. Classes named `*IT.java` (e.g. `ProjektManagementServiceIT`) do **not** run with `./mvnw test` and therefore not in CI either.
 - Database tests against real PostgreSQL: `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat -Dkompat.db.user=kompat -Dkompat.db.pass=kompat` (throwaway `postgres:16` container)
 - Frontends: `npm run dev` / `npm run build` / `npm run lint` / `npm test` / `npm run test:e2e` in `react-pc-frontend/` and `react-zeiterfassung/`. `npm run build` writes into `src/main/resources/static/` – the build output is committed.
-- Requires Java 23; Maven wrapper included (no global install needed)
+- Requires Java 25; Maven wrapper included (no global install needed)
 
 ## Coding Style & Naming
 - Java conventions: classes `UpperCamelCase`, methods/fields `lowerCamelCase`
@@ -89,7 +89,7 @@ class MeinControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private MeinService service;
 
     @Test

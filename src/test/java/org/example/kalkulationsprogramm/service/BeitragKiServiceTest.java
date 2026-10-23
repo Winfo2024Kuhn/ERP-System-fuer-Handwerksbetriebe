@@ -1,7 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
@@ -47,7 +48,7 @@ class BeitragKiServiceTest {
         dokumentRepository = mock(AusgangsGeschaeftsDokumentRepository.class);
         service = new BeitragKiService(
                 projektRepository, notizRepository, dokumentRepository,
-                mock(SystemSettingsService.class), new ObjectMapper(),
+                mock(SystemSettingsService.class), JsonMapper.builderWithJackson2Defaults().build(),
                 mock(java.net.http.HttpClient.class), "gemini-pro-latest");
     }
 
@@ -266,14 +267,14 @@ class BeitragKiServiceTest {
         JsonNode contents = service.baueKoerper(anfrage, List.of()).path("contents");
 
         assertThat(contents.size()).isEqualTo(3);
-        assertThat(contents.get(0).path("role").asText()).isEqualTo("user");
-        assertThat(contents.get(0).path("parts").get(0).path("text").asText()).isEqualTo("Erster Wunsch");
-        assertThat(contents.get(1).path("role").asText()).isEqualTo("model");
-        assertThat(contents.get(1).path("parts").get(0).path("text").asText()).isEqualTo("Erste Antwort");
+        assertThat(contents.get(0).path("role").asString("")).isEqualTo("user");
+        assertThat(contents.get(0).path("parts").get(0).path("text").asString("")).isEqualTo("Erster Wunsch");
+        assertThat(contents.get(1).path("role").asString("")).isEqualTo("model");
+        assertThat(contents.get(1).path("parts").get(0).path("text").asString("")).isEqualTo("Erste Antwort");
         // Die aktuelle Runde (Sachkontext plus Auftrag) steht als letztes,
         // sonst liest das Modell die eigene Antwort vor der Frage.
-        assertThat(contents.get(2).path("role").asText()).isEqualTo("user");
-        assertThat(contents.get(2).path("parts").get(0).path("text").asText()).contains("Hallentor Neubau");
+        assertThat(contents.get(2).path("role").asString("")).isEqualTo("user");
+        assertThat(contents.get(2).path("parts").get(0).path("text").asString("")).contains("Hallentor Neubau");
     }
 
     @Test
@@ -293,7 +294,7 @@ class BeitragKiServiceTest {
 
         // 20 Verlauf-Eintraege plus 1 aktuelle Runde.
         assertThat(contents.size()).isEqualTo(21);
-        assertThat(contents.get(0).path("parts").get(0).path("text").asText()).isEqualTo("Nachricht 6");
-        assertThat(contents.get(19).path("parts").get(0).path("text").asText()).isEqualTo("Nachricht 25");
+        assertThat(contents.get(0).path("parts").get(0).path("text").asString("")).isEqualTo("Nachricht 6");
+        assertThat(contents.get(19).path("parts").get(0).path("text").asString("")).isEqualTo("Nachricht 25");
     }
 }

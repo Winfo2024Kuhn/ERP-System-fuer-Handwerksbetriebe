@@ -23,7 +23,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -143,7 +142,7 @@ public class BelegPdfService {
         try {
             byte[] pdf = erzeugePdfBytes(anzeigeTitel, zeilen, fusstext, ersteller);
 
-            Path ordner = Paths.get(uploadPath, "belege");
+            Path ordner = Path.of(uploadPath, "belege");
             Files.createDirectories(ordner);
 
             String originalDateiname = dateiTitel + "-" + datum + ".pdf";
@@ -237,7 +236,7 @@ public class BelegPdfService {
             // den Dateinamen ohnehin sanitisieren, aber wir pruefen hier nochmal.
             String safe = dateiname.trim();
             if (!safe.contains("..") && !safe.contains("/") && !safe.contains("\\")) {
-                Path base = Paths.get(uploadPath, "firma", "logo").toAbsolutePath().normalize();
+                Path base = Path.of(uploadPath, "firma", "logo").toAbsolutePath().normalize();
                 Path logoPath = base.resolve(safe).normalize();
                 if (logoPath.startsWith(base) && Files.exists(logoPath)) {
                     try {

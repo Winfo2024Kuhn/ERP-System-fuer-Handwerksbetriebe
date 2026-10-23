@@ -9,7 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKiAnalyseStatus;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
@@ -27,20 +27,20 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Belegscanner gegen eine echte (H2-)Datenbank. Das Einordnen in die Kette läuft
@@ -61,7 +61,9 @@ class BelegscannerZuordnungIntegrationTest {
     static class Konfiguration {
         @Bean
         ObjectMapper objectMapper() {
-            return new ObjectMapper().findAndRegisterModules();
+            return JsonMapper.builderWithJackson2Defaults()
+                    .findAndAddModules()
+                    .build();
         }
 
         @Bean(name = "taskExecutor")
@@ -80,14 +82,14 @@ class BelegscannerZuordnungIntegrationTest {
     @Autowired private PlatformTransactionManager transactionManager;
 
     // Externes (KI über Spy) und Nachbardienste ohne Bezug zur Zuordnung
-    @SpyBean private GeminiDokumentAnalyseService analyseSpy;
-    @MockBean private ZugferdExtractorService zugferdExtractorService;
-    @MockBean private BelegKiKostenkontoService kostenkontoService;
-    @MockBean private BelegSplitService belegSplitService;
-    @MockBean private KasseSaldoService kasseSaldoService;
-    @MockBean private BelegAuditService auditService;
-    @MockBean private KassenbuchSchreibschutz schreibschutz;
-    @MockBean private BelegVorschlagService vorschlagService;
+    @MockitoSpyBean private GeminiDokumentAnalyseService analyseSpy;
+    @MockitoBean private ZugferdExtractorService zugferdExtractorService;
+    @MockitoBean private BelegKiKostenkontoService kostenkontoService;
+    @MockitoBean private BelegSplitService belegSplitService;
+    @MockitoBean private KasseSaldoService kasseSaldoService;
+    @MockitoBean private BelegAuditService auditService;
+    @MockitoBean private KassenbuchSchreibschutz schreibschutz;
+    @MockitoBean private BelegVorschlagService vorschlagService;
 
     private TransactionTemplate tx;
 
@@ -198,7 +200,9 @@ class BelegscannerZuordnungIntegrationTest {
     void lieferantImPruefDialogGesetzt_lieferantenDokumentEntstehtUndFindetLieferschein() throws Exception {
         Long[] ids = lieferantMitLieferschein();
         // KI hat eine Rechnung erkannt, aber keinen Lieferanten gefunden
-        String kiJson = new ObjectMapper().findAndRegisterModules().writeValueAsString(kiRechnung());
+        String kiJson = JsonMapper.builderWithJackson2Defaults()
+                .findAndAddModules()
+                .build().writeValueAsString(kiRechnung());
         Long ohneLieferant = beleg(null);
         Long belegId = tx.execute(status -> {
             Beleg beleg = belegRepository.findById(ohneLieferant).orElseThrow();

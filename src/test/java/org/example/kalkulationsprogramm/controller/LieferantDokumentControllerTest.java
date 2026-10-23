@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.FrontendUserRole;
@@ -26,12 +26,12 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
@@ -66,34 +66,34 @@ class LieferantDokumentControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private LieferantDokumentRepository dokumentRepository;
 
-    @MockBean
+    @MockitoBean
     private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
 
-    @MockBean
+    @MockitoBean
     private LieferantDokumentService dokumentService;
 
-    @MockBean
+    @MockitoBean
     private GeminiDokumentAnalyseService analyseService;
 
-    @MockBean
+    @MockitoBean
     private EmailRepository emailRepository;
 
-    @MockBean
+    @MockitoBean
     private EmailAttachmentProcessingService emailAttachmentProcessingService;
 
-    @MockBean
+    @MockitoBean
     private EmailAttachmentRepository emailAttachmentRepository;
 
-    @MockBean
+    @MockitoBean
     private DatensatzLockService dokumentLockService;
 
-    @MockBean
+    @MockitoBean
     private LieferantDokumentZugriffService zugriffService;
 
-    @MockBean
+    @MockitoBean
     private LieferantDokumentDateiService dokumentDateiService;
 
     /** Echte Dateisuche hinter dem Mock; die Ordner liegen unter {@code uploadDir} wie im Standard-Setup. */
@@ -660,7 +660,7 @@ class LieferantDokumentControllerTest {
             mockMvc.perform(get("/api/lieferant-dokumente/9/download"))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Content-Disposition",
-                            "inline; filename=\"=?UTF-8?Q?a\";x=3D\"b.pdf?=\"; filename*=UTF-8''a%22%3Bx%3D%22b.pdf"));
+                            "inline; filename=\"a\\\";x=\\\"b.pdf\"; filename*=UTF-8''a%22%3Bx%3D%22b.pdf"));
         }
     }
 

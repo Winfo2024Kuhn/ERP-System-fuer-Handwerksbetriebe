@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
 import org.example.kalkulationsprogramm.domain.BelegKiAnalyseStatus;
@@ -69,7 +70,7 @@ class BelegKiAnalyseServiceTest {
     @Mock private BelegAuditService auditService;
 
     // ObjectMapper kein @Mock — echte Serialisierung
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
     @InjectMocks
     private BelegKiAnalyseService service;

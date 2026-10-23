@@ -17,6 +17,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
@@ -109,7 +110,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Abschlussdatum
    * eines passenden Projekts oder Anfrages liegen (Karenzzeit).
    */
-  @Query(value = """
+  @NativeQuery("""
       SELECT DISTINCT e.* FROM email e
       WHERE e.zuordnung_typ = 'KEINE'
         AND e.direction = 'IN'
@@ -153,7 +154,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
             )
         )
       ORDER BY e.sent_at DESC
-      """, nativeQuery = true)
+      """)
   List<Email> findUnassigned();
 
   // ═══════════════════════════════════════════════════════════════
@@ -189,7 +190,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Prüft sowohl senderDomain als auch extrahiert Domain aus fromAddress als
    * Fallback.
    */
-  @Query(value = """
+  @NativeQuery("""
       SELECT * FROM email e
       WHERE e.zuordnung_typ = 'KEINE'
         AND e.direction = 'IN'
@@ -199,7 +200,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
           OR (e.sender_domain IS NULL AND LOWER(e.from_address) LIKE LOWER(CONCAT('%@', :domain)))
         )
       ORDER BY e.sent_at DESC
-      """, nativeQuery = true)
+      """)
   List<Email> findUnassignedByDomain(@Param("domain") String domain);
 
   @Query("""
@@ -220,7 +221,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Score-Analyse).
    * Nur nicht-zugeordnete, nicht-spam, nicht-gelöschte eingehende Emails.
    */
-  @Query(value = """
+  @NativeQuery("""
       SELECT * FROM email e
       WHERE e.is_potential_inquiry = true
         AND e.is_spam = false
@@ -231,7 +232,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.anfrage_id IS NULL
         AND e.lieferant_id IS NULL
       ORDER BY e.sent_at DESC
-      """, nativeQuery = true)
+      """)
   List<Email> findPotentialInquiries();
 
   /**
@@ -255,14 +256,14 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * stammen.
    * Wird verwendet um Anfragen-Flag zu entfernen wenn Lieferant angelegt wird.
    */
-  @Query(value = """
+  @NativeQuery("""
       SELECT * FROM email e
       WHERE e.is_potential_inquiry = true
         AND (
           LOWER(e.sender_domain) = LOWER(:domain)
           OR (e.sender_domain IS NULL AND LOWER(e.from_address) LIKE LOWER(CONCAT('%@', :domain)))
         )
-      """, nativeQuery = true)
+      """)
   List<Email> findInquiriesByDomain(@Param("domain") String domain);
 
   /**
@@ -512,13 +513,13 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Durchsucht alle Emails nach Betreff, Absender oder Empfänger.
    * Gibt maximal 50 Ergebnisse zurück, sortiert nach Datum absteigend.
    */
-  @Query(value = """
+  @NativeQuery("""
       SELECT * FROM email e
       WHERE (LOWER(e.subject) LIKE LOWER(CONCAT('%', :query, '%'))
           OR LOWER(e.from_address) LIKE LOWER(CONCAT('%', :query, '%'))
           OR LOWER(e.recipient) LIKE LOWER(CONCAT('%', :query, '%'))
           OR LOWER(e.body) LIKE LOWER(CONCAT('%', :query, '%')))
       ORDER BY e.sent_at DESC
-      """, nativeQuery = true)
+      """)
   List<Email> searchGlobal(@Param("query") String query);
 }

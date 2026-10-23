@@ -20,13 +20,13 @@ import org.example.kalkulationsprogramm.service.WerkstoffService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Werkstoffe ändern Stammdaten für alle Artikel: nur angemeldet und (bei Änderungen) nur mit CSRF-Token. Die Handy-App kommt nicht heran. */
@@ -44,9 +44,9 @@ class WerkstoffControllerSecurityTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private WerkstoffService service;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean private FrontendUserProfileRepository frontendUserProfileRepository;
+    @MockitoBean private WerkstoffService service;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private FrontendUserProfileRepository frontendUserProfileRepository;
 
     private static final String BASIS = "/api/werkstoffe";
     private static final String KOERPER = "{\"name\":\"S235JR\"}";

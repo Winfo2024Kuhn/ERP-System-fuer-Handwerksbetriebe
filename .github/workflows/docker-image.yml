@@ -259,10 +259,9 @@ jobs:
 
       # Bekannte Sicherheitsluecken in den Linux-Paketen und Java-Bibliotheken des
       # Images. Die hohen und kritischen stehen im Bericht des Laufs. KRITISCHE
-      # Luecken, fuer die es schon eine Korrektur gibt, melden sich als Warnung -
-      # mit SPERRE: "ja" verhindern sie die Veroeffentlichung. Die Sperre ist noch
-      # aus: Spring Boot 3.2 bringt bekannte kritische Luecken mit, sie wuerde jedes
-      # Nachtupdate stoppen. Erst Spring Boot aktualisieren, dann einschalten.
+      # Luecken, fuer die es schon eine Korrektur gibt, verhindern die
+      # Veroeffentlichung (SPERRE: "ja"; mit "nein" nur eine Warnung). Seit
+      # Spring Boot 4.1 / Java 25 ist das Image frei davon.
       # Eine bewusst hingenommene Luecke kommt mit Begruendung in .trivyignore
       # (eine CVE-Nummer je Zeile).
       #
@@ -280,7 +279,7 @@ jobs:
         shell: bash
         env:
           TRIVY: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
-          SPERRE: "nein"
+          SPERRE: "ja"
         run: |
           set -uo pipefail
           scan="$RUNNER_TEMP/trivy"

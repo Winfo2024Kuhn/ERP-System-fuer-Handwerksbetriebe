@@ -37,12 +37,12 @@ import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -64,24 +64,24 @@ class BestellungsUebersichtSecurityTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private LieferantDokumentRepository dokumentRepository;
-    @MockBean private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
-    @MockBean private ProjektRepository projektRepository;
-    @MockBean private ProjektDokumentRepository projektDokumentRepository;
-    @MockBean private LieferantDokumentProjektAnteilRepository projektAnteilRepository;
-    @MockBean private KostenstelleRepository kostenstelleRepository;
-    @MockBean private FrontendUserProfileRepository frontendUserProfileRepository;
-    @MockBean private BelegRepository belegRepository;
-    @MockBean private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
-    @MockBean private BelegService belegService;
-    @MockBean private BelegAuditService belegAuditService;
-    @MockBean private RechnungsVorschlagService rechnungsVorschlagService;
-    @MockBean private KettenVorschlagService kettenVorschlagService;
-    @MockBean private LieferantDokumentService lieferantDokumentService;
-    @MockBean private BestellungsUebersichtService bestellungsUebersichtService;
-    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService zuordnungService;
-    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService zugriffService;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private LieferantDokumentRepository dokumentRepository;
+    @MockitoBean private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
+    @MockitoBean private ProjektRepository projektRepository;
+    @MockitoBean private ProjektDokumentRepository projektDokumentRepository;
+    @MockitoBean private LieferantDokumentProjektAnteilRepository projektAnteilRepository;
+    @MockitoBean private KostenstelleRepository kostenstelleRepository;
+    @MockitoBean private FrontendUserProfileRepository frontendUserProfileRepository;
+    @MockitoBean private BelegRepository belegRepository;
+    @MockitoBean private BelegKostenstellenAnteilRepository belegKostenstellenAnteilRepository;
+    @MockitoBean private BelegService belegService;
+    @MockitoBean private BelegAuditService belegAuditService;
+    @MockitoBean private RechnungsVorschlagService rechnungsVorschlagService;
+    @MockitoBean private KettenVorschlagService kettenVorschlagService;
+    @MockitoBean private LieferantDokumentService lieferantDokumentService;
+    @MockitoBean private BestellungsUebersichtService bestellungsUebersichtService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService zuordnungService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService zugriffService;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
 
     @org.junit.jupiter.api.BeforeEach
     void alleTypenSichtbar() {

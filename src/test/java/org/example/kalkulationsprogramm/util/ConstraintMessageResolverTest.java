@@ -60,8 +60,9 @@ class ConstraintMessageResolverTest {
         constraint("kunde_kundennummer_key", "kunde", ConstraintType.UNIQUE, List.of("kundennummer"), null);
 
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: duplicate key value violates unique constraint \"kunde_kundennummer_key\"\n"
-                        + "  Detail: Key (kundennummer)=(1001) already exists.", "23505"));
+                """
+                ERROR: duplicate key value violates unique constraint "kunde_kundennummer_key"
+                  Detail: Key (kundennummer)=(1001) already exists.""", "23505"));
 
         assertThat(ergebnis.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(ergebnis.userMessage()).isEqualTo("Der Wert '1001' für Kundennummer ist bereits vergeben.");
@@ -78,8 +79,9 @@ class ConstraintMessageResolverTest {
                 .willReturn(Optional.of(new ColumnMetadata("kunde", "kundennummer", "Kunden-Nr.", 20, false)));
 
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: duplicate key value violates unique constraint \"kunde_kundennummer_key\"\n"
-                        + "  Detail: Key (kundennummer)=(1001) already exists.", "23505"));
+                """
+                ERROR: duplicate key value violates unique constraint "kunde_kundennummer_key"
+                  Detail: Key (kundennummer)=(1001) already exists.""", "23505"));
 
         assertThat(ergebnis.userMessage()).isEqualTo("Der Wert '1001' für Kunden-Nr. ist bereits vergeben.");
         assertThat(ergebnis.fieldErrors()).extracting(FieldErrorDetail::label).containsExactly("Kunden-Nr.");
@@ -91,8 +93,9 @@ class ConstraintMessageResolverTest {
         constraint("uk_projekt_nummer", "projekt", ConstraintType.UNIQUE, List.of("kunden_id", "nummer", "jahr"), null);
 
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: duplicate key value violates unique constraint \"uk_projekt_nummer\"\n"
-                        + "  Detail: Key (kunden_id, nummer, jahr)=(7, 12, 2026) already exists.", "23505"));
+                """
+                ERROR: duplicate key value violates unique constraint "uk_projekt_nummer"
+                  Detail: Key (kunden_id, nummer, jahr)=(7, 12, 2026) already exists.""", "23505"));
 
         assertThat(ergebnis.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(ergebnis.userMessage()).isEqualTo("Die Kombination aus Kunden Id, Nummer und Jahr muss eindeutig sein.");
@@ -104,8 +107,9 @@ class ConstraintMessageResolverTest {
     @DisplayName("Doppelter Wert ohne Metadaten: allgemeine Meldung mit Constraint-Namen")
     void doppelterWertOhneMetadaten() {
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: duplicate key value violates unique constraint \"kunde_email_key\"\n"
-                        + "  Detail: Key (email)=(max.mustermann@example.com) already exists.", "23505"));
+                """
+                ERROR: duplicate key value violates unique constraint "kunde_email_key"
+                  Detail: Key (email)=(max.mustermann@example.com) already exists.""", "23505"));
 
         assertThat(ergebnis.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(ergebnis.userMessage())
@@ -120,8 +124,9 @@ class ConstraintMessageResolverTest {
         constraint("kunde_kundennummer_key", "kunde", ConstraintType.UNIQUE, List.of(), null);
 
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: duplicate key value violates unique constraint \"kunde_kundennummer_key\"\n"
-                        + "  Detail: Key (kundennummer)=(1001) already exists.", "23505"));
+                """
+                ERROR: duplicate key value violates unique constraint "kunde_kundennummer_key"
+                  Detail: Key (kundennummer)=(1001) already exists.""", "23505"));
 
         assertThat(ergebnis.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(ergebnis.userMessage())
@@ -200,8 +205,9 @@ class ConstraintMessageResolverTest {
         constraint("fk_projekt_kunde", "projekt", ConstraintType.FOREIGN_KEY, List.of("kunden_id"), "kunde");
 
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: update or delete on table \"kunde\" violates foreign key constraint \"fk_projekt_kunde\" on table \"projekt\"\n"
-                        + "  Detail: Key (id)=(7) is still referenced from table \"projekt\".", "23503"));
+                """
+                ERROR: update or delete on table "kunde" violates foreign key constraint "fk_projekt_kunde" on table "projekt"
+                  Detail: Key (id)=(7) is still referenced from table "projekt".""", "23503"));
 
         assertThat(ergebnis.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(ergebnis.userMessage())
@@ -231,8 +237,9 @@ class ConstraintMessageResolverTest {
         given(metadaten.findTable("kunde")).willReturn(Optional.of(new TableMetadata("kunde", "Kunden")));
 
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: insert or update on table \"projekt\" violates foreign key constraint \"fk_projekt_kunde\"\n"
-                        + "  Detail: Key (kunden_id)=(99) is not present in table \"kunde\".", "23503"));
+                """
+                ERROR: insert or update on table "projekt" violates foreign key constraint "fk_projekt_kunde"
+                  Detail: Key (kunden_id)=(99) is not present in table "kunde".""", "23503"));
 
         assertThat(ergebnis.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(ergebnis.userMessage()).isEqualTo(
@@ -245,11 +252,13 @@ class ConstraintMessageResolverTest {
     @DisplayName("Verweis ohne Metadaten: Tabellen kommen aus dem PostgreSQL-Text")
     void verweisOhneMetadaten() {
         ConstraintErrorDetail einfuegen = resolver.resolve(fehler(
-                "ERROR: insert or update on table \"projekt\" violates foreign key constraint \"fk_unbekannt\"\n"
-                        + "  Detail: Key (kunden_id)=(99) is not present in table \"kunde\".", "23503"));
+                """
+                ERROR: insert or update on table "projekt" violates foreign key constraint "fk_unbekannt"
+                  Detail: Key (kunden_id)=(99) is not present in table "kunde".""", "23503"));
         ConstraintErrorDetail loeschen = resolver.resolve(fehler(
-                "ERROR: update or delete on table \"kunde\" violates foreign key constraint \"fk_unbekannt\" on table \"projekt\"\n"
-                        + "  Detail: Key (id)=(7) is still referenced from table \"projekt\".", "23503"));
+                """
+                ERROR: update or delete on table "kunde" violates foreign key constraint "fk_unbekannt" on table "projekt"
+                  Detail: Key (id)=(7) is still referenced from table "projekt".""", "23503"));
 
         assertThat(einfuegen.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(einfuegen.userMessage())
@@ -268,8 +277,9 @@ class ConstraintMessageResolverTest {
         constraint("fk_projekt_kunde", "projekt", ConstraintType.FOREIGN_KEY, List.of("kunden_id"), null);
 
         ConstraintErrorDetail ergebnis = resolver.resolve(fehler(
-                "ERROR: insert or update on table \"projekt\" violates foreign key constraint \"fk_projekt_kunde\"\n"
-                        + "  Detail: Key (kunden_id)=(99) is not present in table \"kunde\".", "23503"));
+                """
+                ERROR: insert or update on table "projekt" violates foreign key constraint "fk_projekt_kunde"
+                  Detail: Key (kunden_id)=(99) is not present in table "kunde".""", "23503"));
 
         assertThat(ergebnis.userMessage()).isEqualTo(
                 "Der angegebene Wert für Kunden Id ist ungültig – es existiert kein passender Eintrag in 'Kunde'.");

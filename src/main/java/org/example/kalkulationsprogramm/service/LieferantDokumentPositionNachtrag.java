@@ -8,10 +8,9 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentPositionRepo
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -73,7 +72,7 @@ public class LieferantDokumentPositionNachtrag {
         JsonNode antwort;
         try {
             antwort = objectMapper.readTree(gd.getAiRawJson());
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             // Nie die Antwort selbst loggen: sie enthält die Belegdaten.
             log.debug("[PositionenNachtrag] KI-Antwort von Dokument {} nicht lesbar", id);
             return 0;

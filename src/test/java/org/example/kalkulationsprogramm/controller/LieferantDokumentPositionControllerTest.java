@@ -36,11 +36,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -62,11 +62,11 @@ class LieferantDokumentPositionControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private LieferantDokumentZuordnungService zuordnungService;
-    @MockBean private GeminiDokumentAnalyseService analyseService;
-    @MockBean private BelegService belegService;
-    @MockBean private LieferantDokumentZugriffService zugriffService;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private LieferantDokumentZuordnungService zuordnungService;
+    @MockitoBean private GeminiDokumentAnalyseService analyseService;
+    @MockitoBean private BelegService belegService;
+    @MockitoBean private LieferantDokumentZugriffService zugriffService;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
 
     /** @MockBean wird in @Nested-Klassen nicht zurückgesetzt – daher hier von Hand. */
     @AfterEach
