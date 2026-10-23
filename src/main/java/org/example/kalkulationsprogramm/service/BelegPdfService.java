@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.BadElementException;
 import org.openpdf.text.Document;
 import org.openpdf.text.DocumentException;
@@ -13,7 +14,6 @@ import org.openpdf.text.Phrase;
 import org.openpdf.text.Rectangle;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
-import org.openpdf.text.pdf.PdfWriter;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
@@ -162,7 +162,7 @@ public class BelegPdfService {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         // A4 hochkant -- anders als das Kassenbuch-PDF (BelegeKasseExportPdfService), das quer liegt.
         Document doc = new Document(PageSize.A4, 36, 36, 36, 36);
-        PdfWriter.getInstance(doc, out).setPdfVersion(PdfWriter.VERSION_1_7);
+        PdfWriterFabrik.writer(doc, out);
         doc.open();
 
         Firmeninformation firma = firmeninformationRepository.findFirmeninformation().orElse(null);

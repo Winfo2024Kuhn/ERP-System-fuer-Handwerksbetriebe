@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.*;
 import org.openpdf.text.BadElementException;
 import org.openpdf.text.Font;
@@ -7,7 +8,6 @@ import org.openpdf.text.Image;
 import org.openpdf.text.Rectangle;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
-import org.openpdf.text.pdf.PdfWriter;
 
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
@@ -114,7 +114,7 @@ public class BelegeKasseExportPdfService {
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "belege-export-", ".pdf");
             Document doc = new Document(PageSize.A4.rotate(), 36, 36, 36, 36);
-            PdfWriter.getInstance(doc, Files.newOutputStream(temp)).setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriterFabrik.writer(doc, Files.newOutputStream(temp));
             doc.open();
 
             Firmeninformation firma = firmeninformationRepository.findFirmeninformation().orElse(null);

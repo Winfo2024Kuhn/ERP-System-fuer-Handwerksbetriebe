@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service.miete;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.Document;
 import org.openpdf.text.DocumentException;
 import org.openpdf.text.Element;
@@ -9,7 +10,6 @@ import org.openpdf.text.Paragraph;
 import org.openpdf.text.Phrase;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
-import org.openpdf.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.miete.Mietobjekt;
 import org.example.kalkulationsprogramm.domain.miete.Raum;
@@ -56,7 +56,7 @@ public class ZaehlerstandErfassungsPdfService {
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, 36f, 36f, 40f, 40f);
-            PdfWriter.getInstance(document, baos).setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriterFabrik.writer(document, baos);
             document.open();
 
             addDocumentHeader(document, mietobjekt, jahr);

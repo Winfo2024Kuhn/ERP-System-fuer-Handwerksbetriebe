@@ -1,11 +1,11 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.Document;
 import org.openpdf.text.DocumentException;
 import org.openpdf.text.Font;
 import org.openpdf.text.PageSize;
 import org.openpdf.text.Paragraph;
-import org.openpdf.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
@@ -135,7 +135,7 @@ public class WiderrufsbelehrungPdfService
         Document doc = new Document(PageSize.A4, 56, 56, 56, 56);
         try
         {
-            PdfWriter.getInstance(doc, out).setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriterFabrik.writer(doc, out);
             doc.open();
             Font titelFont = PdfSchriften.betreff(15f, PdfSchriften.TEXTFARBE);
             Font ueberschrift = PdfSchriften.brieftext(11f, Font.BOLD, PdfSchriften.TEXTFARBE);

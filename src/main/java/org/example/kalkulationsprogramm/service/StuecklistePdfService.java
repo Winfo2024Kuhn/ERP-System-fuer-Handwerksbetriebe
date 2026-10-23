@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.*;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
@@ -44,8 +45,7 @@ public class StuecklistePdfService {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try {
             Document doc = new Document(PageSize.A4.rotate());
-            PdfWriter writer = PdfWriter.getInstance(doc, baos);
-            writer.setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriter writer = PdfWriterFabrik.writer(doc, baos);
             writer.setCompressionLevel(0);
             doc.open();
 
@@ -248,8 +248,7 @@ public class StuecklistePdfService {
                 org.openpdf.text.pdf.PdfReader refReader = new org.openpdf.text.pdf.PdfReader(refIs);
                 java.io.ByteArrayOutputStream mergedOut = new java.io.ByteArrayOutputStream();
                 org.openpdf.text.Document merged = new org.openpdf.text.Document();
-                org.openpdf.text.pdf.PdfCopy copy = new org.openpdf.text.pdf.PdfCopy(merged, mergedOut);
-                copy.setPdfVersion(org.openpdf.text.pdf.PdfWriter.VERSION_1_7);
+                org.openpdf.text.pdf.PdfCopy copy = PdfWriterFabrik.kopie(merged, mergedOut);
                 merged.open();
                 for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
                     copy.addPage(copy.getImportedPage(mainReader, i));
