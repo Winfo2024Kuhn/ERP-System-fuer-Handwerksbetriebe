@@ -87,10 +87,11 @@ async function stubArbeitsgangApi(page: Page, antwort: unknown = DUMMY_ANTWORT) 
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
 
+        // Die Arbeitsgänge-Seite ist nur für Admins erreichbar.
         if (pfad === '/api/auth/me') {
             return json(route, {
                 id: 1, username: 'anna.buero', displayName: 'Anna Büro',
-                active: true, roles: ['USER'], admin: false, requiresInitialSetup: false,
+                active: true, roles: ['ADMIN'], admin: true, requiresInitialSetup: false,
             });
         }
         if (pfad === '/api/notifications/summary') {

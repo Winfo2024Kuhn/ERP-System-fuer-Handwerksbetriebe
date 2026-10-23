@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Inbox, MailCheck, RefreshCw } from 'lucide-react';
 import { Button } from '../../../ui/button';
 import { useToast } from '../../../ui/toast';
@@ -33,14 +33,20 @@ function ohne<T>(eintraege: Record<number, T>, id: number): Record<number, T> {
 const reiterLink = 'font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded';
 
 /**
- * Einstellungen → Berechtigungen: Wer sieht welches E-Mail-Postfach?
+ * Einstellungen → Abteilungen & Rechte: Wer sieht welches E-Mail-Postfach?
  *
  * <p>Pro Postfach eine Zeile mit „Alle im Betrieb“ / „Nur bestimmte“ und
  * eigenem Speichern-Knopf (`PUT /api/postfaecher/{id}/sichtbarkeit`). Die
  * Häkchen-Listen für Abteilungen und Benutzer werden nur einmal geladen –
  * und erst, wenn ein Postfach auf „Nur bestimmte“ steht.</p>
+ *
+ * <p>`abteilungenStand` zählt der Reiter hoch, sobald eine Abteilung angelegt,
+ * umbenannt oder gelöscht wurde. Dann holt die Karte Postfächer und
+ * Abteilungsliste ohne Ladeanzeige neu – sonst fehlte eine neue Abteilung,
+ * stünde ein alter Name da oder ginge eine gelöschte Abteilung beim Speichern
+ * mit. Noch nicht gespeicherte Auswahlen werden dabei verworfen.</p>
  */
-export function PostfachSichtbarkeitKarte() {
+export function PostfachSichtbarkeitKarte({ abteilungenStand = 0 }: { abteilungenStand?: number } = {}) {
     const toast = useToast();
     const [postfaecher, setPostfaecher] = useState<PostfachDto[]>([]);
     const [laedt, setLaedt] = useState(true);
@@ -75,6 +81,16 @@ export function PostfachSichtbarkeitKarte() {
         parseSichtbarkeitsAbteilungen, 'Abteilungen konnten nicht geladen werden.');
     const benutzer = useNachladeListe('/api/frontend-users', brauchtListen,
         parseSichtbarkeitsBenutzer, 'Benutzer konnten nicht geladen werden.');
+
+    // Nach Änderungen an den Abteilungen (nicht beim ersten Anzeigen) leise neu laden.
+    const bekannterStand = useRef(abteilungenStand);
+    const abteilungenNeuLaden = abteilungen.neuLaden;
+    useEffect(() => {
+        if (bekannterStand.current === abteilungenStand) return;
+        bekannterStand.current = abteilungenStand;
+        abteilungenNeuLaden();
+        void laden();
+    }, [abteilungenStand, abteilungenNeuLaden, laden]);
 
     const aendere = (postfach: PostfachDto, wert: SichtbarkeitsAuswahl) => {
         setEntwuerfe(vorher => ({ ...vorher, [postfach.id]: wert }));

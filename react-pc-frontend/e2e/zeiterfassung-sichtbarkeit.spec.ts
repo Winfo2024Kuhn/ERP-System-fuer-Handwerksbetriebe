@@ -6,7 +6,7 @@ import { inhalt } from './hilfen/seite';
 
 /**
  * Menü-Bereich „Zeiterfassung“ je Abteilung: Der Haken „Zeiterfassung im Menü
- * sehen“ in Einstellungen → Berechtigungen, der Reiter in der Menüleiste und
+ * sehen“ in Einstellungen → Abteilungen & Rechte, der Reiter in der Menüleiste und
  * der Hinweis beim direkten Aufruf einer Seite ohne Recht.
  * Backend gestubbt, nur Dummy-Daten (Max Mustermann).
  */

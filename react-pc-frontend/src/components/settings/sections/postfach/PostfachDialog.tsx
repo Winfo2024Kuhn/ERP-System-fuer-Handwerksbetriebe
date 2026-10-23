@@ -188,7 +188,7 @@ export function PostfachDialog({
             smtpPort: lesePort(formular.smtpPort) ?? null,
             imapHost: leerZuNull(formular.imapHost),
             imapPort: lesePort(formular.imapPort) ?? null,
-            // Sichtbarkeit wird unter Einstellungen → Berechtigungen gepflegt: hier immer unverändert.
+            // Sichtbarkeit wird unter Einstellungen → Abteilungen & Rechte gepflegt: hier immer unverändert.
             sichtbarFuerAlle: null,
             abteilungIds: null,
             benutzerIds: null,
@@ -286,7 +286,7 @@ export function PostfachDialog({
         .some(feld => formular[feld] !== ausgangsstand[feld]);
 
     /**
-     * Link „Einstellungen → Berechtigungen“: wechselt den Reiter und schließt damit den Dialog.
+     * Link „Einstellungen → Abteilungen & Rechte“: wechselt den Reiter und schließt damit den Dialog.
      * Ungespeicherte Eingaben gehen dabei nicht still verloren – erst nachfragen.
      */
     const zuDenBerechtigungen = async (event: MouseEvent<HTMLAnchorElement>) => {
@@ -294,7 +294,7 @@ export function PostfachDialog({
         event.preventDefault();
         const ok = await confirm({
             title: 'Änderungen verwerfen?',
-            message: 'Sie haben noch nicht gespeichert. Trotzdem zu den Berechtigungen wechseln?',
+            message: 'Sie haben noch nicht gespeichert. Trotzdem zu „Abteilungen & Rechte“ wechseln?',
             confirmLabel: 'Verwerfen',
             cancelLabel: 'Weiter bearbeiten',
             variant: 'warning',
@@ -457,7 +457,7 @@ export function PostfachDialog({
                         <span>
                             Wer dieses Postfach sehen darf, legen Sie unter{' '}
                             <a href="#berechtigungen" onClick={(e) => void zuDenBerechtigungen(e)} className="font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded">
-                                Einstellungen → Berechtigungen
+                                Einstellungen → Abteilungen & Rechte
                             </a>{' '}
                             fest.
                         </span>

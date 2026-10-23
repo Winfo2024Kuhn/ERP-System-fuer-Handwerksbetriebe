@@ -93,7 +93,7 @@ const MORE_SECTIONS: NavSection[] = [
     },
 ];
 
-const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/benutzer']);
+const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/benutzer', '/arbeitsgaenge']);
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
 const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 

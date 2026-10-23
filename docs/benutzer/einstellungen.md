@@ -1,6 +1,6 @@
 # Einstellungen, Firma und Benutzer
 
-Die Grundeinrichtung des Programms darf nur ein Admin vornehmen. Er findet sie unter **Vorlagen & Stammdaten → Einstellungen** (Reiter „E-Mail“, „Dateien“, „KI-Funktionen“, „Zeiterfassung“, „Telefon“, „Berechtigungen“), unter **Vorlagen & Stammdaten → Firma** und oben rechts im Benutzermenü unter „Benutzer verwalten“. Für alle anderen Benutzer sind diese Menüpunkte ausgeblendet. Jeder Reiter speichert für sich; ein grünes Häkchen am Reiter heißt „Eingerichtet“.
+Die Grundeinrichtung des Programms darf nur ein Admin vornehmen. Er findet sie unter **Vorlagen & Stammdaten → Einstellungen** (Reiter „E-Mail“, „Dateien“, „KI-Funktionen“, „Zeiterfassung“, „Telefon“, „Abteilungen & Rechte“), unter **Vorlagen & Stammdaten → Firma** und oben rechts im Benutzermenü unter „Benutzer verwalten“. Für alle anderen Benutzer sind diese Menüpunkte ausgeblendet. Jeder Reiter speichert für sich; ein grünes Häkchen am Reiter heißt „Eingerichtet“.
 
 ## Ersteinrichtung
 
@@ -27,11 +27,21 @@ Ein Postfach, das schon E-Mails hat, lässt sich nicht löschen, nur ausschalten
 
 ## Wer sieht welches Postfach?
 
-Unter **Einstellungen → Berechtigungen**, Karte „E-Mail-Postfächer – wer sieht welches Postfach?“, für jedes Postfach „Alle im Betrieb“ oder „Nur bestimmte“ wählen und bei „Nur bestimmte“ Abteilungen und Benutzer anhaken, dann „Speichern“. Hauptpostfach und Rechnungs-Postfach sieht immer jeder; der Inhaber und Admins sehen ihr Postfach immer.
+Unter **Einstellungen → Abteilungen & Rechte**, Karte „E-Mail-Postfächer – wer sieht welches Postfach?“, für jedes Postfach „Alle im Betrieb“ oder „Nur bestimmte“ wählen und bei „Nur bestimmte“ Abteilungen und Benutzer anhaken, dann „Speichern“. Hauptpostfach und Rechnungs-Postfach sieht immer jeder; der Inhaber und Admins sehen ihr Postfach immer.
+
+## Abteilungen anlegen, umbenennen, löschen
+
+Unter **Einstellungen → Abteilungen & Rechte**, ganz oben die Karte „Abteilungen“:
+
+- **Anlegen:** Namen ins Feld „Neue Abteilung …“ tippen (z. B. „Montage“) und „Abteilung anlegen“. Die neue Abteilung erscheint sofort darunter bei „Rechte pro Abteilung“; dort ihre Rechte anhaken. Zwei Abteilungen mit demselben Namen gibt es nicht (Groß-/Kleinschreibung zählt nicht).
+- **Umbenennen:** Stift neben der Abteilung. Nur der Name ändert sich; Mitarbeiter, Arbeitsgänge und Rechte bleiben zugeordnet.
+- **Löschen:** Papierkorb. Das geht erst, wenn kein Mitarbeiter (auch kein ausgeschiedener) und kein Arbeitsgang mehr zur Abteilung gehört; sonst sagt das Programm, was noch zugeordnet ist. Mit der Abteilung verschwinden ihre Rechte und ihre Freigaben für E-Mail-Postfächer.
+
+Welcher Mitarbeiter zu welcher Abteilung gehört, legt man beim Mitarbeiter fest. Die Arbeitsgänge einer Abteilung pflegt der Admin unter **Vorlagen & Stammdaten → Arbeitsgänge**; diese Seite sehen nur Admins, und nur Admins dürfen Arbeitsgänge und Stundensätze anlegen, ändern oder löschen. Die Auswahl der Arbeitsgänge beim Stempeln und in der Zeiterfassung sehen weiterhin alle.
 
 ## Rechte pro Abteilung
 
-Unter **Einstellungen → Berechtigungen**, Karte „Rechte pro Abteilung“, für jede Abteilung anhaken und „Speichern“:
+Unter **Einstellungen → Abteilungen & Rechte**, Karte „Rechte pro Abteilung“, für jede Abteilung anhaken und „Speichern“:
 
 - **„Dokumente & Belege“:** je Belegart (Angebot, Auftragsbestätigung, Lieferschein, Rechnung, Gutschrift, Sonstiges, Belege für Kasse und Bank, Werkstoffzeugnis) „Sehen“ und „Scannen“ (mit dem Handy hochladen).
 - **„Eingangsrechnungen“:** „Rechnungen genehmigen“ oder „Genehmigte Rechnungen sehen“.
@@ -41,7 +51,7 @@ Unter **Einstellungen → Berechtigungen**, Karte „Rechte pro Abteilung“, f�
 
 Die Rechte wirken über den Mitarbeiter, mit dem ein Benutzer verknüpft ist. Ein Benutzer ohne verknüpften Mitarbeiter bekommt diese Rechte nicht – auch ein Admin braucht für Monatsabschluss und Telefon ein solches Abteilungsrecht.
 
-„Zeiterfassung im Menü sehen“ steuert, wer am PC den Bereich **Zeiterfassung** bekommt: Ohne Haken verschwindet er aus dem Menü, und das Programm gibt Zeiten, Abwesenheiten, Urlaubsanträge, Lange Krankheit und Monatsabschlüsse anderer Mitarbeiter an diesen Zugang nicht mehr heraus. Auch die Arbeitszeit im Mitarbeiter-Stammblatt und die offenen Urlaubsanträge in der Glocke sieht er dann nicht. Im Termin-Kalender sieht er kranke Kollegen nur als „Abwesend“. Administratoren und die Geschäftsführung sehen die Zeiterfassung immer. Nach dem Update ist der Haken bei allen Abteilungen aus: Zunächst sehen nur Administratoren und die Geschäftsführung die Zeiterfassung und die Krankheit anderer. Hake danach die Abteilungen an, die die Zeiterfassung brauchen (meist das Büro). Ebenfalls ohne Zugang sind Zugänge ohne verknüpften Mitarbeiter (außer Admin), Mitarbeiter ohne Abteilung und inaktive Mitarbeiter. Wer „Monate abschließen“ soll, braucht zusätzlich diesen Haken. Die Handy-App (Stempeln, Urlaub beantragen) ist davon nicht betroffen. Abteilungen legt man unter **Vorlagen & Stammdaten → Arbeitsgänge** an und weist sie beim Mitarbeiter zu.
+„Zeiterfassung im Menü sehen“ steuert, wer am PC den Bereich **Zeiterfassung** bekommt: Ohne Haken verschwindet er aus dem Menü, und das Programm gibt Zeiten, Abwesenheiten, Urlaubsanträge, Lange Krankheit und Monatsabschlüsse anderer Mitarbeiter an diesen Zugang nicht mehr heraus. Auch die Arbeitszeit im Mitarbeiter-Stammblatt und die offenen Urlaubsanträge in der Glocke sieht er dann nicht. Im Termin-Kalender sieht er kranke Kollegen nur als „Abwesend“. Administratoren und die Geschäftsführung sehen die Zeiterfassung immer. Nach dem Update ist der Haken bei allen Abteilungen aus: Zunächst sehen nur Administratoren und die Geschäftsführung die Zeiterfassung und die Krankheit anderer. Hake danach die Abteilungen an, die die Zeiterfassung brauchen (meist das Büro). Ebenfalls ohne Zugang sind Zugänge ohne verknüpften Mitarbeiter (außer Admin), Mitarbeiter ohne Abteilung und inaktive Mitarbeiter. Wer „Monate abschließen“ soll, braucht zusätzlich diesen Haken. Die Handy-App (Stempeln, Urlaub beantragen) ist davon nicht betroffen. Abteilungen legt man oben im selben Reiter an (siehe „Abteilungen anlegen, umbenennen, löschen“) und weist sie beim Mitarbeiter zu.
 
 ## Ablageort für Zeichnungen und Tabellen
 

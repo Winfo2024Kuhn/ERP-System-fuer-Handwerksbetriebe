@@ -16,7 +16,7 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Recht „Aufschläge ändern“: Administratoren dürfen es immer. Alle anderen nur, wenn ihr aktives Profil mit einem aktiven Mitarbeiter verknüpft ist,
- * der in einer Abteilung mit {@code darfAufschlaegeAendern} ist (Einstellungen → Berechtigungen).
+ * der in einer Abteilung mit {@code darfAufschlaegeAendern} ist (Einstellungen → Abteilungen & Rechte).
  */
 @Service
 @RequiredArgsConstructor

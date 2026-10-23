@@ -232,12 +232,12 @@ test.describe('Menueleiste (RibbonNav): lange Beschriftungen bei 1440 nicht abge
         await designPruefung(page, testInfo, 'menueleiste-kategorien');
     });
 
-    test('alte Adresse der Dokumentenrechte fuehrt in den Reiter "Berechtigungen" der Einstellungen', async ({ page }) => {
+    test('alte Adresse der Dokumentenrechte fuehrt in den Reiter "Abteilungen & Rechte" der Einstellungen', async ({ page }) => {
         await oeffneProjekteMitMenueleiste(page);
 
         await page.goto('/abteilung-berechtigungen');
         await expect(page).toHaveURL(/\/einstellungen#berechtigungen$/);
-        await expect(page.getByRole('tab', { name: /Berechtigungen/ })).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('tab', { name: /Abteilungen & Rechte/ })).toHaveAttribute('aria-selected', 'true');
     });
 
     test('Kategorie "Finanzen & Controlling": "Mietabrechnung" steht vollstaendig da', async ({ page }, testInfo) => {

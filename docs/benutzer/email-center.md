@@ -88,4 +88,4 @@ Die Notiz schaltet sich zum Zeitraum selbst ein und aus. Jeder Absender bekommt 
 
 ## Wer sieht welches Postfach?
 
-Das Hauptpostfach und das Postfach für Rechnungen & Mahnungen sieht jeder im Betrieb. Bei allen anderen legt ein Admin unter **Einstellungen → Berechtigungen** fest, ob „Alle im Betrieb“ sie sehen oder nur bestimmte Abteilungen und Benutzer. Der Inhaber eines Postfachs und Admins sehen es immer. E-Mails, die einem Projekt, einer Anfrage oder einem Lieferanten zugeordnet sind, sieht jeder in dessen Reiter „E-Mails“.
+Das Hauptpostfach und das Postfach für Rechnungen & Mahnungen sieht jeder im Betrieb. Bei allen anderen legt ein Admin unter **Einstellungen → Abteilungen & Rechte** fest, ob „Alle im Betrieb“ sie sehen oder nur bestimmte Abteilungen und Benutzer. Der Inhaber eines Postfachs und Admins sehen es immer. E-Mails, die einem Projekt, einer Anfrage oder einem Lieferanten zugeordnet sind, sieht jeder in dessen Reiter „E-Mails“.

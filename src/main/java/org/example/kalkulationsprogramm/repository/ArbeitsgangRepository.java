@@ -8,4 +8,7 @@ import org.springframework.stereotype.Repository;
 public interface ArbeitsgangRepository extends JpaRepository<Arbeitsgang, Long> {
     // Repository für die Stammdaten der Arbeitsgänge (Planung, Montage etc.).
     java.util.Optional<Arbeitsgang> findByBeschreibung(String bezeichnung);
+
+    /** Wie viele Arbeitsgänge hängen an dieser Abteilung? Solange es welche gibt, darf sie nicht gelöscht werden. */
+    long countByAbteilung_Id(Long abteilungId);
 }

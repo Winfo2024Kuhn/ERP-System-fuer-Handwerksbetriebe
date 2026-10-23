@@ -49,7 +49,7 @@ public class PostfachController {
         return postfachService.aendern(id, request);
     }
 
-    /** „Wer darf es sehen?“ – gepflegt unter Einstellungen → Berechtigungen. */
+    /** „Wer darf es sehen?“ – gepflegt unter Einstellungen → Abteilungen & Rechte. */
     @PutMapping("/{id}/sichtbarkeit")
     public PostfachDto sichtbarkeitAendern(@PathVariable Long id, @RequestBody PostfachSichtbarkeitRequest request) {
         return postfachService.sichtbarkeitAendern(id, request);

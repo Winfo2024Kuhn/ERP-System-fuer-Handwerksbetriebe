@@ -64,6 +64,6 @@ In der Kundenansicht Reiter „Notizen“ → „Neue Notiz“, Text eingeben, �
 
 ## Anrufe eines Kunden
 
-Wer das Recht „Anrufe & Anrufbeantworter“ hat (vergibt ein Admin je Abteilung unter **Einstellungen → Berechtigungen**), sieht in der Kundenansicht den Reiter „Anrufe“: angenommene, verpasste und ausgehende Anrufe sowie Nachrichten auf dem Anrufbeantworter, die sich direkt abspielen lassen. Über „…“ lässt sich ein Anruf einem anderen Kontakt zuordnen.
+Wer das Recht „Anrufe & Anrufbeantworter“ hat (vergibt ein Admin je Abteilung unter **Einstellungen → Abteilungen & Rechte**), sieht in der Kundenansicht den Reiter „Anrufe“: angenommene, verpasste und ausgehende Anrufe sowie Nachrichten auf dem Anrufbeantworter, die sich direkt abspielen lassen. Über „…“ lässt sich ein Anruf einem anderen Kontakt zuordnen.
 
 Nummern, die beim Zuordnen eines Anrufs gemerkt wurden, stehen bei den Kontaktdaten unter „Weitere Rufnummern“. Entfernen darf sie nur, wer das Telefon-Recht hat.
