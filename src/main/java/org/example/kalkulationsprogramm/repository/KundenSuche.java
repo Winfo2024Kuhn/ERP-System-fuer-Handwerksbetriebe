@@ -92,7 +92,7 @@ public final class KundenSuche {
 
     private static Specification<Kunde> feld(String feld, String wert) {
         if (!StringUtils.hasText(wert)) {
-            return null;
+            return Specification.unrestricted();
         }
         final String muster = muster(wert);
         return (root, cq, cb) -> cb.like(cb.lower(root.get(feld)), muster);

@@ -17,13 +17,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -89,16 +89,16 @@ class FreigabeCodeIntegrationTest
 
     private static SSLContext vorherigerKontext;
 
-    @MockBean private SystemSettingsService systemSettingsService;
-    @MockBean private FirmeninformationService firmeninformationService;
-    @MockBean private EmailSignatureService emailSignatureService;
-    @MockBean private AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
-    @MockBean private AusgangsGeschaeftsDokumentAuditService ausgangsGeschaeftsDokumentAuditService;
-    @MockBean private WebPushService webPushService;
-    @MockBean private DateiSpeicherService dateiSpeicherService;
-    @MockBean private AutoAuftragsbestaetigungVersandService autoAuftragsbestaetigungVersandService;
-    @MockBean private ProjektManagementService projektManagementService;
-    @MockBean private TaskExecutor taskExecutor;
+    @MockitoBean private SystemSettingsService systemSettingsService;
+    @MockitoBean private FirmeninformationService firmeninformationService;
+    @MockitoBean private EmailSignatureService emailSignatureService;
+    @MockitoBean private AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
+    @MockitoBean private AusgangsGeschaeftsDokumentAuditService ausgangsGeschaeftsDokumentAuditService;
+    @MockitoBean private WebPushService webPushService;
+    @MockitoBean private DateiSpeicherService dateiSpeicherService;
+    @MockitoBean private AutoAuftragsbestaetigungVersandService autoAuftragsbestaetigungVersandService;
+    @MockitoBean private ProjektManagementService projektManagementService;
+    @MockitoBean private TaskExecutor taskExecutor;
 
     @Autowired private DokumentFreigabeRepository repository;
     @Autowired private DokumentFreigabeService freigabeService;

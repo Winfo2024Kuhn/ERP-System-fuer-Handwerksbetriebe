@@ -22,11 +22,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Glocke: Einträge und ganze Spalten erledigen – Anmeldung, CSRF und Eingabeprüfung. */
@@ -43,8 +43,8 @@ class NotificationErledigtEndpointTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean private BenachrichtigungService benachrichtigungService;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private BenachrichtigungService benachrichtigungService;
 
     private org.springframework.test.web.servlet.ResultActions erledigt(String json) throws Exception {
         return mockMvc.perform(post("/api/notifications/erledigt").with(csrf())

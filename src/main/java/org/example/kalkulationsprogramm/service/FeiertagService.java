@@ -1,7 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Bundesland;
 import org.example.kalkulationsprogramm.domain.Feiertag;
@@ -57,7 +58,7 @@ public class FeiertagService {
     private final FeiertagRepository feiertagRepository;
     private final FirmeninformationRepository firmeninformationRepository;
     private final MonatsSaldoRepository monatsSaldoRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
     /** Bundesland:Jahr, für die das Laden schon versucht wurde – kein zweiter API-Aufruf. */
     private final Set<String> attemptedYears = ConcurrentHashMap.newKeySet();
@@ -320,14 +321,14 @@ public class FeiertagService {
         try {
             String response = new RestTemplate().getForObject(API_URL.formatted(jahr, schluessel), String.class);
             JsonNode root = objectMapper.readTree(response);
-            if (root.has("status") && "success".equals(root.get("status").asText())) {
+            if (root.has("status") && "success".equals(root.get("status").asString(""))) {
                 JsonNode liste = root.get("feiertage");
                 if (liste != null && liste.isArray()) {
                     for (JsonNode ft : liste) {
                         // Nur Feiertage, die im Land gelten ("by": "1")
-                        if (ft.hasNonNull(schluessel) && "1".equals(ft.get(schluessel).asText())) {
-                            feiertage.add(new Feiertag(LocalDate.parse(ft.get("date").asText()),
-                                    ft.get("fname").asText(), land.name()));
+                        if (ft.hasNonNull(schluessel) && "1".equals(ft.get(schluessel).asString(""))) {
+                            feiertage.add(new Feiertag(LocalDate.parse(ft.get("date").asString("")),
+                                    ft.get("fname").asString(""), land.name()));
                         }
                     }
                 }

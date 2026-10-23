@@ -8,11 +8,11 @@ import org.example.kalkulationsprogramm.dto.ZeitkontenmodellDto;
 import org.example.kalkulationsprogramm.repository.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,8 +36,8 @@ class ZeitkontoPausenIntegrationTest {
     @Autowired ZeitkontoPauseRepository pauseRepository;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired EntityManager entityManager;
-    @MockBean TagesSollService tagesSollService;
-    @MockBean MonatsSaldoRepository monatsSaldoRepository;
+    @MockitoBean TagesSollService tagesSollService;
+    @MockitoBean MonatsSaldoRepository monatsSaldoRepository;
     @TestConfiguration static class ValidationConfig {
         @Bean Validator validator() { return new LocalValidatorFactoryBean(); }
     }

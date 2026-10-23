@@ -505,7 +505,7 @@ Fehlerbild: Ein Task stellt einen Service auf eine **neue** Abhängigkeit um
 (Constructor Injection). Der Charakterisierungstest, der sein Verhalten
 festnageln soll, wird rot — mit `NullPointerException`, nicht mit einer
 falschen Zahl. Ursache: Der Test kennt den neuen Konstruktor-Parameter nicht,
-Mockito injiziert `null`. Bei `@WebMvcTest` fehlt analog ein `@MockBean`.
+Mockito injiziert `null`. Bei `@WebMvcTest` fehlt analog ein `@MockitoBean`.
 
 Das ist **kein** Verhaltensfehler und **keine** Regression, sondern eine
 Verkabelungslücke — der Test ist schlicht nicht mehr lauffähig.
@@ -514,7 +514,7 @@ Regel, die in den Auftrag gehört (real gebraucht am 08.09.2026, sonst wären
 sechs Tasks einzeln daran gescheitert):
 
 > An deiner Charakterisierungsdatei darfst du die **Verkabelung** anpassen —
-> Mock/`@MockBean` ergänzen, Stubs setzen, Konstruktoraufruf nachziehen.
+> Mock/`@MockitoBean` ergänzen, Stubs setzen, Konstruktoraufruf nachziehen.
 > **Unverändert bleiben:** jede erwartete Zahl, jede erwartete Exception samt
 > Meldung, und die Menge der geprüften Fälle.
 

@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.kihilfe.GeminiEinbetter;

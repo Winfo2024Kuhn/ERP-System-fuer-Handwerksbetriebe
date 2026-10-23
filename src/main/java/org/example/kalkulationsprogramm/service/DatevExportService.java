@@ -1,8 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.persistence.OptimisticLockException;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.*;
@@ -15,6 +15,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.transaction.*;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.core.JacksonException;
+
 import java.io.*;
 import java.math.BigDecimal;
 import java.time.YearMonth;
@@ -28,7 +30,7 @@ public class DatevExportService {
  private final MonatsabschlussBerechtigungService rechte;
  private final LodasDateiWriter writer;
  private final TransactionTemplate tx;
- private static final ObjectMapper JSON=new ObjectMapper();
+ private static final ObjectMapper JSON=JsonMapper.builderWithJackson2Defaults().build();
  private static final List<String> ABWESENHEIT=List.of("URLAUB","KRANKHEIT","FORTBILDUNG","ZEITAUSGLEICH","KRANKENGELD","WIEDEREINGLIEDERUNG");
  private record Pruefstand(Vorpruefung dto,Konfiguration config,SortedMap<YearMonth,List<LodasDateiWriter.Buchung>> monate,boolean konflikt) {}
  public DatevExportService(DatevExportRepository repo,MonatsabschlussBerechtigungService rechte,LodasDateiWriter writer,PlatformTransactionManager manager) {
@@ -87,7 +89,7 @@ public class DatevExportService {
   }
   List<Zuordnung> zuordnungen;
   try { zuordnungen=JSON.readValue(configEntity.getZuordnungenJson(),new TypeReference<List<Zuordnung>>(){}); }
-  catch(JsonProcessingException ex) { throw new IllegalStateException("Gespeicherte DATEV-Zuordnung ist ungültig",ex); }
+  catch(JacksonException ex) { throw new IllegalStateException("Gespeicherte DATEV-Zuordnung ist ungültig",ex); }
   var config=new Konfiguration(configEntity.getVersion(),configEntity.getZiel(),configEntity.getBeraterNr(),configEntity.getMandantenNr(),configEntity.getStundenart(),zuordnungen,List.of());
   if(!"LODAS".equals(config.ziel()) || !nummerGueltig(config.beraterNr(),4,7) || !nummerGueltig(config.mandantenNr(),1,5))
    hinweis(fehler,null,"KONFIGURATION",null,"LODAS, eine gültige Beraternummer (4–7 Ziffern) und Mandantennummer (1–5 Ziffern) einrichten.");

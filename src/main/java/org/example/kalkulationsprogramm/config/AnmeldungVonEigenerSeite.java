@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.config;
 
-import static org.springframework.security.web.util.matcher.AntPathRequestMatcher.antMatcher;
+import static org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher.pathPattern;
 
 import java.util.Locale;
 
@@ -31,7 +31,7 @@ import jakarta.servlet.http.HttpServletRequest;
 final class AnmeldungVonEigenerSeite implements RequestMatcher {
 
     private final RequestMatcher anmeldePfade = new OrRequestMatcher(
-            antMatcher("/api/auth/login"), antMatcher("/api/auth/logout"));
+            pathPattern("/api/auth/login"), pathPattern("/api/auth/logout"));
 
     @Override
     public boolean matches(HttpServletRequest request) {

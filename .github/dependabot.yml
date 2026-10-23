@@ -1,9 +1,10 @@
 # Versions-Updates von Dependabot (Sicherheitsupdates kommen unabhaengig davon
 # sofort, die schaltet die Repo-Einstellung "Dependabot security updates" ein).
 #
-# Damit es nicht zu viele PRs werden: einmal im Monat, kleine Updates (minor +
-# patch) je Bereich in EINEM PR gesammelt. Grosse Spruenge (major) kommen einzeln,
-# weil sie oft Anpassungen am Code brauchen.
+# Damit es nicht zu viele PRs werden: einmal im Monat, je Bereich ein PR fuer die
+# kleinen Updates (minor + patch) und einer fuer die grossen (major). Die grossen
+# brauchen oft Anpassungen am Code - lieber in Ruhe einzeln herausnehmen als 15 PRs.
+# (Am 23.10.2026 kamen mit einzelnen Major-PRs 15 PRs auf einmal.)
 #
 # Die PR-Automatik mergt diese PRs NICHT (sie nimmt nur PRs des Repo-Besitzers).
 # Sie laufen durch das PR Quality Gate und werden von Hand angesehen und gemergt -
@@ -26,16 +27,18 @@ updates:
     directory: /
     schedule:
       interval: monthly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps)"
     groups:
-      # Spring Boot (3.2 -> 3.x) ist ein grosser Schritt und kommt allein, damit
+      # Spring Boot (auch 4.1 -> 4.x) kommt allein, damit
       # ein Fehlschlag dort die kleinen Updates nicht aufhaelt.
       spring-boot:
         patterns: ["org.springframework.boot:*"]
       backend-klein:
         update-types: [minor, patch]
+      backend-gross:
+        update-types: [major]
 
   - package-ecosystem: npm
     directories:
@@ -43,12 +46,14 @@ updates:
       - /react-zeiterfassung
     schedule:
       interval: monthly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps)"
     groups:
       frontend-klein:
         update-types: [minor, patch]
+      frontend-gross:
+        update-types: [major]
 
   # Basis-Images der Dockerfiles. Major-Spruenge (Java 23 -> 25, Node 24 -> 26)
   # nicht automatisch: Die Java-Version haengt an pom.xml, Node an der CI.

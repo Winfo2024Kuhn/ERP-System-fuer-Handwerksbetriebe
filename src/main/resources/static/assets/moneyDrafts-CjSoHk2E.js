@@ -1,1 +1,0 @@
-import{v as r}from"./numberDrafts-kZcgy4Pb.js";function l(e){const a=r({betrag:e},{betrag:{label:"Betrag",required:!0,min:0,maxDecimalPlaces:2}});return a.valid?{valid:!0,value:a.values.betrag}:a}export{l as v};

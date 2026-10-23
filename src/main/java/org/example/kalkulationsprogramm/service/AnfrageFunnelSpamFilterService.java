@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageFunnelRequestDto;
 import org.springframework.stereotype.Service;
@@ -151,7 +151,7 @@ public class AnfrageFunnelSpamFilterService {
             if (!spam) {
                 return Result.ok();
             }
-            String grund = node.path("grund").asText("Anfrage wirkt nicht ernst gemeint");
+            String grund = node.path("grund").asString("Anfrage wirkt nicht ernst gemeint");
             return Result.spam(grund);
         } catch (Exception e) {
             log.warn("Funnel-Spam-Filter konnte Antwort nicht parsen: '{}'", raw);

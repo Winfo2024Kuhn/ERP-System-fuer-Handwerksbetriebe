@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.repository;
 
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -146,27 +147,27 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
          * Zählt die Anzahl der Bestellungen (Auftragsbestätigungen) für einen
          * Lieferanten.
          */
-        @Query(value = "SELECT COUNT(*) FROM lieferant_dokument d " +
+        @NativeQuery("SELECT COUNT(*) FROM lieferant_dokument d " +
                         "WHERE d.lieferant_id = :lieferantId " +
-                        "AND d.typ = 'AUFTRAGSBESTAETIGUNG'", nativeQuery = true)
+                        "AND d.typ = 'AUFTRAGSBESTAETIGUNG'")
         Long countBestellungenByLieferantId(@Param("lieferantId") Long lieferantId);
 
         /**
          * Berechnet die Gesamtkosten (Summe aller Rechnungen Netto) für einen
          * Lieferanten.
          */
-        @Query(value = "SELECT COALESCE(SUM(gd.betrag_netto), 0) " +
+        @NativeQuery("SELECT COALESCE(SUM(gd.betrag_netto), 0) " +
                         "FROM lieferant_geschaeftsdokument gd " +
                         "JOIN lieferant_dokument d ON gd.id = d.id " +
                         "WHERE d.lieferant_id = :lieferantId " +
-                        "AND d.typ = 'RECHNUNG'", nativeQuery = true)
+                        "AND d.typ = 'RECHNUNG'")
         Double sumGesamtkostenByLieferantId(@Param("lieferantId") Long lieferantId);
 
         /**
          * Lieferantenkosten pro Jahr (für Erfolgsanalyse).
          * Gibt Jahreszahl und Summe Netto aller Rechnungen zurück.
          */
-        @Query(value = "SELECT EXTRACT(YEAR FROM gd.dokument_datum) as jahr, " +
+        @NativeQuery("SELECT EXTRACT(YEAR FROM gd.dokument_datum) as jahr, " +
                         "COUNT(DISTINCT d.id) as bestellungen, " +
                         "COALESCE(SUM(gd.betrag_netto), 0) as netto " +
                         "FROM lieferant_geschaeftsdokument gd " +
@@ -174,14 +175,14 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "WHERE d.typ = 'RECHNUNG' " +
                         "AND gd.dokument_datum IS NOT NULL " +
                         "GROUP BY EXTRACT(YEAR FROM gd.dokument_datum) " +
-                        "ORDER BY EXTRACT(YEAR FROM gd.dokument_datum) DESC", nativeQuery = true)
+                        "ORDER BY EXTRACT(YEAR FROM gd.dokument_datum) DESC")
         java.util.List<Object[]> getLieferantenkostenProJahr();
 
         /**
          * Lieferanten-Performance: Statistik pro Lieferant (Bestellungen und Summe
          * Netto).
          */
-        @Query(value = "SELECT l.lieferantenname, " +
+        @NativeQuery("SELECT l.lieferantenname, " +
                         "COUNT(CASE WHEN d.typ = 'AUFTRAGSBESTAETIGUNG' THEN 1 END) as bestellungen, " +
                         "SUM(CASE WHEN d.typ = 'RECHNUNG' THEN gd.betrag_netto ELSE 0 END) as netto " +
                         "FROM lieferanten l " +
@@ -189,13 +190,13 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "LEFT JOIN lieferant_geschaeftsdokument gd ON gd.id = d.id " +
                         "GROUP BY l.id, l.lieferantenname " +
                         "HAVING COUNT(d.id) > 0 " +
-                        "ORDER BY netto DESC", nativeQuery = true)
+                        "ORDER BY netto DESC")
         java.util.List<Object[]> getLieferantenPerformance();
 
         /**
          * Lieferanten-Performance gefiltert nach Jahr und optionalem Monat.
          */
-        @Query(value = "SELECT l.lieferantenname, " +
+        @NativeQuery("SELECT l.lieferantenname, " +
                         "COUNT(CASE WHEN d.typ = 'AUFTRAGSBESTAETIGUNG' THEN 1 END) as bestellungen, " +
                         "SUM(CASE WHEN d.typ = 'RECHNUNG' THEN gd.betrag_netto ELSE 0 END) as netto " +
                         "FROM lieferanten l " +
@@ -208,7 +209,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "        AND EXTRACT(MONTH FROM gd.dokument_datum) = COALESCE(:monat, EXTRACT(MONTH FROM gd.dokument_datum)))) " +
                         "GROUP BY l.id, l.lieferantenname " +
                         "HAVING SUM(CASE WHEN d.typ = 'RECHNUNG' THEN gd.betrag_netto ELSE 0 END) > 0 " +
-                        "ORDER BY netto DESC", nativeQuery = true)
+                        "ORDER BY netto DESC")
         java.util.List<Object[]> getLieferantenPerformanceFiltered(
                         @Param("jahr") Integer jahr,
                         @Param("monat") Integer monat);
@@ -229,7 +230,7 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
          * Findet alle Duplikate: dokumentNummer + lieferantId Kombinationen mit mehr als 1 Vorkommen.
          * Gibt die IDs gruppiert zurück – das älteste (kleinste ID) wird behalten, die anderen gelöscht.
          */
-        @Query(value = "SELECT gd.id, gd.dokument_nummer, d.lieferant_id, l.lieferantenname " +
+        @NativeQuery("SELECT gd.id, gd.dokument_nummer, d.lieferant_id, l.lieferantenname " +
                         "FROM lieferant_geschaeftsdokument gd " +
                         "JOIN lieferant_dokument d ON gd.id = d.id " +
                         "JOIN lieferanten l ON d.lieferant_id = l.id " +
@@ -242,6 +243,6 @@ public interface LieferantGeschaeftsdokumentRepository extends JpaRepository<Lie
                         "   GROUP BY d2.lieferant_id, gd2.dokument_nummer " +
                         "   HAVING COUNT(*) > 1" +
                         ") " +
-                        "ORDER BY d.lieferant_id, gd.dokument_nummer, gd.id", nativeQuery = true)
+                        "ORDER BY d.lieferant_id, gd.dokument_nummer, gd.id")
         java.util.List<Object[]> findAllDuplicates();
 }

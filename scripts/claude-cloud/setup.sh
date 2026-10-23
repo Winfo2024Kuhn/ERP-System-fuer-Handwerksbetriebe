@@ -20,10 +20,10 @@ set -uo pipefail
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0
 
 MODE="${1:-provision}"
-JDK_VERSION="23.0.2"
-# Von https://download.oracle.com/java/23/archive/jdk-23.0.2_linux-x64_bin.tar.gz.sha256
-JDK_SHA256="12d7553d06b5cacf88b26cad4a8ba83cabe79646f1defb1b7fd029f3356d0922"
-JDK_DIR="/opt/jdk-23"
+JDK_VERSION="25.0.4"
+# Von https://download.oracle.com/java/25/archive/jdk-25.0.4_linux-x64_bin.tar.gz.sha256
+JDK_SHA256="0d3e87de2516557a170e2df4f6a4872b1749ea3174dd7c9e555cb5170e618301"
+JDK_DIR="/opt/jdk-25"
 # Fest gepinnt: das Binary läuft als Hook bei jedem Tool-Aufruf.
 GRAPHIFY_SPEC="graphifyy[sql]==0.9.71"
 GRAPHIFY_VENV="/opt/graphify-venv"
@@ -82,10 +82,10 @@ install_graphify() {
 
 install_jdk() {
     [ -x "$JDK_DIR/bin/javac" ] && return 0
-    log "Installiere JDK $JDK_VERSION (pom.xml verlangt Java 23) ..."
+    log "Installiere JDK $JDK_VERSION (pom.xml verlangt Java 25) ..."
     local tmp
     tmp="$(mktemp -d)" || return 1
-    if curl -fsSL -o "$tmp/jdk.tar.gz" "https://download.oracle.com/java/23/archive/jdk-${JDK_VERSION}_linux-x64_bin.tar.gz" \
+    if curl -fsSL -o "$tmp/jdk.tar.gz" "https://download.oracle.com/java/25/archive/jdk-${JDK_VERSION}_linux-x64_bin.tar.gz" \
         && echo "$JDK_SHA256  $tmp/jdk.tar.gz" | sha256sum -c --status \
         && tar -xzf "$tmp/jdk.tar.gz" -C "$tmp"; then
         rm -rf "$JDK_DIR"

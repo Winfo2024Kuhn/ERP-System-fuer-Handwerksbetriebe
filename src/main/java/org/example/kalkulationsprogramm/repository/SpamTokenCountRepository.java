@@ -3,7 +3,7 @@ package org.example.kalkulationsprogramm.repository;
 import org.example.kalkulationsprogramm.domain.SpamTokenCount;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
@@ -20,11 +20,10 @@ public interface SpamTokenCountRepository extends JpaRepository<SpamTokenCount, 
 
     /** Dekrementiert Spam- oder Ham-Zähler, klemmt bei 0 (verhindert negative Werte). */
     @Modifying
-    @Query(value = "UPDATE spam_token_count SET "
+    @NativeQuery("UPDATE spam_token_count SET "
             + "spam_count = GREATEST(0, spam_count - :spamDec), "
             + "ham_count  = GREATEST(0, ham_count  - :hamDec) "
-            + "WHERE token = :token",
-            nativeQuery = true)
+            + "WHERE token = :token")
     void decrementToken(@Param("token") String token,
                         @Param("spamDec") int spamDecrement,
                         @Param("hamDec") int hamDecrement);

@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.persistence.*;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.DatevDto.*;
@@ -9,12 +10,13 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.mock.mockito.*;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.*;
 import org.springframework.transaction.annotation.*;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -40,15 +42,15 @@ class DatevExportPostgresTest {
  @Autowired EntityManager em;
  @Autowired PlatformTransactionManager tm;
  @Autowired JdbcTemplate jdbc;
- @MockBean MonatsabschlussBerechtigungService rights;
- @SpyBean LodasDateiWriter writer;
+ @MockitoBean MonatsabschlussBerechtigungService rights;
+ @MockitoSpyBean LodasDateiWriter writer;
  TransactionTemplate tx;
  long saldoId;
  ExportRequest request;
  @BeforeEach void setup() throws Exception {
   reset(writer);tx=new TransactionTemplate(tm);
   jdbc.update("DELETE FROM monats_saldo");jdbc.update("DELETE FROM datev_personalnummer");jdbc.update("DELETE FROM datev_konfiguration");jdbc.update("DELETE FROM mitarbeiter");
-  String mapping=new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(DatevKonfigurationService.KATEGORIEN.stream().map(k->new Zuordnung(k,!k.equals("ARBEIT"),k.equals("ARBEIT")?"200":"")).toList());
+  String mapping=JsonMapper.builderWithJackson2Defaults().build().writeValueAsString(DatevKonfigurationService.KATEGORIEN.stream().map(k->new Zuordnung(k,!k.equals("ARBEIT"),k.equals("ARBEIT")?"200":"")).toList());
   request=tx.execute(status->{
    var m=new Mitarbeiter();m.setVorname("Max");m.setNachname("Mustermann");em.persist(m);
    var c=new DatevKonfiguration();c.setBeraterNr("1234");c.setMandantenNr("123");c.setStundenart("IST");c.setZuordnungenJson(mapping);em.persist(c);

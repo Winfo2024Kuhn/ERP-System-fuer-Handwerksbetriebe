@@ -1,8 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragDetailDto;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragSummaryDto;
@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.core.JacksonException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -102,7 +103,7 @@ public class BeitraegeWebsiteClient {
         try {
             return objectMapper.readerForListOf(BeitragSummaryDto.class)
                     .readValue(root.path("posts"));
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new BeitraegeWebsiteException("Beitragsliste konnte nicht gelesen werden.", e);
         }
     }
@@ -344,7 +345,7 @@ public class BeitraegeWebsiteClient {
         try {
             return HttpRequest.BodyPublishers.ofString(
                     objectMapper.writeValueAsString(body), StandardCharsets.UTF_8);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new BeitraegeWebsiteException("Anfrage konnte nicht als JSON aufgebaut werden.", e);
         }
     }
@@ -369,7 +370,7 @@ public class BeitraegeWebsiteClient {
 
         try {
             return objectMapper.readTree(response.body());
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new BeitraegeWebsiteException("Antwort der Website-API ist kein gültiges JSON.", e);
         }
     }
@@ -377,7 +378,7 @@ public class BeitraegeWebsiteClient {
     private BeitragDetailDto beitragAusAntwort(JsonNode root) {
         try {
             return objectMapper.treeToValue(root.path("post"), BeitragDetailDto.class);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new BeitraegeWebsiteException("Beitrag konnte nicht aus der Antwort gelesen werden.", e);
         }
     }

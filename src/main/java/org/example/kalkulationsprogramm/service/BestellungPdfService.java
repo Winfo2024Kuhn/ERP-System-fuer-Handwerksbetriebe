@@ -1,11 +1,11 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.*;
-import com.lowagie.text.Font;
-import com.lowagie.text.Image;
-import com.lowagie.text.pdf.PdfPCell;
-import com.lowagie.text.pdf.PdfPTable;
-import com.lowagie.text.pdf.PdfWriter;
+import org.openpdf.text.*;
+import org.openpdf.text.Font;
+import org.openpdf.text.Image;
+import org.openpdf.text.pdf.PdfPCell;
+import org.openpdf.text.pdf.PdfPTable;
+import org.openpdf.text.pdf.PdfWriter;
 import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.dto.Bestellung.BestellungResponseDto;
 import org.example.kalkulationsprogramm.repository.SchnittbilderRepository;
@@ -48,6 +48,7 @@ public class BestellungPdfService {
             Path temp = Files.createTempFile(dir, "bestellung-", ".pdf.html");
             Document doc = new Document(PageSize.A4.rotate());
             PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
+            writer.setPdfVersion(PdfWriter.VERSION_1_7);
             writer.setCompressionLevel(0);
             doc.open();
 
@@ -104,14 +105,15 @@ public class BestellungPdfService {
             doc.close();
             // Statische Schnittbild-PDF-Seiten am Ende anhängen
             try {
-                var mainReader = new com.lowagie.text.pdf.PdfReader(Files.readAllBytes(temp));
+                var mainReader = new org.openpdf.text.pdf.PdfReader(Files.readAllBytes(temp));
                 var refIs = BestellungPdfService.class
                         .getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
                 if (refIs != null) {
                     Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
-                    var refReader = new com.lowagie.text.pdf.PdfReader(refIs);
-                    var mergedDoc = new com.lowagie.text.Document();
-                    var copy = new com.lowagie.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
+                    var refReader = new org.openpdf.text.pdf.PdfReader(refIs);
+                    var mergedDoc = new org.openpdf.text.Document();
+                    var copy = new org.openpdf.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
+                    copy.setPdfVersion(org.openpdf.text.pdf.PdfWriter.VERSION_1_7);
                     mergedDoc.open();
                     for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
                         copy.addPage(copy.getImportedPage(mainReader, i));
@@ -163,6 +165,7 @@ public class BestellungPdfService {
             Path temp = Files.createTempFile(dir, "bestellung-", ".pdf.html");
             Document doc = new Document(PageSize.A4.rotate());
             PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
+            writer.setPdfVersion(PdfWriter.VERSION_1_7);
             writer.setCompressionLevel(0);
             doc.open();
 
@@ -217,14 +220,15 @@ public class BestellungPdfService {
             doc.close();
             // Statische Schnittbild-PDF-Seiten am Ende anhängen
             try {
-                var mainReader = new com.lowagie.text.pdf.PdfReader(Files.readAllBytes(temp));
+                var mainReader = new org.openpdf.text.pdf.PdfReader(Files.readAllBytes(temp));
                 var refIs = BestellungPdfService.class
                         .getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
                 if (refIs != null) {
                     Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
-                    var refReader = new com.lowagie.text.pdf.PdfReader(refIs);
-                    var mergedDoc = new com.lowagie.text.Document();
-                    var copy = new com.lowagie.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
+                    var refReader = new org.openpdf.text.pdf.PdfReader(refIs);
+                    var mergedDoc = new org.openpdf.text.Document();
+                    var copy = new org.openpdf.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
+                    copy.setPdfVersion(org.openpdf.text.pdf.PdfWriter.VERSION_1_7);
                     mergedDoc.open();
                     for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
                         copy.addPage(copy.getImportedPage(mainReader, i));

@@ -9,8 +9,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 
@@ -18,7 +18,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -180,7 +179,7 @@ public class SteuerberaterEmailProcessingService {
         log.info("[Steuerberater] Analysiere PDF: {}", attachment.getOriginalFilename());
 
         try {
-            Path pdfPath = Paths.get(mailAttachmentDir, attachment.getStoredFilename());
+            Path pdfPath = Path.of(mailAttachmentDir, attachment.getStoredFilename());
             if (!Files.exists(pdfPath)) {
                 log.error("Datei nicht gefunden: {}", pdfPath);
                 return;
@@ -228,7 +227,7 @@ public class SteuerberaterEmailProcessingService {
 
             JsonNode root = parseAiJson(aiResponse);
             String dokumentTyp = root != null && root.has("dokumentTyp")
-                    ? root.get("dokumentTyp").asText("")
+                    ? root.get("dokumentTyp").asString("")
                     : "";
 
             if ("BWA".equalsIgnoreCase(dokumentTyp)) {
@@ -275,7 +274,7 @@ public class SteuerberaterEmailProcessingService {
             int totalPages = originalDoc.getNumberOfPages();
 
             for (JsonNode node : abrechnungen) {
-                String mitarbeiterName = node.has("mitarbeiterName") ? node.get("mitarbeiterName").asText(null) : null;
+                String mitarbeiterName = node.has("mitarbeiterName") ? node.get("mitarbeiterName").asString(null) : null;
 
                 Mitarbeiter mitarbeiter = mitarbeiterName != null ? findMitarbeiterByName(mitarbeiterName) : null;
                 if (mitarbeiter == null) {
@@ -285,8 +284,8 @@ public class SteuerberaterEmailProcessingService {
                     continue;
                 }
 
-                Integer jahr = node.has("jahr") && node.get("jahr").canConvertToInt() ? node.get("jahr").asInt() : null;
-                Integer monat = node.has("monat") && node.get("monat").canConvertToInt() ? node.get("monat").asInt() : null;
+                Integer jahr = node.has("jahr") && node.get("jahr").canConvertToInt() ? node.get("jahr").asInt(0) : null;
+                Integer monat = node.has("monat") && node.get("monat").canConvertToInt() ? node.get("monat").asInt(0) : null;
                 if (jahr == null || monat == null || monat < 1 || monat > 12) {
                     Integer[] periode = extractPeriodFromFilename(attachment.getOriginalFilename());
                     if (jahr == null) jahr = periode[0];
@@ -294,13 +293,13 @@ public class SteuerberaterEmailProcessingService {
                 }
 
                 // Seitenbereich extrahieren und als eigene PDF speichern
-                String seiten = node.has("seiten") ? node.get("seiten").asText("") : "";
+                String seiten = node.has("seiten") ? node.get("seiten").asString("") : "";
                 byte[] teilPdf = extrahiereSeiten(originalDoc, seiten, totalPages);
                 String gespeicherterName = speichereLohnabrechnungPdf(teilPdf);
 
                 speichereLohnabrechnung(mitarbeiter, jahr, monat,
-                        node.has("bruttolohn") ? node.get("bruttolohn").decimalValue() : null,
-                        node.has("nettolohn") ? node.get("nettolohn").decimalValue() : null,
+                        leseBetrag(node, "bruttolohn"),
+                        leseBetrag(node, "nettolohn"),
                         gespeicherterName, aiResponse, attachment, email, steuerberater);
                 erstellt++;
             }
@@ -374,7 +373,7 @@ public class SteuerberaterEmailProcessingService {
             return;
         }
         try {
-            Path basis = Paths.get(lohnabrechnungDir).toAbsolutePath().normalize();
+            Path basis = Path.of(lohnabrechnungDir).toAbsolutePath().normalize();
             Path datei = basis.resolve(gespeicherterDateiname).normalize();
             if (datei.startsWith(basis)) {
                 Files.deleteIfExists(datei);
@@ -388,7 +387,7 @@ public class SteuerberaterEmailProcessingService {
      * Speichert eine (Teil-)PDF im Lohnabrechnungs-Verzeichnis unter UUID-Namen.
      */
     private String speichereLohnabrechnungPdf(byte[] pdfBytes) throws IOException {
-        Path dir = Paths.get(lohnabrechnungDir);
+        Path dir = Path.of(lohnabrechnungDir);
         Files.createDirectories(dir);
         String dateiname = UUID.randomUUID() + ".pdf";
         Files.write(dir.resolve(dateiname), pdfBytes);
@@ -544,7 +543,7 @@ public class SteuerberaterEmailProcessingService {
         }
 
         try {
-            Path pdfPath = Paths.get(mailAttachmentDir, attachment.getStoredFilename());
+            Path pdfPath = Path.of(mailAttachmentDir, attachment.getStoredFilename());
             if (!Files.exists(pdfPath)) {
                 log.error("Datei nicht gefunden: {}", pdfPath);
                 return;
@@ -578,8 +577,8 @@ public class SteuerberaterEmailProcessingService {
                 String json = aiResponse.replaceAll("```json", "").replaceAll("```", "").trim();
                 if (json.startsWith("{")) {
                      JsonNode root = objectMapper.readTree(json);
-                     if (root.hasNonNull("jahr")) jahr = root.get("jahr").asInt();
-                     if (root.hasNonNull("monat")) monat = root.get("monat").asInt();
+                     if (root.hasNonNull("jahr")) jahr = root.get("jahr").asInt(0);
+                     if (root.hasNonNull("monat")) monat = root.get("monat").asInt(0);
                      gemeinkosten = ermittleGemeinkosten(root);
                 }
             }
@@ -691,12 +690,12 @@ public class SteuerberaterEmailProcessingService {
         JsonNode node = root.get(feld);
         if (node.isNumber()) {
             // valueOf statt new BigDecimal(double): sonst 1234.5599999999999
-            return java.math.BigDecimal.valueOf(node.asDouble()).abs();
+            return java.math.BigDecimal.valueOf(node.asDouble(0.0)).abs();
         }
-        if (!node.isTextual()) {
+        if (!node.isString()) {
             return null;
         }
-        String roh = node.asText().replaceAll("[^0-9,.-]", "").trim();
+        String roh = node.asString("").replaceAll("[^0-9,.-]", "").trim();
         if (roh.isEmpty()) {
             return null;
         }
@@ -734,7 +733,7 @@ public class SteuerberaterEmailProcessingService {
         try {
             return new java.math.BigDecimal(normalisiert).abs();
         } catch (NumberFormatException e) {
-            log.warn("[Steuerberater] Betrag '{}' im Feld '{}' nicht lesbar", node.asText(), feld);
+            log.warn("[Steuerberater] Betrag im Feld '{}' nicht lesbar", feld);
             return null;
         }
     }

@@ -17,9 +17,8 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
@@ -30,6 +29,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -72,8 +72,8 @@ class SitzungsRechteFilterTest {
     }
 
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService users;
-    @MockBean MitarbeiterRepository mitarbeiter;
+    @MockitoBean FrontendUserDetailsService users;
+    @MockitoBean MitarbeiterRepository mitarbeiter;
 
     @Test
     void neuesAdminRechtGiltOhneNeueAnmeldung() throws Exception {

@@ -16,9 +16,9 @@ import org.example.kalkulationsprogramm.service.ProduktkategorieService;
 import org.example.kalkulationsprogramm.service.ProduktkategorieVerwaltungService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
@@ -41,12 +41,12 @@ class ProduktkategorieSecurityTest {
     }
 
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService users;
-    @MockBean MitarbeiterRepository mitarbeiter;
-    @MockBean ProduktkategorieService produktkategorieService;
-    @MockBean ProduktkategorieVerwaltungService verwaltungService;
-    @MockBean ProduktkategorieAuswertungService auswertungService;
-    @MockBean LeistungService leistungService;
+    @MockitoBean FrontendUserDetailsService users;
+    @MockitoBean MitarbeiterRepository mitarbeiter;
+    @MockitoBean ProduktkategorieService produktkategorieService;
+    @MockitoBean ProduktkategorieVerwaltungService verwaltungService;
+    @MockitoBean ProduktkategorieAuswertungService auswertungService;
+    @MockitoBean LeistungService leistungService;
 
     @Test
     void ohneAnmeldungKeinZugriff() throws Exception {

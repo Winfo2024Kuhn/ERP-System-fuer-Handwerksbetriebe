@@ -47,11 +47,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -68,15 +68,15 @@ class RechnungsuebersichtUploadTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private RechnungsuebersichtService rechnungsuebersichtService;
-    @MockBean private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
-    @MockBean private MitarbeiterRepository mitarbeiterRepository;
-    @MockBean private LieferantenRepository lieferantenRepository;
-    @MockBean private GeminiDokumentAnalyseService geminiService;
-    @MockBean private LieferantDokumentRepository lieferantDokumentRepository;
-    @MockBean private LieferantDokumentZugriffService zugriffService;
-    @MockBean private LieferantDokumentDateiService dokumentDateiService;
-    @MockBean private LieferantDateiablage dateiablage;
+    @MockitoBean private RechnungsuebersichtService rechnungsuebersichtService;
+    @MockitoBean private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
+    @MockitoBean private MitarbeiterRepository mitarbeiterRepository;
+    @MockitoBean private LieferantenRepository lieferantenRepository;
+    @MockitoBean private GeminiDokumentAnalyseService geminiService;
+    @MockitoBean private LieferantDokumentRepository lieferantDokumentRepository;
+    @MockitoBean private LieferantDokumentZugriffService zugriffService;
+    @MockitoBean private LieferantDokumentDateiService dokumentDateiService;
+    @MockitoBean private LieferantDateiablage dateiablage;
 
     @TempDir private Path arbeitsordner;
     private Path uploads;

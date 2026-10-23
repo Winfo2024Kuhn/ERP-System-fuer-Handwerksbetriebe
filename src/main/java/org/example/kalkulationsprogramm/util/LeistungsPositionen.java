@@ -5,8 +5,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -17,7 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class LeistungsPositionen {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMapper.builderWithJackson2Defaults().build();
 
     private LeistungsPositionen() {
     }
@@ -62,12 +63,12 @@ public final class LeistungsPositionen {
     }
 
     private static boolean istLeistung(JsonNode block) {
-        return "SERVICE".equals(block.path("type").asText())
+        return "SERVICE".equals(block.path("type").asString(""))
                 && block.has("leistungId") && !block.get("leistungId").isNull();
     }
 
     private static Iterable<JsonNode> kinder(JsonNode block) {
-        if ("SECTION_HEADER".equals(block.path("type").asText()) && block.path("children").isArray()) {
+        if ("SECTION_HEADER".equals(block.path("type").asString("")) && block.path("children").isArray()) {
             return block.get("children");
         }
         return Set.of();
@@ -75,7 +76,7 @@ public final class LeistungsPositionen {
 
     private static void sammleIds(JsonNode block, Set<Long> ids) {
         if (istLeistung(block)) {
-            ids.add(block.get("leistungId").asLong());
+            ids.add(block.get("leistungId").asLong(0L));
         }
         for (JsonNode kind : kinder(block)) {
             sammleIds(kind, ids);
@@ -85,13 +86,13 @@ public final class LeistungsPositionen {
     private static void sammleMengen(JsonNode block, Map<Long, BigDecimal> mengen,
             Map<Long, Long> kategorieJeLeistung) {
         if (istLeistung(block) && !block.path("optional").asBoolean(false)) {
-            long leistungId = block.get("leistungId").asLong();
+            long leistungId = block.get("leistungId").asLong(0L);
             BigDecimal menge = block.has("quantity") && !block.get("quantity").isNull()
-                    ? BigDecimal.valueOf(block.get("quantity").asDouble())
+                    ? BigDecimal.valueOf(block.get("quantity").asDouble(0.0))
                     : BigDecimal.ZERO;
             mengen.merge(leistungId, menge, BigDecimal::add);
             if (block.has("kategorieId") && !block.get("kategorieId").isNull()) {
-                kategorieJeLeistung.put(leistungId, block.get("kategorieId").asLong());
+                kategorieJeLeistung.put(leistungId, block.get("kategorieId").asLong(0L));
             }
         }
         for (JsonNode kind : kinder(block)) {

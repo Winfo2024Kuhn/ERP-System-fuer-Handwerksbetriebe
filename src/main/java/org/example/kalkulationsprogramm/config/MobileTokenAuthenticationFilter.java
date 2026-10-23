@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.config;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;
@@ -30,6 +30,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
+import tools.jackson.core.JacksonException;
 
 /** Authentifiziert mobile Aufrufe vor CSRF und vor jedem Fach-Controller. */
 public final class MobileTokenAuthenticationFilter extends OncePerRequestFilter {
@@ -111,10 +112,10 @@ public final class MobileTokenAuthenticationFilter extends OncePerRequestFilter 
             if (body.length > 0) {
                 JsonNode json;
                 try { json = mapper.readTree(body); }
-                catch (com.fasterxml.jackson.core.JsonProcessingException e) { reject(response, 400, 0); return; }
+                catch (JacksonException e) { reject(response, 400, 0); return; }
                 if (json == null || !json.isObject()) { reject(response, 400, 0); return; }
-                if ((json.has("token") && !credential.equals(json.path("token").asText()))
-                        || (json.has("mitarbeiterId") && !employee.getId().toString().equals(json.path("mitarbeiterId").asText()))) {
+                if ((json.has("token") && !credential.equals(json.path("token").asString("")))
+                        || (json.has("mitarbeiterId") && !employee.getId().toString().equals(json.path("mitarbeiterId").asString("")))) {
                     reject(response, 403, 0); return;
                 }
             }

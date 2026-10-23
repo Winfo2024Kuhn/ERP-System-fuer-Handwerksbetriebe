@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.dto.KassenbuchAbschlussDto;
 import org.example.kalkulationsprogramm.dto.KassenzaehlungDto;
@@ -16,10 +16,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -57,12 +57,12 @@ class KassenbuchControllerTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
 
-    @MockBean private BelegService belegService;
-    @MockBean private KassenbuchAbschlussService abschlussService;
-    @MockBean private KassenzaehlungService zaehlungService;
-    @MockBean private BelegAuditService auditService;
-    @MockBean private BelegAuditChainVerifier verifier;
-    @MockBean private VerfahrensdokumentationService verfahrensdokumentationService;
+    @MockitoBean private BelegService belegService;
+    @MockitoBean private KassenbuchAbschlussService abschlussService;
+    @MockitoBean private KassenzaehlungService zaehlungService;
+    @MockitoBean private BelegAuditService auditService;
+    @MockitoBean private BelegAuditChainVerifier verifier;
+    @MockitoBean private VerfahrensdokumentationService verfahrensdokumentationService;
 
     private Mitarbeiter maxMustermann;
 

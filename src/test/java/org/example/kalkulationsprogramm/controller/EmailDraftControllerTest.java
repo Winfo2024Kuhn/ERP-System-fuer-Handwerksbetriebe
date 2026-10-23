@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.EmailDraft;
 import org.example.kalkulationsprogramm.repository.EmailDraftRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -182,7 +183,7 @@ class EmailDraftControllerTest {
     void preservesLocalSignatureImagesAndMetadataWhileRemovingActiveContent() throws Exception {
         String body = "<div class='email-signature' data-signature-id='3'><img src='/api/email/signatures/3/images/8' onerror='alert(1)'><img src='/api/emails/12/attachments/4'></div>";
         mvc.perform(post("/api/emails/drafts").contentType(MediaType.APPLICATION_JSON)
-                .content(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(java.util.Map.of("body", body))))
+                .content(JsonMapper.builderWithJackson2Defaults().build().writeValueAsString(java.util.Map.of("body", body))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("src=\"/api/email/signatures/3/images/8\"")))
                 .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("src=\"/api/emails/12/attachments/4\"")))

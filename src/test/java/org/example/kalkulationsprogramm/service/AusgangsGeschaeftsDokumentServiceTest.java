@@ -7,8 +7,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -2995,27 +2996,27 @@ class AusgangsGeschaeftsDokumentServiceTest {
                 ]
                 """;
             String result = service.markiereAlternativenAlsBeauftragt(altJson, Set.of("opt1"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "a")).isNotNull();
             assertThat(finde(blocks, "opt1")).isNotNull();
-            assertThat(finde(blocks, "opt1").path("optional").asBoolean()).isFalse();
+            assertThat(finde(blocks, "opt1").path("optional").asBoolean(false)).isFalse();
             assertThat(finde(blocks, "opt2")).isNull();
         }
 
         @Test
         void machtGewaehlteVarianteZurFestenPosition() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             JsonNode gewaehlt = finde(blocks, "b");
-            assertThat(gewaehlt.path("optional").asBoolean()).isFalse();
+            assertThat(gewaehlt.path("optional").asBoolean(false)).isFalse();
         }
 
         @Test
         void entferntAbgewaehlteVarianteVollstaendig() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "c")).isNull();
         }
@@ -3023,7 +3024,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void entferntAuchAbgewaehlteZusatzposition() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "d")).isNull();
         }
@@ -3031,7 +3032,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void laesstFestePositionenUnberuehrt() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "a")).isNotNull();
         }
@@ -3039,7 +3040,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void entferntAbgewaehlteAuchInnerhalbEinesBauabschnitts() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b", "e"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "e")).isNotNull();
             assertThat(finde(blocks, "f")).isNull();
@@ -3048,7 +3049,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void entferntAlleOptionalenWennNichtsGewaehltWurde() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of());
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "a")).isNotNull();
             assertThat(finde(blocks, "b")).isNull();
@@ -3058,9 +3059,9 @@ class AusgangsGeschaeftsDokumentServiceTest {
         /** Sucht einen Block ueber beide Ebenen; null wenn nicht vorhanden. */
         private JsonNode finde(JsonNode blocks, String id) {
             for (JsonNode b : blocks) {
-                if (id.equals(b.path("id").asText())) return b;
+                if (id.equals(b.path("id").asString(""))) return b;
                 for (JsonNode k : b.path("children")) {
-                    if (id.equals(k.path("id").asText())) return k;
+                    if (id.equals(k.path("id").asString(""))) return k;
                 }
             }
             return null;

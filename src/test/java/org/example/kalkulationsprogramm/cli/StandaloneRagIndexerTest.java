@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.cli;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +25,7 @@ class StandaloneRagIndexerTest {
 
     private static final Map<String, String> MIT_KEY = Map.of("GEMINI_API_KEY", "test-schluessel");
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
     private final ByteArrayOutputStream ausgabe = new ByteArrayOutputStream();
     private final AtomicInteger eingebettet = new AtomicInteger();
     private final List<String> genutzteSchluessel = new ArrayList<>();
@@ -36,7 +37,7 @@ class StandaloneRagIndexerTest {
     void setUp() throws IOException {
         Files.createDirectories(projekt.resolve("docs/benutzer"));
         Files.writeString(projekt.resolve("docs/benutzer/monatsabschluss.md"),
-                "# Monatsabschluss\nKnopf: Monat jetzt abschliessen", StandardCharsets.UTF_8);
+                "# Monatsabschluss\nKnopf: Monat jetzt abschliessen");
     }
 
     private int ausfuehren(Map<String, String> umgebung, String... args) {

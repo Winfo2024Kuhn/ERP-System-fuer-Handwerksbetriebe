@@ -1,11 +1,11 @@
 package org.example.kalkulationsprogramm.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Die Benutzerverwaltung lädt die Profile als JSON. Vom Mitarbeiter gehören nur
@@ -29,11 +29,13 @@ class FrontendUserProfileJsonTest {
         profil.setDisplayName("Max Mustermann");
         profil.setMitarbeiter(mitarbeiter);
 
-        JsonNode json = new ObjectMapper().findAndRegisterModules().valueToTree(profil).get("mitarbeiter");
+        JsonNode json = JsonMapper.builderWithJackson2Defaults()
+                .findAndAddModules()
+                .build().valueToTree(profil).get("mitarbeiter");
 
-        assertThat(json.get("id").asLong()).isEqualTo(7L);
-        assertThat(json.get("vorname").asText()).isEqualTo("Max");
-        assertThat(json.get("nachname").asText()).isEqualTo("Mustermann");
+        assertThat(json.get("id").asLong(0L)).isEqualTo(7L);
+        assertThat(json.get("vorname").asString("")).isEqualTo("Max");
+        assertThat(json.get("nachname").asString("")).isEqualTo("Mustermann");
         assertThat(json.size()).as("nur id, vorname, nachname").isEqualTo(3);
         assertThat(json.has("krankenkasse")).isFalse();
         assertThat(json.has("loginToken")).isFalse();

@@ -1,7 +1,9 @@
 package org.example.kalkulationsprogramm.domain;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,9 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class UrlaubsantragSerialisierungTest {
 
     // Wie Spring Boot: JavaTime-Modul + ISO-Datumsformat statt Timestamps
-    private final ObjectMapper objectMapper = new ObjectMapper()
-            .findAndRegisterModules()
-            .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults()
+            .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build();
 
     private Urlaubsantrag antrag;
 
@@ -61,10 +63,10 @@ class UrlaubsantragSerialisierungTest {
         JsonNode mitarbeiterJson = json.get("mitarbeiter");
 
         assertThat(mitarbeiterJson).isNotNull();
-        assertThat(mitarbeiterJson.get("id").asLong()).isEqualTo(1L);
-        assertThat(mitarbeiterJson.get("vorname").asText()).isEqualTo("Max");
-        assertThat(mitarbeiterJson.get("nachname").asText()).isEqualTo("Mustermann");
-        assertThat(mitarbeiterJson.get("jahresUrlaub").asInt()).isEqualTo(30);
+        assertThat(mitarbeiterJson.get("id").asLong(0L)).isEqualTo(1L);
+        assertThat(mitarbeiterJson.get("vorname").asString("")).isEqualTo("Max");
+        assertThat(mitarbeiterJson.get("nachname").asString("")).isEqualTo("Mustermann");
+        assertThat(mitarbeiterJson.get("jahresUrlaub").asInt(0)).isEqualTo(30);
 
         assertThat(mitarbeiterJson.has("krankenkasse"))
                 .as("krankenkasse muss ausgefiltert sein – in Produktion ist sie ein Hibernate-Proxy, "
@@ -82,11 +84,11 @@ class UrlaubsantragSerialisierungTest {
     void antragsFelderBleibenErhalten() {
         JsonNode json = objectMapper.valueToTree(antrag);
 
-        assertThat(json.get("id").asLong()).isEqualTo(42L);
-        assertThat(json.get("bemerkung").asText()).isEqualTo("Sommerurlaub");
-        assertThat(json.get("status").asText()).isEqualTo("OFFEN");
-        assertThat(json.get("typ").asText()).isEqualTo("URLAUB");
-        assertThat(json.get("vonDatum").asText()).isEqualTo("2026-08-03");
-        assertThat(json.get("bisDatum").asText()).isEqualTo("2026-08-14");
+        assertThat(json.get("id").asLong(0L)).isEqualTo(42L);
+        assertThat(json.get("bemerkung").asString("")).isEqualTo("Sommerurlaub");
+        assertThat(json.get("status").asString("")).isEqualTo("OFFEN");
+        assertThat(json.get("typ").asString("")).isEqualTo("URLAUB");
+        assertThat(json.get("vonDatum").asString("")).isEqualTo("2026-08-03");
+        assertThat(json.get("bisDatum").asString("")).isEqualTo("2026-08-14");
     }
 }

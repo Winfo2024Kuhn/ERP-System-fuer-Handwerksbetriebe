@@ -58,7 +58,7 @@ class WeiterleitungAnhaengeServiceTest {
         original.addAttachment(a);
         if (inhalt != null) {
             Path datei = ordner.resolve(id + "_datei");
-            Files.writeString(datei, inhalt, StandardCharsets.UTF_8);
+            Files.writeString(datei, inhalt);
             when(anhangDateien.resolveAttachmentPath(a)).thenReturn(datei);
         } else {
             when(anhangDateien.resolveAttachmentPath(a)).thenReturn(ordner.resolve("fehlt"));

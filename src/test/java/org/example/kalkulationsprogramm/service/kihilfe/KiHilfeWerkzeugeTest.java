@@ -1,9 +1,10 @@
 package org.example.kalkulationsprogramm.service.kihilfe;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.example.kalkulationsprogramm.service.LocalRagService;
 import org.example.kalkulationsprogramm.service.LocalRagService.Bereich;
 import org.example.kalkulationsprogramm.service.LocalRagService.CodeChunkResult;
@@ -30,7 +31,7 @@ class KiHilfeWerkzeugeTest {
 
     private static final String SEITE = "react-pc-frontend/src/pages/ProjektEditor.tsx";
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
     private final LocalRagService rag = mock(LocalRagService.class);
     private final List<String> schritte = new ArrayList<>();
     private KiHilfeWerkzeuge werkzeuge;
@@ -53,13 +54,13 @@ class KiHilfeWerkzeugeTest {
     void deklarationen() {
         ArrayNode deklarationen = werkzeuge.deklarationen();
 
-        assertThat(deklarationen).extracting(d -> d.path("name").asText())
+        assertThat(deklarationen).extracting(d -> d.path("name").asString(""))
                 .containsExactly(KiHilfeWerkzeuge.SUCHEN, KiHilfeWerkzeuge.LESEN);
         JsonNode suchen = deklarationen.get(0).path("parameters");
         assertThat(suchen.path("required").toString()).contains("suchbegriffe", "hinweis");
         assertThat(suchen.path("properties").path("bereich").path("enum").toString())
                 .contains("bedienung", "technik", "alles");
-        assertThat(suchen.path("properties").path("bereich").path("format").asText()).isEqualTo("enum");
+        assertThat(suchen.path("properties").path("bereich").path("format").asString("")).isEqualTo("enum");
         assertThat(deklarationen.get(1).path("parameters").path("required").toString()).contains("datei");
     }
 
@@ -75,10 +76,10 @@ class KiHilfeWerkzeugeTest {
 
         assertThat(schritte).containsExactly("Schaut nach: Wie man storniert");
         JsonNode treffer = ergebnis.path("treffer").get(0);
-        assertThat(treffer.path("datei").asText()).isEqualTo(SEITE);
-        assertThat(treffer.path("abschnitt").asText()).isEqualTo("Teil 2");
-        assertThat(treffer.path("art").asText()).startsWith("Bildschirm");
-        assertThat(treffer.path("inhalt").asText()).contains("Stornieren");
+        assertThat(treffer.path("datei").asString("")).isEqualTo(SEITE);
+        assertThat(treffer.path("abschnitt").asString("")).isEqualTo("Teil 2");
+        assertThat(treffer.path("art").asString("")).startsWith("Bildschirm");
+        assertThat(treffer.path("inhalt").asString("")).contains("Stornieren");
 
         // Zweite Suche bekommt beide als "schon gesehen"
         when(rag.suchen(anyString(), any(), anyInt(), any())).thenReturn(List.of());
@@ -88,7 +89,7 @@ class KiHilfeWerkzeugeTest {
         ArgumentCaptor<Set<String>> gesehen = ArgumentCaptor.forClass(Set.class);
         verify(rag).suchen(eq("Gutschrift"), eq(Bereich.TECHNIK), eq(4), gesehen.capture());
         assertThat(gesehen.getValue()).containsExactlyInAnyOrder(SEITE + "::Vorher", SEITE + "::Teil 2");
-        assertThat(leer.path("hinweis").asText()).startsWith("Keine neuen Treffer");
+        assertThat(leer.path("hinweis").asString("")).startsWith("Keine neuen Treffer");
         assertThat(schritte).last().isEqualTo("Schaut nach: Gutschrift");
     }
 
@@ -101,7 +102,7 @@ class KiHilfeWerkzeugeTest {
         verify(rag).suchen(eq("x"), eq(Bereich.ALLES), eq(4), any());
 
         ObjectNode ergebnis = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.SUCHEN, "{\"suchbegriffe\":\"  \"}"));
-        assertThat(ergebnis.path("hinweis").asText()).isEqualTo("Bitte Suchbegriffe angeben.");
+        assertThat(ergebnis.path("hinweis").asString("")).isEqualTo("Bitte Suchbegriffe angeben.");
         assertThat(schritte).hasSize(1);
     }
 
@@ -112,7 +113,7 @@ class KiHilfeWerkzeugeTest {
 
         ObjectNode ergebnis = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.SUCHEN, "{\"suchbegriffe\":\"x\"}"));
 
-        assertThat(ergebnis.path("hinweis").asText()).startsWith("Die Suche ging gerade nicht");
+        assertThat(ergebnis.path("hinweis").asString("")).startsWith("Die Suche ging gerade nicht");
     }
 
     @Test
@@ -124,8 +125,8 @@ class KiHilfeWerkzeugeTest {
         when(rag.dateiLesen(SEITE)).thenReturn(List.of(abschnitt("Teil 1", "a")));
         ObjectNode lesen = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"" + SEITE + "\"}"));
 
-        assertThat(suchen.path("hinweis").asText()).startsWith("Genug nachgeschlagen");
-        assertThat(lesen.path("hinweis").asText()).startsWith("Genug nachgeschlagen");
+        assertThat(suchen.path("hinweis").asString("")).startsWith("Genug nachgeschlagen");
+        assertThat(lesen.path("hinweis").asString("")).startsWith("Genug nachgeschlagen");
         verify(rag, never()).suchen(anyString(), any(), anyInt(), any());
         assertThat(schritte).isEmpty();
     }
@@ -140,7 +141,7 @@ class KiHilfeWerkzeugeTest {
         ObjectNode ergebnis = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.SUCHEN, "{\"suchbegriffe\":\"y\"}"));
 
         assertThat(ergebnis.path("treffer")).isEmpty();
-        assertThat(ergebnis.path("hinweis").asText()).startsWith("Genug nachgeschlagen");
+        assertThat(ergebnis.path("hinweis").asString("")).startsWith("Genug nachgeschlagen");
     }
 
     @Test
@@ -151,8 +152,8 @@ class KiHilfeWerkzeugeTest {
         ObjectNode ergebnis = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN,
                 "{\"datei\":\" " + SEITE + " \",\"hinweis\":\"Die Seite Projekte\"}"));
 
-        assertThat(ergebnis.path("inhalt").asText()).isEqualTo("Kopf\n\nKnopf");
-        assertThat(ergebnis.path("art").asText()).startsWith("Bildschirm");
+        assertThat(ergebnis.path("inhalt").asString("")).isEqualTo("Kopf\n\nKnopf");
+        assertThat(ergebnis.path("art").asString("")).startsWith("Bildschirm");
         assertThat(ergebnis.has("hinweis")).isFalse();
         assertThat(schritte).containsExactly("Liest genauer: Die Seite Projekte");
     }
@@ -166,8 +167,8 @@ class KiHilfeWerkzeugeTest {
 
         ObjectNode ergebnis = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"" + SEITE + "\"}"));
 
-        assertThat(ergebnis.path("inhalt").asText().length()).isLessThanOrEqualTo(KiHilfeWerkzeuge.MAX_ZEICHEN_DATEI);
-        assertThat(ergebnis.path("hinweis").asText()).contains(KiHilfeWerkzeuge.SUCHEN);
+        assertThat(ergebnis.path("inhalt").asString("").length()).isLessThanOrEqualTo(KiHilfeWerkzeuge.MAX_ZEICHEN_DATEI);
+        assertThat(ergebnis.path("hinweis").asString("")).contains(KiHilfeWerkzeuge.SUCHEN);
         assertThat(schritte).containsExactly("Liest genauer: eine Seite des Programms");
     }
 
@@ -176,20 +177,20 @@ class KiHilfeWerkzeugeTest {
     void lesenUnbekannt() throws Exception {
         when(rag.dateiLesen(anyString())).thenReturn(List.of());
         ObjectNode unbekannt = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"../../etc/passwd\"}"));
-        assertThat(unbekannt.path("hinweis").asText()).startsWith("Diese Datei gibt es");
+        assertThat(unbekannt.path("hinweis").asString("")).startsWith("Diese Datei gibt es");
 
         when(rag.dateiLesen(anyString())).thenThrow(new IllegalStateException("kaputt"));
         ObjectNode fehler = werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"x\"}"));
-        assertThat(fehler.path("hinweis").asText()).startsWith("Das Lesen ging gerade nicht");
+        assertThat(fehler.path("hinweis").asString("")).startsWith("Das Lesen ging gerade nicht");
         assertThat(schritte).isEmpty();
     }
 
     @Test
     @DisplayName("Unbekanntes Werkzeug und zu viele Aufrufe: Hinweis an die KI")
     void unbekanntUndZuViele() throws Exception {
-        assertThat(werkzeuge.ausfuehren(aufruf("rm_rf", "{}")).path("hinweis").asText())
+        assertThat(werkzeuge.ausfuehren(aufruf("rm_rf", "{}")).path("hinweis").asString(""))
                 .contains(KiHilfeWerkzeuge.SUCHEN, KiHilfeWerkzeuge.LESEN);
-        assertThat(werkzeuge.zuVieleAufrufe().path("hinweis").asText()).startsWith("Zu viele Suchen");
+        assertThat(werkzeuge.zuVieleAufrufe().path("hinweis").asString("")).startsWith("Zu viele Suchen");
     }
 
     @Test
@@ -215,7 +216,7 @@ class KiHilfeWerkzeugeTest {
         for (int i = 0; i < 10; i++) werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"" + SEITE + "\"}"));
 
         assertThat(werkzeuge.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"" + SEITE + "\"}"))
-                .path("hinweis").asText()).startsWith("Genug nachgeschlagen");
+                .path("hinweis").asString("")).startsWith("Genug nachgeschlagen");
         assertThat(schritte).hasSizeLessThanOrEqualTo(KiHilfeWerkzeuge.MAX_ZEICHEN_GESAMT / teil.length());
 
         when(rag.dateiLesen("docs/A.md")).thenReturn(List.of(new CodeChunkResult("docs/A.md::1", "kurz", "docs/A.md",
@@ -223,7 +224,7 @@ class KiHilfeWerkzeugeTest {
         KiHilfeWerkzeuge frisch = new KiHilfeWerkzeuge(rag, objectMapper, schritte::add);
         frisch.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"docs/A.md\"}"));
         assertThat(frisch.ausfuehren(aufruf(KiHilfeWerkzeuge.LESEN, "{\"datei\":\"docs/A.md\"}"))
-                .path("hinweis").asText()).startsWith("Diese Datei kennst du schon");
+                .path("hinweis").asString("")).startsWith("Diese Datei kennst du schon");
     }
 
     @Test

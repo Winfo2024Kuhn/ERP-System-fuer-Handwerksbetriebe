@@ -1,8 +1,7 @@
 package org.example.kalkulationsprogramm.service.telefon;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.dto.Telefon.AnrufbeantworterDto;
 import org.example.kalkulationsprogramm.dto.Telefon.TelefonEinstellungenDto;
@@ -12,6 +11,7 @@ import org.example.kalkulationsprogramm.service.mail.MailSecretService;
 import org.example.kalkulationsprogramm.service.telefon.fritzbox.FritzBoxHost;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -192,7 +192,7 @@ public class TelefonEinstellungenService {
         try {
             return objectMapper.readValue(wert, new TypeReference<List<AnrufbeantworterDto>>() {
             });
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             return List.of();
         }
     }
@@ -282,7 +282,7 @@ public class TelefonEinstellungenService {
     private String json(List<AnrufbeantworterDto> abs) {
         try {
             return objectMapper.writeValueAsString(abs);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Anrufbeantworter konnten nicht gespeichert werden", e);
         }
     }

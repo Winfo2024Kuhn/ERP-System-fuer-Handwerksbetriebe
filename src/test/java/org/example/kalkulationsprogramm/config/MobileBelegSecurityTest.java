@@ -17,9 +17,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Answers;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
@@ -27,13 +26,13 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 import java.util.Optional;
 
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -46,13 +45,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MobileBelegSecurityTest {
     private static final String TOKEN = "12345678-1234-4234-8234-123456789abc";
     @Autowired private MockMvc mvc;
-    @MockBean private FrontendUserDetailsService users;
-    @MockBean private MitarbeiterRepository mitarbeiter;
-    @MockBean private BelegRepository belege;
-    @MockBean private BelegSplitService split;
-    @MockBean private MwstRechnerService mwst;
-    @MockBean private KassenbuchungService kasse;
-    @MockBean(answer = Answers.CALLS_REAL_METHODS) private BelegService service;
+    @MockitoBean private FrontendUserDetailsService users;
+    @MockitoBean private MitarbeiterRepository mitarbeiter;
+    @MockitoBean private BelegRepository belege;
+    @MockitoBean private BelegSplitService split;
+    @MockitoBean private MwstRechnerService mwst;
+    @MockitoBean private KassenbuchungService kasse;
+    @MockitoBean(answers = Answers.CALLS_REAL_METHODS) private BelegService service;
     private Mitarbeiter caller;
 
     @TestConfiguration

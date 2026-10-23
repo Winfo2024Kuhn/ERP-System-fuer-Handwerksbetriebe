@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service.kihilfe;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.GeminiAnfrage;
 
@@ -142,7 +142,7 @@ public class GeminiEinbetter implements RagIndexer.Einbetter {
         }
         float[] vektor = new float[RagIndexer.DIMENSIONEN];
         for (int i = 0; i < vektor.length; i++) {
-            vektor[i] = (float) werte.get(i).asDouble();
+            vektor[i] = (float) werte.get(i).asDouble(0.0);
         }
         return vektor;
     }

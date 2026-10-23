@@ -1,4 +1,5 @@
 package org.example.kalkulationsprogramm.service;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.dto.MonatsabschlussUebersichtDto.*;
@@ -8,6 +9,7 @@ import java.math.BigDecimal;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
+
 class MonatsabschlussUebersichtServiceTest {
     final MonatsabschlussUebersichtRepository repo=mock(MonatsabschlussUebersichtRepository.class);
     final MonatsSaldoService saldo=mock(MonatsSaldoService.class);
@@ -49,10 +51,10 @@ class MonatsabschlussUebersichtServiceTest {
         when(repo.salden(anyList(),anyInt(),anyInt())).thenReturn(List.of(geschlossen,offen));
         var result=service.lade(new Filter(2025,1,null,null,"ALLE",0,1),null);
         assertThat(result.items()).hasSize(1);
-        var json=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(result.auswahl());
-        assertThat(json.get(0).path("festgeschrieben").asBoolean()).isTrue();
+        var json=JsonMapper.builderWithJackson2Defaults().build().valueToTree(result.auswahl());
+        assertThat(json.get(0).path("festgeschrieben").asBoolean(false)).isTrue();
         assertThat(json.get(1).path("festgeschrieben").isBoolean()).isTrue();
-        assertThat(json.get(1).path("festgeschrieben").asBoolean()).isFalse();
+        assertThat(json.get(1).path("festgeschrieben").asBoolean(false)).isFalse();
         assertThat(result.auswahl()).allSatisfy(s->assertThat(s.version()).isEqualTo(3L));
         verifyNoInteractions(saldo);
     }

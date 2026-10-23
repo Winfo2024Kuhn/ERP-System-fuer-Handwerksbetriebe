@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.Image;
+import org.openpdf.text.Image;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;

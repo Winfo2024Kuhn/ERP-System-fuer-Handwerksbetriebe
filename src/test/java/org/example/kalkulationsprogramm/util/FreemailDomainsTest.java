@@ -4,7 +4,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -57,7 +56,7 @@ class FreemailDomainsTest {
     @DisplayName("Frontend-Liste stimmt mit der Backend-Liste ueberein")
     void frontendListeIstGleich() throws IOException {
         Path datei = frontendListe();
-        String quelle = Files.readString(datei, StandardCharsets.UTF_8);
+        String quelle = Files.readString(datei);
         int start = quelle.indexOf("new Set([");
         int ende = quelle.indexOf("])", start);
         assertThat(start).as("Set-Literal in %s", datei).isPositive();

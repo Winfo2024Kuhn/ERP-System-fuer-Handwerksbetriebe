@@ -13,12 +13,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
@@ -49,10 +49,10 @@ class TelefonbuchControllerTest {
     }
 
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean FrontendUserProfileRepository profiles;
-    @MockBean TelefonbuchAbgleichService abgleich;
-    @MockBean TelefonbuchAbgleichPlaner planer;
+    @MockitoBean FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean FrontendUserProfileRepository profiles;
+    @MockitoBean TelefonbuchAbgleichService abgleich;
+    @MockitoBean TelefonbuchAbgleichPlaner planer;
 
     private static final TelefonbuchStatusDto STATUS = new TelefonbuchStatusDto(true, true, "ERP-Kontakte",
             LocalDateTime.of(2026, 10, 21, 9, 30), 42, null, false, false, null);

@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.util;
 
-import com.lowagie.text.Font;
+import org.openpdf.text.Font;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

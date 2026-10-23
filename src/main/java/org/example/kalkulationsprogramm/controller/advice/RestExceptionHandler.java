@@ -8,6 +8,7 @@ import org.example.kalkulationsprogramm.exception.MietabrechnungValidationExcept
 import org.example.kalkulationsprogramm.util.ConstraintErrorDetail;
 import org.example.kalkulationsprogramm.util.ConstraintMessageResolver;
 import org.example.kalkulationsprogramm.util.FieldErrorDetail;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -17,7 +18,6 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
-import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.server.ResponseStatusException;

@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.pdf.PdfReader;
-import com.lowagie.text.pdf.parser.PdfTextExtractor;
+import org.openpdf.text.pdf.PdfReader;
+import org.openpdf.text.pdf.parser.PdfTextExtractor;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
@@ -79,16 +79,13 @@ class BelegPdfServiceTest {
 
     private String extractText(Path pdf) throws Exception {
         byte[] bytes = Files.readAllBytes(pdf);
-        PdfReader reader = new PdfReader(bytes);
-        try {
+        try (PdfReader reader = new PdfReader(bytes)) {
             PdfTextExtractor extractor = new PdfTextExtractor(reader);
             StringBuilder sb = new StringBuilder();
             for (int i = 1; i <= reader.getNumberOfPages(); i++) {
                 sb.append(extractor.getTextFromPage(i)).append("\n");
             }
             return sb.toString();
-        } finally {
-            reader.close();
         }
     }
 

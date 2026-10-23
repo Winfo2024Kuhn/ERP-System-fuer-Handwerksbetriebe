@@ -6,18 +6,18 @@ import static org.mockito.Mockito.mock;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Optional;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.testsupport.LogMitschnitt;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 /** Was die PDF-Auslesung per Gemini ins Log schreibt: nie Rechnungsinhalte oder Pfade. Nur Dummy-Daten. */
 class PdfAiExtractorServiceLogTest {
 
     private final PdfAiExtractorService service =
-            new PdfAiExtractorService(new ObjectMapper(), mock(SystemSettingsService.class));
+            new PdfAiExtractorService(JsonMapper.builderWithJackson2Defaults().build(), mock(SystemSettingsService.class));
 
     @Test
     void antwortMitRechnungsdatenLandetNichtImLog() {
@@ -51,7 +51,7 @@ class PdfAiExtractorServiceLogTest {
         assertThat(log).noneMatch(zeile -> zeile.contains("Mustermann"));
         assertThat(log).contains(
                 "[PdfAI/Gemini] Keine Parts in Antwort. FinishReason: SAFETY",
-                "[PdfAI/Gemini] Parse-Fehler: JsonParseException");
+                "[PdfAI/Gemini] Parse-Fehler: StreamReadException");
     }
 
     @Test

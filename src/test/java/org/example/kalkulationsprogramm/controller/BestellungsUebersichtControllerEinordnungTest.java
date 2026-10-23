@@ -1,5 +1,5 @@
 package org.example.kalkulationsprogramm.controller;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
@@ -16,7 +16,7 @@ import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentAbgleich;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.RechnungsVorschlagService;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,9 +62,9 @@ class BestellungsUebersichtControllerEinordnungTest {
     @BeforeEach
     void setUp() {
         RechnungsVorschlagService vorschlagService = new RechnungsVorschlagService(
-                new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository);
+                new LieferantDokumentAbgleich(JsonMapper.builderWithJackson2Defaults().build()), dokumentRepository, sperreRepository);
         KettenVorschlagService kettenVorschlagService = new KettenVorschlagService(
-                new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository);
+                new LieferantDokumentAbgleich(JsonMapper.builderWithJackson2Defaults().build()), dokumentRepository, sperreRepository);
         controller = new BestellungsUebersichtController(
                 dokumentRepository, geschaeftsdokumentRepository, projektAnteilRepository,
                 null, null, null, null, null, null,

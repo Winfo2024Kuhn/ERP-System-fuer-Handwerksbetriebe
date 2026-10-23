@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.WebsiteAnalyticsSnapshot;
 import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.AnalyticsSnapshotRequestDto;
 import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.AnalyticsSnapshotResponseDto;
@@ -35,7 +35,7 @@ class WebsiteAnalyticsSnapshotServiceTest {
     private WebsiteAnalyticsSnapshotRepository repository;
 
     @Spy
-    private ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
     @InjectMocks
     private WebsiteAnalyticsSnapshotService service;

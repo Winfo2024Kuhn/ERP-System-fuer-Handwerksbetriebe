@@ -1,8 +1,8 @@
 package org.example.kalkulationsprogramm.util;
 
-import com.lowagie.text.Chunk;
-import com.lowagie.text.Font;
-import com.lowagie.text.Paragraph;
+import org.openpdf.text.Chunk;
+import org.openpdf.text.Font;
+import org.openpdf.text.Paragraph;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

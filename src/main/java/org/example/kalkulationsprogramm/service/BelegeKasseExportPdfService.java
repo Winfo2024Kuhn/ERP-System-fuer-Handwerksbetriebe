@@ -1,16 +1,15 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.*;
-import com.lowagie.text.BadElementException;
-import com.lowagie.text.Font;
-import com.lowagie.text.Image;
-import com.lowagie.text.Rectangle;
-import com.lowagie.text.pdf.PdfPCell;
-import com.lowagie.text.pdf.PdfPTable;
-import com.lowagie.text.pdf.PdfWriter;
+import org.openpdf.text.*;
+import org.openpdf.text.BadElementException;
+import org.openpdf.text.Font;
+import org.openpdf.text.Image;
+import org.openpdf.text.Rectangle;
+import org.openpdf.text.pdf.PdfPCell;
+import org.openpdf.text.pdf.PdfPTable;
+import org.openpdf.text.pdf.PdfWriter;
 
 import java.io.IOException;
-import java.nio.file.Paths;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Beleg;
@@ -111,11 +110,11 @@ public class BelegeKasseExportPdfService {
             // Temp-PDF unter dem konfigurierten upload.path ablegen — sonst
             // driftet die Temp-Location, wenn das Upload-Verzeichnis (z.B. in
             // application-local.properties) umgebogen wurde.
-            Path dir = Paths.get(uploadPath);
+            Path dir = Path.of(uploadPath);
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "belege-export-", ".pdf");
             Document doc = new Document(PageSize.A4.rotate(), 36, 36, 36, 36);
-            PdfWriter.getInstance(doc, Files.newOutputStream(temp));
+            PdfWriter.getInstance(doc, Files.newOutputStream(temp)).setPdfVersion(PdfWriter.VERSION_1_7);
             doc.open();
 
             Firmeninformation firma = firmeninformationRepository.findFirmeninformation().orElse(null);
@@ -208,7 +207,7 @@ public class BelegeKasseExportPdfService {
             // den Dateinamen ohnehin sanitisieren, aber wir prüfen hier nochmal.
             String safe = dateiname.trim();
             if (!safe.contains("..") && !safe.contains("/") && !safe.contains("\\")) {
-                Path base = Paths.get(uploadPath, "firma", "logo").toAbsolutePath().normalize();
+                Path base = Path.of(uploadPath, "firma", "logo").toAbsolutePath().normalize();
                 Path logoPath = base.resolve(safe).normalize();
                 if (logoPath.startsWith(base) && Files.exists(logoPath)) {
                     try {
@@ -580,7 +579,7 @@ public class BelegeKasseExportPdfService {
         if (!EINBETTBARE_MIME_TYPES.contains(mime)) return null;
         if (name.contains("..") || name.contains("/") || name.contains("\\")) return null;
 
-        Path base = Paths.get(uploadPath, "belege").toAbsolutePath().normalize();
+        Path base = Path.of(uploadPath, "belege").toAbsolutePath().normalize();
         Path datei = base.resolve(name).normalize();
         if (!datei.startsWith(base) || !Files.exists(datei)) return null;
         try {

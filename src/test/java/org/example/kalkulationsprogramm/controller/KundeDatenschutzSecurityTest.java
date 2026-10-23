@@ -25,11 +25,11 @@ import org.example.kalkulationsprogramm.service.KundennummerService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -49,16 +49,16 @@ class KundeDatenschutzSecurityTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean private MitarbeiterRepository mitarbeiterRepository;
-    @MockBean private KundeRepository kundeRepository;
-    @MockBean private KundeMapper kundeMapper;
-    @MockBean private KundenDetailService kundenDetailService;
-    @MockBean private org.springframework.context.ApplicationEventPublisher eventPublisher;
-    @MockBean private KundennummerService kundennummerService;
-    @MockBean private KundeDuplikatService kundeDuplikatService;
-    @MockBean private KundeNotizRepository kundeNotizRepository;
-    @MockBean private KundeDatenschutzService datenschutzService;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private MitarbeiterRepository mitarbeiterRepository;
+    @MockitoBean private KundeRepository kundeRepository;
+    @MockitoBean private KundeMapper kundeMapper;
+    @MockitoBean private KundenDetailService kundenDetailService;
+    @MockitoBean private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @MockitoBean private KundennummerService kundennummerService;
+    @MockitoBean private KundeDuplikatService kundeDuplikatService;
+    @MockitoBean private KundeNotizRepository kundeNotizRepository;
+    @MockitoBean private KundeDatenschutzService datenschutzService;
 
     @Test
     @WithMockUser(roles = "USER")

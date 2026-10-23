@@ -27,9 +27,9 @@ import org.example.kalkulationsprogramm.service.ProduktkategorieVerwaltungServic
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
@@ -41,9 +41,9 @@ import org.springframework.web.server.ResponseStatusException;
 class ProduktkategorieControllerTest {
 
     @Autowired MockMvc mockMvc;
-    @MockBean ProduktkategorieService produktkategorieService;
-    @MockBean ProduktkategorieVerwaltungService verwaltungService;
-    @MockBean ProduktkategorieAuswertungService auswertungService;
+    @MockitoBean ProduktkategorieService produktkategorieService;
+    @MockitoBean ProduktkategorieVerwaltungService verwaltungService;
+    @MockitoBean ProduktkategorieAuswertungService auswertungService;
 
     private static ProduktkategorieResponseDto ordner(long id, String name) {
         ProduktkategorieResponseDto dto = new ProduktkategorieResponseDto();

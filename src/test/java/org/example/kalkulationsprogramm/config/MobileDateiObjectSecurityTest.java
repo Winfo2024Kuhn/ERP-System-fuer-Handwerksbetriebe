@@ -39,13 +39,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Echte HTTP-Authentifizierung und Dateiauslieferung; Speicher und Datenbank sind Testdoubles. */
@@ -56,14 +56,14 @@ class MobileDateiObjectSecurityTest {
     private static final String TOKEN = "12345678-1234-4234-8234-123456789abc";
     private static final byte[] PRIVATE_BYTES = "vertraulicher-testinhalt".getBytes(java.nio.charset.StandardCharsets.UTF_8);
     @Autowired private MockMvc mvc;
-    @MockBean private FrontendUserDetailsService users;
-    @MockBean private MitarbeiterRepository mitarbeiter;
-    @MockBean private ProjektDokumentRepository projektDokumente;
-    @MockBean private AnfrageDokumentRepository anfrageDokumente;
-    @MockBean private ProjektNotizBildRepository projektNotizBilder;
-    @MockBean private AnfrageNotizBildRepository anfrageNotizBilder;
-    @MockBean private DateiSpeicherService speicher;
-    @MockBean private BildVorschauService vorschau;
+    @MockitoBean private FrontendUserDetailsService users;
+    @MockitoBean private MitarbeiterRepository mitarbeiter;
+    @MockitoBean private ProjektDokumentRepository projektDokumente;
+    @MockitoBean private AnfrageDokumentRepository anfrageDokumente;
+    @MockitoBean private ProjektNotizBildRepository projektNotizBilder;
+    @MockitoBean private AnfrageNotizBildRepository anfrageNotizBilder;
+    @MockitoBean private DateiSpeicherService speicher;
+    @MockitoBean private BildVorschauService vorschau;
 
     @BeforeEach
     void aktiveAnmeldungUndVorhandenePrivateDatei() {

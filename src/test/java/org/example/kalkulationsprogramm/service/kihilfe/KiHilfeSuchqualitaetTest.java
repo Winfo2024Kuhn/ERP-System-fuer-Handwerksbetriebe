@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service.kihilfe;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -42,7 +43,7 @@ class KiHilfeSuchqualitaetTest {
     @Test
     @DisplayName("Typische Fragen finden ihre Seite unter den ersten 10 Treffern")
     void trefferquote() {
-        List<RagIndexer.Rohabschnitt> abschnitte = new RagIndexer(new ObjectMapper())
+        List<RagIndexer.Rohabschnitt> abschnitte = new RagIndexer(JsonMapper.builderWithJackson2Defaults().build())
                 .zerlegen(Path.of(System.getProperty("user.dir")));
         assertThat(abschnitte).as("Quellcode im Projektordner").hasSizeGreaterThan(500);
         StichwortIndex index = StichwortIndex.aus(abschnitte.stream()
