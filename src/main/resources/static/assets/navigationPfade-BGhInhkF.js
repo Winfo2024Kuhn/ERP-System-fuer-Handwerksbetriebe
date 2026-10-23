@@ -1,0 +1,1 @@
+function e(e){return`/projekte?projektId=${encodeURIComponent(String(e))}`}function t(e){return`/anfragen?anfrageId=${encodeURIComponent(String(e))}`}function n(e){return`/lieferanten?lieferantId=${encodeURIComponent(String(e))}`}export{n,e as r,t};

@@ -1,0 +1,1 @@
+var e=`Das Zahlungsziel muss zwischen 1 und 365 Tagen liegen.`;function t(t){let n=t.trim();if(!/^\d{1,3}$/.test(n))return{gueltig:!1,meldung:e};let r=Number(n);return r<1||r>365?{gueltig:!1,meldung:e}:{gueltig:!0,tage:r}}export{t};

@@ -25,7 +25,7 @@ const DREI_POSITIONEN = JSON.stringify({
 });
 
 function loeschKnopf(page: import('@playwright/test').Page, blockId: string) {
-    return page.locator(`[data-block-id="${blockId}"] button:has(svg.lucide-trash2)`);
+    return page.locator(`[data-block-id="${blockId}"] button:has(svg.lucide-trash-2)`);
 }
 
 test.describe('Dokument-Editor – Rückgängig & Wiederholen', () => {

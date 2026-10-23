@@ -1431,11 +1431,11 @@ describe('DocumentEditor – Rückgängig & Wiederholen', () => {
         await waitFor(() => expect(screen.getByDisplayValue('Dachrinne reinigen')).toBeInTheDocument(), { timeout: 3000 });
     }
 
-    /** Loeschen-Knopf einer Karte (traegt svg.lucide-trash2). */
+    /** Loeschen-Knopf einer Karte (traegt svg.lucide-trash-2). */
     function muelleimer(container: HTMLElement, blockId: string): HTMLButtonElement {
         const treffer = Array.from(
             container.querySelectorAll<HTMLButtonElement>(`[data-block-id="${blockId}"] button`)
-        ).find(b => b.querySelector('svg.lucide-trash2'));
+        ).find(b => b.querySelector('svg.lucide-trash-2'));
         if (!treffer) throw new Error(`Kein Löschen-Knopf für Block ${blockId} gefunden`);
         return treffer;
     }
@@ -1994,7 +1994,7 @@ describe('DocumentEditor – einfache Rechnung schliesst den Auftrag ab', () => 
     function muelleimer(container: HTMLElement, blockId: string): HTMLButtonElement {
         const treffer = Array.from(
             container.querySelectorAll<HTMLButtonElement>(`[data-block-id="${blockId}"] button`)
-        ).find(b => b.querySelector('svg.lucide-trash2'));
+        ).find(b => b.querySelector('svg.lucide-trash-2'));
         if (!treffer) throw new Error(`Kein Löschen-Knopf für Block ${blockId} gefunden`);
         return treffer;
     }

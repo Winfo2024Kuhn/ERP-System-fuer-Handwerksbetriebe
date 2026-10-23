@@ -43,19 +43,16 @@
     </properties>
 
     <!-- web-push 5.1.1 bringt veraltete Bibliotheken mit bekannten Sicherheitsluecken mit
-         (Trivy-Scan im Image-Workflow). Auf die neuesten Versionen derselben Hauptreihe heben -
-         die Schnittstellen, die web-push nutzt, sind unveraendert. -->
+         (Trivy-Scan im Image-Workflow). Auf die neuesten Versionen heben. async-http-client
+         darf in die Hauptreihe 3: ihn braucht nur web-pushs PushAsyncService, die Anwendung
+         nutzt PushService (Apache httpasyncclient, siehe unten). jose4j bleibt in seiner
+         Hauptreihe, die Schnittstellen, die web-push nutzt, sind unveraendert. -->
     <dependencyManagement>
         <dependencies>
             <dependency>
                 <groupId>org.asynchttpclient</groupId>
                 <artifactId>async-http-client</artifactId>
                 <version>3.0.14</version>
-            </dependency>
-            <dependency>
-                <groupId>org.asynchttpclient</groupId>
-                <artifactId>async-http-client-netty-utils</artifactId>
-                <version>2.16.1</version>
             </dependency>
             <dependency>
                 <groupId>org.bitbucket.b_c</groupId>
@@ -252,7 +249,7 @@
         <dependency>
             <groupId>com.icegreen</groupId>
             <artifactId>greenmail-junit5</artifactId>
-            <version>2.1.14</version>
+            <version>2.0.1</version>
             <scope>test</scope>
             <exclusions>
                 <exclusion>

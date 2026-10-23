@@ -1,0 +1,1 @@
+import{t as e}from"./numberDrafts-kpOeku-Q.js";function t(t){let n=e({betrag:t},{betrag:{label:`Betrag`,required:!0,min:0,maxDecimalPlaces:2}});return n.valid?{valid:!0,value:n.values.betrag}:n}export{t};
