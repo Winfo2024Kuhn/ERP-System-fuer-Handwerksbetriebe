@@ -539,12 +539,17 @@ class DateiSpeicherServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "datei", "mappe.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "data".getBytes());
+        // Server unter Linux (Docker): \\server\share ist dort kein Netzwerkpfad
+        service.istWindows = false;
+        Path falscherOrdner = Path.of(networkUrl).toAbsolutePath().normalize();
 
         service.speichereDatei(file, 1L, DokumentGruppe.DIVERSE_DOKUMENTE);
 
         assertNotNull(saved[0]);
         assertTrue(Files.exists(hicadRoot.resolve(saved[0].getGespeicherterDateiname())));
         assertFalse(Files.exists(docRoot.resolve(saved[0].getGespeicherterDateiname())));
+        // Keine zweite Kopie in einem Ordner, der wie die Freigabe heisst
+        assertFalse(Files.exists(falscherOrdner.resolve(saved[0].getGespeicherterDateiname())));
     }
 
     @Test

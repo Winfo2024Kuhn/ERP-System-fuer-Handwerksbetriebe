@@ -173,7 +173,11 @@ public class SecurityConfig {
             "/dokument-editor", "/dokument-editor/**",
             "/login", "/login/**", "/onboarding", "/onboarding/**",
             "/error", "/error/**",
-            "/actuator/health"
+            "/actuator/health",
+            // Update-Abfrage des OpenFile Launchers: läuft außerhalb des Browsers, ohne Login.
+            // Nur lesend, Antwort unterschrieben (OpenFileLauncherService); von außen sperrt
+            // ZeiterfassungSecurityFilter wie alles außer der Handy-App.
+            "/openfile-launcher/aktuell"
     };
 
     /**
@@ -274,6 +278,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT, "/api/zeitverwaltung/feiertage/*").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/zeitverwaltung/feiertage/*").hasRole("ADMIN")
                 .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**", "/api/postfaecher", "/api/postfaecher/**").hasRole("ADMIN")
+                // Einrichtungs-Dateien des OpenFile Launchers gibt es nur unter Einstellungen (Admin)
+                .requestMatchers("/api/openfile-launcher/**").hasRole("ADMIN")
                 // System-Signatur fuer automatische E-Mails ist firmenweite Konfiguration
                 // (wirkt auf Mahnungen, Auto-Auftragsbestaetigungen) — nur Admins duerfen sie umbiegen.
                 .requestMatchers(HttpMethod.PUT, "/api/email/signatures/*/system-default").hasRole("ADMIN")
