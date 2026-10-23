@@ -1,12 +1,12 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.*;
 import org.openpdf.text.Font;
 import org.openpdf.text.Image;
 import org.openpdf.text.Rectangle;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
-import org.openpdf.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
@@ -116,7 +116,7 @@ public class ProjektAuswertungPdfService {
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "regiebericht-", ".pdf");
             Document doc = new Document(PageSize.A4.rotate());
-            PdfWriter.getInstance(doc, Files.newOutputStream(temp)).setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriterFabrik.writer(doc, Files.newOutputStream(temp));
             doc.open();
 
             Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(50, 50, 50));
