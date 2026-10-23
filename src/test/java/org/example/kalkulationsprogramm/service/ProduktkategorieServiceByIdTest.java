@@ -1,9 +1,12 @@
 package org.example.kalkulationsprogramm.service;
 
+import static org.mockito.Mockito.mock;
+
 import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.ProduktkategorieResponseDto;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
+import org.example.kalkulationsprogramm.repository.LeistungRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +39,8 @@ class ProduktkategorieServiceByIdTest {
     @BeforeEach
     void setUp() {
         service = new ProduktkategorieService(produktkategorieRepository, projektRepository,
-                new ProduktkategorieMapper(), dateiSpeicherService);
+                new ProduktkategorieMapper(), dateiSpeicherService,
+                mock(LeistungRepository.class));
     }
 
     private static Produktkategorie edelstahlUnterGelaender() {
@@ -68,7 +72,7 @@ class ProduktkategorieServiceByIdTest {
         Produktkategorie edelstahl = edelstahlUnterGelaender();
         when(produktkategorieRepository.findById(2L)).thenReturn(Optional.of(edelstahl));
         when(projektRepository.getKategorieProjektPairs()).thenReturn(List.of());
-        when(produktkategorieRepository.findAll()).thenReturn(List.of(edelstahl));
+        when(produktkategorieRepository.findAllWithParent()).thenReturn(List.of(edelstahl));
 
         ProduktkategorieResponseDto dto = service.findeKategorieById(2L);
 
