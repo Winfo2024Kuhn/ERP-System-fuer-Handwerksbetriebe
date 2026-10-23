@@ -1,10 +1,10 @@
 package org.example.kalkulationsprogramm.service.miete;
 
-import com.lowagie.text.*;
-import com.lowagie.text.pdf.PdfPCell;
-import com.lowagie.text.pdf.PdfPTable;
-import com.lowagie.text.pdf.PdfPageEventHelper;
-import com.lowagie.text.pdf.PdfWriter;
+import org.openpdf.text.*;
+import org.openpdf.text.pdf.PdfPCell;
+import org.openpdf.text.pdf.PdfPTable;
+import org.openpdf.text.pdf.PdfPageEventHelper;
+import org.openpdf.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.miete.*;
 import org.example.kalkulationsprogramm.service.miete.model.AnnualAccountingResult;
@@ -60,6 +60,7 @@ public class MietabrechnungPdfService {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, 40f, 40f, 50f, 50f);
             PdfWriter writer = PdfWriter.getInstance(document, baos);
+            writer.setPdfVersion(PdfWriter.VERSION_1_7);
             writer.setPageEvent(new FooterPageEvent(result));
             document.open();
 

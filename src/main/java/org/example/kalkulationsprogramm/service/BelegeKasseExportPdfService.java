@@ -1,13 +1,13 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.*;
-import com.lowagie.text.BadElementException;
-import com.lowagie.text.Font;
-import com.lowagie.text.Image;
-import com.lowagie.text.Rectangle;
-import com.lowagie.text.pdf.PdfPCell;
-import com.lowagie.text.pdf.PdfPTable;
-import com.lowagie.text.pdf.PdfWriter;
+import org.openpdf.text.*;
+import org.openpdf.text.BadElementException;
+import org.openpdf.text.Font;
+import org.openpdf.text.Image;
+import org.openpdf.text.Rectangle;
+import org.openpdf.text.pdf.PdfPCell;
+import org.openpdf.text.pdf.PdfPTable;
+import org.openpdf.text.pdf.PdfWriter;
 
 import java.io.IOException;
 import java.nio.file.Paths;
@@ -115,7 +115,7 @@ public class BelegeKasseExportPdfService {
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "belege-export-", ".pdf");
             Document doc = new Document(PageSize.A4.rotate(), 36, 36, 36, 36);
-            PdfWriter.getInstance(doc, Files.newOutputStream(temp));
+            PdfWriter.getInstance(doc, Files.newOutputStream(temp)).setPdfVersion(PdfWriter.VERSION_1_7);
             doc.open();
 
             Firmeninformation firma = firmeninformationRepository.findFirmeninformation().orElse(null);
