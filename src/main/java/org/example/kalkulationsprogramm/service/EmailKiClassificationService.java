@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.*;
@@ -234,9 +234,9 @@ public class EmailKiClassificationService {
             String jsonStr = extractJson(response);
             JsonNode json = objectMapper.readTree(jsonStr);
 
-            String key = json.path("key").asText("NONE");
+            String key = json.path("key").asString("NONE");
             double confidence = json.path("confidence").asDouble(0.0);
-            String reason = json.path("reason").asText("");
+            String reason = json.path("reason").asString("");
 
             log.info("[KI-Classify] Ergebnis: key={}, confidence={}, reason={}", key, confidence, reason);
 

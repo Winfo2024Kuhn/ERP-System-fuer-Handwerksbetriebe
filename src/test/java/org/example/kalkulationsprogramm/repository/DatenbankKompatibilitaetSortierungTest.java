@@ -16,7 +16,7 @@ import org.hibernate.metamodel.mapping.EntityMappingType;
 import org.hibernate.metamodel.mapping.internal.BasicAttributeMapping;
 import org.hibernate.metamodel.mapping.internal.ToOneAttributeMapping;
 import org.hibernate.persister.entity.EntityPersister;
-import org.hibernate.query.NullPrecedence;
+import jakarta.persistence.criteria.Nulls;
 import org.hibernate.query.sqm.tree.SqmStatement;
 import org.hibernate.query.sqm.tree.domain.SqmPath;
 import org.hibernate.query.sqm.tree.select.SqmQuerySpec;
@@ -28,8 +28,8 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.AnnotatedElementUtils;
@@ -154,11 +154,11 @@ class DatenbankKompatibilitaetSortierungTest {
         int anzahl = 0;
         for (SqmSortSpecification sortierung : teil.getOrderByClause().getSortSpecifications()) {
             anzahl++;
-            if (sortierung.getNullPrecedence() != null && sortierung.getNullPrecedence() != NullPrecedence.NONE) {
+            if (sortierung.getNullPrecedence() != null && sortierung.getNullPrecedence() != Nulls.NONE) {
                 continue;
             }
             if (sortierung.getSortExpression() instanceof SqmPath<?> pfad && pfad.getLhs() != null) {
-                String entitaet = pfad.getLhs().getReferencedPathSource().getSqmPathType().getTypeName();
+                String entitaet = pfad.getLhs().getReferencedPathSource().getPathType().getTypeName();
                 String spalte = spalte(fabrik, entitaet, pfad.getNavigablePath().getLocalName());
                 if (spalte != null && !pflichtspalten.contains(spalte)) {
                     ohneAngabe.add(name + " " + spalte);

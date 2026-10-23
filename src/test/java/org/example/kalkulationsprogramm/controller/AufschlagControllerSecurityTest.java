@@ -21,14 +21,14 @@ import org.example.kalkulationsprogramm.service.AufschlagService.Uebersicht;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Aufschläge sind eine Preisregel des Betriebs: nur angemeldet, nur mit CSRF-Token und nur mit dem Recht „Aufschläge ändern“. Die Handy-App kommt nicht heran. */
@@ -46,10 +46,10 @@ class AufschlagControllerSecurityTest {
 
     @Autowired private MockMvc mockMvc;
 
-    @MockBean private AufschlagService service;
-    @MockBean private AufschlagBerechtigungService berechtigung;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean private FrontendUserProfileRepository frontendUserProfileRepository;
+    @MockitoBean private AufschlagService service;
+    @MockitoBean private AufschlagBerechtigungService berechtigung;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private FrontendUserProfileRepository frontendUserProfileRepository;
 
     private static final String BASIS = "/api/aufschlaege";
     private static final String KOERPER = "{\"prozent\":10}";

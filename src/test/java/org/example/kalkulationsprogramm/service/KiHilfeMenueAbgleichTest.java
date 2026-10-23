@@ -5,7 +5,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -47,7 +46,7 @@ class KiHilfeMenueAbgleichTest {
     static void einlesen() throws IOException {
         String kategorie = null;
         String untergruppe = null;
-        for (String zeile : Files.readAllLines(finde(NAVIGATION), StandardCharsets.UTF_8)) {
+        for (String zeile : Files.readAllLines(finde(NAVIGATION))) {
             Matcher k = KATEGORIE.matcher(zeile);
             Matcher u = UNTERGRUPPE.matcher(zeile);
             Matcher e = EINTRAG.matcher(zeile);
@@ -62,7 +61,7 @@ class KiHilfeMenueAbgleichTest {
                 MENUE.get(kategorie).get(untergruppe).put(e.group(1), e.group(3));
             }
         }
-        Matcher r = ROUTE.matcher(Files.readString(finde(APP), StandardCharsets.UTF_8));
+        Matcher r = ROUTE.matcher(Files.readString(finde(APP)));
         while (r.find()) {
             ROUTEN.add(r.group(1));
         }

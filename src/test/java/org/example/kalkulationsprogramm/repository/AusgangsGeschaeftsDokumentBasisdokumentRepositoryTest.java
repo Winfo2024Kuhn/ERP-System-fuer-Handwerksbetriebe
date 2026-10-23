@@ -4,10 +4,10 @@ import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;

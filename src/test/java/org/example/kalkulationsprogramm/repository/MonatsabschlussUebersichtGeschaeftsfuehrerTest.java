@@ -5,8 +5,8 @@ import org.example.kalkulationsprogramm.domain.MitarbeiterArt;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;

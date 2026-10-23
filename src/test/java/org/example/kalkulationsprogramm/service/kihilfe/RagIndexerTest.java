@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service.kihilfe;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer.Abschnitt;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer.Ergebnis;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer.Rohabschnitt;
@@ -11,7 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class RagIndexerTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
     private final RagIndexer indexer = new RagIndexer(objectMapper);
 
     @TempDir
@@ -35,7 +35,7 @@ class RagIndexerTest {
     private void datei(String pfad, String inhalt) throws IOException {
         Path ziel = projekt.resolve(pfad);
         Files.createDirectories(ziel.getParent());
-        Files.writeString(ziel, inhalt, StandardCharsets.UTF_8);
+        Files.writeString(ziel, inhalt);
     }
 
     private static float[] vektor(float wert) {

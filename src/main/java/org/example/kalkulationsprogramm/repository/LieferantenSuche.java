@@ -47,7 +47,7 @@ public final class LieferantenSuche {
      */
     public static Specification<Lieferanten> spezifikation(String freitext, String name, String typ, String ort,
             String email, LieferantRolle rolle) {
-        Specification<Lieferanten> spec = Specification.where(null);
+        Specification<Lieferanten> spec = Specification.unrestricted();
         if (StringUtils.hasText(freitext)) {
             final String muster = muster(freitext);
             spec = spec.and((root, cq, cb) -> cb.or(
@@ -81,7 +81,7 @@ public final class LieferantenSuche {
 
     private static Specification<Lieferanten> feld(String feld, String wert) {
         if (!StringUtils.hasText(wert)) {
-            return null;
+            return Specification.unrestricted();
         }
         final String muster = muster(wert);
         return (root, cq, cb) -> cb.like(cb.lower(root.get(feld)), muster);

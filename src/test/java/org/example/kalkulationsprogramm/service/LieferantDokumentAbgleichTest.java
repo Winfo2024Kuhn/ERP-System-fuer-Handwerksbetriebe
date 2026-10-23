@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
@@ -14,11 +14,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 class LieferantDokumentAbgleichTest {
 
-    private final LieferantDokumentAbgleich abgleich = new LieferantDokumentAbgleich(new ObjectMapper());
+    private final LieferantDokumentAbgleich abgleich = new LieferantDokumentAbgleich(JsonMapper.builderWithJackson2Defaults().build());
     private long naechsteId = 1;
 
     private LieferantDokument dokument(LieferantDokumentTyp typ, String nummer, LocalDate datum) {

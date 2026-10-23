@@ -2,7 +2,9 @@ package org.example.kalkulationsprogramm.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -10,7 +12,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 class WebsiteInternalApiKeyFilterTest {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
 
     private boolean passiert(WebsiteInternalApiKeyFilter filter, MockHttpServletRequest request,
             MockHttpServletResponse response) throws Exception {

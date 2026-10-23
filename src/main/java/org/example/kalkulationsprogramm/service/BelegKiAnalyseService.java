@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Beleg;
@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -94,7 +93,7 @@ public class BelegKiAnalyseService {
         belegRepository.save(beleg);
 
         try {
-            Path datei = Paths.get(uploadPath, "belege", beleg.getGespeicherterDateiname());
+            Path datei = Path.of(uploadPath, "belege", beleg.getGespeicherterDateiname());
             var ergebnis = geminiService.analyzeFile(datei, beleg.getOriginalDateiname());
 
             if (ergebnis == null) {
@@ -269,7 +268,7 @@ public class BelegKiAnalyseService {
 
     private static String textOrNull(JsonNode n) {
         if (n == null || n.isNull() || n.isMissingNode()) return null;
-        String v = n.asText(null);
+        String v = n.asString(null);
         return (v == null || v.isBlank()) ? null : v.trim();
     }
 
@@ -281,7 +280,7 @@ public class BelegKiAnalyseService {
     private static BigDecimal numericOrNull(JsonNode n) {
         if (n == null || n.isNull() || n.isMissingNode()) return null;
         try {
-            String raw = n.asText("").trim().replace(',', '.');
+            String raw = n.asString("").trim().replace(',', '.');
             if (raw.isEmpty()) return null;
             return new BigDecimal(raw);
         } catch (NumberFormatException e) {

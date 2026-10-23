@@ -50,9 +50,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -60,6 +59,7 @@ import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -87,27 +87,27 @@ class LieferantDokumentEinzelzugriffSecurityTest {
     @TempDir
     Path uploadVerzeichnis;
 
-    @MockBean
+    @MockitoBean
     private BelegService belegService;
-    @MockBean
+    @MockitoBean
     private GeminiDokumentAnalyseService analyseService;
-    @MockBean
+    @MockitoBean
     private LieferantDokumentRepository dokumentRepository;
-    @MockBean
+    @MockitoBean
     private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
-    @MockBean
+    @MockitoBean
     private LieferantDokumentService dokumentService;
-    @MockBean
+    @MockitoBean
     private EmailRepository emailRepository;
-    @MockBean
+    @MockitoBean
     private EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean
+    @MockitoBean
     private EmailAttachmentRepository emailAttachmentRepository;
-    @MockBean
+    @MockitoBean
     private DatensatzLockService dokumentLockService;
-    @MockBean
+    @MockitoBean
     private LieferantDokumentDateiService dokumentDateiService;
-    @MockBean
+    @MockitoBean
     private FrontendUserDetailsService frontendUserDetailsService;
 
     // ---------------------------------------------------------------- Helfer

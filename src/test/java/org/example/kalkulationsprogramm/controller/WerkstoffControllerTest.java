@@ -22,11 +22,11 @@ import org.example.kalkulationsprogramm.service.WerkstoffService.Eingabe;
 import org.example.kalkulationsprogramm.service.WerkstoffService.Zeile;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -36,7 +36,7 @@ import org.springframework.web.server.ResponseStatusException;
 class WerkstoffControllerTest {
 
     @Autowired private MockMvc mvc;
-    @MockBean private WerkstoffService service;
+    @MockitoBean private WerkstoffService service;
 
     private static Zeile zeile() {
         return new Zeile(1L, "S235JR", "Baustahl", "Schwarzstahl", new BigDecimal("7.850"), "EN 10025", true, true, null, 2);

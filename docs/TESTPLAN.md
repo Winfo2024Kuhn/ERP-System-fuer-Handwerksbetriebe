@@ -587,7 +587,7 @@ Läuft bei jedem Pull Request auf `main`. Das Merge-Gate „PR Quality Gate“ v
 
 | Job | Befehl |
 |---|---|
-| Backend Tests | `./mvnw test` (JDK 23) |
+| Backend Tests | `./mvnw test` (JDK 25) |
 | Datenbank-Kompatibilitaet (PostgreSQL) | Service `postgres:16`; `DatenbankKompatibilitaet*Test`, danach `MonatsabschlussPostgresTest`, `MonatsabschlussSammelPostgresTest`, `DatevExportPostgresTest`; Prüfschritt: Tests > 0 und nichts übersprungen |
 | PC Frontend Lint / Unit Tests / Build | `npm run lint`, `npm test`, `npm run build` (Node 24) |
 | PC Frontend E2E (3 Shards) | `npm run typecheck:e2e`, `npm run test:e2e -- --shard=N/3` |
@@ -646,7 +646,7 @@ Die Abdeckung wird gemessen, aber nicht erzwungen: `./mvnw test` schreibt mit Ja
 | Tool | Zweck | Schicht |
 |---|---|---|
 | **JUnit 5** | Test-Framework | Backend |
-| **Mockito** | Mocking (`@Mock`, `@InjectMocks`, `@MockBean`) | Backend – Unit |
+| **Mockito** | Mocking (`@Mock`, `@InjectMocks`, `@MockitoBean`) | Backend – Unit |
 | **MockMvc** | REST-Controller-Tests (`@WebMvcTest`) | Backend – Controller |
 | **Spring Security Test** | Tests mit Benutzern/Rollen, CSRF | Backend – Sicherheit |
 | **AssertJ** | Fluent Assertions | Backend |

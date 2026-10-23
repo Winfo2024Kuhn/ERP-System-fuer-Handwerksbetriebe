@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.WebsiteAnalyticsSnapshot;
 import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.VerlaufPunktDto;
 import org.example.kalkulationsprogramm.repository.WebsiteAnalyticsSnapshotRepository;
@@ -28,7 +29,7 @@ class WebsiteAnalyticsSnapshotVerlaufTest {
     @BeforeEach
     void setUp() {
         repository = mock(WebsiteAnalyticsSnapshotRepository.class);
-        service = new WebsiteAnalyticsSnapshotService(repository, new ObjectMapper());
+        service = new WebsiteAnalyticsSnapshotService(repository, JsonMapper.builderWithJackson2Defaults().build());
     }
 
     private WebsiteAnalyticsSnapshot schnappschuss(LocalDate tag, long besucherAmTag) {

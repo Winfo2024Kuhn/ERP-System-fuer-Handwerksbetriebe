@@ -8,8 +8,19 @@ class EmailVorschauTextTest {
 
     @Test
     void entferntOutlookKopfMitAllenVierZeilen() {
-        String text = "Hallo Herr Mustermann,\n\nPasst so.\n\nGruß Erika\n\nVon: Max Mustermann <max@example.com>\n"
-                + "Gesendet: Dienstag, 23. Juni 2026 17:23\nAn: info@example.com\nBetreff: Angebot\n\nAlter Text";
+        String text = """
+                Hallo Herr Mustermann,
+                
+                Passt so.
+                
+                Gruß Erika
+                
+                Von: Max Mustermann <max@example.com>
+                Gesendet: Dienstag, 23. Juni 2026 17:23
+                An: info@example.com
+                Betreff: Angebot
+                
+                Alter Text""";
         assertThat(EmailVorschauText.ohneZitiertenVerlauf(text))
                 .isEqualTo("Hallo Herr Mustermann,\n\nPasst so.\n\nGruß Erika");
     }

@@ -27,10 +27,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -67,13 +67,13 @@ class PostfachMailserverIntegrationTest {
 
     private static SSLContext vorherigerKontext;
 
-    @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
-    @MockBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean private SpamFilterService spamFilterService;
-    @MockBean private SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
-    @MockBean private OutOfOfficeResponder outOfOfficeResponder;
-    @MockBean private BounceErkennungService bounceErkennungService;
-    @MockBean private SeenSenderDomainRepository seenSenderDomainRepository;
+    @MockitoBean private EmailAutoAssignmentService emailAutoAssignmentService;
+    @MockitoBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
+    @MockitoBean private SpamFilterService spamFilterService;
+    @MockitoBean private SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
+    @MockitoBean private OutOfOfficeResponder outOfOfficeResponder;
+    @MockitoBean private BounceErkennungService bounceErkennungService;
+    @MockitoBean private SeenSenderDomainRepository seenSenderDomainRepository;
 
     @Autowired private EmailImportService emailImportService;
     @Autowired private PostfachVersandService postfachVersandService;

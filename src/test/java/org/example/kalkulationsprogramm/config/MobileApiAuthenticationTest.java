@@ -6,6 +6,7 @@ import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.junit.jupiter.api.Test;
 import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,8 +18,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
@@ -33,11 +33,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfig.class, MobileApiAuthenticationTest.ProbeController.class, MobileApiAuthenticationTest.FilterBeans.class})
 class MobileApiAuthenticationTest {
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService users;
+    @MockitoBean FrontendUserDetailsService users;
     @TestConfiguration static class FilterBeans {
         @Bean CloudflareAccessJwtFilter cloudflareAccessJwtFilter() { return new CloudflareAccessJwtFilter(); }
     }
-    @MockBean MitarbeiterRepository mitarbeiter;
+    @MockitoBean MitarbeiterRepository mitarbeiter;
 
     @Test void anonymeProjektabfrageWirdAbgewiesen() throws Exception {
         mvc.perform(get("/api/zeiterfassung/projekte")).andExpect(status().isUnauthorized());

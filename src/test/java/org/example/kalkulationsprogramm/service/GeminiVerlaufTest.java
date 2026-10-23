@@ -1,8 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class GeminiVerlaufTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
     private JsonNode json(String text) throws Exception {
         return objectMapper.readTree(text);
@@ -31,7 +32,7 @@ class GeminiVerlaufTest {
 
         List<JsonNode> aufrufe = GeminiVerlauf.funktionsaufrufe(GeminiVerlauf.kandidat(antwort));
 
-        assertThat(aufrufe).extracting(a -> a.path("id").asText()).containsExactly("a1", "a2");
+        assertThat(aufrufe).extracting(a -> a.path("id").asString("")).containsExactly("a1", "a2");
         assertThat(GeminiVerlauf.funktionsaufrufe(GeminiVerlauf.kandidat(json("{}")))).isEmpty();
     }
 
@@ -61,9 +62,9 @@ class GeminiVerlaufTest {
 
         ObjectNode zug = GeminiVerlauf.modellZug(kandidat);
 
-        assertThat(zug.path("role").asText()).isEqualTo("model");
+        assertThat(zug.path("role").asString("")).isEqualTo("model");
         assertThat(zug.path("parts")).isEqualTo(kandidat.path("content").path("parts"));
-        assertThat(zug.path("parts").path(1).path("thoughtSignature").asText()).isEqualTo("sig-1");
+        assertThat(zug.path("parts").path(1).path("thoughtSignature").asString("")).isEqualTo("sig-1");
         assertThat(GeminiVerlauf.modellZug(json("{}")).path("parts").isArray()).isTrue();
     }
 
@@ -76,10 +77,10 @@ class GeminiVerlaufTest {
         ObjectNode ohneId = GeminiVerlauf.antwortTeil(json("{\"name\":\"lesen\"}"), ergebnis);
         ObjectNode zug = GeminiVerlauf.antwortZug(List.of(mitId, ohneId));
 
-        assertThat(zug.path("role").asText()).isEqualTo("user");
-        assertThat(zug.path("parts").path(0).path("functionResponse").path("id").asText()).isEqualTo("a1");
-        assertThat(zug.path("parts").path(0).path("functionResponse").path("name").asText()).isEqualTo("suchen");
-        assertThat(zug.path("parts").path(0).path("functionResponse").path("response").path("hinweis").asText())
+        assertThat(zug.path("role").asString("")).isEqualTo("user");
+        assertThat(zug.path("parts").path(0).path("functionResponse").path("id").asString("")).isEqualTo("a1");
+        assertThat(zug.path("parts").path(0).path("functionResponse").path("name").asString("")).isEqualTo("suchen");
+        assertThat(zug.path("parts").path(0).path("functionResponse").path("response").path("hinweis").asString(""))
                 .isEqualTo("ok");
         assertThat(zug.path("parts").path(1).path("functionResponse").has("id")).isFalse();
     }

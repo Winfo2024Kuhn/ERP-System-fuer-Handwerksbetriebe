@@ -368,7 +368,7 @@ class RechnungsuebersichtControllerTest {
 
         assertThat(result.getStatusCode().value()).isEqualTo(200);
         assertThat(seitenzahl(result)).isEqualTo(1);
-        assertThat(result.getHeaders().containsKey(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
+        assertThat(result.getHeaders().containsHeader(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
     }
 
     @Test
@@ -387,7 +387,7 @@ class RechnungsuebersichtControllerTest {
 
         assertThat(result.getStatusCode().value()).isEqualTo(200);
         assertThat(seitenzahl(result)).isEqualTo(1);
-        assertThat(result.getHeaders().containsKey(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
+        assertThat(result.getHeaders().containsHeader(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
     }
 
     @Test
@@ -419,7 +419,7 @@ class RechnungsuebersichtControllerTest {
 
         assertThat(result.getStatusCode().value()).isEqualTo(200);
         assertThat(seitenzahl(result)).isEqualTo(3);
-        assertThat(result.getHeaders().containsKey(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
+        assertThat(result.getHeaders().containsHeader(RechnungsuebersichtController.HEADER_NICHT_ENTHALTEN)).isFalse();
     }
 
     @Test

@@ -59,10 +59,11 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -121,7 +122,7 @@ public class AusgangsGeschaeftsDokumentService {
      * Mapper fuer positionenJson-Auswertungen. Statisch, weil der Korrekturlauf ueber
      * den Gesamtbestand sonst pro Dokument mehrere Mapper-Instanzen erzeugt.
      */
-    private static final ObjectMapper POSITIONEN_MAPPER = new ObjectMapper();
+    private static final ObjectMapper POSITIONEN_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
 
     /** Rechnungstypen, die im Abrechnungsverlauf berücksichtigt werden */
     private static final Set<AusgangsGeschaeftsDokumentTyp> RECHNUNGSTYPEN = EnumSet.of(
@@ -1752,7 +1753,7 @@ public class AusgangsGeschaeftsDokumentService {
 
     private BigDecimal summeServiceBlock(JsonNode block) {
         BigDecimal summe = BigDecimal.ZERO;
-        String type = block.has("type") ? block.get("type").asText() : "";
+        String type = block.has("type") ? block.get("type").asString("") : "";
 
         // Optionale Positionen (Wahl-/Alternativpositionen) zaehlen NICHT zur Nettosumme —
         // genau wie im Editor (helpers.ts#calculateNetto) und im PDF
@@ -1808,7 +1809,7 @@ public class AusgangsGeschaeftsDokumentService {
     private String entferneStandardTextbausteine(String positionenJson) {
         if (positionenJson == null || positionenJson.isBlank()) return positionenJson;
         try {
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
             JsonNode root = mapper.readTree(positionenJson);
 
             ArrayNode blocksNode;
@@ -1853,7 +1854,7 @@ public class AusgangsGeschaeftsDokumentService {
     private boolean istStandardTextbaustein(JsonNode block) {
         if (block == null || !block.isObject()) return false;
         JsonNode rolle = block.get("textbausteinRolle");
-        return rolle != null && !rolle.isNull() && !rolle.asText().isBlank();
+        return rolle != null && !rolle.isNull() && !rolle.asString("").isBlank();
     }
 
     /**
@@ -1910,7 +1911,7 @@ public class AusgangsGeschaeftsDokumentService {
     private Set<String> extractAbgerechneteBlockIds(String positionenJson) {
         Set<String> ids = new HashSet<>();
         try {
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
             JsonNode root = mapper.readTree(positionenJson);
 
             JsonNode blocks;
@@ -1932,13 +1933,13 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     private void collectAbgerechneteServiceIds(JsonNode block, Set<String> ids) {
-        String type = block.has("type") ? block.get("type").asText() : "";
+        String type = block.has("type") ? block.get("type").asString("") : "";
 
         if ("SERVICE".equals(type)) {
             double quantity = block.has("quantity") ? block.get("quantity").asDouble(0) : 0;
             double price = block.has("price") ? block.get("price").asDouble(0) : 0;
             if (quantity > 0 && price > 0 && block.has("id")) {
-                ids.add(block.get("id").asText());
+                ids.add(block.get("id").asString(""));
             }
         }
 
@@ -2990,7 +2991,7 @@ public class AusgangsGeschaeftsDokumentService {
     // mit der Editor-Anzeige übereinstimmen.
 
     /** Thread-safe und wiederverwendbar — einmalig statt pro Aufruf neu instanziieren. */
-    private static final ObjectMapper ALTERNATIV_MAPPER = new ObjectMapper();
+    private static final ObjectMapper ALTERNATIV_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
 
     /**
      * Baut die kundensichere Positions-Liste für die Freigabe-Ansicht aus dem
@@ -3179,7 +3180,7 @@ public class AusgangsGeschaeftsDokumentService {
      */
     private void entferneAbgewaehlte(JsonNode ebene) {
         if (!(ebene instanceof ArrayNode arr)) return;
-        Iterator<JsonNode> it = arr.elements();
+        Iterator<JsonNode> it = arr.values().iterator();
         while (it.hasNext()) {
             JsonNode block = it.next();
             String typ = textOrNull(block, "type");
@@ -3235,14 +3236,14 @@ public class AusgangsGeschaeftsDokumentService {
 
     private static String textOrNull(JsonNode node, String field) {
         JsonNode v = node.get(field);
-        return v == null || v.isNull() ? null : v.asText();
+        return v == null || v.isNull() ? null : v.asString("");
     }
 
     private static BigDecimal decimalOrNull(JsonNode node, String field) {
         JsonNode v = node.get(field);
-        if (v == null || v.isNull() || (!v.isNumber() && !v.isTextual())) return null;
+        if (v == null || v.isNull() || (!v.isNumber() && !v.isString())) return null;
         try {
-            return new BigDecimal(v.asText());
+            return new BigDecimal(v.asString(""));
         } catch (NumberFormatException e) {
             return null;
         }

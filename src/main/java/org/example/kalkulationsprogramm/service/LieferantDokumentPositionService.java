@@ -23,10 +23,10 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentPositionRepo
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -339,7 +339,7 @@ public class LieferantDokumentPositionService {
         if (wert == null || wert.isNull()) {
             return null;
         }
-        return leerAlsNull(wert.asText());
+        return leerAlsNull(wert.asString(""));
     }
 
     /** Textliste aus einem JSON-Array (Zahlen werden zu Text); alles andere ergibt eine leere Liste. */
@@ -349,7 +349,7 @@ public class LieferantDokumentPositionService {
         }
         List<String> ergebnis = new ArrayList<>();
         for (JsonNode eintrag : liste) {
-            String text = eintrag == null || eintrag.isNull() ? null : leerAlsNull(eintrag.asText());
+            String text = eintrag == null || eintrag.isNull() ? null : leerAlsNull(eintrag.asString(""));
             if (text != null && ergebnis.size() < MAX_BEZUG) {
                 ergebnis.add(kuerze(text, MAX_EINHEIT));
             }
@@ -387,7 +387,7 @@ public class LieferantDokumentPositionService {
                 return null;
             }
         }
-        String roh = wert.asText();
+        String roh = wert.asString("");
         if (roh == null) {
             return null;
         }

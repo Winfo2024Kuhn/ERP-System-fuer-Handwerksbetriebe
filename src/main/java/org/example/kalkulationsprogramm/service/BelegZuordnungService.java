@@ -22,8 +22,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -67,7 +67,7 @@ public class BelegZuordnungService {
         this.geschaeftsdokumentRepository = geschaeftsdokumentRepository;
         this.belegRepository = belegRepository;
         // Die gespeicherte KI-Antwort enthält Felder, die das DTO nicht kennt.
-        this.objectMapper = objectMapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper = objectMapper.rebuild().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
         this.neueTransaktion = new TransactionTemplate(transactionManager);
         this.neueTransaktion.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.taskExecutor = taskExecutor;

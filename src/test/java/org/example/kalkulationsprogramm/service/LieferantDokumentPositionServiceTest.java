@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.List;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.AusgelesenePosition;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentPosition;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -27,12 +27,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class LieferantDokumentPositionServiceTest {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
 
     @Mock
     private LieferantDokumentPositionRepository repository;
@@ -332,7 +332,7 @@ class LieferantDokumentPositionServiceTest {
                 List.of(ware("Flachstahl", "10")), mapper);
 
         var json = mapper.readTree(neu);
-        assertThat(json.get("dokumentNummer").asText()).isEqualTo("RE-1");
+        assertThat(json.get("dokumentNummer").asString("")).isEqualTo("RE-1");
         assertThat(LieferantDokumentPositionService.ausKiAntwort(json)).hasSize(1);
         assertThat(LieferantDokumentPositionService.mitPositionen(null, List.of(), mapper)).isNull();
         assertThat(LieferantDokumentPositionService.mitPositionen("kein json", List.of(), mapper)).isNull();

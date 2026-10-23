@@ -45,9 +45,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import org.mockito.InOrder;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -72,44 +73,44 @@ class UnifiedEmailControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @org.springframework.boot.test.mock.mockito.SpyBean
+    @MockitoSpyBean
     private UnifiedEmailController unifiedEmailController;
 
-    @MockBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
+    @MockitoBean private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
 
-    @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
-    @MockBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
-    @MockBean private EmailRepository emailRepository;
-    @MockBean private org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
-    @MockBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
-    @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
-    @MockBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
-    @MockBean private ProjektRepository projektRepository;
-    @MockBean private AnfrageRepository anfrageRepository;
-    @MockBean private LieferantenRepository lieferantenRepository;
-    @MockBean private org.example.kalkulationsprogramm.service.EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
-    @MockBean private KundeRepository kundeRepository;
-    @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
-    @MockBean private EmailImportService emailImportService;
-    @MockBean private org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean private SpamFilterService spamFilterService;
-    @MockBean private InquiryDetectionService inquiryDetectionService;
-    @MockBean private EmailBlacklistRepository emailBlacklistRepository;
-    @MockBean private ProjektDokumentRepository projektDokumentRepository;
-    @MockBean private AnfrageDokumentRepository anfrageDokumentRepository;
-    @MockBean private DateiSpeicherService dateiSpeicherService;
-    @MockBean private ContactService contactService;
-    @MockBean private SpamBayesService spamBayesService;
-    @MockBean private EmailThreadService emailThreadService;
-    @MockBean private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
-    @MockBean private org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
-    @MockBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
-    @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
-    @MockBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
-    @MockBean private org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
-    @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
-    @MockBean private org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
-    @MockBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
+    @MockitoBean private EmailRepository emailRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository frontendUserProfileRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.EmailDraftRepository emailDraftRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.EmailDraftAttachmentRepository emailDraftAttachmentRepository;
+    @MockitoBean private ProjektRepository projektRepository;
+    @MockitoBean private AnfrageRepository anfrageRepository;
+    @MockitoBean private LieferantenRepository lieferantenRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.service.EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
+    @MockitoBean private KundeRepository kundeRepository;
+    @MockitoBean private EmailAutoAssignmentService emailAutoAssignmentService;
+    @MockitoBean private EmailImportService emailImportService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService emailAttachmentProcessingService;
+    @MockitoBean private SpamFilterService spamFilterService;
+    @MockitoBean private InquiryDetectionService inquiryDetectionService;
+    @MockitoBean private EmailBlacklistRepository emailBlacklistRepository;
+    @MockitoBean private ProjektDokumentRepository projektDokumentRepository;
+    @MockitoBean private AnfrageDokumentRepository anfrageDokumentRepository;
+    @MockitoBean private DateiSpeicherService dateiSpeicherService;
+    @MockitoBean private ContactService contactService;
+    @MockitoBean private SpamBayesService spamBayesService;
+    @MockitoBean private EmailThreadService emailThreadService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.EmailAbsenderService emailAbsenderService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
+    @MockitoBean private SteuerberaterKontaktService steuerberaterKontaktService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.PostfachVersandService postfachVersandService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService postfachSichtbarkeitService;
 
     @org.junit.jupiter.api.BeforeEach
     void gelesenWieBisher() {

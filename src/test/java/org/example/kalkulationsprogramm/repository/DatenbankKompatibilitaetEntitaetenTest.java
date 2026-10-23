@@ -48,7 +48,7 @@ import org.example.kalkulationsprogramm.util.FieldErrorDetail;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
-import org.hibernate.id.Assigned;
+import org.hibernate.generator.Assigned;
 import org.hibernate.metamodel.mapping.AttributeMapping;
 import org.hibernate.metamodel.mapping.BasicEntityIdentifierMapping;
 import org.hibernate.metamodel.mapping.EntityIdentifierMapping;
@@ -67,8 +67,8 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -317,7 +317,7 @@ class DatenbankKompatibilitaetEntitaetenTest {
         Map<String, Object> werte = new HashMap<>();
         persister.forEachAttributeMapping(am -> {
             if (am instanceof BasicAttributeMapping b && b.isInsertable() && !b.isFormula()) {
-                werte.put(am.getAttributeName(), am.getPropertyAccess().getGetter().get(entitaet));
+                werte.put(am.getAttributeName(), am.getValue(entitaet));
             }
         });
         return werte;
@@ -405,12 +405,12 @@ class DatenbankKompatibilitaetEntitaetenTest {
             }
             boolean pflicht = !b.isNullable() || istPflicht(b.getContainingTableExpression(), b.getSelectionExpression());
             if (istLangtext(ziel.getClass(), am.getAttributeName()) && !pflicht) {
-                am.getPropertyAccess().getSetter().set(ziel, null);
+                am.setValue(ziel, null);
                 leereLangtexte.add(entitaet + "." + am.getAttributeName());
                 return;
             }
-            if ((pflicht || tiefe >= alleFelderAbTiefe) && am.getPropertyAccess().getGetter().get(ziel) == null) {
-                am.getPropertyAccess().getSetter().set(ziel, pflichtwert(b, tiefe));
+            if ((pflicht || tiefe >= alleFelderAbTiefe) && am.getValue(ziel) == null) {
+                am.setValue(ziel, pflichtwert(b, tiefe));
             }
             return;
         }
@@ -420,12 +420,12 @@ class DatenbankKompatibilitaetEntitaetenTest {
     /** Verweise und eingebettete Werte - nur, wenn die Datenbank sie verlangt. */
     private void befuellenPflicht(String entitaet, Object ziel, AttributeMapping am, int tiefe) {
         if (am instanceof BasicAttributeMapping b) {
-            if (am.getPropertyAccess().getGetter().get(ziel) == null) {
-                am.getPropertyAccess().getSetter().set(ziel, pflichtwert(b, tiefe));
+            if (am.getValue(ziel) == null) {
+                am.setValue(ziel, pflichtwert(b, tiefe));
             }
         } else if (am instanceof ToOneAttributeMapping verweis) {
             if (verweis.getSideNature() != ForeignKeyDescriptor.Nature.KEY
-                    || am.getPropertyAccess().getGetter().get(ziel) != null) {
+                    || am.getValue(ziel) != null) {
                 return; // Gegenseite einer 1:1-Beziehung oder schon gesetzt
             }
             boolean[] pflicht = { !verweis.isNullable() };
@@ -438,17 +438,17 @@ class DatenbankKompatibilitaetEntitaetenTest {
                 EntityPersister zielTyp = verweis.getEntityMappingType().getEntityPersister();
                 Object referenz = neu(zielTyp, tiefe + 1, new HashSet<>());
                 em.persist(referenz);
-                am.getPropertyAccess().getSetter().set(ziel, referenz);
+                am.setValue(ziel, referenz);
             }
         } else if (am instanceof EmbeddedAttributeMapping eingebettet) {
-            Object wert = am.getPropertyAccess().getGetter().get(ziel);
+            Object wert = am.getValue(ziel);
             if (wert == null) {
                 wert = instanziieren(eingebettet.getEmbeddableTypeDescriptor().getJavaType().getJavaTypeClass());
             }
             Object fertig = wert;
             eingebettet.getEmbeddableTypeDescriptor().forEachAttributeMapping(
                     teil -> befuellen(entitaet, fertig, teil, tiefe, new HashSet<>()));
-            am.getPropertyAccess().getSetter().set(ziel, fertig);
+            am.setValue(ziel, fertig);
         }
     }
 

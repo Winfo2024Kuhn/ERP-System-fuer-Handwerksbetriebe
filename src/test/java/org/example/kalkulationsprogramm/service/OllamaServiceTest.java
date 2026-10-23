@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,7 +26,7 @@ class OllamaServiceTest {
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
+        objectMapper = JsonMapper.builderWithJackson2Defaults().build();
         mockHttpClient = mock(HttpClient.class);
         ollamaService = new OllamaService(
                 objectMapper, mockHttpClient,

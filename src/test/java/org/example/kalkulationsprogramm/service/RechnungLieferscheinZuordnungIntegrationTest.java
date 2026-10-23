@@ -29,17 +29,16 @@ import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.persistence.EntityManager;
 
 /**
@@ -63,7 +62,9 @@ class RechnungLieferscheinZuordnungIntegrationTest {
     static class Konfiguration {
         @Bean
         ObjectMapper objectMapper() {
-            return new ObjectMapper().findAndRegisterModules();
+            return JsonMapper.builderWithJackson2Defaults()
+                    .findAndAddModules()
+                    .build();
         }
 
         /** Hintergrundaufgaben laufen im Test sofort. */
@@ -86,14 +87,14 @@ class RechnungLieferscheinZuordnungIntegrationTest {
     @Autowired private EntityManager entityManager;
 
     // Externes: KI-Aufruf (über Spy) und Dienste ohne Bezug zur Zuordnung
-    @SpyBean private GeminiDokumentAnalyseService analyseSpy;
-    @MockBean private ZugferdExtractorService zugferdExtractorService;
-    @MockBean private BelegKiKostenkontoService kostenkontoService;
-    @MockBean private BelegSplitService belegSplitService;
-    @MockBean private BelegAuditService belegAuditService;
-    @MockBean private BelegService belegService;
-    @MockBean private LieferantDokumentZugriffService zugriffService;
-    @MockBean private LieferantDokumentService lieferantDokumentService;
+    @MockitoSpyBean private GeminiDokumentAnalyseService analyseSpy;
+    @MockitoBean private ZugferdExtractorService zugferdExtractorService;
+    @MockitoBean private BelegKiKostenkontoService kostenkontoService;
+    @MockitoBean private BelegSplitService belegSplitService;
+    @MockitoBean private BelegAuditService belegAuditService;
+    @MockitoBean private BelegService belegService;
+    @MockitoBean private LieferantDokumentZugriffService zugriffService;
+    @MockitoBean private LieferantDokumentService lieferantDokumentService;
 
     private Lieferanten lieferant;
 

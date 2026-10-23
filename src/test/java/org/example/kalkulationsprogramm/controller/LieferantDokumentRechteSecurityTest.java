@@ -51,14 +51,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -87,61 +87,61 @@ class LieferantDokumentRechteSecurityTest {
     @TempDir
     Path uploadVerzeichnis;
 
-    @MockBean
+    @MockitoBean
     private BelegService belegService;
-    @MockBean
+    @MockitoBean
     private LieferantDokumentService dokumentService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.LieferantDokumentSucheService dokumentSucheService;
-    @MockBean
+    @MockitoBean
     private LieferantenRepository lieferantenRepository;
-    @MockBean
+    @MockitoBean
     private LieferantenDetailService lieferantenDetailService;
-    @MockBean
+    @MockitoBean
     private LieferantGeschaeftsdokumentRepository lieferantGdRepo;
-    @MockBean
+    @MockitoBean
     private AusgangsGeschaeftsDokumentRepository ausgangsRepo;
-    @MockBean
+    @MockitoBean
     private FrontendUserDetailsService frontendUserDetailsService;
 
     // Weitere Abhängigkeiten des LieferantenController (für diese Tests ohne Bedeutung)
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.BildVorschauService bildVorschauService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.MitarbeiterRepository mitarbeiterRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.KostenstelleRepository kostenstelleRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.mapper.LieferantMapper lieferantMapper;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.LieferantEmailResolver lieferantEmailResolver;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.LieferantArtikelpreisService artikelpreisService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.BelegZuordnungService belegZuordnungService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.LieferantNotizRepository notizRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.LieferantBildRepository lieferantBildRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.EmailSignatureService emailSignatureService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.SystemSettingsService systemSettingsService;
-    @MockBean
+    @MockitoBean
     private LieferantDokumentDateiService dokumentDateiService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.LieferantDateiablage dateiablage;
 
     // ---------------------------------------------------------------- Helfer

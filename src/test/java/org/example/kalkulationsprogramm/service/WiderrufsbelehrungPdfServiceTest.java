@@ -66,16 +66,13 @@ class WiderrufsbelehrungPdfServiceTest {
     }
 
     private static String pdfText(byte[] pdf) throws Exception {
-        PdfReader reader = new PdfReader(pdf);
-        try {
+        try (PdfReader reader = new PdfReader(pdf)) {
             PdfTextExtractor extractor = new PdfTextExtractor(reader);
             StringBuilder sb = new StringBuilder();
             for (int seite = 1; seite <= reader.getNumberOfPages(); seite++) {
                 sb.append(extractor.getTextFromPage(seite)).append('\n');
             }
             return sb.toString().replaceAll("\\s++", " ");
-        } finally {
-            reader.close();
         }
     }
 

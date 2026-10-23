@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.BelegKategorie;
 import org.example.kalkulationsprogramm.domain.BelegStatus;
@@ -18,11 +18,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -51,11 +51,11 @@ class KasseShortcutControllerTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
 
-    @MockBean private BelegService belegService;
-    @MockBean private KasseShortcutService kasseShortcutService;
-    @MockBean private KasseSaldoService kasseSaldoService;
-    @MockBean private KasseEinstellungRepository kasseEinstellungRepository;
-    @MockBean private SachkontoRepository sachkontoRepository;
+    @MockitoBean private BelegService belegService;
+    @MockitoBean private KasseShortcutService kasseShortcutService;
+    @MockitoBean private KasseSaldoService kasseSaldoService;
+    @MockitoBean private KasseEinstellungRepository kasseEinstellungRepository;
+    @MockitoBean private SachkontoRepository sachkontoRepository;
 
     @AfterEach
     void cleanup() {

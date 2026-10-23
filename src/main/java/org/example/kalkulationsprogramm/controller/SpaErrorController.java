@@ -3,9 +3,9 @@ package org.example.kalkulationsprogramm.controller;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.springframework.boot.web.servlet.error.ErrorAttributes;
+import org.springframework.boot.webmvc.error.ErrorAttributes;
 import org.springframework.boot.web.error.ErrorAttributeOptions;
-import org.springframework.boot.web.servlet.error.ErrorController;
+import org.springframework.boot.webmvc.error.ErrorController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

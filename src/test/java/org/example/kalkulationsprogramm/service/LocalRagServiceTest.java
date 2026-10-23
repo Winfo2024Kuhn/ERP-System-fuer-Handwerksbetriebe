@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.service.kihilfe.GeminiEinbetter;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer.Abschnitt;
@@ -10,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
 
 class LocalRagServiceTest {
 
-    private final RagIndexer indexer = new RagIndexer(new ObjectMapper());
+    private final RagIndexer indexer = new RagIndexer(JsonMapper.builderWithJackson2Defaults().build());
     private final GeminiEinbetter einbetter = mock(GeminiEinbetter.class);
     private final SystemSettingsService einstellungen = mock(SystemSettingsService.class);
     private LocalRagService service;
@@ -176,7 +176,7 @@ class LocalRagServiceTest {
     @DisplayName("Entwicklung: bettet den Quellcode ein und speichert die RAG-Datei")
     void entwicklungBettetEin() throws Exception {
         Files.createDirectories(projekt.resolve("docs"));
-        Files.writeString(projekt.resolve("docs/ANLEITUNG.md"), "# Anleitung\nSo geht es.", StandardCharsets.UTF_8);
+        Files.writeString(projekt.resolve("docs/ANLEITUNG.md"), "# Anleitung\nSo geht es.");
         when(einstellungen.getGeminiApiKey()).thenReturn("test-schluessel");
         when(einbetter.einbetten(anyList())).thenReturn(List.of(richtung(1, 0)));
 
@@ -195,7 +195,7 @@ class LocalRagServiceTest {
     @DisplayName("Entwicklung ohne Schluessel: RAG bleibt aus")
     void entwicklungOhneSchluessel() throws Exception {
         Files.createDirectories(projekt.resolve("docs"));
-        Files.writeString(projekt.resolve("docs/ANLEITUNG.md"), "# Anleitung", StandardCharsets.UTF_8);
+        Files.writeString(projekt.resolve("docs/ANLEITUNG.md"), "# Anleitung");
         when(einstellungen.getGeminiApiKey()).thenReturn(null);
 
         service.indexAufbauen();
@@ -208,7 +208,7 @@ class LocalRagServiceTest {
     @DisplayName("Entwicklung: Einbetten scheitert -> Teilstand, kein Absturz")
     void entwicklungEinbettenScheitert() throws Exception {
         Files.createDirectories(projekt.resolve("docs"));
-        Files.writeString(projekt.resolve("docs/ANLEITUNG.md"), "# Anleitung", StandardCharsets.UTF_8);
+        Files.writeString(projekt.resolve("docs/ANLEITUNG.md"), "# Anleitung");
         when(einstellungen.getGeminiApiKey()).thenReturn("test-schluessel");
         when(einbetter.einbetten(anyList())).thenThrow(new java.io.IOException("Gemini Embedding Fehler 403"));
 

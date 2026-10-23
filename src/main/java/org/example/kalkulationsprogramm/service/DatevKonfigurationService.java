@@ -1,8 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.*;
@@ -13,6 +13,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.core.JacksonException;
+
 import java.util.*;
 
 @Service @RequiredArgsConstructor @Slf4j
@@ -22,7 +24,7 @@ public class DatevKonfigurationService {
      "FORTBILDUNG", "ZEITAUSGLEICH", "KRANKENGELD", "WIEDEREINGLIEDERUNG");
  /** Which hours go to the tax office as ARBEIT: contractual (SOLL) or worked (IST). */
  public static final Set<String> STUNDENARTEN = Set.of("SOLL", "IST");
- private static final ObjectMapper JSON = new ObjectMapper();
+ private static final ObjectMapper JSON = JsonMapper.builderWithJackson2Defaults().build();
  private final DatevKonfigurationRepository configs;
  private final DatevPersonalnummerRepository nummern;
  private final MonatsabschlussBerechtigungService rechte;
@@ -55,7 +57,7 @@ public class DatevKonfigurationService {
   entity.setZiel(clean.ziel()); entity.setBeraterNr(clean.beraterNr()); entity.setMandantenNr(clean.mandantenNr());
   entity.setStundenart(clean.stundenart());
   try { entity.setZuordnungenJson(JSON.writeValueAsString(clean.zuordnungen())); }
-  catch (JsonProcessingException ex) { throw new IllegalStateException("DATEV-Zuordnungen konnten nicht gespeichert werden", ex); }
+  catch (JacksonException ex) { throw new IllegalStateException("DATEV-Zuordnungen konnten nicht gespeichert werden", ex); }
   entity.setAenderungszaehler(entity.getAenderungszaehler() + 1);
   // Delete first, so exchanging two existing numbers cannot transiently violate the unique constraint.
   nummern.deleteAllInBatch();
@@ -73,7 +75,7 @@ public class DatevKonfigurationService {
  private Konfiguration dto(DatevKonfiguration entity, List<Personalnummer> personal) {
   try { return new Konfiguration(entity.getVersion(), entity.getZiel(), entity.getBeraterNr(), entity.getMandantenNr(),
       entity.getStundenart(), JSON.readValue(entity.getZuordnungenJson(), new TypeReference<List<Zuordnung>>() {}), personal); }
-  catch (JsonProcessingException ex) { throw new IllegalStateException("Gespeicherte DATEV-Zuordnungen sind ungültig", ex); }
+  catch (JacksonException ex) { throw new IllegalStateException("Gespeicherte DATEV-Zuordnungen sind ungültig", ex); }
  }
  private Konfiguration validieren(Konfiguration input) {
   if (input == null || input.version() == null || input.version() < 0) throw bad("Die Konfigurationsversion fehlt oder ist ungültig.");

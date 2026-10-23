@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDokumentResponseDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterDto;
 import org.example.kalkulationsprogramm.dto.Mitarbeiter.MitarbeiterErstellenDto;
@@ -10,11 +10,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
@@ -39,10 +39,10 @@ class MitarbeiterControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private MitarbeiterService service;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.BelegService belegService;
 
     private MitarbeiterDto buildMitarbeiterDto(Long id, String vorname, String nachname) {

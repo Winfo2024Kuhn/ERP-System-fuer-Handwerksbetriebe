@@ -2,7 +2,9 @@ package org.example.kalkulationsprogramm.repository;
 
 import java.util.List;
 
-import org.hibernate.query.NullPrecedence;
+import jakarta.persistence.criteria.Nulls;
+import org.hibernate.metamodel.model.domain.ManagedDomainType;
+import org.hibernate.metamodel.model.domain.PersistentAttribute;
 import org.hibernate.query.criteria.JpaOrder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -62,7 +64,7 @@ public final class PortableSortierung {
     }
 
     static Order reihenfolge(Sort.Order order, Root<?> root, CriteriaBuilder cb) {
-        Expression<?> ausdruck = pfad(root, order.getProperty());
+        Expression<?> ausdruck = pfad(root, order.getProperty(), cb);
         if (order.isIgnoreCase() && String.class.equals(ausdruck.getJavaType())) {
             @SuppressWarnings("unchecked")
             Expression<String> text = (Expression<String>) ausdruck;
@@ -73,21 +75,42 @@ public final class PortableSortierung {
     }
 
     /** Ausdrueckliche Angabe am Sort.Order geht vor, sonst wie bisher: leer ist der kleinste Wert. */
-    static NullPrecedence leerwerte(Sort.Order order) {
+    static Nulls leerwerte(Sort.Order order) {
         return switch (order.getNullHandling()) {
-            case NULLS_FIRST -> NullPrecedence.FIRST;
-            case NULLS_LAST -> NullPrecedence.LAST;
-            case NATIVE -> order.isAscending() ? NullPrecedence.FIRST : NullPrecedence.LAST;
+            case NULLS_FIRST -> Nulls.FIRST;
+            case NULLS_LAST -> Nulls.LAST;
+            case NATIVE -> order.isAscending() ? Nulls.FIRST : Nulls.LAST;
         };
     }
 
-    private static Expression<?> pfad(Root<?> root, String eigenschaft) {
+    private static Expression<?> pfad(Root<?> root, String eigenschaft, CriteriaBuilder cb) {
         String[] teile = eigenschaft.split("\\.");
         From<?, ?> von = root;
         for (int i = 0; i < teile.length - 1; i++) {
             von = verbinden(von, teile[i]);
         }
-        return von.get(teile[teile.length - 1]);
+        return feld(von, teile[teile.length - 1], cb);
+    }
+
+    /**
+     * Ein Feld, das nur eine Unterklasse hat (z. B. {@code masse} von {@code ArtikelWerkstoffe}
+     * in der Artikelliste), loest Hibernate 7 nicht mehr von selbst auf - es braucht ein
+     * {@code treat}. Zeilen ohne dieses Feld bleiben in der Liste und zaehlen als leer.
+     */
+    private static Expression<?> feld(From<?, ?> von, String attribut, CriteriaBuilder cb) {
+        if (von instanceof Root<?> wurzel && wurzel.getModel() instanceof ManagedDomainType<?> typ
+                && typ.findAttribute(attribut) == null) {
+            PersistentAttribute<?, ?> ausUnterklasse = typ.findSubTypesAttribute(attribut);
+            if (ausUnterklasse != null) {
+                return alsUnterklasse(wurzel, ausUnterklasse.getDeclaringType().getJavaType(), cb).get(attribut);
+            }
+        }
+        return von.get(attribut);
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private static Root<?> alsUnterklasse(Root wurzel, Class unterklasse, CriteriaBuilder cb) {
+        return cb.treat(wurzel, unterklasse);
     }
 
     /** Vorhandenen LEFT JOIN wiederverwenden (z. B. aus dem Filter), sonst neu anlegen. */
