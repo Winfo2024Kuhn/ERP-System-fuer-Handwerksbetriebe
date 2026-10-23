@@ -1,6 +1,6 @@
 # Monatsabschluss
 
-Unter **Zeiterfassung → Monatsabschluss** lassen sich die Monatsstunden mehrerer Mitarbeiter gemeinsam prüfen und abschließen. Dafür ist das Recht zum Monatsabschluss erforderlich. Ein Admin vergibt es unter **Einstellungen → Berechtigungen** für eine Abteilung („Monate abschließen und wieder öffnen“). Auch Admins brauchen dieses Recht.
+Unter **Zeiterfassung → Monatsabschluss** lassen sich die Monatsstunden mehrerer Mitarbeiter gemeinsam prüfen und abschließen. Dafür ist das Recht zum Monatsabschluss erforderlich. Ein Admin vergibt es unter **Einstellungen → Abteilungen & Rechte** für eine Abteilung („Monate abschließen und wieder öffnen“). Auch Admins brauchen dieses Recht.
 
 Geschäftsführer und Mitarbeiter ohne Zeiterfassung haben keinen Monatsabschluss.
 

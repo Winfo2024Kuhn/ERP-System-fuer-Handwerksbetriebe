@@ -123,7 +123,7 @@ public class PostfachService {
     }
 
     /**
-     * Nur die Sichtbarkeit ändern (Einstellungen → Berechtigungen). Fehlende Listen gelten als leer.
+     * Nur die Sichtbarkeit ändern (Einstellungen → Abteilungen & Rechte). Fehlende Listen gelten als leer.
      *
      * @throws NoSuchElementException   Postfach unbekannt (404)
      * @throws IllegalArgumentException Hauptpostfach, fehlende Angabe oder unbekannte Abteilung/Benutzer (400)

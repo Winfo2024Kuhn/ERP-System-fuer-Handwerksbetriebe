@@ -87,6 +87,6 @@ Löschen darf nur ein Admin: in der Lieferantenansicht, Reiter „Dokumente“, 
 
 ## Wer sieht welche Belege?
 
-Ein Admin legt unter **Einstellungen → Berechtigungen** je Abteilung fest, welche Belegarten ihre Mitarbeiter sehen dürfen („Sehen“) und welche sie mit dem Handy hochladen dürfen („Scannen“). Admins sehen alles. Wer keinem Mitarbeiter zugeordnet ist, sieht keine Belege. Ohne das Recht für Rechnungen stehen die „Gesamtkosten“ eines Lieferanten auf 0.
+Ein Admin legt unter **Einstellungen → Abteilungen & Rechte** je Abteilung fest, welche Belegarten ihre Mitarbeiter sehen dürfen („Sehen“) und welche sie mit dem Handy hochladen dürfen („Scannen“). Admins sehen alles. Wer keinem Mitarbeiter zugeordnet ist, sieht keine Belege. Ohne das Recht für Rechnungen stehen die „Gesamtkosten“ eines Lieferanten auf 0.
 
 Preise eines Lieferanten pflegt man beim Artikel (siehe [Artikel](artikel.md)).

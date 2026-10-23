@@ -166,8 +166,8 @@ public class KiHilfeService {
             ### 1. Vorlagen & Stammdaten
             - **Dokumente:** Textvorlagen, Stundensätze
             - **Kontakte:** Kunden, Mitarbeiter, Lieferanten
-            - **Katalog:** Artikel, Leistungen & Kategorien (Leistungen in Ordnern; dieselben Ordner sind die Kategorien der Projekte, mit Auswertung), Arbeitsgänge
-            - **Administration:** Firma, Formularwesen, Einstellungen (dort u. a. der Reiter „Berechtigungen“)
+            - **Katalog:** Artikel, Leistungen & Kategorien (Leistungen in Ordnern; dieselben Ordner sind die Kategorien der Projekte, mit Auswertung), Arbeitsgänge (nur Admin)
+            - **Administration:** Firma, Formularwesen, Einstellungen (dort u. a. der Reiter „Abteilungen & Rechte“)
             
             ### 2. Projektmanagement
             - **Aufträge:** Projekte, Anfragen

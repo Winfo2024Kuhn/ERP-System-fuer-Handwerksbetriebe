@@ -6,7 +6,7 @@ import { ToastProvider } from '../../../ui/toast';
 import type { PostfachDto } from '../../../../features/email/postfach';
 
 /**
- * Einstellungen → Berechtigungen: „E-Mail-Postfächer – wer sieht welches Postfach?“
+ * Einstellungen → Abteilungen & Rechte: „E-Mail-Postfächer – wer sieht welches Postfach?“
  * Nur Dummy-Daten (DSGVO).
  */
 
@@ -380,5 +380,29 @@ describe('PostfachSichtbarkeitKarte – Lade-, Leer- und Fehlerzustände', () =>
         const z = await zeile('max@musterbetrieb.example');
         await user.click(within(z).getByRole('radio', { name: /Nur bestimmte/ }));
         expect(await within(gruppe(z, 'Benutzer')).findByRole('alert')).toHaveTextContent(/^Benutzer konnten nicht geladen werden\.Erneut laden$/);
+    });
+});
+
+describe('PostfachSichtbarkeitKarte – nach Änderung einer Abteilung', () => {
+    it('lädt Postfächer und Abteilungsliste leise neu, sobald der Stand hochgezählt wird', async () => {
+        let abteilungen = ABTEILUNGEN;
+        const fetchMock = stubFetch([info, max], (url) => (url === '/api/abteilungen/berechtigungen' ? { body: abteilungen } : undefined));
+        const { rerender } = render(<ToastProvider><PostfachSichtbarkeitKarte abteilungenStand={0} /></ToastProvider>);
+
+        const maxZeile = await zeile('max@musterbetrieb.example');
+        expect(await within(gruppe(maxZeile, 'Abteilungen')).findByRole('checkbox', { name: /Montage/ })).toBeInTheDocument();
+        expect(aufrufe(fetchMock, '/api/postfaecher')).toBe(1);
+        expect(aufrufe(fetchMock, '/api/abteilungen/berechtigungen')).toBe(1);
+
+        // Montage gelöscht, Lager neu angelegt
+        abteilungen = [...ABTEILUNGEN.filter(a => a.abteilungId !== 4), { abteilungId: 9, abteilungName: 'Lager', berechtigungen: [] }];
+        rerender(<ToastProvider><PostfachSichtbarkeitKarte abteilungenStand={1} /></ToastProvider>);
+
+        const neueZeile = await zeile('max@musterbetrieb.example');
+        expect(await within(gruppe(neueZeile, 'Abteilungen')).findByRole('checkbox', { name: /Lager/ })).toBeInTheDocument();
+        expect(within(gruppe(neueZeile, 'Abteilungen')).queryByRole('checkbox', { name: /Montage/ })).not.toBeInTheDocument();
+        expect(aufrufe(fetchMock, '/api/postfaecher')).toBe(2);
+        expect(aufrufe(fetchMock, '/api/abteilungen/berechtigungen')).toBe(2);
+        expect(screen.queryByLabelText('Postfächer werden geladen')).not.toBeInTheDocument();
     });
 });

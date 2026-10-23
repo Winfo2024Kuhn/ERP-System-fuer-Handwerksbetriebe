@@ -16,6 +16,9 @@ import java.util.List;
 public interface MitarbeiterRepository extends JpaRepository<Mitarbeiter, Long> {
     Optional<Mitarbeiter> findByLoginToken(String loginToken);
 
+    /** Wie viele Mitarbeiter (auch ausgeschiedene) gehören zu dieser Abteilung? Solange es welche gibt, darf sie nicht gelöscht werden. */
+    long countByAbteilungen_Id(Long abteilungId);
+
     // Für Zeiterfassung: nur aktive Menschen dürfen sich einloggen, auch ohne Zeitkonto.
     @Query("SELECT m FROM Mitarbeiter m WHERE m.loginToken = :token AND m.aktiv = true AND m.art = org.example.kalkulationsprogramm.domain.MitarbeiterArt.MENSCH")
     Optional<Mitarbeiter> findByLoginTokenAndAktivTrue(@Param("token") String loginToken);

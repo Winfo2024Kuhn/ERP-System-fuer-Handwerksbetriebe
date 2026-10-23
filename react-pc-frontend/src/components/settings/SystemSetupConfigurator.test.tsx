@@ -86,7 +86,7 @@ describe('SystemSetupConfigurator – Reiter', () => {
 
         window.history.pushState(null, '', '/#berechtigungen');
         window.dispatchEvent(new HashChangeEvent('hashchange'));
-        await waitFor(() => expect(screen.getByRole('tab', { name: /Berechtigungen/ })).toHaveAttribute('aria-selected', 'true'));
+        await waitFor(() => expect(screen.getByRole('tab', { name: /Abteilungen & Rechte/ })).toHaveAttribute('aria-selected', 'true'));
         expect(await screen.findByText('E-Mail-Postfächer – wer sieht welches Postfach?')).toBeInTheDocument();
     });
 

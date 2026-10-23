@@ -82,7 +82,7 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/lieferanten" element={<Seite><LieferantenEditor /></Seite>} />
                 <Route path="/artikel" element={<Seite><ArtikelEditor /></Seite>} />
                 <Route path="/artikel/:id" element={<Seite><ArtikelDetail /></Seite>} />
-                <Route path="/arbeitsgaenge" element={<Seite><ArbeitsgangEditor /></Seite>} />
+                <Route path="/arbeitsgaenge" element={<RequireAdmin><Seite><ArbeitsgangEditor /></Seite></RequireAdmin>} />
                 {/* Projekt-Kategorien sind die Ordner der Leistungen – eine gemeinsame Seite. */}
                 <Route path="/produktkategorien" element={<Navigate to="/leistungen" replace />} />
                 <Route path="/projekte" element={<Seite><ProjektEditor /></Seite>} />

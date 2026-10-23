@@ -35,7 +35,7 @@ const TABS: TabDefinition[] = [
     { id: 'ki', label: 'KI-Funktionen', icon: <Brain className="w-4 h-4" /> },
     { id: 'zeiterfassung', label: 'Zeiterfassung', icon: <Clock className="w-4 h-4" /> },
     { id: 'telefon', label: 'Telefon', icon: <Phone className="w-4 h-4" /> },
-    { id: 'berechtigungen', label: 'Berechtigungen', icon: <Shield className="w-4 h-4" /> },
+    { id: 'berechtigungen', label: 'Abteilungen & Rechte', icon: <Shield className="w-4 h-4" /> },
 ];
 
 /** Welche Bereiche sind fertig eingerichtet — für die Häkchen an den Reitern. */
@@ -59,7 +59,7 @@ function useTabInHash(): [TabId, (tab: TabId) => void] {
         return istGueltigerTab(raw) ? raw : 'email';
     });
 
-    // Links wie „Einstellungen → Berechtigungen“ (`href="#berechtigungen"`) wechseln den Reiter über die Adresse.
+    // Links wie „Einstellungen → Abteilungen & Rechte“ (`href="#berechtigungen"`) wechseln den Reiter über die Adresse.
     useEffect(() => {
         const beiHashWechsel = () => {
             const raw = window.location.hash.replace(/^#/, '');

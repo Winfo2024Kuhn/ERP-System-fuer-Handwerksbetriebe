@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
     Building2,
     Calculator,
@@ -35,25 +36,38 @@ const formatRate = (value: number | null) => {
     return priceFormatter.format(value);
 };
 
+/** Abteilungen werden nur noch von Admins in den Einstellungen gepflegt – hier nur der Weg dorthin. */
+const AbteilungenVerwaltenHinweis = () => (
+    <p className="text-sm text-slate-500">
+        Abteilungen legen Sie unter{' '}
+        <Link
+            to="/einstellungen#berechtigungen"
+            className="font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded"
+        >
+            Einstellungen → Abteilungen &amp; Rechte
+        </Link>
+        {' '}an, benennen sie dort um oder löschen sie.
+    </p>
+);
+
 // ==================== Abteilung List Component ====================
 interface AbteilungListProps {
     abteilungen: Abteilung[];
     selectedId: number | null;
     onSelect: (id: number) => void;
-    onDelete: (id: number) => void;
 }
 
 const AbteilungList: React.FC<AbteilungListProps> = ({
     abteilungen,
     selectedId,
     onSelect,
-    onDelete,
 }) => {
     if (!abteilungen.length) {
         return (
-            <Card className="p-8 text-center text-slate-500 border-dashed">
-                <Building2 className="w-10 h-10 mx-auto mb-2 text-rose-200" />
-                Keine Abteilungen vorhanden
+            <Card className="p-8 text-center text-slate-500 border-dashed space-y-2">
+                <Building2 className="w-10 h-10 mx-auto text-rose-200" />
+                <p className="font-medium text-slate-700">Keine Abteilungen vorhanden</p>
+                <AbteilungenVerwaltenHinweis />
             </Card>
         );
     }
@@ -66,7 +80,7 @@ const AbteilungList: React.FC<AbteilungListProps> = ({
                     <div
                         key={abteilung.id}
                         className={cn(
-                            'group flex items-center justify-between gap-2 rounded-lg border px-3 py-2 cursor-pointer transition',
+                            'flex items-center justify-between gap-2 rounded-lg border px-3 py-2 cursor-pointer transition',
                             'border-slate-200 bg-white hover:border-rose-200 hover:shadow-sm',
                             isSelected ? 'border-rose-500 bg-rose-50 shadow-sm' : ''
                         )}
@@ -78,21 +92,9 @@ const AbteilungList: React.FC<AbteilungListProps> = ({
                                 {abteilung.name}
                             </span>
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                            {isSelected && (
-                                <ChevronRight className="w-4 h-4 text-rose-600" />
-                            )}
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDelete(abteilung.id);
-                                }}
-                                className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
-                                title="Abteilung löschen"
-                            >
-                                <Trash2 className="w-3 h-3" />
-                            </button>
-                        </div>
+                        {isSelected && (
+                            <ChevronRight className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                        )}
                     </div>
                 );
             })}
@@ -194,9 +196,7 @@ export default function ArbeitsgangEditor() {
     const [arbeitsgaenge, setArbeitsgaenge] = useState<Arbeitsgang[]>([]);
     const [selectedAbteilungId, setSelectedAbteilungId] = useState<number | null>(null);
     const [loading, setLoading] = useState(false);
-    const [newAbteilungName, setNewAbteilungName] = useState('');
     const [newBeschreibung, setNewBeschreibung] = useState('');
-    const [creatingAbteilung, setCreatingAbteilung] = useState(false);
     const [creatingArbeitsgang, setCreatingArbeitsgang] = useState(false);
 
     // Modal state
@@ -260,47 +260,6 @@ export default function ArbeitsgangEditor() {
             setSelectedAbteilungId(abteilungen[0].id);
         }
     }, [abteilungen, selectedAbteilungId]);
-
-    // Create Abteilung
-    const handleCreateAbteilung = async () => {
-        if (!newAbteilungName.trim()) return;
-        setCreatingAbteilung(true);
-        try {
-            const res = await fetch('/api/abteilungen', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newAbteilungName.trim() })
-            });
-            if (res.ok) {
-                setNewAbteilungName('');
-                await loadData();
-            } else {
-                toast.error('Fehler beim Erstellen der Abteilung.');
-            }
-        } catch (err) {
-            console.error(err);
-            toast.error('Fehler beim Erstellen der Abteilung.');
-        } finally {
-            setCreatingAbteilung(false);
-        }
-    };
-
-    // Delete Abteilung
-    const handleDeleteAbteilung = async (id: number) => {
-        if (!await confirmDialog({ title: 'Abteilung löschen', message: 'Möchten Sie diese Abteilung wirklich löschen?', variant: 'danger', confirmLabel: 'Löschen' })) return;
-        try {
-            const res = await fetch(`/api/abteilungen/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                await loadData();
-            } else if (res.status === 409) {
-                toast.warning('Abteilung kann nicht gelöscht werden, da noch Arbeitsgänge zugeordnet sind.');
-            } else {
-                toast.error('Fehler beim Löschen der Abteilung.');
-            }
-        } catch (err) {
-            console.error(err);
-        }
-    };
 
     // Create Arbeitsgang
     const handleCreateArbeitsgang = async () => {
@@ -414,29 +373,14 @@ export default function ArbeitsgangEditor() {
                             abteilungen={abteilungen}
                             selectedId={selectedAbteilungId}
                             onSelect={setSelectedAbteilungId}
-                            onDelete={handleDeleteAbteilung}
                         />
                     )}
 
-                    {/* Add Abteilung Form */}
-                    <div className="mt-4 pt-4 border-t border-slate-100">
-                        <div className="space-y-2">
-                            <Input
-                                value={newAbteilungName}
-                                onChange={(e) => setNewAbteilungName(e.target.value)}
-                                placeholder="Neue Abteilung..."
-                                onKeyDown={(e) => e.key === 'Enter' && handleCreateAbteilung()}
-                            />
-                            <Button
-                                className="w-full bg-rose-600 text-white border border-rose-600 hover:bg-rose-700"
-                                size="sm"
-                                onClick={handleCreateAbteilung}
-                                disabled={!newAbteilungName.trim() || creatingAbteilung}
-                            >
-                                <Plus className="w-4 h-4" /> Abteilung anlegen
-                            </Button>
+                    {!loading && abteilungen.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-slate-100">
+                            <AbteilungenVerwaltenHinweis />
                         </div>
-                    </div>
+                    )}
                 </Card>
 
                 {/* Column 2: Arbeitsgänge List */}

@@ -147,6 +147,11 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.DELETE, "/api/kunden/*").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/api/kunden/*/datenschutz-sperre").hasRole("ADMIN")
                     .requestMatchers(HttpMethod.POST, "/api/kunden/*/anonymisieren").hasRole("ADMIN")
+                    // Arbeitsgänge und ihre Stundensätze pflegt nur der Admin (Stammdaten → Arbeitsgänge).
+                    // Lesen bleibt offen: Zeiterfassung, Kalender und Projekte brauchen die Liste.
+                    .requestMatchers(HttpMethod.POST, "/api/arbeitsgaenge", "/api/arbeitsgaenge/**").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.PUT, "/api/arbeitsgaenge/**").hasRole("ADMIN")
+                    .requestMatchers(HttpMethod.DELETE, "/api/arbeitsgaenge/**").hasRole("ADMIN")
                     .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                     .authenticationEntryPoint((request, response, exception) -> writeJson(response, 401, Map.of("error", "Anmeldung erforderlich.")))
@@ -258,6 +263,11 @@ public class SecurityConfig {
                         "/api/firma/steuerberater",
                         "/api/firma/steuerberater/*").authenticated()
                 .requestMatchers(HttpMethod.PUT, "/api/abteilungen/*/berechtigungen").hasRole("ADMIN")
+                // Abteilungen anlegen, umbenennen, löschen (Einstellungen → Abteilungen & Rechte). Lesen bleibt offen,
+                // weil der Mitarbeiter-Editor und der Monatsabschluss die Liste brauchen.
+                .requestMatchers(HttpMethod.POST, "/api/abteilungen").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/abteilungen/*").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/abteilungen/*").hasRole("ADMIN")
                 // Feiertage anlegen, anpassen, löschen wirkt auf Soll und Lohn aller Mitarbeiter (Issue #222).
                 .requestMatchers(HttpMethod.POST, "/api/zeitverwaltung/feiertage",
                         "/api/zeitverwaltung/feiertage/regenerieren").hasRole("ADMIN")
