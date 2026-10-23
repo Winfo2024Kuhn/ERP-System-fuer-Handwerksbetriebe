@@ -53,6 +53,7 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Part;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
+import jakarta.mail.UIDFolder;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMultipart;
@@ -104,6 +105,8 @@ public class EmailImportService {
     // Mini-Transaktion startet (nicht eine Riesen-Transaktion über alle Mails).
     @Setter(onMethod_ = { @Autowired, @Lazy })
     private EmailImportService self;
+
+    private final EmailImportFehlversuche fehlversuche = new EmailImportFehlversuche();
 
     // IMAP-Ordner für eingehende E-Mails
     private static final List<String> INCOMING_FOLDERS = List.of(
@@ -264,7 +267,7 @@ public class EmailImportService {
     /**
      * Importiert E-Mails aus einem einzelnen IMAP-Ordner.
      */
-    private int importFromFolder(Store store, String folderName, EmailDirection direction, Long postfachId) {
+    int importFromFolder(Store store, String folderName, EmailDirection direction, Long postfachId) {
         try {
             Folder genericFolder = store.getFolder(folderName);
             if (!(genericFolder instanceof IMAPFolder folder) || !folder.exists()) {
@@ -279,10 +282,19 @@ public class EmailImportService {
                 FetchProfile fp = new FetchProfile();
                 fp.add(FetchProfile.Item.ENVELOPE);
                 fp.add(FetchProfile.Item.FLAGS);
+                // UIDs in einem Rutsch, sonst kostet jedes getUID() einen eigenen Roundtrip
+                fp.add(UIDFolder.FetchProfileItem.UID);
                 folder.fetch(messages, fp);
 
+                long uidValidity = uidValidityOderNull(folder);
                 int imported = 0;
                 for (Message msg : messages) {
+                    long uid = uidOderMinusEins(folder, msg);
+                    String schluessel = uid < 0 ? null
+                            : EmailImportFehlversuche.schluessel(postfachId, folderName, uidValidity, uid);
+                    if (schluessel != null && fehlversuche.ueberspringen(schluessel)) {
+                        continue;
+                    }
                     try {
                         // Über self-Proxy aufrufen, damit @Transactional auf
                         // importMessage greift (eigene Tx pro Mail).
@@ -292,22 +304,29 @@ public class EmailImportService {
                             // sonst sperren sich beide gegenseitig.
                             pruefeRuecklaeufer(msg, direction);
                         }
+                        if (schluessel != null) {
+                            fehlversuche.erfolgreich(schluessel);
+                        }
                     } catch (Exception e) {
-                        // Versuche Kontext-Infos aus dem Envelope zu extrahieren (bereits vorgeladen)
-                        String msgSubject = "<unbekannt>";
-                        String msgFrom = "<unbekannt>";
-                        try {
-                            if (msg.getSubject() != null) msgSubject = msg.getSubject();
-                            Address[] from = msg.getFrom();
-                            if (from != null && from.length > 0) msgFrom = from[0].toString();
-                        } catch (Exception ignored) {}
-                        log.warn("[EmailImport] Fehler beim Verarbeiten einer Nachricht in Ordner '{}'" +
-                                " (Betreff: '{}', Von: '{}'): {} – {}",
-                                folderName, msgSubject, msgFrom,
-                                e.getClass().getSimpleName(), e.getMessage());
+                        // Bewusst ohne Betreff und Absender (DSGVO) – UID und Ordner reichen,
+                        // um die Nachricht auf dem Server wiederzufinden.
                         if (isFolderOrStoreClosed(e, folder)) {
-                            log.warn("[EmailImport] Verbindung oder Ordner '{}' wurde getrennt/geschlossen. Breche weiteren Import in diesem Ordner ab.", folderName);
+                            log.warn("[EmailImport] Verbindung oder Ordner '{}' wurde getrennt/geschlossen "
+                                    + "(bei UID {}: {}). Breche weiteren Import in diesem Ordner ab.",
+                                    folderName, uid, fehlerKurz(e));
                             break;
+                        }
+                        // Vorübergehende Störungen (Datenbank kurz weg) zählen nicht – sonst
+                        // wäre nach einem Ausfall jede Mail bis zum Neustart gesperrt.
+                        int versuche = schluessel != null && !istVoruebergehend(e)
+                                ? fehlversuche.fehlgeschlagen(schluessel) : 0;
+                        if (versuche >= EmailImportFehlversuche.MAX_VERSUCHE) {
+                            log.error("[EmailImport] Nachricht UID {} in Ordner '{}' (Postfach {}) ließ sich {}-mal "
+                                    + "nicht importieren und wird bis zum nächsten Neustart übersprungen: {}",
+                                    uid, folderName, postfachId, versuche, fehlerKurz(e));
+                        } else {
+                            log.warn("[EmailImport] Fehler beim Verarbeiten der Nachricht UID {} in Ordner '{}' "
+                                    + "(Postfach {}): {}", uid, folderName, postfachId, fehlerKurz(e));
                         }
                     }
                 }
@@ -328,6 +347,60 @@ public class EmailImportService {
             log.warn("[EmailImport] Ordner '{}' nicht verfügbar: {}", folderName, e.getMessage());
             return 0;
         }
+    }
+
+    private static long uidOderMinusEins(IMAPFolder folder, Message msg) {
+        try {
+            return folder.getUID(msg);
+        } catch (MessagingException | RuntimeException e) {
+            return -1;
+        }
+    }
+
+    private static long uidValidityOderNull(IMAPFolder folder) {
+        try {
+            return folder.getUIDValidity();
+        } catch (MessagingException | RuntimeException e) {
+            return 0;
+        }
+    }
+
+    /** Störung, die von selbst wieder verschwindet – kein Fehler der Nachricht selbst. */
+    static boolean istVoruebergehend(Throwable e) {
+        Throwable t = e;
+        for (int tiefe = 0; tiefe < 20 && t != null; tiefe++) {
+            if (t instanceof org.springframework.dao.TransientDataAccessException
+                    || t instanceof org.springframework.dao.RecoverableDataAccessException
+                    || t instanceof org.springframework.dao.DataAccessResourceFailureException
+                    || t instanceof org.springframework.transaction.CannotCreateTransactionException
+                    || t instanceof java.sql.SQLTransientException
+                    || t instanceof java.sql.SQLRecoverableException) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
+    }
+
+    /**
+     * Fehler fürs Log: Art des Fehlers plus erste Zeile der eigentlichen Ursache.
+     * Nur die erste Zeile, weil PostgreSQL in den Folgezeilen ("Detail: Key …")
+     * die betroffenen Werte nennt – das können Adressen sein. Bei ungültigen
+     * Adressen steht die Adresse schon in der ersten Zeile, dort nur die Art.
+     */
+    static String fehlerKurz(Throwable e) {
+        Throwable ursache = e;
+        for (int tiefe = 0; tiefe < 20 && ursache.getCause() != null; tiefe++) {
+            ursache = ursache.getCause();
+        }
+        String meldung = ursache.getMessage() == null || ursache instanceof jakarta.mail.internet.AddressException
+                ? "" : ursache.getMessage().lines().findFirst().orElse("");
+        if (meldung.length() > 200) {
+            meldung = meldung.substring(0, 200) + "…";
+        }
+        String text = ursache == e ? e.getClass().getSimpleName()
+                : e.getClass().getSimpleName() + " / " + ursache.getClass().getSimpleName();
+        return meldung.isBlank() ? text : text + ": " + meldung;
     }
 
     static boolean isFolderOrStoreClosed(Throwable t, Folder folder) {
@@ -438,16 +511,9 @@ public class EmailImportService {
         }
 
         // Nur beim ersten Import warnen (nach Deduplizierungsprüfung)
+        // Bewusst ohne Absender und Betreff (DSGVO); die Fallback-ID enthält UID und Ordner.
         if (fallbackId) {
-            try {
-                String fallbackSubject = msg.getSubject() != null ? msg.getSubject() : "<kein Betreff>";
-                Address[] fallbackFrom = msg.getFrom();
-                String fallbackFromStr = (fallbackFrom != null && fallbackFrom.length > 0) ? fallbackFrom[0].toString() : "<unbekannt>";
-                log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}', Von: '{}', Betreff: '{}' – Fallback-ID: {}",
-                        folder.getFullName(), fallbackFromStr, fallbackSubject, messageId);
-            } catch (Exception ignored) {
-                log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}' – Fallback-ID: {}", folder.getFullName(), messageId);
-            }
+            log.warn("[EmailImport] Neue Email ohne Message-ID in Ordner '{}' – Fallback-ID: {}", folder.getFullName(), messageId);
         }
 
         // Email erstellen
@@ -480,8 +546,8 @@ public class EmailImportService {
         if (direction == EmailDirection.IN && email.getFromAddress() != null
                 && emailBlacklistRepository.existsByEmailAddress(
                         email.getFromAddress().toLowerCase(java.util.Locale.ROOT))) {
-            log.debug("[EmailImport] Absender {} ist gesperrt – Mail wird verworfen (kein DB-Eintrag)",
-                    email.getFromAddress());
+            log.debug("[EmailImport] Absender ist gesperrt – Mail UID {} wird verworfen (kein DB-Eintrag)",
+                    email.getImapUid());
             return false;
         }
 
@@ -530,8 +596,8 @@ public class EmailImportService {
         if (parentEmail == null) {
             parentEmail = findParentBySubject(email);
             if (parentEmail != null) {
-                log.info("[EmailImport] Parent via Subject-Fallback gefunden für '{}' → '{}'",
-                        email.getSubject(), parentEmail.getSubject());
+                log.info("[EmailImport] Parent via Subject-Fallback gefunden: UID {} → Email {}",
+                        email.getImapUid(), parentEmail.getId());
             }
         }
         if (parentEmail != null) {
@@ -554,8 +620,8 @@ public class EmailImportService {
                     if (!lieferantMatches.isEmpty()) {
                         email.assignToLieferant(lieferantMatches.getFirst());
                         assignedToLieferantByDomain = true;
-                        log.info("[EmailImport] Lieferant-Domain {} hat Vorrang vor Parent-Zuordnung (Projekt/Anfrage) für Email von {}",
-                                senderDomain, email.getFromAddress());
+                        log.info("[EmailImport] Lieferant-Domain {} hat Vorrang vor Parent-Zuordnung (Projekt/Anfrage) für Mail UID {}",
+                                senderDomain, email.getImapUid());
                     }
                 }
             }
@@ -595,8 +661,8 @@ public class EmailImportService {
             if (!isLieferantDomain) {
                 email.setNewsletter(true);
             } else {
-                log.info("[EmailImport] List-Unsubscribe Header ignoriert für Lieferanten-Email: {}",
-                        email.getFromAddress());
+                log.info("[EmailImport] List-Unsubscribe Header ignoriert für Lieferanten-Mail UID {}",
+                        email.getImapUid());
             }
         }
 
