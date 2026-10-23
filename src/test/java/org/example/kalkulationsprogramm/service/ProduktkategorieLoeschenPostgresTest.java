@@ -29,9 +29,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -77,8 +77,8 @@ class ProduktkategorieLoeschenPostgresTest {
     @Autowired EntityManager em;
     @Autowired PlatformTransactionManager tm;
     @Autowired JdbcTemplate jdbc;
-    @MockBean DateiSpeicherService dateiSpeicherService;
-    @MockBean AngemeldeterMitarbeiterService angemeldeterMitarbeiterService;
+    @MockitoBean DateiSpeicherService dateiSpeicherService;
+    @MockitoBean AngemeldeterMitarbeiterService angemeldeterMitarbeiterService;
 
     private final String suffix = UUID.randomUUID().toString().substring(0, 8);
     private final List<Long> ordnerIds = new ArrayList<>();
