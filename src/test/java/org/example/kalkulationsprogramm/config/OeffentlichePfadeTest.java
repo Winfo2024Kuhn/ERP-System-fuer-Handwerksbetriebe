@@ -57,6 +57,15 @@ class OeffentlichePfadeTest {
     }
 
     @Test
+    @DisplayName("Launcher-Update ist ohne Login erreichbar, die Einrichtungs-Dateien nicht")
+    void openFileLauncherNurUpdateOffen() {
+        assertThat(ohneLoginErreichbar("/openfile-launcher/aktuell")).isTrue();
+        assertThat(ohneLoginErreichbar("/openfile-launcher/anderes")).isFalse();
+        assertThat(ohneLoginErreichbar("/api/openfile-launcher/einrichtung/windows")).isFalse();
+        assertThat(ohneLoginErreichbar("/api/openfile-launcher/einrichtung/mac")).isFalse();
+    }
+
+    @Test
     @DisplayName("Actuator gibt nur den Health-Endpoint frei, ohne Details")
     void actuatorKonfigurationIstEng() throws Exception {
         // Direkt aus src/main lesen: src/test/resources bringt eine eigene

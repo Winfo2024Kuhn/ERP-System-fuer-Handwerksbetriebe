@@ -57,6 +57,15 @@ Die Rechte wirken über den Mitarbeiter, mit dem ein Benutzer verknüpft ist. Ei
 
 Unter **Einstellungen → Dateien**, Karte „Wo sollen Zeichnungen und Dateien liegen?“, den „Ordner auf diesem Rechner“ eintragen (z. B. C:\Zeichnungen), mit „Ordner prüfen“ testen und mit „Datei-Ordner speichern“ sichern. Optional die „Netzwerk-Adresse für Kollegen“ (beginnt mit \\). Dort legt das Programm Zeichnungen (HiCAD, Tenado) und Excel-Tabellen aus den Projekten ab. „So gibst du den Ordner im Netzwerk frei“ erklärt die Freigabe unter Windows.
 
+## Dateien direkt am PC öffnen (Excel, HiCAD, Tenado)
+
+Damit eine Excel-Tabelle oder Zeichnung aus einem Projekt direkt im passenden Programm aufgeht statt im Download-Ordner zu landen, braucht jeder PC einmal ein kleines Hilfsprogramm. Unter **Einstellungen → Dateien**, Karte „Dateien direkt am PC öffnen“, gibt es dafür „Für Windows herunterladen“ und „Für Mac herunterladen“ (geht erst, wenn die Netzwerk-Adresse eingetragen und gespeichert ist).
+
+- **Windows:** Die heruntergeladene Datei doppelt anklicken. Warnt Windows („Der Computer wurde durch Windows geschützt“), auf „Weitere Informationen“ und „Trotzdem ausführen“ klicken. Administrator-Rechte braucht es nicht.
+- **Mac:** Die Zip-Datei öffnen und „ERP-Dateien-oeffnen.command“ doppelt anklicken. Meldet der Mac einen nicht verifizierten Entwickler: Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“.
+
+Beim ersten Klick auf eine Datei fragt der Browser, ob er den Link öffnen darf – erlauben. Beim ersten Verbinden fragt der PC einmal nach Benutzer und Passwort des Ordners. Danach hält sich das Hilfsprogramm selbst aktuell, wenn das Programm über https geöffnet wird (z. B. über die Tailscale-Adresse). **Von unterwegs** klappt es über Tailscale, wenn auf dem Rechner mit dem Ordner einmal `deployment/openfile-launcher/Freigabe-Tailscale.ps1` als Administrator ausgeführt wurde.
+
 ## KI-Funktionen einschalten
 
 Unter **Einstellungen → KI-Funktionen** einen Schlüssel von Google Gemini eintragen, mit „Schlüssel testen“ prüfen und „Schlüssel speichern“. Die KI ist freiwillig. Ohne Schlüssel fehlen die KI-Hilfe in der Menüleiste, die Text-Verbesserung beim E-Mail-Schreiben, das automatische Auslesen von Belegen (E-Rechnungen liest das Programm trotzdem) und die Spracheingabe in der Handy-App. Mit Schlüssel gehen Belege, Texte und Sprachaufnahmen zur Verarbeitung an Google. „Schlüssel entfernen“ löscht den gespeicherten Schlüssel; danach sind alle KI-Funktionen aus, schon ausgelesene Daten bleiben erhalten.
