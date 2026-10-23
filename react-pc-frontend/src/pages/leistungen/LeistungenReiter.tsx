@@ -98,14 +98,14 @@ export function LeistungenReiter(props: LeistungenReiterProps) {
         setPreisFehler(undefined);
     };
 
-    // Aus der Suche geöffnete Leistung übernehmen.
-    useEffect(() => {
-        if (!oeffnen) return;
-        const leistung = leistungen.find((l) => l.id === oeffnen.id);
+    // Aus der Suche geöffnete Leistung übernehmen – beim Rendern, sobald ein neuer
+    // Öffnen-Wunsch kommt. Nur auf neue Wünsche reagieren, nicht auf jede Listenänderung.
+    const [uebernommenerWunsch, setUebernommenerWunsch] = useState<LeistungenReiterProps['oeffnen']>(null);
+    if (oeffnen !== uebernommenerWunsch) {
+        setUebernommenerWunsch(oeffnen);
+        const leistung = oeffnen ? leistungen.find((l) => l.id === oeffnen.id) : undefined;
         if (leistung) bearbeiten(leistung);
-        // Nur auf neue Öffnen-Wünsche reagieren, nicht auf jede Listenänderung.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [oeffnen]);
+    }
 
     // Wird die bearbeitete Leistung gelöscht (oder ausgeblendet), schließt das Formular.
     const bearbeitetVorhanden = entwurf?.id === undefined || leistungen.some((l) => l.id === entwurf.id);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Save, AlertTriangle, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { DecimalInput } from './ui/decimal-input';
@@ -31,15 +31,18 @@ export const StundensatzEditModal: React.FC<StundensatzEditModalProps> = ({
         currentYear - arbeitsgang.stundensatzJahr >= 1;
 
     // Bewusst auf id/stundensatz statt auf das ganze arbeitsgang-Objekt hoeren:
-    // uebergibt der Aufrufer ein frisch erzeugtes Objekt, lief der Effekt sonst
-    // nach jedem Render erneut und hat den getippten Entwurf wieder auf den
-    // gespeicherten Wert zurueckgesetzt.
-    useEffect(() => {
+    // uebergibt der Aufrufer ein frisch erzeugtes Objekt, wuerde der getippte
+    // Entwurf sonst nach jedem Render wieder auf den gespeicherten Wert zurueckgesetzt.
+    // Angepasst wird beim Rendern, sobald sich Offen-Zustand, Id oder Satz aendern.
+    const entwurfFuer = `${isOpen}|${arbeitsgang.id}|${arbeitsgang.stundensatz}`;
+    const [entwurfGesetztFuer, setEntwurfGesetztFuer] = useState<string | null>(null);
+    if (entwurfGesetztFuer !== entwurfFuer) {
+        setEntwurfGesetztFuer(entwurfFuer);
         if (isOpen) {
             setStundensatz(arbeitsgang.stundensatz == null ? '' : formatDecimalInput(arbeitsgang.stundensatz));
             setError('');
         }
-    }, [isOpen, arbeitsgang.id, arbeitsgang.stundensatz]);
+    }
 
     const handleSave = async () => {
         const result = validateDecimalInput(stundensatz, { label: 'Stundensatz', required: true, min: 0 });

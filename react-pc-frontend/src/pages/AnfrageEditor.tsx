@@ -439,8 +439,11 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
         projektOrt: '',
     });
 
-    // Reset beim Öffnen/Schließen
-    useEffect(() => {
+    // Reset beim Öffnen/Schließen bzw. wenn eine andere Anfrage bearbeitet wird.
+    // `null` als Startwert, damit der Abgleich auch beim ersten Rendern greift.
+    const [vorher, setVorher] = useState<{ isOpen: boolean; editAnfrage: AnfrageErstellenModalProps['editAnfrage'] } | null>(null);
+    if (vorher === null || vorher.isOpen !== isOpen || vorher.editAnfrage !== editAnfrage) {
+        setVorher({ isOpen, editAnfrage });
         if (!isOpen) {
             setFormData({ bauvorhaben: '', projektStrasse: '', projektPlz: '', projektOrt: '' });
             setSelectedKunde(null);
@@ -470,10 +473,12 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                 setZusaetzlicheEmails(editAnfrage.kundenEmails);
             }
         }
-    }, [isOpen, editAnfrage]);
+    }
 
-    // Kundenadresse in Projektadresse übernehmen wenn Checkbox aktiviert
-    useEffect(() => {
+    // Kundenadresse in Projektadresse übernehmen, sobald der Haken gesetzt bzw. ein Kunde gewählt wird
+    const [vorherAdresse, setVorherAdresse] = useState<{ adresseGleichKunde: boolean; selectedKunde: Kunde | null }>({ adresseGleichKunde, selectedKunde });
+    if (vorherAdresse.adresseGleichKunde !== adresseGleichKunde || vorherAdresse.selectedKunde !== selectedKunde) {
+        setVorherAdresse({ adresseGleichKunde, selectedKunde });
         if (adresseGleichKunde && selectedKunde) {
             setFormData(prev => ({
                 ...prev,
@@ -482,7 +487,7 @@ const AnfrageErstellenModal: React.FC<AnfrageErstellenModalProps> = ({
                 projektOrt: selectedKunde.ort || '',
             }));
         }
-    }, [adresseGleichKunde, selectedKunde]);
+    }
 
     const handleKundeSelect = (kunde: Kunde) => {
         setSelectedKunde(kunde);
@@ -729,9 +734,12 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const [kurzbeschreibung, setKurzbeschreibung] = useState(anfrage.kurzbeschreibung || '');
     const [savingDesc, setSavingDesc] = useState(false);
 
-    useEffect(() => {
+    // Neue Kurzbeschreibung vom Server übernehmen (z. B. nach dem Speichern).
+    const [vorherKurzbeschreibung, setVorherKurzbeschreibung] = useState(anfrage.kurzbeschreibung);
+    if (vorherKurzbeschreibung !== anfrage.kurzbeschreibung) {
+        setVorherKurzbeschreibung(anfrage.kurzbeschreibung);
         setKurzbeschreibung(anfrage.kurzbeschreibung || '');
-    }, [anfrage.kurzbeschreibung]);
+    }
 
     const handleSaveDescription = async () => {
         setSavingDesc(true);
@@ -767,17 +775,16 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
     const [notizBildViewer, setNotizBildViewer] = useState<{ images: { url: string; name?: string }[]; startIndex: number } | null>(null);
 
     // Notizen laden
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
     const loadNotizen = useCallback(async () => {
-        if (anfrage.id) {
-            try {
-                const res = await fetch(`/api/anfragen/${anfrage.id}/notizen`);
+        if (!anfrage.id) return;
+        await fetch(`/api/anfragen/${anfrage.id}/notizen`)
+            .then(async res => {
                 if (res.ok) {
                     setNotizen(await res.json());
                 }
-            } catch {
-                setNotizen([]);
-            }
-        }
+            })
+            .catch(() => setNotizen([]));
     }, [anfrage.id]);
 
     useEffect(() => {
@@ -789,16 +796,14 @@ const AnfrageDetailView: React.FC<AnfrageDetailViewProps> = ({ anfrage, onBack, 
 
     // Ausgangs-Geschäftsdokumente laden
     const loadAusgangsDokumente = useCallback(async () => {
-        if (anfrage.id) {
-            try {
-                const res = await fetch(`/api/ausgangs-dokumente/anfrage/${anfrage.id}`);
+        if (!anfrage.id) return;
+        await fetch(`/api/ausgangs-dokumente/anfrage/${anfrage.id}`)
+            .then(async res => {
                 if (res.ok) {
                     setAusgangsDokumente(await res.json());
                 }
-            } catch {
-                setAusgangsDokumente([]);
-            }
-        }
+            })
+            .catch(() => setAusgangsDokumente([]));
     }, [anfrage.id]);
 
     useEffect(() => {
@@ -1577,7 +1582,8 @@ export default function AnfrageEditor() {
     const [anfragen, setAnfragen] = useState<Anfrage[]>([]);
     const [freigabeStatusByAnfrageId, setFreigabeStatusByAnfrageId] = useState<Record<number, FreigabeStatusKurz>>({});
     const [selectedAnfrage, setSelectedAnfrage] = useState<AnfrageDetail | null>(null);
-    const [loading, setLoading] = useState(false);
+    // Die Liste lädt gleich beim Öffnen (Startansicht ist die Liste).
+    const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -1652,80 +1658,97 @@ export default function AnfrageEditor() {
     const ladeVorgangRef = useRef(0);
 
     // Fetch List
-    const loadAnfragen = useCallback(async () => {
+    // Den Ladehinweis schalten die Auslöser an (Render-Anpassung unten bzw.
+    // loadAnfragen); Ergebnisse erst in den Promise-Callbacks übernehmen.
+    const ladeAnfragenDaten = useCallback(() => {
         const ladeVorgang = ++ladeVorgangRef.current;
         const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            params.set("page", String(page));
-            params.set("size", String(PAGE_SIZE));
-            if (filters.q) {
-                params.set("q", filters.q);
-            }
-            if (filters.jahr) params.set("jahr", filters.jahr);
-            // Angebots-Status filtert das Backend – nur so landen alle Treffer auf den
-            // vorderen Seiten, statt nur die aktuell geladene Seite auszudünnen.
-            if (filters.freigabe !== 'all') params.set("freigabe", filters.freigabe);
-            // Status, Herkunft und Sortierung (nach Anlegedatum) erledigt ebenfalls das
-            // Backend vor dem Blättern – die Reihenfolge der Antwort bleibt unverändert.
-            if (filters.status !== 'alle') params.set("status", filters.status);
-            if (filters.herkunft !== 'alle') params.set("herkunft", filters.herkunft);
-            params.set("sortierung", filters.sortierung);
-
-            const res = await fetch(`/api/anfragen?${params.toString()}`);
-            if (!res.ok) throw new Error("Fehler beim Laden");
-            const data = await res.json();
-            if (!istAktuell()) return;
-
-            let resultList: Anfrage[];
-            if (Array.isArray(data)) {
-                resultList = data;
-                setAnfragen(resultList);
-                setTotal(resultList.length);
-            } else {
-                resultList = Array.isArray(data.anfragen) ? data.anfragen : [];
-                setAnfragen(resultList);
-                setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
-            }
-            // Freigabe-Status (Angebot/AB digital angenommen?) für die geladenen Anfragen ziehen.
-            const ids = resultList.map(a => a.id).filter((id): id is number => typeof id === 'number');
-            if (ids.length > 0) {
-                try {
-                    const idsParam = ids.join(',');
-                    const statusRes = await fetch(`/api/anfragen/freigabe-status?ids=${encodeURIComponent(idsParam)}`);
-                    if (!istAktuell()) return;
-                    if (statusRes.ok) {
-                        const statusJson = await statusRes.json();
-                        setFreigabeStatusByAnfrageId(statusJson || {});
-                    } else {
-                        setFreigabeStatusByAnfrageId({});
-                    }
-                } catch {
-                    // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
-                    // der aktuelle ist – sonst löscht ein veralteter Request die
-                    // Status-Icons der inzwischen angezeigten Liste.
-                    if (istAktuell()) setFreigabeStatusByAnfrageId({});
-                }
-            } else {
-                setFreigabeStatusByAnfrageId({});
-            }
-        } catch (err) {
-            console.error(err);
-            if (!istAktuell()) return;
-            setAnfragen([]);
-            setTotal(0);
-            setFreigabeStatusByAnfrageId({});
-        } finally {
-            if (istAktuell()) setLoading(false);
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("size", String(PAGE_SIZE));
+        if (filters.q) {
+            params.set("q", filters.q);
         }
+        if (filters.jahr) params.set("jahr", filters.jahr);
+        // Angebots-Status filtert das Backend – nur so landen alle Treffer auf den
+        // vorderen Seiten, statt nur die aktuell geladene Seite auszudünnen.
+        if (filters.freigabe !== 'all') params.set("freigabe", filters.freigabe);
+        // Status, Herkunft und Sortierung (nach Anlegedatum) erledigt ebenfalls das
+        // Backend vor dem Blättern – die Reihenfolge der Antwort bleibt unverändert.
+        if (filters.status !== 'alle') params.set("status", filters.status);
+        if (filters.herkunft !== 'alle') params.set("herkunft", filters.herkunft);
+        params.set("sortierung", filters.sortierung);
+
+        return fetch(`/api/anfragen?${params.toString()}`)
+            .then(async (res) => {
+                if (!res.ok) throw new Error("Fehler beim Laden");
+                const data = await res.json();
+                if (!istAktuell()) return;
+
+                let resultList: Anfrage[];
+                if (Array.isArray(data)) {
+                    resultList = data;
+                    setAnfragen(resultList);
+                    setTotal(resultList.length);
+                } else {
+                    resultList = Array.isArray(data.anfragen) ? data.anfragen : [];
+                    setAnfragen(resultList);
+                    setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
+                }
+                // Freigabe-Status (Angebot/AB digital angenommen?) für die geladenen Anfragen ziehen.
+                const ids = resultList.map(a => a.id).filter((id): id is number => typeof id === 'number');
+                if (ids.length > 0) {
+                    try {
+                        const idsParam = ids.join(',');
+                        const statusRes = await fetch(`/api/anfragen/freigabe-status?ids=${encodeURIComponent(idsParam)}`);
+                        if (!istAktuell()) return;
+                        if (statusRes.ok) {
+                            const statusJson = await statusRes.json();
+                            setFreigabeStatusByAnfrageId(statusJson || {});
+                        } else {
+                            setFreigabeStatusByAnfrageId({});
+                        }
+                    } catch {
+                        // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
+                        // der aktuelle ist – sonst löscht ein veralteter Request die
+                        // Status-Icons der inzwischen angezeigten Liste.
+                        if (istAktuell()) setFreigabeStatusByAnfrageId({});
+                    }
+                } else {
+                    setFreigabeStatusByAnfrageId({});
+                }
+            })
+            .catch((err: unknown) => {
+                console.error(err);
+                if (!istAktuell()) return;
+                setAnfragen([]);
+                setTotal(0);
+                setFreigabeStatusByAnfrageId({});
+            })
+            .finally(() => {
+                if (istAktuell()) setLoading(false);
+            });
     }, [page, filters]);
+
+    /** Neu laden nach einer Aktion bzw. auf Knopfdruck – mit Ladehinweis. */
+    const loadAnfragen = useCallback(() => {
+        setLoading(true);
+        return ladeAnfragenDaten();
+    }, [ladeAnfragenDaten]);
+
+    // Andere Seite, andere Filter oder zurück zur Liste: sofort „wird geladen“
+    // zeigen, bevor der Effekt unten neu lädt.
+    const [letzterListenAnlass, setLetzterListenAnlass] = useState({ page, filters, viewMode });
+    if (letzterListenAnlass.page !== page || letzterListenAnlass.filters !== filters || letzterListenAnlass.viewMode !== viewMode) {
+        setLetzterListenAnlass({ page, filters, viewMode });
+        if (viewMode === 'list') setLoading(true);
+    }
 
     useEffect(() => {
         if (viewMode === 'list') {
-            loadAnfragen();
+            void ladeAnfragenDaten();
         }
-    }, [loadAnfragen, viewMode]);
+    }, [ladeAnfragenDaten, viewMode]);
 
     // Toggle abgeschlossen status
     const handleToggleAbgeschlossen = async (anfrageId: number, abgeschlossen: boolean) => {
@@ -1783,11 +1806,7 @@ export default function AnfrageEditor() {
     // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
     // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
     // `total` noch der alte Wert.
-    useEffect(() => {
-        if (loading) return;
-        const letzteSeite = totalPages - 1;
-        if (page > letzteSeite) setPage(letzteSeite);
-    }, [loading, totalPages, page]);
+    if (!loading && page > totalPages - 1) setPage(totalPages - 1);
 
     const statusText = useMemo(() => {
         if (loading) return 'Anfragen werden geladen...';

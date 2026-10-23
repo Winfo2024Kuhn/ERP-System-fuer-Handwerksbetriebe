@@ -28,6 +28,8 @@ interface Entwurf {
 
 const EINHEITEN = VERRECHNUNGSEINHEITEN.map((e) => ({ value: e.name, label: e.anzeigename }));
 const entwurfAus = (o: Ordner): Entwurf => ({ name: o.name, einheit: o.einheit ?? '', beschreibung: o.beschreibung });
+/** Der Editor meldet eine leere Beschreibung als `<p></p>` – das ist keine Änderung, sondern weiter leer. */
+const beschreibungAusEditor = (html: string) => (html.trim() === '<p></p>' ? '' : html);
 
 /**
  * Reiter „Ordner“: Name, Einheit, Bild und Beschreibung des Ordners mit einem
@@ -45,14 +47,16 @@ export function OrdnerReiter({ ordner, onSpeichern, onUngespeichert }: OrdnerRei
     const ungespeichert = JSON.stringify(entwurf) !== JSON.stringify(ausgang) || bild !== null || bildEntfernen;
 
     // Ändert sich der Ordner von außen (z. B. Umbenennen im Baum, Bild abgelegt) und hier ist nichts offen: übernehmen.
-    useEffect(() => {
-        if (ungespeichert) return;
-        const neu = entwurfAus(ordner);
-        setEntwurf(neu);
-        setAusgang(neu);
-        // Nur auf Änderungen am Ordner reagieren.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ordner]);
+    // Nur auf Änderungen am Ordner reagieren (beim Rendern abgeglichen).
+    const [bekannterOrdner, setBekannterOrdner] = useState(ordner);
+    if (bekannterOrdner !== ordner) {
+        setBekannterOrdner(ordner);
+        if (!ungespeichert) {
+            const neu = entwurfAus(ordner);
+            setEntwurf(neu);
+            setAusgang(neu);
+        }
+    }
 
     useEffect(() => { onUngespeichert(ungespeichert); }, [ungespeichert, onUngespeichert]);
     useEffect(() => () => onUngespeichert(false), [onUngespeichert]);
@@ -147,7 +151,7 @@ export function OrdnerReiter({ ordner, onSpeichern, onUngespeichert }: OrdnerRei
                     <Label>Beschreibung</Label>
                     <InfoBeschreibung />
                 </div>
-                <TiptapEditor value={entwurf.beschreibung} onChange={(v) => setEntwurf((alt) => ({ ...alt, beschreibung: v }))} />
+                <TiptapEditor value={entwurf.beschreibung} onChange={(v) => setEntwurf((alt) => ({ ...alt, beschreibung: beschreibungAusEditor(v) }))} />
             </div>
 
         </div>

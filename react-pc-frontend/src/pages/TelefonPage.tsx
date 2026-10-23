@@ -97,14 +97,15 @@ function TelefonInhalt({ reiter }: { reiter: Reiter }) {
     const [aktualisierung, setAktualisierung] = useState(0);
     const ergebnisTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const ladeStand = useCallback(async () => {
-        try {
-            setStatus(await ladeStatus());
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.
+    const ladeStand = useCallback(() => ladeStatus()
+        .then((neu) => {
+            setStatus(neu);
             setStatusFehler(null);
-        } catch (e) {
+        })
+        .catch((e) => {
             setStatusFehler(e instanceof Error ? e.message : 'Der Telefon-Stand konnte nicht geladen werden.');
-        }
-    }, []);
+        }), []);
 
     useEffect(() => {
         void ladeStand();

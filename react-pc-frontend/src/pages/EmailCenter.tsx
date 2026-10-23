@@ -16,7 +16,7 @@ import {
     getSenderName, getDisplayName, groupEmailThreads, hasFurtherRecipients, isImageAttachment, loeschFehlerMeldung, nutztServerFilterUngelesen,
     type DraftItem, type EmailItem, type EmailThreadRow, type FolderType, type ReadFilter, type ReplyMode,
 } from '../features/email/emailCenterModel';
-import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext } from 'react-router-dom';
 import { PdfCanvasViewer } from '../components/ui/PdfCanvasViewer';
 import {
@@ -104,6 +104,9 @@ function DraggableEmailWrapper({ emailId, disabled, children }: DraggableEmailWr
         </div>
     );
 }
+
+/** Gemerkte Mail-Liste je Ordner/Filter (stale-while-revalidate). */
+type EmailListCacheEintrag = { emails: EmailItem[]; hasMore: boolean; timestamp: number };
 
 export default function EmailCenter() {
     const hasDataRouter = useContext(UNSAFE_DataRouterContext) !== null;
@@ -278,7 +281,7 @@ export default function EmailCenter() {
 
     // Folder cache: stale-while-revalidate – show cached data instantly, refresh in background.
     // Schlüssel über emailListCacheKey: die „Ungelesen"-Liste liegt getrennt von der vollen Liste.
-    const folderCacheRef = useRef<Map<string, { emails: EmailItem[]; hasMore: boolean; timestamp: number }>>(new Map());
+    const folderCacheRef = useRef<Map<string, EmailListCacheEintrag>>(new Map());
     // IDs die gerade optimistisch entfernt werden (Spam, Löschen, Blockieren) – verhindert
     // dass der Deep-Link-Effect die Email via API-Fetch zurücksetzt bevor die URL gecleart ist
     const pendingRemovalsRef = useRef<Set<number>>(new Set());
@@ -320,8 +323,10 @@ export default function EmailCenter() {
     // vor verspäteten Antworten nach einem Ordner- oder Filterwechsel.
     const nurUngelesen = nutztServerFilterUngelesen(activeFolder, readFilter);
     const listKey = emailListCacheKey(activeFolder, nurUngelesen);
+    // Neuester Listen-Schlüssel für späte Antworten; schon beim Commit (Layout-Effekt)
+    // nachgezogen, damit keine Antwort dazwischen den alten Schlüssel sieht.
     const listKeyRef = useRef(listKey);
-    listKeyRef.current = listKey;
+    useLayoutEffect(() => { listKeyRef.current = listKey; }, [listKey]);
     const [forwardEmail, setForwardEmail] = useState<EmailItem | null>(null);
 
     // Drafts
@@ -431,42 +436,19 @@ export default function EmailCenter() {
         }
     };
 
-    const handleComposeClose = () => {
-        setIsComposing(false);
-        setReplyToEmail(null);
-        setReplyToEmailId(undefined);
-        setForwardEmail(null);
-        setActiveDraftId(undefined);
-        setActiveDraft(null);
-        // Refresh drafts and stats so draft count updates
-        loadDrafts();
-        loadStats();
-    };
-
-    const handleComposeSuccess = () => {
-        setIsComposing(false);
-        setReplyToEmail(null);
-        setReplyToEmailId(undefined);
-        setForwardEmail(null);
-        setActiveDraftId(undefined);
-        setActiveDraft(null);
-        // Reload in background without resetting scroll/selection
-        refreshEmailsSilently();
-        loadDrafts();
-        loadStats();
-    };
-
     // Drafts laden
-    const loadDrafts = useCallback(async () => {
-        try {
-            const res = await fetch('/api/emails/drafts');
-            if (res.ok) {
-                setDrafts(await res.json());
-            }
-        } catch (err) {
-            console.error('Failed to load drafts', err);
-        }
-    }, []);
+    // Ergebnisse erst in den Promise-Callbacks übernehmen (auch beim Aufruf aus Effekten).
+    const loadDrafts = useCallback(() =>
+        fetch('/api/emails/drafts')
+            .then(async (res) => {
+                if (res.ok) {
+                    setDrafts(await res.json());
+                }
+            })
+            .catch((err: unknown) => {
+                console.error('Failed to load drafts', err);
+            }),
+    []);
 
     // Draft öffnen = Compose-Form mit Draft-Daten
     const handleOpenDraft = async (draft: DraftItem) => {
@@ -497,18 +479,13 @@ export default function EmailCenter() {
         }
     };
 
-    // Load emails based on folder and filter – stale-while-revalidate
-    const loadEmails = useCallback(async () => {
-        if (activeFolder === 'drafts') {
-            setEmails([]);
-            setHasMore(false);
-            setLoading(false);
-            return;
-        }
-        const keyAtCallTime = listKey;
-        const endpoint = buildEmailListUrl(activeFolder, 0, PAGE_SIZE, nurUngelesen);
-
-        // Show cached data instantly if available
+    // Load emails based on folder and filter – stale-while-revalidate.
+    // Schritt 1 (synchron beim Ordner-/Filterwechsel): gemerkte Liste sofort zeigen.
+    // Bewusst synchron im Effekt (wie vor dem Umbau): Die Liste kommt aus dem Zwischenspeicher
+    // (Ref, also ein externer Speicher). Die Regel schweigt hier, weil die Funktion ein Ref liest –
+    // das gilt auch für die Ladeanzeige ohne Treffer, die nicht aus dem Ref stammt.
+    // Liefert den Zwischenspeicher-Eintrag zurück, den Schritt 2 für die Fehlerbehandlung braucht.
+    const zeigeGemerkteListe = useCallback((keyAtCallTime: string) => {
         const cached = folderCacheRef.current.get(keyAtCallTime);
         if (cached) {
             setEmails(cached.emails);
@@ -525,28 +502,46 @@ export default function EmailCenter() {
             setLoading(true);
             setHasMore(false);
         }
+        return cached;
+    }, []);
 
-        try {
-            const res = await fetch(endpoint);
-            if (listKeyRef.current !== keyAtCallTime) return; // Ordner/Filter gewechselt, alte Antwort verwerfen
-            if (res.ok) {
-                let data = await res.json();
-                if (!Array.isArray(data)) data = [];
+    // Schritt 2: frisch vom Server holen – Ergebnisse erst in den Promise-Callbacks übernehmen.
+    const ladeEmails = useCallback((keyAtCallTime: string, cached: EmailListCacheEintrag | undefined) => {
+        const endpoint = buildEmailListUrl(activeFolder, 0, PAGE_SIZE, nurUngelesen);
+        return fetch(endpoint)
+            .then(async (res) => {
+                if (listKeyRef.current !== keyAtCallTime) return; // Ordner/Filter gewechselt, alte Antwort verwerfen
+                if (res.ok) {
+                    let data = await res.json();
+                    if (!Array.isArray(data)) data = [];
 
-                const more = data.length >= PAGE_SIZE;
-                setEmails(data);
-                setHasMore(more);
-                folderCacheRef.current.set(keyAtCallTime, { emails: data, hasMore: more, timestamp: Date.now() });
-            } else {
+                    const more = data.length >= PAGE_SIZE;
+                    setEmails(data);
+                    setHasMore(more);
+                    folderCacheRef.current.set(keyAtCallTime, { emails: data, hasMore: more, timestamp: Date.now() });
+                } else {
+                    if (!cached) { setEmails([]); setHasMore(false); }
+                }
+            })
+            .catch((err: unknown) => {
+                console.error('Failed to load emails', err);
                 if (!cached) { setEmails([]); setHasMore(false); }
-            }
-        } catch (err) {
-            console.error('Failed to load emails', err);
-            if (!cached) { setEmails([]); setHasMore(false); }
-        } finally {
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+    }, [activeFolder, nurUngelesen]);
+
+    // Entwürfe-Ordner hat keine Mail-Liste: beim Wechsel dorthin sofort leeren.
+    const [vorherigerListKey, setVorherigerListKey] = useState<string | null>(null);
+    if (vorherigerListKey !== listKey) {
+        setVorherigerListKey(listKey);
+        if (activeFolder === 'drafts') {
+            setEmails([]);
+            setHasMore(false);
             setLoading(false);
         }
-    }, [activeFolder, listKey, nurUngelesen]);
+    }
 
     // Naechste Seite asynchron nachladen (Infinite Scroll)
     const loadMoreEmails = useCallback(async () => {
@@ -584,52 +579,53 @@ export default function EmailCenter() {
     }, [activeFolder, emails.length, hasMore, listKey, loading, loadingMore, nurUngelesen]);
 
     // Load stats for folder counts
-    const loadStats = useCallback(async () => {
-        try {
-            const [statsRes, draftRes] = await Promise.all([
-                fetch('/api/emails/stats'),
-                fetch('/api/emails/drafts/count')
-            ]);
-            let draftCount = 0;
-            if (draftRes.ok) {
-                const draftData = await draftRes.json();
-                draftCount = draftData.count || 0;
-            }
-            if (statsRes.ok) {
-                const stats = await statsRes.json();
-                setFolderCounts({
-                    inbox: stats.inboxCount || 0,
-                    sent: stats.sentCount || 0,
-                    drafts: draftCount,
-                    trash: stats.trashCount || 0,
-                    spam: stats.spamCount || 0,
-                    newsletter: stats.newsletterCount || 0,
-                    starred: stats.starredCount || 0,
-                    unassigned: stats.unassignedCount || 0,
-                    projects: stats.projectCount || 0,
-                    offers: stats.offerCount || 0,
-                    suppliers: stats.supplierCount || 0,
-                    taxAdvisors: stats.taxAdvisorCount || 0
-                });
-                setFolderTotals({
-                    inbox: stats.inboxTotal || 0,
-                    sent: stats.sentTotal || 0,
-                    drafts: draftCount,
-                    trash: stats.trashTotal || 0,
-                    spam: stats.spamTotal || 0,
-                    newsletter: stats.newsletterTotal || 0,
-                    starred: stats.starredTotal || 0,
-                    unassigned: stats.unassignedTotal || 0,
-                    projects: stats.projectTotal || 0,
-                    offers: stats.offerTotal || 0,
-                    suppliers: stats.supplierTotal || 0,
-                    'tax-advisors': stats.taxAdvisorTotal || 0
-                });
-            }
-        } catch (err) {
-            console.error('Failed to load stats', err);
-        }
-    }, []);
+    const loadStats = useCallback(() =>
+        Promise.all([
+            fetch('/api/emails/stats'),
+            fetch('/api/emails/drafts/count')
+        ])
+            .then(async ([statsRes, draftRes]) => {
+                let draftCount = 0;
+                if (draftRes.ok) {
+                    const draftData = await draftRes.json();
+                    draftCount = draftData.count || 0;
+                }
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    setFolderCounts({
+                        inbox: stats.inboxCount || 0,
+                        sent: stats.sentCount || 0,
+                        drafts: draftCount,
+                        trash: stats.trashCount || 0,
+                        spam: stats.spamCount || 0,
+                        newsletter: stats.newsletterCount || 0,
+                        starred: stats.starredCount || 0,
+                        unassigned: stats.unassignedCount || 0,
+                        projects: stats.projectCount || 0,
+                        offers: stats.offerCount || 0,
+                        suppliers: stats.supplierCount || 0,
+                        taxAdvisors: stats.taxAdvisorCount || 0
+                    });
+                    setFolderTotals({
+                        inbox: stats.inboxTotal || 0,
+                        sent: stats.sentTotal || 0,
+                        drafts: draftCount,
+                        trash: stats.trashTotal || 0,
+                        spam: stats.spamTotal || 0,
+                        newsletter: stats.newsletterTotal || 0,
+                        starred: stats.starredTotal || 0,
+                        unassigned: stats.unassignedTotal || 0,
+                        projects: stats.projectTotal || 0,
+                        offers: stats.offerTotal || 0,
+                        suppliers: stats.supplierTotal || 0,
+                        'tax-advisors': stats.taxAdvisorTotal || 0
+                    });
+                }
+            })
+            .catch((err: unknown) => {
+                console.error('Failed to load stats', err);
+            }),
+    []);
 
     // Silent refresh: refreshed das aktuell sichtbare Slice (limit = bisherige Anzahl, mind. PAGE_SIZE)
     const refreshEmailsSilently = useCallback(async () => {
@@ -657,13 +653,43 @@ export default function EmailCenter() {
         }
     }, [activeFolder, emails.length, listKey, loadDrafts, nurUngelesen]);
 
+    // Steht hinter refreshEmailsSilently/loadDrafts/loadStats, die es aufruft.
+    const handleComposeClose = () => {
+        setIsComposing(false);
+        setReplyToEmail(null);
+        setReplyToEmailId(undefined);
+        setForwardEmail(null);
+        setActiveDraftId(undefined);
+        setActiveDraft(null);
+        // Refresh drafts and stats so draft count updates
+        loadDrafts();
+        loadStats();
+    };
+
+    const handleComposeSuccess = () => {
+        setIsComposing(false);
+        setReplyToEmail(null);
+        setReplyToEmailId(undefined);
+        setForwardEmail(null);
+        setActiveDraftId(undefined);
+        setActiveDraft(null);
+        // Reload in background without resetting scroll/selection
+        refreshEmailsSilently();
+        loadDrafts();
+        loadStats();
+    };
+
     // Load emails + stats when folder changes (single effect, no duplicates)
     // Drafts werden immer geladen, damit das Entwurf-Badge in allen Ordnern sichtbar ist
     useEffect(() => {
-        loadEmails();
-        loadStats();
-        loadDrafts();
-    }, [loadEmails, loadStats, loadDrafts, activeFolder]);
+        if (activeFolder !== 'drafts') {
+            // Stale-while-revalidate: gemerkte Liste (Ref-Zwischenspeicher) sofort zeigen, dann frisch laden.
+            const cached = zeigeGemerkteListe(listKey);
+            void ladeEmails(listKey, cached);
+        }
+        void loadStats();
+        void loadDrafts();
+    }, [zeigeGemerkteListe, ladeEmails, listKey, loadStats, loadDrafts, activeFolder]);
 
     // Auto-poll for new emails every 30 seconds
     useEffect(() => {
@@ -753,14 +779,97 @@ export default function EmailCenter() {
         return () => controller.abort();
     }, [emailIdParam, activeFolder, loadStats]);
 
-    useEffect(() => {
+    // Ordnerwechsel ohne offenen Editor und ohne gewählte Mail in der Adresse: Auswahl leeren.
+    const [auswahlOrdner, setAuswahlOrdner] = useState(activeFolder);
+    if (auswahlOrdner !== activeFolder) {
+        setAuswahlOrdner(activeFolder);
         if (!isComposing && !emailIdParam) {
             setSelectedEmail(null);
             setSelectedIds(new Set());
-            lastSelectedIdRef.current = null;
         }
+    }
+    // Der Anker für die Umschalt-Auswahl ist ein Ref – den setzt der Effekt zurück.
+    useEffect(() => {
+        if (!isComposing && !emailIdParam) lastSelectedIdRef.current = null;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeFolder]);
+
+    // Steht vor den Handlern, die diese Werte lesen.
+    // Eine Zeile pro Verlauf (wie Gmail): Die jüngste geladene Nachricht steht stellvertretend
+    // in der Liste; Sortierung und "Ungelesen" richten sich nach dem ganzen Verlauf, damit neue
+    // Antworten den Verlauf nach oben holen. Bei der globalen Suche werden alle Treffer einzeln
+    // gezeigt (der Nutzer sucht gezielt nach einer bestimmten Nachricht).
+    const threadRows = useMemo(() => groupEmailThreads(emails), [emails]);
+    const threadRowByEmailId = useMemo(() => {
+        const byId = new Map<number, EmailThreadRow>();
+        for (const row of threadRows) for (const member of row.members) byId.set(member.id, row);
+        return byId;
+    }, [threadRows]);
+
+    /** Alle geladenen Nachrichten der Verläufe zu den gewählten Listenzeilen. */
+    const expandToThreadMembers = (ids: number[]): number[] => {
+        if (isGlobalSearch) return ids;
+        const expanded = new Set<number>();
+        for (const id of ids) {
+            const members = threadRowByEmailId.get(id)?.members;
+            if (members) members.forEach(member => expanded.add(member.id));
+            else expanded.add(id);
+        }
+        return Array.from(expanded);
+    };
+
+    // Gegenstelle pro Verlauf: der externe Kunde/Partner – auch wenn die jüngste Nachricht
+    // eine eigene Folgenachricht oder Selbst-Antwort ist.
+    const threadCounterparts = useMemo(() => {
+        const counterparts = new Map<number, string>();
+        for (const row of threadRows) {
+            for (const e of row.members) {
+                let name: string | undefined;
+                if (e.kundeName) {
+                    name = e.kundeName;
+                } else if (e.lieferantName) {
+                    name = e.lieferantName;
+                } else if (e.direction === 'IN' && e.fromAddress && !isOwnEmail(e.fromAddress)) {
+                    name = extractDisplayName(e.fromAddress);
+                } else if (e.direction === 'OUT' && e.recipient && !isOwnEmail(e.recipient)) {
+                    const external = parseRecipientList(e.recipient).filter(p => !isOwnEmail(p.email));
+                    name = external.length > 0 ? external[0].displayName : extractDisplayName(e.recipient);
+                }
+                if (name) {
+                    counterparts.set(row.email.id, name);
+                    break;
+                }
+            }
+        }
+        return counterparts;
+    }, [threadRows, isOwnEmail]);
+
+    const filteredEmails = useMemo(() => {
+        if (isGlobalSearch) {
+            return [...globalSearchResults].sort((a, b) => {
+                const aTs = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+                const bTs = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+                return sortOrder === 'desc' ? bTs - aTs : aTs - bTs;
+            });
+        }
+        const q = searchQuery.trim().toLowerCase();
+        const matches = (e: EmailItem) => !q || (
+            e.subject?.toLowerCase().includes(q) ||
+            e.fromAddress?.toLowerCase().includes(q) ||
+            e.recipient?.toLowerCase().includes(q) ||
+            e.body?.toLowerCase().includes(q) ||
+            getDisplayName(e, isOwnEmail).toLowerCase().includes(q)
+        );
+        let rows = threadRows.filter(row => row.members.some(matches));
+        // Gesendet/Entwürfe haben kein sinnvolles Lese-Konzept.
+        // Ein Verlauf gilt als ungelesen, sobald eine seiner Nachrichten ungelesen ist.
+        if (readFilter !== 'all' && activeFolder !== 'sent') {
+            rows = rows.filter(row => readFilter === 'unread' ? row.anyUnread : !row.anyUnread);
+        }
+        return rows
+            .sort((a, b) => sortOrder === 'desc' ? b.latestActivity - a.latestActivity : a.latestActivity - b.latestActivity)
+            .map(row => row.email);
+    }, [threadRows, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder, isOwnEmail]);
 
     // Handlers
     const handleEmailClick = async (e: React.MouseEvent, email: EmailItem) => {
@@ -1294,15 +1403,22 @@ export default function EmailCenter() {
         });
     }, [selectedEmail, inlineAttachmentIds]);
 
-    // Global search with debounce – laedt erste Seite
-    useEffect(() => {
-        if (!isGlobalSearch || !searchQuery.trim() || searchQuery.trim().length < 2) {
+    // Global search with debounce – laedt erste Seite.
+    // Suche geändert: Ergebnisse sofort leeren (zu kurz) bzw. als „sucht“ zeigen.
+    const globaleSucheGueltig = isGlobalSearch && searchQuery.trim().length >= 2;
+    const [vorherigeSuche, setVorherigeSuche] = useState({ isGlobalSearch, searchQuery });
+    if (vorherigeSuche.isGlobalSearch !== isGlobalSearch || vorherigeSuche.searchQuery !== searchQuery) {
+        setVorherigeSuche({ isGlobalSearch, searchQuery });
+        if (!globaleSucheGueltig) {
             setGlobalSearchResults([]);
             setSearchHasMore(false);
             setGlobalSearchLoading(false);
-            return;
+        } else {
+            setGlobalSearchLoading(true);
         }
-        setGlobalSearchLoading(true);
+    }
+    useEffect(() => {
+        if (!isGlobalSearch || !searchQuery.trim() || searchQuery.trim().length < 2) return;
         const timeout = setTimeout(async () => {
             try {
                 const res = await fetch(`/api/emails/search?q=${encodeURIComponent(searchQuery.trim())}&offset=0&limit=${PAGE_SIZE}`);
@@ -1369,81 +1485,6 @@ export default function EmailCenter() {
         return () => observer.disconnect();
     }, [isGlobalSearch, loadMoreEmails, loadMoreSearch, hasMore, searchHasMore, emails.length, globalSearchResults.length]);
 
-    // Eine Zeile pro Verlauf (wie Gmail): Die jüngste geladene Nachricht steht stellvertretend
-    // in der Liste; Sortierung und "Ungelesen" richten sich nach dem ganzen Verlauf, damit neue
-    // Antworten den Verlauf nach oben holen. Bei der globalen Suche werden alle Treffer einzeln
-    // gezeigt (der Nutzer sucht gezielt nach einer bestimmten Nachricht).
-    const threadRows = useMemo(() => groupEmailThreads(emails), [emails]);
-    const threadRowByEmailId = useMemo(() => {
-        const byId = new Map<number, EmailThreadRow>();
-        for (const row of threadRows) for (const member of row.members) byId.set(member.id, row);
-        return byId;
-    }, [threadRows]);
-
-    /** Alle geladenen Nachrichten der Verläufe zu den gewählten Listenzeilen. */
-    const expandToThreadMembers = (ids: number[]): number[] => {
-        if (isGlobalSearch) return ids;
-        const expanded = new Set<number>();
-        for (const id of ids) {
-            const members = threadRowByEmailId.get(id)?.members;
-            if (members) members.forEach(member => expanded.add(member.id));
-            else expanded.add(id);
-        }
-        return Array.from(expanded);
-    };
-
-    // Gegenstelle pro Verlauf: der externe Kunde/Partner – auch wenn die jüngste Nachricht
-    // eine eigene Folgenachricht oder Selbst-Antwort ist.
-    const threadCounterparts = useMemo(() => {
-        const counterparts = new Map<number, string>();
-        for (const row of threadRows) {
-            for (const e of row.members) {
-                let name: string | undefined;
-                if (e.kundeName) {
-                    name = e.kundeName;
-                } else if (e.lieferantName) {
-                    name = e.lieferantName;
-                } else if (e.direction === 'IN' && e.fromAddress && !isOwnEmail(e.fromAddress)) {
-                    name = extractDisplayName(e.fromAddress);
-                } else if (e.direction === 'OUT' && e.recipient && !isOwnEmail(e.recipient)) {
-                    const external = parseRecipientList(e.recipient).filter(p => !isOwnEmail(p.email));
-                    name = external.length > 0 ? external[0].displayName : extractDisplayName(e.recipient);
-                }
-                if (name) {
-                    counterparts.set(row.email.id, name);
-                    break;
-                }
-            }
-        }
-        return counterparts;
-    }, [threadRows, isOwnEmail]);
-
-    const filteredEmails = useMemo(() => {
-        if (isGlobalSearch) {
-            return [...globalSearchResults].sort((a, b) => {
-                const aTs = a.sentAt ? new Date(a.sentAt).getTime() : 0;
-                const bTs = b.sentAt ? new Date(b.sentAt).getTime() : 0;
-                return sortOrder === 'desc' ? bTs - aTs : aTs - bTs;
-            });
-        }
-        const q = searchQuery.trim().toLowerCase();
-        const matches = (e: EmailItem) => !q || (
-            e.subject?.toLowerCase().includes(q) ||
-            e.fromAddress?.toLowerCase().includes(q) ||
-            e.recipient?.toLowerCase().includes(q) ||
-            e.body?.toLowerCase().includes(q) ||
-            getDisplayName(e, isOwnEmail).toLowerCase().includes(q)
-        );
-        let rows = threadRows.filter(row => row.members.some(matches));
-        // Gesendet/Entwürfe haben kein sinnvolles Lese-Konzept.
-        // Ein Verlauf gilt als ungelesen, sobald eine seiner Nachrichten ungelesen ist.
-        if (readFilter !== 'all' && activeFolder !== 'sent') {
-            rows = rows.filter(row => readFilter === 'unread' ? row.anyUnread : !row.anyUnread);
-        }
-        return rows
-            .sort((a, b) => sortOrder === 'desc' ? b.latestActivity - a.latestActivity : a.latestActivity - b.latestActivity)
-            .map(row => row.email);
-    }, [threadRows, searchQuery, isGlobalSearch, globalSearchResults, sortOrder, readFilter, activeFolder, isOwnEmail]);
 
     /** Fett/markiert, solange irgendeine Nachricht des Verlaufs ungelesen ist. */
     const isRowUnread = (email: EmailItem) => isGlobalSearch

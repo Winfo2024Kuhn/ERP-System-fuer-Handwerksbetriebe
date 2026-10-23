@@ -190,6 +190,15 @@ function HinweisEintrag({ hinweis, kompakt }: { hinweis: Hinweis; kompakt?: bool
     );
 }
 
+/** Datum aus dem Deep-Link ?date=2026-03-06, oder null, wenn keins oder ungültig. */
+function deepLinkDatumAus(searchParams: URLSearchParams): Date | null {
+    const dateParam = searchParams.get('date');
+    if (!dateParam) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return null;
+    const parsed = parseLocalDate(dateParam);
+    return isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export default function TerminKalender() {
     const toast = useToast();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -203,7 +212,7 @@ export default function TerminKalender() {
     const [eintraege, setEintraege] = useState<KalenderEintrag[]>([]);
     const [teamAbwesenheiten, setTeamAbwesenheiten] = useState<TeamAbwesenheit[]>([]);
     const [feiertage, setFeiertage] = useState<Feiertag[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [ladeFehler, setLadeFehler] = useState<string | null>(null);
     const [neuLadenZaehler, setNeuLadenZaehler] = useState(0);
     const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -235,44 +244,53 @@ export default function TerminKalender() {
             .catch(() => toast.error('Die Mitarbeiterliste für die Teilnehmer konnte nicht geladen werden.'));
     }, [toast]);
 
-    // Lädt Termine, Abwesenheiten und Feiertage genau für den sichtbaren Zeitraum.
-    const laden = useCallback(async (zeitraumVon: string, zeitraumBis: string) => {
-        const nummer = ++ladeNummer.current;
+    // Anderer Zeitraum oder „Neu laden“: Ladeanzeige an und alten Fehler weg, bevor der Effekt lädt.
+    const [ladeAnlass, setLadeAnlass] = useState({ von, bis, neuLadenZaehler });
+    if (ladeAnlass.von !== von || ladeAnlass.bis !== bis || ladeAnlass.neuLadenZaehler !== neuLadenZaehler) {
+        setLadeAnlass({ von, bis, neuLadenZaehler });
         setLoading(true);
         setLadeFehler(null);
-        try {
-            const mitarbeiterId = getCurrentUserMitarbeiterId();
-            const params = new URLSearchParams({ von: zeitraumVon, bis: zeitraumBis });
-            if (mitarbeiterId) params.set('mitarbeiterId', String(mitarbeiterId));
-            const jahre = jahreImZeitraum({ von: zeitraumVon, bis: zeitraumBis });
-            const [kalenderRes, abwesenheitRes, ...feiertagRes] = await Promise.all([
-                fetch(`/api/kalender?${params.toString()}`),
-                fetch(`/api/abwesenheit/team?von=${zeitraumVon}&bis=${zeitraumBis}`).catch(() => null),
-                ...jahre.map(jahr => fetch(`/api/zeiterfassung/feiertage?jahr=${jahr}`).catch(() => null)),
-            ]);
-            if (!kalenderRes.ok) {
-                throw new Error(await leseFehlermeldung(kalenderRes, 'Die Termine konnten nicht geladen werden.'));
-            }
-            const kalenderDaten = await kalenderRes.json();
-            const abwesenheitDaten = abwesenheitRes?.ok ? await abwesenheitRes.json().catch(() => []) : [];
-            const feiertagDaten = await Promise.all(feiertagRes.map(res => res?.ok ? res.json().catch(() => []) : []));
-            if (nummer !== ladeNummer.current) return; // Inzwischen wurde weitergeblättert.
-            setEintraege(Array.isArray(kalenderDaten) ? kalenderDaten : []);
-            setTeamAbwesenheiten(Array.isArray(abwesenheitDaten) ? abwesenheitDaten : []);
-            setFeiertage(feiertagDaten.flatMap(daten => Array.isArray(daten) ? daten as Feiertag[] : []));
-        } catch (err) {
-            if (nummer !== ladeNummer.current) return;
-            // fetch wirft TypeError, wenn der Server nicht erreichbar ist.
-            const text = err instanceof TypeError || !(err instanceof Error) || !err.message
-                ? 'Die Termine konnten nicht geladen werden. Bitte die Verbindung prüfen.'
-                : err.message;
-            setEintraege([]);
-            setTeamAbwesenheiten([]);
-            setLadeFehler(text);
-            toast.error(text);
-        } finally {
-            if (nummer === ladeNummer.current) setLoading(false);
-        }
+    }
+
+    // Lädt Termine, Abwesenheiten und Feiertage genau für den sichtbaren Zeitraum.
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antworten da sind.
+    const laden = useCallback((zeitraumVon: string, zeitraumBis: string) => {
+        const nummer = ++ladeNummer.current;
+        const mitarbeiterId = getCurrentUserMitarbeiterId();
+        const params = new URLSearchParams({ von: zeitraumVon, bis: zeitraumBis });
+        if (mitarbeiterId) params.set('mitarbeiterId', String(mitarbeiterId));
+        const jahre = jahreImZeitraum({ von: zeitraumVon, bis: zeitraumBis });
+        return Promise.all([
+            fetch(`/api/kalender?${params.toString()}`),
+            fetch(`/api/abwesenheit/team?von=${zeitraumVon}&bis=${zeitraumBis}`).catch(() => null),
+            ...jahre.map(jahr => fetch(`/api/zeiterfassung/feiertage?jahr=${jahr}`).catch(() => null)),
+        ])
+            .then(async ([kalenderRes, abwesenheitRes, ...feiertagRes]) => {
+                if (!kalenderRes.ok) {
+                    throw new Error(await leseFehlermeldung(kalenderRes, 'Die Termine konnten nicht geladen werden.'));
+                }
+                const kalenderDaten = await kalenderRes.json();
+                const abwesenheitDaten = abwesenheitRes?.ok ? await abwesenheitRes.json().catch(() => []) : [];
+                const feiertagDaten = await Promise.all(feiertagRes.map(res => res?.ok ? res.json().catch(() => []) : []));
+                if (nummer !== ladeNummer.current) return; // Inzwischen wurde weitergeblättert.
+                setEintraege(Array.isArray(kalenderDaten) ? kalenderDaten : []);
+                setTeamAbwesenheiten(Array.isArray(abwesenheitDaten) ? abwesenheitDaten : []);
+                setFeiertage(feiertagDaten.flatMap(daten => Array.isArray(daten) ? daten as Feiertag[] : []));
+            })
+            .catch((err) => {
+                if (nummer !== ladeNummer.current) return;
+                // fetch wirft TypeError, wenn der Server nicht erreichbar ist.
+                const text = err instanceof TypeError || !(err instanceof Error) || !err.message
+                    ? 'Die Termine konnten nicht geladen werden. Bitte die Verbindung prüfen.'
+                    : err.message;
+                setEintraege([]);
+                setTeamAbwesenheiten([]);
+                setLadeFehler(text);
+                toast.error(text);
+            })
+            .finally(() => {
+                if (nummer === ladeNummer.current) setLoading(false);
+            });
     }, [toast]);
 
     useEffect(() => {
@@ -280,15 +298,18 @@ export default function TerminKalender() {
     }, [laden, von, bis, neuLadenZaehler]);
 
     // Deep-link: navigate to specific date from URL param ?date=2026-03-06
+    // Gültiges Datum beim Rendern übernehmen; die Adresszeile räumt der Effekt danach auf.
+    const [ausgewerteteParams, setAusgewerteteParams] = useState<URLSearchParams | null>(null);
+    if (ausgewerteteParams !== searchParams) {
+        setAusgewerteteParams(searchParams);
+        const datum = deepLinkDatumAus(searchParams);
+        if (datum) {
+            setStichtag(datum);
+            setAnsicht('tag');
+        }
+    }
     useEffect(() => {
-        const dateParam = searchParams.get('date');
-        if (!dateParam) return;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return;
-        const parsed = parseLocalDate(dateParam);
-        if (isNaN(parsed.getTime())) return;
-        setStichtag(parsed);
-        setAnsicht('tag');
-        setSearchParams({}, { replace: true });
+        if (deepLinkDatumAus(searchParams)) setSearchParams({}, { replace: true });
     }, [searchParams, setSearchParams]);
 
     // Inhalte je Tag: echte Termine, Abwesenheiten und Feiertage getrennt.

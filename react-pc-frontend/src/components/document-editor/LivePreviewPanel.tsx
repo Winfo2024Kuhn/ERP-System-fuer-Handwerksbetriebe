@@ -54,127 +54,138 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
     /**
      * Rendert alle Seiten des PDFs als Canvas-Elemente.
      */
-    const renderPdf = useCallback(async (url: string) => {
-        const pdfjsLib = await ladePdfjs();
-        if (!pdfjsLib) {
-            console.warn('PDF.js nicht verfügbar – verwende iframe Fallback');
-            setUseFallback(true);
-            return;
-        }
-
-        if (!canvasContainerRef.current || !scrollContainerRef.current) return;
-        // Wenn schon ein Render läuft: neueste URL merken, läuft danach automatisch
-        if (renderingRef.current) {
-            pendingUrlRef.current = url;
-            return;
-        }
-        renderingRef.current = true;
-        setError(null);
-
-        // Scroll-Position als Fraktion merken (0–1)
-        const scrollEl = scrollContainerRef.current;
-        if (prevUrlRef.current && scrollEl.scrollHeight > scrollEl.clientHeight) {
-            scrollFractionRef.current = scrollEl.scrollTop / (scrollEl.scrollHeight - scrollEl.clientHeight);
-        }
-        prevUrlRef.current = url;
-
-        try {
-            // PDF-Daten laden
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.arrayBuffer();
-
-            // Altes Dokument aufräumen
-            if (pdfDocRef.current) {
-                try { pdfDocRef.current.destroy(); } catch { /* ok */ }
+    // Als Promise-Kette: alle Zustandsänderungen laufen erst nach dem Laden von PDF.js.
+    const renderPdf = useCallback((url: string) => ladePdfjs().then(async (pdfjsLib) => {
+            if (!pdfjsLib) {
+                console.warn('PDF.js nicht verfügbar – verwende iframe Fallback');
+                setUseFallback(true);
+                return;
             }
 
-            const loadingTask = pdfjsLib.getDocument({ data });
-            const doc = await loadingTask.promise;
-            pdfDocRef.current = doc;
-            setPageCount(doc.numPages);
+            if (!canvasContainerRef.current || !scrollContainerRef.current) return;
+            // Wenn schon ein Render läuft: neueste URL merken, läuft danach automatisch
+            if (renderingRef.current) {
+                pendingUrlRef.current = url;
+                return;
+            }
+            renderingRef.current = true;
+            setError(null);
 
-            const container = canvasContainerRef.current;
-            if (!container) { renderingRef.current = false; return; }
+            // Scroll-Position als Fraktion merken (0–1)
+            const scrollEl = scrollContainerRef.current;
+            if (prevUrlRef.current && scrollEl.scrollHeight > scrollEl.clientHeight) {
+                scrollFractionRef.current = scrollEl.scrollTop / (scrollEl.scrollHeight - scrollEl.clientHeight);
+            }
+            prevUrlRef.current = url;
 
-            // Container-Breite
-            const containerWidth = container.clientWidth;
-            if (containerWidth <= 0) { renderingRef.current = false; return; }
+            try {
+                // PDF-Daten laden
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.arrayBuffer();
 
-            // Alte Canvases entfernen
-            container.innerHTML = '';
-
-            // Seiten nacheinander rendern
-            for (let i = 1; i <= doc.numPages; i++) {
-                const page = await doc.getPage(i);
-                const defaultViewport = page.getViewport({ scale: 1 });
-
-                // Scale: PDF-Seite auf Container-Breite skalieren
-                const scale = containerWidth / defaultViewport.width;
-                const viewport = page.getViewport({ scale });
-
-                const canvas = document.createElement('canvas');
-
-                // HiDPI für scharfe Darstellung
-                const dpr = window.devicePixelRatio || 1;
-                canvas.width = Math.floor(viewport.width * dpr);
-                canvas.height = Math.floor(viewport.height * dpr);
-                canvas.style.width = `${Math.floor(viewport.width)}px`;
-                canvas.style.height = `${Math.floor(viewport.height)}px`;
-                canvas.style.display = 'block';
-
-                // Seiten-Wrapper
-                const wrapper = document.createElement('div');
-                wrapper.style.background = 'white';
-                wrapper.style.lineHeight = '0';
-                if (i < doc.numPages) {
-                    wrapper.style.marginBottom = '2px';
+                // Altes Dokument aufräumen
+                if (pdfDocRef.current) {
+                    try { pdfDocRef.current.destroy(); } catch { /* ok */ }
                 }
-                wrapper.appendChild(canvas);
-                container.appendChild(wrapper);
 
-                // Rendern
-                await page.render({ canvas, viewport, transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0] }).promise;
-            }
+                const loadingTask = pdfjsLib.getDocument({ data });
+                const doc = await loadingTask.promise;
+                pdfDocRef.current = doc;
+                setPageCount(doc.numPages);
 
-            // Scroll-Position wiederherstellen
-            requestAnimationFrame(() => {
-                if (scrollEl && scrollEl.scrollHeight > scrollEl.clientHeight && scrollFractionRef.current > 0) {
-                    const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
-                    scrollEl.scrollTop = Math.round(scrollFractionRef.current * maxScroll);
+                const container = canvasContainerRef.current;
+                if (!container) { renderingRef.current = false; return; }
+
+                // Container-Breite
+                const containerWidth = container.clientWidth;
+                if (containerWidth <= 0) { renderingRef.current = false; return; }
+
+                // Alte Canvases entfernen
+                container.innerHTML = '';
+
+                // Seiten nacheinander rendern
+                for (let i = 1; i <= doc.numPages; i++) {
+                    const page = await doc.getPage(i);
+                    const defaultViewport = page.getViewport({ scale: 1 });
+
+                    // Scale: PDF-Seite auf Container-Breite skalieren
+                    const scale = containerWidth / defaultViewport.width;
+                    const viewport = page.getViewport({ scale });
+
+                    const canvas = document.createElement('canvas');
+
+                    // HiDPI für scharfe Darstellung
+                    const dpr = window.devicePixelRatio || 1;
+                    canvas.width = Math.floor(viewport.width * dpr);
+                    canvas.height = Math.floor(viewport.height * dpr);
+                    canvas.style.width = `${Math.floor(viewport.width)}px`;
+                    canvas.style.height = `${Math.floor(viewport.height)}px`;
+                    canvas.style.display = 'block';
+
+                    // Seiten-Wrapper
+                    const wrapper = document.createElement('div');
+                    wrapper.style.background = 'white';
+                    wrapper.style.lineHeight = '0';
+                    if (i < doc.numPages) {
+                        wrapper.style.marginBottom = '2px';
+                    }
+                    wrapper.appendChild(canvas);
+                    container.appendChild(wrapper);
+
+                    // Rendern
+                    await page.render({ canvas, viewport, transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0] }).promise;
                 }
-            });
 
-            // Erst JETZT — nach allen Seiten + Scroll-Restore — gilt das PDF als fertig gerendert.
-            // Skelett wird ausgeblendet (siehe isRendering unten).
-            setRenderedUrl(url);
+                // Scroll-Position wiederherstellen
+                requestAnimationFrame(() => {
+                    if (scrollEl && scrollEl.scrollHeight > scrollEl.clientHeight && scrollFractionRef.current > 0) {
+                        const maxScroll = scrollEl.scrollHeight - scrollEl.clientHeight;
+                        scrollEl.scrollTop = Math.round(scrollFractionRef.current * maxScroll);
+                    }
+                });
 
-        } catch (err) {
-            console.error('PDF Render-Fehler:', err);
-            setError('PDF konnte nicht gerendert werden');
-            // Fallback auf iframe
-            setUseFallback(true);
-        } finally {
-            renderingRef.current = false;
-            // Wurde während des Renderings eine neuere URL angefragt? → jetzt ausführen
-            const pending = pendingUrlRef.current;
-            if (pending && pending !== url) {
-                pendingUrlRef.current = null;
-                renderPdfRef.current?.(pending);
-            } else {
-                pendingUrlRef.current = null;
+                // Erst JETZT — nach allen Seiten + Scroll-Restore — gilt das PDF als fertig gerendert.
+                // Skelett wird ausgeblendet (siehe isRendering unten).
+                setRenderedUrl(url);
+
+            } catch (err) {
+                console.error('PDF Render-Fehler:', err);
+                setError('PDF konnte nicht gerendert werden');
+                // Fallback auf iframe
+                setUseFallback(true);
+            } finally {
+                renderingRef.current = false;
+                // Wurde während des Renderings eine neuere URL angefragt? → jetzt ausführen
+                const pending = pendingUrlRef.current;
+                if (pending && pending !== url) {
+                    pendingUrlRef.current = null;
+                    renderPdfRef.current?.(pending);
+                } else {
+                    pendingUrlRef.current = null;
+                }
             }
+    }), []);
+    // Neueste Fassung für den Selbstaufruf (wartende URL) – nicht beim Rendern schreiben.
+    useEffect(() => {
+        renderPdfRef.current = renderPdf;
+    }, [renderPdf]);
+
+    // Vorschau weg: Seitenzahl und Fertig-Markierungen beim Rendern zurücksetzen.
+    const [previewUrlVorher, setPreviewUrlVorher] = useState(previewUrl);
+    if (previewUrl !== previewUrlVorher) {
+        setPreviewUrlVorher(previewUrl);
+        if (!previewUrl) {
+            setPageCount(0);
+            setRenderedUrl(null);
+            setIframeLoadedUrl(null);
         }
-    }, []);
-    renderPdfRef.current = renderPdf;
+    }
 
     // PDF rendern wenn sich die URL ändert
     useEffect(() => {
         if (!previewUrl) {
             if (canvasContainerRef.current) canvasContainerRef.current.innerHTML = '';
-            setPageCount(0);
-            setRenderedUrl(null);
-            setIframeLoadedUrl(null);
             if (pdfDocRef.current) {
                 try { pdfDocRef.current.destroy(); } catch { /* ok */ }
                 pdfDocRef.current = null;
@@ -185,7 +196,7 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
         if (useFallback) return; // Im Fallback-Modus: iframe kümmert sich
 
         // Skelett bleibt sichtbar, bis renderPdf fertig ist und renderedUrl=previewUrl setzt.
-        renderPdf(previewUrl);
+        void renderPdf(previewUrl);
     }, [previewUrl, renderPdf, useFallback]);
 
     // Resize-Handler
@@ -216,16 +227,25 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
     const [shouldRender, setShouldRender] = useState(isOpen);
     const [animationState, setAnimationState] = useState<'entering' | 'visible' | 'exiting' | 'hidden'>(isOpen ? 'entering' : 'hidden');
 
-    useEffect(() => {
+    // Öffnen/Schließen: Startzustand der Animation beim Rendern setzen.
+    const [warOffen, setWarOffen] = useState(isOpen);
+    if (isOpen !== warOffen) {
+        setWarOffen(isOpen);
         if (isOpen) {
             setShouldRender(true);
+            setAnimationState('entering');
+        } else {
+            setAnimationState('exiting');
+        }
+    }
+
+    useEffect(() => {
+        if (isOpen) {
             // Start entering on next frame so the initial styles apply first
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => setAnimationState('visible'));
             });
-            setAnimationState('entering');
         } else {
-            setAnimationState('exiting');
             const timer = setTimeout(() => {
                 setShouldRender(false);
                 setAnimationState('hidden');

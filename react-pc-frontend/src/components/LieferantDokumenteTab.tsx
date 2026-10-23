@@ -176,35 +176,42 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
         }
     };
 
-    // Dokumente laden falls nicht übergeben
-    useEffect(() => {
-        if (!initialDokumente) {
-            loadDokumente();
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [lieferantId, initialDokumente]);
+    const ladeDokumente = useCallback(() => fetch(`/api/lieferanten/${lieferantId}/dokumente`)
+        .then(async (res) => {
+            if (!res.ok) return;
+            const data: LieferantDokument[] = await res.json();
+            setDokumente(data);
+            // Ein offenes Bearbeiten-Fenster bekommt den frischen Stand (z. B. die neue
+            // Projekt-Zuordnung); es befüllt sein Formular nur bei anderer ID neu.
+            setSelectedDokument(prev => (prev ? data.find(d => d.id === prev.id) ?? prev : prev));
+        })
+        .catch((err: unknown) => {
+            console.error("Fehler beim Laden der Dokumente", err);
+        })
+        .finally(() => setLoading(false)), [lieferantId]);
 
     /**
      * Lädt die Dokumente neu. `still` = ohne Ladeanzeige: Die Ladeanzeige ersetzt den
      * ganzen Reiter und würde ein offenes Bearbeiten-Fenster samt Eingaben schließen.
      */
-    const loadDokumente = useCallback(async ({ still = false }: { still?: boolean } = {}) => {
+    const loadDokumente = ({ still = false }: { still?: boolean } = {}) => {
         if (!still) setLoading(true);
-        try {
-            const res = await fetch(`/api/lieferanten/${lieferantId}/dokumente`);
-            if (res.ok) {
-                const data: LieferantDokument[] = await res.json();
-                setDokumente(data);
-                // Ein offenes Bearbeiten-Fenster bekommt den frischen Stand (z. B. die neue
-                // Projekt-Zuordnung); es befüllt sein Formular nur bei anderer ID neu.
-                setSelectedDokument(prev => (prev ? data.find(d => d.id === prev.id) ?? prev : prev));
-            }
-        } catch (err) {
-            console.error("Fehler beim Laden der Dokumente", err);
-        } finally {
-            setLoading(false);
+        return ladeDokumente();
+    };
+
+    // Anderer Lieferant ohne mitgegebene Dokumente: sofort die Ladeanzeige zeigen.
+    const [ladeQuelle, setLadeQuelle] = useState({ lieferantId, initialDokumente });
+    if (ladeQuelle.lieferantId !== lieferantId || ladeQuelle.initialDokumente !== initialDokumente) {
+        setLadeQuelle({ lieferantId, initialDokumente });
+        if (!initialDokumente) setLoading(true);
+    }
+
+    // Dokumente laden falls nicht übergeben
+    useEffect(() => {
+        if (!initialDokumente) {
+            void ladeDokumente();
         }
-    }, [lieferantId]);
+    }, [ladeDokumente, initialDokumente]);
 
     // Fehler der Positionssuche nur einmal melden – sonst käme bei jedem Tastendruck ein neuer Toast
     const positionsFehlerGemeldet = useRef(false);
@@ -233,9 +240,7 @@ export default function LieferantDokumenteTab({ lieferantId, lieferantName, doku
             window.clearTimeout(timer);
             controller.abort();
         };
-        // toast ist bei jedem Render ein neues Objekt – die Suche hängt nur an Begriff und Lieferant
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [suche, lieferantId]);
+    }, [suche, lieferantId, toast]);
 
     // Nur Treffer zum aktuellen Suchbegriff zählen – alte Antworten bleiben außen vor
     const positionsTreffer = positionsSucheAktiv(suche) && positionsErgebnis?.suche === suche

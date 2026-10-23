@@ -85,19 +85,27 @@ export function BeitraegeTab({ onNeuerBeitrag, neuLadenSignal = 0 }: BeitraegeTa
     // Direkt-Upload von der Festplatte: Text des laufenden Fortschritts, sonst null.
     const [direktHochladen, setDirektHochladen] = useState<string | null>(null);
 
-    const ladeListe = useCallback(async () => {
+    const holeListe = useCallback(() => ladeBeitraege()
+        .then(setListe)
+        .catch((e: unknown) => { setFehler(fehlertext(e)); })
+        .finally(() => setLaedtListe(false)), []);
+
+    /** Lädt die Liste neu und zeigt dabei die Ladeanzeige. */
+    const ladeListe = () => {
         setLaedtListe(true);
         setFehler(null);
-        try {
-            setListe(await ladeBeitraege());
-        } catch (e) {
-            setFehler(fehlertext(e));
-        } finally {
-            setLaedtListe(false);
-        }
-    }, []);
+        return holeListe();
+    };
 
-    useEffect(() => { void ladeListe(); }, [ladeListe, neuLadenSignal]);
+    // Neues Signal von außen (z. B. Beitrag im Assistenten angelegt): sofort wieder „wird geladen“.
+    const [geladenFuerSignal, setGeladenFuerSignal] = useState(neuLadenSignal);
+    if (geladenFuerSignal !== neuLadenSignal) {
+        setGeladenFuerSignal(neuLadenSignal);
+        setLaedtListe(true);
+        setFehler(null);
+    }
+
+    useEffect(() => { void holeListe(); }, [holeListe, neuLadenSignal]);
 
     /** Uebernimmt einen frisch geladenen oder zurueckgegebenen Beitrag in die Felder. */
     const uebernehmen = useCallback((beitrag: BeitragDetail) => {

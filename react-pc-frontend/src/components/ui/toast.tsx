@@ -69,25 +69,31 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         return () => { pending.forEach(clearTimeout); pending.clear(); };
     }, []);
 
+    const zeigen = useCallback((type: ToastType, fallback: number, message: string, dauerOderOptionen?: number | ToastOptionen) => {
+        const optionen: ToastOptionen = typeof dauerOderOptionen === 'number'
+            ? { dauerMs: dauerOderOptionen }
+            : dauerOderOptionen ?? {};
+        const id = ++nextId.current;
+        setMessages(current => [...current, { id, type, message, aktion: optionen.aktion, schluessel: optionen.schluessel }]);
+        timers.current.set(id, setTimeout(() => dismiss(id), Math.max(0, optionen.dauerMs ?? fallback)));
+    }, [dismiss]);
+
+    const schliessen = useCallback((schluessel: string) => {
+        setMessages(current => {
+            for (const m of current) if (m.schluessel === schluessel) { clearTimeout(timers.current.get(m.id)); timers.current.delete(m.id); }
+            return current.filter(m => m.schluessel !== schluessel);
+        });
+    }, []);
+
     // Stabile Referenz: Meldungen dürfen Effekte der Verbraucher nicht erneut
     // auslösen und dabei deren ungespeicherte Formularentwürfe überschreiben.
-    const api = useMemo<ToastApi>(() => {
-        const add = (type: ToastType, fallback: number) => (message: string, dauerOderOptionen?: number | ToastOptionen) => {
-            const optionen: ToastOptionen = typeof dauerOderOptionen === 'number'
-                ? { dauerMs: dauerOderOptionen }
-                : dauerOderOptionen ?? {};
-            const id = ++nextId.current;
-            setMessages(current => [...current, { id, type, message, aktion: optionen.aktion, schluessel: optionen.schluessel }]);
-            timers.current.set(id, setTimeout(() => dismiss(id), Math.max(0, optionen.dauerMs ?? fallback)));
-        };
-        const schliessen = (schluessel: string) => {
-            setMessages(current => {
-                for (const m of current) if (m.schluessel === schluessel) { clearTimeout(timers.current.get(m.id)); timers.current.delete(m.id); }
-                return current.filter(m => m.schluessel !== schluessel);
-            });
-        };
-        return { success: add('success', 4000), error: add('error', 5000), warning: add('warning', 5000), info: add('info', 4000), schliessen };
-    }, [dismiss]);
+    const api = useMemo<ToastApi>(() => ({
+        success: (message, dauerOderOptionen) => zeigen('success', 4000, message, dauerOderOptionen),
+        error: (message, dauerOderOptionen) => zeigen('error', 5000, message, dauerOderOptionen),
+        warning: (message, dauerOderOptionen) => zeigen('warning', 5000, message, dauerOderOptionen),
+        info: (message, dauerOderOptionen) => zeigen('info', 4000, message, dauerOderOptionen),
+        schliessen,
+    }), [zeigen, schliessen]);
 
     return <ToastContext.Provider value={api}>
         <div ref={noticeRef} data-testid="toast-container" data-pc-toasts role="region" aria-label="Meldungen" tabIndex={messages.length ? 0 : -1}

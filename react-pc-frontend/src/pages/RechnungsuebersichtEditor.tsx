@@ -138,10 +138,15 @@ export default function RechnungsuebersichtEditor() {
     }, [selectedYear, selectedMonth, searchQuery, loadData]);
 
     // Clear selections when tab or filter changes
-    useEffect(() => {
+    const [auswahlAnsicht, setAuswahlAnsicht] = useState({ activeTab, selectedYear, selectedMonth, searchQuery });
+    if (auswahlAnsicht.activeTab !== activeTab
+        || auswahlAnsicht.selectedYear !== selectedYear
+        || auswahlAnsicht.selectedMonth !== selectedMonth
+        || auswahlAnsicht.searchQuery !== searchQuery) {
+        setAuswahlAnsicht({ activeTab, selectedYear, selectedMonth, searchQuery });
         setSelectedAusgang(new Set());
         setSelectedEingang(new Set());
-    }, [activeTab, selectedYear, selectedMonth, searchQuery]);
+    }
 
     // Calculate totals and KPI stats
     const ausgangTotal = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { type Kostenposition, type Kostenstelle } from './types';
 import { MietabrechnungService } from './MietabrechnungService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
@@ -24,7 +24,7 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
     const confirmDialog = useConfirm();
     const [centers, setCenters] = useState<Kostenstelle[]>([]);
     const [positions, setPositions] = useState<(Kostenposition & { centerName?: string })[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [filterCenterId, setFilterCenterId] = useState<string>('all');
     const [filterYear, setFilterYear] = useState<string>(String(currentYear));
 
@@ -33,15 +33,15 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
     const [drafts, setDrafts] = useState({ jahr: String(currentYear), betrag: '0', faktor: '' });
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mietobjektId]);
-
-    const loadData = async () => {
+    // Beim Wechsel des Mietobjekts zeigt die Liste sofort wieder „wird geladen“.
+    const [geladenFuer, setGeladenFuer] = useState(mietobjektId);
+    if (geladenFuer !== mietobjektId) {
+        setGeladenFuer(mietobjektId);
         setLoading(true);
-        try {
-            const cs = await MietabrechnungService.getKostenstellen(mietobjektId);
+    }
+
+    const ladeDaten = useCallback(() => MietabrechnungService.getKostenstellen(mietobjektId)
+        .then(async cs => {
             setCenters(cs);
             const allPos: (Kostenposition & { centerName?: string })[] = [];
 
@@ -59,8 +59,16 @@ export function KostenpositionenView({ mietobjektId }: KostenpositionenViewProps
             });
             await Promise.all(centerPromises);
             setPositions(allPos);
+        })
+        .catch(() => { toast.error('Kostenstellen konnten nicht geladen werden.'); })
+        .finally(() => setLoading(false)), [mietobjektId, toast]);
 
-        } catch { toast.error('Kostenstellen konnten nicht geladen werden.'); } finally { setLoading(false); }
+    useEffect(() => { void ladeDaten(); }, [ladeDaten]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const loadData = () => {
+        setLoading(true);
+        return ladeDaten();
     };
 
     const handleNew = () => {

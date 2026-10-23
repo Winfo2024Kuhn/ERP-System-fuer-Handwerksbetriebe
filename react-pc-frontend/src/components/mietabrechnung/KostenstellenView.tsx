@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { type Kostenstelle, type Verteilungsschluessel } from './types';
 import { MietabrechnungService } from './MietabrechnungService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
@@ -17,7 +17,7 @@ export function KostenstellenView({ mietobjektId }: KostenstellenViewProps) {
     const confirmDialog = useConfirm();
     const [centers, setCenters] = useState<Kostenstelle[]>([]);
     const [keys, setKeys] = useState<Verteilungsschluessel[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     // Modals
     const [centerModalOpen, setCenterModalOpen] = useState(false);
@@ -25,21 +25,30 @@ export function KostenstellenView({ mietobjektId }: KostenstellenViewProps) {
     const [editCenter, setEditCenter] = useState<Kostenstelle | null>(null);
     const [editKey, setEditKey] = useState<Verteilungsschluessel | null>(null);
 
-    useEffect(() => {
-        loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mietobjektId]);
-
-    const loadData = async () => {
+    // Beim Wechsel des Mietobjekts zeigt die Liste sofort wieder „wird geladen“.
+    const [geladenFuer, setGeladenFuer] = useState(mietobjektId);
+    if (geladenFuer !== mietobjektId) {
+        setGeladenFuer(mietobjektId);
         setLoading(true);
-        try {
-            const [c, k] = await Promise.all([
-                MietabrechnungService.getKostenstellen(mietobjektId),
-                MietabrechnungService.getVerteilungsschluessel(mietobjektId)
-            ]);
+    }
+
+    const ladeDaten = useCallback(() => Promise.all([
+        MietabrechnungService.getKostenstellen(mietobjektId),
+        MietabrechnungService.getVerteilungsschluessel(mietobjektId)
+    ])
+        .then(([c, k]) => {
             setCenters(c);
             setKeys(k);
-        } catch (err) { console.error(err); } finally { setLoading(false); }
+        })
+        .catch((err: unknown) => { console.error(err); })
+        .finally(() => setLoading(false)), [mietobjektId]);
+
+    useEffect(() => { void ladeDaten(); }, [ladeDaten]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const loadData = () => {
+        setLoading(true);
+        return ladeDaten();
     };
 
     // --- Center Handlers ---

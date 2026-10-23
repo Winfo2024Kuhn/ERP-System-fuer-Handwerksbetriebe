@@ -139,12 +139,18 @@ export function ServiceBlock({
     const menge = useZahlEntwurf(block.quantity, 'Menge', (quantity) => onUpdate(block.id, { quantity }));
     const preis = useZahlEntwurf(block.price, 'Einzelpreis', (price) => onUpdate(block.id, { price }));
 
+    // Keine Leistung oder keine Menge mehr: alte Zeitprognose beim Rendern verwerfen.
+    const prognoseMoeglich = !!block.leistungId && !!block.quantity && block.quantity > 0;
+    const prognoseSchluessel = `${block.leistungId ?? ''}|${block.quantity ?? ''}`;
+    const [prognoseSchluesselVorher, setPrognoseSchluesselVorher] = useState(prognoseSchluessel);
+    if (prognoseSchluessel !== prognoseSchluesselVorher) {
+        setPrognoseSchluesselVorher(prognoseSchluessel);
+        if (!prognoseMoeglich) setZeitprognose(null);
+    }
+
     // Fetch time prediction when leistungId or quantity changes
     useEffect(() => {
-        if (!block.leistungId || !block.quantity || block.quantity <= 0) {
-            setZeitprognose(null);
-            return;
-        }
+        if (!block.leistungId || !block.quantity || block.quantity <= 0) return;
 
         if (debounceRef.current) clearTimeout(debounceRef.current);
 

@@ -195,7 +195,7 @@ export default function ArbeitsgangEditor() {
     const [abteilungen, setAbteilungen] = useState<Abteilung[]>([]);
     const [arbeitsgaenge, setArbeitsgaenge] = useState<Arbeitsgang[]>([]);
     const [selectedAbteilungId, setSelectedAbteilungId] = useState<number | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [newBeschreibung, setNewBeschreibung] = useState('');
     const [creatingArbeitsgang, setCreatingArbeitsgang] = useState(false);
 
@@ -224,42 +224,44 @@ export default function ArbeitsgangEditor() {
         return abteilungen.find(a => a.id === selectedAbteilungId) || null;
     }, [abteilungen, selectedAbteilungId]);
 
-    // Load data
-    const loadData = useCallback(async () => {
+    // Load data – Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    const ladeDaten = useCallback(() =>
+        Promise.all([
+            fetch('/api/abteilungen'),
+            fetch('/api/arbeitsgaenge')
+        ])
+            .then(async ([abtRes, agRes]) => {
+                if (abtRes.ok) {
+                    const data = await abtRes.json();
+                    setAbteilungen(Array.isArray(data) ? data : []);
+                }
+                if (agRes.ok) {
+                    const data = await agRes.json();
+                    setArbeitsgaenge(Array.isArray(data) ? data : []);
+                }
+            })
+            .catch((err: unknown) => {
+                console.error('Fehler beim Laden:', err);
+            })
+            .finally(() => {
+                setLoading(false);
+            }),
+    []);
+
+    /** Neu laden nach einer Änderung bzw. auf Knopfdruck – mit Ladehinweis. */
+    const loadData = useCallback(() => {
         setLoading(true);
-        try {
-            const [abtRes, agRes] = await Promise.all([
-                fetch('/api/abteilungen'),
-                fetch('/api/arbeitsgaenge')
-            ]);
-
-            if (abtRes.ok) {
-                const data = await abtRes.json();
-                setAbteilungen(Array.isArray(data) ? data : []);
-            }
-            if (agRes.ok) {
-                const data = await agRes.json();
-                setArbeitsgaenge(Array.isArray(data) ? data : []);
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden:', err);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+        return ladeDaten();
+    }, [ladeDaten]);
 
     useEffect(() => {
-        loadData();
-    }, [loadData]);
+        void ladeDaten();
+    }, [ladeDaten]);
 
-    // Auto-select first abteilung
-    useEffect(() => {
-        if (abteilungen.length > 0 && selectedAbteilungId === null) {
-            setSelectedAbteilungId(abteilungen[0].id);
-        } else if (abteilungen.length > 0 && !abteilungen.some(a => a.id === selectedAbteilungId)) {
-            setSelectedAbteilungId(abteilungen[0].id);
-        }
-    }, [abteilungen, selectedAbteilungId]);
+    // Auto-select first abteilung (auch wenn die gewählte nicht mehr existiert)
+    if (abteilungen.length > 0 && (selectedAbteilungId === null || !abteilungen.some(a => a.id === selectedAbteilungId))) {
+        setSelectedAbteilungId(abteilungen[0].id);
+    }
 
     // Create Arbeitsgang
     const handleCreateArbeitsgang = async () => {

@@ -22,9 +22,12 @@ export function LieferantNotizenTab({ lieferantId, notizen: initialNotizen, onNo
     const [newText, setNewText] = useState('');
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
+    // Kommen neue Notizen von außen (z. B. nach dem Neuladen der Seite), die Liste damit ersetzen.
+    const [notizenVonAussen, setNotizenVonAussen] = useState(initialNotizen);
+    if (notizenVonAussen !== initialNotizen) {
+        setNotizenVonAussen(initialNotizen);
         setNotizen(initialNotizen || []);
-    }, [initialNotizen]);
+    }
 
     const loadNotizen = useCallback(async (query?: string) => {
         try {

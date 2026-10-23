@@ -63,22 +63,20 @@ export function ResturlaubKarte({ onSaved }: { onSaved?: () => void }) {
     const [speichert, setSpeichert] = useState(false);
     const [fehler, setFehler] = useState('');
 
-    const laden = useCallback(async () => {
-        setLaedt(true);
-        setLadeFehler('');
-        try {
-            const regel = bereinige(await zeiterfassungApi.ladeUrlaubsverfall());
+    // Ladeanzeige und Fehler setzt „Erneut laden“ vorab zurück; beim ersten Laden stimmen die Startwerte.
+    const laden = useCallback(() => zeiterfassungApi.ladeUrlaubsverfall()
+        .then((daten) => {
+            const regel = bereinige(daten);
             setGespeichert(regel);
             setEntwurf(regel);
             setFehler('');
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             const text = meldung(err, 'Die Regel für Resturlaub konnte nicht geladen werden.');
             setLadeFehler(text);
             toast.error(text);
-        } finally {
-            setLaedt(false);
-        }
-    }, [toast]);
+        })
+        .finally(() => setLaedt(false)), [toast]);
 
     useEffect(() => { void laden(); }, [laden]);
 
@@ -158,7 +156,7 @@ export function ResturlaubKarte({ onSaved }: { onSaved?: () => void }) {
             ) : ladeFehler ? (
                 <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                     {ladeFehler}
-                    <Button variant="outline" size="sm" onClick={() => void laden()}>Erneut laden</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setLaedt(true); setLadeFehler(''); void laden(); }}>Erneut laden</Button>
                 </div>
             ) : (
                 <fieldset disabled={speichert} aria-label="Regel für Resturlaub" className="min-w-0 space-y-4">

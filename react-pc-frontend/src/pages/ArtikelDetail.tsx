@@ -105,40 +105,57 @@ export default function ArtikelDetail() {
     // Stammdaten bearbeiten (Name, Nummern, Einheit, Kategorie, Maße ...)
     const [stammdatenBearbeiten, setStammdatenBearbeiten] = useState(false);
 
-    const laden = useCallback(async () => {
-        if (!id) return;
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    // Den Ladezustand schalten die Auslöser an: `laden` (Knöpfe, nach dem
+    // Speichern) bzw. die Render-Anpassung bei einem anderen Artikel.
+    const ladeDaten = useCallback(() => {
+        if (!id) return Promise.resolve();
         // Beim Auffrischen bleibt die Seite stehen (kein Skeleton, Reiter und
         // Eingaben bleiben); nur ein Fehler wird gemeldet.
         const auffrischen = geladeneId.current === id;
-        setLaedt(true);
-        if (!auffrischen) setFehler(null);
-        try {
-            const res = await fetch(`/api/artikel/${encodeURIComponent(id)}/detail`);
-            if (res.status === 404) {
-                geladeneId.current = null;
-                setFehler("Dieser Artikel wurde nicht gefunden.");
-                setDaten(null);
-                return;
-            }
-            if (!res.ok) throw new Error("Laden fehlgeschlagen");
-            setDaten(await res.json());
-            setDatenFuer(id);
-            setFehler(null);
-            geladeneId.current = id;
-        } catch (err) {
-            console.error(err);
-            if (auffrischen) toast.error("Die Artikeldaten konnten nicht neu geladen werden.");
-            else setFehler("Die Artikeldaten konnten nicht geladen werden.");
-        } finally {
-            setLaedt(false);
-        }
-        // toast bewusst nicht in den Abhaengigkeiten: useToast() liefert bei jedem
-        // Render des ToastProvider ein neues Objekt. Sonst loeste jeder Toast in der
-        // App ein erneutes Laden aus (siehe ArtikelDokumente).
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id]);
+        return fetch(`/api/artikel/${encodeURIComponent(id)}/detail`)
+            .then(async (res) => {
+                if (res.status === 404) {
+                    geladeneId.current = null;
+                    setFehler("Dieser Artikel wurde nicht gefunden.");
+                    setDaten(null);
+                    return;
+                }
+                if (!res.ok) throw new Error("Laden fehlgeschlagen");
+                setDaten(await res.json());
+                setDatenFuer(id);
+                setFehler(null);
+                geladeneId.current = id;
+            })
+            .catch((err: unknown) => {
+                console.error(err);
+                if (auffrischen) toast.error("Die Artikeldaten konnten nicht neu geladen werden.");
+                else setFehler("Die Artikeldaten konnten nicht geladen werden.");
+            })
+            .finally(() => {
+                setLaedt(false);
+            });
+    }, [id, toast]);
 
-    useEffect(() => { laden(); }, [laden]);
+    /** Neu laden (Aktualisieren, nach dem Speichern): Ladezustand an, beim Erstladen alten Fehler weg. */
+    const laden = useCallback(() => {
+        if (!id) return Promise.resolve();
+        setLaedt(true);
+        if (geladeneId.current !== id) setFehler(null);
+        return ladeDaten();
+    }, [id, ladeDaten]);
+
+    // Anderer Artikel: sofort als „lädt“ zeigen und alten Fehler entfernen, bevor der Effekt neu lädt.
+    const [vorherigeId, setVorherigeId] = useState(id);
+    if (vorherigeId !== id) {
+        setVorherigeId(id);
+        if (id) {
+            setLaedt(true);
+            setFehler(null);
+        }
+    }
+
+    useEffect(() => { void ladeDaten(); }, [ladeDaten]);
 
     /**
      * Merkt sich, fuer welche Artikel-ID die Angebotsfelder zuletzt aus den

@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- baueMailText ist reine Textlogik und wird separat getestet (siehe EmailComposeForm.tsx, gleiches Muster) */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Calendar, FileText, User, CheckCircle, Trash, Plus, Mail, Loader2 } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
@@ -146,24 +146,32 @@ export function LieferantReklamationenTab({ lieferantId, lieferantName, lieferan
     const [reklamationsMail, setReklamationsMail] = useState<ReklamationsMail | null>(null);
     const [mailWirdVorbereitetId, setMailWirdVorbereitetId] = useState<number | null>(null);
 
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const res = await fetch(`/api/reklamationen/lieferant/${lieferantId}`);
+    const ladeReklamationen = useCallback(() => fetch(`/api/reklamationen/lieferant/${lieferantId}`)
+        .then(async (res) => {
             if (res.ok) {
                 const data = await res.json();
                 setReklamationen(data);
             }
-        } catch (err) {
-            console.error(err);
-        }
-        setLoading(false);
+        })
+        .catch((err: unknown) => { console.error(err); })
+        .finally(() => setLoading(false)), [lieferantId]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const loadData = () => {
+        setLoading(true);
+        return ladeReklamationen();
     };
 
+    // Anderer Lieferant: sofort wieder „wird geladen“ zeigen.
+    const [geladenFuer, setGeladenFuer] = useState(lieferantId);
+    if (geladenFuer !== lieferantId) {
+        setGeladenFuer(lieferantId);
+        setLoading(true);
+    }
+
     useEffect(() => {
-        loadData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [lieferantId]);
+        void ladeReklamationen();
+    }, [ladeReklamationen]);
 
     const handleImageClick = (rek: LieferantReklamation, clickedIndex: number) => {
         const images = rek.bilder.map(b => ({ url: b.url, name: b.originalDateiname }));

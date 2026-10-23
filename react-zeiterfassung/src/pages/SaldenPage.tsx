@@ -74,30 +74,70 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
 
-    const loadZeitkontoStatus = async () => {
+    // Beim Öffnen läuft die Prüfung schon (statusLoading startet mit true).
+    const holeZeitkontoStatus = (token: string) => fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
+        .then(res => {
+            if (!res.ok) throw new Error()
+            return res.json() as Promise<ZeitkontoStatus>
+        })
+        .then(data => {
+            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
+            setZeitkontoStatus(data)
+        })
+        .catch(() => setZeitkontoStatus(null))
+        .finally(() => setStatusLoading(false))
+
+    // Erneut-versuchen-Knopf
+    const loadZeitkontoStatus = () => {
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) return
         setStatusLoading(true)
-        try {
-            const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
-            if (!res.ok) throw new Error()
-            const data = await res.json() as ZeitkontoStatus
-            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
-            setZeitkontoStatus(data)
-        } catch {
-            setZeitkontoStatus(null)
-        } finally {
-            setStatusLoading(false)
-        }
+        void holeZeitkontoStatus(token)
     }
 
-    useEffect(() => { loadZeitkontoStatus() }, [])
-
     useEffect(() => {
-        if (hatEingerichtetesZeitkonto(zeitkontoStatus)) loadSaldo(selectedMonth, selectedYear)
-    }, [selectedMonth, selectedYear, zeitkontoStatus])
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (token) void holeZeitkontoStatus(token)
+    }, [])
 
-    const loadSaldo = async (month?: number, year?: number) => {
+    const holeSaldo = (token: string, month?: number, year?: number) => {
+        // ========== API-Aufruf für Saldodaten ==========
+        //
+        // GESAMTSALDO-BERECHNUNG (gesamtBisHeute=true):
+        // Die Mobile App zeigt IMMER das aktuelle Gesamtstundenkonto bis HEUTE an,
+        // unabhängig davon welcher Monat/Jahr für die Monats-Ansicht ausgewählt wurde.
+        // 
+        // Beispiel: Wenn der Benutzer Dezember 2024 auswählt:
+        // - Monat: zeigt Soll/Ist für Dezember 2024
+        // - Gesamtsaldo: zeigt ALLE +/- Stunden von Eintrittsdatum bis HEUTE
+        //
+        // Das PC-Frontend (ZeiterfassungKalender) hat ein anderes Verhalten:
+        // Dort wird das Gesamtsaldo bis zum Ende des ausgewählten Jahres berechnet.
+        //
+        let url = `/api/zeiterfassung/saldo/${token}`
+        const params = new URLSearchParams()
+        if (year) params.append('jahr', year.toString())
+        if (month) params.append('monat', month.toString())
+        // WICHTIG: gesamtBisHeute=true = Gesamtsaldo immer bis heute berechnen
+        params.append('gesamtBisHeute', 'true')
+        if (params.toString()) url += `?${params.toString()}`
+
+        return fetch(url)
+            .then(async res => {
+                if (!res.ok) {
+                    setError('Fehler beim Laden der Daten')
+                    return
+                }
+                setSaldo(await res.json())
+                setError(null)
+            })
+            .catch(() => setError('Server nicht erreichbar'))
+            .finally(() => setLoading(false))
+    }
+
+    // Ladeanzeige und alter Fehler werden dort zurückgesetzt, wo das Neuladen ausgelöst wird
+    // (Aktualisieren-Knopf, Monatswechsel); beim Öffnen startet `loading` schon mit true.
+    const loadSaldo = (month?: number, year?: number) => {
         setLoading(true)
         setError(null)
         const token = localStorage.getItem('zeiterfassung_token')
@@ -106,42 +146,13 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
             setLoading(false)
             return
         }
-
-        try {
-            // ========== API-Aufruf für Saldodaten ==========
-            //
-            // GESAMTSALDO-BERECHNUNG (gesamtBisHeute=true):
-            // Die Mobile App zeigt IMMER das aktuelle Gesamtstundenkonto bis HEUTE an,
-            // unabhängig davon welcher Monat/Jahr für die Monats-Ansicht ausgewählt wurde.
-            // 
-            // Beispiel: Wenn der Benutzer Dezember 2024 auswählt:
-            // - Monat: zeigt Soll/Ist für Dezember 2024
-            // - Gesamtsaldo: zeigt ALLE +/- Stunden von Eintrittsdatum bis HEUTE
-            //
-            // Das PC-Frontend (ZeiterfassungKalender) hat ein anderes Verhalten:
-            // Dort wird das Gesamtsaldo bis zum Ende des ausgewählten Jahres berechnet.
-            //
-            let url = `/api/zeiterfassung/saldo/${token}`
-            const params = new URLSearchParams()
-            if (year) params.append('jahr', year.toString())
-            if (month) params.append('monat', month.toString())
-            // WICHTIG: gesamtBisHeute=true = Gesamtsaldo immer bis heute berechnen
-            params.append('gesamtBisHeute', 'true')
-            if (params.toString()) url += `?${params.toString()}`
-
-            const res = await fetch(url)
-            if (res.ok) {
-                const data = await res.json()
-                setSaldo(data)
-            } else {
-                setError('Fehler beim Laden der Daten')
-            }
-        } catch {
-            setError('Server nicht erreichbar')
-        } finally {
-            setLoading(false)
-        }
+        void holeSaldo(token, month, year)
     }
+
+    useEffect(() => {
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (token && hatEingerichtetesZeitkonto(zeitkontoStatus)) void holeSaldo(token, selectedMonth, selectedYear)
+    }, [selectedMonth, selectedYear, zeitkontoStatus])
 
     // Navigate to previous or next month
     const changeMonth = (delta: number) => {
@@ -156,25 +167,23 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
             newYear += 1
         }
 
+        setLoading(true)
+        setError(null)
         setSelectedMonth(newMonth)
         setSelectedYear(newYear)
     }
 
-    const loadFeiertage = async (jahr: number) => {
-        try {
-            const res = await fetch(`/api/zeiterfassung/feiertage?jahr=${jahr}`)
-            if (res.ok) {
-                const data = await res.json()
-                // Sort by date
-                const sorted = data.sort((a: Feiertag, b: Feiertag) =>
-                    new Date(a.datum).getTime() - new Date(b.datum).getTime()
-                )
-                setFeiertage(sorted)
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden der Feiertage:', err)
-        }
-    }
+    const loadFeiertage = (jahr: number) => fetch(`/api/zeiterfassung/feiertage?jahr=${jahr}`)
+        .then(async res => {
+            if (!res.ok) return
+            const data = await res.json()
+            // Sort by date
+            const sorted = data.sort((a: Feiertag, b: Feiertag) =>
+                new Date(a.datum).getTime() - new Date(b.datum).getTime()
+            )
+            setFeiertage(sorted)
+        })
+        .catch(err => console.error('Fehler beim Laden der Feiertage:', err))
 
     // Load Feiertage when saldo changes (to get the year)
     useEffect(() => {

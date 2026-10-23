@@ -147,7 +147,7 @@ export default function LeistungenUndKategorien() {
         if (gewaehlt === null || gewaehlt === zuletztAufgeklappt.current || !baum.byId.has(gewaehlt)) return;
         zuletztAufgeklappt.current = gewaehlt;
         const kette = ordnerKette(baum, gewaehlt).map((o) => o.id);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+        // Erlaubt im Effekt: hängt am Merker-Ref, läuft also nur einmal je Auswahl.
         setAufgeklappt((alt) => new Set([...alt, ...kette]));
     }, [gewaehlt, baum]);
 

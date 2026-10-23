@@ -92,20 +92,18 @@ export function AbteilungenVerwaltenKarte({ onGeaendert }: AbteilungenVerwaltenK
     const zeilenRefs = useRef<Record<number, HTMLLIElement | null>>({});
     const fokusZurueckAn = useRef<number | null>(null);
 
-    const laden = useCallback(async () => {
-        try {
-            const res = await fetch('/api/abteilungen');
+    const laden = useCallback(() => fetch('/api/abteilungen')
+        .then(async (res) => {
             if (!res.ok) throw new Error(await serverMeldung(res, LADEFEHLER));
             setAbteilungen(parseAbteilungen(await res.json()));
             setLadeFehler(null);
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             const text = err instanceof Error && err.message ? err.message : LADEFEHLER;
             setLadeFehler(text);
             toast.error(text);
-        } finally {
-            setLaedt(false);
-        }
-    }, [toast]);
+        })
+        .finally(() => setLaedt(false)), [toast]);
 
     useEffect(() => { void laden(); }, [laden]);
 

@@ -214,22 +214,30 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
     // Signatur laden
     const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
 
-    // Modal initialisieren
+    // Modal initialisieren: Formular zurücksetzen, sobald der Dialog (für einen
+    // anderen Lieferanten) aufgeht. `null` als Startwert, damit das auch beim
+    // ersten Rendern greift.
+    const [vorher, setVorher] = useState<{ isOpen: boolean; lieferantId: number; lieferantName: string } | null>(null);
+    if (vorher === null || vorher.isOpen !== isOpen || vorher.lieferantId !== lieferantId || vorher.lieferantName !== lieferantName) {
+        setVorher({ isOpen, lieferantId, lieferantName });
+        if (isOpen) {
+            setSubject(`Bestellanfrage: ${lieferantName}`);
+            setSending(false);
+            setBeautifying(false);
+            setUploadedFiles([]);
+            setPreviewFile(null);
+            setShowCustomRecipient(false);
+            setCustomRecipient('');
+            setCc('');
+            setCcManual('');
+            setLieferantenEmails([]);
+            setRecipient('');
+        }
+    }
+
+    // … und die Daten dazu laden.
     useEffect(() => {
         if (!isOpen) return;
-
-        // Reset
-        setSubject(`Bestellanfrage: ${lieferantName}`);
-        setSending(false);
-        setBeautifying(false);
-        setUploadedFiles([]);
-        setPreviewFile(null);
-        setShowCustomRecipient(false);
-        setCustomRecipient('');
-        setCc('');
-        setCcManual('');
-        setLieferantenEmails([]);
-        setRecipient('');
 
         // Lieferanten-spezifische E-Mails laden
         fetch(`/api/lieferanten/${lieferantId}`)
@@ -844,23 +852,31 @@ export default function BestellungEditor() {
     const [loading, setLoading] = useState(true);
     const [emailModal, setEmailModal] = useState<{ lieferantId: number; lieferantName: string } | null>(null);
 
-    const loadBestellungen = useCallback(async () => {
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    const ladeBestellungen = useCallback(() =>
+        fetch('/api/bestellungen/offen')
+            .then(async (res) => {
+                const data = res.ok ? await res.json() : [];
+                setBestellungen(Array.isArray(data) ? data : []);
+            })
+            .catch((err: unknown) => {
+                console.error('Error loading Bestellungen:', err);
+                setBestellungen([]);
+            })
+            .finally(() => {
+                setLoading(false);
+            }),
+    []);
+
+    /** Neu laden (Knopf, nach dem Versand) – mit Ladehinweis. */
+    const loadBestellungen = useCallback(() => {
         setLoading(true);
-        try {
-            const res = await fetch('/api/bestellungen/offen');
-            const data = res.ok ? await res.json() : [];
-            setBestellungen(Array.isArray(data) ? data : []);
-        } catch (err) {
-            console.error('Error loading Bestellungen:', err);
-            setBestellungen([]);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+        return ladeBestellungen();
+    }, [ladeBestellungen]);
 
     useEffect(() => {
-        loadBestellungen();
-    }, [loadBestellungen]);
+        void ladeBestellungen();
+    }, [ladeBestellungen]);
 
     // Group by supplier
     const lieferantGruppen = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { X, Loader2, Calculator, Plus, Trash2, AlertCircle, Clock, CalendarDays, Plane } from 'lucide-react';
 import { Button } from './ui/button';
 import { DecimalInput } from './ui/decimal-input';
@@ -57,26 +57,39 @@ export function ZeitkontoKorrekturenModal({
     const [stornoError, setStornoError] = useState('');
     const [stornieren, setStornieren] = useState(false);
 
-    useEffect(() => {
-        loadKorrekturen();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mitarbeiterId]);
-
-    const loadKorrekturen = async () => {
+    // Anderer Mitarbeiter: sofort wieder „wird geladen“ zeigen, bevor der Effekt neu lädt.
+    const [geladenFuer, setGeladenFuer] = useState(mitarbeiterId);
+    if (geladenFuer !== mitarbeiterId) {
+        setGeladenFuer(mitarbeiterId);
         setLoading(true);
-        try {
-            const res = await fetch(`/api/zeitkonto/korrekturen/mitarbeiter/${mitarbeiterId}?alleAnzeigen=false`);
-            if (res.ok) {
-                const data = await res.json();
-                setKorrekturen(data);
-            } else {
+    }
+
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    const ladeKorrekturen = useCallback(() =>
+        fetch(`/api/zeitkonto/korrekturen/mitarbeiter/${mitarbeiterId}?alleAnzeigen=false`)
+            .then(async res => {
+                if (res.ok) {
+                    const data = await res.json();
+                    setKorrekturen(data);
+                } else {
+                    toast.error('Korrekturen konnten nicht geladen werden.');
+                }
+            })
+            .catch(err => {
+                console.error('Fehler beim Laden:', err);
                 toast.error('Korrekturen konnten nicht geladen werden.');
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden:', err);
-            toast.error('Korrekturen konnten nicht geladen werden.');
-        }
-        setLoading(false);
+            })
+            .finally(() => setLoading(false)),
+    [mitarbeiterId, toast]);
+
+    useEffect(() => {
+        void ladeKorrekturen();
+    }, [ladeKorrekturen]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const loadKorrekturen = () => {
+        setLoading(true);
+        return ladeKorrekturen();
     };
 
     const handleAddKorrektur = async () => {

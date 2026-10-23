@@ -162,7 +162,7 @@ export function ArtikelSuche({
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [artikelList, setArtikelList] = useState<Artikel[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
     // Vor der ersten Antwort ist `total` nur ein Platzhalter (0) - der Seiten-Guard
     // weiter unten duerfte daraus noch keine Schluesse ziehen.
@@ -229,52 +229,73 @@ export function ArtikelSuche({
     // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
     const ladeVorgangRef = useRef(0);
 
-    // Fetch List
-    const loadArtikel = useCallback(async () => {
+    // Andere Seite, Filter oder Sortierung: Ladeanzeige beim Rendern einschalten
+    // (geladen wird im Effekt unten).
+    const [abfrageVorher, setAbfrageVorher] = useState({
+        page, filters, sortColumn, sortDirection, effektiveSeitenGroesse, nurMitLieferantenpreis,
+    });
+    if (abfrageVorher.page !== page || abfrageVorher.filters !== filters
+        || abfrageVorher.sortColumn !== sortColumn || abfrageVorher.sortDirection !== sortDirection
+        || abfrageVorher.effektiveSeitenGroesse !== effektiveSeitenGroesse
+        || abfrageVorher.nurMitLieferantenpreis !== nurMitLieferantenpreis) {
+        setAbfrageVorher({ page, filters, sortColumn, sortDirection, effektiveSeitenGroesse, nurMitLieferantenpreis });
+        setLoading(true);
+    }
+
+    // Fetch List (ohne Start-Ladeanzeige, die setzen Startwert, Render-Anpassung bzw. loadArtikel)
+    const holeArtikel = useCallback(() => {
         const ladeVorgang = ++ladeVorgangRef.current;
         const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            params.set("page", String(page));
-            params.set("size", String(effektiveSeitenGroesse));
-            params.set("sort", sortColumn);
-            params.set("dir", sortDirection);
-            if (nurMitLieferantenpreis) params.set("nurMitLieferantenpreis", "true");
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("size", String(effektiveSeitenGroesse));
+        params.set("sort", sortColumn);
+        params.set("dir", sortDirection);
+        if (nurMitLieferantenpreis) params.set("nurMitLieferantenpreis", "true");
 
-            if (filters.q) params.set("q", filters.q);
-            if (filters.lieferant) params.set("lieferant", filters.lieferant);
-            if (filters.produktlinie) params.set("produktlinie", filters.produktlinie);
-            if (filters.werkstoff) params.set("werkstoff", filters.werkstoff);
-            if (filters.kategorieId) params.set("kategorieId", String(filters.kategorieId));
-            if (filters.herstellverfahren) params.set("herstellverfahren", filters.herstellverfahren);
-            if (filters.fertigungszustand) params.set("fertigungszustand", filters.fertigungszustand);
-            if (filters.verzinkbar) params.set("verzinkbar", filters.verzinkbar);
-            if (filters.pulverbeschichtbar) params.set("pulverbeschichtbar", filters.pulverbeschichtbar);
+        if (filters.q) params.set("q", filters.q);
+        if (filters.lieferant) params.set("lieferant", filters.lieferant);
+        if (filters.produktlinie) params.set("produktlinie", filters.produktlinie);
+        if (filters.werkstoff) params.set("werkstoff", filters.werkstoff);
+        if (filters.kategorieId) params.set("kategorieId", String(filters.kategorieId));
+        if (filters.herstellverfahren) params.set("herstellverfahren", filters.herstellverfahren);
+        if (filters.fertigungszustand) params.set("fertigungszustand", filters.fertigungszustand);
+        if (filters.verzinkbar) params.set("verzinkbar", filters.verzinkbar);
+        if (filters.pulverbeschichtbar) params.set("pulverbeschichtbar", filters.pulverbeschichtbar);
 
-            const res = await fetch(`/api/artikel?${params.toString()}`);
-            if (!res.ok) throw new Error("Fehler beim Laden");
-            const data = await res.json();
-            if (!istAktuell()) return;
-
-            setArtikelList(data && Array.isArray(data.artikel) ? data.artikel : []);
-            setTotal(data && typeof data.gesamt === "number" ? data.gesamt : 0);
-        } catch (err) {
-            console.error(err);
-            if (!istAktuell()) return;
-            setArtikelList([]);
-            setTotal(0);
-        } finally {
-            if (istAktuell()) {
-                setLoading(false);
-                setErsteAntwortDa(true);
-            }
-        }
+        return fetch(`/api/artikel?${params.toString()}`)
+            .then(res => {
+                if (!res.ok) throw new Error("Fehler beim Laden");
+                return res.json();
+            })
+            .then(data => {
+                if (!istAktuell()) return;
+                setArtikelList(data && Array.isArray(data.artikel) ? data.artikel : []);
+                setTotal(data && typeof data.gesamt === "number" ? data.gesamt : 0);
+            })
+            .catch(err => {
+                console.error(err);
+                if (!istAktuell()) return;
+                setArtikelList([]);
+                setTotal(0);
+            })
+            .finally(() => {
+                if (istAktuell()) {
+                    setLoading(false);
+                    setErsteAntwortDa(true);
+                }
+            });
     }, [page, filters, sortColumn, sortDirection, effektiveSeitenGroesse, nurMitLieferantenpreis]);
 
+    // Neu laden mit Ladeanzeige (von außen über neuLaden)
+    const loadArtikel = useCallback(() => {
+        setLoading(true);
+        void holeArtikel();
+    }, [holeArtikel]);
+
     useEffect(() => {
-        loadArtikel();
-    }, [loadArtikel]);
+        void holeArtikel();
+    }, [holeArtikel]);
 
     /**
      * Misst, wie viele Zeilen ganz in die Liste passen.
@@ -369,11 +390,10 @@ export function ArtikelSuche({
     // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
     // `total` noch der alte Wert – und vor der allerersten Antwort schlicht 0, was
     // eine aus der URL übernommene Seite sofort verschlucken würde.
-    useEffect(() => {
-        if (loading || !ersteAntwortDa) return;
-        const letzteSeite = totalPages - 1;
-        if (page > letzteSeite) setPage(letzteSeite);
-    }, [loading, ersteAntwortDa, totalPages, page]);
+    // (Zustand beim Rendern anpassen.)
+    if (!loading && ersteAntwortDa && page > totalPages - 1) {
+        setPage(totalPages - 1);
+    }
 
     const statusText = useMemo(() => {
         if (loading) return 'Artikel werden geladen...';

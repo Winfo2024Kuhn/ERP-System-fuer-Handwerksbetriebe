@@ -77,29 +77,39 @@ export default function BenachrichtigungenPage() {
     // Unser eigenes notifications:refresh (für die Glocke) nicht selbst noch einmal beantworten.
     const eigenesEreignis = useRef(false);
 
-    const laden = useCallback(async (vomNutzer = false): Promise<void> => {
-        if (laufendeMeldungen.current > 0) return;
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    // Den Ladehinweis für den Knopf schaltet `ladenVomNutzer` vorab an.
+    const laden = useCallback((vomNutzer = false): Promise<void> => {
+        if (laufendeMeldungen.current > 0) return Promise.resolve();
         abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
-        if (vomNutzer) setNeuLaden(true);
-        try {
-            const res = await fetch(summaryUrl(true), { signal: controller.signal });
-            if (!res.ok) throw new Error(`Status ${res.status}`);
-            const summary = normalisiere(await res.json());
-            if (controller.signal.aborted) return;
-            setData(summary);
-            setStatus('bereit');
-        } catch (err) {
-            if (controller.signal.aborted || (err as Error).name === 'AbortError') return;
-            // Ein gescheitertes Nachladen im Hintergrund lässt die bisherige Liste stehen.
-            setStatus(vorher => (vorher === 'bereit' ? vorher : 'fehler'));
-            if (vomNutzer) toast.error('Benachrichtigungen konnten nicht geladen werden.');
-        } finally {
-            if (abortRef.current === controller) abortRef.current = null;
-            if (vomNutzer) setNeuLaden(false);
-        }
+        return fetch(summaryUrl(true), { signal: controller.signal })
+            .then(async (res) => {
+                if (!res.ok) throw new Error(`Status ${res.status}`);
+                const summary = normalisiere(await res.json());
+                if (controller.signal.aborted) return;
+                setData(summary);
+                setStatus('bereit');
+            })
+            .catch((err: unknown) => {
+                if (controller.signal.aborted || (err as Error).name === 'AbortError') return;
+                // Ein gescheitertes Nachladen im Hintergrund lässt die bisherige Liste stehen.
+                setStatus(vorher => (vorher === 'bereit' ? vorher : 'fehler'));
+                if (vomNutzer) toast.error('Benachrichtigungen konnten nicht geladen werden.');
+            })
+            .finally(() => {
+                if (abortRef.current === controller) abortRef.current = null;
+                if (vomNutzer) setNeuLaden(false);
+            });
     }, [toast]);
+
+    /** „Neu laden“ per Knopf: mit Ladehinweis und Fehler-Toast. */
+    const ladenVomNutzer = () => {
+        if (laufendeMeldungen.current > 0) return;
+        setNeuLaden(true);
+        void laden(true);
+    };
 
     useEffect(() => {
         aktivRef.current = true;
@@ -230,7 +240,7 @@ export default function BenachrichtigungenPage() {
                 <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => { void laden(true); }}
+                    onClick={ladenVomNutzer}
                     disabled={neuLaden || status === 'laden'}
                     title={neuLaden || status === 'laden' ? 'Wird gerade geladen …' : 'Stand vom Server holen'}
                 >
@@ -242,7 +252,7 @@ export default function BenachrichtigungenPage() {
             {status === 'laden' && <Ladezustand />}
 
             {status === 'fehler' && (
-                <Fehlerzustand onNeuLaden={() => { setStatus('laden'); void laden(true); }} />
+                <Fehlerzustand onNeuLaden={() => { setStatus('laden'); ladenVomNutzer(); }} />
             )}
 
             {status === 'bereit' && !zeigeThemenleiste && <Leerzustand />}

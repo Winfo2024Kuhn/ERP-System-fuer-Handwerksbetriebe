@@ -75,7 +75,8 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
     const titelId = useId();
     const isBelegZuordnung = belegId != null;
     const [geschaeftsdaten, setGeschaeftsdaten] = useState<GeschaeftsdatenDto | null>(null);
-    const [loading, setLoading] = useState(true);
+    const ladeZielId = isBelegZuordnung ? belegId : geschaeftsdokumentId;
+    const [loading, setLoading] = useState(ladeZielId != null);
     const [saving, setSaving] = useState(false);
     const [modus, setModus] = useState<'prozent' | 'absolut' | 'positionen'>('prozent');
     const [anteile, setAnteile] = useState<ProjektAnteil[]>([]);
@@ -85,14 +86,18 @@ export function ZuordnungModal({ geschaeftsdokumentId, belegId, dokumentNummer, 
     const positionsAufteilung = usePositionsAufteilung(isBelegZuordnung ? null : geschaeftsdokumentId, modus === 'positionen');
     const nachPositionen = modus === 'positionen';
 
+    // Anderes Dokument: Ladezustand sofort passend setzen, bevor der Effekt neu lädt.
+    const ladeSchluessel = `${isBelegZuordnung ? 'beleg' : 'dokument'}:${ladeZielId ?? ''}`;
+    const [geladenFuer, setGeladenFuer] = useState(ladeSchluessel);
+    if (geladenFuer !== ladeSchluessel) {
+        setGeladenFuer(ladeSchluessel);
+        setLoading(ladeZielId != null);
+    }
+
     // Geschäftsdaten + bestehende Zuordnungen laden
     useEffect(() => {
         const targetId = isBelegZuordnung ? belegId : geschaeftsdokumentId;
-        if (targetId == null) {
-            setLoading(false);
-            return;
-        }
-        setLoading(true);
+        if (targetId == null) return;
         const datenUrl = isBelegZuordnung
             ? `/api/bestellungen-uebersicht/belegdaten/${targetId}`
             : `/api/bestellungen-uebersicht/geschaeftsdaten/${targetId}`;

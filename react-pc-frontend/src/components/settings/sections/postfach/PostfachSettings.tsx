@@ -37,24 +37,28 @@ export function PostfachSettings({ onSaved }: { onSaved?: () => void }) {
     const [dialog, setDialog] = useState<DialogZustand>({ offen: false });
     const [loeschtId, setLoeschtId] = useState<number | null>(null);
 
-    const laden = useCallback(async (mitSpinner = true) => {
-        if (mitSpinner) setLaedt(true);
-        try {
-            const res = await fetch('/api/postfaecher');
+    const ladePostfaecher = useCallback(() => fetch('/api/postfaecher')
+        .then(async (res) => {
             if (!res.ok) throw new Error(await parseErrorMessage(res, 'Postfächer konnten nicht geladen werden.'));
             const daten = await res.json();
             setPostfaecher(parsePostfaecher(daten));
             setLadeFehler(null);
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             const text = err instanceof Error && err.message ? err.message : 'Postfächer konnten nicht geladen werden.';
             setLadeFehler(text);
             toast.error(text);
-        } finally {
-            setLaedt(false);
-        }
-    }, [toast]);
+        })
+        .finally(() => setLaedt(false)), [toast]);
 
-    useEffect(() => { void laden(); }, [laden]);
+    /** Lädt neu; `mitSpinner` zeigt dabei die Ladeanzeige. */
+    const laden = (mitSpinner = true) => {
+        if (mitSpinner) setLaedt(true);
+        return ladePostfaecher();
+    };
+
+    // Beim ersten Laden steht die Ladeanzeige schon (Startwert).
+    useEffect(() => { void ladePostfaecher(); }, [ladePostfaecher]);
 
     const hauptpostfach = postfaecher.find(p => p.hauptpostfach);
 

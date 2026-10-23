@@ -138,9 +138,16 @@ function MonatsabschlussDialog({ jahr, monat, onClose, onFertig }: {
         if (value) toast.error([value.text, value.hinweis].filter(Boolean).join(' '));
     }, [toast]);
 
+    // Anderer Monat: Ladeanzeige beim Rendern einschalten.
+    const monatSchluessel = `${jahr}-${monat}`;
+    const [monatSchluesselVorher, setMonatSchluesselVorher] = useState(monatSchluessel);
+    if (monatSchluessel !== monatSchluesselVorher) {
+        setMonatSchluesselVorher(monatSchluessel);
+        setLaden(true);
+    }
+
     useEffect(() => {
         let abgebrochen = false;
-        setLaden(true);
         fetch(`/api/buchhaltung/kassenbuch/abschluss/vorschau?jahr=${jahr}&monat=${monat}`)
             .then(r => r.ok ? r.json() : Promise.reject(new Error('Vorschau fehlgeschlagen')))
             .then((d: Vorschau) => { if (!abgebrochen) setVorschau(d); })
@@ -289,17 +296,17 @@ function KassensturzDialog({ onClose, onFertig }: { onClose: () => void; onFerti
         if (value) toast.error([value.text, value.hinweis].filter(Boolean).join(' '));
     }, [toast]);
 
-    const ladeErwartet = useCallback(async (tag: string) => {
-        try {
-            const res = await fetch(`/api/buchhaltung/kassenbuch/zaehlungen/erwartet?stichtag=${encodeURIComponent(tag)}`);
-            if (!res.ok) return;
-            const d: ErwarteterBestand = await res.json();
-            setErwartet(d.rechnerischerBestand);
-        } catch {
-            // Ohne Vergleichswert ist das Zählen trotzdem möglich; der Server
-            // rechnet die Differenz beim Speichern ohnehin selbst.
-        }
-    }, []);
+    const ladeErwartet = useCallback((tag: string) =>
+        fetch(`/api/buchhaltung/kassenbuch/zaehlungen/erwartet?stichtag=${encodeURIComponent(tag)}`)
+            .then(async res => {
+                if (!res.ok) return;
+                const d: ErwarteterBestand = await res.json();
+                setErwartet(d.rechnerischerBestand);
+            })
+            .catch(() => {
+                // Ohne Vergleichswert ist das Zählen trotzdem möglich; der Server
+                // rechnet die Differenz beim Speichern ohnehin selbst.
+            }), []);
 
     useEffect(() => { void ladeErwartet(stichtag); }, [stichtag, ladeErwartet]);
 

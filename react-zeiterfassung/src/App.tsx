@@ -159,82 +159,6 @@ function App() {
     return lauf
   }, [setSyncStatus])
 
-  useEffect(() => {
-    if (initialized.current) return
-    initialized.current = true
-    initializeApp()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // === GLOBAL SYNC HANDLERS ===
-  // Diese Handler sind auf App-Ebene, damit Sync auf ALLEN Seiten funktioniert
-  useEffect(() => {
-    const angemeldet = () => !!localStorage.getItem('zeiterfassung_token')
-
-    const handleOnline = async () => {
-      if (!angemeldet()) return
-      console.log('🌐 App ist online -> Sync pending entries')
-      nachfassenAbbrechen()
-      const result = await abgleichen()
-      if (result.success) return
-      // Das online-Event kommt oft, bevor der Server wirklich erreichbar ist.
-      for (const wartezeit of [3000, 10000]) {
-        const id = window.setTimeout(() => {
-          nachfassTimer.current = nachfassTimer.current.filter(t => t !== id)
-          if (angemeldet() && letzterSyncStatus.current === 'error') void abgleichen()
-        }, wartezeit)
-        nachfassTimer.current.push(id)
-      }
-    }
-
-    const handleVisibilityChange = async () => {
-      // PWA: Wenn App aus dem Hintergrund kommt -> Sync
-      if (document.visibilityState !== 'visible' || !angemeldet()) return
-      console.log('👁️ App wurde wieder sichtbar -> Sync check')
-      const pendingCount = await OfflineService.getPendingCount()
-      if (pendingCount > 0 || letzterSyncStatus.current === 'error') void abgleichen()
-    }
-
-    const handleAnstoss = async () => {
-      if (!angemeldet()) return
-      // Läuft gerade ein Abgleich, hat er die neue Buchung womöglich schon verpasst:
-      // abwarten und danach noch einmal abgleichen.
-      if (laufenderAbgleich.current) await laufenderAbgleich.current.catch(() => undefined)
-      void abgleichen()
-    }
-
-    // Der Service Worker hat Buchungen im Hintergrund gesendet (Android): Anzeige auffrischen.
-    const handleWorkerNachricht = (event: MessageEvent) => {
-      if ((event.data as { type?: string } | null)?.type === BUCHUNGEN_UEBERTRAGEN_NACHRICHT) void handleAnstoss()
-    }
-
-    window.addEventListener('online', handleOnline)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener(ABGLEICH_ANSTOSSEN_EVENT, handleAnstoss)
-    navigator.serviceWorker?.addEventListener('message', handleWorkerNachricht)
-
-    // Heartbeat alle 30 Sekunden für "stille" Reconnects – solange Buchungen
-    // warten oder der letzte Abgleich gescheitert ist.
-    const heartbeat = setInterval(async () => {
-      if (!angemeldet()) return
-      const pendingCount = await OfflineService.getPendingCount()
-      if (pendingCount > 0 || letzterSyncStatus.current === 'error') {
-        console.log(`❤️ Heartbeat: ${pendingCount} pending entries -> Sync`)
-        void abgleichen()
-      }
-    }, 30000)
-
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener(ABGLEICH_ANSTOSSEN_EVENT, handleAnstoss)
-      navigator.serviceWorker?.removeEventListener('message', handleWorkerNachricht)
-      clearInterval(heartbeat)
-      nachfassenAbbrechen()
-    }
-  }, [abgleichen, nachfassenAbbrechen])
-
-
   const initializeApp = async () => {
     // Check URL for token (from QR code scan)
     const urlToken = searchParams.get('token')
@@ -325,6 +249,7 @@ function App() {
     cleanUrl.searchParams.delete('token')
     window.history.replaceState(window.history.state, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash)
     if (loginPending.current) return
+    // eslint-disable-next-line react-hooks/purity -- läuft nur beim Anmelden (Effekt/QR-Scan), nicht beim Rendern
     if (Math.max(retryAt, readLoginRetryAt()) > Date.now()) {
       showLoginError(new TokenLoginError('Zu viele Anmeldeversuche. Bitte warte kurz.'))
       return
@@ -372,6 +297,81 @@ function App() {
     setIsAuthenticated(false)
     setMitarbeiter(null)
   }
+
+  useEffect(() => {
+    if (initialized.current) return
+    initialized.current = true
+    initializeApp()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // === GLOBAL SYNC HANDLERS ===
+  // Diese Handler sind auf App-Ebene, damit Sync auf ALLEN Seiten funktioniert
+  useEffect(() => {
+    const angemeldet = () => !!localStorage.getItem('zeiterfassung_token')
+
+    const handleOnline = async () => {
+      if (!angemeldet()) return
+      console.log('🌐 App ist online -> Sync pending entries')
+      nachfassenAbbrechen()
+      const result = await abgleichen()
+      if (result.success) return
+      // Das online-Event kommt oft, bevor der Server wirklich erreichbar ist.
+      for (const wartezeit of [3000, 10000]) {
+        const id = window.setTimeout(() => {
+          nachfassTimer.current = nachfassTimer.current.filter(t => t !== id)
+          if (angemeldet() && letzterSyncStatus.current === 'error') void abgleichen()
+        }, wartezeit)
+        nachfassTimer.current.push(id)
+      }
+    }
+
+    const handleVisibilityChange = async () => {
+      // PWA: Wenn App aus dem Hintergrund kommt -> Sync
+      if (document.visibilityState !== 'visible' || !angemeldet()) return
+      console.log('👁️ App wurde wieder sichtbar -> Sync check')
+      const pendingCount = await OfflineService.getPendingCount()
+      if (pendingCount > 0 || letzterSyncStatus.current === 'error') void abgleichen()
+    }
+
+    const handleAnstoss = async () => {
+      if (!angemeldet()) return
+      // Läuft gerade ein Abgleich, hat er die neue Buchung womöglich schon verpasst:
+      // abwarten und danach noch einmal abgleichen.
+      if (laufenderAbgleich.current) await laufenderAbgleich.current.catch(() => undefined)
+      void abgleichen()
+    }
+
+    // Der Service Worker hat Buchungen im Hintergrund gesendet (Android): Anzeige auffrischen.
+    const handleWorkerNachricht = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type === BUCHUNGEN_UEBERTRAGEN_NACHRICHT) void handleAnstoss()
+    }
+
+    window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener(ABGLEICH_ANSTOSSEN_EVENT, handleAnstoss)
+    navigator.serviceWorker?.addEventListener('message', handleWorkerNachricht)
+
+    // Heartbeat alle 30 Sekunden für "stille" Reconnects – solange Buchungen
+    // warten oder der letzte Abgleich gescheitert ist.
+    const heartbeat = setInterval(async () => {
+      if (!angemeldet()) return
+      const pendingCount = await OfflineService.getPendingCount()
+      if (pendingCount > 0 || letzterSyncStatus.current === 'error') {
+        console.log(`❤️ Heartbeat: ${pendingCount} pending entries -> Sync`)
+        void abgleichen()
+      }
+    }, 30000)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener(ABGLEICH_ANSTOSSEN_EVENT, handleAnstoss)
+      navigator.serviceWorker?.removeEventListener('message', handleWorkerNachricht)
+      clearInterval(heartbeat)
+      nachfassenAbbrechen()
+    }
+  }, [abgleichen, nachfassenAbbrechen])
 
   // Show loading while checking token
   if (loading) {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { type Raum, type Verbraucher, type Zaehlerstand } from './types';
 import { MietabrechnungService } from './MietabrechnungService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
@@ -21,7 +21,7 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [raeume, setRaeume] = useState<Raum[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [flaeche, setFlaeche] = useState('0');
     const [meterDraft, setMeterDraft] = useState({ jahr: '', stand: '0', verbrauch: '' });
@@ -36,29 +36,32 @@ export function RaeumeView({ mietobjektId }: RaeumeViewProps) {
     const [editingMeter, setEditingMeter] = useState<Zaehlerstand | null>(null);
     const [activeConsumerId, setActiveConsumerId] = useState<number | null>(null);
 
-    useEffect(() => {
-        loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mietobjektId]);
-
-    const loadData = async () => {
+    // Beim Wechsel des Mietobjekts zeigt die Liste sofort wieder „wird geladen“.
+    const [geladenFuer, setGeladenFuer] = useState(mietobjektId);
+    if (geladenFuer !== mietobjektId) {
+        setGeladenFuer(mietobjektId);
         setLoading(true);
-        try {
-            const rooms = await MietabrechnungService.getRaeume(mietobjektId);
-            const enriched = await Promise.all(rooms.map(async (r) => {
-                const consumers = await MietabrechnungService.getVerbraucherForRaum(r.id);
-                const consumersWithMeters = await Promise.all(consumers.map(async (c) => {
-                    const meters = await MietabrechnungService.getZaehlerstaende(c.id);
-                    return { ...c, zaehlerstaende: meters };
-                }));
-                return { ...r, verbraucher: consumersWithMeters };
+    }
+
+    const ladeDaten = useCallback(() => MietabrechnungService.getRaeume(mietobjektId)
+        .then(rooms => Promise.all(rooms.map(async (r) => {
+            const consumers = await MietabrechnungService.getVerbraucherForRaum(r.id);
+            const consumersWithMeters = await Promise.all(consumers.map(async (c) => {
+                const meters = await MietabrechnungService.getZaehlerstaende(c.id);
+                return { ...c, zaehlerstaende: meters };
             }));
-            setRaeume(enriched);
-        } catch {
-            toast.error('Räume und Zähler konnten nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
+            return { ...r, verbraucher: consumersWithMeters };
+        })))
+        .then(enriched => { setRaeume(enriched); })
+        .catch(() => { toast.error('Räume und Zähler konnten nicht geladen werden.'); })
+        .finally(() => setLoading(false)), [mietobjektId, toast]);
+
+    useEffect(() => { void ladeDaten(); }, [ladeDaten]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const loadData = () => {
+        setLoading(true);
+        return ladeDaten();
     };
 
     // --- Room Handlers ---

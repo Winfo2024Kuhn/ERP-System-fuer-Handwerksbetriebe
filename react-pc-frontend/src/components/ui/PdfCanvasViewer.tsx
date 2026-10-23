@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useEffect, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Printer } from 'lucide-react';
 import { ladePdfjs } from '../../lib/pdfjs';
 import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
@@ -146,70 +146,77 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
     const [fallbackBlobUrl, setFallbackBlobUrl] = useState<string | null>(null);
     const [zoom, setZoom] = useState(1);
     const zoomRef = useRef(1);
-    zoomRef.current = zoom;
+    // Vor allen übrigen Effekten abgleichen: renderPages liest den Zoom über die Ref.
+    useLayoutEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
-    /** Rendert alle Seiten des bereits geladenen Dokuments auf Basis von Container-Breite × Zoom. */
+    /**
+     * Rendert alle Seiten des bereits geladenen Dokuments auf Basis von Container-Breite × Zoom.
+     * Wurde während eines Renders ein weiterer angefordert, folgt er direkt danach in derselben Schleife.
+     */
     const renderPages = useCallback(async () => {
-        const doc = pdfDocRef.current;
-        const container = canvasContainerRef.current;
-        const scroller = scrollContainerRef.current;
-        if (!doc || !container || !scroller) return;
+        let nochmal = true;
+        while (nochmal) {
+            nochmal = false;
+            const doc = pdfDocRef.current;
+            const container = canvasContainerRef.current;
+            const scroller = scrollContainerRef.current;
+            if (!doc || !container || !scroller) return;
 
-        const containerWidth = scroller.clientWidth;
-        if (containerWidth <= 0) return;
+            const containerWidth = scroller.clientWidth;
+            if (containerWidth <= 0) return;
 
-        // Läuft schon ein Render? Dann nur vormerken – verhindert überlappende Renders bei schnellem Zoomen.
-        if (renderingRef.current) { rerenderPendingRef.current = true; return; }
-        renderingRef.current = true;
+            // Läuft schon ein Render? Dann nur vormerken – verhindert überlappende Renders bei schnellem Zoomen.
+            if (renderingRef.current) { rerenderPendingRef.current = true; return; }
+            renderingRef.current = true;
 
-        try {
-            const z = zoomRef.current;
-            // In ein Fragment rendern und erst am Ende atomar einhängen → kein Flackern.
-            const frag = document.createDocumentFragment();
-            for (let i = 1; i <= doc.numPages; i++) {
-                const page = await doc.getPage(i);
-                const defaultViewport = page.getViewport({ scale: 1 });
-                const fitScale = containerWidth / defaultViewport.width;
-                const viewport = page.getViewport({ scale: fitScale * z });
+            try {
+                const z = zoomRef.current;
+                // In ein Fragment rendern und erst am Ende atomar einhängen → kein Flackern.
+                const frag = document.createDocumentFragment();
+                for (let i = 1; i <= doc.numPages; i++) {
+                    const page = await doc.getPage(i);
+                    const defaultViewport = page.getViewport({ scale: 1 });
+                    const fitScale = containerWidth / defaultViewport.width;
+                    const viewport = page.getViewport({ scale: fitScale * z });
 
-                const canvas = document.createElement('canvas');
+                    const canvas = document.createElement('canvas');
 
-                const dpr = window.devicePixelRatio || 1;
-                canvas.width = Math.floor(viewport.width * dpr);
-                canvas.height = Math.floor(viewport.height * dpr);
-                canvas.style.width = `${Math.floor(viewport.width)}px`;
-                canvas.style.height = `${Math.floor(viewport.height)}px`;
-                canvas.style.display = 'block';
+                    const dpr = window.devicePixelRatio || 1;
+                    canvas.width = Math.floor(viewport.width * dpr);
+                    canvas.height = Math.floor(viewport.height * dpr);
+                    canvas.style.width = `${Math.floor(viewport.width)}px`;
+                    canvas.style.height = `${Math.floor(viewport.height)}px`;
+                    canvas.style.display = 'block';
 
-                const wrapper = document.createElement('div');
-                wrapper.style.background = 'white';
-                wrapper.style.lineHeight = '0';
-                // fit-content + margin auto: zentriert bei Zoom < 100%, links bündig + Scrollbar bei Überbreite.
-                wrapper.style.width = 'fit-content';
-                wrapper.style.margin = '0 auto';
-                if (i < doc.numPages) {
-                    wrapper.style.marginBottom = '8px';
+                    const wrapper = document.createElement('div');
+                    wrapper.style.background = 'white';
+                    wrapper.style.lineHeight = '0';
+                    // fit-content + margin auto: zentriert bei Zoom < 100%, links bündig + Scrollbar bei Überbreite.
+                    wrapper.style.width = 'fit-content';
+                    wrapper.style.margin = '0 auto';
+                    if (i < doc.numPages) {
+                        wrapper.style.marginBottom = '8px';
+                    }
+                    wrapper.appendChild(canvas);
+                    frag.appendChild(wrapper);
+
+                    await page.render({ canvas, viewport, transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0] }).promise;
                 }
-                wrapper.appendChild(canvas);
-                frag.appendChild(wrapper);
-
-                await page.render({ canvas, viewport, transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0] }).promise;
-            }
-            container.replaceChildren(frag);
-        } catch {
-            setUseFallback(true);
-        } finally {
-            renderingRef.current = false;
-            if (rerenderPendingRef.current) {
-                rerenderPendingRef.current = false;
-                void renderPages();
+                container.replaceChildren(frag);
+            } catch {
+                setUseFallback(true);
+            } finally {
+                renderingRef.current = false;
+                if (rerenderPendingRef.current) {
+                    rerenderPendingRef.current = false;
+                    nochmal = true;
+                }
             }
         }
     }, []);
 
     /** Lädt das Dokument (fetch + parse) und rendert es anschließend. */
-    const loadDocument = useCallback(async (pdfUrl: string) => {
-        const pdfjsLib = await ladePdfjs();
+    const loadDocument = useCallback((pdfUrl: string) => ladePdfjs().then(async (pdfjsLib) => {
         if (!pdfjsLib) {
             setUseFallback(true);
             return;
@@ -243,7 +250,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
         } catch {
             setUseFallback(true);
         }
-    }, [renderPages]);
+    }), [renderPages]);
 
     /**
      * Druckt das Original-PDF – bevorzugt aus den bereits geladenen Bytes, damit
@@ -263,11 +270,17 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
     /** Ohne Bytes zur aktuell angezeigten URL würde ein leeres Dokument im Drucker landen. */
     const canPrint = readySrc === url;
 
-    // Dokument (neu) laden, wenn sich die URL ändert – Zoom dabei zurücksetzen.
+    // Neue URL: Zoom beim Rendern zurücksetzen (geladen wird im Effekt darunter).
+    const [zoomFuerUrl, setZoomFuerUrl] = useState(url);
+    if (zoomFuerUrl !== url) {
+        setZoomFuerUrl(url);
+        if (url && !useFallback) setZoom(1);
+    }
+
+    // Dokument (neu) laden, wenn sich die URL ändert.
     useEffect(() => {
         if (!url) return;
         if (useFallback) return;
-        setZoom(1);
         void loadDocument(url);
     }, [url, loadDocument, useFallback]);
 
@@ -305,13 +318,20 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
 
     // Fallback-Pfad: PDF als Blob laden, damit das iframe auch extern gehostete PDFs
     // mit X-Frame-Options anzeigen kann (blob:// ist immer same-origin). Erst danach iframe.
+    // Auch hier zuerst verwerfen: Solange die neuen Bytes fehlen, darf nichts Altes gedruckt werden.
+    // Die Druckfreigabe wird beim Rendern zurückgenommen, die Bytes im Effekt darunter.
+    const fallbackFuer = useFallback && url ? url : null;
+    const [fallbackGestartetFuer, setFallbackGestartetFuer] = useState<string | null>(null);
+    if (fallbackGestartetFuer !== fallbackFuer) {
+        setFallbackGestartetFuer(fallbackFuer);
+        if (fallbackFuer) setReadySrc(null);
+    }
+
     useEffect(() => {
         if (!useFallback || !url) return;
         let createdUrl: string | null = null;
         let cancelled = false;
-        // Auch hier zuerst verwerfen: Solange die neuen Bytes fehlen, darf nichts Altes gedruckt werden.
         pdfBlobRef.current = null;
-        setReadySrc(null);
         fetch(url)
             .then(async res => {
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);

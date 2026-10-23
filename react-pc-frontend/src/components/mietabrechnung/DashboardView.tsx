@@ -17,38 +17,43 @@ export function DashboardView({ mietobjektId }: DashboardViewProps) {
     const [year, setYear] = useState<number>(new Date().getFullYear());
     const [data, setData] = useState<AbrechnungResult | null>(null);
     const [history, setHistory] = useState<AbrechnungResult[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(Boolean(mietobjektId));
 
-    useEffect(() => {
+    // Anderes Mietobjekt oder Jahr: Ladebalken sofort zeigen bzw. ohne Objekt die Anzeige leeren.
+    const [geladenFuer, setGeladenFuer] = useState({ mietobjektId, year });
+    if (geladenFuer.mietobjektId !== mietobjektId || geladenFuer.year !== year) {
+        setGeladenFuer({ mietobjektId, year });
         if (mietobjektId) {
-            loadData(year);
-            loadHistory();
+            setLoading(true);
         } else {
             setData(null);
             setHistory([]);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
+
+    useEffect(() => {
+        if (!mietobjektId) return;
+
+        const loadData = async (y: number) => {
+            try {
+                const result = await MietabrechnungService.getAbrechnung(mietobjektId, y);
+                setData(result);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        const loadHistory = async () => {
+            const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 4 + i);
+            const results = await Promise.all(years.map(y => MietabrechnungService.getAbrechnung(mietobjektId, y).catch(() => null)));
+            setHistory(results.filter(r => r !== null && r.gesamtkosten > 0) as AbrechnungResult[]);
+        };
+
+        void loadData(year);
+        void loadHistory();
     }, [mietobjektId, year]);
-
-    const loadData = async (y: number) => {
-        if (!mietobjektId) return;
-        setLoading(true);
-        try {
-            const result = await MietabrechnungService.getAbrechnung(mietobjektId, y);
-            setData(result);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const loadHistory = async () => {
-        if (!mietobjektId) return;
-        const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 4 + i);
-        const results = await Promise.all(years.map(y => MietabrechnungService.getAbrechnung(mietobjektId, y).catch(() => null)));
-        setHistory(results.filter(r => r !== null && r.gesamtkosten > 0) as AbrechnungResult[]);
-    };
 
     const handleDownloadPdf = () => {
         if (!mietobjektId) return;

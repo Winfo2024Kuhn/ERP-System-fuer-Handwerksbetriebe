@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { type Mietobjekt } from './types';
 import { MietabrechnungService } from './MietabrechnungService';
 import { Input } from '../ui/input';
@@ -15,12 +15,15 @@ interface StammdatenViewProps {
 export function StammdatenView({ mietobjekt, onUpdate, onDelete }: StammdatenViewProps) {
     const toast = useToast();
     const confirmDialog = useConfirm();
-    const [formData, setFormData] = useState<Mietobjekt | null>(null);
+    const [formData, setFormData] = useState<Mietobjekt | null>(mietobjekt);
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
+    // Kommt ein anderes oder neu geladenes Mietobjekt herein, das Formular damit neu füllen.
+    const [formularFuer, setFormularFuer] = useState(mietobjekt);
+    if (formularFuer !== mietobjekt) {
+        setFormularFuer(mietobjekt);
         setFormData(mietobjekt);
-    }, [mietobjekt]);
+    }
 
     if (!mietobjekt || !formData) return <div className="text-slate-500 text-center py-10">Kein Mietobjekt ausgewählt.</div>;
 

@@ -49,13 +49,11 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
     const [spamFilterAktiv, setSpamFilterAktiv] = useState(true);
     const [spamFilterSaving, setSpamFilterSaving] = useState(false);
 
-    const loadSettings = useCallback(async () => {
-        setLoading(true);
-        try {
-            const [geminiRes, spamRes] = await Promise.all([
-                fetch('/api/settings/gemini'),
-                fetch('/api/settings/anfrage-funnel-spamfilter'),
-            ]);
+    const ladeEinstellungen = useCallback(() => Promise.all([
+        fetch('/api/settings/gemini'),
+        fetch('/api/settings/anfrage-funnel-spamfilter'),
+    ])
+        .then(async ([geminiRes, spamRes]) => {
             if (geminiRes.ok) {
                 const data = await geminiRes.json();
                 setApiKeySet(!!data?.apiKeySet);
@@ -64,17 +62,21 @@ export function KiSettingsSection({ onSaved }: { onSaved?: () => void }) {
                 const data = await spamRes.json();
                 setSpamFilterAktiv(data?.aktiv !== false);
             }
-        } catch {
+        })
+        .catch(() => {
             toast.error('KI-Einstellungen konnten nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        })
+        .finally(() => setLoading(false)), [toast]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const loadSettings = () => {
+        setLoading(true);
+        return ladeEinstellungen();
+    };
 
     useEffect(() => {
-        loadSettings();
-    }, [loadSettings]);
+        void ladeEinstellungen();
+    }, [ladeEinstellungen]);
 
     const handleSave = async () => {
         if (!apiKey.trim()) {

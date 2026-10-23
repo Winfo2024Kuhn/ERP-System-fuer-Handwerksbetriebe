@@ -28,40 +28,50 @@ export function KundeSearchModal({ isOpen, onClose, onSelect, currentKundeId }: 
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
-    const loadKunden = useCallback(async (query: string) => {
+    // Beim Öffnen: Suchfeld leeren und sofort die Ladeanzeige zeigen (geladen wird im Effekt unten).
+    const [warOffen, setWarOffen] = useState(false);
+    if (isOpen !== warOffen) {
+        setWarOffen(isOpen);
+        if (isOpen) {
+            setSearchTerm('');
+            setLoading(true);
+        }
+    }
+
+    const loadKunden = useCallback((query: string) => {
         if (abortRef.current) abortRef.current.abort();
         const controller = new AbortController();
         abortRef.current = controller;
 
-        setLoading(true);
-        try {
-            const params = new URLSearchParams({ size: '50', page: '0' });
-            if (query.trim()) params.set('q', query.trim());
-            const res = await fetch(`/api/kunden?${params}`, { signal: controller.signal });
-            if (!res.ok) throw new Error('Fehler beim Laden');
-            const data = await res.json();
-            const items: KundeSearchItem[] = (data.kunden ?? []).map((k: { id: number; name: string; kundennummer?: string; ort?: string; ansprechspartner?: string }) => ({
-                id: k.id,
-                name: k.name,
-                kundennummer: k.kundennummer,
-                ort: k.ort,
-                ansprechspartner: k.ansprechspartner,
-            }));
-            setKunden(items);
-            if (!query.trim()) setTotalCount(data.gesamt ?? items.length);
-        } catch (e) {
-            if (!(e instanceof DOMException && e.name === 'AbortError')) {
-                console.error('Kundensuche fehlgeschlagen:', e);
-            }
-        } finally {
-            if (!controller.signal.aborted) setLoading(false);
-        }
+        const params = new URLSearchParams({ size: '50', page: '0' });
+        if (query.trim()) params.set('q', query.trim());
+        return fetch(`/api/kunden?${params}`, { signal: controller.signal })
+            .then(async (res) => {
+                if (!res.ok) throw new Error('Fehler beim Laden');
+                const data = await res.json();
+                const items: KundeSearchItem[] = (data.kunden ?? []).map((k: { id: number; name: string; kundennummer?: string; ort?: string; ansprechspartner?: string }) => ({
+                    id: k.id,
+                    name: k.name,
+                    kundennummer: k.kundennummer,
+                    ort: k.ort,
+                    ansprechspartner: k.ansprechspartner,
+                }));
+                setKunden(items);
+                if (!query.trim()) setTotalCount(data.gesamt ?? items.length);
+            })
+            .catch((e: unknown) => {
+                if (!(e instanceof DOMException && e.name === 'AbortError')) {
+                    console.error('Kundensuche fehlgeschlagen:', e);
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
+            });
     }, []);
 
     useEffect(() => {
         if (isOpen) {
-            setSearchTerm('');
-            loadKunden('');
+            void loadKunden('');
         }
         return () => {
             if (abortRef.current) abortRef.current.abort();
@@ -72,7 +82,8 @@ export function KundeSearchModal({ isOpen, onClose, onSelect, currentKundeId }: 
         if (!isOpen) return;
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
-            loadKunden(searchTerm);
+            setLoading(true);
+            void loadKunden(searchTerm);
         }, 300);
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);

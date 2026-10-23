@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
     CategoryScale,
     Chart as ChartJS,
@@ -29,24 +29,30 @@ export function InsightsTab() {
     const [laedt, setLaedt] = useState(true);
     const [fehler, setFehler] = useState<string | null>(null);
 
-    const laden = useCallback(async (zeitraum: number) => {
+    // Ladezustand und Fehler setzt der Zeitraum-Knopf vorab (siehe waehleZeitraum),
+    // beim ersten Laden stimmen die Startwerte schon. Ergebnisse erst in den
+    // Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    useEffect(() => {
+        void Promise.all([
+            ladeAnalyticsAktuell(),
+            ladeAnalyticsVerlauf(tage),
+        ])
+            .then(([aktuell, punkte]) => {
+                setSchnappschuss(aktuell);
+                setVerlauf(punkte);
+            })
+            .catch(() => {
+                setFehler('Die Zahlen konnten nicht geladen werden. Bitte später noch einmal versuchen.');
+            })
+            .finally(() => setLaedt(false));
+    }, [tage]);
+
+    const waehleZeitraum = (zeitraum: number) => {
+        if (zeitraum === tage) return;
         setLaedt(true);
         setFehler(null);
-        try {
-            const [aktuell, punkte] = await Promise.all([
-                ladeAnalyticsAktuell(),
-                ladeAnalyticsVerlauf(zeitraum),
-            ]);
-            setSchnappschuss(aktuell);
-            setVerlauf(punkte);
-        } catch {
-            setFehler('Die Zahlen konnten nicht geladen werden. Bitte später noch einmal versuchen.');
-        } finally {
-            setLaedt(false);
-        }
-    }, []);
-
-    useEffect(() => { void laden(tage); }, [laden, tage]);
+        setTage(zeitraum);
+    };
 
     if (laedt && !schnappschuss && !fehler) {
         return (
@@ -102,7 +108,7 @@ export function InsightsTab() {
                         {ZEITRAEUME.map(z => (
                             <button
                                 key={z}
-                                onClick={() => setTage(z)}
+                                onClick={() => waehleZeitraum(z)}
                                 className={`px-3 py-1.5 text-sm rounded-lg border transition-colors cursor-pointer
                                     ${tage === z
                                         ? 'bg-rose-600 text-white border-rose-600'

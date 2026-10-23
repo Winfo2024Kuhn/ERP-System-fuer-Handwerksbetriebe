@@ -6,7 +6,7 @@ import { useConfirm } from '../components/ui/confirm-dialog'
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button'
 import { leseFehlermeldung } from '../lib/apiFehler'
 import { formatUrlaubstage, statusLabel, typLabel, vorjahresHinweis, zurueckziehenFrage, type AntragStatus, type AntragTyp, type VorjahresRest } from '../lib/urlaubsantrag'
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, Send, Loader2, CheckCircle2, Plane, Stethoscope, Calendar, AlertTriangle, X, Clock, RefreshCw, Undo2 } from 'lucide-react'
 
@@ -117,76 +117,106 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     const [showFeiertagModal, setShowFeiertagModal] = useState(false)
     const [gefundeneFeiertage, setGefundeneFeiertage] = useState<Feiertag[]>([])
 
-    useEffect(() => {
+    // Typ aus der Adresse übernehmen, wenn sie sich ändert (z. B. Glocke → „Zeitausgleich“).
+    const [letzterQueryTyp, setLetzterQueryTyp] = useState(queryTyp)
+    if (queryTyp !== letzterQueryTyp) {
+        setLetzterQueryTyp(queryTyp)
         if (queryTyp === 'ZEITAUSGLEICH' || queryTyp === 'KRANKHEIT' || queryTyp === 'FORTBILDUNG' || queryTyp === 'URLAUB') {
             setTyp(queryTyp)
         }
-    }, [queryTyp])
+    }
 
-    // Fetch Antraege when tab is overview or year changes
+    const mitarbeiterId = mitarbeiter?.id
+
+    // Anträge laden, wenn die Übersicht offen ist oder das Jahr wechselt. Die Ladeanzeige
+    // geht schon beim Rendern an, damit kein Bild ohne Ladehinweis entsteht.
+    const antraegeSchluessel = activeTab === 'UEBERSICHT' && mitarbeiterId !== undefined ? `${mitarbeiterId}|${selectedYear}` : null
+    const [antraegeFuer, setAntraegeFuer] = useState<string | null>(null)
+    if (antraegeFuer !== antraegeSchluessel) {
+        setAntraegeFuer(antraegeSchluessel)
+        if (antraegeSchluessel !== null) setLoadingAntraege(true)
+    }
+
+    const holeAntraege = useCallback((id: number, jahr: number) =>
+        // Fetch by year (filtering by status happens client-side for better UX with small lists)
+        fetch(`/api/urlaub/antraege?mitarbeiterId=${id}&jahr=${jahr}`)
+            .then(res => {
+                if (!res.ok) throw new Error('Anträge konnten nicht geladen werden.')
+                return res.json()
+            })
+            .then((data: Urlaubsantrag[]) => {
+                // Sort by date desc
+                data.sort((a, b) => new Date(b.vonDatum).getTime() - new Date(a.vonDatum).getTime())
+                setAntraege(data)
+            })
+            .catch(error => {
+                console.error("Failed to fetch antraege", error)
+                toast.error('Anträge konnten nicht geladen werden.')
+            })
+            .finally(() => setLoadingAntraege(false)), [toast])
+
     useEffect(() => {
-        if (activeTab === 'UEBERSICHT' && mitarbeiter) {
-            fetchAntraege()
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, selectedYear, mitarbeiter])
+        if (activeTab === 'UEBERSICHT' && mitarbeiterId !== undefined) void holeAntraege(mitarbeiterId, selectedYear)
+    }, [activeTab, selectedYear, mitarbeiterId, holeAntraege])
 
-    // Fetch Resturlaub when typ=URLAUB and mitarbeiter available
+    // Resturlaub nur bei Urlaub: beim Wechsel zurücksetzen und neu laden.
+    const resturlaubFuer = typ === 'URLAUB' && mitarbeiterId !== undefined ? mitarbeiterId : null
+    const [resturlaubGeladenFuer, setResturlaubGeladenFuer] = useState<number | null>(null)
+    if (resturlaubGeladenFuer !== resturlaubFuer) {
+        setResturlaubGeladenFuer(resturlaubFuer)
+        setResturlaub(null)
+        setLoadingResturlaub(resturlaubFuer !== null)
+    }
+
+    const holeResturlaub = useCallback((id: number) => fetch(`/api/urlaub/resturlaub?mitarbeiterId=${id}`)
+        .then(res => {
+            if (!res.ok) throw new Error('Resturlaub konnte nicht geladen werden.')
+            return res.json()
+        })
+        .then(data => {
+            setResturlaub(data.verbleibend)
+            setVorjahresRest(data)
+        })
+        .catch(err => {
+            console.error('Fehler beim Laden des Resturlaubs:', err)
+            toast.error('Resturlaub konnte nicht geladen werden.')
+        })
+        .finally(() => setLoadingResturlaub(false)), [toast])
+
     useEffect(() => {
-        if (mitarbeiter && typ === 'URLAUB') {
-            fetchResturlaub()
-        } else {
-            setResturlaub(null)
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mitarbeiter, typ])
+        if (resturlaubFuer !== null) void holeResturlaub(resturlaubFuer)
+    }, [resturlaubFuer, holeResturlaub])
 
-    // Fetch Zeitkonto-Saldo when typ=ZEITAUSGLEICH
+    // Nach dem Absenden: Resturlaub aktualisieren
+    const fetchResturlaub = () => {
+        if (!mitarbeiter) return
+        setLoadingResturlaub(true)
+        void holeResturlaub(mitarbeiter.id)
+    }
+
+    // Stundenkonto nur bei Zeitausgleich (und angemeldet): beim Wechsel zurücksetzen und neu laden.
+    const zeitausgleich = typ === 'ZEITAUSGLEICH' && !!localStorage.getItem('zeiterfassung_token')
+    const [saldoFuerZeitausgleich, setSaldoFuerZeitausgleich] = useState(false)
+    if (saldoFuerZeitausgleich !== zeitausgleich) {
+        setSaldoFuerZeitausgleich(zeitausgleich)
+        setZeitkontoSaldo(null)
+        setLoadingZeitkontoSaldo(zeitausgleich)
+    }
+
     useEffect(() => {
-        if (typ === 'ZEITAUSGLEICH') {
-            fetchZeitkontoSaldo()
-        } else {
-            setZeitkontoSaldo(null)
-        }
-    }, [typ])
-
-    const fetchZeitkontoSaldo = async () => {
         const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return
-        setLoadingZeitkontoSaldo(true)
-        try {
-            const res = await fetch(`/api/zeiterfassung/saldo/${encodeURIComponent(token)}?gesamtBisHeute=true`)
-            if (res.ok) {
+        if (!zeitausgleich || !token) return // ohne Token ist zeitausgleich schon false
+        fetch(`/api/zeiterfassung/saldo/${encodeURIComponent(token)}?gesamtBisHeute=true`)
+            .then(async res => {
+                if (!res.ok) return
                 const data = await res.json()
                 if (data && data.gesamt && typeof data.gesamt.saldo === 'number') {
                     setZeitkontoSaldo(data.gesamt.saldo)
                 }
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden des Stundenkontos:', err)
-        } finally {
-            setLoadingZeitkontoSaldo(false)
-        }
-    }
-
-    const fetchResturlaub = async () => {
-        if (!mitarbeiter) return
-        setLoadingResturlaub(true)
-        try {
-            const res = await fetch(`/api/urlaub/resturlaub?mitarbeiterId=${mitarbeiter.id}`)
-            if (!res.ok) throw new Error('Resturlaub konnte nicht geladen werden.')
-            if (res.ok) {
-                const data = await res.json()
-                setResturlaub(data.verbleibend)
-                setVorjahresRest(data)
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden des Resturlaubs:', err)
-            toast.error('Resturlaub konnte nicht geladen werden.')
-        } finally {
-            setLoadingResturlaub(false)
-        }
-    }
+            })
+            .catch(err => console.error('Fehler beim Laden des Stundenkontos:', err))
+            .finally(() => setLoadingZeitkontoSaldo(false))
+    }, [zeitausgleich])
 
     /**
      * Zählt Arbeitstage (Mo–Fr) zwischen von und bis (inkl.).
@@ -210,13 +240,17 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     // Antwort (offline, Fehler), bleibt es bei der lokalen Schätzung – dann „ungefähr“
     // und der Knopf bleibt frei; der Server prüft beim Absenden ohnehin.
     const zeitraum = von && bis && von <= bis ? `${von}|${bis}` : null
-    const mitarbeiterId = mitarbeiter?.id
     const [urlaubVorschau, setUrlaubVorschau] = useState<{ zeitraum: string; daten: UrlaubVorschau } | null>(null)
+    const vorschauSchluessel = typ === 'URLAUB' && mitarbeiterId !== undefined && zeitraum ? `${mitarbeiterId}|${zeitraum}` : null
     const [vorschauLaedt, setVorschauLaedt] = useState(false)
+    const [vorschauFuer, setVorschauFuer] = useState<string | null>(null)
+    if (vorschauFuer !== vorschauSchluessel) {
+        setVorschauFuer(vorschauSchluessel)
+        setVorschauLaedt(vorschauSchluessel !== null)
+    }
     useEffect(() => {
-        if (typ !== 'URLAUB' || mitarbeiterId === undefined || !zeitraum) { setVorschauLaedt(false); return }
+        if (typ !== 'URLAUB' || mitarbeiterId === undefined || !zeitraum) return
         let abgebrochen = false
-        setVorschauLaedt(true)
         const timer = setTimeout(async () => {
             const [vonDatum, bisDatum] = zeitraum.split('|')
             try {
@@ -242,25 +276,11 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     const vielleichtZuViel = !istGeschaeftsfuehrer && typ === 'URLAUB' && !vorschauAktuell && !vorschauLaedt
         && resturlaub !== null && geschaetzteTage > resturlaub
 
+    // Nach dem Zurückziehen: Liste neu laden
     const fetchAntraege = async () => {
         if (!mitarbeiter) return
         setLoadingAntraege(true)
-        try {
-            // Fetch by year (filtering by status happens client-side for better UX with small lists)
-            const res = await fetch(`/api/urlaub/antraege?mitarbeiterId=${mitarbeiter.id}&jahr=${selectedYear}`)
-            if (!res.ok) throw new Error('Anträge konnten nicht geladen werden.')
-            if (res.ok) {
-                const data = await res.json()
-                // Sort by date desc
-                data.sort((a: Urlaubsantrag, b: Urlaubsantrag) => new Date(b.vonDatum).getTime() - new Date(a.vonDatum).getTime())
-                setAntraege(data)
-            }
-        } catch (error) {
-            console.error("Failed to fetch antraege", error)
-            toast.error('Anträge konnten nicht geladen werden.')
-        } finally {
-            setLoadingAntraege(false)
-        }
+        await holeAntraege(mitarbeiter.id, selectedYear)
     }
 
     // Prüfe auf Feiertage im gewählten Zeitraum

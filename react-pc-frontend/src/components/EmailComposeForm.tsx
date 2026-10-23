@@ -359,23 +359,26 @@ export function EmailComposeForm({
     }, [entityId, isAnfrageContext]);
 
     // Merge: Props + Backend (dedupliziert)
+    const projektKundenEmails = effectiveProjekt?.kundenEmails;
+    const kundeDtoKundenEmails = effectiveProjekt?.kundeDto?.kundenEmails;
+    const anfrageKundenEmails = propAnfrage?.kundenEmails;
     const entityKundenEmails = useMemo(() => {
         const emails: string[] = [];
         // Projekt-spezifische E-Mails (aus effectiveProjekt)
-        if (effectiveProjekt?.kundenEmails) {
-            effectiveProjekt.kundenEmails.forEach(e => {
+        if (projektKundenEmails) {
+            projektKundenEmails.forEach(e => {
                 if (e && !emails.includes(e)) emails.push(e);
             });
         }
         // Kunden-E-Mails aus kundeDto
-        if (effectiveProjekt?.kundeDto?.kundenEmails) {
-            effectiveProjekt.kundeDto.kundenEmails.forEach(e => {
+        if (kundeDtoKundenEmails) {
+            kundeDtoKundenEmails.forEach(e => {
                 if (e && !emails.includes(e)) emails.push(e);
             });
         }
         // Anfrage-E-Mails als Fallback
-        if (propAnfrage?.kundenEmails) {
-            propAnfrage.kundenEmails.forEach(e => {
+        if (anfrageKundenEmails) {
+            anfrageKundenEmails.forEach(e => {
                 if (e && !emails.includes(e)) emails.push(e);
             });
         }
@@ -384,11 +387,14 @@ export function EmailComposeForm({
             if (e && !emails.includes(e)) emails.push(e);
         });
         return emails;
-    }, [effectiveProjekt?.kundenEmails, effectiveProjekt?.kundeDto?.kundenEmails, propAnfrage?.kundenEmails, fetchedEmails]);
+    }, [projektKundenEmails, kundeDtoKundenEmails, anfrageKundenEmails, fetchedEmails]);
 
     const [recipient, setRecipient] = useState<string>(initialRecipient || '');
     const [subject, setSubject] = useState<string>(initialSubject || '');
-    const [body, setBody] = useState<string>(initialBody || '');
+    // Bringt der Startinhalt seine Signatur schon mit (z. B. aus dem Dokument-Editor),
+    // steht der bereinigte Text sofort fest; sonst ergänzt der Mount-Effekt die Signatur.
+    const startTextMitSignatur = !initialDraftId && !replyQuote && !!initialBody && /email-signature/i.test(initialBody);
+    const [body, setBody] = useState<string>(() => (startTextMitSignatur ? sanitizeHtml(initialBody) : initialBody || ''));
     const [signature, setSignature] = useState('');
     const [sending, setSending] = useState(false);
     const [beautifying, setBeautifying] = useState(false);
@@ -540,12 +546,12 @@ export function EmailComposeForm({
     const zuVieleEmpfaenger = einzelversandAktiv && anEmpfaenger.length > EINZELVERSAND_MAX_EMPFAENGER;
     // Solange der Empfänger nur automatisch vorgeschlagen wurde, darf ein Wechsel der
     // Zuordnung ihn mitziehen. Sobald der User selbst tippt, bleibt seine Eingabe stehen.
-    const empfaengerAutomatisch = useRef<boolean>(!initialRecipient && !replyEmailId);
+    const [empfaengerAutomatisch, setEmpfaengerAutomatisch] = useState<boolean>(!initialRecipient && !replyEmailId);
 
     // Handle recipient change
     const handleRecipientChange = (val: string) => {
         markDirty();
-        empfaengerAutomatisch.current = false;
+        setEmpfaengerAutomatisch(false);
         setRecipient(val);
     };
 
@@ -573,11 +579,19 @@ export function EmailComposeForm({
         entwurfSpeichern && !draftLoading && !draftLoadError && !komprimiereAnhaenge, reportDraftError);
     const markDirty = draft.markDirty;
 
+    // Anderer Entwurf: Ladeanzeige beim Rendern einschalten (erneuter Versuch: im Knopf).
+    const [draftIdVorher, setDraftIdVorher] = useState(initialDraftId);
+    if (initialDraftId !== draftIdVorher) {
+        setDraftIdVorher(initialDraftId);
+        if (initialDraftId) {
+            setDraftLoading(true);
+            setDraftLoadError(null);
+        }
+    }
+
     useEffect(() => {
         if (!initialDraftId) return;
         let cancelled = false;
-        setDraftLoading(true);
-        setDraftLoadError(null);
         void loadEmailDraft(initialDraftId).then(({ content, files }) => {
             if (cancelled) return;
             setRecipient(content.recipient ?? initialRecipient);
@@ -602,7 +616,7 @@ export function EmailComposeForm({
             else if (content.anfrageId) setZuordnung({ typ: 'ANFRAGE', id: content.anfrageId, titel: '' });
             else if ('projektId' in content) setZuordnung(null);
             setUploadedFiles(files.map(file => ({ file })));
-            empfaengerAutomatisch.current = false;
+            setEmpfaengerAutomatisch(false);
             setDraftLoading(false);
         }).catch((error: unknown) => {
             if (cancelled) return;
@@ -649,49 +663,61 @@ export function EmailComposeForm({
         } finally { setClosing(false); }
     };
 
-    const loadSignature = useCallback(async () => {
-        const sig = await ladeStandardSignatur(getCurrentFrontendUser()?.id);
-        if (sig) setSignature(sig);
-        return sig;
-    }, []);
+    const loadSignature = useCallback(() =>
+        ladeStandardSignatur(getCurrentFrontendUser()?.id).then(sig => {
+            if (sig) setSignature(sig);
+            return sig;
+        }), []);
 
     // Beim Versand eines Geschäftsdokuments entscheidet nicht die Auswahl,
     // sondern das dafür eingerichtete Postfach. Wir holen die Adresse, um
     // sie fest anzuzeigen.
-    const loadDokumentAbsender = useCallback(async () => {
-        if (!geschaeftsdokument) return;
-        try {
-            const res = await fetch('/api/email/dokument-absender');
-            if (!res.ok) return;
-            const data = await res.json();
-            if (data?.aktiv && typeof data.address === 'string' && data.address.trim()) {
-                setDokumentAbsender(data.address.trim());
-            }
-        } catch (err) {
-            // Kein harter Fehler: Dann steht das Hauptpostfach da, der Versand
-            // läuft serverseitig trotzdem über das richtige Postfach.
-            console.error('Absender für Geschäftsdokumente konnte nicht geladen werden:', err);
-        }
+    const loadDokumentAbsender = useCallback(() => {
+        if (!geschaeftsdokument) return Promise.resolve();
+        return fetch('/api/email/dokument-absender')
+            .then(res => (res.ok ? res.json() : null))
+            .then(data => {
+                if (data?.aktiv && typeof data.address === 'string' && data.address.trim()) {
+                    setDokumentAbsender(data.address.trim());
+                }
+            })
+            .catch(err => {
+                // Kein harter Fehler: Dann steht das Hauptpostfach da, der Versand
+                // läuft serverseitig trotzdem über das richtige Postfach.
+                console.error('Absender für Geschäftsdokumente konnte nicht geladen werden:', err);
+            });
     }, [geschaeftsdokument]);
 
     // Vorbelegung „Senden von“: eigenes Postfach, sonst Hauptpostfach, sonst das erste.
     // Ein gespeicherter Entwurf behält sein Postfach, solange es noch wählbar ist.
-    useEffect(() => {
-        if (absenderPostfaecher.laedt) return;
-        if (postfachId != null && waehlbarePostfaecher.some(p => p.id === postfachId)) return;
+    // (Zustand beim Rendern anpassen; setzt nur, wenn sich etwas ändert.)
+    if (!absenderPostfaecher.laedt && !(postfachId != null && waehlbarePostfaecher.some(p => p.id === postfachId))) {
         const standard = waehleStandardAbsender(waehlbarePostfaecher)?.id ?? null;
         if (standard !== postfachId) setPostfachId(standard);
-    }, [absenderPostfaecher.laedt, waehlbarePostfaecher, postfachId]);
+    }
 
     // Antwort/Weiterleitung: Postfach (und bei Weiterleitungen die Anhänge) der Original-Mail
     // holen, falls der Aufrufer sie nicht mitgibt (z. B. beim Wiederöffnen eines Entwurfs).
+    // Ladeanzeigen dafür beim Rendern setzen, sobald etwas zu holen ist.
+    const originalPostfachFehlt = bekanntesAntwortPostfach === undefined;
+    const originalAnhaengeFehlen = !!weitergeleitetVonEmailId && !weiterleitungsAnhaengeBekannt;
+    const originalLadeSchluessel = originalEmailId && (originalPostfachFehlt || originalAnhaengeFehlen)
+        ? `${originalEmailId}|${originalPostfachFehlt}|${originalAnhaengeFehlen}`
+        : null;
+    const [originalLadeSchluesselVorher, setOriginalLadeSchluesselVorher] = useState<string | null>(null);
+    if (originalLadeSchluessel !== originalLadeSchluesselVorher) {
+        setOriginalLadeSchluesselVorher(originalLadeSchluessel);
+        if (originalLadeSchluessel) {
+            if (originalPostfachFehlt) setFestesPostfach(undefined);
+            if (originalAnhaengeFehlen) setOriginalAnhaengeLaden(true);
+        }
+    }
+
     useEffect(() => {
         const postfachFehlt = bekanntesAntwortPostfach === undefined;
         const anhaengeFehlen = !!weitergeleitetVonEmailId && !weiterleitungsAnhaengeBekannt;
         if (!originalEmailId || (!postfachFehlt && !anhaengeFehlen)) return;
         let aktiv = true;
-        if (postfachFehlt) setFestesPostfach(undefined);
-        if (anhaengeFehlen) setOriginalAnhaengeLaden(true);
         fetch(`/api/emails/${originalEmailId}`)
             .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
             .then((original: { antwortPostfach?: PostfachKurz | null; attachments?: EmailAttachment[] | null }) => {
@@ -713,46 +739,19 @@ export function EmailComposeForm({
         return () => { aktiv = false; };
     }, [originalEmailId, bekanntesAntwortPostfach, weitergeleitetVonEmailId, weiterleitungsAnhaengeBekannt, toast]);
 
-    const loadEntityDokumente = useCallback(async () => {
+    // Dateien des verknüpften Vorgangs: bei Wechsel der Zuordnung Liste bzw.
+    // Ladeanzeige beim Rendern anpassen, geladen wird im Effekt weiter unten.
+    const entityDokumenteSchluessel = entityId ? `${isAnfrageContext ? 'anfrage' : 'projekt'}:${entityId}` : '';
+    const [entityDokumenteSchluesselVorher, setEntityDokumenteSchluesselVorher] = useState<string | null>(null);
+    if (entityDokumenteSchluessel !== entityDokumenteSchluesselVorher) {
+        setEntityDokumenteSchluesselVorher(entityDokumenteSchluessel);
         if (!entityId) {
             setEntityDokumente([]);
             setBautagebuchDokumente([]);
-            return;
+        } else {
+            setLoadingEntityDokumente(true);
         }
-        setLoadingEntityDokumente(true);
-        try {
-            const apiUrl = isAnfrageContext
-                ? `/api/anfragen/${entityId}/dokumente`
-                : `/api/projekte/${entityId}/dokumente`;
-            const res = await fetch(apiUrl);
-            if (!res.ok) throw new Error('Dateien konnten nicht geladen werden');
-            setEntityDokumente(await res.json());
-            // Bautagebuch ist eine Zugabe: scheitert es, bleiben die normalen Dateien nutzbar.
-            try {
-                const notizRes = await fetch(`${apiUrl.replace(/\/dokumente$/, '')}/notizen`);
-                if (notizRes.ok) {
-                    const notizen: { bilder?: { id: number; url: string; originalDateiname: string; erstelltAm?: string }[] }[] = await notizRes.json();
-                    setBautagebuchDokumente(notizen.flatMap(notiz => (notiz.bilder ?? []).map(bild => ({
-                        id: -bild.id,
-                        originalDateiname: bild.originalDateiname,
-                        url: bild.url,
-                        dokumentGruppe: 'DIVERSE_DOKUMENTE' as const,
-                        uploadDatum: bild.erstelltAm,
-                    }))));
-                } else {
-                    setBautagebuchDokumente([]);
-                }
-            } catch (notizErr) {
-                console.error('Bautagebuch-Dateien konnten nicht geladen werden:', notizErr);
-                setBautagebuchDokumente([]);
-            }
-        } catch (err) {
-            console.error('Projekt-/Anfrage-Dateien konnten nicht geladen werden:', err);
-            setError('Projekt-/Anfrage-Dateien konnten nicht geladen werden.');
-        } finally {
-            setLoadingEntityDokumente(false);
-        }
-    }, [entityId, isAnfrageContext]);
+    }
 
     // Initialisierung - nur einmal beim Mount
     useEffect(() => {
@@ -791,7 +790,8 @@ export function EmailComposeForm({
             // Signatur nur anhängen wenn im Body noch keine enthalten ist (Draft enthält sie bereits)
             const alreadyHasSignature = /email-signature/i.test(initialBody);
             if (alreadyHasSignature) {
-                setBody(setzeEditorHtml(editorRef.current, initialBody));
+                // body steht schon beim ersten Rendern fest (startTextMitSignatur).
+                setzeEditorHtml(editorRef.current, initialBody);
             } else {
                 loadSignature().then(sig => {
                     setBody(setzeEditorHtml(editorRef.current, `${initialBody}${sig}`));
@@ -807,8 +807,42 @@ export function EmailComposeForm({
 
     // Dateien des verknüpften Vorgangs laden – auch nach Wechsel der Zuordnung
     useEffect(() => {
-        loadEntityDokumente();
-    }, [loadEntityDokumente]);
+        if (!entityId) return;
+        void (async () => {
+            try {
+                const apiUrl = isAnfrageContext
+                    ? `/api/anfragen/${entityId}/dokumente`
+                    : `/api/projekte/${entityId}/dokumente`;
+                const res = await fetch(apiUrl);
+                if (!res.ok) throw new Error('Dateien konnten nicht geladen werden');
+                setEntityDokumente(await res.json());
+                // Bautagebuch ist eine Zugabe: scheitert es, bleiben die normalen Dateien nutzbar.
+                try {
+                    const notizRes = await fetch(`${apiUrl.replace(/\/dokumente$/, '')}/notizen`);
+                    if (notizRes.ok) {
+                        const notizen: { bilder?: { id: number; url: string; originalDateiname: string; erstelltAm?: string }[] }[] = await notizRes.json();
+                        setBautagebuchDokumente(notizen.flatMap(notiz => (notiz.bilder ?? []).map(bild => ({
+                            id: -bild.id,
+                            originalDateiname: bild.originalDateiname,
+                            url: bild.url,
+                            dokumentGruppe: 'DIVERSE_DOKUMENTE' as const,
+                            uploadDatum: bild.erstelltAm,
+                        }))));
+                    } else {
+                        setBautagebuchDokumente([]);
+                    }
+                } catch (notizErr) {
+                    console.error('Bautagebuch-Dateien konnten nicht geladen werden:', notizErr);
+                    setBautagebuchDokumente([]);
+                }
+            } catch (err) {
+                console.error('Projekt-/Anfrage-Dateien konnten nicht geladen werden:', err);
+                setError('Projekt-/Anfrage-Dateien konnten nicht geladen werden.');
+            } finally {
+                setLoadingEntityDokumente(false);
+            }
+        })();
+    }, [entityId, isAnfrageContext]);
 
     // Escape schließt die Rückfrage vor dem Senden
     useEffect(() => {
@@ -822,11 +856,14 @@ export function EmailComposeForm({
 
     // Empfänger aus dem verknüpften Vorgang vorschlagen – auch nach einem Wechsel der
     // Zuordnung, damit die Mail nicht an den Kunden des vorherigen Projekts geht.
-    useEffect(() => {
-        if (!empfaengerAutomatisch.current) return;
-        if (entityKundenEmails.length === 0) return;
-        setRecipient(prev => (prev === entityKundenEmails[0] ? prev : entityKundenEmails[0]));
-    }, [entityKundenEmails]);
+    // (Zustand beim Rendern anpassen.)
+    const [vorgeschlageneEmailsVorher, setVorgeschlageneEmailsVorher] = useState<string[] | null>(null);
+    if (entityKundenEmails !== vorgeschlageneEmailsVorher) {
+        setVorgeschlageneEmailsVorher(entityKundenEmails);
+        if (empfaengerAutomatisch && entityKundenEmails.length > 0 && recipient !== entityKundenEmails[0]) {
+            setRecipient(entityKundenEmails[0]);
+        }
+    }
 
     // Externe Dateien hochladen. Fotos werden vorher verkleinert – siehe
     // komprimiereBilderFuerEmail: Handyfotos sprengen sonst das Anhangslimit.
@@ -1144,7 +1181,11 @@ export function EmailComposeForm({
         <div className="flex h-full min-h-48 flex-col items-center justify-center gap-4 p-4" role={draftLoadError ? 'alert' : 'status'}>
             {draftLoading ? <><Loader2 className="h-5 w-5 animate-spin" />Entwurf und Anhänge werden geladen…</> : <>
                 <p className="text-sm text-rose-700">{draftLoadError}</p>
-                <Button onClick={() => setLoadAttempt(value => value + 1)}>Erneut laden</Button>
+                <Button onClick={() => {
+                    setDraftLoading(true);
+                    setDraftLoadError(null);
+                    setLoadAttempt(value => value + 1);
+                }}>Erneut laden</Button>
             </>}
             <Button variant="outline" onClick={onClose}>Schließen</Button>
         </div>

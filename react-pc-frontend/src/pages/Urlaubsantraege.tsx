@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
@@ -58,7 +58,7 @@ export default function Urlaubsantraege() {
     const [statusFilter, setStatusFilter] = useState<string>(() => {
         return searchParams.get('status') || 'OFFEN';
     });
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [fokusId, setFokusId] = useState<number | null>(() => {
         const v = searchParams.get('antragId');
         return v ? Number(v) : null;
@@ -73,16 +73,20 @@ export default function Urlaubsantraege() {
     // Deep-link: read status + optionalen fokusId aus URL.
     // fokusId wird nach dem Scrollen wieder aus der URL entfernt, damit die Hervorhebung
     // nicht beim Reload wieder triggert.
-    useEffect(() => {
+    // Den Zustand übernehmen wir beim Rendern, das Aufräumen der Adresszeile im Effekt.
+    const [verarbeiteteParams, setVerarbeiteteParams] = useState(searchParams);
+    if (verarbeiteteParams !== searchParams) {
+        setVerarbeiteteParams(searchParams);
         const statusParam = searchParams.get('status');
         const antragParam = searchParams.get('antragId');
-        if (statusParam || antragParam) {
-            if (statusParam) setStatusFilter(statusParam);
-            if (antragParam) setFokusId(Number(antragParam));
+        if (statusParam) setStatusFilter(statusParam);
+        if (antragParam) setFokusId(Number(antragParam));
+    }
+    useEffect(() => {
+        if (searchParams.get('status') || searchParams.get('antragId')) {
             setSearchParams({}, { replace: true });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams]);
+    }, [searchParams, setSearchParams]);
 
     // Scroll + Highlight, sobald die Liste die fokussierte ID enthält.
     useEffect(() => {
@@ -104,10 +108,31 @@ export default function Urlaubsantraege() {
         return () => window.clearTimeout(t);
     }, [fokusId, antraege]);
 
+    // Anderer Status-Filter: Ladeanzeige an, bevor der Effekt neu lädt.
+    const [geladenerFilter, setGeladenerFilter] = useState(statusFilter);
+    if (geladenerFilter !== statusFilter) {
+        setGeladenerFilter(statusFilter);
+        setLoading(true);
+    }
+
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.
+    const loadAntraege = useCallback(() => fetch(`/api/urlaub/antraege?status=${statusFilter}`)
+        .then(async (res) => {
+            if (res.ok) {
+                const data = await res.json();
+                setAntraege(data);
+            }
+        })
+        .catch((error) => {
+            console.error("Error loading requests", error);
+        })
+        .finally(() => {
+            setLoading(false);
+        }), [statusFilter]);
+
     useEffect(() => {
-        loadAntraege();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [statusFilter]);
+        void loadAntraege();
+    }, [loadAntraege]);
 
     // Hinweis auf eine laufende Krankmeldung, dort abgefragt, wo die
     // Entscheidung fällt: bei jedem offenen Antrag, direkt beim Laden, nicht
@@ -116,12 +141,15 @@ export default function Urlaubsantraege() {
     // (kriterien.md, Performance). Der Hinweis ist Beiwerk: ein Fehler hier
     // darf die Antragsliste nicht kaputt machen, deshalb kein Toast/Error-UI,
     // nur ein leerer Kasten (= gar keiner).
+    // Ohne offene Anträge gibt es keine Hinweise: gleich beim Rendern leeren.
+    const [hinweiseFuer, setHinweiseFuer] = useState(antraege);
+    if (hinweiseFuer !== antraege) {
+        setHinweiseFuer(antraege);
+        if (!antraege.some(a => a.status === 'OFFEN')) setHinweise({});
+    }
     useEffect(() => {
         const offeneAntraege = antraege.filter(a => a.status === 'OFFEN');
-        if (offeneAntraege.length === 0) {
-            setHinweise({});
-            return;
-        }
+        if (offeneAntraege.length === 0) return;
         let abgebrochen = false;
         Promise.all(
             offeneAntraege.map(async (antrag): Promise<[number, string[]]> => {
@@ -147,21 +175,6 @@ export default function Urlaubsantraege() {
         return () => { abgebrochen = true; };
     }, [antraege]);
 
-    const loadAntraege = async () => {
-        setLoading(true);
-        try {
-            const res = await fetch(`/api/urlaub/antraege?status=${statusFilter}`);
-            if (res.ok) {
-                const data = await res.json();
-                setAntraege(data);
-            }
-        } catch (error) {
-            console.error("Error loading requests", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     /** Genehmigen, Ablehnen, Stornieren – ein Ablauf, damit jede Antwort des Servers sichtbar wird. */
     const entscheide = async (id: number, aktion: 'approve' | 'reject' | 'storno', erfolg: string, ersatzFehler: string) => {
         setAktionLaeuftId(id);
@@ -172,6 +185,7 @@ export default function Urlaubsantraege() {
                 return;
             }
             toast.success(erfolg);
+            setLoading(true);
             await loadAntraege();
         } catch (error) {
             console.error(`Error (${aktion}) request`, error);

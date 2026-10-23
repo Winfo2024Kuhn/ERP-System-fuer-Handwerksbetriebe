@@ -43,36 +43,47 @@ export function LieferantSearchModal({
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
-    const loadLieferanten = useCallback(async (query: string) => {
+    // Beim Öffnen (oder anderem Vorgabe-Suchtext/Filter bei offenem Fenster): Suchtext setzen
+    // und sofort die Ladeanzeige zeigen – geladen wird im Effekt unten.
+    const oeffnung = isOpen ? `offen|${nurAktive}|${initialSearch}` : 'zu';
+    const [letzteOeffnung, setLetzteOeffnung] = useState('zu');
+    if (oeffnung !== letzteOeffnung) {
+        setLetzteOeffnung(oeffnung);
+        if (isOpen) {
+            setSearchTerm(initialSearch.trim());
+            setLoading(true);
+        }
+    }
+
+    const loadLieferanten = useCallback((query: string) => {
         if (abortRef.current) abortRef.current.abort();
         const controller = new AbortController();
         abortRef.current = controller;
 
-        setLoading(true);
-        try {
-            const params = new URLSearchParams({ size: '100' });
-            if (query.trim()) params.set('q', query.trim());
-            const res = await fetch(`/api/lieferanten?${params}`, { signal: controller.signal });
-            if (!res.ok) throw new Error('Fehler beim Laden');
-            const data = await res.json();
-            const list: LieferantSuchErgebnis[] = Array.isArray(data?.lieferanten) ? data.lieferanten : [];
-            const gefiltert = nurAktive ? list.filter(l => l.istAktiv !== false) : list;
-            setLieferanten(gefiltert);
-            setTotalCount(typeof data?.gesamt === 'number' ? data.gesamt : gefiltert.length);
-        } catch (e) {
-            if (!(e instanceof DOMException && e.name === 'AbortError')) {
-                console.error('Lieferantensuche fehlgeschlagen:', e);
-            }
-        } finally {
-            if (!controller.signal.aborted) setLoading(false);
-        }
+        const params = new URLSearchParams({ size: '100' });
+        if (query.trim()) params.set('q', query.trim());
+        return fetch(`/api/lieferanten?${params}`, { signal: controller.signal })
+            .then(async (res) => {
+                if (!res.ok) throw new Error('Fehler beim Laden');
+                const data = await res.json();
+                const list: LieferantSuchErgebnis[] = Array.isArray(data?.lieferanten) ? data.lieferanten : [];
+                const gefiltert = nurAktive ? list.filter(l => l.istAktiv !== false) : list;
+                setLieferanten(gefiltert);
+                setTotalCount(typeof data?.gesamt === 'number' ? data.gesamt : gefiltert.length);
+            })
+            .catch((e: unknown) => {
+                if (!(e instanceof DOMException && e.name === 'AbortError')) {
+                    console.error('Lieferantensuche fehlgeschlagen:', e);
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
+            });
     }, [nurAktive]);
 
     useEffect(() => {
         if (isOpen) {
-            const suche = initialSearch.trim();
-            setSearchTerm(suche);
-            loadLieferanten(suche);
+            void loadLieferanten(initialSearch.trim());
         }
         return () => {
             if (abortRef.current) abortRef.current.abort();
@@ -82,7 +93,10 @@ export function LieferantSearchModal({
     useEffect(() => {
         if (!isOpen) return;
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => loadLieferanten(searchTerm), 250);
+        debounceRef.current = setTimeout(() => {
+            setLoading(true);
+            void loadLieferanten(searchTerm);
+        }, 250);
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };

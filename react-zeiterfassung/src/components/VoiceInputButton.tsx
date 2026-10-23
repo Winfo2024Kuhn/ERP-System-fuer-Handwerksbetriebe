@@ -257,7 +257,7 @@ export default function VoiceInputButton({
         if (zustand !== 'bereit') return
 
         // Beim ersten Mal erst erklaeren, wohin die Aufnahme geht — dann erst aufnehmen.
-        let schonGesehen = false
+        let schonGesehen: boolean
         try {
             schonGesehen = localStorage.getItem(HINWEIS_MERKER) === '1'
         } catch {

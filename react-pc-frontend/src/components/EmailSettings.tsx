@@ -139,6 +139,25 @@ const fetchUserDefaultSignatureHtml = async (): Promise<string> => {
     return '';
 };
 
+// Visual chip button used to insert placeholders at cursor.
+// mousedown preventDefault keeps the active editor (input or contentEditable)
+// focused, so the saved selection/caret is preserved when the click fires.
+function PlaceholderChip({ token, label, onClick }: { token: string; label: string; onClick: () => void }) {
+    return (
+        <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onClick}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-rose-200 text-rose-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 transition-colors cursor-pointer shadow-sm"
+            title={`${token} am Cursor einfügen`}
+        >
+            <Plus className="w-3 h-3" />
+            {label}
+            <code className="text-[10px] text-rose-400 font-mono">{token}</code>
+        </button>
+    );
+}
+
 export default function EmailSettings() {
     const toast = useToast();
     const confirmDialog = useConfirm();
@@ -149,7 +168,7 @@ export default function EmailSettings() {
 
     // OOO state
     const [oooEntries, setOooEntries] = useState<OutOfOfficeEntry[]>([]);
-    const [loadingOoo, setLoadingOoo] = useState(false);
+    const [loadingOoo, setLoadingOoo] = useState(true);
     const [editingOoo, setEditingOoo] = useState<OooEntwurf | null>(null);
     const [savingOoo, setSavingOoo] = useState(false);
     const [waehlbarePostfaecher, setWaehlbarePostfaecher] = useState<WaehlbaresPostfach[]>([]);
@@ -168,80 +187,99 @@ export default function EmailSettings() {
     // Active tab within settings
     const [activeSection, setActiveSection] = useState<'signatures' | 'ooo'>('signatures');
 
+    // Die hol…-Funktionen laden ohne Start-Ladeanzeige (Startwerte bzw. die load…-Varianten
+    // für Knöpfe und nach dem Speichern setzen sie), damit beim Öffnen kein setState
+    // synchron im Effekt läuft.
+
     // Signaturen laden (Benutzer: eigene, Admins: alle – das filtert das Backend)
-    const loadSignatures = useCallback(async () => {
+    const holeSignaturen = useCallback(() =>
+        ladeSignaturen()
+            .then((liste) => {
+                setSignatures(liste);
+                setSignaturLadeFehler(false);
+            })
+            .catch((err) => {
+                setSignaturLadeFehler(true);
+                toast.error(err instanceof Error ? err.message : 'Signaturen konnten nicht geladen werden.');
+            })
+            .finally(() => {
+                setLoadingSignatures(false);
+            }), [toast]);
+
+    const loadSignatures = useCallback(() => {
         setLoadingSignatures(true);
-        try {
-            setSignatures(await ladeSignaturen());
-            setSignaturLadeFehler(false);
-        } catch (err) {
-            setSignaturLadeFehler(true);
-            toast.error(err instanceof Error ? err.message : 'Signaturen konnten nicht geladen werden.');
-        } finally {
-            setLoadingSignatures(false);
-        }
-    }, [toast]);
+        return holeSignaturen();
+    }, [holeSignaturen]);
 
     // Load OOO entries - map backend field names to frontend
-    const loadOooEntries = useCallback(async () => {
+    const holeOooEintraege = useCallback(() =>
+        fetch('/api/email/outofoffice')
+            .then(async (res) => {
+                if (!res.ok) {
+                    toast.error(await fehlerTextAus(res, 'Abwesenheitsnotizen konnten nicht geladen werden.'));
+                    return;
+                }
+                const data: OutOfOfficeBackend[] = await res.json();
+                // Map backend field names to frontend
+                const mapped: OutOfOfficeEntry[] = (Array.isArray(data) ? data : []).map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    startDate: item.startAt,
+                    endDate: item.endAt,
+                    subject: item.subjectTemplate || '',
+                    message: item.bodyTemplate || '',
+                    signatureId: item.signature?.id || null,
+                    active: item.active,
+                    postfaecher: Array.isArray(item.postfaecher) ? item.postfaecher.filter(istPostfach) : []
+                }));
+                setOooEntries(mapped);
+            })
+            .catch((err) => {
+                console.error('Failed to load OOO entries', err);
+                toast.error('Abwesenheitsnotizen konnten nicht geladen werden.');
+            })
+            .finally(() => {
+                setLoadingOoo(false);
+            }), [toast]);
+
+    const loadOooEntries = useCallback(() => {
         setLoadingOoo(true);
-        try {
-            const res = await fetch('/api/email/outofoffice');
-            if (!res.ok) {
-                toast.error(await fehlerTextAus(res, 'Abwesenheitsnotizen konnten nicht geladen werden.'));
-                return;
-            }
-            const data: OutOfOfficeBackend[] = await res.json();
-            // Map backend field names to frontend
-            const mapped: OutOfOfficeEntry[] = (Array.isArray(data) ? data : []).map((item) => ({
-                id: item.id,
-                title: item.title,
-                startDate: item.startAt,
-                endDate: item.endAt,
-                subject: item.subjectTemplate || '',
-                message: item.bodyTemplate || '',
-                signatureId: item.signature?.id || null,
-                active: item.active,
-                postfaecher: Array.isArray(item.postfaecher) ? item.postfaecher.filter(istPostfach) : []
-            }));
-            setOooEntries(mapped);
-        } catch (err) {
-            console.error('Failed to load OOO entries', err);
-            toast.error('Abwesenheitsnotizen konnten nicht geladen werden.');
-        } finally {
-            setLoadingOoo(false);
-        }
-    }, [toast]);
+        return holeOooEintraege();
+    }, [holeOooEintraege]);
 
     // Postfächer, die der angemeldete Benutzer für Abwesenheitsnotizen ankreuzen darf.
     // Welche das sind, entscheidet allein das Backend (eigenes + allgemeine, Admins alle).
-    const loadWaehlbarePostfaecher = useCallback(async () => {
-        setPostfachStatus('laden');
-        try {
-            const res = await fetch('/api/email/outofoffice/postfaecher');
-            if (!res.ok) {
+    const holeWaehlbarePostfaecher = useCallback(() =>
+        fetch('/api/email/outofoffice/postfaecher')
+            .then(async (res) => {
+                if (!res.ok) {
+                    setPostfachStatus('fehler');
+                    toast.error(await fehlerTextAus(res, 'Postfächer für die Abwesenheitsnotiz konnten nicht geladen werden.'));
+                    return;
+                }
+                const data: unknown = await res.json();
+                const liste = Array.isArray(data)
+                    ? data.filter(istPostfach).map((p) => ({ ...p, eigenes: (p as WaehlbaresPostfach).eigenes === true }))
+                    : [];
+                setWaehlbarePostfaecher(liste);
+                setPostfachStatus('fertig');
+            })
+            .catch((err) => {
+                console.error('Failed to load mailboxes for OOO', err);
                 setPostfachStatus('fehler');
-                toast.error(await fehlerTextAus(res, 'Postfächer für die Abwesenheitsnotiz konnten nicht geladen werden.'));
-                return;
-            }
-            const data: unknown = await res.json();
-            const liste = Array.isArray(data)
-                ? data.filter(istPostfach).map((p) => ({ ...p, eigenes: (p as WaehlbaresPostfach).eigenes === true }))
-                : [];
-            setWaehlbarePostfaecher(liste);
-            setPostfachStatus('fertig');
-        } catch (err) {
-            console.error('Failed to load mailboxes for OOO', err);
-            setPostfachStatus('fehler');
-            toast.error('Postfächer für die Abwesenheitsnotiz konnten nicht geladen werden.');
-        }
-    }, [toast]);
+                toast.error('Postfächer für die Abwesenheitsnotiz konnten nicht geladen werden.');
+            }), [toast]);
+
+    const loadWaehlbarePostfaecher = useCallback(() => {
+        setPostfachStatus('laden');
+        return holeWaehlbarePostfaecher();
+    }, [holeWaehlbarePostfaecher]);
 
     useEffect(() => {
-        loadSignatures();
-        loadOooEntries();
-        loadWaehlbarePostfaecher();
-    }, [loadSignatures, loadOooEntries, loadWaehlbarePostfaecher]);
+        void holeSignaturen();
+        void holeOooEintraege();
+        void holeWaehlbarePostfaecher();
+    }, [holeSignaturen, holeOooEintraege, holeWaehlbarePostfaecher]);
 
     // Initialize the contentEditable editor's HTML only when the entry changes,
     // not on every state update. Without this, dangerouslySetInnerHTML would
@@ -589,23 +627,6 @@ ${signatureHtml}`;
         }
         saveMessageRange();
     };
-
-    // Visual chip button used to insert placeholders at cursor.
-    // mousedown preventDefault keeps the active editor (input or contentEditable)
-    // focused, so the saved selection/caret is preserved when the click fires.
-    const PlaceholderChip = ({ token, label, onClick }: { token: string; label: string; onClick: () => void }) => (
-        <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={onClick}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-rose-200 text-rose-700 text-xs font-medium hover:bg-rose-50 hover:border-rose-300 transition-colors cursor-pointer shadow-sm"
-            title={`${token} am Cursor einfügen`}
-        >
-            <Plus className="w-3 h-3" />
-            {label}
-            <code className="text-[10px] text-rose-400 font-mono">{token}</code>
-        </button>
-    );
 
     return (
         <div className="space-y-6">

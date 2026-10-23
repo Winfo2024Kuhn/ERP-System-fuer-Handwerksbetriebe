@@ -98,7 +98,7 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [documents, setDocuments] = useState<ProjektDokument[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(() => Boolean(projektId || anfrageId));
     const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
     const [uploadingGroups, setUploadingGroups] = useState<Set<string>>(new Set());
     const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
@@ -111,32 +111,42 @@ export default function DocumentManager({ projektId, anfrageId, className }: Doc
         ? `/api/anfragen/${entityId}/dokumente`
         : `/api/projekte/${entityId}/dokumente`;
 
-    // Dokumente laden
-    const loadDocuments = useCallback(async (options?: { preserveLoading?: boolean }) => {
-        if (!entityId) {
+    // Anderes Projekt / andere Anfrage: Ladezustand beim Rendern anpassen.
+    const ladeSchluessel = entityId ? apiBasePath : null;
+    const [ladeSchluesselVorher, setLadeSchluesselVorher] = useState(ladeSchluessel);
+    if (ladeSchluessel !== ladeSchluesselVorher) {
+        setLadeSchluesselVorher(ladeSchluessel);
+        if (ladeSchluessel) {
+            setLoading(true);
+        } else {
             setDocuments([]);
             setLoading(false);
-            return;
         }
-        if (!options?.preserveLoading) {
-            setLoading(true);
-        }
-        try {
-            const res = await fetch(apiBasePath);
-            if (!res.ok) throw new Error('Fehler beim Laden der Dokumente');
-            const data: ProjektDokument[] = await res.json();
-            setDocuments(data);
-        } catch (err) {
-            console.error('Fehler beim Laden der Dokumente:', err);
-        } finally {
-            if (!options?.preserveLoading) {
-                setLoading(false);
-            }
-        }
+    }
+
+    // Dokumente laden (den Ladezustand zu Beginn setzt der Aufrufer)
+    const loadDocuments = useCallback((options?: { preserveLoading?: boolean }) => {
+        if (!entityId) return Promise.resolve();
+        return fetch(apiBasePath)
+            .then(res => {
+                if (!res.ok) throw new Error('Fehler beim Laden der Dokumente');
+                return res.json();
+            })
+            .then((data: ProjektDokument[]) => {
+                setDocuments(data);
+            })
+            .catch(err => {
+                console.error('Fehler beim Laden der Dokumente:', err);
+            })
+            .finally(() => {
+                if (!options?.preserveLoading) {
+                    setLoading(false);
+                }
+            });
     }, [entityId, apiBasePath]);
 
     useEffect(() => {
-        loadDocuments();
+        void loadDocuments();
     }, [loadDocuments]);
 
     // Dokumente nach Gruppe gruppieren

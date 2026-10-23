@@ -160,9 +160,6 @@ function Gruppe({ icon, titel, children }: { icon: ReactNode; titel: string; chi
 
 export function BerechtigungenSection() {
     const toast = useToast();
-    // Stabile Referenz, damit laden keine wechselnde Abhängigkeit bekommt.
-    const toastRef = useRef(toast);
-    toastRef.current = toast;
     const [abteilungen, setAbteilungen] = useState<AbteilungBerechtigung[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
@@ -178,12 +175,10 @@ export function BerechtigungenSection() {
      * Holt die Rechte aller Abteilungen. `leise` (nach Anlegen/Umbenennen/Löschen einer Abteilung):
      * ohne Ladeanzeige, und noch nicht gespeicherte Häkchen der übrigen Abteilungen bleiben stehen –
      * vom Server kommen dann nur neue Abteilungen, neue Namen und das Verschwinden gelöschter.
+     * Ladeanzeige und Fehler setzt `neuLaden` vorab zurück; beim ersten Laden stimmen die Startwerte.
      */
-    const laden = useCallback(async (leise = false) => {
-        if (!leise) setLoading(true);
-        setLoadError(false);
-        try {
-            const res = await fetch('/api/abteilungen/berechtigungen');
+    const laden = useCallback((leise = false) => fetch('/api/abteilungen/berechtigungen')
+        .then(async (res) => {
             if (!res.ok) throw new Error('Berechtigungen konnten nicht geladen werden.');
             const data: AbteilungBerechtigung[] = await res.json();
             const frisch = data.map(normalisiere);
@@ -193,15 +188,21 @@ export function BerechtigungenSection() {
                     return bisher ? { ...bisher, abteilungName: neu.abteilungName } : neu;
                 })
                 : frisch));
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             setLoadError(true);
-            toastRef.current.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht geladen werden.');
-        }
-        setLoading(false);
-    }, []);
+            toast.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht geladen werden.');
+        })
+        .finally(() => setLoading(false)), [toast]);
+
+    const neuLaden = (leise = false) => {
+        if (!leise) setLoading(true);
+        setLoadError(false);
+        return laden(leise);
+    };
 
     useEffect(() => {
-        laden();
+        void laden();
     }, [laden]);
 
     const aendere = (abteilungId: number, aenderung: (abt: AbteilungBerechtigung) => AbteilungBerechtigung) => {
@@ -266,7 +267,7 @@ export function BerechtigungenSection() {
             {/* Beide Karten laden eigenständig – unabhängig von den Abteilungsrechten darunter. */}
             <AbteilungenVerwaltenKarte onGeaendert={() => {
                 setAbteilungenStand((stand) => stand + 1);
-                void laden(true);
+                void neuLaden(true);
             }} />
             <PostfachSichtbarkeitKarte abteilungenStand={abteilungenStand} />
 
@@ -287,7 +288,7 @@ export function BerechtigungenSection() {
                     {loadError && (
                         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                             Berechtigungen konnten nicht geladen werden.
-                            <Button variant="outline" size="sm" onClick={() => void laden()}>Erneut laden</Button>
+                            <Button variant="outline" size="sm" onClick={() => void neuLaden()}>Erneut laden</Button>
                         </div>
                     )}
                     {!loadError && abteilungen.length === 0 && (

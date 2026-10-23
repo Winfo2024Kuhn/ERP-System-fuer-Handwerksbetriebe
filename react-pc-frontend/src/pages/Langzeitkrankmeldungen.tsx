@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Stethoscope, Plus, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Card } from '../components/ui/card';
@@ -100,25 +100,35 @@ export default function Langzeitkrankmeldungen() {
     const [lohnfortzahlungBisBeruehrt, setLohnfortzahlungBisBeruehrt] = useState(false);
     const [neuNotiz, setNeuNotiz] = useState('');
 
-    const loadMeldungen = async () => {
+    // Anderer Status-Filter: Ladeanzeige an, bevor der Effekt neu lädt.
+    const [geladenerFilter, setGeladenerFilter] = useState(statusFilter);
+    if (geladenerFilter !== statusFilter) {
+        setGeladenerFilter(statusFilter);
         setLadeStatus('laedt');
-        try {
-            const res = await fetch(`/api/langzeitkrankmeldungen?status=${statusFilter}`);
+    }
+
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.
+    const loadMeldungen = useCallback(() => fetch(`/api/langzeitkrankmeldungen?status=${statusFilter}`)
+        .then(async (res) => {
             if (!res.ok) throw new Error();
             const data = await res.json();
             setMeldungen(Array.isArray(data) ? data : []);
             setExpandedId(null);
             setLadeStatus('ok');
-        } catch {
+        })
+        .catch(() => {
             setLadeStatus('fehler');
             toast.error('Krankmeldungen konnten nicht geladen werden.');
-        }
+        }), [statusFilter, toast]);
+
+    const neuLaden = () => {
+        setLadeStatus('laedt');
+        return loadMeldungen();
     };
 
     useEffect(() => {
-        loadMeldungen();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [statusFilter]);
+        void loadMeldungen();
+    }, [loadMeldungen]);
 
     // Stammdaten fuer den Anlegen-Dialog und das Tageslimit im Stufenplan --
     // zwei unabhaengige Fetches, kein Wasserfall (kriterien.md, Performance).
@@ -215,7 +225,7 @@ export default function Langzeitkrankmeldungen() {
             if (await pruefeAntwort(res)) return;
             if (!res.ok) throw new Error(await fehlertextAus(res, 'Konnte nicht abgeschlossen werden.'));
             toast.success('Krankmeldung abgeschlossen.');
-            await loadMeldungen();
+            await neuLaden();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Konnte nicht abgeschlossen werden.');
         } finally {
@@ -243,7 +253,7 @@ export default function Langzeitkrankmeldungen() {
             if (await pruefeAntwort(res)) return;
             if (!res.ok) throw new Error(await fehlertextAus(res, 'Die Krankmeldung konnte nicht wieder geöffnet werden.'));
             toast.success('Krankmeldung wieder geöffnet.');
-            await loadMeldungen();
+            await neuLaden();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Die Krankmeldung konnte nicht wieder geöffnet werden.');
         } finally {
@@ -267,7 +277,7 @@ export default function Langzeitkrankmeldungen() {
             if (await pruefeAntwort(res)) return;
             if (!res.ok) throw new Error(await fehlertextAus(res, 'Konnte nicht zurückgenommen werden.'));
             toast.success('Krankmeldung zurückgenommen.');
-            await loadMeldungen();
+            await neuLaden();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Konnte nicht zurückgenommen werden.');
         } finally {
@@ -334,7 +344,7 @@ export default function Langzeitkrankmeldungen() {
             toast.success('Krankmeldung angelegt.');
             setAnlegenOffen(false);
             resetAnlegenForm();
-            await loadMeldungen();
+            await neuLaden();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Die Krankmeldung konnte nicht angelegt werden.');
         } finally {
@@ -387,7 +397,7 @@ export default function Langzeitkrankmeldungen() {
             {ladeStatus === 'fehler' && (
                 <div className="text-center py-12 text-slate-500 bg-slate-50 rounded-lg">
                     <p>Die Krankmeldungen konnten nicht geladen werden.</p>
-                    <Button variant="outline" size="sm" className="mt-3" onClick={loadMeldungen}>
+                    <Button variant="outline" size="sm" className="mt-3" onClick={neuLaden}>
                         Erneut versuchen
                     </Button>
                 </div>

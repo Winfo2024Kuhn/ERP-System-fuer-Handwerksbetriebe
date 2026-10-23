@@ -107,19 +107,26 @@ export function KiHilfeChat() {
         setLiveSchritte([]);
     }, []);
 
-    // Beim Verlassen der Seite keine Antwort mehr abwarten.
-    useEffect(() => () => laufendeAnfrageRef.current?.abort(), []);
-
-    // Reload state when user changes
-    useEffect(() => {
-        // Eine Antwort für den vorherigen Benutzer gehört nicht in den neuen Chat.
-        anfrageAbbrechen();
+    // Anderer Benutzer: Chat-Zustand beim Rendern aus dessen Speicher übernehmen.
+    const [chatFuerBenutzer, setChatFuerBenutzer] = useState(userId);
+    if (chatFuerBenutzer !== userId) {
+        setChatFuerBenutzer(userId);
         setMessages(readLS(keyMessages, []));
         setOpen(readLS(keyOpen, false));
         setMinimized(readLS(keyMinimized, false));
         setError(null);
         setInput('');
-    }, [keyMessages, keyOpen, keyMinimized, anfrageAbbrechen]);
+        setLoading(false);
+        setLiveSchritte([]);
+    }
+
+    // Beim Benutzerwechsel und beim Verlassen der Seite keine Antwort mehr abwarten:
+    // Eine Antwort für den vorherigen Benutzer gehört nicht in den neuen Chat.
+    useEffect(() => () => {
+        laufendeAnfrageRef.current?.abort();
+        laufendeAnfrageRef.current = null;
+        offeneFrageRef.current = null;
+    }, [userId]);
 
     // Persist state to localStorage on change
     useEffect(() => { localStorage.setItem(keyMessages, JSON.stringify(messages)); }, [messages, keyMessages]);

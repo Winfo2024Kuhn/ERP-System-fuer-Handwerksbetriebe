@@ -32,6 +32,9 @@ import { istEinfacheKostenstellenZuordnung } from './kostenstellenModus';
 
 // ===================== Detail / Validierungs-Modal =====================
 
+/** Bar-Belege: nur bei ihnen zeigt der Dialog den Kassenstand. */
+const BAR_KATEGORIEN: BelegKategorie[] = ['KASSE_EINNAHME', 'KASSE_AUSGABE', 'PRIVATENTNAHME', 'PRIVATEINLAGE'];
+
 export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, onSaved, onDeleted }: {
     beleg: Beleg;
     sachkonten: Sachkonto[];
@@ -57,6 +60,33 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     const formularBearbeitet = useRef(false);
     const splitsBearbeitet = useRef(false);
     const zahlungBearbeitet = useRef(false);
+    const [form, setForm] = useState({
+        belegKategorie: beleg.belegKategorie,
+        belegDatum: beleg.belegDatum ?? '',
+        belegNummer: beleg.belegNummer ?? '',
+        beschreibung: beleg.beschreibung ?? '',
+        betragNetto: beleg.betragNetto == null ? '' : formatDecimalInput(beleg.betragNetto),
+        betragBrutto: beleg.betragBrutto == null ? '' : formatDecimalInput(beleg.betragBrutto),
+        mwstSatz: beleg.mwstSatz == null ? '' : formatDecimalInput(beleg.mwstSatz),
+        zahlungsart: beleg.zahlungsart ?? '',
+        lieferantId: beleg.lieferantId ?? null as number | null,
+        lieferantName: beleg.lieferantName ?? '',
+        sachkontoId: beleg.sachkontoId ?? null as number | null,
+        notiz: beleg.notiz ?? '',
+    });
+    const [zeigeStorno, setZeigeStorno] = useState(false);
+    const [zeigeVerwerfen, setZeigeVerwerfen] = useState(false);
+    const [splits, setSplits] = useState<KostenstellenSplit[]>(beleg.kostenstellenSplits ?? []);
+    const [kostenstellen, setKostenstellen] = useState<{ id: number; bezeichnung: string; nummer?: string | null }[]>([]);
+    const [mehrereKostenstellen, setMehrereKostenstellen] = useState(() => !istEinfacheKostenstellenZuordnung(beleg.kostenstellenSplits ?? []));
+    const [kostenstelleId, setKostenstelleId] = useState<number | null>(() => {
+        const erster = beleg.kostenstellenSplits?.[0];
+        return erster && istEinfacheKostenstellenZuordnung(beleg.kostenstellenSplits ?? []) ? erster.kostenstelleId : null;
+    });
+    const [bezahlt, setBezahlt] = useState(beleg.eingangsrechnungBezahlt ?? false);
+    const [bezahltAm, setBezahltAm] = useState(beleg.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
+    // Detail-Beleg nachladen (Erklärung oben bei detailBeleg). Steht hinter den
+    // Formular-States, weil das Nachladen sie beim ersten Mal vorbelegt.
     // Bewusst nur diese drei Werte als Abhaengigkeit: eine neue `beleg`-Identitaet
     // bei sonst gleichen Werten wuerde das Polling sonst unnoetig neu starten.
     const belegId = beleg.id;
@@ -94,32 +124,6 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
 
         return () => { cancelled = true; if (timer) clearTimeout(timer); };
     }, [belegId]);
-
-    const [form, setForm] = useState({
-        belegKategorie: beleg.belegKategorie,
-        belegDatum: beleg.belegDatum ?? '',
-        belegNummer: beleg.belegNummer ?? '',
-        beschreibung: beleg.beschreibung ?? '',
-        betragNetto: beleg.betragNetto == null ? '' : formatDecimalInput(beleg.betragNetto),
-        betragBrutto: beleg.betragBrutto == null ? '' : formatDecimalInput(beleg.betragBrutto),
-        mwstSatz: beleg.mwstSatz == null ? '' : formatDecimalInput(beleg.mwstSatz),
-        zahlungsart: beleg.zahlungsart ?? '',
-        lieferantId: beleg.lieferantId ?? null as number | null,
-        lieferantName: beleg.lieferantName ?? '',
-        sachkontoId: beleg.sachkontoId ?? null as number | null,
-        notiz: beleg.notiz ?? '',
-    });
-    const [zeigeStorno, setZeigeStorno] = useState(false);
-    const [zeigeVerwerfen, setZeigeVerwerfen] = useState(false);
-    const [splits, setSplits] = useState<KostenstellenSplit[]>(beleg.kostenstellenSplits ?? []);
-    const [kostenstellen, setKostenstellen] = useState<{ id: number; bezeichnung: string; nummer?: string | null }[]>([]);
-    const [mehrereKostenstellen, setMehrereKostenstellen] = useState(() => !istEinfacheKostenstellenZuordnung(beleg.kostenstellenSplits ?? []));
-    const [kostenstelleId, setKostenstelleId] = useState<number | null>(() => {
-        const erster = beleg.kostenstellenSplits?.[0];
-        return erster && istEinfacheKostenstellenZuordnung(beleg.kostenstellenSplits ?? []) ? erster.kostenstelleId : null;
-    });
-    const [bezahlt, setBezahlt] = useState(beleg.eingangsrechnungBezahlt ?? false);
-    const [bezahltAm, setBezahltAm] = useState(beleg.eingangsrechnungBezahltAm ?? new Date().toISOString().slice(0, 10));
     useEffect(() => {
         fetch('/api/bestellungen-uebersicht/kostenstellen')
             .then(r => r.ok ? r.json() : [])
@@ -152,12 +156,15 @@ export function BelegDetailModal({ beleg, sachkonten, zahlungsarten, onClose, on
     }, [validationHint]);
 
     // Live-Saldo laden, sobald Modal offen — nur fuer Bar-Belege relevant.
+    // Kein Bar-Beleg (mehr): Saldo beim Rendern verwerfen.
+    const istBarBeleg = BAR_KATEGORIEN.includes(form.belegKategorie);
+    const [istBarBelegVorher, setIstBarBelegVorher] = useState(istBarBeleg);
+    if (istBarBeleg !== istBarBelegVorher) {
+        setIstBarBelegVorher(istBarBeleg);
+        if (!istBarBeleg) setSaldoInfo(null);
+    }
     useEffect(() => {
-        const barKategorien: BelegKategorie[] = ['KASSE_EINNAHME', 'KASSE_AUSGABE', 'PRIVATENTNAHME', 'PRIVATEINLAGE'];
-        if (!barKategorien.includes(form.belegKategorie)) {
-            setSaldoInfo(null);
-            return;
-        }
+        if (!BAR_KATEGORIEN.includes(form.belegKategorie)) return;
         fetch('/api/buchhaltung/kasse/saldo')
             .then(r => r.ok ? r.json() : null)
             .then((s) => s && setSaldoInfo(s))

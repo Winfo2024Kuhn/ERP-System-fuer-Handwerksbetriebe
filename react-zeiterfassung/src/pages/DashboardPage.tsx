@@ -414,6 +414,11 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
 
     useEffect(() => {
         // Load active session from server (primary) or localStorage (fallback)
+        // Bewusste Ausnahme: Die fünf Ladefunktionen gleichen mit Server und Offline-Speicher ab und setzen
+        // ihren Zustand meist erst nach await (das erkennt die Regel nicht). Synchron übernehmen nur
+        // loadActiveSession (im Handy gespeicherte Buchung, Stop-Cooldown) und loadZeitkontoStatus
+        // (Ladeanzeige) etwas. Sie auf Promise-Ketten umzubauen ist ein eigener Schritt für die Offline-Logik.
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- siehe Kommentar darüber
         loadActiveSession()
         loadZeitkontoStatus()
         // Load today's hours
@@ -695,6 +700,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
         if (!activeSession) return
         const token = localStorage.getItem('zeiterfassung_token')
         const alteSession = { ...activeSession } // Backup for rollback
+        // eslint-disable-next-line react-hooks/purity -- wechsleBuchung läuft nur nach einem Tipp (Event-Handler), nie beim Rendern
         const elapsedMinutes = Math.floor((Date.now() - new Date(activeSession.startTime).getTime()) / 60000)
         const isWorkSession = !isAbwesenheitOderPause(activeSession.typ)
         const stopZeit = new Date().toISOString()
@@ -734,6 +740,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
 
         const session = neueSession(
             startZeitAusErgebnis(start, startZeit),
+            // eslint-disable-next-line react-hooks/purity -- wie oben: nur im Event-Handler
             start.art === 'ok' ? start.daten.id ?? null : 'offline-' + Date.now(),
         )
         localStorage.setItem('zeiterfassung_active_session', JSON.stringify(session))

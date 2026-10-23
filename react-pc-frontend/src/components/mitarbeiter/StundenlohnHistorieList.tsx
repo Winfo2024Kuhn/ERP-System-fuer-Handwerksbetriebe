@@ -24,24 +24,34 @@ export function StundenlohnHistorieList({ mitarbeiterId, onChange }: { mitarbeit
     const showError = toast.error;
     const [eintraege, setEintraege] = useState<StundenlohnEintrag[]>([]);
     const [editing, setEditing] = useState<(Omit<StundenlohnEintrag, 'stundenlohn'> & { stundenlohn: string }) | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
 
-    const load = useCallback(async () => {
-        setLoading(true);
-        try {
-            const res = await fetch(`/api/mitarbeiter/${encodeURIComponent(String(mitarbeiterId))}/stundenlohn-historie`);
+    const ladeVerlauf = useCallback(() => fetch(`/api/mitarbeiter/${encodeURIComponent(String(mitarbeiterId))}/stundenlohn-historie`)
+        .then(async (res) => {
             if (res.ok) setEintraege(await res.json());
             else showError('Stundenlohn-Verlauf konnte nicht geladen werden.');
-        } catch {
+        })
+        .catch(() => {
             showError('Stundenlohn-Verlauf konnte nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
-    }, [mitarbeiterId, showError]);
+        })
+        .finally(() => setLoading(false)), [mitarbeiterId, showError]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const load = () => {
+        setLoading(true);
+        return ladeVerlauf();
+    };
+
+    // Anderer Mitarbeiter: sofort wieder „wird geladen“ zeigen.
+    const [geladenFuer, setGeladenFuer] = useState(mitarbeiterId);
+    if (geladenFuer !== mitarbeiterId) {
+        setGeladenFuer(mitarbeiterId);
+        setLoading(true);
+    }
 
     useEffect(() => {
-        void load();
-    }, [load]);
+        void ladeVerlauf();
+    }, [ladeVerlauf]);
 
     const save = async () => {
         if (!editing) return;

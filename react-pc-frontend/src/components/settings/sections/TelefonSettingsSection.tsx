@@ -90,19 +90,15 @@ export function TelefonSettingsSection({ onSaved }: { onSaved?: () => void }) {
         setMonateNachrichten(String(daten.aufbewahrungSprachnachrichtenMonate || STANDARD_MONATE));
     }, []);
 
-    const lade = useCallback(async () => {
-        setLaedt(true);
-        setLadefehler(null);
-        try {
-            uebernimm(await ladeEinstellungen());
-        } catch (e) {
+    // Ladeanzeige und Fehler setzt „Erneut laden“ vorab zurück; beim ersten Laden stimmen die Startwerte.
+    const lade = useCallback(() => ladeEinstellungen()
+        .then(uebernimm)
+        .catch((e: unknown) => {
             const meldung = e instanceof Error ? e.message : 'Die Telefon-Einstellungen konnten nicht geladen werden.';
             setLadefehler(meldung);
             toast.error(meldung);
-        } finally {
-            setLaedt(false);
-        }
-    }, [toast, uebernimm]);
+        })
+        .finally(() => setLaedt(false)), [toast, uebernimm]);
 
     useEffect(() => {
         void lade();
@@ -209,7 +205,7 @@ export function TelefonSettingsSection({ onSaved }: { onSaved?: () => void }) {
         return (
             <div role="alert" className="flex flex-col items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-rose-800 sm:flex-row sm:items-center">
                 <span className="flex-1">{ladefehler}</span>
-                <Button variant="outline" size="sm" onClick={() => void lade()}>Erneut laden</Button>
+                <Button variant="outline" size="sm" onClick={() => { setLaedt(true); setLadefehler(null); void lade(); }}>Erneut laden</Button>
             </div>
         );
     }

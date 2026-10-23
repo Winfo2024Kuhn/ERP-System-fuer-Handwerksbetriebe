@@ -131,7 +131,7 @@ export default function BenutzerEditor() {
     const [mitarbeiterList, setMitarbeiterList] = useState<Mitarbeiter[]>([]);
     const [postfaecher, setPostfaecher] = useState<PostfachDto[]>([]);
     const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
     // Form State
@@ -149,43 +149,52 @@ export default function BenutzerEditor() {
 
     const selectedUser = users.find(u => u.id === selectedUserId) || null;
 
-    // Load data
-    const loadData = useCallback(async () => {
+    // Load data – Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    const ladeDaten = useCallback(() =>
+        Promise.all([
+            fetch('/api/frontend-users'),
+            fetch('/api/mitarbeiter'),
+            fetch('/api/postfaecher'),
+        ])
+            .then(async ([usersRes, mitarbeiterRes, postfaecherRes]) => {
+                if (usersRes.ok) {
+                    const data = await usersRes.json();
+                    setUsers(Array.isArray(data) ? data : []);
+                }
+                if (mitarbeiterRes.ok) {
+                    const data = await mitarbeiterRes.json();
+                    setMitarbeiterList(Array.isArray(data) ? data : []);
+                }
+                if (postfaecherRes.ok) {
+                    const data = await postfaecherRes.json();
+                    setPostfaecher(Array.isArray(data) ? data : []);
+                } else {
+                    toast.error('Postfächer konnten nicht geladen werden.');
+                }
+            })
+            .catch((err: unknown) => {
+                console.error('Fehler beim Laden:', err);
+                toast.error('Benutzer konnten nicht geladen werden.');
+            })
+            .finally(() => {
+                setLoading(false);
+            }),
+    [toast]);
+
+    /** Neu laden (Knopf, nach dem Speichern/Löschen) – mit Ladehinweis. */
+    const loadData = useCallback(() => {
         setLoading(true);
-        try {
-            const [usersRes, mitarbeiterRes, postfaecherRes] = await Promise.all([
-                fetch('/api/frontend-users'),
-                fetch('/api/mitarbeiter'),
-                fetch('/api/postfaecher'),
-            ]);
-            if (usersRes.ok) {
-                const data = await usersRes.json();
-                setUsers(Array.isArray(data) ? data : []);
-            }
-            if (mitarbeiterRes.ok) {
-                const data = await mitarbeiterRes.json();
-                setMitarbeiterList(Array.isArray(data) ? data : []);
-            }
-            if (postfaecherRes.ok) {
-                const data = await postfaecherRes.json();
-                setPostfaecher(Array.isArray(data) ? data : []);
-            } else {
-                toast.error('Postfächer konnten nicht geladen werden.');
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden:', err);
-            toast.error('Benutzer konnten nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
-    }, [toast]);
+        return ladeDaten();
+    }, [ladeDaten]);
 
     useEffect(() => {
-        loadData();
-    }, [loadData]);
+        void ladeDaten();
+    }, [ladeDaten]);
 
-    // Sync form with selected user
-    useEffect(() => {
+    // Sync form with selected user (andere Auswahl oder neu geladene Daten)
+    const [vorherSelectedUser, setVorherSelectedUser] = useState(selectedUser);
+    if (vorherSelectedUser !== selectedUser) {
+        setVorherSelectedUser(selectedUser);
         if (selectedUser) {
             setFormData({
                 id: selectedUser.id,
@@ -199,7 +208,7 @@ export default function BenutzerEditor() {
                 emailAbsenderId: selectedUser.emailAbsender?.id || null,
             });
         }
-    }, [selectedUser]);
+    }
 
     // Reset form for new user
     const handleNewUser = () => {

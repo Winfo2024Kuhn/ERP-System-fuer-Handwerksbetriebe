@@ -151,14 +151,20 @@ export const CategoryMultiSelectModal: React.FC<CategoryMultiSelectModalProps> =
             .finally(() => setLoading(false));
     }, []);
 
-    // Debounced search
-    useEffect(() => {
-        if (!searchTerm.trim()) {
+    // Suchbegriff ändern: Ergebnisliste und Ladeanzeige direkt im Handler anpassen.
+    const sucheAendern = (wert: string) => {
+        setSearchTerm(wert);
+        if (!wert.trim()) {
             setSearchResults([]);
             setSearching(false);
-            return;
+        } else {
+            setSearching(true);
         }
-        setSearching(true);
+    };
+
+    // Debounced search
+    useEffect(() => {
+        if (!searchTerm.trim()) return;
         const timer = setTimeout(async () => {
             try {
                 const res = await fetch(`/api/produktkategorien/suche?q=${encodeURIComponent(searchTerm.trim())}`);
@@ -210,14 +216,14 @@ export const CategoryMultiSelectModal: React.FC<CategoryMultiSelectModalProps> =
                         <input
                             type="text"
                             value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
+                            onChange={e => sucheAendern(e.target.value)}
                             placeholder="Kategorie suchen..."
                             className="w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 text-sm"
                             autoFocus
                         />
                         {searchTerm && (
                             <button 
-                                onClick={() => setSearchTerm('')}
+                                onClick={() => sucheAendern('')}
                                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                             >
                                 <X className="w-4 h-4" />

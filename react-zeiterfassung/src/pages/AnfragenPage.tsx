@@ -106,7 +106,7 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
     const [showUploadModal, setShowUploadModal] = useState(false)
     const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
     const pendingPhotosRef = useRef<PendingPhoto[]>([])
-    pendingPhotosRef.current = pendingPhotos
+    useEffect(() => { pendingPhotosRef.current = pendingPhotos }, [pendingPhotos])
     const [uploadFortschritt, setUploadFortschritt] = useState<{ nummer: number; gesamt: number } | null>(null)
     // Id des gerade offenen Eintrags (null nach dem Verlassen): Ein laufender Upload darf dann nichts mehr umschalten.
     const aktivIdRef = useRef<number | null>(null)
@@ -183,22 +183,22 @@ export default function AnfragenPage({ mitarbeiter, syncStatus, onSync }: Anfrag
         setDetailLoading(false)
     }
 
-    // Cleanup pendingPhotos beim Unmount (revoke object URLs)
-    useEffect(() => () => {
-        pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
-    }, [])
 
     useEffect(() => {
         aktivIdRef.current = selectedAnfrage?.id ?? null
         return () => { aktivIdRef.current = null }
     }, [selectedAnfrage?.id])
 
-    // Reset pendingPhotos beim Wechsel der Anfrage
-    useEffect(() => {
-        setPendingPhotos(prev => {
-            prev.forEach(p => URL.revokeObjectURL(p.url))
-            return []
-        })
+    // Vorgemerkte Fotos gehören zum offenen Eintrag: beim Wechsel verwerfen …
+    const [fotosFuerId, setFotosFuerId] = useState(selectedAnfrage?.id)
+    if (fotosFuerId !== selectedAnfrage?.id) {
+        setFotosFuerId(selectedAnfrage?.id)
+        setPendingPhotos([])
+    }
+    // … und ihre Vorschau-Adressen freigeben, sobald der Eintrag wechselt oder die Seite schließt.
+    // Die Aufräumfunktion läuft vor dem Abgleich des Refs, sieht also noch die alten Fotos.
+    useEffect(() => () => {
+        pendingPhotosRef.current.forEach(p => URL.revokeObjectURL(p.url))
     }, [selectedAnfrage?.id])
 
     // URL-based Selection Sync (Deep-Link z.B. aus dem Kalender: /anfragen?id=123)

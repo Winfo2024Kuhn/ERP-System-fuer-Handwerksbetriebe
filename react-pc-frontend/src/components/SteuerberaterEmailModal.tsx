@@ -200,23 +200,33 @@ ${sig}
     // Load signature once
     const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
 
-    // Open: load Steuerberater + signature
-    useEffect(() => {
-        if (!isOpen) {
-            // Reset on close
+    // Geschlossen: Auswahl und Texte leeren. Geöffnet (oder anderer Monat): sofort „wird geladen“.
+    const steuerberaterFuer = isOpen ? `${monat}|${jahr}` : null;
+    const [steuerberaterGeladenFuer, setSteuerberaterGeladenFuer] = useState<string | null>(null);
+    if (steuerberaterFuer !== steuerberaterGeladenFuer) {
+        setSteuerberaterGeladenFuer(steuerberaterFuer);
+        if (steuerberaterFuer) {
+            setLoadingSteuerberater(true);
+        } else {
             setSteuerberaterListe([]);
             setSelectedSteuerberaterId(null);
             setSelectedAnsprechpartnerId(null);
             setRecipient('');
             setSubject('');
             setError(null);
+        }
+    }
+
+    // Open: load Steuerberater + signature
+    useEffect(() => {
+        if (!isOpen) {
+            // Reset on close
             signatureRef.current = '';
             lastRenderedKeyRef.current = '';
             return;
         }
 
         let cancelled = false;
-        setLoadingSteuerberater(true);
         const monthName = getMonthName(monat);
 
         Promise.all([
@@ -259,21 +269,26 @@ ${sig}
     }, [isOpen, monat, jahr, loadSignature]);
 
     // Bei Wechsel des Steuerberaters: Lohn-Ansprechpartner als Default setzen
-    useEffect(() => {
-        if (!selectedSteuerberater) return;
-        const lohnAp = (selectedSteuerberater.ansprechpartnerListe || []).find(ap => ap.istLohnAnsprechpartner)
-            || selectedSteuerberater.ansprechpartnerListe?.[0]
-            || null;
-        setSelectedAnsprechpartnerId(lohnAp?.id || null);
-        setRecipient(lohnAp?.email || selectedSteuerberater.email || '');
-    }, [selectedSteuerberaterId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const [vorgabeFuerSteuerberaterId, setVorgabeFuerSteuerberaterId] = useState(selectedSteuerberaterId);
+    if (vorgabeFuerSteuerberaterId !== selectedSteuerberaterId) {
+        setVorgabeFuerSteuerberaterId(selectedSteuerberaterId);
+        if (selectedSteuerberater) {
+            const lohnAp = (selectedSteuerberater.ansprechpartnerListe || []).find(ap => ap.istLohnAnsprechpartner)
+                || selectedSteuerberater.ansprechpartnerListe?.[0]
+                || null;
+            setSelectedAnsprechpartnerId(lohnAp?.id || null);
+            setRecipient(lohnAp?.email || selectedSteuerberater.email || '');
+        }
+    }
 
     // Bei Wechsel des Ansprechpartners: dessen Email als Empfänger setzen (falls vorhanden)
-    useEffect(() => {
+    const [vorgabeFuerAnsprechpartnerId, setVorgabeFuerAnsprechpartnerId] = useState(selectedAnsprechpartnerId);
+    if (vorgabeFuerAnsprechpartnerId !== selectedAnsprechpartnerId) {
+        setVorgabeFuerAnsprechpartnerId(selectedAnsprechpartnerId);
         if (selectedAnsprechpartner?.email) {
             setRecipient(selectedAnsprechpartner.email);
         }
-    }, [selectedAnsprechpartnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }
 
     // Editor-Inhalt rendern, wenn sich Anrede/Ansprechpartner/Steuerberater ändert.
     // Wir nutzen einen Key, damit wir nicht bei jedem Tippen im contentEditable

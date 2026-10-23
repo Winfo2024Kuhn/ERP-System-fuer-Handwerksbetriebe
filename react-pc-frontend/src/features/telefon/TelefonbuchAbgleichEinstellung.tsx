@@ -42,23 +42,28 @@ export function TelefonbuchAbgleichEinstellung({ telefonAnbindungAktiv }: { tele
     const [abfrageGestoppt, setAbfrageGestoppt] = useState(false);
     const [ergebnis, setErgebnis] = useState<TelefonbuchAbgleichErgebnis | null>(null);
 
-    const lade = useCallback(async () => {
-        setLaedt(true);
-        setLadefehler(null);
-        try {
-            setStatus(await ladeTelefonbuchStatus());
-        } catch (e) {
-            const meldung = e instanceof Error ? e.message : 'Der Stand des FRITZ!Box-Telefonbuchs konnte nicht geladen werden.';
-            setLadefehler(meldung);
-            toast.error(meldung);
-        } finally {
-            setLaedt(false);
-        }
-    }, [toast]);
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    const ladeStand = useCallback(() =>
+        ladeTelefonbuchStatus()
+            .then((neu) => setStatus(neu))
+            .catch((e: unknown) => {
+                const meldung = e instanceof Error ? e.message : 'Der Stand des FRITZ!Box-Telefonbuchs konnte nicht geladen werden.';
+                setLadefehler(meldung);
+                toast.error(meldung);
+            })
+            .finally(() => setLaedt(false)),
+    [toast]);
 
     useEffect(() => {
-        void lade();
-    }, [lade]);
+        void ladeStand();
+    }, [ladeStand]);
+
+    /** „Erneut laden“: Ladeanzeige an, alten Fehler weg, dann neu holen. */
+    const lade = () => {
+        setLaedt(true);
+        setLadefehler(null);
+        return ladeStand();
+    };
 
     const laeuft = !!status?.laeuftGerade;
 
@@ -82,15 +87,16 @@ export function TelefonbuchAbgleichEinstellung({ telefonAnbindungAktiv }: { tele
         };
     }, [laeuft, abfrageGestoppt, status, toast]);
 
-    // Lauf fertig: Ergebnis zeigen, Fehler zusätzlich als Toast.
-    useEffect(() => {
-        if (!wartetAufErgebnis || !status || status.laeuftGerade) return;
+    // Lauf fertig: Ergebnis zeigen …
+    if (wartetAufErgebnis && status && !status.laeuftGerade) {
         setWartetAufErgebnis(false);
-        const letztes = status.letztesErgebnis;
-        if (!letztes) return;
-        setErgebnis(letztes);
-        if (!letztes.erfolgreich) toast.error(letztes.meldung || 'Das FRITZ!Box-Telefonbuch konnte nicht abgeglichen werden.');
-    }, [wartetAufErgebnis, status, toast]);
+        if (status.letztesErgebnis) setErgebnis(status.letztesErgebnis);
+    }
+    // … und einen Fehler zusätzlich als Toast melden. Ein Ergebnis wird nur an
+    // dieser Stelle gesetzt, jedes neue also genau einmal gemeldet.
+    useEffect(() => {
+        if (ergebnis && !ergebnis.erfolgreich) toast.error(ergebnis.meldung || 'Das FRITZ!Box-Telefonbuch konnte nicht abgeglichen werden.');
+    }, [ergebnis, toast]);
 
     const anbindungAktiv = telefonAnbindungAktiv ?? status?.telefonAnbindungAktiv ?? false;
     const telefonbuchName = status?.telefonbuchName ?? 'ERP-Kontakte';

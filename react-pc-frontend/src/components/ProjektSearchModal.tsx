@@ -38,38 +38,50 @@ export function ProjektSearchModal({
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
+    // Beim Öffnen (oder anderem Filter bei offenem Fenster): Suchfeld leeren und sofort die
+    // Ladeanzeige zeigen – geladen wird im Effekt unten.
+    const oeffnung = isOpen ? `offen|${nurOffene}` : 'zu';
+    const [letzteOeffnung, setLetzteOeffnung] = useState('zu');
+    if (oeffnung !== letzteOeffnung) {
+        setLetzteOeffnung(oeffnung);
+        if (isOpen) {
+            setSearchTerm('');
+            setLoading(true);
+        }
+    }
+
     // Projekte vom Server laden
-    const loadProjekte = useCallback(async (query: string) => {
+    const loadProjekte = useCallback((query: string) => {
         // Vorherigen Request abbrechen
         if (abortRef.current) abortRef.current.abort();
         const controller = new AbortController();
         abortRef.current = controller;
 
-        setLoading(true);
-        try {
-            const params = new URLSearchParams({ size: '500' });
-            if (query.trim()) params.set('q', query.trim());
-            if (nurOffene) params.set('nurOffene', 'true');
-            const res = await fetch(`/api/projekte/simple?${params}`, { signal: controller.signal });
-            if (!res.ok) throw new Error('Fehler beim Laden');
-            const data: Projekt[] = await res.json();
-            setProjekte(data);
-            // Beim ersten Laden (ohne Query) die Gesamtanzahl merken
-            if (!query.trim()) setTotalCount(data.length);
-        } catch (e) {
-            if (!(e instanceof DOMException && e.name === 'AbortError')) {
-                console.error('Projektsuche fehlgeschlagen:', e);
-            }
-        } finally {
-            if (!controller.signal.aborted) setLoading(false);
-        }
+        const params = new URLSearchParams({ size: '500' });
+        if (query.trim()) params.set('q', query.trim());
+        if (nurOffene) params.set('nurOffene', 'true');
+        return fetch(`/api/projekte/simple?${params}`, { signal: controller.signal })
+            .then(async (res) => {
+                if (!res.ok) throw new Error('Fehler beim Laden');
+                const data: Projekt[] = await res.json();
+                setProjekte(data);
+                // Beim ersten Laden (ohne Query) die Gesamtanzahl merken
+                if (!query.trim()) setTotalCount(data.length);
+            })
+            .catch((e: unknown) => {
+                if (!(e instanceof DOMException && e.name === 'AbortError')) {
+                    console.error('Projektsuche fehlgeschlagen:', e);
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
+            });
     }, [nurOffene]);
 
     // Initiales Laden wenn Modal geöffnet wird
     useEffect(() => {
         if (isOpen) {
-            setSearchTerm('');
-            loadProjekte('');
+            void loadProjekte('');
         }
         return () => {
             if (abortRef.current) abortRef.current.abort();
@@ -81,7 +93,8 @@ export function ProjektSearchModal({
         if (!isOpen) return;
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
-            loadProjekte(searchTerm);
+            setLoading(true);
+            void loadProjekte(searchTerm);
         }, 300);
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
