@@ -7,6 +7,7 @@ import { useToast } from '../../ui/toast';
 import { SaveButton, SectionLoading, SettingsCard, TestResultBanner } from '../settingsUi';
 import { parseErrorMessage } from '../settingsApi';
 import type { TestResult } from '../settingsApi';
+import { OpenFileLauncherKarte } from './OpenFileLauncherKarte';
 
 /**
  * Gemeinsamer Ablageort für Zeichnungen und Dateien (HiCAD, Tenado, Excel).
@@ -21,6 +22,8 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
 
     const [pfad, setPfad] = useState('');
     const [networkUrl, setNetworkUrl] = useState('');
+    // Was zuletzt geladen bzw. gespeichert wurde – das Hilfsprogramm bekommt nur diese Adresse.
+    const [gespeicherteNetworkUrl, setGespeicherteNetworkUrl] = useState('');
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
     const [freigebend, setFreigebend] = useState(false);
@@ -35,6 +38,7 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
                 const data = await res.json();
                 setPfad(data?.pfad || '');
                 setNetworkUrl(data?.networkUrl || '');
+                setGespeicherteNetworkUrl(data?.networkUrl || '');
             }
         } catch {
             toast.error('Datei-Ordner konnte nicht geladen werden.');
@@ -77,6 +81,7 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
                 toast.error(await parseErrorMessage(res, 'Datei-Ordner konnte nicht gespeichert werden.'));
                 return;
             }
+            setGespeicherteNetworkUrl(networkUrl.trim());
             toast.success('Datei-Ordner gespeichert.');
             onSaved?.();
         } catch {
@@ -102,83 +107,90 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
     if (loading) return <SectionLoading />;
 
     return (
-        <SettingsCard
-            icon={<FolderOpen className="w-5 h-5 text-rose-600" />}
-            title="Wo sollen Zeichnungen und Dateien liegen?"
-            description={
-                <p>
-                    In diesen Ordner legt das Programm Zeichnungen aus HiCAD (.sza) und Tenado (.tcd) sowie
-                    Tabellen (Excel, CSV, OpenOffice), die Sie an Projekten hochladen. Andere Dateien wie PDFs
-                    und Fotos speichert das Programm an seinem eigenen Ablageort. Ein lokaler Ordner
-                    (C:\Zeichnungen), ein Netzlaufwerk (Z:\Zeichnungen) oder eine Netzwerk-Adresse
-                    (\\server\zeichnungen) funktionieren.
-                </p>
-            }
-        >
-            <div className="space-y-4">
-                <div>
-                    <Label htmlFor="dateiOrdnerPfad">Ordner auf diesem Rechner</Label>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                        <Input
-                            id="dateiOrdnerPfad"
-                            className="flex-1 sm:max-w-lg"
-                            value={pfad}
-                            onChange={(e) => setPfad(e.target.value)}
-                            placeholder="C:\Zeichnungen"
-                        />
-                        <Button variant="outline" onClick={handleTest} disabled={testing || !pfad.trim()}>
-                            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderCheck aria-hidden="true" className="w-4 h-4" />}
-                            {testing ? 'Prüfe...' : 'Ordner prüfen'}
-                        </Button>
-                    </div>
-                </div>
-
-                <div>
-                    <Label htmlFor="dateiOrdnerNetworkUrl">Netzwerk-Adresse für Kollegen (optional)</Label>
-                    <Input
-                        id="dateiOrdnerNetworkUrl"
-                        className="sm:max-w-lg"
-                        value={networkUrl}
-                        onChange={(e) => setNetworkUrl(e.target.value)}
-                        placeholder="\\server\zeichnungen"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">
-                        So erreichen andere Rechner den Ordner. Leer lassen, wenn nur dieser Rechner ihn nutzt.
+        <>
+            <SettingsCard
+                icon={<FolderOpen className="w-5 h-5 text-rose-600" />}
+                title="Wo sollen Zeichnungen und Dateien liegen?"
+                description={
+                    <p>
+                        In diesen Ordner legt das Programm Zeichnungen aus HiCAD (.sza) und Tenado (.tcd) sowie
+                        Tabellen (Excel, CSV, OpenOffice), die Sie an Projekten hochladen. Andere Dateien wie PDFs
+                        und Fotos speichert das Programm an seinem eigenen Ablageort. Ein lokaler Ordner
+                        (C:\Zeichnungen), ein Netzlaufwerk (Z:\Zeichnungen) oder eine Netzwerk-Adresse
+                        (\\server\zeichnungen) funktionieren.
                     </p>
-                </div>
-            </div>
-
-            <TestResultBanner result={testResult} className="mt-3" />
-
-            <button
-                type="button"
-                aria-expanded={anleitungOffen}
-                className="mt-4 flex items-center gap-1 text-sm text-rose-700 hover:text-rose-800"
-                onClick={() => setAnleitungOffen((prev) => !prev)}
+                }
             >
-                {anleitungOffen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                So geben Sie den Ordner im Netzwerk frei
-            </button>
-            {anleitungOffen && (
-                <div className="mt-2 p-4 rounded-lg bg-slate-50 text-sm text-slate-700 space-y-2">
-                    <p>1. Im Windows-Explorer mit der rechten Maustaste auf den Ordner klicken → <strong>Eigenschaften</strong>.</p>
-                    <p>2. Reiter <strong>Freigabe</strong> → <strong>Freigeben...</strong> → Kollegen oder „Jeder" hinzufügen → <strong>Freigeben</strong>.</p>
-                    <p>3. Die angezeigte Adresse (z. B. \\BUERO-PC\Zeichnungen) oben als Netzwerk-Adresse eintragen.</p>
-                    <div className="pt-2">
-                        <Button variant="outline" onClick={handleFreigeben} disabled={freigebend || !pfad.trim()}>
-                            {freigebend ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
-                            {freigebend ? 'Gebe frei...' : 'Oder: Ordner automatisch freigeben'}
-                        </Button>
+                <div className="space-y-4">
+                    <div>
+                        <Label htmlFor="dateiOrdnerPfad">Ordner auf diesem Rechner</Label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <Input
+                                id="dateiOrdnerPfad"
+                                className="flex-1 sm:max-w-lg"
+                                value={pfad}
+                                onChange={(e) => setPfad(e.target.value)}
+                                placeholder="C:\Zeichnungen"
+                            />
+                            <Button variant="outline" onClick={handleTest} disabled={testing || !pfad.trim()}>
+                                {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderCheck aria-hidden="true" className="w-4 h-4" />}
+                                {testing ? 'Prüfe...' : 'Ordner prüfen'}
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <Label htmlFor="dateiOrdnerNetworkUrl">Netzwerk-Adresse für Kollegen (optional)</Label>
+                        <Input
+                            id="dateiOrdnerNetworkUrl"
+                            className="sm:max-w-lg"
+                            value={networkUrl}
+                            onChange={(e) => setNetworkUrl(e.target.value)}
+                            placeholder="\\server\zeichnungen"
+                        />
                         <p className="text-xs text-slate-500 mt-1">
-                            Windows fragt dabei einmal nach Administrator-Rechten. Der Ordner muss vorher gespeichert sein.
+                            So erreichen andere Rechner den Ordner. Leer lassen, wenn nur dieser Rechner ihn nutzt.
                         </p>
                     </div>
                 </div>
-            )}
 
-            <SaveButton onClick={handleSave} saving={saving} disabled={!pfad.trim()}>
-                Datei-Ordner speichern
-            </SaveButton>
-        </SettingsCard>
+                <TestResultBanner result={testResult} className="mt-3" />
+
+                <button
+                    type="button"
+                    aria-expanded={anleitungOffen}
+                    className="mt-4 flex items-center gap-1 text-sm text-rose-700 hover:text-rose-800"
+                    onClick={() => setAnleitungOffen((prev) => !prev)}
+                >
+                    {anleitungOffen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    So geben Sie den Ordner im Netzwerk frei
+                </button>
+                {anleitungOffen && (
+                    <div className="mt-2 p-4 rounded-lg bg-slate-50 text-sm text-slate-700 space-y-2">
+                        <p>1. Im Windows-Explorer mit der rechten Maustaste auf den Ordner klicken → <strong>Eigenschaften</strong>.</p>
+                        <p>2. Reiter <strong>Freigabe</strong> → <strong>Freigeben...</strong> → Kollegen oder „Jeder" hinzufügen → <strong>Freigeben</strong>.</p>
+                        <p>3. Die angezeigte Adresse (z. B. \\BUERO-PC\Zeichnungen) oben als Netzwerk-Adresse eintragen.</p>
+                        <div className="pt-2">
+                            <Button variant="outline" onClick={handleFreigeben} disabled={freigebend || !pfad.trim()}>
+                                {freigebend ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                                {freigebend ? 'Gebe frei...' : 'Oder: Ordner automatisch freigeben'}
+                            </Button>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Windows fragt dabei einmal nach Administrator-Rechten. Der Ordner muss vorher gespeichert sein.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                <SaveButton onClick={handleSave} saving={saving} disabled={!pfad.trim()}>
+                    Datei-Ordner speichern
+                </SaveButton>
+            </SettingsCard>
+
+            <OpenFileLauncherKarte
+                gespeicherteAdresse={gespeicherteNetworkUrl}
+                ungespeichert={networkUrl.trim() !== gespeicherteNetworkUrl.trim()}
+            />
+        </>
     );
 }

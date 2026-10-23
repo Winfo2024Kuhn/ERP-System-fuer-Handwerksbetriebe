@@ -70,6 +70,8 @@ public class DateiSpeicherService {
     private final AnfrageRepository anfrageRepository;
     private final Path dokumentenSpeicherplatz;
     private final Path anfragenSpeicherplatz;
+    /** Läuft der Server unter Windows? In Tests umschaltbar. */
+    boolean istWindows = java.io.File.separatorChar == '\\';
     private final Path bilderSpeicherplatz;
     private final Path schnittbilderSpeicherplatz;
     private final ProduktkategorieRepository produktkategorieRepository;
@@ -1734,6 +1736,12 @@ public class DateiSpeicherService {
             String netzwerkUrl = hicadNetworkUrl();
             if (netzwerkUrl == null || !netzwerkUrl.startsWith("\\\\")) {
                 return; // keine UNC-Freigabe konfiguriert
+            }
+            if (!istWindows) {
+                // Nur Windows versteht \\server\freigabe als Netzwerkpfad. Unter Linux (Docker)
+                // waere es ein Ordner mit diesem Namen im Arbeitsverzeichnis - jede Datei landete
+                // dort ein zweites Mal. Die Freigabe zeigt dort ohnehin auf den Datei-Ordner selbst.
+                return;
             }
             Path netzBasis = Path.of(netzwerkUrl).toAbsolutePath().normalize();
             Path netzZiel = resolveAndValidate(netzBasis, gespeicherterDateiname);
