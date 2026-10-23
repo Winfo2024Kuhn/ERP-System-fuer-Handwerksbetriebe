@@ -155,7 +155,7 @@ describe('PostfachSettings – Anlegen', () => {
             smtpPort: 465,
             imapHost: 'mail.your-server.de',
             imapPort: 993,
-            // Sichtbarkeit wird unter Einstellungen → Berechtigungen gepflegt: hier immer unverändert.
+            // Sichtbarkeit wird unter Einstellungen → Abteilungen & Rechte gepflegt: hier immer unverändert.
             sichtbarFuerAlle: null,
             abteilungIds: null,
             benutzerIds: null,
@@ -473,7 +473,7 @@ describe('PostfachSettings – Sichtbarkeit', () => {
         const zeile = within(buero).getByTestId('postfach-sichtbarkeit');
         expect(zeile).toHaveTextContent('Sichtbar: Büro, Max Mustermann, Erika Musterfrau+1');
         expect(zeile).toHaveAttribute('title', 'Büro, Max Mustermann, Erika Musterfrau, Moritz Muster');
-        expect(within(buero).getByRole('link', { name: 'Sichtbarkeit von buero@musterbetrieb.example unter Berechtigungen ändern' }))
+        expect(within(buero).getByRole('link', { name: 'Sichtbarkeit von buero@musterbetrieb.example unter Abteilungen & Rechte ändern' }))
             .toHaveAttribute('href', '#berechtigungen');
     });
 
@@ -497,8 +497,8 @@ describe('PostfachSettings – Sichtbarkeit', () => {
         expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument();
         expect(within(dialog).queryByText('Wer darf es sehen?')).not.toBeInTheDocument();
         expect(within(dialog).getByTestId('postfach-sichtbarkeit-hinweis'))
-            .toHaveTextContent('Wer dieses Postfach sehen darf, legen Sie unter Einstellungen → Berechtigungen fest.');
-        expect(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' })).toHaveAttribute('href', '#berechtigungen');
+            .toHaveTextContent('Wer dieses Postfach sehen darf, legen Sie unter Einstellungen → Abteilungen & Rechte fest.');
+        expect(within(dialog).getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' })).toHaveAttribute('href', '#berechtigungen');
         // Keine Häkchen-Listen mehr nötig.
         expect(fetchMock.mock.calls.some(([u]) => String(u) === '/api/abteilungen/berechtigungen')).toBe(false);
 
@@ -524,7 +524,7 @@ describe('PostfachDialog – Link zu den Berechtigungen', () => {
     it('wechselt ohne Änderungen direkt, ohne Rückfrage', async () => {
         const user = userEvent.setup();
         const dialog = await oeffneMax(user);
-        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }));
         expect(screen.queryByText('Änderungen verwerfen?')).not.toBeInTheDocument();
         await waitFor(() => expect(window.location.hash).toBe('#berechtigungen'));
     });
@@ -534,10 +534,10 @@ describe('PostfachDialog – Link zu den Berechtigungen', () => {
         const dialog = await oeffneMax(user);
         const name = within(dialog).getByLabelText('Angezeigter Name');
         await user.type(name, 'Buchhaltung');
-        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }));
 
         expect(await screen.findByText('Änderungen verwerfen?')).toBeInTheDocument();
-        expect(screen.getByText('Sie haben noch nicht gespeichert. Trotzdem zu den Berechtigungen wechseln?')).toBeInTheDocument();
+        expect(screen.getByText('Sie haben noch nicht gespeichert. Trotzdem zu „Abteilungen & Rechte“ wechseln?')).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
 
         await waitFor(() => expect(screen.queryByText('Änderungen verwerfen?')).not.toBeInTheDocument());
@@ -550,7 +550,7 @@ describe('PostfachDialog – Link zu den Berechtigungen', () => {
         const user = userEvent.setup();
         const dialog = await oeffneMax(user);
         await user.click(within(dialog).getByRole('checkbox', { name: /Für Rechnungen & Mahnungen/ }));
-        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }));
         await user.click(await screen.findByRole('button', { name: 'Verwerfen' }));
         await waitFor(() => expect(window.location.hash).toBe('#berechtigungen'));
     });
@@ -644,7 +644,7 @@ describe('PostfachDialog – Läuft aus', () => {
         await user.click(await screen.findByRole('button', { name: 'Postfach max@musterbetrieb.example bearbeiten' }));
         const dialog = await screen.findByRole('dialog');
         await user.click(laeuftAusSchalter(dialog));
-        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Berechtigungen' }));
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }));
         expect(await screen.findByText('Änderungen verwerfen?')).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
     });

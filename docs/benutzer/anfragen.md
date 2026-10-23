@@ -34,7 +34,7 @@ Schickt jemand das Anfrageformular auf der Webseite des Betriebs ab, legt das Pr
 - Die Nachricht und die Fotos stehen als erster Eintrag im Reiter „Tagebuch“ („Anfrage über Webseite vom …“).
 - Der Interessent bekommt automatisch eine Bestätigungs-E-Mail. Ihren Text pflegt man unter **Kommunikation → E-Mail Vorlagen**, Vorlage „Webseite — Anfragebestätigung“.
 - Die Glocke oben rechts meldet die Anfrage unter „Neu von der Webseite“, bis sie beendet ist.
-- Mitarbeiter einer Abteilung mit dem Recht „Neue Anfrage über Webseite“ bekommen eine Nachricht aufs Handy (Recht vergibt ein Admin unter **Einstellungen → Berechtigungen**).
+- Mitarbeiter einer Abteilung mit dem Recht „Neue Anfrage über Webseite“ bekommen eine Nachricht aufs Handy (Recht vergibt ein Admin unter **Einstellungen → Abteilungen & Rechte**).
 
 Die Karte trägt „Webseite · neu“, bis aus der Anfrage ein Projekt wird oder sie beendet ist.
 

@@ -14,7 +14,7 @@ Dieses Dokument beschreibt, wie Unterlagen von Lieferanten ins Programm kommen �
 | **Projektmanagement › Einkauf › Bestellungen** | Dokumente als Kette (Angebot → AB → Lieferschein → Rechnung), Rechnung Projekten zuordnen – siehe [BESTELLWESEN.md](BESTELLWESEN.md) |
 | **Finanzen & Controlling › Buchhaltung › Offene Posten** → Reiter **„Eingangsrechnungen“** | Rechnungen genehmigen (Spalte „Genehmigt“) und als bezahlt abhaken |
 | **Projektmanagement › Dokumente** → Reiter „Eingang“ und **Finanzen & Controlling › Buchhaltung › Rechnungen** | Übersichten über alle Dokumente bzw. Rechnungen |
-| **Vorlagen & Stammdaten › Administration › Einstellungen** → Reiter **„Berechtigungen“** (nur Admin) | Je Abteilung festlegen, welche Dokumentarten sie sehen und scannen darf und wer Rechnungen genehmigt |
+| **Vorlagen & Stammdaten › Administration › Einstellungen** → Reiter **„Abteilungen & Rechte“** (nur Admin) | Je Abteilung festlegen, welche Dokumentarten sie sehen und scannen darf und wer Rechnungen genehmigt |
 
 ### So geht's (Kurzfassung)
 
@@ -228,7 +228,7 @@ Die Genehmigung setzt keine vorherige Prüfung voraus. Wird eine Rechnung innerh
 
 ### 6.2 Rechte pro Abteilung
 
-Die Rechte hängen nicht an festen Abteilungsnummern, sondern an Haken je Abteilung unter **Einstellungen › Reiter „Berechtigungen“** (Gruppe „Eingangsrechnungen“):
+Die Rechte hängen nicht an festen Abteilungsnummern, sondern an Haken je Abteilung unter **Einstellungen › Reiter „Abteilungen & Rechte“** (Gruppe „Eingangsrechnungen“):
 
 | Recht | Wirkung |
 |---|---|
@@ -236,7 +236,7 @@ Die Rechte hängen nicht an festen Abteilungsnummern, sondern an Haken je Abteil
 | **„Genehmigte Rechnungen sehen“** | „Sieht nur schon genehmigte Eingangsrechnungen (Buchhaltung).“ |
 | keins von beiden | sieht unter Offene Posten keine Eingangsrechnungen |
 
-Zusätzlich legt die Tabelle „Dokumente & Belege“ je Abteilung und Dokumentart fest, was jemand **„Sehen“** und **„Scannen“** darf. Administratoren sehen alle Dokumentarten, brauchen zum Genehmigen aber ebenfalls das Abteilungsrecht. Ohne Recht zeigt die Spalte „Genehmigt“ den Hinweis „Nur mit dem Abteilungsrecht „Rechnungen genehmigen““. Lehnt der Server das Genehmigen trotzdem ab (Recht inzwischen entzogen), erklärt eine Meldung, dass das Recht je Abteilung unter Einstellungen → Berechtigungen vergeben wird.
+Zusätzlich legt die Tabelle „Dokumente & Belege“ je Abteilung und Dokumentart fest, was jemand **„Sehen“** und **„Scannen“** darf. Administratoren sehen alle Dokumentarten, brauchen zum Genehmigen aber ebenfalls das Abteilungsrecht. Ohne Recht zeigt die Spalte „Genehmigt“ den Hinweis „Nur mit dem Abteilungsrecht „Rechnungen genehmigen““. Lehnt der Server das Genehmigen trotzdem ab (Recht inzwischen entzogen), erklärt eine Meldung, dass das Recht je Abteilung unter Einstellungen → Abteilungen & Rechte vergeben wird.
 
 ---
 

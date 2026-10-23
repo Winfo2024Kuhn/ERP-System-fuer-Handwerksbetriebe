@@ -5,7 +5,7 @@ import { json, stubbeEmailCenter } from './hilfen/postfaecher';
 
 /**
  * Etappe 2 der Postfach-Spec – Sichtbarkeit:
- *   - Einstellungen → Berechtigungen: Postfach auf „Nur bestimmte“, Abteilung und Benutzer
+ *   - Einstellungen → Abteilungen & Rechte: Postfach auf „Nur bestimmte“, Abteilung und Benutzer
  *     anhaken, Request prüfen; Einstellungen → E-Mail: Zeile „Sichtbar: …“ und Link dorthin.
  *   - E-Mail-Center: Senden über ein nicht erlaubtes Postfach → verständliche Meldung.
  * Nur Dummy-Daten, /api gestubbt (mit Zustand).
@@ -109,7 +109,7 @@ test('Sichtbarkeit unter Berechtigungen: Postfach auf „Nur bestimmte“, Abtei
     await page.getByRole('button', { name: 'Postfach max@musterbetrieb.example bearbeiten' }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByTestId('postfach-sichtbarkeit-hinweis'))
-        .toHaveText('Wer dieses Postfach sehen darf, legen Sie unter Einstellungen → Berechtigungen fest.');
+        .toHaveText('Wer dieses Postfach sehen darf, legen Sie unter Einstellungen → Abteilungen & Rechte fest.');
     await expect(dialog.getByRole('radio')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Speichern' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -119,18 +119,18 @@ test('Sichtbarkeit unter Berechtigungen: Postfach auf „Nur bestimmte“, Abtei
     await page.getByRole('button', { name: 'Postfach max@musterbetrieb.example bearbeiten' }).click();
     const postfachDialog = page.getByRole('dialog').filter({ hasText: 'Postfach bearbeiten' });
     await postfachDialog.getByLabel('Angezeigter Name').fill('Max Mustermann – Musterbetrieb');
-    await postfachDialog.getByRole('link', { name: 'Einstellungen → Berechtigungen' }).click();
-    await expect(page.getByText('Sie haben noch nicht gespeichert. Trotzdem zu den Berechtigungen wechseln?')).toBeVisible();
+    await postfachDialog.getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }).click();
+    await expect(page.getByText('Sie haben noch nicht gespeichert. Trotzdem zu „Abteilungen & Rechte“ wechseln?')).toBeVisible();
     await designPruefung(page, info, 'postfach-dialog-verwerfen-rueckfrage', { primaerAktion: page.getByRole('button', { name: 'Weiter bearbeiten' }) });
     await page.getByRole('button', { name: 'Weiter bearbeiten' }).click();
     await expect(page.getByText('Änderungen verwerfen?')).toHaveCount(0);
     await expect(postfachDialog.getByLabel('Angezeigter Name')).toHaveValue('Max Mustermann – Musterbetrieb');
     await expect(page.getByRole('tab', { name: /E-Mail/ })).toHaveAttribute('aria-selected', 'true');
 
-    await postfachDialog.getByRole('link', { name: 'Einstellungen → Berechtigungen' }).click();
+    await postfachDialog.getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }).click();
     await page.getByRole('button', { name: 'Verwerfen' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('tab', { name: /Berechtigungen/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: /Abteilungen & Rechte/ })).toHaveAttribute('aria-selected', 'true');
 
     const karte = page.getByRole('list', { name: 'Sichtbarkeit der Postfächer' });
     const haupt = karte.getByRole('listitem').filter({ hasText: 'info@musterbetrieb.example' });
@@ -176,8 +176,8 @@ test('Sichtbarkeit unter Berechtigungen: Postfach auf „Nur bestimmte“, Abtei
     await expect(rechnungenListe.getByTestId('postfach-sichtbarkeit')).toHaveText('Sichtbar: alle');
     await expect(rechnungenListe.getByRole('link')).toHaveCount(0);
     await designPruefung(page, info, 'postfach-sichtbarkeit-liste', { primaerAktion: page.getByRole('button', { name: 'Neues Postfach' }) });
-    await maxZeile.getByRole('link', { name: /unter Berechtigungen ändern/ }).click();
-    await expect(page.getByRole('tab', { name: /Berechtigungen/ })).toHaveAttribute('aria-selected', 'true');
+    await maxZeile.getByRole('link', { name: /unter Abteilungen & Rechte ändern/ }).click();
+    await expect(page.getByRole('tab', { name: /Abteilungen & Rechte/ })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('E-Mail-Center: Senden über ein nicht erlaubtes Postfach zeigt die Meldung, das Formular bleibt offen', async ({ page }, info) => {

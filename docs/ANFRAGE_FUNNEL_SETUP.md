@@ -106,7 +106,7 @@ Eine neue Datenbank bekommt alles Nötige automatisch über das Basis-Schema
   des Betriebs, darunter die System-Signatur. Die Mail wird der Anfrage
   zugeordnet und ist im E-Mail-Center bei der Anfrage zu sehen.
 - Die Push-Nachricht bekommen alle Mitarbeiter, deren Abteilung das Recht
-  **„Neue Anfrage über Webseite“** hat (Einstellungen › Reiter „Berechtigungen“,
+  **„Neue Anfrage über Webseite“** hat (Einstellungen › Reiter „Abteilungen & Rechte“,
   „Push-Nachrichten aufs Handy“). Ein Tipp darauf öffnet die Anfrage in der
   Handy-App.
 

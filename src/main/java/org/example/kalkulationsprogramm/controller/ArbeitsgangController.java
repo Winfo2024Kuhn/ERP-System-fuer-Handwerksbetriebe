@@ -1,14 +1,11 @@
 package org.example.kalkulationsprogramm.controller;
 
 import lombok.AllArgsConstructor;
-import org.example.kalkulationsprogramm.domain.Abteilung;
 import org.example.kalkulationsprogramm.domain.Arbeitsgang;
-import org.example.kalkulationsprogramm.dto.Abteilung.AbteilungResponseDto;
 import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangErstellenDto;
 import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangResponseDto;
 import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangStundensatzDto;
 import org.example.kalkulationsprogramm.mapper.ArbeitsgangMapper;
-import org.example.kalkulationsprogramm.repository.AbteilungRepository;
 import org.example.kalkulationsprogramm.service.ArbeitsgangManagementService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,51 +22,6 @@ import java.util.stream.Collectors;
 public class ArbeitsgangController {
     private final ArbeitsgangManagementService arbeitsgangManagementService;
     private final ArbeitsgangMapper arbeitsgangMapper;
-    private final AbteilungRepository abteilungRepository;
-
-    // ==================== Abteilung Endpoints ====================
-
-    @GetMapping("/abteilungen")
-    public ResponseEntity<List<AbteilungResponseDto>> getAlleAbteilungen() {
-        List<AbteilungResponseDto> dtos = abteilungRepository.findAll().stream()
-                .map(this::toAbteilungDto)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(dtos);
-    }
-
-    @PostMapping("/abteilungen")
-    public ResponseEntity<AbteilungResponseDto> erstelleAbteilung(@RequestBody Map<String, String> body) {
-        String name = body.get("name");
-        if (name == null || name.trim().isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-        Abteilung abteilung = new Abteilung();
-        abteilung.setName(name.trim());
-        Abteilung saved = abteilungRepository.save(abteilung);
-        return ResponseEntity.status(HttpStatus.CREATED).body(toAbteilungDto(saved));
-    }
-
-    @DeleteMapping("/abteilungen/{id}")
-    public ResponseEntity<Void> loescheAbteilung(@PathVariable Long id) {
-        try {
-            Abteilung abteilung = abteilungRepository.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Abteilung nicht gefunden"));
-            if (!abteilung.getArbeitsgaenge().isEmpty()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).build();
-            }
-            abteilungRepository.delete(abteilung);
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-
-    private AbteilungResponseDto toAbteilungDto(Abteilung abteilung) {
-        AbteilungResponseDto dto = new AbteilungResponseDto();
-        dto.setId(abteilung.getId());
-        dto.setName(abteilung.getName());
-        return dto;
-    }
 
     // ==================== Arbeitsgang Endpoints ====================
 

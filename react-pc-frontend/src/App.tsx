@@ -83,7 +83,7 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/lieferanten" element={<Seite><LieferantenEditor /></Seite>} />
                 <Route path="/artikel" element={<Seite><ArtikelEditor /></Seite>} />
                 <Route path="/artikel/:id" element={<Seite><ArtikelDetail /></Seite>} />
-                <Route path="/arbeitsgaenge" element={<Seite><ArbeitsgangEditor /></Seite>} />
+                <Route path="/arbeitsgaenge" element={<RequireAdmin><Seite><ArbeitsgangEditor /></Seite></RequireAdmin>} />
                 <Route path="/produktkategorien" element={<Seite><ProduktkategorieEditor /></Seite>} />
                 <Route path="/projekte" element={<Seite><ProjektEditor /></Seite>} />
                 <Route path="/anfragen" element={<Seite><AnfrageEditor /></Seite>} />

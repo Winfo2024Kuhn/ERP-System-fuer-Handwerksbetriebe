@@ -79,4 +79,4 @@ Gutschriften von Lieferanten stehen eingerückt unter der Rechnung, zu der sie g
 
 In **Finanzen & Controlling → Offene Posten**, Reiter „Eingangsrechnungen“, gibt das Schild-Symbol in der Spalte „Genehmigt“ eine Rechnung frei. Noch nicht genehmigte Rechnungen lassen sich über das Dokument-Symbol korrigieren, genehmigte nur noch ansehen.
 
-Die Eingangsrechnungen hängen an Abteilungsrechten, die ein Admin unter **Einstellungen → Berechtigungen** vergibt: „Rechnungen genehmigen“ (sieht alle und darf genehmigen) oder „Genehmigte Rechnungen sehen“. Ohne eines davon bleibt der Reiter leer. Den Reiter „Ausgangsrechnungen“ sieht jeder angemeldete Benutzer und darf dort Rechnungen als bezahlt markieren.
+Die Eingangsrechnungen hängen an Abteilungsrechten, die ein Admin unter **Einstellungen → Abteilungen & Rechte** vergibt: „Rechnungen genehmigen“ (sieht alle und darf genehmigen) oder „Genehmigte Rechnungen sehen“. Ohne eines davon bleibt der Reiter leer. Den Reiter „Ausgangsrechnungen“ sieht jeder angemeldete Benutzer und darf dort Rechnungen als bezahlt markieren.

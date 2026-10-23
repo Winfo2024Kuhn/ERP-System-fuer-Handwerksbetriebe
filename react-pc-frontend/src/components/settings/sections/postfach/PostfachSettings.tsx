@@ -191,7 +191,7 @@ export function PostfachSettings({ onSaved }: { onSaved?: () => void }) {
                                                 <>
                                                     {' · '}
                                                     <a href="#berechtigungen"
-                                                        aria-label={`Sichtbarkeit von ${postfach.emailAdresse} unter Berechtigungen ändern`}
+                                                        aria-label={`Sichtbarkeit von ${postfach.emailAdresse} unter Abteilungen & Rechte ändern`}
                                                         className="font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded">
                                                         ändern
                                                     </a>

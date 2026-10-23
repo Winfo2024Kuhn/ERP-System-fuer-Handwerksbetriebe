@@ -13,7 +13,7 @@ import { useZeiterfassungSichtbarkeit } from '../../features/zeiterfassung/useZe
 import { NAVIGATION, ZEITERFASSUNG_KATEGORIE, type NavCategory } from './navigation';
 
 
-const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/benutzer', '/website']);
+const ADMIN_ONLY_PATHS = new Set(['/firma', '/formulare', '/einstellungen', '/benutzer', '/website', '/arbeitsgaenge']);
 /** Nur mit dem Abteilungs-Recht „Anrufe & Anrufbeantworter" sichtbar. */
 const TELEFON_PATHS = new Set(['/telefon/anrufe', '/telefon/anrufbeantworter']);
 

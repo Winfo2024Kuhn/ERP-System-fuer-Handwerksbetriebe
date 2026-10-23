@@ -13,7 +13,7 @@
 | **Kommunikation › E-Mail › E-Mail Vorlagen** (`/email-textvorlagen`, Seite „E-MAIL-TEXTVORLAGEN“) | alle | Texte für Angebote, Rechnungen, Mahnungen, Webseiten-Anfragen |
 | **Kommunikation › E-Mail › E-Mail-Einstellungen** (`/email-einstellungen`) | alle | Reiter „Signaturen“ und „Abwesenheitsnotizen“ |
 | **Vorlagen & Stammdaten › Administration › Einstellungen** → Reiter **„E-Mail“** → „Postfächer“ | Admin | Postfächer anlegen, Zugangsdaten, Hauptpostfach |
-| **Einstellungen** → Reiter **„Berechtigungen“** → „E-Mail-Postfächer – wer sieht welches Postfach?“ | Admin | Sichtbarkeit je Abteilung und Benutzer |
+| **Einstellungen** → Reiter **„Abteilungen & Rechte“** → „E-Mail-Postfächer – wer sieht welches Postfach?“ | Admin | Sichtbarkeit je Abteilung und Benutzer |
 | Benutzermenü → **„Benutzer verwalten“** → Feld „Eigenes Postfach“ | Admin | Einem Benutzer sein Postfach zuordnen |
 | Projekt, Anfrage, Lieferant („E-Mail-Verlauf“), Steuerberater | alle | Alle Mails zu diesem Vorgang |
 

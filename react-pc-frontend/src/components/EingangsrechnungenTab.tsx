@@ -65,7 +65,7 @@ const authHeaders = (): Record<string, string> => {
 };
 
 const KEIN_GENEHMIGUNGSRECHT =
-    'Keine Berechtigung zum Genehmigen. Das Recht „Rechnungen genehmigen“ wird je Abteilung unter Einstellungen → Berechtigungen vergeben.';
+    'Keine Berechtigung zum Genehmigen. Das Recht „Rechnungen genehmigen“ wird je Abteilung unter Einstellungen → Abteilungen & Rechte vergeben.';
 
 
 // Format date to German locale

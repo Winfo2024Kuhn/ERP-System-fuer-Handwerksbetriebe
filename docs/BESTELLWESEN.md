@@ -258,7 +258,7 @@ Die Markierung einer Rechnung als **Lagerbestellung** (kein Projekt nötig) gibt
 
 Der Knopf **„Belegkosten zuordnen (n)“** im Seitenkopf zeigt Belege aus „Belege & Kasse“, die nicht aus dem E-Mail-Import stammen, und verteilt ihre Kosten ebenso auf Projekte und Kostenstellen.
 
-Welche Dokumentarten jemand in der Übersicht sieht, richtet sich nach den Rechten seiner Abteilung (Einstellungen › Reiter „Berechtigungen“, Spalte „Sehen“); Administratoren sehen alle.
+Welche Dokumentarten jemand in der Übersicht sieht, richtet sich nach den Rechten seiner Abteilung (Einstellungen › Reiter „Abteilungen & Rechte“, Spalte „Sehen“); Administratoren sehen alle.
 
 ---
 

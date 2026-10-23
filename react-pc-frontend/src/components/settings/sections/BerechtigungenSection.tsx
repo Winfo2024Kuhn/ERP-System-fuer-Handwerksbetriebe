@@ -4,12 +4,15 @@ import { InfoAbschnitt, InfoButton } from '../../ui/info-button';
 import { Button } from '../../ui/button';
 import { useToast } from '../../ui/toast';
 import { SaveButton, SectionLoading, SettingsCard } from '../settingsUi';
+import { AbteilungenVerwaltenKarte } from './berechtigungen/AbteilungenVerwaltenKarte';
 import { PostfachSichtbarkeitKarte } from './berechtigungen/PostfachSichtbarkeitKarte';
 import { setzeZeiterfassungSichtbarkeitZurueck } from '../../../features/zeiterfassung/useZeiterfassungSichtbarkeit';
 
 /**
+ * Reiter „Abteilungen & Rechte“. Ganz oben werden die Abteilungen selbst angelegt,
+ * umbenannt und gelöscht ({@link AbteilungenVerwaltenKarte}). Darunter die
  * Rechte pro Abteilung: welche Lieferanten-Dokumente sie sehen und scannen darf,
- * Eingangsrechnungen, Zeiterfassung im Menü, Monatsabschluss, Telefon und Push-Nachrichten. Ganz oben:
+ * Eingangsrechnungen, Zeiterfassung im Menü, Monatsabschluss, Telefon und Push-Nachrichten. Davor:
  * wer welches E-Mail-Postfach sieht ({@link PostfachSichtbarkeitKarte}).
  *
  * <p>War vorher eine eigene Seite „Lieferanten-Dokumentenrechte“ mit eigenem
@@ -165,18 +168,31 @@ export function BerechtigungenSection() {
     const [loadError, setLoadError] = useState(false);
     const [saving, setSaving] = useState<number | null>(null);
     const [saveSuccess, setSaveSuccess] = useState<number | null>(null);
+    /** Zählt jede Änderung an den Abteilungen – die Postfach-Karte lädt daraufhin neu. */
+    const [abteilungenStand, setAbteilungenStand] = useState(0);
     const gespeichertTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     useEffect(() => () => clearTimeout(gespeichertTimer.current), []);
 
-    const laden = useCallback(async () => {
-        setLoading(true);
+    /**
+     * Holt die Rechte aller Abteilungen. `leise` (nach Anlegen/Umbenennen/Löschen einer Abteilung):
+     * ohne Ladeanzeige, und noch nicht gespeicherte Häkchen der übrigen Abteilungen bleiben stehen –
+     * vom Server kommen dann nur neue Abteilungen, neue Namen und das Verschwinden gelöschter.
+     */
+    const laden = useCallback(async (leise = false) => {
+        if (!leise) setLoading(true);
         setLoadError(false);
         try {
             const res = await fetch('/api/abteilungen/berechtigungen');
             if (!res.ok) throw new Error('Berechtigungen konnten nicht geladen werden.');
             const data: AbteilungBerechtigung[] = await res.json();
-            setAbteilungen(data.map(normalisiere));
+            const frisch = data.map(normalisiere);
+            setAbteilungen((vorher) => (leise
+                ? frisch.map((neu) => {
+                    const bisher = vorher.find((abt) => abt.abteilungId === neu.abteilungId);
+                    return bisher ? { ...bisher, abteilungName: neu.abteilungName } : neu;
+                })
+                : frisch));
         } catch (err) {
             setLoadError(true);
             toastRef.current.error(err instanceof Error ? err.message : 'Berechtigungen konnten nicht geladen werden.');
@@ -247,8 +263,12 @@ export function BerechtigungenSection() {
 
     return (
         <div className="space-y-6">
-            {/* Lädt eigenständig – unabhängig von den Abteilungsrechten darunter. */}
-            <PostfachSichtbarkeitKarte />
+            {/* Beide Karten laden eigenständig – unabhängig von den Abteilungsrechten darunter. */}
+            <AbteilungenVerwaltenKarte onGeaendert={() => {
+                setAbteilungenStand((stand) => stand + 1);
+                void laden(true);
+            }} />
+            <PostfachSichtbarkeitKarte abteilungenStand={abteilungenStand} />
 
             {loading ? <SectionLoading /> : <>
                 <SettingsCard
@@ -267,12 +287,12 @@ export function BerechtigungenSection() {
                     {loadError && (
                         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                             Berechtigungen konnten nicht geladen werden.
-                            <Button variant="outline" size="sm" onClick={laden}>Erneut laden</Button>
+                            <Button variant="outline" size="sm" onClick={() => void laden()}>Erneut laden</Button>
                         </div>
                     )}
                     {!loadError && abteilungen.length === 0 && (
                         <p className="text-sm text-slate-500">
-                            Noch keine Abteilungen angelegt. Abteilungen legen Sie unter Vorlagen & Stammdaten → Arbeitsgänge mit „Abteilung anlegen“ an. Beim Mitarbeiter weisen Sie die Abteilung danach nur noch zu.
+                            Noch keine Abteilungen angelegt. Legen Sie oben in der Karte „Abteilungen“ die erste an – danach erscheint sie hier mit ihren Rechten. Beim Mitarbeiter weisen Sie die Abteilung anschließend nur noch zu.
                         </p>
                     )}
                 </SettingsCard>

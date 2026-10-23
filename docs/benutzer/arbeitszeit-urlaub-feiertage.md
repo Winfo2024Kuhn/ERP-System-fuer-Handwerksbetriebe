@@ -14,7 +14,7 @@ Damit die Zeiterfassung rechnen kann, braucht jeder Mitarbeiter eine Arbeitszeit
    - „Arbeitszeit erfassen“ (voreingestellt): ausschalten für Personen, die nicht stempeln.
 3. „Speichern“. Danach beim Mitarbeiter „Arbeitszeit einrichten“ wählen (siehe unten).
 
-Abteilungen selbst legt man unter **Vorlagen & Stammdaten → Arbeitsgänge** an.
+Abteilungen selbst legt ein Admin unter **Einstellungen → Abteilungen & Rechte**, Karte „Abteilungen“, an.
 
 ## Handy-App einrichten (QR-Code)
 
