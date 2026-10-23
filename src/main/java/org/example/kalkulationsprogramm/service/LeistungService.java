@@ -1,16 +1,20 @@
 package org.example.kalkulationsprogramm.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.Leistung;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
+import org.example.kalkulationsprogramm.dto.Leistung.LeistungVerwendungDto;
 import org.example.kalkulationsprogramm.mapper.LeistungMapper;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LeistungRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.example.kalkulationsprogramm.util.LeistungsPositionen;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,10 +25,13 @@ public class LeistungService {
 
     /** Laenge der Spalte {@code leistung.bezeichnung} (VARCHAR(255)). */
     static final int MAX_NAME_LAENGE = 255;
+    /** So viele Dokumente zeigt der Lösch-Dialog; {@code dokumentAnzahl} nennt alle. */
+    static final int MAX_DOKUMENTE = 20;
 
     private final LeistungRepository leistungRepository;
     private final LeistungMapper leistungMapper;
     private final ProduktkategorieRepository produktkategorieRepository;
+    private final AusgangsGeschaeftsDokumentRepository dokumentRepository;
 
     @Transactional(readOnly = true)
     public List<LeistungDto> getAllLeistungen() {
@@ -56,6 +63,32 @@ public class LeistungService {
         leistungMapper.updateEntity(leistung, dto);
         leistung = leistungRepository.save(leistung);
         return leistungMapper.toDto(leistung);
+    }
+
+    /**
+     * In welchen Angeboten, Auftragsbestätigungen und Rechnungen die Leistung steckt.
+     * Die Positionen speichern Text und Preis fest; Löschen ändert an diesen Dokumenten nichts.
+     */
+    @Transactional(readOnly = true)
+    public LeistungVerwendungDto ermittleVerwendung(Long id) {
+        if (id == null || id <= 0 || !leistungRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Diese Leistung gibt es nicht mehr.");
+        }
+        // Vorauswahl per Textmuster, danach genau prüfen, weil "leistungId":12 auch in
+        // "leistungId":120 steckt.
+        List<AusgangsGeschaeftsDokument> treffer = dokumentRepository
+                .findeMitLeistungInPositionen("%\"leistungId\":" + id + "%", "%\"leistungId\": " + id + "%",
+                        "%\"leistungId\":\"" + id + "\"%")
+                .stream()
+                .filter(d -> LeistungsPositionen.leistungIds(d.getPositionenJson()).contains(id))
+                .toList();
+        return new LeistungVerwendungDto(treffer.size(), treffer.stream()
+                .limit(MAX_DOKUMENTE)
+                .map(d -> new LeistungVerwendungDto.Dokument(d.getId(), d.getDokumentNummer(), d.getTyp(),
+                        d.getDatum(),
+                        d.getProjekt() != null ? d.getProjekt().getId() : null,
+                        d.getProjekt() != null ? d.getProjekt().getBauvorhaben() : null))
+                .toList());
     }
 
     @Transactional

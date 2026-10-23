@@ -4,7 +4,7 @@ import { cn } from '../../lib/utils';
 import {
     Briefcase, Clock, Mail, Package, MoreHorizontal,
     X, FileText, User, Truck, ShoppingCart, FileCheck,
-    BarChart3, Euro, Home, Layers, List, Calendar,
+    BarChart3, Euro, Home, Layers, Calendar,
     CalendarDays, Plane, FileJson, ChevronRight, Stethoscope,
     Phone, Voicemail
 } from 'lucide-react';
@@ -65,14 +65,13 @@ const MORE_SECTIONS: NavSection[] = [
         label: 'Dokumente',
         items: [
             { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
-            { name: 'Leistungen', href: '/leistungen', icon: List },
         ]
     },
     {
         label: 'Katalog',
         items: [
+            { name: 'Leistungen & Kategorien', href: '/leistungen', icon: Layers },
             { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
-            { name: 'Projekt-Kategorien', href: '/produktkategorien', icon: Layers },
         ]
     },
     {

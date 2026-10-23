@@ -6,6 +6,8 @@ import { VerbindungsHinweis } from './ui/lade-anzeige';
  * Seiten werden einzeln nachgeladen. Reißt dabei die Verbindung ab, meldet jeder Browser das
  * anders – gemeinsam ist nur der Wortlaut rund um „dynamisch importierte Module“.
  */
+// Kleine Prüffunktion neben der Fehlergrenze; Fast Refresh der Fehlergrenze ist dafür entbehrlich.
+// eslint-disable-next-line react-refresh/only-export-components
 export function istLadefehlerEinerSeite(error: Error | null): boolean {
   const text = `${error?.name ?? ''} ${error?.message ?? ''}`;
   return /dynamically imported module|Importing a module script failed|ChunkLoadError|Unable to preload CSS/i.test(text);

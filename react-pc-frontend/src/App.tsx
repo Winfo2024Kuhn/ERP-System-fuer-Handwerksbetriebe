@@ -14,13 +14,12 @@ import { BESTELLBEDARF_PFAD, istFreigegeben } from './lib/freigaben';
 // Jede Seite ist eine eigene Datei und wird erst beim Öffnen geladen – der erste Aufruf
 // (von unterwegs über Tailscale) lädt so nur das Gerüst und die aktuelle Seite.
 const TextbausteinEditor = lazy(() => import('./pages/TextbausteinEditor'));
-const Leistungseditor = lazy(() => import('./pages/Leistungseditor'));
+const LeistungenUndKategorien = lazy(() => import('./pages/leistungen/LeistungenUndKategorien'));
 const Kundeneditor = lazy(() => import('./pages/Kundeneditor'));
 const LieferantenEditor = lazy(() => import('./pages/LieferantenEditor'));
 const ArtikelEditor = lazy(() => import('./pages/ArtikelEditor'));
 const ArtikelDetail = lazy(() => import('./pages/ArtikelDetail'));
 const ArbeitsgangEditor = lazy(() => import('./pages/ArbeitsgangEditor'));
-const ProduktkategorieEditor = lazy(() => import('./pages/ProduktkategorieEditor'));
 const ProjektEditor = lazy(() => import('./pages/ProjektEditor'));
 const AnfrageEditor = lazy(() => import('./pages/AnfrageEditor'));
 const BestellungenUebersicht = lazy(() => import('./pages/BestellungenUebersicht'));
@@ -76,7 +75,7 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/" element={<Navigate to="/projekte" replace />} />
 
                 <Route path="/textbausteine" element={<Seite><TextbausteinEditor /></Seite>} />
-                <Route path="/leistungen" element={<Seite><Leistungseditor /></Seite>} />
+                <Route path="/leistungen" element={<Seite><LeistungenUndKategorien /></Seite>} />
                 <Route path="/arbeitszeitarten" element={<Seite><ArbeitszeitartEditor /></Seite>} />
                 <Route path="/kunden" element={<Seite><Kundeneditor /></Seite>} />
                 <Route path="/mitarbeiter" element={<Seite><MitarbeiterEditor /></Seite>} />
@@ -84,7 +83,8 @@ const router = createBrowserRouter(createRoutesFromElements(
                 <Route path="/artikel" element={<Seite><ArtikelEditor /></Seite>} />
                 <Route path="/artikel/:id" element={<Seite><ArtikelDetail /></Seite>} />
                 <Route path="/arbeitsgaenge" element={<RequireAdmin><Seite><ArbeitsgangEditor /></Seite></RequireAdmin>} />
-                <Route path="/produktkategorien" element={<Seite><ProduktkategorieEditor /></Seite>} />
+                {/* Projekt-Kategorien sind die Ordner der Leistungen – eine gemeinsame Seite. */}
+                <Route path="/produktkategorien" element={<Navigate to="/leistungen" replace />} />
                 <Route path="/projekte" element={<Seite><ProjektEditor /></Seite>} />
                 <Route path="/anfragen" element={<Seite><AnfrageEditor /></Seite>} />
                 <Route path="/bestellungen" element={<Seite><BestellungenUebersicht /></Seite>} />

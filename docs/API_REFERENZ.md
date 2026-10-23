@@ -710,12 +710,16 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `GET` | `/haupt` | Hauptkategorien (`light`) |
 | `GET` | `/{id}` | Einzelne Kategorie |
 | `GET` | `/{kategorieId}/analyse` | Auswertung einer Kategorie (optional Jahr) |
+| `GET` | `/auswertung` | Übersicht: Hauptordner oder Unterordner von `parentId` mit Projekten, Stunden, Menge, Stunden je Einheit (optional `jahr`, nur abgeschlossene Projekte) |
 | `GET` | `/{parentId}/unterkategorien` | Unterkategorien (`light`) |
 | `GET` | `/suche` | Unterste Kategorien per Suchbegriff (`q`) |
 | `POST` | `/` | Kategorie anlegen (multipart, optional Bild) |
 | `PATCH` | `/{kategorieId}/beschreibung` | Beschreibung ändern |
-| `PUT` | `/{id}` | Kategorie ändern (multipart, optional Bild) |
-| `DELETE` | `/{kategorieId}` | Kategorie löschen |
+| `PUT` | `/{id}` | Kategorie ändern (multipart, optional Bild, `bildEntfernen`) |
+| `PATCH` | `/{id}/verschieben` | In anderen Ordner verschieben (`parentId`, `null` = Hauptordner) |
+| `GET` | `/{id}/loeschpruefung` | Was hängt am Ordner (Unterordner, Leistungen, Projekte, Zeiten)? |
+| `POST` | `/{id}/loeschen` | Löschen mit Bezügen: `UMZIEHEN` (in `zielKategorieId`) oder `ALLES` |
+| `DELETE` | `/{kategorieId}` | Leeren Ordner löschen (sonst 409) |
 
 ### AbteilungController
 
@@ -778,6 +782,7 @@ Rechner „Was muss meine Stunde kosten?“.
 | `GET` | `/` | Alle Leistungen |
 | `POST` | `/` | Leistung anlegen |
 | `PUT` | `/{id}` | Leistung ändern |
+| `GET` | `/{id}/verwendung` | In welchen Ausgangsdokumenten steckt die Leistung? |
 | `DELETE` | `/{id}` | Leistung löschen |
 
 ### SchnittbilderController
@@ -1809,7 +1814,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 46 | `KundeController` | `/api/kunden` | 10 | 4 |
 | 47 | `LangzeitkrankmeldungController` | `/api/langzeitkrankmeldungen` | 10 | 12 |
 | 48 | `LangzeitkrankmeldungMobileController` | `/api/zeiterfassung/langzeitkrankmeldung` | 1 | 10 |
-| 49 | `LeistungController` | `/api/leistungen` | 4 | 8 |
+| 49 | `LeistungController` | `/api/leistungen` | 5 | 8 |
 | 50 | `LieferantDokumentController` | `/api/lieferant-dokumente` | 13 | 7 |
 | 51 | `LieferantDokumentPositionController` | `/api/bestellungen-uebersicht/positionen` | 4 | 7 |
 | 52 | `LieferantDokumentWartungController` | `/api/admin/lieferant-dokumente` | 1 | 7 |
@@ -1829,7 +1834,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 66 | `OffenePostenController` | `/api/offene-posten` | 6 | 6 |
 | 67 | `OutOfOfficeController` | `/api/email/outofoffice` | 4 | 9 |
 | 68 | `PostfachController` | `/api/postfaecher` | 6 | 9 |
-| 69 | `ProduktkategorieController` | `/api/produktkategorien` | 10 | 8 |
+| 69 | `ProduktkategorieController` | `/api/produktkategorien` | 14 | 8 |
 | 70 | `ProjektController` | `/api/projekte` | 50 | 3 |
 | 71 | `ProjektWartungController` | `/api/admin/projekte` | 2 | 3 |
 | 72 | `PushSubscriptionController` | `/api/push` | 3 | 10 |

@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
+import org.example.kalkulationsprogramm.dto.Leistung.LeistungVerwendungDto;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.service.LeistungService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -261,6 +263,36 @@ class LeistungControllerTest {
             assertThrows(Exception.class, () ->
                     mockMvc.perform(delete("/api/leistungen/999"))
             );
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/leistungen/{id}/verwendung")
+    class Verwendung {
+
+        @Test
+        @DisplayName("Liefert Anzahl und Dokumente")
+        void liefertDokumente() throws Exception {
+            given(leistungService.ermittleVerwendung(12L)).willReturn(new LeistungVerwendungDto(1, List.of(
+                    new LeistungVerwendungDto.Dokument(77L, "AN-2026-031", AusgangsGeschaeftsDokumentTyp.ANGEBOT,
+                            java.time.LocalDate.of(2026, 3, 2), 9L, "Neubau Mustermann"))));
+
+            mockMvc.perform(get("/api/leistungen/12/verwendung"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dokumentAnzahl").value(1))
+                    .andExpect(jsonPath("$.dokumente[0].dokumentNummer").value("AN-2026-031"))
+                    .andExpect(jsonPath("$.dokumente[0].typ").value("ANGEBOT"))
+                    .andExpect(jsonPath("$.dokumente[0].datum").value("2026-03-02"))
+                    .andExpect(jsonPath("$.dokumente[0].bauvorhaben").value("Neubau Mustermann"));
+        }
+
+        @Test
+        @DisplayName("Unbekannte Leistung: 404")
+        void unbekannt() throws Exception {
+            given(leistungService.ermittleVerwendung(99L))
+                    .willThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Diese Leistung gibt es nicht mehr."));
+
+            mockMvc.perform(get("/api/leistungen/99/verwendung")).andExpect(status().isNotFound());
         }
     }
 }

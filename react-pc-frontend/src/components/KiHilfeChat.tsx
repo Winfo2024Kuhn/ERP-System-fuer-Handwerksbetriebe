@@ -602,7 +602,7 @@ export function KiHilfeChat() {
 const VALID_ROUTES = new Set([
     '/projekte', '/anfragen', '/kunden', '/lieferanten', '/artikel',
     '/bestellungen', BESTELLBEDARF_PFAD, '/textbausteine', '/leistungen',
-    '/arbeitsgaenge', '/produktkategorien', '/mitarbeiter', '/arbeitszeitarten',
+    '/arbeitsgaenge', '/mitarbeiter', '/arbeitszeitarten',
     '/kalender', '/emails', '/formulare', '/offeneposten',
     '/rechnungsuebersicht', '/miete', '/analyse', '/zeitbuchungen',
     '/auswertung', '/steuerberater', '/zeitkonten', '/feiertage',

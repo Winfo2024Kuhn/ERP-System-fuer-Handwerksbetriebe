@@ -2,13 +2,20 @@ package org.example.kalkulationsprogramm.controller;
 
 import java.util.List;
 
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieAuswertungZeileDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieLoeschPruefungDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieLoeschenDto;
+import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVerschiebenDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.ProduktkategorieAnalyseDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.ProduktkategorieErstellenDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.ProduktkategorieResponseDto;
+import org.example.kalkulationsprogramm.service.ProduktkategorieAuswertungService;
 import org.example.kalkulationsprogramm.service.ProduktkategorieService;
+import org.example.kalkulationsprogramm.service.ProduktkategorieVerwaltungService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -30,6 +37,8 @@ import lombok.AllArgsConstructor;
 public class ProduktkategorieController {
 
     private final ProduktkategorieService produktkategorieService;
+    private final ProduktkategorieVerwaltungService verwaltungService;
+    private final ProduktkategorieAuswertungService auswertungService;
 
     // ... GET-Methoden bleiben unverändert ...
     @GetMapping
@@ -42,6 +51,14 @@ public class ProduktkategorieController {
     public ResponseEntity<List<ProduktkategorieResponseDto>> getHauptkategorien(
             @RequestParam(value = "light", required = false, defaultValue = "false") boolean light) {
         return ResponseEntity.ok(produktkategorieService.findeHauptkategorien(light));
+    }
+
+    /** Übersicht: Hauptordner (ohne parentId) oder die Unterordner von parentId nebeneinander. */
+    @GetMapping("/auswertung")
+    public List<KategorieAuswertungZeileDto> getAuswertung(
+            @RequestParam(value = "jahr", required = false) Integer jahr,
+            @RequestParam(value = "parentId", required = false) Long parentId) {
+        return auswertungService.werteAus(jahr, parentId);
     }
 
     // NEU: Endpunkt, um eine einzelne Kategorie anhand ihrer ID abzurufen
@@ -102,28 +119,37 @@ public class ProduktkategorieController {
     }
 
     @PutMapping(value = "/{id}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
-    public ResponseEntity<ProduktkategorieResponseDto> aktualisiereKategorie(
+    public ProduktkategorieResponseDto aktualisiereKategorie(
             @PathVariable Long id,
             @ModelAttribute ProduktkategorieErstellenDto kategorieDto,
             @RequestParam(value = "bild", required = false) MultipartFile bild) {
-
-        try {
-            ProduktkategorieResponseDto updated = produktkategorieService.aktualisiereKategorie(id, kategorieDto, bild);
-            return ResponseEntity.ok(updated);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        return produktkategorieService.aktualisiereKategorie(id, kategorieDto, bild);
     }
 
+    @PatchMapping("/{id}/verschieben")
+    public ProduktkategorieResponseDto verschiebe(@PathVariable Long id,
+            @RequestBody KategorieVerschiebenDto ziel) {
+        return verwaltungService.verschiebe(id, ziel != null ? ziel.parentId() : null);
+    }
+
+    /** Was hängt am Ordner? Grundlage für den Lösch-Dialog. */
+    @GetMapping("/{id}/loeschpruefung")
+    public KategorieLoeschPruefungDto pruefeLoeschen(@PathVariable Long id) {
+        return verwaltungService.pruefeLoeschen(id);
+    }
+
+    /** Löschen mit Bezügen: Inhalt umziehen oder mitlöschen. */
+    @PostMapping("/{id}/loeschen")
+    public ResponseEntity<Void> loescheMitEntscheidung(@PathVariable Long id,
+            @RequestBody KategorieLoeschenDto auftrag, Authentication authentication) {
+        verwaltungService.loesche(id, auftrag, authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Nur für Ordner ohne Bezüge, sonst 409 mit Hinweis auf den Lösch-Dialog. */
     @DeleteMapping("/{kategorieId}")
     public ResponseEntity<Void> loescheKategorie(@PathVariable Long kategorieId) {
-        try {
-            produktkategorieService.loescheKategorie(kategorieId);
-            return ResponseEntity.noContent().build();
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        produktkategorieService.loescheKategorie(kategorieId);
+        return ResponseEntity.noContent().build();
     }
 }

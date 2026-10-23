@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
+import static org.mockito.Mockito.mock;
+
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -7,6 +9,7 @@ import org.example.kalkulationsprogramm.domain.Produktkategorie;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.ProduktkategorieResponseDto;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
+import org.example.kalkulationsprogramm.repository.LeistungRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,8 +44,8 @@ class ProduktkategorieServiceSucheTest {
                 produktkategorieRepository,
                 projektRepository,
                 produktkategorieMapper,
-                dateiSpeicherService
-        );
+                dateiSpeicherService,
+                mock(LeistungRepository.class));
     }
 
     @Test

@@ -26,7 +26,7 @@ describe('Handy-Leiste – Arbeitsgänge nur für Admins', () => {
 
     it('blendet Arbeitsgänge für andere Benutzer aus, der übrige Katalog bleibt', () => {
         oeffneMehr();
-        expect(screen.getByRole('link', { name: /Projekt-Kategorien/ })).toHaveAttribute('href', '/produktkategorien');
+        expect(screen.getByRole('link', { name: /Leistungen & Kategorien/ })).toHaveAttribute('href', '/leistungen');
         expect(screen.queryByRole('link', { name: /Arbeitsgänge/ })).toBeNull();
     });
 });

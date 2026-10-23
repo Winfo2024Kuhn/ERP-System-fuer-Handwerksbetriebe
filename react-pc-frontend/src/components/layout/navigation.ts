@@ -27,7 +27,6 @@ export const NAVIGATION: NavCategory[] = [
                 label: 'Dokumente',
                 items: [
                     { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
-                    { name: 'Leistungen', href: '/leistungen', icon: List },
                     { name: 'Stundensätze', href: '/arbeitszeitarten', icon: Clock },
                 ]
             },
@@ -43,8 +42,8 @@ export const NAVIGATION: NavCategory[] = [
                 label: 'Katalog',
                 items: [
                     { name: 'Artikel', href: '/artikel', icon: Package },
+                    { name: 'Leistungen & Kategorien', href: '/leistungen', icon: Layers },
                     { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
-                    { name: 'Projekt-Kategorien', href: '/produktkategorien', icon: Layers },
                 ]
             },
             {
