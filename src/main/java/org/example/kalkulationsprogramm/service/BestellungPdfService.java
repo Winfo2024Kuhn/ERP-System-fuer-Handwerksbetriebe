@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.*;
 import org.openpdf.text.Font;
 import org.openpdf.text.Image;
@@ -47,8 +48,7 @@ public class BestellungPdfService {
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "bestellung-", ".pdf.html");
             Document doc = new Document(PageSize.A4.rotate());
-            PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
-            writer.setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriter writer = PdfWriterFabrik.writer(doc, Files.newOutputStream(temp));
             writer.setCompressionLevel(0);
             doc.open();
 
@@ -112,8 +112,7 @@ public class BestellungPdfService {
                     Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
                     var refReader = new org.openpdf.text.pdf.PdfReader(refIs);
                     var mergedDoc = new org.openpdf.text.Document();
-                    var copy = new org.openpdf.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
-                    copy.setPdfVersion(org.openpdf.text.pdf.PdfWriter.VERSION_1_7);
+                    var copy = PdfWriterFabrik.kopie(mergedDoc, Files.newOutputStream(merged));
                     mergedDoc.open();
                     for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
                         copy.addPage(copy.getImportedPage(mainReader, i));
@@ -164,8 +163,7 @@ public class BestellungPdfService {
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "bestellung-", ".pdf.html");
             Document doc = new Document(PageSize.A4.rotate());
-            PdfWriter writer = PdfWriter.getInstance(doc, Files.newOutputStream(temp));
-            writer.setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriter writer = PdfWriterFabrik.writer(doc, Files.newOutputStream(temp));
             writer.setCompressionLevel(0);
             doc.open();
 
@@ -227,8 +225,7 @@ public class BestellungPdfService {
                     Path merged = Files.createTempFile(dir, "bestellung-merged-", ".pdf.html");
                     var refReader = new org.openpdf.text.pdf.PdfReader(refIs);
                     var mergedDoc = new org.openpdf.text.Document();
-                    var copy = new org.openpdf.text.pdf.PdfCopy(mergedDoc, Files.newOutputStream(merged));
-                    copy.setPdfVersion(org.openpdf.text.pdf.PdfWriter.VERSION_1_7);
+                    var copy = PdfWriterFabrik.kopie(mergedDoc, Files.newOutputStream(merged));
                     mergedDoc.open();
                     for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
                         copy.addPage(copy.getImportedPage(mainReader, i));

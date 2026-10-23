@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.Document;
 import org.openpdf.text.Element;
 import org.openpdf.text.Font;
@@ -9,7 +10,6 @@ import org.openpdf.text.Paragraph;
 import org.openpdf.text.Rectangle;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
-import org.openpdf.text.pdf.PdfWriter;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -55,7 +55,7 @@ public class ProjektListenPdfService {
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             // Hochformat: Die Liste wird meist ausgedruckt und abgeheftet – Querformat passt dort nicht.
             Document document = new Document(PageSize.A4, 36, 36, 42, 36);
-            PdfWriter.getInstance(document, output).setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriterFabrik.writer(document, output);
             document.open();
 
             Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, new Color(30, 41, 59));

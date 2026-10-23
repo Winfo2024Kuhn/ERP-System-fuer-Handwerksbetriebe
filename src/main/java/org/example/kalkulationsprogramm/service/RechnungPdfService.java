@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
@@ -305,9 +306,7 @@ public class RechnungPdfService {
         Document document = new Document(PageSize.A4, 0, 0, 0, 0); // No margins, background fills page
 
         try {
-            PdfWriter writer = PdfWriter.getInstance(document, out);
-            // OpenPDF 3 schreibt sonst "%PDF-2.0"; die E-Rechnung (PDF/A-3) verlangt "%PDF-1.n".
-            writer.setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriter writer = PdfWriterFabrik.writer(document, out);
             document.open();
 
             PdfContentByte cb = writer.getDirectContent();

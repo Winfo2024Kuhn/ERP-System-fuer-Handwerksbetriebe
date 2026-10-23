@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service.miete;
 
+import org.example.kalkulationsprogramm.util.PdfWriterFabrik;
 import org.openpdf.text.*;
 import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
@@ -59,8 +60,7 @@ public class MietabrechnungPdfService {
         AnnualAccountingResult result = mietabrechnungService.berechneJahresabrechnung(mietobjektId, jahr);
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, 40f, 40f, 50f, 50f);
-            PdfWriter writer = PdfWriter.getInstance(document, baos);
-            writer.setPdfVersion(PdfWriter.VERSION_1_7);
+            PdfWriter writer = PdfWriterFabrik.writer(document, baos);
             writer.setPageEvent(new FooterPageEvent(result));
             document.open();
 
