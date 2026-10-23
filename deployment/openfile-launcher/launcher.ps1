@@ -1,25 +1,35 @@
-param([string]$Url)
+param([string]$Url, [switch]$Aktualisieren)
+
+# Kanonische Fassung: src/main/resources/openfile-launcher/launcher.ps1. Das ERP liefert sie
+# mit der Einrichtungs-Datei aus (Einstellungen -> Dateien) und aktualisiert sie selbst.
+# deployment/openfile-launcher/launcher.ps1 ist eine Kopie fuer die alte Admin-Installation.
+# Nur ASCII-Zeichen: Windows PowerShell 5 liest UTF-8 ohne BOM als ANSI.
 
 # ===================== Setup =====================
 Add-Type -AssemblyName System.Web
 $ErrorActionPreference = 'Stop'
 
-# Erlaubte Pfade aus config.json neben diesem Skript (erzeugt von Setup-Freigabe.ps1,
-# vom Installations-Skript mitkopiert). Ohne config.json oeffnet der Launcher nichts:
+# Erlaubte Pfade aus config.json neben diesem Skript (kommt aus dem ERP bzw. von
+# Setup-Freigabe.ps1). Ohne config.json oeffnet der Launcher nichts:
 # Ein fest eingetragener Rechnername wuerde auf fremden Installationen nie passen.
 $AllowedRoots = @()
 $RootAliases  = @{}
+$ErpAdresse   = $null
+$Version      = ''
 $configFile   = Join-Path $PSScriptRoot 'config.json'
 $configError  = $null
 if (Test-Path $configFile) {
   try {
-    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
+    # Als UTF-8 lesen (mit oder ohne BOM): Get-Content nimmt in PowerShell 5 sonst ANSI
+    $cfg = [IO.File]::ReadAllText($configFile) | ConvertFrom-Json
     if ($cfg.allowedRoots) { $AllowedRoots = @($cfg.allowedRoots) }
     if ($cfg.rootAliases) {
       foreach ($key in $cfg.rootAliases.PSObject.Properties.Name) {
         $RootAliases[$key] = $cfg.rootAliases.$key
       }
     }
+    if ($cfg.erpAdresse) { $ErpAdresse = [string]$cfg.erpAdresse }
+    if ($cfg.version) { $Version = [string]$cfg.version }
   } catch {
     $configError = $_.Exception.Message
   }
@@ -31,18 +41,79 @@ $PreferredDrive = 'Z:'
 # Optional: bekannter TENADO-Pfad (Fallback)
 $TenadoExeFallback = 'C:\Program Files (x86)\TENADO\TENADO METALL 2D V22\TENADOMETALL22.exe'
 
-# Spreadsheet-Endungen (Excel, CSV, ODS, …)
+# Spreadsheet-Endungen (Excel, CSV, ODS, ...)
 $SpreadsheetExts = @('.xlsx','.xls','.xlsm','.xlsb','.xlt','.xltx','.xltm','.csv','.ods')
 
-# ---- Logging: Konsole + Datei ----
-$logDir = 'C:\ProgramData\OpenFileLauncher'
+# ---- Logging: Konsole + Datei (im Benutzerordner, dort darf jeder schreiben) ----
+$logDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'OpenFileLauncher' } else { 'C:\ProgramData\OpenFileLauncher' }
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $log = Join-Path $logDir 'launcher.log'
 function L([string]$m){
   $ts = "[{0:yyyy-MM-dd HH:mm:ss}] {1}" -f (Get-Date), $m
-  Add-Content -Path $log -Value $ts
+  try { Add-Content -Path $log -Value $ts } catch {}
   Write-Host $ts
 }
+
+# ===================== Selbst-Update =====================
+# Fragt das ERP, ob es eine neuere Fassung (Skript oder erlaubte Ordner) gibt. Laeuft in einem
+# eigenen, unsichtbaren Prozess, damit das Oeffnen der Datei nie darauf wartet.
+# Sicherheit: nur ueber https, und nur was das ERP mit seinem eigenen Schluessel unterschrieben
+# hat (oeffentlicher Teil kam mit der Einrichtung in config.json). Eine abgefangene oder
+# umgeleitete Verbindung kann so keinen fremden Code auf den PC bringen.
+function Test-Unterschrift([string]$paket, [string]$signaturB64) {
+  if (-not $cfg -or -not $cfg.pruefSchluesselXml) { return $false }
+  $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+  try {
+    $rsa.FromXmlString([string]$cfg.pruefSchluesselXml)
+    return $rsa.VerifyData([Text.Encoding]::UTF8.GetBytes($paket), 'SHA256', [Convert]::FromBase64String($signaturB64))
+  } catch { return $false } finally { $rsa.Dispose() }
+}
+
+function Update-Launcher {
+  if (-not $ErpAdresse) { L "Update: keine ERP-Adresse in config.json"; return }
+  if (-not $ErpAdresse.StartsWith('https://')) { L "Update: nur ueber https - $ErpAdresse wird nicht gefragt"; return }
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $abfrage = $ErpAdresse.TrimEnd('/') + '/openfile-launcher/aktuell?system=windows' +
+      '&version=' + [Uri]::EscapeDataString($Version) + '&adresse=' + [Uri]::EscapeDataString($ErpAdresse)
+    $antwort = Invoke-WebRequest -Uri $abfrage -UseBasicParsing -TimeoutSec 15 -MaximumRedirection 0
+    if ($antwort.StatusCode -ne 200) { L "Update: aktuell ($Version)"; return }
+    # Bytes selbst als UTF-8 lesen: PowerShell 5 raet den Zeichensatz sonst falsch
+    $neu = [Text.Encoding]::UTF8.GetString($antwort.RawContentStream.ToArray()) | ConvertFrom-Json
+    $skript = [string]$neu.skript
+    $configJson = [string]$neu.configJson
+    if (-not $skript.StartsWith('param(') -or -not $configJson -or -not $neu.signatur) {
+      L "Update: Antwort unbrauchbar - nichts geaendert"; return
+    }
+    # Unterschrieben ist genau: version + LF + configJson + LF + skript
+    $paket = [string]$neu.version + "`n" + $configJson + "`n" + $skript
+    if (-not (Test-Unterschrift $paket ([string]$neu.signatur))) {
+      L "Update ABGELEHNT: Unterschrift passt nicht - nichts geaendert"; return
+    }
+    # Auch eine echte Unterschrift darf den PC nicht umlenken oder auf alte Fassungen zurueckdrehen
+    $neuCfg = $configJson | ConvertFrom-Json
+    if ([string]$neuCfg.erpAdresse -ne $ErpAdresse) {
+      L "Update ABGELEHNT: andere ERP-Adresse ($($neuCfg.erpAdresse))"; return
+    }
+    $bisherStand = [int64]0
+    if ($cfg.stand) { $bisherStand = [int64]$cfg.stand }
+    if (-not $neuCfg.stand -or [int64]$neuCfg.stand -le $bisherStand) {
+      L "Update ABGELEHNT: Stand $($neuCfg.stand) ist nicht neuer als $bisherStand"; return
+    }
+    $skriptPfad = $PSCommandPath
+    $tmpSkript = $skriptPfad + '.neu'
+    $tmpConfig = $configFile + '.neu'
+    [IO.File]::WriteAllText($tmpSkript, $skript, (New-Object System.Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText($tmpConfig, $configJson, (New-Object System.Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $tmpConfig -Destination $configFile -Force
+    Move-Item -LiteralPath $tmpSkript -Destination $skriptPfad -Force
+    L "Update: neue Fassung $($neu.version) installiert"
+  } catch {
+    L "Update fehlgeschlagen: $($_.Exception.Message)"
+  }
+}
+
+if ($Aktualisieren) { Update-Launcher; exit 0 }
 
 # ===================== Helfer =====================
 function Normalize-UNC([string]$p){
@@ -58,12 +129,27 @@ function Normalize-UNC([string]$p){
   return ($prefix + $p).TrimEnd('\')
 }
 
+# Antwortet der Rechner hinter \\host\... auf dem Freigabe-Port (445)? Kurzer Versuch statt
+# der langen Windows-Wartezeit bei unbekannten Rechnern (z. B. Buero-Name unterwegs).
+function Test-SmbErreichbar([string]$uncPfad){
+  $h = (Normalize-UNC $uncPfad).TrimStart('\').Split('\')[0]
+  if (-not $h){ return $false }
+  $client = New-Object System.Net.Sockets.TcpClient
+  try {
+    $versuch = $client.BeginConnect($h, 445, $null, $null)
+    if (-not $versuch.AsyncWaitHandle.WaitOne(1500)) { return $false }
+    $client.EndConnect($versuch)
+    return $true
+  } catch { return $false } finally { $client.Close() }
+}
+
 function Get-MatchingRoot([string]$fullPath, [string[]]$roots){
   $p = Normalize-UNC $fullPath
   $candidates = @()
   foreach($r in $roots){
     $rn = Normalize-UNC $r
-    if ($p.ToLower().StartsWith($rn.ToLower())){
+    # Pfadgrenze: \\server\Zeichnungen erlaubt nicht \\server\Zeichnungen-Lohn
+    if ($p.ToLower().StartsWith(($rn + '\').ToLower())){
       $candidates += [pscustomobject]@{
         Root = $r
         RootNorm = $rn
@@ -198,6 +284,15 @@ try {
   L "PSVersion: $($PSVersionTable.PSVersion)  PID: $PID"
   L "WD: $(Get-Location)"
 
+  # Update (nur https + Unterschrift, siehe Update-Launcher) parallel anstossen; greift beim naechsten Klick
+  if ($ErpAdresse -and $PSCommandPath) {
+    try {
+      Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+        '-File', ('"' + $PSCommandPath + '"'), '-Aktualisieren') | Out-Null
+    } catch { L "Update nicht gestartet: $($_.Exception.Message)" }
+  }
+
   if ($configError){ L "ERR config.json nicht lesbar ($configFile): $configError" }
   if ($AllowedRoots.Count -eq 0){
     L "ERR keine erlaubten Pfade: $configFile fehlt oder enthaelt keine allowedRoots. Auf dem ERP-Rechner Setup-Freigabe.ps1 ausfuehren und den Launcher mit der erzeugten config.json neu installieren."
@@ -213,7 +308,7 @@ try {
     exit 2
   }
 
-  # URL -> UNC (unterstützt openfile://?path=... und openfile://open/?path=...)
+  # URL -> UNC (unterstuetzt openfile://?path=... und openfile://open/?path=...)
   $unc = $null
   if ($Url -like '\\*'){ $unc = $Url } else {
     $u = [Uri]$Url
@@ -228,6 +323,12 @@ try {
   L "UNC: $unc"
   L "EXT: $ext"
 
+  # Nur Tabellen und Zeichnungen - nie Programme, Verknuepfungen oder Skripte aus der Freigabe
+  $ErlaubteEndungen = $SpreadsheetExts + @('.sza', '.tcd')
+  if ($ErlaubteEndungen -notcontains $ext) {
+    L "ERR Dateiart nicht erlaubt: $ext"; exit 2
+  }
+
   # Root + rel ermitteln (inkl. Alias-Rewrite)
   $match = Get-MatchingRoot $unc $AllowedRoots
   if (-not $match){
@@ -236,21 +337,39 @@ try {
   }
   $root = $match.Root
   $rel  = $match.Relative
+  if (-not $rel -or ($rel -split '\\' | Where-Object { $_ -eq '..' -or $_ -eq '.' })) {
+    L "ERR unzulaessiger Pfad: $unc"; exit 2
+  }
 
-  # Share erreichbar machen
+  # Share erreichbar machen. Unterwegs (Tailscale) ist der Rechnername aus dem Buero oft
+  # unbekannt - dann ohne langes Warten auf den Ausweich-Namen wechseln.
+  $aliasRoot = $null
+  foreach ($k in $RootAliases.Keys) { if ((Normalize-UNC $k) -ieq (Normalize-UNC $root)) { $aliasRoot = $RootAliases[$k] } }
+  if ($aliasRoot -and -not (Test-SmbErreichbar $root) -and (Test-SmbErreichbar $aliasRoot)) {
+    L "Root nicht erreichbar -> Ausweich-Adresse: $root  ==>  $aliasRoot"
+    $root = Normalize-UNC $aliasRoot
+    $unc  = $root + '\' + $rel
+  }
   $rootExists = Test-Path -LiteralPath $root
   if (-not $rootExists){
     L "Share not mounted, trying: net use $root"
     try { cmd /c ("net use " + $root) | Out-Null } catch {}
     $rootExists = Test-Path -LiteralPath $root
   }
-  if (-not $rootExists -and $RootAliases.ContainsKey($root)){
-    $newRoot = $RootAliases[$root]
-    L "Root unavailable -> rewrite: $root  ==>  $newRoot"
-    $root = $newRoot
-    $unc  = (Join-Path ($root + '\') $rel)
+  if (-not $rootExists -and $aliasRoot -and ($root -ine (Normalize-UNC $aliasRoot))){
+    $root = Normalize-UNC $aliasRoot
+    L "Root unavailable -> rewrite: $root"
+    $unc  = $root + '\' + $rel
+    $rootExists = Test-Path -LiteralPath $root
   }
-  L ("RootExists: " + (Test-Path -LiteralPath $root))
+  if (-not $rootExists -and (Test-SmbErreichbar $root)) {
+    # Rechner erreichbar, aber keine Anmeldung: Explorer fragt nach Benutzer und Passwort
+    # (mit "Anmeldedaten speichern"). Danach klappt der naechste Klick ohne Rueckfrage.
+    L "Share erreichbar, aber kein Zugriff -> Explorer fragt nach Anmeldung: $root"
+    Start-Process -FilePath "$env:WINDIR\explorer.exe" -ArgumentList ('"' + $root + '"')
+    exit 4
+  }
+  L ("RootExists: " + $rootExists)
 
   # ========= HiCAD (.sza) =========
   if ($ext -eq '.sza'){
