@@ -94,7 +94,7 @@ jobs:
           echo "Getestet im PR (Stand $pr_head, PR Quality Gate gruen) - Image wird gebaut."
 
       - name: Checkout (genau der getestete Commit)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.COMMIT }}
           persist-credentials: false
@@ -108,10 +108,10 @@ jobs:
           echo "kurz=${COMMIT:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Docker Buildx einrichten
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Image bauen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -221,7 +221,7 @@ jobs:
         if: steps.rag.outputs.datei == 'ja'
         # Scheitert das, bleibt das Image aus dem ersten Bau (ohne RAG-Datei)
         continue-on-error: true
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-contexts: ki-hilfe=./ki-hilfe
