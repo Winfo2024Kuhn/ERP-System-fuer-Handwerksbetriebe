@@ -6,11 +6,11 @@ import org.example.kalkulationsprogramm.domain.Textbaustein;
 import org.example.kalkulationsprogramm.domain.TextbausteinPosition;
 import org.example.kalkulationsprogramm.repository.FormularTemplateTextbausteinDefaultRepository;
 import org.example.kalkulationsprogramm.repository.TextbausteinRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 

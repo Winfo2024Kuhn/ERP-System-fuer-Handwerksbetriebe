@@ -36,14 +36,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -96,18 +96,18 @@ class TelefonControllerSecurityTest {
     }
 
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean FrontendUserProfileRepository profiles;
-    @MockBean TelefonService telefonService;
-    @MockBean TelefonEinstellungenService einstellungen;
-    @MockBean TelefonAbholService abholService;
-    @MockBean TelefonLiveService liveService;
-    @MockBean AnrufKontaktUeberblickService kontaktUeberblick;
-    @MockBean TelefonWaehlService waehlService;
-    @MockBean TelefonAnlage anlage;
-    @MockBean TelefonAnrufmonitorService anrufmonitor;
-    @MockBean AbteilungRepository abteilungen;
-    @MockBean AbteilungDokumentBerechtigungRepository dokumentRechte;
+    @MockitoBean FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean FrontendUserProfileRepository profiles;
+    @MockitoBean TelefonService telefonService;
+    @MockitoBean TelefonEinstellungenService einstellungen;
+    @MockitoBean TelefonAbholService abholService;
+    @MockitoBean TelefonLiveService liveService;
+    @MockitoBean AnrufKontaktUeberblickService kontaktUeberblick;
+    @MockitoBean TelefonWaehlService waehlService;
+    @MockitoBean TelefonAnlage anlage;
+    @MockitoBean TelefonAnrufmonitorService anrufmonitor;
+    @MockitoBean AbteilungRepository abteilungen;
+    @MockitoBean AbteilungDokumentBerechtigungRepository dokumentRechte;
 
     @TempDir Path tmp;
 

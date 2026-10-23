@@ -6,14 +6,13 @@ import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDate;
 import java.util.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -31,12 +30,12 @@ class ZeiterfassungEinstellungenSecurityTest {
   @org.springframework.context.annotation.Bean java.time.Clock clock() { return java.time.Clock.systemDefaultZone(); }
  }
  @Autowired MockMvc mvc;
- @MockBean FrontendUserDetailsService users;
- @MockBean FrontendUserProfileRepository profiles;
- @MockBean SystemSettingsService settings;
- @MockBean DatevKonfigurationRepository configs;
- @MockBean DatevPersonalnummerRepository nummern;
- @MockBean MonatsabschlussBerechtigungService rechte;
+ @MockitoBean FrontendUserDetailsService users;
+ @MockitoBean FrontendUserProfileRepository profiles;
+ @MockitoBean SystemSettingsService settings;
+ @MockitoBean DatevKonfigurationRepository configs;
+ @MockitoBean DatevPersonalnummerRepository nummern;
+ @MockitoBean MonatsabschlussBerechtigungService rechte;
  static final String START="/api/settings/zeiterfassung";
  static final String DATEV="/api/settings/datev";
  static final String DATEV_BODY="{\"version\":0,\"ziel\":\"LODAS\",\"beraterNr\":\"\",\"mandantenNr\":\"\",\"stundenart\":\"IST\",\"zuordnungen\":[],\"personalnummern\":[]}";

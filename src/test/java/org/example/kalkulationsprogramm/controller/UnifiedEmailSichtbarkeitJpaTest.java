@@ -40,14 +40,14 @@ import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.test.context.TestPropertySource;
-
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import jakarta.persistence.EntityManager;
 
 /**
@@ -63,32 +63,32 @@ class UnifiedEmailSichtbarkeitJpaTest {
 
     @Autowired private UnifiedEmailController controller;
     /** Spy: „Nicht zugeordnet“ ist eine native PostgreSQL-Abfrage, die H2 nicht kann – hier leer. */
-    @org.springframework.boot.test.mock.mockito.SpyBean private EmailRepository emailRepository;
+    @MockitoSpyBean private EmailRepository emailRepository;
     @Autowired private EmailAbsenderRepository postfachRepository;
     @Autowired private FrontendUserProfileRepository benutzerRepository;
     @Autowired private AbteilungRepository abteilungRepository;
     @Autowired private EntityManager entityManager;
 
-    @MockBean private EmailDraftService emailDraftService;
+    @MockitoBean private EmailDraftService emailDraftService;
 
-    @MockBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
-    @MockBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
-    @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
-    @MockBean private EmailImportService emailImportService;
-    @MockBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean private SpamFilterService spamFilterService;
-    @MockBean private InquiryDetectionService inquiryDetectionService;
-    @MockBean private DateiSpeicherService dateiSpeicherService;
-    @MockBean private ContactService contactService;
-    @MockBean private SpamBayesService spamBayesService;
-    @MockBean private FrontendUserProfileService frontendUserProfileService;
-    @MockBean private PostfachService postfachService;
-    @MockBean private PostfachVersandService postfachVersandService;
-    @MockBean private AusgangsmailService ausgangsmailService;
-    @MockBean private SteuerberaterKontaktService steuerberaterKontaktService;
-    @MockBean private EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
-    @MockBean private LieferantDokumentZugriffService lieferantDokumentZugriffService;
-    @MockBean private org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.FreigabeEmpfaengerService freigabeEmpfaengerService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
+    @MockitoBean private EmailAutoAssignmentService emailAutoAssignmentService;
+    @MockitoBean private EmailImportService emailImportService;
+    @MockitoBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
+    @MockitoBean private SpamFilterService spamFilterService;
+    @MockitoBean private InquiryDetectionService inquiryDetectionService;
+    @MockitoBean private DateiSpeicherService dateiSpeicherService;
+    @MockitoBean private ContactService contactService;
+    @MockitoBean private SpamBayesService spamBayesService;
+    @MockitoBean private FrontendUserProfileService frontendUserProfileService;
+    @MockitoBean private PostfachService postfachService;
+    @MockitoBean private PostfachVersandService postfachVersandService;
+    @MockitoBean private AusgangsmailService ausgangsmailService;
+    @MockitoBean private SteuerberaterKontaktService steuerberaterKontaktService;
+    @MockitoBean private EmailLieferantVerknuepfungService emailLieferantVerknuepfungService;
+    @MockitoBean private LieferantDokumentZugriffService lieferantDokumentZugriffService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.WeiterleitungAnhaengeService weiterleitungAnhaengeService;
 
     private static final Authentication ADMIN = new UsernamePasswordAuthenticationToken("chefin", null,
             AuthorityUtils.createAuthorityList("ROLE_ADMIN"));

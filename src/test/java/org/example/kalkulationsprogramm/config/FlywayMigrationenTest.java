@@ -156,7 +156,7 @@ class FlywayMigrationenTest {
     /** Nachbau von Flyways ChecksumCalculator (CRC32 ueber Zeilen ohne Umbruch, BOM entfernt). */
     static int flywayChecksumme(Path datei) throws IOException {
         CRC32 crc = new CRC32();
-        try (BufferedReader leser = Files.newBufferedReader(datei, StandardCharsets.UTF_8)) {
+        try (BufferedReader leser = Files.newBufferedReader(datei)) {
             String zeile = leser.readLine();
             if (zeile != null && !zeile.isEmpty() && zeile.charAt(0) == BOM) {
                 zeile = zeile.substring(1);
@@ -230,7 +230,7 @@ class FlywayMigrationenTest {
                 if (ERLAUBTE_WERTELISTEN.contains(datei)) {
                     continue;
                 }
-                assertThat(hatCheckMitWerteliste(Files.readString(MIGRATIONEN.resolve(datei), StandardCharsets.UTF_8)))
+                assertThat(hatCheckMitWerteliste(Files.readString(MIGRATIONEN.resolve(datei))))
                         .as("%s: CHECK mit Werteliste - Enum-Werte nicht in der Datenbank festschreiben", datei)
                         .isFalse();
             }
@@ -252,7 +252,7 @@ class FlywayMigrationenTest {
         void ausnahmenAktuell() throws IOException {
             assertThat(migrationen().values()).containsAll(ERLAUBTE_WERTELISTEN);
             for (String datei : ERLAUBTE_WERTELISTEN) {
-                assertThat(hatCheckMitWerteliste(Files.readString(MIGRATIONEN.resolve(datei), StandardCharsets.UTF_8)))
+                assertThat(hatCheckMitWerteliste(Files.readString(MIGRATIONEN.resolve(datei))))
                         .as("%s braucht keine Ausnahme mehr", datei).isTrue();
             }
         }
@@ -265,7 +265,7 @@ class FlywayMigrationenTest {
         @Test
         @DisplayName("Basis ist vorhanden und enthaelt das komplette Schema")
         void vollstaendig() throws IOException {
-            String basis = Files.readString(BASIS, StandardCharsets.UTF_8);
+            String basis = Files.readString(BASIS);
             assertThat(Pattern.compile("(?m)^CREATE TABLE ").matcher(basis).results().count())
                     .isGreaterThan(100);
             assertThat(basis).contains("PostgreSQL database dump complete");
@@ -274,7 +274,7 @@ class FlywayMigrationenTest {
         @Test
         @DisplayName("Basis enthaelt keine E-Mail-Adressen (keine Personendaten)")
         void keinePersonendaten() throws IOException {
-            String basis = Files.readString(BASIS, StandardCharsets.UTF_8);
+            String basis = Files.readString(BASIS);
             assertThat(EMAIL.matcher(basis).find()).as("E-Mail-Adresse im Basis-Schema").isFalse();
         }
 
@@ -289,7 +289,7 @@ class FlywayMigrationenTest {
         @Test
         @DisplayName("Basis loescht nichts und verstellt die Verbindung nicht")
         void keinDropKeinPsqlBefehl() throws IOException {
-            String basis = Files.readString(BASIS, StandardCharsets.UTF_8);
+            String basis = Files.readString(BASIS);
             assertThat(basis).doesNotContainPattern("(?i)\\bDROP\\s++(TABLE|DATABASE|SCHEMA)\\b");
             // psql-Befehle (\restrict ...) versteht Flyway nicht; ein geleerter
             // search_path wuerde die Verbindung fuer die App unbrauchbar machen
@@ -301,7 +301,7 @@ class FlywayMigrationenTest {
         @DisplayName("Keine Enum-CHECKs in der Basis")
         void keineEnumChecks() throws IOException {
             // pg_dump schreibt "x IN ('A','B')" als "x = ANY ((ARRAY['A', 'B']))"
-            for (String zeile : Files.readAllLines(BASIS, StandardCharsets.UTF_8)) {
+            for (String zeile : Files.readAllLines(BASIS)) {
                 if (zeile.contains("= ANY ((ARRAY[")) {
                     Matcher name = CHECK_NAME.matcher(zeile);
                     assertThat(name.find() && ERLAUBTE_WERTELISTEN_CONSTRAINTS.contains(name.group(1)))
@@ -314,7 +314,7 @@ class FlywayMigrationenTest {
         @Test
         @DisplayName("Jede Migration der Basis-Historie existiert unveraendert (Checksumme wie Flyway)")
         void historiePasstZuDenMigrationen() throws IOException {
-            String basis = Files.readString(BASIS, StandardCharsets.UTF_8);
+            String basis = Files.readString(BASIS);
             Matcher treffer = HISTORIE.matcher(basis);
             while (treffer.find()) {
                 Path datei = MIGRATIONEN.resolve(treffer.group(2));
@@ -343,7 +343,7 @@ class FlywayMigrationenTest {
             Set<String> regeln = new TreeSet<>();
             List<String> fremdschluessel = new ArrayList<>();
             String tabelle = null;
-            for (String zeile : Files.readAllLines(BASIS, StandardCharsets.UTF_8)) {
+            for (String zeile : Files.readAllLines(BASIS)) {
                 Matcher alter = ALTER_TABLE.matcher(zeile);
                 if (alter.find()) {
                     tabelle = alter.group(1);

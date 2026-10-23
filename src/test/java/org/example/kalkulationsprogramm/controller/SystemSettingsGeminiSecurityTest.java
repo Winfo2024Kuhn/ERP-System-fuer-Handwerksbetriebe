@@ -15,12 +15,12 @@ import org.example.kalkulationsprogramm.service.PostfachUmzugService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** KI-Schlüssel entfernen (Issue #274): nur Admins, nur mit CSRF-Token. */
@@ -37,11 +37,11 @@ class SystemSettingsGeminiSecurityTest {
     }
 
     @Autowired private MockMvc mvc;
-    @MockBean private FrontendUserDetailsService users;
-    @MockBean private FrontendUserProfileRepository profiles;
-    @MockBean private SystemSettingsService settings;
-    @MockBean private DateiOrdnerService dateiOrdnerService;
-    @MockBean private PostfachUmzugService postfachUmzugService;
+    @MockitoBean private FrontendUserDetailsService users;
+    @MockitoBean private FrontendUserProfileRepository profiles;
+    @MockitoBean private SystemSettingsService settings;
+    @MockitoBean private DateiOrdnerService dateiOrdnerService;
+    @MockitoBean private PostfachUmzugService postfachUmzugService;
 
     @Test
     void ohneAnmeldungAbgewiesen() throws Exception {

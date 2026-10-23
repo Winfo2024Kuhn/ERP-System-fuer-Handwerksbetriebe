@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.DatevDto.*;
 import org.example.kalkulationsprogramm.repository.DatevExportRepository;
@@ -40,7 +41,7 @@ class DatevExportServiceTest {
  }
  void mapping(boolean absence) throws Exception {
   var mappings=DatevKonfigurationService.KATEGORIEN.stream().sorted().map(k->new Zuordnung(k,!k.equals("ARBEIT")&&!(absence&&k.equals("URLAUB")),k.equals("ARBEIT")||absence&&k.equals("URLAUB")?"200":"")).toList();
-  config.setZuordnungenJson(new ObjectMapper().writeValueAsString(mappings));
+  config.setZuordnungenJson(JsonMapper.builderWithJackson2Defaults().build().writeValueAsString(mappings));
  }
  @Test void alteAbwesenheitNurExplizitAusschliessenKorrekturNiemalsAuszahlen() {
   var result=service.pruefen(request,null);

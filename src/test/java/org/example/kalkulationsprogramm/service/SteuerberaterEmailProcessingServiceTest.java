@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -49,7 +50,7 @@ class SteuerberaterEmailProcessingServiceTest {
     @Mock
     private GeminiDokumentAnalyseService geminiService;
     @Spy
-    private ObjectMapper objectMapper = new ObjectMapper();
+    private ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
     @InjectMocks
     private SteuerberaterEmailProcessingService service;
@@ -166,6 +167,46 @@ class SteuerberaterEmailProcessingServiceTest {
                 throw new AssertionError(e);
             }
         });
+    }
+
+    /**
+     * Die KI liefert unlesbare Beträge als null oder als deutschen Text. Seit Jackson 3
+     * wirft {@code decimalValue()} dabei – dann brach die Schleife beim ersten Mitarbeiter
+     * ab und die übrigen fehlten dauerhaft. Jetzt: Betrag leer bzw. gelesen, alle gespeichert.
+     */
+    @Test
+    void betraegeAlsNullOderTextBrechenDieSammelPdfNichtAb() {
+        mockSteuerberaterErkannt();
+        when(mitarbeiterRepository.findAktiveMenschen()).thenReturn(List.of(max, erika));
+        when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
+                .thenReturn(false);
+        when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(anyLong(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(geminiService.rufGeminiApiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn("""
+                        {
+                          "dokumentTyp": "LOHNABRECHNUNG",
+                          "abrechnungen": [
+                            {"mitarbeiterName": "Max Mustermann", "seiten": "1", "monat": 5, "jahr": 2026,
+                             "bruttolohn": null, "nettolohn": "1.800,50"},
+                            {"mitarbeiterName": "Erika Musterfrau", "seiten": "2", "monat": 5, "jahr": 2026,
+                             "bruttolohn": "3.000,00 EUR", "nettolohn": "unleserlich"}
+                          ]
+                        }
+                        """);
+
+        assertThat(service.processSteuerberaterEmail(email)).isTrue();
+
+        ArgumentCaptor<Lohnabrechnung> captor = ArgumentCaptor.forClass(Lohnabrechnung.class);
+        verify(lohnabrechnungRepository, times(2)).save(captor.capture());
+        Lohnabrechnung maxAbrechnung = captor.getAllValues().stream()
+                .filter(la -> la.getMitarbeiter().getNachname().equals("Mustermann")).findFirst().orElseThrow();
+        Lohnabrechnung erikaAbrechnung = captor.getAllValues().stream()
+                .filter(la -> la.getMitarbeiter().getNachname().equals("Musterfrau")).findFirst().orElseThrow();
+        assertThat(maxAbrechnung.getBruttolohn()).isNull();
+        assertThat(maxAbrechnung.getNettolohn()).isEqualByComparingTo("1800.50");
+        assertThat(erikaAbrechnung.getBruttolohn()).isEqualByComparingTo("3000.00");
+        assertThat(erikaAbrechnung.getNettolohn()).isNull();
     }
 
     /**

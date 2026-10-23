@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
@@ -399,16 +400,16 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                         textbaustein(2L, "<p>Mit freundlichen Gruessen</p>")),
                 java.util.Map.of("KUNDENNAME", "Max Mustermann"));
 
-        com.fasterxml.jackson.databind.JsonNode blocks =
-                new com.fasterxml.jackson.databind.ObjectMapper().readTree(neu).get("blocks");
+        tools.jackson.databind.JsonNode blocks =
+                JsonMapper.builderWithJackson2Defaults().build().readTree(neu).get("blocks");
 
         assertThat(blocks).hasSize(4);
-        assertThat(blocks.get(0).get("type").asText()).isEqualTo("TEXT");
-        assertThat(blocks.get(0).get("textbausteinRolle").asText()).isEqualTo("VOR");
-        assertThat(blocks.get(0).get("content").asText()).isEqualTo("<p>Guten Tag Max Mustermann,</p>");
-        assertThat(blocks.get(1).get("type").asText()).isEqualTo("SERVICE");
-        assertThat(blocks.get(2).get("type").asText()).isEqualTo("SUBTOTAL");
-        assertThat(blocks.get(3).get("textbausteinRolle").asText()).isEqualTo("NACH");
+        assertThat(blocks.get(0).get("type").asString("")).isEqualTo("TEXT");
+        assertThat(blocks.get(0).get("textbausteinRolle").asString("")).isEqualTo("VOR");
+        assertThat(blocks.get(0).get("content").asString("")).isEqualTo("<p>Guten Tag Max Mustermann,</p>");
+        assertThat(blocks.get(1).get("type").asString("")).isEqualTo("SERVICE");
+        assertThat(blocks.get(2).get("type").asString("")).isEqualTo("SUBTOTAL");
+        assertThat(blocks.get(3).get("textbausteinRolle").asString("")).isEqualTo("NACH");
     }
 
     @Test
@@ -422,13 +423,13 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         String neu = AutoAuftragsbestaetigungVersandService.baueJsonMitStandardtexten(
                 json, defaults(textbaustein(1L, "<p>AB Vortext</p>"), null), java.util.Map.of());
 
-        com.fasterxml.jackson.databind.JsonNode root =
-                new com.fasterxml.jackson.databind.ObjectMapper().readTree(neu);
+        tools.jackson.databind.JsonNode root =
+                JsonMapper.builderWithJackson2Defaults().build().readTree(neu);
 
         assertThat(root.has("standardTextbausteineErneuern")).isFalse();
         assertThat(root.get("blocks")).hasSize(2);
-        assertThat(root.get("blocks").get(0).get("content").asText()).isEqualTo("<p>AB Vortext</p>");
-        assertThat(root.get("blocks").get(1).get("type").asText()).isEqualTo("SERVICE");
+        assertThat(root.get("blocks").get(0).get("content").asString("")).isEqualTo("<p>AB Vortext</p>");
+        assertThat(root.get("blocks").get(1).get("type").asString("")).isEqualTo("SERVICE");
     }
 
     @Test
@@ -437,12 +438,12 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 "[]", defaults(textbaustein(1L, "<p>Vor</p>"), textbaustein(2L, "<p>Nach</p>")),
                 java.util.Map.of());
 
-        com.fasterxml.jackson.databind.JsonNode blocks =
-                new com.fasterxml.jackson.databind.ObjectMapper().readTree(neu).get("blocks");
+        tools.jackson.databind.JsonNode blocks =
+                JsonMapper.builderWithJackson2Defaults().build().readTree(neu).get("blocks");
 
         assertThat(blocks).hasSize(2);
-        assertThat(blocks.get(0).get("textbausteinRolle").asText()).isEqualTo("VOR");
-        assertThat(blocks.get(1).get("textbausteinRolle").asText()).isEqualTo("NACH");
+        assertThat(blocks.get(0).get("textbausteinRolle").asString("")).isEqualTo("VOR");
+        assertThat(blocks.get(1).get("textbausteinRolle").asString("")).isEqualTo("NACH");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.EmailSignature;
 import org.example.kalkulationsprogramm.domain.EmailSignatureImage;
@@ -284,12 +285,12 @@ class EmailSignaturVerwaltungServiceTest {
             EmailSignaturDto dto = service.firmenVorlagen(MAX).get(0);
 
             assertThat(dto.firmenVorlage()).isTrue();
-            var daten = new com.fasterxml.jackson.databind.ObjectMapper().readTree(dto.vorlageDaten());
-            assertThat(daten.get("vorlage").asText()).isEqualTo("kompakt");
-            assertThat(daten.get("firma").asText()).isEqualTo("Mustermann Metallbau GmbH");
-            assertThat(daten.get("telefon").asText()).isEqualTo("0931 123456");
+            var daten = JsonMapper.builderWithJackson2Defaults().build().readTree(dto.vorlageDaten());
+            assertThat(daten.get("vorlage").asString("")).isEqualTo("kompakt");
+            assertThat(daten.get("firma").asString("")).isEqualTo("Mustermann Metallbau GmbH");
+            assertThat(daten.get("telefon").asString("")).isEqualTo("0931 123456");
             for (String feld : List.of("name", "position", "abteilung", "mobil", "email", "fotoUrl")) {
-                assertThat(daten.get(feld).asText()).as(feld).isEmpty();
+                assertThat(daten.get(feld).asString("")).as(feld).isEmpty();
             }
             assertThat(dto.html()).isEmpty();
             assertThat(dto.images()).isEmpty();

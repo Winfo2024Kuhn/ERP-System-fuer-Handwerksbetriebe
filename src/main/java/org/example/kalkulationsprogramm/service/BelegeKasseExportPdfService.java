@@ -10,7 +10,6 @@ import org.openpdf.text.pdf.PdfPCell;
 import org.openpdf.text.pdf.PdfPTable;
 
 import java.io.IOException;
-import java.nio.file.Paths;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Beleg;
@@ -111,7 +110,7 @@ public class BelegeKasseExportPdfService {
             // Temp-PDF unter dem konfigurierten upload.path ablegen — sonst
             // driftet die Temp-Location, wenn das Upload-Verzeichnis (z.B. in
             // application-local.properties) umgebogen wurde.
-            Path dir = Paths.get(uploadPath);
+            Path dir = Path.of(uploadPath);
             Files.createDirectories(dir);
             Path temp = Files.createTempFile(dir, "belege-export-", ".pdf");
             Document doc = new Document(PageSize.A4.rotate(), 36, 36, 36, 36);
@@ -208,7 +207,7 @@ public class BelegeKasseExportPdfService {
             // den Dateinamen ohnehin sanitisieren, aber wir prüfen hier nochmal.
             String safe = dateiname.trim();
             if (!safe.contains("..") && !safe.contains("/") && !safe.contains("\\")) {
-                Path base = Paths.get(uploadPath, "firma", "logo").toAbsolutePath().normalize();
+                Path base = Path.of(uploadPath, "firma", "logo").toAbsolutePath().normalize();
                 Path logoPath = base.resolve(safe).normalize();
                 if (logoPath.startsWith(base) && Files.exists(logoPath)) {
                     try {
@@ -580,7 +579,7 @@ public class BelegeKasseExportPdfService {
         if (!EINBETTBARE_MIME_TYPES.contains(mime)) return null;
         if (name.contains("..") || name.contains("/") || name.contains("\\")) return null;
 
-        Path base = Paths.get(uploadPath, "belege").toAbsolutePath().normalize();
+        Path base = Path.of(uploadPath, "belege").toAbsolutePath().normalize();
         Path datei = base.resolve(name).normalize();
         if (!datei.startsWith(base) || !Files.exists(datei)) return null;
         try {

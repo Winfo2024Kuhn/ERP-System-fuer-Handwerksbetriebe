@@ -14,7 +14,6 @@ import java.time.LocalDate;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Unit-Tests für RechnungPdfService.
@@ -300,8 +299,11 @@ class RechnungPdfServiceTest {
         @Test
         @DisplayName("Lange Anschrift in schmalem Adressfeld: Keine Zeile geht durch die breitere Schrift verloren")
         void langeAnschriftPasstInsAdressfeld() {
-            String adresse = "Mustermann Bedachungen und Gerüstbau GmbH & Co. KG\nz. Hd. Max Mustermann\n"
-                    + "Musterstraße 123 b\n12345 Musterstadt";
+            String adresse = """
+                    Mustermann Bedachungen und Gerüstbau GmbH & Co. KG
+                    z. Hd. Max Mustermann
+                    Musterstraße 123 b
+                    12345 Musterstadt""";
             byte[] pdf = pdfMitFormBlocks(List.of(new FormBlockDto("a1", "text", 1, 24, 130, 200, 64,
                     adresse, Map.of("fontSize", 11, "color", "#111827"))));
 

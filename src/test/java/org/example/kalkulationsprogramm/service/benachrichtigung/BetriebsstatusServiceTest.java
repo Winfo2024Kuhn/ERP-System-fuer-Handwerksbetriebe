@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.service.benachrichtigung;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -11,7 +10,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +19,7 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Statusdateien von nächtlicher Sicherung und Nachtupdate (geschrieben von
@@ -39,7 +38,7 @@ class BetriebsstatusServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new BetriebsstatusService(ordner.toString(), new ObjectMapper(), UHR);
+        service = new BetriebsstatusService(ordner.toString(), JsonMapper.builderWithJackson2Defaults().build(), UHR);
     }
 
     // ── Sicherung ──────────────────────────────────────────────────────────
@@ -48,7 +47,7 @@ class BetriebsstatusServiceTest {
     @DisplayName("Ohne eingestellten Ordner gibt es keine Meldungen")
     void ohneOrdnerKeineMeldung() throws IOException {
         schreiben("sicherung.json", status("FEHLER", "2026-10-11T02:00:17+02:00", "Sicherung fehlgeschlagen", "x", null));
-        BetriebsstatusService aus = new BetriebsstatusService("  ", new ObjectMapper(), UHR);
+        BetriebsstatusService aus = new BetriebsstatusService("  ", JsonMapper.builderWithJackson2Defaults().build(), UHR);
         assertThat(aus.sicherung()).isEmpty();
         assertThat(aus.nachtupdate()).isEmpty();
     }
@@ -173,9 +172,11 @@ class BetriebsstatusServiceTest {
         var meldung = service.sicherung().orElseThrow();
 
         assertThat(meldung.titel()).isEqualTo("ERP-Sicherung nur teilweise");
-        assertThat(meldung.text()).isEqualTo("Externe Festplatte nicht gefunden. Bitte anschließen und den Rechner "
-                + "neu starten.\nGesichert auf diesem Rechner und im Cloud-Ordner.\n"
-                + "Es gibt noch keine vollständige Sicherung.");
+        assertThat(meldung.text()).isEqualTo("""
+                Externe Festplatte nicht gefunden. Bitte anschließen und den Rechner \
+                neu starten.
+                Gesichert auf diesem Rechner und im Cloud-Ordner.
+                Es gibt noch keine vollständige Sicherung.""");
         assertThat(meldung.schluessel()).isEqualTo("SICHERUNG:20261011-020054");
     }
 
@@ -237,7 +238,7 @@ class BetriebsstatusServiceTest {
     // ── Hilfen ─────────────────────────────────────────────────────────────
 
     private void schreiben(String name, String inhalt) throws IOException {
-        Files.writeString(ordner.resolve(name), inhalt, StandardCharsets.UTF_8);
+        Files.writeString(ordner.resolve(name), inhalt);
     }
 
     private static String status(String ergebnis, String zeitpunkt, String titel, String text, String letzterErfolg)
@@ -248,6 +249,6 @@ class BetriebsstatusServiceTest {
         werte.put("titel", titel);
         werte.put("text", text);
         werte.put("letzterErfolg", letzterErfolg);
-        return new ObjectMapper().writeValueAsString(werte);
+        return JsonMapper.builderWithJackson2Defaults().build().writeValueAsString(werte);
     }
 }

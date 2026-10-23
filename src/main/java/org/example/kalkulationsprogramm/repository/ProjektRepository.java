@@ -11,6 +11,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -203,12 +204,12 @@ public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpec
          * Findet Projekte wo die Email in kunden_emails ODER projekt_kunden_emails
          * vorkommt.
          */
-        @Query(value = """
+        @NativeQuery("""
                         SELECT DISTINCT p.* FROM projekt p
                         LEFT JOIN kunde k ON p.kunden_id = k.id
                         WHERE EXISTS (SELECT 1 FROM kunden_emails ke WHERE ke.kunden_id = k.id AND lower(ke.email) = lower(:email))
                            OR EXISTS (SELECT 1 FROM projekt_kunden_emails pke WHERE pke.projekt_id = p.id AND lower(pke.email) = lower(:email))
-                        """, nativeQuery = true)
+                        """)
         List<Projekt> findByKundenEmail(@Param("email") String email);
 
         /**

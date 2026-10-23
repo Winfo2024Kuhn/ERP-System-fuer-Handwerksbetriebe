@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.util.EmailAiPostProcessor;
@@ -86,10 +86,10 @@ public class EmailAiService {
             try {
                 JsonNode contentNode = objectMapper.readTree(jsonResponse);
                 if (contentNode.has("email")) {
-                    String optimizedEmail = contentNode.get("email").asText();
+                    String optimizedEmail = contentNode.get("email").asString("");
                     return cleanResult(optimizedEmail);
                 } else if (contentNode.has("text")) {
-                     String optimizedEmail = contentNode.get("text").asText();
+                     String optimizedEmail = contentNode.get("text").asString("");
                      return cleanResult(optimizedEmail);
                 } else {
                      // Fallback: vielleicht ist es kein JSON sondern direkt Text?
@@ -168,7 +168,7 @@ public class EmailAiService {
             if (candidates.isArray() && !candidates.isEmpty()) {
                 JsonNode partsNode = candidates.get(0).path("content").path("parts");
                 if (partsNode.isArray() && !partsNode.isEmpty()) {
-                    return partsNode.get(0).path("text").asText();
+                    return partsNode.get(0).path("text").asString("");
                 }
             }
             

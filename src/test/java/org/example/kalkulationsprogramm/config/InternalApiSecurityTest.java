@@ -20,15 +20,15 @@ import org.example.kalkulationsprogramm.service.WebsiteAnalyticsSnapshotService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultMatcher;
 
@@ -49,13 +49,13 @@ class InternalApiSecurityTest {
     }
 
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService users;
-    @MockBean MitarbeiterRepository mitarbeiter;
-    @MockBean AnfrageFunnelService anfrageFunnelService;
-    @MockBean DokumentFreigabeService freigabeService;
-    @MockBean FreigabeCodeService freigabeCodeService;
-    @MockBean DateiSpeicherService dateiSpeicherService;
-    @MockBean WebsiteAnalyticsSnapshotService snapshotService;
+    @MockitoBean FrontendUserDetailsService users;
+    @MockitoBean MitarbeiterRepository mitarbeiter;
+    @MockitoBean AnfrageFunnelService anfrageFunnelService;
+    @MockitoBean DokumentFreigabeService freigabeService;
+    @MockitoBean FreigabeCodeService freigabeCodeService;
+    @MockitoBean DateiSpeicherService dateiSpeicherService;
+    @MockitoBean WebsiteAnalyticsSnapshotService snapshotService;
 
     private static final ResultMatcher NICHT_401 = result ->
             assertThat(result.getResponse().getStatus()).isNotEqualTo(401);

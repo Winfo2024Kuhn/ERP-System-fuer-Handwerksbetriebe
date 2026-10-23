@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.domain.KundeNotiz;
 import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
@@ -15,15 +15,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -51,28 +51,28 @@ class KundeControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private KundeRepository kundeRepository;
 
-    @MockBean
+    @MockitoBean
     private KundeMapper kundeMapper;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.KundenDetailService kundenDetailService;
 
-    @MockBean
+    @MockitoBean
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.KundennummerService kundennummerService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.KundeDuplikatService kundeDuplikatService;
 
-    @MockBean
+    @MockitoBean
     private KundeNotizRepository kundeNotizRepository;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.KundeDatenschutzService kundeDatenschutzService;
 
     @BeforeEach

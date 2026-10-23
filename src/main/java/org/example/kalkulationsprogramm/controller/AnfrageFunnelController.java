@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Valid;
 import jakarta.validation.Validator;
@@ -18,8 +18,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.core.JacksonException;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,7 +52,7 @@ public class AnfrageFunnelController {
         AnfrageFunnelRequestDto dto;
         try {
             dto = objectMapper.readValue(anfrageJson, AnfrageFunnelRequestDto.class);
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "message", "Anfrage-Payload ist kein gültiges JSON."));
         }

@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailPreviewRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailSendRequest;
@@ -18,10 +18,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -44,43 +44,43 @@ class EmailControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.mail.SentMailArchiver sentMailArchiver;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.FirmeninformationService firmeninformationService;
 
-    @MockBean
+    @MockitoBean
     private ProjektDokumentRepository dokumentRepository;
 
-    @MockBean
+    @MockitoBean
     private AnfrageDokumentRepository anfrageDokumentRepository;
 
-    @MockBean
+    @MockitoBean
     private AnfrageRepository anfrageRepository;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
 
-    @MockBean
+    @MockitoBean
     private EmailAiService emailAiService;
 
-    @MockBean
+    @MockitoBean
     private EmailSignatureService emailSignatureService;
 
-    @MockBean
+    @MockitoBean
     private FrontendUserProfileService frontendUserProfileService;
 
-    @MockBean
+    @MockitoBean
     private DateiSpeicherService dateiSpeicherService;
 
-    @MockBean
+    @MockitoBean
     private SystemSettingsService systemSettingsService;
 
-    @MockBean
+    @MockitoBean
     private DokumentFreigabeService dokumentFreigabeService;
 
-    @MockBean
+    @MockitoBean
     private EmailAbsenderService emailAbsenderService;
 
     @Nested

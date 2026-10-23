@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragDetailDto;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragSummaryDto;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragUpsertRequest;
@@ -48,14 +49,14 @@ class BeitraegeWebsiteClientTest {
         mockFirmeninformationService = mock(FirmeninformationService.class);
         baseUrlProperty = "";
         client = new BeitraegeWebsiteClient(
-                new ObjectMapper(), mockFirmeninformationService, mockHttpClient,
+                JsonMapper.builderWithJackson2Defaults().build(), mockFirmeninformationService, mockHttpClient,
                 baseUrlProperty, API_TOKEN);
     }
 
     /** Baut den Client mit gesetzter Property neu, weil sie im Konstruktor landet. */
     private void mitBaseUrlProperty(String wert) {
         client = new BeitraegeWebsiteClient(
-                new ObjectMapper(), mockFirmeninformationService, mockHttpClient, wert, API_TOKEN);
+                JsonMapper.builderWithJackson2Defaults().build(), mockFirmeninformationService, mockHttpClient, wert, API_TOKEN);
     }
 
     /**
@@ -522,7 +523,7 @@ class BeitraegeWebsiteClientTest {
         // Kein mitWebsiteUrl(...): pruefeApiToken() wirft, bevor ermittleBaseUrl()
         // die Firmenstammdaten überhaupt abfragt.
         BeitraegeWebsiteClient clientOhneToken =
-                new BeitraegeWebsiteClient(new ObjectMapper(), mockFirmeninformationService, mockHttpClient,
+                new BeitraegeWebsiteClient(JsonMapper.builderWithJackson2Defaults().build(), mockFirmeninformationService, mockHttpClient,
                         baseUrlProperty, "   ");
 
         assertThatThrownBy(() -> clientOhneToken.listeAlle())

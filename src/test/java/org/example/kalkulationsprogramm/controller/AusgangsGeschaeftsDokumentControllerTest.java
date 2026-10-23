@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.config.ClientIpConfig;
 import org.example.kalkulationsprogramm.config.FrontendUserPrincipal;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
@@ -23,13 +23,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -61,22 +61,22 @@ class AusgangsGeschaeftsDokumentControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private AusgangsGeschaeftsDokumentService service;
 
-    @MockBean
+    @MockitoBean
     private DokumentFreigabeService dokumentFreigabeService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.FreigabeAbloesungService freigabeAbloesungService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentAuditService auditService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.AutoMahnVersandService autoMahnVersandService;
 
-    @MockBean
+    @MockitoBean
     private DatensatzLockService dokumentLockService;
 
     /**

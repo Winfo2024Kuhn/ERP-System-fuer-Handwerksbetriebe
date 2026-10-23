@@ -32,13 +32,13 @@ import org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -56,13 +56,13 @@ class ZeiterfassungZugriffSecurityTest {
     private static final String TOKEN = "12345678-1234-4234-8234-123456789abc";
 
     @Autowired private MockMvc mvc;
-    @MockBean private FrontendUserDetailsService users;
-    @MockBean private MitarbeiterRepository mitarbeiter;
-    @MockBean private FrontendUserProfileRepository profiles;
-    @MockBean private UrlaubsantragService urlaubsantragService;
-    @MockBean private AbwesenheitService abwesenheitService;
-    @MockBean private GesundheitsdatenSichtService gesundheitsdatenSichtService;
-    @MockBean private UrlaubUebertragService urlaubUebertragService;
+    @MockitoBean private FrontendUserDetailsService users;
+    @MockitoBean private MitarbeiterRepository mitarbeiter;
+    @MockitoBean private FrontendUserProfileRepository profiles;
+    @MockitoBean private UrlaubsantragService urlaubsantragService;
+    @MockitoBean private AbwesenheitService abwesenheitService;
+    @MockitoBean private GesundheitsdatenSichtService gesundheitsdatenSichtService;
+    @MockitoBean private UrlaubUebertragService urlaubUebertragService;
 
     @TestConfiguration
     static class FilterBeans {

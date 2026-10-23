@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Optional;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.AusgelesenePosition;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -29,7 +29,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -52,7 +52,7 @@ class LieferantDokumentPositionNachtragTest {
     void setUp() {
         when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         nachtrag = new LieferantDokumentPositionNachtrag(positionRepository, geschaeftsdokumentRepository,
-                positionService, new ObjectMapper(), new TransactionTemplate(transactionManager));
+                positionService, JsonMapper.builderWithJackson2Defaults().build(), new TransactionTemplate(transactionManager));
     }
 
     private LieferantGeschaeftsdokument dokument(long id, LieferantDokumentTyp typ, String antwort) {

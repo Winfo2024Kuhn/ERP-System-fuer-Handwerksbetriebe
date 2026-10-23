@@ -1,13 +1,14 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.SpracheingabeErgebnis;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -186,7 +187,7 @@ public class SpracheingabeService {
                     .POST(HttpRequest.BodyPublishers.ofString(
                             objectMapper.writeValueAsString(koerper), StandardCharsets.UTF_8))
                     .build();
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Anfrage an die Spracherkennung konnte nicht gebaut werden.", e);
         }
 
@@ -209,9 +210,9 @@ public class SpracheingabeService {
         try {
             JsonNode wurzel = objectMapper.readTree(antwort.body());
             String text = wurzel.path("candidates").path(0).path("content")
-                    .path("parts").path(0).path("text").asText("");
+                    .path("parts").path(0).path("text").asString("");
             return new SpracheingabeErgebnis(text.trim());
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("Die Antwort der Spracherkennung war nicht lesbar.", e);
         }
     }

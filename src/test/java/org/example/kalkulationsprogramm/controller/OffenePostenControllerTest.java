@@ -23,10 +23,10 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -34,7 +34,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(OffenePostenController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -46,31 +46,31 @@ class OffenePostenControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
 
-    @MockBean
+    @MockitoBean
     private MitarbeiterRepository mitarbeiterRepository;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiDokumentAnalyseService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.ProjektDokumentRepository projektDokumentRepository;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.DateiSpeicherService dateiSpeicherService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
 
-    @MockBean
+    @MockitoBean
     private LieferantDokumentZugriffService zugriffService;
 
     @BeforeEach

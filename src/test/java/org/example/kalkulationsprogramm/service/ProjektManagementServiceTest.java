@@ -739,8 +739,11 @@ class ProjektManagementServiceTest {
 
         Projekt projekt = erstelleProjektAusAnfragen(dto, List.of(anfrage));
 
-        assertEquals("Aufmaß am Montag\n\n--- Übernommen aus Anfrage: Geländer Musterweg ---\n"
-                + "Geländer 12 m, verzinkt", projekt.getKurzbeschreibung());
+        assertEquals("""
+                Aufmaß am Montag
+                
+                --- Übernommen aus Anfrage: Geländer Musterweg ---
+                Geländer 12 m, verzinkt""", projekt.getKurzbeschreibung());
     }
 
     @Test

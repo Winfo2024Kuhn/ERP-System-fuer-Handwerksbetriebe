@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
 import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
@@ -24,7 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class KettenVorschlagServiceTest {
@@ -43,7 +43,7 @@ class KettenVorschlagServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new KettenVorschlagService(new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository,
+        service = new KettenVorschlagService(new LieferantDokumentAbgleich(JsonMapper.builderWithJackson2Defaults().build()), dokumentRepository,
                 sperreRepository);
         lieferant = new Lieferanten();
         lieferant.setId(1L);

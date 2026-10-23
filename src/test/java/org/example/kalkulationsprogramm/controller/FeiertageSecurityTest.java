@@ -9,14 +9,14 @@ import org.example.kalkulationsprogramm.service.FeiertagService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -60,23 +60,23 @@ class FeiertageSecurityTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean private FeiertagService feiertagService;
-    @MockBean private EmailAbsenderService emailAbsenderService;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean private org.example.kalkulationsprogramm.repository.ZeitbuchungRepository zeitbuchungRepository;
-    @MockBean private org.example.kalkulationsprogramm.repository.AbwesenheitRepository abwesenheitRepository;
-    @MockBean private org.example.kalkulationsprogramm.repository.MitarbeiterRepository mitarbeiterRepository;
-    @MockBean private org.example.kalkulationsprogramm.service.ZeitkontoService zeitkontoService;
-    @MockBean private org.example.kalkulationsprogramm.service.ZeitkontoWechselService zeitkontoWechselService;
-    @MockBean private org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
-    @MockBean private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
-    @MockBean private org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
-    @MockBean private org.example.kalkulationsprogramm.repository.ArbeitsgangRepository arbeitsgangRepository;
-    @MockBean private org.example.kalkulationsprogramm.service.ZeitbuchungAuditService auditService;
-    @MockBean private org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
-    @MockBean private org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
-    @MockBean private org.example.kalkulationsprogramm.service.MonatsSaldoWarmupService monatsSaldoWarmupService;
-    @MockBean private org.example.kalkulationsprogramm.service.TagesSollService tagesSollService;
+    @MockitoBean private FeiertagService feiertagService;
+    @MockitoBean private EmailAbsenderService emailAbsenderService;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.ZeitbuchungRepository zeitbuchungRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.AbwesenheitRepository abwesenheitRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.MitarbeiterRepository mitarbeiterRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeitkontoService zeitkontoService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeitkontoWechselService zeitkontoWechselService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.repository.ArbeitsgangRepository arbeitsgangRepository;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeitbuchungAuditService auditService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
+    @MockitoBean private org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.MonatsSaldoWarmupService monatsSaldoWarmupService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.TagesSollService tagesSollService;
 
     private static Feiertag feiertag(long id, boolean eigener) {
         Feiertag f = new Feiertag(LocalDate.of(2026, 12, 24), "Heiligabend", "BY", true);

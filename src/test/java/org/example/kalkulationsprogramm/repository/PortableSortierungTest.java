@@ -6,11 +6,11 @@ import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Werkstoff;
-import org.hibernate.query.NullPrecedence;
+import jakarta.persistence.criteria.Nulls;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -33,10 +33,10 @@ class PortableSortierungTest {
     @Test
     @DisplayName("Leere Werte wie bisher: aufsteigend zuerst, absteigend zuletzt; Angabe am Sort.Order geht vor")
     void leerwerte() {
-        assertThat(PortableSortierung.leerwerte(Sort.Order.asc("a"))).isEqualTo(NullPrecedence.FIRST);
-        assertThat(PortableSortierung.leerwerte(Sort.Order.desc("a"))).isEqualTo(NullPrecedence.LAST);
-        assertThat(PortableSortierung.leerwerte(Sort.Order.asc("a").nullsLast())).isEqualTo(NullPrecedence.LAST);
-        assertThat(PortableSortierung.leerwerte(Sort.Order.desc("a").nullsFirst())).isEqualTo(NullPrecedence.FIRST);
+        assertThat(PortableSortierung.leerwerte(Sort.Order.asc("a"))).isEqualTo(Nulls.FIRST);
+        assertThat(PortableSortierung.leerwerte(Sort.Order.desc("a"))).isEqualTo(Nulls.LAST);
+        assertThat(PortableSortierung.leerwerte(Sort.Order.asc("a").nullsLast())).isEqualTo(Nulls.LAST);
+        assertThat(PortableSortierung.leerwerte(Sort.Order.desc("a").nullsFirst())).isEqualTo(Nulls.FIRST);
     }
 
     @Test
@@ -74,13 +74,13 @@ class PortableSortierungTest {
         em.flush();
 
         Sort sort = Sort.by(Sort.Order.desc("werkstoff.name").ignoreCase());
-        var seite = artikel.findAll(PortableSortierung.mit(Specification.where(null), sort),
+        var seite = artikel.findAll(PortableSortierung.mit(Specification.unrestricted(), sort),
                 PortableSortierung.ohneSortierung(PageRequest.of(0, 2, sort)));
 
         // "V2A" vor "s235jr" nur ohne Gross-/Kleinschreibung; ohne Werkstoff zuletzt (Seite 2)
         assertThat(seite.getContent()).extracting(Artikel::getProduktname).containsExactly("Rohr B", "Rohr A");
         assertThat(seite.getTotalElements()).isEqualTo(3);
-        assertThat(artikel.findAll(PortableSortierung.mit(Specification.where(null), sort))
+        assertThat(artikel.findAll(PortableSortierung.mit(Specification.unrestricted(), sort))
                 .stream().map(Artikel::getProduktname).toList()).isEqualTo(List.of("Rohr B", "Rohr A", "Rohr C"));
     }
 }

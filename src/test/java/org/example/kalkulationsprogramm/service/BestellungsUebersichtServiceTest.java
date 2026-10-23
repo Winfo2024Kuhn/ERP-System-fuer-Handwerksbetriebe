@@ -17,7 +17,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
@@ -34,7 +34,7 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentProjektAntei
 import org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository;
 import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -75,7 +75,7 @@ class BestellungsUebersichtServiceTest {
     void setUp() {
         service = new BestellungsUebersichtService(dokumentRepository, geschaeftsdokumentRepository,
                 projektAnteilRepository, rechnungsVorschlagService, new KettenVorschlagService(
-                        new LieferantDokumentAbgleich(new ObjectMapper()), dokumentRepository, sperreRepository));
+                        new LieferantDokumentAbgleich(JsonMapper.builderWithJackson2Defaults().build()), dokumentRepository, sperreRepository));
         lieferant = lieferant(1L, "Max Mustermann GmbH");
         andererLieferant = lieferant(2L, "Erika Musterfrau KG");
         lenient().when(projektAnteilRepository.findAll()).thenReturn(List.of());

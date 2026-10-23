@@ -7,15 +7,15 @@ import org.example.kalkulationsprogramm.service.SteuerberaterExportService;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -23,9 +23,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(addFilters = false)
 class SteuerberaterExportControllerTest {
     @Autowired MockMvc mvc;
-    @MockBean BelegService belege;
-    @MockBean SteuerberaterExportService export;
-    @MockBean FirmeninformationRepository firmen;
+    @MockitoBean BelegService belege;
+    @MockitoBean SteuerberaterExportService export;
+    @MockitoBean FirmeninformationRepository firmen;
 
     @Test void sperrtOhneRechtUndUngültigenMonat() throws Exception {
         mvc.perform(get("/api/buchhaltung/steuerberater/vorpruefung?jahr=2026&monat=2")).andExpect(status().isForbidden());

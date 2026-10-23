@@ -36,15 +36,15 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -65,59 +65,59 @@ class ProjektControllerTest {
         @Autowired
         private MockMvc mockMvc;
 
-        @MockBean
+        @MockitoBean
         private DateiSpeicherService dateiSpeicherService;
 
-        @MockBean
+        @MockitoBean
         private ProjektManagementService projektManagementService;
 
-        @MockBean
+        @MockitoBean
         private ProjektListenPdfService projektListenPdfService;
 
-        @MockBean
+        @MockitoBean
         private ZugferdExtractorService zugferdExtractorService;
 
-        @MockBean
+        @MockitoBean
         private ZugferdErstellService zugferdErstellService;
 
-        @MockBean
+        @MockitoBean
         private ProduktkategorieMapper produktkategorieMapper;
 
-        @MockBean
+        @MockitoBean
         private StuecklistePdfService stuecklistePdfService;
 
-        @MockBean
+        @MockitoBean
         private PdfAiExtractorService pdfAiExtractorService;
 
-        @MockBean
+        @MockitoBean
         private AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
 
 
-        @MockBean
+        @MockitoBean
         private LieferantenRepository lieferantenRepository;
 
-        @MockBean
+        @MockitoBean
         private LieferantDokumentProjektAnteilRepository lieferantDokumentProjektAnteilRepository;
 
-        @MockBean
+        @MockitoBean
         private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
 
-        @MockBean
+        @MockitoBean
         private ProjektNotizRepository projektNotizRepository;
 
-        @MockBean
+        @MockitoBean
         private ProjektNotizBildRepository projektNotizBildRepository;
 
-        @MockBean
+        @MockitoBean
         private ProjektRepository projektRepository;
 
-        @MockBean
+        @MockitoBean
         private ZeitbuchungRepository zeitbuchungRepository;
 
-        @MockBean
+        @MockitoBean
         private DokumentFreigabeService dokumentFreigabeService;
 
-        @MockBean
+        @MockitoBean
         private LieferantDokumentZugriffService lieferantDokumentZugriffService;
 
         @BeforeEach

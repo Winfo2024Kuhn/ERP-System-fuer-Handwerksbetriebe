@@ -1,7 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.Anrede;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
@@ -16,7 +17,6 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -41,7 +41,7 @@ import java.util.List;
 class AutoAuftragsbestaetigungVersandServicePreview {
 
     private static final String VORLAGEN_NAME = "rechnungen";
-    private static final Path OUTPUT = Paths.get("target/auto-ab-preview.pdf");
+    private static final Path OUTPUT = Path.of("target/auto-ab-preview.pdf");
 
     @Test
     void schreibePreviewPdf() throws Exception {
@@ -129,9 +129,9 @@ class AutoAuftragsbestaetigungVersandServicePreview {
                     + " — PDF wird ohne Briefkopf gerendert.");
             return VorlagenDaten.leer();
         }
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
         JsonNode root = mapper.readTree(templateFile);
-        String html = root.has("html") ? root.get("html").asText() : "";
+        String html = root.has("html") ? root.get("html").asString("") : "";
         return AutoAuftragsbestaetigungVersandService.parseVorlagenHtml(html);
     }
 

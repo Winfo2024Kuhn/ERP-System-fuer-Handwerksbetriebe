@@ -17,10 +17,9 @@ import org.example.kalkulationsprogramm.service.SteuerberaterEmailProcessingServ
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
-
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import jakarta.persistence.EntityManager;
 
 /**
@@ -37,15 +36,15 @@ class EmailThreadBackfillIntegrationTest {
     @Autowired private EmailRepository emailRepository;
     @Autowired private EntityManager entityManager;
 
-    @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
-    @MockBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean private SpamFilterService spamFilterService;
-    @MockBean private SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
-    @MockBean private SystemSettingsService systemSettingsService;
-    @MockBean private OutOfOfficeResponder outOfOfficeResponder;
-    @MockBean private BounceErkennungService bounceErkennungService;
-    @MockBean private org.example.kalkulationsprogramm.service.mail.PostfachZugangService postfachZugangService;
-    @MockBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
+    @MockitoBean private EmailAutoAssignmentService emailAutoAssignmentService;
+    @MockitoBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
+    @MockitoBean private SpamFilterService spamFilterService;
+    @MockitoBean private SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
+    @MockitoBean private SystemSettingsService systemSettingsService;
+    @MockitoBean private OutOfOfficeResponder outOfOfficeResponder;
+    @MockitoBean private BounceErkennungService bounceErkennungService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.mail.PostfachZugangService postfachZugangService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.PostfachService postfachService;
 
     private final LocalDateTime start = LocalDateTime.of(2026, 9, 1, 8, 0);
     private int naechsteId;

@@ -14,11 +14,11 @@ import org.example.kalkulationsprogramm.domain.Mitarbeiter;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -49,35 +49,35 @@ class ZeitverwaltungControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.ZeitbuchungRepository zeitbuchungRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.AbwesenheitRepository abwesenheitRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.MitarbeiterRepository mitarbeiterRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.FeiertagService feiertagService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.ZeitkontoService zeitkontoService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.ZeitkontoWechselService zeitkontoWechselService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.ProjektAuswertungPdfService projektAuswertungPdfService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.ArbeitsgangStundensatzRepository arbeitsgangStundensatzRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.repository.ArbeitsgangRepository arbeitsgangRepository;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.ZeitbuchungAuditService auditService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.AngemeldeterMitarbeiterService angemeldeterMitarbeiter;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.MonatsSaldoService monatsSaldoService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.MonatsSaldoWarmupService monatsSaldoWarmupService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.TagesSollService tagesSollService;
 
     /**

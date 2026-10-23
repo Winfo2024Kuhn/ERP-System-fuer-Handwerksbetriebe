@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageFunnelRequestDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -73,7 +74,7 @@ class AnfrageFunnelSpamFilterServiceTest {
 
     @Test
     void pruefe_returnsOk_whenDtoNull() {
-        var service = new AnfrageFunnelSpamFilterService(List.of(), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(), JsonMapper.builderWithJackson2Defaults().build(), settings);
         assertThat(service.pruefe(null).spam()).isFalse();
     }
 
@@ -81,7 +82,7 @@ class AnfrageFunnelSpamFilterServiceTest {
     void pruefe_returnsOk_whenFilterDeaktiviert() {
         when(settings.isAnfrageFunnelSpamFilterAktiv()).thenReturn(false);
         var backend = new StubBackend("lokal", true, "{\"spam\":true,\"grund\":\"x\"}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(backend), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(backend), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -94,7 +95,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         aktivieren();
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("aus");
         var backend = new StubBackend("lokal", true, "{\"spam\":true,\"grund\":\"x\"}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(backend), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(backend), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -108,7 +109,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("lokal");
         var lokal = new StubBackend("lokal", false, "{}");
         var extern = new StubBackend("extern", false, "{}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -123,7 +124,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("extern");
         var lokal = new StubBackend("lokal", true, "{\"spam\":true,\"grund\":\"vom lokalen\"}");
         var extern = new StubBackend("extern", true, "{\"spam\":true,\"grund\":\"vom externen\"}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -139,7 +140,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("extern");
         var lokal = new StubBackend("lokal", true, "{\"spam\":false}");
         var extern = new StubBackend("extern", false, "{}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -154,7 +155,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("lokal");
         var lokal = new StubBackend("lokal", true, "{\"spam\":false}");
         var extern = new StubBackend("extern", true, "{\"spam\":true,\"grund\":\"falsch\"}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -168,7 +169,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         aktivieren();
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("lokal");
         var lokal = new StubBackend("lokal", true, new RuntimeException("Netzwerk weg"));
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -181,7 +182,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("lokal");
         var lokal = new StubBackend("lokal", true,
                 "{\"spam\":true,\"grund\":\"E-Mail wirkt unsinnig\"}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -194,7 +195,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         aktivieren();
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("lokal");
         var lokal = new StubBackend("lokal", true, "kein json sondern müll");
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -207,7 +208,7 @@ class AnfrageFunnelSpamFilterServiceTest {
         when(settings.getAnfrageFunnelSpamFilterProvider()).thenReturn("unbekannt");
         var lokal = new StubBackend("lokal", false, "{}");
         var extern = new StubBackend("extern", true, "{\"spam\":false}");
-        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(lokal, extern), JsonMapper.builderWithJackson2Defaults().build(), settings);
 
         var result = service.pruefe(dummyDto());
 
@@ -217,7 +218,7 @@ class AnfrageFunnelSpamFilterServiceTest {
 
     @Test
     void pruefe_pruefSettingAktiv_nichtNoetigWennKeinDto() {
-        var service = new AnfrageFunnelSpamFilterService(List.of(), new ObjectMapper(), settings);
+        var service = new AnfrageFunnelSpamFilterService(List.of(), JsonMapper.builderWithJackson2Defaults().build(), settings);
         service.pruefe(null);
         verify(settings, never()).isAnfrageFunnelSpamFilterAktiv();
     }

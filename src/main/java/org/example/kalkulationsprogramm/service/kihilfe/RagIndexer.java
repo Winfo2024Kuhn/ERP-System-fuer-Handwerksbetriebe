@@ -1,11 +1,12 @@
 package org.example.kalkulationsprogramm.service.kihilfe;
 
-import com.fasterxml.jackson.core.JsonEncoding;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonEncoding;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -188,7 +189,7 @@ public final class RagIndexer {
     private void zerlegeDatei(List<Rohabschnitt> abschnitte, Path wurzel, Path datei, String kategorie) {
         String inhalt;
         try {
-            inhalt = Files.readString(datei, StandardCharsets.UTF_8);
+            inhalt = Files.readString(datei);
         } catch (IOException e) {
             log.warn("RAG: Datei nicht lesbar: {}", datei);
             return;
@@ -429,7 +430,7 @@ public final class RagIndexer {
     public Map<String, Abschnitt> laden(Path datei) {
         Map<String, Abschnitt> abschnitte = new LinkedHashMap<>();
         if (datei == null || !Files.isRegularFile(datei)) return abschnitte;
-        try (JsonParser parser = objectMapper.getFactory().createParser(datei.toFile())) {
+        try (JsonParser parser = objectMapper.createParser(datei.toFile())) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 log.info("RAG-Datei {} hat ein altes Format - wird nicht verwendet", datei);
                 return abschnitte;
@@ -437,7 +438,7 @@ public final class RagIndexer {
             int format = 0;
             int dimensionen = 0;
             String modell = "";
-            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+            while (parser.nextToken() == JsonToken.PROPERTY_NAME) {
                 String feld = parser.currentName();
                 JsonToken wert = parser.nextToken();
                 switch (feld) {
@@ -456,18 +457,18 @@ public final class RagIndexer {
                         }
                         while (parser.nextToken() == JsonToken.START_OBJECT) {
                             JsonNode a = parser.readValueAsTree();
-                            float[] vektor = vektorLesen(a.path("vector").asText(""));
+                            float[] vektor = vektorLesen(a.path("vector").asString(""));
                             if (vektor == null) continue;
-                            Abschnitt abschnitt = new Abschnitt(a.path("content").asText(), a.path("filePath").asText(),
-                                    a.path("category").asText(), a.path("chunkType").asText(), a.path("name").asText(),
-                                    a.path("contentHash").asText(), vektor);
+                            Abschnitt abschnitt = new Abschnitt(a.path("content").asString(""), a.path("filePath").asString(""),
+                                    a.path("category").asString(""), a.path("chunkType").asString(""), a.path("name").asString(""),
+                                    a.path("contentHash").asString(""), vektor);
                             abschnitte.put(abschnitt.schluessel(), abschnitt);
                         }
                     }
                     default -> parser.skipChildren();
                 }
             }
-        } catch (IOException | RuntimeException e) {
+        } catch (RuntimeException e) {
             log.warn("RAG-Datei {} nicht lesbar, wird nicht verwendet: {}", datei, e.getMessage());
             abschnitte.clear();
         }
@@ -480,21 +481,21 @@ public final class RagIndexer {
         if (ziel.getParent() != null) Files.createDirectories(ziel.getParent());
         Path temp = ziel.resolveSibling(ziel.getFileName() + ".neu");
         try {
-            try (JsonGenerator json = objectMapper.getFactory().createGenerator(temp.toFile(), JsonEncoding.UTF8)) {
+            try (JsonGenerator json = objectMapper.createGenerator(temp.toFile(), JsonEncoding.UTF8)) {
                 json.writeStartObject();
-                json.writeNumberField("format", FORMAT);
-                json.writeStringField("modell", MODELL);
-                json.writeNumberField("dimensionen", DIMENSIONEN);
-                json.writeArrayFieldStart("abschnitte");
+                json.writeNumberProperty("format", FORMAT);
+                json.writeStringProperty("modell", MODELL);
+                json.writeNumberProperty("dimensionen", DIMENSIONEN);
+                json.writeArrayPropertyStart("abschnitte");
                 for (Abschnitt a : abschnitte) {
                     json.writeStartObject();
-                    json.writeStringField("filePath", a.filePath());
-                    json.writeStringField("name", a.name());
-                    json.writeStringField("category", a.category());
-                    json.writeStringField("chunkType", a.chunkType());
-                    json.writeStringField("contentHash", a.contentHash());
-                    json.writeStringField("content", a.content());
-                    json.writeStringField("vector", vektorSchreiben(a.vector()));
+                    json.writeStringProperty("filePath", a.filePath());
+                    json.writeStringProperty("name", a.name());
+                    json.writeStringProperty("category", a.category());
+                    json.writeStringProperty("chunkType", a.chunkType());
+                    json.writeStringProperty("contentHash", a.contentHash());
+                    json.writeStringProperty("content", a.content());
+                    json.writeStringProperty("vector", vektorSchreiben(a.vector()));
                     json.writeEndObject();
                 }
                 json.writeEndArray();
@@ -504,6 +505,10 @@ public final class RagIndexer {
         } catch (IOException | RuntimeException e) {
             // Keine halbe 25-MB-Datei liegen lassen
             Files.deleteIfExists(temp);
+            // Jackson 3 meldet Schreibfehler (volle Platte) ungeprueft - die Aufrufer fangen IOException
+            if (e instanceof JacksonException jackson) {
+                throw new IOException("RAG-Datei konnte nicht geschrieben werden", jackson);
+            }
             throw e;
         }
     }

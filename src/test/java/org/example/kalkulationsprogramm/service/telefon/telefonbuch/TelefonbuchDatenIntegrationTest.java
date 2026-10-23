@@ -25,11 +25,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,8 +78,8 @@ class TelefonbuchDatenIntegrationTest {
         }
     }
 
-    @MockBean TelefonEinstellungenService telefon;
-    @MockBean TelefonbuchAbgleichPlaner planer;
+    @MockitoBean TelefonEinstellungenService telefon;
+    @MockitoBean TelefonbuchAbgleichPlaner planer;
 
     @Autowired TelefonbuchSollListe sollListe;
     @Autowired TelefonbuchAbgleichService abgleich;

@@ -26,12 +26,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -83,8 +83,8 @@ class TelefonDatenIntegrationTest {
         }
     }
 
-    @MockBean TelefonEinstellungenService einstellungen;
-    @MockBean TelefonAnlage anlage;
+    @MockitoBean TelefonEinstellungenService einstellungen;
+    @MockitoBean TelefonAnlage anlage;
 
     @Autowired TelefonService telefonService;
     @Autowired TelefonAbholService abholService;

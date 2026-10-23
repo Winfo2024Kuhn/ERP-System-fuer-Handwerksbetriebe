@@ -29,9 +29,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
@@ -39,6 +38,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Echter Controller mit den produktiven Security-Ketten; nur Fachservice und Datenbank sind ersetzt. */
@@ -48,9 +48,9 @@ import org.springframework.test.web.servlet.MockMvc;
 class MobileUrlaubsantragSecurityTest {
     private static final String TOKEN = "12345678-1234-4234-8234-123456789abc";
     @Autowired private MockMvc mvc;
-    @MockBean private FrontendUserDetailsService users;
-    @MockBean private MitarbeiterRepository mitarbeiter;
-    @MockBean private UrlaubsantragService service;
+    @MockitoBean private FrontendUserDetailsService users;
+    @MockitoBean private MitarbeiterRepository mitarbeiter;
+    @MockitoBean private UrlaubsantragService service;
 
     @TestConfiguration
     static class FilterBeans {

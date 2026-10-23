@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.cli;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.service.kihilfe.GeminiEinbetter;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer;
 
@@ -43,7 +44,7 @@ public final class StandaloneRagIndexer {
     }
 
     public static void main(String[] args) {
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
         int code = ausfuehren(args, System.getenv(), System.out, objectMapper,
                 key -> new GeminiEinbetter(objectMapper, () -> key));
         System.exit(code);

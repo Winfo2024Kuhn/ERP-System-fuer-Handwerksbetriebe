@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -45,7 +45,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Ende zu Ende: Anfrage aus dem Editor → sichtbares PDF mit eingebetteter E-Rechnung. Jede
@@ -222,7 +222,7 @@ class DokumentGeneratorControllerZugferdExportTest {
     @Nested
     class UeberHttp {
 
-        private static final ObjectMapper JSON = new ObjectMapper();
+        private static final ObjectMapper JSON = JsonMapper.builderWithJackson2Defaults().build();
 
         private GeneratePdfRequest rechnung(KopfdatenRequest kopf, List<DocBlockRequest> bloecke,
                 AbrechnungsverlaufRequest verlauf) {

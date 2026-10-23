@@ -35,10 +35,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -60,15 +60,15 @@ class EmailKiClassificationSichtbarkeitTest {
     }
 
     @Autowired private MockMvc mockMvc;
-    @MockBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean private EmailClassificationGeminiClient geminiClient;
-    @MockBean private EmailKiClassificationService classificationService;
-    @MockBean private EmailRepository emailRepository;
-    @MockBean private ProjektRepository projektRepository;
-    @MockBean private AnfrageRepository anfrageRepository;
-    @MockBean private EmailAbsenderRepository postfachRepository;
-    @MockBean private EmailPostfachZuordnungRepository zuordnungRepository;
-    @MockBean private FrontendUserProfileService frontendUserProfileService;
+    @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean private EmailClassificationGeminiClient geminiClient;
+    @MockitoBean private EmailKiClassificationService classificationService;
+    @MockitoBean private EmailRepository emailRepository;
+    @MockitoBean private ProjektRepository projektRepository;
+    @MockitoBean private AnfrageRepository anfrageRepository;
+    @MockitoBean private EmailAbsenderRepository postfachRepository;
+    @MockitoBean private EmailPostfachZuordnungRepository zuordnungRepository;
+    @MockitoBean private FrontendUserProfileService frontendUserProfileService;
 
     @BeforeEach
     void daten() {

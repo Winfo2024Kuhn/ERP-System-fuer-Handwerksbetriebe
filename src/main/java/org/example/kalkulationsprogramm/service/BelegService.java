@@ -45,7 +45,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -201,7 +200,7 @@ public class BelegService {
         }
 
         String storedFilename = UUID.randomUUID() + "_" + originalFilename;
-        Path belegDir = Paths.get(uploadPath, "belege");
+        Path belegDir = Path.of(uploadPath, "belege");
         Files.createDirectories(belegDir);
         Path target = belegDir.resolve(storedFilename);
         datei.transferTo(target);
@@ -319,7 +318,7 @@ public class BelegService {
     }
 
     public Path getBelegDatei(Beleg beleg) {
-        return Paths.get(uploadPath, "belege", beleg.getGespeicherterDateiname());
+        return Path.of(uploadPath, "belege", beleg.getGespeicherterDateiname());
     }
 
     // ===================== Update / Validierung =====================
