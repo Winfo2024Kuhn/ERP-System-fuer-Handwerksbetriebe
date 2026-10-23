@@ -1,17 +1,17 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragKiAnfrage;
 import org.example.kalkulationsprogramm.dto.Beitraege.BeitragKiEntwurf;
 import org.example.kalkulationsprogramm.service.BeitragKiService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.charset.StandardCharsets;
@@ -50,7 +50,7 @@ class BeitragKiControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private BeitragKiService beitragKiService;
 
     private MockMultipartFile anfrageTeil(BeitragKiAnfrage anfrage) throws Exception {

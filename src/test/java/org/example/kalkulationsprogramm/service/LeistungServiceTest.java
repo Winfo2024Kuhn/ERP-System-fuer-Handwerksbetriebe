@@ -1,10 +1,15 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.Leistung;
+import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
+import org.example.kalkulationsprogramm.dto.Leistung.LeistungVerwendungDto;
 import org.example.kalkulationsprogramm.mapper.LeistungMapper;
+import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LeistungRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +25,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.stream.IntStream;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +46,8 @@ class LeistungServiceTest {
     private LeistungMapper leistungMapper;
     @Mock
     private ProduktkategorieRepository produktkategorieRepository;
+    @Mock
+    private AusgangsGeschaeftsDokumentRepository dokumentRepository;
 
     @InjectMocks
     private LeistungService leistungService;
@@ -238,6 +248,71 @@ class LeistungServiceTest {
             when(leistungRepository.findById(5L)).thenReturn(Optional.of(new Leistung()));
             erwarte400(() -> leistungService.updateLeistung(5L, dto(" ", 7L, null)),
                     "Bitte geben Sie der Leistung einen Namen.");
+        }
+    }
+
+    @Nested
+    @DisplayName("Verwendung in Dokumenten")
+    class Verwendung {
+
+        private AusgangsGeschaeftsDokument dokument(long id, String positionen, Projekt projekt) {
+            AusgangsGeschaeftsDokument d = new AusgangsGeschaeftsDokument();
+            d.setId(id);
+            d.setDokumentNummer("AN-2026-0" + id);
+            d.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+            d.setDatum(LocalDate.of(2026, 3, 2));
+            d.setPositionenJson(positionen);
+            d.setProjekt(projekt);
+            return d;
+        }
+
+        @Test
+        @DisplayName("Findet nur Dokumente mit genau dieser Leistung, nicht 120 statt 12")
+        void filtertGenau() {
+            Projekt neubau = new Projekt();
+            neubau.setId(9L);
+            neubau.setBauvorhaben("Neubau Mustermann");
+            when(leistungRepository.existsById(12L)).thenReturn(true);
+            when(dokumentRepository.findeMitLeistungInPositionen("%\"leistungId\":12%", "%\"leistungId\": 12%",
+                    "%\"leistungId\":\"12\"%")).thenReturn(List.of(
+                    dokument(1, "[{\"type\":\"SERVICE\",\"leistungId\":12,\"quantity\":1}]", neubau),
+                    dokument(2, "[{\"type\":\"SERVICE\",\"leistungId\":120,\"quantity\":1}]", null)));
+
+            LeistungVerwendungDto verwendung = leistungService.ermittleVerwendung(12L);
+
+            assertThat(verwendung.dokumentAnzahl()).isEqualTo(1);
+            assertThat(verwendung.dokumente()).singleElement().satisfies(d -> {
+                assertThat(d.dokumentNummer()).isEqualTo("AN-2026-01");
+                assertThat(d.typ()).isEqualTo(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+                assertThat(d.projektId()).isEqualTo(9L);
+                assertThat(d.bauvorhaben()).isEqualTo("Neubau Mustermann");
+            });
+        }
+
+        @Test
+        @DisplayName("Kürzt die Liste, zählt aber alle")
+        void kuerztListe() {
+            when(leistungRepository.existsById(5L)).thenReturn(true);
+            List<AusgangsGeschaeftsDokument> viele = IntStream.range(0, 25)
+                    .mapToObj(i -> dokument(i, "[{\"type\":\"SERVICE\",\"leistungId\":5}]", null))
+                    .toList();
+            when(dokumentRepository.findeMitLeistungInPositionen(any(), any(), any())).thenReturn(viele);
+
+            LeistungVerwendungDto verwendung = leistungService.ermittleVerwendung(5L);
+
+            assertThat(verwendung.dokumentAnzahl()).isEqualTo(25);
+            assertThat(verwendung.dokumente()).hasSize(LeistungService.MAX_DOKUMENTE);
+            assertThat(verwendung.dokumente().get(0).projektId()).isNull();
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = { -1L, 0L, Long.MAX_VALUE })
+        @DisplayName("Unbekannte oder ungültige IDs ergeben 404")
+        void unbekannt(long id) {
+            assertThatThrownBy(() -> leistungService.ermittleVerwendung(id))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+            verify(dokumentRepository, never()).findeMitLeistungInPositionen(any(), any(), any());
         }
     }
 }

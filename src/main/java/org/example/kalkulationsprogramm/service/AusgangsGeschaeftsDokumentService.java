@@ -42,6 +42,7 @@ import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.StornoHin
 import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.KategorieVorschlagDto;
 import org.example.kalkulationsprogramm.util.RabattRechner;
+import org.example.kalkulationsprogramm.util.LeistungsPositionen;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentCounterRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
@@ -58,10 +59,11 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -120,7 +122,7 @@ public class AusgangsGeschaeftsDokumentService {
      * Mapper fuer positionenJson-Auswertungen. Statisch, weil der Korrekturlauf ueber
      * den Gesamtbestand sonst pro Dokument mehrere Mapper-Instanzen erzeugt.
      */
-    private static final ObjectMapper POSITIONEN_MAPPER = new ObjectMapper();
+    private static final ObjectMapper POSITIONEN_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
 
     /** Rechnungstypen, die im Abrechnungsverlauf berücksichtigt werden */
     private static final Set<AusgangsGeschaeftsDokumentTyp> RECHNUNGSTYPEN = EnumSet.of(
@@ -1751,7 +1753,7 @@ public class AusgangsGeschaeftsDokumentService {
 
     private BigDecimal summeServiceBlock(JsonNode block) {
         BigDecimal summe = BigDecimal.ZERO;
-        String type = block.has("type") ? block.get("type").asText() : "";
+        String type = block.has("type") ? block.get("type").asString("") : "";
 
         // Optionale Positionen (Wahl-/Alternativpositionen) zaehlen NICHT zur Nettosumme —
         // genau wie im Editor (helpers.ts#calculateNetto) und im PDF
@@ -1807,7 +1809,7 @@ public class AusgangsGeschaeftsDokumentService {
     private String entferneStandardTextbausteine(String positionenJson) {
         if (positionenJson == null || positionenJson.isBlank()) return positionenJson;
         try {
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
             JsonNode root = mapper.readTree(positionenJson);
 
             ArrayNode blocksNode;
@@ -1852,7 +1854,7 @@ public class AusgangsGeschaeftsDokumentService {
     private boolean istStandardTextbaustein(JsonNode block) {
         if (block == null || !block.isObject()) return false;
         JsonNode rolle = block.get("textbausteinRolle");
-        return rolle != null && !rolle.isNull() && !rolle.asText().isBlank();
+        return rolle != null && !rolle.isNull() && !rolle.asString("").isBlank();
     }
 
     /**
@@ -1909,7 +1911,7 @@ public class AusgangsGeschaeftsDokumentService {
     private Set<String> extractAbgerechneteBlockIds(String positionenJson) {
         Set<String> ids = new HashSet<>();
         try {
-            ObjectMapper mapper = new ObjectMapper();
+            ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
             JsonNode root = mapper.readTree(positionenJson);
 
             JsonNode blocks;
@@ -1931,13 +1933,13 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     private void collectAbgerechneteServiceIds(JsonNode block, Set<String> ids) {
-        String type = block.has("type") ? block.get("type").asText() : "";
+        String type = block.has("type") ? block.get("type").asString("") : "";
 
         if ("SERVICE".equals(type)) {
             double quantity = block.has("quantity") ? block.get("quantity").asDouble(0) : 0;
             double price = block.has("price") ? block.get("price").asDouble(0) : 0;
             if (quantity > 0 && price > 0 && block.has("id")) {
-                ids.add(block.get("id").asText());
+                ids.add(block.get("id").asString(""));
             }
         }
 
@@ -2841,24 +2843,7 @@ public class AusgangsGeschaeftsDokumentService {
                     .toList()
                 : abs;
 
-        // LeistungId → aggregierte Menge aus positionenJson extrahieren
-        Map<Long, BigDecimal> leistungMengen = new java.util.HashMap<>();
-        for (AusgangsGeschaeftsDokument dok : effektiveDokumente) {
-            extractLeistungMengenFromPositionenJson(dok.getPositionenJson(), leistungMengen);
-        }
-
-        // Leistungen laden und Produktkategorie → aggregierte Menge ermitteln
-        Map<Long, BigDecimal> kategorieMengen = new java.util.HashMap<>();
-        if (!leistungMengen.isEmpty()) {
-            List<Leistung> leistungen = leistungRepository.findAllById(leistungMengen.keySet());
-            for (Leistung l : leistungen) {
-                if (l.getKategorie() != null) {
-                    kategorieMengen.merge(l.getKategorie().getId(),
-                            leistungMengen.getOrDefault(l.getId(), BigDecimal.ZERO),
-                            BigDecimal::add);
-                }
-            }
-        }
+        Map<Long, BigDecimal> kategorieMengen = kategorieMengenAus(effektiveDokumente);
 
         // Bestehende ProjektProduktkategorien: Map nach kategorieId
         Map<Long, ProjektProduktkategorie> bestehend = projekt.getProjektProduktkategorien().stream()
@@ -2929,22 +2914,7 @@ public class AusgangsGeschaeftsDokumentService {
                 ? AusgangsGeschaeftsDokumentTyp.ANGEBOT.name()
                 : AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG.name();
 
-        Map<Long, BigDecimal> leistungMengen = new java.util.HashMap<>();
-        for (AusgangsGeschaeftsDokument dok : effektive) {
-            extractLeistungMengenFromPositionenJson(dok.getPositionenJson(), leistungMengen);
-        }
-        if (leistungMengen.isEmpty()) return List.of();
-
-        // Leistung → aggregierte Menge ihrer Kategorie
-        Map<Long, BigDecimal> kategorieMengen = new java.util.HashMap<>();
-        List<Leistung> leistungen = leistungRepository.findAllById(leistungMengen.keySet());
-        for (Leistung l : leistungen) {
-            if (l.getKategorie() != null) {
-                kategorieMengen.merge(l.getKategorie().getId(),
-                        leistungMengen.getOrDefault(l.getId(), BigDecimal.ZERO),
-                        BigDecimal::add);
-            }
-        }
+        Map<Long, BigDecimal> kategorieMengen = kategorieMengenAus(effektive);
         if (kategorieMengen.isEmpty()) return List.of();
 
         List<Produktkategorie> kategorien = produktkategorieRepository.findAllById(kategorieMengen.keySet());
@@ -2965,6 +2935,44 @@ public class AusgangsGeschaeftsDokumentService {
                 .toList();
     }
 
+    /**
+     * Summiert die Mengen der Leistungs-Positionen je Produktkategorie. Maßgeblich ist der
+     * aktuelle Ordner der Leistung; ist die Leistung gelöscht, zählt die Kategorie, die beim
+     * Einfügen in der Position gespeichert wurde (sofern es den Ordner noch gibt). So verliert
+     * ein Projekt seine Kategorie nicht, nur weil eine Leistung aus dem Katalog verschwindet.
+     */
+    private Map<Long, BigDecimal> kategorieMengenAus(List<AusgangsGeschaeftsDokument> dokumente) {
+        Map<Long, BigDecimal> leistungMengen = new java.util.HashMap<>();
+        Map<Long, Long> kategorieAusPosition = new java.util.HashMap<>();
+        for (AusgangsGeschaeftsDokument dok : dokumente) {
+            LeistungsPositionen.sammleMengen(dok.getPositionenJson(), leistungMengen, kategorieAusPosition);
+        }
+        Map<Long, BigDecimal> kategorieMengen = new java.util.HashMap<>();
+        if (leistungMengen.isEmpty()) {
+            return kategorieMengen;
+        }
+        Set<Long> gefunden = new HashSet<>();
+        for (Leistung l : leistungRepository.findAllById(leistungMengen.keySet())) {
+            gefunden.add(l.getId());
+            if (l.getKategorie() != null) {
+                kategorieMengen.merge(l.getKategorie().getId(), leistungMengen.get(l.getId()), BigDecimal::add);
+            }
+        }
+        Map<Long, BigDecimal> ohneLeistung = new java.util.HashMap<>();
+        leistungMengen.forEach((leistungId, menge) -> {
+            Long kategorieId = kategorieAusPosition.get(leistungId);
+            if (!gefunden.contains(leistungId) && kategorieId != null) {
+                ohneLeistung.merge(kategorieId, menge, BigDecimal::add);
+            }
+        });
+        if (!ohneLeistung.isEmpty()) {
+            for (Produktkategorie k : produktkategorieRepository.findAllById(ohneLeistung.keySet())) {
+                kategorieMengen.merge(k.getId(), ohneLeistung.get(k.getId()), BigDecimal::add);
+            }
+        }
+        return kategorieMengen;
+    }
+
     private String bauePfad(Produktkategorie kategorie) {
         java.util.Deque<String> namen = new java.util.ArrayDeque<>();
         Produktkategorie current = kategorie;
@@ -2975,101 +2983,6 @@ public class AusgangsGeschaeftsDokumentService {
         return String.join(" > ", namen);
     }
 
-    /**
-     * Extrahiert alle leistungId-Werte aus einem positionenJson-String.
-     * Berücksichtigt sowohl Top-Level SERVICE-Blöcke als auch verschachtelte Blöcke
-     * in SECTION_HEADER-Containern.
-     */
-    private Set<Long> extractLeistungIdsFromPositionenJson(String positionenJson) {
-        Set<Long> ids = new HashSet<>();
-        if (positionenJson == null || positionenJson.isBlank()) return ids;
-
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(positionenJson);
-
-            JsonNode blocks;
-            if (root.isArray()) {
-                blocks = root;
-            } else if (root.has("blocks") && root.get("blocks").isArray()) {
-                blocks = root.get("blocks");
-            } else {
-                return ids;
-            }
-
-            for (JsonNode block : blocks) {
-                collectLeistungIds(block, ids);
-            }
-        } catch (Exception e) {
-            log.warn("Fehler beim Extrahieren der LeistungIds aus positionenJson: {}", e.getMessage());
-        }
-        return ids;
-    }
-
-    /**
-     * Extrahiert leistungId → aggregierte Menge (quantity) aus einem positionenJson-String.
-     * Optionale Positionen werden nicht berücksichtigt.
-     */
-    private void extractLeistungMengenFromPositionenJson(String positionenJson, Map<Long, BigDecimal> result) {
-        if (positionenJson == null || positionenJson.isBlank()) return;
-
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(positionenJson);
-
-            JsonNode blocks;
-            if (root.isArray()) {
-                blocks = root;
-            } else if (root.has("blocks") && root.get("blocks").isArray()) {
-                blocks = root.get("blocks");
-            } else {
-                return;
-            }
-
-            for (JsonNode block : blocks) {
-                collectLeistungMengen(block, result);
-            }
-        } catch (Exception e) {
-            log.warn("Fehler beim Extrahieren der Leistung-Mengen aus positionenJson: {}", e.getMessage());
-        }
-    }
-
-    private void collectLeistungIds(JsonNode block, Set<Long> ids) {
-        String type = block.has("type") ? block.get("type").asText() : "";
-
-        if ("SERVICE".equals(type) && block.has("leistungId") && !block.get("leistungId").isNull()) {
-            ids.add(block.get("leistungId").asLong());
-        }
-
-        if ("SECTION_HEADER".equals(type) && block.has("children") && block.get("children").isArray()) {
-            for (JsonNode child : block.get("children")) {
-                collectLeistungIds(child, ids);
-            }
-        }
-    }
-
-    private void collectLeistungMengen(JsonNode block, Map<Long, BigDecimal> result) {
-        String type = block.has("type") ? block.get("type").asText() : "";
-
-        if ("SERVICE".equals(type) && block.has("leistungId") && !block.get("leistungId").isNull()) {
-            // Optionale Positionen nicht berücksichtigen
-            boolean optional = block.has("optional") && block.get("optional").asBoolean(false);
-            if (!optional) {
-                long leistungId = block.get("leistungId").asLong();
-                BigDecimal quantity = block.has("quantity") && !block.get("quantity").isNull()
-                        ? BigDecimal.valueOf(block.get("quantity").asDouble())
-                        : BigDecimal.ZERO;
-                result.merge(leistungId, quantity, BigDecimal::add);
-            }
-        }
-
-        if ("SECTION_HEADER".equals(type) && block.has("children") && block.get("children").isArray()) {
-            for (JsonNode child : block.get("children")) {
-                collectLeistungMengen(child, result);
-            }
-        }
-    }
-
     // === Digitale Freigabe: Alternativ-Positionen ===========================
     // Helfer für die kundenseitige Freigabe-Ansicht und das Mitbeauftragen optionaler
     // (alternativer) Positionen. Die Traversierung (Top-Level + eine Ebene
@@ -3078,7 +2991,7 @@ public class AusgangsGeschaeftsDokumentService {
     // mit der Editor-Anzeige übereinstimmen.
 
     /** Thread-safe und wiederverwendbar — einmalig statt pro Aufruf neu instanziieren. */
-    private static final ObjectMapper ALTERNATIV_MAPPER = new ObjectMapper();
+    private static final ObjectMapper ALTERNATIV_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
 
     /**
      * Baut die kundensichere Positions-Liste für die Freigabe-Ansicht aus dem
@@ -3267,7 +3180,7 @@ public class AusgangsGeschaeftsDokumentService {
      */
     private void entferneAbgewaehlte(JsonNode ebene) {
         if (!(ebene instanceof ArrayNode arr)) return;
-        Iterator<JsonNode> it = arr.elements();
+        Iterator<JsonNode> it = arr.values().iterator();
         while (it.hasNext()) {
             JsonNode block = it.next();
             String typ = textOrNull(block, "type");
@@ -3323,14 +3236,14 @@ public class AusgangsGeschaeftsDokumentService {
 
     private static String textOrNull(JsonNode node, String field) {
         JsonNode v = node.get(field);
-        return v == null || v.isNull() ? null : v.asText();
+        return v == null || v.isNull() ? null : v.asString("");
     }
 
     private static BigDecimal decimalOrNull(JsonNode node, String field) {
         JsonNode v = node.get(field);
-        if (v == null || v.isNull() || (!v.isNumber() && !v.isTextual())) return null;
+        if (v == null || v.isNull() || (!v.isNumber() && !v.isString())) return null;
         try {
-            return new BigDecimal(v.asText());
+            return new BigDecimal(v.asString(""));
         } catch (NumberFormatException e) {
             return null;
         }

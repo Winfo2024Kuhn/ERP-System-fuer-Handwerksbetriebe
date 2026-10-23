@@ -22,12 +22,12 @@ import org.example.kalkulationsprogramm.service.AufschlagService.Quelle;
 import org.example.kalkulationsprogramm.service.AufschlagService.Uebersicht;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -37,8 +37,8 @@ import org.springframework.web.server.ResponseStatusException;
 class AufschlagControllerTest {
 
     @Autowired private MockMvc mvc;
-    @MockBean private AufschlagService service;
-    @MockBean private AufschlagBerechtigungService berechtigung;
+    @MockitoBean private AufschlagService service;
+    @MockitoBean private AufschlagBerechtigungService berechtigung;
 
     private static Uebersicht uebersicht() {
         return new Uebersicht(new BigDecimal("20.00"), List.of(new KategorieZeile(1, null, "Stahl", new BigDecimal("25.00"), new BigDecimal("25.00"), Quelle.KATEGORIE, "Stahl")));

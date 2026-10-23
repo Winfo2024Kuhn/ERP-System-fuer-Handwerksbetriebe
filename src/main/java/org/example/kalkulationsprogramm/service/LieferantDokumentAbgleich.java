@@ -25,8 +25,8 @@ import org.example.kalkulationsprogramm.domain.LieferantGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.PositionsSuchtext;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -1121,12 +1121,12 @@ public class LieferantDokumentAbgleich {
             JsonNode weitere = json.get("weitereReferenzen");
             if (weitere != null && weitere.isArray()) {
                 weitere.forEach(r -> {
-                    String wert = r.isTextual() ? r.asText() : null;
+                    String wert = r.isString() ? r.asString("") : null;
                     fuegeNummerHinzu(referenzen, referenzenOhneKuerzel, wert);
                     sammleNummern(wert, Feld.REFERENZ, tokens);
                 });
-            } else if (weitere != null && weitere.isTextual()) {
-                for (String teil : weitere.asText().split("[,;]")) {
+            } else if (weitere != null && weitere.isString()) {
+                for (String teil : weitere.asString("").split("[,;]")) {
                     fuegeNummerHinzu(referenzen, referenzenOhneKuerzel, teil);
                     sammleNummern(teil, Feld.REFERENZ, tokens);
                 }
@@ -1335,7 +1335,7 @@ public class LieferantDokumentAbgleich {
 
     private static String text(JsonNode node, String feld) {
         JsonNode wert = node == null ? null : node.get(feld);
-        return wert != null && wert.isTextual() ? wert.asText() : null;
+        return wert != null && wert.isString() ? wert.asString("") : null;
     }
 
     /** Merkt die Nummer – und, falls sie ein Kürzel trägt, getrennt ihre Fassung ohne Kürzel. */

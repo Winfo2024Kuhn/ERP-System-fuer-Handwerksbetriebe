@@ -46,12 +46,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -73,14 +73,14 @@ class KalenderControllerSecurityTest {
     }
 
     @Autowired private MockMvc mvc;
-    @MockBean private FrontendUserDetailsService users;
-    @MockBean private FrontendUserProfileRepository profile;
-    @MockBean private MitarbeiterRepository mitarbeiterRepository;
-    @MockBean private KalenderEintragRepository eintraege;
-    @MockBean private ProjektRepository projektRepository;
-    @MockBean private KundeRepository kundeRepository;
-    @MockBean private LieferantenRepository lieferantenRepository;
-    @MockBean private AnfrageRepository anfrageRepository;
+    @MockitoBean private FrontendUserDetailsService users;
+    @MockitoBean private FrontendUserProfileRepository profile;
+    @MockitoBean private MitarbeiterRepository mitarbeiterRepository;
+    @MockitoBean private KalenderEintragRepository eintraege;
+    @MockitoBean private ProjektRepository projektRepository;
+    @MockitoBean private KundeRepository kundeRepository;
+    @MockitoBean private LieferantenRepository lieferantenRepository;
+    @MockitoBean private AnfrageRepository anfrageRepository;
 
     private static final LocalDate VON = LocalDate.of(2026, 9, 28);
     private static final LocalDate BIS = LocalDate.of(2026, 11, 8);

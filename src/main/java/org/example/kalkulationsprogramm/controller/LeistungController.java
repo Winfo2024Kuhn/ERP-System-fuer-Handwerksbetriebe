@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
+import org.example.kalkulationsprogramm.dto.Leistung.LeistungVerwendungDto;
 import org.example.kalkulationsprogramm.service.LeistungService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +20,11 @@ public class LeistungController {
     @GetMapping
     public List<LeistungDto> getAll() {
         return leistungService.getAllLeistungen();
+    }
+
+    @GetMapping("/{id}/verwendung")
+    public LeistungVerwendungDto verwendung(@PathVariable Long id) {
+        return leistungService.ermittleVerwendung(id);
     }
 
     @PostMapping

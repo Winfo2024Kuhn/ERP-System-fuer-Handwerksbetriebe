@@ -10,17 +10,21 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 
 | Bibliothek | Version | Lizenz | Quelle |
 |---|---|---|---|
-| Spring Boot (Data JPA, Web, Security, Validation, DevTools, Test) | 3.2.5 | Apache License 2.0 | https://spring.io/projects/spring-boot |
-| Mustang Project – Library | 2.18.0 | Apache License 2.0 | https://www.mustangproject.org/ |
-| Mustang Project – Validator | 2.17.0 | Apache License 2.0 | https://www.mustangproject.org/ |
+| Spring Boot (Data JPA, Web, Security, Validation, DevTools, Test) | 4.1.2 | Apache License 2.0 | https://spring.io/projects/spring-boot |
+| Mustang Project – Library | 2.26.0 | Apache License 2.0 | https://www.mustangproject.org/ |
+| Mustang Project – Validator | 2.26.0 | Apache License 2.0 | https://www.mustangproject.org/ |
+| veraPDF (über Mustang Validator) | 1.30.2 | GPL 3.0+ / MPL 2.0+ (wahlweise; hier MPL 2.0) | https://verapdf.org/ |
+| Saxon-HE (über Mustang Library) | 12.10 | Mozilla Public License 2.0 | https://www.saxonica.com/ |
+| Mozilla Rhino (über Mustang Validator) | 1.7.15.1 | Mozilla Public License 2.0 | https://github.com/mozilla/rhino |
+| ph-schematron (über Mustang Validator) | 8.0.6 | Apache License 2.0 | https://github.com/phax/ph-schematron |
 | PostgreSQL JDBC Driver (pgJDBC) | (managed) | BSD 2-Clause License | https://jdbc.postgresql.org/ |
-| Project Lombok | 1.18.42 | MIT License | https://projectlombok.org/ |
+| Project Lombok | 1.18.48 | MIT License | https://projectlombok.org/ |
 | Flyway (Core) | (managed) | Apache License 2.0 | https://flywaydb.org/ |
 | Jakarta Mail | 2.0.1 | EPL 2.0 / GPL 2.0 mit Classpath Exception | https://eclipse-ee4j.github.io/mail/ |
 | Jakarta Activation | 2.0.1 | EDL 1.0 (BSD 3-Clause) | https://eclipse-ee4j.github.io/jaf/ |
 | jsoup | 1.17.2 | MIT License | https://jsoup.org/ |
 | Apache PDFBox | 3.0.2 | Apache License 2.0 | https://pdfbox.apache.org/ |
-| OpenPDF | 1.3.30 | LGPL 2.1 / MPL 2.0 | https://github.com/LibrePDF/OpenPDF |
+| OpenPDF | 3.0.5 | LGPL 2.1 / MPL 2.0 | https://github.com/LibrePDF/OpenPDF |
 | Apache Commons Text | 1.10.0 | Apache License 2.0 | https://commons.apache.org/proper/commons-text/ |
 | Google ZXing (Core, JavaSE) | 3.5.3 | Apache License 2.0 | https://github.com/zxing/zxing |
 | OpenCV (OpenPnP Wrapper) | 4.9.0-0 | Apache 2.0 (Wrapper), BSD 3-Clause (OpenCV) | https://github.com/openpnp/opencv |

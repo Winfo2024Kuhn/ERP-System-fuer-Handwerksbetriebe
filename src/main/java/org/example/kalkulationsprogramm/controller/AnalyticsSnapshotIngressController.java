@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.core.JacksonException;
 
 import java.util.Map;
 import java.util.Set;
@@ -69,7 +69,7 @@ public class AnalyticsSnapshotIngressController {
         AnalyticsSnapshotRequestDto dto;
         try {
             dto = objectMapper.readValue(rawPayload, AnalyticsSnapshotRequestDto.class);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Analytics-Snapshot Payload ist kein gueltiges JSON: {}", e.getOriginalMessage());
             return ResponseEntity.badRequest().body(Map.of(
                     "success", false,

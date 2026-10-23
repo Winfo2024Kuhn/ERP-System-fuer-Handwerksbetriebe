@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SteuerberaterBwaGemeinkostenTest {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
 
     private BigDecimal ausJson(String json) throws Exception {
         return SteuerberaterEmailProcessingService.ermittleGemeinkosten(mapper.readTree(json));

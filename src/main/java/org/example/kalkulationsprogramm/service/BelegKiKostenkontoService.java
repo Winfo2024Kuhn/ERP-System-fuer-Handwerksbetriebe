@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.Beleg;
@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.repository.SachkontoRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -158,7 +159,7 @@ public class BelegKiKostenkontoService {
             // finale_zuordnung beendet den Lauf - auch wenn Gemini daneben noch
             // andere Werkzeuge aufruft; die werden dann nicht mehr ausgefuehrt.
             JsonNode finale = aufrufe.stream()
-                    .filter(a -> "finale_zuordnung".equals(a.path("name").asText("")))
+                    .filter(a -> "finale_zuordnung".equals(a.path("name").asString("")))
                     .findFirst().orElse(null);
             if (finale != null) {
                 ergebnis = parseFinaleZuordnung(finale.path("args"));
@@ -174,7 +175,7 @@ public class BelegKiKostenkontoService {
             List<ObjectNode> antworten = new ArrayList<>();
             String unbekanntesTool = null;
             for (JsonNode aufruf : aufrufe) {
-                String toolName = aufruf.path("name").asText("");
+                String toolName = aufruf.path("name").asString("");
                 JsonNode toolResult = dispatch(toolName, aufruf.path("args"), beleg);
                 if (toolResult != null && toolResult.has("fehler")) {
                     unbekanntesTool = toolName;
@@ -456,7 +457,7 @@ public class BelegKiKostenkontoService {
                         attempt, MAX_GEMINI_ATTEMPTS, status, errBody);
                 return null;
 
-            } catch (java.io.IOException ioe) {
+            } catch (JacksonException | java.io.IOException ioe) {
                 // Netzwerk-/Timeout-Fehler: ebenfalls retry-bar.
                 if (attempt < MAX_GEMINI_ATTEMPTS) {
                     long backoff = RETRY_BACKOFF_MS[attempt - 1];
@@ -618,7 +619,7 @@ public class BelegKiKostenkontoService {
 
     private ObjectNode toolResponseTeil(JsonNode functionCall, JsonNode result) {
         ObjectNode responseWrapper = objectMapper.createObjectNode();
-        responseWrapper.put("name", functionCall.path("name").asText(""));
+        responseWrapper.put("name", functionCall.path("name").asString(""));
         responseWrapper.set("content", result);
         return GeminiVerlauf.antwortTeil(functionCall, responseWrapper);
     }
@@ -726,7 +727,7 @@ public class BelegKiKostenkontoService {
                 if (!position.isObject() || !position.hasNonNull("beschreibung")) {
                     continue;
                 }
-                String beschreibung = safe(position.path("beschreibung").asText());
+                String beschreibung = safe(position.path("beschreibung").asString(""));
                 if (beschreibung.isBlank()) {
                     continue;
                 }
@@ -741,7 +742,7 @@ public class BelegKiKostenkontoService {
                 }
             }
             return zeilen.isEmpty() ? "" : "\nAUSGELESENE POSITIONEN:\n" + zeilen;
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             log.debug("KI-Agent Beleg {}: Positionsdaten sind nicht lesbar ({})",
                     beleg.getId(), e.getClass().getSimpleName());
             return "";
@@ -749,7 +750,7 @@ public class BelegKiKostenkontoService {
     }
 
     private static String positionsZahl(JsonNode wert) {
-        String text = safe(wert.asText(""));
+        String text = safe(wert.asString(""));
         try {
             return new BigDecimal(text.replace(',', '.')).toPlainString().replace('.', ',');
         } catch (NumberFormatException e) {
@@ -784,8 +785,8 @@ public class BelegKiKostenkontoService {
     private static Long optionalLong(JsonNode root, String field) {
         JsonNode n = root.get(field);
         if (n == null || n.isNull()) return null;
-        if (n.isNumber()) return n.asLong();
-        String s = n.asText().trim();
+        if (n.isNumber()) return n.asLong(0L);
+        String s = n.asString("").trim();
         if (s.isEmpty() || "null".equalsIgnoreCase(s)) return null;
         try { return Long.parseLong(s); } catch (NumberFormatException e) { return null; }
     }
@@ -793,13 +794,13 @@ public class BelegKiKostenkontoService {
     private static BigDecimal optionalBigDecimal(JsonNode root, String field) {
         JsonNode n = root.get(field);
         if (n == null || n.isNull()) return null;
-        try { return new BigDecimal(n.asText()); } catch (Exception e) { return null; }
+        try { return new BigDecimal(n.asString("")); } catch (Exception e) { return null; }
     }
 
     private static String optionalString(JsonNode root, String field) {
         JsonNode n = root.get(field);
         if (n == null || n.isNull()) return null;
-        String s = n.asText();
+        String s = n.asString("");
         return s == null || s.isBlank() ? null : s.trim();
     }
 

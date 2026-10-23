@@ -413,10 +413,12 @@ class SpamBayesServiceTest {
 
         @Test
         void importiertTabSepariertesDatenset() throws IOException {
-            String tsv = "ham\tGo until jurong point, crazy.. Available only in bugis\n"
-                       + "spam\tFree entry in 2 a wkly comp to win FA Cup final\n"
-                       + "ham\tOk lar... Joking wif u oni...\n"
-                       + "spam\tWINNER!! You have been selected to receive a prize\n";
+            String tsv = """
+                       ham\tGo until jurong point, crazy.. Available only in bugis
+                       spam\tFree entry in 2 a wkly comp to win FA Cup final
+                       ham\tOk lar... Joking wif u oni...
+                       spam\tWINNER!! You have been selected to receive a prize
+                       """;
 
             InputStream stream = new ByteArrayInputStream(tsv.getBytes(StandardCharsets.UTF_8));
 
@@ -428,9 +430,11 @@ class SpamBayesServiceTest {
 
         @Test
         void importiertCsvMitHeader() throws IOException {
-            String csv = "v1,v2\n"
-                       + "spam,\"Buy viagra now! Best deals\"\n"
-                       + "ham,\"Meeting tomorrow at 10am\"\n";
+            String csv = """
+                       v1,v2
+                       spam,"Buy viagra now! Best deals"
+                       ham,"Meeting tomorrow at 10am"
+                       """;
 
             InputStream stream = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
 
@@ -442,9 +446,11 @@ class SpamBayesServiceTest {
 
         @Test
         void uebergehtUnbekanntesLabel() throws IOException {
-            String tsv = "ham\tNormale Nachricht\n"
-                       + "unknown\tDiese Zeile wird ignoriert\n"
-                       + "spam\tSpam Nachricht\n";
+            String tsv = """
+                       ham\tNormale Nachricht
+                       unknown\tDiese Zeile wird ignoriert
+                       spam\tSpam Nachricht
+                       """;
 
             InputStream stream = new ByteArrayInputStream(tsv.getBytes(StandardCharsets.UTF_8));
 
@@ -456,10 +462,12 @@ class SpamBayesServiceTest {
 
         @Test
         void uebergehtLeereZeilen() throws IOException {
-            String tsv = "ham\tErste Nachricht\n"
-                       + "\n"
-                       + "   \n"
-                       + "spam\tZweite Nachricht\n";
+            String tsv = """
+                       ham\tErste Nachricht
+                       
+                         \s
+                       spam\tZweite Nachricht
+                       """;
 
             InputStream stream = new ByteArrayInputStream(tsv.getBytes(StandardCharsets.UTF_8));
 
@@ -482,12 +490,14 @@ class SpamBayesServiceTest {
         @Test
         void erkenntHuggingFaceFormat() throws IOException {
             // HuggingFace-Format: text,labels Header mit not_spam/spam
-            String csv = "text,labels\n"
-                       + "\"Hallo, wie geht es dir?\",not_spam\n"
-                       + "Kostenlos downloaden jetzt!,spam\n"
-                       + "Guten Morgen zusammen,not_spam\n"
-                       + "Schnell reich werden!,spam\n"
-                       + "Investiere jetzt und werde Millionär,spam\n";
+            String csv = """
+                       text,labels
+                       "Hallo, wie geht es dir?",not_spam
+                       Kostenlos downloaden jetzt!,spam
+                       Guten Morgen zusammen,not_spam
+                       Schnell reich werden!,spam
+                       Investiere jetzt und werde Millionär,spam
+                       """;
 
             InputStream stream = new ByteArrayInputStream(csv.getBytes(StandardCharsets.UTF_8));
 

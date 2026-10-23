@@ -1,5 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
+import static org.mockito.Mockito.mock;
+
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +15,7 @@ import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
 import org.example.kalkulationsprogramm.dto.Produktkategroie.ProduktkategorieAnalyseDto;
 import org.example.kalkulationsprogramm.mapper.ProduktkategorieMapper;
+import org.example.kalkulationsprogramm.repository.LeistungRepository;
 import org.example.kalkulationsprogramm.repository.ProduktkategorieRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,8 +54,8 @@ class ProduktkategorieServiceAnalyseTest {
                 produktkategorieRepository,
                 projektRepository,
                 new ProduktkategorieMapper(),
-                dateiSpeicherService
-        );
+                dateiSpeicherService,
+                mock(LeistungRepository.class));
 
         kategorie = new Produktkategorie();
         kategorie.setId(1L);

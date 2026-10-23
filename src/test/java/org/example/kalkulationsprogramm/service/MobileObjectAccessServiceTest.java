@@ -19,8 +19,8 @@ import org.example.kalkulationsprogramm.domain.ProjektNotizBild;
 import org.example.kalkulationsprogramm.exception.NotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 
 /** Echte H2-Abfragen und Objektbeziehungen einschließlich der Notizbild-EntityGraphs. */

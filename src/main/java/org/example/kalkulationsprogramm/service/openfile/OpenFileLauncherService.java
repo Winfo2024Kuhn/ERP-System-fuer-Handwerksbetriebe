@@ -26,8 +26,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 
@@ -199,12 +198,7 @@ public class OpenFileLauncherService {
         config.put("aliasHosts", aliasHosts);
         config.put("pruefSchluesselXml", signatur.oeffentlicherSchluesselXml());
         config.put("pruefSchluesselPem", pruefPem);
-        String configJson;
-        try {
-            configJson = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Launcher-Einstellungen nicht schreibbar", e);
-        }
+        String configJson = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(config);
         String unterschrift = signatur.unterschreibe(version + "\n" + configJson + "\n" + skript);
         return new OpenFileLauncherPaketDto(version, skript, configJson, unterschrift);
     }

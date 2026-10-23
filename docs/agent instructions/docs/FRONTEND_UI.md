@@ -24,6 +24,7 @@ Jede UI-Entscheidung wird an diesen zwei Fragen gemessen. Beide MÜSSEN mit Ja b
 - Icon-only-Buttons **immer** mit sichtbarem Tooltip/`aria-label` — nie ein Icon ohne Erklärung raten lassen.
 - Deaktivierte Buttons/Felder erklären per Tooltip **warum** sie deaktiviert sind, statt einfach grau und stumm zu sein.
 - Destruktive Aktionen (Löschen, Stornieren, unwiderrufliches Versenden) verlangen eine Bestätigung per Dialog (`useConfirm` aus `components/ui/confirm-dialog.tsx`, `variant: 'danger'`) — nie ein einzelner Klick, der sofort unwiderruflich ausführt.
+  - Ausnahme (Nutzervorgabe 23.10.2026, Seite „Leistungen & Kategorien“): Hängt an einem Ordner oder einer Leistung nichts, wird ohne Dialog gelöscht – mit Toast „Rückgängig“ und erst danach gesendetem DELETE (`pages/leistungen/useVerzoegertesLoeschen.ts`). Hängt etwas daran, fragt ein Dialog nach und nennt die Bezüge.
 - Formulare zeigen Pflichtfelder, Format-Hinweise (z. B. Datumsformat, Mengeneinheit) und Platzhalter **bevor** der Nutzer den Fehler macht, nicht erst danach in einer Fehlermeldung.
 
 ### Gulf of Evaluation — "Sieht der Nutzer sofort, WAS passiert ist?"

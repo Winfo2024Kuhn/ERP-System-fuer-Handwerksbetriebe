@@ -1,0 +1,77 @@
+# Versions-Updates von Dependabot (Sicherheitsupdates kommen unabhaengig davon
+# sofort, die schaltet die Repo-Einstellung "Dependabot security updates" ein).
+#
+# Damit es nicht zu viele PRs werden: einmal im Monat, je Bereich ein PR fuer die
+# kleinen Updates (minor + patch) und einer fuer die grossen (major). Die grossen
+# brauchen oft Anpassungen am Code - lieber in Ruhe einzeln herausnehmen als 15 PRs.
+# (Am 23.10.2026 kamen mit einzelnen Major-PRs 15 PRs auf einmal.)
+#
+# Die PR-Automatik mergt diese PRs NICHT (sie nimmt nur PRs des Repo-Besitzers).
+# Sie laufen durch das PR Quality Gate und werden von Hand angesehen und gemergt -
+# sie gehen ueber das Nachtupdate direkt zu den Kunden.
+
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Spring Boot (auch 4.1 -> 4.x) kommt allein, damit
+      # ein Fehlschlag dort die kleinen Updates nicht aufhaelt.
+      spring-boot:
+        patterns: ["org.springframework.boot:*"]
+      backend-klein:
+        update-types: [minor, patch]
+      backend-gross:
+        update-types: [major]
+
+  - package-ecosystem: npm
+    directories:
+      - /react-pc-frontend
+      - /react-zeiterfassung
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      frontend-klein:
+        update-types: [minor, patch]
+      frontend-gross:
+        update-types: [major]
+
+  # Basis-Images der Dockerfiles. Major-Spruenge (Java 23 -> 25, Node 24 -> 26)
+  # nicht automatisch: Die Java-Version haengt an pom.xml, Node an der CI.
+  # Bewusst ohne docker-compose: postgres:16 -> 17 waere ein Datenbank-Upgrade
+  # bei allen Kunden.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /deployment/docker-server/updater
+      - /deployment/docker-server/netzsperre
+      - /deployment/mobile-public/tunnel
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      basis-images:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

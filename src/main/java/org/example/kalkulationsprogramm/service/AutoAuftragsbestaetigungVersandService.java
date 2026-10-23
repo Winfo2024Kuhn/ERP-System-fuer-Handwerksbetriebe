@@ -1,9 +1,10 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.email.EmailService;
@@ -62,7 +63,7 @@ import java.util.UUID;
 @Slf4j
 public class AutoAuftragsbestaetigungVersandService
 {
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
     private static final DateTimeFormatter DATUM_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     private final RechnungPdfService rechnungPdfService;
@@ -493,7 +494,7 @@ public class AutoAuftragsbestaetigungVersandService
     {
         if (block == null || !block.isObject()) return false;
         JsonNode rolle = block.get("textbausteinRolle");
-        return rolle != null && !rolle.isNull() && !rolle.asText().isBlank();
+        return rolle != null && !rolle.isNull() && !rolle.asString("").isBlank();
     }
 
     /** {@code true}, wenn im JSON bereits Standard-Textbausteine stecken. */
@@ -1098,7 +1099,7 @@ public class AutoAuftragsbestaetigungVersandService
     private static String optString(JsonNode node, String key, String fallback)
     {
         if (node == null || !node.has(key) || node.get(key).isNull()) return fallback;
-        return node.get(key).asText();
+        return node.get(key).asString("");
     }
     private static boolean optBoolean(JsonNode node, String key, boolean fallback)
     {
@@ -1108,7 +1109,7 @@ public class AutoAuftragsbestaetigungVersandService
     private static BigDecimal optBigDecimal(JsonNode node, String key, BigDecimal fallback)
     {
         if (node == null || !node.has(key) || node.get(key).isNull()) return fallback;
-        try { return new BigDecimal(node.get(key).asText()); }
+        try { return new BigDecimal(node.get(key).asString("")); }
         catch (NumberFormatException e) { return fallback; }
     }
 

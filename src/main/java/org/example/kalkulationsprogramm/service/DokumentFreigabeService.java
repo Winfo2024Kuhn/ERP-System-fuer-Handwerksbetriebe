@@ -1,5 +1,5 @@
 package org.example.kalkulationsprogramm.service;
-
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,7 +50,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Verwaltet die digitale Freigabe von Geschäftsdokumenten (Angebot, Auftragsbestätigung)
@@ -83,7 +83,7 @@ public class DokumentFreigabeService
     private static final DateTimeFormatter ABLAUF_DATUM_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 
     /** Thread-safe und wiederverwendbar — einmalig statt pro Annahme neu instanziieren. */
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
 
     private final DokumentFreigabeRepository repository;
     private final AnfrageDokumentRepository anfrageDokumentRepository;

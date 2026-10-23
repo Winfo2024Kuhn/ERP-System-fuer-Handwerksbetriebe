@@ -1,0 +1,1 @@
+import{R as e,j as r}from"./react-CQtPN3I9.js";import{c as a}from"./index-dvLb1F10.js";const n=e.forwardRef(({className:s,...o},t)=>r.jsx("input",{ref:t,className:a("w-full border border-slate-200 rounded px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500",s),...o}));n.displayName="Input";export{n as I};

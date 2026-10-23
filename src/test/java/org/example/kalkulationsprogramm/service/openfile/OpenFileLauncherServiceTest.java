@@ -39,8 +39,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 class OpenFileLauncherServiceTest {
 
@@ -69,7 +69,7 @@ class OpenFileLauncherServiceTest {
 
     private static boolean unterschriftGueltig(OpenFileLauncherPaketDto paket) throws Exception {
         JsonNode config = JSON.readTree(paket.configJson());
-        String b64 = config.get("pruefSchluesselPem").asText()
+        String b64 = config.get("pruefSchluesselPem").asString()
                 .replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "").replaceAll("\\s", "");
         PublicKey key = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(b64)));
         Signature s = Signature.getInstance("SHA256withRSA");
@@ -145,13 +145,13 @@ class OpenFileLauncherServiceTest {
         assertThat(paket.skript()).startsWith("param(");
         assertThat(paket.version()).hasSize(16).matches("[0-9a-f]+");
         JsonNode config = JSON.readTree(paket.configJson());
-        assertThat(config.get("version").asText()).isEqualTo(paket.version());
-        assertThat(config.get("erpAdresse").asText()).isEqualTo(ERP);
-        assertThat(config.get("allowedRoots").get(0).asText()).isEqualTo("\\\\BUERO_PC\\Zeichnungen");
-        assertThat(config.get("rootAliases").get("\\\\BUERO_PC\\Zeichnungen").asText())
+        assertThat(config.get("version").asString()).isEqualTo(paket.version());
+        assertThat(config.get("erpAdresse").asString()).isEqualTo(ERP);
+        assertThat(config.get("allowedRoots").get(0).asString()).isEqualTo("\\\\BUERO_PC\\Zeichnungen");
+        assertThat(config.get("rootAliases").get("\\\\BUERO_PC\\Zeichnungen").asString())
                 .isEqualTo("\\\\erp.firma-mustermann.de\\Zeichnungen");
-        assertThat(config.get("aliasHosts").get(0).asText()).isEqualTo(HOST);
-        assertThat(config.get("pruefSchluesselXml").asText()).startsWith("<RSAKeyValue>");
+        assertThat(config.get("aliasHosts").get(0).asString()).isEqualTo(HOST);
+        assertThat(config.get("pruefSchluesselXml").asString()).startsWith("<RSAKeyValue>");
     }
 
     @Test
@@ -266,7 +266,7 @@ class OpenFileLauncherServiceTest {
         Matcher config = Pattern.compile("\\$configB64 = '([A-Za-z0-9+/=]+)'").matcher(bat);
         assertThat(config.find()).isTrue();
         String json = new String(Base64.getDecoder().decode(config.group(1)), StandardCharsets.UTF_8);
-        assertThat(JSON.readTree(json).get("allowedRoots").get(0).asText()).isEqualTo("\\\\BUERO_PC\\Aufträge");
+        assertThat(JSON.readTree(json).get("allowedRoots").get(0).asString()).isEqualTo("\\\\BUERO_PC\\Aufträge");
         // ... und der Windows-Launcher liest config.json als UTF-8, nicht als ANSI
         assertThat(OpenFileLauncherService.ressource("launcher.ps1"))
                 .contains("[IO.File]::ReadAllText($configFile)")
@@ -305,7 +305,7 @@ class OpenFileLauncherServiceTest {
         String skript = new String(Base64.getDecoder().decode(launcher.group(1)), StandardCharsets.UTF_8);
         assertThat(skript).isEqualTo(OpenFileLauncherService.ressource("launcher.ps1"));
         JsonNode cfg = JSON.readTree(Base64.getDecoder().decode(config.group(1)));
-        assertThat(cfg.get("erpAdresse").asText()).isEqualTo(ERP);
+        assertThat(cfg.get("erpAdresse").asString()).isEqualTo(ERP);
     }
 
     @Test

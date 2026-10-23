@@ -1,8 +1,8 @@
 package org.example.kalkulationsprogramm.util;
 
-import com.lowagie.text.Font;
-import com.lowagie.text.FontFactory;
-import com.lowagie.text.pdf.BaseFont;
+import org.openpdf.text.Font;
+import org.openpdf.text.FontFactory;
+import org.openpdf.text.pdf.BaseFont;
 import lombok.extern.slf4j.Slf4j;
 
 import java.awt.Color;

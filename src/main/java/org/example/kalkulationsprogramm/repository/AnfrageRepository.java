@@ -6,6 +6,7 @@ import java.util.List;
 import org.example.kalkulationsprogramm.domain.Anfrage;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -92,12 +93,12 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
       * Findet Anfragen wo die Email in anfrage_kunden_emails ODER kunden_emails
       * vorkommt.
       */
-     @Query(value = """
+     @NativeQuery("""
                SELECT DISTINCT a.* FROM anfrage a
                LEFT JOIN kunde k ON a.kunde_id = k.id
                WHERE EXISTS (SELECT 1 FROM anfrage_kunden_emails ake WHERE ake.anfrage_id = a.id AND lower(ake.email) = lower(:email))
                   OR EXISTS (SELECT 1 FROM kunden_emails ke WHERE ke.kunden_id = k.id AND lower(ke.email) = lower(:email))
-               """, nativeQuery = true)
+               """)
      List<Anfrage> findByKundenEmail(@org.springframework.data.repository.query.Param("email") String email);
 
      /**

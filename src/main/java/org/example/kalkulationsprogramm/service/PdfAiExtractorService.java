@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -282,15 +282,15 @@ public class PdfAiExtractorService {
             }
 
             // Prüfe finishReason - zeigt warum Gemini gestoppt hat
-            String finishReason = firstCandidate.path("finishReason").asText("UNKNOWN");
+            String finishReason = firstCandidate.path("finishReason").asString("UNKNOWN");
             log.info("[PdfAI/Gemini] finishReason: {}", finishReason);
 
             // Prüfe safetyRatings
             JsonNode safetyRatings = firstCandidate.path("safetyRatings");
             if (!safetyRatings.isMissingNode() && safetyRatings.isArray()) {
                 for (JsonNode rating : safetyRatings) {
-                    String category = rating.path("category").asText();
-                    String probability = rating.path("probability").asText();
+                    String category = rating.path("category").asString("");
+                    String probability = rating.path("probability").asString("");
                     if (!"NEGLIGIBLE".equals(probability) && !"LOW".equals(probability)) {
                         log.warn("[PdfAI/Gemini] Safety-Warnung: {} = {}", category, probability);
                     }
@@ -311,7 +311,7 @@ public class PdfAiExtractorService {
                 return Optional.empty();
             }
 
-            String content = firstPart.path("text").asText();
+            String content = firstPart.path("text").asString("");
 
             if (content == null || content.isBlank()) {
                 log.warn("[PdfAI/Gemini] Leere Antwort");
@@ -426,7 +426,7 @@ public class PdfAiExtractorService {
     private Optional<ZugferdDaten> parseOllamaResponse(String responseBody) {
         try {
             JsonNode responseJson = objectMapper.readTree(responseBody);
-            String content = responseJson.path("message").path("content").asText();
+            String content = responseJson.path("message").path("content").asString("");
             if (content == null || content.isBlank())
                 return Optional.empty();
 
@@ -479,44 +479,44 @@ public class PdfAiExtractorService {
         ZugferdDaten daten = new ZugferdDaten();
 
         JsonNode dokumenttypNode = json.path("dokumenttyp");
-        if (dokumenttypNode.isTextual() && !dokumenttypNode.asText().isBlank()) {
-            daten.setGeschaeftsdokumentart(dokumenttypNode.asText().trim());
+        if (dokumenttypNode.isString() && !dokumenttypNode.asString("").isBlank()) {
+            daten.setGeschaeftsdokumentart(dokumenttypNode.asString("").trim());
         }
 
         JsonNode nummerNode = json.path("dokumentnummer");
-        if (nummerNode.isTextual() && !nummerNode.asText().isBlank()) {
-            daten.setRechnungsnummer(nummerNode.asText().trim());
+        if (nummerNode.isString() && !nummerNode.asString("").isBlank()) {
+            daten.setRechnungsnummer(nummerNode.asString("").trim());
         }
 
         JsonNode rechnungsdatumNode = json.path("rechnungsdatum");
-        if (rechnungsdatumNode.isTextual() && !rechnungsdatumNode.asText().isBlank()) {
-            daten.setRechnungsdatum(parseDate(rechnungsdatumNode.asText()));
+        if (rechnungsdatumNode.isString() && !rechnungsdatumNode.asString("").isBlank()) {
+            daten.setRechnungsdatum(parseDate(rechnungsdatumNode.asString("")));
         }
 
         JsonNode faelligkeitNode = json.path("faelligkeitsdatum");
-        if (faelligkeitNode.isTextual() && !faelligkeitNode.asText().isBlank()) {
-            daten.setFaelligkeitsdatum(parseDate(faelligkeitNode.asText()));
+        if (faelligkeitNode.isString() && !faelligkeitNode.asString("").isBlank()) {
+            daten.setFaelligkeitsdatum(parseDate(faelligkeitNode.asString("")));
         }
 
         JsonNode betragNode = json.path("betrag");
         if (betragNode.isNumber()) {
-            daten.setBetrag(BigDecimal.valueOf(betragNode.asDouble()));
-        } else if (betragNode.isTextual() && !betragNode.asText().isBlank()) {
+            daten.setBetrag(BigDecimal.valueOf(betragNode.asDouble(0.0)));
+        } else if (betragNode.isString() && !betragNode.asString("").isBlank()) {
             try {
-                String betragStr = betragNode.asText().replace(",", ".").replaceAll("[^0-9.]", "");
+                String betragStr = betragNode.asString("").replace(",", ".").replaceAll("[^0-9.]", "");
                 daten.setBetrag(new BigDecimal(betragStr));
             } catch (NumberFormatException ignored) {
             }
         }
 
         JsonNode kundennameNode = json.path("kundenname");
-        if (kundennameNode.isTextual() && !kundennameNode.asText().isBlank()) {
-            daten.setKundenName(kundennameNode.asText().trim());
+        if (kundennameNode.isString() && !kundennameNode.asString("").isBlank()) {
+            daten.setKundenName(kundennameNode.asString("").trim());
         }
 
         JsonNode kundennummerNode = json.path("kundennummer");
-        if (kundennummerNode.isTextual() && !kundennummerNode.asText().isBlank()) {
-            daten.setKundennummer(kundennummerNode.asText().trim());
+        if (kundennummerNode.isString() && !kundennummerNode.asString("").isBlank()) {
+            daten.setKundennummer(kundennummerNode.asString("").trim());
         }
 
         return daten;

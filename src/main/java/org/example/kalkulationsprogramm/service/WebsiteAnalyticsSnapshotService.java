@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.domain.WebsiteAnalyticsSnapshot;
@@ -11,6 +10,7 @@ import org.example.kalkulationsprogramm.dto.WebsiteAnalytics.VerlaufPunktDto;
 import org.example.kalkulationsprogramm.repository.WebsiteAnalyticsSnapshotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -125,7 +125,7 @@ public class WebsiteAnalyticsSnapshotService {
         }
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Analytics-Snapshot Liste konnte nicht serialisiert werden.", e);
             return "[]";
         }
@@ -168,7 +168,7 @@ public class WebsiteAnalyticsSnapshotService {
             List<java.util.Map<String, Object>> raw = objectMapper.readValue(json,
                     objectMapper.getTypeFactory().constructCollectionType(List.class, java.util.Map.class));
             return raw.stream().map(mapper).toList();
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             log.warn("Analytics-Snapshot Liste konnte nicht gelesen werden ({}).", targetType.getSimpleName(), e);
             return Collections.emptyList();
         }

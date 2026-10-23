@@ -21,10 +21,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -48,27 +48,27 @@ class LieferantDokumentBackfillSecurityTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private GeminiDokumentAnalyseService analyseService;
-    @MockBean
+    @MockitoBean
     private LieferantDokumentRepository dokumentRepository;
-    @MockBean
+    @MockitoBean
     private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
-    @MockBean
+    @MockitoBean
     private LieferantDokumentService dokumentService;
-    @MockBean
+    @MockitoBean
     private EmailRepository emailRepository;
-    @MockBean
+    @MockitoBean
     private EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean
+    @MockitoBean
     private EmailAttachmentRepository emailAttachmentRepository;
-    @MockBean
+    @MockitoBean
     private DatensatzLockService dokumentLockService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService zugriffService;
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.LieferantDokumentDateiService dokumentDateiService;
-    @MockBean
+    @MockitoBean
     private FrontendUserDetailsService frontendUserDetailsService;
 
     @ParameterizedTest

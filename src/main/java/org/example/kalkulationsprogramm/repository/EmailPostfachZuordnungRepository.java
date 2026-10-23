@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.repository;
 import org.example.kalkulationsprogramm.domain.EmailPostfachZuordnung;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,12 +21,11 @@ public interface EmailPostfachZuordnungRepository extends JpaRepository<EmailPos
      * @return Anzahl neu zugeordneter Mails
      */
     @Modifying
-    @Query(value = "INSERT INTO email_postfach_zuordnung (email_id, postfach_id, imap_ordner, imap_uid) "
+    @NativeQuery("INSERT INTO email_postfach_zuordnung (email_id, postfach_id, imap_ordner, imap_uid) "
             + "SELECT e.id, p.id, e.imap_folder, e.imap_uid FROM email e "
             + "JOIN email_absender p ON LOWER(TRIM(e.from_address)) = LOWER(p.email_adresse) "
             + "WHERE e.direction = 'OUT' "
-            + "AND NOT EXISTS (SELECT 1 FROM email_postfach_zuordnung z WHERE z.email_id = e.id)",
-            nativeQuery = true)
+            + "AND NOT EXISTS (SELECT 1 FROM email_postfach_zuordnung z WHERE z.email_id = e.id)")
     int ordneAusgangsmailsNachAbsenderZu();
 
     /**
@@ -36,10 +36,9 @@ public interface EmailPostfachZuordnungRepository extends JpaRepository<EmailPos
      * @return Anzahl neu zugeordneter Mails
      */
     @Modifying
-    @Query(value = "INSERT INTO email_postfach_zuordnung (email_id, postfach_id, imap_ordner, imap_uid) "
+    @NativeQuery("INSERT INTO email_postfach_zuordnung (email_id, postfach_id, imap_ordner, imap_uid) "
             + "SELECT e.id, :postfachId, e.imap_folder, e.imap_uid FROM email e "
-            + "WHERE NOT EXISTS (SELECT 1 FROM email_postfach_zuordnung z WHERE z.email_id = e.id)",
-            nativeQuery = true)
+            + "WHERE NOT EXISTS (SELECT 1 FROM email_postfach_zuordnung z WHERE z.email_id = e.id)")
     int ordneOhnePostfachZu(@Param("postfachId") Long postfachId);
 
     /**

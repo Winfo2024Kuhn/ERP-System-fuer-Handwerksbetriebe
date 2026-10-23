@@ -1,7 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.dto.SpracheingabeErgebnis;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class SpracheingabeServiceTest {
         systemSettingsService = mock(SystemSettingsService.class);
         httpClient = mock(HttpClient.class);
         service = new SpracheingabeService(
-                systemSettingsService, new ObjectMapper(), httpClient, "gemini-flash-latest");
+                systemSettingsService, JsonMapper.builderWithJackson2Defaults().build(), httpClient, "gemini-flash-latest");
     }
 
     private static byte[] audioBytes(int laenge) {
@@ -148,8 +149,8 @@ class SpracheingabeServiceTest {
         assertThat(contents.size()).isEqualTo(1);
         JsonNode parts = contents.get(0).path("parts");
         assertThat(parts.size()).isEqualTo(1);
-        assertThat(parts.get(0).path("inlineData").path("mimeType").asText()).isEqualTo("audio/webm");
-        assertThat(parts.get(0).path("inlineData").path("data").asText())
+        assertThat(parts.get(0).path("inlineData").path("mimeType").asString("")).isEqualTo("audio/webm");
+        assertThat(parts.get(0).path("inlineData").path("data").asString(""))
                 .isEqualTo(Base64.getEncoder().encodeToString(audio));
     }
 
@@ -158,8 +159,8 @@ class SpracheingabeServiceTest {
         JsonNode koerper = service.baueKoerper(new byte[] {1}, "audio/webm");
         JsonNode konfiguration = koerper.path("generationConfig");
 
-        assertThat(konfiguration.path("temperature").asDouble()).isEqualTo(0.0);
-        assertThat(konfiguration.path("responseMimeType").asText()).isEqualTo("text/plain");
+        assertThat(konfiguration.path("temperature").asDouble(0.0)).isEqualTo(0.0);
+        assertThat(konfiguration.path("responseMimeType").asString("")).isEqualTo("text/plain");
         assertThat(konfiguration.has("responseSchema")).isFalse();
     }
 

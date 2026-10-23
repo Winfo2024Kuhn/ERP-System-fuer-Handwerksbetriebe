@@ -18,7 +18,7 @@
 - Note: Surefire runs only its default patterns (`*Test.java`, `*Tests.java`, `Test*.java`, `*TestCase.java`); no Failsafe plugin is configured. Classes named `*IT.java` (e.g. `ProjektManagementServiceIT`) do **not** run with `./mvnw test` and therefore not in CI either.
 - Database tests against real PostgreSQL: `./mvnw test "-Dtest=DatenbankKompatibilitaet*Test" -Dkompat.db.url=jdbc:postgresql://localhost:5432/kompat -Dkompat.db.user=kompat -Dkompat.db.pass=kompat` (throwaway `postgres:16` container)
 - Frontends: `npm run dev` / `npm run build` / `npm run lint` / `npm test` / `npm run test:e2e` in `react-pc-frontend/` and `react-zeiterfassung/`. `npm run build` writes into `src/main/resources/static/` – the build output is committed.
-- Requires Java 23; Maven wrapper included (no global install needed)
+- Requires Java 25; Maven wrapper included (no global install needed)
 
 ## Coding Style & Naming
 - Java conventions: classes `UpperCamelCase`, methods/fields `lowerCamelCase`
@@ -89,7 +89,7 @@ class MeinControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private MeinService service;
 
     @Test
@@ -461,7 +461,7 @@ Buttons sollen im gesamten Programm einheitlich gestaltet werden, um eine konsis
 - **CSS-Klassen:** `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700` (= `variant="default"`)
 - **Verwendung:** Hauptaktionen wie "Neu", "Speichern"
 - **Beispiele:**
-    - Leistungseditor → "+ Neue Leistung" (`src/pages/Leistungseditor.tsx`)
+    - Leistungen & Kategorien → "Neue Leistung" (`src/pages/leistungen/LeistungenReiter.tsx`)
     - E-Mail-Textvorlagen → "Speichern" (`src/pages/EmailTextvorlagenEditor.tsx`)
 
 ### Sekundärer Button (Outline)
@@ -627,10 +627,9 @@ Nur für einen Header ohne Seitenrahmen gibt es `PageHeader` aus `src/components
 | ErfolgsanalyseEditor | Controlling         |
 | FormularwesenMain (Formularwesen) | Vorlagen-Center |
 | BestellungEditor     | Einkauf             |
-| Leistungseditor      | Textverwaltung      |
+| LeistungenUndKategorien | Katalog          |
 | ArbeitsgangEditor    | Arbeitsplanung      |
 | AnfrageEditor        | Anfragemanagement   |
-| ProduktkategorieEditor | Artikelverwaltung  |
 | TelefonPage, EmailEinstellungenPage | Kommunikation |
 | MietabrechnungEditor | Finanzen & Controlling |
 

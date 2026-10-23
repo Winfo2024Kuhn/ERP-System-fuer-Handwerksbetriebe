@@ -1,11 +1,11 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.*;
-import com.lowagie.text.pdf.PdfPCell;
-import com.lowagie.text.pdf.PdfPTable;
-import com.lowagie.text.pdf.PdfWriter;
-import com.lowagie.text.pdf.PdfContentByte;
-import com.lowagie.text.pdf.PdfPCellEvent;
+import org.openpdf.text.*;
+import org.openpdf.text.pdf.PdfPCell;
+import org.openpdf.text.pdf.PdfPTable;
+import org.openpdf.text.pdf.PdfWriter;
+import org.openpdf.text.pdf.PdfContentByte;
+import org.openpdf.text.pdf.PdfPCellEvent;
 import lombok.AllArgsConstructor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ArtikelInProjektRepository;
@@ -45,6 +45,7 @@ public class StuecklistePdfService {
         try {
             Document doc = new Document(PageSize.A4.rotate());
             PdfWriter writer = PdfWriter.getInstance(doc, baos);
+            writer.setPdfVersion(PdfWriter.VERSION_1_7);
             writer.setCompressionLevel(0);
             doc.open();
 
@@ -243,11 +244,12 @@ public class StuecklistePdfService {
         try {
             java.io.InputStream refIs = StuecklistePdfService.class.getResourceAsStream("/static/Schnittbilder_Formstahl_Kuhn Copy.pdf");
             if (refIs != null) {
-                com.lowagie.text.pdf.PdfReader mainReader = new com.lowagie.text.pdf.PdfReader(baos.toByteArray());
-                com.lowagie.text.pdf.PdfReader refReader = new com.lowagie.text.pdf.PdfReader(refIs);
+                org.openpdf.text.pdf.PdfReader mainReader = new org.openpdf.text.pdf.PdfReader(baos.toByteArray());
+                org.openpdf.text.pdf.PdfReader refReader = new org.openpdf.text.pdf.PdfReader(refIs);
                 java.io.ByteArrayOutputStream mergedOut = new java.io.ByteArrayOutputStream();
-                com.lowagie.text.Document merged = new com.lowagie.text.Document();
-                com.lowagie.text.pdf.PdfCopy copy = new com.lowagie.text.pdf.PdfCopy(merged, mergedOut);
+                org.openpdf.text.Document merged = new org.openpdf.text.Document();
+                org.openpdf.text.pdf.PdfCopy copy = new org.openpdf.text.pdf.PdfCopy(merged, mergedOut);
+                copy.setPdfVersion(org.openpdf.text.pdf.PdfWriter.VERSION_1_7);
                 merged.open();
                 for (int i = 1; i <= mainReader.getNumberOfPages(); i++) {
                     copy.addPage(copy.getImportedPage(mainReader, i));

@@ -1,7 +1,9 @@
 package org.example.kalkulationsprogramm.repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -141,4 +143,22 @@ public interface ZeitbuchungRepository extends JpaRepository<Zeitbuchung, Long> 
                         @Param("von") LocalDateTime von,
                         @Param("bis") LocalDateTime bis,
                         @Param("arten") List<ProjektArt> arten);
+
+        /** Buchungen, die an diesen Projekt-Zuordnungen hängen (Löschen/Umziehen eines Ordners). */
+        List<Zeitbuchung> findByProjektProduktkategorieIdIn(Collection<Long> projektProduktkategorieIds);
+
+        long countByProjektProduktkategorieIdIn(Collection<Long> projektProduktkategorieIds);
+
+        /**
+         * Gebuchte Stunden je Kategorie und Projekt, nur abgeschlossene Projekte;
+         * mit {@code von}/{@code bis} nur Projekte, die in diesem Zeitraum abgeschlossen wurden.
+         * Liefert {@code [kategorieId, projektId, stunden]}.
+         */
+        @Query("SELECT ppk.produktkategorie.id, p.id, SUM(z.anzahlInStunden) FROM Zeitbuchung z "
+                        + "JOIN z.projektProduktkategorie ppk JOIN ppk.projekt p "
+                        + "WHERE p.abgeschlossen = true AND (CAST(:von AS LocalDate) IS NULL "
+                        + "OR (p.abschlussdatum >= :von AND p.abschlussdatum <= :bis)) "
+                        + "GROUP BY ppk.produktkategorie.id, p.id")
+        List<Object[]> summiereStundenAbgeschlossenerProjekte(@Param("von") LocalDate von,
+                        @Param("bis") LocalDate bis);
 }

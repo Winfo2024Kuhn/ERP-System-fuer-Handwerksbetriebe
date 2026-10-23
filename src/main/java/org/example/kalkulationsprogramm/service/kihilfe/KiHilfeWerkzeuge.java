@@ -1,9 +1,9 @@
 package org.example.kalkulationsprogramm.service.kihilfe;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.LocalRagService;
 import org.example.kalkulationsprogramm.service.LocalRagService.Bereich;
@@ -104,7 +104,7 @@ public final class KiHilfeWerkzeuge {
     /** Fuehrt einen Werkzeug-Aufruf ({@code functionCall}) aus und liefert die Antwort fuer Gemini. */
     public ObjectNode ausfuehren(JsonNode aufruf) {
         JsonNode args = aufruf.path("args");
-        return switch (aufruf.path("name").asText("")) {
+        return switch (aufruf.path("name").asString("")) {
             case SUCHEN -> suchen(args);
             case LESEN -> lesen(args);
             default -> hinweis("Dieses Werkzeug gibt es nicht. Verfuegbar sind " + SUCHEN + " und " + LESEN + ".");
@@ -122,14 +122,14 @@ public final class KiHilfeWerkzeuge {
     }
 
     private ObjectNode suchen(JsonNode args) {
-        String begriffe = kuerzen(args.path("suchbegriffe").asText("").strip(), MAX_SUCHBEGRIFFE);
+        String begriffe = kuerzen(args.path("suchbegriffe").asString("").strip(), MAX_SUCHBEGRIFFE);
         if (begriffe.isBlank()) return hinweis("Bitte Suchbegriffe angeben.");
         if (restbudget() < MIN_RESTBUDGET) return hinweis(BUDGET_ERSCHOEPFT);
 
-        schritt.accept("Schaut nach: " + anzeigeText(args.path("hinweis").asText(""), begriffe));
+        schritt.accept("Schaut nach: " + anzeigeText(args.path("hinweis").asString(""), begriffe));
         List<CodeChunkResult> treffer;
         try {
-            treffer = rag.suchen(begriffe, bereich(args.path("bereich").asText("")), TREFFER_JE_SUCHE, gesehen);
+            treffer = rag.suchen(begriffe, bereich(args.path("bereich").asString("")), TREFFER_JE_SUCHE, gesehen);
         } catch (RuntimeException e) {
             log.warn("KI-Hilfe: Werkzeug-Suche fehlgeschlagen ({})", e.getClass().getSimpleName());
             return hinweis("Die Suche ging gerade nicht. Antworte mit dem, was du schon weisst.");
@@ -155,7 +155,7 @@ public final class KiHilfeWerkzeuge {
     }
 
     private ObjectNode lesen(JsonNode args) {
-        String datei = args.path("datei").asText("").strip();
+        String datei = args.path("datei").asString("").strip();
         List<CodeChunkResult> teile;
         try {
             teile = rag.dateiLesen(datei);
@@ -186,7 +186,7 @@ public final class KiHilfeWerkzeuge {
         if (inhalt.isEmpty()) return hinweis(BUDGET_ERSCHOEPFT);
         // Alles Gelieferte zaehlt, auch schon bekannte Teile - sonst liesse sich das Budget umgehen
         gelieferteZeichen += inhalt.length();
-        schritt.accept("Liest genauer: " + anzeigeText(args.path("hinweis").asText(""), "eine Seite des Programms"));
+        schritt.accept("Liest genauer: " + anzeigeText(args.path("hinweis").asString(""), "eine Seite des Programms"));
         ObjectNode ergebnis = objectMapper.createObjectNode();
         ergebnis.put("datei", datei);
         ergebnis.put("art", LocalRagService.art(teile.get(0).category(), teile.get(0).filePath()));

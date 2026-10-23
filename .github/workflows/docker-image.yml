@@ -51,7 +51,7 @@ jobs:
       packages: write
       pull-requests: read   # PR zum Commit finden (Pruefschritt)
       checks: read          # "PR Quality Gate" des PR lesen (Pruefschritt)
-    timeout-minutes: 75
+    timeout-minutes: 90
     env:
       COMMIT: ${{ github.sha }}
     steps:
@@ -94,7 +94,7 @@ jobs:
           echo "Getestet im PR (Stand $pr_head, PR Quality Gate gruen) - Image wird gebaut."
 
       - name: Checkout (genau der getestete Commit)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.COMMIT }}
           persist-credentials: false
@@ -108,10 +108,10 @@ jobs:
           echo "kurz=${COMMIT:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Docker Buildx einrichten
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Image bauen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -221,7 +221,7 @@ jobs:
         if: steps.rag.outputs.datei == 'ja'
         # Scheitert das, bleibt das Image aus dem ersten Bau (ohne RAG-Datei)
         continue-on-error: true
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-contexts: ki-hilfe=./ki-hilfe
@@ -256,6 +256,69 @@ jobs:
             echo "::error::Image faehrt auf PostgreSQL nicht sauber hoch - wird NICHT veroeffentlicht."
             exit 1
           fi
+
+      # Bekannte Sicherheitsluecken in den Linux-Paketen und Java-Bibliotheken des
+      # Images. Die hohen und kritischen stehen im Bericht des Laufs. KRITISCHE
+      # Luecken, fuer die es schon eine Korrektur gibt, verhindern die
+      # Veroeffentlichung (SPERRE: "ja"; mit "nein" nur eine Warnung). Seit
+      # Spring Boot 4.1 / Java 25 ist das Image frei davon.
+      # Eine bewusst hingenommene Luecke kommt mit Begruendung in .trivyignore
+      # (eine CVE-Nummer je Zeile).
+      #
+      # Trivy laeuft als Container mit festem Digest und sieht nur das Image als
+      # Datei, keine Zugangsdaten dieses Jobs (Docker-Login mit packages: write).
+      # Grund: Im Maerz 2026 waren trivy-action und einzelne Trivy-Images
+      # kompromittiert (GHSA-69fq-xp46-6x23). Neue Version nur mit neuem Digest:
+      # docker buildx imagetools inspect ghcr.io/aquasecurity/trivy:<version>
+      # Faellt Trivy selbst aus (Datenbank nicht ladbar, haengt), wird trotzdem
+      # veroeffentlicht - wie bei der KI-Hilfe haengt ein Release nicht daran.
+      # Deshalb begrenzt "timeout 9m" jeden Lauf selbst; das Schritt-Limit ist nur
+      # die Notbremse und darf nie zuerst greifen (es wuerde den Job abbrechen).
+      - name: Sicherheits-Scan (Trivy)
+        timeout-minutes: 25
+        shell: bash
+        env:
+          TRIVY: ghcr.io/aquasecurity/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+          SPERRE: "ja"
+        run: |
+          set -uo pipefail
+          scan="$RUNNER_TEMP/trivy"
+          mkdir -p "$scan/cache"
+          if ! docker save erp-starttest:latest -o "$scan/image.tar"; then
+            echo "::warning::Image liess sich fuer den Sicherheits-Scan nicht exportieren - wird ohne Scan veroeffentlicht."
+            exit 0
+          fi
+          ignorieren=()
+          if [ -f .trivyignore ]; then
+            if cp .trivyignore "$scan/trivyignore"; then
+              ignorieren=(--ignorefile /scan/trivyignore)
+            else
+              echo "::warning::.trivyignore nicht uebernommen - Scan laeuft ohne Ausnahmeliste."
+            fi
+          fi
+          trivy() {
+            timeout -k 30s 9m docker run --rm -v "$scan:/scan" "$TRIVY" image --cache-dir /scan/cache \
+              --input /scan/image.tar --scanners vuln --timeout 8m --no-progress \
+              ${ignorieren[@]+"${ignorieren[@]}"} "$@"
+          }
+
+          if ! trivy --severity HIGH,CRITICAL --format table --output /scan/bericht.txt; then
+            echo "::warning::Sicherheits-Scan nicht moeglich - Image wird ohne Scan veroeffentlicht."
+            exit 0
+          fi
+          { echo "### Sicherheits-Scan: hohe und kritische Luecken"; echo '```'; head -c 900000 "$scan/bericht.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+          trivy --skip-db-update --skip-java-db-update --severity CRITICAL --ignore-unfixed --exit-code 2 --format table
+          ergebnis=$?
+          case "$ergebnis" in
+            0) echo "Keine kritische Luecke mit verfuegbarer Korrektur." ;;
+            2) if [ "$SPERRE" = "ja" ]; then
+                 echo "::error::Kritische Sicherheitsluecke mit verfuegbarer Korrektur im Image - wird NICHT veroeffentlicht. Basis-Image bzw. Bibliothek aktualisieren (oder begruendet in .trivyignore)."
+                 exit 1
+               fi
+               echo "::warning::Kritische Sicherheitsluecke mit verfuegbarer Korrektur im Image (Liste oben) - bitte Basis-Image bzw. Bibliothek aktualisieren." ;;
+            *) echo "::warning::Sperrpruefung fehlgeschlagen (Code $ergebnis) - Image wird ohne sie veroeffentlicht." ;;
+          esac
 
       - name: Image veroeffentlichen
         shell: bash

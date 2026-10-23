@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.kihilfe.GeminiEinbetter;
@@ -54,9 +54,8 @@ public class LocalRagService {
             Map.entry("/bestellungen", List.of("BestellungenUebersicht")),
             Map.entry("/bestellungen/bedarf", List.of("BestellungEditor")),
             Map.entry("/textbausteine", List.of("TextbausteinEditor")),
-            Map.entry("/leistungen", List.of("Leistungseditor")),
+            Map.entry("/leistungen", List.of("LeistungenUndKategorien", "OrdnerBaum", "AuswertungReiter")),
             Map.entry("/arbeitsgaenge", List.of("ArbeitsgangEditor")),
-            Map.entry("/produktkategorien", List.of("ProduktkategorieEditor")),
             Map.entry("/mitarbeiter", List.of("MitarbeiterEditor")),
             Map.entry("/arbeitszeitarten", List.of("ArbeitszeitartEditor")),
             Map.entry("/kalender", List.of("TerminKalender")),

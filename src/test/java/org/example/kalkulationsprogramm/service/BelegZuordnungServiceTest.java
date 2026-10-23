@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.Beleg;
 import org.example.kalkulationsprogramm.domain.LieferantDokument;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -31,7 +31,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class BelegZuordnungServiceTest {
@@ -41,7 +41,9 @@ class BelegZuordnungServiceTest {
     @Mock private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     @Mock private BelegRepository belegRepository;
 
-    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults()
+            .findAndAddModules()
+            .build();
     private BelegZuordnungService service;
     private Lieferanten lieferant;
 

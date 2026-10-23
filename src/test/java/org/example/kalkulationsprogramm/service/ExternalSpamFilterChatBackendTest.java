@@ -1,7 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -21,7 +22,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ExternalSpamFilterChatBackendTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
     @Test
     void isEnabled_falseWhenUrlOrModelMissing() {
@@ -180,7 +181,7 @@ class ExternalSpamFilterChatBackendTest {
 
         String raw = backend.chat("sys", "user");
         JsonNode parsed = objectMapper.readTree(raw);
-        assertThat(parsed.path("spam").asBoolean()).isTrue();
-        assertThat(parsed.path("grund").asText()).isEqualTo("Test 123");
+        assertThat(parsed.path("spam").asBoolean(false)).isTrue();
+        assertThat(parsed.path("grund").asString("")).isEqualTo("Test 123");
     }
 }

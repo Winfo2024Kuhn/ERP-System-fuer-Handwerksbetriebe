@@ -2,16 +2,13 @@ package org.example.kalkulationsprogramm.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAbsender;
@@ -30,15 +27,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.icegreen.greenmail.junit5.GreenMailExtension;
+import com.icegreen.greenmail.util.DummySSLServerSocketFactory;
 import com.icegreen.greenmail.util.ServerSetupTest;
 
 import jakarta.mail.Address;
@@ -69,13 +67,13 @@ class PostfachMailserverIntegrationTest {
 
     private static SSLContext vorherigerKontext;
 
-    @MockBean private EmailAutoAssignmentService emailAutoAssignmentService;
-    @MockBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
-    @MockBean private SpamFilterService spamFilterService;
-    @MockBean private SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
-    @MockBean private OutOfOfficeResponder outOfOfficeResponder;
-    @MockBean private BounceErkennungService bounceErkennungService;
-    @MockBean private SeenSenderDomainRepository seenSenderDomainRepository;
+    @MockitoBean private EmailAutoAssignmentService emailAutoAssignmentService;
+    @MockitoBean private EmailAttachmentProcessingService emailAttachmentProcessingService;
+    @MockitoBean private SpamFilterService spamFilterService;
+    @MockitoBean private SteuerberaterEmailProcessingService steuerberaterEmailProcessingService;
+    @MockitoBean private OutOfOfficeResponder outOfOfficeResponder;
+    @MockitoBean private BounceErkennungService bounceErkennungService;
+    @MockitoBean private SeenSenderDomainRepository seenSenderDomainRepository;
 
     @Autowired private EmailImportService emailImportService;
     @Autowired private PostfachVersandService postfachVersandService;
@@ -88,17 +86,18 @@ class PostfachMailserverIntegrationTest {
     private EmailAbsender info;
     private EmailAbsender max;
 
-    /** GreenMail nutzt ein selbstsigniertes Zertifikat – nur in diesem Test wird ihm vertraut. */
+    /**
+     * GreenMail nutzt ein selbstsigniertes Zertifikat. Nur in diesem Test wird genau diesem
+     * Zertifikat vertraut (aus GreenMails eigenem Schlüsselspeicher), keinem beliebigen.
+     */
     @BeforeAll
     static void vertraueTestserver() throws Exception {
         vorherigerKontext = SSLContext.getDefault();
-        SSLContext alles = SSLContext.getInstance("TLS");
-        alles.init(null, new TrustManager[] { new X509TrustManager() {
-            @Override public void checkClientTrusted(X509Certificate[] chain, String authType) { }
-            @Override public void checkServerTrusted(X509Certificate[] chain, String authType) { }
-            @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-        } }, new SecureRandom());
-        SSLContext.setDefault(alles);
+        TrustManagerFactory nurGreenMail = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        nurGreenMail.init(new DummySSLServerSocketFactory().getKeyStore());
+        SSLContext kontext = SSLContext.getInstance("TLS");
+        kontext.init(null, nurGreenMail.getTrustManagers(), null);
+        SSLContext.setDefault(kontext);
     }
 
     @AfterAll

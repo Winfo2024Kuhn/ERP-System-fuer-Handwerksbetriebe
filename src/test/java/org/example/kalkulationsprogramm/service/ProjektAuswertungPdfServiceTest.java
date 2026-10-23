@@ -1,7 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
-import com.lowagie.text.pdf.PdfReader;
-import com.lowagie.text.pdf.parser.PdfTextExtractor;
+import org.openpdf.text.pdf.PdfReader;
+import org.openpdf.text.pdf.parser.PdfTextExtractor;
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -386,16 +386,13 @@ class ProjektAuswertungPdfServiceTest {
 
         /** Liest den Text aller Seiten des PDFs aus. */
         private String extrahiereText(Path pdf) throws Exception {
-            PdfReader reader = new PdfReader(pdf.toString());
-            try {
+            try (PdfReader reader = new PdfReader(pdf.toString())) {
                 PdfTextExtractor extractor = new PdfTextExtractor(reader);
                 StringBuilder sb = new StringBuilder();
                 for (int seite = 1; seite <= reader.getNumberOfPages(); seite++) {
                     sb.append(extractor.getTextFromPage(seite)).append('\n');
                 }
                 return sb.toString();
-            } finally {
-                reader.close();
             }
         }
 

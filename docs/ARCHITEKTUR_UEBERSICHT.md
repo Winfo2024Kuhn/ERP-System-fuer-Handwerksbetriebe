@@ -10,7 +10,7 @@ Dieses Dokument beschreibt die technische Architektur des Handwerkerprogramms â€
 
 | Schicht | Technologie | Version |
 |---|---|---|
-| **Backend** | Java, Spring Boot (Web, Security, Data JPA/Hibernate, Actuator), Flyway | Java 23, Spring Boot 3.2.5 |
+| **Backend** | Java, Spring Boot (Web, Security, Data JPA/Hibernate, Actuator), Flyway | Java 25, Spring Boot 4.1 |
 | **Datenbank** | PostgreSQL (einzige Datenbank; H2 nur in den automatischen Tests) | PostgreSQL 16 |
 | **Desktop-Frontend** | React, TypeScript, Vite, Tailwind CSS | React 19, TypeScript 5.9, Vite 7, Tailwind 3 |
 | **Mobile App** | React-PWA (`vite-plugin-pwa`, eigener Service Worker, Offline-Speicher in IndexedDB Ã¼ber `idb`) | React 19, Vite 7, Tailwind 4 |

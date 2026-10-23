@@ -6,10 +6,10 @@ import org.example.kalkulationsprogramm.repository.*;
 import org.example.kalkulationsprogramm.service.*;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import java.util.*;
 import org.example.kalkulationsprogramm.testsupport.SitzungsRechteImTest;
@@ -27,11 +27,11 @@ class MonatsabschlussSecurityTest {
         @org.springframework.context.annotation.Bean CloudflareAccessJwtFilter cloudflareAccessJwtFilter() { return new CloudflareAccessJwtFilter(); }
     }
     @Autowired MockMvc mvc;
-    @MockBean FrontendUserDetailsService frontendUserDetailsService;
-    @MockBean FrontendUserProfileRepository profiles;
-    @MockBean MonatsSaldoService saldo;
-    @MockBean AbteilungRepository abteilungen;
-    @MockBean AbteilungDokumentBerechtigungRepository dokumentRechte;
+    @MockitoBean FrontendUserDetailsService frontendUserDetailsService;
+    @MockitoBean FrontendUserProfileRepository profiles;
+    @MockitoBean MonatsSaldoService saldo;
+    @MockitoBean AbteilungRepository abteilungen;
+    @MockitoBean AbteilungDokumentBerechtigungRepository dokumentRechte;
     static final String BASE = "/api/zeitverwaltung/monatsabschluesse";
 
     @BeforeEach

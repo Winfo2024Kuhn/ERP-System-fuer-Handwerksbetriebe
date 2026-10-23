@@ -7,18 +7,19 @@ import org.example.kalkulationsprogramm.service.KostenstelleService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.IOException;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -33,19 +34,19 @@ class FirmaControllerLogoTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private FirmeninformationService firmeninformationService;
 
-    @MockBean
+    @MockitoBean
     private KostenstelleService kostenstelleService;
 
-    @MockBean
+    @MockitoBean
     private SteuerberaterKontaktService steuerberaterKontaktService;
 
-    @MockBean
+    @MockitoBean
     private org.example.kalkulationsprogramm.service.FeiertageVorschauService feiertageVorschauService;
 
-    @MockBean
+    @MockitoBean
     private EmailAbsenderService emailAbsenderService;
 
     @Test

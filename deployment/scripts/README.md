@@ -86,7 +86,7 @@ von `deployment/docker-server`). Ein JAR erreicht diese Datenbank aber nicht –
 
 - ✅ Git
 - ✅ Node.js mit npm (für den Frontend-Build; sonst `-SkipFrontendBuild`)
-- ✅ Java JDK 23 (Maven kommt über `mvnw.cmd` aus dem Repository)
+- ✅ Java JDK 25 (Maven kommt über `mvnw.cmd` aus dem Repository)
 - ✅ Docker Desktop mit dem Datenbank-Container (für die Sicherung)
 - ✅ Das Repository unter `C:\Github\ERP-System-fuer-Handwerksbetriebe` (fest im Skript)
 - ✅ Administrator-Rechte (fragt das Skript selbst an)

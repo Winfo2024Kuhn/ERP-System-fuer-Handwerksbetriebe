@@ -10,8 +10,8 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-AGPL_v3-blue" alt="AGPL v3" /></a>
-  <img src="https://img.shields.io/badge/Java-23-orange?logo=openjdk" alt="Java 23" />
-  <img src="https://img.shields.io/badge/Spring_Boot-3.2-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot 3.2" />
+  <img src="https://img.shields.io/badge/Java-25-orange?logo=openjdk" alt="Java 25" />
+  <img src="https://img.shields.io/badge/Spring_Boot-4.1-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot 4.1" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19" />
   <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 16" />
 </p>
@@ -84,7 +84,7 @@ Danach `http://localhost:8080` öffnen und gleich registrieren: Der erste Benutz
 
 **Im Betrieb (Windows-PC oder Linux-Server):** Ordner [`deployment/docker-server`](deployment/docker-server) auf den Rechner kopieren, unter Windows `Einrichten.cmd` doppelklicken, unter Linux `sudo ./einrichten.sh` ausführen. Das richtet PostgreSQL, das ERP, einen Updater und eine Netzsperre ein. Der Updater sichert jede Nacht um 2 Uhr die Datenbank (auf Wunsch zusätzlich mit den Dateien auf eine externe Festplatte oder in einen Cloud-Ordner), spielt um 3 Uhr neue Versionen ein, sichert davor noch einmal und rollt bei Fehlern zurück. Die Netzsperre lässt das ERP ins Internet (Mail, KI, Website), aber nicht ins übrige Firmennetz. Das ERP selbst kommt als fertiges Image aus der GitHub Container Registry. Anleitung: [EINRICHTEN.md](deployment/docker-server/EINRICHTEN.md).
 
-**Zur Entwicklung:** Java 23, Node.js 20.19 oder neuer und Docker für die Datenbank (PostgreSQL 16).
+**Zur Entwicklung:** Java 25, Node.js 20.19 oder neuer und Docker für die Datenbank (PostgreSQL 16).
 
 ```bash
 docker run -d --name erp-dev-pg -p 127.0.0.1:5432:5432 -e POSTGRES_DB=kalkulationsprogramm_db -e POSTGRES_USER=erp_user -e POSTGRES_PASSWORD=erp_dev postgres:16
@@ -98,7 +98,7 @@ Die Datenbank-Zugangsdaten (hier `erp_user` / `erp_dev`) kommen in die `applicat
 
 | Schicht | Umsetzung |
 | --- | --- |
-| Backend | Java 23, Spring Boot 3.2, Spring Security, JPA/Hibernate, Flyway |
+| Backend | Java 25, Spring Boot 4.1, Spring Security, JPA/Hibernate, Flyway |
 | Datenbank | PostgreSQL 16 |
 | Desktop | React 19, TypeScript, Vite, Tailwind CSS |
 | Handy | React-PWA mit IndexedDB für den Offline-Betrieb, Web-Push |

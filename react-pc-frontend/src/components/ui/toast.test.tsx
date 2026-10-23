@@ -140,3 +140,76 @@ it('blendet Meldungen nach Ablauf aus und beendet Timer beim Unmount', async () 
         unmount(); vi.useRealTimers();
     }
 });
+
+describe('Meldung mit Aktion (z. B. Rückgängig)', () => {
+    function MitAktion({ onRueckgaengig }: { onRueckgaengig: () => void }) {
+        const toast = useToast();
+        return <>
+            <button onClick={() => toast.success('„Geländer“ gelöscht.', { aktion: { label: 'Rückgängig', onClick: onRueckgaengig }, dauerMs: 6000 })}>Löschen</button>
+            <button onClick={() => toast.info('Nur Dauer', 1000)}>Kurz</button>
+        </>;
+    }
+
+    it('zeigt den Aktionsknopf, führt ihn aus und schließt die Meldung', async () => {
+        const rueckgaengig = vi.fn();
+        render(<ToastProvider><MitAktion onRueckgaengig={rueckgaengig} /></ToastProvider>);
+        await act(async () => { screen.getByText('Löschen').click(); });
+        const knopf = screen.getByRole('button', { name: 'Rückgängig' });
+        await act(async () => { knopf.click(); });
+        expect(rueckgaengig).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText('„Geländer“ gelöscht.')).not.toBeInTheDocument();
+    });
+
+    it('nutzt dauerMs aus den Optionen und bleibt mit einer Zahl rückwärtskompatibel', () => {
+        vi.useFakeTimers();
+        try {
+            render(<ToastProvider><MitAktion onRueckgaengig={vi.fn()} /></ToastProvider>);
+            act(() => { screen.getByText('Löschen').click(); screen.getByText('Kurz').click(); });
+            act(() => vi.advanceTimersByTime(1000));
+            expect(screen.queryByText('Nur Dauer')).not.toBeInTheDocument();
+            expect(screen.getByText('„Geländer“ gelöscht.')).toBeInTheDocument();
+            act(() => vi.advanceTimersByTime(5000));
+            expect(screen.queryByText('„Geländer“ gelöscht.')).not.toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('zeigt ohne Aktion keinen zusätzlichen Knopf', async () => {
+        render(<ToastProvider><MitAktion onRueckgaengig={vi.fn()} /></ToastProvider>);
+        await act(async () => { screen.getByText('Kurz').click(); });
+        expect(screen.queryByRole('button', { name: 'Rückgängig' })).not.toBeInTheDocument();
+    });
+});
+
+describe('Meldung vorzeitig schließen', () => {
+    it('schließt Meldungen mit einem Schlüssel, andere bleiben stehen', async () => {
+        function Probe() {
+            const toast = useToast();
+            return <>
+                <button onClick={() => toast.success('„Geländer“ gelöscht.', { aktion: { label: 'Rückgängig', onClick: () => undefined }, schluessel: 'ordner:2' })}>Zeigen</button>
+                <button onClick={() => toast.info('Andere Meldung')}>Andere</button>
+                <button onClick={() => toast.schliessen('ordner:2')}>Schließen</button>
+                <button onClick={() => toast.schliessen('unbekannt')}>Unbekannt</button>
+            </>;
+        }
+        render(<ToastProvider><Probe /></ToastProvider>);
+        await act(async () => { screen.getByText('Zeigen').click(); screen.getByText('Andere').click(); });
+        await act(async () => { screen.getByText('Unbekannt').click(); });
+        expect(screen.getByText('„Geländer“ gelöscht.')).toBeInTheDocument();
+        await act(async () => { screen.getByText('Schließen').click(); });
+        expect(screen.queryByText('„Geländer“ gelöscht.')).not.toBeInTheDocument();
+        expect(screen.getByText('Andere Meldung')).toBeInTheDocument();
+    });
+
+    it('gibt nichts zurück – Aufrufe direkt in useEffect bleiben erlaubt', async () => {
+        function Probe() {
+            const toast = useToast();
+            useEffect(() => toast.error('Beim Laden schiefgegangen'), [toast]);
+            return null;
+        }
+        const { unmount } = render(<ToastProvider><Probe /></ToastProvider>);
+        expect(screen.getByText('Beim Laden schiefgegangen')).toBeInTheDocument();
+        expect(() => unmount()).not.toThrow();
+    });
+});

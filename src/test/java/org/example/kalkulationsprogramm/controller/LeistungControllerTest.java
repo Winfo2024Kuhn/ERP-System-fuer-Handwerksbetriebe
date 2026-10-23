@@ -1,8 +1,10 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungCreateDto;
 import org.example.kalkulationsprogramm.dto.Leistung.LeistungDto;
+import org.example.kalkulationsprogramm.dto.Leistung.LeistungVerwendungDto;
+import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.service.LeistungService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -10,11 +12,11 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -39,7 +41,7 @@ class LeistungControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private LeistungService leistungService;
 
     @Nested
@@ -261,6 +263,36 @@ class LeistungControllerTest {
             assertThrows(Exception.class, () ->
                     mockMvc.perform(delete("/api/leistungen/999"))
             );
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/leistungen/{id}/verwendung")
+    class Verwendung {
+
+        @Test
+        @DisplayName("Liefert Anzahl und Dokumente")
+        void liefertDokumente() throws Exception {
+            given(leistungService.ermittleVerwendung(12L)).willReturn(new LeistungVerwendungDto(1, List.of(
+                    new LeistungVerwendungDto.Dokument(77L, "AN-2026-031", AusgangsGeschaeftsDokumentTyp.ANGEBOT,
+                            java.time.LocalDate.of(2026, 3, 2), 9L, "Neubau Mustermann"))));
+
+            mockMvc.perform(get("/api/leistungen/12/verwendung"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dokumentAnzahl").value(1))
+                    .andExpect(jsonPath("$.dokumente[0].dokumentNummer").value("AN-2026-031"))
+                    .andExpect(jsonPath("$.dokumente[0].typ").value("ANGEBOT"))
+                    .andExpect(jsonPath("$.dokumente[0].datum").value("2026-03-02"))
+                    .andExpect(jsonPath("$.dokumente[0].bauvorhaben").value("Neubau Mustermann"));
+        }
+
+        @Test
+        @DisplayName("Unbekannte Leistung: 404")
+        void unbekannt() throws Exception {
+            given(leistungService.ermittleVerwendung(99L))
+                    .willThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Diese Leistung gibt es nicht mehr."));
+
+            mockMvc.perform(get("/api/leistungen/99/verwendung")).andExpect(status().isNotFound());
         }
     }
 }

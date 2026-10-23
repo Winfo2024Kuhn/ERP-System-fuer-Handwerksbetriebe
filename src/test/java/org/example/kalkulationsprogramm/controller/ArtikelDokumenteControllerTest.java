@@ -18,11 +18,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.hasSize;
@@ -53,21 +53,21 @@ class ArtikelDokumenteControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private ArtikelServiceContract artikelService;
-    @MockBean
+    @MockitoBean
     private ArtikelImportService artikelImportService;
-    @MockBean
+    @MockitoBean
     private LieferantenRepository lieferantenRepository;
-    @MockBean
+    @MockitoBean
     private WerkstoffRepository werkstoffRepository;
-    @MockBean
+    @MockitoBean
     private ArtikelMatchingService artikelMatchingService;
-    @MockBean
+    @MockitoBean
     private KategorieService kategorieService;
-    @MockBean
+    @MockitoBean
     private ArtikelPositionsPreisService artikelPositionsPreisService;
-    @MockBean
+    @MockitoBean
     private ArtikelDokumentService artikelDokumentService;
 
     /** Ein einfaches Multipart-Textfeld (kein Datei-Anhang) fuer @RequestPart-String-Bindings. */
@@ -214,14 +214,14 @@ class ArtikelDokumenteControllerTest {
                     new ByteArrayResource("PDF-Inhalt".getBytes()), "plan.pdf", "application/pdf", true);
             given(artikelDokumentService.ladeDatei(10L)).willReturn(datei);
 
-            // Spring's ContentDisposition.builder() liefert bei einem reinen ASCII-Namen sowohl
-            // das klassische filename= (RFC-2047-kodiert, fuer aeltere Clients) als auch das
-            // RFC-5987-konforme filename*=UTF-8''... - lokal verifiziert, nicht geraten.
+            // Spring's ContentDisposition.builder() liefert sowohl das klassische filename=
+            // (ASCII-Ersatzname, fuer aeltere Clients) als auch das RFC-5987-konforme
+            // filename*=UTF-8''... - lokal verifiziert (Spring 7), nicht geraten.
             mockMvc.perform(get("/api/artikel/dokumente/10/datei"))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Content-Type", "application/pdf"))
                     .andExpect(header().string("Content-Disposition",
-                            "inline; filename=\"=?UTF-8?Q?plan.pdf?=\"; filename*=UTF-8''plan.pdf"))
+                            "inline; filename=\"plan.pdf\"; filename*=UTF-8''plan.pdf"))
                     .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                     .andExpect(content().bytes("PDF-Inhalt".getBytes()));
         }
@@ -239,7 +239,7 @@ class ArtikelDokumenteControllerTest {
             mockMvc.perform(get("/api/artikel/dokumente/11/datei"))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Content-Disposition",
-                            "attachment; filename=\"=?UTF-8?Q?geschmuggelt.html?=\"; filename*=UTF-8''geschmuggelt.html"))
+                            "attachment; filename=\"geschmuggelt.html\"; filename*=UTF-8''geschmuggelt.html"))
                     .andExpect(header().string("X-Content-Type-Options", "nosniff"));
         }
 
@@ -251,17 +251,15 @@ class ArtikelDokumenteControllerTest {
                     new ByteArrayResource("Inhalt".getBytes()), "a\";x=\"b.pdf", "application/pdf", true);
             given(artikelDokumentService.ladeDatei(12L)).willReturn(datei);
 
-            // Tatsaechliches Verhalten von ContentDisposition.builder() lokal verifiziert (nicht
-            // geraten): Das legacy filename= (RFC-2047-Q-Encoding, fuer sehr alte Clients) laesst
-            // das eingebettete Anfuehrungszeichen unveraendert stehen - das ist Spring-eigenes
-            // Verhalten, identisch zu BelegController#downloadDatei. Sicherheitsrelevant ist das
-            // nicht: es entsteht keine zusaetzliche Kopfzeile (kein CR/LF, siehe naechster Test),
-            // und alle RFC-6266-konformen Clients nutzen bevorzugt filename*=, das hier korrekt
-            // RFC-5987-prozent-kodiert ist.
+            // Tatsaechliches Verhalten von ContentDisposition.builder() (Spring 7) lokal verifiziert
+            // (nicht geraten): Das klassische filename= ist ein ASCII-Ersatzname, in dem jedes
+            // Anfuehrungszeichen mit \ maskiert ist - es bleibt ein einziger Wert und kann nicht
+            // ausbrechen. Identisch zu BelegController#downloadDatei. Alle RFC-6266-konformen
+            // Clients nutzen bevorzugt filename*=, das RFC-5987-prozent-kodiert ist.
             mockMvc.perform(get("/api/artikel/dokumente/12/datei"))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Content-Disposition",
-                            "inline; filename=\"=?UTF-8?Q?a\";x=3D\"b.pdf?=\"; filename*=UTF-8''a%22%3Bx%3D%22b.pdf"));
+                            "inline; filename=\"a\\\";x=\\\"b.pdf\"; filename*=UTF-8''a%22%3Bx%3D%22b.pdf"));
         }
 
         @Test

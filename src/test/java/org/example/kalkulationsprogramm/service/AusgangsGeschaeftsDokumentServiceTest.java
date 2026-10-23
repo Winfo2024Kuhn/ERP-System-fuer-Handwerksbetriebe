@@ -7,8 +7,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -2889,6 +2890,34 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(result.get(0).getKategorieId()).isEqualTo(20L);
             assertThat(result.get(0).getMenge()).isEqualByComparingTo(new BigDecimal("4"));
         }
+
+        @Test
+        void geloeschteLeistungZaehltUeberDieKategorieAusDerPosition() {
+            // Leistung 5 gibt es nicht mehr, die Position kennt aber noch ihren Ordner.
+            String json = "[{\"type\":\"SERVICE\",\"leistungId\":5,\"kategorieId\":10,\"quantity\":3}]";
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(1L))
+                    .thenReturn(List.of(dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT, json)));
+            when(leistungRepository.findAllById(any())).thenReturn(List.of());
+            when(produktkategorieRepository.findAllById(any())).thenReturn(List.of(kategorieRohbau));
+
+            List<KategorieVorschlagDto> result = service.berechneKategorieVorschlagFuerAnfrage(1L);
+
+            assertThat(result).singleElement().satisfies(v -> {
+                assertThat(v.getKategorieId()).isEqualTo(10L);
+                assertThat(v.getMenge()).isEqualByComparingTo(new BigDecimal("3"));
+            });
+        }
+
+        @Test
+        void geloeschteLeistungInGeloeschtemOrdnerFaelltWeg() {
+            String json = "[{\"type\":\"SERVICE\",\"leistungId\":5,\"kategorieId\":77,\"quantity\":3}]";
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(1L))
+                    .thenReturn(List.of(dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT, json)));
+            when(leistungRepository.findAllById(any())).thenReturn(List.of());
+            when(produktkategorieRepository.findAllById(any())).thenReturn(List.of());
+
+            assertThat(service.berechneKategorieVorschlagFuerAnfrage(1L)).isEmpty();
+        }
     }
 
     @Nested
@@ -2967,27 +2996,27 @@ class AusgangsGeschaeftsDokumentServiceTest {
                 ]
                 """;
             String result = service.markiereAlternativenAlsBeauftragt(altJson, Set.of("opt1"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "a")).isNotNull();
             assertThat(finde(blocks, "opt1")).isNotNull();
-            assertThat(finde(blocks, "opt1").path("optional").asBoolean()).isFalse();
+            assertThat(finde(blocks, "opt1").path("optional").asBoolean(false)).isFalse();
             assertThat(finde(blocks, "opt2")).isNull();
         }
 
         @Test
         void machtGewaehlteVarianteZurFestenPosition() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             JsonNode gewaehlt = finde(blocks, "b");
-            assertThat(gewaehlt.path("optional").asBoolean()).isFalse();
+            assertThat(gewaehlt.path("optional").asBoolean(false)).isFalse();
         }
 
         @Test
         void entferntAbgewaehlteVarianteVollstaendig() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "c")).isNull();
         }
@@ -2995,7 +3024,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void entferntAuchAbgewaehlteZusatzposition() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "d")).isNull();
         }
@@ -3003,7 +3032,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void laesstFestePositionenUnberuehrt() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "a")).isNotNull();
         }
@@ -3011,7 +3040,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void entferntAbgewaehlteAuchInnerhalbEinesBauabschnitts() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of("b", "e"));
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "e")).isNotNull();
             assertThat(finde(blocks, "f")).isNull();
@@ -3020,7 +3049,7 @@ class AusgangsGeschaeftsDokumentServiceTest {
         @Test
         void entferntAlleOptionalenWennNichtsGewaehltWurde() throws Exception {
             String result = service.markiereAlternativenAlsBeauftragt(JSON, Set.of());
-            JsonNode blocks = new ObjectMapper().readTree(result);
+            JsonNode blocks = JsonMapper.builderWithJackson2Defaults().build().readTree(result);
 
             assertThat(finde(blocks, "a")).isNotNull();
             assertThat(finde(blocks, "b")).isNull();
@@ -3030,9 +3059,9 @@ class AusgangsGeschaeftsDokumentServiceTest {
         /** Sucht einen Block ueber beide Ebenen; null wenn nicht vorhanden. */
         private JsonNode finde(JsonNode blocks, String id) {
             for (JsonNode b : blocks) {
-                if (id.equals(b.path("id").asText())) return b;
+                if (id.equals(b.path("id").asString(""))) return b;
                 for (JsonNode k : b.path("children")) {
-                    if (id.equals(k.path("id").asText())) return k;
+                    if (id.equals(k.path("id").asString(""))) return k;
                 }
             }
             return null;

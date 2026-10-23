@@ -3,9 +3,9 @@ package org.example.kalkulationsprogramm.service;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Bausteine fuer Gespraeche mit Werkzeug-Aufrufen (Gemini "Function Calling"), fuer alle KI-Dienste gleich.
@@ -41,7 +41,7 @@ public final class GeminiVerlauf {
         StringBuilder text = new StringBuilder();
         for (JsonNode teil : kandidat.path("content").path("parts")) {
             if (teil.path("thought").asBoolean(false)) continue;
-            String stueck = teil.path("text").asText("");
+            String stueck = teil.path("text").asString("");
             if (stueck.isEmpty()) continue;
             if (!text.isEmpty()) text.append('\n');
             text.append(stueck);
@@ -69,9 +69,9 @@ public final class GeminiVerlauf {
     public static ObjectNode antwortTeil(JsonNode aufruf, JsonNode ergebnis) {
         ObjectNode teil = JSON.objectNode();
         ObjectNode antwort = teil.putObject("functionResponse");
-        String id = aufruf.path("id").asText("");
+        String id = aufruf.path("id").asString("");
         if (!id.isEmpty()) antwort.put("id", id);
-        antwort.put("name", aufruf.path("name").asText(""));
+        antwort.put("name", aufruf.path("name").asString(""));
         antwort.set("response", ergebnis);
         return teil;
     }

@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
-
+import tools.jackson.databind.json.JsonMapper;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -13,11 +13,11 @@ import org.example.kalkulationsprogramm.domain.AusgelesenePosition;
 import org.example.kalkulationsprogramm.service.LieferantDokumentPositionLeser.KiAntwort;
 import org.junit.jupiter.api.Test;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 
 class LieferantDokumentPositionLeserTest {
 
-    private final LieferantDokumentPositionLeser leser = new LieferantDokumentPositionLeser(new ObjectMapper());
+    private final LieferantDokumentPositionLeser leser = new LieferantDokumentPositionLeser(JsonMapper.builderWithJackson2Defaults().build());
 
     private static byte[] pdfMitSeiten(int seiten) throws Exception {
         try (PDDocument doc = new PDDocument()) {

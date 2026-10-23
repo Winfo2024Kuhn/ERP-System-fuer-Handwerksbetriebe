@@ -158,7 +158,7 @@ Write-Log "JAR-Datei gefunden: $JarPath"
 Write-Log "Suche Java-Installation..."
 $javaExe = Find-JavaExecutable
 if (-not $javaExe) {
-    Write-Log "FEHLER: Java nicht gefunden! Bitte installieren Sie Java 23 oder höher." "ERROR"
+    Write-Log "FEHLER: Java nicht gefunden! Bitte installieren Sie Java 25 oder höher." "ERROR"
     exit 1
 }
 Write-Log "Java gefunden: $javaExe"

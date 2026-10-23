@@ -11,13 +11,10 @@ public final class EmailHtmlBackfillMain {
     }
 
     public static void main(String[] args) {
-        ConfigurableApplicationContext context = new SpringApplicationBuilder(KalkulationsprogrammApplication.class)
+        try (ConfigurableApplicationContext context = new SpringApplicationBuilder(KalkulationsprogrammApplication.class)
                 .web(WebApplicationType.NONE)
-                .run(args);
-        try {
+                .run(args)) {
             context.getBean(EmailHtmlBackfillRunner.class).run();
-        } finally {
-            context.close();
         }
     }
 }

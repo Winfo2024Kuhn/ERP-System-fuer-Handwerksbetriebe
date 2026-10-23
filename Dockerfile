@@ -20,7 +20,7 @@ RUN npm run build --prefix react-pc-frontend \
  && npm run build --prefix react-zeiterfassung
 
 # ===== Stage 2: Build the Spring Boot JAR =====
-FROM eclipse-temurin:23-jdk AS builder
+FROM eclipse-temurin:25-jdk AS builder
 
 WORKDIR /app
 
@@ -56,7 +56,7 @@ RUN ./mvnw clean package -DskipTests -B \
 FROM scratch AS ki-hilfe
 
 # ===== Stage 3: Runtime image =====
-FROM eclipse-temurin:23-jre
+FROM eclipse-temurin:25-jre
 
 # Git-Commit, aus dem das Image gebaut wurde. Setzt die GitHub Action; das
 # Nachtupdate nennt ihn in seiner Handy-Nachricht ("von abc1234 auf def5678").

@@ -171,7 +171,7 @@ Handwerksbetriebe kämpfen mit dezentralen Papierprozessen, fehlender Projektkos
 
 | Layer | Technologie |
 |-------|-------------|
-| Backend | Spring Boot 3.2.5, Java 23, JPA/Hibernate, Flyway |
+| Backend | Spring Boot 4.1, Java 25, JPA/Hibernate, Flyway |
 | Datenbank | PostgreSQL 16 |
 | PC-Frontend | React 19 + TypeScript + Vite + Tailwind CSS |
 | Mobile | React-PWA (Zeiterfassung, offline-fähig) |

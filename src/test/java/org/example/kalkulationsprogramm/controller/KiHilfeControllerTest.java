@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.service.KiHilfeService;
 import org.example.kalkulationsprogramm.service.KiHilfeService.ChatMessage;
 import org.example.kalkulationsprogramm.service.KiHilfeService.ChatResult;
@@ -9,13 +9,13 @@ import org.example.kalkulationsprogramm.service.KiHilfeService.SourceLink;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.mock.web.MockAsyncContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -69,7 +69,7 @@ class KiHilfeControllerTest {
     @Autowired
     private KiHilfeController controller;
 
-    @MockBean
+    @MockitoBean
     private KiHilfeService kiHilfeService;
 
     private String anfrage(List<Map<String, String>> nachrichten, Map<String, Object> kontext) throws Exception {

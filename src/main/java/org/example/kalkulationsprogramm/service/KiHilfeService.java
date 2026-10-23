@@ -22,10 +22,10 @@ import org.example.kalkulationsprogramm.service.kihilfe.KiHilfeWerkzeuge;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -164,9 +164,9 @@ public class KiHilfeService {
             Beschreibe die Navigation IMMER als: Hauptreiter → Menüpunkt (z.B. "Projektmanagement → Anfragen").
             
             ### 1. Vorlagen & Stammdaten
-            - **Dokumente:** Textvorlagen, Leistungen, Stundensätze
+            - **Dokumente:** Textvorlagen, Stundensätze
             - **Kontakte:** Kunden, Mitarbeiter, Lieferanten
-            - **Katalog:** Artikel, Arbeitsgänge (nur Admin), Projekt-Kategorien
+            - **Katalog:** Artikel, Leistungen & Kategorien (Leistungen in Ordnern; dieselben Ordner sind die Kategorien der Projekte, mit Auswertung), Arbeitsgänge (nur Admin)
             - **Administration:** Firma, Formularwesen, Einstellungen (dort u. a. der Reiter „Abteilungen & Rechte“)
             
             ### 2. Projektmanagement
@@ -211,9 +211,8 @@ public class KiHilfeService {
             | Lieferanten | [Lieferanten](/lieferanten) |
             | Artikel | [Artikel](/artikel) |
             | Arbeitsgänge | [Arbeitsgänge](/arbeitsgaenge) |
-            | Projekt-Kategorien | [Projekt-Kategorien](/produktkategorien) |
             | Textvorlagen | [Textvorlagen](/textbausteine) |
-            | Leistungen | [Leistungen](/leistungen) |
+            | Leistungen & Kategorien | [Leistungen & Kategorien](/leistungen) |
             | Stundensätze | [Stundensätze](/arbeitszeitarten) |
             | Firma | [Firma](/firma) |
             | Formularwesen | [Formularwesen](/formulare) |
@@ -575,7 +574,7 @@ public class KiHilfeService {
                 }
                 String replyText = GeminiVerlauf.text(kandidat);
                 if (replyText.isBlank() && nachschlagen
-                        && KAPUTTER_AUFRUF.equals(kandidat.path("finishReason").asText(""))) {
+                        && KAPUTTER_AUFRUF.equals(kandidat.path("finishReason").asString(""))) {
                     // Die KI hat einen Werkzeug-Aufruf verbockt: noch einmal, dann aber mit Antwortpflicht
                     log.warn("  -> Gemini: kaputter Werkzeug-Aufruf, Antwort ohne weiteres Nachschlagen");
                     antwortErzwingen = true;
@@ -678,7 +677,7 @@ public class KiHilfeService {
         if (!queries.isArray() || queries.isEmpty()) return;
         log.info("  -> Google Search Queries: {}", queries.size());
         for (JsonNode query : queries) {
-            String text = query.asText("").strip();
+            String text = query.asString("").strip();
             if (text.isEmpty() || bisher.size() >= MAX_WEBSUCHEN_ANZEIGE || !bisher.add(text)) continue;
             melden.accept("Sucht im Internet: " + text);
         }
@@ -728,8 +727,8 @@ public class KiHilfeService {
         List<SourceLink> sources = new ArrayList<>();
         for (JsonNode chunk : chunks) {
             JsonNode web = chunk.path("web");
-            String uri = web.path("uri").asText("");
-            String title = web.path("title").asText("");
+            String uri = web.path("uri").asString("");
+            String title = web.path("title").asString("");
             if (!uri.isEmpty()) {
                 sources.add(new SourceLink(title.isEmpty() ? uri : title, uri));
             }
