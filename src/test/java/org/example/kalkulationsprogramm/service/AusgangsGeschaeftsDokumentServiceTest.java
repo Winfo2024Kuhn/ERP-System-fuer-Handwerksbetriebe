@@ -2889,6 +2889,34 @@ class AusgangsGeschaeftsDokumentServiceTest {
             assertThat(result.get(0).getKategorieId()).isEqualTo(20L);
             assertThat(result.get(0).getMenge()).isEqualByComparingTo(new BigDecimal("4"));
         }
+
+        @Test
+        void geloeschteLeistungZaehltUeberDieKategorieAusDerPosition() {
+            // Leistung 5 gibt es nicht mehr, die Position kennt aber noch ihren Ordner.
+            String json = "[{\"type\":\"SERVICE\",\"leistungId\":5,\"kategorieId\":10,\"quantity\":3}]";
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(1L))
+                    .thenReturn(List.of(dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT, json)));
+            when(leistungRepository.findAllById(any())).thenReturn(List.of());
+            when(produktkategorieRepository.findAllById(any())).thenReturn(List.of(kategorieRohbau));
+
+            List<KategorieVorschlagDto> result = service.berechneKategorieVorschlagFuerAnfrage(1L);
+
+            assertThat(result).singleElement().satisfies(v -> {
+                assertThat(v.getKategorieId()).isEqualTo(10L);
+                assertThat(v.getMenge()).isEqualByComparingTo(new BigDecimal("3"));
+            });
+        }
+
+        @Test
+        void geloeschteLeistungInGeloeschtemOrdnerFaelltWeg() {
+            String json = "[{\"type\":\"SERVICE\",\"leistungId\":5,\"kategorieId\":77,\"quantity\":3}]";
+            when(dokumentRepository.findByAnfrageIdOrderByDatumDesc(1L))
+                    .thenReturn(List.of(dok(AusgangsGeschaeftsDokumentTyp.ANGEBOT, json)));
+            when(leistungRepository.findAllById(any())).thenReturn(List.of());
+            when(produktkategorieRepository.findAllById(any())).thenReturn(List.of());
+
+            assertThat(service.berechneKategorieVorschlagFuerAnfrage(1L)).isEmpty();
+        }
     }
 
     @Nested

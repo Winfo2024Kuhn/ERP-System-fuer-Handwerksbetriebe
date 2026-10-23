@@ -461,7 +461,7 @@ Buttons sollen im gesamten Programm einheitlich gestaltet werden, um eine konsis
 - **CSS-Klassen:** `bg-rose-600 text-white border border-rose-600 hover:bg-rose-700` (= `variant="default"`)
 - **Verwendung:** Hauptaktionen wie "Neu", "Speichern"
 - **Beispiele:**
-    - Leistungseditor → "+ Neue Leistung" (`src/pages/Leistungseditor.tsx`)
+    - Leistungen & Kategorien → "Neue Leistung" (`src/pages/leistungen/LeistungenReiter.tsx`)
     - E-Mail-Textvorlagen → "Speichern" (`src/pages/EmailTextvorlagenEditor.tsx`)
 
 ### Sekundärer Button (Outline)
@@ -627,10 +627,9 @@ Nur für einen Header ohne Seitenrahmen gibt es `PageHeader` aus `src/components
 | ErfolgsanalyseEditor | Controlling         |
 | FormularwesenMain (Formularwesen) | Vorlagen-Center |
 | BestellungEditor     | Einkauf             |
-| Leistungseditor      | Textverwaltung      |
+| LeistungenUndKategorien | Katalog          |
 | ArbeitsgangEditor    | Arbeitsplanung      |
 | AnfrageEditor        | Anfragemanagement   |
-| ProduktkategorieEditor | Artikelverwaltung  |
 | TelefonPage, EmailEinstellungenPage | Kommunikation |
 | MietabrechnungEditor | Finanzen & Controlling |
 
