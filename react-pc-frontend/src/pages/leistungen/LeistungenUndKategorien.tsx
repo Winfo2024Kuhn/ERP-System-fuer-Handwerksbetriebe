@@ -392,7 +392,7 @@ export default function LeistungenUndKategorien() {
 
     return (
         <PageLayout
-            ribbonCategory="Katalog"
+            ribbonCategory="Vorlagen & Stammdaten"
             title="Leistungen & Kategorien"
             titelInfo={<InfoSeite />}
             subtitle="Ihre Leistungen in Ordnern – dieselben Ordner ordnen auch Ihre Projekte ein."

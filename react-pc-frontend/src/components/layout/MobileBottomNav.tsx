@@ -64,14 +64,8 @@ const MORE_SECTIONS: NavSection[] = [
     {
         label: 'Dokumente',
         items: [
-            { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
-        ]
-    },
-    {
-        label: 'Katalog',
-        items: [
             { name: 'Leistungen & Kategorien', href: '/leistungen', icon: Layers },
-            { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
+            { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
         ]
     },
     {
@@ -87,6 +81,7 @@ const MORE_SECTIONS: NavSection[] = [
         items: [
             { name: 'Feiertage', href: '/feiertage', icon: CalendarDays },
             { name: 'Formularwesen', href: '/formulare', icon: FileJson },
+            { name: 'Arbeitsgänge', href: '/arbeitsgaenge', icon: Clock },
             { name: 'Benutzer', href: '/benutzer', icon: User },
         ]
     },

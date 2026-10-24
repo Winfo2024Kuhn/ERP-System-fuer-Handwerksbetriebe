@@ -30,7 +30,7 @@ describe('Menüleiste – Arbeitsgänge nur für Admins', () => {
     beforeEach(() => setzeTelefonBerechtigungZurueck());
     afterEach(() => vi.unstubAllGlobals());
 
-    it('zeigt Arbeitsgänge für Admins unter Vorlagen & Stammdaten → Katalog', async () => {
+    it('zeigt Arbeitsgänge für Admins unter Vorlagen & Stammdaten → Administration', async () => {
         stubbe(true);
         zeige();
         fireEvent.click(await screen.findByRole('button', { name: 'Vorlagen & Stammdaten' }));
@@ -38,7 +38,7 @@ describe('Menüleiste – Arbeitsgänge nur für Admins', () => {
         expect(await screen.findByRole('link', { name: /Arbeitsgänge/ })).toHaveAttribute('href', '/arbeitsgaenge');
     });
 
-    it('blendet Arbeitsgänge für andere Benutzer aus, der übrige Katalog bleibt', async () => {
+    it('blendet Arbeitsgänge für andere Benutzer aus, die übrigen Stammdaten bleiben', async () => {
         stubbe(false);
         zeige();
         fireEvent.click(await screen.findByRole('button', { name: 'Vorlagen & Stammdaten' }));

@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { NAVIGATION, ZEITERFASSUNG_KATEGORIE, ZEITERFASSUNG_PFADE, istZeiterfassungPfad } from './navigation';
 
+describe('Reiter „Vorlagen & Stammdaten“', () => {
+    const gruppen = NAVIGATION.find((kategorie) => kategorie.category === 'Vorlagen & Stammdaten')!.subgroups;
+    const namenIn = (label: string) => gruppen.find((gruppe) => gruppe.label === label)!.items.map((eintrag) => eintrag.name);
+
+    it('zeigt Leistungen & Kategorien unter Dokumente links vor den Textvorlagen', () => {
+        expect(namenIn('Dokumente')).toEqual(['Leistungen & Kategorien', 'Textvorlagen', 'Stundensätze']);
+        expect(namenIn('Katalog')).toEqual(['Artikel']);
+    });
+
+    it('führt Arbeitsgänge unter Administration', () => {
+        expect(namenIn('Administration')).toContain('Arbeitsgänge');
+    });
+});
+
 describe('Zeiterfassungs-Seiten', () => {
     it('stammen genau aus der Menü-Gruppe „Zeiterfassung“', () => {
         const ausMenue = NAVIGATION
