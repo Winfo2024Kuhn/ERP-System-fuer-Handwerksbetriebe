@@ -118,7 +118,7 @@ test('Übersicht aller Ordner führt in die Auswertung eines Ordners und seiner 
     await expect(page.getByRole('heading', { name: 'Geländer', level: 2 })).toBeVisible();
 });
 
-test('alte Adresse /produktkategorien führt auf „Leistungen & Kategorien“, Menüeintrag unter Katalog', async ({ page }) => {
+test('alte Adresse /produktkategorien führt auf „Leistungen & Kategorien“, Menüeintrag unter Dokumente', async ({ page }) => {
     await stubbeLeistungenApi(page);
     await page.goto('/produktkategorien');
     await expect(page).toHaveURL(/\/leistungen$/);

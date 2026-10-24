@@ -164,10 +164,10 @@ public class KiHilfeService {
             Beschreibe die Navigation IMMER als: Hauptreiter → Menüpunkt (z.B. "Projektmanagement → Anfragen").
             
             ### 1. Vorlagen & Stammdaten
-            - **Dokumente:** Textvorlagen, Stundensätze
+            - **Dokumente:** Leistungen & Kategorien (Leistungen in Ordnern; dieselben Ordner sind die Kategorien der Projekte, mit Auswertung), Textvorlagen, Stundensätze
             - **Kontakte:** Kunden, Mitarbeiter, Lieferanten
-            - **Katalog:** Artikel, Leistungen & Kategorien (Leistungen in Ordnern; dieselben Ordner sind die Kategorien der Projekte, mit Auswertung), Arbeitsgänge (nur Admin)
-            - **Administration:** Firma, Formularwesen, Einstellungen (dort u. a. der Reiter „Abteilungen & Rechte“)
+            - **Katalog:** Artikel
+            - **Administration:** (nur Admin) Firma, Formularwesen, Arbeitsgänge, Einstellungen (dort u. a. der Reiter „Abteilungen & Rechte“)
             
             ### 2. Projektmanagement
             - **Aufträge:** Projekte, Anfragen

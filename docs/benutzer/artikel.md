@@ -85,7 +85,7 @@ Der „Werkstoff“ am Artikel kommt aus einer eigenen Liste. Sie lässt sich in
 
 In **Vorlagen & Stammdaten → Artikel** öffnet „Kategorien anlegen“ das Fenster „Kategorien verwalten“. Links steht die Ordnerstruktur. Ohne Auswahl entsteht mit „Hauptkategorie anlegen“ ein neuer Hauptordner; ist links ein Ordner gewählt, entsteht mit „Unterkategorie anlegen“ ein Unterordner darin. Umbenennen oder löschen lassen sich Ordner nicht.
 
-Der Menüpunkt **Katalog → Leistungen & Kategorien** ist etwas anderes: Dort stehen die Ordner Ihrer Leistungen. Dieselben Ordner sind die Gewerke (Kategorien), nach denen Projekte eingeordnet und ausgewertet werden.
+Der Menüpunkt **Dokumente → Leistungen & Kategorien** ist etwas anderes: Dort stehen die Ordner Ihrer Leistungen. Dieselben Ordner sind die Gewerke (Kategorien), nach denen Projekte eingeordnet und ausgewertet werden.
 
 ## Was zeigt ein Artikel?
 
