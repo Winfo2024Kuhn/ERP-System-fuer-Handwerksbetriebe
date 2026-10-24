@@ -320,107 +320,123 @@ export const VerrechnungslohnRechnerDialog: React.FC<VerrechnungslohnRechnerDial
         stunden: false,
     });
 
-    // Reset beim Öffnen
+    // Reset beim Öffnen (Zustand beim Rendern, die Vorschlags-Ref im Effekt darunter)
+    const [warOffen, setWarOffen] = useState(false);
+    if (open !== warOffen) {
+        setWarOffen(open);
+        if (open) {
+            setJahr(currentYear);
+            setInternEntwurf(formatDecimalInput(DEFAULT_INTERN_PROZENT));
+            setInternBerechnet(DEFAULT_INTERN_PROZENT);
+            setGewinnProzent(DEFAULT_GEWINN_PROZENT);
+            setZellenEntwuerfe({});
+            setLohnOverrides({});
+            setStundenOverrides({});
+            setKostenstelleOverrides({});
+            setAbteilungAufschlaege({});
+            setExpanded({ lohn: false, gemeinkosten: false, stunden: false });
+            setError(null);
+            setData(null);
+        }
+    }
     useEffect(() => {
-        if (!open) return;
-        setJahr(currentYear);
-        setInternEntwurf(formatDecimalInput(DEFAULT_INTERN_PROZENT));
-        setInternBerechnet(DEFAULT_INTERN_PROZENT);
-        setGewinnProzent(DEFAULT_GEWINN_PROZENT);
-        setZellenEntwuerfe({});
-        setLohnOverrides({});
-        setStundenOverrides({});
-        setKostenstelleOverrides({});
-        setAbteilungAufschlaege({});
-        letzteVorschlaegeRef.current = {};
-        setExpanded({ lohn: false, gemeinkosten: false, stunden: false });
-        setError(null);
-        setData(null);
+        if (open) letzteVorschlaegeRef.current = {};
     }, [open]);
 
     // Daten laden. Eine laufende Abfrage wird abgebrochen, sobald eine neue
     // startet – sonst kann eine langsame alte Antwort die neue überschreiben.
     const abbruchRef = useRef<AbortController | null>(null);
 
-    const loadData = useCallback(async () => {
+    // Neue Abfrage (Dialog offen, anderes Jahr oder andere Quote): sofort „wird berechnet“ zeigen.
+    const abfrageFuer = open ? `${jahr}|${internBerechnet}` : null;
+    const [abfrageGestartetFuer, setAbfrageGestartetFuer] = useState<string | null>(null);
+    if (abfrageFuer !== abfrageGestartetFuer) {
+        setAbfrageGestartetFuer(abfrageFuer);
+        if (abfrageFuer) {
+            setLoading(true);
+            setError(null);
+        }
+    }
+
+    const loadData = useCallback(() => {
         abbruchRef.current?.abort();
         const controller = new AbortController();
         abbruchRef.current = controller;
 
-        setLoading(true);
-        setError(null);
-        try {
-            const params = new URLSearchParams({
-                jahr: String(jahr),
-                internProzent: String(internBerechnet),
-            });
-            const res = await fetch(`/api/verrechnungslohn?${params.toString()}`, {
-                signal: controller.signal,
-            });
-            if (!res.ok) {
-                if (res.status === 404) {
-                    const message = 'Der Verrechnungslohn-Service ist auf diesem Server noch nicht freigeschaltet.';
-                    setError(message);
-                    showError(message);
-                } else {
-                    const message = await leseFehlermeldung(res, 'Der Verrechnungslohn konnte nicht berechnet werden.');
-                    // Während des Lesens kann schon eine neuere Abfrage laufen – die gewinnt.
-                    if (controller.signal.aborted) return;
-                    setError(message);
-                    showError(message);
+        const params = new URLSearchParams({
+            jahr: String(jahr),
+            internProzent: String(internBerechnet),
+        });
+        return fetch(`/api/verrechnungslohn?${params.toString()}`, {
+            signal: controller.signal,
+        })
+            .then(async (res) => {
+                if (!res.ok) {
+                    if (res.status === 404) {
+                        const message = 'Der Verrechnungslohn-Service ist auf diesem Server noch nicht freigeschaltet.';
+                        setError(message);
+                        showError(message);
+                    } else {
+                        const message = await leseFehlermeldung(res, 'Der Verrechnungslohn konnte nicht berechnet werden.');
+                        // Während des Lesens kann schon eine neuere Abfrage laufen – die gewinnt.
+                        if (controller.signal.aborted) return;
+                        setError(message);
+                        showError(message);
+                    }
+                    setData(null);
+                    return;
                 }
+                const json: VerrechnungslohnErgebnis = await res.json();
+                setData(json);
+                // Der Server sagt, mit welcher Quote er gerechnet hat – Regler und
+                // Ergebnis können so nicht auseinanderlaufen. Eine noch nicht
+                // übernommene Eingabe des Nutzers wird dabei nicht überschrieben.
+                if (typeof json.interneQuoteProzent === 'number') {
+                    setInternBerechnet(json.interneQuoteProzent);
+                    setInternEntwurf((entwurf) =>
+                        entwurf === formatDecimalInput(internBerechnet) ? formatDecimalInput(json.interneQuoteProzent) : entwurf
+                    );
+                }
+                setLohnOverrides({});
+                setStundenOverrides({});
+                setKostenstelleOverrides({});
+                // Der Server schickt bei jeder Antwort seine Aufschlags-Vorschläge mit.
+                // Was der Nutzer selbst eingetragen hat, bleibt dabei stehen — erkennbar
+                // daran, dass der aktuelle Betrag vom zuletzt vorgeschlagenen abweicht.
+                // Ohne das löschte eine zweite Antwort die Eingabe stumm wieder weg.
+                const vorschlaege: Record<number, number> = {};
+                for (const a of json.abteilungen) vorschlaege[a.abteilungId] = a.aufschlagEuro;
+                // Die alten Vorschläge vorher festhalten: der Updater unten läuft erst
+                // beim nächsten Rendern, die Ref zeigt dann schon auf die neuen Werte.
+                const vorherigeVorschlaege = letzteVorschlaegeRef.current;
+                letzteVorschlaegeRef.current = vorschlaege;
+                setAbteilungAufschlaege((bisher) => {
+                    const naechste: Record<number, number> = {};
+                    for (const a of json.abteilungen) {
+                        const aktuell = bisher[a.abteilungId];
+                        const vomNutzer =
+                            aktuell !== undefined &&
+                            aktuell !== vorherigeVorschlaege[a.abteilungId];
+                        naechste[a.abteilungId] = vomNutzer ? aktuell : a.aufschlagEuro;
+                    }
+                    return naechste;
+                });
+            })
+            .catch((e: unknown) => {
+                if (controller.signal.aborted) return;
+                console.error(e);
+                setError('Verbindung zum Server fehlgeschlagen.');
+                showError('Verbindung zum Server fehlgeschlagen.');
                 setData(null);
-                return;
-            }
-            const json: VerrechnungslohnErgebnis = await res.json();
-            setData(json);
-            // Der Server sagt, mit welcher Quote er gerechnet hat – Regler und
-            // Ergebnis können so nicht auseinanderlaufen. Eine noch nicht
-            // übernommene Eingabe des Nutzers wird dabei nicht überschrieben.
-            if (typeof json.interneQuoteProzent === 'number') {
-                setInternBerechnet(json.interneQuoteProzent);
-                setInternEntwurf((entwurf) =>
-                    entwurf === formatDecimalInput(internBerechnet) ? formatDecimalInput(json.interneQuoteProzent) : entwurf
-                );
-            }
-            setLohnOverrides({});
-            setStundenOverrides({});
-            setKostenstelleOverrides({});
-            // Der Server schickt bei jeder Antwort seine Aufschlags-Vorschläge mit.
-            // Was der Nutzer selbst eingetragen hat, bleibt dabei stehen — erkennbar
-            // daran, dass der aktuelle Betrag vom zuletzt vorgeschlagenen abweicht.
-            // Ohne das löschte eine zweite Antwort die Eingabe stumm wieder weg.
-            const vorschlaege: Record<number, number> = {};
-            for (const a of json.abteilungen) vorschlaege[a.abteilungId] = a.aufschlagEuro;
-            // Die alten Vorschläge vorher festhalten: der Updater unten läuft erst
-            // beim nächsten Rendern, die Ref zeigt dann schon auf die neuen Werte.
-            const vorherigeVorschlaege = letzteVorschlaegeRef.current;
-            letzteVorschlaegeRef.current = vorschlaege;
-            setAbteilungAufschlaege((bisher) => {
-                const naechste: Record<number, number> = {};
-                for (const a of json.abteilungen) {
-                    const aktuell = bisher[a.abteilungId];
-                    const vomNutzer =
-                        aktuell !== undefined &&
-                        aktuell !== vorherigeVorschlaege[a.abteilungId];
-                    naechste[a.abteilungId] = vomNutzer ? aktuell : a.aufschlagEuro;
-                }
-                return naechste;
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
             });
-        } catch (e) {
-            if (controller.signal.aborted) return;
-            console.error(e);
-            setError('Verbindung zum Server fehlgeschlagen.');
-            showError('Verbindung zum Server fehlgeschlagen.');
-            setData(null);
-        } finally {
-            if (!controller.signal.aborted) setLoading(false);
-        }
     }, [jahr, internBerechnet, showError]);
 
     useEffect(() => {
         if (!open) return;
-        loadData();
+        void loadData();
     }, [open, loadData]);
 
     // Offene Abfrage beenden, wenn der Dialog verschwindet.

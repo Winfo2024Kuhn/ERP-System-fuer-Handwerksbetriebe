@@ -1,0 +1,1 @@
+async function e(e,t){try{let t=await e.text(),n=JSON.parse(t);if(typeof n?.message==`string`&&n.message.trim())return n.message;if(t.trim())return t}catch{}return t}export{e as t};

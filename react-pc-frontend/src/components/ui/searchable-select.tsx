@@ -22,6 +22,16 @@ export interface SearchableSelectProps {
     icon?: React.ReactNode;
 }
 
+/** Lokale Suche: Bezeichnung oder Zusatz enthält den Suchbegriff (ohne Groß-/Kleinschreibung). */
+function filtereLokal(options: SearchableSelectOption[], searchTerm: string): SearchableSelectOption[] {
+    if (!searchTerm) return options;
+    const lower = searchTerm.toLowerCase();
+    return options.filter(o =>
+        o.label.toLowerCase().includes(lower) ||
+        (o.sublabel && o.sublabel.toLowerCase().includes(lower))
+    );
+}
+
 /**
  * A searchable dropdown select component.
  * Supports both local filtering (via options) and async backend search (via onSearch).
@@ -39,11 +49,15 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filteredOptions, setFilteredOptions] = useState<SearchableSelectOption[]>(options);
+    /** Treffer der Server-Suche (nur mit onSearch). */
+    const [asyncOptions, setAsyncOptions] = useState<SearchableSelectOption[]>(options);
     const [asyncLoading, setAsyncLoading] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Angezeigte Treffer: vom Server (onSearch) oder lokal beim Rendern gefiltert
+    const filteredOptions = onSearch ? asyncOptions : filtereLokal(options, searchTerm);
 
     // Get selected option label
     const selectedOption = options.find(o => o.value === value)
@@ -58,9 +72,9 @@ export function SearchableSelect({
             setAsyncLoading(true);
             try {
                 const results = await onSearch(term);
-                setFilteredOptions(results);
+                setAsyncOptions(results);
             } catch {
-                setFilteredOptions([]);
+                setAsyncOptions([]);
             } finally {
                 setAsyncLoading(false);
             }
@@ -74,21 +88,6 @@ export function SearchableSelect({
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, onSearch]);
-
-    // Filter options based on search term (local mode)
-    useEffect(() => {
-        if (onSearch) return; // Skip local filtering in async mode
-        if (!searchTerm) {
-            setFilteredOptions(options);
-            return;
-        }
-        const lower = searchTerm.toLowerCase();
-        const filtered = options.filter(o =>
-            o.label.toLowerCase().includes(lower) ||
-            (o.sublabel && o.sublabel.toLowerCase().includes(lower))
-        );
-        setFilteredOptions(filtered);
-    }, [searchTerm, options, onSearch]);
 
     // Handle click outside to close
     useEffect(() => {

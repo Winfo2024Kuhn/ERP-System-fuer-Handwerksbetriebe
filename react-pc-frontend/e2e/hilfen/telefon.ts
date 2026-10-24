@@ -198,7 +198,7 @@ export async function stubbeTelefonApi(page: Page, optionen: {
         const pfad = url.pathname;
         const methode = anfrage.method();
         if (methode !== 'GET') {
-            let body: unknown = null;
+            let body: unknown;
             try { body = anfrage.postDataJSON(); } catch { body = null; }
             mitschrift.push({ methode, pfad, query: url.search, body });
         }

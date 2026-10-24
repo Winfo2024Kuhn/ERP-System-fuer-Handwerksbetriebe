@@ -40,22 +40,33 @@ export function AnrufbeantworterListe({ anrufbeantworter, aktualisierung }: Anru
     const gescrollt = useRef<number | null>(null);
     const eintraegeRef = useRef(new Map<number, HTMLLIElement>());
 
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
     const anfrageRef = useRef(0);
-    const lade = useCallback(async () => {
+    const lade = useCallback(() => {
         const nummer = ++anfrageRef.current;
+        return ladeSprachnachrichten({ anrufbeantworter: abFilter, tag: tag || undefined })
+            .then((liste) => {
+                if (nummer === anfrageRef.current) setNachrichten(liste);
+            })
+            .catch((e: unknown) => {
+                if (nummer === anfrageRef.current) {
+                    setFehler(e instanceof Error ? e.message : 'Die Nachrichten konnten nicht geladen werden.');
+                }
+            })
+            .finally(() => {
+                if (nummer === anfrageRef.current) setLaedt(false);
+            });
+    }, [abFilter, tag]);
+
+    // Andere Filter, „Jetzt abholen“ oder „Erneut laden“: sofort als „lädt“
+    // zeigen, bevor der Effekt unten neu holt.
+    const ladeAnlass = JSON.stringify([abFilter, tag, aktualisierung, neuLaden]);
+    const [letzterLadeAnlass, setLetzterLadeAnlass] = useState(ladeAnlass);
+    if (letzterLadeAnlass !== ladeAnlass) {
+        setLetzterLadeAnlass(ladeAnlass);
         setLaedt(true);
         setFehler(null);
-        try {
-            const liste = await ladeSprachnachrichten({ anrufbeantworter: abFilter, tag: tag || undefined });
-            if (nummer === anfrageRef.current) setNachrichten(liste);
-        } catch (e) {
-            if (nummer === anfrageRef.current) {
-                setFehler(e instanceof Error ? e.message : 'Die Nachrichten konnten nicht geladen werden.');
-            }
-        } finally {
-            if (nummer === anfrageRef.current) setLaedt(false);
-        }
-    }, [abFilter, tag]);
+    }
 
     useEffect(() => {
         void lade();

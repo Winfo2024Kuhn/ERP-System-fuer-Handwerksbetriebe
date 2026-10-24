@@ -54,7 +54,10 @@ export function DatevBereich({ auswahl, mitarbeiter, darfEinrichten }: { auswahl
     const key = JSON.stringify({ auswahl, config });
     const exportAuswahl = auswahl.map(({ mitarbeiterId, jahr, monat, version }) => ({ mitarbeiterId, jahr, monat, version }));
     const aktuell = useRef(key);
-    useLayoutEffect(() => { aktuell.current = key; lauf.current++; setPruefung(null); setBestaetigt(false); }, [key]);
+    // Andere Auswahl oder Einstellungen: alte Vorprüfung und Bestätigung gelten nicht mehr.
+    const [letzterKey, setLetzterKey] = useState(key);
+    if (letzterKey !== key) { setLetzterKey(key); setPruefung(null); setBestaetigt(false); }
+    useLayoutEffect(() => { aktuell.current = key; lauf.current++; }, [key]);
     useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
     const grund = !auswahl.length ? 'Bitte zuerst Mitarbeiter für den Export auswählen.' : auswahl.length > 500 ? 'Bitte höchstens 500 Mitarbeiter auswählen.' : new Set(auswahl.map(s => `${s.jahr}/${s.monat}`)).size !== 1 ? 'Bitte genau einen Monat auswählen.' : auswahl.some(s => s.festgeschrieben !== true || s.version === null) ? 'Bitte die ausgewählten Monate zuerst abschließen und aktualisieren.' : '';
     const zugangFehlt = config !== null && !zugangEingetragen(config);

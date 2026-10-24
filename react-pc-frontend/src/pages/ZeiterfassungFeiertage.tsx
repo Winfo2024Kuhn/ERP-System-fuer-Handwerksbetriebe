@@ -115,24 +115,39 @@ export default function ZeiterfassungFeiertage() {
 
     const landName = bundeslandName(bundesland);
 
-    const loadFeiertage = useCallback(async (fuerJahr: number) => {
-        const nummer = ++anfrage.current;
+    // Anderes Jahr: Ladeanzeige an und alten Fehler weg, bevor der Effekt lädt.
+    const [geladenesJahr, setGeladenesJahr] = useState(jahr);
+    if (geladenesJahr !== jahr) {
+        setGeladenesJahr(jahr);
         setLoading(true);
         setLadeFehler(false);
-        try {
-            const res = await fetch(`${API}?jahr=${encodeURIComponent(fuerJahr)}`);
-            if (!res.ok) throw new Error(await leseFehlermeldung(res, 'Feiertage konnten nicht geladen werden.'));
-            const data: unknown = await res.json();
-            if (nummer === anfrage.current) setFeiertage(Array.isArray(data) ? data as FeiertagDto[] : []);
-        } catch (err) {
-            if (nummer !== anfrage.current) return;
-            setFeiertage([]);
-            setLadeFehler(true);
-            toast.error(err instanceof Error ? err.message : 'Feiertage konnten nicht geladen werden.');
-        } finally {
-            if (nummer === anfrage.current) setLoading(false);
-        }
+    }
+
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.
+    const loadFeiertage = useCallback((fuerJahr: number) => {
+        const nummer = ++anfrage.current;
+        return fetch(`${API}?jahr=${encodeURIComponent(fuerJahr)}`)
+            .then(async (res) => {
+                if (!res.ok) throw new Error(await leseFehlermeldung(res, 'Feiertage konnten nicht geladen werden.'));
+                const data: unknown = await res.json();
+                if (nummer === anfrage.current) setFeiertage(Array.isArray(data) ? data as FeiertagDto[] : []);
+            })
+            .catch((err) => {
+                if (nummer !== anfrage.current) return;
+                setFeiertage([]);
+                setLadeFehler(true);
+                toast.error(err instanceof Error ? err.message : 'Feiertage konnten nicht geladen werden.');
+            })
+            .finally(() => {
+                if (nummer === anfrage.current) setLoading(false);
+            });
     }, [toast]);
+
+    const neuLaden = () => {
+        setLoading(true);
+        setLadeFehler(false);
+        return loadFeiertage(jahr);
+    };
 
     useEffect(() => { void loadFeiertage(jahr); }, [jahr, loadFeiertage]);
 
@@ -157,7 +172,7 @@ export default function ZeiterfassungFeiertage() {
         } finally {
             setRegeneriert(false);
         }
-        await loadFeiertage(jahr);
+        await neuLaden();
     };
 
     const sperren = (id: number, an: boolean) => setInArbeit(alt => {
@@ -301,7 +316,7 @@ export default function ZeiterfassungFeiertage() {
                 ) : ladeFehler ? (
                     <div className="p-8 text-center text-sm text-slate-600">
                         <p>Die Feiertage konnten nicht geladen werden.</p>
-                        <Button variant="outline" size="sm" className="mt-3" onClick={() => void loadFeiertage(jahr)}>Erneut versuchen</Button>
+                        <Button variant="outline" size="sm" className="mt-3" onClick={() => void neuLaden()}>Erneut versuchen</Button>
                     </div>
                 ) : feiertage.length === 0 ? (
                     <div className="p-8 text-center text-sm text-slate-500">

@@ -47,30 +47,42 @@ export function KategorieAnalyseInhalt({ kategorieId, jahr, className }: Kategor
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const chartRef = useRef<Chart | null>(null);
 
-    const laden = useCallback(async () => {
+    /** Setzt Ladeanzeige, Fehler und Hinweis zurück, bevor neu geladen wird. */
+    const ladenStarten = () => {
         setLaedt(true);
         setFehler(null);
         setHinweis(null);
-        try {
-            const params = new URLSearchParams();
-            if (jahr) params.set('jahr', jahr);
-            if (ohneAusreisser) params.set('ohneAusreisser', 'true');
-            const qs = params.toString();
-            const res = await fetch(`/api/produktkategorien/${kategorieId}/analyse${qs ? `?${qs}` : ''}`);
-            if (res.status === 400) {
-                setHinweis(await leseFehlermeldung(res, 'Für diesen Ordner lässt sich keine Zeitanalyse rechnen.'));
+    };
+
+    // Anderer Ordner, anderes Jahr oder Ausreißer-Schalter: sofort wieder „wird geladen“ zeigen.
+    const abfrage = `${kategorieId}|${jahr}|${ohneAusreisser}`;
+    const [geladeneAbfrage, setGeladeneAbfrage] = useState(abfrage);
+    if (geladeneAbfrage !== abfrage) {
+        setGeladeneAbfrage(abfrage);
+        ladenStarten();
+    }
+
+    const laden = useCallback(() => {
+        const params = new URLSearchParams();
+        if (jahr) params.set('jahr', jahr);
+        if (ohneAusreisser) params.set('ohneAusreisser', 'true');
+        const qs = params.toString();
+        return fetch(`/api/produktkategorien/${kategorieId}/analyse${qs ? `?${qs}` : ''}`)
+            .then(async (res) => {
+                if (res.status === 400) {
+                    setHinweis(await leseFehlermeldung(res, 'Für diesen Ordner lässt sich keine Zeitanalyse rechnen.'));
+                    setDaten(null);
+                    return;
+                }
+                if (!res.ok) throw new Error(await leseFehlermeldung(res, 'Die Analyse konnte nicht geladen werden.'));
+                setDaten(await res.json());
+            })
+            .catch((err: unknown) => {
+                // TypeError = keine Verbindung; sonst steht die Meldung des Servers im Fehler.
+                setFehler(err instanceof Error && !(err instanceof TypeError) ? err.message : 'Die Analyse konnte nicht geladen werden.');
                 setDaten(null);
-                return;
-            }
-            if (!res.ok) throw new Error(await leseFehlermeldung(res, 'Die Analyse konnte nicht geladen werden.'));
-            setDaten(await res.json());
-        } catch (err) {
-            // TypeError = keine Verbindung; sonst steht die Meldung des Servers im Fehler.
-            setFehler(err instanceof Error && !(err instanceof TypeError) ? err.message : 'Die Analyse konnte nicht geladen werden.');
-            setDaten(null);
-        } finally {
-            setLaedt(false);
-        }
+            })
+            .finally(() => setLaedt(false));
     }, [kategorieId, jahr, ohneAusreisser]);
 
     useEffect(() => { void laden(); }, [laden]);
@@ -202,7 +214,7 @@ export function KategorieAnalyseInhalt({ kategorieId, jahr, className }: Kategor
             {fehler && !laedt && (
                 <Card className="p-4 border-rose-200 bg-rose-50 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-sm text-rose-800">{fehler}</p>
-                    <Button size="sm" variant="outline" onClick={() => void laden()}>
+                    <Button size="sm" variant="outline" onClick={() => { ladenStarten(); void laden(); }}>
                         <RefreshCw className="w-4 h-4" aria-hidden="true" /> Erneut versuchen
                     </Button>
                 </Card>

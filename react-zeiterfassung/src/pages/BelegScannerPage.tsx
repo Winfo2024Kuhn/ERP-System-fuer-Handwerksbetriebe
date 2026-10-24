@@ -99,15 +99,19 @@ interface Permissions {
 
 export default function BelegScannerPage() {
     const navigate = useNavigate()
-    const [permission, setPermission] = useState<Permissions | null>(null)
-    const [permissionLoading, setPermissionLoading] = useState(true)
+    const token = typeof window !== 'undefined' ? localStorage.getItem('zeiterfassung_token') : null
+
+    // Ohne Anmeldung gibt es nichts zu fragen: dann gleich ohne Rechte starten.
+    const [permission, setPermission] = useState<Permissions | null>(() => token ? null : { darfScannen: false, darfSehen: false })
+    const [permissionLoading, setPermissionLoading] = useState(!!token)
     const [showScanner, setShowScanner] = useState(false)
     const [queue, setQueue] = useState<QueueItem[]>([])
     // Serverseitige Liste der zuletzt hochgeladenen Belege des Aufrufers.
     // Sie ueberlebt App-Wechsel, PWA-Reload und den TEILWEISE-Navigationssprung
     // — anders als die lokale Queue, die nur in-flight + failed Items haelt.
     const [serverBelege, setServerBelege] = useState<ServerBeleg[]>([])
-    const [serverLoading, setServerLoading] = useState(false)
+    // Erst nach der ersten Antwort heißt eine leere Liste „noch keine Belege“.
+    const [serverGeladen, setServerGeladen] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     // Wizard-State: ein Beleg wird in 3 Schritten konfiguriert, dann aufgenommen.
@@ -120,14 +124,8 @@ export default function BelegScannerPage() {
     // noch waehrend des Rerenders nach Sheet-Close hereinkommt.
     const captureContextRef = useRef<{ lieferant: LieferantOption | null; modus: AufteilungsModus } | null>(null)
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('zeiterfassung_token') : null
-
     useEffect(() => {
-        if (!token) {
-            setPermission({ darfScannen: false, darfSehen: false })
-            setPermissionLoading(false)
-            return
-        }
+        if (!token) return
         fetch(`/api/buchhaltung/mobile/me/permissions?token=${token}`)
             .then(res => res.ok ? res.json() : { darfScannen: false, darfSehen: false })
             .then(setPermission)
@@ -142,17 +140,13 @@ export default function BelegScannerPage() {
     // weiterlaeuft.
     const reloadServerBelege = useCallback(async () => {
         if (!token) return
-        setServerLoading(true)
-        try {
-            const res = await fetch(`/api/buchhaltung/mobile/belege?token=${encodeURIComponent(token)}`)
-            if (!res.ok) return
-            const data = (await res.json()) as ServerBeleg[]
-            setServerBelege(data)
-        } catch {
+        await fetch(`/api/buchhaltung/mobile/belege?token=${encodeURIComponent(token)}`)
+            .then(async res => {
+                if (res.ok) setServerBelege((await res.json()) as ServerBeleg[])
+            })
             // Liste ist nur Convenience — bei Netzwerkfehler weiter mit lokalem State.
-        } finally {
-            setServerLoading(false)
-        }
+            .catch(() => undefined)
+            .finally(() => setServerGeladen(true))
     }, [token])
 
     useEffect(() => {
@@ -215,11 +209,13 @@ export default function BelegScannerPage() {
             void uploadUndNavigiereZuPositionen(file, lieferant)
             return
         }
+        // eslint-disable-next-line react-hooks/purity -- enqueue läuft nur nach einer Aufnahme (Event-Handler), nie beim Rendern
+        const [jetzt, zufall] = [Date.now(), Math.random()]
         const item: QueueItem = {
-            localId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            localId: `${jetzt}_${zufall.toString(36).slice(2, 8)}`,
             file,
             status: 'pending',
-            addedAt: Date.now(),
+            addedAt: jetzt,
             lieferantId: lieferant?.id,
             lieferantName: lieferant?.firmenname,
             aufteilungsModus: modus,
@@ -529,7 +525,7 @@ export default function BelegScannerPage() {
                     <div className="text-center text-slate-400 py-12">
                         <Receipt className="w-12 h-12 mx-auto mb-2 opacity-40" />
                         <p className="text-sm">
-                            {serverLoading ? 'Belege werden geladen…' : 'Noch keine Belege gescannt.'}
+                            {permission?.darfSehen && !serverGeladen ? 'Belege werden geladen…' : 'Noch keine Belege gescannt.'}
                         </p>
                         <p className="text-xs mt-1">Tippe oben auf <strong>Beleg hinzufügen</strong>.</p>
                     </div>

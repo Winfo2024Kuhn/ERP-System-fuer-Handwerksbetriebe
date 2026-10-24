@@ -32,6 +32,20 @@ import type {
 // ein zweiter Ort dafuer war nur eine weitere Stelle zum Suchen.
 type Tab = 'eingang' | 'alle' | 'kasse' | 'auswertung';
 
+/**
+ * Ein offener Punkt aus dem Steuerberater-Paket landet direkt in der
+ * vorhandenen Belegprüfung (`?belegId=`). Nach dem Öffnen entfernen wir den
+ * Parameter, damit der Dialog nach einem bewussten Schließen nicht erneut aufgeht.
+ */
+function belegAusAdresse(belege: Beleg[]): Beleg | null {
+    const belegId = Number(new URLSearchParams(window.location.search).get('belegId'));
+    if (!Number.isInteger(belegId) || belegId <= 0) return null;
+    const beleg = belege.find(item => item.id === belegId);
+    if (!beleg) return null;
+    window.history.replaceState(null, '', window.location.pathname);
+    return beleg;
+}
+
 export default function BelegeKasseEditor() {
     const toast = useToast();
     const [activeTab, setActiveTab] = useState<Tab>('eingang');
@@ -65,102 +79,125 @@ export default function BelegeKasseEditor() {
     const [steuerberaterPaketOpen, setSteuerberaterPaketOpen] = useState(false);
     const [steuerberaterPaketAnhang, setSteuerberaterPaketAnhang] = useState<SteuerberaterPaketAnhang | null>(null);
 
-    const loadBelege = useCallback(async () => {
-        setLoading(true);
-        try {
-            const res = await fetch('/api/buchhaltung/belege');
-            if (res.ok) {
-                const data: Beleg[] = await res.json();
-                setBelege(data);
-                setLoadError(null);
-            } else if (res.status === 403) {
-                setBelege([]);
-                setLoadError('forbidden');
-            } else {
-                setBelege([]);
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    // Den Ladehinweis schalten die Auslöser an (loadBelege bzw. Startwert).
+    const ladeBelege = useCallback(() =>
+        fetch('/api/buchhaltung/belege')
+            .then(async (res) => {
+                if (res.ok) {
+                    const data: Beleg[] = await res.json();
+                    setBelege(data);
+                    setLoadError(null);
+                    const ausAdresse = belegAusAdresse(data);
+                    if (ausAdresse) setEditing(ausAdresse);
+                } else if (res.status === 403) {
+                    setBelege([]);
+                    setLoadError('forbidden');
+                } else {
+                    setBelege([]);
+                    setLoadError('network');
+                }
+            })
+            .catch((e: unknown) => {
+                console.error('Belege laden fehlgeschlagen', e);
                 setLoadError('network');
-            }
-        } catch (e) {
-            console.error('Belege laden fehlgeschlagen', e);
-            setLoadError('network');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+            })
+            .finally(() => {
+                setLoading(false);
+            }),
+    []);
 
-    const loadSachkonten = useCallback(async () => {
-        try {
-            const res = await fetch('/api/buchhaltung/sachkonten?nurAktive=true');
-            if (res.ok) setSachkonten(await res.json());
-        } catch (e) {
-            console.error('Sachkonten laden fehlgeschlagen', e);
-        }
-    }, []);
+    /** Neu laden (Knopf, nach Änderungen, Auto-Refresh) – mit Ladehinweis. */
+    const loadBelege = useCallback(() => {
+        setLoading(true);
+        return ladeBelege();
+    }, [ladeBelege]);
 
-    const loadZahlungsarten = useCallback(async () => {
-        try {
-            const res = await fetch('/api/buchhaltung/zahlungsarten?nurAktive=true');
-            if (res.ok) setZahlungsarten(await res.json());
-        } catch (e) {
-            console.error('Zahlungsarten laden fehlgeschlagen', e);
-        }
-    }, []);
+    const loadSachkonten = useCallback(() =>
+        fetch('/api/buchhaltung/sachkonten?nurAktive=true')
+            .then(async (res) => {
+                if (res.ok) setSachkonten(await res.json());
+            })
+            .catch((e: unknown) => {
+                console.error('Sachkonten laden fehlgeschlagen', e);
+            }),
+    []);
 
-    const loadAuswertung = useCallback(async () => {
-        setAuswertungLoading(true);
-        try {
-            const params = new URLSearchParams();
-            if (auswVon) params.set('von', auswVon);
-            if (auswBis) params.set('bis', auswBis);
-            const res = await fetch(`/api/buchhaltung/auswertung?${params}`);
-            if (res.ok) setAuswertung(await res.json());
-        } catch (e) {
-            console.error('Auswertung laden fehlgeschlagen', e);
-        } finally {
-            setAuswertungLoading(false);
-        }
+    const loadZahlungsarten = useCallback(() =>
+        fetch('/api/buchhaltung/zahlungsarten?nurAktive=true')
+            .then(async (res) => {
+                if (res.ok) setZahlungsarten(await res.json());
+            })
+            .catch((e: unknown) => {
+                console.error('Zahlungsarten laden fehlgeschlagen', e);
+            }),
+    []);
+
+    const ladeAuswertung = useCallback(() => {
+        const params = new URLSearchParams();
+        if (auswVon) params.set('von', auswVon);
+        if (auswBis) params.set('bis', auswBis);
+        return fetch(`/api/buchhaltung/auswertung?${params}`)
+            .then(async (res) => {
+                if (res.ok) setAuswertung(await res.json());
+            })
+            .catch((e: unknown) => {
+                console.error('Auswertung laden fehlgeschlagen', e);
+            })
+            .finally(() => {
+                setAuswertungLoading(false);
+            });
     }, [auswVon, auswBis]);
 
-    const loadKassenbuch = useCallback(async () => {
-        setKassenLoading(true);
-        try {
-            // von/bis kann der Server laengst — genutzt hat es bisher niemand.
-            const params = new URLSearchParams();
-            if (kasseVon) params.set('von', kasseVon);
-            if (kasseBis) params.set('bis', kasseBis);
-            const res = await fetch(`/api/buchhaltung/kassenbuch?${params}`);
-            if (res.ok) {
-                setKassenbuch(await res.json());
-            }
-        } catch (e) {
-            console.error('Kassenbuch laden fehlgeschlagen', e);
-        } finally {
-            setKassenLoading(false);
-        }
+    const loadAuswertung = useCallback(() => {
+        setAuswertungLoading(true);
+        return ladeAuswertung();
+    }, [ladeAuswertung]);
+
+    const ladeKassenbuch = useCallback(() => {
+        // von/bis kann der Server laengst — genutzt hat es bisher niemand.
+        const params = new URLSearchParams();
+        if (kasseVon) params.set('von', kasseVon);
+        if (kasseBis) params.set('bis', kasseBis);
+        return fetch(`/api/buchhaltung/kassenbuch?${params}`)
+            .then(async (res) => {
+                if (res.ok) {
+                    setKassenbuch(await res.json());
+                }
+            })
+            .catch((e: unknown) => {
+                console.error('Kassenbuch laden fehlgeschlagen', e);
+            })
+            .finally(() => {
+                setKassenLoading(false);
+            });
     }, [kasseVon, kasseBis]);
 
-    useEffect(() => {
-        loadBelege();
-        loadSachkonten();
-        loadZahlungsarten();
-    }, [loadBelege, loadSachkonten, loadZahlungsarten]);
-
-    // Ein offener Punkt aus dem Steuerberater-Paket landet direkt in der
-    // vorhandenen Belegprüfung. Nach dem Öffnen entfernen wir den Parameter,
-    // damit der Dialog nach einem bewussten Schließen nicht erneut aufgeht.
-    useEffect(() => {
-        const belegId = Number(new URLSearchParams(window.location.search).get('belegId'));
-        if (!Number.isInteger(belegId) || belegId <= 0) return;
-        const beleg = belege.find(item => item.id === belegId);
-        if (!beleg) return;
-        setEditing(beleg);
-        window.history.replaceState(null, '', window.location.pathname);
-    }, [belege]);
+    const loadKassenbuch = useCallback(() => {
+        setKassenLoading(true);
+        return ladeKassenbuch();
+    }, [ladeKassenbuch]);
 
     useEffect(() => {
-        if (activeTab === 'kasse') loadKassenbuch();
-        if (activeTab === 'auswertung') loadAuswertung();
-    }, [activeTab, loadKassenbuch, loadAuswertung]);
+        void ladeBelege();
+        void loadSachkonten();
+        void loadZahlungsarten();
+    }, [ladeBelege, loadSachkonten, loadZahlungsarten]);
+
+    // Reiter oder Zeitraum gewechselt: Ladehinweis des sichtbaren Reiters sofort
+    // an, bevor der Effekt unten neu lädt.
+    const reiterAnlass = JSON.stringify([activeTab, kasseVon, kasseBis, auswVon, auswBis]);
+    const [letzterReiterAnlass, setLetzterReiterAnlass] = useState(reiterAnlass);
+    if (letzterReiterAnlass !== reiterAnlass) {
+        setLetzterReiterAnlass(reiterAnlass);
+        if (activeTab === 'kasse') setKassenLoading(true);
+        if (activeTab === 'auswertung') setAuswertungLoading(true);
+    }
+
+    useEffect(() => {
+        if (activeTab === 'kasse') void ladeKassenbuch();
+        if (activeTab === 'auswertung') void ladeAuswertung();
+    }, [activeTab, ladeKassenbuch, ladeAuswertung]);
 
     // Auto-Refresh, solange noch KI-Analysen offen sind
     useEffect(() => {

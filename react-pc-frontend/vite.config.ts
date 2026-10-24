@@ -24,7 +24,7 @@ export default defineConfig({
   plugins: [react()],
   base: '/',
   build: {
-    outDir: resolve(__dirname, '../src/main/resources/static'),
+    outDir: resolve(import.meta.dirname, '../src/main/resources/static'),
     emptyOutDir: false, // Do not delete existing legacy files yet
     rollupOptions: {
       output: {

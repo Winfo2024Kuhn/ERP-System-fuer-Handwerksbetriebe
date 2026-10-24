@@ -71,7 +71,7 @@ export default function AnfrageNotizenPage() {
     const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
     const [pendingForNotizId, setPendingForNotizId] = useState<number | null>(null)
     const pendingPhotosRef = useRef<PendingPhoto[]>([])
-    pendingPhotosRef.current = pendingPhotos
+    useEffect(() => { pendingPhotosRef.current = pendingPhotos }, [pendingPhotos])
     const [uploadFortschritt, setUploadFortschritt] = useState<{ nummer: number; gesamt: number } | null>(null)
     const mountedRef = useRef(true)
 

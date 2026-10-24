@@ -199,7 +199,7 @@ function DirektFeld({ was, anzeige, knopfLabel, eingabeLabel, startwert, inputMo
     const speichern = async () => {
         if (speichert) return;
         setSpeichert(true);
-        let fertig = false;
+        let fertig: boolean;
         try {
             fertig = await onSpeichern(entwurf);
         } finally {

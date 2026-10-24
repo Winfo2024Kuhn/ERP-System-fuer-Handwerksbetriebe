@@ -18,11 +18,15 @@ interface Supplier {
     rollen?: LieferantRolle[];
 }
 
+const KEINE_ROLLEN: LieferantRolle[] = [];
+
 export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSelect, onClose, kategorieId, kategorieName }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [passendeRollen, setPassendeRollen] = useState<LieferantRolle[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [geladeneRollen, setGeladeneRollen] = useState<LieferantRolle[]>([]);
+    // Ohne Kategorie gibt es keine passenden Rollen.
+    const passendeRollen = kategorieId ? geladeneRollen : KEINE_ROLLEN;
 
     // Escape schliesst NUR dieses Fenster. Capture-Phase plus stopPropagation,
     // damit das Event nie beim Escape-Zuhoerer eines darunterliegenden Dialogs
@@ -41,7 +45,6 @@ export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSele
 
     useEffect(() => {
         const fetchSuppliers = async () => {
-            setLoading(true);
             try {
                 const res = await fetch('/api/lieferanten?size=1000');
                 if (res.ok) {
@@ -58,14 +61,11 @@ export const SupplierSelectModal: React.FC<SupplierSelectModalProps> = ({ onSele
     }, []);
 
     useEffect(() => {
-        if (!kategorieId) {
-            setPassendeRollen([]);
-            return;
-        }
+        if (!kategorieId) return;
         fetch(`/api/artikel/kategorien/${kategorieId}/effektive-rollen`)
             .then(res => res.ok ? res.json() : [])
-            .then(data => setPassendeRollen(Array.isArray(data) ? data : []))
-            .catch(() => setPassendeRollen([]));
+            .then(data => setGeladeneRollen(Array.isArray(data) ? data : []))
+            .catch(() => setGeladeneRollen([]));
     }, [kategorieId]);
 
     const isPassend = (supplier: Supplier) =>

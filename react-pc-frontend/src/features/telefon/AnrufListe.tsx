@@ -105,40 +105,59 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
         return () => window.clearTimeout(timer);
     }, [sucheEingabe]);
 
-    const lade = useCallback(async (zielSeite: number, anhaengen: boolean) => {
+    // Start-Zustände (Spinner an, alter Fehler weg) setzt der Auslöser: beim
+    // Neuladen die Render-Anpassung unten, bei „Weitere laden“ der Knopf.
+    // Ergebnisse erst in den Promise-Callbacks übernehmen.
+    const lade = useCallback((zielSeite: number, anhaengen: boolean) => {
         const nummer = ++anfrageRef.current;
-        if (anhaengen) setLaedtMehr(true); else setLaedt(true);
-        setFehler(null);
-        try {
-            const ergebnis = await ladeAnrufe({
-                art: filter === 'verpasst' ? 'VERPASST' : undefined,
-                nurUnbekannt: filter === 'unbekannt',
-                nurOffen: filter === 'offen',
-                suche: filter === 'offen' ? undefined : suche,
-                tag: tag || undefined,
-                kontaktart: kontaktart ?? undefined,
-                seite: zielSeite,
-                groesse: SEITENGROESSE,
+        return ladeAnrufe({
+            art: filter === 'verpasst' ? 'VERPASST' : undefined,
+            nurUnbekannt: filter === 'unbekannt',
+            nurOffen: filter === 'offen',
+            suche: filter === 'offen' ? undefined : suche,
+            tag: tag || undefined,
+            kontaktart: kontaktart ?? undefined,
+            seite: zielSeite,
+            groesse: SEITENGROESSE,
+        })
+            .then((ergebnis) => {
+                if (nummer !== anfrageRef.current) return;
+                setAnrufe((alt) => (anhaengen ? [...alt, ...ergebnis.inhalt] : ergebnis.inhalt));
+                setGesamt(ergebnis.gesamt);
+                setSeiten(ergebnis.seiten);
+                setSeite(zielSeite);
+            })
+            .catch((e: unknown) => {
+                if (nummer !== anfrageRef.current) return;
+                setFehler(e instanceof Error ? e.message : 'Die Anrufe konnten nicht geladen werden.');
+            })
+            .finally(() => {
+                if (nummer === anfrageRef.current) {
+                    setLaedt(false);
+                    setLaedtMehr(false);
+                }
             });
-            if (nummer !== anfrageRef.current) return;
-            setAnrufe((alt) => (anhaengen ? [...alt, ...ergebnis.inhalt] : ergebnis.inhalt));
-            setGesamt(ergebnis.gesamt);
-            setSeiten(ergebnis.seiten);
-            setSeite(zielSeite);
-        } catch (e) {
-            if (nummer !== anfrageRef.current) return;
-            setFehler(e instanceof Error ? e.message : 'Die Anrufe konnten nicht geladen werden.');
-        } finally {
-            if (nummer === anfrageRef.current) {
-                setLaedt(false);
-                setLaedtMehr(false);
-            }
-        }
     }, [filter, suche, tag, kontaktart]);
+
+    // Andere Filter, Suche, „Jetzt abholen“ oder „Erneut versuchen“: sofort als
+    // „lädt“ zeigen, bevor der Effekt unten die erste Seite neu holt.
+    const ladeAnlass = JSON.stringify([filter, suche, tag, kontaktart, aktualisierung, neuLaden]);
+    const [letzterLadeAnlass, setLetzterLadeAnlass] = useState(ladeAnlass);
+    if (letzterLadeAnlass !== ladeAnlass) {
+        setLetzterLadeAnlass(ladeAnlass);
+        setLaedt(true);
+        setFehler(null);
+    }
 
     useEffect(() => {
         void lade(0, false);
     }, [lade, aktualisierung, neuLaden]);
+
+    const ladeWeitere = () => {
+        setLaedtMehr(true);
+        setFehler(null);
+        void lade(seite + 1, true);
+    };
 
     // Hervorgehobenen Anruf einmal in den Blick holen.
     useEffect(() => {
@@ -354,7 +373,7 @@ export function AnrufListe({ anrufbeantworter, aktualisierung }: AnrufListeProps
                 <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
                     <span>{anrufe.length} von {gesamt} Anrufen</span>
                     {seite + 1 < seiten && (
-                        <Button variant="outline" size="sm" onClick={() => void lade(seite + 1, true)} disabled={laedtMehr}>
+                        <Button variant="outline" size="sm" onClick={ladeWeitere} disabled={laedtMehr}>
                             {laedtMehr && <Loader2 aria-hidden="true" className="h-4 w-4 motion-safe:animate-spin" />}
                             Weitere Anrufe laden
                         </Button>

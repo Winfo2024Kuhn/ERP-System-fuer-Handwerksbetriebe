@@ -60,23 +60,52 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
     const [statusLoading, setStatusLoading] = useState(true)
     const [statusError, setStatusError] = useState<string | null>(null)
 
-    const loadZeitkontoStatus = async () => {
+    const holeZeitkontoStatus = (token: string) => fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
+        .then(res => {
+            if (!res.ok) throw new Error()
+            return res.json() as Promise<ZeitkontoStatus>
+        })
+        .then(data => {
+            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
+            setZeitkontoStatus(data)
+        })
+        .catch(() => {
+            setZeitkontoStatus(null)
+            setStatusError('Die Arbeitszeit-Einrichtung konnte nicht geprüft werden.')
+        })
+        .finally(() => setStatusLoading(false))
+
+    // Erneut-versuchen-Knopf; beim Öffnen startet statusLoading schon mit true.
+    const loadZeitkontoStatus = () => {
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) return
         setStatusLoading(true)
         setStatusError(null)
-        try {
-            const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
-            if (!res.ok) throw new Error()
-            const data = await res.json() as ZeitkontoStatus
-            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
-            setZeitkontoStatus(data)
-        } catch {
-            setZeitkontoStatus(null)
-            setStatusError('Die Arbeitszeit-Einrichtung konnte nicht geprüft werden.')
-        } finally {
-            setStatusLoading(false)
-        }
+        void holeZeitkontoStatus(token)
+    }
+
+    // Die Ladefunktionen setzen nur das Ergebnis; die Ladeanzeige schaltet an, wer das Laden
+    // auslöst (Auswahl-Tipp, Abgleich, fertige Einrichtungsprüfung).
+    const loadProjekte = () => OfflineService.getProjekte().then(data => {
+        // Nur nicht-abgeschlossene Projekte für Zeiterfassung
+        setProjekte((data as Projekt[]).filter(p => !p.abgeschlossen))
+        setLoading(false)
+    })
+
+    const loadKategorien = (projekt: Projekt | null = selectedProjekt) => {
+        if (!projekt) return Promise.resolve()
+        return OfflineService.getKategorien(projekt.id).then(data => {
+            setKategorien(data as Produktkategorie[])
+            setLoading(false)
+        })
+    }
+
+    const loadArbeitsgaenge = () => {
+        const token = localStorage.getItem('zeiterfassung_token') || undefined
+        return OfflineService.getArbeitsgaenge(token).then(data => {
+            setArbeitsgaenge(data as Arbeitsgang[])
+            setLoading(false)
+        })
     }
 
     const handleSync = async () => {
@@ -85,6 +114,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
         try {
             await Promise.all([OfflineService.syncAll(), minSpinTime])
             // Reload current step data
+            if (step === 'projekt' || step === 'kategorie' || step === 'arbeitsgang') setLoading(true)
             if (step === 'projekt') loadProjekte()
             else if (step === 'kategorie') loadKategorien()
             else if (step === 'arbeitsgang') loadArbeitsgaenge()
@@ -95,54 +125,23 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
         }
     }
 
-    // Load projects
     useEffect(() => {
-        loadZeitkontoStatus()
+        const token = localStorage.getItem('zeiterfassung_token')
+        if (token) void holeZeitkontoStatus(token)
     }, [])
 
+    // Load projects – sobald die Einrichtung geprüft ist; die Ladeanzeige geht schon beim Rendern an.
+    const zeitkontoEingerichtet = hatEingerichtetesZeitkonto(zeitkontoStatus)
+    const [projekteFuerEinrichtung, setProjekteFuerEinrichtung] = useState(false)
+    if (projekteFuerEinrichtung !== zeitkontoEingerichtet) {
+        setProjekteFuerEinrichtung(zeitkontoEingerichtet)
+        if (zeitkontoEingerichtet) setLoading(true)
+    }
+
     useEffect(() => {
-        if (hatEingerichtetesZeitkonto(zeitkontoStatus)) loadProjekte()
+        if (hatEingerichtetesZeitkonto(zeitkontoStatus)) void loadProjekte()
     }, [zeitkontoStatus])
 
-    // Load categories when project is selected
-    useEffect(() => {
-        if (selectedProjekt) {
-            loadKategorien()
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedProjekt])
-
-    // Load Arbeitsgänge when category is selected
-    useEffect(() => {
-        if (selectedKategorie) {
-            loadArbeitsgaenge()
-        }
-    }, [selectedKategorie])
-
-    const loadProjekte = async () => {
-        setLoading(true)
-        const data = await OfflineService.getProjekte() as Projekt[]
-        // Nur nicht-abgeschlossene Projekte für Zeiterfassung
-        const offeneProjekte = data.filter(p => !p.abgeschlossen)
-        setProjekte(offeneProjekte)
-        setLoading(false)
-    }
-
-    const loadKategorien = async () => {
-        if (!selectedProjekt) return
-        setLoading(true)
-        const data = await OfflineService.getKategorien(selectedProjekt.id)
-        setKategorien(data as Produktkategorie[])
-        setLoading(false)
-    }
-
-    const loadArbeitsgaenge = async () => {
-        setLoading(true)
-        const token = localStorage.getItem('zeiterfassung_token') || undefined
-        const data = await OfflineService.getArbeitsgaenge(token)
-        setArbeitsgaenge(data as Arbeitsgang[])
-        setLoading(false)
-    }
 
     const handleStartTracking = async () => {
         if (!selectedProjekt || !selectedArbeitsgang) return
@@ -362,8 +361,11 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                                     <button
                                         key={projekt.id}
                                         onClick={() => {
+                                            // Kategorien des gewählten Projekts laden
+                                            setLoading(true)
                                             setSelectedProjekt(projekt)
                                             setStep('kategorie')
+                                            void loadKategorien(projekt)
                                         }}
                                         className="w-full bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-rose-200 hover:shadow-sm transition-all text-left"
                                     >
@@ -421,8 +423,11 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                                         <button
                                             key={kategorie.id}
                                             onClick={() => {
+                                                // Arbeitsgänge laden, sobald eine Kategorie gewählt ist
+                                                setLoading(true)
                                                 setSelectedKategorie(kategorie)
                                                 setStep('arbeitsgang')
+                                                void loadArbeitsgaenge()
                                             }}
                                             className="w-full bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover:border-rose-200 hover:shadow-sm transition-all text-left"
                                         >

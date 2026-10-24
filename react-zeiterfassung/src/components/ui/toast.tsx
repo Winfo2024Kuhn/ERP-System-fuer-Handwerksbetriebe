@@ -67,18 +67,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         const pending = timers.current
         return () => { pending.forEach(clearTimeout); pending.clear() }
     }, [])
-    const api = useMemo<ToastApi>(() => {
-        const add = (kind: Kind) => (message: string, duration = STANDARD_DAUER[kind]) => {
-            // Gleiche Meldung steht schon da (z. B. zweimal derselbe Fehler): nicht stapeln,
-            // nur ihre Laufzeit neu starten.
-            const vorhanden = aktuell.current.find(m => !m.geht && m.kind === kind && m.message === message)
-            const id = vorhanden?.id ?? ++nextId.current
-            if (vorhanden) clearTimeout(timers.current.get(id))
-            else setMessages(current => [...current, { id, kind, message, geht: false }])
-            if (duration > 0) timers.current.set(id, setTimeout(() => dismiss(id), duration))
-        }
-        return { success: add('success'), error: add('error'), warning: add('warning'), info: add('info') }
+    const zeigen = useCallback((kind: Kind, message: string, duration = STANDARD_DAUER[kind]) => {
+        // Gleiche Meldung steht schon da (z. B. zweimal derselbe Fehler): nicht stapeln,
+        // nur ihre Laufzeit neu starten.
+        const vorhanden = aktuell.current.find(m => !m.geht && m.kind === kind && m.message === message)
+        const id = vorhanden?.id ?? ++nextId.current
+        if (vorhanden) clearTimeout(timers.current.get(id))
+        else setMessages(current => [...current, { id, kind, message, geht: false }])
+        if (duration > 0) timers.current.set(id, setTimeout(() => dismiss(id), duration))
     }, [dismiss, setMessages])
+    const api = useMemo<ToastApi>(() => ({
+        success: (message, duration) => zeigen('success', message, duration),
+        error: (message, duration) => zeigen('error', message, duration),
+        warning: (message, duration) => zeigen('warning', message, duration),
+        info: (message, duration) => zeigen('info', message, duration),
+    }), [zeigen])
     const sichtbar = messages.slice(-MAX_SICHTBAR)
     const verborgen = messages.length - sichtbar.length
     // Per Portal an <body>, nicht in #root: #root ist fest am Fenster verankert und

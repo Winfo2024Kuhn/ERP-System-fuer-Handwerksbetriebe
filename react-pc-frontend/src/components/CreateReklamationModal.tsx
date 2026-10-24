@@ -39,7 +39,10 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
 
     const [submitting, setSubmitting] = useState(false);
 
-    useEffect(() => {
+    // Beim Öffnen leeres Formular (Zustand beim Rendern anpassen).
+    const [warOffen, setWarOffen] = useState(isOpen);
+    if (isOpen !== warOffen) {
+        setWarOffen(isOpen);
         if (isOpen) {
             setBeschreibung("");
             setFiles([]);
@@ -47,7 +50,7 @@ export function CreateReklamationModal({ isOpen, onClose, lieferantId, onSuccess
             setSearchResults([]);
             setSelectedLieferschein(null);
         }
-    }, [isOpen]);
+    }
 
     // Search Lieferscheine Debounced
     useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
@@ -42,34 +42,40 @@ export function SteuerpruefungExport() {
     const [von, setVon] = useState(jahresAnfang);
     const [bis, setBis] = useState(heuteIso);
     const [anzahl, setAnzahl] = useState<number | null>(null);
-    const [loading, setLoading] = useState(false);
+    // Beim Öffnen wird die Anzahl für den voreingestellten Zeitraum sofort gezählt.
+    const [loading, setLoading] = useState(true);
     const [downloading, setDownloading] = useState(false);
     const [downloadingZip, setDownloadingZip] = useState(false);
     const [verifying, setVerifying] = useState(false);
     const [verifyBericht, setVerifyBericht] = useState<VerifyBericht | null>(null);
 
-    const refreshAnzahl = useCallback(async () => {
-        if (!von || !bis) return;
-        setLoading(true);
-        try {
-            const params = new URLSearchParams({ von, bis });
-            const res = await fetch(`/api/ausgangs-dokumente/audit/anzahl?${params.toString()}`);
-            if (res.ok) {
-                setAnzahl(await res.json());
-            } else {
-                setAnzahl(null);
-            }
-        } catch (e) {
-            console.error(e);
-            setAnzahl(null);
-        } finally {
-            setLoading(false);
-        }
-    }, [von, bis]);
+    // Anderer Zeitraum: Ladeanzeige beim Rendern einschalten, gezählt wird im Effekt.
+    const zeitraum = `${von}|${bis}`;
+    const [zeitraumVorher, setZeitraumVorher] = useState(zeitraum);
+    if (zeitraum !== zeitraumVorher) {
+        setZeitraumVorher(zeitraum);
+        if (von && bis) setLoading(true);
+    }
 
     useEffect(() => {
-        refreshAnzahl();
-    }, [refreshAnzahl]);
+        if (!von || !bis) return;
+        void (async () => {
+            try {
+                const params = new URLSearchParams({ von, bis });
+                const res = await fetch(`/api/ausgangs-dokumente/audit/anzahl?${params.toString()}`);
+                if (res.ok) {
+                    setAnzahl(await res.json());
+                } else {
+                    setAnzahl(null);
+                }
+            } catch (e) {
+                console.error(e);
+                setAnzahl(null);
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, [von, bis]);
 
     const handleDownloadCsv = async () => {
         if (!von || !bis) return;

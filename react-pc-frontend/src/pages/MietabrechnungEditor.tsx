@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Home, Building2, Users, LayoutGrid, Tags, CircleDollarSign, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { Input } from '../components/ui/input';
@@ -26,25 +26,25 @@ export default function MietabrechnungEditor() {
     const [loading, setLoading] = useState(true);
     const [view, setView] = useState<'dashboard' | 'stammdaten' | 'parteien' | 'raeume' | 'kostenstellen' | 'kostenpositionen'>('dashboard');
 
-    const loadMietobjekte = async (selectId?: number) => {
-        setLoading(true);
-        try {
-            const list = await MietabrechnungService.getMietobjekte();
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Liste da ist.
+    // Die Ladeanzeige startet mit true bzw. setzt der Aufrufer.
+    const loadMietobjekte = useCallback((selectId?: number) => MietabrechnungService.getMietobjekte()
+        .then((list) => {
             setMietobjekte(list);
             if (selectId) {
                 setSelectedId(String(selectId));
-            } else if (list.length > 0 && !selectedId) {
-                setSelectedId(String(list[0].id));
+            } else if (list.length > 0) {
+                setSelectedId(prev => prev || String(list[0].id));
             }
-        } catch {
+        })
+        .catch(() => {
             toast.error('Mietobjekte konnten nicht geladen werden.');
-        } finally { setLoading(false); }
-    };
+        })
+        .finally(() => { setLoading(false); }), [toast]);
 
     useEffect(() => {
-        loadMietobjekte();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        void loadMietobjekte();
+    }, [loadMietobjekte]);
 
     const handleCreate = async (event: FormEvent) => {
         event.preventDefault();
@@ -57,6 +57,7 @@ export default function MietabrechnungEditor() {
         try {
             const created = await MietabrechnungService.createMietobjekt({ name: name.trim(), strasse: '', plz: '', ort: '' });
             setCreateOpen(false); toast.success('Mietobjekt angelegt.');
+            setLoading(true);
             await loadMietobjekte(created.id);
         } catch {
             toast.error('Mietobjekt konnte nicht angelegt werden.');

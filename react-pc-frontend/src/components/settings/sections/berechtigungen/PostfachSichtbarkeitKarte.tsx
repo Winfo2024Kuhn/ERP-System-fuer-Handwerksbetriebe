@@ -55,22 +55,20 @@ export function PostfachSichtbarkeitKarte({ abteilungenStand = 0 }: { abteilunge
     const [speichertId, setSpeichertId] = useState<number | null>(null);
     const [zeilenFehler, setZeilenFehler] = useState<Record<number, string>>({});
 
-    const laden = useCallback(async () => {
-        try {
-            const res = await fetch('/api/postfaecher');
+    const laden = useCallback(() => fetch('/api/postfaecher')
+        .then(async (res) => {
             if (!res.ok) throw new Error(await parseErrorMessage(res, LADEFEHLER));
             setPostfaecher(parsePostfaecher(await res.json()));
             setEntwuerfe({});
             setZeilenFehler({});
             setLadeFehler(null);
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             const text = err instanceof Error && err.message ? err.message : LADEFEHLER;
             setLadeFehler(text);
             toast.error(text);
-        } finally {
-            setLaedt(false);
-        }
-    }, [toast]);
+        })
+        .finally(() => setLaedt(false)), [toast]);
 
     useEffect(() => { void laden(); }, [laden]);
 

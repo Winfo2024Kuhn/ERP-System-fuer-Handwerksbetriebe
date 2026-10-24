@@ -138,20 +138,27 @@ export function DokumentHierarchie({
     };
     const [freigabeStatus, setFreigabeStatus] = useState<Record<number, FreigabeStatusKurz>>({});
 
+    const freigabeIdsParam = ausgangsDokumente
+        .map(d => d.id)
+        .filter((id): id is number => typeof id === 'number')
+        .join(',');
+
+    // Keine Dokumente mehr: Freigabe-Status beim Rendern leeren.
+    const [freigabeIdsVorher, setFreigabeIdsVorher] = useState(freigabeIdsParam);
+    if (freigabeIdsParam !== freigabeIdsVorher) {
+        setFreigabeIdsVorher(freigabeIdsParam);
+        if (!freigabeIdsParam) setFreigabeStatus({});
+    }
+
+    // Auch bei gleichen Ids neu laden, wenn die Dokumentliste neu geladen wurde
+    // (der Freigabe-Status kann sich inzwischen geändert haben).
     useEffect(() => {
-        const ids = ausgangsDokumente
-            .map(d => d.id)
-            .filter((id): id is number => typeof id === 'number');
-        if (ids.length === 0) {
-            setFreigabeStatus({});
-            return;
-        }
-        const idsParam = ids.join(',');
-        fetch(`/api/ausgangs-dokumente/freigabe-status?ids=${encodeURIComponent(idsParam)}`)
+        if (!freigabeIdsParam) return;
+        fetch(`/api/ausgangs-dokumente/freigabe-status?ids=${encodeURIComponent(freigabeIdsParam)}`)
             .then(res => (res.ok ? res.json() : {}))
             .then(data => setFreigabeStatus(data || {}))
             .catch(() => setFreigabeStatus({}));
-    }, [ausgangsDokumente]);
+    }, [freigabeIdsParam, ausgangsDokumente]);
 
     // Prüfen ob bereits ein aktives Basisdokument (Root ohne Vorgänger, nicht storniert) existiert
     const hasBasisdokument = useMemo(

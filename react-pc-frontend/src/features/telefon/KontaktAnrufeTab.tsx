@@ -49,30 +49,38 @@ export function KontaktAnrufeTab({ typ, kontaktId }: KontaktAnrufeTabProps) {
         [typ, kontaktId],
     );
 
-    const lade = useCallback(async () => {
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    const ladeDaten = useCallback(() => {
         const nummer = ++anfrageRef.current;
+        return Promise.all([
+            ladeAnrufe({ ...kontaktFilter, seite: 0, groesse: SEITENGROESSE }),
+            ladeSprachnachrichten(kontaktFilter),
+            // Nur für die Namen der Anrufbeantworter – ohne geht es auch.
+            ladeStatus().catch(() => null),
+        ])
+            .then(([ersteSeite, liste, status]) => {
+                if (nummer !== anfrageRef.current) return;
+                setAnrufe(ersteSeite.inhalt);
+                setGesamt(ersteSeite.gesamt);
+                setSeiten(ersteSeite.seiten);
+                setSeite(0);
+                setNachrichten(liste);
+                setAnrufbeantworter(status?.anrufbeantworter ?? []);
+            })
+            .catch((e: unknown) => {
+                if (nummer === anfrageRef.current) setFehler(e instanceof Error ? e.message : 'Die Anrufe konnten nicht geladen werden.');
+            })
+            .finally(() => {
+                if (nummer === anfrageRef.current) setLaedt(false);
+            });
+    }, [kontaktFilter]);
+
+    /** Neu laden auf Knopfdruck bzw. nach einer Zuordnung – mit Ladeanzeige. */
+    const lade = useCallback(() => {
         setLaedt(true);
         setFehler(null);
-        try {
-            const [ersteSeite, liste, status] = await Promise.all([
-                ladeAnrufe({ ...kontaktFilter, seite: 0, groesse: SEITENGROESSE }),
-                ladeSprachnachrichten(kontaktFilter),
-                // Nur für die Namen der Anrufbeantworter – ohne geht es auch.
-                ladeStatus().catch(() => null),
-            ]);
-            if (nummer !== anfrageRef.current) return;
-            setAnrufe(ersteSeite.inhalt);
-            setGesamt(ersteSeite.gesamt);
-            setSeiten(ersteSeite.seiten);
-            setSeite(0);
-            setNachrichten(liste);
-            setAnrufbeantworter(status?.anrufbeantworter ?? []);
-        } catch (e) {
-            if (nummer === anfrageRef.current) setFehler(e instanceof Error ? e.message : 'Die Anrufe konnten nicht geladen werden.');
-        } finally {
-            if (nummer === anfrageRef.current) setLaedt(false);
-        }
-    }, [kontaktFilter]);
+        return ladeDaten();
+    }, [ladeDaten]);
 
     const ladeMehr = useCallback(async () => {
         const nummer = anfrageRef.current;
@@ -93,9 +101,18 @@ export function KontaktAnrufeTab({ typ, kontaktId }: KontaktAnrufeTabProps) {
 
     const weitereSeiten = seite + 1 < seiten;
 
+    // Anderer Kontakt: sofort als „lädt“ zeigen, bevor der Effekt neu holt.
+    const kontaktSchluessel = `${typ}:${kontaktId}`;
+    const [geladenFuer, setGeladenFuer] = useState(kontaktSchluessel);
+    if (geladenFuer !== kontaktSchluessel) {
+        setGeladenFuer(kontaktSchluessel);
+        setLaedt(true);
+        setFehler(null);
+    }
+
     useEffect(() => {
-        void lade();
-    }, [lade]);
+        void ladeDaten();
+    }, [ladeDaten]);
 
     const zeilen = useMemo<Zeile[]>(() => {
         const nachrichtNachId = new Map(nachrichten.map((n) => [n.id, n]));

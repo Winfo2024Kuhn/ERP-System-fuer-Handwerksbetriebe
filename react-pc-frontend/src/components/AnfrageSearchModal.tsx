@@ -26,40 +26,53 @@ export function AnfrageSearchModal({
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const abortRef = useRef<AbortController | null>(null);
 
-    const loadAnfragen = useCallback(async (query: string) => {
+    // Den Ladezustand setzen die Aufrufer (Öffnen, Suchfeld), damit hier kein
+    // setState synchron im Effekt läuft.
+    const loadAnfragen = useCallback((query: string) => {
         if (abortRef.current) abortRef.current.abort();
         const controller = new AbortController();
         abortRef.current = controller;
 
-        setLoading(true);
-        try {
-            const params = new URLSearchParams({ nurOhneProjekt: 'true' });
-            if (query.trim()) params.set('q', query.trim());
+        const params = new URLSearchParams({ nurOhneProjekt: 'true' });
+        if (query.trim()) params.set('q', query.trim());
 
-            const res = await fetch(`/api/anfragen?${params}`, { signal: controller.signal });
-            if (!res.ok) throw new Error('Fehler beim Laden');
-
-            const data = await res.json();
-            const alleAnfragen: Anfrage[] = Array.isArray(data) ? data : data.anfragen || [];
-            const passendeAnfragen = kundenId == null
-                ? []
-                : alleAnfragen.filter(anfrage => anfrage.kundenId === kundenId);
-            setAnfragen(passendeAnfragen);
-            if (!query.trim()) setTotalCount(passendeAnfragen.length);
-        } catch (error) {
-            if (!(error instanceof DOMException && error.name === 'AbortError')) {
-                console.error('Anfragesuche fehlgeschlagen:', error);
-                setAnfragen([]);
-            }
-        } finally {
-            if (!controller.signal.aborted) setLoading(false);
-        }
+        return fetch(`/api/anfragen?${params}`, { signal: controller.signal })
+            .then(res => {
+                if (!res.ok) throw new Error('Fehler beim Laden');
+                return res.json();
+            })
+            .then(data => {
+                const alleAnfragen: Anfrage[] = Array.isArray(data) ? data : data.anfragen || [];
+                const passendeAnfragen = kundenId == null
+                    ? []
+                    : alleAnfragen.filter(anfrage => anfrage.kundenId === kundenId);
+                setAnfragen(passendeAnfragen);
+                if (!query.trim()) setTotalCount(passendeAnfragen.length);
+            })
+            .catch(error => {
+                if (!(error instanceof DOMException && error.name === 'AbortError')) {
+                    console.error('Anfragesuche fehlgeschlagen:', error);
+                    setAnfragen([]);
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
+            });
     }, [kundenId]);
+
+    // Beim Öffnen Suchfeld leeren und Ladezustand zeigen (beim Rendern, nicht im Effekt).
+    const [warOffen, setWarOffen] = useState(false);
+    if (isOpen !== warOffen) {
+        setWarOffen(isOpen);
+        if (isOpen) {
+            setSearchTerm('');
+            setLoading(true);
+        }
+    }
 
     useEffect(() => {
         if (isOpen) {
-            setSearchTerm('');
-            loadAnfragen('');
+            void loadAnfragen('');
         }
         return () => {
             if (abortRef.current) abortRef.current.abort();
@@ -69,7 +82,10 @@ export function AnfrageSearchModal({
     useEffect(() => {
         if (!isOpen) return;
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => loadAnfragen(searchTerm), 300);
+        debounceRef.current = setTimeout(() => {
+            setLoading(true);
+            void loadAnfragen(searchTerm);
+        }, 300);
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };

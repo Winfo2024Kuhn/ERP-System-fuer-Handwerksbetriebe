@@ -116,7 +116,7 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
                 ? err.message
                 : 'Die Positionen konnten nicht ausgelesen werden.';
             setAuslesenFehler(meldung);
-            throw new Error(meldung);
+            throw new Error(meldung, { cause: err });
         } finally {
             setAuslesenLaeuft(false);
         }
@@ -157,11 +157,20 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
     const aufteilung = useMemo(() => baueAufteilung(positionen, zuweisungen, bezuege), [positionen, zuweisungen, bezuege]);
     const aufteilungsSchluessel = useMemo(() => JSON.stringify(aufteilung), [aufteilung]);
 
+    // Neue Auswahl: „rechnet“ sofort an (bzw. aus, wenn keine Vorschau läuft),
+    // bevor der Effekt unten die entprellte Anfrage startet.
+    const vorschauNoetig = aktiv && geschaeftsdokumentId != null && positionen.length > 0;
+    const vorschauAnlass = `${aktiv}|${geschaeftsdokumentId ?? ''}|${positionen.length}|${aufteilungsSchluessel}`;
+    const [letzterVorschauAnlass, setLetzterVorschauAnlass] = useState(vorschauAnlass);
+    if (letzterVorschauAnlass !== vorschauAnlass) {
+        setLetzterVorschauAnlass(vorschauAnlass);
+        setVorschauLaeuft(vorschauNoetig);
+    }
+
     // Live-Vorschau, entprellt; veraltete Antworten werden verworfen.
     useEffect(() => {
         if (!aktiv || geschaeftsdokumentId == null || positionen.length === 0) return;
         const abbruch = new AbortController();
-        setVorschauLaeuft(true);
         const timer = window.setTimeout(async () => {
             try {
                 const res = await fetch(`${BASIS}/${geschaeftsdokumentId}/vorschau`, {
@@ -188,7 +197,6 @@ export function usePositionsAufteilung(geschaeftsdokumentId: number | null | und
         return () => {
             window.clearTimeout(timer);
             abbruch.abort();
-            setVorschauLaeuft(false);
         };
     }, [aktiv, geschaeftsdokumentId, positionen.length, aufteilungsSchluessel]);
 

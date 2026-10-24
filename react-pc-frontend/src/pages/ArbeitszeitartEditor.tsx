@@ -49,21 +49,22 @@ export default function ArbeitszeitartEditor() {
   }, [items, searchTerm]);
 
   // Laden
-  const loadItems = useCallback(async () => {
-    try {
-      const res = await fetch('/api/arbeitszeitarten/alle');
-      if (!res.ok) throw new Error('Arbeitszeitarten konnten nicht geladen werden.');
-      if (res.ok) {
+  // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+  const loadItems = useCallback(() =>
+    fetch('/api/arbeitszeitarten/alle')
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Arbeitszeitarten konnten nicht geladen werden.');
         const data = await res.json();
         setItems(data);
-      }
-    } catch (err) {
-      console.error('Fehler beim Laden:', err);
-      showError('Arbeitszeitarten konnten nicht geladen werden.');
-    } finally {
-      setLoading(false);
-    }
-  }, [showError]);
+      })
+      .catch((err: unknown) => {
+        console.error('Fehler beim Laden:', err);
+        showError('Arbeitszeitarten konnten nicht geladen werden.');
+      })
+      .finally(() => {
+        setLoading(false);
+      }),
+  [showError]);
 
   useEffect(() => {
     loadItems();

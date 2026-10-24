@@ -219,11 +219,17 @@ export function SteuerberaterBelegExportModal({
         return { von: iso(von), bis: iso(bis) };
     }, [jahr, monat]);
 
-    // Belege im Monat laden
+    // Belege im Monat laden. Bei einem anderen Monat sofort wieder „wird geladen“ zeigen.
+    const belegeFuer = isOpen && !anhang ? `${dateRange.von}|${dateRange.bis}` : null;
+    const [belegeGeladenFuer, setBelegeGeladenFuer] = useState<string | null>(null);
+    if (belegeFuer !== belegeGeladenFuer) {
+        setBelegeGeladenFuer(belegeFuer);
+        if (belegeFuer) setLoadingEntries(true);
+    }
+
     useEffect(() => {
         if (!isOpen || anhang) return;
         let cancelled = false;
-        setLoadingEntries(true);
         const params = new URLSearchParams({ von: dateRange.von, bis: dateRange.bis });
         fetch(`/api/buchhaltung/steuerberater-export?${params.toString()}`)
             .then(r => r.ok ? r.json() : [])
@@ -348,20 +354,30 @@ ${sig}
 
     const loadSignature = useCallback(() => ladeStandardSignatur(getCurrentFrontendUser()?.id), []);
 
-    useEffect(() => {
-        if (!isOpen) {
+    // Geschlossen: Auswahl und Texte leeren. Geöffnet (oder anderer Monat): sofort „wird geladen“.
+    const steuerberaterFuer = isOpen ? `${monat}|${jahr}|${paketMonat}|${paketJahr}` : null;
+    const [steuerberaterGeladenFuer, setSteuerberaterGeladenFuer] = useState<string | null>(null);
+    if (steuerberaterFuer !== steuerberaterGeladenFuer) {
+        setSteuerberaterGeladenFuer(steuerberaterFuer);
+        if (steuerberaterFuer) {
+            setLoadingSteuerberater(true);
+        } else {
             setSteuerberaterListe([]);
             setSelectedSteuerberaterId(null);
             setSelectedAnsprechpartnerId(null);
             setRecipient('');
             setSubject('');
             setError(null);
+        }
+    }
+
+    useEffect(() => {
+        if (!isOpen) {
             signatureRef.current = '';
             lastRenderedKeyRef.current = '';
             return;
         }
         let cancelled = false;
-        setLoadingSteuerberater(true);
         const monatName = MONATSNAMEN[paketMonat - 1] || '';
 
         Promise.all([
@@ -395,18 +411,25 @@ ${sig}
         return () => { cancelled = true; };
     }, [isOpen, monat, jahr, paketMonat, paketJahr, loadSignature]);
 
-    useEffect(() => {
-        if (!selectedSteuerberater) return;
-        const ap = selectedSteuerberater.ansprechpartnerListe?.[0] || null;
-        setSelectedAnsprechpartnerId(ap?.id || null);
-        setRecipient(ap?.email || selectedSteuerberater.email || '');
-    }, [selectedSteuerberaterId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Anderer Steuerberater: ersten Ansprechpartner und dessen Adresse vorschlagen.
+    const [vorgabeFuerSteuerberaterId, setVorgabeFuerSteuerberaterId] = useState(selectedSteuerberaterId);
+    if (vorgabeFuerSteuerberaterId !== selectedSteuerberaterId) {
+        setVorgabeFuerSteuerberaterId(selectedSteuerberaterId);
+        if (selectedSteuerberater) {
+            const ap = selectedSteuerberater.ansprechpartnerListe?.[0] || null;
+            setSelectedAnsprechpartnerId(ap?.id || null);
+            setRecipient(ap?.email || selectedSteuerberater.email || '');
+        }
+    }
 
-    useEffect(() => {
+    // Anderer Ansprechpartner: dessen Adresse als Empfänger übernehmen.
+    const [vorgabeFuerAnsprechpartnerId, setVorgabeFuerAnsprechpartnerId] = useState(selectedAnsprechpartnerId);
+    if (vorgabeFuerAnsprechpartnerId !== selectedAnsprechpartnerId) {
+        setVorgabeFuerAnsprechpartnerId(selectedAnsprechpartnerId);
         if (selectedAnsprechpartner?.email) {
             setRecipient(selectedAnsprechpartner.email);
         }
-    }, [selectedAnsprechpartnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }
 
     // Stabiler Fingerprint statt entries.length — zwei Monate mit zufaellig
     // gleich vielen Belegen sind nicht inhaltsgleich. Wir nehmen die sortierten

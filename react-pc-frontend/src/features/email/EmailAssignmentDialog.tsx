@@ -60,13 +60,24 @@ export function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId, 
     const [results, setResults] = useState<SuchTreffer[]>([]);
     const [suggestions, setSuggestions] = useState<{ projekte: EntityOption[], anfragen: EntityOption[] }>({ projekte: [], anfragen: [] });
     const [loading, setLoading] = useState(false);
-    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(Boolean(isOpen && emailId));
     const [assigning, setAssigning] = useState(false);
+
+    // Dialog geht auf bzw. andere E-Mail: Vorschläge laden gleich als „lädt“ zeigen.
+    // Dialog geht zu: Suche zurücksetzen.
+    const [vorher, setVorher] = useState({ isOpen, emailId });
+    if (vorher.isOpen !== isOpen || vorher.emailId !== emailId) {
+        setVorher({ isOpen, emailId });
+        if (isOpen && emailId) setLoadingSuggestions(true);
+        if (!isOpen && vorher.isOpen) {
+            setSearchQuery('');
+            setResults([]);
+        }
+    }
 
     // Load suggestions when modal opens
     useEffect(() => {
         if (isOpen && emailId) {
-            setLoadingSuggestions(true);
             fetch(`/api/emails/${emailId}/possible-assignments`)
                 .then(res => res.json())
                 .then(data => {
@@ -79,13 +90,6 @@ export function AssignModal({ isOpen, onClose, onAssign, emailSubject, emailId, 
                 .finally(() => setLoadingSuggestions(false));
         }
     }, [isOpen, emailId]);
-
-    useEffect(() => {
-        if (!isOpen) {
-            setSearchQuery('');
-            setResults([]);
-        }
-    }, [isOpen]);
 
     const fetchResults = useCallback(async () => {
         if (!searchQuery.trim()) {

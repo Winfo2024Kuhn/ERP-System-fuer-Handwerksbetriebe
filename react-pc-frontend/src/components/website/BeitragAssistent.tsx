@@ -59,7 +59,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
     // "Zurueck" ausgehaengt und bei "Weiter" neu gemountet, liefe die KI ein
     // zweites Mal automatisch und ueberschriebe von Hand geschriebenen Text.
     // Deshalb bleibt sie im Baum und wird nur per hidden-Attribut versteckt.
-    const textJeGezeigt = useRef(false);
+    const [textJeGezeigt, setTextJeGezeigt] = useState(false);
     // ProjektSearchModal ruft in handleSelect erst onSelect und direkt danach
     // onClose auf. Ohne diese Unterscheidung landete auch das erfolgreiche
     // Waehlen eines Projekts bei onAbbrechen -- der Assistent schloss sich
@@ -70,16 +70,14 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
     // Spiegel der Auswahl, damit der Reset beim Neuoeffnen die Speicherplaetze
     // der hochgeladenen Bilder des letzten Durchlaufs freigeben kann.
     const auswahlRef = useRef<GewaehltesBild[]>([]);
-    useEffect(() => { auswahlRef.current = auswahl; }, [auswahl]);
-    // Beim Verlassen der Seite die hochgeladenen Bilder aus dem Speicher geben.
-    useEffect(() => () => gibUploadsFrei(auswahlRef.current), []);
 
-    // Zuruecksetzen, sobald der Assistent neu geoeffnet wird.
-    useEffect(() => {
+    // Zuruecksetzen, sobald der Assistent neu geoeffnet wird (Zustand beim Rendern).
+    const [warOffen, setWarOffen] = useState(false);
+    if (offen !== warOffen) {
+        setWarOffen(offen);
         if (offen) {
             setSchritt('projekt');
             setProjekt(null);
-            gibUploadsFrei(auswahlRef.current);
             setAuswahl([]);
             setStand(LEERER_STAND);
             setMitKi(false);
@@ -87,10 +85,20 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
             setTeilfehler(null);
             setFortschritt(null);
             setBeitragId(null);
-            textJeGezeigt.current = false;
-            projektGewaehlt.current = false;
+            setTextJeGezeigt(false);
         }
+    }
+    // Beim Neuoeffnen die Speicherplaetze des letzten Durchlaufs freigeben. Muss VOR dem
+    // Abgleich von auswahlRef stehen: Effekte laufen in dieser Reihenfolge, die Ref zeigt
+    // hier also noch auf die alte Auswahl.
+    useEffect(() => {
+        if (!offen) return;
+        gibUploadsFrei(auswahlRef.current);
+        projektGewaehlt.current = false;
     }, [offen]);
+    useEffect(() => { auswahlRef.current = auswahl; }, [auswahl]);
+    // Beim Verlassen der Seite die hochgeladenen Bilder aus dem Speicher geben.
+    useEffect(() => () => gibUploadsFrei(auswahlRef.current), []);
 
     // Kleine Fassungen fuer die KI vorbereiten, sobald der Textschritt ansteht.
     const bereiteKiBilderVor = useCallback(async (gewaehlt: GewaehltesBild[]) => {
@@ -180,7 +188,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
 
     if (!offen) return null;
 
-    if (schritt === 'text') textJeGezeigt.current = true;
+    if (schritt === 'text' && !textJeGezeigt) setTextJeGezeigt(true);
 
     const kannSpeichern = Boolean(
         stand.titel.trim() && stand.kurzbeschreibung.trim() && stand.textHtml.trim());
@@ -284,7 +292,7 @@ export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssist
                     </div>
                 )}
 
-                {textJeGezeigt.current && projekt && (
+                {textJeGezeigt && projekt && (
                     <div hidden={schritt !== 'text'}>
                         <SchrittText
                             projektId={projekt.id}

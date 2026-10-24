@@ -69,24 +69,34 @@ export function ResturlaubUebertrag({ mitarbeiterId }: { mitarbeiterId: number }
     const [entwurf, setEntwurf] = useState('');
     const [speichert, setSpeichert] = useState(false);
 
-    const laden = useCallback(async () => {
+    /** Setzt Ladeanzeige und Fehler zurück, bevor neu geladen wird. */
+    const ladenStarten = () => {
         setLaedt(true);
         setLadeFehler('');
-        try {
-            const res = await fetch(`/api/urlaub/uebertrag?mitarbeiterId=${encodeURIComponent(String(mitarbeiterId))}&jahr=${encodeURIComponent(String(jahr))}`);
+    };
+
+    // Anderer Mitarbeiter oder anderes Jahr: sofort wieder „wird geladen“ zeigen.
+    const geladenFuer = `${mitarbeiterId}|${jahr}`;
+    const [zuletztGeladenFuer, setZuletztGeladenFuer] = useState(geladenFuer);
+    if (zuletztGeladenFuer !== geladenFuer) {
+        setZuletztGeladenFuer(geladenFuer);
+        ladenStarten();
+    }
+
+    const laden = useCallback(() => fetch(`/api/urlaub/uebertrag?mitarbeiterId=${encodeURIComponent(String(mitarbeiterId))}&jahr=${encodeURIComponent(String(jahr))}`)
+        .then(async (res) => {
             if (!res.ok) throw new Error(await leseFehlermeldung(res, LADEFEHLER));
             const daten: unknown = await res.json();
             if (!istStand(daten)) throw new Error(LADEFEHLER);
             setStand(daten);
             setEntwurf(formatDecimalInput(daten.tage));
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             const text = err instanceof Error && err.message ? err.message : LADEFEHLER;
             setLadeFehler(text);
             toast.error(text);
-        } finally {
-            setLaedt(false);
-        }
-    }, [mitarbeiterId, jahr, toast]);
+        })
+        .finally(() => setLaedt(false)), [mitarbeiterId, jahr, toast]);
 
     useEffect(() => { void laden(); }, [laden]);
 
@@ -153,7 +163,7 @@ export function ResturlaubUebertrag({ mitarbeiterId }: { mitarbeiterId: number }
             ) : ladeFehler || !stand ? (
                 <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-rose-800">
                     {ladeFehler || LADEFEHLER}
-                    <Button variant="outline" size="sm" onClick={() => void laden()}>Erneut laden</Button>
+                    <Button variant="outline" size="sm" onClick={() => { ladenStarten(); void laden(); }}>Erneut laden</Button>
                 </div>
             ) : (
                 <>

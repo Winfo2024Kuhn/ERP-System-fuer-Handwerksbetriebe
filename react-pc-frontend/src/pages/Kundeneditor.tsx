@@ -630,18 +630,21 @@ const KundenFormular: React.FC<KundenFormularProps> = ({ kunde, isCreating, onSa
     const [formData, setFormData] = useState<KundeDetail>(kunde);
     // Als Text: Beim Tippen darf das Feld kurz leer sein, ohne auf 8 zu springen.
     const [zahlungszielText, setZahlungszielText] = useState(String(kunde.zahlungsziel ?? 8));
-    const [emails, setEmails] = useState<string[]>(kunde.kundenEmails || ['']);
+    const [emails, setEmails] = useState<string[]>(kunde.kundenEmails?.length ? kunde.kundenEmails : ['']);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
     const [autoKundennummer, setAutoKundennummer] = useState(isCreating && !kunde.kundennummer);
     const [duplikatModal, setDuplikatModal] = useState<{ duplikate: KundeDuplikatTreffer[] } | null>(null);
 
-    useEffect(() => {
+    // Kommt ein anderer Kunde herein, startet das Formular mit dessen Daten neu.
+    const [vorlage, setVorlage] = useState(kunde);
+    if (vorlage !== kunde) {
+        setVorlage(kunde);
         setFormData(kunde);
         setEmails(kunde.kundenEmails?.length ? kunde.kundenEmails : ['']);
         setZahlungszielText(String(kunde.zahlungsziel ?? 8));
         setError('');
-    }, [kunde]);
+    }
 
     // Nächste verfügbare Kundennummer laden
     useEffect(() => {
@@ -1050,7 +1053,7 @@ export const Kundeneditor: React.FC = () => {
     const [kunden, setKunden] = useState<KundeDetail[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [filters, setFilters] = useState<FilterState>(LEERE_FILTER);
     const [editingKunde, setEditingKunde] = useState<KundeDetail | null>(null);
     const [isCreating, setIsCreating] = useState(false);
@@ -1090,48 +1093,60 @@ export const Kundeneditor: React.FC = () => {
     // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
     const ladeVorgangRef = useRef(0);
 
-    const fetchKunden = useCallback(async () => {
+    // Andere Seite oder andere Filter: Ladeanzeige an, bevor der Effekt neu lädt.
+    const [geladeneAbfrage, setGeladeneAbfrage] = useState({ page, filters });
+    if (geladeneAbfrage.page !== page || geladeneAbfrage.filters !== filters) {
+        setGeladeneAbfrage({ page, filters });
+        setLoading(true);
+    }
+
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.
+    const fetchKunden = useCallback(() => {
         const ladeVorgang = ++ladeVorgangRef.current;
         const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            params.set('page', String(page));
-            params.set('size', String(PAGE_SIZE));
-            Object.entries(filters).forEach(([key, value]) => {
-                if (value) params.set(key, value);
+        const params = new URLSearchParams();
+        params.set('page', String(page));
+        params.set('size', String(PAGE_SIZE));
+        Object.entries(filters).forEach(([key, value]) => {
+            if (value) params.set(key, value);
+        });
+
+        return fetch(`/api/kunden?${params.toString()}`)
+            .then(async (res) => {
+                if (!res.ok) throw new Error('Laden fehlgeschlagen');
+
+                const data = await res.json();
+                if (!istAktuell()) return;
+                setKunden(Array.isArray(data?.kunden) ? data.kunden : []);
+                setTotal(typeof data?.gesamt === 'number' ? data.gesamt : 0);
+            })
+            .catch((err) => {
+                console.warn('Kunden konnten nicht geladen werden', err);
+                if (!istAktuell()) return;
+                setKunden([]);
+                setTotal(0);
+            })
+            .finally(() => {
+                if (istAktuell()) setLoading(false);
             });
-
-            const res = await fetch(`/api/kunden?${params.toString()}`);
-            if (!res.ok) throw new Error('Laden fehlgeschlagen');
-
-            const data = await res.json();
-            if (!istAktuell()) return;
-            setKunden(Array.isArray(data?.kunden) ? data.kunden : []);
-            setTotal(typeof data?.gesamt === 'number' ? data.gesamt : 0);
-        } catch (err) {
-            console.warn('Kunden konnten nicht geladen werden', err);
-            if (!istAktuell()) return;
-            setKunden([]);
-            setTotal(0);
-        } finally {
-            if (istAktuell()) setLoading(false);
-        }
     }, [page, filters]);
 
+    const neuLaden = () => {
+        setLoading(true);
+        void fetchKunden();
+    };
+
     useEffect(() => {
-        fetchKunden();
+        void fetchKunden();
     }, [fetchKunden]);
 
     // Zeigt die Seitenzahl hinter das Ergebnis (z.B. nachdem der letzte Eintrag einer
     // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
     // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
     // `total` noch der alte Wert.
-    useEffect(() => {
-        if (loading) return;
-        const letzteSeite = totalPages - 1;
-        if (page > letzteSeite) setPage(letzteSeite);
-    }, [loading, totalPages, page]);
+    if (!loading && page > totalPages - 1) {
+        setPage(totalPages - 1);
+    }
 
     // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
     // Seite 5 stehen, während die gefilterte Liste nur noch zwei Seiten hat – die
@@ -1211,12 +1226,12 @@ export const Kundeneditor: React.FC = () => {
 
     const handleGeloescht = () => {
         handleBackToList();
-        fetchKunden();
+        neuLaden();
     };
 
     const handleGesperrt = (aktualisiert: KundeDetail) => {
         setSelectedKunde(prev => (prev && prev.id !== aktualisiert.id) ? prev : aktualisiert);
-        fetchKunden();
+        neuLaden();
     };
 
     const handleEditFromDetail = () => {
@@ -1230,7 +1245,7 @@ export const Kundeneditor: React.FC = () => {
         setEditingKunde(null);
         setIsCreating(false);
         if (isCreating) setPage(0);
-        fetchKunden();
+        neuLaden();
         if (viewMode === 'detail') {
             // Die Antwort aufs Speichern enthält nur die Stammdaten. Damit Projekte,
             // Dokumente und Kennzahlen stehen bleiben, die ganze Akte neu laden.
@@ -1290,7 +1305,7 @@ export const Kundeneditor: React.FC = () => {
                         <Plus className="w-4 h-4 mr-2" />
                         Neuer Kunde
                     </Button>
-                    <Button variant="outline" size="sm" onClick={fetchKunden}>
+                    <Button variant="outline" size="sm" onClick={neuLaden}>
                         <RefreshCw className="w-4 h-4 mr-2" />
                         Aktualisieren
                     </Button>

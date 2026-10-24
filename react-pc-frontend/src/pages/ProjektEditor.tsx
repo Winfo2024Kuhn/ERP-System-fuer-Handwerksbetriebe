@@ -252,9 +252,12 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [kurzbeschreibung, setKurzbeschreibung] = useState(projekt.kurzbeschreibung || '');
     const [savingDesc, setSavingDesc] = useState(false);
 
-    useEffect(() => {
+    // Neue Kurzbeschreibung vom Server: Eingabefeld darauf zurücksetzen.
+    const [geladeneKurzbeschreibung, setGeladeneKurzbeschreibung] = useState(projekt.kurzbeschreibung);
+    if (geladeneKurzbeschreibung !== projekt.kurzbeschreibung) {
+        setGeladeneKurzbeschreibung(projekt.kurzbeschreibung);
         setKurzbeschreibung(projekt.kurzbeschreibung || '');
-    }, [projekt.kurzbeschreibung]);
+    }
 
     const handleSaveDescription = async () => {
         setSavingDesc(true);
@@ -416,24 +419,25 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [eingangsrechnungen, setEingangsrechnungen] = useState<Eingangsrechnung[]>([]);
 
     // Eingangsrechnungen laden
-    const loadEingangsrechnungen = useCallback(async () => {
-        if (projekt.id) {
-            try {
-                const res = await fetch(`/api/projekte/${projekt.id}/eingangsrechnungen`);
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.
+    const loadEingangsrechnungen = useCallback(() => {
+        if (!projekt.id) return Promise.resolve();
+        return fetch(`/api/projekte/${projekt.id}/eingangsrechnungen`)
+            .then(async (res) => {
                 if (res.ok) {
                     const data = await res.json();
                     setEingangsrechnungen(data);
                 } else {
                     setEingangsrechnungen([]);
                 }
-            } catch {
+            })
+            .catch(() => {
                 setEingangsrechnungen([]);
-            }
-        }
+            });
     }, [projekt.id]);
 
     useEffect(() => {
-        loadEingangsrechnungen();
+        void loadEingangsrechnungen();
     }, [loadEingangsrechnungen]);
 
     // Projekt-Notizen State
@@ -499,39 +503,40 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     const [dokumenteCount, setDokumenteCount] = useState(0);
 
     // Notizen laden
-    const loadNotizen = useCallback(async () => {
-        if (projekt.id) {
-            try {
-                const res = await fetch(`/api/projekte/${projekt.id}/notizen`);
+    // (Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.)
+    const loadNotizen = useCallback(() => {
+        if (!projekt.id) return Promise.resolve();
+        return fetch(`/api/projekte/${projekt.id}/notizen`)
+            .then(async (res) => {
                 if (res.ok) {
                     setNotizen(await res.json());
                 }
-            } catch {
+            })
+            .catch(() => {
                 setNotizen([]);
-            }
-        }
+            });
     }, [projekt.id]);
 
     useEffect(() => {
-        loadNotizen();
+        void loadNotizen();
     }, [loadNotizen]);
 
-    // Ausgangs-Geschäftsdokumente laden
-    const loadAusgangsDokumente = useCallback(async () => {
-        if (projekt.id) {
-            try {
-                const res = await fetch(`/api/ausgangs-dokumente/projekt/${projekt.id}`);
+    // Ausgangs-Geschäftsdokumente laden (Promise-Kette wie oben)
+    const loadAusgangsDokumente = useCallback(() => {
+        if (!projekt.id) return Promise.resolve();
+        return fetch(`/api/ausgangs-dokumente/projekt/${projekt.id}`)
+            .then(async (res) => {
                 if (res.ok) {
                     setAusgangsDokumente(await res.json());
                 }
-            } catch {
+            })
+            .catch(() => {
                 setAusgangsDokumente([]);
-            }
-        }
+            });
     }, [projekt.id]);
 
     useEffect(() => {
-        loadAusgangsDokumente();
+        void loadAusgangsDokumente();
     }, [loadAusgangsDokumente]);
 
     const openAnfrageMergeDialog = () => {
@@ -588,14 +593,17 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     // Freigabe-Status für alle aktuell geladenen Dokumente nachziehen.
     // Symmetrisch zu DokumentHierarchie — sobald die Dokumentliste sich ändert,
     // wird der Status aller IDs in einem Request gebündelt aktualisiert.
+    // Ohne Dokument-IDs gibt es nichts nachzuziehen: Status gleich beim Rendern leeren.
+    const [freigabeStatusFuer, setFreigabeStatusFuer] = useState(ausgangsDokumente);
+    if (freigabeStatusFuer !== ausgangsDokumente) {
+        setFreigabeStatusFuer(ausgangsDokumente);
+        if (!ausgangsDokumente.some(d => typeof d.id === 'number')) setFreigabeStatus({});
+    }
     useEffect(() => {
         const ids = ausgangsDokumente
             .map(d => d.id)
             .filter((id): id is number => typeof id === 'number');
-        if (ids.length === 0) {
-            setFreigabeStatus({});
-            return;
-        }
+        if (ids.length === 0) return;
         fetch(`/api/ausgangs-dokumente/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`)
             .then(res => (res.ok ? res.json() : {}))
             .then(data => setFreigabeStatus(data || {}))
@@ -3785,7 +3793,7 @@ export default function ProjektEditor() {
         () => (selectedProjekt ? projektZumBearbeiten(selectedProjekt) : null),
         [selectedProjekt],
     );
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -3815,114 +3823,137 @@ export default function ProjektEditor() {
     // auf eine alte Filter-/Seiten-Kombination die aktuelle Liste überschreiben.
     const ladeVorgangRef = useRef(0);
 
-    // Fetch List
-    const loadProjekte = useCallback(async () => {
+    // Andere Seite, andere Filter oder zurück in der Liste: Ladeanzeige an, bevor der Effekt neu lädt.
+    const [geladeneAbfrage, setGeladeneAbfrage] = useState({ page, filters, viewMode });
+    if (geladeneAbfrage.page !== page || geladeneAbfrage.filters !== filters || geladeneAbfrage.viewMode !== viewMode) {
+        setGeladeneAbfrage({ page, filters, viewMode });
+        if (viewMode === 'list') setLoading(true);
+    }
+
+    // Fetch List (Promise-Kette: Zustand wird erst gesetzt, wenn die Antworten da sind)
+    const loadProjekte = useCallback(() => {
         const ladeVorgang = ++ladeVorgangRef.current;
         const istAktuell = () => ladeVorgangRef.current === ladeVorgang;
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            params.set("page", String(page));
-            params.set("size", String(PAGE_SIZE));
-            if (filters.q) params.set("q", filters.q);
-            if (filters.kunde) params.set("kunde", filters.kunde);
-            if (filters.status === 'in-arbeit') params.set("abgeschlossen", "false");
-            if (filters.status === 'abgeschlossen') params.set("abgeschlossen", "true");
-            if (filters.jahr) params.set("jahr", filters.jahr);
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("size", String(PAGE_SIZE));
+        if (filters.q) params.set("q", filters.q);
+        if (filters.kunde) params.set("kunde", filters.kunde);
+        if (filters.status === 'in-arbeit') params.set("abgeschlossen", "false");
+        if (filters.status === 'abgeschlossen') params.set("abgeschlossen", "true");
+        if (filters.jahr) params.set("jahr", filters.jahr);
 
-            const [res, lastAccessed] = await Promise.all([
-                fetch(`/api/projekte?${params.toString()}`),
-                fetchProjektLastAccessed(),
-            ]);
-            if (!res.ok) throw new Error("Fehler beim Laden");
-            const data = await res.json();
-            if (!istAktuell()) return;
+        return Promise.all([
+            fetch(`/api/projekte?${params.toString()}`),
+            fetchProjektLastAccessed(),
+        ])
+            .then(async ([res, lastAccessed]) => {
+                if (!res.ok) throw new Error("Fehler beim Laden");
+                const data = await res.json();
+                if (!istAktuell()) return;
 
-            // Projekte sortieren: zuletzt aufgerufene zuerst (Stack), dann offene vor abgeschlossenen
-            const sortedProjekte = Array.isArray(data.projekte) ? data.projekte : [];
-            sortedProjekte.sort((a: Projekt, b: Projekt) => {
-                const ta = lastAccessed[String(a.id)] || 0;
-                const tb = lastAccessed[String(b.id)] || 0;
-                if (ta !== tb) return tb - ta;
-                if (a.abgeschlossen === b.abgeschlossen) return 0;
-                return a.abgeschlossen ? 1 : -1;
-            });
+                // Projekte sortieren: zuletzt aufgerufene zuerst (Stack), dann offene vor abgeschlossenen
+                const sortedProjekte = Array.isArray(data.projekte) ? data.projekte : [];
+                sortedProjekte.sort((a: Projekt, b: Projekt) => {
+                    const ta = lastAccessed[String(a.id)] || 0;
+                    const tb = lastAccessed[String(b.id)] || 0;
+                    if (ta !== tb) return tb - ta;
+                    if (a.abgeschlossen === b.abgeschlossen) return 0;
+                    return a.abgeschlossen ? 1 : -1;
+                });
 
-            setProjekte(sortedProjekte);
-            setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
+                setProjekte(sortedProjekte);
+                setTotal(typeof data.gesamt === "number" ? data.gesamt : 0);
 
-            // Freigabe-Status (Angebot/AB digital angenommen?) für die geladenen Projekte ziehen.
-            const ids = sortedProjekte
-                .map((p: Projekt) => p.id)
-                .filter((id: unknown): id is number => typeof id === 'number');
-            if (ids.length > 0) {
-                try {
-                    const statusRes = await fetch(`/api/projekte/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`);
-                    if (!istAktuell()) return;
-                    if (statusRes.ok) {
-                        setFreigabeStatusByProjektId(await statusRes.json() || {});
-                    } else {
-                        setFreigabeStatusByProjektId({});
+                // Freigabe-Status (Angebot/AB digital angenommen?) für die geladenen Projekte ziehen.
+                const ids = sortedProjekte
+                    .map((p: Projekt) => p.id)
+                    .filter((id: unknown): id is number => typeof id === 'number');
+                if (ids.length > 0) {
+                    try {
+                        const statusRes = await fetch(`/api/projekte/freigabe-status?ids=${encodeURIComponent(ids.join(','))}`);
+                        if (!istAktuell()) return;
+                        if (statusRes.ok) {
+                            setFreigabeStatusByProjektId(await statusRes.json() || {});
+                        } else {
+                            setFreigabeStatusByProjektId({});
+                        }
+                    } catch {
+                        // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
+                        // der aktuelle ist – sonst löscht ein veralteter Request die
+                        // Status-Icons der inzwischen angezeigten Liste.
+                        if (istAktuell()) setFreigabeStatusByProjektId({});
                     }
-                } catch {
-                    // Auch im Fehlerfall nur schreiben, wenn dieser Ladevorgang noch
-                    // der aktuelle ist – sonst löscht ein veralteter Request die
-                    // Status-Icons der inzwischen angezeigten Liste.
-                    if (istAktuell()) setFreigabeStatusByProjektId({});
+                } else {
+                    setFreigabeStatusByProjektId({});
                 }
-            } else {
+            })
+            .catch((err) => {
+                console.error(err);
+                if (!istAktuell()) return;
+                setProjekte([]);
+                setTotal(0);
                 setFreigabeStatusByProjektId({});
-            }
-        } catch (err) {
-            console.error(err);
-            if (!istAktuell()) return;
-            setProjekte([]);
-            setTotal(0);
-            setFreigabeStatusByProjektId({});
-        } finally {
-            if (istAktuell()) setLoading(false);
-        }
+            })
+            .finally(() => {
+                if (istAktuell()) setLoading(false);
+            });
     }, [page, filters]);
+
+    const neuLaden = () => {
+        setLoading(true);
+        void loadProjekte();
+    };
 
     useEffect(() => {
         if (viewMode === 'list') {
-            loadProjekte();
+            void loadProjekte();
         }
     }, [loadProjekte, viewMode]);
 
     // Deep-link: auto-open project from URL param ?projektId=123&tab=notizen
+    // Die Adresse wird beim Rendern ausgewertet (Tab, zu ladende Projekt-ID, Ladeanzeige),
+    // geladen wird im Effekt darunter.
     const [deepLinkTab, setDeepLinkTab] = useState<ProjektDetailTab | undefined>(undefined);
-    const lastProcessedProjektId = useRef<string | null>(null);
-    useEffect(() => {
+    const [ausgewerteteParams, setAusgewerteteParams] = useState<URLSearchParams | null>(null);
+    const [deepLinkProjektId, setDeepLinkProjektId] = useState<string | null>(null);
+    if (ausgewerteteParams !== searchParams) {
+        setAusgewerteteParams(searchParams);
         const projektIdParam = searchParams.get('projektId');
         // Whitelist-Validierung statt unchecked `as`-Cast: unbekannte tab-Werte
         // ignorieren wir, sonst rendert die Detail-View ohne sichtbares Pane.
         const tabParam = parseProjektTab(searchParams.get('tab'));
-        if (!projektIdParam && !tabParam) return;
-        // Skip if we already processed this exact projektId
-        if (projektIdParam && lastProcessedProjektId.current === projektIdParam) return;
         const projektId = projektIdParam ? Number(projektIdParam) : null;
-        if (projektIdParam && (isNaN(projektId!) || !projektId)) return;
-        if (tabParam) setDeepLinkTab(tabParam);
-        if (projektIdParam) lastProcessedProjektId.current = projektIdParam;
-        if (projektId) {
-            (async () => {
-                try {
-                    setLoading(true);
-                    const res = await fetch(`/api/projekte/${projektId}`);
-                    if (!res.ok) throw new Error('Fehler beim Laden der Details');
-                    const data: ProjektDetail = await res.json();
-                    trackProjektAccess(data.id);
-                    setSelectedProjekt(data);
-                    setViewMode('detail');
-                } catch (err) {
-                    console.error('Deep-link load error', err);
-                } finally {
-                    setLoading(false);
-                }
-            })();
+        const istNeu = (projektIdParam || tabParam)
+            // Skip if we already processed this exact projektId
+            && !(projektIdParam && deepLinkProjektId === projektIdParam)
+            && !(projektIdParam && (isNaN(projektId!) || !projektId));
+        if (istNeu) {
+            if (tabParam) setDeepLinkTab(tabParam);
+            if (projektIdParam) {
+                setDeepLinkProjektId(projektIdParam);
+                setLoading(true);
+            }
         }
-    }, [searchParams]);
+    }
+    useEffect(() => {
+        if (!deepLinkProjektId) return;
+        const projektId = Number(deepLinkProjektId);
+        (async () => {
+            try {
+                const res = await fetch(`/api/projekte/${projektId}`);
+                if (!res.ok) throw new Error('Fehler beim Laden der Details');
+                const data: ProjektDetail = await res.json();
+                trackProjektAccess(data.id);
+                setSelectedProjekt(data);
+                setViewMode('detail');
+            } catch (err) {
+                console.error('Deep-link load error', err);
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, [deepLinkProjektId]);
 
     // Handlers
     // Jede Filter-Änderung springt zurück auf Seite 1: Sonst bliebe man z.B. auf
@@ -3998,11 +4029,9 @@ export default function ProjektEditor() {
     // Seite gelöscht wurde), springen wir auf die letzte gültige Seite zurück – sonst
     // stünde man vor einer leeren Liste. Erst nach dem Laden, denn währenddessen ist
     // `total` noch der alte Wert.
-    useEffect(() => {
-        if (loading) return;
-        const letzteSeite = totalPages - 1;
-        if (page > letzteSeite) setPage(letzteSeite);
-    }, [loading, totalPages, page]);
+    if (!loading && page > totalPages - 1) {
+        setPage(totalPages - 1);
+    }
 
     const statusText = useMemo(() => {
         if (loading) return 'Projekte werden geladen...';
@@ -4078,7 +4107,7 @@ export default function ProjektEditor() {
                         <Plus className="w-4 h-4 mr-2" />
                         Neues Projekt
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => loadProjekte()}>
+                    <Button variant="outline" size="sm" onClick={neuLaden}>
                         <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
                         Aktualisieren
                     </Button>
@@ -4198,7 +4227,7 @@ export default function ProjektEditor() {
                 isOpen={showCreateModal}
                 onClose={() => setShowCreateModal(false)}
                 onSuccess={() => {
-                    loadProjekte();
+                    neuLaden();
                 }}
             />
 
@@ -4218,7 +4247,7 @@ export default function ProjektEditor() {
                         } catch (err) {
                             console.error('Projekt konnte nicht neu geladen werden:', err);
                         }
-                        loadProjekte();
+                        neuLaden();
                     }}
                     editProjekt={editVorbelegung}
                 />

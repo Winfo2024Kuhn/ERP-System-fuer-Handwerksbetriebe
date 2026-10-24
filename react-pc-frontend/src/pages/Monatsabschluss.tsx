@@ -46,12 +46,26 @@ export default function Monatsabschluss() {
     const [verlaufZeile, setVerlaufZeile] = useState<Zeile | null>(null);
     const [verlauf, setVerlauf] = useState<Verlauf | null>(null);
     const [verlaufFehler, setVerlaufFehler] = useState('');
-    const toast = useToast(); const toastRef = useRef(toast); toastRef.current = toast;
+    // useToast() liefert eine stabile API – kein Ref auf den neuesten Wert nötig.
+    const toast = useToast();
     const confirm = useConfirm();
     // DATEV einrichten dürfen nur Admins (Einstellungen → Zeiterfassung).
     const { isAdmin } = useAuth();
     const vergangen = filter.jahr * 12 + filter.monat < heute.getFullYear() * 12 + heute.getMonth() + 1;
-    const recht = useMonatsabschlussBerechtigung(text => { setFehler(text); toastRef.current.error(text); });
+    const recht = useMonatsabschlussBerechtigung(text => { setFehler(text); toast.error(text); });
+    // Neue Abfrage (Recht da, anderer Filter, Neu laden): Ladeanzeige an und alten Fehler weg,
+    // bevor der Effekt unten lädt.
+    const [ladeAnlass, setLadeAnlass] = useState<{ recht: boolean | null; filter: Filter; revision: number } | null>(null);
+    if (!ladeAnlass || ladeAnlass.recht !== recht || ladeAnlass.filter !== filter || ladeAnlass.revision !== revision) {
+        setLadeAnlass({ recht, filter, revision });
+        if (recht) { setLaedt(true); setFehler(''); }
+    }
+    // Andere Zeile für den Verlauf: alten Verlauf und Fehler verwerfen.
+    const [verlaufFuer, setVerlaufFuer] = useState(verlaufZeile);
+    if (verlaufFuer !== verlaufZeile) {
+        setVerlaufFuer(verlaufZeile);
+        setVerlauf(null); setVerlaufFehler('');
+    }
     useEffect(() => () => {
         // Invalidate pending confirmation callbacks when this page unmounts.
         generation.current++;
@@ -61,12 +75,12 @@ export default function Monatsabschluss() {
         const controller = new AbortController();
         Promise.all([api.ladeMitarbeiter(controller.signal), api.ladeAbteilungen(controller.signal)]).then(([menschen, teams]) => {
             if (!controller.signal.aborted) { setMitarbeiter(menschen.map(m => ({ id: m.id, name: `${m.vorname} ${m.nachname}` }))); setAbteilungen(teams); }
-        }).catch(err => { if (!controller.signal.aborted) { setFehler(meldung(err)); toastRef.current.error(meldung(err)); } });
+        }).catch(err => { if (!controller.signal.aborted) { setFehler(meldung(err)); toast.error(meldung(err)); } });
         return () => controller.abort();
-    }, [recht]);
+    }, [recht, toast]);
     useEffect(() => {
         if (!recht) return;
-        const controller = new AbortController(); setLaedt(true); setFehler('');
+        const controller = new AbortController();
         Promise.all([
             api.ladeUebersicht(filter, controller.signal),
             api.ladeJahresvergleich({ jahr: filter.jahr, mitarbeiterId: filter.mitarbeiterId, abteilungId: filter.abteilungId }, controller.signal)
@@ -75,18 +89,17 @@ export default function Monatsabschluss() {
             if (uebersicht.totalElements > 500 || uebersicht.auswahl.length > 500) throw new Error('Bitte die Auswahl auf höchstens 500 Mitarbeiter eingrenzen.');
             setDaten(uebersicht); setJahresvergleich(jv);
             setAuswahl(current => current.map(stand => uebersicht.auswahl.find(s => key(s) === key(stand)) ?? stand));
-        }).catch(err => { if (!controller.signal.aborted) { setDaten(null); setJahresvergleich(null); setFehler(meldung(err)); toastRef.current.error(meldung(err)); } })
+        }).catch(err => { if (!controller.signal.aborted) { setDaten(null); setJahresvergleich(null); setFehler(meldung(err)); toast.error(meldung(err)); } })
             .finally(() => { if (!controller.signal.aborted) setLaedt(false); });
         return () => controller.abort();
-    }, [recht, filter, revision]);
+    }, [recht, filter, revision, toast]);
     useEffect(() => {
-        setVerlauf(null); setVerlaufFehler('');
         if (!verlaufZeile) return;
         const controller = new AbortController();
         api.ladeVerlauf(verlaufZeile.referenz, controller.signal).then(data => { if (!controller.signal.aborted) setVerlauf(data); })
-            .catch(err => { if (!controller.signal.aborted) { setVerlaufFehler(meldung(err)); toastRef.current.error(meldung(err)); } });
+            .catch(err => { if (!controller.signal.aborted) { setVerlaufFehler(meldung(err)); toast.error(meldung(err)); } });
         return () => controller.abort();
-    }, [verlaufZeile]);
+    }, [verlaufZeile, toast]);
     function aendereFilter(next: Partial<Filter>) { generation.current++; setAuswahl([]); setErgebnisse([]); setVerlaufZeile(null); setDaten(null); setJahresvergleich(null); setFilter(prev => ({ ...prev, ...next, page: 0 })); }
     function waehle(stand: AuswahlStand) { generation.current++; setAuswahl(prev => prev.some(s => key(s) === key(stand)) ? prev.filter(s => key(s) !== key(stand)) : [...prev, stand]); }
     async function abschliessen() {
@@ -99,9 +112,9 @@ export default function Monatsabschluss() {
             window.dispatchEvent(new Event('notifications:refresh'));
             const fehlgeschlagen = response.ergebnisse.filter(e => e.status === 'FEHLGESCHLAGEN');
             if (lauf === generation.current) { setErgebnisse(response.ergebnisse); setAuswahl(staende.filter(s => fehlgeschlagen.some(e => key(e.referenz) === key(s)))); setVerlaufZeile(null); setFilter(f => ({ ...f, page: 0 })); setRevision(v => v + 1); }
-            if (fehlgeschlagen.length) toastRef.current.error(`${fehlgeschlagen.length} Abschlüsse fehlgeschlagen. Bitte die Ergebnisse prüfen.`);
-            else toastRef.current.success('Die ausgewählten Monate sind abgeschlossen.');
-        } catch (err) { toastRef.current.error(meldung(err)); if (lauf === generation.current) { setFehler(meldung(err)); setRevision(v => v + 1); } }
+            if (fehlgeschlagen.length) toast.error(`${fehlgeschlagen.length} Abschlüsse fehlgeschlagen. Bitte die Ergebnisse prüfen.`);
+            else toast.success('Die ausgewählten Monate sind abgeschlossen.');
+        } catch (err) { toast.error(meldung(err)); if (lauf === generation.current) { setFehler(meldung(err)); setRevision(v => v + 1); } }
         finally { busyRef.current = false; setBusy(false); }
     }
     async function oeffneMonat(zeile: Zeile) {
@@ -117,14 +130,14 @@ export default function Monatsabschluss() {
         setBusy(true);
         try {
             await api.oeffnen(zeile.referenz);
-            toastRef.current.success(`Monat für ${zeile.mitarbeiterName} wieder geöffnet.`);
+            toast.success(`Monat für ${zeile.mitarbeiterName} wieder geöffnet.`);
             window.dispatchEvent(new Event('notifications:refresh'));
             setRevision(v => v + 1);
             if (verlaufZeile && key(verlaufZeile.referenz) === key(zeile.referenz)) {
                 setVerlaufZeile(null);
             }
         } catch (err) {
-            toastRef.current.error(meldung(err));
+            toast.error(meldung(err));
         } finally {
             busyRef.current = false;
             setBusy(false);

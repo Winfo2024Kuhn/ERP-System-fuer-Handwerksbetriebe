@@ -68,18 +68,18 @@ export function WerkstoffPflege({ onGeaendert }: Props = {}) {
     const [fehler, setFehler] = useState('');
     const [speichert, setSpeichert] = useState(false);
 
-    const laden = useCallback(async () => {
-        try {
-            const res = await fetch(BASIS);
-            if (!res.ok) throw new Error(await parseErrorMessage(res, 'Die Werkstoffe konnten nicht geladen werden.'));
-            setListe(await res.json() as Werkstoff[]);
-            setLadefehler('');
-        } catch (e) {
-            const text = e instanceof Error ? e.message : 'Die Werkstoffe konnten nicht geladen werden.';
-            setLadefehler(text);
-            toast.error(text);
-        }
-    }, [toast]);
+    const laden = useCallback(() =>
+        fetch(BASIS)
+            .then(async res => {
+                if (!res.ok) throw new Error(await parseErrorMessage(res, 'Die Werkstoffe konnten nicht geladen werden.'));
+                setListe(await res.json() as Werkstoff[]);
+                setLadefehler('');
+            })
+            .catch(e => {
+                const text = e instanceof Error ? e.message : 'Die Werkstoffe konnten nicht geladen werden.';
+                setLadefehler(text);
+                toast.error(text);
+            }), [toast]);
 
     useEffect(() => { void laden(); }, [laden]);
 

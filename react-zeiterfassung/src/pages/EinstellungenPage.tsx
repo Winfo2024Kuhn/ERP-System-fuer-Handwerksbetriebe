@@ -44,10 +44,8 @@ export default function EinstellungenPage() {
     const [laeuft, setLaeuft] = useState<Bereich | null>(null)
     const [hilfeOffen, setHilfeOffen] = useState<Bereich | null>(null)
 
-    const ladeStatus = useCallback(async () => {
-        const [mikrofon, kamera] = await Promise.all([leseMikrofonStatus(), leseKameraStatus()])
-        setStatus({ benachrichtigungen: leseBenachrichtigungsStatus(), mikrofon, kamera })
-    }, [])
+    const ladeStatus = useCallback(() => Promise.all([leseMikrofonStatus(), leseKameraStatus()])
+        .then(([mikrofon, kamera]) => setStatus({ benachrichtigungen: leseBenachrichtigungsStatus(), mikrofon, kamera })), [])
 
     useEffect(() => { void ladeStatus() }, [ladeStatus])
 

@@ -435,7 +435,7 @@ export default function BestellungenUebersicht() {
     const [error, setError] = useState<string | null>(null);
     const [busyKetteId, setBusyKetteId] = useState<string | null>(null);
     const [offeneBelege, setOffeneBelege] = useState<BelegZuordnungRef[]>([]);
-    const [offeneBelegeLoading, setOffeneBelegeLoading] = useState(false);
+    const [offeneBelegeLoading, setOffeneBelegeLoading] = useState(true);
     const [showBelegAuswahl, setShowBelegAuswahl] = useState(false);
     const [selectedBeleg, setSelectedBeleg] = useState<BelegZuordnungRef | null>(null);
 
@@ -455,67 +455,81 @@ export default function BestellungenUebersicht() {
     const [sucheLaedt, setSucheLaedt] = useState(false);
     const [mehrLaedt, setMehrLaedt] = useState(false);
 
-    const loadData = useCallback(async (modus: LadeModus = 'voll') => {
+    // Ergebnisse erst in den Promise-Callbacks übernehmen, nicht synchron im Effekt.
+    // Die Ladeanzeigen schaltet `loadData` vorab an (beim ersten Laden der Startwert).
+    const ladeUebersicht = useCallback((modus: LadeModus) => {
         anfrageRef.current?.abort();
         const anfrage = new AbortController();
         anfrageRef.current = anfrage;
         const parameter = { ...parameterRef.current };
+        return fetch(uebersichtUrl(parameter), { signal: anfrage.signal })
+            .then(async (res) => {
+                if (!res.ok) {
+                    const body = await res.json().catch(() => null) as { message?: unknown } | null;
+                    throw new Error(typeof body?.message === 'string' && body.message ? body.message : 'Bestellungen konnten nicht geladen werden.');
+                }
+                const json = await res.json();
+                if (anfrageRef.current !== anfrage) return; // inzwischen neuere Anfrage unterwegs
+                setData(normalisiereUebersicht<DokumentenKette>(json));
+                setGeladeneSuche(parameter.suche);
+                setError(null);
+            })
+            .catch((err: unknown) => {
+                // Abgebrochen (neuere Anfrage oder Seite verlassen): kein Fehler für den Nutzer
+                if (anfrage.signal.aborted || anfrageRef.current !== anfrage) return;
+                const meldung = err instanceof Error ? err.message : 'Bestellungen konnten nicht geladen werden.';
+                // Ohne angezeigte Liste ersetzt der Fehler die Liste, sonst bleibt sie stehen und ein Toast meldet es
+                if (modus === 'voll') setError(meldung);
+                else toast.error(meldung);
+            })
+            .finally(() => {
+                if (anfrageRef.current === anfrage) {
+                    anfrageRef.current = null;
+                    setLoading(false);
+                    setSucheLaedt(false);
+                    setMehrLaedt(false);
+                }
+            });
+    }, [toast]);
+
+    const loadData = useCallback((modus: LadeModus = 'voll') => {
         if (modus === 'voll') setLoading(true);
         if (modus === 'suche') setSucheLaedt(true);
         if (modus === 'mehr') setMehrLaedt(true);
-        try {
-            const res = await fetch(uebersichtUrl(parameter), { signal: anfrage.signal });
-            if (!res.ok) {
-                const body = await res.json().catch(() => null) as { message?: unknown } | null;
-                throw new Error(typeof body?.message === 'string' && body.message ? body.message : 'Bestellungen konnten nicht geladen werden.');
-            }
-            const json = await res.json();
-            if (anfrageRef.current !== anfrage) return; // inzwischen neuere Anfrage unterwegs
-            setData(normalisiereUebersicht<DokumentenKette>(json));
-            setGeladeneSuche(parameter.suche);
-            setError(null);
-        } catch (err) {
-            // Abgebrochen (neuere Anfrage oder Seite verlassen): kein Fehler für den Nutzer
-            if (anfrage.signal.aborted || anfrageRef.current !== anfrage) return;
-            const meldung = err instanceof Error ? err.message : 'Bestellungen konnten nicht geladen werden.';
-            // Ohne angezeigte Liste ersetzt der Fehler die Liste, sonst bleibt sie stehen und ein Toast meldet es
-            if (modus === 'voll') setError(meldung);
-            else toast.error(meldung);
-        } finally {
-            if (anfrageRef.current === anfrage) {
-                anfrageRef.current = null;
-                setLoading(false);
-                setSucheLaedt(false);
-                setMehrLaedt(false);
-            }
-        }
-    }, [toast]);
+        return ladeUebersicht(modus);
+    }, [ladeUebersicht]);
 
     useEffect(() => () => anfrageRef.current?.abort(), []);
 
-    const loadOffeneBelege = useCallback(async () => {
-        setOffeneBelegeLoading(true);
-        try {
-            const res = await fetch('/api/bestellungen-uebersicht/belege-offen');
-            if (res.status === 401 || res.status === 403) {
+    const ladeOffeneBelege = useCallback(() =>
+        fetch('/api/bestellungen-uebersicht/belege-offen')
+            .then(async (res) => {
+                if (res.status === 401 || res.status === 403) {
+                    setOffeneBelege([]);
+                    return;
+                }
+                if (!res.ok) throw new Error('Fehler beim Laden');
+                const json = await res.json();
+                setOffeneBelege(Array.isArray(json) ? json : []);
+            })
+            .catch(() => {
+                toast.error('Belege konnten nicht geladen werden');
                 setOffeneBelege([]);
-                return;
-            }
-            if (!res.ok) throw new Error('Fehler beim Laden');
-            const json = await res.json();
-            setOffeneBelege(Array.isArray(json) ? json : []);
-        } catch {
-            toast.error('Belege konnten nicht geladen werden');
-            setOffeneBelege([]);
-        } finally {
-            setOffeneBelegeLoading(false);
-        }
-    }, [toast]);
+            })
+            .finally(() => {
+                setOffeneBelegeLoading(false);
+            }),
+    [toast]);
+
+    const loadOffeneBelege = useCallback(() => {
+        setOffeneBelegeLoading(true);
+        return ladeOffeneBelege();
+    }, [ladeOffeneBelege]);
 
     useEffect(() => {
-        void loadData();
-        void loadOffeneBelege();
-    }, [loadData, loadOffeneBelege]);
+        void ladeUebersicht('voll');
+        void ladeOffeneBelege();
+    }, [ladeUebersicht, ladeOffeneBelege]);
 
     // Suche fragt den Server (alle Bestellungen, nicht nur die geladenen) – entprellt, Löschen sofort
     useEffect(() => {

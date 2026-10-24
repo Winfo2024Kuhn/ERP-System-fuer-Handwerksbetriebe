@@ -76,29 +76,37 @@ export function ArtikelDokumente({ artikelId, onGeaendert }: ArtikelDokumentePro
     const bildInputRef = useRef<HTMLInputElement>(null);
     const dokumentInputRef = useRef<HTMLInputElement>(null);
 
-    const laden = useCallback(async () => {
+    // Anderer Artikel: Ladeanzeige beim Rendern einschalten.
+    const [artikelIdVorher, setArtikelIdVorher] = useState(artikelId);
+    if (artikelId !== artikelIdVorher) {
+        setArtikelIdVorher(artikelId);
         setLoading(true);
-        try {
-            const res = await fetch(`/api/artikel/${encodeURIComponent(artikelId)}/dokumente`);
-            if (!res.ok) throw new Error("Laden fehlgeschlagen");
-            const daten = await res.json();
-            setDokumente(Array.isArray(daten) ? daten : []);
-        } catch (err) {
-            console.error(err);
-            toast.error("Die Bilder und Unterlagen konnten nicht geladen werden.");
-        } finally {
-            setLoading(false);
-        }
-        // toast bewusst nicht in den Abhaengigkeiten: useToast() liefert bei jedem
-        // Render des ToastProvider ein neues Objekt (nur die inneren Callbacks sind
-        // memoisiert). Mit toast in den Deps wuerde JEDER Toast irgendwo in der App
-        // dieses laden() neu erzeugen und ueber useEffect(laden) einen erneuten Ladevorgang
-        // (Skeleton-Flackern) ausloesen - siehe ArtikelDetail.tsx, das aus demselben
-        // Grund nur an [id] haengt.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [artikelId]);
+    }
 
-    useEffect(() => { laden(); }, [laden]);
+    // Lädt ohne Start-Ladeanzeige (die setzen Startwert, Artikelwechsel bzw. laden()).
+    const holeDokumente = useCallback(() =>
+        fetch(`/api/artikel/${encodeURIComponent(artikelId)}/dokumente`)
+            .then((res) => {
+                if (!res.ok) throw new Error("Laden fehlgeschlagen");
+                return res.json();
+            })
+            .then((daten) => {
+                setDokumente(Array.isArray(daten) ? daten : []);
+            })
+            .catch((err) => {
+                console.error(err);
+                toast.error("Die Bilder und Unterlagen konnten nicht geladen werden.");
+            })
+            .finally(() => {
+                setLoading(false);
+            }), [artikelId, toast]);
+
+    const laden = useCallback(() => {
+        setLoading(true);
+        return holeDokumente();
+    }, [holeDokumente]);
+
+    useEffect(() => { void holeDokumente(); }, [holeDokumente]);
 
     const vorschaubild = dokumente.find((d) => d.typ === "VORSCHAUBILD");
     const unterlagen = dokumente.filter((d) => d.typ !== "VORSCHAUBILD");

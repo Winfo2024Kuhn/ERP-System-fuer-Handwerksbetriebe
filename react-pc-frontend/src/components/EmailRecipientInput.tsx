@@ -146,13 +146,17 @@ export function EmailRecipientInput({
         return items;
     })();
 
+    // Zu kurzer Suchtext: Trefferliste beim Rendern leeren.
+    const [suchtextVorher, setSuchtextVorher] = useState(suchtext);
+    if (suchtext !== suchtextVorher) {
+        setSuchtextVorher(suchtext);
+        if (!suchtext || suchtext.length < 2) setContacts([]);
+    }
+
     // Debounced Suche
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (!suchtext || suchtext.length < 2) {
-            setContacts([]);
-            return;
-        }
+        if (!suchtext || suchtext.length < 2) return;
         debounceRef.current = setTimeout(() => {
             searchContacts(suchtext);
         }, 250);
@@ -199,10 +203,13 @@ export function EmailRecipientInput({
         };
     }, [showDropdown]);
 
-    // Reset highlight when items change
-    useEffect(() => {
+    // Reset highlight when items change (Zustand beim Rendern anpassen)
+    const anzahlSchluessel = `${displayItems.length}|${linkedEmails.length}`;
+    const [anzahlSchluesselVorher, setAnzahlSchluesselVorher] = useState(anzahlSchluessel);
+    if (anzahlSchluessel !== anzahlSchluesselVorher) {
+        setAnzahlSchluesselVorher(anzahlSchluessel);
         setHighlightIdx(-1);
-    }, [displayItems.length, linkedEmails.length]);
+    }
 
     /** Mehrfach-Modus: neue Empfänger als Kärtchen anhängen. */
     const uebernehme = (neue: string[]) => {

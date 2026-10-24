@@ -30,26 +30,22 @@ export function LieferantReklamationDetailPage() {
     const [uploading, setUploading] = useState(false);
     const [viewerImage, setViewerImage] = useState<string | null>(null);
 
+    const loadData = () => fetch(`/api/reklamationen/${id}`)
+        .then(res => {
+            if (!res.ok) throw new Error('Reklamation konnte nicht geladen werden.');
+            return res.json();
+        })
+        .then(data => setReklamation(data))
+        .catch(error => {
+            console.error(error);
+            toast.error('Reklamation konnte nicht geladen werden.');
+        })
+        .finally(() => setLoading(false));
+
     useEffect(() => {
         loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
-
-    const loadData = async () => {
-        try {
-            const res = await fetch(`/api/reklamationen/${id}`);
-            if (!res.ok) throw new Error('Reklamation konnte nicht geladen werden.');
-            if (res.ok) {
-                const data = await res.json();
-                setReklamation(data);
-            }
-        } catch (error) {
-            console.error(error);
-            toast.error('Reklamation konnte nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;

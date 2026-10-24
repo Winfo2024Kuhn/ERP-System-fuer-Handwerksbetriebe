@@ -68,43 +68,52 @@ export function DatevEinstellungenKarte({ onSaved }: { onSaved?: () => void }) {
     const [fehler, setFehler] = useState('');
     const [konflikt, setKonflikt] = useState(false);
 
-    /** Lädt nur die Mitarbeiter nach – ein Entwurf im Formular bleibt dabei stehen. */
-    const ladeMitarbeiter = useCallback(async () => {
-        setMitarbeiterLaedt(true);
-        try {
-            setMitarbeiter(await zeiterfassungApi.ladeMitarbeiter());
+    // Die Ladefunktionen setzen nur das Ergebnis. Ladeanzeige und Fehler setzen die Knöpfe
+    // „Erneut laden“ vorab zurück (siehe neuLaden); beim ersten Laden stimmen die Startwerte.
+    const ladeMitarbeiter = useCallback(() => zeiterfassungApi.ladeMitarbeiter()
+        .then((liste) => {
+            setMitarbeiter(liste);
             setMitarbeiterFehler('');
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             const text = meldung(err, 'Die Mitarbeiter konnten nicht geladen werden.');
             setMitarbeiterFehler(text);
             toast.error(text);
-        } finally {
-            setMitarbeiterLaedt(false);
-        }
-    }, [toast]);
+        })
+        .finally(() => setMitarbeiterLaedt(false)), [toast]);
 
-    const laden = useCallback(async () => {
-        setLaedt(true);
-        setLadeFehler('');
-        setFehler('');
-        setKonflikt(false);
-        try {
-            const neu = normalisiereKonfiguration(await zeiterfassungApi.ladeDatev());
+    const laden = useCallback(() => zeiterfassungApi.ladeDatev()
+        .then((daten) => {
+            const neu = normalisiereKonfiguration(daten);
             setConfig(neu);
             setGespeichert(vergleichsform(neu));
-        } catch (err) {
+        })
+        .catch((err: unknown) => {
             const text = meldung(err, 'Die DATEV-Einstellungen konnten nicht geladen werden.');
             setLadeFehler(text);
             toast.error(text);
-        } finally {
-            setLaedt(false);
-        }
-    }, [toast]);
+        })
+        .finally(() => setLaedt(false)), [toast]);
 
     useEffect(() => {
         void laden();
         void ladeMitarbeiter();
     }, [laden, ladeMitarbeiter]);
+
+    /** Lädt die Einstellungen neu; ein Entwurf im Formular wird dabei verworfen. */
+    const neuLaden = () => {
+        setLaedt(true);
+        setLadeFehler('');
+        setFehler('');
+        setKonflikt(false);
+        void laden();
+    };
+
+    /** Lädt nur die Mitarbeiter nach – ein Entwurf im Formular bleibt dabei stehen. */
+    const mitarbeiterNeuLaden = () => {
+        setMitarbeiterLaedt(true);
+        void ladeMitarbeiter();
+    };
 
     const nameVon = (id: number) => mitarbeiter.find(m => m.id === id)?.name ?? `Mitarbeiter ${id}`;
     const geaendert = config !== null && vergleichsform(config) !== gespeichert;
@@ -159,7 +168,7 @@ export function DatevEinstellungenKarte({ onSaved }: { onSaved?: () => void }) {
             ) : ladeFehler || !config ? (
                 <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                     {ladeFehler || 'Die DATEV-Einstellungen konnten nicht geladen werden.'}
-                    <Button variant="outline" size="sm" onClick={() => void laden()}>Erneut laden</Button>
+                    <Button variant="outline" size="sm" onClick={neuLaden}>Erneut laden</Button>
                 </div>
             ) : (
                 <fieldset disabled={speichert} aria-label="DATEV-Einstellungen" className="min-w-0 space-y-8">
@@ -199,7 +208,7 @@ export function DatevEinstellungenKarte({ onSaved }: { onSaved?: () => void }) {
 
                         <Abschnitt titel="Mitarbeiter" erklaerung="Personalnummer aus dem Lohnprogramm des Steuerbüros. Die Stunden-Auswahl je Mitarbeiter geht erst mit Personalnummer.">
                             <MitarbeiterTabelle config={config} mitarbeiter={mitarbeiter} laedt={mitarbeiterLaedt} fehler={mitarbeiterFehler}
-                                speichert={speichert} onChange={aendern} onNeuLaden={() => void ladeMitarbeiter()} />
+                                speichert={speichert} onChange={aendern} onNeuLaden={mitarbeiterNeuLaden} />
                         </Abschnitt>
                     </div>
 
@@ -207,7 +216,7 @@ export function DatevEinstellungenKarte({ onSaved }: { onSaved?: () => void }) {
                         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
                             {fehler}
                             {konflikt && (
-                                <Button variant="outline" size="sm" onClick={() => void laden()}>
+                                <Button variant="outline" size="sm" onClick={neuLaden}>
                                     <RefreshCw aria-hidden="true" className="w-4 h-4" />
                                     Neu laden
                                 </Button>

@@ -38,26 +38,24 @@ export default function ZeiterfassungSteuerberater() {
     const [jahr, setJahr] = useState(today.getFullYear());
     const [monat, setMonat] = useState(today.getMonth() + 1);
 
-    // Load Zeitkonten on mount
-    const loadZeitkonten = async () => {
-        setLoadingZeitkonten(true);
-        try {
-            const res = await fetch('/api/zeitverwaltung/zeitkonten');
-            if (!res.ok) throw new Error('Zeitkonten konnten nicht geladen werden.');
-            const data = await res.json() as ZeitkontoStatus[];
-            // Menschen ohne aktuell eingerichtetes Zeitkonto fehlen nur aus der
-            // aktuellen Auswahl. Ihre historischen Auswertungsdaten bleiben im Backend.
-            // Geschäftsführer werden bei der monatlichen Stundenübermittlung an den Steuerberater nicht aufgeführt.
-            setZeitkonten(Array.isArray(data) ? data.filter(konto => konto.fuehrtZeitkonto && konto.aktuell !== null && !konto.istGeschaeftsfuehrer) : []);
-        } catch (err) {
-            console.error('Fehler beim Laden der Zeitkonten:', err);
-            setZeitkonten([]);
-        }
-        setLoadingZeitkonten(false);
-    };
-
+    // Load Zeitkonten on mount (Ladeanzeige startet mit true)
     useEffect(() => {
-        loadZeitkonten();
+        fetch('/api/zeitverwaltung/zeitkonten')
+            .then(async (res) => {
+                if (!res.ok) throw new Error('Zeitkonten konnten nicht geladen werden.');
+                const data = await res.json() as ZeitkontoStatus[];
+                // Menschen ohne aktuell eingerichtetes Zeitkonto fehlen nur aus der
+                // aktuellen Auswahl. Ihre historischen Auswertungsdaten bleiben im Backend.
+                // Geschäftsführer werden bei der monatlichen Stundenübermittlung an den Steuerberater nicht aufgeführt.
+                setZeitkonten(Array.isArray(data) ? data.filter(konto => konto.fuehrtZeitkonto && konto.aktuell !== null && !konto.istGeschaeftsfuehrer) : []);
+            })
+            .catch((err) => {
+                console.error('Fehler beim Laden der Zeitkonten:', err);
+                setZeitkonten([]);
+            })
+            .finally(() => {
+                setLoadingZeitkonten(false);
+            });
     }, []);
 
     const arbeitszeitAm = (konto: ZeitkontoStatus, datum: string): Arbeitszeit | null => {

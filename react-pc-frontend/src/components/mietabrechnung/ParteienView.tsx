@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { type Partei } from './types';
 import { MietabrechnungService } from './MietabrechnungService';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
@@ -21,27 +21,30 @@ export function ParteienView({ mietobjektId }: ParteienViewProps) {
     const toast = useToast();
     const confirmDialog = useConfirm();
     const [parteien, setParteien] = useState<Partei[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState<Partei | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [vorschuss, setVorschuss] = useState('0');
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        loadParteien();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mietobjektId]);
-
-    const loadParteien = async () => {
+    // Beim Wechsel des Mietobjekts zeigt die Liste sofort wieder „wird geladen“.
+    const [geladenFuer, setGeladenFuer] = useState(mietobjektId);
+    if (geladenFuer !== mietobjektId) {
+        setGeladenFuer(mietobjektId);
         setLoading(true);
-        try {
-            const list = await MietabrechnungService.getParteien(mietobjektId);
-            setParteien(list);
-        } catch {
-            toast.error('Parteien konnten nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
+    }
+
+    const ladeParteien = useCallback(() => MietabrechnungService.getParteien(mietobjektId)
+        .then(list => { setParteien(list); })
+        .catch(() => { toast.error('Parteien konnten nicht geladen werden.'); })
+        .finally(() => setLoading(false)), [mietobjektId, toast]);
+
+    useEffect(() => { void ladeParteien(); }, [ladeParteien]);
+
+    /** Lädt nach einer Änderung neu und zeigt dabei den Ladehinweis. */
+    const loadParteien = () => {
+        setLoading(true);
+        return ladeParteien();
     };
 
     const handleEdit = (p: Partei) => {

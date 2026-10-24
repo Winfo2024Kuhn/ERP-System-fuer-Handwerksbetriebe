@@ -118,12 +118,19 @@ export function EmailZuordnungSearchModal({
     }, []);
 
     // Beim Öffnen zurücksetzen – keine Treffer der letzten Sitzung stehen lassen
-    useEffect(() => {
+    // (Zustand beim Rendern anpassen).
+    const [warOffen, setWarOffen] = useState(isOpen);
+    if (isOpen !== warOffen) {
+        setWarOffen(isOpen);
         if (isOpen) {
             setSearchTerm('');
             setFilter('ALLE');
             setTreffer([]);
         }
+    }
+
+    // Beim Schließen eine laufende Suche abbrechen
+    useEffect(() => {
         return () => {
             if (abortRef.current) abortRef.current.abort();
         };

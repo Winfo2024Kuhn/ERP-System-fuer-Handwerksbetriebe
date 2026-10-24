@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { ZeitkontoKorrekturenModal } from './ZeitkontoKorrekturenModal';
 const toastError = vi.fn();
-vi.mock('./ui/toast', () => ({ useToast: () => ({ error: toastError }) }));
+// Wie der echte ToastProvider: eine stabile API, sonst lädt jeder Render neu.
+const toast = { error: toastError };
+vi.mock('./ui/toast', () => ({ useToast: () => toast }));
 const fetchMock = vi.fn();
 beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { Button } from '../ui/button';
@@ -43,12 +43,15 @@ export function DokumentLoeschenDialog({
     const [freitext, setFreitext] = useState('');
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
+    // Beim Öffnen Standard-Grund und leeren Freitext (Zustand beim Rendern anpassen).
+    const [warOffen, setWarOffen] = useState(open);
+    if (open !== warOffen) {
+        setWarOffen(open);
         if (open) {
             setGrundCode('TIPPFEHLER');
             setFreitext('');
         }
-    }, [open]);
+    }
 
     const grundLabel = STANDARD_GRUENDE.find(g => g.value === grundCode)?.label || '';
     const begruendungZusammen = freitext.trim()

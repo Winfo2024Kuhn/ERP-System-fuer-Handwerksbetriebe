@@ -95,54 +95,65 @@ async function parseResponseMessage(res: Response, fallback: string): Promise<st
     return fallback;
 }
 
+interface Anmeldestand {
+    user: AuthUser | null;
+    /** Keine Antwort vom Server (Funkloch oder Zeitüberschreitung). */
+    verbindungsProblem: boolean;
+}
+
+/** Fragt beim Server nach, wer angemeldet ist – ohne Zustand zu ändern. */
+async function frageAnmeldungAb(): Promise<Anmeldestand> {
+    const abbruch = new AbortController();
+    const timer = setTimeout(() => abbruch.abort(), ANMELDUNG_TIMEOUT_MS);
+    let res: Response;
+    try {
+        res = await fetch('/api/auth/me', {
+            credentials: 'same-origin',
+            signal: abbruch.signal,
+        });
+    } catch {
+        // Keine Antwort (Funkloch oder Zeitüberschreitung): Ob die Sitzung noch gilt, wissen wir nicht.
+        clearTimeout(timer);
+        return { user: null, verbindungsProblem: true };
+    }
+
+    try {
+        if (!res.ok) {
+            return { user: null, verbindungsProblem: false };
+        }
+        const data: AuthUser = await res.json();
+        return { user: data, verbindungsProblem: false };
+    } catch {
+        // Der Server hat geantwortet, aber unbrauchbar (z. B. Fehlerseite statt JSON): wie abgemeldet.
+        return { user: null, verbindungsProblem: false };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [loading, setLoading] = useState(true);
     const [verbindungsProblem, setVerbindungsProblem] = useState(false);
 
-    const refreshMe = useCallback(async (): Promise<AuthUser | null> => {
-        const abbruch = new AbortController();
-        const timer = setTimeout(() => abbruch.abort(), ANMELDUNG_TIMEOUT_MS);
-        let res: Response;
-        try {
-            res = await fetch('/api/auth/me', {
-                credentials: 'same-origin',
-                signal: abbruch.signal,
-            });
-        } catch {
-            // Keine Antwort (Funkloch oder Zeitüberschreitung): Ob die Sitzung noch gilt, wissen wir nicht.
-            clearTimeout(timer);
-            setVerbindungsProblem(true);
-            setUser(null);
-            syncFrontendUserSelection(null);
-            return null;
-        }
-        setVerbindungsProblem(false);
-
-        try {
-            if (!res.ok) {
-                setUser(null);
-                syncFrontendUserSelection(null);
-                return null;
-            }
-
-            const data = await res.json();
-            setUser(data);
-            syncFrontendUserSelection(data);
-            return data;
-        } catch {
-            // Der Server hat geantwortet, aber unbrauchbar (z. B. Fehlerseite statt JSON): wie abgemeldet.
-            setUser(null);
-            syncFrontendUserSelection(null);
-            return null;
-        } finally {
-            clearTimeout(timer);
-        }
+    /** Übernimmt das Ergebnis der Anmeldeprüfung in den Zustand. */
+    const uebernehmeAnmeldung = useCallback((ergebnis: Anmeldestand): AuthUser | null => {
+        setVerbindungsProblem(ergebnis.verbindungsProblem);
+        setUser(ergebnis.user);
+        syncFrontendUserSelection(ergebnis.user);
+        return ergebnis.user;
     }, []);
 
+    const refreshMe = useCallback(
+        async (): Promise<AuthUser | null> => uebernehmeAnmeldung(await frageAnmeldungAb()),
+        [uebernehmeAnmeldung],
+    );
+
     useEffect(() => {
-        refreshMe().finally(() => setLoading(false));
-    }, [refreshMe]);
+        frageAnmeldungAb()
+            .then(uebernehmeAnmeldung)
+            .finally(() => setLoading(false));
+    }, [uebernehmeAnmeldung]);
 
     const erneutPruefen = useCallback(async () => {
         setLoading(true);

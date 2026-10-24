@@ -16,24 +16,17 @@ export function LieferantReklamationenPage() {
     const [reklamationen, setReklamationen] = useState<Reklamation[]>([]);
     const [loading, setLoading] = useState(true);
 
+    const loadData = () => fetch(`/api/reklamationen/lieferant/${lieferantId}`)
+        .then(async res => {
+            if (res.ok) setReklamationen(await res.json());
+        })
+        .catch(error => console.error(error))
+        .finally(() => setLoading(false));
+
     useEffect(() => {
         loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lieferantId]);
-
-    const loadData = async () => {
-        try {
-            const res = await fetch(`/api/reklamationen/lieferant/${lieferantId}`);
-            if (res.ok) {
-                const data = await res.json();
-                setReklamationen(data);
-            }
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     return (
         <div className="min-h-screen bg-slate-50 pb-20 font-sans">

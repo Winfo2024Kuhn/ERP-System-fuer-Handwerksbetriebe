@@ -43,26 +43,30 @@ interface KostenstelleDetailViewProps {
 
 export function KostenstelleDetailView({ kostenstelle, onBack }: KostenstelleDetailViewProps) {
     const [assignments, setAssignments] = useState<ZuordnungDto[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+
+    // Andere Kostenstelle: Ladeanzeige beim Rendern einschalten.
+    const kostenstelleId = kostenstelle.id;
+    const [kostenstelleIdVorher, setKostenstelleIdVorher] = useState(kostenstelleId);
+    if (kostenstelleId !== kostenstelleIdVorher) {
+        setKostenstelleIdVorher(kostenstelleId);
+        setLoading(true);
+    }
 
     useEffect(() => {
-        loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [kostenstelle.id]);
-
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const res = await fetch(`/api/bestellungen-uebersicht/zuordnungen/kostenstelle/${kostenstelle.id}`);
-            if (res.ok) {
-                setAssignments(await res.json());
+        void (async () => {
+            try {
+                const res = await fetch(`/api/bestellungen-uebersicht/zuordnungen/kostenstelle/${kostenstelleId}`);
+                if (res.ok) {
+                    setAssignments(await res.json());
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setLoading(false);
             }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    };
+        })();
+    }, [kostenstelleId]);
 
     const totalAmount = assignments.reduce((sum, a) => sum + (a.betrag || 0), 0);
 

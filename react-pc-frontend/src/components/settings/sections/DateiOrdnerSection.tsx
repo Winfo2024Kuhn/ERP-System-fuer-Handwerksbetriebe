@@ -30,26 +30,22 @@ export function DateiOrdnerSection({ onSaved }: { onSaved?: () => void }) {
     const [testResult, setTestResult] = useState<TestResult | null>(null);
     const [anleitungOffen, setAnleitungOffen] = useState(false);
 
-    const loadSettings = useCallback(async () => {
-        setLoading(true);
-        try {
-            const res = await fetch('/api/settings/datei-ordner');
+    const loadSettings = useCallback(() => fetch('/api/settings/datei-ordner')
+        .then(async (res) => {
             if (res.ok) {
                 const data = await res.json();
                 setPfad(data?.pfad || '');
                 setNetworkUrl(data?.networkUrl || '');
                 setGespeicherteNetworkUrl(data?.networkUrl || '');
             }
-        } catch {
+        })
+        .catch(() => {
             toast.error('Datei-Ordner konnte nicht geladen werden.');
-        } finally {
-            setLoading(false);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        })
+        .finally(() => setLoading(false)), [toast]);
 
     useEffect(() => {
-        loadSettings();
+        void loadSettings();
     }, [loadSettings]);
 
     const handleTest = async () => {

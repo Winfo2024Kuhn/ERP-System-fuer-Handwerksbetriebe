@@ -99,7 +99,7 @@ export function OrdnerBaum(props: OrdnerBaumProps) {
         const element = zeilenRefs.current.get(fokusWunsch);
         if (!element) return;
         element.focus();
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+        // Erlaubt im Effekt: Der Fokus-Wunsch ist erst nach dem DOM-Zugriff (Ref) erledigt.
         setFokusWunsch(null);
     }, [fokusWunsch, zeilen]);
 
@@ -146,7 +146,8 @@ export function OrdnerBaum(props: OrdnerBaumProps) {
         }
     };
 
-    const refSetzen = (key: ZeilenSchluessel) => (element: HTMLDivElement | null) => {
+    // Callback-Ref je Zeile: Die Map wird erst beim Einhängen/Aushängen gefüllt, nicht beim Rendern.
+    const refSetzen = (key: ZeilenSchluessel, element: HTMLDivElement | null) => {
         if (element) zeilenRefs.current.set(key, element);
         else zeilenRefs.current.delete(key);
     };
@@ -183,7 +184,7 @@ export function OrdnerBaum(props: OrdnerBaumProps) {
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
                 <div role="tree" aria-label="Ordner">
                     <UebersichtZeile
-                        refSetzen={refSetzen(UEBERSICHT)}
+                        refSetzen={(element) => refSetzen(UEBERSICHT, element)}
                         gewaehlt={gewaehlt === null}
                         aktiv={aktivSichtbar === UEBERSICHT}
                         onFokus={() => setAktiv(UEBERSICHT)}
@@ -207,7 +208,7 @@ export function OrdnerBaum(props: OrdnerBaumProps) {
                                 zaehler={zaehler.get(zeile.ordner.id) ?? { direkt: 0, gesamt: 0 }}
                                 gewaehlt={gewaehlt === zeile.ordner.id}
                                 aktiv={aktivSichtbar === zeile.ordner.id}
-                                refSetzen={refSetzen(zeile.ordner.id)}
+                                refSetzen={(element) => refSetzen(zeile.ordner.id, element)}
                                 onFokus={() => setAktiv(zeile.ordner.id)}
                                 onTaste={(e) => beiTaste(e, zeile)}
                             />

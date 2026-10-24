@@ -68,11 +68,21 @@ export function SteuerberaterPaketDialog({
     { length: 7 },
     (_, index) => heute.getFullYear() + 1 - index,
   );
+  // Geöffnet oder anderer Monat: alte Vorprüfung verwerfen und sofort „wird geprüft“ zeigen.
+  const pruefungFuer = offen ? `${jahr}|${monat}` : null;
+  const [pruefungGestartetFuer, setPruefungGestartetFuer] = useState<
+    string | null
+  >(null);
+  if (pruefungFuer !== pruefungGestartetFuer) {
+    setPruefungGestartetFuer(pruefungFuer);
+    if (pruefungFuer) {
+      setLoading(true);
+      setPruefung(null);
+    }
+  }
   useEffect(() => {
     if (!offen) return;
     let cancelled = false;
-    setLoading(true);
-    setPruefung(null);
     fetch(
       `/api/buchhaltung/steuerberater/vorpruefung?jahr=${jahr}&monat=${monat}`,
     )

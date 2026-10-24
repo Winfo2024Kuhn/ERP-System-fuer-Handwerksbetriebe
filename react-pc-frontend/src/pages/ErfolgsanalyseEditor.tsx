@@ -398,6 +398,13 @@ function YearPicker({ value, onChange, minYear = 2015, maxYear = new Date().getF
 type KundenSortField = 'kundenName' | 'umsatzBrutto' | 'umsatzNetto' | 'projektAnzahl' | 'gewinn';
 type SortDirection = 'asc' | 'desc';
 
+function SortIcon({ field, aktivesFeld, richtung }: { field: KundenSortField; aktivesFeld: KundenSortField; richtung: SortDirection }) {
+    if (aktivesFeld !== field) return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />;
+    return richtung === 'asc'
+        ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
+        : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />;
+}
+
 export default function ErfolgsanalyseEditor() {
     // Filter State
     const [jahr, setJahr] = useState(new Date().getFullYear());
@@ -408,7 +415,7 @@ export default function ErfolgsanalyseEditor() {
     const [kundenSortDir, setKundenSortDir] = useState<SortDirection>('desc');
 
     // Data State
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [dokumente, setDokumente] = useState<UmsatzDokument[]>([]);
     const [statistiken, setStatistiken] = useState<UmsatzStatistiken | null>(null);
     const [lieferantenkostenJahre, setLieferantenkostenJahre] = useState<LieferantenkostenJahr[]>([]);
@@ -422,79 +429,87 @@ export default function ErfolgsanalyseEditor() {
     const [lieferantenDetailsOffen, setLieferantenDetailsOffen] = useState(false);
     const [hervorgehobenerRang, setHervorgehobenerRang] = useState<number | null>(null);
 
-    // Lade Daten
-    const loadData = useCallback(async () => {
+    // Neuer Zeitraum: Ladeanzeige an und Markierung weg, bevor der Effekt neu lädt.
+    // Mit neuen Daten gilt eine neue Rangfolge – die alte Markierung würde
+    // auf einen anderen Lieferanten zeigen.
+    const zeitraumSchluessel = `${jahr}-${monat}`;
+    const [geladenerZeitraum, setGeladenerZeitraum] = useState(zeitraumSchluessel);
+    if (geladenerZeitraum !== zeitraumSchluessel) {
+        setGeladenerZeitraum(zeitraumSchluessel);
         setLoading(true);
-        // Mit neuen Daten gilt eine neue Rangfolge – die alte Markierung würde
-        // auf einen anderen Lieferanten zeigen.
         setHervorgehobenerRang(null);
-        try {
-            const params = new URLSearchParams({ jahr: jahr.toString() });
-            if (monat) params.append('monat', monat);
+    }
 
-            const [docsRes, statsRes, liefkostenRes, liefPerfRes, websiteRes, kostenstellenRes] = await Promise.all([
-                fetch(`/api/projekte/umsatz?${params.toString()}`),
-                fetch(`/api/projekte/umsatz/statistiken?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
-                fetch('/api/projekte/umsatz/lieferantenkosten-jahresuebersicht'),
-                fetch(`/api/projekte/umsatz/lieferanten-performance?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
-                fetch('/api/website-analytics/latest'),
-                fetch(`/api/bestellungen-uebersicht/kostenstellen/auswertung?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
-            ]);
+    // Lade Daten (als Promise-Kette: Zustand wird erst gesetzt, wenn die Antworten da sind)
+    const loadData = useCallback(() => {
+        const params = new URLSearchParams({ jahr: jahr.toString() });
+        if (monat) params.append('monat', monat);
 
-            if (docsRes.ok) {
-                const docs = await docsRes.json();
-                setDokumente(Array.isArray(docs) ? docs : []);
-            }
-
-            if (statsRes.ok) {
-                const stats = await statsRes.json();
-                setStatistiken(stats);
-            }
-
-            if (liefkostenRes.ok) {
-                const liefkosten = await liefkostenRes.json();
-                setLieferantenkostenJahre(Array.isArray(liefkosten) ? liefkosten : []);
-            }
-
-            if (liefPerfRes.ok) {
-                const liefPerf = await liefPerfRes.json();
-                setLieferantPerformance(Array.isArray(liefPerf) ? liefPerf : []);
-            }
-
-            if (websiteRes.ok) {
-                // 204 No Content -> noch kein Snapshot vorhanden
-                if (websiteRes.status === 204) {
-                    setWebsiteAnalytics(null);
-                } else {
-                    const snap: WebsiteAnalyticsSnapshotDto = await websiteRes.json();
-                    setWebsiteAnalytics(snap);
+        return Promise.all([
+            fetch(`/api/projekte/umsatz?${params.toString()}`),
+            fetch(`/api/projekte/umsatz/statistiken?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
+            fetch('/api/projekte/umsatz/lieferantenkosten-jahresuebersicht'),
+            fetch(`/api/projekte/umsatz/lieferanten-performance?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
+            fetch('/api/website-analytics/latest'),
+            fetch(`/api/bestellungen-uebersicht/kostenstellen/auswertung?jahr=${jahr}${monat ? `&monat=${monat}` : ''}`),
+        ])
+            .then(async ([docsRes, statsRes, liefkostenRes, liefPerfRes, websiteRes, kostenstellenRes]) => {
+                if (docsRes.ok) {
+                    const docs = await docsRes.json();
+                    setDokumente(Array.isArray(docs) ? docs : []);
                 }
-            } else {
-                setWebsiteAnalytics(null);
-            }
 
-            if (kostenstellenRes.ok) {
-                const ks = await kostenstellenRes.json();
-                setKostenstellenVergleich(Array.isArray(ks) ? ks : []);
-            } else {
-                setKostenstellenVergleich([]);
-            }
-        } catch (err) {
-            console.error('Fehler beim Laden:', err);
-        } finally {
-            setLoading(false);
-        }
+                if (statsRes.ok) {
+                    const stats = await statsRes.json();
+                    setStatistiken(stats);
+                }
+
+                if (liefkostenRes.ok) {
+                    const liefkosten = await liefkostenRes.json();
+                    setLieferantenkostenJahre(Array.isArray(liefkosten) ? liefkosten : []);
+                }
+
+                if (liefPerfRes.ok) {
+                    const liefPerf = await liefPerfRes.json();
+                    setLieferantPerformance(Array.isArray(liefPerf) ? liefPerf : []);
+                }
+
+                if (websiteRes.ok) {
+                    // 204 No Content -> noch kein Snapshot vorhanden
+                    if (websiteRes.status === 204) {
+                        setWebsiteAnalytics(null);
+                    } else {
+                        const snap: WebsiteAnalyticsSnapshotDto = await websiteRes.json();
+                        setWebsiteAnalytics(snap);
+                    }
+                } else {
+                    setWebsiteAnalytics(null);
+                }
+
+                if (kostenstellenRes.ok) {
+                    const ks = await kostenstellenRes.json();
+                    setKostenstellenVergleich(Array.isArray(ks) ? ks : []);
+                } else {
+                    setKostenstellenVergleich([]);
+                }
+            })
+            .catch((err) => {
+                console.error('Fehler beim Laden:', err);
+            })
+            .finally(() => {
+                setLoading(false);
+            });
     }, [jahr, monat]);
 
     // Initial laden
     useEffect(() => {
-        loadData();
+        void loadData();
     }, [loadData]);
 
     // Berechnete Summen (Kosten nur einmal pro Projekt zählen!)
     // Berechnete Summen
     const summary = useMemo(() => {
-        let brutto = 0, netto = 0, mwst = 0, material = 0, arbeit = 0, kosten = 0, gewinn = 0;
+        let brutto = 0, netto = 0, mwst = 0, material = 0, arbeit = 0, kosten = 0, gewinn: number;
 
         dokumente.forEach(d => {
             const bruttoVal = d.rechnungsbetrag || 0;
@@ -849,15 +864,14 @@ export default function ErfolgsanalyseEditor() {
         }
     };
 
-    const SortIcon = ({ field }: { field: KundenSortField }) => {
-        if (kundenSortField !== field) return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />;
-        return kundenSortDir === 'asc'
-            ? <ArrowUp className="w-3.5 h-3.5 text-rose-600" />
-            : <ArrowDown className="w-3.5 h-3.5 text-rose-600" />;
+    const neuLaden = () => {
+        setLoading(true);
+        setHervorgehobenerRang(null);
+        void loadData();
     };
 
     const handleFilter = () => {
-        loadData();
+        neuLaden();
     };
 
     const handleReset = () => {
@@ -910,7 +924,7 @@ export default function ErfolgsanalyseEditor() {
             title="Erfolgsanalyse"
             subtitle={`Geschäftsentwicklung im Überblick für ${jahr}`}
             actions={
-                <Button onClick={loadData} variant="outline" size="sm" className="border-rose-300 text-rose-700 hover:bg-rose-50" disabled={loading}>
+                <Button onClick={neuLaden} variant="outline" size="sm" className="border-rose-300 text-rose-700 hover:bg-rose-50" disabled={loading}>
                     {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
                     Aktualisieren
                 </Button>
@@ -1032,31 +1046,31 @@ export default function ErfolgsanalyseEditor() {
                                                     className="text-left py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
                                                     onClick={() => toggleKundenSort('kundenName')}
                                                 >
-                                                    <span className="inline-flex items-center gap-1">Kunde <SortIcon field="kundenName" /></span>
+                                                    <span className="inline-flex items-center gap-1">Kunde <SortIcon field="kundenName" aktivesFeld={kundenSortField} richtung={kundenSortDir} /></span>
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
                                                     onClick={() => toggleKundenSort('umsatzBrutto')}
                                                 >
-                                                    <span className="inline-flex items-center gap-1 justify-end">Brutto <SortIcon field="umsatzBrutto" /></span>
+                                                    <span className="inline-flex items-center gap-1 justify-end">Brutto <SortIcon field="umsatzBrutto" aktivesFeld={kundenSortField} richtung={kundenSortDir} /></span>
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
                                                     onClick={() => toggleKundenSort('umsatzNetto')}
                                                 >
-                                                    <span className="inline-flex items-center gap-1 justify-end">Netto <SortIcon field="umsatzNetto" /></span>
+                                                    <span className="inline-flex items-center gap-1 justify-end">Netto <SortIcon field="umsatzNetto" aktivesFeld={kundenSortField} richtung={kundenSortDir} /></span>
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
                                                     onClick={() => toggleKundenSort('projektAnzahl')}
                                                 >
-                                                    <span className="inline-flex items-center gap-1 justify-end">Projekte <SortIcon field="projektAnzahl" /></span>
+                                                    <span className="inline-flex items-center gap-1 justify-end">Projekte <SortIcon field="projektAnzahl" aktivesFeld={kundenSortField} richtung={kundenSortDir} /></span>
                                                 </th>
                                                 <th
                                                     className="text-right py-3 px-4 text-xs font-semibold text-slate-600 uppercase cursor-pointer select-none hover:text-rose-600 transition-colors"
                                                     onClick={() => toggleKundenSort('gewinn')}
                                                 >
-                                                    <span className="inline-flex items-center gap-1 justify-end">Gewinn <SortIcon field="gewinn" /></span>
+                                                    <span className="inline-flex items-center gap-1 justify-end">Gewinn <SortIcon field="gewinn" aktivesFeld={kundenSortField} richtung={kundenSortDir} /></span>
                                                 </th>
                                             </tr>
                                         </thead>

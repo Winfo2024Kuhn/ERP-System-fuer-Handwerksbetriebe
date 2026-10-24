@@ -99,12 +99,9 @@ export default function TagesbuchungenPage({ syncStatus, onSync }: Tagesbuchunge
         const datum = toDateKey(selectedDate)
         const today = toDateKey(new Date())
         
-        let serverBuchungen: Buchung[] = []
-        let offlineMode = false
-
         const serverResult = await OfflineService.getTagesbuchungen(token, datum)
-        serverBuchungen = serverResult.buchungen as unknown as Buchung[]
-        offlineMode = serverResult.fromCache
+        const serverBuchungen = serverResult.buchungen as unknown as Buchung[]
+        const offlineMode = serverResult.fromCache
 
         const pending = await OfflineService.getPendingEntries() as PendingEntry[]
         const offlineBuchungen = await buildOfflineBuchungen(pending, datum)

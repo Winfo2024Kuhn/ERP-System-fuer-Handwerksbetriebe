@@ -92,13 +92,6 @@ export default function LieferantLieferscheinePage() {
         || currentFile?.name.toLowerCase().endsWith('.pdf'))
     const previewIsImage = !!vorschauBild || currentFile?.type.startsWith('image/')
 
-    useEffect(() => {
-        if (lieferantId) {
-            loadData()
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [lieferantId])
-
     // Beim Verlassen der Page Kamera-Tracks freigeben (falls der Scanner nur
     // geschlossen wurde). Nach einem fertigen Scan stoppt handleScanComplete die
     // Kamera schon selbst – ein weiterer Scan kann auf dem iPhone daher erneut
@@ -108,7 +101,6 @@ export default function LieferantLieferscheinePage() {
     }, [])
 
     const loadData = async () => {
-        setLoading(true)
         const token = localStorage.getItem('zeiterfassung_token')
 
         // Lieferant + Dokumente parallel laden – Liste ist der kritische Pfad,
@@ -134,6 +126,13 @@ export default function LieferantLieferscheinePage() {
 
         await Promise.all([liefPromise, docPromise])
     }
+
+    useEffect(() => {
+        if (lieferantId) {
+            loadData()
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lieferantId])
 
     const filteredLieferscheine = lieferscheine.filter(d => {
         const term = searchTerm.toLowerCase()
@@ -234,6 +233,7 @@ export default function LieferantLieferscheinePage() {
                 setVerifying(false)
                 belegVerwerfen()
                 if (token) NotificationService.onLieferscheinUploaded(token)
+                setLoading(true)
                 loadData() // Reload list
             } else {
                 const err = await res.json()

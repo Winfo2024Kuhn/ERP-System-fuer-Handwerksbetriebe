@@ -173,9 +173,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     const wrapperRef = useRef<HTMLDivElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
-    const debounceRef = useRef<number | null>(null);
     const timeoutRef = useRef<number | null>(null);
-    const skipNextSearchRef = useRef(false);
 
     const countriesKey = useMemo(
         () => [...countryCodes].map(c => c.toLowerCase()).sort().join(','),
@@ -291,38 +289,44 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         [cacheKey, allowedCountries, filterByCountry]
     );
 
-    useEffect(() => {
-        if (skipNextSearchRef.current) {
-            skipNextSearchRef.current = false;
-            return;
-        }
+    // Straße geändert (Tippen oder neuer Wert von außen): Vorschlagsliste beim Rendern
+    // anpassen und die Suche beauftragen. Nach dem Übernehmen eines Vorschlags nicht suchen.
+    const [strasseVorher, setStrasseVorher] = useState<string | null>(null);
+    const [sucheUeberspringen, setSucheUeberspringen] = useState(false);
+    const [suchauftrag, setSuchauftrag] = useState<{ query: string } | null>(null);
+    if (value.strasse !== strasseVorher) {
+        setStrasseVorher(value.strasse);
         const query = value.strasse.trim();
-        if (debounceRef.current) window.clearTimeout(debounceRef.current);
-        if (query.length < minChars) {
+        if (sucheUeberspringen) {
+            setSucheUeberspringen(false);
+            setSuchauftrag(null);
+        } else if (query.length < minChars) {
             setSuggestions([]);
             setOpen(false);
             setLoading(false);
             setErrorMsg(null);
-            return;
-        }
-        const cached = queryCache.get(cacheKey(query));
-        if (cached) {
-            setSuggestions(cached);
-            setOpen(true);
-            setLoading(false);
-            setErrorMsg(null);
+            setSuchauftrag(null);
         } else {
-            setLoading(true);
-            setErrorMsg(null);
+            const cached = queryCache.get(cacheKey(query));
+            if (cached) {
+                setSuggestions(cached);
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
             setOpen(true);
+            setErrorMsg(null);
+            setSuchauftrag({ query });
         }
-        debounceRef.current = window.setTimeout(() => {
-            void runSearch(query);
+    }
+
+    useEffect(() => {
+        if (!suchauftrag) return;
+        const debounce = window.setTimeout(() => {
+            void runSearch(suchauftrag.query);
         }, DEBOUNCE_MS);
-        return () => {
-            if (debounceRef.current) window.clearTimeout(debounceRef.current);
-        };
-    }, [value.strasse, minChars, runSearch, cacheKey]);
+        return () => window.clearTimeout(debounce);
+    }, [suchauftrag, runSearch]);
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -360,7 +364,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     }, [showDropdown, suggestions.length, loading, errorMsg]);
 
     const selectSuggestion = (s: Suggestion) => {
-        skipNextSearchRef.current = true;
+        setSucheUeberspringen(true);
         onChange(s.value);
         setOpen(false);
         setSuggestions([]);

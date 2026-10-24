@@ -65,15 +65,15 @@ export default function DocumentEditorPage() {
     // genau diesem Fenster kurz auf `true` springen -- der Editor (der schon
     // die ganze Zeit editierbar war) wuerde fuer einen Moment schreibgeschuetzt
     // wirken, obwohl der Nutzer ununterbrochen weiterschreibt. Das ist exakt
-    // das "Flackern", das die Spec verbietet. `kamOhneIdRef` haelt fest, ob
+    // das "Flackern", das die Spec verbietet. `kamOhneId` haelt fest, ob
     // die Seite OHNE Id gestartet ist (unveraenderlich fuer die Lebensdauer
-    // der Komponente); `ersterErwerbNachAnlageGeschehenRef` schaltet die
+    // der Komponente); `ersterErwerbNachAnlageGeschehen` schaltet die
     // optimistische Behandlung nach der ERSTEN Aufloesung dieses Erwerbs
     // endgueltig ab (egal ob sie erfolgreich war oder nicht) -- ein SPAETERER
     // Lock-Verlust (Heartbeat-409) oder ein manueller Uebernahmeversuch nach
     // Fremdsperre/Fehler durchlaeuft danach wieder ganz normal die echten
     // Zustaende, ohne die Optimistik erneut anzuwenden.
-    const kamOhneIdRef = useRef(dokumentIdNum == null);
+    const [kamOhneId] = useState(dokumentIdNum == null);
     // Vollbild-Ladeanzeige ("Dokument wird geoeffnet ..."): nur bis zur
     // ERSTEN Aufloesung eines Locks fuer ein Dokument, das schon MIT Id
     // geoeffnet wurde. Ein Dokument ohne Id am Seitenstart hat nichts
@@ -83,17 +83,25 @@ export default function DocumentEditorPage() {
     // bar -- kein Remount, kein Ersetzen durch die Ladeanzeige, genau wie im
     // Lieferant-Dokument-Modal (dort blendet ein Retry ebenfalls nur den
     // Knopf-Zustand um, nie die ganze Ansicht).
-    const ersteLockAufloesungGeschehenRef = useRef(dokumentIdNum == null);
-    const ersterErwerbNachAnlageGeschehenRef = useRef(false);
+    //
+    // Beide Merker sind State (sie bestimmen die Anzeige) und kippen nur einmal
+    // von false auf true: beim ersten aufgeloesten Lock-Status. Schon in DEM
+    // Render, der den Status sieht, gelten sie als gesetzt (`|| lockAufgeloest`),
+    // der State zieht per Render-Anpassung nach und haelt es danach fest.
+    const [ersteLockAufloesungGeschehenState, setErsteLockAufloesungGeschehen] = useState(dokumentIdNum == null);
+    const [ersterErwerbNachAnlageGeschehenState, setErsterErwerbNachAnlageGeschehen] = useState(false);
 
-    if (lock.status === 'acquired' || lock.status === 'locked-by-other' || lock.status === 'error') {
-        ersteLockAufloesungGeschehenRef.current = true;
-        ersterErwerbNachAnlageGeschehenRef.current = true;
+    const lockAufgeloest = lock.status === 'acquired' || lock.status === 'locked-by-other' || lock.status === 'error';
+    if (lockAufgeloest && (!ersteLockAufloesungGeschehenState || !ersterErwerbNachAnlageGeschehenState)) {
+        setErsteLockAufloesungGeschehen(true);
+        setErsterErwerbNachAnlageGeschehen(true);
     }
+    const ersteLockAufloesungGeschehen = ersteLockAufloesungGeschehenState || lockAufgeloest;
+    const ersterErwerbNachAnlageGeschehen = ersterErwerbNachAnlageGeschehenState || lockAufgeloest;
 
     const zeigeLadeSeite =
-        hatId && !ersteLockAufloesungGeschehenRef.current && (lock.status === 'idle' || lock.status === 'loading');
-    const optimistischEditierbarNachAnlage = kamOhneIdRef.current && !ersterErwerbNachAnlageGeschehenRef.current;
+        hatId && !ersteLockAufloesungGeschehen && (lock.status === 'idle' || lock.status === 'loading');
+    const optimistischEditierbarNachAnlage = kamOhneId && !ersterErwerbNachAnlageGeschehen;
 
     const readOnly = hatId ? (optimistischEditierbarNachAnlage ? false : lock.modus !== 'bearbeiten') : false;
     // Nur fuer die ANZEIGE (Leiste): optimistisch "bearbeiten", solange die
@@ -215,11 +223,14 @@ export default function DocumentEditorPage() {
     const [leisteElement, setLeisteElement] = useState<HTMLDivElement | null>(null);
     const [leisteHoehe, setLeisteHoehe] = useState(0);
     const zeigeLeiste = hatId && !schliesstGerade;
+    // Leiste weg: Versatz sofort auf 0 (gemessen wird nur eine vorhandene Leiste).
+    const [vorherigesLeisteElement, setVorherigesLeisteElement] = useState(leisteElement);
+    if (vorherigesLeisteElement !== leisteElement) {
+        setVorherigesLeisteElement(leisteElement);
+        if (!leisteElement) setLeisteHoehe(0);
+    }
     useEffect(() => {
-        if (!leisteElement) {
-            setLeisteHoehe(0);
-            return;
-        }
+        if (!leisteElement) return;
         // Bewusst IMMER `getBoundingClientRect()` messen, auch im
         // ResizeObserver-Callback -- NICHT `entries[0].contentRect`. Die
         // Leiste hat Padding UND einen unteren Rand (`px-4 py-2.5 border-b`);

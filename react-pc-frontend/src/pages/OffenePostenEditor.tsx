@@ -151,16 +151,20 @@ export default function OffenePostenEditor() {
 
     // Deep-link: tab + optionalen dokumentId aus URL übernehmen.
     // dokumentId wird nach Verarbeitung wieder entfernt, damit Reload nicht erneut springt.
-    useEffect(() => {
+    // Den Zustand übernehmen wir beim Rendern, das Aufräumen der Adresszeile im Effekt.
+    const [verarbeiteteParams, setVerarbeiteteParams] = useState(searchParams);
+    if (verarbeiteteParams !== searchParams) {
+        setVerarbeiteteParams(searchParams);
         const tabParam = searchParams.get('tab');
         const dokParam = searchParams.get('dokumentId');
-        if (tabParam || dokParam) {
-            if (tabParam === 'eingang' || tabParam === 'ausgang') setActiveTab(tabParam);
-            if (dokParam) setFokusId(Number(dokParam));
+        if (tabParam === 'eingang' || tabParam === 'ausgang') setActiveTab(tabParam);
+        if (dokParam) setFokusId(Number(dokParam));
+    }
+    useEffect(() => {
+        if (searchParams.get('tab') || searchParams.get('dokumentId')) {
             setSearchParams({}, { replace: true });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams]);
+    }, [searchParams, setSearchParams]);
 
     // Scroll + Highlight, sobald die geladene Liste die fokussierte ID enthält.
     useEffect(() => {
@@ -184,48 +188,61 @@ export default function OffenePostenEditor() {
 
 
     // Load open items
-    const loadData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch('/api/projekte/offene-posten');
+    // Promise-Kette: Zustand wird erst gesetzt, wenn die Antwort da ist.
+    // Ladeanzeige und Fehler-Reset setzen die Aufrufer (Startwert bzw. Knopf).
+    const loadData = useCallback(() => fetch('/api/projekte/offene-posten')
+        .then(async (res) => {
             if (!res.ok) throw new Error('Laden fehlgeschlagen');
             const data: OffenerPosten[] = await res.json();
             setItems(data);
-        } catch (err) {
+            setError(null);
+        })
+        .catch((err) => {
             console.error('Offene Posten konnten nicht geladen werden:', err);
             setError('Fehler beim Laden der offenen Posten.');
-        } finally {
+        })
+        .finally(() => {
             setLoading(false);
-        }
-    }, []);
+        }), []);
+
+    const aktualisieren = () => {
+        setLoading(true);
+        setError(null);
+        void loadData();
+    };
 
     // Bezahlte Rechnungen laden. Fehler zeigt ein Toast; die offenen Posten bleiben davon unberührt.
-    const loadBezahlte = useCallback(async () => {
-        try {
-            const res = await fetch('/api/projekte/offene-posten/bezahlt');
+    const loadBezahlte = useCallback(() => fetch('/api/projekte/offene-posten/bezahlt')
+        .then(async (res) => {
             if (!res.ok) {
                 toast.error(await leseFehlermeldung(res, 'Die bezahlten Rechnungen konnten nicht geladen werden.'));
                 return;
             }
             const data: unknown = await res.json();
             setBezahlteItems(Array.isArray(data) ? data as OffenerPosten[] : []);
-        } catch {
+        })
+        .catch(() => {
             toast.error('Die bezahlten Rechnungen konnten nicht geladen werden. Bitte die Verbindung prüfen.');
-        }
-    }, [toast]);
+        }), [toast]);
 
     useEffect(() => {
-        loadData();
+        void loadData();
     }, [loadData]);
 
+    // Ausgeblendete bezahlte Rechnungen verwerfen, eingeblendete im Effekt laden.
+    const [bezahltWarSichtbar, setBezahltWarSichtbar] = useState(showBezahlt);
+    if (bezahltWarSichtbar !== showBezahlt) {
+        setBezahltWarSichtbar(showBezahlt);
+        if (!showBezahlt) setBezahlteItems([]);
+    }
     useEffect(() => {
         if (showBezahlt) void loadBezahlte();
-        else setBezahlteItems([]);
     }, [showBezahlt, loadBezahlte]);
 
     // Nach einem Haken beide Listen neu laden, damit die Rechnung in die richtige Liste wandert.
     const neuLaden = useCallback(async () => {
+        setLoading(true);
+        setError(null);
         await Promise.all([loadData(), showBezahlt ? loadBezahlte() : Promise.resolve()]);
     }, [loadData, loadBezahlte, showBezahlt]);
 
@@ -467,7 +484,7 @@ export default function OffenePostenEditor() {
             subtitle="Übersicht aller unbezahlten Rechnungen"
             actions={
                 activeTab === 'ausgang' ? (
-                    <Button variant="outline" size="sm" onClick={loadData} disabled={loading}>
+                    <Button variant="outline" size="sm" onClick={aktualisieren} disabled={loading}>
                         <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
                         Aktualisieren
                     </Button>
