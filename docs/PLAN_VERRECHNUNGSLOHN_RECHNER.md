@@ -6,7 +6,7 @@ Status: **Umgesetzt.** Bauabschnitte 1–3 inklusive „Übernehmen“ mit Aufsc
 
 ## Ziel
 
-Auf der Seite **Arbeitsgänge** (Menü **Vorlagen & Stammdaten → Katalog → Arbeitsgänge**, Seitenkopf „Arbeitsplanung“) gibt es oben rechts – links neben „Aktualisieren“ – den Knopf:
+Auf der Seite **Arbeitsgänge** (Menü **Vorlagen & Stammdaten → Administration → Arbeitsgänge**, Seitenkopf „Arbeitsplanung“) gibt es oben rechts – links neben „Aktualisieren“ – den Knopf:
 
 > "Was muss meine Stunde kosten?"
 
