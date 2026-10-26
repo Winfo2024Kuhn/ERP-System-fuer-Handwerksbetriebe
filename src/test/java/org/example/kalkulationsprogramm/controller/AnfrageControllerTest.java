@@ -21,6 +21,8 @@ import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
 import org.example.kalkulationsprogramm.exception.FirmenstammdatenUnvollstaendigException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
@@ -387,6 +389,52 @@ class AnfrageControllerTest {
         assertEquals(200, antwort.getStatusCode().value());
         verify(dateiSpeicher).speichereAnfragesDatei(datei, 1L,
                 org.example.kalkulationsprogramm.domain.DokumentGruppe.BILDER, null);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "xlsx", "xls", "xlsm", "xlsb", "sza", "tcd", "XLSX" })
+    void tabellenUndZeichnungenBekommenNetzwerkPfadZumDirektenOeffnen(String endung) {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        DateiSpeicherService dateiSpeicher = mock(DateiSpeicherService.class);
+        AnfrageController controller = uploadController(angemeldet, dateiSpeicher);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.empty());
+        var dokument = gespeichertesDokument();
+        dokument.setOriginalDateiname("Kalkulation_Mustermann." + endung);
+        dokument.setGespeicherterDateiname("abc_Kalkulation_Mustermann." + endung);
+        when(dateiSpeicher.speichereAnfragesDatei(any(), eq(1L), any(), any())).thenReturn(dokument);
+        when(dateiSpeicher.holeNetzwerkPfad("abc_Kalkulation_Mustermann." + endung))
+                .thenReturn("\\\\SERVER\\Zeichnungen\\abc_Kalkulation_Mustermann." + endung);
+        var datei = new MockMultipartFile("datei", "Kalkulation_Mustermann." + endung,
+                "application/octet-stream", "data".getBytes());
+
+        var antwort = controller.uploadDokument(1L, List.of(datei), null, auth);
+
+        assertEquals(200, antwort.getStatusCode().value());
+        assertEquals("\\\\SERVER\\Zeichnungen\\abc_Kalkulation_Mustermann." + endung,
+                erstesDokument(antwort).getNetzwerkPfad());
+    }
+
+    @Test
+    void pdfBekommtKeinenNetzwerkPfad() {
+        AngemeldeterMitarbeiterService angemeldet = mock(AngemeldeterMitarbeiterService.class);
+        DateiSpeicherService dateiSpeicher = mock(DateiSpeicherService.class);
+        AnfrageController controller = uploadController(angemeldet, dateiSpeicher);
+        var auth = mock(org.springframework.security.core.Authentication.class);
+        when(angemeldet.handelnderMitarbeiter(auth)).thenReturn(Optional.empty());
+        when(dateiSpeicher.speichereAnfragesDatei(any(), eq(1L), any(), any())).thenAnswer(inv -> gespeichertesDokument());
+        var datei = new MockMultipartFile("datei", "plan.pdf", "application/pdf", "data".getBytes());
+
+        var antwort = controller.uploadDokument(1L, List.of(datei), null, auth);
+
+        assertEquals(200, antwort.getStatusCode().value());
+        assertNull(erstesDokument(antwort).getNetzwerkPfad());
+        verify(dateiSpeicher, never()).holeNetzwerkPfad(any());
+    }
+
+    private static org.example.kalkulationsprogramm.dto.Anfrage.AnfrageDokumentResponseDto erstesDokument(
+            ResponseEntity<?> antwort) {
+        return (org.example.kalkulationsprogramm.dto.Anfrage.AnfrageDokumentResponseDto) ((List<?>) antwort.getBody()).get(0);
     }
 
     private AnfrageController uploadController(AngemeldeterMitarbeiterService angemeldet,
