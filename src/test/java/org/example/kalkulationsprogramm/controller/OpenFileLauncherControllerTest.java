@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -24,6 +25,7 @@ import org.example.kalkulationsprogramm.config.ZeiterfassungSecurityFilter;
 import org.example.kalkulationsprogramm.controller.advice.RestExceptionHandler;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.service.openfile.OpenFileLauncherService;
+import org.example.kalkulationsprogramm.dto.OpenFileLauncherBefehlDto;
 import org.example.kalkulationsprogramm.dto.OpenFileLauncherPaketDto;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,24 +74,92 @@ class OpenFileLauncherControllerTest {
                 .andExpect(content().bytes("@echo off\r\n".getBytes()));
     }
 
-    @Test
-    void macEinrichtungAlsZip() throws Exception {
-        when(service.einrichtungMac(ADRESSE, "localhost")).thenReturn(new byte[] {'P', 'K'});
+    private static final String MAC_BEFEHL = "/api/openfile-launcher/einrichtung/mac/befehl";
+    private static final String SCHLUESSEL = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd";
 
-        mvc.perform(get("/api/openfile-launcher/einrichtung/mac").param("adresse", ADRESSE)
+    @Test
+    void macBefehlFuerAdmin() throws Exception {
+        when(service.einrichtungMacBefehl(ADRESSE, "localhost")).thenReturn(new OpenFileLauncherBefehlDto(
+                "/bin/bash -c \"$(curl -fSsL 'https://localhost/openfile-launcher/mac/" + SCHLUESSEL + "')\"", 10));
+
+        mvc.perform(post(MAC_BEFEHL).param("adresse", ADRESSE).with(csrf())
                         .with(user("chef").roles("ADMIN")))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Content-Disposition", "attachment; filename=\"ERP-Dateien-oeffnen-Mac.zip\""))
-                .andExpect(header().string("Content-Type", "application/zip"));
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.befehl").value(
+                        "/bin/bash -c \"$(curl -fSsL 'https://localhost/openfile-launcher/mac/" + SCHLUESSEL + "')\""))
+                .andExpect(jsonPath("$.gueltigMinuten").value(10));
+    }
+
+    @Test
+    void macBefehlOhneCsrfTokenIst403() throws Exception {
+        mvc.perform(post(MAC_BEFEHL).param("adresse", ADRESSE).with(user("chef").roles("ADMIN")))
+                .andExpect(status().isForbidden());
+        verify(service, never()).einrichtungMacBefehl(anyString(), anyString());
+    }
+
+    @Test
+    void macBefehlOhneAdresseIst400() throws Exception {
+        mvc.perform(post(MAC_BEFEHL).with(csrf()).with(user("chef").roles("ADMIN")))
+                .andExpect(status().isBadRequest());
+        verify(service, never()).einrichtungMacBefehl(any(), any());
+    }
+
+    @Test
+    void macBefehlMitFremderAdresseKommtAlsVerstaendliche400() throws Exception {
+        when(service.einrichtungMacBefehl(anyString(), anyString())).thenThrow(new ResponseStatusException(
+                HttpStatus.BAD_REQUEST, "Die Adresse des ERP passt nicht zu dieser Anfrage."));
+
+        mvc.perform(post(MAC_BEFEHL).param("adresse", "<script>alert(1)</script>").with(csrf())
+                        .with(user("chef").roles("ADMIN")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Die Adresse des ERP passt nicht zu dieser Anfrage."));
+    }
+
+    @Test
+    void einmalLinkLiefertSkriptOhneAnmeldung() throws Exception {
+        when(service.einrichtungMac(SCHLUESSEL, "localhost")).thenReturn(Optional.of("#!/bin/bash\necho Fertig!\n"));
+
+        mvc.perform(get("/openfile-launcher/mac/" + SCHLUESSEL))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "text/plain;charset=UTF-8"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(content().string("#!/bin/bash\necho Fertig!\n"));
+    }
+
+    @Test
+    void abgelaufenerOderUnbekannterLinkIst404() throws Exception {
+        when(service.einrichtungMac(anyString(), anyString())).thenReturn(Optional.empty());
+
+        mvc.perform(get("/openfile-launcher/mac/" + SCHLUESSEL))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/openfile-launcher/mac/..%2F..%2Fetc%2Fpasswd"))
+                .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void einmalLinkIstNurLesend() throws Exception {
+        mvc.perform(post("/openfile-launcher/mac/" + SCHLUESSEL))
+                .andExpect(status().isMethodNotAllowed());
+        verify(service, never()).einrichtungMac(anyString(), anyString());
+    }
+
+    @Test
+    void alterZipDownloadGibtEsNichtMehr() throws Exception {
+        mvc.perform(get("/api/openfile-launcher/einrichtung/mac").param("adresse", ADRESSE)
+                        .with(user("chef").roles("ADMIN")))
+                .andExpect(status().is4xxClientError());
     }
 
     @Test
     void einrichtungOhneAnmeldungIst401() throws Exception {
         mvc.perform(get("/api/openfile-launcher/einrichtung/windows").param("adresse", ADRESSE))
                 .andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/openfile-launcher/einrichtung/mac").param("adresse", ADRESSE))
+        mvc.perform(post(MAC_BEFEHL).param("adresse", ADRESSE).with(csrf()))
                 .andExpect(status().isUnauthorized());
         verify(service, never()).einrichtungWindows(anyString(), anyString());
+        verify(service, never()).einrichtungMacBefehl(anyString(), anyString());
     }
 
     @Test
@@ -97,10 +167,10 @@ class OpenFileLauncherControllerTest {
         mvc.perform(get("/api/openfile-launcher/einrichtung/windows").param("adresse", ADRESSE)
                         .with(user("max.mustermann").roles("USER")))
                 .andExpect(status().isForbidden());
-        mvc.perform(get("/api/openfile-launcher/einrichtung/mac").param("adresse", ADRESSE)
+        mvc.perform(post(MAC_BEFEHL).param("adresse", ADRESSE).with(csrf())
                         .with(user("max.mustermann").roles("USER")))
                 .andExpect(status().isForbidden());
-        verify(service, never()).einrichtungMac(anyString(), anyString());
+        verify(service, never()).einrichtungMacBefehl(anyString(), anyString());
     }
 
     @Test
@@ -117,9 +187,9 @@ class OpenFileLauncherControllerTest {
 
     @Test
     void ohneAdresseIst400() throws Exception {
-        mvc.perform(get("/api/openfile-launcher/einrichtung/mac").with(user("chef").roles("ADMIN")))
+        mvc.perform(get("/api/openfile-launcher/einrichtung/windows").with(user("chef").roles("ADMIN")))
                 .andExpect(status().isBadRequest());
-        verify(service, never()).einrichtungMac(any(), any());
+        verify(service, never()).einrichtungWindows(any(), any());
     }
 
     @Test

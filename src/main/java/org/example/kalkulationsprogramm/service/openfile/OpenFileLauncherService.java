@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
+import org.example.kalkulationsprogramm.dto.OpenFileLauncherBefehlDto;
 import org.example.kalkulationsprogramm.dto.OpenFileLauncherPaketDto;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.springframework.core.io.ClassPathResource;
@@ -32,8 +33,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Liefert den OpenFile Launcher (öffnet Excel-, HiCAD- und Tenado-Dateien aus dem ERP direkt
- * aus dem gemeinsamen Ordner) als Einrichtungs-Datei für Windows und Mac sowie als
- * unterschriebenes Update.
+ * aus dem gemeinsamen Ordner) als Einrichtungs-Datei für Windows, als Terminal-Befehl für den Mac
+ * sowie als unterschriebenes Update.
  *
  * <p>Die Einstellungen des Launchers (erlaubte Ordner, Ausweich-Rechnername für unterwegs,
  * Prüfschlüssel) entstehen hier aus der Netzwerk-Adresse des Datei-Ordners. Ändert sich die
@@ -70,11 +71,16 @@ public class OpenFileLauncherService {
     static final String OHNE_NETZWERK_ADRESSE =
             "Bitte zuerst die Netzwerk-Adresse des Datei-Ordners eintragen und speichern (z. B. \\\\server\\zeichnungen).";
     static final String FALSCHE_ADRESSE = "Die Adresse des ERP passt nicht zu dieser Anfrage.";
+    static final String NUR_HTTPS_FUER_MAC =
+            "Den Befehl für den Mac gibt es nur über die https-Adresse (z. B. die Tailscale-Adresse). Bitte das Programm darüber öffnen.";
 
     private static final int MAX_ADRESSE = 255;
     /** Rechnername bzw. Freigabe-Teil eines UNC-Pfads: keine Steuerzeichen, Anführungszeichen oder Leerraum am Rand. */
     private static final Pattern RECHNERNAME = Pattern.compile("[A-Za-z0-9._-]{1,253}+");
     private static final Pattern PFADTEIL = Pattern.compile("[^\\\\/:*?\"<>|\\p{Cntrl}]{1,255}+");
+    /** Einmal-Link im Terminal-Befehl: https, Hostname/IPv4 oder IPv6 in Klammern, Port, Schlüssel. */
+    private static final Pattern SICHERER_MAC_LINK = Pattern.compile(
+            "https://(?:[a-z0-9.-]{1,253}+|\\[[0-9a-f:.]{2,45}+\\])(?::[0-9]{1,5}+)?/openfile-launcher/mac/[A-Za-z0-9_-]{43}+");
 
     /** Fertig unterschriebene Pakete – unterschrieben wird nur, wenn sich etwas geändert hat. */
     private record PaketSchluessel(Betriebssystem bs, String erpAdresse, String wurzel) {
@@ -86,6 +92,7 @@ public class OpenFileLauncherService {
     private final SystemSettingsService settings;
     private final LauncherSignatur signatur;
     private final ObjectMapper objectMapper;
+    private final EinmalLinks einmalLinks;
 
     private final Map<PaketSchluessel, OpenFileLauncherPaketDto> zwischenspeicher = new ConcurrentHashMap<>();
     /** Uhr für den fortlaufenden Stand; in Tests ersetzbar. */
@@ -103,17 +110,43 @@ public class OpenFileLauncherService {
         return bat.replace("\r\n", "\n").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Zip mit der ausführbaren {@code .command}-Datei für den Mac. */
-    public byte[] einrichtungMac(String adresse, String serverName) {
+    /**
+     * Terminal-Befehl für den Mac. Eine heruntergeladene Einrichtungs-Datei sperrt macOS (keine
+     * Apple-Unterschrift); was {@code curl} lädt, bekommt keine Quarantäne-Markierung. Der Befehl
+     * holt das Skript über einen Einmal-Link ({@link EinmalLinks}) und führt es erst aus, wenn es
+     * vollständig da ist ({@code bash -c "$(…)"} statt {@code curl | bash}).
+     *
+     * <p>Nur über https: Das Skript läuft ungesehen im Terminal. Über http könnte es im Netz
+     * unterwegs ausgetauscht werden.</p>
+     */
+    public OpenFileLauncherBefehlDto einrichtungMacBefehl(String adresse, String serverName) {
         String erp = pruefeErpAdresse(adresse, serverName);
+        if (!erp.startsWith("https://")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, NUR_HTTPS_FUER_MAC);
+        }
+        String basis = erp + "/openfile-launcher/mac/";
+        // Der Link steht in '…' in einem Shell-Befehl: ausdrücklich nur sichere Zeichen, auch wenn
+        // pruefeErpAdresse später einmal mehr zulassen sollte. Geprüft wird vor dem Anlegen, damit
+        // kein Link übrig bleibt, den niemand bekommt.
+        if (!SICHERER_MAC_LINK.matcher(basis + "A".repeat(43)).matches()) {
+            throw new IllegalStateException("Einmal-Link enthält unerwartete Zeichen");
+        }
+        String link = basis + einmalLinks.neu(einrichtungMacSkript(erp), URI.create(erp).getHost());
+        return new OpenFileLauncherBefehlDto("/bin/bash -c \"$(curl -fSsL '" + link + "')\"",
+                (int) EinmalLinks.GUELTIG.toMinutes());
+    }
+
+    /** Das Einrichtungs-Skript zum Einmal-Link – leer, wenn unbekannt, abgelaufen oder schon abgeholt. */
+    public Optional<String> einrichtungMac(String schluessel, String serverName) {
+        return einmalLinks.einloesen(schluessel, serverName);
+    }
+
+    String einrichtungMacSkript(String erp) {
         OpenFileLauncherPaketDto paket = paket(Betriebssystem.MAC, erp);
         Base64.Encoder zeilen = Base64.getMimeEncoder(76, "\n".getBytes(StandardCharsets.US_ASCII));
-        String command = ressource("einrichten-mac.command")
+        return ressource("einrichten-mac.command")
                 .replace("@@LAUNCHER_BASE64@@", zeilen.encodeToString(paket.skript().getBytes(StandardCharsets.UTF_8)))
                 .replace("@@CONFIG_BASE64@@", zeilen.encodeToString(paket.configJson().getBytes(StandardCharsets.UTF_8)));
-        return new UnixZip()
-                .datei("ERP-Dateien-oeffnen.command", command.getBytes(StandardCharsets.UTF_8), UnixZip.AUSFUEHRBAR)
-                .fertig();
     }
 
     /**

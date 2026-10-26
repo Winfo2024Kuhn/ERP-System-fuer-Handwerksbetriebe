@@ -59,10 +59,10 @@ Unter **Einstellungen → Dateien**, Karte „Wo sollen Zeichnungen und Dateien 
 
 ## Dateien direkt am PC öffnen (Excel, HiCAD, Tenado)
 
-Damit eine Excel-Tabelle oder Zeichnung aus einem Projekt direkt im passenden Programm aufgeht statt im Download-Ordner zu landen, braucht jeder PC einmal ein kleines Hilfsprogramm. Unter **Einstellungen → Dateien**, Karte „Dateien direkt am PC öffnen“, gibt es dafür „Für Windows herunterladen“ und „Für Mac herunterladen“ (geht erst, wenn die Netzwerk-Adresse eingetragen und gespeichert ist).
+Damit eine Excel-Tabelle oder Zeichnung aus einem Projekt oder einer Anfrage direkt im passenden Programm aufgeht statt im Download-Ordner zu landen, braucht jeder PC einmal ein kleines Hilfsprogramm. Unter **Einstellungen → Dateien**, Karte „Dateien direkt am PC öffnen“, gibt es dafür „Für Windows herunterladen“ und „Befehl für Mac erstellen“ (geht erst, wenn die Netzwerk-Adresse eingetragen und gespeichert ist).
 
 - **Windows:** Die heruntergeladene Datei doppelt anklicken. Warnt Windows („Der Computer wurde durch Windows geschützt“), auf „Weitere Informationen“ und „Trotzdem ausführen“ klicken. Administrator-Rechte braucht es nicht.
-- **Mac:** Die Zip-Datei öffnen und „ERP-Dateien-oeffnen.command“ doppelt anklicken. Meldet der Mac einen nicht verifizierten Entwickler: Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“.
+- **Mac:** „Befehl für Mac erstellen“ und „Kopieren“ klicken. Am Mac das Programm „Terminal“ öffnen (⌘ + Leertaste, „Terminal“ tippen, Enter), den Befehl einfügen (⌘ + V) und Enter drücken. Fertig ist es, wenn „Fertig!“ erscheint. Der Befehl gilt 10 Minuten und nur einmal; danach (oder wenn das Terminal „error: 404“ meldet) einfach einen neuen erstellen. Den Befehl gibt es nur, wenn das Programm über die https-Adresse geöffnet ist (z. B. die Tailscale-Adresse). Eine heruntergeladene Einrichtungs-Datei würde macOS sperren („Apple konnte nicht überprüfen …“), über das Terminal gibt es diese Sperre nicht. Administrator-Rechte braucht es nicht.
 
 Beim ersten Klick auf eine Datei fragt der Browser, ob er den Link öffnen darf – erlauben. Beim ersten Verbinden fragt der PC einmal nach Benutzer und Passwort des Ordners. Danach hält sich das Hilfsprogramm selbst aktuell, wenn das Programm über https geöffnet wird (z. B. über die Tailscale-Adresse). **Von unterwegs** klappt es über Tailscale, wenn auf dem Rechner mit dem Ordner einmal `deployment/openfile-launcher/Freigabe-Tailscale.ps1` als Administrator ausgeführt wurde.
 

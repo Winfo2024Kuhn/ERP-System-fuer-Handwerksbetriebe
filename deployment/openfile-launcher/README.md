@@ -7,17 +7,24 @@ Programm (z. B. TENADO, HiCAD, Excel) statt eine Kopie herunterzuladen.
 
 ## ⭐ Einfachster Weg: Einrichtung aus dem ERP (Windows und Mac)
 
-Im ERP unter **Einstellungen → Dateien → „Dateien direkt am PC öffnen“** gibt es eine fertige
-Einrichtungs-Datei zum Herunterladen:
+Im ERP unter **Einstellungen → Dateien → „Dateien direkt am PC öffnen“** gibt es die fertige
+Einrichtung:
 
-- **Windows:** `ERP-Dateien-oeffnen-Windows.bat` doppelt anklicken. Richtet den Launcher für
-  den angemeldeten Benutzer ein (`%LOCALAPPDATA%\OpenFileLauncher`, `openfile://` unter
-  `HKCU`), ohne Administrator-Rechte. Hat Vorrang vor einer alten Installation für alle.
-- **Mac:** `ERP-Dateien-oeffnen-Mac.zip` öffnen, `ERP-Dateien-oeffnen.command` doppelt
-  anklicken. Legt `~/Applications/ERP-Dateien-oeffnen.app` an, die `openfile://` annimmt,
-  den Ordner per smb verbindet und die Datei mit dem Standardprogramm öffnet.
+- **Windows:** `ERP-Dateien-oeffnen-Windows.bat` herunterladen und doppelt anklicken. Richtet den
+  Launcher für den angemeldeten Benutzer ein (`%LOCALAPPDATA%\OpenFileLauncher`, `openfile://`
+  unter `HKCU`), ohne Administrator-Rechte. Hat Vorrang vor einer alten Installation für alle.
+- **Mac:** „Befehl für Mac erstellen“ liefert einen Terminal-Befehl
+  (`/bin/bash -c "$(curl -fSsL '<ERP>/openfile-launcher/mac/<Einmal-Link>')"`). Der Einmal-Link
+  gilt 10 Minuten und lässt sich nur einmal abholen (ohne Anmeldung, `EinmalLinks`); den Befehl
+  gibt es nur über https, weil das Skript ungesehen im Terminal läuft. Ist der Link abgelaufen
+  oder verbraucht, meldet `curl` „error: 404“ und es läuft nichts. Grund für den Befehl: Eine
+  heruntergeladene `.command`-Datei ohne Apple-Unterschrift
+  sperrt macOS (Gatekeeper); was `curl` lädt, bekommt keine Quarantäne-Markierung. Das Skript
+  (`src/main/resources/openfile-launcher/einrichten-mac.command`) legt
+  `~/Applications/ERP-Dateien-oeffnen.app` an, die `openfile://` annimmt, den Ordner per smb
+  verbindet und die Datei mit dem Standardprogramm öffnet.
 
-Die erlaubten Ordner, die ERP-Adresse und der Prüfschlüssel stecken schon in der Datei – eine
+Die erlaubten Ordner, die ERP-Adresse und der Prüfschlüssel stecken schon in der Einrichtung – eine
 `config.json` von Hand braucht es nicht. Danach **aktualisiert sich der Launcher selbst**: Nach
 jedem Öffnen fragt er `GET /openfile-launcher/aktuell`, aber nur über **https** und er
 installiert nur Fassungen, die das ERP mit seinem eigenen Schlüssel unterschrieben hat

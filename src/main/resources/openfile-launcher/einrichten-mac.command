@@ -1,5 +1,6 @@
 #!/bin/bash
-# ERP - Dateien direkt oeffnen einrichten (Mac). Doppelklick genuegt, keine Administrator-Rechte.
+# ERP - Dateien direkt oeffnen einrichten (Mac). Laeuft ueber den Terminal-Befehl aus dem ERP
+# (Einmal-Link per curl, siehe OpenFileLauncherService), keine Administrator-Rechte.
 # Legt das Hilfsprogramm unter ~/Library/Application Support/ERP-Dateien-oeffnen ab und meldet
 # ein kleines Programm in ~/Applications fuer openfile://-Links an.
 set -euo pipefail
