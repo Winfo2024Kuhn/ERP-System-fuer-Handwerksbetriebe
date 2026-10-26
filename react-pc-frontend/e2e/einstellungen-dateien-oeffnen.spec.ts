@@ -4,9 +4,12 @@ import { designPruefung } from './hilfen/design';
 
 /**
  * Einstellungen -> Dateien: Hilfsprogramm zum direkten Öffnen von Excel-,
- * HiCAD- und Tenado-Dateien herunterladen.
+ * HiCAD- und Tenado-Dateien einrichten – Windows per Download, Mac per
+ * Terminal-Befehl mit Einmal-Link.
  * Kein Backend: alle /api-Routen sind gestubbt. Nur Dummy-Daten (DSGVO).
  */
+
+const MAC_BEFEHL = `/bin/bash -c "$(curl -fSsL 'https://erp.example.test/openfile-launcher/mac/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd')"`;
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -24,17 +27,12 @@ async function stubbe(page: Page, networkUrl = '\\\\server\\zeichnungen'): Promi
         if (pfad === '/api/settings/datei-ordner') {
             return json(route, { pfad: 'C:\\Zeichnungen', networkUrl, konfiguriert: true });
         }
-        if (pfad === '/api/openfile-launcher/einrichtung/mac') {
-            downloadAufrufe.push(`mac${url.search}`);
-            return route.fulfill({
-                status: 200,
-                contentType: 'application/zip',
-                headers: { 'Content-Disposition': 'attachment; filename="ERP-Dateien-oeffnen-Mac.zip"' },
-                body: 'PK',
-            });
+        if (pfad === '/api/openfile-launcher/einrichtung/mac/befehl') {
+            downloadAufrufe.push(`${route.request().method()} mac${url.search}`);
+            return json(route, { befehl: MAC_BEFEHL, gueltigMinuten: 10 });
         }
         if (pfad === '/api/openfile-launcher/einrichtung/windows') {
-            downloadAufrufe.push(`windows${url.search}`);
+            downloadAufrufe.push(`${route.request().method()} windows${url.search}`);
             return route.fulfill({
                 status: 200,
                 contentType: 'application/octet-stream',
@@ -48,22 +46,22 @@ async function stubbe(page: Page, networkUrl = '\\\\server\\zeichnungen'): Promi
     return downloadAufrufe;
 }
 
-test('Hilfsprogramm für Windows und Mac herunterladen', async ({ page }, info) => {
+test('Hilfsprogramm für Windows herunterladen und Befehl für den Mac erstellen', async ({ page }, info) => {
     const downloadAufrufe = await stubbe(page);
     await page.goto('/einstellungen#dateien');
 
     // Erst die Daten: das Feld zeigt die gespeicherte Netzwerk-Adresse.
     await expect(page.getByLabel('Netzwerk-Adresse für Kollegen (optional)')).toHaveValue('\\\\server\\zeichnungen');
-    // Ganze Karte ins Bild: bis zum letzten Satz der Mac-Anleitung rollen.
+    // Ganze Karte ins Bild: bis zum letzten Satz der Mac-Beschreibung rollen.
     await page.getByText('mit dem Programm, das dort dafür eingestellt ist.', { exact: false }).scrollIntoViewIfNeeded();
     await expect(page.getByRole('heading', { name: 'Dateien direkt am PC öffnen' })).toBeInViewport();
     const windows = page.getByRole('button', { name: 'Für Windows herunterladen' });
-    const mac = page.getByRole('button', { name: 'Für Mac herunterladen' });
+    const mac = page.getByRole('button', { name: 'Befehl für Mac erstellen' });
     await expect(windows).toBeEnabled();
     await expect(mac).toBeEnabled();
     await expect(page.getByText('Nur bei dieser Datei aus dem ERP: Warnt Windows', { exact: false })).toBeVisible();
-    await expect(page.getByText('Nur bei dieser Datei aus dem ERP: Meldet macOS', { exact: false })).toBeVisible();
-    await expect(page.getByText('Administrator-Rechte sind nicht nötig.', { exact: false })).toBeVisible();
+    await expect(page.getByText('ohne Download und ohne Warnung von macOS', { exact: false })).toBeVisible();
+    await expect(page.getByText('Administrator-Rechte sind nicht nötig.', { exact: false })).toHaveCount(2);
     await expect(page.getByText(/Bitte erst speichern|Tragen Sie oben zuerst/)).toHaveCount(0);
     // vite preview läuft auf http: der dezente Hinweis zur https-Adresse steht in der Karte.
     await expect(page.getByText('Sie nutzen das Programm gerade über http.', { exact: false })).toBeVisible();
@@ -91,11 +89,31 @@ test('Hilfsprogramm für Windows und Mac herunterladen', async ({ page }, info) 
     // Erst wenn der erste Download fertig ist, sind beide Knöpfe wieder frei.
     await expect(mac).toBeEnabled();
 
-    const macDownload = page.waitForEvent('download');
     await mac.click();
-    expect((await macDownload).suggestedFilename()).toBe('ERP-Dateien-oeffnen-Mac.zip');
-    expect(downloadAufrufe).toEqual([`windows${adresse}`, `mac${adresse}`]);
-    await expect(windows).toBeEnabled();
+    const befehlFeld = page.getByLabel('Befehl für das Terminal');
+    await expect(befehlFeld).toHaveValue(MAC_BEFEHL);
+    await expect(page.getByText('Am Mac das Programm „Terminal“ öffnen', { exact: false })).toBeVisible();
+    await expect(page.getByText('Befehl einfügen (⌘ + V) und Enter drücken.')).toBeVisible();
+    await expect(page.getByText('Warten, bis „Fertig!“ erscheint – dann kann das Fenster zu.')).toBeVisible();
+    await expect(page.getByText('Der Befehl gilt 10 Minuten und nur ein einziges Mal.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Kopieren' })).toBeVisible();
+    const neuerBefehl = page.getByRole('button', { name: 'Neuen Befehl erstellen' });
+    await expect(neuerBefehl).toBeEnabled();
+    expect(downloadAufrufe).toEqual([`GET windows${adresse}`, `POST mac${adresse}`]);
+    await page.getByText('Der Befehl gilt 10 Minuten', { exact: false }).scrollIntoViewIfNeeded();
+    await designPruefung(page, info, 'einstellungen-dateien-oeffnen-mac-befehl');
+
+    // Info-Knopf neben „Mac“ erklärt, warum es ein Befehl statt einer Datei ist.
+    const macInfo = page.getByRole('button', { name: 'Mehr zu: Warum ein Befehl statt einer Datei?' });
+    await macInfo.click();
+    const macErklaerung = page.getByRole('dialog', { name: 'Warum ein Befehl statt einer Datei?' });
+    await expect(macErklaerung).toContainText('Der Link gilt nur 10 Minuten und funktioniert genau einmal');
+    await expect(macErklaerung).toContainText('Über das Terminal gibt es diese Sperre nicht.');
+    await designPruefung(page, info, 'einstellungen-dateien-oeffnen-mac-info');
+    expect(await macErklaerung.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(macErklaerung).toHaveCount(0);
+    await expect(macInfo).toBeFocused();
 });
 
 test('Ohne Netzwerk-Adresse bleiben die Knöpfe gesperrt, bis sie gespeichert ist', async ({ page }, info) => {
@@ -105,7 +123,7 @@ test('Ohne Netzwerk-Adresse bleiben die Knöpfe gesperrt, bis sie gespeichert is
     const feld = page.getByLabel('Netzwerk-Adresse für Kollegen (optional)');
     await expect(feld).toHaveValue('');
     const windows = page.getByRole('button', { name: 'Für Windows herunterladen' });
-    const mac = page.getByRole('button', { name: 'Für Mac herunterladen' });
+    const mac = page.getByRole('button', { name: 'Befehl für Mac erstellen' });
     await expect(page.getByText('Tragen Sie oben zuerst die Netzwerk-Adresse ein', { exact: false })).toBeVisible();
     await expect(windows).toBeDisabled();
     await expect(mac).toBeDisabled();

@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -24,11 +23,10 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.example.kalkulationsprogramm.service.openfile.OpenFileLauncherService.Betriebssystem;
+import org.example.kalkulationsprogramm.dto.OpenFileLauncherBefehlDto;
 import org.example.kalkulationsprogramm.dto.OpenFileLauncherPaketDto;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,7 +62,7 @@ class OpenFileLauncherServiceTest {
     void setUp() {
         settings = mock(SystemSettingsService.class);
         when(settings.getDateiOrdnerNetworkUrl()).thenReturn("\\\\BUERO_PC\\\\Zeichnungen\\");
-        service = new OpenFileLauncherService(settings, signatur, JSON);
+        service = new OpenFileLauncherService(settings, signatur, JSON, new EinmalLinks());
     }
 
     private static boolean unterschriftGueltig(OpenFileLauncherPaketDto paket) throws Exception {
@@ -214,7 +212,7 @@ class OpenFileLauncherServiceTest {
     @Test
     void paketTraegtFortlaufendenStandUndWirdNurEinmalUnterschrieben() throws Exception {
         LauncherSignatur zaehlend = spy(signatur);
-        OpenFileLauncherService svc = new OpenFileLauncherService(settings, zaehlend, JSON);
+        OpenFileLauncherService svc = new OpenFileLauncherService(settings, zaehlend, JSON, new EinmalLinks());
         svc.jetzt = () -> 1_760_000_000_000L;
 
         OpenFileLauncherPaketDto erstes = svc.paket(Betriebssystem.WINDOWS, ERP);
@@ -235,7 +233,7 @@ class OpenFileLauncherServiceTest {
     void aktuellerPcKostetKeineUnterschrift() {
         String version = service.aktuellesPaket("windows", "alt", ERP, HOST).orElseThrow().version();
         LauncherSignatur zaehlend = spy(signatur);
-        OpenFileLauncherService frisch = new OpenFileLauncherService(settings, zaehlend, JSON);
+        OpenFileLauncherService frisch = new OpenFileLauncherService(settings, zaehlend, JSON, new EinmalLinks());
 
         assertThat(frisch.aktuellesPaket("windows", version, ERP, HOST)).isEmpty();
         verify(zaehlend, never()).unterschreibe(anyString());
@@ -252,7 +250,7 @@ class OpenFileLauncherServiceTest {
     @Test
     void updateAbfrageErzeugtKeinenSchluessel() {
         LauncherSignatur ohneSchluessel = mock(LauncherSignatur.class);
-        OpenFileLauncherService svc = new OpenFileLauncherService(settings, ohneSchluessel, JSON);
+        OpenFileLauncherService svc = new OpenFileLauncherService(settings, ohneSchluessel, JSON, new EinmalLinks());
 
         assertThat(svc.aktuellesPaket("windows", "alt", ERP, HOST)).isEmpty();
         verify(ohneSchluessel).istEingerichtet();
@@ -308,28 +306,73 @@ class OpenFileLauncherServiceTest {
         assertThat(cfg.get("erpAdresse").asString()).isEqualTo(ERP);
     }
 
-    @Test
-    void macEinrichtungIstZipMitCommandDatei() throws IOException {
-        byte[] zip = service.einrichtungMac(ERP, HOST);
+    private static final Pattern MAC_BEFEHL = Pattern.compile(
+            "/bin/bash -c \"\\$\\(curl -fSsL '(https://erp\\.firma-mustermann\\.de/openfile-launcher/mac/([A-Za-z0-9_-]{43}))'\\)\"");
 
-        try (ZipInputStream in = new ZipInputStream(new ByteArrayInputStream(zip))) {
-            ZipEntry eintrag = in.getNextEntry();
-            assertThat(eintrag.getName()).isEqualTo("ERP-Dateien-oeffnen.command");
-            String command = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            assertThat(command).startsWith("#!/bin/bash\n").doesNotContain("@@").doesNotContain("\r");
-            Matcher launcher = Pattern.compile("<<'LAUNCHER'\n([A-Za-z0-9+/=\n]+)\nLAUNCHER").matcher(command);
-            assertThat(launcher.find()).isTrue();
-            String skript = new String(Base64.getMimeDecoder().decode(launcher.group(1)), StandardCharsets.UTF_8);
-            assertThat(skript).isEqualTo(OpenFileLauncherService.ressource("launcher-mac.sh"));
-            assertThat(in.getNextEntry()).isNull();
-        }
+    @Test
+    void macBefehlHoltDasSkriptUeberEinenEinmalLink() {
+        OpenFileLauncherBefehlDto befehl = service.einrichtungMacBefehl(ERP + "/", HOST);
+
+        assertThat(befehl.gueltigMinuten()).isEqualTo(10);
+        Matcher teile = MAC_BEFEHL.matcher(befehl.befehl());
+        assertThat(teile.matches()).as(befehl.befehl()).isTrue();
+
+        String command = service.einrichtungMac(teile.group(2), HOST).orElseThrow();
+        assertThat(command).startsWith("#!/bin/bash\n").doesNotContain("@@").doesNotContain("\r");
+        Matcher launcher = Pattern.compile("<<'LAUNCHER'\n([A-Za-z0-9+/=\n]+)\nLAUNCHER").matcher(command);
+        assertThat(launcher.find()).isTrue();
+        String skript = new String(Base64.getMimeDecoder().decode(launcher.group(1)), StandardCharsets.UTF_8);
+        assertThat(skript).isEqualTo(OpenFileLauncherService.ressource("launcher-mac.sh"));
+        Matcher config = Pattern.compile("<<'CONFIG'\n([A-Za-z0-9+/=\n]+)\nCONFIG").matcher(command);
+        assertThat(config.find()).isTrue();
+        JsonNode cfg = JSON.readTree(Base64.getMimeDecoder().decode(config.group(1)));
+        assertThat(cfg.get("erpAdresse").asString()).isEqualTo(ERP);
+
+        // Nur einmal einlösbar
+        assertThat(service.einrichtungMac(teile.group(2), HOST)).isEmpty();
+    }
+
+    @Test
+    void jederMacBefehlHatEinenEigenenLink() {
+        String erster = service.einrichtungMacBefehl(ERP, HOST).befehl();
+        String zweiter = service.einrichtungMacBefehl(ERP, HOST).befehl();
+
+        assertThat(erster).isNotEqualTo(zweiter);
+    }
+
+    @Test
+    void macBefehlOhneNetzwerkAdresseIst400() {
+        when(settings.getDateiOrdnerNetworkUrl()).thenReturn("");
+
+        assertThatThrownBy(() -> service.einrichtungMacBefehl(ERP, HOST))
+                .isInstanceOfSatisfying(ResponseStatusException.class, e -> {
+                    assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(e.getReason()).isEqualTo(OpenFileLauncherService.OHNE_NETZWERK_ADRESSE);
+                });
+    }
+
+    @Test
+    void macBefehlNurUeberHttps() {
+        assertThatThrownBy(() -> service.einrichtungMacBefehl("http://buero-pc:8080", "BUERO-PC"))
+                .isInstanceOfSatisfying(ResponseStatusException.class, e -> {
+                    assertThat(e.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(e.getReason()).isEqualTo(OpenFileLauncherService.NUR_HTTPS_FUER_MAC);
+                });
+    }
+
+    @Test
+    void macBefehlMitPortUndIpv4() {
+        assertThat(service.einrichtungMacBefehl("https://192.168.0.10:8443", "192.168.0.10").befehl())
+                .matches("/bin/bash -c \"\\$\\(curl -fSsL 'https://192\\.168\\.0\\.10:8443/openfile-launcher/mac/[A-Za-z0-9_-]{43}'\\)\"");
     }
 
     @Test
     void einrichtungPrueftDieErpAdresse() {
         assertThatThrownBy(() -> service.einrichtungWindows("https://boese.example.com", HOST))
                 .isInstanceOf(ResponseStatusException.class);
-        assertThatThrownBy(() -> service.einrichtungMac("https://boese.example.com", HOST))
+        assertThatThrownBy(() -> service.einrichtungMacBefehl("https://boese.example.com", HOST))
+                .isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> service.einrichtungMacBefehl("https://erp.firma-mustermann.de/'; rm -rf ~ #", HOST))
                 .isInstanceOf(ResponseStatusException.class);
     }
 

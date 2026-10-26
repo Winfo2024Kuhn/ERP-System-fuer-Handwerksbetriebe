@@ -177,7 +177,10 @@ public class SecurityConfig {
             // Update-Abfrage des OpenFile Launchers: läuft außerhalb des Browsers, ohne Login.
             // Nur lesend, Antwort unterschrieben (OpenFileLauncherService); von außen sperrt
             // ZeiterfassungSecurityFilter wie alles außer der Handy-App.
-            "/openfile-launcher/aktuell"
+            "/openfile-launcher/aktuell",
+            // Mac-Einrichtung per Terminal-Befehl: curl ohne Login. Nur lesend; gilt nur mit einem
+            // Einmal-Link, den ein Admin erzeugt hat (10 Minuten, einmal einlösbar, EinmalLinks).
+            "/openfile-launcher/mac/**"
     };
 
     /**
