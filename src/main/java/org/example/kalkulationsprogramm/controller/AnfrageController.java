@@ -511,8 +511,11 @@ public class AnfrageController {
         String nameForType = dokument.getOriginalDateiname() != null ? dokument.getOriginalDateiname().toLowerCase()
                 : (dokument.getGespeicherterDateiname() != null ? dokument.getGespeicherterDateiname().toLowerCase()
                         : "");
-        boolean isHiCAD = nameForType.endsWith(".sza") || nameForType.endsWith(".tcd");
-        if (isHiCAD) {
+        // Wie bei Projekten: Zeichnungen und Excel-Tabellen öffnet der OpenFile Launcher direkt aus dem Ordner
+        boolean imOrdnerOeffnen = nameForType.endsWith(".sza") || nameForType.endsWith(".tcd")
+                || nameForType.endsWith(".xlsx") || nameForType.endsWith(".xls") || nameForType.endsWith(".xlsm")
+                || nameForType.endsWith(".xlsb");
+        if (imOrdnerOeffnen) {
             try {
                 dto.setNetzwerkPfad(dateiSpeicherService.holeNetzwerkPfad(dokument.getGespeicherterDateiname()));
             } catch (Exception ignored) {
