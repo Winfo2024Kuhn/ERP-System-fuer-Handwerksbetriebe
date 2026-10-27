@@ -12,7 +12,7 @@
   - `test`/`expect` immer aus `./hilfen/test` importieren, nicht aus `@playwright/test`. Diese Datei sperrt fremde Netzwerkzugriffe, auch in Popups.
   - Die PC-Specs laufen in drei Größen: `pc-14zoll` 1440×900, `pc-uebergang` 1536×960 und `pc-monitor` 1920×1080. Die Handy-App läuft im Projekt `handy` (iPhone 15). PC zusätzlich: `npm run typecheck:e2e`.
 - **Daten:** Immer Dummy-Daten nutzen (DSGVO!, z. B. `Max Mustermann`). Utils erfordern 100% Coverage.
-- **CI:** `.github/workflows/pr-ci.yml` muss vor dem Merge grün sein („PR Quality Gate“). Geprüft werden Backend-Tests, Datenbank-Kompatibilität sowie Lint, Unit-Tests, Build und E2E beider Frontends.
+- **CI:** `.github/workflows/pr-ci.yml` muss vor dem Merge grün sein („PR Quality Gate“). Geprüft werden Backend-Tests, Datenbank-Kompatibilität, Lint, Unit-Tests, Build und E2E beider Frontends sowie die Syntax der OpenFile-Launcher-Skripte (PowerShell-Parser, `bash -n`).
 
 ## Sicherheits-Pflichtcheckliste (Für JEDEN neuen Endpoint)
 Bevor ein Endpoint als "fertig" markiert wird, müssen folgende Angriffsvektoren im Code/Test abgedeckt sein:
