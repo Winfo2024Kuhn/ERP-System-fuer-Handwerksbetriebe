@@ -143,6 +143,34 @@ function Test-SmbErreichbar([string]$uncPfad){
   } catch { return $false } finally { $client.Close() }
 }
 
+# Antwortet das ERP? Dann laeuft die Verbindung (z. B. Tailscale), und ein nicht erreichbarer
+# Ordner liegt an der Freigabe des Rechners mit dem Ordner (meist die Windows-Firewall).
+function Test-ErpErreichbar {
+  if (-not $ErpAdresse) { return $false }
+  $erp = $null
+  if (-not [Uri]::TryCreate($ErpAdresse, [UriKind]::Absolute, [ref]$erp) -or -not $erp.DnsSafeHost) { return $false }
+  $client = New-Object System.Net.Sockets.TcpClient
+  try {
+    $versuch = $client.BeginConnect($erp.DnsSafeHost, $erp.Port, $null, $null)
+    if (-not $versuch.AsyncWaitHandle.WaitOne(1500)) { return $false }
+    $client.EndConnect($versuch)
+    return $true
+  } catch { return $false } finally { $client.Close() }
+}
+
+# Der Launcher laeuft unsichtbar - ohne Meldung saehe der Nutzer nach dem Klick gar nichts
+function Zeige-Meldung([string]$text){
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show($text, "ERP - Datei oeffnen",
+      [System.Windows.Forms.MessageBoxButtons]::OK,
+      [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+  } catch {}
+}
+
+$MeldungFreigabeFehlt = "Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal am Rechner mit dem Ordner ein (Freigabe-Tailscale.ps1)."
+$MeldungNichtErreichbar = "Der gemeinsame Ordner ist gerade nicht erreichbar. Unterwegs bitte Tailscale einschalten - sonst ist der Rechner mit dem Ordner vielleicht aus."
+
 function Get-MatchingRoot([string]$fullPath, [string[]]$roots){
   $p = Normalize-UNC $fullPath
   $candidates = @()
@@ -368,6 +396,17 @@ try {
     L "Share erreichbar, aber kein Zugriff -> Explorer fragt nach Anmeldung: $root"
     Start-Process -FilePath "$env:WINDIR\explorer.exe" -ArgumentList ('"' + $root + '"')
     exit 4
+  }
+  if (-not $rootExists) {
+    # Ohne erreichbaren Ordner scheitert jedes Programm - lieber sagen, woran es liegt
+    if (Test-ErpErreichbar) {
+      L "ERP erreichbar, Share nicht -> Freigabe fuer unterwegs fehlt: $root"
+      Zeige-Meldung $MeldungFreigabeFehlt
+    } else {
+      L "Weder Share noch ERP erreichbar: $root"
+      Zeige-Meldung $MeldungNichtErreichbar
+    }
+    exit 3
   }
   L ("RootExists: " + $rootExists)
 

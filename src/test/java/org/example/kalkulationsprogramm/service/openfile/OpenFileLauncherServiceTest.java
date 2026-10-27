@@ -288,6 +288,23 @@ class OpenFileLauncherServiceTest {
                 "!= \"$erp\"", "-le \"$bisher\"");
     }
 
+    @Test
+    void launcherNennenDieUrsacheWennDerOrdnerNichtErreichbarIst() {
+        String windows = OpenFileLauncherService.ressource("launcher.ps1");
+        String mac = OpenFileLauncherService.ressource("launcher-mac.sh");
+        String freigabeFehlt = "Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner"
+                + " fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal am Rechner"
+                + " mit dem Ordner ein (Freigabe-Tailscale.ps1).";
+        String nichtErreichbar = "Der gemeinsame Ordner ist gerade nicht erreichbar. Unterwegs bitte Tailscale"
+                + " einschalten - sonst ist der Rechner mit dem Ordner vielleicht aus.";
+        // Beide Systeme sagen dasselbe, abhängig davon, ob das ERP selbst antwortet
+        assertThat(windows).contains(freigabeFehlt, nichtErreichbar, "if (Test-ErpErreichbar) {",
+                "Zeige-Meldung $MeldungFreigabeFehlt", "Zeige-Meldung $MeldungNichtErreichbar");
+        assertThat(mac).contains(freigabeFehlt, nichtErreichbar, "if erp_erreichbar; then",
+                "meldung \"$MELDUNG_FREIGABE_FEHLT\"", "meldung \"$MELDUNG_NICHT_ERREICHBAR\"");
+        assertThat(mac).doesNotContain("Unterwegs bitte Tailscale einschalten.\"");
+    }
+
     // ---------- Einrichtungs-Dateien ----------
 
     @Test

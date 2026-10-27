@@ -425,7 +425,7 @@ const url = `/api/search?q=${suchbegriff}`;
 - Commits: clear, imperative subject; concise body with rationale; group related changes
 - PRs: include summary, linked issues, reproduction/verification steps, and screenshots for UI changes
 - Expect `./mvnw test` to pass; update/add tests when changing behavior
-- `main` only via pull request (a ruleset rejects direct pushes). Required check: "PR Quality Gate" from `.github/workflows/pr-ci.yml` (backend tests, PostgreSQL compatibility, lint, unit tests, build and E2E for both frontends). Green PRs from the owner account are merged by `.github/workflows/pr-automatik.yml` (label `kein-automerge` stops it); every merge to `main` is built by `.github/workflows/docker-image.yml`, start-tested and published as `:stable`, which customer servers install in the nightly update.
+- `main` only via pull request (a ruleset rejects direct pushes). Required check: "PR Quality Gate" from `.github/workflows/pr-ci.yml` (backend tests, PostgreSQL compatibility, lint, unit tests, build and E2E for both frontends, syntax of the OpenFile Launcher scripts). Green PRs from the owner account are merged by `.github/workflows/pr-automatik.yml` (label `kein-automerge` stops it); every merge to `main` is built by `.github/workflows/docker-image.yml`, start-tested and published as `:stable`, which customer servers install in the nightly update.
 
 ## Security & Configuration
 

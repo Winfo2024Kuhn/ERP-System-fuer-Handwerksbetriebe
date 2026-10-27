@@ -187,6 +187,25 @@ eingehaengt() {
   return 1
 }
 
+MELDUNG_FREIGABE_FEHLT="Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal am Rechner mit dem Ordner ein (Freigabe-Tailscale.ps1)."
+MELDUNG_NICHT_ERREICHBAR="Der gemeinsame Ordner ist gerade nicht erreichbar. Unterwegs bitte Tailscale einschalten - sonst ist der Rechner mit dem Ordner vielleicht aus."
+
+# Antwortet das ERP? Kurzer Versuch auf dessen Port (https 443, http 80 oder der angegebene)
+erp_erreichbar() {
+  local erp hp h p
+  erp="$(cfg erpAdresse)"
+  case "$erp" in
+    https://*) p=443 ;;
+    http://*) p=80 ;;
+    *) return 1 ;;
+  esac
+  hp="${erp#*://}"
+  hp="${hp%%/*}"
+  h="${hp%%:*}"
+  if [ "$h" != "$hp" ]; then p="${hp##*:}"; fi
+  [ -n "$h" ] && nc -z -G 2 "$h" "$p" >/dev/null 2>&1
+}
+
 ordner="$(eingehaengt)"
 if [ -z "$ordner" ]; then
   verbunden=""
@@ -201,7 +220,15 @@ if [ -z "$ordner" ]; then
     log "Nicht erreichbar: $k"
   done
   if [ -z "$verbunden" ]; then
-    meldung "Der gemeinsame Ordner ist gerade nicht erreichbar. Unterwegs bitte Tailscale einschalten."
+    # Ist das ERP erreichbar, laeuft die Verbindung (z. B. Tailscale) - dann sperrt der Rechner
+    # mit dem Ordner die Freigabe von unterwegs, meist die Windows-Firewall
+    if erp_erreichbar; then
+      log "ERP erreichbar, Ordner nicht -> Freigabe fuer unterwegs fehlt"
+      meldung "$MELDUNG_FREIGABE_FEHLT"
+    else
+      log "Weder Ordner noch ERP erreichbar"
+      meldung "$MELDUNG_NICHT_ERREICHBAR"
+    fi
     exit 3
   fi
   # Beim ersten Mal fragt der Mac nach Benutzer und Passwort - bis zu 2 Minuten warten

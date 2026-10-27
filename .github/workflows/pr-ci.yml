@@ -346,11 +346,49 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # Die Launcher-Skripte gehen per Auto-Update an alle PCs und Macs. Ein Syntaxfehler
+  # legte dort auch das Selbst-Update lahm - deshalb hier echt parsen. pwsh 7 ist auf
+  # ubuntu-latest vorinstalliert; die PCs laufen mit Windows PowerShell 5, also weiter
+  # nur PS5-Syntax verwenden (kein ??, kein ?:, kein &&).
+  launcher_skripte:
+    name: Launcher-Skripte (Syntax)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: PowerShell-Skripte parsen
+        shell: pwsh
+        run: |
+          $dateien = @(Get-ChildItem -Path deployment/openfile-launcher, src/main/resources/openfile-launcher -Filter *.ps1)
+          if ($dateien.Count -eq 0) { throw 'Keine .ps1-Dateien gefunden' }
+          $fehler = 0
+          foreach ($d in $dateien) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($d.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $fehler++
+              $pfad = Resolve-Path -Relative $d.FullName
+              foreach ($e in $errors) { Write-Host "::error file=$pfad,line=$($e.Extent.StartLineNumber)::$($e.Message)" }
+            } else { Write-Host "OK $($d.Name)" }
+          }
+          if ($fehler -gt 0) { exit 1 }
+
+      - name: Bash-Skripte pruefen
+        run: |
+          fehler=0
+          for f in src/main/resources/openfile-launcher/launcher-mac.sh src/main/resources/openfile-launcher/einrichten-mac.command; do
+            if bash -n "$f"; then echo "OK $f"; else echo "::error file=$f::Syntaxfehler"; fehler=1; fi
+          done
+          exit "$fehler"
+
   quality_gate:
     name: PR Quality Gate
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - launcher_skripte
       - backend_tests
       - db_kompatibilitaet
       - pc_lint
@@ -366,6 +404,7 @@ jobs:
         shell: bash
         run: |
           results=(
+            "${{ needs.launcher_skripte.result }}"
             "${{ needs.backend_tests.result }}"
             "${{ needs.db_kompatibilitaet.result }}"
             "${{ needs.pc_lint.result }}"
