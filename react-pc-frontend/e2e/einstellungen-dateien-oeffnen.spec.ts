@@ -5,7 +5,8 @@ import { designPruefung } from './hilfen/design';
 /**
  * Einstellungen -> Dateien: Hilfsprogramm zum direkten Öffnen von Excel-,
  * HiCAD- und Tenado-Dateien einrichten – Windows per Download, Mac per
- * Terminal-Befehl mit Einmal-Link.
+ * Terminal-Befehl mit Einmal-Link. Dazu die Ordner-Freigabe aus dem ERP-Paket,
+ * deren Adresse sich mit einem Klick übernehmen lässt.
  * Kein Backend: alle /api-Routen sind gestubbt. Nur Dummy-Daten (DSGVO).
  */
 
@@ -15,7 +16,11 @@ function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-async function stubbe(page: Page, networkUrl = '\\\\server\\zeichnungen'): Promise<string[]> {
+async function stubbe(
+    page: Page,
+    networkUrl = '\\\\server\\zeichnungen',
+    freigabe: { adresse: string; pfad: string } | null = null,
+): Promise<string[]> {
     const downloadAufrufe: string[] = [];
     await page.route('**/api/**', async (route) => {
         const url = new URL(route.request().url());
@@ -25,7 +30,14 @@ async function stubbe(page: Page, networkUrl = '\\\\server\\zeichnungen'): Promi
         }
         if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
         if (pfad === '/api/settings/datei-ordner') {
-            return json(route, { pfad: 'C:\\Zeichnungen', networkUrl, konfiguriert: true });
+            if (route.request().method() === 'PUT') return json(route, {});
+            return json(route, {
+                pfad: freigabe?.pfad ?? 'C:\\Zeichnungen',
+                networkUrl,
+                konfiguriert: true,
+                containerFreigabe: freigabe?.adresse ?? null,
+                containerFreigabePfad: freigabe?.pfad ?? null,
+            });
         }
         if (pfad === '/api/openfile-launcher/einrichtung/mac/befehl') {
             downloadAufrufe.push(`${route.request().method()} mac${url.search}`);
@@ -135,4 +147,53 @@ test('Ohne Netzwerk-Adresse bleiben die Knöpfe gesperrt, bis sie gespeichert is
     await page.getByText('mit dem Programm, das dort dafür eingestellt ist.', { exact: false }).scrollIntoViewIfNeeded();
     await designPruefung(page, info, 'einstellungen-dateien-oeffnen-ungespeichert');
     expect(downloadAufrufe).toEqual([]);
+});
+
+test('Ordner-Freigabe des ERP: Adresse übernehmen und speichern, Windows-Anleitung entfällt', async ({ page }, info) => {
+    const freigabe = '\\\\erp-dateien.example.ts.net\\CADdrawings';
+    const freigabePfad = '/app/uploads/CADdrawings';
+    await stubbe(page, '\\\\BUERO-PC\\Zeichnungen', { adresse: freigabe, pfad: freigabePfad });
+    await page.goto('/einstellungen#dateien');
+
+    const feld = page.getByLabel('Netzwerk-Adresse für Kollegen (optional)');
+    await expect(feld).toHaveValue('\\\\BUERO-PC\\Zeichnungen');
+    const hinweis = page.getByRole('region', { name: 'Ordner-Freigabe des ERP ist eingeschaltet' });
+    await expect(hinweis).toContainText(freigabe);
+    await expect(page.getByRole('button', { name: 'So geben Sie den Ordner im Netzwerk frei' })).toHaveCount(0);
+    await expect(page.getByLabel('Ordner auf diesem Rechner')).toHaveValue(freigabePfad);
+    await expect(hinweis.getByText('So würden die Links ins Leere zeigen', { exact: false })).toHaveCount(0);
+    // Gespeichert ist noch die alte Adresse: die Einrichtung hätte die Zugangsdaten noch nicht dabei.
+    const launcherErstSpeichern = page.getByText('Erst oben die Adresse der Ordner-Freigabe eintragen und speichern', { exact: false });
+    await expect(launcherErstSpeichern).toBeVisible();
+    const eintragen = hinweis.getByRole('button', { name: 'Diese Adresse eintragen' });
+    await designPruefung(page, info, 'einstellungen-dateien-container-freigabe', { primaerAktion: eintragen });
+
+    // Info-Knopf an der Überschrift des Hinweises.
+    const infoKnopf = hinweis.getByRole('button', { name: 'Mehr zu: Ordner-Freigabe des ERP' });
+    await infoKnopf.click();
+    const erklaerung = page.getByRole('dialog', { name: 'Ordner-Freigabe des ERP' });
+    await expect(erklaerung).toContainText('Das ERP-Paket bringt eine eigene Ordner-Freigabe mit.');
+    await expect(erklaerung).toContainText('nur im eigenen Tailscale-Netz erreichbar');
+    await expect(erklaerung).toContainText('nur der Weg dorthin ändert sich');
+    await designPruefung(page, info, 'einstellungen-dateien-container-freigabe-info');
+    expect(await erklaerung.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(erklaerung).toHaveCount(0);
+
+    await eintragen.click();
+    await expect(feld).toHaveValue(freigabe);
+    await expect(hinweis.getByText('Eingetragen')).toBeVisible();
+    await expect(eintragen).toHaveCount(0);
+    await expect(page.getByText('Bitte erst speichern – das Hilfsprogramm bekommt die gespeicherte Adresse.')).toBeVisible();
+    await launcherErstSpeichern.scrollIntoViewIfNeeded();
+    await designPruefung(page, info, 'einstellungen-dateien-container-freigabe-eingetragen');
+
+    const speichern = page.waitForRequest((req) => req.method() === 'PUT' && new URL(req.url()).pathname === '/api/settings/datei-ordner');
+    await page.getByRole('button', { name: 'Datei-Ordner speichern' }).click();
+    expect((await speichern).postDataJSON()).toEqual({ pfad: freigabePfad, networkUrl: freigabe });
+    await expect(page.getByText(/Bitte erst speichern/)).toHaveCount(0);
+    // Jetzt ist die Adresse der Freigabe gespeichert: die Einrichtung bringt Benutzer und Passwort mit.
+    await expect(page.getByText('Benutzer und Passwort für den Ordner stecken schon in der Einrichtung', { exact: false })).toBeVisible();
+    await expect(launcherErstSpeichern).toHaveCount(0);
+    await expect(page.getByText('Die Datei löscht sich nach der Einrichtung selbst', { exact: false })).toBeVisible();
 });

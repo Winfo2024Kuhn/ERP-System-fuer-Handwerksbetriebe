@@ -5,16 +5,21 @@ import { OpenFileLauncherKarte } from './OpenFileLauncherKarte';
 import { DateiOrdnerSection } from './DateiOrdnerSection';
 
 const ADRESSE = '\\\\server\\zeichnungen';
+const FREIGABE = '\\\\erp-dateien.example.ts.net\\CADdrawings';
 const WINDOWS = 'Für Windows herunterladen';
 const MAC = 'Befehl für Mac erstellen';
 const MAC_NEU = 'Neuen Befehl erstellen';
 const BEFEHL = `/bin/bash -c "$(curl -fSsL 'https://erp.example.test/openfile-launcher/mac/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd')"`;
 const BEFEHL_URL = `/api/openfile-launcher/einrichtung/mac/befehl?adresse=${encodeURIComponent(window.location.origin)}`;
 
-function zeigeKarte(gespeicherteAdresse: string, ungespeichert = false) {
+function zeigeKarte(gespeicherteAdresse: string, ungespeichert = false, containerFreigabe?: string | null) {
     return render(
         <ToastProvider>
-            <OpenFileLauncherKarte gespeicherteAdresse={gespeicherteAdresse} ungespeichert={ungespeichert} />
+            <OpenFileLauncherKarte
+                gespeicherteAdresse={gespeicherteAdresse}
+                ungespeichert={ungespeichert}
+                containerFreigabe={containerFreigabe}
+            />
         </ToastProvider>,
     );
 }
@@ -104,6 +109,41 @@ describe('OpenFileLauncherKarte', () => {
         expect(fetchMock.mock.calls[0][0]).toBe(
             `/api/openfile-launcher/einrichtung/windows?adresse=${encodeURIComponent('https://erp.example.test')}`,
         );
+    });
+
+    it('sagt bei gespeicherter Adresse der Ordner-Freigabe, dass die Zugangsdaten schon in der Einrichtung stecken', () => {
+        // Groß-/Kleinschreibung und Leerzeichen zählen nicht.
+        zeigeKarte(' \\\\ERP-DATEIEN.example.ts.net\\CADdrawings ', false, FREIGABE);
+
+        expect(screen.getByText(
+            'Benutzer und Passwort für den Ordner stecken schon in der Einrichtung – am PC muss niemand etwas eintippen.',
+        )).toBeInTheDocument();
+        expect(screen.queryByText(/Erst oben die Adresse der Ordner-Freigabe/)).not.toBeInTheDocument();
+    });
+
+    it('bittet erst um die Adresse der Ordner-Freigabe, solange eine andere gespeichert ist', () => {
+        zeigeKarte(ADRESSE, false, FREIGABE);
+
+        expect(screen.getByText(
+            'Erst oben die Adresse der Ordner-Freigabe eintragen und speichern – dann bringt die Einrichtung Benutzer und Passwort gleich mit.',
+        )).toBeInTheDocument();
+        expect(screen.queryByText(/Benutzer und Passwort für den Ordner stecken/)).not.toBeInTheDocument();
+    });
+
+    it('schweigt zu Zugangsdaten ohne Ordner-Freigabe des ERP', () => {
+        zeigeKarte(ADRESSE);
+        expect(screen.queryByText(/Benutzer und Passwort/)).not.toBeInTheDocument();
+
+        zeigeKarte(ADRESSE, false, null);
+        expect(screen.queryByText(/Benutzer und Passwort/)).not.toBeInTheDocument();
+    });
+
+    it('sagt bei Windows, dass sich die Datei selbst löscht und nicht weitergegeben wird', () => {
+        zeigeKarte(ADRESSE);
+
+        expect(screen.getByText(
+            /Die Datei löscht sich nach der Einrichtung selbst – für\s+jeden PC neu herunterladen und nicht weitergeben\./,
+        )).toBeInTheDocument();
     });
 
     it('weist auf eine ungespeicherte Änderung hin', () => {

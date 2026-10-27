@@ -122,6 +122,15 @@ waechter_aktiv() {
     [[ -n "$(find "$LOG_DIR/docker-waechter-lebt.txt" -mmin -30 2>/dev/null)" ]]
 }
 NICHT_EINGEBUNDEN_HINWEIS="ist in der .env eingetragen, aber noch nicht eingebunden. Bitte im ERP-Ordner einmal ausführen: docker compose up -d updater"
+# Nach einem Umzug der Uploads (dateifreigabe.sh --umziehen) haengt bis zum
+# naechsten "docker compose up -d" noch der alte Ordner im Updater. Aus dem
+# spiegelte die Sicherung sonst weiter - und neue Dateien fehlten darin.
+uploads_eingebunden() {
+    # Ein Updater von vor dieser Pruefung kennt die Variable nicht: nichts zu vergleichen
+    [[ -z "${UPLOADS_ORDNER_EINGEBUNDEN+x}" ]] && return 0
+    [[ "$(env_wert UPLOADS_ORDNER)" == "$UPLOADS_ORDNER_EINGEBUNDEN" ]]
+}
+UPLOADS_UMGEZOGEN_HINWEIS="Die hochgeladenen Dateien sind umgezogen, der Updater sichert aber noch den alten Ordner. Bitte im ERP-Ordner einmal ausführen: docker compose up -d"
 
 # -----------------------------------------------------------------------------
 # Ziele einrichten
@@ -211,6 +220,10 @@ ziel_sichern() {
     fi
     log "$name: Datenbank-Sicherung kopiert ($dateiname)." >&2
 
+    if ! uploads_eingebunden; then
+        echo "$name: $UPLOADS_UMGEZOGEN_HINWEIS"
+        return 1
+    fi
     if [[ -d "$UPLOADS" ]]; then
         # -rt: Ordner und Zeitstempel, keine Rechte/Besitzer (FAT32, OneDrive).
         # --modify-window=2: FAT speichert Zeiten nur auf 2 Sekunden genau -

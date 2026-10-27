@@ -93,6 +93,7 @@ public class OpenFileLauncherService {
     private final LauncherSignatur signatur;
     private final ObjectMapper objectMapper;
     private final EinmalLinks einmalLinks;
+    private final ContainerFreigabe containerFreigabe;
 
     private final Map<PaketSchluessel, OpenFileLauncherPaketDto> zwischenspeicher = new ConcurrentHashMap<>();
     /** Uhr für den fortlaufenden Stand; in Tests ersetzbar. */
@@ -105,7 +106,12 @@ public class OpenFileLauncherService {
         String vorlage = ressource("einrichten-windows.bat");
         String bat = vorlage
                 .replace("@@LAUNCHER_BASE64@@", base64(paket.skript()))
-                .replace("@@CONFIG_BASE64@@", base64(paket.configJson()));
+                .replace("@@CONFIG_BASE64@@", base64(paket.configJson()))
+                .replace("@@ORDNER_ZUGANG@@", zugangFuer(wurzel()).map(z ->
+                        "  # Zugang zum Datei-Ordner (Ordner-Freigabe des ERP): Windows meldet sich damit selbst an\n"
+                        + "  cmdkey /add:" + z.rechner() + " /user:" + z.benutzer() + " /pass:" + z.passwort()
+                        + " | Out-Null\n"
+                        + "  Write-Host 'Zugang zum Datei-Ordner gespeichert.'\n").orElse(""));
         // cmd.exe braucht CRLF
         return bat.replace("\r\n", "\n").replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8);
     }
@@ -146,7 +152,16 @@ public class OpenFileLauncherService {
         Base64.Encoder zeilen = Base64.getMimeEncoder(76, "\n".getBytes(StandardCharsets.US_ASCII));
         return ressource("einrichten-mac.command")
                 .replace("@@LAUNCHER_BASE64@@", zeilen.encodeToString(paket.skript().getBytes(StandardCharsets.UTF_8)))
-                .replace("@@CONFIG_BASE64@@", zeilen.encodeToString(paket.configJson().getBytes(StandardCharsets.UTF_8)));
+                .replace("@@CONFIG_BASE64@@", zeilen.encodeToString(paket.configJson().getBytes(StandardCharsets.UTF_8)))
+                .replace("@@ORDNER_ZUGANG@@", zugangFuer(wurzel()).map(z ->
+                        "# Zugang zum Datei-Ordner (Ordner-Freigabe des ERP) im Schluesselbund: Der Mac meldet sich\n"
+                        + "# damit ohne Anmeldedialog selbst an (launcher.sh liest ihn ueber security).\n"
+                        + "security add-internet-password -U -a '" + z.benutzer() + "' -s '" + z.rechner()
+                        + "' -r 'smb ' -l '" + z.rechner() + "' -w '" + z.passwort() + "' \\\n"
+                        + "  -T /usr/bin/security >/dev/null\n"
+                        + "echo \"Zugang zum Datei-Ordner im Schluesselbund gespeichert.\"\n")
+                        .orElse("echo \"Beim ersten Verbinden fragt der Mac nach Benutzer und Passwort des Ordners"
+                                + " (im Schluesselbund sichern).\"\n"));
     }
 
     /**
@@ -173,6 +188,16 @@ public class OpenFileLauncherService {
         return Optional.of(paket(bs, erp));
     }
 
+    /**
+     * Zugang zur Ordner-Freigabe des Docker-Pakets – nur, wenn die eingestellte Netzwerk-Adresse
+     * auch auf deren Rechner zeigt. Er steckt allein in der Einrichtung (die nur Admins
+     * herunterladen bzw. per Einmal-Link bekommen), nie im Update, das jeder PC ohne Anmeldung holt.
+     */
+    private Optional<ContainerFreigabe.Zugang> zugangFuer(String wurzel) {
+        String rechner = uncHost(wurzel);
+        return containerFreigabe.zugang().filter(z -> z.rechner().equalsIgnoreCase(rechner));
+    }
+
     private String wurzel() {
         return normalisiereUnc(settings.getDateiOrdnerNetworkUrl())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, OHNE_NETZWERK_ADRESSE));
@@ -185,6 +210,11 @@ public class OpenFileLauncherService {
     private static List<String> aliasHosts(String erpAdresse, String wurzel) {
         String erpHost = URI.create(erpAdresse).getHost();
         String uncHost = uncHost(wurzel);
+        // Liegt der Ordner schon im Tailscale-Netz (Ordner-Freigabe des Docker-Pakets), ist er
+        // im Büro wie unterwegs unter demselben Namen erreichbar - ein Umweg führte ins Leere.
+        if (uncHost.toLowerCase(Locale.ROOT).endsWith(".ts.net")) {
+            return List.of();
+        }
         if (erpHost != null && !erpHost.equalsIgnoreCase(uncHost) && istRechnername(erpHost)
                 && !"localhost".equalsIgnoreCase(erpHost) && !erpHost.startsWith("127.")) {
             return List.of(erpHost);

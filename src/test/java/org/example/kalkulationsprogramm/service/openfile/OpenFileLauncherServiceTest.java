@@ -50,6 +50,7 @@ class OpenFileLauncherServiceTest {
     private static LauncherSignatur signatur;
 
     private SystemSettingsService settings;
+    private ContainerFreigabe containerFreigabe;
     private OpenFileLauncherService service;
 
     @BeforeAll
@@ -62,7 +63,8 @@ class OpenFileLauncherServiceTest {
     void setUp() {
         settings = mock(SystemSettingsService.class);
         when(settings.getDateiOrdnerNetworkUrl()).thenReturn("\\\\BUERO_PC\\\\Zeichnungen\\");
-        service = new OpenFileLauncherService(settings, signatur, JSON, new EinmalLinks());
+        containerFreigabe = mock(ContainerFreigabe.class);
+        service = new OpenFileLauncherService(settings, signatur, JSON, new EinmalLinks(), containerFreigabe);
     }
 
     private static boolean unterschriftGueltig(OpenFileLauncherPaketDto paket) throws Exception {
@@ -167,6 +169,16 @@ class OpenFileLauncherServiceTest {
     }
 
     @Test
+    void keinAusweichNameWennDerOrdnerSchonImTailscaleNetzLiegt() throws Exception {
+        when(settings.getDateiOrdnerNetworkUrl()).thenReturn("\\\\erp-dateien.tail1234.ts.net\\CADdrawings");
+        JsonNode config = JSON.readTree(service.paket(Betriebssystem.WINDOWS, "https://buero-pc.tail1234.ts.net").configJson());
+
+        assertThat(config.get("allowedRoots").get(0).asString()).isEqualTo("\\\\erp-dateien.tail1234.ts.net\\CADdrawings");
+        assertThat(config.get("aliasHosts")).isEmpty();
+        assertThat(config.get("rootAliases")).isEmpty();
+    }
+
+    @Test
     void versionAendertSichMitAdresseUndSystemNichtMitErpAdresse() {
         String windows = service.paket(Betriebssystem.WINDOWS, ERP).version();
         assertThat(service.paket(Betriebssystem.WINDOWS, ERP).version()).isEqualTo(windows);
@@ -212,7 +224,7 @@ class OpenFileLauncherServiceTest {
     @Test
     void paketTraegtFortlaufendenStandUndWirdNurEinmalUnterschrieben() throws Exception {
         LauncherSignatur zaehlend = spy(signatur);
-        OpenFileLauncherService svc = new OpenFileLauncherService(settings, zaehlend, JSON, new EinmalLinks());
+        OpenFileLauncherService svc = new OpenFileLauncherService(settings, zaehlend, JSON, new EinmalLinks(), containerFreigabe);
         svc.jetzt = () -> 1_760_000_000_000L;
 
         OpenFileLauncherPaketDto erstes = svc.paket(Betriebssystem.WINDOWS, ERP);
@@ -233,7 +245,7 @@ class OpenFileLauncherServiceTest {
     void aktuellerPcKostetKeineUnterschrift() {
         String version = service.aktuellesPaket("windows", "alt", ERP, HOST).orElseThrow().version();
         LauncherSignatur zaehlend = spy(signatur);
-        OpenFileLauncherService frisch = new OpenFileLauncherService(settings, zaehlend, JSON, new EinmalLinks());
+        OpenFileLauncherService frisch = new OpenFileLauncherService(settings, zaehlend, JSON, new EinmalLinks(), containerFreigabe);
 
         assertThat(frisch.aktuellesPaket("windows", version, ERP, HOST)).isEmpty();
         verify(zaehlend, never()).unterschreibe(anyString());
@@ -250,7 +262,7 @@ class OpenFileLauncherServiceTest {
     @Test
     void updateAbfrageErzeugtKeinenSchluessel() {
         LauncherSignatur ohneSchluessel = mock(LauncherSignatur.class);
-        OpenFileLauncherService svc = new OpenFileLauncherService(settings, ohneSchluessel, JSON, new EinmalLinks());
+        OpenFileLauncherService svc = new OpenFileLauncherService(settings, ohneSchluessel, JSON, new EinmalLinks(), containerFreigabe);
 
         assertThat(svc.aktuellesPaket("windows", "alt", ERP, HOST)).isEmpty();
         verify(ohneSchluessel).istEingerichtet();
@@ -293,8 +305,8 @@ class OpenFileLauncherServiceTest {
         String windows = OpenFileLauncherService.ressource("launcher.ps1");
         String mac = OpenFileLauncherService.ressource("launcher-mac.sh");
         String freigabeFehlt = "Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner"
-                + " fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal am Rechner"
-                + " mit dem Ordner ein (Freigabe-Tailscale.ps1).";
+                + " fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal ein"
+                + " (Tailscale-Regeln bzw. Freigabe-Tailscale.ps1 am Rechner mit dem Ordner).";
         String nichtErreichbar = "Der gemeinsame Ordner ist gerade nicht erreichbar. Unterwegs bitte Tailscale"
                 + " einschalten - sonst ist der Rechner mit dem Ordner vielleicht aus.";
         // Beide Systeme sagen dasselbe, abhängig davon, ob das ERP selbst antwortet
@@ -312,6 +324,9 @@ class OpenFileLauncherServiceTest {
         String bat = new String(service.einrichtungWindows(ERP, HOST), StandardCharsets.UTF_8);
 
         assertThat(bat).startsWith("@echo off\r\n").doesNotContain("@@").doesNotContainPattern("[^\r]\n");
+        // Kann das Ordner-Passwort enthalten - loescht sich nach der Einrichtung selbst
+        assertThat(bat).contains("pause\r\nrem Selbst loeschen: (goto) beendet die Stapeldatei, del laeuft danach noch\r\n"
+                + "(goto) 2>nul & del \"%~f0\"\r\n");
         assertThat(bat).matches("\\p{ASCII}*");
         Matcher launcher = Pattern.compile("\\$launcherB64 = '([A-Za-z0-9+/=]+)'").matcher(bat);
         Matcher config = Pattern.compile("\\$configB64 = '([A-Za-z0-9+/=]+)'").matcher(bat);
@@ -321,6 +336,80 @@ class OpenFileLauncherServiceTest {
         assertThat(skript).isEqualTo(OpenFileLauncherService.ressource("launcher.ps1"));
         JsonNode cfg = JSON.readTree(Base64.getDecoder().decode(config.group(1)));
         assertThat(cfg.get("erpAdresse").asString()).isEqualTo(ERP);
+    }
+
+    // ---------- Zugang zur Ordner-Freigabe des Docker-Pakets ----------
+
+    private static final String FREIGABE = "\\\\erp-dateien.tail1234.ts.net\\CADdrawings";
+    private static final String DUMMY_PASSWORT = "MusterPasswort2345abcdefgh";
+
+    private void freigabeEingeschaltet(String eingestellteAdresse) {
+        when(settings.getDateiOrdnerNetworkUrl()).thenReturn(eingestellteAdresse);
+        when(containerFreigabe.zugang()).thenReturn(Optional.of(new ContainerFreigabe.Zugang(
+                FREIGABE, "erp-dateien.tail1234.ts.net", "erp-dateien", DUMMY_PASSWORT)));
+    }
+
+    @Test
+    void einrichtungBringtDenZugangZurFreigabeMitAberNieDasUpdate() {
+        freigabeEingeschaltet(FREIGABE);
+
+        String bat = new String(service.einrichtungWindows(ERP, HOST), StandardCharsets.UTF_8);
+        assertThat(bat).contains("  cmdkey /add:erp-dateien.tail1234.ts.net /user:erp-dateien /pass:" + DUMMY_PASSWORT
+                + " | Out-Null\r\n").doesNotContain("@@").doesNotContainPattern("[^\r]\n");
+
+        String mac = service.einrichtungMacSkript(ERP);
+        assertThat(mac).contains("security add-internet-password -U -a 'erp-dateien' -s 'erp-dateien.tail1234.ts.net'"
+                + " -r 'smb ' -l 'erp-dateien.tail1234.ts.net' -w '" + DUMMY_PASSWORT + "' \\\n"
+                + "  -T /usr/bin/security >/dev/null\n")
+                .doesNotContain("@@").doesNotContain("fragt der Mac nach Benutzer und Passwort");
+
+        // Das Update holt jeder PC ohne Anmeldung - darin darf das Passwort nie stehen
+        for (Betriebssystem bs : Betriebssystem.values()) {
+            OpenFileLauncherPaketDto paket = service.paket(bs, ERP);
+            assertThat(paket.configJson() + paket.skript()).doesNotContain(DUMMY_PASSWORT);
+            assertThat(service.aktuellesPaket(bs.name(), "alt", ERP, HOST).orElseThrow().configJson())
+                    .doesNotContain(DUMMY_PASSWORT);
+        }
+    }
+
+    @Test
+    void keinZugangWennDieEingestellteAdresseAufEinenAnderenRechnerZeigt() {
+        freigabeEingeschaltet("\\\\BUERO_PC\\CADdrawings");
+
+        String bat = new String(service.einrichtungWindows(ERP, HOST), StandardCharsets.UTF_8);
+        assertThat(bat).doesNotContain("cmdkey", DUMMY_PASSWORT, "@@");
+        String mac = service.einrichtungMacSkript(ERP);
+        assertThat(mac).doesNotContain("security add-internet-password", DUMMY_PASSWORT, "@@")
+                .contains("echo \"Beim ersten Verbinden fragt der Mac nach Benutzer und Passwort des Ordners");
+    }
+
+    @Test
+    void ohneFreigabeBleibtDieEinrichtungWieBisher() {
+        String bat = new String(service.einrichtungWindows(ERP, HOST), StandardCharsets.UTF_8);
+        assertThat(bat).doesNotContain("cmdkey", "@@");
+        assertThat(service.einrichtungMacSkript(ERP)).doesNotContain("security add-internet-password", "@@");
+    }
+
+    @Test
+    void launcherHolenBeiUnbekanntemOrdnerSofortDieNeueFassung() {
+        String windows = OpenFileLauncherService.ressource("launcher.ps1");
+        String mac = OpenFileLauncherService.ressource("launcher-mac.sh");
+        // Nach dem Umstellen der Adresse im ERP scheitert der erste Klick nicht mehr
+        assertThat(windows).contains("if (-not $match -and $ErpAdresse) {", "Update-Launcher\n    try {",
+                "$match = Get-MatchingRoot $unc $AllowedRoots\n  }");
+        assertThat(mac).contains("  aktualisieren\n  if im_erlaubten_ordner; then erlaubt=1; fi");
+    }
+
+    @Test
+    void macLauncherVerbindetMitDemZugangAusDerEinrichtungOhneDialog() {
+        String mac = OpenFileLauncherService.ressource("launcher-mac.sh");
+        // Zugang aus dem Schluesselbund, Werte streng geprueft, Passwort nur ueber stdin
+        assertThat(mac).contains("if mit_zugang_verbinden \"$k\" \"$freigabe_url\"; then",
+                "case \"$1\" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac",
+                "case \"$pw\" in ''|*[!A-Za-z0-9]*) return 1 ;; esac",
+                "| osascript >/dev/null");
+        // Ohne gespeicherten Zugang wie bisher ueber den Finder
+        assertThat(mac).contains("open \"smb://$k/$freigabe_url\"");
     }
 
     private static final Pattern MAC_BEFEHL = Pattern.compile(

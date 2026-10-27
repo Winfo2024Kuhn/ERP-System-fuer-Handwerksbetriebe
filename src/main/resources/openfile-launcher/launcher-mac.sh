@@ -133,15 +133,28 @@ case "$(klein "$rest")" in
 esac
 
 # Nur Dateien aus den freigegebenen Ordnern
+im_erlaubten_ordner() {
+  local anzahl i wurzel
+  anzahl="$(cfg allowedRoots)"
+  i=0
+  while [ "$i" -lt "${anzahl:-0}" ]; do
+    wurzel="$(normalisiere "$(cfg "allowedRoots.$i")")"
+    wurzel="${wurzel%/}"
+    case "$(klein "$ziel")" in "$(klein "$wurzel")"/*) return 0 ;; esac
+    i=$((i + 1))
+  done
+  return 1
+}
 erlaubt=0
-anzahl="$(cfg allowedRoots)"
-i=0
-while [ "$i" -lt "${anzahl:-0}" ]; do
-  wurzel="$(normalisiere "$(cfg "allowedRoots.$i")")"
-  wurzel="${wurzel%/}"
-  case "$(klein "$ziel")" in "$(klein "$wurzel")"/*) erlaubt=1 ;; esac
-  i=$((i + 1))
-done
+if im_erlaubten_ordner; then
+  erlaubt=1
+else
+  # Hat der Admin den Ordner im ERP umgestellt, kennt erst die neue Fassung die neue
+  # Adresse: jetzt gleich aktualisieren statt erst nach diesem Klick
+  log "Ordner unbekannt - frage nach einer neuen Fassung"
+  aktualisieren
+  if im_erlaubten_ordner; then erlaubt=1; fi
+fi
 if [ "$erlaubt" != "1" ]; then
   log "FEHLER: ausserhalb der erlaubten Ordner: $ziel"
   meldung "Diese Datei liegt nicht im freigegebenen Ordner und wird nicht geoeffnet."
@@ -187,7 +200,7 @@ eingehaengt() {
   return 1
 }
 
-MELDUNG_FREIGABE_FEHLT="Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal am Rechner mit dem Ordner ein (Freigabe-Tailscale.ps1)."
+MELDUNG_FREIGABE_FEHLT="Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal ein (Tailscale-Regeln bzw. Freigabe-Tailscale.ps1 am Rechner mit dem Ordner)."
 MELDUNG_NICHT_ERREICHBAR="Der gemeinsame Ordner ist gerade nicht erreichbar. Unterwegs bitte Tailscale einschalten - sonst ist der Rechner mit dem Ordner vielleicht aus."
 
 # Antwortet das ERP? Kurzer Versuch auf dessen Port (https 443, http 80 oder der angegebene)
@@ -206,14 +219,34 @@ erp_erreichbar() {
   [ -n "$h" ] && nc -z -G 2 "$h" "$p" >/dev/null 2>&1
 }
 
+# Hat die Einrichtung den Zugang zum Ordner in den Schluesselbund gelegt (Ordner-Freigabe des
+# ERP), verbindet das Hilfsprogramm selbst - ohne Anmeldedialog. Der Finder nimmt den Eintrag
+# nicht von sich aus. Das Passwort geht ueber stdin an osascript, nie in eine Befehlszeile.
+mit_zugang_verbinden() {  # mit_zugang_verbinden <rechner> <freigabe (URL-kodiert)>
+  local konto pw
+  case "$1" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  case "$2" in ''|*[!A-Za-z0-9._~%-]*) return 1 ;; esac
+  konto="$(security find-internet-password -s "$1" -r 'smb ' 2>/dev/null \
+    | sed -n 's/^ *"acct"<blob>="\([a-z0-9-]*\)"$/\1/p' | head -n 1)"
+  [ -n "$konto" ] || return 1
+  pw="$(security find-internet-password -s "$1" -a "$konto" -r 'smb ' -w 2>/dev/null)" || return 1
+  case "$pw" in ''|*[!A-Za-z0-9]*) return 1 ;; esac
+  printf 'mount volume "smb://%s/%s" as user name "%s" with password "%s"\n' "$1" "$2" "$konto" "$pw" \
+    | osascript >/dev/null 2>>"$LOG"
+}
+
 ordner="$(eingehaengt)"
 if [ -z "$ordner" ]; then
   verbunden=""
   for k in "${kandidaten[@]}"; do
     if nc -z -G 2 "$k" 445 >/dev/null 2>&1; then
       freigabe_url="$(osascript -l JavaScript -e 'function run(a){ return encodeURIComponent(a[0]); }' "$freigabe" 2>/dev/null)"
-      log "Verbinde smb://$k/$freigabe_url"
-      open "smb://$k/$freigabe_url"
+      if mit_zugang_verbinden "$k" "$freigabe_url"; then
+        log "Verbunden mit dem Zugang aus der Einrichtung: smb://$k/$freigabe_url"
+      else
+        log "Verbinde smb://$k/$freigabe_url"
+        open "smb://$k/$freigabe_url"
+      fi
       verbunden="$k"
       break
     fi

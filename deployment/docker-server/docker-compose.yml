@@ -18,6 +18,11 @@
 #   jetzt-aktualisieren
 #              Knopf in Docker Desktop: auf Start klicken, und das Update laeuft
 #              sofort (wie nachts). Startet nie von allein (Profil "manuell").
+#   dateifreigabe
+#              Optional (Profil "dateifreigabe", in .env: COMPOSE_PROFILES=
+#              dateifreigabe): gibt den Zeichnungs-Ordner der Uploads ueber
+#              Tailscale frei - Excel, HiCAD und Tenado oeffnen Dateien dann im
+#              Buero und unterwegs direkt, ohne Windows-Freigabe.
 #
 # Abschottung (README, Abschnitt "Sicherheit"):
 #   - Die Datenbank haengt nur im Netz "intern" - ohne Verbindung nach aussen,
@@ -124,6 +129,9 @@ services:
       # Volume statt ./Ordner: Der Updater erstellt die App selbst neu, ein
       # relativer Pfad zeigte dann ins Leere (siehe UPLOADS_ORDNER).
       - betriebsstatus:/app/betriebsstatus:ro
+      # Adresse und Zugang der Ordner-Freigabe (Dienst dateifreigabe) - nur lesen.
+      # Leer, solange die Freigabe nicht laeuft.
+      - dateifreigabe_status:/app/dateifreigabe:ro
     networks: [intern, extern]
     # Schreibgeschuetzt: Wer eine Luecke findet, kann weder das ERP noch das
     # System im Container veraendern. Beschreibbar sind nur die Volumes oben und
@@ -162,6 +170,10 @@ services:
       # "noch nicht eingebunden" statt in den leeren Platzhalter zu sichern.
       SICHERUNG_PLATTE_EINGEBUNDEN: ${SICHERUNG_PLATTE:-}
       SICHERUNG_CLOUD_EINGEBUNDEN: ${SICHERUNG_CLOUD:-}
+      # Dasselbe fuer die Uploads: Nach einem Umzug (dateifreigabe.sh --umziehen)
+      # sichert ein Updater, der noch den alten Ordner eingebunden hat, nicht
+      # weiter von dort, sondern meldet "noch nicht eingebunden".
+      UPLOADS_ORDNER_EINGEBUNDEN: ${UPLOADS_ORDNER:-}
     volumes:
       # Steuert die Container dieses Projekts. Wer den Socket hat, hat volle
       # Kontrolle ueber Docker - deshalb tut der Updater nur, was in
@@ -238,6 +250,69 @@ services:
     security_opt: [no-new-privileges:true]
     restart: always
 
+  # Ordner-Freigabe fuer "Dateien direkt am PC oeffnen" (README, Abschnitt
+  # "Ordner-Freigabe ohne Windows"). Eigenes Geraet im Tailscale-Netz
+  # (DATEIFREIGABE_NAME, Standard erp-dateien) mit Samba; erreichbar nur ueber
+  # Tailscale, nie im Firmennetz. Einschalten und einrichten in einem Schritt:
+  #   docker compose exec updater bash /erp/dateifreigabe.sh
+  dateifreigabe:
+    build: ./dateifreigabe
+    image: erp-dateifreigabe:lokal
+    container_name: erp-dateifreigabe
+    profiles: [dateifreigabe]
+    hostname: ${DATEIFREIGABE_NAME:-erp-dateien}
+    environment:
+      TZ: Europe/Berlin
+      DATEIFREIGABE_NAME: ${DATEIFREIGABE_NAME:-erp-dateien}
+      DATEIFREIGABE_ORDNER: ${DATEIFREIGABE_ORDNER:-CADdrawings}
+      DATEIFREIGABE_TAG: ${DATEIFREIGABE_TAG-tag:erp-dateien}
+      DATEIFREIGABE_PASSWORT: ${DATEIFREIGABE_PASSWORT:-}
+      # Nur fuer die erste Anmeldung; danach merkt sich der Container sie im
+      # Volume dateifreigabe_daten. Leer = Anmelde-Link im Log.
+      TS_AUTHKEY: ${DATEIFREIGABE_TS_AUTHKEY:-}
+    volumes:
+      # Dieselben Uploads wie das ERP - freigegeben wird nur DATEIFREIGABE_ORDNER
+      - ${UPLOADS_ORDNER:-app_uploads}:/daten
+      # Tailscale-Anmeldung und das erzeugte Ordner-Passwort
+      - dateifreigabe_daten:/var/lib/dateifreigabe
+      # Adresse und Zugang fuer das ERP (die App bindet es nur lesend ein)
+      - dateifreigabe_status:/status
+    # Tailscale braucht ein eigenes Netzwerk-Geraet (tailscale0) ...
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # ... und einen festen UDP-Port fuer direkte Verbindungen zu den PCs. Ohne
+    # ihn laeuft alles ueber die Tailscale-Relais - das geht, ist aber langsamer.
+    # 41642 statt 41641: Auf diesem Rechner laeuft oft schon Tailscale selbst.
+    ports:
+      - "${DATEIFREIGABE_UDP_PORT:-41642}:41642/udp"
+    # Eigenes Netz ohne Netzsperre: Tailscale sucht den kuerzesten Weg zu den
+    # PCs, im Buero auch direkt im Firmennetz. Samba lauscht trotzdem nur auf
+    # tailscale0 (smb.conf), nicht in diesem Netz.
+    networks: [dateifreigabe]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/lib/samba
+      - /var/cache/samba
+      - /var/log
+    # NET_ADMIN/NET_RAW: Tailscale-Netzwerkgeraet und Routen. SETUID/SETGID:
+    # Samba wechselt fuer jeden Zugriff zum Benutzer des ERP (Kennung 10001).
+    # CHOWN/DAC_OVERRIDE/FOWNER: Ordner anlegen und Dateien der Kennung 10001
+    # bearbeiten.
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, NET_RAW, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    init: true
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /status/dateifreigabe.json && nc -z 127.0.0.1 445"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5m
+    restart: always
+
 networks:
   # Datenbank <-> App. "internal": Docker laesst aus diesem Netz nichts nach aussen.
   intern:
@@ -247,9 +322,13 @@ networks:
   extern:
     driver_opts:
       com.docker.network.bridge.name: erp-extern
+  # Nur fuer die Ordner-Freigabe (Tailscale ins Internet)
+  dateifreigabe:
 
 volumes:
   postgres_data:
   app_uploads:
   app_logs:
   betriebsstatus:
+  dateifreigabe_daten:
+  dateifreigabe_status:

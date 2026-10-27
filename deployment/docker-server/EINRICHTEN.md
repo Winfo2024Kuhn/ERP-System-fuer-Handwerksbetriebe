@@ -240,10 +240,33 @@ So erfährst du als Betreuer von Problemen, auch wenn beim Kunden niemand ins ER
 - [ ] QR-Codes für die Mitarbeiter im ERP erzeugen und einmal mit einem Handy im Mobilfunk
       (WLAN aus) testen.
 
+## 8b. Dateien direkt öffnen – Excel, HiCAD, Tenado (empfohlen)
+
+Damit alle dieselbe Datei aus dem gemeinsamen Ordner öffnen – im Büro und unterwegs, ohne
+Kopien und ohne Windows-Freigabe. Erklärung: [README, Ordner-Freigabe ohne Windows](README.md#ordner-freigabe-ohne-windows).
+
+- [ ] In den **Tailscale-Regeln** `tag:erp-dateien` unter `tagOwners` eintragen und den
+      Zugriff auf Port 445 erlauben (Regeln stehen im README-Abschnitt).
+- [ ] In `C:\ERP-Handwerk` (Rechtsklick → *Im Terminal öffnen*):
+
+  ```powershell
+  docker compose exec updater bash /erp/dateifreigabe.sh
+  ```
+
+  Den angezeigten **Anmelde-Link** im Browser öffnen und mit dem Tailscale-Admin-Konto
+  bestätigen. Am Ende nennt das Skript die Adresse des Ordners.
+- [ ] `docker compose up -d`
+- [ ] Im ERP: *Einstellungen → Dateien* → **„Diese Adresse eintragen“** → speichern.
+- [ ] Auf jedem PC, der Dateien öffnen soll: Tailscale installieren und anmelden, dann unter
+      *Einstellungen → Dateien → „Dateien direkt am PC öffnen“* das Hilfsprogramm einrichten.
+      Benutzer und Passwort für den Ordner bringt die Einrichtung mit.
+- [ ] Eine Excel-Datei aus einem Projekt öffnen, etwas ändern, speichern – und noch einmal
+      öffnen: Die Änderung ist da.
+
 ## 9. Abnahme – bevor du gehst
 
 - [ ] `docker compose ps` zeigt vier laufende Dienste: `erp-postgres`, `erp-app`,
-      `erp-updater`, `erp-netzsperre`.
+      `erp-updater`, `erp-netzsperre` – mit Ordner-Freigabe (8b) zusätzlich `erp-dateifreigabe`.
 - [ ] **PC neu starten.** Nach der automatischen Anmeldung läuft das ERP wieder von selbst
       (Verknüpfung „ERP Handwerk“ öffnen).
 - [ ] In der **Aufgabenplanung** steht „ERP Handwerk Docker-Waechter“ mit Status „Bereit“.

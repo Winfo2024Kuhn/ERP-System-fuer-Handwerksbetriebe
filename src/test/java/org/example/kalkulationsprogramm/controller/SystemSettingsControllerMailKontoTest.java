@@ -33,6 +33,7 @@ class SystemSettingsControllerMailKontoTest {
     @MockitoBean private SystemSettingsService settingsService;
     @MockitoBean private DateiOrdnerService dateiOrdnerService;
     @MockitoBean private PostfachUmzugService postfachUmzugService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.openfile.ContainerFreigabe containerFreigabe;
 
     @Test
     void kiSchluesselEntfernen() throws Exception {

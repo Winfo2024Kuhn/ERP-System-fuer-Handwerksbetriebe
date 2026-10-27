@@ -168,7 +168,7 @@ function Zeige-Meldung([string]$text){
   } catch {}
 }
 
-$MeldungFreigabeFehlt = "Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal am Rechner mit dem Ordner ein (Freigabe-Tailscale.ps1)."
+$MeldungFreigabeFehlt = "Das ERP ist erreichbar, der gemeinsame Ordner aber nicht. Wahrscheinlich ist der Ordner fuer unterwegs (Tailscale) noch nicht freigegeben. Das richtet der Administrator einmal ein (Tailscale-Regeln bzw. Freigabe-Tailscale.ps1 am Rechner mit dem Ordner)."
 $MeldungNichtErreichbar = "Der gemeinsame Ordner ist gerade nicht erreichbar. Unterwegs bitte Tailscale einschalten - sonst ist der Rechner mit dem Ordner vielleicht aus."
 
 function Get-MatchingRoot([string]$fullPath, [string[]]$roots){
@@ -359,6 +359,21 @@ try {
 
   # Root + rel ermitteln (inkl. Alias-Rewrite)
   $match = Get-MatchingRoot $unc $AllowedRoots
+  if (-not $match -and $ErpAdresse) {
+    # Hat der Admin den Ordner im ERP umgestellt, kennt erst die neue Fassung die neue
+    # Adresse: jetzt gleich aktualisieren statt erst nach diesem Klick
+    L "Ordner unbekannt - frage nach einer neuen Fassung"
+    Update-Launcher
+    try {
+      $cfg = [IO.File]::ReadAllText($configFile) | ConvertFrom-Json
+      if ($cfg.allowedRoots) { $AllowedRoots = @($cfg.allowedRoots) }
+      $RootAliases = @{}
+      if ($cfg.rootAliases) {
+        foreach ($key in $cfg.rootAliases.PSObject.Properties.Name) { $RootAliases[$key] = $cfg.rootAliases.$key }
+      }
+    } catch { L "config.json nach dem Update nicht lesbar: $($_.Exception.Message)" }
+    $match = Get-MatchingRoot $unc $AllowedRoots
+  }
   if (-not $match){
     L ("ERR out of allowed roots: " + $unc + "  (allowed: " + ($AllowedRoots -join ', ') + ")")
     exit 2

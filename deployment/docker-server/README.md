@@ -184,6 +184,137 @@ UPLOADS_ORDNER=/run/desktop/mnt/host/c/Kalkulationsprogramm/uploads
 Das Nachtupdate sichert Uploads nie mit. Die [tägliche Sicherung](#tägliche-sicherung)
 spiegelt sie – egal ob Volume oder eigener Ordner.
 
+Empfohlen ist das Volume: Es ist schneller, hängt nicht an Windows und lässt sich mit der
+[Ordner-Freigabe](#ordner-freigabe-ohne-windows) trotzdem im Büro und unterwegs öffnen.
+Umziehen aus einem eigenen Ordner geht mit `dateifreigabe.sh --umziehen` (siehe dort).
+
+### Ordner-Freigabe ohne Windows
+
+Excel-Tabellen und Zeichnungen (HiCAD, Tenado) öffnet das ERP über das Hilfsprogramm
+„Dateien direkt am PC öffnen“ direkt aus dem gemeinsamen Ordner – alle arbeiten an derselben
+Datei, es entstehen keine Kopien. Den Ordner dafür gibt der Dienst `dateifreigabe` frei:
+
+- Ein eigener Container mit **Tailscale** und **Samba**. Er ist ein eigenes Gerät im
+  Tailscale-Netz (`erp-dateien`) und gibt nur den Datei-Ordner der Uploads frei
+  (`DATEIFREIGABE_ORDNER`, Standard `CADdrawings`), nicht den Rest.
+- Erreichbar **nur über Tailscale** – im Büro wie unterwegs unter demselben Namen,
+  z. B. `\\erp-dateien.<tailnet>.ts.net\CADdrawings`. Im Firmennetz ist kein Port offen,
+  Windows-Freigabe, Windows-Konto und Windows-Firewall spielen keine Rolle mehr.
+- Benutzer `erp-dateien` mit einem Passwort, das der Container beim ersten Start zufällig
+  erzeugt. Niemand muss es kennen: Er meldet Adresse und Zugang dem ERP (Volume
+  `dateifreigabe_status`, für das ERP nur lesbar). Die Einrichtung des Hilfsprogramms legt
+  den Zugang auf jedem PC ab (Windows: Anmeldeinformationen per `cmdkey`, Mac: Schlüsselbund).
+  Im automatischen Update, das die PCs ohne Anmeldung holen, steht er nie.
+- Die [tägliche Sicherung](#tägliche-sicherung) nimmt den Ordner automatisch mit – er liegt
+  in den Uploads.
+
+**Vorher in den Tailscale-Regeln** (Admin-Konsole → *Access controls*):
+
+```jsonc
+"tagOwners": { "tag:erp-dateien": ["autogroup:admin"] },
+"grants": [
+  // Ordner-Freigabe des ERP: eigene Geräte und Laptops für unterwegs, nur Port 445
+  {"src": ["autogroup:member", "tag:remote"], "dst": ["tag:erp-dateien"], "ip": ["tcp:445"]},
+],
+"tests": [
+  {"src": "tag:remote", "accept": ["tag:erp-dateien:445"]},
+  {"src": "tag:handy",  "deny":   ["tag:erp-dateien:445"]},
+],
+```
+
+Handys (`tag:handy`) bekommen keinen Zugang. Jeder PC, der Dateien öffnen soll – auch im
+Büro –, braucht Tailscale und muss nach diesen Regeln dürfen.
+
+**Einschalten** (im ERP-Ordner):
+
+```bash
+docker compose exec updater bash /erp/dateifreigabe.sh
+```
+
+Das Skript trägt `COMPOSE_PROFILES=dateifreigabe` in die `.env` ein, baut und startet den
+Dienst und zeigt beim ersten Mal einen **Anmelde-Link**: im Browser öffnen und mit dem
+Admin-Konto von Tailscale bestätigen (ohne Link: `DATEIFREIGABE_TS_AUTHKEY` in der `.env`).
+Am Ende nennt es die Adresse. Danach:
+
+1. `docker compose up -d` auf dem Rechner selbst.
+2. Im ERP unter *Einstellungen → Dateien* auf **„Diese Adresse eintragen“** klicken und
+   speichern. Die PCs mit dem Hilfsprogramm holen sich die neue Adresse beim nächsten Klick
+   auf eine Datei selbst.
+3. Damit die PCs den Zugang bekommen, das Hilfsprogramm einmal neu einrichten
+   (*Einstellungen → Dateien → „Dateien direkt am PC öffnen“*).
+
+**Umziehen aus einem Windows-Ordner** (`UPLOADS_ORDNER` gesetzt, z. B.
+`C:\Kalkulationsprogramm\uploads`):
+
+```bash
+docker compose exec updater bash /erp/dateifreigabe.sh --umziehen
+```
+
+Das hält das ERP kurz an, kopiert alle Uploads ins Volume `app_uploads` (Besitzer: der
+Benutzer des ERP), vergleicht Anzahl und Größe der Dateien, leert `UPLOADS_ORDNER` in der
+`.env` (mit Datum und altem Pfad als Kommentar) und startet das ERP mit dem Volume neu.
+Scheitert etwas, läuft das ERP weiter mit dem alten Ordner, und nichts ist umgestellt. **Der
+alte Ordner bleibt unverändert liegen** – er wird nicht mehr benutzt. Danach unbedingt
+`docker compose up -d`: Erst dann sichert auch der Updater das Volume. Bis dahin meldet die
+tägliche Sicherung „Die hochgeladenen Dateien sind umgezogen …“. Eine alte Windows-Freigabe
+des Ordners danach abschalten, damit niemand mehr in die Reserve speichert.
+
+**Bestehende Installation umstellen** (z. B. bisher Windows-Freigabe von
+`C:\Kalkulationsprogramm\uploads`), in dieser Reihenfolge:
+
+1. ERP auf den neuen Stand bringen: Nachtupdate abwarten oder in Docker Desktop
+   `erp-jetzt-aktualisieren` starten. Ab dieser Fassung holt sich das Hilfsprogramm an den PCs
+   eine neue Ordner-Adresse beim ersten Klick selbst.
+2. Die Dateien dieses Ordners auf den Rechner kopieren (siehe [Alltag](#alltag), letzter
+   Absatz): mindestens `docker-compose.yml`, `sicherung.sh`, `dateifreigabe.sh` und den Ordner
+   `dateifreigabe/`. `.env`, `app.env`, `sicherungen/`, `logs/` und `.status/` nicht überschreiben.
+3. Tailscale-Regeln ergänzen (oben).
+4. `docker compose up -d` – bindet das Status-Volume im ERP und die Prüfung im Updater ein.
+5. Allen sagen, dass sie offene Excel-Dateien und Zeichnungen schließen. Dann die alte
+   Windows-Freigabe des Ordners entfernen (Rechtsklick auf den Ordner → *Eigenschaften →
+   Freigabe → Erweiterte Freigabe* → Haken weg) und die Firewall-Regel von
+   `Freigabe-Tailscale.ps1` mit `.\Freigabe-Tailscale.ps1 -Entfernen`. Was ab jetzt noch in den
+   alten Ordner gespeichert würde, käme beim Umzug nicht mit.
+6. `docker compose exec updater bash /erp/dateifreigabe.sh --umziehen`, Anmelde-Link bestätigen.
+   Das Skript prüft vorher den freien Platz und legt eine Kopie der `.env` daneben
+   (`.env.vor-dateifreigabe-…`). Unter Docker Desktop sieht es nur den Platz in Dockers
+   eigener Platte; die liegt auf C: – dort muss also mindestens so viel frei sein, wie die
+   Uploads groß sind. Lag im Volume schon eine gleichnamige Datei, bleibt sie als
+   `<Name>.vor-umzug-<Datum>` daneben liegen; die darf man löschen, wenn klar ist, dass die
+   umgezogene Fassung die richtige ist.
+7. `docker compose up -d`
+8. Im ERP: *Einstellungen → Dateien* → „Diese Adresse eintragen“ (bzw. „Adresse und Ordner
+   eintragen“) → speichern.
+9. An jedem PC das Hilfsprogramm einmal neu einrichten (bringt den Zugang mit) und eine
+   Excel-Datei, eine HiCAD- und eine Tenado-Zeichnung öffnen. Der alte Ordner bleibt als
+   Reserve liegen.
+
+**Gut zu wissen:**
+- Mac-Finder-Infos speichert die Freigabe als erweiterte Attribute (keine `._`-Dateien),
+  wenn der Ordner das kann – im Volume immer, in einem Windows-Ordner nicht.
+- Für direkte Verbindungen zu den PCs ist UDP-Port `41642` freigegeben
+  (`DATEIFREIGABE_UDP_PORT`). Ohne ihn läuft alles über die Tailscale-Relais – langsamer,
+  aber es geht.
+- Log: `docker compose logs dateifreigabe`. Adresse und Zustand: `docker compose ps`.
+- **Passwort wechseln** (z. B. wenn ein Laptop weg ist – vorher das Gerät in der
+  Tailscale-Konsole entfernen): `docker compose exec dateifreigabe rm /var/lib/dateifreigabe/passwort`
+  (oder ein eigenes in `DATEIFREIGABE_PASSWORT`), dann `docker compose restart dateifreigabe`
+  und das Hilfsprogramm an allen PCs neu einrichten.
+- **Ohne Tag** (`DATEIFREIGABE_TAG=` leer) läuft die Anmeldung des Geräts nach 180 Tagen ab,
+  und der Ordner ist dann weg. In der Tailscale-Konsole beim Gerät *Disable key expiry*
+  wählen. Mit Tag (Standard) läuft sie nicht ab.
+- **Bewusst in Kauf genommen:** Alle PCs nutzen ein gemeinsames Konto. Während der
+  Einrichtung steht das Passwort kurz in einer Befehlszeile (`cmdkey` unter Windows,
+  `security` bzw. `bash -c` am Mac). Programme, die Befehlszeilen mitschreiben, können es
+  dort sehen. Am Mac darf jedes Programm des angemeldeten Benutzers den Eintrag im
+  Schlüsselbund ohne Rückfrage lesen (`-T /usr/bin/security`), sonst könnte das Hilfsprogramm
+  nicht ohne Dialog verbinden. Die Windows-Einrichtungsdatei löscht sich nach dem Lauf
+  selbst. Den Ordner erreicht trotzdem nur, wer im eigenen Tailnet ist und nach den Regeln
+  auf Port 445 darf.
+- Ausschalten: `dateifreigabe` aus `COMPOSE_PROFILES` in der `.env` nehmen und
+  `docker compose stop dateifreigabe`. Das Gerät dann in der Tailscale-Konsole entfernen.
+- Updates von Tailscale und Samba: `docker compose build --pull dateifreigabe && docker compose up -d dateifreigabe`.
+
 ### Hinter `tailscale serve` (nur über Tailscale erreichbar)
 
 ```ini
@@ -507,6 +638,8 @@ Wächter Docker Desktop nach etwa 10 Minuten wieder.
 | App-Log live | `docker compose logs -f app` |
 | ERP im Browser weg, Container laufen aber (Windows) | `docker desktop restart` – macht der [Docker-Wächter](#docker-wächter-windows) meist innerhalb von 10 Minuten selbst; sein Log: `logs/docker-waechter.log` |
 | Updater selbst erneuern (selten) | `docker compose build --pull updater && docker compose up -d updater` |
+| Ordner-Freigabe einschalten bzw. Uploads umziehen | `docker compose exec updater bash /erp/dateifreigabe.sh` (`--umziehen`), siehe [Ordner-Freigabe](#ordner-freigabe-ohne-windows) |
+| Ordner-Freigabe aktualisieren (Tailscale, Samba) | `docker compose build --pull dateifreigabe && docker compose up -d dateifreigabe` |
 
 `sicherungen/` hält außer den täglichen Sicherungen die letzten 14 Sicherungen von vor den
 Updates (`SICHERUNGEN_BEHALTEN`). Die sind nur für den Rollback da und kein Ersatz für die
@@ -592,7 +725,7 @@ dann mit Rollback.
 | Datei | Zweck |
 | --- | --- |
 | `EINRICHTEN.md` | Schritt-für-Schritt-Anleitung für einen neuen Kunden (zum Abhaken) |
-| `docker-compose.yml` | postgres, app, updater, netzsperre, alle mit `restart: always`; dazu der Klick-Container `jetzt-aktualisieren` (Profil `manuell`, startet nur auf Klick) |
+| `docker-compose.yml` | postgres, app, updater, netzsperre, alle mit `restart: always`; dazu der Klick-Container `jetzt-aktualisieren` (Profil `manuell`, startet nur auf Klick) und die Ordner-Freigabe `dateifreigabe` (Profil `dateifreigabe`) |
 | `postgres-init/` | Legt beim ersten Start die App-Rolle in PostgreSQL an (ohne Superuser-Rechte) |
 | `.env.example` | Vorlage für `.env`. Die `.env` wird beim Einrichten erzeugt und nie committet |
 | `app.env` | Optional, weitere ERP-Einstellungen (API-Schlüssel …). Nie committet |
@@ -606,3 +739,6 @@ dann mit Rollback.
 | `updater/` | Image des Updater-Containers und sein Startskript (Zeitplan per crond); `update-jetzt.sh` ist der Ablauf hinter dem Knopf „Jetzt aktualisieren“ |
 | Volume `betriebsstatus` | Ergebnis der letzten Sicherung bzw. des letzten Updates – liest das ERP für die Benachrichtigungen |
 | `starttest.sh` | Starttest für die GitHub Action |
+| `dateifreigabe/` | Image der Ordner-Freigabe (Tailscale + Samba): `Dockerfile`, `start.sh`, `smb.conf.vorlage` |
+| `dateifreigabe.sh` | Ordner-Freigabe einschalten, Uploads aus einem Ordner ins Volume umziehen |
+| Volumes `dateifreigabe_daten`, `dateifreigabe_status` | Tailscale-Anmeldung und Ordner-Passwort bzw. Adresse und Zugang für das ERP |
