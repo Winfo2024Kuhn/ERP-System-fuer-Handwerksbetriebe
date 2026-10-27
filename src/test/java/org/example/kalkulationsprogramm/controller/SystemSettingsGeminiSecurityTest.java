@@ -42,6 +42,7 @@ class SystemSettingsGeminiSecurityTest {
     @MockitoBean private SystemSettingsService settings;
     @MockitoBean private DateiOrdnerService dateiOrdnerService;
     @MockitoBean private PostfachUmzugService postfachUmzugService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.openfile.ContainerFreigabe containerFreigabe;
 
     @Test
     void ohneAnmeldungAbgewiesen() throws Exception {

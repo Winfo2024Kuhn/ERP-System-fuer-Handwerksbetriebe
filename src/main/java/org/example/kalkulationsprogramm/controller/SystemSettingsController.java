@@ -28,6 +28,7 @@ public class SystemSettingsController {
     private final SystemSettingsService settingsService;
     private final org.example.kalkulationsprogramm.service.DateiOrdnerService dateiOrdnerService;
     private final org.example.kalkulationsprogramm.service.PostfachUmzugService postfachUmzugService;
+    private final org.example.kalkulationsprogramm.service.openfile.ContainerFreigabe containerFreigabe;
 
     private static final String PASSWORT_NEU_EINGEBEN =
             "Bitte das Passwort erneut eingeben, wenn Sie Server oder Anmeldename ändern.";
@@ -224,7 +225,10 @@ public class SystemSettingsController {
         return ResponseEntity.ok(new DateiOrdnerResponse(
                 settingsService.getDateiOrdnerPfad(),
                 settingsService.getDateiOrdnerNetworkUrl(),
-                settingsService.isDateiOrdnerConfigured()));
+                settingsService.isDateiOrdnerConfigured(),
+                // Nur die Adresse - Benutzer und Passwort bekommt allein die Einrichtung des Hilfsprogramms
+                containerFreigabe.adresse().orElse(null),
+                containerFreigabe.ordnerAufDemServer().orElse(null)));
     }
 
     @PutMapping("/datei-ordner")
@@ -272,7 +276,12 @@ public class SystemSettingsController {
     record GeminiTestRequest(String apiKey) {}
     record FunnelSpamFilterResponse(boolean aktiv) {}
     record FunnelSpamFilterRequest(boolean aktiv) {}
-    record DateiOrdnerResponse(String pfad, String networkUrl, boolean konfiguriert) {}
+    /**
+     * {@code containerFreigabe}: Adresse der Ordner-Freigabe aus dem Docker-Paket, {@code null} ohne;
+     * {@code containerFreigabePfad}: der dazu passende Ordner auf dem Server.
+     */
+    record DateiOrdnerResponse(String pfad, String networkUrl, boolean konfiguriert, String containerFreigabe,
+            String containerFreigabePfad) {}
     record DateiOrdnerRequest(String pfad, String networkUrl) {}
     record DateiOrdnerTestRequest(String pfad) {}
 }

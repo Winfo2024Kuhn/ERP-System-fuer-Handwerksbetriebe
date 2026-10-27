@@ -1,0 +1,51 @@
+# Vorlage - start.sh setzt @ORDNER@ und @VFS@ ein und schreibt das Ergebnis
+# nach /run/samba/smb.conf (das Dateisystem des Containers ist schreibgeschuetzt).
+[global]
+   server role = standalone server
+   server string = ERP Dateien
+   workgroup = WORKGROUP
+   netbios name = ERP-DATEIEN
+   disable netbios = yes
+   smb ports = 445
+   # Nur ueber Tailscale (und lo fuer den Health-Check) - im Docker-Netz lauscht nichts.
+   # Adressen statt "tailscale0": Samba laesst Geraete ohne Broadcast-Adresse sonst aus.
+   interfaces = lo @TAILSCALE_ADRESSEN@
+   bind interfaces only = yes
+   # Zusaetzlich: nur Absender aus dem Tailscale-Netz (und lo)
+   hosts allow = 127.0.0.1 ::1 100.64.0.0/10 fd7a:115c:a1e0::/48
+   hosts deny = ALL
+   # SMB 3: Windows 10/11 und macOS koennen es, alte unsichere Fassungen bleiben aus
+   server min protocol = SMB3
+   # Nur mit Benutzer und Passwort, nie als Gast
+   map to guest = never
+   restrict anonymous = 2
+   # Kein Drucker-Dienst
+   load printers = no
+   printing = bsd
+   printcap name = /dev/null
+   disable spoolss = yes
+   # Laufzeitdaten im tmpfs
+   pid directory = /run/samba
+   lock directory = /run/samba/lock
+   state directory = /var/lib/samba
+   cache directory = /var/cache/samba
+   private dir = /var/lib/samba/private
+   log file = /var/log/samba/%m.log
+   max log size = 1000
+   log level = 1
+@VFS@
+
+[@ORDNER@]
+   comment = Zeichnungen und Tabellen aus dem ERP
+   path = /daten/@ORDNER@
+   valid users = erp-dateien
+   read only = no
+   browseable = yes
+   # Alles gehoert dem Benutzer des ERP (Kennung 10001), egal wer speichert
+   force user = erp-dateien
+   force group = erp
+   create mask = 0664
+   directory mask = 0775
+   # Systemdateien von Mac und Windows nicht im Ordner ablegen
+   veto files = /.DS_Store/Thumbs.db/desktop.ini/
+   delete veto files = yes

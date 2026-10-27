@@ -32,10 +32,26 @@ installiert nur Fassungen, die das ERP mit seinem eigenen Schlüssel unterschrie
 `src/main/resources/openfile-launcher/`; `launcher.ps1` in diesem Ordner ist eine Kopie
 (ein Test hält beide gleich).
 
-**Unterwegs (Tailscale):** Kennt der PC den Büro-Rechnernamen nicht, weicht der Launcher auf
-den Rechnernamen des ERP aus (z. B. `\\erp-rechner.tailnet.ts.net\Freigabe`). Dafür auf dem
-Rechner mit dem Ordner einmal `Freigabe-Tailscale.ps1` als Administrator ausführen
-(Firewall-Regel: Port 445 nur aus dem Tailscale-Netz).
+**Empfohlen: Ordner-Freigabe aus dem Docker-Paket.** Der Dienst `dateifreigabe` gibt den Ordner
+über Tailscale frei – ohne Windows-Freigabe, im Büro und unterwegs unter demselben Namen
+(`\\erp-dateien.<tailnet>.ts.net\CADdrawings`). Einrichtung:
+[docker-server/README.md, Ordner-Freigabe ohne Windows](../docker-server/README.md#ordner-freigabe-ohne-windows).
+Zeigt die Netzwerk-Adresse auf diese Freigabe, legt die Einrichtung den Zugang gleich mit ab:
+unter Windows per `cmdkey` in den Anmeldeinformationen, am Mac im Schlüsselbund. Der Mac-Launcher
+verbindet dann selbst (`mount volume` über `osascript`, Passwort nur über stdin), ohne
+Anmeldedialog. Im Update steht der Zugang nie. Die Windows-Einrichtungsdatei löscht sich nach
+dem Lauf selbst, weil sie das Passwort enthalten kann (für jeden PC neu herunterladen). Was dabei
+bewusst in Kauf genommen ist, steht im docker-server/README.md unter „Gut zu wissen“. Für eine Adresse im Tailscale-Netz (`*.ts.net`)
+gibt es keinen Ausweich-Namen.
+
+**Neue Adresse:** Stellt der Admin die Netzwerk-Adresse um, kennt der Launcher sie erst nach
+dem nächsten Update. Liegt eine Datei außerhalb der bekannten Ordner, holt er das Update
+deshalb sofort und prüft dann noch einmal – der erste Klick klappt also schon.
+
+**Unterwegs mit Windows-Freigabe (Tailscale):** Kennt der PC den Büro-Rechnernamen nicht,
+weicht der Launcher auf den Rechnernamen des ERP aus (z. B. `\\erp-rechner.tailnet.ts.net\Freigabe`).
+Dafür auf dem Rechner mit dem Ordner einmal `Freigabe-Tailscale.ps1` als Administrator
+ausführen (Firewall-Regel: Port 445 nur aus dem Tailscale-Netz).
 
 **Gut zu wissen:**
 - Der Launcher öffnet nur Tabellen und Zeichnungen (`.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.xlt*`,

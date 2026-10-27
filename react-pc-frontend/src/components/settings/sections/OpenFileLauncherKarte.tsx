@@ -95,9 +95,14 @@ interface OpenFileLauncherKarteProps {
     gespeicherteAdresse: string;
     /** Das Feld „Netzwerk-Adresse“ wurde geändert, aber noch nicht gespeichert. */
     ungespeichert: boolean;
+    /**
+     * Adresse der Ordner-Freigabe aus dem ERP-Paket, falls eingeschaltet. Ist genau sie gespeichert,
+     * bringt die Einrichtung die Zugangsdaten schon mit – das sagt die Karte dazu.
+     */
+    containerFreigabe?: string | null;
 }
 
-export function OpenFileLauncherKarte({ gespeicherteAdresse, ungespeichert }: OpenFileLauncherKarteProps) {
+export function OpenFileLauncherKarte({ gespeicherteAdresse, ungespeichert, containerFreigabe }: OpenFileLauncherKarteProps) {
     const toast = useToast();
     const [laedt, setLaedt] = useState<Betriebssystem | null>(null);
     const [macBefehl, setMacBefehl] = useState<MacBefehl | null>(null);
@@ -106,6 +111,9 @@ export function OpenFileLauncherKarte({ gespeicherteAdresse, ungespeichert }: Op
     const ueberHttp = window.location.protocol !== 'https:';
     const gesperrt = !bereit || laedt !== null;
     const gesperrtGrund = bereit ? undefined : GESPERRT_GRUND;
+    // Die Zugangsdaten der Freigabe packt das Backend nur ein, wenn genau ihre Adresse gespeichert ist.
+    const freigabeGespeichert = !!containerFreigabe
+        && gespeicherteAdresse.trim().toLowerCase() === containerFreigabe.trim().toLowerCase();
 
     const hinweis = ungespeichert
         ? 'Bitte erst speichern – das Hilfsprogramm bekommt die gespeicherte Adresse.'
@@ -159,10 +167,19 @@ export function OpenFileLauncherKarte({ gespeicherteAdresse, ungespeichert }: Op
             title="Dateien direkt am PC öffnen"
             info={<OpenFileLauncherInfo />}
             description={
-                <p>
-                    Damit Excel-, HiCAD- und Tenado-Dateien aus einem Projekt oder einer Anfrage direkt im passenden Programm aufgehen
-                    statt heruntergeladen zu werden, braucht jeder PC einmal ein kleines Hilfsprogramm.
-                </p>
+                <>
+                    <p>
+                        Damit Excel-, HiCAD- und Tenado-Dateien aus einem Projekt oder einer Anfrage direkt im passenden Programm aufgehen
+                        statt heruntergeladen zu werden, braucht jeder PC einmal ein kleines Hilfsprogramm.
+                    </p>
+                    {containerFreigabe && (
+                        <p>
+                            {freigabeGespeichert
+                                ? 'Benutzer und Passwort für den Ordner stecken schon in der Einrichtung – am PC muss niemand etwas eintippen.'
+                                : 'Erst oben die Adresse der Ordner-Freigabe eintragen und speichern – dann bringt die Einrichtung Benutzer und Passwort gleich mit.'}
+                        </p>
+                    )}
+                </>
             }
         >
             {hinweis && (
@@ -204,7 +221,8 @@ export function OpenFileLauncherKarte({ gespeicherteAdresse, ungespeichert }: Op
                     <p className="text-sm text-slate-600">
                         Datei herunterladen und doppelt anklicken. Nur bei dieser Datei aus dem ERP: Warnt Windows mit „Der Computer wurde durch Windows
                         geschützt“, auf „Weitere Informationen“ und dann „Trotzdem ausführen“ klicken.
-                        Administrator-Rechte sind nicht nötig.
+                        Administrator-Rechte sind nicht nötig. Die Datei löscht sich nach der Einrichtung selbst – für
+                        jeden PC neu herunterladen und nicht weitergeben.
                     </p>
                 </SystemSpalte>
                 <SystemSpalte

@@ -48,9 +48,8 @@ PLIST="$APP/Contents/Info.plist"
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 xattr -dr com.apple.quarantine "$APP" >/dev/null 2>&1 || true
 "$LSREGISTER" -f "$APP"
-
+@@ORDNER_ZUGANG@@
 echo ""
 echo "Fertig! Excel-Dateien aus dem ERP oeffnen sich jetzt direkt."
 echo "Beim ersten Klick fragt der Browser, ob er den Link oeffnen darf - bitte erlauben."
-echo "Beim ersten Verbinden fragt der Mac nach Benutzer und Passwort des Ordners (im Schluesselbund sichern)."
 echo "Das Hilfsprogramm haelt sich selbst aktuell. Dieses Fenster kann geschlossen werden."
