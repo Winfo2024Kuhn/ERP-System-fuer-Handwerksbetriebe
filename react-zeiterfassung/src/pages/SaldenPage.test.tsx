@@ -48,3 +48,20 @@ it('nennt das eingestellte Bundesland und kennzeichnet halbe Feiertage', async (
     expect(screen.getByText('(halber Tag)')).toBeInTheDocument()
     expect(screen.getAllByText('(halber Tag)')).toHaveLength(1)
 })
+
+it('ohne Netz: kein falsches „nicht eingerichtet“, sondern ein ruhiger Hinweis', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    render(<ToastProvider><MemoryRouter><SaldenPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} /></MemoryRouter></ToastProvider>)
+    expect(await screen.findByText(/Ohne Verbindung – die Salden kommen vom Büro/)).toBeInTheDocument()
+    expect(screen.queryByText('Saldenauswertung nicht verfügbar')).not.toBeInTheDocument()
+    expect(screen.queryByText(/keine Arbeitszeit eingerichtet/)).not.toBeInTheDocument()
+})
+
+it('sagt „nicht eingerichtet“ nur, wenn der Server es meldet', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+        fuehrtZeitkonto: true, eingerichtet: false, hinweis: 'Für Sie ist noch keine Arbeitszeit eingerichtet.',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    render(<ToastProvider><MemoryRouter><SaldenPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} /></MemoryRouter></ToastProvider>)
+    expect(await screen.findByText('Saldenauswertung nicht verfügbar')).toBeInTheDocument()
+    expect(screen.getByText('Für Sie ist noch keine Arbeitszeit eingerichtet.')).toBeInTheDocument()
+})

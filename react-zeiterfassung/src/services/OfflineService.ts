@@ -724,10 +724,10 @@ export const OfflineService = {
      * Server und wird auf dem Handy gemerkt. Ohne Netz, bei Zeitüberschreitung oder
      * Serverfehler (5xx) gilt der gemerkte Stand (`ausCache: true`); gibt es keinen,
      * ist `status` null – das heißt „unbekannt“, nicht „nicht eingerichtet“.
-     * Eine echte Server-Antwort (200) gilt immer und ersetzt den gemerkten Stand.
+     * Eine echte Server-Antwort (200) gilt immer und ersetzt den gemerkten Stand – auch wenn
+     * der Handy-Speicher nicht nutzbar ist (z. B. privater Modus); er ist nur die Reserve.
      */
     async getZeitkontoStatus(token: string): Promise<{ status: ZeitkontoStatus | null; ausCache: boolean }> {
-        const db = await oeffneBuchungsDB()
         const cacheKey = `${CACHE_KEYS.zeitkonto_status}_${token}`
 
         const controller = new AbortController()
@@ -739,7 +739,12 @@ export const OfflineService = {
             if (res.ok) {
                 const data: unknown = await res.json()
                 if (istVollstaendigerZeitkontoStatus(data)) {
-                    await db.put('master_data', { key: cacheKey, value: data })
+                    // Merken ist nur Zugabe: Scheitert es (auch synchron, ohne IndexedDB), fängt das
+                    // lokale catch es ab und die gültige Server-Antwort kommt trotzdem zurück.
+                    await Promise.resolve()
+                        .then(() => oeffneBuchungsDB())
+                        .then(db => db.put('master_data', { key: cacheKey, value: data }))
+                        .catch(() => undefined) // Merken klappt nicht: Die Antwort gilt trotzdem.
                     return { status: data, ausCache: false }
                 }
                 // Unvollständige Antwort: nicht merken, gemerkten Stand nehmen.
@@ -753,6 +758,7 @@ export const OfflineService = {
         } finally {
             clearTimeout(timeoutId)
         }
+        const db = await oeffneBuchungsDB()
         const cached = await db.get('master_data', cacheKey)
         return {
             status: istVollstaendigerZeitkontoStatus(cached?.value) ? cached.value : null,

@@ -4,7 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw, WifiOff } from 'lucide-react'
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button'
 import { createOperationId, OfflineService, sendeBuchung, startZeitAusErgebnis } from '../services/OfflineService'
-import { zeitbuchungGesperrt, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { zeitkontoHinweis } from '../types/zeitkonto'
+import { useZeitkontoStatus } from '../hooks/useZeitkontoStatus'
 
 interface Projekt {
     id: number
@@ -67,27 +68,15 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
     const [loading, setLoading] = useState(false)
     const [starting, setStarting] = useState(false)
     const [isSyncing, setIsSyncing] = useState(false)
-    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
-    const [statusLoading, setStatusLoading] = useState(true)
-    // Projektliste kommt vom Handy-Speicher (ohne Verbindung) – mit Stand des letzten Abgleichs.
-    const [listeAusSpeicher, setListeAusSpeicher] = useState(false)
-    const [listenStand, setListenStand] = useState<Date | null>(null)
-
     // Nur eine ausdrückliche Antwort „nicht eingerichtet“ (vom Server oder dessen gemerktem
     // Stand) sperrt. Ohne Netz und ohne gemerkten Stand bleibt alles bedienbar: Die Buchung
     // läuft auf dem Handy, der Server entscheidet beim Übertragen.
-    const holeZeitkontoStatus = (token: string) => OfflineService.getZeitkontoStatus(token)
-        .then(({ status }) => setZeitkontoStatus(status))
-        .catch(() => setZeitkontoStatus(null))
-        .finally(() => setStatusLoading(false))
-
-    // Erneut-versuchen-Knopf; beim Öffnen startet statusLoading schon mit true.
-    const loadZeitkontoStatus = () => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return
-        setStatusLoading(true)
-        void holeZeitkontoStatus(token)
-    }
+    const { status: zeitkontoStatus, geprueft: zeitkontoGeprueft, gesperrt, laedt: zeitkontoLaedt, neuLaden: zeitkontoNeuLaden } =
+        useZeitkontoStatus()
+    const statusLoading = !zeitkontoGeprueft
+    // Projektliste kommt vom Handy-Speicher (ohne Verbindung) – mit Stand des letzten Abgleichs.
+    const [listeAusSpeicher, setListeAusSpeicher] = useState(false)
+    const [listenStand, setListenStand] = useState<Date | null>(null)
 
     // Die Ladefunktionen setzen nur das Ergebnis; die Ladeanzeige schaltet an, wer das Laden
     // auslöst (Auswahl-Tipp, Abgleich, fertige Einrichtungsprüfung).
@@ -135,14 +124,8 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
         }
     }
 
-    useEffect(() => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (token) void holeZeitkontoStatus(token)
-    }, [])
-
     // Load projects – sobald die Einrichtung geprüft ist und nicht sperrt; die Ladeanzeige
     // geht schon beim Rendern an.
-    const gesperrt = zeitbuchungGesperrt(zeitkontoStatus)
     const projekteFreigegeben = !statusLoading && !gesperrt
     const [projekteGeladenFuer, setProjekteGeladenFuer] = useState(false)
     if (projekteGeladenFuer !== projekteFreigegeben) {
@@ -316,7 +299,8 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                     <div className="w-full rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm" role="alert">
                         <h2 className="font-bold text-slate-900">Keine neue Zeitbuchung möglich</h2>
                         <p className="mt-2 text-sm leading-6 text-slate-700">{zeitkontoHinweis(zeitkontoStatus)}</p>
-                        <button onClick={loadZeitkontoStatus} className="mt-4 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                        <button onClick={zeitkontoNeuLaden} disabled={zeitkontoLaedt} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60">
+                            {zeitkontoLaedt && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                             Erneut prüfen
                         </button>
                     </div>

@@ -5,6 +5,7 @@ import { useToast } from '../components/ui/toast'
 import { useConfirm } from '../components/ui/confirm-dialog'
 import { InfoAbschnitt, InfoButton } from '../components/ui/info-button'
 import { leseFehlermeldung } from '../lib/apiFehler'
+import { useZeitkontoStatus } from '../hooks/useZeitkontoStatus'
 import { formatUrlaubstage, statusLabel, typLabel, vorjahresHinweis, zurueckziehenFrage, type AntragStatus, type AntragTyp, type VorjahresRest } from '../lib/urlaubsantrag'
 import { useCallback, useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -88,24 +89,13 @@ export default function UrlaubsantragPage({ mitarbeiter, syncStatus, onSync }: U
     // Zeitkonto Saldo State
     const [zeitkontoSaldo, setZeitkontoSaldo] = useState<number | null>(null)
     const [loadingZeitkontoSaldo, setLoadingZeitkontoSaldo] = useState(false)
-    const [zeitkontoStatus, setZeitkontoStatus] = useState<{ fuehrtZeitkonto?: boolean; eingerichtet?: boolean; istGeschaeftsfuehrer?: boolean } | null>(null)
+    // Ohne Netz gilt der auf dem Handy gemerkte Stand.
+    const { status: zeitkontoStatus } = useZeitkontoStatus()
     const istGeschaeftsfuehrer = !!zeitkontoStatus?.istGeschaeftsfuehrer
-
-    useEffect(() => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return
-        fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-                if (data) {
-                    setZeitkontoStatus(data)
-                    if (data.istGeschaeftsfuehrer && typ === 'ZEITAUSGLEICH') {
-                        setTyp('URLAUB')
-                    }
-                }
-            })
-            .catch(() => {})
-    }, [typ])
+    // Geschäftsführer haben kein Zeitkonto, also keinen Zeitausgleich.
+    if (istGeschaeftsfuehrer && typ === 'ZEITAUSGLEICH') {
+        setTyp('URLAUB')
+    }
 
     // Overview State
     const [antraege, setAntraege] = useState<Urlaubsantrag[]>([])

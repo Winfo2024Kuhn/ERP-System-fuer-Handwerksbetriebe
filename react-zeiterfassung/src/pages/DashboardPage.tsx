@@ -4,7 +4,8 @@ import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, 
 import { createOperationId, OfflineService, sendeBuchung, startZeitAusErgebnis, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
-import { zeitbuchungGesperrt, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { zeitkontoHinweis } from '../types/zeitkonto'
+import { useZeitkontoStatus } from '../hooks/useZeitkontoStatus'
 import { NachrichtenGlocke } from '../features/nachrichten/NachrichtenGlocke'
 import { useToast } from '../components/ui/toast'
 
@@ -115,10 +116,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
     const [actionInProgress, setActionInProgress] = useState(false)
     const [heuteStunden, setHeuteStunden] = useState(0)
     const [heuteMinuten, setHeuteMinuten] = useState(0)
-    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
-    // Bleibt nach der ersten Prüfung true: Ein Nachladen nach dem Abgleich soll die
-    // Knöpfe nicht kurz verschwinden lassen.
-    const [zeitkontoGeprueft, setZeitkontoGeprueft] = useState(false)
+    // Nach jedem Abgleich neu prüfen; „geprüft“ bleibt dabei stehen, damit die Knöpfe nicht flackern.
+    const { status: zeitkontoStatus, geprueft: zeitkontoGeprueft, gesperrt: zeitkontoGesperrt } =
+        useZeitkontoStatus(abgleichNummer)
 
     // Checkbox/Switch logic
     const [viewMode, setViewMode] = useState<'activities' | 'projects'>('activities')
@@ -159,16 +159,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
     // Zeitbuchen (Pause, Wechsel, Abwesenheit, Salden) nur ausblenden, wenn der Server –
     // oder sein auf dem Handy gemerkter Stand – ausdrücklich „nicht eingerichtet“ sagt.
     // Ohne Netz und ohne gemerkten Stand bleibt alles da („Handy gewinnt“).
-    const darfZeitBuchen = zeitkontoGeprueft && !zeitbuchungGesperrt(zeitkontoStatus)
-
-    const loadZeitkontoStatus = () => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return Promise.resolve()
-        return OfflineService.getZeitkontoStatus(token)
-            .then(({ status }) => setZeitkontoStatus(status))
-            .catch(() => setZeitkontoStatus(null)) // Speicher nicht lesbar: unbekannt, nicht sperren
-            .finally(() => setZeitkontoGeprueft(true))
-    }
+    const darfZeitBuchen = zeitkontoGeprueft && !zeitkontoGesperrt
 
     const loadFailedEntries = async () => {
         const entries = await OfflineService.getFailedEntries()
@@ -408,10 +399,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
         // Bewusste Ausnahme: Die fünf Ladefunktionen gleichen mit Server und Offline-Speicher ab und setzen
         // ihren Zustand meist erst nach await (das erkennt die Regel nicht). Synchron übernimmt nur
         // loadActiveSession (im Handy gespeicherte Buchung, Stop-Cooldown) etwas. Sie auf Promise-Ketten
-        // umzubauen ist ein eigener Schritt für die Offline-Logik (loadZeitkontoStatus ist schon eine).
+        // umzubauen ist ein eigener Schritt für die Offline-Logik (den Zeitkonto-Status lädt useZeitkontoStatus).
         // eslint-disable-next-line react-hooks/set-state-in-effect -- siehe Kommentar darüber
         loadActiveSession()
-        loadZeitkontoStatus()
         // Load today's hours
         loadHeuteGearbeitet()
         // Langzeitkrankmeldung laden. Nachrichten (Entscheidungen, Urlaubsverfall)
@@ -434,7 +424,6 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
         loadActiveSession()
         loadHeuteGearbeitet()
         loadFailedEntries()
-        loadZeitkontoStatus()
     }, [abgleichNummer])
 
     useEffect(() => {
