@@ -20,6 +20,7 @@ import org.example.kalkulationsprogramm.domain.ProjektGeschaeftsdokument;
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyResponse;
 import org.example.kalkulationsprogramm.dto.Email.EmailPreviewRequest;
+import org.example.kalkulationsprogramm.dto.Email.EmailSchreibstil;
 import org.example.kalkulationsprogramm.dto.Email.EmailSendRequest;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
@@ -42,6 +43,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -117,11 +119,16 @@ public class EmailController {
             response.setBody("");
             return ResponseEntity.ok(response);
         }
+        EmailSchreibstil stil = EmailSchreibstil.ausAnfrage(request.getStil())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unbekannter Schreibstil."));
         try {
-            String result = emailAiService.beautify(request.getBody(), request.getContext());
+            String result = emailAiService.beautify(request.getBody(), request.getContext(), stil);
             EmailBeautifyResponse response = new EmailBeautifyResponse();
             response.setBody(result);
             return ResponseEntity.ok(response);
+        } catch (ResponseStatusException ex) {
+            // Verständliche Meldung (z. B. „Kein Mail-Verlauf vorhanden“) an den Nutzer durchreichen
+            throw ex;
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             log.warn("KI-Formulierung unterbrochen");

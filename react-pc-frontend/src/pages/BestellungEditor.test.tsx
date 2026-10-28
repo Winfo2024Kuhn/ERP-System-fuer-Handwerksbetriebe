@@ -133,6 +133,25 @@ describe('BestellungEmailModal KI-Formulierung', () => {
         expect(await screen.findByText('Die KI hat keine andere Formulierung geliefert.')).toBeInTheDocument();
         expect(screen.getByText(/bitte erstellen Sie uns ein Angebot/)).toBeInTheDocument();
     });
+
+    it('zeigt eine begruendete Ablehnung als Fehler und schickt keinen Stil mit', async () => {
+        vi.mocked(fetch).mockImplementation(((url: string) => {
+            if (url === '/api/email/beautify') {
+                return Promise.resolve(new Response(JSON.stringify({ message: 'Unbekannter Schreibstil.' }), { status: 400 }));
+            }
+            return antwort([]);
+        }) as unknown as typeof fetch);
+        oeffneDialog();
+        await screen.findByText(/bitte erstellen Sie uns ein Angebot/);
+
+        await userEvent.click(screen.getByRole('button', { name: /KI Formulierung/ }));
+
+        expect(await screen.findByText('Unbekannter Schreibstil.')).toBeInTheDocument();
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        const anfrage = vi.mocked(fetch).mock.calls.find(([url]) => url === '/api/email/beautify')!;
+        expect(JSON.parse(String((anfrage[1] as RequestInit).body))).not.toHaveProperty('stil');
+        expect(screen.getByText(/bitte erstellen Sie uns ein Angebot/)).toBeInTheDocument();
+    });
 });
 
 describe('Bedarf-Seite', () => {

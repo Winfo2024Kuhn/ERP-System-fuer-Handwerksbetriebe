@@ -303,6 +303,10 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                 toast.warning('Die KI hat keine andere Formulierung geliefert.');
                 return;
             }
+            if (ergebnis.status === 'abgelehnt') {
+                toast.error(ergebnis.meldung);
+                return;
+            }
             setBody(ergebnis.html);
         } catch (err) {
             console.error('KI-Formulierung fehlgeschlagen:', err);
