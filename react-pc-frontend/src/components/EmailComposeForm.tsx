@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { PdfCanvasViewer } from './ui/PdfCanvasViewer';
-import { AiButton } from './ui/ai-button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import type { ProjektDetail, ProjektDokument } from '../types';
@@ -19,7 +18,8 @@ import { useToast } from './ui/toast';
 import { useEmailDraft } from '../features/email/useEmailDraft';
 import { loadEmailDraft } from '../features/email/emailDraftPersistence';
 import { sanitizeHtml, toSafeResourceUrl } from '../lib/htmlSanitizer';
-import { formuliereMitKi, htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml } from '../features/email/mailEditorHtml';
+import { formuliereMitKi, hatZitiertenVerlauf, htmlFuerVersand, ladeStandardSignatur, setzeEditorHtml, type KiStil } from '../features/email/mailEditorHtml';
+import { KiStilMenue } from '../features/email/KiStilMenue';
 import { AbsenderPostfachAuswahl } from '../features/email/AbsenderPostfachAuswahl';
 import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
 import { nurWaehlbareAbsender, waehleStandardAbsender, type PostfachKurz } from '../features/email/postfach';
@@ -949,14 +949,15 @@ export function EmailComposeForm({
         e.stopPropagation();
     };
 
-    // KI-Verschönerung: nur der eigene Text, Signatur und Zitat bleiben stehen
-    const handleBeautify = async () => {
+    // KI-Verschönerung im gewählten Stil: nur der eigene Text, Signatur und Zitat bleiben stehen
+    const handleBeautify = async (stil: KiStil) => {
         setBeautifying(true);
         setError(null);
         try {
             const ergebnis = await formuliereMitKi(editorRef.current?.innerHTML || body, {
                 kontext: entityName ? `Projekt/Anfrage: ${entityName}` : null,
                 ersatzSignaturHtml: signature,
+                stil,
             });
             if (ergebnis.status === 'kein-text') {
                 setError('Kein Text zum Umformulieren gefunden.');
@@ -964,6 +965,10 @@ export function EmailComposeForm({
             }
             if (ergebnis.status === 'kein-vorschlag') {
                 setError('Keine alternative Formulierung erhalten.');
+                return;
+            }
+            if (ergebnis.status === 'abgelehnt') {
+                setError(ergebnis.meldung);
                 return;
             }
             markDirty();
@@ -1483,10 +1488,10 @@ export function EmailComposeForm({
                                 <Label className="text-slate-900">Nachricht</Label>
                                 <p className={inline ? "hidden" : "text-xs text-slate-500 mt-1"}>Formulieren, überarbeiten und anschließend direkt versenden.</p>
                             </div>
-                            <AiButton
-                                onClick={handleBeautify}
+                            <KiStilMenue
                                 isLoading={beautifying}
-                                label="KI-Optimierung"
+                                hatVerlauf={() => hatZitiertenVerlauf(editorRef.current?.innerHTML || body)}
+                                onWaehlen={(stil) => void handleBeautify(stil)}
                             />
                         </div>
                         <div className={inline ? "flex-1 p-2 bg-white" : "flex-1 p-4 bg-white"}>

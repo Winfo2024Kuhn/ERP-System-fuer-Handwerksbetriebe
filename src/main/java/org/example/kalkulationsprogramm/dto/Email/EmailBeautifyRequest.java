@@ -9,4 +9,6 @@ public class EmailBeautifyRequest {
     private String body;
     // Optional: ursprünglicher zitierter Text als Kontext für die KI
     private String context;
+    // Optional: RECHTSCHREIBUNG (Standard), FOERMLICH, LOCKER oder VERLAUF – siehe EmailSchreibstil
+    private String stil;
 }

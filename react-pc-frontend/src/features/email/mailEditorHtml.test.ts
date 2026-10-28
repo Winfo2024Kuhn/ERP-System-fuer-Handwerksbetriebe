@@ -7,6 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     formuliereMitKi,
+    hatZitiertenVerlauf,
+    KEIN_VERLAUF_MELDUNG,
     htmlFuerVersand,
     klartextAlsAbsaetze,
     ladeStandardSignatur,
@@ -197,5 +199,49 @@ describe('formuliereMitKi', () => {
     it('wirft bei einem Fehler der KI', async () => {
         fetchMock.mockReturnValue(antwort({}, 502));
         await expect(formuliereMitKi('<p>alt</p>')).rejects.toThrow('HTTP 502');
+    });
+
+    it('schickt den gewaehlten Stil mit, ohne Stil bleibt das Feld weg', async () => {
+        fetchMock.mockImplementation(() => antwort({ body: 'Neu.' }));
+        await formuliereMitKi('<p>alt</p>', { kontext: 'Projekt', stil: 'LOCKER' });
+        expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)))
+            .toEqual({ body: 'alt', context: 'Projekt', stil: 'LOCKER' });
+        await formuliereMitKi('<p>alt</p>');
+        expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).not.toHaveProperty('stil');
+    });
+
+    it('schickt bei VERLAUF nur die zitierte Mail als Kontext', async () => {
+        fetchMock.mockReturnValue(antwort({ body: 'Passt, bis Donnerstag.' }));
+        await formuliereMitKi('<p>ja passt</p><div class="email-quote">Hi, passt Donnerstag?</div>',
+            { kontext: 'Projekt/Anfrage: Carport', stil: 'VERLAUF' });
+        expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)))
+            .toEqual({ body: 'ja passt', context: 'Hi, passt Donnerstag?', stil: 'VERLAUF' });
+    });
+
+    it('fragt bei VERLAUF ohne Zitat gar nicht erst, auch nicht mit Projekt-Kontext', async () => {
+        expect(await formuliereMitKi('<p>alt</p><div class="email-quote">  </div>', { kontext: 'Projekt', stil: 'VERLAUF' }))
+            .toEqual({ status: 'abgelehnt', meldung: KEIN_VERLAUF_MELDUNG });
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('gibt die Meldung einer begruendeten Ablehnung weiter', async () => {
+        fetchMock.mockReturnValue(antwort({ message: 'Unbekannter Schreibstil.' }, 400));
+        expect(await formuliereMitKi('<p>alt</p>', { stil: 'FOERMLICH' }))
+            .toEqual({ status: 'abgelehnt', meldung: 'Unbekannter Schreibstil.' });
+    });
+
+    it('wirft bei 400 ohne brauchbare Meldung', async () => {
+        fetchMock.mockReturnValue(antwort({ message: '  ' }, 400));
+        await expect(formuliereMitKi('<p>alt</p>')).rejects.toThrow('HTTP 400');
+        fetchMock.mockReturnValue(Promise.resolve(new Response('kein json', { status: 400 })));
+        await expect(formuliereMitKi('<p>alt</p>')).rejects.toThrow('HTTP 400');
+    });
+});
+
+describe('hatZitiertenVerlauf', () => {
+    it('erkennt eine zitierte Mail mit Text', () => {
+        expect(hatZitiertenVerlauf(`<p>Text</p>${SIGNATUR}<div class="email-quote">Alte Nachricht</div>`)).toBe(true);
+        expect(hatZitiertenVerlauf(`<p>Text</p>${SIGNATUR}`)).toBe(false);
+        expect(hatZitiertenVerlauf('<p>Text</p><div class="email-quote"> </div>')).toBe(false);
     });
 });

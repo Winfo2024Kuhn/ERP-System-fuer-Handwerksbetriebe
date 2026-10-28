@@ -21,6 +21,12 @@ vi.mock('./ui/PdfCanvasViewer', () => ({
 
 const render = (ui: ReactElement) => rtlRender(<ToastProvider>{ui}</ToastProvider>);
 
+/** Öffnet das Menü am Knopf „KI-Optimierung“ und wählt einen Stil. */
+async function kiStilWaehlen(stil: RegExp | string = /Nur Rechtschreibung/) {
+    await userEvent.click(screen.getByRole('button', { name: /KI-Optimierung/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: stil }));
+}
+
 type Antwort = { status?: number; body?: unknown; roh?: Response };
 let routen: Record<string, Antwort | (() => Antwort)>;
 let aufrufe: { url: string; init?: RequestInit }[];
@@ -159,7 +165,7 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
         const editor = screen.getByRole('textbox', { name: 'Nachricht' });
         await waitFor(() => expect(editor.innerHTML).toContain('Alte Nachricht'));
         editor.innerHTML = '<p>bitte schöner</p>' + editor.innerHTML;
-        await userEvent.click(screen.getByRole('button', { name: /KI-Optimierung/ }));
+        await kiStilWaehlen();
         await waitFor(() => expect(editor.innerHTML).toContain('<p>Erster Absatz.</p><p>Zweiter Absatz.</p>'));
         expect(editor.innerHTML).toContain('Alte Nachricht');
         const anfrage = aufrufe.find(a => a.url === '/api/email/beautify')!;
@@ -172,7 +178,7 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
         const editor = screen.getByRole('textbox', { name: 'Nachricht' });
         await waitFor(() => expect(editor.innerHTML).toContain('Viele Grüße'));
         editor.innerHTML = '<p>Text</p><div style="border-left: 3px solid #ccc">Zitat</div>';
-        await userEvent.click(screen.getByRole('button', { name: /KI-Optimierung/ }));
+        await kiStilWaehlen();
         await waitFor(() => expect(editor.innerHTML).toContain('<p>Fertig.</p>'));
         expect(editor.innerHTML).toContain('Zitat');
     });
@@ -203,17 +209,91 @@ describe('EmailComposeForm – Text, Signatur und KI', () => {
         const editor = screen.getByRole('textbox', { name: 'Nachricht' });
         await waitFor(() => expect(editor.innerHTML).toContain('Viele Grüße'));
         editor.innerHTML = '<div class="email-signature">Gruß</div>';
-        await userEvent.click(screen.getByRole('button', { name: /KI-Optimierung/ }));
+        await kiStilWaehlen();
         expect(await screen.findByText('Kein Text zum Umformulieren gefunden.')).toBeInTheDocument();
 
         editor.innerHTML = '<p>Hallo</p>';
         routen['/api/email/beautify'] = { body: { body: '  ' } };
-        await userEvent.click(screen.getByRole('button', { name: /KI-Optimierung/ }));
+        await kiStilWaehlen();
         expect(await screen.findByText('Keine alternative Formulierung erhalten.')).toBeInTheDocument();
 
         routen['/api/email/beautify'] = { status: 500, body: {} };
-        await userEvent.click(screen.getByRole('button', { name: /KI-Optimierung/ }));
+        await kiStilWaehlen();
         expect(await screen.findByText('Formulierung fehlgeschlagen. Bitte erneut versuchen.')).toBeInTheDocument();
+    });
+
+    it('fragt vor der KI nach dem Stil und schickt ihn mit', async () => {
+        routen['/api/email/beautify'] = { body: { body: 'Sehr geehrter Herr Mustermann, gern.' } };
+        render(<EmailComposeForm onClose={() => {}} />);
+        const editor = screen.getByRole('textbox', { name: 'Nachricht' });
+        await waitFor(() => expect(editor.innerHTML).toContain('Viele Grüße'));
+        editor.innerHTML = '<p>klar machen wir</p>' + editor.innerHTML;
+
+        await userEvent.click(screen.getByRole('button', { name: /KI-Optimierung/ }));
+        const menue = await screen.findByRole('menu');
+        expect(within(menue).getAllByRole('menuitem').map(e => e.textContent)).toEqual([
+            'Nur RechtschreibungFehler korrigieren, Stil bleibt',
+            'FörmlicherMit „Sie“, höflich und geschäftlich',
+            'LockererMit „Du“, kurz und freundlich',
+        ]);
+        expect(aufrufe.some(a => a.url === '/api/email/beautify')).toBe(false);
+
+        await userEvent.click(within(menue).getByRole('menuitem', { name: /Förmlicher/ }));
+        await waitFor(() => expect(editor.innerHTML).toContain('Sehr geehrter Herr Mustermann, gern.'));
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        const anfrage = aufrufe.find(a => a.url === '/api/email/beautify')!;
+        expect(JSON.parse(String(anfrage.init?.body))).toEqual({ body: 'klar machen wir', context: null, stil: 'FOERMLICH' });
+    });
+
+    it('bietet „Ton des Verlaufs übernehmen“ nur mit zitierter Mail an und lässt sich per Tastatur bedienen', async () => {
+        routen['/api/email/beautify'] = { body: { body: 'Passt, Donnerstag geht klar.' } };
+        render(<EmailComposeForm onClose={() => {}} replyEmailId={5} antwortPostfach={null}
+            replyQuote='<div class="email-quote">Hi, passt Donnerstag?</div>' initialRecipient="kunde@example.org" initialSubject="Re: Termin" />);
+        const editor = screen.getByRole('textbox', { name: 'Nachricht' });
+        await waitFor(() => expect(editor.innerHTML).toContain('passt Donnerstag'));
+        editor.innerHTML = '<p>ja geht</p>' + editor.innerHTML;
+
+        const knopf = screen.getByRole('button', { name: /KI-Optimierung/ });
+        knopf.focus();
+        await userEvent.keyboard('{Enter}');
+        const verlauf = await screen.findByRole('menuitem', { name: /Ton des Verlaufs übernehmen/ });
+        expect(verlauf).toHaveTextContent('Anrede und Ton wie in der letzten Mail');
+        await userEvent.keyboard('{Escape}');
+        await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+
+        // Zitat gelöscht → beim nächsten Öffnen ist die Option weg
+        const zitatHtml = editor.querySelector('.email-quote')!.outerHTML;
+        editor.querySelector('.email-quote')!.remove();
+        await userEvent.click(knopf);
+        await screen.findByRole('menu');
+        expect(screen.queryByRole('menuitem', { name: /Ton des Verlaufs/ })).not.toBeInTheDocument();
+        await userEvent.keyboard('{Escape}');
+        await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+
+        editor.insertAdjacentHTML('beforeend', zitatHtml);
+        await userEvent.click(knopf);
+        await userEvent.click(await screen.findByRole('menuitem', { name: /Ton des Verlaufs/ }));
+        await waitFor(() => expect(editor.innerHTML).toContain('Passt, Donnerstag geht klar.'));
+        const anfrage = aufrufe.find(a => a.url === '/api/email/beautify')!;
+        expect(JSON.parse(String(anfrage.init?.body))).toEqual({ body: 'ja geht', context: 'Hi, passt Donnerstag?', stil: 'VERLAUF' });
+    });
+
+    it('zeigt die Begründung, wenn das Backend den Stil ablehnt', async () => {
+        routen['/api/email/beautify'] = { status: 400, body: { message: 'Unbekannter Schreibstil.' } };
+        render(<EmailComposeForm onClose={() => {}} />);
+        const editor = screen.getByRole('textbox', { name: 'Nachricht' });
+        await waitFor(() => expect(editor.innerHTML).toContain('Viele Grüße'));
+        editor.innerHTML = '<p>Hallo</p>';
+        await kiStilWaehlen(/Lockerer/);
+        expect(await screen.findByText('Unbekannter Schreibstil.')).toBeInTheDocument();
+        expect(editor.innerHTML).toBe('<p>Hallo</p>');
+    });
+
+    it('erklärt per Info-Knopf, was an die KI geht', async () => {
+        render(<EmailComposeForm onClose={() => {}} />);
+        await userEvent.click(screen.getByRole('button', { name: /Mehr zu: Text mit KI überarbeiten/ }));
+        expect(await screen.findByText(/Ihr Text wird an die KI geschickt/)).toBeInTheDocument();
+        expect(screen.getByText(/Grußformel und Name lässt die KI weg/)).toBeInTheDocument();
     });
 
     it('merkt Eingaben im Text als Änderung', async () => {

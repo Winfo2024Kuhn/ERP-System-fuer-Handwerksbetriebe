@@ -115,29 +115,70 @@ function alsKlartextMitAbsaetzen(container: HTMLElement): string {
         .trim();
 }
 
+/**
+ * Schreibstil für die KI-Formulierung (`stil` im Body von `POST /api/email/beautify`).
+ * - `RECHTSCHREIBUNG`: nur Fehler korrigieren, Stil bleibt (Standard)
+ * - `FOERMLICH`: mit „Sie“, höflich und geschäftlich
+ * - `LOCKER`: mit „Du“, kurz und freundlich
+ * - `VERLAUF`: Anrede und Ton wie in der zitierten Vorgänger-Mail
+ */
+export type KiStil = 'RECHTSCHREIBUNG' | 'FOERMLICH' | 'LOCKER' | 'VERLAUF';
+
+/** Meldung, wenn „Ton des Verlaufs übernehmen“ ohne zitierte Mail gewählt wird. */
+export const KEIN_VERLAUF_MELDUNG = 'Kein Mail-Verlauf vorhanden – bitte einen anderen Stil wählen.';
+
 export type KiFormulierung =
     | { status: 'ok'; html: string }
     | { status: 'kein-text' }
-    | { status: 'kein-vorschlag' };
+    | { status: 'kein-vorschlag' }
+    /** Das Backend hat die Anfrage begründet abgelehnt (HTTP 400) – `meldung` ist für den Nutzer gedacht. */
+    | { status: 'abgelehnt'; meldung: string };
+
+/** Hat der Editor eine zitierte Vorgänger-Mail mit Text (also eine Antwort)? */
+export function hatZitiertenVerlauf(editorHtml: string): boolean {
+    return zerlegeEditorHtml(editorHtml).zitatText.trim().length > 0;
+}
+
+async function ablehnungsMeldung(res: Response): Promise<string | null> {
+    try {
+        const data = await res.json() as { message?: unknown } | null;
+        return typeof data?.message === 'string' && data.message.trim() ? data.message.trim() : null;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * Lässt den eigenen Text im Editor von der KI neu formulieren (`POST /api/email/beautify`).
  * Signatur und Zitat bleiben unverändert; fehlt die Signatur im Editor, wird
  * `ersatzSignaturHtml` angehängt. Das Ergebnis ist bereinigtes Editor-HTML.
+ *
+ * Ohne `stil` entscheidet das Backend (bisheriges Verhalten: nur Rechtschreibung).
+ * Bei `VERLAUF` geht nur die zitierte Mail als Kontext mit – nie der allgemeine
+ * `kontext` als Ersatz; fehlt das Zitat, wird gar nicht erst gefragt.
  * Wirft bei HTTP- oder Netzwerkfehlern – die Meldung zeigt der Aufrufer.
  */
 export async function formuliereMitKi(
     editorHtml: string,
-    optionen: { kontext?: string | null; ersatzSignaturHtml?: string } = {},
+    optionen: { kontext?: string | null; ersatzSignaturHtml?: string; stil?: KiStil } = {},
 ): Promise<KiFormulierung> {
     const teile = zerlegeEditorHtml(editorHtml);
     if (!teile.text) return { status: 'kein-text' };
 
+    const { stil } = optionen;
+    const zitatText = teile.zitatText.trim();
+    if (stil === 'VERLAUF' && !zitatText) return { status: 'abgelehnt', meldung: KEIN_VERLAUF_MELDUNG };
+    const context = stil === 'VERLAUF' ? zitatText : (teile.zitatText || optionen.kontext || null);
+
     const res = await fetch('/api/email/beautify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: teile.text, context: teile.zitatText || optionen.kontext || null }),
+        body: JSON.stringify({ body: teile.text, context, ...(stil ? { stil } : {}) }),
     });
+    if (res.status === 400) {
+        const meldung = await ablehnungsMeldung(res);
+        if (meldung) return { status: 'abgelehnt', meldung };
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json() as { body?: unknown } | null;

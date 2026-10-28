@@ -3,6 +3,7 @@ package org.example.kalkulationsprogramm.controller;
 import tools.jackson.databind.ObjectMapper;
 import org.example.kalkulationsprogramm.dto.Email.EmailBeautifyRequest;
 import org.example.kalkulationsprogramm.dto.Email.EmailPreviewRequest;
+import org.example.kalkulationsprogramm.dto.Email.EmailSchreibstil;
 import org.example.kalkulationsprogramm.dto.Email.EmailSendRequest;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
@@ -20,9 +21,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -90,7 +93,7 @@ class EmailControllerTest {
         @Test
         @DisplayName("Beautify gibt formatierten Body zurück")
         void beautifyErfolgreich() throws Exception {
-            given(emailAiService.beautify("Hallo Test", null))
+            given(emailAiService.beautify("Hallo Test", null, EmailSchreibstil.RECHTSCHREIBUNG))
                     .willReturn("Sehr geehrte Damen und Herren, ...");
 
             EmailBeautifyRequest request = new EmailBeautifyRequest();
@@ -131,7 +134,7 @@ class EmailControllerTest {
         @Test
         @DisplayName("AI-Fehler gibt 502 zurück")
         void aiFehlerGibt502() throws Exception {
-            given(emailAiService.beautify(any(), any()))
+            given(emailAiService.beautify(any(), any(), any()))
                     .willThrow(new RuntimeException("AI unavailable"));
 
             EmailBeautifyRequest request = new EmailBeautifyRequest();
@@ -147,7 +150,7 @@ class EmailControllerTest {
         @DisplayName("SQL Injection im Body wird als String behandelt")
         void sqlInjectionImBody() throws Exception {
             String sqlPayload = "'; DROP TABLE emails; --";
-            given(emailAiService.beautify(sqlPayload, null)).willReturn(sqlPayload);
+            given(emailAiService.beautify(sqlPayload, null, EmailSchreibstil.RECHTSCHREIBUNG)).willReturn(sqlPayload);
 
             EmailBeautifyRequest request = new EmailBeautifyRequest();
             request.setBody(sqlPayload);
@@ -162,7 +165,7 @@ class EmailControllerTest {
         @DisplayName("XSS im Body")
         void xssImBody() throws Exception {
             String xssPayload = "<script>alert('xss')</script>";
-            given(emailAiService.beautify(xssPayload, null)).willReturn(xssPayload);
+            given(emailAiService.beautify(xssPayload, null, EmailSchreibstil.RECHTSCHREIBUNG)).willReturn(xssPayload);
 
             EmailBeautifyRequest request = new EmailBeautifyRequest();
             request.setBody(xssPayload);
@@ -171,6 +174,56 @@ class EmailControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("Gewählter Stil wird an die KI weitergegeben (Groß-/Kleinschreibung egal)")
+        void stilWirdWeitergegeben() throws Exception {
+            given(emailAiService.beautify("hi max, passt morgen?", "Hallo Max, wann kommt ihr?", EmailSchreibstil.VERLAUF))
+                    .willReturn("Hi Max, passt dir morgen?");
+
+            EmailBeautifyRequest request = new EmailBeautifyRequest();
+            request.setBody("hi max, passt morgen?");
+            request.setContext("Hallo Max, wann kommt ihr?");
+            request.setStil("verlauf");
+
+            mockMvc.perform(post("/api/email/beautify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.body").value("Hi Max, passt dir morgen?"));
+        }
+
+        @Test
+        @DisplayName("Unbekannter Stil gibt 400 mit Meldung")
+        void unbekannterStilGibt400() throws Exception {
+            EmailBeautifyRequest request = new EmailBeautifyRequest();
+            request.setBody("Test");
+            request.setStil("'; DROP TABLE emails; --");
+
+            mockMvc.perform(post("/api/email/beautify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Unbekannter Schreibstil."));
+        }
+
+        @Test
+        @DisplayName("Verlauf ohne Verlauf gibt 400 statt 502")
+        void verlaufOhneKontextGibt400() throws Exception {
+            given(emailAiService.beautify("Test", null, EmailSchreibstil.VERLAUF))
+                    .willThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Kein Mail-Verlauf vorhanden – bitte einen anderen Stil wählen."));
+
+            EmailBeautifyRequest request = new EmailBeautifyRequest();
+            request.setBody("Test");
+            request.setStil("VERLAUF");
+
+            mockMvc.perform(post("/api/email/beautify")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Kein Mail-Verlauf vorhanden – bitte einen anderen Stil wählen."));
         }
 
         @Test
