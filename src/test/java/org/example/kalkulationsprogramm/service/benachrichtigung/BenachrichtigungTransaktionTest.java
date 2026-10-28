@@ -86,6 +86,7 @@ class BenachrichtigungTransaktionTest {
     @MockitoBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
     @MockitoBean private FrontendUserProfileService frontendUserProfileService;
     @MockitoBean private BetriebsstatusService betriebsstatusService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService ueberschneidungService;
 
     private final Authentication max = UsernamePasswordAuthenticationToken.authenticated("max", null, List.of());
 

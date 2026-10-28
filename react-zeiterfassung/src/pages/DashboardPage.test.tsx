@@ -19,6 +19,18 @@ vi.mock('../services/OfflineService', async () => {
         ...actual,
         sendeBuchung: vi.fn(),
         OfflineService: {
+            // Standard: wie der echte Dienst online – fragt den (gestubbten) Server.
+            // Ohne Antwort „unbekannt“ wie offline ohne gemerkten Stand.
+            getZeitkontoStatus: vi.fn(async (token: string) => {
+                try {
+                    const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
+                    const data = res.ok ? await res.json() : null
+                    if (data && typeof data.fuehrtZeitkonto === 'boolean' && typeof data.eingerichtet === 'boolean') {
+                        return { status: data, ausCache: false }
+                    }
+                } catch { /* offline */ }
+                return { status: null, ausCache: true }
+            }),
             getFailedEntries: vi.fn(),
             removeFailedEntry: vi.fn(),
             getHeuteGearbeitet: vi.fn(),
@@ -265,6 +277,111 @@ describe('DashboardPage – Zeitkonto-Status', () => {
         expect(screen.getByText('Projekte')).toBeInTheDocument()
         expect(screen.queryByText('Saldenauswertung')).not.toBeInTheDocument()
         expect(screen.queryByText('Zeit erfassen')).not.toBeInTheDocument()
+    })
+})
+
+describe('DashboardPage – ohne Verbindung', () => {
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', createMemoryStorage())
+        localStorage.setItem('zeiterfassung_token', 'tok-test')
+        mockedOfflineService.getFailedEntries.mockResolvedValue([])
+        mockedOfflineService.getHeuteGearbeitet.mockResolvedValue({ stunden: 0, minuten: 0, fromCache: true })
+        mockedOfflineService.getPendingCount.mockResolvedValue(1)
+        mockedOfflineService.getUnsyncedStopMinutes.mockResolvedValue(0)
+        // Kein Netz: jede Anfrage scheitert
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    })
+
+    afterEach(() => {
+        vi.clearAllMocks()
+        localStorage.clear()
+        vi.unstubAllGlobals()
+    })
+
+    it('zeigt mit gemerktem Stand Pause und alle Wechsel-Knöpfe', async () => {
+        localStorage.setItem('zeiterfassung_active_session', JSON.stringify(buildActiveWorkSession()))
+        mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: configuredZeitkonto, ausCache: true })
+
+        renderDashboard()
+
+        expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Tätigkeit' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Auftrag' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Kategorie' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Gehen \(Feierabend\)/ })).toBeInTheDocument()
+    })
+
+    it('sperrt ohne je gemerkten Stand nicht und sagt nicht „nicht eingerichtet“', async () => {
+        mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: null, ausCache: true })
+
+        renderDashboard()
+
+        expect(await screen.findByText('Zeit erfassen')).toBeInTheDocument()
+        expect(screen.queryByText('Zeiterfassung derzeit nicht verfügbar')).toBeNull()
+        expect(screen.queryByText(/noch keine Arbeitszeit eingerichtet/)).toBeNull()
+        expect(screen.getByText('Heute gearbeitet')).toBeInTheDocument()
+    })
+
+    it('zeigt auch mit laufender Buchung und ohne gemerkten Stand Pause und Wechsel', async () => {
+        localStorage.setItem('zeiterfassung_active_session', JSON.stringify(buildActiveWorkSession()))
+        mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: null, ausCache: true })
+
+        renderDashboard()
+
+        expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Auftrag' })).toBeInTheDocument()
+    })
+
+    it('sperrt, wenn der gemerkte Stand „nicht eingerichtet“ sagt', async () => {
+        mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({
+            status: { fuehrtZeitkonto: true, eingerichtet: false, hinweis: 'Für Sie ist noch keine Arbeitszeit eingerichtet.' },
+            ausCache: true,
+        })
+
+        renderDashboard()
+
+        expect(await screen.findByText('Zeiterfassung derzeit nicht verfügbar')).toBeInTheDocument()
+        expect(screen.getByText('Für Sie ist noch keine Arbeitszeit eingerichtet.')).toBeInTheDocument()
+        expect(screen.queryByText('Zeit erfassen')).toBeNull()
+    })
+
+    it('öffnet den Tätigkeitswechsel mit Tätigkeiten und Projekten vom Handy', async () => {
+        localStorage.setItem('zeiterfassung_active_session', JSON.stringify(buildActiveWorkSession()))
+        mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: configuredZeitkonto, ausCache: true })
+        mockedOfflineService.getArbeitsgaenge.mockResolvedValueOnce([{ id: 12, beschreibung: 'Schweißen' }])
+        mockedOfflineService.getProjekte.mockResolvedValueOnce([{ id: 77, name: 'Bauvorhaben Mustermann', projektNummer: 'A-1', kundenName: 'Max Mustermann' }])
+        const user = userEvent.setup()
+
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: 'Tätigkeit' }))
+
+        expect(await screen.findByRole('button', { name: 'Schweißen' })).toBeInTheDocument()
+        expect(mockedOfflineService.getArbeitsgaenge).toHaveBeenCalledWith('tok-test')
+    })
+
+    it('meldet per Toast, wenn die Tätigkeiten nicht einmal vom Handy gelesen werden können', async () => {
+        localStorage.setItem('zeiterfassung_active_session', JSON.stringify(buildActiveWorkSession()))
+        mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: configuredZeitkonto, ausCache: true })
+        mockedOfflineService.getArbeitsgaenge.mockRejectedValueOnce(new Error('IndexedDB nicht verfügbar'))
+        mockedOfflineService.getProjekte.mockResolvedValueOnce([])
+        const user = userEvent.setup()
+
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: 'Tätigkeit' }))
+
+        expect(await screen.findByText('Die Tätigkeiten konnten nicht geladen werden. Bitte noch einmal tippen.')).toBeInTheDocument()
+    })
+
+    it('meldet per Toast, wenn die Kategorien nicht einmal vom Handy gelesen werden können', async () => {
+        localStorage.setItem('zeiterfassung_active_session', JSON.stringify(buildActiveWorkSession()))
+        mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: configuredZeitkonto, ausCache: true })
+        mockedOfflineService.getKategorien.mockRejectedValueOnce(new Error('IndexedDB nicht verfügbar'))
+        const user = userEvent.setup()
+
+        renderDashboard()
+        await user.click(await screen.findByRole('button', { name: 'Kategorie' }))
+
+        expect(await screen.findByText('Die Kategorien konnten nicht geladen werden. Bitte noch einmal tippen.')).toBeInTheDocument()
     })
 })
 
@@ -838,10 +955,17 @@ describe('DashboardPage – Nachrichten-Glocke (#270)', () => {
     ]
     const VERFALL = { resturlaubTage: 3.5, verfallsDatum: '2027-03-31', verfallsJahr: 2027, tageVerbleibend: 20, dringend: true }
 
-    function stubNachrichten(opts: { entscheidungen?: unknown[]; verfall?: unknown; putStatus?: number; fehlerBeiId?: number } = {}) {
+    function stubNachrichten(opts: { entscheidungen?: unknown[]; verfall?: unknown; putStatus?: number; fehlerBeiId?: number; ueberschneidungen?: unknown } = {}) {
         const puts: string[] = []
         const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
             const url = typeof input === 'string' ? input : input.toString()
+            if (init?.method === 'PUT' && url.includes('/api/zeiterfassung/ueberschneidungen/')) {
+                puts.push(url)
+                return new Response(null, { status: opts.putStatus ?? 204 })
+            }
+            if (url === '/api/zeiterfassung/ueberschneidungen') {
+                return new Response(JSON.stringify(opts.ueberschneidungen ?? []), { status: 200, headers: { 'Content-Type': 'application/json' } })
+            }
             if (init?.method === 'PUT' && url.includes('/api/urlaub/antraege/')) {
                 puts.push(url)
                 if (opts.fehlerBeiId !== undefined && url.includes(`/antraege/${opts.fehlerBeiId}/`)) return new Response(null, { status: 500 })
@@ -978,6 +1102,80 @@ describe('DashboardPage – Nachrichten-Glocke (#270)', () => {
         stubNachrichten({ entscheidungen: [], verfall: { ...VERFALL, resturlaubTage: 2 } })
         renderDashboard()
         expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('1')
+    })
+
+    const UEBERSCHNEIDUNG = {
+        id: 5,
+        von: '2026-10-28T10:00:00',
+        bis: '2026-10-28T12:00:00',
+        titel: 'Überschneidung am 28.10.2026',
+        text: 'Deine Handy-Buchung 10:00–12:00 hatte Vorrang. Büro-Eintrag „Projekt Musterhaus, Montage“ 09:00–11:00 wurde auf 09:00–10:00 gekürzt.',
+        erstelltAm: '2026-10-28T14:03:11',
+    }
+
+    it('zeigt eine Überschneidung mit Titel und Text und markiert sie per „Gelesen“ – PUT …/ueberschneidungen/{id}/gesehen', async () => {
+        const { puts } = stubNachrichten({ entscheidungen: [], ueberschneidungen: [UEBERSCHNEIDUNG] })
+        renderDashboard()
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('1')
+
+        const sheet = await oeffneGlocke()
+        expect(within(sheet).getByText('Überschneidung am 28.10.2026')).toBeInTheDocument()
+        expect(within(sheet).getByText(/Deine Handy-Buchung 10:00–12:00 hatte Vorrang\./)).toBeInTheDocument()
+        expect(within(sheet).getByTestId('nachricht').querySelector('.lucide-calendar-clock')).not.toBeNull()
+
+        fireEvent.click(within(sheet).getByRole('button', { name: 'Gelesen: Überschneidung am 28.10.2026' }))
+
+        await waitFor(() => expect(puts).toEqual(['/api/zeiterfassung/ueberschneidungen/5/gesehen']))
+        expect(await within(sheet).findByText('Keine neuen Nachrichten.')).toBeInTheDocument()
+    })
+
+    it('markiert eine Überschneidung schon beim Antippen als gelesen und öffnet die Tagesbuchungen', async () => {
+        const { puts } = stubNachrichten({ entscheidungen: [], ueberschneidungen: [UEBERSCHNEIDUNG] })
+        render(
+            <ToastProvider>
+                <MemoryRouter>
+                    <Routes>
+                        <Route path="/" element={<DashboardPage mitarbeiter={{ id: 1, vorname: 'Max', nachname: 'Mustermann' }} onLogout={() => undefined} />} />
+                        <Route path="/tagesbuchungen" element={<div>Tagesbuchungen</div>} />
+                    </Routes>
+                </MemoryRouter>
+            </ToastProvider>,
+        )
+        await screen.findByTestId('nachrichten-zaehler')
+
+        const sheet = await oeffneGlocke()
+        fireEvent.click(within(sheet).getByText('Überschneidung am 28.10.2026'))
+
+        expect(await screen.findByText('Tagesbuchungen')).toBeInTheDocument()
+        await waitFor(() => expect(puts).toEqual(['/api/zeiterfassung/ueberschneidungen/5/gesehen']))
+    })
+
+    it('„Alle als gelesen" markiert auch Überschneidungen', async () => {
+        const { puts } = stubNachrichten({ ueberschneidungen: [UEBERSCHNEIDUNG] })
+        renderDashboard()
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('3')
+
+        const sheet = await oeffneGlocke()
+        fireEvent.click(within(sheet).getByRole('button', { name: 'Alle als gelesen markieren' }))
+
+        await waitFor(() => expect(puts).toContain('/api/zeiterfassung/ueberschneidungen/5/gesehen'))
+        expect(await within(sheet).findByText('Keine neuen Nachrichten.')).toBeInTheDocument()
+    })
+
+    it('übergeht offline die Überschneidungen still', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input.toString()
+            if (url === '/api/zeiterfassung/ueberschneidungen') throw new TypeError('Failed to fetch')
+            if (url.includes('/api/urlaub/antraege/neue-entscheidungen')) {
+                return new Response(JSON.stringify(ENTSCHEIDUNGEN), { status: 200, headers: { 'Content-Type': 'application/json' } })
+            }
+            return antwortMitZeitkontoStatus(input)
+        })
+        vi.stubGlobal('fetch', fetchMock)
+        renderDashboard()
+
+        expect(await screen.findByTestId('nachrichten-zaehler')).toHaveTextContent('2')
+        expect(screen.queryByRole('alert')).toBeNull()
     })
 
     it('zeigt im leeren Zustand einen freundlichen Hinweis und keinen Zähler', async () => {

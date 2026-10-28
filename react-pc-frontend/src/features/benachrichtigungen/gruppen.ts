@@ -69,14 +69,15 @@ export const GRUPPEN: BenachrichtigungsGruppe[] = [
     },
     {
         // Hier steht geschätzte statt gestempelter Arbeitszeit in den
-        // Zeitkonten. Das muss auffallen, bevor der Monat abgerechnet wird.
+        // Zeitkonten – oder eine Handy-Buchung hat einen Büro-Eintrag gekürzt
+        // (Überschneidung). Das muss auffallen, bevor der Monat abgerechnet wird.
         id: 'zeiterfassung',
         label: 'Zeiten prüfen',
         icon: Clock,
         accentText: 'text-amber-700',
         accentBg: 'bg-amber-100',
-        types: ['ZEITEN_AUTO_BEENDET', 'MONATSABSCHLUSS'],
-        recentTypes: ['ZEIT_AUTO_BEENDET', 'MONATSABSCHLUSS'],
+        types: ['ZEITEN_AUTO_BEENDET', 'ZEITEN_UEBERSCHNEIDUNG', 'MONATSABSCHLUSS'],
+        recentTypes: ['ZEIT_AUTO_BEENDET', 'ZEIT_UEBERSCHNEIDUNG', 'MONATSABSCHLUSS'],
     },
     {
         id: 'posteingaenge',
@@ -162,6 +163,7 @@ export const EINTRAG_FARBEN: Record<string, string> = {
     FREIGABE_ANGENOMMEN: 'text-emerald-500',
     ANFRAGE_WEBSEITE: 'text-rose-600',
     ZEIT_AUTO_BEENDET: 'text-amber-600',
+    ZEIT_UEBERSCHNEIDUNG: 'text-amber-600',
     MONATSABSCHLUSS: 'text-rose-600',
     SPRACHNACHRICHT: 'text-amber-600',
     VERPASSTER_ANRUF: 'text-red-600',
@@ -182,6 +184,7 @@ export const EINTRAG_ICONS: Record<string, IconKomponente> = {
     FREIGABE_ANGENOMMEN: CheckCircle2,
     ANFRAGE_WEBSEITE: Globe,
     ZEIT_AUTO_BEENDET: Clock,
+    ZEIT_UEBERSCHNEIDUNG: CalendarClock,
     MONATSABSCHLUSS: CalendarCheck,
     SPRACHNACHRICHT: Voicemail,
     VERPASSTER_ANRUF: PhoneMissed,

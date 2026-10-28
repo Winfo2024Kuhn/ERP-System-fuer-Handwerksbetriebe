@@ -98,6 +98,7 @@ class NotificationSichtbarkeitTest {
     @MockitoBean private BenachrichtigungErledigtService erledigtService;
     @MockitoBean private BetriebsstatusService betriebsstatusService;
     @MockitoBean private org.springframework.transaction.PlatformTransactionManager transactionManager;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService ueberschneidungService;
 
     @org.junit.jupiter.api.BeforeEach
     void gelesenWieBisher() {

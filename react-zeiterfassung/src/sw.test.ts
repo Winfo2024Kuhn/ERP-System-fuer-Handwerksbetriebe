@@ -384,6 +384,32 @@ describe('Push-Nachrichten zur Zeiterfassung', () => {
         expect(gezeigteNachricht().optionen.data.url).toBe('/zeiterfassung/zeiterfassung')
     })
 
+    it('zeigt eine Überschneidung als eigene Nachricht und öffnet die Handy-App statt „/“', async () => {
+        await dispatch('push', pushDaten({
+            title: 'Überschneidung am 28.10.2026',
+            body: 'Deine Handy-Buchung 10:00–12:00 hatte Vorrang.',
+            url: '/',
+            appointmentId: null,
+            type: 'ZEIT_UEBERSCHNEIDUNG',
+            timestamp: 1761660000000,
+        }))
+
+        const { titel, optionen } = gezeigteNachricht()
+        expect(titel).toBe('📆 Überschneidung am 28.10.2026')
+        expect(optionen.body).toContain('hatte Vorrang')
+        expect(optionen.tag).toBe('zeit-ueberschneidung-1761660000000')
+        expect(optionen.data.url).toBe('/zeiterfassung/')
+    })
+
+    it('übernimmt bei einer Überschneidung einen Link in die Handy-App', async () => {
+        await dispatch('push', pushDaten({
+            title: 'Überschneidung am 28.10.2026', body: 'Bitte prüf den Tag.', url: '/zeiterfassung/tagesbuchungen',
+            appointmentId: null, type: 'ZEIT_UEBERSCHNEIDUNG', timestamp: 4,
+        }))
+
+        expect(gezeigteNachricht().optionen.data.url).toBe('/zeiterfassung/tagesbuchungen')
+    })
+
     it('lässt allgemeine Mitarbeiter-Nachrichten unverändert', async () => {
         await dispatch('push', pushDaten({
             title: 'Urlaub genehmigt', body: 'Dein Urlaub wurde genehmigt.', url: '',

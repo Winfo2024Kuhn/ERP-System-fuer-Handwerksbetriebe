@@ -3,10 +3,11 @@ import { entscheidungsText, formatIsoDatumDe, formatUrlaubstage, typLabel, type 
 
 /**
  * Nachrichten der Glocke: Entscheidungen des Büros zu eigenen Anträgen
- * (genehmigt, abgelehnt, vom Büro storniert) und die Warnung vor
- * verfallendem Resturlaub – zusammengeführt zu einer Liste.
+ * (genehmigt, abgelehnt, vom Büro storniert), die Warnung vor
+ * verfallendem Resturlaub und Überschneidungen zwischen einer Handy-Buchung
+ * und einem Büro-Eintrag – zusammengeführt zu einer Liste.
  */
-export type NachrichtArt = 'GENEHMIGT' | 'ABGELEHNT' | 'STORNIERT' | 'URLAUBSVERFALL'
+export type NachrichtArt = 'GENEHMIGT' | 'ABGELEHNT' | 'STORNIERT' | 'URLAUBSVERFALL' | 'UEBERSCHNEIDUNG'
 
 export interface Nachricht {
     key: string
@@ -18,6 +19,8 @@ export interface Nachricht {
     dringend: boolean
     /** Wohin ein Tipp auf die Nachricht führt. */
     ziel: string
+    /** true: Schon der Tipp auf die Nachricht markiert sie als gelesen (reine Info, nichts zu erledigen). */
+    gelesenBeimOeffnen?: boolean
     /** Markiert die Nachricht als gelesen; wirft bei Fehlern, die Nachricht bleibt dann stehen. */
     onGelesen: () => Promise<void>
 }
@@ -30,6 +33,19 @@ interface Entscheidung {
     vonDatum: string
     bisDatum: string
     entschiedenAm?: string | null
+}
+
+/**
+ * DTO von GET /api/zeiterfassung/ueberschneidungen: Eine Handy-Buchung hat einen
+ * Büro-Eintrag gekürzt oder ersetzt. Titel und Text formuliert der Server fertig.
+ */
+interface Ueberschneidung {
+    id: number
+    von: string
+    bis: string | null
+    titel: string
+    text: string
+    erstelltAm: string
 }
 
 /** Ergebnis von „Alle als gelesen": wie viele Entscheidungen nicht gespeichert werden konnten. */
@@ -87,14 +103,25 @@ async function pruefeAntwort(res: Response) {
 interface Ladeergebnis {
     entscheidungen: Entscheidung[] | null
     verfall: UrlaubsVerfallWarnung | null | undefined
+    ueberschneidungen: Ueberschneidung[] | null
 }
+
+const istUeberschneidung = (u: unknown): u is Ueberschneidung =>
+    !!u && typeof u === 'object'
+    && typeof (u as Ueberschneidung).id === 'number'
+    && typeof (u as Ueberschneidung).titel === 'string'
+    && typeof (u as Ueberschneidung).text === 'string'
+
+const ueberschneidungGesehenUrl = (id: number) => `/api/zeiterfassung/ueberschneidungen/${encodeURIComponent(String(id))}/gesehen`
 
 /** Lädt beide Quellen parallel. `null`/`undefined` heißt: nicht erreichbar, bisherigen Stand behalten. */
 async function ladeNachrichten(mitarbeiterId: number): Promise<Ladeergebnis> {
     const token = localStorage.getItem('zeiterfassung_token')
-    const [neu, warnung] = await Promise.all([
+    const [neu, warnung, ueberschneidungen] = await Promise.all([
         ladeJson<Entscheidung[]>(`/api/urlaub/antraege/neue-entscheidungen?mitarbeiterId=${encodeURIComponent(String(mitarbeiterId))}`),
         token ? ladeJson<UrlaubsVerfallWarnung>(`/api/zeiterfassung/urlaubsverfall/${encodeURIComponent(token)}`) : Promise.resolve(null),
+        // Der Server erkennt den Mitarbeiter am Anmelde-Kopf der Handy-App.
+        token ? ladeJson<unknown[]>('/api/zeiterfassung/ueberschneidungen') : Promise.resolve(null),
     ])
     let verfall: UrlaubsVerfallWarnung | null | undefined
     if (warnung !== null) {
@@ -105,6 +132,7 @@ async function ladeNachrichten(mitarbeiterId: number): Promise<Ladeergebnis> {
     return {
         entscheidungen: neu === null ? null : (Array.isArray(neu) ? neu.filter(e => e && typeof e.id === 'number') : []),
         verfall,
+        ueberschneidungen: ueberschneidungen === null ? null : (Array.isArray(ueberschneidungen) ? ueberschneidungen.filter(istUeberschneidung) : []),
     }
 }
 
@@ -115,12 +143,14 @@ async function ladeNachrichten(mitarbeiterId: number): Promise<Ladeergebnis> {
 export function useNachrichten(mitarbeiterId: number | null | undefined, ausloeser?: unknown) {
     const [entscheidungen, setEntscheidungen] = useState<Entscheidung[]>([])
     const [verfall, setVerfall] = useState<UrlaubsVerfallWarnung | null>(null)
+    const [ueberschneidungen, setUeberschneidungen] = useState<Ueberschneidung[]>([])
     const anfrage = useRef(0)
 
     const uebernehmen = useCallback((nummer: number, ergebnis: Ladeergebnis) => {
         if (nummer !== anfrage.current) return // eine neuere Anfrage läuft schon
         if (ergebnis.entscheidungen !== null) setEntscheidungen(ergebnis.entscheidungen)
         if (ergebnis.verfall !== undefined) setVerfall(ergebnis.verfall)
+        if (ergebnis.ueberschneidungen !== null) setUeberschneidungen(ergebnis.ueberschneidungen)
     }, [])
 
     const neuLaden = useCallback(async () => {
@@ -139,6 +169,12 @@ export function useNachrichten(mitarbeiterId: number | null | undefined, ausloes
         const res = await fetch(`/api/urlaub/antraege/${id}/entscheidung-gesehen`, { method: 'PUT' })
         await pruefeAntwort(res)
         setEntscheidungen(alt => alt.filter(e => e.id !== id))
+    }, [])
+
+    const ueberschneidungGesehen = useCallback(async (id: number) => {
+        const res = await fetch(ueberschneidungGesehenUrl(id), { method: 'PUT' })
+        await pruefeAntwort(res)
+        setUeberschneidungen(alt => alt.filter(u => u.id !== id))
     }, [])
 
     const verfallGelesen = useCallback(async () => {
@@ -163,13 +199,22 @@ export function useNachrichten(mitarbeiterId: number | null | undefined, ausloes
         const erledigt = new Set(ergebnisse.flatMap(e => e.status === 'fulfilled' ? [e.value] : []))
         if (erledigt.size > 0) setEntscheidungen(alt => alt.filter(e => !erledigt.has(e.id)))
         let fehlgeschlagen = ergebnisse.length - erledigt.size
+
+        const ueberschneidungsErgebnisse = await Promise.allSettled(ueberschneidungen.map(async u => {
+            const res = await fetch(ueberschneidungGesehenUrl(u.id), { method: 'PUT' })
+            await pruefeAntwort(res)
+            return u.id
+        }))
+        const gesehen = new Set(ueberschneidungsErgebnisse.flatMap(e => e.status === 'fulfilled' ? [e.value] : []))
+        if (gesehen.size > 0) setUeberschneidungen(alt => alt.filter(u => !gesehen.has(u.id)))
+        fehlgeschlagen += ueberschneidungsErgebnisse.length - gesehen.size
         try {
             await verfallGelesen()
         } catch {
             fehlgeschlagen += 1
         }
         return { fehlgeschlagen }
-    }, [mitarbeiterId, entscheidungen, verfallGelesen])
+    }, [mitarbeiterId, entscheidungen, ueberschneidungen, verfallGelesen])
 
     const nachrichten: Nachricht[] = [
         ...(verfall ? [{
@@ -182,6 +227,17 @@ export function useNachrichten(mitarbeiterId: number | null | undefined, ausloes
             ziel: '/salden',
             onGelesen: verfallGelesen,
         }] : []),
+        ...ueberschneidungen.map(u => ({
+            key: `ueberschneidung-${u.id}`,
+            art: 'UEBERSCHNEIDUNG' as const,
+            titel: u.titel,
+            text: u.text,
+            datum: null,
+            dringend: false,
+            ziel: '/tagesbuchungen',
+            gelesenBeimOeffnen: true,
+            onGelesen: () => ueberschneidungGesehen(u.id),
+        })),
         ...entscheidungen.map(e => {
             const art: NachrichtArt = e.status === 'ABGELEHNT' ? 'ABGELEHNT' : e.status === 'STORNIERT' ? 'STORNIERT' : 'GENEHMIGT'
             const ergebnis = art === 'ABGELEHNT' ? 'abgelehnt' : art === 'STORNIERT' ? 'storniert' : 'genehmigt'

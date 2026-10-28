@@ -443,6 +443,24 @@ describe('OfflineService', () => {
             expect(urls.some(u => u.includes('/projekte'))).toBe(true)
         })
 
+        it('frischt beim Abgleich den Arbeitszeit-Status auf, damit er ohne Netz bereitsteht', async () => {
+            localStorage.setItem('zeiterfassung_token', 'tok-max')
+            vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+                const u = String(url)
+                const body = u.includes('/buchungszeitfenster/') ? { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null } : []
+                return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response
+            })
+
+            expect((await OfflineService.syncAll()).success).toBe(true)
+
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({
+                status: { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null },
+                ausCache: true,
+            })
+        })
+
         it('sollte allPendingCleared=false melden wenn während sync neue Pending-Entries entstehen', async () => {
             let injected = false
 
@@ -515,6 +533,135 @@ describe('OfflineService', () => {
             vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
             const result = await OfflineService.getProjekte()
             expect(result).toEqual([])
+        })
+
+        it('lädt alle offenen Projekte ohne 100er-Grenze', async () => {
+            const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok([]))
+            await OfflineService.getProjekte()
+            expect(String(fetchSpy.mock.calls[0][0])).toBe('/api/zeiterfassung/projekte')
+        })
+
+        it('meldet mit getProjekteMitHerkunft, ob die Liste frisch oder vom Handy kommt', async () => {
+            const data = [{ id: 1, name: 'Bauvorhaben Mustermann' }]
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(data))
+            expect(await OfflineService.getProjekteMitHerkunft()).toEqual({ daten: data, ausSpeicher: false })
+
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+            expect(await OfflineService.getProjekteMitHerkunft()).toEqual({ daten: data, ausSpeicher: true })
+        })
+
+        it('nimmt ohne Netz (navigator.onLine=false) sofort den Speicher, ohne zu fragen', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok([{ id: 1, name: 'Bauvorhaben Mustermann' }]))
+            await OfflineService.getProjekte()
+            vi.restoreAllMocks()
+            const fetchSpy = vi.spyOn(globalThis, 'fetch')
+            Object.defineProperty(navigator, 'onLine', { writable: true, value: false })
+
+            const r = await OfflineService.getProjekteMitHerkunft()
+
+            expect(r.ausSpeicher).toBe(true)
+            expect(r.daten).toHaveLength(1)
+            expect(fetchSpy).not.toHaveBeenCalled()
+        })
+
+        it('wartet bei schwachem Netz höchstens 3 Sekunden und nimmt dann den Speicher', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok([{ id: 7, beschreibung: 'Montage' }]))
+            await OfflineService.getArbeitsgaenge('tok-max')
+            vi.restoreAllMocks()
+            // Nur setTimeout vortäuschen – der Handy-Speicher (fake-indexeddb) braucht echte Zeitgeber.
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+            try {
+                // Anfrage hängt, bis sie abgebrochen wird
+                const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+                    init?.signal?.addEventListener('abort', () => reject(new DOMException('abgebrochen', 'AbortError')))
+                }))
+                const ergebnis = OfflineService.getArbeitsgaenge('tok-max')
+                await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+                await vi.advanceTimersByTimeAsync(2999)
+                let fertig = false
+                void ergebnis.then(() => { fertig = true })
+                await Promise.resolve()
+                expect(fertig).toBe(false)
+                await vi.advanceTimersByTimeAsync(1)
+                expect(await ergebnis).toEqual([{ id: 7, beschreibung: 'Montage' }])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        it('sucht Projekte ohne Netz im gespeicherten Stand (Name und Projektnummer)', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok([
+                { id: 1, name: 'Bauvorhaben Mustermann', projektNummer: 'P-100' },
+                { id: 2, name: 'Werkstatt', projektNummer: 'P-200' },
+            ]))
+            await OfflineService.getProjekte()
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+
+            expect((await OfflineService.searchProjekte('muster')).map((p: { id: number }) => p.id)).toEqual([1])
+            expect((await OfflineService.searchProjekte('p-200')).map((p: { id: number }) => p.id)).toEqual([2])
+        })
+    })
+
+    // ==================== ARBEITSZEIT-STATUS ====================
+    describe('getZeitkontoStatus', () => {
+        const eingerichtet = { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null }
+        const nichtEingerichtet = { fuehrtZeitkonto: true, eingerichtet: false, hinweis: 'Für Sie ist noch keine Arbeitszeit eingerichtet.' }
+
+        it('liefert online die Server-Antwort und merkt sie sich', async () => {
+            const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(eingerichtet))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({ status: eingerichtet, ausCache: false })
+            expect(String(fetchSpy.mock.calls[0][0])).toBe('/api/zeiterfassung/buchungszeitfenster/tok-max')
+
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({ status: eingerichtet, ausCache: true })
+        })
+
+        it('liefert offline ohne gemerkten Stand null (unbekannt), nicht „nicht eingerichtet“', async () => {
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({ status: null, ausCache: true })
+        })
+
+        it('nimmt bei Serverfehler (5xx) den gemerkten Stand', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(eingerichtet))
+            await OfflineService.getZeitkontoStatus('tok-max')
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => serverError(503))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({ status: eingerichtet, ausCache: true })
+        })
+
+        it('eine echte Server-Antwort ersetzt den gemerkten Stand – auch „nicht eingerichtet“', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(eingerichtet))
+            await OfflineService.getZeitkontoStatus('tok-max')
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(nichtEingerichtet))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({ status: nichtEingerichtet, ausCache: false })
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+            expect((await OfflineService.getZeitkontoStatus('tok-max')).status).toEqual(nichtEingerichtet)
+        })
+
+        it('merkt sich eine unvollständige Antwort nicht', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok({ hinweis: null }))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({ status: null, ausCache: true })
+        })
+
+        it('urteilt bei echter Ablehnung (403) nicht über die Arbeitszeit', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(nichtEingerichtet))
+            await OfflineService.getZeitkontoStatus('tok-max')
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => clientError(403))
+            expect(await OfflineService.getZeitkontoStatus('tok-max')).toEqual({ status: null, ausCache: false })
+        })
+
+        it('hält gemerkte Stände je Mitarbeiter-Token getrennt', async () => {
+            vi.spyOn(globalThis, 'fetch').mockImplementation(() => ok(eingerichtet))
+            await OfflineService.getZeitkontoStatus('tok-max')
+            vi.restoreAllMocks()
+            vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+            expect((await OfflineService.getZeitkontoStatus('tok-erika')).status).toBeNull()
         })
     })
 
