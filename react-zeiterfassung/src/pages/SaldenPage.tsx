@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Sun, Briefcase, Clock, TrendingUp, TrendingDown, Minus, RefreshCw, Stethoscope, GraduationCap, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
-import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { ArrowLeft, Sun, Briefcase, Clock, TrendingUp, TrendingDown, Minus, RefreshCw, Stethoscope, GraduationCap, CalendarDays, ChevronLeft, ChevronRight, WifiOff } from 'lucide-react'
+import { zeitkontoHinweis } from '../types/zeitkonto'
+import { useZeitkontoStatus } from '../hooks/useZeitkontoStatus'
 import { anspruchHinweis, formatUrlaubstage, tageMitEinheit, vorjahresHinweis, type VorjahresRest } from '../lib/urlaubsantrag'
 import { feiertageAnzahlText } from '../lib/bundeslaender'
 
@@ -65,40 +66,19 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
     const navigate = useNavigate()
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    // Server nicht erreichbar: kein Fehler, sondern ein ruhiger Hinweis.
+    const [ohneVerbindung, setOhneVerbindung] = useState(false)
     const [saldo, setSaldo] = useState<SaldoData | null>(null)
     const [feiertage, setFeiertage] = useState<Feiertag[]>([])
-    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
-    const [statusLoading, setStatusLoading] = useState(true)
+    // Ohne Netz gilt der gemerkte Stand; „nicht eingerichtet“ nur, wenn es wirklich so ist.
+    const { status: zeitkontoStatus, geprueft: zeitkontoGeprueft, gesperrt, laedt: zeitkontoLaedt, neuLaden: zeitkontoNeuLaden } =
+        useZeitkontoStatus()
+    const statusLoading = !zeitkontoGeprueft
+    const saldenFreigegeben = zeitkontoGeprueft && !gesperrt
 
     // Month navigation state - default to current month/year
     const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1)
     const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear())
-
-    // Beim Öffnen läuft die Prüfung schon (statusLoading startet mit true).
-    const holeZeitkontoStatus = (token: string) => fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
-        .then(res => {
-            if (!res.ok) throw new Error()
-            return res.json() as Promise<ZeitkontoStatus>
-        })
-        .then(data => {
-            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
-            setZeitkontoStatus(data)
-        })
-        .catch(() => setZeitkontoStatus(null))
-        .finally(() => setStatusLoading(false))
-
-    // Erneut-versuchen-Knopf
-    const loadZeitkontoStatus = () => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return
-        setStatusLoading(true)
-        void holeZeitkontoStatus(token)
-    }
-
-    useEffect(() => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (token) void holeZeitkontoStatus(token)
-    }, [])
 
     const holeSaldo = (token: string, month?: number, year?: number) => {
         // ========== API-Aufruf für Saldodaten ==========
@@ -123,15 +103,18 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
         if (params.toString()) url += `?${params.toString()}`
 
         return fetch(url)
-            .then(async res => {
-                if (!res.ok) {
-                    setError('Fehler beim Laden der Daten')
-                    return
-                }
-                setSaldo(await res.json())
-                setError(null)
-            })
-            .catch(() => setError('Server nicht erreichbar'))
+            .then(
+                res => {
+                    setOhneVerbindung(false)
+                    if (!res.ok) throw new Error('Antwort nicht ok')
+                    return res.json().then(daten => {
+                        setSaldo(daten)
+                        setError(null)
+                    })
+                },
+                () => setOhneVerbindung(true),
+            )
+            .catch(() => setError('Fehler beim Laden der Daten'))
             .finally(() => setLoading(false))
     }
 
@@ -140,6 +123,7 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
     const loadSaldo = (month?: number, year?: number) => {
         setLoading(true)
         setError(null)
+        setOhneVerbindung(false)
         const token = localStorage.getItem('zeiterfassung_token')
         if (!token) {
             setError('Nicht angemeldet')
@@ -151,8 +135,8 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
 
     useEffect(() => {
         const token = localStorage.getItem('zeiterfassung_token')
-        if (token && hatEingerichtetesZeitkonto(zeitkontoStatus)) void holeSaldo(token, selectedMonth, selectedYear)
-    }, [selectedMonth, selectedYear, zeitkontoStatus])
+        if (token && saldenFreigegeben) void holeSaldo(token, selectedMonth, selectedYear)
+    }, [selectedMonth, selectedYear, saldenFreigegeben])
 
     // Navigate to previous or next month
     const changeMonth = (delta: number) => {
@@ -169,6 +153,7 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
 
         setLoading(true)
         setError(null)
+        setOhneVerbindung(false)
         setSelectedMonth(newMonth)
         setSelectedYear(newYear)
     }
@@ -273,29 +258,39 @@ export default function SaldenPage({ syncStatus, onSync }: SaldenPageProps) {
                     </div>
                 )}
 
-                {!statusLoading && !hatEingerichtetesZeitkonto(zeitkontoStatus) && (
+                {!statusLoading && gesperrt && (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm" role="alert">
                         <h2 className="font-bold text-slate-900">Saldenauswertung nicht verfügbar</h2>
                         <p className="mt-2 text-sm leading-6 text-slate-700">{zeitkontoHinweis(zeitkontoStatus)}</p>
-                        <button onClick={loadZeitkontoStatus} className="mt-4 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                        <button onClick={zeitkontoNeuLaden} disabled={zeitkontoLaedt} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60">
+                            {zeitkontoLaedt && <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />}
                             Erneut prüfen
                         </button>
                     </div>
                 )}
 
-                {hatEingerichtetesZeitkonto(zeitkontoStatus) && loading && (
+                {saldenFreigegeben && loading && (
                     <div className="flex items-center justify-center py-12">
                         <RefreshCw className="w-8 h-8 text-rose-500 animate-spin" />
                     </div>
                 )}
 
-                {hatEingerichtetesZeitkonto(zeitkontoStatus) && error && (
+                {saldenFreigegeben && ohneVerbindung && !loading && (
+                    <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm" role="status">
+                        <WifiOff className="mt-0.5 h-5 w-5 flex-shrink-0 text-slate-500" aria-hidden="true" />
+                        <p className="text-sm leading-6 text-slate-700">
+                            Ohne Verbindung – die Salden kommen vom Büro. Sobald wieder Netz da ist, siehst du sie hier.
+                        </p>
+                    </div>
+                )}
+
+                {saldenFreigegeben && error && (
                     <div className="bg-red-50 text-red-600 p-4 rounded-xl text-center">
                         {error}
                     </div>
                 )}
 
-                {hatEingerichtetesZeitkonto(zeitkontoStatus) && saldo && !loading && (
+                {saldenFreigegeben && saldo && !loading && (
                     <>
                         {/* Urlaub Section */}
                         <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
