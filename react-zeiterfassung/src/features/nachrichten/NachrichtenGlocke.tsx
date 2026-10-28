@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Ban, Bell, BellOff, Check, CheckCheck, CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { AlertTriangle, Ban, Bell, BellOff, CalendarClock, Check, CheckCheck, CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import { Drawer, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from '../../components/ui/drawer'
 import { useToast } from '../../components/ui/toast'
 import { cn } from '../../lib/utils'
@@ -21,6 +21,9 @@ function NachrichtIcon({ nachricht }: { nachricht: Nachricht }) {
     if (nachricht.art === 'STORNIERT') {
         return <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100"><Ban aria-hidden="true" className="h-5 w-5 text-slate-600" /></span>
     }
+    if (nachricht.art === 'UEBERSCHNEIDUNG') {
+        return <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100"><CalendarClock aria-hidden="true" className="h-5 w-5 text-amber-700" /></span>
+    }
     if (nachricht.art === 'ABGELEHNT') {
         return <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100"><XCircle aria-hidden="true" className="h-5 w-5 text-rose-600" /></span>
     }
@@ -33,6 +36,7 @@ const TITEL_FARBE: Record<string, string> = {
     GENEHMIGT: 'text-emerald-700',
     ABGELEHNT: 'text-rose-700',
     STORNIERT: 'text-slate-600',
+    UEBERSCHNEIDUNG: 'text-amber-700',
 }
 
 /**
@@ -122,7 +126,12 @@ export function NachrichtenGlocke({ mitarbeiterId, neuLadenAusloeser }: Nachrich
                                     <li key={nachricht.key} data-testid="nachricht" className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                                         <button
                                             type="button"
-                                            onClick={() => { setOffen(false); navigate(nachricht.ziel) }}
+                                            onClick={() => {
+                                                // Reine Info (Überschneidung): Antippen gilt als gelesen; schlägt das fehl, meldet ein Toast es.
+                                                if (nachricht.gelesenBeimOeffnen) void gelesen(nachricht)
+                                                setOffen(false)
+                                                navigate(nachricht.ziel)
+                                            }}
                                             className="flex min-h-11 min-w-0 flex-1 items-start gap-3 rounded-xl p-1 text-left hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
                                         >
                                             <NachrichtIcon nachricht={nachricht} />

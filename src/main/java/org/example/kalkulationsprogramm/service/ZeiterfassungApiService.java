@@ -34,6 +34,7 @@ import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
 import org.example.kalkulationsprogramm.domain.ProjektProduktkategorie;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
+import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidung;
 import org.example.kalkulationsprogramm.domain.ZeitkontoVersion;
 import org.example.kalkulationsprogramm.dto.Arbeitsgang.ArbeitsgangResponseDto;
 import org.example.kalkulationsprogramm.mapper.ArbeitsgangMapper;
@@ -86,6 +87,7 @@ public class ZeiterfassungApiService {
     private final ZeitkontoKorrekturService zeitkontoKorrekturService;
     private final MonatsSaldoService monatsSaldoService;
     private final UrlaubskontoService urlaubskontoService;
+    private final ZeitbuchungUeberschneidungService ueberschneidungService;
 
     // ==================== Daten abrufen ====================
 
@@ -95,11 +97,13 @@ public class ZeiterfassungApiService {
      */
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getOpenProjekte(Integer limit, String search) {
+        // Ohne Suche lädt das Handy ALLE offenen Projekte (Arbeit ohne Netz) – darum gefiltert
+        // in der Datenbank und mit Kunde in einer Abfrage statt einer je Projekt.
         List<Projekt> projekte;
         if (search != null && !search.isBlank()) {
             projekte = projektRepository.searchByBauvorhabenOrKundeOrEmail(search);
         } else {
-            projekte = projektRepository.findAll();
+            projekte = projektRepository.findOffeneMitKunde();
         }
 
         return projekte.stream()
@@ -264,21 +268,17 @@ public class ZeiterfassungApiService {
         LocalDateTime startZeit = originalStartZeit != null ? originalStartZeit : LocalDateTime.now();
         pruefeNeuenStart(mitarbeiter, startZeit.toLocalDate());
 
-        // Prüfe ob bereits eine aktive Buchung existiert. Innerhalb des Mitarbeiter-Locks
-        // ist diese Prüfung atomar: kein anderer Thread kann zwischen Read und Write
-        // eine neue Buchung anlegen.
-        List<Zeitbuchung> aktiveBuchungen = zeitbuchungRepository
-                .findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId());
-
-        if (!aktiveBuchungen.isEmpty()) {
-            throw new RuntimeException("Es läuft bereits eine Buchung. Bitte erst stoppen.");
-        }
-
         Projekt projekt = projektRepository.findById(projektId)
                 .orElseThrow(() -> new RuntimeException("Projekt nicht gefunden"));
 
         Arbeitsgang arbeitsgang = arbeitsgangRepository.findById(arbeitsgangId)
                 .orElseThrow(() -> new RuntimeException("Arbeitsgang nicht gefunden"));
+
+        // "Handy gewinnt": Was noch läuft, endet jetzt – statt den Start abzulehnen. Ohne Netz
+        // gestempelte Wechsel kommen sonst nie an ("Es läuft bereits eine Buchung"). Innerhalb
+        // des Mitarbeiter-Locks, also atomar zum Speichern unten.
+        List<ZeitbuchungUeberschneidung> meldungen = machePlatzFuerNeueBuchung(mitarbeiter, startZeit,
+                "Beendet beim Anstechen einer neuen Buchung am Handy");
 
         Zeitbuchung buchung = new Zeitbuchung();
         buchung.setMitarbeiter(mitarbeiter);
@@ -317,6 +317,7 @@ public class ZeiterfassungApiService {
         buchung.setArbeitsgangStundensatz(stundensatz);
 
         Zeitbuchung gespeichert = zeitbuchungRepository.save(buchung);
+        ueberschneidungService.handyBuchungZuordnen(meldungen, gespeichert.getId());
 
         // Audit-Protokoll: Erfassung loggen
         auditService.protokolliereErstellung(gespeichert, mitarbeiter, ErfassungsQuelle.MOBILE_APP);
@@ -435,6 +436,11 @@ public class ZeiterfassungApiService {
         // MonatsSaldo-Cache invalidieren
         monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), buchung.getStartZeit());
 
+        // Jetzt steht der Zeitraum fest: Büro-Einträge darin weichen ("Handy gewinnt").
+        if (!ZeitbuchungUeberschneidungService.istBueroEintrag(buchung)) {
+            ueberschneidungService.nachHandyBuchung(buchung, mitarbeiter);
+        }
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", buchung.getId());
         // Projekt kann bei PAUSE-Buchungen null sein
@@ -527,6 +533,11 @@ public class ZeiterfassungApiService {
 
         zeitbuchungRepository.save(buchung);
         monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), buchung.getStartZeit());
+        // Erst jetzt steht die echte Endezeit fest – Büro-Einträge darin weichen. (Nach dem
+        // Auto-Stop allein nicht: Dessen Endezeit ist nur geschätzt und darf nichts verdrängen.)
+        if (!ZeitbuchungUeberschneidungService.istBueroEintrag(buchung)) {
+            ueberschneidungService.nachHandyBuchung(buchung, mitarbeiter);
+        }
 
         log.info("Verspäteter Stop nachgetragen: Buchung {} von Mitarbeiter {} von {} auf {} korrigiert",
                 buchung.getId(), mitarbeiter.getId(), geschaetzt, originalEndeZeit);
@@ -603,45 +614,8 @@ public class ZeiterfassungApiService {
         // signalisiert hat, dass jetzt Pause ist.
         LocalDateTime pauseStartZeit = originalZeit != null ? originalZeit : LocalDateTime.now();
         pruefeNeuenStart(mitarbeiter, pauseStartZeit.toLocalDate());
-        // Deterministische Reihenfolge fuer den Audit-Trail: chronologisch nach
-        // Start der Buchung. Bei normalem Betrieb gibt es genau eine offene
-        // Buchung, dann ist die Sortierung irrelevant - aber im Recovery-Fall
-        // (mehrere offen) sollte die Buchhaltung die Beendigungs-Reihenfolge
-        // nachvollziehen koennen.
-        List<Zeitbuchung> aktiveBuchungen = zeitbuchungRepository
-                .findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId())
-                .stream()
-                .sorted(Comparator.comparing(Zeitbuchung::getStartZeit))
-                .collect(Collectors.toList());
-
-        for (Zeitbuchung buchung : aktiveBuchungen) {
-            // endeZeit muss nach startZeit liegen (gleicher Schutz wie in
-            // stopZeiterfassung). Bei Mehrfach-Aktivbuchungen kann eine
-            // spaeter gestartet sein als pauseStartZeit, dann +1 min Korrektur.
-            LocalDateTime endeZeit = pauseStartZeit;
-            if (!endeZeit.isAfter(buchung.getStartZeit())) {
-                log.warn("endeZeit ({}) <= startZeit ({}) fuer Buchung {} (Mitarbeiter {}) - korrigiere auf startZeit + 1 Min (Recovery: Pause-Start fiel in spaeter gestartete Buchung)",
-                        endeZeit, buchung.getStartZeit(), buchung.getId(), mitarbeiter.getId());
-                endeZeit = buchung.getStartZeit().plusMinutes(1);
-            }
-            buchung.setEndeZeit(endeZeit);
-            Duration dauer = Duration.between(buchung.getStartZeit(), buchung.getEndeZeit());
-            BigDecimal stunden = BigDecimal.valueOf(dauer.toMinutes())
-                    .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
-            buchung.setAnzahlInStunden(stunden);
-            // GoBD-Audit: Erst Version erhoehen, dann Audit protokollieren.
-            buchung.markiereAlsGeaendert(mitarbeiter);
-            auditService.protokolliereAenderung(buchung, mitarbeiter, ErfassungsQuelle.MOBILE_APP,
-                    "Beendet beim Anstechen einer Pause am Handy");
-            // saveAndFlush statt save: Der UPDATE (ende_zeit setzen) muss die DB
-            // erreichen, BEVOR der INSERT der Pause-Buchung ausgeführt wird.
-            // Ohne Flush würde Hibernate den UPDATE batchen und NACH dem INSERT
-            // senden – die Datenbank sähe dann kurz zwei offene Buchungen und würde den
-            // Unique-Index uk_zeitbuchung_aktiv_pro_mitarbeiter verletzen.
-            zeitbuchungRepository.saveAndFlush(buchung);
-            // MonatsSaldo-Cache invalidieren (analog stopZeiterfassung Zeile ~378)
-            monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), buchung.getStartZeit());
-        }
+        List<ZeitbuchungUeberschneidung> meldungen = machePlatzFuerNeueBuchung(mitarbeiter, pauseStartZeit,
+                "Beendet beim Anstechen einer Pause am Handy");
 
         // Neue Pausenbuchung erstellen - OHNE Projekt
         Zeitbuchung pauseBuchung = new Zeitbuchung();
@@ -661,6 +635,7 @@ public class ZeiterfassungApiService {
         }
 
         Zeitbuchung gespeichert = zeitbuchungRepository.save(pauseBuchung);
+        ueberschneidungService.handyBuchungZuordnen(meldungen, gespeichert.getId());
         auditService.protokolliereErstellung(gespeichert, mitarbeiter, ErfassungsQuelle.MOBILE_APP);
         // MonatsSaldo-Cache fuer den Monat der Pause invalidieren
         monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), gespeichert.getStartZeit());
@@ -672,6 +647,78 @@ public class ZeiterfassungApiService {
         result.put("status", "gestartet");
 
         return result;
+    }
+
+    /**
+     * Schafft Platz für eine neue Handy-Buchung ab {@code zeit} (Anstechen, Pause).
+     *
+     * <ol>
+     * <li>Eigene noch laufende Handy-Buchungen enden zu dieser Zeit – wie ein Stop, inklusive
+     * Überschneidungs-Prüfung ihres Zeitraums. Chronologisch, damit das Protokoll die
+     * Reihenfolge zeigt (mehrere offene gibt es nur bei Altdaten).</li>
+     * <li>Büro-Einträge, die jetzt laufen oder genau jetzt beginnen, weichen
+     * ({@link ZeitbuchungUeberschneidungService#vorNeuerHandyBuchung}).</li>
+     * </ol>
+     * Die Reihenfolge zählt: Ein in Schritt 1 abgeteilter Büro-Rest beginnt genau bei
+     * {@code zeit} und muss in Schritt 2 weichen, bevor die neue Buchung (gleiche Startzeit,
+     * eine offene Buchung je Mitarbeiter) gespeichert wird.
+     *
+     * @return die Meldungen aus Schritt 2 – die neue Buchung wird danach dort eingetragen
+     */
+    private List<ZeitbuchungUeberschneidung> machePlatzFuerNeueBuchung(Mitarbeiter mitarbeiter, LocalDateTime zeit,
+            String grund) {
+        List<Zeitbuchung> eigeneLaufende = zeitbuchungRepository
+                .findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId())
+                .stream()
+                .filter(z -> !ZeitbuchungUeberschneidungService.istBueroEintrag(z))
+                .sorted(Comparator.comparing(Zeitbuchung::getStartZeit))
+                .collect(Collectors.toList());
+
+        for (Zeitbuchung buchung : eigeneLaufende) {
+            // Liegt die neue Buchung deutlich VOR dem Start der laufenden, kam sie in falscher
+            // Reihenfolge an (z. B. zweites Gerät). Kürzen würde beide Zeiten still verfälschen –
+            // wie beim verspäteten Feierabend ablehnen; das Handy legt sie in die Reparatur-Liste.
+            if (zeit.isBefore(buchung.getStartZeit().minus(UHR_ABWEICHUNG_TOLERANZ))) {
+                log.warn("Neue Buchung ({}) liegt {} Min. vor Start der laufenden Buchung {} - abgelehnt",
+                        zeit, Duration.between(zeit, buchung.getStartZeit()).toMinutes(), buchung.getId());
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Diese Buchung liegt vor der laufenden "
+                        + "Buchung und wurde nicht übernommen. Die laufende Buchung bleibt bestehen. "
+                        + "Bitte im Büro nachtragen lassen.");
+            }
+            // endeZeit muss nach startZeit liegen (gleicher Schutz wie in stopZeiterfassung):
+            // Uhr-Abweichung innerhalb der Toleranz.
+            LocalDateTime endeZeit = zeit;
+            if (!endeZeit.isAfter(buchung.getStartZeit())) {
+                log.warn("endeZeit ({}) <= startZeit ({}) fuer Buchung {} (Mitarbeiter {}) - korrigiere auf startZeit + 1 Min",
+                        endeZeit, buchung.getStartZeit(), buchung.getId(), mitarbeiter.getId());
+                endeZeit = buchung.getStartZeit().plusMinutes(1);
+            }
+            buchung.setEndeZeit(endeZeit);
+            Duration dauer = Duration.between(buchung.getStartZeit(), buchung.getEndeZeit());
+            buchung.setAnzahlInStunden(BigDecimal.valueOf(dauer.toMinutes())
+                    .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP));
+            // GoBD-Audit: Erst Version erhoehen, dann Audit protokollieren.
+            buchung.markiereAlsGeaendert(mitarbeiter);
+            auditService.protokolliereAenderung(buchung, mitarbeiter, ErfassungsQuelle.MOBILE_APP, grund);
+            // saveAndFlush statt save: Der UPDATE (ende_zeit setzen) muss die DB erreichen,
+            // BEVOR die neue Buchung eingefügt wird – sonst sähe die Datenbank kurz zwei offene
+            // Buchungen und der Unique-Index uk_zeitbuchung_aktiv_pro_mitarbeiter griffe.
+            zeitbuchungRepository.saveAndFlush(buchung);
+            monatsSaldoService.invalidiereFuerDateTime(mitarbeiter.getId(), buchung.getStartZeit());
+            ueberschneidungService.nachHandyBuchung(buchung, mitarbeiter);
+        }
+
+        List<ZeitbuchungUeberschneidung> meldungen = ueberschneidungService.vorNeuerHandyBuchung(mitarbeiter, zeit);
+
+        // Konnte ein Büro-Eintrag nicht weichen (Monat abgeschlossen, Zeit belegt), scheiterte das Speichern
+        // gleich an den Unique-Indizes. Lieber eine klare Meldung als ein Datenbankfehler.
+        if (zeitbuchungRepository.existsByMitarbeiterIdAndStartZeit(mitarbeiter.getId(), zeit)
+                || zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(mitarbeiter.getId()).stream()
+                        .anyMatch(z -> z.getEndeZeit() == null)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Zu dieser Zeit steht im Büro schon ein "
+                    + "Eintrag, der nicht automatisch angepasst werden kann. Bitte im Büro klären.");
+        }
+        return meldungen;
     }
 
     /**

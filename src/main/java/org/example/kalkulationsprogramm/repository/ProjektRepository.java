@@ -18,6 +18,13 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProjektRepository extends JpaRepository<Projekt, Long>, JpaSpecificationExecutor<Projekt> {
+
+        /**
+         * Alle offenen Projekte mit Kunde in einer Abfrage – für die Projektliste der
+         * Zeiterfassungs-App, die das Handy für die Arbeit ohne Netz komplett speichert.
+         */
+        @Query("SELECT p FROM Projekt p LEFT JOIN FETCH p.kundenId WHERE p.abgeschlossen = false ORDER BY p.id DESC")
+        List<Projekt> findOffeneMitKunde();
         @Query("SELECT COUNT(p) FROM Projekt p JOIN p.projektProduktkategorien pk WHERE pk.produktkategorie.id = :kategorieId")
         long countByProduktkategorieId(@Param("kategorieId") Long produktkategorieId);
 

@@ -36,6 +36,7 @@ import org.example.kalkulationsprogramm.domain.ProjektNotiz;
 import org.example.kalkulationsprogramm.domain.ReklamationStatus;
 import org.example.kalkulationsprogramm.domain.Urlaubsantrag;
 import org.example.kalkulationsprogramm.domain.Zeitbuchung;
+import org.example.kalkulationsprogramm.domain.ZeitbuchungUeberschneidung;
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungEintragDto;
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungKategorieDto;
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungZusammenfassungDto;
@@ -62,6 +63,7 @@ import org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeit;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
 import org.example.kalkulationsprogramm.service.ZeiterfassungEinstellungService;
+import org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBenachrichtigungService;
 import org.example.kalkulationsprogramm.service.telefon.TelefonBerechtigungService;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -107,7 +109,7 @@ public class BenachrichtigungService {
             "ANFRAGEN_WEBSEITE", "EMAILS", "EMAILS_PROJECTS", "EMAILS_OFFERS", "EMAILS_SUPPLIERS",
             "EMAILS_SPAM", "EMAILS_NEWSLETTER", "URLAUBSANTRAEGE", "BAUTAGEBUCH", "EINGANG_FAELLIG",
             "AUSGANG_UEBERFAELLIG", "RECHNUNGEN", "TERMINE", "LIEFERSCHEINE", "REKLAMATIONEN",
-            "FREIGABEN_ANGENOMMEN", "ZEITEN_AUTO_BEENDET", "MONATSABSCHLUSS", "SPRACHNACHRICHTEN",
+            "FREIGABEN_ANGENOMMEN", "ZEITEN_AUTO_BEENDET", "ZEITEN_UEBERSCHNEIDUNG", "MONATSABSCHLUSS", "SPRACHNACHRICHTEN",
             "VERPASSTE_ANRUFE", "SICHERUNG", "UPDATE");
 
     private static final String EMAIL_ART = "EMAIL";
@@ -133,6 +135,7 @@ public class BenachrichtigungService {
     private final PostfachSichtbarkeitService postfachSichtbarkeitService;
     private final EmailGelesenService emailGelesenService;
     private final ZeiterfassungEinstellungService zeiterfassungEinstellungService;
+    private final ZeitbuchungUeberschneidungService ueberschneidungService;
     private final FrontendUserProfileService frontendUserProfileService;
     private final BenachrichtigungErledigtService erledigtService;
     private final BetriebsstatusService betriebsstatusService;
@@ -412,6 +415,7 @@ public class BenachrichtigungService {
         quellen.add(new QuellenAufruf("FREIGABEN_ANGENOMMEN", this::freigaben));
         if (zeiterfassung) {
             quellen.add(new QuellenAufruf("ZEITEN_AUTO_BEENDET", this::zeitenAutomatischBeendet));
+            quellen.add(new QuellenAufruf("ZEITEN_UEBERSCHNEIDUNG", this::zeitenUeberschneidung));
         }
 
         // Only the authenticated session decides who receives closure reminders. Ohne Zeiterfassungs-Recht
@@ -754,6 +758,23 @@ public class BenachrichtigungService {
                             "Kein Feierabend gestempelt – automatisch auf " + bis + " Uhr gesetzt",
                             z.getStartZeit().toString(),
                             "/zeitbuchungen?mitarbeiterId=" + (ma != null ? ma.getId() : ""));
+                }, 5);
+    }
+
+    /**
+     * Überschneidungen: Eine (oft offline gestempelte) Handy-Buchung hatte Vorrang vor einem
+     * Eintrag im Büro, der deshalb gekürzt, geteilt oder entfernt wurde – das Büro soll es wissen.
+     */
+    private Quelle<?> zeitenUeberschneidung() {
+        List<ZeitbuchungUeberschneidung> meldungen = ueberschneidungService.fuerBuero();
+        return Quelle.von("ZEITEN_UEBERSCHNEIDUNG", "Überschneidungen Handy/Büro", "CalendarClock", "/zeitbuchungen",
+                meldungen,
+                u -> "ZEIT_UEBERSCHNEIDUNG:" + u.getId(),
+                u -> {
+                    ZeitbuchungUeberschneidungService.Anzeige anzeige = ueberschneidungService.anzeigeFuerBuero(u);
+                    return new BenachrichtigungEintragDto("ZEIT_UEBERSCHNEIDUNG:" + u.getId(), "ZEIT_UEBERSCHNEIDUNG",
+                            anzeige.titel(), anzeige.text(), u.getGeaendertAm().toString(),
+                            "/zeitbuchungen?mitarbeiterId=" + u.getMitarbeiter().getId());
                 }, 5);
     }
 

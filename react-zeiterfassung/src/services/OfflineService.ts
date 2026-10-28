@@ -3,6 +3,7 @@
 // PRINCIPLE: Client ALWAYS wins when pending entries exist.
 // The local session is NEVER deleted by sync logic.
 import { leseFehlermeldung } from '../lib/apiFehler'
+import { istVollstaendigerZeitkontoStatus, type ZeitkontoStatus } from '../types/zeitkonto'
 import {
     arbeiteWarteschlangeAb,
     HINTERGRUND_SYNC_TAG,
@@ -70,7 +71,7 @@ const CACHE_KEYS = {
     arbeitsgaenge_personal: 'arbeitsgaenge_personal', // User specific list
     kunden: 'kunden',
     heute_gearbeitet: 'heute_gearbeitet', // Today's hours (cached)
-    buchungszeitfenster: 'buchungszeitfenster', // Booking time window config
+    zeitkonto_status: 'zeitkonto_status', // Arbeitszeit eingerichtet? (je Mitarbeiter-Token)
     tagesbuchungen: 'tagesbuchungen', // Daily bookings per employee/date
     lastSync: 'last_sync',
 }
@@ -200,33 +201,52 @@ function generateUUID() {
     });
 }
 
+/**
+ * So lange warten Listen-Abrufe auf den Server, bevor der Stand vom Handy genommen wird.
+ * Bei schwachem Netz („Balken da, aber nichts kommt durch“) soll der Mitarbeiter im
+ * Keller nicht lange vor einer leeren Liste stehen.
+ */
+const LISTEN_ZEITLIMIT_MS = 3000
+
+/** Wartezeit für den Arbeitszeit-Status – so kurz wie bei „heute gearbeitet“. */
+const ZEITKONTO_ZEITLIMIT_MS = 2500
+
+/** Eine Liste samt Herkunft: `ausSpeicher` = vom letzten Abgleich auf dem Handy, nicht frisch vom Server. */
+export interface ListeMitHerkunft<T> {
+    daten: T[]
+    ausSpeicher: boolean
+}
+
 // Generic fetch with IDB cache fallback
-async function fetchWithCache<T>(url: string, cacheKey: string): Promise<T[]> {
+async function fetchMitHerkunft<T>(url: string, cacheKey: string): Promise<ListeMitHerkunft<T>> {
     const db = await oeffneBuchungsDB()
     const isOnline = navigator.onLine
 
     if (isOnline) {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), LISTEN_ZEITLIMIT_MS)
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout
-
             const res = await fetch(url, { signal: controller.signal })
-            clearTimeout(timeoutId);
-
             if (res.ok) {
                 const data = await res.json()
                 // Cache the fresh data in IDB
                 await db.put('master_data', { key: cacheKey, value: data })
-                return Array.isArray(data) ? data : []
+                return { daten: Array.isArray(data) ? data : [], ausSpeicher: false }
             }
         } catch (error) {
             console.warn('Network request failed, falling back to cache', error)
+        } finally {
+            clearTimeout(timeoutId)
         }
     }
 
     // Offline or error - return cached data from IDB
     const cached = await db.get('master_data', cacheKey)
-    return (cached?.value as T[] | undefined) || []
+    return { daten: (cached?.value as T[] | undefined) || [], ausSpeicher: true }
+}
+
+async function fetchWithCache<T>(url: string, cacheKey: string): Promise<T[]> {
+    return (await fetchMitHerkunft<T>(url, cacheKey)).daten
 }
 
 export const OfflineService = {
@@ -285,6 +305,9 @@ export const OfflineService = {
             const token = localStorage.getItem('zeiterfassung_token') || undefined
 
             await Promise.all([
+                // Arbeitszeit-Status merken: Ohne Netz zeigt die App sonst fälschlich
+                // „keine Arbeitszeit eingerichtet“ und sperrt Pause und Wechsel.
+                token ? OfflineService.getZeitkontoStatus(token) : Promise.resolve(null),
                 OfflineService.getKategorien(),
                 OfflineService.getArbeitsgaenge(), // Global
                 OfflineService.getArbeitsgaenge(token), // Personal (für Zeiterfassung!)
@@ -337,19 +360,29 @@ export const OfflineService = {
         return entry ? new Date(entry.value as string) : null
     },
 
-    // Fetch with automatic caching - increased limit for time tracking
+    // Alle offenen Projekte (ohne limit liefert der Server alle nicht abgeschlossenen),
+    // damit ohne Netz jedes Projekt zum Anstechen bereitsteht.
     async getProjekte() {
-        return fetchWithCache('/api/zeiterfassung/projekte?limit=100', CACHE_KEYS.projekte)
+        return fetchWithCache('/api/zeiterfassung/projekte', CACHE_KEYS.projekte)
+    },
+
+    /** Wie getProjekte, meldet aber zusätzlich, ob die Liste vom Handy-Speicher kommt (ohne Verbindung). */
+    async getProjekteMitHerkunft() {
+        return fetchMitHerkunft('/api/zeiterfassung/projekte', CACHE_KEYS.projekte)
     },
 
     async searchProjekte(query: string) {
         if (!query || query.length < 2) return this.getProjekte();
         // Search is usually online-only or returns non-cached results
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), LISTEN_ZEITLIMIT_MS)
         try {
-            const res = await fetch(`/api/zeiterfassung/projekte?search=${encodeURIComponent(query)}`)
+            const res = await fetch(`/api/zeiterfassung/projekte?search=${encodeURIComponent(query)}`, { signal: controller.signal })
             if (res.ok) return await res.json();
         } catch (error) {
             console.warn('Search projects failed', error);
+        } finally {
+            clearTimeout(timeoutId)
         }
         // Fallback to local filter if offline
         const cached = await this.getProjekte() as ProjektCacheEntry[]
@@ -685,30 +718,46 @@ export const OfflineService = {
         await db.clear('pending')
     },
 
-    // === BUCHUNGSZEITFENSTER ===
-    // Fetches and caches the allowed booking time window for the employee
-    async getBuchungszeitfenster(token: string): Promise<{ buchungStartZeit: string | null; buchungEndeZeit: string | null }> {
+    // === ARBEITSZEIT-STATUS ===
+    /**
+     * Ist für den Mitarbeiter eine Arbeitszeit eingerichtet? Online kommt die Antwort vom
+     * Server und wird auf dem Handy gemerkt. Ohne Netz, bei Zeitüberschreitung oder
+     * Serverfehler (5xx) gilt der gemerkte Stand (`ausCache: true`); gibt es keinen,
+     * ist `status` null – das heißt „unbekannt“, nicht „nicht eingerichtet“.
+     * Eine echte Server-Antwort (200) gilt immer und ersetzt den gemerkten Stand.
+     */
+    async getZeitkontoStatus(token: string): Promise<{ status: ZeitkontoStatus | null; ausCache: boolean }> {
         const db = await oeffneBuchungsDB()
-        const cacheKey = `${CACHE_KEYS.buchungszeitfenster}_${token}`
+        const cacheKey = `${CACHE_KEYS.zeitkonto_status}_${token}`
 
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), ZEITKONTO_ZEITLIMIT_MS)
         try {
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 2000)
             const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`, {
                 signal: controller.signal,
             })
-            clearTimeout(timeoutId)
             if (res.ok) {
-                const data = await res.json()
-                await db.put('master_data', { key: cacheKey, value: data })
-                return data
+                const data: unknown = await res.json()
+                if (istVollstaendigerZeitkontoStatus(data)) {
+                    await db.put('master_data', { key: cacheKey, value: data })
+                    return { status: data, ausCache: false }
+                }
+                // Unvollständige Antwort: nicht merken, gemerkten Stand nehmen.
+            } else if (!istVoruebergehenderFehler(res.status)) {
+                // Echte Ablehnung (z. B. Anmeldung ungültig): kein Urteil über die Arbeitszeit.
+                // Die Buchung selbst prüft der Server ohnehin.
+                return { status: null, ausCache: false }
             }
         } catch {
-            // Offline / timeout - use cache
+            // Offline / Zeitüberschreitung – gemerkten Stand nehmen
+        } finally {
+            clearTimeout(timeoutId)
         }
         const cached = await db.get('master_data', cacheKey)
-        return (cached?.value as { buchungStartZeit: string | null; buchungEndeZeit: string | null } | undefined)
-            || { buchungStartZeit: null, buchungEndeZeit: null }
+        return {
+            status: istVollstaendigerZeitkontoStatus(cached?.value) ? cached.value : null,
+            ausCache: true,
+        }
     },
 }
 

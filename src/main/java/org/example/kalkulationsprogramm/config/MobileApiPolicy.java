@@ -15,6 +15,9 @@ public final class MobileApiPolicy {
         route("GET", "/api/zeiterfassung/projekte/" + ID + "/bilder"),
         route("GET", "/api/zeiterfassung/(?:arbeitsgaenge|aktiv|heute|saldo|buchungen|urlaubsverfall|buchungszeitfenster|langzeitkrankmeldung)/[^/]+"),
         route("POST", "/api/zeiterfassung/(?:start|stop|pause)"),
+        // Eigene Überschneidungs-Meldungen ("Handy gewinnt"); nur die eigenen, siehe Controller.
+        route("GET", "/api/zeiterfassung/ueberschneidungen"),
+        route("PUT", "/api/zeiterfassung/ueberschneidungen/" + ID + "/gesehen"),
         route("GET", "/api/urlaub/(?:antraege|resturlaub|typen|vorschau)"),
         route("POST", "/api/urlaub/antraege"),
         // Eigenen offenen Antrag zurückziehen; die Fachregel (nur eigener, nur offen) steht im Controller/Service.

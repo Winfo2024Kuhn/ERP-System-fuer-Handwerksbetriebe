@@ -4,7 +4,7 @@ import { Play, FolderOpen, Users, Clock, Loader2, ChevronRight, ArrowRightLeft, 
 import { createOperationId, OfflineService, sendeBuchung, startZeitAusErgebnis, type FailedEntry } from '../services/OfflineService'
 import NetworkStatusBadge from '../components/NetworkStatusBadge'
 import FailedEntriesModal from '../components/FailedEntriesModal'
-import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { zeitbuchungGesperrt, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
 import { NachrichtenGlocke } from '../features/nachrichten/NachrichtenGlocke'
 import { useToast } from '../components/ui/toast'
 
@@ -116,8 +116,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
     const [heuteStunden, setHeuteStunden] = useState(0)
     const [heuteMinuten, setHeuteMinuten] = useState(0)
     const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
-    const [zeitkontoWirdGeprueft, setZeitkontoWirdGeprueft] = useState(true)
-    const [zeitkontoFehler, setZeitkontoFehler] = useState<string | null>(null)
+    // Bleibt nach der ersten Prüfung true: Ein Nachladen nach dem Abgleich soll die
+    // Knöpfe nicht kurz verschwinden lassen.
+    const [zeitkontoGeprueft, setZeitkontoGeprueft] = useState(false)
 
     // Checkbox/Switch logic
     const [viewMode, setViewMode] = useState<'activities' | 'projects'>('activities')
@@ -155,28 +156,18 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
     const [failedEntries, setFailedEntries] = useState<FailedEntry[]>([])
     const [showFailedModal, setShowFailedModal] = useState(false)
 
-    const hatZeitkonto = hatEingerichtetesZeitkonto(zeitkontoStatus)
+    // Zeitbuchen (Pause, Wechsel, Abwesenheit, Salden) nur ausblenden, wenn der Server –
+    // oder sein auf dem Handy gemerkter Stand – ausdrücklich „nicht eingerichtet“ sagt.
+    // Ohne Netz und ohne gemerkten Stand bleibt alles da („Handy gewinnt“).
+    const darfZeitBuchen = zeitkontoGeprueft && !zeitbuchungGesperrt(zeitkontoStatus)
 
-    const loadZeitkontoStatus = async () => {
+    const loadZeitkontoStatus = () => {
         const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return
-
-        setZeitkontoWirdGeprueft(true)
-        setZeitkontoFehler(null)
-        try {
-            const res = await fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
-            if (!res.ok) throw new Error('Status konnte nicht geladen werden')
-            const data = await res.json() as ZeitkontoStatus
-            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') {
-                throw new Error('Unvollständige Antwort')
-            }
-            setZeitkontoStatus(data)
-        } catch {
-            setZeitkontoStatus(null)
-            setZeitkontoFehler('Die Arbeitszeit-Einrichtung konnte nicht geprüft werden. Bitte später erneut versuchen.')
-        } finally {
-            setZeitkontoWirdGeprueft(false)
-        }
+        if (!token) return Promise.resolve()
+        return OfflineService.getZeitkontoStatus(token)
+            .then(({ status }) => setZeitkontoStatus(status))
+            .catch(() => setZeitkontoStatus(null)) // Speicher nicht lesbar: unbekannt, nicht sperren
+            .finally(() => setZeitkontoGeprueft(true))
     }
 
     const loadFailedEntries = async () => {
@@ -415,9 +406,9 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
     useEffect(() => {
         // Load active session from server (primary) or localStorage (fallback)
         // Bewusste Ausnahme: Die fünf Ladefunktionen gleichen mit Server und Offline-Speicher ab und setzen
-        // ihren Zustand meist erst nach await (das erkennt die Regel nicht). Synchron übernehmen nur
-        // loadActiveSession (im Handy gespeicherte Buchung, Stop-Cooldown) und loadZeitkontoStatus
-        // (Ladeanzeige) etwas. Sie auf Promise-Ketten umzubauen ist ein eigener Schritt für die Offline-Logik.
+        // ihren Zustand meist erst nach await (das erkennt die Regel nicht). Synchron übernimmt nur
+        // loadActiveSession (im Handy gespeicherte Buchung, Stop-Cooldown) etwas. Sie auf Promise-Ketten
+        // umzubauen ist ein eigener Schritt für die Offline-Logik (loadZeitkontoStatus ist schon eine).
         // eslint-disable-next-line react-hooks/set-state-in-effect -- siehe Kommentar darüber
         loadActiveSession()
         loadZeitkontoStatus()
@@ -660,10 +651,21 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
     }
 
     // Open Arbeitsgang switch modal
+    // Ohne Netz kommen Tätigkeiten und Projekte vom letzten Abgleich (Handy-Speicher).
     const handleOpenArbeitsgangSwitch = async () => {
         const token = localStorage.getItem('zeiterfassung_token') || undefined
-        const agData = await OfflineService.getArbeitsgaenge(token) as Arbeitsgang[]
-        const projData = await OfflineService.getProjekte() as ProjektSummary[]
+        let agData: Arbeitsgang[]
+        let projData: ProjektSummary[]
+        try {
+            // Gleichzeitig laden: Bei schwachem Netz wartet man sonst zweimal aufs Zeitlimit.
+            ;[agData, projData] = await Promise.all([
+                OfflineService.getArbeitsgaenge(token) as Promise<Arbeitsgang[]>,
+                OfflineService.getProjekte() as Promise<ProjektSummary[]>,
+            ])
+        } catch {
+            toast.error('Die Tätigkeiten konnten nicht geladen werden. Bitte noch einmal tippen.')
+            return
+        }
 
         setArbeitsgaenge(agData)
         setProjekte(projData)
@@ -679,8 +681,14 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
     const handleOpenKategorieSwitch = async () => {
         if (!activeSession?.projektId) return
 
-        // Load categories for current project
-        const katData = await OfflineService.getKategorien(activeSession.projektId) as Array<{ id: number; name: string }>
+        // Load categories for current project (ohne Netz vom letzten Abgleich)
+        let katData: Array<{ id: number; name: string }>
+        try {
+            katData = await OfflineService.getKategorien(activeSession.projektId) as Array<{ id: number; name: string }>
+        } catch {
+            toast.error('Die Kategorien konnten nicht geladen werden. Bitte noch einmal tippen.')
+            return
+        }
         setKategorien(katData)
         setShowKategorieSwitch(true)
     }
@@ -896,7 +904,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
                         </div>
 
                         {/* Action Buttons */}
-                        {hatZeitkonto && (
+                        {darfZeitBuchen && (
                         <div className="grid grid-cols-3 gap-2 mb-3">
                             {isAbwesenheitOderPause(activeSession.typ) ? (
                                 <>
@@ -938,7 +946,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
                         )}
 
                         {/* Pause Button (above Gehen, same size) */}
-                        {hatZeitkonto && !isAbwesenheitOderPause(activeSession.typ) && (
+                        {darfZeitBuchen && !isAbwesenheitOderPause(activeSession.typ) && (
                             <button
                                 onClick={handlePause}
                                 disabled={actionInProgress}
@@ -959,7 +967,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
                             Gehen (Feierabend)
                         </button>
                     </div>
-                ) : hatZeitkonto ? (
+                ) : darfZeitBuchen ? (
                     <button
                         onClick={() => navigate('/zeiterfassung')}
                         className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-2xl p-6 shadow-sm transition-colors"
@@ -984,9 +992,8 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
                             <div>
                                 <p className="font-semibold text-slate-900">Zeiterfassung derzeit nicht verfügbar</p>
                                 <p className="mt-1 text-sm text-slate-700">
-                                    {zeitkontoWirdGeprueft ? 'Die Arbeitszeit-Einrichtung wird geprüft.' : zeitkontoHinweis(zeitkontoStatus)}
+                                    {zeitkontoGeprueft ? zeitkontoHinweis(zeitkontoStatus) : 'Die Arbeitszeit-Einrichtung wird geprüft.'}
                                 </p>
-                                {zeitkontoFehler && <p className="mt-1 text-sm text-amber-800">{zeitkontoFehler}</p>}
                             </div>
                         </div>
                     </div>
@@ -1067,7 +1074,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
                         </div>
                     </button>
 
-                    {hatZeitkonto && <button
+                    {darfZeitBuchen && <button
                         onClick={() => navigate('/urlaub')}
                         className="w-full bg-white border border-slate-200 rounded-xl p-4 hover:border-rose-200 hover:shadow-md transition-all text-left flex items-center gap-4"
                     >
@@ -1080,7 +1087,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
                         </div>
                     </button>}
 
-                    {hatZeitkonto && <button
+                    {darfZeitBuchen && <button
                         onClick={() => navigate('/salden')}
                         className="w-full bg-white border border-slate-200 rounded-xl p-4 hover:border-rose-200 hover:shadow-md transition-all text-left flex items-center gap-4"
                     >
@@ -1095,7 +1102,7 @@ export default function DashboardPage({ mitarbeiter, syncStatus, abgleichNummer 
                 </div>
 
                 {/* Heute Stats */}
-                {hatZeitkonto && <button
+                {darfZeitBuchen && <button
                     onClick={() => navigate('/tagesbuchungen')}
                     className="w-full bg-white border border-slate-200 rounded-xl p-4 text-left hover:border-rose-200 hover:shadow-sm transition-all"
                 >

@@ -61,6 +61,7 @@ class BenachrichtigungMailSichtbarkeitTest {
     @MockitoBean private org.example.kalkulationsprogramm.service.ZeiterfassungSichtbarkeitService zeiterfassungSichtbarkeitService;
     @MockitoBean private TelefonBenachrichtigungService telefonBenachrichtigungService;
     @MockitoBean private ZeiterfassungEinstellungService zeiterfassungEinstellungService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService ueberschneidungService;
     @MockitoBean private FrontendUserProfileService frontendUserProfileService;
     @MockitoBean private BetriebsstatusService betriebsstatusService;
 

@@ -80,6 +80,7 @@ class BenachrichtigungServiceTest {
     @Mock org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
     @Mock BenachrichtigungErledigtService erledigtService;
     @Mock BetriebsstatusService betriebsstatusService;
+    @Mock org.example.kalkulationsprogramm.service.ZeitbuchungUeberschneidungService ueberschneidungService;
     @Mock org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     @Mock org.example.kalkulationsprogramm.service.EmailGelesenService emailGelesenService;
