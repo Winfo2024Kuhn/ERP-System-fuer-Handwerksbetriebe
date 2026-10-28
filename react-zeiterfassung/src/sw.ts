@@ -376,6 +376,15 @@ syncSelf.addEventListener('sync', (event: SyncEvent) => {
   event.waitUntil(buchungenImHintergrundSenden())
 })
 
+/**
+ * Wohin ein Tipp auf die Nachricht führt. Die Überschneidungs-Nachricht kommt mit „/“ –
+ * das wäre das PC-Programm. Alles außerhalb der Handy-App öffnet dort die Startseite.
+ */
+function zielAdresse(typ: string, url: string | undefined, fallbackUrl: string): string {
+  if (typ === 'ZEIT_UEBERSCHNEIDUNG') return url && url.startsWith('/zeiterfassung') ? url : fallbackUrl
+  return url || fallbackUrl
+}
+
 // ─── Web Push Event: Server-sent push notifications (iOS lock screen support) ───
 self.addEventListener('push', (event) => {
   if (!event.data) {
@@ -432,6 +441,12 @@ self.addEventListener('push', (event) => {
           tag = 'pause-erinnerung'
           fallbackUrl = '/zeiterfassung/zeiterfassung'
           break
+        case 'ZEIT_UEBERSCHNEIDUNG':
+          // Handy-Buchung hat einen Büro-Eintrag gekürzt: eigene Nachricht je Fall.
+          icon = '📆'
+          tag = `zeit-ueberschneidung-${payload.timestamp}`
+          fallbackUrl = '/zeiterfassung/'
+          break
         default:
           icon = '🔔'
           tag = `push-${payload.timestamp}`
@@ -447,7 +462,7 @@ self.addEventListener('push', (event) => {
         badge: '/zeiterfassung/pwa-192x192.png',
         tag,
         requireInteraction: true,
-        data: { url: payload.url || fallbackUrl }
+        data: { url: zielAdresse(payload.type, payload.url, fallbackUrl) }
       }
       if (payload.type === 'pause') optionen.renotify = true
       await self.registration.showNotification(`${icon} ${payload.title}`, optionen)

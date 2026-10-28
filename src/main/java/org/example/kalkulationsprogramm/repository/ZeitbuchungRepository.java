@@ -129,6 +129,19 @@ public interface ZeitbuchungRepository extends JpaRepository<Zeitbuchung, Long> 
         List<Zeitbuchung> findByAutomatischBeendetTrueAndStartZeitAfterOrderByStartZeitDesc(LocalDateTime ab);
 
         /**
+         * Alle Buchungen eines Mitarbeiters, die den Zeitraum [von, bis) berühren – auch noch
+         * laufende. Grundlage für "Handy gewinnt" bei Überschneidungen mit Büro-Einträgen.
+         */
+        @Query("SELECT z FROM Zeitbuchung z WHERE z.mitarbeiter.id = :mitarbeiterId "
+                        + "AND z.startZeit < :bis AND (z.endeZeit IS NULL OR z.endeZeit > :von) "
+                        + "ORDER BY z.startZeit ASC")
+        List<Zeitbuchung> findUeberlappende(@Param("mitarbeiterId") Long mitarbeiterId,
+                        @Param("von") LocalDateTime von, @Param("bis") LocalDateTime bis);
+
+        /** Beginnt beim Mitarbeiter schon eine Buchung genau zu dieser Zeit? (Unique-Index Mitarbeiter + Start) */
+        boolean existsByMitarbeiterIdAndStartZeit(Long mitarbeiterId, LocalDateTime startZeit);
+
+        /**
          * Summiert geleistete Stunden eines Mitarbeiters im Zeitraum, gefiltert nach
          * Projekt-Art (z.B. INTERN/GARANTIE fuer unproduktive, PAUSCHAL/REGIE fuer
          * produktive Stunden). Pausen werden ignoriert.

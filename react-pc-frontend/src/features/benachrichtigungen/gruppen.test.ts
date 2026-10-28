@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { NotificationSummary, RecentItemDto } from '../../components/layout/notification-helpers';
+import { kategorieFuerEintrag, type NotificationSummary, type RecentItemDto } from '../../components/layout/notification-helpers';
 import { EINTRAG_ICONS, GRUPPEN, gruppeZuId, gruppiere, themaAusAdresse } from './gruppen';
 
 function eintrag(id: string, type: string, link = ''): RecentItemDto {
@@ -47,7 +47,7 @@ describe('GRUPPEN', () => {
             'ANFRAGEN_WEBSEITE', 'AUSGANG_UEBERFAELLIG', 'BAUTAGEBUCH', 'EINGANG_FAELLIG', 'EMAILS', 'EMAILS_NEWSLETTER',
             'EMAILS_OFFERS', 'EMAILS_PROJECTS', 'EMAILS_SPAM', 'EMAILS_SUPPLIERS', 'FREIGABEN_ANGENOMMEN', 'LIEFERSCHEINE',
             'MONATSABSCHLUSS', 'RECHNUNGEN', 'REKLAMATIONEN', 'SICHERUNG', 'SPRACHNACHRICHTEN', 'TERMINE', 'UPDATE',
-            'URLAUBSANTRAEGE', 'VERPASSTE_ANRUFE', 'ZEITEN_AUTO_BEENDET',
+            'URLAUBSANTRAEGE', 'VERPASSTE_ANRUFE', 'ZEITEN_AUTO_BEENDET', 'ZEITEN_UEBERSCHNEIDUNG',
         ]);
     });
 
@@ -127,5 +127,25 @@ describe('themaAusAdresse / gruppeZuId', () => {
         expect(gruppeZuId('betrieb')?.label).toBe('Sicherung & Updates');
         expect(gruppeZuId('sonstiges')?.label).toBe('Weitere Meldungen');
         expect(gruppeZuId('gibt-es-nicht')).toBeUndefined();
+    });
+});
+
+describe('Überschneidungen Handy/Büro', () => {
+    it('landen unter „Zeiten prüfen“ mit eigenem Symbol und gehören zu ihrer Kategorie', () => {
+        const summary: NotificationSummary = {
+            totalCount: 1,
+            categories: [{
+                type: 'ZEITEN_UEBERSCHNEIDUNG', label: 'Überschneidungen Handy/Büro', count: 1,
+                icon: 'CalendarClock', link: '/zeitbuchungen',
+            }],
+            recentItems: [eintrag('ZEIT_UEBERSCHNEIDUNG:3', 'ZEIT_UEBERSCHNEIDUNG', '/zeitbuchungen?mitarbeiterId=7')],
+        };
+
+        const gruppen = gruppiere(summary);
+
+        expect(gruppen.map(g => g.gruppe.id)).toEqual(['zeiterfassung']);
+        expect(gruppen[0].eintraege.map(e => e.id)).toEqual(['ZEIT_UEBERSCHNEIDUNG:3']);
+        expect(EINTRAG_ICONS.ZEIT_UEBERSCHNEIDUNG).toBeDefined();
+        expect(kategorieFuerEintrag({ type: 'ZEIT_UEBERSCHNEIDUNG', link: '' })).toBe('ZEITEN_UEBERSCHNEIDUNG');
     });
 });

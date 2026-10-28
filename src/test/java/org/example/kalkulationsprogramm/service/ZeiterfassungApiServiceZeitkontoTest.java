@@ -47,6 +47,7 @@ class ZeiterfassungApiServiceZeitkontoTest {
     @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
     @Mock private MonatsSaldoService monatsSaldoService;
     @Mock private UrlaubskontoService urlaubskontoService;
+    @Mock private ZeitbuchungUeberschneidungService ueberschneidungService;
     @InjectMocks private ZeiterfassungApiService service;
 
     private static final String TOKEN = "test-token-max-mustermann";

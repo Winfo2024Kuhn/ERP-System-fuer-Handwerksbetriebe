@@ -89,6 +89,7 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
     @Mock private UrlaubsverfallService urlaubsverfallService;
 
     @Mock private MonatsSaldoService monatsSaldoService;
+    @Mock private ZeitbuchungUeberschneidungService ueberschneidungService;
 
     private ZeiterfassungApiService service;
 
@@ -106,7 +107,7 @@ class TagesSollCharakterisierungZeiterfassungApiTest {
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
                 lieferantenRepository, feiertagService, auditService, tagesSollService,
                 zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
-                org.mockito.Mockito.mock(UrlaubskontoService.class));
+                org.mockito.Mockito.mock(UrlaubskontoService.class), ueberschneidungService);
 
         // Keine Zeitbuchungen/Abwesenheiten/Korrekturen im Fixture-Zeitraum - isoliert
         // die Zusicherung auf die Feiertagsberechnung. any() fuer den Zeitraum ist hier

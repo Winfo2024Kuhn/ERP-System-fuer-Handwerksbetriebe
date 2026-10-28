@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
@@ -13,7 +13,9 @@ vi.mock('../services/OfflineService', async importOriginal => ({
  ...await importOriginal<object>(),
  sendeBuchung: vi.fn(),
  OfflineService: {
-  getProjekte: vi.fn(async () => [{ id: 1, name: 'Testprojekt', projektNummer: 'TEST-1', kundenName: 'Testbetrieb' }]),
+  getZeitkontoStatus: vi.fn(async () => ({ status: { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null }, ausCache: false })),
+  getProjekteMitHerkunft: vi.fn(async () => ({ daten: [{ id: 1, name: 'Testprojekt', projektNummer: 'TEST-1', kundenName: 'Testbetrieb' }], ausSpeicher: false })),
+  getLastSyncTime: vi.fn(async () => null),
   getKategorien: vi.fn(async () => [{ id: 1, name: 'Testkategorie' }]),
   getArbeitsgaenge: vi.fn(async () => [{ id: 1, beschreibung: 'Montage' }]),
   addPendingEntryWithOperationId: vi.fn(),
@@ -21,6 +23,12 @@ vi.mock('../services/OfflineService', async importOriginal => ({
 }))
 
 const mockedSendeBuchung = vi.mocked(sendeBuchung)
+const mockedOfflineService = vi.mocked(OfflineService)
+
+const renderSeite = (pfad = '/zeiterfassung') => render(<MemoryRouter initialEntries={[pfad]}><ToastProvider><Routes>
+ <Route path="/zeiterfassung" element={<ZeiterfassungPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} />} />
+ <Route path="/" element={<div>Startseite</div>} />
+</Routes></ToastProvider></MemoryRouter>)
 
 beforeEach(() => {
  localStorage.setItem('zeiterfassung_token', 'test-token')
@@ -32,10 +40,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks() })
 
 const startePerKlick = async (pfad = '/zeiterfassung') => {
  const user = userEvent.setup()
- render(<MemoryRouter initialEntries={[pfad]}><ToastProvider><Routes>
-  <Route path="/zeiterfassung" element={<ZeiterfassungPage mitarbeiter={{ id: 1, name: 'Max Mustermann' }} />} />
-  <Route path="/" element={<div>Startseite</div>} />
- </Routes></ToastProvider></MemoryRouter>)
+ renderSeite(pfad)
  await user.click(await screen.findByText('Testprojekt'))
  await user.click(await screen.findByText('Testkategorie'))
  await user.click(await screen.findByText('Montage'))
@@ -126,4 +131,91 @@ it('Wechsel löscht keine älteren Offline-Feierabende, sondern stellt sich dahi
  expect(wartend.map(e => e.type).sort()).toEqual(['start', 'stop', 'stop'])
  expect(wartend.some(e => e.id === 'op-feierabend-gestern')).toBe(true)
  await echt.OfflineService.clearPending()
+})
+
+// ==================== OHNE VERBINDUNG ====================
+
+it('zeigt ohne Netz mit gemerktem Stand die Projektliste und einen ruhigen Hinweis mit Uhrzeit', async () => {
+ const heute = new Date()
+ heute.setHours(7, 5, 0, 0)
+ mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: { fuehrtZeitkonto: true, eingerichtet: true, hinweis: null }, ausCache: true })
+ mockedOfflineService.getProjekteMitHerkunft.mockResolvedValueOnce({ daten: [{ id: 1, name: 'Testprojekt', projektNummer: 'TEST-1', kundenName: 'Testbetrieb' }], ausSpeicher: true })
+ mockedOfflineService.getLastSyncTime.mockResolvedValueOnce(heute)
+
+ renderSeite()
+
+ expect(await screen.findByText('Testprojekt')).toBeInTheDocument()
+ const hinweis = await screen.findByText(/Ohne Verbindung – Stand 07:05 Uhr\./)
+ expect(hinweis).toHaveTextContent('Deine Buchung wird übertragen, sobald wieder Netz da ist.')
+ expect(screen.queryByText('Keine neue Zeitbuchung möglich')).toBeNull()
+ // Info-Knopf erklärt den Hintergrund
+ const user = userEvent.setup()
+ await user.click(screen.getByRole('button', { name: 'Mehr zu: Ohne Verbindung buchen' }))
+ expect(within(await screen.findByRole('dialog')).getByText(/schickt die App die Buchung von selbst ans Büro/)).toBeInTheDocument()
+})
+
+it('nennt beim Listenstand von einem anderen Tag auch das Datum', async () => {
+ mockedOfflineService.getProjekteMitHerkunft.mockResolvedValueOnce({ daten: [{ id: 1, name: 'Testprojekt', projektNummer: 'TEST-1', kundenName: 'Testbetrieb' }], ausSpeicher: true })
+ mockedOfflineService.getLastSyncTime.mockResolvedValueOnce(new Date(2026, 9, 27, 16, 30))
+
+ renderSeite()
+
+ expect(await screen.findByText(/Ohne Verbindung – Stand 27\.10\.2026, 16:30 Uhr\./)).toBeInTheDocument()
+})
+
+it('sperrt ohne Netz und ohne je gemerkten Stand nicht, sondern zeigt die Projekte', async () => {
+ mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: null, ausCache: true })
+ mockedOfflineService.getProjekteMitHerkunft.mockResolvedValueOnce({ daten: [{ id: 1, name: 'Testprojekt', projektNummer: 'TEST-1', kundenName: 'Testbetrieb' }], ausSpeicher: true })
+
+ renderSeite()
+
+ expect(await screen.findByText('Testprojekt')).toBeInTheDocument()
+ expect(screen.queryByText('Keine neue Zeitbuchung möglich')).toBeNull()
+ expect(screen.queryByText(/noch keine Arbeitszeit eingerichtet/)).toBeNull()
+ expect(screen.getByText(/Ohne Verbindung – Stand vom letzten Abgleich\./)).toBeInTheDocument()
+})
+
+it('startet ohne Netz eine Buchung auf dem Handy (wird eingereiht)', async () => {
+ mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: null, ausCache: true })
+ mockedOfflineService.getProjekteMitHerkunft.mockResolvedValueOnce({ daten: [{ id: 1, name: 'Testprojekt', projektNummer: 'TEST-1', kundenName: 'Testbetrieb' }], ausSpeicher: true })
+ mockedSendeBuchung.mockResolvedValue({ art: 'eingereiht' })
+
+ await startePerKlick()
+
+ expect(await screen.findByText('Startseite')).toBeInTheDocument()
+ expect(JSON.parse(localStorage.getItem('zeiterfassung_active_session') || '{}').projektId).toBe(1)
+})
+
+it('sagt ohne Netz und leerem Speicher, dass die Projekte nachgeladen werden', async () => {
+ mockedOfflineService.getProjekteMitHerkunft.mockResolvedValueOnce({ daten: [], ausSpeicher: true })
+
+ renderSeite()
+
+ expect(await screen.findByText(/Noch keine Projekte auf dem Handy gespeichert/)).toBeInTheDocument()
+})
+
+it('behält den Hinweis „nicht eingerichtet“, wenn der Server es so sagt', async () => {
+ mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: { fuehrtZeitkonto: true, eingerichtet: false, hinweis: 'Für Sie ist noch keine Arbeitszeit eingerichtet.' }, ausCache: false })
+
+ renderSeite()
+
+ expect(await screen.findByText('Keine neue Zeitbuchung möglich')).toBeInTheDocument()
+ expect(screen.getByText('Für Sie ist noch keine Arbeitszeit eingerichtet.')).toBeInTheDocument()
+ expect(mockedOfflineService.getProjekteMitHerkunft).not.toHaveBeenCalled()
+})
+
+it('sperrt auch ohne Netz, wenn der gemerkte Stand „nicht eingerichtet“ sagt', async () => {
+ mockedOfflineService.getZeitkontoStatus.mockResolvedValueOnce({ status: { fuehrtZeitkonto: false, eingerichtet: false, hinweis: 'Die Zeiterfassung ist ausgeschaltet.' }, ausCache: true })
+
+ renderSeite()
+
+ expect(await screen.findByText('Die Zeiterfassung ist ausgeschaltet.')).toBeInTheDocument()
+ expect(screen.queryByText('Testprojekt')).toBeNull()
+})
+
+it('zeigt online keinen Ohne-Verbindung-Hinweis', async () => {
+ renderSeite()
+
+ expect(await screen.findByText('Testprojekt')).toBeInTheDocument()
+ expect(screen.queryByText(/Ohne Verbindung/)).toBeNull()
 })

@@ -1,9 +1,11 @@
 import { useToast } from '../components/ui/toast'
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Search, Play, Loader2, ChevronRight, Briefcase, Layers, Wrench, RefreshCw, WifiOff } from 'lucide-react'
+import { InfoAbschnitt, InfoButton } from '../components/ui/info-button'
 import { createOperationId, OfflineService, sendeBuchung, startZeitAusErgebnis } from '../services/OfflineService'
-import { hatEingerichtetesZeitkonto, zeitkontoHinweis, type ZeitkontoStatus } from '../types/zeitkonto'
+import { zeitkontoHinweis } from '../types/zeitkonto'
+import { useZeitkontoStatus } from '../hooks/useZeitkontoStatus'
 
 interface Projekt {
     id: number
@@ -32,6 +34,16 @@ interface ZeiterfassungPageProps {
 
 type Step = 'projekt' | 'kategorie' | 'arbeitsgang'
 
+/** „14:03 Uhr“ für heute, sonst „27.10.2026, 14:03 Uhr“ – Stand der Liste auf dem Handy. */
+function formatiereListenStand(stand: Date, jetzt = new Date()): string {
+    const uhrzeit = `${stand.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
+    const heute = stand.getFullYear() === jetzt.getFullYear()
+        && stand.getMonth() === jetzt.getMonth()
+        && stand.getDate() === jetzt.getDate()
+    if (heute) return uhrzeit
+    return `${stand.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}, ${uhrzeit}`
+}
+
 export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
     void props
     const toast = useToast()
@@ -56,41 +68,28 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
     const [loading, setLoading] = useState(false)
     const [starting, setStarting] = useState(false)
     const [isSyncing, setIsSyncing] = useState(false)
-    const [zeitkontoStatus, setZeitkontoStatus] = useState<ZeitkontoStatus | null>(null)
-    const [statusLoading, setStatusLoading] = useState(true)
-    const [statusError, setStatusError] = useState<string | null>(null)
-
-    const holeZeitkontoStatus = (token: string) => fetch(`/api/zeiterfassung/buchungszeitfenster/${encodeURIComponent(token)}`)
-        .then(res => {
-            if (!res.ok) throw new Error()
-            return res.json() as Promise<ZeitkontoStatus>
-        })
-        .then(data => {
-            if (typeof data.fuehrtZeitkonto !== 'boolean' || typeof data.eingerichtet !== 'boolean') throw new Error()
-            setZeitkontoStatus(data)
-        })
-        .catch(() => {
-            setZeitkontoStatus(null)
-            setStatusError('Die Arbeitszeit-Einrichtung konnte nicht geprüft werden.')
-        })
-        .finally(() => setStatusLoading(false))
-
-    // Erneut-versuchen-Knopf; beim Öffnen startet statusLoading schon mit true.
-    const loadZeitkontoStatus = () => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (!token) return
-        setStatusLoading(true)
-        setStatusError(null)
-        void holeZeitkontoStatus(token)
-    }
+    // Nur eine ausdrückliche Antwort „nicht eingerichtet“ (vom Server oder dessen gemerktem
+    // Stand) sperrt. Ohne Netz und ohne gemerkten Stand bleibt alles bedienbar: Die Buchung
+    // läuft auf dem Handy, der Server entscheidet beim Übertragen.
+    const { status: zeitkontoStatus, geprueft: zeitkontoGeprueft, gesperrt, laedt: zeitkontoLaedt, neuLaden: zeitkontoNeuLaden } =
+        useZeitkontoStatus()
+    const statusLoading = !zeitkontoGeprueft
+    // Projektliste kommt vom Handy-Speicher (ohne Verbindung) – mit Stand des letzten Abgleichs.
+    const [listeAusSpeicher, setListeAusSpeicher] = useState(false)
+    const [listenStand, setListenStand] = useState<Date | null>(null)
 
     // Die Ladefunktionen setzen nur das Ergebnis; die Ladeanzeige schaltet an, wer das Laden
     // auslöst (Auswahl-Tipp, Abgleich, fertige Einrichtungsprüfung).
-    const loadProjekte = () => OfflineService.getProjekte().then(data => {
-        // Nur nicht-abgeschlossene Projekte für Zeiterfassung
-        setProjekte((data as Projekt[]).filter(p => !p.abgeschlossen))
-        setLoading(false)
-    })
+    const loadProjekte = useCallback(() => OfflineService.getProjekteMitHerkunft()
+        .then(({ daten, ausSpeicher }) => {
+            // Nur nicht-abgeschlossene Projekte für Zeiterfassung
+            setProjekte((daten as Projekt[]).filter(p => !p.abgeschlossen))
+            setListeAusSpeicher(ausSpeicher)
+            return ausSpeicher ? OfflineService.getLastSyncTime().catch(() => null) : null
+        })
+        .then(stand => setListenStand(stand))
+        .catch(() => toast.error('Die Projekte konnten nicht geladen werden. Bitte noch einmal aktualisieren.'))
+        .finally(() => setLoading(false)), [toast])
 
     const loadKategorien = (projekt: Projekt | null = selectedProjekt) => {
         if (!projekt) return Promise.resolve()
@@ -125,22 +124,18 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
         }
     }
 
-    useEffect(() => {
-        const token = localStorage.getItem('zeiterfassung_token')
-        if (token) void holeZeitkontoStatus(token)
-    }, [])
-
-    // Load projects – sobald die Einrichtung geprüft ist; die Ladeanzeige geht schon beim Rendern an.
-    const zeitkontoEingerichtet = hatEingerichtetesZeitkonto(zeitkontoStatus)
-    const [projekteFuerEinrichtung, setProjekteFuerEinrichtung] = useState(false)
-    if (projekteFuerEinrichtung !== zeitkontoEingerichtet) {
-        setProjekteFuerEinrichtung(zeitkontoEingerichtet)
-        if (zeitkontoEingerichtet) setLoading(true)
+    // Load projects – sobald die Einrichtung geprüft ist und nicht sperrt; die Ladeanzeige
+    // geht schon beim Rendern an.
+    const projekteFreigegeben = !statusLoading && !gesperrt
+    const [projekteGeladenFuer, setProjekteGeladenFuer] = useState(false)
+    if (projekteGeladenFuer !== projekteFreigegeben) {
+        setProjekteGeladenFuer(projekteFreigegeben)
+        if (projekteFreigegeben) setLoading(true)
     }
 
     useEffect(() => {
-        if (hatEingerichtetesZeitkonto(zeitkontoStatus)) void loadProjekte()
-    }, [zeitkontoStatus])
+        if (projekteFreigegeben) void loadProjekte()
+    }, [projekteFreigegeben, loadProjekte])
 
 
     const handleStartTracking = async () => {
@@ -299,13 +294,13 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                 </div>
             </header>
 
-            {!statusLoading && !hatEingerichtetesZeitkonto(zeitkontoStatus) ? (
+            {!statusLoading && gesperrt ? (
                 <main className="flex flex-1 items-center p-4">
                     <div className="w-full rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm" role="alert">
                         <h2 className="font-bold text-slate-900">Keine neue Zeitbuchung möglich</h2>
                         <p className="mt-2 text-sm leading-6 text-slate-700">{zeitkontoHinweis(zeitkontoStatus)}</p>
-                        {statusError && <p className="mt-2 text-sm text-amber-800">{statusError}</p>}
-                        <button onClick={loadZeitkontoStatus} className="mt-4 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                        <button onClick={zeitkontoNeuLaden} disabled={zeitkontoLaedt} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60">
+                            {zeitkontoLaedt && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                             Erneut prüfen
                         </button>
                     </div>
@@ -322,6 +317,27 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                 <div className={`flex-1 h-1.5 rounded-full ${step === 'kategorie' || step === 'arbeitsgang' ? 'bg-rose-600' : 'bg-slate-200'}`} />
                 <div className={`flex-1 h-1.5 rounded-full ${step === 'arbeitsgang' ? 'bg-rose-600' : 'bg-slate-200'}`} />
             </div>
+
+            {/* Ohne Verbindung: ruhiger Hinweis, dass die Liste vom Handy kommt und gebucht werden kann */}
+            {listeAusSpeicher && (
+                <div className="mx-4 mt-3 flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-3" role="status">
+                    <WifiOff className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-500" aria-hidden="true" />
+                    <p className="min-w-0 flex-1 text-sm text-slate-700">
+                        {listenStand
+                            ? `Ohne Verbindung – Stand ${formatiereListenStand(listenStand)}.`
+                            : 'Ohne Verbindung – Stand vom letzten Abgleich.'}
+                        {' '}Deine Buchung wird übertragen, sobald wieder Netz da ist.
+                    </p>
+                    <InfoButton titel="Ohne Verbindung buchen" className="-my-1.5 -mr-1">
+                        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                            <p>Die Projekte, Kategorien und Tätigkeiten stammen vom letzten Abgleich mit dem Büro. Deine Buchung wird mit der echten Uhrzeit auf dem Handy gespeichert.</p>
+                        </InfoAbschnitt>
+                        <InfoAbschnitt titel="Was bewirkt das?">
+                            <p>Sobald wieder Netz da ist, schickt die App die Buchung von selbst ans Büro – du musst nichts weiter tun. Ein Projekt, das erst seit dem letzten Abgleich angelegt wurde, fehlt hier noch.</p>
+                        </InfoAbschnitt>
+                    </InfoButton>
+                </div>
+            )}
 
             {/* Switching-Hinweis: Alte Buchung läuft noch */}
             {isSwitching && (
@@ -357,6 +373,11 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
                             </div>
                         ) : (
                             <div className="space-y-2">
+                                {listeAusSpeicher && projekte.length === 0 && (
+                                    <p className="py-8 text-center text-sm text-slate-500">
+                                        Noch keine Projekte auf dem Handy gespeichert. Sobald wieder Netz da ist, lädt die App sie.
+                                    </p>
+                                )}
                                 {filteredProjekte.map(projekt => (
                                     <button
                                         key={projekt.id}
@@ -503,7 +524,7 @@ export default function ZeiterfassungPage(props: ZeiterfassungPageProps) {
             </div>
 
             {/* Start Button (only in step 3) - Fixed at bottom */}
-            {step === 'arbeitsgang' && selectedArbeitsgang && hatEingerichtetesZeitkonto(zeitkontoStatus) && (
+            {step === 'arbeitsgang' && selectedArbeitsgang && !gesperrt && (
                 <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 shadow-lg">
                     <button
                         onClick={handleStartTracking}

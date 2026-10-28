@@ -83,10 +83,10 @@ jobs:
           -c "CREATE DATABASE kompat_leer OWNER kompat"
 
       # Alle DatenbankKompatibilitaet*Test-Klassen (Abfragen + Fehler aus dem Betrieb)
-      # sowie service-Tests, die diese Datenbank mitnutzen (KundeDatenschutzPostgresTest, ProduktkategorieLoeschenPostgresTest)
+      # sowie service-Tests, die diese Datenbank mitnutzen (KundeDatenschutzPostgresTest, ProduktkategorieLoeschenPostgresTest, ZeitbuchungUeberschneidungPostgresTest)
       - name: Alle Abfragen gegen PostgreSQL
         run: >-
-          ./mvnw -B test "-Dtest=DatenbankKompatibilitaet*Test,KundeDatenschutzPostgresTest,ProduktkategorieLoeschenPostgresTest"
+          ./mvnw -B test "-Dtest=DatenbankKompatibilitaet*Test,KundeDatenschutzPostgresTest,ProduktkategorieLoeschenPostgresTest,ZeitbuchungUeberschneidungPostgresTest"
           "-Dkompat.db.url=jdbc:postgresql://127.0.0.1:5432/kompat" -Dkompat.db.user=kompat -Dkompat.db.pass=kompat
 
       # Gleichzeitiges Abschliessen/Exportieren (Zeilensperren) - eigene leere

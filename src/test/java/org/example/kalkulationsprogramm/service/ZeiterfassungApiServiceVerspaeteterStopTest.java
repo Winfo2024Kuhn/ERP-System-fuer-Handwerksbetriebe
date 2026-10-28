@@ -65,6 +65,7 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
     @Mock private UrlaubsverfallService urlaubsverfallService;
 
     @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
+    @Mock private ZeitbuchungUeberschneidungService ueberschneidungService;
 
     private ZeiterfassungApiService service;
 
@@ -84,7 +85,7 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
                 lieferantenRepository, feiertagService, auditService, tagesSollService,
                 zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
-                org.mockito.Mockito.mock(UrlaubskontoService.class));
+                org.mockito.Mockito.mock(UrlaubskontoService.class), ueberschneidungService);
     }
 
     private Mitarbeiter dummyMitarbeiter() {
@@ -134,6 +135,8 @@ class ZeiterfassungApiServiceVerspaeteterStopTest {
         assertThat(result.get("status")).isEqualTo("nachgetragen");
         verify(zeitbuchungRepository).save(buchung);
         verify(monatsSaldoService).invalidiereFuerDateTime(MITARBEITER_ID, START);
+        // Jetzt steht die echte Endezeit fest: Büro-Einträge darin weichen.
+        verify(ueberschneidungService).nachHandyBuchung(buchung, mitarbeiter);
     }
 
     @Test

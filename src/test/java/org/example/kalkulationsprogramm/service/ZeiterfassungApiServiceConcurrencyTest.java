@@ -1,7 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -69,6 +68,7 @@ class ZeiterfassungApiServiceConcurrencyTest {
     @Mock private UrlaubsverfallService urlaubsverfallService;
 
     @Mock private ZeitkontoKorrekturService zeitkontoKorrekturService;
+    @Mock private ZeitbuchungUeberschneidungService ueberschneidungService;
 
     private ZeiterfassungApiService service;
 
@@ -85,7 +85,7 @@ class ZeiterfassungApiServiceConcurrencyTest {
                 arbeitsgangStundensatzRepository, arbeitsgangMapper, dateiSpeicherService,
                 lieferantenRepository, feiertagService, auditService, tagesSollService,
                 zeitkontoService, urlaubsverfallService, zeitkontoKorrekturService, monatsSaldoService,
-                org.mockito.Mockito.mock(UrlaubskontoService.class));
+                org.mockito.Mockito.mock(UrlaubskontoService.class), ueberschneidungService);
     }
 
     private Mitarbeiter dummyMitarbeiter() {
@@ -146,22 +146,83 @@ class ZeiterfassungApiServiceConcurrencyTest {
     }
 
     @Test
-    void startZeiterfassung_wirftFehlerWennBereitsAktiveBuchungExistiert() {
+    void startZeiterfassung_beendetLaufendeHandyBuchungStattAbzulehnen() {
+        // "Handy gewinnt": Ein offline gestempelter Wechsel kommt an, waehrend am Server noch
+        // die alte Buchung laeuft (der Stop ging verloren). Frueher: "Es laeuft bereits eine
+        // Buchung" -> der Wechsel landete in der Reparatur-Liste.
         when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
                 .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
+        LocalDateTime neuerStart = LocalDateTime.now().minusMinutes(30);
         Zeitbuchung aktiveBuchung = new Zeitbuchung();
         aktiveBuchung.setId(123L);
         aktiveBuchung.setMitarbeiter(dummyMitarbeiter());
-        aktiveBuchung.setStartZeit(LocalDateTime.now().minusHours(1));
+        aktiveBuchung.setStartZeit(neuerStart.minusHours(1));
+        aktiveBuchung.setErfasstVia(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.MOBILE_APP);
 
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
+                .thenReturn(Optional.of(dummyMitarbeiter()));
+        // Erst laeuft die alte Buchung, nach dem Beenden keine mehr.
+        when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
+                .thenReturn(List.of(aktiveBuchung), List.of());
+        when(projektRepository.findById(PROJEKT_ID)).thenReturn(Optional.of(dummyProjekt()));
+        when(arbeitsgangRepository.findById(ARBEITSGANG_ID)).thenReturn(Optional.of(dummyArbeitsgang()));
+        when(arbeitsgangStundensatzRepository.findTopByArbeitsgangIdAndJahrOrderByIdDesc(eq(ARBEITSGANG_ID), anyInt()))
+                .thenReturn(Optional.of(dummyStundensatz()));
+        when(zeitbuchungRepository.save(any(Zeitbuchung.class))).thenAnswer(inv -> {
+            Zeitbuchung b = inv.getArgument(0);
+            b.setId(999L);
+            return b;
+        });
+
+        Map<String, Object> result = service.startZeiterfassung(TOKEN, PROJEKT_ID, ARBEITSGANG_ID, null,
+                neuerStart, null);
+
+        assertThat(result.get("status")).isEqualTo("gestartet");
+        assertThat(aktiveBuchung.getEndeZeit()).isEqualTo(neuerStart);
+        verify(zeitbuchungRepository).saveAndFlush(aktiveBuchung);
+        verify(ueberschneidungService).nachHandyBuchung(eq(aktiveBuchung), any(Mitarbeiter.class));
+        verify(ueberschneidungService).vorNeuerHandyBuchung(any(Mitarbeiter.class), eq(neuerStart));
+        verify(ueberschneidungService).handyBuchungZuordnen(any(), eq(999L));
+    }
+
+    @Test
+    void startZeiterfassung_lehntStartVorDerLaufendenBuchungAb() {
+        // Falsche Reihenfolge (z. B. zweites Geraet): Kuerzen wuerde beide Zeiten still verfaelschen.
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
+        LocalDateTime laufendSeit = LocalDateTime.now().minusMinutes(10);
+        Zeitbuchung aktiveBuchung = new Zeitbuchung();
+        aktiveBuchung.setId(123L);
+        aktiveBuchung.setMitarbeiter(dummyMitarbeiter());
+        aktiveBuchung.setStartZeit(laufendSeit);
+        aktiveBuchung.setErfasstVia(org.example.kalkulationsprogramm.domain.ErfassungsQuelle.MOBILE_APP);
         when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
                 .thenReturn(Optional.of(dummyMitarbeiter()));
         when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID))
                 .thenReturn(List.of(aktiveBuchung));
+        when(projektRepository.findById(PROJEKT_ID)).thenReturn(Optional.of(dummyProjekt()));
+        when(arbeitsgangRepository.findById(ARBEITSGANG_ID)).thenReturn(Optional.of(dummyArbeitsgang()));
 
-        assertThatThrownBy(() -> service.startZeiterfassung(TOKEN, PROJEKT_ID, ARBEITSGANG_ID, null, null, null))
-                .hasMessageContaining("bereits eine Buchung");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.startZeiterfassung(TOKEN, PROJEKT_ID,
+                        ARBEITSGANG_ID, null, laufendSeit.minusHours(1), null))
+                .hasMessageContaining("vor der laufenden Buchung");
+        assertThat(aktiveBuchung.getEndeZeit()).isNull();
+        verify(zeitbuchungRepository, never()).save(any(Zeitbuchung.class));
+    }
 
+    @Test
+    void startPause_meldetBelegteZeitVerstaendlichStattDatenbankfehler() {
+        // Ein Buero-Eintrag im festgeschriebenen Monat beginnt genau jetzt und durfte nicht weichen.
+        when(zeitkontoService.versionAm(eq(MITARBEITER_ID), any()))
+                .thenReturn(Optional.of(new org.example.kalkulationsprogramm.domain.ZeitkontoVersion()));
+        LocalDateTime pause = LocalDateTime.now().minusMinutes(5);
+        when(mitarbeiterRepository.findByLoginTokenAndAktivTrueForUpdate(TOKEN))
+                .thenReturn(Optional.of(dummyMitarbeiter()));
+        when(zeitbuchungRepository.findByMitarbeiterIdAndEndeZeitIsNull(MITARBEITER_ID)).thenReturn(List.of());
+        when(zeitbuchungRepository.existsByMitarbeiterIdAndStartZeit(MITARBEITER_ID, pause)).thenReturn(true);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.startPause(TOKEN, pause, null))
+                .hasMessageContaining("Bitte im Büro klären");
         verify(zeitbuchungRepository, never()).save(any(Zeitbuchung.class));
     }
 
