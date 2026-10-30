@@ -268,6 +268,47 @@ class BenachrichtigungServiceTest {
     }
 
     @Test
+    @DisplayName("Glocke nennt bei einer Annahme, ob sofort begonnen werden darf")
+    void freigabeNenntArbeitsbeginn() {
+        DokumentFreigabe wartet = new DokumentFreigabe();
+        wartet.setId(1L);
+        wartet.setStatus(FreigabeStatus.ACCEPTED);
+        wartet.setAkzeptiertAm(LocalDateTime.of(2026, 10, 30, 12, 26));
+        wartet.setKundeName("Max Mustermann");
+        wartet.setDokumentArt("Angebot");
+        wartet.setDokumentNummer("AG-2026-0021");
+        wartet.setVorzeitigerBeginn(false);
+        DokumentFreigabe sofort = new DokumentFreigabe();
+        sofort.setId(2L);
+        sofort.setStatus(FreigabeStatus.ACCEPTED);
+        sofort.setAkzeptiertAm(LocalDateTime.of(2026, 10, 30, 12, 0));
+        sofort.setKundeName("Erika Musterfrau");
+        sofort.setDokumentArt("Angebot");
+        sofort.setDokumentNummer("AG-2026-0022");
+        sofort.setVorzeitigerBeginn(true);
+        DokumentFreigabe alt = new DokumentFreigabe();
+        alt.setId(3L);
+        alt.setStatus(FreigabeStatus.ACCEPTED);
+        alt.setAkzeptiertAm(LocalDateTime.of(2026, 10, 30, 11, 0));
+        alt.setKundeName("Moritz Muster");
+        alt.setDokumentArt("Angebot");
+        alt.setDokumentNummer("AG-2026-0023");
+
+        given(dokumentFreigabeRepository.findKuerzlichAkzeptiert(any(LocalDateTime.class)))
+                .willReturn(List.of(wartet, sofort, alt));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
+
+        assertThat(summary.recentItems())
+                .filteredOn(i -> "FREIGABE_ANGENOMMEN".equals(i.type()))
+                .extracting(i -> i.subtitle())
+                .containsExactlyInAnyOrder(
+                        "Von: Max Mustermann · Erst nach Ablauf der Widerrufsfrist beginnen (bis 13.11.2026).",
+                        "Von: Erika Musterfrau · Sofort beginnen erlaubt.",
+                        "Von: Moritz Muster");
+    }
+
+    @Test
     @DisplayName("Automatisch beendete Zeitbuchung erscheint als Prüffall in der Glocke")
     void automatischBeendeteZeitbuchungErscheintInDerGlocke() {
         // REGRESSION 29.07.2026: Der Auto-Stop schrieb geschätzte 20:00-Endezeiten in

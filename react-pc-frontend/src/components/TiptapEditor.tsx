@@ -338,7 +338,13 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
         e.target.value = '';
     }, [editor]);
 
-    if (!editor) {
+    // Die Leiste bekommt den zuletzt fokussierten Editor von aussen. Wird dessen
+    // Block geloescht oder zugeklappt, baut Tiptap den Editor ab, die Referenz
+    // bleibt aber stehen - editor.commands wirft dann "Cannot read properties
+    // of null (reading 'commands')". Ein abgebauter Editor zaehlt wie keiner.
+    // (Fuer die Leiste reicht isDestroyed: sie sieht nur Editoren, die schon
+    // im DOM haengen; vor dem Einhaengen meldet Tiptap ebenfalls true.)
+    if (!editor || editor.isDestroyed) {
         return (
             <div className="flex flex-wrap gap-1 items-center bg-slate-100 border border-slate-200 rounded-lg px-3 py-2">
                 <span className="text-slate-400 text-sm">Klicken Sie auf einen Textblock zum Bearbeiten...</span>
