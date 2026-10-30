@@ -146,4 +146,39 @@ describe('TiptapToolbar (eigenstaendig exportierte Leiste)', () => {
             expect(queryByTitle('Wiederholen (Ctrl+Y)')).not.toBeInTheDocument();
         }).not.toThrow();
     });
+
+    it('stuerzt nicht ab, wenn der zuletzt fokussierte Editor schon abgebaut ist', () => {
+        // Nachstellung: Textblock im Dokumenteditor fokussiert, dann geloescht.
+        // Die globale Leiste haelt die Editor-Referenz noch, Tiptap hat den
+        // Editor aber zerstoert (commandManager = null).
+        let erfassterEditor: Editor | null = null;
+        render(
+            <TiptapEditor
+                value="<p>Hallo</p>"
+                onChange={vi.fn()}
+                hideToolbar
+                onEditorReady={(ed) => { erfassterEditor = ed as Editor; }}
+            />,
+        );
+        expect(erfassterEditor).not.toBeNull();
+        erfassterEditor!.destroy();
+
+        const { getByText } = render(<TiptapToolbar editor={erfassterEditor} />);
+        expect(getByText('Klicken Sie auf einen Textblock zum Bearbeiten...')).toBeInTheDocument();
+    });
+
+    it('zeigt fuer einen lebenden Editor weiterhin die Rueckgaengig-Pfeile', () => {
+        let erfassterEditor: Editor | null = null;
+        render(
+            <TiptapEditor
+                value="<p>Hallo</p>"
+                onChange={vi.fn()}
+                hideToolbar
+                onEditorReady={(ed) => { erfassterEditor = ed as Editor; }}
+            />,
+        );
+
+        const { queryByTitle } = render(<TiptapToolbar editor={erfassterEditor} />);
+        expect(queryByTitle('Rückgängig (Ctrl+Z)')).toBeInTheDocument();
+    });
 });
