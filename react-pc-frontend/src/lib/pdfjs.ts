@@ -8,6 +8,8 @@
  * Die Legacy-Fassung läuft auch auf älteren Browsern (z. B. Safari auf dem Büro-iPad). Sie ist
  * größer, wird aber nur beim Öffnen einer PDF geladen.
  */
+import { pdfjsHilfsordner } from './pdfjsPfad';
+
 export type PdfjsLib = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
 
 let laden: Promise<PdfjsLib | null> | null = null;
@@ -32,4 +34,19 @@ async function importiere(): Promise<PdfjsLib | null> {
 export function ladePdfjs(): Promise<PdfjsLib | null> {
     laden ??= importiere();
     return laden;
+}
+
+/**
+ * Öffnet ein PDF mit allen Hilfsdateien. Ohne sie überspringt PDF.js still, was es nicht
+ * selbst lesen kann – bei Fax-PDFs fehlt dann der ganze Inhalt, nur das leere Formular bleibt.
+ */
+export function oeffnePdf(lib: PdfjsLib, data: ArrayBuffer | Uint8Array) {
+    const ordner = pdfjsHilfsordner(lib.version);
+    return lib.getDocument({
+        data,
+        wasmUrl: `${ordner}wasm/`,
+        iccUrl: `${ordner}iccs/`,
+        cMapUrl: `${ordner}cmaps/`,
+        standardFontDataUrl: `${ordner}standard_fonts/`,
+    });
 }

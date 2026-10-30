@@ -50,6 +50,14 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 | Lucide React | ^0.555.0 | ISC License | https://lucide.dev/ |
 | react-dropzone | ^14.3.8 | MIT License | https://react-dropzone.js.org/ |
 | tailwind-merge | ^3.4.0 | MIT License | https://github.com/dcastil/tailwind-merge |
+| PDF.js (pdfjs-dist) | 6.4.299 | Apache License 2.0 | https://github.com/mozilla/pdf.js |
+| ↳ JBIG2-/Fax-Decoder (aus PDFium), mitgeliefert unter `assets/pdfjs-*/wasm/` | 6.4.299 | BSD 3-Clause | https://pdfium.googlesource.com/pdfium/ |
+| ↳ OpenJPEG (JPEG-2000-Decoder), `assets/pdfjs-*/wasm/` | 6.4.299 | BSD 2-Clause | https://www.openjpeg.org/ |
+| ↳ qcms (Farbprofile), `assets/pdfjs-*/wasm/` | 6.4.299 | MIT License | https://github.com/FirefoxGraphics/qcms |
+| ↳ Farbprofil CGATS001Compat-v2-micro, `assets/pdfjs-*/iccs/` | 6.4.299 | CC0 1.0 | https://github.com/saucecontrol/Compact-ICC-Profiles |
+| ↳ Foxit-Standardschriften, `assets/pdfjs-*/standard_fonts/` | 6.4.299 | BSD-artig (Foxit) | https://pdfium.googlesource.com/pdfium/ |
+| ↳ Liberation-Schriften, `assets/pdfjs-*/standard_fonts/` | 6.4.299 | GPL 2.0 mit Schrift-Ausnahme (Red Hat) | https://github.com/liberationfonts/liberation-fonts |
+| ↳ Adobe-CMaps, `assets/pdfjs-*/cmaps/` | 6.4.299 | BSD 3-Clause (Adobe) | https://github.com/adobe-type-tools/cmap-resources |
 | Tailwind CSS | ^3.4.17 | MIT License | https://tailwindcss.com/ |
 | Vite | ^7.2.4 | MIT License | https://vite.dev/ |
 | TypeScript | ~5.9.3 | Apache License 2.0 | https://www.typescriptlang.org/ |
@@ -81,7 +89,10 @@ sind unten aufgeführt und müssen bei Weitergabe der Software beachtet werden.
 
 ### Apache License 2.0
 Betrifft: Spring Boot, Mustang Project, Flyway, Apache PDFBox, Apache Commons Text,
-ZXing, html5-qrcode, class-variance-authority, TypeScript
+ZXing, html5-qrcode, class-variance-authority, TypeScript, PDF.js
+
+Die PDF.js-Hilfsdateien unter `assets/pdfjs-*/` werden unverändert mitgeliefert; ihre
+Lizenztexte liegen jeweils daneben (`LICENSE*`).
 
 > Licensed under the Apache License, Version 2.0 (the "License");
 > you may not use this file except in compliance with the License.

@@ -4,7 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PdfCanvasViewer } from './PdfCanvasViewer';
 import { ladePdfjs, type PdfjsLib } from '../../lib/pdfjs';
 
-vi.mock('../../lib/pdfjs', () => ({ ladePdfjs: vi.fn() }));
+vi.mock('../../lib/pdfjs', () => ({
+    ladePdfjs: vi.fn(),
+    oeffnePdf: (lib: PdfjsLib, data: ArrayBuffer) => lib.getDocument({ data }),
+}));
 
 const pdfBlob = (inhalt: string) => new Blob([inhalt], { type: 'application/pdf' });
 

@@ -52,3 +52,22 @@ describe('ladePdfjs', () => {
         await expect(ladePdfjs()).resolves.not.toBeNull();
     });
 });
+
+describe('oeffnePdf', () => {
+    it('nennt PDF.js alle Hilfsordner – sonst fehlt bei Fax-PDFs der ganze Inhalt', async () => {
+        const { oeffnePdf } = await import('./pdfjs');
+        const getDocument = vi.fn(() => ({ promise: Promise.resolve() }));
+        const lib = { version: '6.4.299', getDocument } as unknown as Parameters<typeof oeffnePdf>[0];
+        const data = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+
+        oeffnePdf(lib, data);
+
+        expect(getDocument).toHaveBeenCalledWith({
+            data,
+            wasmUrl: '/assets/pdfjs-6.4.299/wasm/',
+            iccUrl: '/assets/pdfjs-6.4.299/iccs/',
+            cMapUrl: '/assets/pdfjs-6.4.299/cmaps/',
+            standardFontDataUrl: '/assets/pdfjs-6.4.299/standard_fonts/',
+        });
+    });
+});
