@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useEffect, useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Printer } from 'lucide-react';
-import { ladePdfjs } from '../../lib/pdfjs';
+import { ladePdfjs, oeffnePdf } from '../../lib/pdfjs';
 import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -242,7 +242,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
                 try { pdfDocRef.current.destroy(); } catch { /* ok */ }
             }
 
-            const loadingTask = pdfjsLib.getDocument({ data });
+            const loadingTask = oeffnePdf(pdfjsLib, data);
             const doc = await loadingTask.promise;
             pdfDocRef.current = doc;
             setPageCount(doc.numPages);

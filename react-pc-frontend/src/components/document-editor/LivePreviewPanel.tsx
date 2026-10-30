@@ -1,6 +1,6 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { RefreshCw, Download } from 'lucide-react';
-import { ladePdfjs } from '../../lib/pdfjs';
+import { ladePdfjs, oeffnePdf } from '../../lib/pdfjs';
 import { cn } from '../../lib/utils';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -89,7 +89,7 @@ export function LivePreviewPanel({ previewUrl, loading, stale, onRefresh, isOpen
                     try { pdfDocRef.current.destroy(); } catch { /* ok */ }
                 }
 
-                const loadingTask = pdfjsLib.getDocument({ data });
+                const loadingTask = oeffnePdf(pdfjsLib, data);
                 const doc = await loadingTask.promise;
                 pdfDocRef.current = doc;
                 setPageCount(doc.numPages);

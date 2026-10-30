@@ -1,6 +1,50 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
+import { readdirSync, readFileSync } from 'fs';
+import { resolve, sep } from 'path';
+import { PDFJS_HILFSORDNER, istPdfjsHilfsdatei, pdfjsHilfsdateiAusUrl, pdfjsHilfsordner } from './src/lib/pdfjsPfad';
+
+const PDFJS_PAKET = resolve(import.meta.dirname, 'node_modules/pdfjs-dist');
+
+/**
+ * Liefert die Hilfsdateien von PDF.js mit aus. PDF.js lädt sie über feste Dateinamen nach,
+ * deshalb ohne Hash, aber mit der Version im Ordner. Den Pfad legt `src/lib/pdfjsPfad.ts` fest.
+ */
+function pdfjsHilfsdateien(): Plugin {
+  const version: string = JSON.parse(readFileSync(resolve(PDFJS_PAKET, 'package.json'), 'utf8')).version;
+  return {
+    name: 'pdfjs-hilfsdateien',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const treffer = pdfjsHilfsdateiAusUrl(req.url ?? '', version);
+        if (!treffer) return next();
+        const datei = resolve(PDFJS_PAKET, treffer.ordner, treffer.datei);
+        // Zweite Sicherung: nie etwas außerhalb des Hilfsordners lesen.
+        if (!datei.startsWith(resolve(PDFJS_PAKET, treffer.ordner) + sep)) return next();
+        try {
+          const inhalt = readFileSync(datei);
+          if (datei.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
+          res.end(inhalt);
+        } catch {
+          next();
+        }
+      });
+    },
+    generateBundle() {
+      const ziel = pdfjsHilfsordner(version).slice(1);
+      for (const ordner of PDFJS_HILFSORDNER) {
+        for (const eintrag of readdirSync(resolve(PDFJS_PAKET, ordner), { withFileTypes: true })) {
+          if (!eintrag.isFile() || !istPdfjsHilfsdatei(eintrag.name)) continue;
+          this.emitFile({
+            type: 'asset',
+            fileName: `${ziel}${ordner}/${eintrag.name}`,
+            source: readFileSync(resolve(PDFJS_PAKET, ordner, eintrag.name)),
+          });
+        }
+      }
+    },
+  };
+}
 
 /**
  * Große Bibliotheken als eigene Dateien: Sie ändern sich selten, bleiben also über Updates
@@ -21,7 +65,7 @@ function bibliotheksPaket(id: string): string | undefined {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), pdfjsHilfsdateien()],
   base: '/',
   build: {
     outDir: resolve(import.meta.dirname, '../src/main/resources/static'),
