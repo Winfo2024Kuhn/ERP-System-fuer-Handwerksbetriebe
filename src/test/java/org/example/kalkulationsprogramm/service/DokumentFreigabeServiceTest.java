@@ -1135,21 +1135,110 @@ class DokumentFreigabeServiceTest {
     }
 
     @Test
-    void arbeitsbeginnHinweis_fuerPushNachricht() {
-        DokumentFreigabe f = pendingFreigabe("uuid-push");
-        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f)).isEmpty();
+    void akzeptiere_ohneWahlpositionen_abBekommtBetragUndVerlaufNenntEntscheidung() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-verlauf");
+        when(repository.findByUuid("uuid-verlauf")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
 
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setPositionenJson("{\"blocks\":[]}");
+        angebot.setBetragNetto(new BigDecimal("1000.00"));
+        angebot.setMwstSatz(new BigDecimal("0.19"));
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setId(124L);
+        ab.setTyp(AusgangsGeschaeftsDokumentTyp.AUFTRAGSBESTAETIGUNG);
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(ab);
+
+        service.akzeptiere("uuid-verlauf", "192.0.2.10", "UA", "max@example.com",
+                "Max", "Mustermann", "Max Mustermann", null,
+                new FreigabeErklaerung(false, "2026-10-13", null, null, "Zahlungspflichtig beauftragen"));
+
+        // Ohne Wahlpositionen erbt die AB den Betrag des Angebots – sonst stünde im Verlauf „–“.
+        ArgumentCaptor<AusgangsGeschaeftsDokumentErstellenDto> dto =
+                ArgumentCaptor.forClass(AusgangsGeschaeftsDokumentErstellenDto.class);
+        verify(ausgangsGeschaeftsDokumentService).erstellen(dto.capture());
+        assertThat(dto.getValue().getBetragNetto()).isEqualByComparingTo("1000.00");
+        assertThat(dto.getValue().getMwstSatz()).isEqualByComparingTo("0.19");
+
+        // Beide Verlaufseinträge nennen, ob der Kunde einen früheren Beginn verlangt hat.
+        ArgumentCaptor<String> angebotText = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> abText = ArgumentCaptor.forClass(String.class);
+        verify(ausgangsGeschaeftsDokumentAuditService)
+                .protokolliereDigitaleAnnahme(eq(angebot), eq("192.0.2.10"), angebotText.capture());
+        verify(ausgangsGeschaeftsDokumentAuditService)
+                .protokolliereDigitaleAnnahme(eq(ab), eq("192.0.2.10"), abText.capture());
+        assertThat(angebotText.getValue())
+                .startsWith("Digitale Annahme von Angebot ANG-2026-0001 am ")
+                // Datenminimierung: keine Personendaten in der unveränderbaren Kette
+                .doesNotContain("Mustermann").doesNotContain("max@example.com")
+                .contains("Annahme-Hash: " + pending.getHashAcceptance() + ".")
+                .contains("Beginn vor Ablauf der Widerrufsfrist: nicht verlangt (Häkchen nicht gesetzt).")
+                .contains("Erst nach Ablauf der Widerrufsfrist beginnen (bis ")
+                .contains("Widerrufsbelehrung Stand 13.10.2026, ausgelöst mit „Zahlungspflichtig beauftragen“.");
+        assertThat(abText.getValue())
+                .startsWith("Automatisch erstellt nach digitaler Annahme von Angebot ANG-2026-0001")
+                .contains("nicht verlangt");
+    }
+
+    @Test
+    void annahmeNachweisFuerVerlauf_mitCodeUndVorzeitigemBeginn() {
+        DokumentFreigabe f = pendingFreigabe("uuid-text");
+        f.setUnterzeichnerName("Max Mustermann");
+        f.setAkzeptiertAm(LocalDateTime.of(2026, 10, 30, 12, 26));
+        f.setCodeBestaetigtAm(LocalDateTime.of(2026, 10, 30, 12, 26));
+        f.setCodeBestaetigtEmail("max@example.com");
         f.setVorzeitigerBeginn(true);
-        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f)).isEqualTo(" Sofort beginnen erlaubt.");
+        f.setHashAcceptance("b".repeat(64));
 
-        f.setVorzeitigerBeginn(false);
-        f.setAkzeptiertAm(LocalDateTime.of(2026, 10, 13, 9, 30));
-        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f))
-                .isEqualTo(" Erst nach Ablauf der Widerrufsfrist beginnen (bis 27.10.2026).");
+        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, false)).isEqualTo(
+                "Digitale Annahme von Angebot ANG-2026-0001 am 30.10.2026 um 12:26 Uhr."
+                        + " Bestätigt per Einmal-Code."
+                        + " Beginn vor Ablauf der Widerrufsfrist: verlangt (Häkchen gesetzt)."
+                        + " Sofort beginnen erlaubt."
+                        + " Annahme-Hash: " + "b".repeat(64) + ".");
+    }
 
-        f.setAkzeptiertAm(null);
-        assertThat(DokumentFreigabeService.arbeitsbeginnHinweis(f))
-                .isEqualTo(" Erst nach Ablauf der Widerrufsfrist beginnen.");
+    @Test
+    void annahmeNachweisFuerVerlauf_ohneAngaben_nenntFehlendeEntscheidung() {
+        DokumentFreigabe f = pendingFreigabe("uuid-alt");
+        f.setDokumentArt(null);
+
+        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, true)).isEqualTo(
+                "Automatisch erstellt nach digitaler Annahme von Angebot ANG-2026-0001."
+                        + " Keine Angabe zum Beginn vor Ablauf der Widerrufsfrist.");
+    }
+
+    @Test
+    void akzeptiere_angebotOhneBetrag_abRechnetNettoAusPositionenUndUebernimmtMwst() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-ohne-betrag");
+        when(repository.findByUuid("uuid-ohne-betrag")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        String positionenJson = "{\"blocks\":[{\"preis\":500}]}";
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setTyp(AusgangsGeschaeftsDokumentTyp.ANGEBOT);
+        angebot.setPositionenJson(positionenJson);
+        angebot.setMwstSatz(new BigDecimal("0.07"));
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentService.berechneNettoAusPositionenJson(positionenJson))
+                .thenReturn(new BigDecimal("500.00"));
+        when(ausgangsGeschaeftsDokumentService.erstellen(any())).thenReturn(null);
+
+        service.akzeptiere("uuid-ohne-betrag", "192.0.2.10", "UA", "max@example.com",
+                "Max", "Mustermann", "Max Mustermann");
+
+        ArgumentCaptor<AusgangsGeschaeftsDokumentErstellenDto> dto =
+                ArgumentCaptor.forClass(AusgangsGeschaeftsDokumentErstellenDto.class);
+        verify(ausgangsGeschaeftsDokumentService).erstellen(dto.capture());
+        assertThat(dto.getValue().getBetragNetto()).isEqualByComparingTo("500.00");
+        // Ermäßigter Satz des Angebots statt Standard 19 %
+        assertThat(dto.getValue().getMwstSatz()).isEqualByComparingTo("0.07");
     }
 
     @Test
@@ -1217,6 +1306,56 @@ class DokumentFreigabeServiceTest {
         assertThat(audit.getDatenschutzStand()).isEqualTo("2026-10-13");
         assertThat(audit.getBestaetigungText()).isEqualTo("Ich beauftrage verbindlich.");
         assertThat(audit.getKnopfText()).isEqualTo("Zahlungspflichtig beauftragen");
+    }
+
+    @Test
+    void findAuditFuerAusgangsDokument_abOhneEigeneFreigabe_liefertNachweisDesAngebots() {
+        DokumentFreigabe f = pendingFreigabe("uuid-ab");
+        f.setStatus(FreigabeStatus.ACCEPTED);
+        f.setVorzeitigerBeginn(false);
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setDigitalAngenommen(true);
+        AusgangsGeschaeftsDokument ab = new AusgangsGeschaeftsDokument();
+        ab.setId(124L);
+        ab.setDigitalAngenommen(true);
+        ab.setVorgaenger(angebot);
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(124L))).thenReturn(List.of());
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(123L))).thenReturn(List.of(f));
+        when(ausgangsGeschaeftsDokumentRepository.findById(124L)).thenReturn(Optional.of(ab));
+
+        org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto audit =
+                service.findAuditFuerAusgangsDokument(124L).orElseThrow();
+
+        assertThat(audit.getDokumentNummer()).isEqualTo("ANG-2026-0001");
+        assertThat(audit.getVorzeitigerBeginn()).isFalse();
+    }
+
+    @Test
+    void findAuditFuerAusgangsDokument_ohneDigitaleAnnahmeOderOffeneFreigabe_liefertNichts() {
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setDigitalAngenommen(true);
+        AusgangsGeschaeftsDokument abVonHand = new AusgangsGeschaeftsDokument();
+        abVonHand.setId(124L);
+        abVonHand.setVorgaenger(angebot);
+        AusgangsGeschaeftsDokument abDigital = new AusgangsGeschaeftsDokument();
+        abDigital.setId(125L);
+        abDigital.setDigitalAngenommen(true);
+        abDigital.setVorgaenger(angebot);
+        DokumentFreigabe offen = pendingFreigabe("uuid-offen");
+        when(repository.findByQuelle(eq(FreigabeQuellTyp.AUSGANGS_DOKUMENT), any())).thenReturn(List.of());
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(123L))).thenReturn(List.of(offen));
+        when(ausgangsGeschaeftsDokumentRepository.findById(124L)).thenReturn(Optional.of(abVonHand));
+        when(ausgangsGeschaeftsDokumentRepository.findById(125L)).thenReturn(Optional.of(abDigital));
+        when(ausgangsGeschaeftsDokumentRepository.findById(999L)).thenReturn(Optional.empty());
+
+        // AB von Hand angelegt: kein fremder Nachweis.
+        assertThat(service.findAuditFuerAusgangsDokument(124L)).isEmpty();
+        // Vorgänger-Freigabe noch offen: kein Nachweis.
+        assertThat(service.findAuditFuerAusgangsDokument(125L)).isEmpty();
+        assertThat(service.findAuditFuerAusgangsDokument(999L)).isEmpty();
+        assertThat(service.findAuditFuerAusgangsDokument(null)).isEmpty();
     }
 
     // ── PDF vom abgelaufenen Link lösen (DELETE /api/internal/freigabe/{uuid}/pdf) ──

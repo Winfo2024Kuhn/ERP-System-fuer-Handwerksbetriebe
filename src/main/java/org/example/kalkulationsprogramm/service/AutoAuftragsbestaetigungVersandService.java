@@ -1355,6 +1355,9 @@ public class AutoAuftragsbestaetigungVersandService
                     + "verlangt. Wir beginnen daher erst nach Ablauf der 14-tägigen Frist. Möchten Sie, dass wir "
                     + "früher starten, teilen Sie uns das bitte kurz per E-Mail mit.</p>";
         }
+        // Dieselbe Entscheidung noch einmal als Beweis-Zeile, damit der Beleg für sich allein steht.
+        String entscheidung = FreigabeArbeitsbeginn.entscheidungDesKunden(f);
+        String entscheidungZeile = entscheidung != null ? escapeHtml(entscheidung) + "<br>" : "";
         String standZeile = f.getWiderrufStand() != null
                 ? "Widerrufsbelehrung Stand " + escapeHtml(WiderrufsbelehrungPdfService.formatiereStand(f.getWiderrufStand()))
                         + (f.getKnopfText() != null ? ", ausgelöst mit „" + escapeHtml(f.getKnopfText()) + "“" : "")
@@ -1380,6 +1383,7 @@ public class AutoAuftragsbestaetigungVersandService
                 + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;line-height:1.5;\">"
                 + "Beweissicherung: " + beweisZeile + "<br>"
                 + codeZeile
+                + entscheidungZeile
                 + standZeile
                 + "Audit-Hash zur Rechtssicherheit: <code style=\"font-family:monospace;color:#64748b;\">" + hash + "</code>"
                 + "</p>"

@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
-import { History, FileText, Edit2, Lock, Send, RotateCcw, Trash2, CheckCircle2, RefreshCw, Copy } from 'lucide-react';
+import { History, FileText, Edit2, Lock, Send, RotateCcw, Trash2, CheckCircle2, RefreshCw, Copy, ShieldCheck } from 'lucide-react';
 import { useToast } from '../ui/toast';
+import { InfoAbschnitt, InfoButton } from '../ui/info-button';
+import { AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN } from '../../types';
+import { AnnahmeNachweisDetails } from '../../features/freigabe/AnnahmeNachweisDetails';
+import { ladeFreigabeAudit, type FreigabeAuditErgebnis } from '../../features/freigabe/freigabeAudit';
 
 export interface DokumentAuditEintrag {
     id: number;
@@ -39,9 +43,80 @@ const AKTION_META: Record<string, { label: string; icon: React.ComponentType<{cl
     DIGITAL_ANGENOMMEN: { label: 'Digital angenommen', icon: CheckCircle2, color: 'bg-green-100 text-green-700 border-green-200' },
 };
 
+const typLabel = (typ: string) => AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === typ)?.label || typ;
+
+/**
+ * Neuester „Digital angenommen“-Eintrag: Nur an ihm steht der Annahme-Nachweis, weil der
+ * Nachweis immer die aktuelle Freigabe beschreibt.
+ */
+function neuesteAnnahmeId(eintraege: DokumentAuditEintrag[]): number | null {
+    let treffer: DokumentAuditEintrag | null = null;
+    for (const e of eintraege) {
+        if (e.aktion !== 'DIGITAL_ANGENOMMEN') continue;
+        // Die ID steigt mit jedem Eintrag; Zeitstempel-Texte lassen sich nicht sicher vergleichen.
+        if (!treffer || e.id > treffer.id) treffer = e;
+    }
+    return treffer ? treffer.id : null;
+}
+
+/**
+ * Wer den Eintrag ausgelöst hat; die Online-Annahme kommt vom Kunden, nicht vom „System“.
+ * Den Namen gibt es nur am neuesten Annahme-Eintrag – nur zu ihm gehört der geladene Nachweis.
+ */
+function bearbeiter(e: DokumentAuditEintrag, nachweis: FreigabeAuditErgebnis | undefined, istNeuesteAnnahme: boolean): string {
+    if (e.geaendertVon) return e.geaendertVon;
+    if (e.aktion !== 'DIGITAL_ANGENOMMEN') return 'System';
+    const name = istNeuesteAnnahme && nachweis?.art === 'gefunden' ? nachweis.daten.unterzeichnerName : null;
+    return name ? `Kunde: ${name}` : 'Kunde (online)';
+}
+
+function AnnahmeNachweisImVerlauf({ nachweis }: { nachweis: FreigabeAuditErgebnis | undefined }) {
+    if (nachweis?.art === 'keine') return null;
+    return (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+            <div className="flex items-center gap-1 mb-2">
+                <ShieldCheck className="w-4 h-4 text-rose-600" aria-hidden="true" />
+                <p className="text-sm font-semibold text-slate-900">Annahme-Nachweis</p>
+                <InfoButton titel="Annahme-Nachweis">
+                    <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                        <p>
+                            Wenn ein Kunde ein Angebot online annimmt, speichert das Programm, wer angenommen hat,
+                            wann, mit welchem Bestätigungs-Code und ob der Kunde einen Arbeitsbeginn vor Ablauf der
+                            14-tägigen Widerrufsfrist verlangt hat. Diese Angaben sind mit einem Fingerabdruck (Hash)
+                            gesichert und können nicht mehr geändert werden. Die Auftragsbestätigung zeigt den
+                            Nachweis des Angebots, aus dem sie entstanden ist.
+                        </p>
+                    </InfoAbschnitt>
+                    <InfoAbschnitt titel="Was bewirkt das?">
+                        <p>
+                            Sie sehen hier jederzeit, ob Sie sofort anfangen dürfen oder die Widerrufsfrist abwarten
+                            müssen. Dieselbe Angabe steht in der Mail an den Kunden und in der Glocke. Im Streitfall
+                            belegt dieser Nachweis die Annahme.
+                        </p>
+                    </InfoAbschnitt>
+                </InfoButton>
+            </div>
+            {nachweis === undefined ? (
+                <div className="space-y-2" aria-label="Annahme-Nachweis wird geladen">
+                    <div className="h-4 w-2/3 rounded bg-slate-200 motion-safe:animate-pulse" />
+                    <div className="h-4 w-1/2 rounded bg-slate-200 motion-safe:animate-pulse" />
+                </div>
+            ) : nachweis.art === 'fehler' ? (
+                <p className="text-sm text-amber-800">
+                    Annahme-Nachweis konnte nicht geladen werden. Bitte den Verlauf später erneut öffnen.
+                </p>
+            ) : (
+                <AnnahmeNachweisDetails daten={nachweis.daten} kompakt />
+            )}
+        </div>
+    );
+}
+
 /**
  * Audit-Verlauf eines AusgangsGeschaeftsDokuments für die Steuerprüfung.
  * Zeigt alle protokollierten Aktionen mit Bearbeiter, Zeitstempel, Begründung und Inhaltsfingerabdruck.
+ * Beim Eintrag „Digital angenommen“ steht zusätzlich der Annahme-Nachweis (bei einer
+ * Auftragsbestätigung der des angenommenen Angebots).
  */
 export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokumentNummer }: DokumentVerlaufDrawerProps) {
     const toast = useToast();
@@ -68,6 +143,30 @@ export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokument
 
     const eintraege = dokumentId !== undefined ? cache[dokumentId] : undefined;
     const loading = open && dokumentId !== undefined && eintraege === undefined;
+    const annahmeId = eintraege ? neuesteAnnahmeId(eintraege) : null;
+
+    // Annahme-Nachweis nur laden, wenn der Verlauf eine digitale Annahme enthält.
+    const [nachweisCache, setNachweisCache] = useState<Record<number, FreigabeAuditErgebnis>>({});
+    // Ein fehlgeschlagener Nachweis wird beim nächsten Öffnen neu geladen.
+    const [warOffen, setWarOffen] = useState(open);
+    if (open !== warOffen) {
+        setWarOffen(open);
+        if (open) {
+            setNachweisCache(prev => Object.fromEntries(
+                Object.entries(prev).filter(([, ergebnis]) => ergebnis.art !== 'fehler'),
+            ));
+        }
+    }
+    useEffect(() => {
+        if (!open || !dokumentId || annahmeId === null) return;
+        if (nachweisCache[dokumentId]) return;
+        let cancelled = false;
+        ladeFreigabeAudit(dokumentId).then((ergebnis) => {
+            if (!cancelled) setNachweisCache(prev => ({ ...prev, [dokumentId]: ergebnis }));
+        });
+        return () => { cancelled = true; };
+    }, [open, dokumentId, annahmeId, nachweisCache]);
+    const nachweis = dokumentId !== undefined ? nachweisCache[dokumentId] : undefined;
 
     const formatBetrag = (n: number | null) => n != null ? n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }) : '–';
     const formatDate = (s: string) => {
@@ -119,7 +218,7 @@ export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokument
                                             </span>
                                             <div className="text-sm">
                                                 <div className="font-medium text-slate-900">
-                                                    {e.geaendertVon || 'System'}
+                                                    {bearbeiter(e, nachweis, e.id === annahmeId)}
                                                 </div>
                                                 <div className="text-xs text-slate-500">
                                                     {formatDate(e.geaendertAm)}
@@ -128,7 +227,7 @@ export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokument
                                         </div>
                                         <div className="text-right text-xs">
                                             <div className="text-slate-700">{formatBetrag(e.betragBrutto)}</div>
-                                            <div className="text-slate-400">{e.typ}</div>
+                                            <div className="text-slate-400">{typLabel(e.typ)}</div>
                                         </div>
                                     </div>
 
@@ -138,6 +237,8 @@ export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokument
                                             {e.aenderungsgrund}
                                         </div>
                                     )}
+
+                                    {e.id === annahmeId && <AnnahmeNachweisImVerlauf nachweis={nachweis} />}
 
                                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                                         {e.ipAdresse && <span>IP: {e.ipAdresse}</span>}

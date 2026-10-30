@@ -727,6 +727,8 @@ class AutoAuftragsbestaetigungVersandServiceTest {
         assertThat(html)
                 .contains("Auftragsbestätigung und unsere Widerrufsbelehrung als PDF")
                 .contains("Beginn vor Ablauf der Widerrufsfrist:")
+                // Entscheidung zusätzlich als Beweis-Zeile im Beleg
+                .contains("Beginn vor Ablauf der Widerrufsfrist: verlangt (Häkchen gesetzt)<br>")
                 .contains("Widerrufsbelehrung Stand 13.10.2026, ausgelöst mit „Zahlungspflichtig beauftragen“")
                 .doesNotContain("erst nach Ablauf der 14-tägigen Frist");
     }
@@ -755,6 +757,7 @@ class AutoAuftragsbestaetigungVersandServiceTest {
 
         assertThat(html)
                 .contains("erst nach Ablauf der 14-tägigen Frist")
+                .contains("Beginn vor Ablauf der Widerrufsfrist: nicht verlangt (Häkchen nicht gesetzt)<br>")
                 .contains("&lt;b&gt;X&lt;/b&gt;")
                 .doesNotContain("Sie haben ausdrücklich verlangt");
     }

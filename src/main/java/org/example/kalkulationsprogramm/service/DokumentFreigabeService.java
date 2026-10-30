@@ -81,6 +81,7 @@ public class DokumentFreigabeService
     private static final int MAX_GUELTIGKEITS_TAGE = 365;
 
     private static final DateTimeFormatter ABLAUF_DATUM_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    private static final DateTimeFormatter NACHWEIS_ZEIT_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy 'um' HH:mm");
 
     /** Thread-safe und wiederverwendbar — einmalig statt pro Annahme neu instanziieren. */
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
@@ -814,7 +815,8 @@ public class DokumentFreigabeService
                     ? "Freigabe eingegangen von " + unterzeichner + " für " + kunde
                         + " — " + art + " " + saved.getDokumentNummer() + " digital angenommen."
                     : kunde + " hat " + art + " " + saved.getDokumentNummer() + " digital angenommen.";
-            body = body + arbeitsbeginnHinweis(saved);
+            String beginn = FreigabeArbeitsbeginn.hinweisFuersBuero(saved);
+            if (beginn != null) body = body + " " + beginn;
             // Klick auf den Push oeffnet die Mobile-PWA-Projekteseite, weil mit der
             // Annahme die Anfrage zum Projekt wird (siehe erzeugeAutoAuftragsbestaetigungWennAngebot).
             webPushService.notifyFreigabeAnnahme(art + " angenommen", body, "/zeiterfassung/projekte");
@@ -1032,7 +1034,8 @@ public class DokumentFreigabeService
             angebot.setDigitalAngenommen(true);
             angebot = ausgangsGeschaeftsDokumentRepository.save(angebot);
             // GoBD-Audit: rechtsverbindlicher Akt — Hash-Kette schützt das Annahmedatum.
-            ausgangsGeschaeftsDokumentAuditService.protokolliereDigitaleAnnahme(angebot, freigabe.getAkzeptiertIp());
+            ausgangsGeschaeftsDokumentAuditService.protokolliereDigitaleAnnahme(angebot, freigabe.getAkzeptiertIp(),
+                    annahmeNachweisFuerVerlauf(freigabe, false));
         }
 
         // Kein doppeltes Erzeugen: Hat das Angebot bereits eine Auftragsbestätigung als Nachfolger,
@@ -1102,6 +1105,17 @@ public class DokumentFreigabeService
             dto.setBetragNetto(basisNetto.add(deltaNetto));
             dto.setMwstSatz(freigabe.getMwstSatz() != null ? freigabe.getMwstSatz() : angebot.getMwstSatz());
         }
+        else
+        {
+            // Ohne Wahlpositionen erbt die AB die Positionen des Angebots – den Betrag aber nicht.
+            // Ohne ihn stünde im GoBD-Verlauf der Annahme kein Betrag („–“), und der Auftragspreis
+            // des Projekts zählte die AB als 0. Bewusst der Betrag des aktuellen Angebots (nicht
+            // freigabe.getBasisNetto()): erstellen() übernimmt auch dessen aktuelle Positionen.
+            BigDecimal netto = angebot.getBetragNetto() != null ? angebot.getBetragNetto()
+                    : ausgangsGeschaeftsDokumentService.berechneNettoAusPositionenJson(angebot.getPositionenJson());
+            dto.setBetragNetto(netto);
+            dto.setMwstSatz(angebot.getMwstSatz());
+        }
 
         AusgangsGeschaeftsDokument ab = ausgangsGeschaeftsDokumentService.erstellen(dto);
 
@@ -1125,7 +1139,8 @@ public class DokumentFreigabeService
             ab = ausgangsGeschaeftsDokumentRepository.save(ab);
             // GoBD-Audit: AB ist rechtlich Folge der Angebotsannahme; spiegeln wir
             // im Audit, damit Prüfer den vollständigen Annahme-Vorgang nachvollziehen kann.
-            ausgangsGeschaeftsDokumentAuditService.protokolliereDigitaleAnnahme(ab, freigabe.getAkzeptiertIp());
+            ausgangsGeschaeftsDokumentAuditService.protokolliereDigitaleAnnahme(ab, freigabe.getAkzeptiertIp(),
+                    annahmeNachweisFuerVerlauf(freigabe, true));
         }
 
         // Auto-Versand der AB als PDF-Mail an den Kunden (Issue #55) — asynchron
@@ -1319,7 +1334,35 @@ public class DokumentFreigabeService
         Map<Long, DokumentFreigabe> map = findJuengsteProQuelle(typ, List.of(quellDokumentId));
         DokumentFreigabe f = map.get(quellDokumentId);
         if (f == null) return Optional.empty();
-        return Optional.of(FreigabeAuditDto.builder()
+        return Optional.of(toAuditDto(f));
+    }
+
+    /**
+     * Annahme-Nachweis eines Ausgangsdokuments. Hat das Dokument keine eigene Freigabe, ist aber
+     * digital angenommen (die automatisch erzeugte Auftragsbestätigung), gilt der Nachweis des
+     * angenommenen Vorgängers – die AB ist rechtlich nur die Folge dieser Annahme. Der Nachweis
+     * nennt dann Art und Nummer des Angebots.
+     */
+    @Transactional(readOnly = true)
+    public Optional<FreigabeAuditDto> findAuditFuerAusgangsDokument(Long dokumentId)
+    {
+        Optional<FreigabeAuditDto> eigene = findAuditByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, dokumentId);
+        if (eigene.isPresent() || dokumentId == null) return eigene;
+
+        AusgangsGeschaeftsDokument dokument = ausgangsGeschaeftsDokumentRepository.findById(dokumentId).orElse(null);
+        if (dokument == null || !dokument.isDigitalAngenommen()) return Optional.empty();
+        AusgangsGeschaeftsDokument vorgaenger = dokument.getVorgaenger();
+        if (vorgaenger == null || !vorgaenger.isDigitalAngenommen()) return Optional.empty();
+
+        DokumentFreigabe f = findJuengsteProQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(vorgaenger.getId()))
+                .get(vorgaenger.getId());
+        if (f == null || f.getStatus() != FreigabeStatus.ACCEPTED) return Optional.empty();
+        return Optional.of(toAuditDto(f));
+    }
+
+    private static FreigabeAuditDto toAuditDto(DokumentFreigabe f)
+    {
+        return FreigabeAuditDto.builder()
                 .status(f.getStatus().name())
                 .dokumentArt(f.getDokumentArt())
                 .dokumentNummer(f.getDokumentNummer())
@@ -1341,7 +1384,7 @@ public class DokumentFreigabeService
                 .datenschutzStand(f.getDatenschutzStand())
                 .bestaetigungText(f.getBestaetigungText())
                 .knopfText(f.getKnopfText())
-                .build());
+                .build();
     }
 
     /**
@@ -1554,22 +1597,54 @@ public class DokumentFreigabeService
     }
 
     /**
-     * Zusatz für die Push-Nachricht: Darf das Büro sofort loslegen oder muss es die Widerrufsfrist
-     * abwarten? Ohne Angabe (ältere Website) leer.
+     * Begründungstext für den GoBD-Verlauf der digitalen Annahme. Er liegt in der Hash-Kette und
+     * hält dort fest, wann angenommen wurde, ob per Code bestätigt wurde und ob der Kunde einen
+     * Beginn vor Ablauf der Widerrufsfrist verlangt hat.
+     *
+     * <p>Name und E-Mail des Kunden stehen bewusst nicht darin (Datenminimierung): Die Kette ist
+     * unveränderbar, die Personendaten liegen schon in der Freigabe. Der Annahme-Hash verbindet
+     * beide Stellen eindeutig.</p>
+     *
+     * @param folgedokument {@code true} für die automatisch erzeugte Auftragsbestätigung
      */
-    static String arbeitsbeginnHinweis(DokumentFreigabe f)
+    static String annahmeNachweisFuerVerlauf(DokumentFreigabe f, boolean folgedokument)
     {
-        if (Boolean.TRUE.equals(f.getVorzeitigerBeginn()))
+        String dokument = ((f.getDokumentArt() == null ? "Angebot" : f.getDokumentArt()) + " "
+                + (f.getDokumentNummer() == null ? "" : f.getDokumentNummer())).trim();
+        StringBuilder text = new StringBuilder(folgedokument
+                ? "Automatisch erstellt nach digitaler Annahme von " + dokument
+                : "Digitale Annahme von " + dokument);
+        if (f.getAkzeptiertAm() != null)
         {
-            return " Sofort beginnen erlaubt.";
+            text.append(" am ").append(f.getAkzeptiertAm().format(NACHWEIS_ZEIT_FORMAT)).append(" Uhr");
         }
-        if (Boolean.FALSE.equals(f.getVorzeitigerBeginn()))
+        text.append('.');
+        if (f.getCodeBestaetigtAm() != null)
         {
-            String bis = f.getAkzeptiertAm() == null ? ""
-                    : " (bis " + f.getAkzeptiertAm().toLocalDate().plusDays(14).format(ABLAUF_DATUM_FORMAT) + ")";
-            return " Erst nach Ablauf der Widerrufsfrist beginnen" + bis + ".";
+            text.append(" Bestätigt per Einmal-Code.");
         }
-        return "";
+        String entscheidung = FreigabeArbeitsbeginn.entscheidungDesKunden(f);
+        if (entscheidung != null)
+        {
+            text.append(' ').append(entscheidung).append('.');
+            text.append(' ').append(FreigabeArbeitsbeginn.hinweisFuersBuero(f));
+        }
+        else
+        {
+            text.append(" Keine Angabe zum Beginn vor Ablauf der Widerrufsfrist.");
+        }
+        if (f.getWiderrufStand() != null)
+        {
+            text.append(" Widerrufsbelehrung Stand ")
+                    .append(WiderrufsbelehrungPdfService.formatiereStand(f.getWiderrufStand()));
+            if (f.getKnopfText() != null) text.append(", ausgelöst mit „").append(f.getKnopfText()).append('“');
+            text.append('.');
+        }
+        if (f.getHashAcceptance() != null)
+        {
+            text.append(" Annahme-Hash: ").append(f.getHashAcceptance()).append('.');
+        }
+        return text.toString();
     }
 
     /**
