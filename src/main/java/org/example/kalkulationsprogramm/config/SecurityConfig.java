@@ -280,6 +280,9 @@ public class SecurityConfig {
                         "/api/zeitverwaltung/feiertage/regenerieren").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/zeitverwaltung/feiertage/*").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/zeitverwaltung/feiertage/*").hasRole("ADMIN")
+                // Kostenstellen sieht jeder Angemeldete. Anlegen, Ändern, Löschen und Wiederherstellen prüft der
+                // KostenstelleController selbst: Admins oder Abteilungen mit „Kostenstellen verwalten“.
+                .requestMatchers("/api/firma/kostenstellen", "/api/firma/kostenstellen/**").authenticated()
                 .requestMatchers("/api/firma/**", "/api/settings/**", "/api/frontend-users/**", "/api/postfaecher", "/api/postfaecher/**").hasRole("ADMIN")
                 // Einrichtungs-Dateien des OpenFile Launchers gibt es nur unter Einstellungen (Admin)
                 .requestMatchers("/api/openfile-launcher/**").hasRole("ADMIN")

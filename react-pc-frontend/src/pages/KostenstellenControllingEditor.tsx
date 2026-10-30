@@ -11,14 +11,21 @@ import { Select } from '../components/ui/select-custom';
 import { PageLayout } from '../components/layout/PageLayout';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
 import { KostenstelleDetailView } from '../components/firma/KostenstelleDetailView';
+import { GeloeschteKostenstellen } from '../components/firma/GeloeschteKostenstellen';
 import { useToast } from '../components/ui/toast';
 import { useConfirm } from '../components/ui/confirm-dialog';
 import { cn } from '../lib/utils';
+import { leseFehlermeldung } from '../lib/apiFehler';
+import { useDarfKostenstellenVerwalten } from '../features/kostenstellen/useDarfKostenstellenVerwalten';
+import {
+    KOSTENSTELLEN_TYP_OPTIONS, getTypColor, getTypLabel,
+    type Kostenstelle, type KostenstellenTyp,
+} from '../features/kostenstellen/kostenstellenTypen';
 
 interface KostenstelleAuswertung {
     id: number;
     bezeichnung: string;
-    typ: 'LAGER' | 'GEMEINKOSTEN' | 'PROJEKT' | 'SONSTIG';
+    typ: KostenstellenTyp;
     beschreibung: string;
     istFixkosten: boolean;
     istInvestition: boolean;
@@ -30,18 +37,11 @@ interface KostenstelleAuswertung {
 interface KostenstelleForm {
     id?: number;
     bezeichnung?: string;
-    typ?: 'LAGER' | 'GEMEINKOSTEN' | 'PROJEKT' | 'SONSTIG';
-    beschreibung?: string;
+    typ?: KostenstellenTyp;
+    beschreibung?: string | null;
     aktiv?: boolean;
-    sortierung?: number;
+    sortierung?: number | null;
 }
-
-const KOSTENSTELLEN_TYP_OPTIONS = [
-    { value: 'LAGER', label: 'Lager (Investitionen)' },
-    { value: 'GEMEINKOSTEN', label: 'Gemeinkosten (Fixkosten)' },
-    { value: 'PROJEKT', label: 'Projekt' },
-    { value: 'SONSTIG', label: 'Sonstige' },
-];
 
 const MONATE = [
     { value: '', label: 'Ganzes Jahr' },
@@ -62,21 +62,14 @@ const MONATE = [
 const formatCurrency = (val: number) =>
     new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
-const getTypLabel = (typ: string) =>
-    KOSTENSTELLEN_TYP_OPTIONS.find(o => o.value === typ)?.label || typ;
-
-const getTypColor = (typ: string) => {
-    switch (typ) {
-        case 'GEMEINKOSTEN': return 'bg-rose-100 text-rose-700 border-rose-200';
-        case 'LAGER': return 'bg-rose-50 text-rose-600 border-rose-100';
-        case 'PROJEKT': return 'bg-slate-100 text-slate-700 border-slate-300';
-        default: return 'bg-slate-100 text-slate-600 border-slate-200';
-    }
-};
+const SPEICHERN_FEHLER = 'Speichern hat nicht geklappt.';
 
 export default function KostenstellenControllingEditor() {
     const toast = useToast();
     const confirmDialog = useConfirm();
+    const darfVerwalten = useDarfKostenstellenVerwalten();
+    const [geloeschte, setGeloeschte] = useState<Kostenstelle[]>([]);
+    const [wiederherstellendeId, setWiederherstellendeId] = useState<number | null>(null);
 
     const currentYear = new Date().getFullYear();
     const [jahr, setJahr] = useState<number>(currentYear);
@@ -125,14 +118,30 @@ export default function KostenstellenControllingEditor() {
             });
     }, [jahr, monat]);
 
+    // Gelöschte Kostenstellen gibt der Server nur mit dem Recht „Kostenstellen verwalten“ heraus.
+    const ladeGeloeschte = useCallback(() => {
+        if (!darfVerwalten) return Promise.resolve();
+        return fetch('/api/firma/kostenstellen/geloescht')
+            .then(async (res) => {
+                setGeloeschte(res.ok ? await res.json() as Kostenstelle[] : []);
+            })
+            .catch((e) => {
+                console.error('Fehler beim Laden der gelöschten Kostenstellen', e);
+            });
+    }, [darfVerwalten]);
+
     const neuLaden = () => {
         setLoading(true);
-        return loadData();
+        return Promise.all([loadData(), ladeGeloeschte()]);
     };
 
     useEffect(() => {
         void loadData();
     }, [loadData]);
+
+    useEffect(() => {
+        void ladeGeloeschte();
+    }, [ladeGeloeschte]);
 
     const gefiltert = useMemo(() => {
         const begriff = suche.trim().toLowerCase();
@@ -157,31 +166,35 @@ export default function KostenstellenControllingEditor() {
         setSaving(true);
         try {
             const typ = editing.typ || 'GEMEINKOSTEN';
+            // Nur die Felder der Kostenstelle senden – keine Summen aus der Auswertung.
             const payload = {
-                ...editing,
+                bezeichnung: editing.bezeichnung.trim(),
                 typ,
+                beschreibung: editing.beschreibung?.trim() || null,
                 istFixkosten: typ === 'GEMEINKOSTEN',
                 istInvestition: typ === 'LAGER',
+                aktiv: true,
+                sortierung: editing.sortierung ?? null,
             };
-            const method = payload.id ? 'PUT' : 'POST';
-            const url = payload.id
-                ? `/api/firma/kostenstellen/${payload.id}`
+            const url = editing.id
+                ? `/api/firma/kostenstellen/${editing.id}`
                 : '/api/firma/kostenstellen';
             const res = await fetch(url, {
-                method,
+                method: editing.id ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
             if (res.ok) {
                 setShowModal(false);
                 setEditing(null);
+                toast.success('Kostenstelle gespeichert');
                 await neuLaden();
             } else {
-                toast.error('Fehler beim Speichern');
+                toast.error(await leseFehlermeldung(res, SPEICHERN_FEHLER));
             }
         } catch (e) {
             console.error('Fehler beim Speichern', e);
-            toast.error('Netzwerkfehler beim Speichern');
+            toast.error('Server nicht erreichbar. Speichern hat nicht geklappt.');
         } finally {
             setSaving(false);
         }
@@ -190,20 +203,39 @@ export default function KostenstellenControllingEditor() {
     const deleteKostenstelle = async (id: number) => {
         if (!await confirmDialog({
             title: 'Kostenstelle löschen',
-            message: 'Kostenstelle wirklich löschen? Bestehende Zuordnungen bleiben erhalten, aber die Kostenstelle verschwindet aus der Auswahl.',
+            message: 'Die Kostenstelle wird ausgeblendet. Bisherige Buchungen bleiben erhalten, und du kannst sie unten unter ‚Gelöschte Kostenstellen‘ wiederherstellen.',
             variant: 'danger',
             confirmLabel: 'Löschen',
         })) return;
         try {
             const res = await fetch(`/api/firma/kostenstellen/${id}`, { method: 'DELETE' });
             if (res.ok) {
+                toast.success('Kostenstelle gelöscht');
                 await neuLaden();
             } else {
-                toast.error('Löschen fehlgeschlagen');
+                toast.error(await leseFehlermeldung(res, 'Löschen hat nicht geklappt.'));
             }
         } catch (e) {
             console.error('Fehler beim Löschen', e);
-            toast.error('Netzwerkfehler beim Löschen');
+            toast.error('Server nicht erreichbar. Löschen hat nicht geklappt.');
+        }
+    };
+
+    const wiederherstellen = async (ks: Kostenstelle) => {
+        setWiederherstellendeId(ks.id);
+        try {
+            const res = await fetch(`/api/firma/kostenstellen/${ks.id}/wiederherstellen`, { method: 'POST' });
+            if (res.ok) {
+                toast.success('Kostenstelle wiederhergestellt');
+                await neuLaden();
+            } else {
+                toast.error(await leseFehlermeldung(res, 'Wiederherstellen hat nicht geklappt.'));
+            }
+        } catch (e) {
+            console.error('Fehler beim Wiederherstellen', e);
+            toast.error('Server nicht erreichbar. Wiederherstellen hat nicht geklappt.');
+        } finally {
+            setWiederherstellendeId(null);
         }
     };
 
@@ -211,10 +243,14 @@ export default function KostenstellenControllingEditor() {
         try {
             const res = await fetch('/api/firma/kostenstellen/init', { method: 'POST' });
             if (res.ok) {
+                toast.success('Standard-Kostenstellen angelegt');
                 await neuLaden();
+            } else {
+                toast.error(await leseFehlermeldung(res, 'Standard-Kostenstellen konnten nicht angelegt werden.'));
             }
         } catch (e) {
             console.error('Fehler beim Initialisieren', e);
+            toast.error('Server nicht erreichbar. Standard-Kostenstellen konnten nicht angelegt werden.');
         }
     };
 
@@ -225,7 +261,7 @@ export default function KostenstellenControllingEditor() {
             ribbonCategory="Finanzen & Controlling"
             title="KOSTENSTELLEN"
             subtitle="Kosten aus Lieferantenrechnungen nach Kostenstelle – mit Vorjahresvergleich"
-            actions={
+            actions={darfVerwalten && (
                 <div className="flex gap-2">
                     {kostenstellen.length === 0 && !loading && (
                         <Button variant="outline" onClick={initKostenstellen} className="border-rose-300 text-rose-700 hover:bg-rose-50">
@@ -243,7 +279,7 @@ export default function KostenstellenControllingEditor() {
                         Neue Kostenstelle
                     </Button>
                 </div>
-            }
+            )}
         >
             {selected ? (
                 <KostenstelleDetailView
@@ -343,12 +379,13 @@ export default function KostenstellenControllingEditor() {
                                                     {getTypLabel(ks.typ)}
                                                 </span>
                                             </div>
-                                            <div className="flex gap-1 shrink-0">
+                                            {darfVerwalten && <div className="flex gap-1 shrink-0">
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={(e) => { e.stopPropagation(); setEditing(ks); setShowModal(true); }}
-                                                    aria-label="Kostenstelle bearbeiten"
+                                                    aria-label={`${ks.bezeichnung} bearbeiten`}
+                                                    title="Kostenstelle bearbeiten"
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </Button>
@@ -357,11 +394,12 @@ export default function KostenstellenControllingEditor() {
                                                     size="sm"
                                                     onClick={(e) => { e.stopPropagation(); deleteKostenstelle(ks.id); }}
                                                     className="text-rose-600 hover:text-rose-700"
-                                                    aria-label="Kostenstelle löschen"
+                                                    aria-label={`${ks.bezeichnung} löschen`}
+                                                    title="Kostenstelle löschen"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </Button>
-                                            </div>
+                                            </div>}
                                         </div>
 
                                         {ks.beschreibung && (
@@ -386,6 +424,14 @@ export default function KostenstellenControllingEditor() {
                             })}
                         </div>
                     )}
+
+                    {darfVerwalten && (
+                        <GeloeschteKostenstellen
+                            kostenstellen={geloeschte}
+                            wiederherstellendeId={wiederherstellendeId}
+                            onWiederherstellen={wiederherstellen}
+                        />
+                    )}
                 </div>
             )}
 
@@ -397,8 +443,9 @@ export default function KostenstellenControllingEditor() {
                     </DialogHeader>
                     <div className="space-y-4 py-4">
                         <div>
-                            <Label>Bezeichnung *</Label>
+                            <Label htmlFor="kostenstelle-bezeichnung">Bezeichnung *</Label>
                             <Input
+                                id="kostenstelle-bezeichnung"
                                 value={editing?.bezeichnung || ''}
                                 onChange={e => setEditing({ ...editing, bezeichnung: e.target.value })}
                             />
@@ -412,8 +459,9 @@ export default function KostenstellenControllingEditor() {
                             />
                         </div>
                         <div>
-                            <Label>Beschreibung</Label>
+                            <Label htmlFor="kostenstelle-beschreibung">Beschreibung</Label>
                             <Input
+                                id="kostenstelle-beschreibung"
                                 value={editing?.beschreibung || ''}
                                 onChange={e => setEditing({ ...editing, beschreibung: e.target.value })}
                             />

@@ -3,7 +3,6 @@ package org.example.kalkulationsprogramm.controller;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.service.EmailAbsenderService;
 import org.example.kalkulationsprogramm.service.FirmeninformationService;
-import org.example.kalkulationsprogramm.service.KostenstelleService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,9 +35,6 @@ class FirmaControllerLogoTest {
 
     @MockitoBean
     private FirmeninformationService firmeninformationService;
-
-    @MockitoBean
-    private KostenstelleService kostenstelleService;
 
     @MockitoBean
     private SteuerberaterKontaktService steuerberaterKontaktService;

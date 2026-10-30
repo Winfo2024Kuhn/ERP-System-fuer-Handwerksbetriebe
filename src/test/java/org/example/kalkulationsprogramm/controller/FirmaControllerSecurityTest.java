@@ -16,7 +16,6 @@ import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
 import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.service.EmailAbsenderService;
 import org.example.kalkulationsprogramm.service.FirmeninformationService;
-import org.example.kalkulationsprogramm.service.KostenstelleService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -66,9 +65,6 @@ class FirmaControllerSecurityTest {
 
     @MockitoBean
     private FirmeninformationService firmeninformationService;
-
-    @MockitoBean
-    private KostenstelleService kostenstelleService;
 
     @MockitoBean
     private SteuerberaterKontaktService steuerberaterKontaktService;
@@ -178,16 +174,6 @@ class FirmaControllerSecurityTest {
                 .andExpect(status().isForbidden());
 
         verifyNoInteractions(steuerberaterKontaktService);
-    }
-
-    @Test
-    @WithMockUser(roles = "USER")
-    @DisplayName("Normaler Benutzer kommt weiterhin nicht an die Kostenstellen")
-    void normalerBenutzerDarfKostenstellenNichtLesen() throws Exception {
-        mockMvc.perform(get("/api/firma/kostenstellen"))
-                .andExpect(status().isForbidden());
-
-        verifyNoInteractions(kostenstelleService);
     }
 
     private static RequestPostProcessor csrf() {

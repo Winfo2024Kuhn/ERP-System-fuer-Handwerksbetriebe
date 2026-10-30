@@ -142,6 +142,30 @@ it('ein schon gesetztes Recht "Aufschläge ändern" bleibt beim Speichern erhalt
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
     expect(JSON.parse(fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')![1].body)).toMatchObject({ darfAufschlaegeAendern: true });
 });
+it('lädt das Recht "Kostenstellen verwalten", erklärt es im Info-Popover und speichert es mit', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfAufschlaegeAendern: true, darfKostenstellenVerwalten: undefined }] });
+    render(<BerechtigungenSection />);
+    const checkbox = await screen.findByRole('checkbox', { name: /Kostenstellen verwalten/ });
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: /Mehr zu: Kostenstellen verwalten/ }));
+    expect(await screen.findByText(/Buchungen, die schon einer Kostenstelle zugeordnet sind, ändern sich dadurch nicht/)).toBeVisible();
+
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')![1].body))
+        .toMatchObject({ darfKostenstellenVerwalten: true, darfAufschlaegeAendern: true });
+});
+it('ein schon gesetztes Recht "Kostenstellen verwalten" bleibt beim Speichern erhalten', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => [{ ...abteilung, darfKostenstellenVerwalten: true }] });
+    render(<BerechtigungenSection />);
+    expect(await screen.findByRole('checkbox', { name: /Kostenstellen verwalten/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls.find(c => c[1]?.method === 'PUT')![1].body))
+        .toMatchObject({ darfKostenstellenVerwalten: true, darfAufschlaegeAendern: false });
+});
 it('zeigt die Karte „Abteilungen“ ganz oben, vor der Postfach-Karte', async () => {
     fetchMock.mockReturnValue(new Promise(() => {}));
     render(<BerechtigungenSection />);
