@@ -209,6 +209,44 @@ class AusgangsGeschaeftsDokumentControllerTest {
     }
 
     @Nested
+    @DisplayName("GET /api/ausgangs-dokumente/{id}/freigabe-audit")
+    class FreigabeAudit {
+
+        @Test
+        @DisplayName("Auftragsbestätigung liefert den Annahme-Nachweis des Angebots")
+        void liefertNachweis() throws Exception {
+            given(dokumentFreigabeService.findAuditFuerAusgangsDokument(124L)).willReturn(java.util.Optional.of(
+                    org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto.builder()
+                            .status("ACCEPTED").dokumentArt("Angebot").dokumentNummer("AG-2026-0021")
+                            .unterzeichnerName("Max Mustermann").vorzeitigerBeginn(false).build()));
+
+            mockMvc.perform(get("/api/ausgangs-dokumente/124/freigabe-audit"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dokumentNummer").value("AG-2026-0021"))
+                    .andExpect(jsonPath("$.vorzeitigerBeginn").value(false));
+        }
+
+        @Test
+        @DisplayName("Ohne Online-Annahme 404, auch bei ungültigen IDs")
+        void ohneAnnahme404() throws Exception {
+            given(dokumentFreigabeService.findAuditFuerAusgangsDokument(org.mockito.ArgumentMatchers.anyLong()))
+                    .willReturn(java.util.Optional.empty());
+
+            mockMvc.perform(get("/api/ausgangs-dokumente/999/freigabe-audit")).andExpect(status().isNotFound());
+            mockMvc.perform(get("/api/ausgangs-dokumente/0/freigabe-audit")).andExpect(status().isNotFound());
+            mockMvc.perform(get("/api/ausgangs-dokumente/" + Long.MAX_VALUE + "/freigabe-audit"))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("Nicht-numerische ID (SQL-Injection) wird abgewiesen")
+        void sqlInjectionAbgewiesen() throws Exception {
+            mockMvc.perform(get("/api/ausgangs-dokumente/1;DROP TABLE x/freigabe-audit"))
+                    .andExpect(status().is4xxClientError());
+        }
+    }
+
+    @Nested
     @DisplayName("GET /api/ausgangs-dokumente/projekt/{projektId}")
     class GetByProjekt {
 

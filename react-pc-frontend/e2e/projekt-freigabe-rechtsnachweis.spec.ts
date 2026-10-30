@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from './hilfen/test';
+import { designPruefung } from './hilfen/design';
 
 /**
  * Annahme-Nachweis einer digitalen Freigabe im Projekt: Das Büro muss sehen, ob der
@@ -10,12 +11,13 @@ import { test, expect } from './hilfen/test';
 
 const PROJEKT_ID = 7;
 const DOK_ID = 41;
+const AB_ID = 42;
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-async function stubApi(page: Page, audit: Record<string, unknown>) {
+async function stubApi(page: Page, audit: Record<string, unknown>, mitAuftragsbestaetigung = false) {
     const projekt = {
         id: PROJEKT_ID, bauvorhaben: 'Geländer Musterstraße', kunde: 'Max Mustermann', kundenId: 3,
         kundennummer: 'K-1003', auftragsnummer: '2026/10/00007', anlegedatum: '2026-10-01',
@@ -28,6 +30,18 @@ async function stubApi(page: Page, audit: Record<string, unknown>) {
         betragNetto: 4201.68, betragBrutto: 5000, storniert: false, gebucht: true, digitalAngenommen: true,
         projektId: PROJEKT_ID,
     };
+    // Aus der Online-Annahme entstandene Auftragsbestätigung; ihr Nachweis ist der des Angebots.
+    const auftragsbestaetigung = {
+        id: AB_ID, typ: 'AUFTRAGSBESTAETIGUNG', dokumentNummer: 'AB-2026-0042', datum: '2026-10-13',
+        betragNetto: 4201.68, betragBrutto: 5000, storniert: false, gebucht: true, digitalAngenommen: true,
+        projektId: PROJEKT_ID, vorgaengerId: DOK_ID,
+    };
+    const abVerlauf = [{
+        id: 900, aktion: 'DIGITAL_ANGENOMMEN', dokumentId: AB_ID, dokumentNummer: 'AB-2026-0042',
+        typ: 'AUFTRAGSBESTAETIGUNG', betragNetto: 4201.68, betragBrutto: 5000, gebucht: true, storniert: false,
+        digitalAngenommen: true, inhaltHash: 'c'.repeat(64), geaendertVon: null, geaendertVonId: null,
+        geaendertAm: '2026-10-13T09:30:00', aenderungsgrund: 'Digitale Annahme durch Kunden', ipAdresse: '192.0.2.10',
+    }];
 
     await page.route('**/api/**', (route) => {
         const pfad = new URL(route.request().url()).pathname;
@@ -42,7 +56,11 @@ async function stubApi(page: Page, audit: Record<string, unknown>) {
         }
         if (pfad === '/api/projekte' && methode === 'GET') return json(route, { projekte: [], gesamt: 0 });
         if (pfad === `/api/projekte/${PROJEKT_ID}`) return json(route, projekt);
-        if (pfad === `/api/ausgangs-dokumente/projekt/${PROJEKT_ID}`) return json(route, [angebot]);
+        if (pfad === `/api/ausgangs-dokumente/projekt/${PROJEKT_ID}`) {
+            return json(route, mitAuftragsbestaetigung ? [angebot, auftragsbestaetigung] : [angebot]);
+        }
+        if (pfad === `/api/ausgangs-dokumente/${AB_ID}/historie`) return json(route, abVerlauf);
+        if (pfad === `/api/ausgangs-dokumente/${AB_ID}/freigabe-audit`) return json(route, audit);
         if (pfad === '/api/ausgangs-dokumente/freigabe-status') {
             return json(route, { [DOK_ID]: { status: 'ACCEPTED', akzeptiertAm: '2026-10-13T09:30:00', ablaufDatum: '2026-10-24T00:00:00' } });
         }
@@ -110,4 +128,27 @@ test('Altbestand ohne Rechtsnachweis zeigt den Abschnitt nicht', async ({ page }
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByText('Kryptographischer Beweis')).toBeVisible();
     await expect(dialog.getByText('Rechtsnachweis')).toBeHidden();
+});
+
+test('Verlauf der Auftragsbestätigung zeigt den Annahme-Nachweis des Angebots', async ({ page }, testInfo) => {
+    await stubApi(page, { ...BASIS_AUDIT, vorzeitigerBeginn: false }, true);
+    await page.goto(`/projekte?projektId=${PROJEKT_ID}&tab=geschaeftsdokumente`);
+
+    await page.getByText('AB-2026-0042').click();
+    await page.getByRole('button', { name: 'Verlauf anzeigen' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('Annahme-Nachweis', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Angebot AN-2026-0041', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Kunde: Max Mustermann')).toBeVisible();
+    await expect(dialog.getByText('Erst nach Ablauf der Widerrufsfrist beginnen (bis 27.10.2026).')).toBeVisible();
+    await expect(dialog.getByText('Auftragsbestätigung', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('AUFTRAGSBESTAETIGUNG')).toBeHidden();
+
+    await dialog.getByRole('button', { name: 'Mehr zu: Annahme-Nachweis' }).click();
+    const info = page.getByText(/Die Auftragsbestätigung zeigt den Nachweis des Angebots/);
+    await expect(info).toBeVisible();
+    const box = await info.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box && viewport && box.x >= 0 && box.x + box.width <= viewport.width).toBeTruthy();
+    await designPruefung(page, testInfo, 'verlauf-annahme-nachweis-info');
 });

@@ -86,10 +86,16 @@ public class AusgangsGeschaeftsDokumentAuditService {
         save(dokument, AusgangsGeschaeftsDokumentAuditAktion.GELOESCHT, bearbeiter, begruendung, ipAdresse);
     }
 
+    /**
+     * Protokolliert die digitale Annahme durch den Kunden. {@code nachweis} beschreibt den
+     * Vorgang (Zeitpunkt, Code-Bestätigung, Entscheidung zum Arbeitsbeginn, Textstände,
+     * Annahme-Hash) und liegt damit in der Hash-Kette; ohne Angabe bleibt es beim knappen
+     * Standardtext.
+     */
     @Transactional
-    public void protokolliereDigitaleAnnahme(AusgangsGeschaeftsDokument dokument, String ipAdresse) {
-        save(dokument, AusgangsGeschaeftsDokumentAuditAktion.DIGITAL_ANGENOMMEN, null,
-                "Digitale Annahme durch Kunden", ipAdresse);
+    public void protokolliereDigitaleAnnahme(AusgangsGeschaeftsDokument dokument, String ipAdresse, String nachweis) {
+        String grund = nachweis == null || nachweis.isBlank() ? "Digitale Annahme durch Kunden" : nachweis;
+        save(dokument, AusgangsGeschaeftsDokumentAuditAktion.DIGITAL_ANGENOMMEN, null, grund, ipAdresse);
     }
 
     @Transactional(readOnly = true)
@@ -113,9 +119,11 @@ public class AusgangsGeschaeftsDokumentAuditService {
         AusgangsGeschaeftsDokumentAudit audit = AusgangsGeschaeftsDokumentAudit.fromDokument(
                 dokument, aktion, bearbeiter, grund, ipAdresse);
         appendToChain(audit);
-        log.info("Audit-Eintrag #{} (chain={}): {} für Dokument {} (Nr: {}) durch {} – {}",
+        // Begründung bewusst nicht loggen: Sie kann Personendaten enthalten (DSGVO) und steht
+        // ohnehin vollständig im Audit-Eintrag.
+        log.info("Audit-Eintrag #{} (chain={}): {} für Dokument {} (Nr: {}) durch {}",
                 audit.getId(), audit.getChainIndex(), aktion, dokument.getId(), dokument.getDokumentNummer(),
-                bearbeiter != null ? bearbeiter.getId() : "system", grund);
+                bearbeiter != null ? bearbeiter.getId() : "system");
     }
 
     /**

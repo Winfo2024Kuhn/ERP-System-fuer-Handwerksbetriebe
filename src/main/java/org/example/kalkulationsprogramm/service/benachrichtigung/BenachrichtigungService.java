@@ -56,6 +56,7 @@ import org.example.kalkulationsprogramm.repository.UrlaubsantragRepository;
 import org.example.kalkulationsprogramm.repository.ZeitbuchungRepository;
 import org.example.kalkulationsprogramm.service.AnfrageFunnelService;
 import org.example.kalkulationsprogramm.service.EmailGelesenService;
+import org.example.kalkulationsprogramm.service.FreigabeArbeitsbeginn;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.GelesenStand;
 import org.example.kalkulationsprogramm.service.MonatsabschlussBerechtigungService;
@@ -732,9 +733,12 @@ public class BenachrichtigungService {
                             ? (f.getKundeEmail() == null ? "Kunde" : f.getKundeEmail())
                             : f.getKundeName();
                     String art = f.getDokumentArt() == null ? "Dokument" : f.getDokumentArt();
+                    // Ob sofort begonnen werden darf, muss das Büro ohne Klick sehen.
+                    String beginn = FreigabeArbeitsbeginn.hinweisFuersBuero(f);
                     return new BenachrichtigungEintragDto("FREIGABE_ANGENOMMEN:" + f.getId(), "FREIGABE_ANGENOMMEN",
                             art + " " + (f.getDokumentNummer() == null ? "" : f.getDokumentNummer()) + " angenommen",
-                            "Von: " + kunde, f.getAkzeptiertAm() != null ? f.getAkzeptiertAm().toString() : "",
+                            "Von: " + kunde + (beginn == null ? "" : " · " + beginn),
+                            f.getAkzeptiertAm() != null ? f.getAkzeptiertAm().toString() : "",
                             freigabeZuInstanzLink(f));
                 }, 5);
     }
