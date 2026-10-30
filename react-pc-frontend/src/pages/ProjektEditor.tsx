@@ -79,8 +79,8 @@ import { ArtikelSuche } from '../components/artikel/ArtikelSuche';
 import { artikelBezeichnung } from '../components/artikel/artikelBezeichnung';
 import { KettenLinie } from '../features/bestellungen/KettenLinie';
 import { alsKettenTyp, type KettenLinienDokument, type KettenVerbindung } from '../features/bestellungen/kettenLinieLogik';
-import { FreigabeRechtsnachweis } from '../features/freigabe/FreigabeRechtsnachweis';
-import type { FreigabeRechtsnachweisDaten } from '../features/freigabe/rechtsnachweisLogik';
+import { AnnahmeNachweisDetails } from '../features/freigabe/AnnahmeNachweisDetails';
+import { ladeFreigabeAudit, type FreigabeAuditDaten } from '../features/freigabe/freigabeAudit';
 
 interface Supplier {
     id: number;
@@ -175,28 +175,6 @@ const istMahnDokument = (dok: AusgangsGeschaeftsDokument): boolean =>
 
 
 
-
-// ==================== AUDIT-TRAIL ====================
-
-/** Rechtlich relevante Beweisdaten einer akzeptierten digitalen Freigabe. */
-type FreigabeAuditData = {
-    status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
-    dokumentArt: string;
-    dokumentNummer: string;
-    erstelltAm: string;
-    ablaufDatum: string;
-    akzeptiertAm: string | null;
-    akzeptiertEmail: string | null;
-    akzeptiertIp: string | null;
-    akzeptiertUserAgent: string | null;
-    // Vor-/Nachname der konkret klickenden Person (bei Firmenkunden die
-    // vertretungsberechtigte Person). Für Altbestand (Akzeptanzen vor V317) null.
-    unterzeichnerVorname: string | null;
-    unterzeichnerNachname: string | null;
-    unterzeichnerName: string | null;
-    hashOriginal: string | null;
-    hashAcceptance: string | null;
-} & Omit<FreigabeRechtsnachweisDaten, 'akzeptiertAm'>;
 
 // ==================== DETAIL VIEW ====================
 
@@ -493,7 +471,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     // Audit-Detail-Modal beim Klick auf den „Angenommen"-Badge — wird on-demand
     // pro Dokument geladen, damit IP/User-Agent nicht in der Listen-API mitkommen.
     const [auditDokumentId, setAuditDokumentId] = useState<number | null>(null);
-    const [auditDaten, setAuditDaten] = useState<FreigabeAuditData | null>(null);
+    const [auditDaten, setAuditDaten] = useState<FreigabeAuditDaten | null>(null);
     const [auditLoading, setAuditLoading] = useState(false);
     const [actionMenuDokument, setActionMenuDokument] = useState<AusgangsGeschaeftsDokument | null>(null);
     /** Rechnung, zu der gerade eine Gutschrift angelegt wird (Dialog offen). */
@@ -611,20 +589,15 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
     }, [ausgangsDokumente]);
 
     // Audit-Trail on-demand laden, sobald der Nutzer auf den Badge klickt.
-    const oeffneAuditModal = useCallback(async (dokumentId: number) => {
+    // Fehler und fehlende Annahme zeigen „Keine Audit-Daten verfügbar.“
+    const oeffneAuditModal = useCallback((dokumentId: number) => {
         setAuditDokumentId(dokumentId);
         setAuditDaten(null);
         setAuditLoading(true);
-        try {
-            const res = await fetch(`/api/ausgangs-dokumente/${dokumentId}/freigabe-audit`);
-            if (res.ok) {
-                setAuditDaten(await res.json());
-            }
-        } catch {
-            // Modal bleibt leer — Fehler wird durch fehlende Daten sichtbar
-        } finally {
+        return ladeFreigabeAudit(dokumentId).then((ergebnis) => {
+            if (ergebnis.art === 'gefunden') setAuditDaten(ergebnis.daten);
             setAuditLoading(false);
-        }
+        });
     }, []);
 
     // Dateien-Anzahl laden
@@ -3658,40 +3631,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     {!auditLoading && auditDaten && (
                         // Scrollt bei kleinen Bildschirmen, damit „Schließen“ im Dialog bleibt;
                         // -mx-1 px-1 lässt den Fokus-Ringen der Kopieren-Knöpfe Luft.
-                        <div className="space-y-3 py-2 text-sm min-h-0 flex-1 overflow-y-auto -mx-1 px-1">
-                            <AuditRow label="Dokument" value={`${auditDaten.dokumentArt} ${auditDaten.dokumentNummer}`} />
-                            <AuditRow
-                                label="Angenommen am"
-                                value={auditDaten.akzeptiertAm
-                                    ? new Date(auditDaten.akzeptiertAm).toLocaleString('de-DE', {
-                                        day: '2-digit', month: '2-digit', year: 'numeric',
-                                        hour: '2-digit', minute: '2-digit', second: '2-digit',
-                                    })
-                                    : '—'}
-                            />
-                            {/* Unterzeichner: konkret klickende Person — bei Firmenkunden die
-                                vertretungsberechtigte Person, nicht zwangsläufig der Kundenstammname. */}
-                            <AuditRow
-                                label="Angenommen von"
-                                value={auditDaten.unterzeichnerName || '—'}
-                            />
-                            <AuditRow label="E-Mail" value={auditDaten.akzeptiertEmail || '—'} />
-                            <AuditRow label="IP-Adresse" value={auditDaten.akzeptiertIp || '—'} mono />
-                            {auditDaten.akzeptiertUserAgent && (
-                                <AuditRow label="Browser" value={auditDaten.akzeptiertUserAgent} mono small />
-                            )}
-                            <FreigabeRechtsnachweis daten={auditDaten} />
-                            <div className="pt-2 mt-2 border-t border-slate-100 space-y-3">
-                                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-                                    Kryptographischer Beweis
-                                </p>
-                                <HashRow label="Original-Hash" value={auditDaten.hashOriginal} toast={toast} />
-                                <HashRow label="Annahme-Hash" value={auditDaten.hashAcceptance} toast={toast} />
-                                <p className="text-xs text-slate-400 leading-relaxed">
-                                    SHA-256 über Geschäftsdaten + Akzeptanzdaten. Im Streitfall reproduzierbar
-                                    und damit unveränderbarer Beweis der digitalen Annahme.
-                                </p>
-                            </div>
+                        <div className="py-2 text-sm min-h-0 flex-1 overflow-y-auto -mx-1 px-1">
+                            <AnnahmeNachweisDetails daten={auditDaten} />
                         </div>
                     )}
                     <DialogFooter>
@@ -3714,52 +3655,6 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
         </PageLayout>
     );
 };
-
-// ==================== AUDIT-MODAL HELFER ====================
-
-function AuditRow({ label, value, mono, small }: { label: string; value: string; mono?: boolean; small?: boolean }) {
-    return (
-        <div>
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className={cn(
-                "text-slate-900 break-all",
-                mono && "font-mono",
-                small ? "text-xs" : "text-sm",
-            )}>
-                {value}
-            </p>
-        </div>
-    );
-}
-
-function HashRow({ label, value, toast }: {
-    label: string;
-    value: string | null;
-    toast: ReturnType<typeof useToast>;
-}) {
-    if (!value) {
-        return <AuditRow label={label} value="—" />;
-    }
-    const kurz = value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-8)}` : value;
-    const handleCopy = () => {
-        navigator.clipboard.writeText(value)
-            .then(() => toast.success('Hash in Zwischenablage kopiert'))
-            .catch(() => toast.error('Kopieren fehlgeschlagen'));
-    };
-    return (
-        <div>
-            <p className="text-xs text-slate-500">{label}</p>
-            <div className="flex items-center gap-2">
-                <code className="text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded px-2 py-1 flex-1 truncate" title={value}>
-                    {kurz}
-                </code>
-                <Button size="sm" variant="outline" onClick={handleCopy} className="shrink-0">
-                    Kopieren
-                </Button>
-            </div>
-        </div>
-    );
-}
 
 // ==================== MAIN COMPONENT ====================
 

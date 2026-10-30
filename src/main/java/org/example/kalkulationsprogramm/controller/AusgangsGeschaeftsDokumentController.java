@@ -112,13 +112,13 @@ public class AusgangsGeschaeftsDokumentController {
     /**
      * Liefert den vollständigen Audit-Trail einer akzeptierten Freigabe (E-Mail, IP,
      * Zeitstempel, Hash). Wird im Frontend on-demand beim Klick auf den
-     * „Angenommen"-Badge geladen — bewusst nicht in der Listen-API, damit personen-
+     * „Angenommen"-Badge und im Verlauf geladen — bewusst nicht in der Listen-API, damit personen-
      * bezogene Daten (IP, User-Agent) nicht ungefragt mit jeder Übersicht ausgeliefert werden.
      */
     @GetMapping("/{id}/freigabe-audit")
     public ResponseEntity<FreigabeAuditDto> freigabeAudit(@PathVariable Long id) {
         return dokumentFreigabeService
-                .findAuditByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, id)
+                .findAuditFuerAusgangsDokument(id)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
