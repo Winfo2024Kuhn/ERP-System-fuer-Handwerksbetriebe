@@ -159,9 +159,43 @@ class AbteilungBerechtigungControllerTest {
     }
 
     @Test
+    @DisplayName("Kostenstellen-Häkchen: Liste liefert es, Speichern übernimmt es, fehlend bleibt unverändert")
+    void kostenstellenHaekchen() throws Exception {
+        Abteilung buero = abteilung(false, false);
+        buero.setDarfKostenstellenVerwalten(true);
+        when(abteilungRepository.findAll()).thenReturn(List.of(buero));
+        when(abteilungRepository.findById(3L)).thenReturn(Optional.of(buero));
+        when(abteilungRepository.save(any(Abteilung.class))).thenAnswer(aufruf -> aufruf.getArgument(0));
+        when(berechtigungRepository.findByAbteilungId(3L)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/abteilungen/berechtigungen"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].darfKostenstellenVerwalten").value(true));
+
+        mockMvc.perform(put("/api/abteilungen/3/berechtigungen")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"berechtigungen\":[],\"darfKostenstellenVerwalten\":false}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.darfKostenstellenVerwalten").value(false));
+
+        buero.setDarfKostenstellenVerwalten(true);
+        mockMvc.perform(put("/api/abteilungen/3/berechtigungen")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"berechtigungen\":[]}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.darfKostenstellenVerwalten").value(true));
+    }
+
+    @Test
     @DisplayName("Neue Abteilung darf die Aufschläge zunächst nicht ändern")
     void neueAbteilungDarfAufschlaegeNichtAendern() {
         org.assertj.core.api.Assertions.assertThat(new Abteilung().getDarfAufschlaegeAendern()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Neue Abteilung darf Kostenstellen zunächst nicht verwalten")
+    void neueAbteilungDarfKostenstellenNichtVerwalten() {
+        org.assertj.core.api.Assertions.assertThat(new Abteilung().getDarfKostenstellenVerwalten()).isFalse();
     }
 
     @Test

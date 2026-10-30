@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../ui/toast';
 import { DokumentVerlaufDrawer, type DokumentAuditEintrag } from './DokumentVerlaufDrawer';
 import type { FreigabeAuditDaten } from '../../features/freigabe/freigabeAudit';
@@ -32,6 +32,8 @@ const AUDIT: FreigabeAuditDaten = {
     codeBestaetigtAm: '2026-10-13T09:29:00', codeBestaetigtEmail: 'max@example.com',
     vorzeitigerBeginn: false, widerrufStand: '2026-10-13', datenschutzStand: '2026-10-13',
     bestaetigungText: 'Ich beauftrage Angebot AG-2026/10/00021 verbindlich.', knopfText: 'Zahlungspflichtig beauftragen',
+    vorzeitigerBeginnText: 'Ich verlange ausdrücklich, dass Sie mit der Ausführung schon vor Ablauf der Widerrufsfrist beginnen.',
+    akzeptierterBetrag: null, mitbeauftragteAlternativen: [],
 };
 
 const fetchMock = vi.fn();
@@ -61,6 +63,8 @@ function zeige(onOpenChange = vi.fn()) {
 
 const auditAufrufe = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/freigabe-audit')).length;
 
+afterEach(() => { vi.unstubAllGlobals(); });
+
 beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('fetch', fetchMock);
@@ -74,7 +78,12 @@ describe('DokumentVerlaufDrawer', () => {
         const nachweis = (await screen.findByText('Annahme-Nachweis')).closest('div.rounded-lg') as HTMLElement;
         expect(await within(nachweis).findByText('Angebot AG-2026/10/00021')).toBeInTheDocument();
         expect(within(nachweis).getByText('Angenommen wurde')).toBeInTheDocument();
-        expect(within(nachweis).getByText('Max Mustermann')).toBeInTheDocument();
+        expect(within(nachweis).getByText('Max')).toBeInTheDocument();
+        expect(within(nachweis).getByText('Mustermann')).toBeInTheDocument();
+        // Checkliste und voller Annahme-Hash stehen ohne Aufklappen da.
+        expect(within(nachweis).getByText('Freiwilliges Häkchen')).toBeInTheDocument();
+        expect(within(nachweis).getByText('nicht angehakt')).toBeInTheDocument();
+        expect(within(nachweis).getByText('b'.repeat(64))).toBeInTheDocument();
         expect(within(nachweis).getByText('Erst nach Ablauf der Widerrufsfrist beginnen (bis 27.10.2026).')).toHaveClass('bg-amber-50');
         expect(screen.getByText('Kunde: Max Mustermann')).toBeInTheDocument();
         // Der Eintrag „Erstellt“ behält seinen Bearbeiter.
@@ -84,9 +93,9 @@ describe('DokumentVerlaufDrawer', () => {
         expect(screen.getAllByText('Auftragsbestätigung')).toHaveLength(2);
         expect(screen.queryByText('AUFTRAGSBESTAETIGUNG')).not.toBeInTheDocument();
         // Technische Angaben erst auf Klick.
-        expect(within(nachweis).queryByText('Kryptographischer Beweis')).not.toBeInTheDocument();
+        expect(within(nachweis).queryByText('Original-Hash')).not.toBeInTheDocument();
         await userEvent.click(within(nachweis).getByRole('button', { name: 'Technische Angaben anzeigen' }));
-        expect(within(nachweis).getByText('Kryptographischer Beweis')).toBeInTheDocument();
+        expect(within(nachweis).getByText('Original-Hash')).toBeInTheDocument();
         expect(within(nachweis).getByRole('button', { name: 'Technische Angaben ausblenden' })).toHaveAttribute('aria-expanded', 'true');
     });
 
@@ -95,9 +104,10 @@ describe('DokumentVerlaufDrawer', () => {
         zeige();
 
         expect(await screen.findByText(/Sofort beginnen erlaubt/)).toHaveClass('bg-emerald-50');
-        await userEvent.click(screen.getByRole('button', { name: /Annahme-Nachweis/ }));
+        await userEvent.click(screen.getByRole('button', { name: 'Mehr zu: Annahme-Nachweis' }));
         expect(await screen.findByText(/Die Auftragsbestätigung zeigt den Nachweis des Angebots/)).toBeInTheDocument();
-        expect(screen.getByText(/Dieselbe Angabe steht in der Mail an den Kunden und in der Glocke/)).toBeInTheDocument();
+        expect(screen.getByText(/jedes Häkchen mit seinem genauen Wortlaut/)).toBeInTheDocument();
+        expect(screen.getByText(/vergleichen Sie den Hash hier mit dem in der Mail des Kunden/)).toBeInTheDocument();
     });
 
     it('nennt bei älteren Annahmen ohne Angabe ausdrücklich, dass nichts gespeichert ist', async () => {
@@ -161,5 +171,39 @@ describe('DokumentVerlaufDrawer', () => {
         // Der Name aus dem Nachweis gehört nur zum neuesten Eintrag, der ältere bleibt neutral.
         expect(screen.getAllByText(`Kunde: ${AUDIT.unterzeichnerName}`)).toHaveLength(1);
         expect(screen.getAllByText('Kunde (online)')).toHaveLength(1);
+    });
+
+    it('beschriftet den Hash jedes Eintrags als Fingerabdruck des Dokuments und kopiert ihn', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+        stubApi([ANNAHME], { status: 404 });
+        zeige();
+
+        const knopf = await screen.findByRole('button', { name: 'Fingerabdruck des Dokuments: cccccccccccc…' });
+        expect(knopf).toHaveAccessibleDescription(/Fingerabdruck des Dokumentinhalts zu diesem Zeitpunkt – nicht der Annahme-Hash/);
+        expect(screen.queryByText(/SHA-256/)).not.toBeInTheDocument();
+
+        await userEvent.click(knopf);
+        expect(writeText).toHaveBeenCalledWith('c'.repeat(64));
+        expect(await screen.findByText('Fingerabdruck des Dokuments kopiert')).toBeInTheDocument();
+    });
+
+    it('meldet, wenn das Kopieren des Fingerabdrucks scheitert', async () => {
+        vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn().mockRejectedValue(new Error('nein')) } });
+        stubApi([ANNAHME], { status: 404 });
+        zeige();
+
+        await userEvent.click(await screen.findByRole('button', { name: /Fingerabdruck des Dokuments/ }));
+        expect(await screen.findByText('Kopieren fehlgeschlagen')).toBeInTheDocument();
+    });
+
+    it('zeigt eine lange Begründung mit Zeilenumbrüchen umbrechbar an', async () => {
+        const grund = 'Digitale Annahme durch Max Mustermann\nAnnahme-Hash: ' + 'b'.repeat(64);
+        stubApi([{ ...ANNAHME, aenderungsgrund: grund }], { status: 404 });
+        zeige();
+
+        const begruendung = (await screen.findByText(/Begründung:/)).parentElement as HTMLElement;
+        expect(begruendung).toHaveClass('whitespace-pre-line', 'break-words');
+        expect(begruendung.textContent).toContain('b'.repeat(64));
     });
 });

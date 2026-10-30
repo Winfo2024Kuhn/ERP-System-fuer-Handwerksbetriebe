@@ -209,6 +209,13 @@ public class DokumentFreigabe
     @Column(name = "vorzeitiger_beginn")
     private Boolean vorzeitigerBeginn;
 
+    /**
+     * Wortlaut des freiwilligen Häkchens zum vorzeitigen Beginn, so wie der Kunde ihn gesehen hat –
+     * angehakt oder nicht (seit V442). {@code null} bei älteren Annahmen.
+     */
+    @Column(name = "vorzeitiger_beginn_text", length = 600)
+    private String vorzeitigerBeginnText;
+
     /** Stand der Widerrufsbelehrung, die bei der Annahme galt (z. B. {@code 2026-10-13}). */
     @Column(name = "widerruf_stand", length = 20)
     private String widerrufStand;

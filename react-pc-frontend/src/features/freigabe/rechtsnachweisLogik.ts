@@ -12,8 +12,23 @@ export interface FreigabeRechtsnachweisDaten {
     vorzeitigerBeginn: boolean | null;
     widerrufStand: string | null;
     datenschutzStand: string | null;
+    /** Wortlaut des Pflicht-Häkchens („Ich beauftrage … verbindlich …“). */
     bestaetigungText: string | null;
     knopfText: string | null;
+    /** Wortlaut des freiwilligen Häkchens zum Arbeitsbeginn; `null` bei älteren Annahmen. */
+    vorzeitigerBeginnText: string | null;
+    /** Verbindlicher Bruttobetrag; nur gesetzt, wenn Wahlpositionen mitbeauftragt wurden. */
+    akzeptierterBetrag: number | null;
+    /** Mitbeauftragte Wahlpositionen, z. B. „3.2 Geländer Edelstahl“; leer = keine. */
+    mitbeauftragteAlternativen: string[];
+}
+
+/** Ein Häkchen, das der Kunde bei der Annahme gesehen hat. */
+export interface Haekchen {
+    art: 'pflicht' | 'freiwillig';
+    angehakt: boolean;
+    /** Exakter Wortlaut; `null`, wenn er bei dieser Annahme nicht gespeichert wurde. */
+    wortlaut: string | null;
 }
 
 /** Länge der gesetzlichen Widerrufsfrist in Tagen. */
@@ -53,4 +68,31 @@ export function arbeitsbeginn(daten: Pick<FreigabeRechtsnachweisDaten, 'vorzeiti
         return { text: `Erst nach Ablauf der Widerrufsfrist beginnen${bis}.`, ton: 'warten' };
     }
     return null;
+}
+
+/**
+ * Häkchen, die der Kunde bei der Annahme gesehen hat, in der Reihenfolge der Annahmeseite.
+ * Das Pflicht-Häkchen ist immer angehakt (ohne es geht die Annahme nicht) und steht nur da,
+ * wenn sein Wortlaut gespeichert ist. Das freiwillige Häkchen zum Arbeitsbeginn steht da,
+ * sobald die Entscheidung gespeichert ist – auch ohne Wortlaut (ältere Annahmen).
+ */
+export function haekchenListe(
+    daten: Pick<FreigabeRechtsnachweisDaten, 'bestaetigungText' | 'vorzeitigerBeginn' | 'vorzeitigerBeginnText'>,
+): Haekchen[] {
+    const liste: Haekchen[] = [];
+    const pflicht = daten.bestaetigungText?.trim();
+    if (pflicht) liste.push({ art: 'pflicht', angehakt: true, wortlaut: pflicht });
+    if (daten.vorzeitigerBeginn != null) {
+        liste.push({
+            art: 'freiwillig',
+            angehakt: daten.vorzeitigerBeginn,
+            wortlaut: daten.vorzeitigerBeginnText?.trim() || null,
+        });
+    }
+    return liste;
+}
+
+/** `4950.5` → `4.950,50 €`. */
+export function formatiereBetrag(betrag: number): string {
+    return betrag.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 }

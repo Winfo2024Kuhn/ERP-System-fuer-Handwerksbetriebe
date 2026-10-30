@@ -678,7 +678,9 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 .contains("Annahme durch <strong>Max Mustermann</strong> am <strong>11.10.2026 um 14:05 Uhr</strong>")
                 .contains("Bestätigt per Einmal-Code an <strong>max@example.de</strong>")
                 .contains("<strong>Waren Sie das nicht?</strong> Dann rufen Sie uns bitte sofort an: <strong>09369 / 23 23</strong>.")
-                .contains("0123456789abcdef…");
+                // voller Hash, damit der Kunde ihn 1:1 mit dem Nachweis im ERP vergleichen kann
+                .contains("0123456789abcdef0123456789abcdef</code>")
+                .doesNotContain("…");
     }
 
     @Test
@@ -760,6 +762,28 @@ class AutoAuftragsbestaetigungVersandServiceTest {
                 .contains("Beginn vor Ablauf der Widerrufsfrist: nicht verlangt (Häkchen nicht gesetzt)<br>")
                 .contains("&lt;b&gt;X&lt;/b&gt;")
                 .doesNotContain("Sie haben ausdrücklich verlangt");
+    }
+
+    @Test
+    void annahmeBeleg_nenntBeideHaekchenMitWortlautUndBeideFassungen() {
+        DokumentFreigabe f = angenommeneFreigabe();
+        f.setBestaetigungText("Ich beauftrage Angebot AG-2026-0021 verbindlich und zahlungspflichtig.");
+        f.setVorzeitigerBeginn(false);
+        f.setVorzeitigerBeginnText("Ich verlange ausdrücklich einen <früheren> Beginn.");
+        f.setWiderrufStand("2026-10-13");
+        f.setDatenschutzStand("2026-10-13");
+
+        String html = AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null, true);
+
+        assertThat(html)
+                .contains("Pflicht-Häkchen: angehakt – „Ich beauftrage Angebot AG-2026-0021 verbindlich und zahlungspflichtig.“<br>")
+                .contains("Freiwilliges Häkchen: nicht angehakt – „Ich verlange ausdrücklich einen &lt;früheren&gt; Beginn.“<br>")
+                .contains("Datenschutzerklärung Stand 13.10.2026<br>")
+                .doesNotContain("(Häkchen nicht gesetzt)");
+
+        f.setVorzeitigerBeginn(true);
+        assertThat(AutoAuftragsbestaetigungVersandService.buildAnnahmeBelegHtml(f, null, true))
+                .contains("Freiwilliges Häkchen: angehakt – „Ich verlange");
     }
 
     @Test

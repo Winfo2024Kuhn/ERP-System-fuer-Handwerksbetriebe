@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-WkwZ5CU-.js";import{v as t}from"./diagramme-nITFg_Hu.js";var n=e(t(),1);function r(e){let[t,r]=(0,n.useState)(!1);return(0,n.useEffect)(()=>{let t=new AbortController;return fetch(e,{signal:t.signal}).then(e=>e.ok?e.json():{darfAendern:!1}).then(e=>r(e?.darfAendern===!0)).catch(()=>{}),()=>t.abort()},[e]),t}export{r as t};

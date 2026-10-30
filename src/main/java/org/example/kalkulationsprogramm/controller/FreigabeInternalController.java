@@ -206,7 +206,8 @@ public class FreigabeInternalController
                             request.getWiderrufBelehrungStand(),
                             request.getDatenschutzStand(),
                             request.getBestaetigungText(),
-                            request.getKnopfText()));
+                            request.getKnopfText(),
+                            request.getVorzeitigerBeginnText()));
             return ResponseEntity.ok(FreigabeAkzeptiertResponse.builder()
                     .uuid(freigabe.getUuid())
                     .dokumentNummer(freigabe.getDokumentNummer())

@@ -69,6 +69,10 @@ public class FreigabeAkzeptierenRequest
      */
     private Boolean vorzeitigerBeginn;
 
+    /** Wortlaut des freiwilligen Häkchens, wie ihn die Seite angezeigt hat (angehakt oder nicht). */
+    @Size(max = 600, message = "Der Text zum vorzeitigen Beginn ist zu lang.")
+    private String vorzeitigerBeginnText;
+
     /** Stand der Widerrufsbelehrung, die die Freigabe-Seite verlinkt hat (z. B. 2026-10-13). */
     @Size(max = 20, message = "Der Stand der Widerrufsbelehrung ist zu lang.")
     private String widerrufBelehrungStand;
