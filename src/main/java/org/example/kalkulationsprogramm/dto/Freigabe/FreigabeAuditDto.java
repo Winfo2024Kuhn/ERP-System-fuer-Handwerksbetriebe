@@ -4,7 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Audit-Trail einer akzeptierten digitalen Freigabe — wird im Frontend als Detail-Popover
@@ -52,4 +54,10 @@ public class FreigabeAuditDto
     private String datenschutzStand;
     private String bestaetigungText;
     private String knopfText;
+    /** Wortlaut des freiwilligen Häkchens zum vorzeitigen Beginn (seit V442, sonst {@code null}). */
+    private String vorzeitigerBeginnText;
+    /** Verbindlicher Bruttobetrag, nur wenn Wahlpositionen mitbeauftragt wurden. */
+    private BigDecimal akzeptierterBetrag;
+    /** Bezeichnungen der mitbeauftragten Wahlpositionen, z. B. „3.2 Geländer Edelstahl“; nie {@code null}. */
+    private List<String> mitbeauftragteAlternativen;
 }

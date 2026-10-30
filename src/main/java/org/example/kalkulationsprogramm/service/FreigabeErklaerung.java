@@ -15,12 +15,20 @@ package org.example.kalkulationsprogramm.service;
  * @param datenschutzStand  Stand der Datenschutzerklärung
  * @param bestaetigungText  Wortlaut des Pflicht-Häkchens
  * @param knopfText         Beschriftung des auslösenden Knopfs
+ * @param vorzeitigerBeginnText Wortlaut des freiwilligen Häkchens zum vorzeitigen Beginn (seit V442)
  */
 public record FreigabeErklaerung(Boolean vorzeitigerBeginn, String widerrufStand, String datenschutzStand,
-                                 String bestaetigungText, String knopfText)
+                                 String bestaetigungText, String knopfText, String vorzeitigerBeginnText)
 {
     /** Keine Angaben – für Aufrufer und Tests ohne Rechtsnachweis. */
-    public static final FreigabeErklaerung KEINE = new FreigabeErklaerung(null, null, null, null, null);
+    public static final FreigabeErklaerung KEINE = new FreigabeErklaerung(null, null, null, null, null, null);
+
+    /** Ohne Wortlaut des freiwilligen Häkchens (Website-Stände vor V442). */
+    public FreigabeErklaerung(Boolean vorzeitigerBeginn, String widerrufStand, String datenschutzStand,
+                              String bestaetigungText, String knopfText)
+    {
+        this(vorzeitigerBeginn, widerrufStand, datenschutzStand, bestaetigungText, knopfText, null);
+    }
 
     /** Kopie mit bereinigten, auf die Spaltenlängen gekürzten Texten. */
     public FreigabeErklaerung bereinigt()
@@ -29,7 +37,8 @@ public record FreigabeErklaerung(Boolean vorzeitigerBeginn, String widerrufStand
                 kuerze(widerrufStand, 20),
                 kuerze(datenschutzStand, 20),
                 kuerze(bestaetigungText, 500),
-                kuerze(knopfText, 100));
+                kuerze(knopfText, 100),
+                kuerze(vorzeitigerBeginnText, 600));
     }
 
     private static String kuerze(String wert, int max)
