@@ -3,12 +3,9 @@ package org.example.kalkulationsprogramm.controller;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.dto.Feiertag.FeiertageVorschauDto;
 import org.example.kalkulationsprogramm.dto.FirmeninformationDto;
-import org.example.kalkulationsprogramm.dto.KostenstelleDto;
 import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
-import org.example.kalkulationsprogramm.domain.KostenstellenTyp;
 import org.example.kalkulationsprogramm.service.FeiertageVorschauService;
 import org.example.kalkulationsprogramm.service.FirmeninformationService;
-import org.example.kalkulationsprogramm.service.KostenstelleService;
 import org.example.kalkulationsprogramm.service.SteuerberaterKontaktService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -20,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * REST Controller für Firmenstammdaten, Kostenstellen und Steuerberater.
+ * REST Controller für Firmenstammdaten und Steuerberater (Kostenstellen: {@link KostenstelleController}).
  */
 @RestController
 @RequestMapping("/api/firma")
@@ -28,7 +25,6 @@ import java.util.Map;
 public class FirmaController {
 
     private final FirmeninformationService firmeninformationService;
-    private final KostenstelleService kostenstelleService;
     private final SteuerberaterKontaktService steuerberaterKontaktService;
     private final FeiertageVorschauService feiertageVorschauService;
 
@@ -95,53 +91,6 @@ public class FirmaController {
     @DeleteMapping("/logo")
     public ResponseEntity<FirmeninformationDto> deleteLogo() {
         return ResponseEntity.ok(firmeninformationService.loescheLogoDatei());
-    }
-
-    // ==================== KOSTENSTELLEN ====================
-
-    @GetMapping("/kostenstellen")
-    public ResponseEntity<List<KostenstelleDto>> getKostenstellen() {
-        return ResponseEntity.ok(kostenstelleService.findAll());
-    }
-
-    @GetMapping("/kostenstellen/typ/{typ}")
-    public ResponseEntity<List<KostenstelleDto>> getKostenstellenByTyp(@PathVariable KostenstellenTyp typ) {
-        return ResponseEntity.ok(kostenstelleService.findByTyp(typ));
-    }
-
-    @GetMapping("/kostenstellen/{id}")
-    public ResponseEntity<KostenstelleDto> getKostenstelle(@PathVariable Long id) {
-        KostenstelleDto dto = kostenstelleService.findById(id);
-        if (dto == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(dto);
-    }
-
-    @PostMapping("/kostenstellen")
-    public ResponseEntity<KostenstelleDto> erstelleKostenstelle(@RequestBody KostenstelleDto dto) {
-        dto.setId(null); // Neue Kostenstelle
-        return ResponseEntity.ok(kostenstelleService.speichern(dto));
-    }
-
-    @PutMapping("/kostenstellen/{id}")
-    public ResponseEntity<KostenstelleDto> aktualisiereKostenstelle(
-            @PathVariable Long id, 
-            @RequestBody KostenstelleDto dto) {
-        dto.setId(id);
-        return ResponseEntity.ok(kostenstelleService.speichern(dto));
-    }
-
-    @DeleteMapping("/kostenstellen/{id}")
-    public ResponseEntity<Void> loescheKostenstelle(@PathVariable Long id) {
-        kostenstelleService.loeschen(id);
-        return ResponseEntity.noContent().build();
-    }
-
-    @PostMapping("/kostenstellen/init")
-    public ResponseEntity<List<KostenstelleDto>> initKostenstellen() {
-        kostenstelleService.erstelleStandardKostenstellen();
-        return ResponseEntity.ok(kostenstelleService.findAll());
     }
 
     // ==================== STEUERBERATER ====================

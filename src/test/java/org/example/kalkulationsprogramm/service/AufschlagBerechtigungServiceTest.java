@@ -24,7 +24,7 @@ import org.springframework.security.core.Authentication;
 class AufschlagBerechtigungServiceTest {
 
     private final FrontendUserProfileRepository profile = mock(FrontendUserProfileRepository.class);
-    private final AufschlagBerechtigungService service = new AufschlagBerechtigungService(profile);
+    private final AufschlagBerechtigungService service = new AufschlagBerechtigungService(new AbteilungsRechtPruefung(profile));
 
     private static Authentication anmeldung(Long id, boolean admin, boolean aktiv) {
         FrontendUserPrincipal principal = mock(FrontendUserPrincipal.class);

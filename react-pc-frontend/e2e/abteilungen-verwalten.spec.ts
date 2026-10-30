@@ -18,7 +18,7 @@ function rechte(id: number, name: string) {
         abteilungId: id, abteilungName: name, berechtigungen: [],
         darfMonatAbschliessen: false, darfZeiterfassungSehen: false, darfTelefonSehen: false,
         darfRechnungenGenehmigen: false, darfRechnungenSehen: false, darfFreigabeAnnahmePushen: false,
-        darfWebseitenAnfragenPushen: false, darfAufschlaegeAendern: false,
+        darfWebseitenAnfragenPushen: false, darfAufschlaegeAendern: false, darfKostenstellenVerwalten: false,
     };
 }
 

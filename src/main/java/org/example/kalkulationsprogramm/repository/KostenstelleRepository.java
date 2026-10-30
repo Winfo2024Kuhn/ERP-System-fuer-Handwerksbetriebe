@@ -21,6 +21,12 @@ public interface KostenstelleRepository extends JpaRepository<Kostenstelle, Long
 
     Optional<Kostenstelle> findByBezeichnung(String bezeichnung);
 
+    /** Alle Kostenstellen (auch gelöschte) mit diesem Namen, Groß-/Kleinschreibung egal. */
+    List<Kostenstelle> findAllByBezeichnungIgnoreCase(String bezeichnung);
+
+    /** Gelöschte (ausgeblendete) Kostenstellen, nach Name. */
+    List<Kostenstelle> findByAktivFalseOrderByBezeichnungAsc();
+
     /**
      * Findet alle Gemeinkosten-Kostenstellen.
      */

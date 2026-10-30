@@ -76,4 +76,11 @@ public class Abteilung {
      */
     @Column(nullable = false)
     private Boolean darfAufschlaegeAendern = false;
+
+    /**
+     * Mitarbeiter dieser Abteilung dürfen Kostenstellen anlegen, ändern, löschen und wiederherstellen.
+     * Administratoren dürfen es immer.
+     */
+    @Column(nullable = false)
+    private Boolean darfKostenstellenVerwalten = false;
 }

@@ -83,6 +83,7 @@ public class AbteilungBerechtigungController {
             .darfFreigabeAnnahmePushen(Boolean.TRUE.equals(abteilung.getDarfFreigabeAnnahmePushen()))
             .darfWebseitenAnfragenPushen(Boolean.TRUE.equals(abteilung.getDarfWebseitenAnfragenPushen()))
             .darfAufschlaegeAendern(Boolean.TRUE.equals(abteilung.getDarfAufschlaegeAendern()))
+            .darfKostenstellenVerwalten(Boolean.TRUE.equals(abteilung.getDarfKostenstellenVerwalten()))
             .build();
     }
 
@@ -151,6 +152,9 @@ public class AbteilungBerechtigungController {
         }
         if (request.getDarfAufschlaegeAendern() != null) {
             abteilung.setDarfAufschlaegeAendern(request.getDarfAufschlaegeAendern());
+        }
+        if (request.getDarfKostenstellenVerwalten() != null) {
+            abteilung.setDarfKostenstellenVerwalten(request.getDarfKostenstellenVerwalten());
         }
         abteilungRepository.save(abteilung);
 

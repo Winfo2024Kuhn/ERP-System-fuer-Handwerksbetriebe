@@ -39,6 +39,7 @@ interface AbteilungBerechtigung {
     darfFreigabeAnnahmePushen: boolean;
     darfWebseitenAnfragenPushen: boolean;
     darfAufschlaegeAendern: boolean;
+    darfKostenstellenVerwalten: boolean;
 }
 
 type Schalter =
@@ -49,7 +50,8 @@ type Schalter =
     | 'darfRechnungenSehen'
     | 'darfFreigabeAnnahmePushen'
     | 'darfWebseitenAnfragenPushen'
-    | 'darfAufschlaegeAendern';
+    | 'darfAufschlaegeAendern'
+    | 'darfKostenstellenVerwalten';
 
 const DOKUMENT_TYP_LABELS: Record<string, string> = {
     ANGEBOT: 'Angebot',
@@ -76,6 +78,7 @@ function normalisiere(abt: AbteilungBerechtigung): AbteilungBerechtigung {
         darfFreigabeAnnahmePushen: abt.darfFreigabeAnnahmePushen === true,
         darfWebseitenAnfragenPushen: abt.darfWebseitenAnfragenPushen === true,
         darfAufschlaegeAendern: abt.darfAufschlaegeAendern === true,
+        darfKostenstellenVerwalten: abt.darfKostenstellenVerwalten === true,
     };
 }
 
@@ -140,6 +143,25 @@ function AufschlaegeInfo() {
                 <p>
                     Ohne dieses Recht sehen und ändern andere den allgemeinen Aufschlag und die Aufschläge der Kategorien nicht. Der Aufschlag direkt am Artikel kann weiterhin jeder Benutzer
                     ändern. Der Preisvorschlag ändert sich nach einer Änderung sofort; bereits erstellte Angebote und Rechnungen bleiben unverändert.
+                </p>
+            </InfoAbschnitt>
+        </InfoButton>
+    );
+}
+
+function KostenstellenInfo() {
+    return (
+        <InfoButton titel="Kostenstellen verwalten">
+            <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                <p>
+                    Wer in dieser Abteilung ist, darf auf der Seite Kostenstellen neue Kostenstellen anlegen, sie umbenennen, löschen und
+                    gelöschte wiederherstellen. Administratoren dürfen das immer.
+                </p>
+            </InfoAbschnitt>
+            <InfoAbschnitt titel="Was bewirkt das?">
+                <p>
+                    Ohne dieses Recht sieht man die Kostenstellen und ihre Kosten weiterhin, aber keine Knöpfe zum Ändern. Buchungen, die
+                    schon einer Kostenstelle zugeordnet sind, ändern sich dadurch nicht.
                 </p>
             </InfoAbschnitt>
         </InfoButton>
@@ -243,6 +265,7 @@ export function BerechtigungenSection() {
                     darfFreigabeAnnahmePushen: abteilung.darfFreigabeAnnahmePushen,
                     darfWebseitenAnfragenPushen: abteilung.darfWebseitenAnfragenPushen,
                     darfAufschlaegeAendern: abteilung.darfAufschlaegeAendern,
+                    darfKostenstellenVerwalten: abteilung.darfKostenstellenVerwalten,
                 }),
             });
             if (!res.ok) {
@@ -351,12 +374,17 @@ export function BerechtigungenSection() {
                                             erklaerung="Sieht nur schon genehmigte Eingangsrechnungen (Buchhaltung)." />
                                     </Gruppe>
 
-                                    <Gruppe icon={<Percent className="h-4 w-4 text-rose-600" />} titel="Preise">
+                                    <Gruppe icon={<Percent className="h-4 w-4 text-rose-600" />} titel="Preise & Kostenstellen">
                                         <RechtZeile checked={abt.darfAufschlaegeAendern} disabled={sperre}
                                             onChange={() => schalte(abt.abteilungId, 'darfAufschlaegeAendern')}
                                             titel="Aufschläge ändern"
                                             erklaerung="Darf in der Artikelübersicht den allgemeinen Aufschlag und den Aufschlag je Kategorie einstellen."
                                             info={<AufschlaegeInfo />} />
+                                        <RechtZeile checked={abt.darfKostenstellenVerwalten} disabled={sperre}
+                                            onChange={() => schalte(abt.abteilungId, 'darfKostenstellenVerwalten')}
+                                            titel="Kostenstellen verwalten"
+                                            erklaerung="Darf Kostenstellen anlegen, umbenennen, löschen und gelöschte wiederherstellen."
+                                            info={<KostenstellenInfo />} />
                                     </Gruppe>
 
                                     <Gruppe icon={<CalendarCheck className="h-4 w-4 text-rose-600" />} titel="Zeiterfassung, Monatsabschluss & Telefon">
