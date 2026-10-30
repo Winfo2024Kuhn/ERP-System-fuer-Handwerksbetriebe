@@ -59,7 +59,9 @@ import lombok.extern.slf4j.Slf4j;
  *       Anschrift werden geleert, ebenso die Baustellen-Anschrift seiner Projekte und Anfragen und der
  *       Name in Freigabe-Links. Rechnungen, Angebote, PDFs und E-Mails bleiben unverändert (Dokumente
  *       werden unbegrenzt aufbewahrt). Die GoBD-Hash-Kette ({@code AusgangsGeschaeftsDokumentAudit})
- *       enthält vom Kunden nur die ID und bricht dadurch nicht.</li>
+ *       enthält vom Kunden die ID und – nur bei Online-Annahmen – den eingetragenen Namen und die
+ *       Code-Adresse als Auftragsnachweis, genau wie die angenommene Freigabe selbst. Sie bricht
+ *       dadurch nicht.</li>
  * </ul>
  *
  * <p>Das Fristende ist das späteste aller aktuellen Unterlagen (Ausgangsdokumente, Projekt-Geschäftsdokumente

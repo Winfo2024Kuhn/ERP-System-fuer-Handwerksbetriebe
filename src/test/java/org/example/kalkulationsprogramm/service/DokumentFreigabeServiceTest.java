@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.dto.Freigabe.FreigabePositionDto;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
@@ -1155,7 +1156,9 @@ class DokumentFreigabeServiceTest {
 
         service.akzeptiere("uuid-verlauf", "192.0.2.10", "UA", "max@example.com",
                 "Max", "Mustermann", "Max Mustermann", null,
-                new FreigabeErklaerung(false, "2026-10-13", null, null, "Zahlungspflichtig beauftragen"));
+                new FreigabeErklaerung(false, "2026-10-13", "2026-10-13",
+                        "Ich beauftrage Angebot ANG-2026-0001 verbindlich und zahlungspflichtig.",
+                        "Zahlungspflichtig beauftragen", "Ich verlange ausdrücklich einen früheren Beginn."));
 
         // Ohne Wahlpositionen erbt die AB den Betrag des Angebots – sonst stünde im Verlauf „–“.
         ArgumentCaptor<AusgangsGeschaeftsDokumentErstellenDto> dto =
@@ -1173,43 +1176,140 @@ class DokumentFreigabeServiceTest {
                 .protokolliereDigitaleAnnahme(eq(ab), eq("192.0.2.10"), abText.capture());
         assertThat(angebotText.getValue())
                 .startsWith("Digitale Annahme von Angebot ANG-2026-0001 am ")
-                // Datenminimierung: keine Personendaten in der unveränderbaren Kette
-                .doesNotContain("Mustermann").doesNotContain("max@example.com")
-                .contains("Annahme-Hash: " + pending.getHashAcceptance() + ".")
-                .contains("Beginn vor Ablauf der Widerrufsfrist: nicht verlangt (Häkchen nicht gesetzt).")
+                // Lückenlos: eingetragener Name, beide Häkchen mit Wortlaut, Knopf, Fassungen, voller Hash
+                .contains(" Eingetragener Name: Vorname „Max“, Nachname „Mustermann“.")
+                .contains(" Pflicht-Häkchen gesetzt: „Ich beauftrage Angebot ANG-2026-0001 verbindlich und zahlungspflichtig.“ ")
+                .contains(" Freiwilliges Häkchen nicht gesetzt: „Ich verlange ausdrücklich einen früheren Beginn.“ ")
                 .contains("Erst nach Ablauf der Widerrufsfrist beginnen (bis ")
-                .contains("Widerrufsbelehrung Stand 13.10.2026, ausgelöst mit „Zahlungspflichtig beauftragen“.");
+                .contains(" Ausgelöst mit dem Knopf „Zahlungspflichtig beauftragen“.")
+                .contains(" Geltende Fassungen: Widerrufsbelehrung Stand 13.10.2026, Datenschutzerklärung Stand 13.10.2026.")
+                .endsWith(" Annahme-Hash: " + pending.getHashAcceptance() + ".");
+        assertThat(pending.getVorzeitigerBeginnText()).isEqualTo("Ich verlange ausdrücklich einen früheren Beginn.");
         assertThat(abText.getValue())
                 .startsWith("Automatisch erstellt nach digitaler Annahme von Angebot ANG-2026-0001")
-                .contains("nicht verlangt");
+                .contains("Freiwilliges Häkchen nicht gesetzt");
     }
 
     @Test
     void annahmeNachweisFuerVerlauf_mitCodeUndVorzeitigemBeginn() {
         DokumentFreigabe f = pendingFreigabe("uuid-text");
+        f.setUnterzeichnerVorname("Max");
+        f.setUnterzeichnerNachname("Mustermann");
         f.setUnterzeichnerName("Max Mustermann");
         f.setAkzeptiertAm(LocalDateTime.of(2026, 10, 30, 12, 26));
-        f.setCodeBestaetigtAm(LocalDateTime.of(2026, 10, 30, 12, 26));
+        f.setCodeBestaetigtAm(LocalDateTime.of(2026, 10, 30, 12, 25));
         f.setCodeBestaetigtEmail("max@example.com");
         f.setVorzeitigerBeginn(true);
         f.setHashAcceptance("b".repeat(64));
 
-        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, false)).isEqualTo(
+        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, false, List.of())).isEqualTo(
                 "Digitale Annahme von Angebot ANG-2026-0001 am 30.10.2026 um 12:26 Uhr."
-                        + " Bestätigt per Einmal-Code."
-                        + " Beginn vor Ablauf der Widerrufsfrist: verlangt (Häkchen gesetzt)."
+                        + " Eingetragener Name: Vorname „Max“, Nachname „Mustermann“."
+                        + " Bestätigt per Einmal-Code an max@example.com am 30.10.2026 um 12:25 Uhr."
+                        + " Freiwilliges Häkchen gesetzt (Beginn vor Ablauf der Widerrufsfrist; Wortlaut nicht übermittelt)."
                         + " Sofort beginnen erlaubt."
                         + " Annahme-Hash: " + "b".repeat(64) + ".");
     }
 
     @Test
-    void annahmeNachweisFuerVerlauf_ohneAngaben_nenntFehlendeEntscheidung() {
+    void annahmeNachweisFuerVerlauf_nenntAbweichendeEmailWahlpositionenUndBetrag() {
+        DokumentFreigabe f = pendingFreigabe("uuid-voll");
+        f.setAkzeptiertEmail("buero@example.com");
+        f.setCodeBestaetigtAm(LocalDateTime.of(2026, 10, 30, 12, 25));
+        f.setCodeBestaetigtEmail("max@example.com");
+        f.setAkzeptierterBetrag(new BigDecimal("1428"));
+
+        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, false,
+                List.of("3.2 Geländer Edelstahl", "4.1 Handlauf")))
+                .contains(" Angegebene E-Mail: buero@example.com.")
+                .contains(" Mitbeauftragte Wahlpositionen: 3.2 Geländer Edelstahl; 4.1 Handlauf.")
+                .contains(" Verbindlicher Betrag (brutto): 1428,00 €.");
+
+        // Gleiche Adresse wie beim Code: nicht doppelt nennen
+        f.setAkzeptiertEmail("MAX@example.com");
+        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, false, List.of()))
+                .doesNotContain("Angegebene E-Mail");
+    }
+
+    @Test
+    void annahmeNachweisFuerVerlauf_altbestand() {
         DokumentFreigabe f = pendingFreigabe("uuid-alt");
         f.setDokumentArt(null);
+        f.setUnterzeichnerName("Max Mustermann");
+        f.setCodeBestaetigtAm(LocalDateTime.of(2026, 10, 30, 12, 25));
+        f.setDatenschutzStand("2026-10-13");
 
-        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, true)).isEqualTo(
+        assertThat(DokumentFreigabeService.annahmeNachweisFuerVerlauf(f, true, List.of())).isEqualTo(
                 "Automatisch erstellt nach digitaler Annahme von Angebot ANG-2026-0001."
-                        + " Keine Angabe zum Beginn vor Ablauf der Widerrufsfrist.");
+                        + " Eingetragener Name: „Max Mustermann“."
+                        + " Bestätigt per Einmal-Code an unbekannte Adresse am 30.10.2026 um 12:25 Uhr."
+                        + " Keine Angabe zum Beginn vor Ablauf der Widerrufsfrist."
+                        + " Geltende Fassungen: Datenschutzerklärung Stand 13.10.2026.");
+    }
+
+    @Test
+    void mitbeauftragteAlternativen_werdenMitPositionUndBezeichnungAufgeloest() {
+        DokumentFreigabe f = pendingFreigabe("uuid-alt-namen");
+        f.setPositionenSnapshot("{\"snapshot\":true}");
+        f.setAkzeptierteAlternativen("[\"alt-2\"]");
+        FreigabePositionDto gewaehlt = FreigabePositionDto.builder()
+                .blockId("alt-2").pos("3.2").bezeichnung("Geländer Edelstahl").optional(true).build();
+        FreigabePositionDto andere = FreigabePositionDto.builder()
+                .blockId("alt-1").pos("3.1").bezeichnung("Geländer verzinkt").optional(true).build();
+        when(ausgangsGeschaeftsDokumentService.baueKundenPositionen("{\"snapshot\":true}"))
+                .thenReturn(List.of(andere, gewaehlt));
+
+        assertThat(service.mitbeauftragteAlternativen(f)).containsExactly("3.2 Geländer Edelstahl");
+
+        f.setAkzeptierteAlternativen("kein json");
+        assertThat(service.mitbeauftragteAlternativen(f)).isEmpty();
+        f.setAkzeptierteAlternativen(null);
+        assertThat(service.mitbeauftragteAlternativen(f)).isEmpty();
+    }
+
+    @Test
+    void findAuditByQuelle_altbestandOhneSnapshot_loestWahlpositionenAusLiveDokumentAuf() {
+        DokumentFreigabe f = pendingFreigabe("uuid-alt-live");
+        f.setStatus(FreigabeStatus.ACCEPTED);
+        f.setAkzeptierteAlternativen("[\"alt-1\"]");
+        f.setAkzeptierterBetrag(new BigDecimal("1190.00"));
+        AusgangsGeschaeftsDokument angebot = new AusgangsGeschaeftsDokument();
+        angebot.setId(123L);
+        angebot.setPositionenJson("{\"live\":true}");
+        when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(123L))).thenReturn(List.of(f));
+        when(ausgangsGeschaeftsDokumentRepository.findById(123L)).thenReturn(Optional.of(angebot));
+        when(ausgangsGeschaeftsDokumentService.baueKundenPositionen("{\"live\":true}")).thenReturn(List.of(
+                FreigabePositionDto.builder().blockId("alt-1").pos("2.1").bezeichnung("Tor verzinkt").optional(true).build()));
+
+        org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto audit =
+                service.findAuditByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, 123L).orElseThrow();
+
+        assertThat(audit.getMitbeauftragteAlternativen()).containsExactly("2.1 Tor verzinkt");
+        assertThat(audit.getAkzeptierterBetrag()).isEqualByComparingTo("1190.00");
+    }
+
+    @Test
+    void mitbeauftragteAlternativen_unlesbarePositionen_liefernLeereListeStattFehler() {
+        DokumentFreigabe f = pendingFreigabe("uuid-kaputt");
+        f.setPositionenSnapshot("{}");
+        f.setAkzeptierteAlternativen("[\"alt-1\"]");
+        when(ausgangsGeschaeftsDokumentService.baueKundenPositionen("{}")).thenReturn(null);
+
+        assertThat(service.mitbeauftragteAlternativen(f)).isEmpty();
+    }
+
+    @Test
+    void akzeptiere_wortlautOhneEntscheidung_wirdNichtGespeichert() {
+        DokumentFreigabe pending = pendingFreigabe("uuid-nur-text");
+        when(repository.findByUuid("uuid-nur-text")).thenReturn(Optional.of(pending));
+        when(repository.save(any(DokumentFreigabe.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ausgangsGeschaeftsDokumentRepository.findById(any())).thenReturn(Optional.empty());
+
+        DokumentFreigabe result = service.akzeptiere("uuid-nur-text", "192.0.2.10", "UA", null,
+                "Max", "Mustermann", "Max Mustermann", null,
+                new FreigabeErklaerung(null, null, null, null, null, "Ich verlange ausdrücklich einen früheren Beginn."));
+
+        assertThat(result.getVorzeitigerBeginnText()).isNull();
     }
 
     @Test
@@ -1268,7 +1368,8 @@ class DokumentFreigabeServiceTest {
                 f -> f.setWiderrufStand("2026-10-13"),
                 f -> f.setDatenschutzStand("2026-10-13"),
                 f -> f.setBestaetigungText("Ich beauftrage verbindlich."),
-                f -> f.setKnopfText("Zahlungspflichtig beauftragen"));
+                f -> f.setKnopfText("Zahlungspflichtig beauftragen"),
+                f -> f.setVorzeitigerBeginnText("Ich verlange ausdrücklich einen früheren Beginn."));
         java.util.Set<String> hashes = new java.util.HashSet<>();
         hashes.add(ohne);
         for (java.util.function.Consumer<DokumentFreigabe> aenderung : aenderungen) {
@@ -1294,6 +1395,8 @@ class DokumentFreigabeServiceTest {
         f.setDatenschutzStand("2026-10-13");
         f.setBestaetigungText("Ich beauftrage verbindlich.");
         f.setKnopfText("Zahlungspflichtig beauftragen");
+        f.setVorzeitigerBeginnText("Ich verlange ausdrücklich einen früheren Beginn.");
+        f.setAkzeptierterBetrag(new BigDecimal("1428.00"));
         when(repository.findByQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(77L))).thenReturn(List.of(f));
 
         org.example.kalkulationsprogramm.dto.Freigabe.FreigabeAuditDto audit =
@@ -1306,6 +1409,9 @@ class DokumentFreigabeServiceTest {
         assertThat(audit.getDatenschutzStand()).isEqualTo("2026-10-13");
         assertThat(audit.getBestaetigungText()).isEqualTo("Ich beauftrage verbindlich.");
         assertThat(audit.getKnopfText()).isEqualTo("Zahlungspflichtig beauftragen");
+        assertThat(audit.getVorzeitigerBeginnText()).isEqualTo("Ich verlange ausdrücklich einen früheren Beginn.");
+        assertThat(audit.getAkzeptierterBetrag()).isEqualByComparingTo("1428.00");
+        assertThat(audit.getMitbeauftragteAlternativen()).isEmpty();
     }
 
     @Test

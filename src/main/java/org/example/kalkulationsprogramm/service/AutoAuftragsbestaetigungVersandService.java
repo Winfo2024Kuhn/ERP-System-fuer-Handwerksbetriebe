@@ -1321,7 +1321,9 @@ public class AutoAuftragsbestaetigungVersandService
     static String buildAnnahmeBelegHtml(DokumentFreigabe f, String telefon, boolean belehrungAngehaengt)
     {
         String wann = f.getAkzeptiertAm() != null ? f.getAkzeptiertAm().format(ANNAHME_FORMAT) : "—";
-        String hash = kuerzeHash(f.getHashAcceptance());
+        // Voller Hash statt gekürzt: Der Kunde soll ihn 1:1 mit dem Nachweis im ERP vergleichen können.
+        String hash = f.getHashAcceptance() == null || f.getHashAcceptance().isBlank()
+                ? "—" : escapeHtml(f.getHashAcceptance());
         String angebotsNummer = nullSafe(f.getDokumentNummer());
         // Unterzeichner-Name gehört zur Beweissicherung (siehe Issue-Spec): bei
         // Firmenkunden klickt nicht zwingend die Person, deren Name in den Stammdaten
@@ -1355,9 +1357,26 @@ public class AutoAuftragsbestaetigungVersandService
                     + "verlangt. Wir beginnen daher erst nach Ablauf der 14-tägigen Frist. Möchten Sie, dass wir "
                     + "früher starten, teilen Sie uns das bitte kurz per E-Mail mit.</p>";
         }
-        // Dieselbe Entscheidung noch einmal als Beweis-Zeile, damit der Beleg für sich allein steht.
-        String entscheidung = FreigabeArbeitsbeginn.entscheidungDesKunden(f);
-        String entscheidungZeile = entscheidung != null ? escapeHtml(entscheidung) + "<br>" : "";
+        // Was der Kunde angehakt hat, mit dem Wortlaut, den er gesehen hat – damit der Beleg für
+        // sich allein steht. Ohne übermittelten Wortlaut (ältere Website) bleibt die Entscheidung.
+        String pflichtZeile = f.getBestaetigungText() != null
+                ? "Pflicht-Häkchen: angehakt – „" + escapeHtml(f.getBestaetigungText()) + "“<br>"
+                : "";
+        String entscheidungZeile;
+        if (f.getVorzeitigerBeginn() != null && f.getVorzeitigerBeginnText() != null)
+        {
+            entscheidungZeile = "Freiwilliges Häkchen: " + (f.getVorzeitigerBeginn() ? "angehakt" : "nicht angehakt")
+                    + " – „" + escapeHtml(f.getVorzeitigerBeginnText()) + "“<br>";
+        }
+        else
+        {
+            String entscheidung = FreigabeArbeitsbeginn.entscheidungDesKunden(f);
+            entscheidungZeile = entscheidung != null ? escapeHtml(entscheidung) + "<br>" : "";
+        }
+        String datenschutzZeile = f.getDatenschutzStand() != null
+                ? "Datenschutzerklärung Stand "
+                        + escapeHtml(WiderrufsbelehrungPdfService.formatiereStand(f.getDatenschutzStand())) + "<br>"
+                : "";
         String standZeile = f.getWiderrufStand() != null
                 ? "Widerrufsbelehrung Stand " + escapeHtml(WiderrufsbelehrungPdfService.formatiereStand(f.getWiderrufStand()))
                         + (f.getKnopfText() != null ? ", ausgelöst mit „" + escapeHtml(f.getKnopfText()) + "“" : "")
@@ -1383,9 +1402,12 @@ public class AutoAuftragsbestaetigungVersandService
                 + "<p style=\"margin:8px 0 0 0;color:#94a3b8;font-size:13px;line-height:1.5;\">"
                 + "Beweissicherung: " + beweisZeile + "<br>"
                 + codeZeile
+                + pflichtZeile
                 + entscheidungZeile
                 + standZeile
-                + "Audit-Hash zur Rechtssicherheit: <code style=\"font-family:monospace;color:#64748b;\">" + hash + "</code>"
+                + datenschutzZeile
+                + "Annahme-Hash zur Rechtssicherheit (steht genauso in unserem Nachweis): "
+                + "<code style=\"font-family:monospace;color:#64748b;word-break:break-all;\">" + hash + "</code>"
                 + "</p>"
                 + "<p style=\"margin:12px 0 0 0;color:#1e293b;line-height:1.45;\">" + warnung + "</p>"
                 + "</div>";
@@ -1403,11 +1425,5 @@ public class AutoAuftragsbestaetigungVersandService
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;");
-    }
-
-    private static String kuerzeHash(String hash)
-    {
-        if (hash == null || hash.isBlank()) return "—";
-        return hash.length() <= 16 ? hash : hash.substring(0, 16) + "…";
     }
 }

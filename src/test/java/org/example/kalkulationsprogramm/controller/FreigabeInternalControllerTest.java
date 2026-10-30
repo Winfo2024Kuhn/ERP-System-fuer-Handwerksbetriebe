@@ -156,6 +156,7 @@ class FreigabeInternalControllerTest {
         req.setDatenschutzStand("2026-10-13");
         req.setBestaetigungText("Ich beauftrage Angebot ANG-2026-0003 verbindlich und zahlungspflichtig.");
         req.setKnopfText("Zahlungspflichtig beauftragen");
+        req.setVorzeitigerBeginnText("Ich verlange ausdrücklich einen früheren Beginn.");
 
         mockMvc.perform(post("/api/internal/freigabe/uuid-recht/akzeptieren")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -169,13 +170,26 @@ class FreigabeInternalControllerTest {
                 eq("Max"), eq("Mustermann"), eq("Max Mustermann"), any(), eq("123456"), captor.capture());
         assertThat(captor.getValue()).isEqualTo(new FreigabeErklaerung(true, "2026-10-13", "2026-10-13",
                 "Ich beauftrage Angebot ANG-2026-0003 verbindlich und zahlungspflichtig.",
-                "Zahlungspflichtig beauftragen"));
+                "Zahlungspflichtig beauftragen", "Ich verlange ausdrücklich einen früheren Beginn."));
     }
 
     @Test
     void akzeptieren_ueberlangerKnopftext_gibt400() throws Exception {
         FreigabeAkzeptierenRequest req = validRequest();
         req.setKnopfText("x".repeat(10_001));
+
+        mockMvc.perform(post("/api/internal/freigabe/uuid-lang/akzeptieren")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+        verify(freigabeService, never()).akzeptiereMitCode(
+                anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void akzeptieren_ueberlangerTextZumVorzeitigenBeginn_gibt400() throws Exception {
+        FreigabeAkzeptierenRequest req = validRequest();
+        req.setVorzeitigerBeginnText("<script>alert(1)</script>" + "x".repeat(10_001));
 
         mockMvc.perform(post("/api/internal/freigabe/uuid-lang/akzeptieren")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -50,6 +50,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -797,6 +798,8 @@ public class DokumentFreigabeService
         freigabe.setDatenschutzStand(nachweis.datenschutzStand());
         freigabe.setBestaetigungText(pruefeBestaetigungText(freigabe, nachweis.bestaetigungText()));
         freigabe.setKnopfText(nachweis.knopfText());
+        // Wortlaut nur zusammen mit der Entscheidung: allein wäre er kein Nachweis von irgendetwas.
+        freigabe.setVorzeitigerBeginnText(nachweis.vorzeitigerBeginn() == null ? null : nachweis.vorzeitigerBeginnText());
         freigabe.setHashAcceptance(berechneHashAcceptance(freigabe, ip, email, jetzt));
         DokumentFreigabe saved = repository.save(freigabe);
 
@@ -1035,7 +1038,7 @@ public class DokumentFreigabeService
             angebot = ausgangsGeschaeftsDokumentRepository.save(angebot);
             // GoBD-Audit: rechtsverbindlicher Akt — Hash-Kette schützt das Annahmedatum.
             ausgangsGeschaeftsDokumentAuditService.protokolliereDigitaleAnnahme(angebot, freigabe.getAkzeptiertIp(),
-                    annahmeNachweisFuerVerlauf(freigabe, false));
+                    annahmeNachweisFuerVerlauf(freigabe, false, mitbeauftragteAlternativen(freigabe)));
         }
 
         // Kein doppeltes Erzeugen: Hat das Angebot bereits eine Auftragsbestätigung als Nachfolger,
@@ -1140,7 +1143,7 @@ public class DokumentFreigabeService
             // GoBD-Audit: AB ist rechtlich Folge der Angebotsannahme; spiegeln wir
             // im Audit, damit Prüfer den vollständigen Annahme-Vorgang nachvollziehen kann.
             ausgangsGeschaeftsDokumentAuditService.protokolliereDigitaleAnnahme(ab, freigabe.getAkzeptiertIp(),
-                    annahmeNachweisFuerVerlauf(freigabe, true));
+                    annahmeNachweisFuerVerlauf(freigabe, true, mitbeauftragteAlternativen(freigabe)));
         }
 
         // Auto-Versand der AB als PDF-Mail an den Kunden (Issue #55) — asynchron
@@ -1334,7 +1337,7 @@ public class DokumentFreigabeService
         Map<Long, DokumentFreigabe> map = findJuengsteProQuelle(typ, List.of(quellDokumentId));
         DokumentFreigabe f = map.get(quellDokumentId);
         if (f == null) return Optional.empty();
-        return Optional.of(toAuditDto(f));
+        return Optional.of(toAuditDto(f, mitbeauftragteAlternativen(f)));
     }
 
     /**
@@ -1357,10 +1360,51 @@ public class DokumentFreigabeService
         DokumentFreigabe f = findJuengsteProQuelle(FreigabeQuellTyp.AUSGANGS_DOKUMENT, List.of(vorgaenger.getId()))
                 .get(vorgaenger.getId());
         if (f == null || f.getStatus() != FreigabeStatus.ACCEPTED) return Optional.empty();
-        return Optional.of(toAuditDto(f));
+        return Optional.of(toAuditDto(f, mitbeauftragteAlternativen(f)));
     }
 
-    private static FreigabeAuditDto toAuditDto(DokumentFreigabe f)
+    /**
+     * Bezeichnungen der mitbeauftragten Wahlpositionen („3.2 Geländer Edelstahl“), aufgelöst gegen
+     * den Positionen-Stand, den der Kunde gesehen hat (Snapshot; Altbestand: Live-Dokument).
+     * Leer, wenn keine gewählt wurden oder sich nichts auflösen lässt.
+     */
+    List<String> mitbeauftragteAlternativen(DokumentFreigabe f)
+    {
+        String gewaehltJson = f.getAkzeptierteAlternativen();
+        if (gewaehltJson == null || gewaehltJson.isBlank()) return List.of();
+        Set<String> ids;
+        try
+        {
+            ids = new HashSet<>(OBJECT_MAPPER.readValue(gewaehltJson,
+                    OBJECT_MAPPER.getTypeFactory().constructCollectionType(List.class, String.class)));
+        }
+        catch (JacksonException e)
+        {
+            log.warn("Mitbeauftragte Wahlpositionen der Freigabe zu {} nicht lesbar", f.getDokumentNummer());
+            return List.of();
+        }
+        if (ids.isEmpty()) return List.of();
+
+        String positionenJson = f.getPositionenSnapshot();
+        if (positionenJson == null && f.getQuellTyp() == FreigabeQuellTyp.AUSGANGS_DOKUMENT
+                && f.getQuellDokumentId() != null)
+        {
+            positionenJson = ausgangsGeschaeftsDokumentRepository.findById(f.getQuellDokumentId())
+                    .map(AusgangsGeschaeftsDokument::getPositionenJson).orElse(null);
+        }
+        if (positionenJson == null) return List.of();
+        // null bei leerem oder unlesbarem JSON – der Nachweis soll trotzdem laden.
+        List<FreigabePositionDto> positionen = ausgangsGeschaeftsDokumentService.baueKundenPositionen(positionenJson);
+        if (positionen == null) return List.of();
+        return positionen.stream()
+                .filter(p -> p.getBlockId() != null && ids.contains(p.getBlockId()))
+                .map(p -> ((p.getPos() == null ? "" : p.getPos() + " ")
+                        + (p.getBezeichnung() == null ? "" : p.getBezeichnung())).trim())
+                .filter(text -> !text.isEmpty())
+                .toList();
+    }
+
+    private static FreigabeAuditDto toAuditDto(DokumentFreigabe f, List<String> alternativen)
     {
         return FreigabeAuditDto.builder()
                 .status(f.getStatus().name())
@@ -1384,6 +1428,9 @@ public class DokumentFreigabeService
                 .datenschutzStand(f.getDatenschutzStand())
                 .bestaetigungText(f.getBestaetigungText())
                 .knopfText(f.getKnopfText())
+                .vorzeitigerBeginnText(f.getVorzeitigerBeginnText())
+                .akzeptierterBetrag(f.getAkzeptierterBetrag())
+                .mitbeauftragteAlternativen(alternativen)
                 .build();
     }
 
@@ -1593,21 +1640,30 @@ public class DokumentFreigabeService
                     leerWennNull(freigabe.getBestaetigungText()),
                     leerWennNull(freigabe.getKnopfText()));
         }
+        // Wortlaut des freiwilligen Häkchens (seit V442). Eigener Block und nur bei Angabe, damit
+        // die Hashes aller älteren Annahmen unverändert nachrechenbar bleiben.
+        if (freigabe.getVorzeitigerBeginnText() != null)
+        {
+            input = String.join("|", input, freigabe.getVorzeitigerBeginnText());
+        }
         return sha256Hex(input);
     }
 
     /**
      * Begründungstext für den GoBD-Verlauf der digitalen Annahme. Er liegt in der Hash-Kette und
-     * hält dort fest, wann angenommen wurde, ob per Code bestätigt wurde und ob der Kunde einen
-     * Beginn vor Ablauf der Widerrufsfrist verlangt hat.
+     * hält dort lückenlos fest, wer mit welchem eingetragenen Namen angenommen hat, wie per Code
+     * bestätigt wurde, welche Häkchen mit welchem Wortlaut gesetzt waren, welcher Knopf die Annahme
+     * auslöste und welche Fassungen von Widerrufsbelehrung und Datenschutzerklärung galten. Der
+     * Annahme-Hash am Ende ist derselbe, den der Kunde in seiner Bestätigungs-Mail bekommt.
      *
-     * <p>Name und E-Mail des Kunden stehen bewusst nicht darin (Datenminimierung): Die Kette ist
-     * unveränderbar, die Personendaten liegen schon in der Freigabe. Der Annahme-Hash verbindet
-     * beide Stellen eindeutig.</p>
+     * <p>Name und Code-Adresse stehen bewusst darin (Wunsch des Betriebs, lückenloser Nachweis).
+     * Bei angenommenen Freigaben werden sie ohnehin dauerhaft aufbewahrt
+     * ({@code KundeDatenschutzService} anonymisiert sie nur bei nie angenommenen Links).</p>
      *
      * @param folgedokument {@code true} für die automatisch erzeugte Auftragsbestätigung
+     * @param alternativen  Bezeichnungen der mitbeauftragten Wahlpositionen (leer = keine)
      */
-    static String annahmeNachweisFuerVerlauf(DokumentFreigabe f, boolean folgedokument)
+    static String annahmeNachweisFuerVerlauf(DokumentFreigabe f, boolean folgedokument, List<String> alternativen)
     {
         String dokument = ((f.getDokumentArt() == null ? "Angebot" : f.getDokumentArt()) + " "
                 + (f.getDokumentNummer() == null ? "" : f.getDokumentNummer())).trim();
@@ -1619,32 +1675,86 @@ public class DokumentFreigabeService
             text.append(" am ").append(f.getAkzeptiertAm().format(NACHWEIS_ZEIT_FORMAT)).append(" Uhr");
         }
         text.append('.');
+        if (f.getUnterzeichnerVorname() != null || f.getUnterzeichnerNachname() != null)
+        {
+            text.append(" Eingetragener Name: Vorname „").append(leerWennNull(f.getUnterzeichnerVorname()))
+                    .append("“, Nachname „").append(leerWennNull(f.getUnterzeichnerNachname())).append("“.");
+        }
+        else if (f.getUnterzeichnerName() != null && !f.getUnterzeichnerName().isBlank())
+        {
+            text.append(" Eingetragener Name: „").append(f.getUnterzeichnerName()).append("“.");
+        }
+        if (f.getAkzeptiertEmail() != null && !f.getAkzeptiertEmail().equalsIgnoreCase(
+                f.getCodeBestaetigtEmail() == null ? "" : f.getCodeBestaetigtEmail()))
+        {
+            text.append(" Angegebene E-Mail: ").append(f.getAkzeptiertEmail()).append('.');
+        }
         if (f.getCodeBestaetigtAm() != null)
         {
-            text.append(" Bestätigt per Einmal-Code.");
+            text.append(" Bestätigt per Einmal-Code an ")
+                    .append(f.getCodeBestaetigtEmail() == null ? "unbekannte Adresse" : f.getCodeBestaetigtEmail())
+                    .append(" am ").append(f.getCodeBestaetigtAm().format(NACHWEIS_ZEIT_FORMAT)).append(" Uhr.");
         }
-        String entscheidung = FreigabeArbeitsbeginn.entscheidungDesKunden(f);
-        if (entscheidung != null)
+        if (f.getBestaetigungText() != null)
         {
-            text.append(' ').append(entscheidung).append('.');
+            text.append(" Pflicht-Häkchen gesetzt: ").append(zitatAlsSatz(f.getBestaetigungText()));
+        }
+        if (f.getVorzeitigerBeginn() != null)
+        {
+            text.append(f.getVorzeitigerBeginn()
+                    ? " Freiwilliges Häkchen gesetzt"
+                    : " Freiwilliges Häkchen nicht gesetzt");
+            text.append(f.getVorzeitigerBeginnText() != null
+                    ? ": " + zitatAlsSatz(f.getVorzeitigerBeginnText())
+                    : " (Beginn vor Ablauf der Widerrufsfrist; Wortlaut nicht übermittelt).");
             text.append(' ').append(FreigabeArbeitsbeginn.hinweisFuersBuero(f));
         }
         else
         {
             text.append(" Keine Angabe zum Beginn vor Ablauf der Widerrufsfrist.");
         }
-        if (f.getWiderrufStand() != null)
+        if (f.getKnopfText() != null)
         {
-            text.append(" Widerrufsbelehrung Stand ")
-                    .append(WiderrufsbelehrungPdfService.formatiereStand(f.getWiderrufStand()));
-            if (f.getKnopfText() != null) text.append(", ausgelöst mit „").append(f.getKnopfText()).append('“');
+            text.append(" Ausgelöst mit dem Knopf „").append(f.getKnopfText()).append("“.");
+        }
+        if (f.getWiderrufStand() != null || f.getDatenschutzStand() != null)
+        {
+            text.append(" Geltende Fassungen:");
+            if (f.getWiderrufStand() != null)
+            {
+                text.append(" Widerrufsbelehrung Stand ")
+                        .append(WiderrufsbelehrungPdfService.formatiereStand(f.getWiderrufStand()));
+            }
+            if (f.getDatenschutzStand() != null)
+            {
+                text.append(f.getWiderrufStand() != null ? "," : "").append(" Datenschutzerklärung Stand ")
+                        .append(WiderrufsbelehrungPdfService.formatiereStand(f.getDatenschutzStand()));
+            }
             text.append('.');
+        }
+        if (alternativen != null && !alternativen.isEmpty())
+        {
+            text.append(" Mitbeauftragte Wahlpositionen: ").append(String.join("; ", alternativen)).append('.');
+        }
+        if (f.getAkzeptierterBetrag() != null)
+        {
+            text.append(" Verbindlicher Betrag (brutto): ")
+                    .append(f.getAkzeptierterBetrag().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString().replace('.', ','))
+                    .append(" €.");
         }
         if (f.getHashAcceptance() != null)
         {
             text.append(" Annahme-Hash: ").append(f.getHashAcceptance()).append('.');
         }
         return text.toString();
+    }
+
+    /** „Wortlaut“ als eigener Satz – ohne doppelten Punkt, wenn der Wortlaut schon einen hat. */
+    private static String zitatAlsSatz(String wortlaut)
+    {
+        String zitat = "„" + wortlaut + "“";
+        char letztes = wortlaut.isEmpty() ? ' ' : wortlaut.charAt(wortlaut.length() - 1);
+        return letztes == '.' || letztes == '!' || letztes == '?' ? zitat : zitat + ".";
     }
 
     /**

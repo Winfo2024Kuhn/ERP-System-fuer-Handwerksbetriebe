@@ -3611,9 +3611,10 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                 </DialogContent>
             </Dialog>
 
-            {/* Audit-Trail-Modal: Beweisdaten der digitalen Annahme.
-                Wer (E-Mail), Wann (Zeitstempel), Wo (IP), Was (Hash) — analog zu DocuSign-
-                Audit-Trail. Hash wird gekürzt angezeigt mit Copy-Button für den Vollwert. */}
+            {/* Audit-Trail-Modal: lückenloser Nachweis der digitalen Annahme – wer (Name wie
+                eingetragen, E-Mail, Code), was bestätigt wurde (Häkchen mit Wortlaut, Knopf,
+                Fassungen, Wahlpositionen), Arbeitsbeginn und der volle Annahme-Hash zum Vergleich
+                mit der Mail an den Kunden. IP, Browser und Original-Hash darunter. */}
             <Dialog open={auditDokumentId !== null} onOpenChange={(open) => { if (!open) { setAuditDokumentId(null); setAuditDaten(null); } }}>
                 <DialogContent className="max-w-lg">
                     <DialogHeader>

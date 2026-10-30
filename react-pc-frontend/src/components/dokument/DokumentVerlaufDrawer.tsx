@@ -43,6 +43,10 @@ const AKTION_META: Record<string, { label: string; icon: React.ComponentType<{cl
     DIGITAL_ANGENOMMEN: { label: 'Digital angenommen', icon: CheckCircle2, color: 'bg-green-100 text-green-700 border-green-200' },
 };
 
+/** Erklärt am Fingerabdruck jedes Verlaufseintrags, dass er nicht der Annahme-Hash ist. */
+const DOKUMENT_FINGERABDRUCK_HINWEIS =
+    'Fingerabdruck des Dokumentinhalts zu diesem Zeitpunkt – nicht der Annahme-Hash. Klick kopiert den vollen Wert.';
+
 const typLabel = (typ: string) => AUSGANGS_GESCHAEFTSDOKUMENT_TYPEN.find(t => t.value === typ)?.label || typ;
 
 /**
@@ -80,18 +84,21 @@ function AnnahmeNachweisImVerlauf({ nachweis }: { nachweis: FreigabeAuditErgebni
                 <InfoButton titel="Annahme-Nachweis">
                     <InfoAbschnitt titel="Was passiert im Hintergrund?">
                         <p>
-                            Wenn ein Kunde ein Angebot online annimmt, speichert das Programm, wer angenommen hat,
-                            wann, mit welchem Bestätigungs-Code und ob der Kunde einen Arbeitsbeginn vor Ablauf der
-                            14-tägigen Widerrufsfrist verlangt hat. Diese Angaben sind mit einem Fingerabdruck (Hash)
-                            gesichert und können nicht mehr geändert werden. Die Auftragsbestätigung zeigt den
-                            Nachweis des Angebots, aus dem sie entstanden ist.
+                            Wenn ein Kunde ein Angebot online annimmt, speichert das Programm den eingetragenen Namen,
+                            die E-Mail mit dem Bestätigungs-Code, jedes Häkchen mit seinem genauen Wortlaut, den
+                            gedrückten Knopf und die Fassungen von Widerrufsbelehrung und Datenschutzerklärung. Daraus
+                            wird ein Fingerabdruck (Annahme-Hash) berechnet. Der Kunde bekommt denselben Hash in seiner
+                            Bestätigungs-Mail. Alle Angaben stehen zusätzlich im Eintrag „Digital angenommen“ dieses
+                            Verlaufs, und der lässt sich nachträglich nicht unbemerkt ändern.
                         </p>
                     </InfoAbschnitt>
                     <InfoAbschnitt titel="Was bewirkt das?">
                         <p>
-                            Sie sehen hier jederzeit, ob Sie sofort anfangen dürfen oder die Widerrufsfrist abwarten
-                            müssen. Dieselbe Angabe steht in der Mail an den Kunden und in der Glocke. Im Streitfall
-                            belegt dieser Nachweis die Annahme.
+                            Im Streitfall vergleichen Sie den Hash hier mit dem in der Mail des Kunden und mit dem
+                            Eintrag „Digital angenommen“ im Verlauf. Stimmen alle drei überein, gehören Mail und Nachweis
+                            zur selben Annahme. Außerdem sehen Sie sofort,
+                            ob Sie vor Ablauf der Widerrufsfrist beginnen dürfen. Die Auftragsbestätigung zeigt den
+                            Nachweis des Angebots, aus dem sie entstanden ist.
                         </p>
                     </InfoAbschnitt>
                 </InfoButton>
@@ -173,8 +180,9 @@ export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokument
         try { return new Date(s).toLocaleString('de-DE'); } catch { return s; }
     };
     const copyHash = (hash: string) => {
-        navigator.clipboard.writeText(hash);
-        toast.success('Hash kopiert');
+        navigator.clipboard.writeText(hash)
+            .then(() => toast.success('Fingerabdruck des Dokuments kopiert'))
+            .catch(() => toast.error('Kopieren fehlgeschlagen'));
     };
 
     return (
@@ -232,7 +240,7 @@ export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokument
                                     </div>
 
                                     {e.aenderungsgrund && (
-                                        <div className="mt-2 text-sm text-slate-700 bg-slate-50 rounded p-2 border border-slate-100">
+                                        <div className="mt-2 text-sm text-slate-700 bg-slate-50 rounded p-2 border border-slate-100 whitespace-pre-line break-words">
                                             <span className="font-medium">Begründung: </span>
                                             {e.aenderungsgrund}
                                         </div>
@@ -246,11 +254,14 @@ export function DokumentVerlaufDrawer({ open, onOpenChange, dokumentId, dokument
                                             <button
                                                 type="button"
                                                 onClick={() => copyHash(e.inhaltHash!)}
-                                                className="inline-flex items-center gap-1 hover:text-rose-600 transition-colors"
-                                                title="Vollständigen Hash kopieren"
+                                                className="inline-flex items-center gap-1 rounded hover:text-rose-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                                title={DOKUMENT_FINGERABDRUCK_HINWEIS}
                                             >
-                                                <Copy className="w-3 h-3" />
-                                                <span className="font-mono">SHA-256: {e.inhaltHash.substring(0, 12)}…</span>
+                                                <Copy className="w-3 h-3" aria-hidden="true" />
+                                                <span>
+                                                    Fingerabdruck des Dokuments:{' '}
+                                                    <span className="font-mono">{e.inhaltHash.substring(0, 12)}…</span>
+                                                </span>
                                             </button>
                                         )}
                                     </div>

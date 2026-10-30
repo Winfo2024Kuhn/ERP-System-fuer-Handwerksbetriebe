@@ -82,7 +82,8 @@ class FlywayMigrationenTest {
             Map.entry("V438__kategorie_aufschlag.sql", 361623221),
             Map.entry("V439__email_empfaenger_ohne_laengengrenze.sql", -1740503236),
             Map.entry("V440__zeitbuchung_ueberschneidung.sql", 126269073),
-            Map.entry("V441__abteilung_darf_kostenstellen_verwalten.sql", 44855353));
+            Map.entry("V441__abteilung_darf_kostenstellen_verwalten.sql", 44855353),
+            Map.entry("V442__freigabe_wortlaut_vorzeitiger_beginn.sql", -1470402608));
 
     private static final char BOM = 0xFEFF;
 
