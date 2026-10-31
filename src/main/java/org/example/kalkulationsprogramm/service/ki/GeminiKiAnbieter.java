@@ -327,8 +327,9 @@ public class GeminiKiAnbieter implements KiAnbieter {
                     erzeugtText |= "generateContent".equals(methode.asString(""));
                 }
                 boolean chat = erzeugtText && !istSondermodell(kurz);
+                // Ton: Die Modellliste von Google sagt dazu nichts – also offen lassen.
                 modelle.add(new KiModellInfo(kurz, modell.path("displayName").asString(kurz),
-                        kurz.startsWith("gemini") ? Boolean.TRUE : null, chat, List.of()));
+                        kurz.startsWith("gemini") ? Boolean.TRUE : null, null, chat, List.of()));
             }
         } catch (JacksonException e) {
             throw new KiAnbieterFehler("Die Modellliste von Google war nicht lesbar.", false, e);

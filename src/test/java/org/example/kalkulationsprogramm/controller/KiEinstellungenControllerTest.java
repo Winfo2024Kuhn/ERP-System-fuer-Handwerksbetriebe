@@ -215,13 +215,14 @@ class KiEinstellungenControllerTest {
     @WithMockUser(roles = "ADMIN")
     void modellListe() throws Exception {
         when(kiDienst.modellListe()).thenReturn(new KiModellListeDto(
-                List.of(new KiModellListeDto.Modell("MISTRAL", "Mistral", "mistral-large-latest", "Mistral Large", true)),
+                List.of(new KiModellListeDto.Modell("MISTRAL", "Mistral", "mistral-large-latest", "Mistral Large", true, false)),
                 List.of("Google Gemini: Für diesen Anbieter ist noch kein Schlüssel hinterlegt.")));
 
         mvc.perform(get("/api/settings/ki/modelle"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.modelle[0].modell").value("mistral-large-latest"))
                 .andExpect(jsonPath("$.modelle[0].bilder").value(true))
+                .andExpect(jsonPath("$.modelle[0].ton").value(false))
                 .andExpect(jsonPath("$.hinweise[0]").exists());
     }
 }

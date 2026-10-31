@@ -60,6 +60,16 @@ public class MistralKiAnbieter implements KiAnbieter {
     static final Set<String> TONFORMATE = Set.of("audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg",
             "audio/mp3", "audio/flac", "audio/ogg", "audio/webm");
 
+    /**
+     * Obergrenze für {@code max_tokens}. Laut Mistral-API-Doku (Chat Completion, Feld {@code max_tokens},
+     * https://docs.mistral.ai/api/#tag/chat) dürfen Eingabe plus {@code max_tokens} die Kontextlänge des
+     * Modells nicht überschreiten, sonst lehnt Mistral die Anfrage mit HTTP 400 ab. Die Dienste setzen
+     * ihr Limit für Gemini (Dokument-Analyse bis 65.536); bei langen PDFs bringt der OCR-Text dazu
+     * leicht zehntausende Token mit. 16.384 reicht für jede Antwort im Programm (auch große
+     * Rechnungen als JSON) und lässt dem Eingabetext genug Platz. Kleinere Werte bleiben unverändert.
+     */
+    static final int MAX_AUSGABE = 16_384;
+
     /** So lange gilt ein Texterkennungs-Ergebnis; Dienste schicken dieselbe PDF über mehrere Runden und Versuche. */
     static final Duration TEXTERKENNUNG_GUELTIG = Duration.ofMinutes(15);
     /** Höchstens so viele erkannte Dokumente bleiben im Speicher. */
@@ -193,7 +203,7 @@ public class MistralKiAnbieter implements KiAnbieter {
             koerper.put("temperature", anfrage.temperatur());
         }
         if (anfrage.maxAusgabe() != null) {
-            koerper.put("max_tokens", anfrage.maxAusgabe());
+            koerper.put("max_tokens", Math.min(anfrage.maxAusgabe(), MAX_AUSGABE));
         }
         if (anfrage.schema() != null) {
             ObjectNode format = koerper.putObject("response_format").put("type", "json_schema");
@@ -413,7 +423,12 @@ public class MistralKiAnbieter implements KiAnbieter {
         for (JsonNode call : wahl.path("message").path("tool_calls")) {
             JsonNode funktion = call.path("function");
             JsonNode argumente = leseArgumente(funktion.path("arguments"));
-            fehlerhaft |= argumente == null;
+            if (argumente == null) {
+                // Wie Gemini bei MALFORMED_FUNCTION_CALL: Ein kaputter Aufruf wird nicht ausgeführt (mit
+                // leeren Argumenten liefe er womöglich falsch), sondern nur gemeldet – der Dienst fragt nach.
+                fehlerhaft = true;
+                continue;
+            }
             aufrufe.add(new KiTeil.WerkzeugAufruf(call.path("id").asString(""),
                     funktion.path("name").asString(""), argumente));
         }
@@ -495,16 +510,30 @@ public class MistralKiAnbieter implements KiAnbieter {
                 JsonNode faehig = modell.path("capabilities");
                 boolean chat = faehig.path("completion_chat").asBoolean(true) && !istSondermodell(id);
                 Boolean bilder = faehig.has("vision") ? faehig.path("vision").asBoolean(false) : null;
+                Boolean ton = verstehtTon(id, faehig);
                 List<String> aliase = new ArrayList<>();
                 for (JsonNode alias : modell.path("aliases")) {
                     aliase.add(alias.asString(""));
                 }
-                modelle.add(new KiModellInfo(id, modell.path("name").asString(id), bilder, chat, aliase));
+                modelle.add(new KiModellInfo(id, modell.path("name").asString(id), bilder, ton, chat, aliase));
             }
         } catch (JacksonException e) {
             throw new KiAnbieterFehler("Die Modellliste von " + NAME + " war nicht lesbar.", false, e);
         }
         return modelle;
+    }
+
+    /**
+     * Versteht das Modell Ton im Chat ({@code input_audio})? Die Modellliste von Mistral meldet das in
+     * {@code capabilities.audio} (so im offiziellen SDK, {@code ModelCapabilities}). Fehlt das Feld
+     * (ältere Antworten), gilt der Name: Voxtral ist das Sprachmodell von Mistral; bei allen anderen
+     * bleibt es offen ({@code null}), statt „kein Ton“ zu behaupten.
+     */
+    private static Boolean verstehtTon(String modell, JsonNode faehig) {
+        if (faehig.has("audio")) {
+            return faehig.path("audio").asBoolean(false);
+        }
+        return modell.toLowerCase(Locale.ROOT).contains("voxtral") ? Boolean.TRUE : null;
     }
 
     /** Texterkennung, Vektoren, Moderation und Sprache taugen nicht für Auswertungen im Chat. */

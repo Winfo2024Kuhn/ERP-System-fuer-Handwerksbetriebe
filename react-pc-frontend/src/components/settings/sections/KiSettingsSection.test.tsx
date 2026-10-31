@@ -588,6 +588,37 @@ describe('KiSettingsSection – Anbieter und Modell je Funktion', () => {
         expect(letzterBody(mock, '/api/settings/ki/funktionen/DOKUMENT_ANALYSE', 'PUT')).toEqual({ anbieter: null, modell: null });
     });
 
+    it('warnt bei der Spracheingabe, wenn das Modell laut Anbieter keinen Ton versteht', async () => {
+        const mistralMitTon = mistral({ schluesselGesetzt: true, faehigkeiten: ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE'] });
+        const voxtral = { anbieter: 'MISTRAL' as const, anbieterName: 'Mistral', modell: 'voxtral-test-latest', name: 'Voxtral Test', bilder: false, ton: true };
+        const liste = kiModellListe();
+        stubbeServer(kiEinstellungen({ anbieterListe: [mistralMitTon, gemini({ schluesselGesetzt: true })] }),
+            () => antwort({ ...liste, modelle: [...liste.modelle, voxtral] }));
+        const user = userEvent.setup();
+        zeige();
+
+        await screen.findByRole('list', { name: 'KI-Funktionen' });
+        const zeile = funktionsZeile('Spracheingabe in der Handy-App');
+        await user.click(within(zeile).getByRole('button', { name: /^Ändern:/ }));
+        await user.click(within(zeile).getByRole('radio', { name: /^Mistral/ }));
+        await user.click(within(zeile).getByLabelText('Modell von Mistral'));
+
+        // Ton nur in der Unterzeile, wenn der Anbieter es sagt.
+        expect(await within(zeile).findByRole('option', { name: /Voxtral Test/ })).toHaveTextContent('versteht Ton');
+        expect(within(zeile).getByRole('option', { name: /Mistral Large/ })).toHaveTextContent('kein Ton');
+        expect(within(zeile).getByRole('option', { name: /Mistral Test Text/ })).not.toHaveTextContent('Ton');
+
+        await user.click(within(zeile).getByRole('option', { name: /Mistral Large/ }));
+        expect(zeile).toHaveTextContent('Dieses Modell kann laut Mistral keinen Ton verstehen – diese Funktion braucht das.');
+        expect(zeile).not.toHaveTextContent('keine Bilder lesen');
+
+        await user.click(within(zeile).getByLabelText('Modell von Mistral'));
+        await user.click(await within(zeile).findByRole('option', { name: /Voxtral Test/ }));
+        expect(zeile).not.toHaveTextContent('keinen Ton verstehen');
+        // Bilder braucht die Spracheingabe nicht: kein Bild-Hinweis, obwohl Voxtral keine liest.
+        expect(zeile).not.toHaveTextContent('keine Bilder lesen');
+    });
+
     it('sperrt Anbieter, die die Funktion nicht können, und sagt warum', async () => {
         stubbeServer();
         const user = userEvent.setup();

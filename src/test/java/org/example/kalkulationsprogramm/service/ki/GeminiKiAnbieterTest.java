@@ -158,6 +158,8 @@ class GeminiKiAnbieterTest {
         assertThat(modelle).filteredOn(KiModellInfo::chat).singleElement().satisfies(m -> {
             assertThat(m.name()).isEqualTo("Gemini 3.8 Flash");
             assertThat(m.bilder()).isTrue();
+            // Die Modellliste von Google sagt nichts über Ton: offen statt geraten.
+            assertThat(m.ton()).isNull();
         });
     }
 

@@ -9,7 +9,11 @@ import java.util.List;
  */
 public record KiModellListeDto(List<Modell> modelle, List<String> hinweise) {
 
-    /** @param bilder kann es Bilder lesen? {@code null}, wenn der Anbieter es nicht sagt */
-    public record Modell(String anbieter, String anbieterName, String modell, String name, Boolean bilder) {
+    /**
+     * @param bilder kann es Bilder lesen? {@code null}, wenn der Anbieter es nicht sagt
+     * @param ton    versteht es Ton (Aufnahmen)? {@code null}, wenn der Anbieter es nicht sagt
+     */
+    public record Modell(String anbieter, String anbieterName, String modell, String name, Boolean bilder,
+                         Boolean ton) {
     }
 }

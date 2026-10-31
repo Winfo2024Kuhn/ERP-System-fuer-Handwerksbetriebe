@@ -6,7 +6,6 @@ import java.util.Map;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService.TestResult;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -168,38 +167,6 @@ public class SystemSettingsController {
         return ResponseEntity.ok(Map.of("message", "E-Mail-Konto gespeichert."));
     }
 
-    // ==================== Gemini API Key ====================
-
-    @GetMapping("/gemini")
-    public ResponseEntity<GeminiSettingsResponse> getGemini() {
-        return ResponseEntity.ok(new GeminiSettingsResponse(
-                hasValue(settingsService.getGeminiApiKey())
-        ));
-    }
-
-    @PutMapping("/gemini")
-    public ResponseEntity<Map<String, String>> saveGemini(@RequestBody GeminiSettingsRequest req) {
-        settingsService.saveGeminiApiKey(req.apiKey());
-        return ResponseEntity.ok(Map.of("message", "Gemini API Key gespeichert."));
-    }
-
-    /**
-     * Entfernt den KI-Schlüssel (Issue #274). Ein leerer Wert überdeckt auch einen
-     * Schlüssel aus den Properties – danach sind alle KI-Funktionen aus.
-     */
-    @DeleteMapping("/gemini")
-    public ResponseEntity<Map<String, String>> deleteGemini() {
-        settingsService.entferneGeminiApiKey();
-        return ResponseEntity.ok(Map.of("message", "KI-Schlüssel entfernt."));
-    }
-
-    @PostMapping("/gemini/test")
-    public ResponseEntity<TestResult> testGemini(@RequestBody GeminiTestRequest req) {
-        String apiKey = req.apiKey() != null ? req.apiKey() : settingsService.getGeminiApiKey();
-        TestResult result = settingsService.testGeminiApiKey(apiKey);
-        return ResponseEntity.ok(result);
-    }
-
     // ==================== Funnel-Spam-Filter ====================
 
     @GetMapping("/anfrage-funnel-spamfilter")
@@ -271,9 +238,6 @@ public class SystemSettingsController {
     record ImapSettingsRequest(String host, int port, String username, String password) {}
     record ImapTestRequest(String host, int port, String username, String password) {}
     record EmailAccountRequest(String email, String password) {}
-    record GeminiSettingsResponse(boolean apiKeySet) {}
-    record GeminiSettingsRequest(String apiKey) {}
-    record GeminiTestRequest(String apiKey) {}
     record FunnelSpamFilterResponse(boolean aktiv) {}
     record FunnelSpamFilterRequest(boolean aktiv) {}
     /**

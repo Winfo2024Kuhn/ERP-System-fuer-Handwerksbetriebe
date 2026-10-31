@@ -68,6 +68,21 @@ class MistralKiAnbieterTest {
     }
 
     @Test
+    void grosseAusgabeWirdAufDieObergrenzeGekappt() {
+        // Die Dokument-Analyse setzt ihr Gemini-Limit (65.536); Mistral lehnte das bei langen PDFs ab.
+        KiAnfrage gross = KiAnfrage.mitAnweisung("").nutzer(KiTeil.text("x")).maxAusgabe(65_536).bauen();
+        KiAnfrage grenze = KiAnfrage.mitAnweisung("").nutzer(KiTeil.text("x"))
+                .maxAusgabe(MistralKiAnbieter.MAX_AUSGABE).bauen();
+        KiAnfrage ohne = KiAnfrage.mitAnweisung("").nutzer(KiTeil.text("x")).bauen();
+
+        assertThat(anbieter.baueKoerper(gross, "m", d -> "").path("max_tokens").asInt(0))
+                .isEqualTo(MistralKiAnbieter.MAX_AUSGABE).isEqualTo(16_384);
+        assertThat(anbieter.baueKoerper(grenze, "m", d -> "").path("max_tokens").asInt(0))
+                .isEqualTo(MistralKiAnbieter.MAX_AUSGABE);
+        assertThat(anbieter.baueKoerper(ohne, "m", d -> "").has("max_tokens")).isFalse();
+    }
+
+    @Test
     void pdfWirdUeberDieTexterkennungGelesen() {
         KiAnfrage anfrage = KiAnfrage.mitAnweisung("")
                 .nutzer(KiTeil.datei(new byte[] {'%', 'P'}, "application/pdf")).bauen();
@@ -270,16 +285,23 @@ class MistralKiAnbieterTest {
                    "capabilities":{"completion_chat":true,"vision":true}},
                   {"id":"mistral-ocr-latest","capabilities":{"completion_chat":false}},
                   {"id":"mistral-embed","capabilities":{"completion_chat":true}},
-                  {"id":"codestral-latest"}]}""");
+                  {"id":"codestral-latest"},
+                  {"id":"voxtral-small-2507","capabilities":{"completion_chat":true,"audio":true,"vision":false}},
+                  {"id":"voxtral-mini-latest","capabilities":{"completion_chat":true}},
+                  {"id":"mistral-medium-2508","capabilities":{"completion_chat":true,"audio":false}}]}""");
         when(http.<String>send(any(HttpRequest.class), any())).thenReturn(liste);
 
         List<KiModellInfo> modelle = anbieter.ladeModelle(SCHLUESSEL);
 
         assertThat(modelle).filteredOn(KiModellInfo::chat).extracting(KiModellInfo::modell)
-                .containsExactly("mistral-large-2512", "codestral-latest");
+                .containsExactly("mistral-large-2512", "codestral-latest", "voxtral-small-2507",
+                        "voxtral-mini-latest", "mistral-medium-2508");
         assertThat(modelle.get(0).bilder()).isTrue();
         assertThat(modelle.get(0).aliase()).containsExactly("mistral-large-latest");
         assertThat(modelle.get(3).bilder()).isNull();
+        // Ton: aus capabilities.audio; fehlt das Feld, verrät es nur der Name Voxtral, sonst offen.
+        assertThat(modelle).extracting(KiModellInfo::ton)
+                .containsExactly(null, null, null, null, true, true, false);
     }
 
     @Test
@@ -429,11 +451,29 @@ class MistralKiAnbieterTest {
         KiErgebnis ergebnis = anbieter.sende(KiAnfrage.mitAnweisung("").nutzer(KiTeil.text("x")).bauen(),
                 "m", SCHLUESSEL);
 
+        // Wie bei Gemini: Der kaputte Aufruf läuft nicht (auch nicht mit leeren Argumenten), er wird nur gemeldet.
         assertThat(ergebnis.werkzeugAufrufFehlerhaft()).isTrue();
-        assertThat(ergebnis.werkzeugAufrufe()).extracting(KiTeil.WerkzeugAufruf::name)
-                .containsExactly("liste_sachkonten", "liste_kostenstellen");
-        assertThat(ergebnis.werkzeugAufrufe().get(0).argumente().isObject()).isTrue();
+        assertThat(ergebnis.werkzeugAufrufe()).singleElement().satisfies(aufruf -> {
+            assertThat(aufruf.name()).isEqualTo("liste_kostenstellen");
+            assertThat(aufruf.id()).isEqualTo("b");
+            assertThat(aufruf.argumente().isObject()).isTrue();
+        });
         assertThat(ergebnis.text()).isEmpty();
+    }
+
+    @Test
+    void nurKaputteAufrufeErgebenKeineAufrufeUndDieMeldung() throws Exception {
+        HttpResponse<String> chat = antwort(200, """
+                {"choices":[{"message":{"content":"","tool_calls":[
+                  {"id":"a","function":{"name":"finale_zuordnung","arguments":"[1,2]"}}]}}]}""");
+        when(http.<String>send(any(HttpRequest.class), any())).thenReturn(chat);
+
+        KiErgebnis ergebnis = anbieter.sende(KiAnfrage.mitAnweisung("").nutzer(KiTeil.text("x")).bauen(),
+                "m", SCHLUESSEL);
+
+        assertThat(ergebnis.werkzeugAufrufe()).isEmpty();
+        assertThat(ergebnis.werkzeugAufrufFehlerhaft()).isTrue();
+        assertThat(ergebnis.alsNachricht().werkzeugAufrufe()).isEmpty();
     }
 
     @Test

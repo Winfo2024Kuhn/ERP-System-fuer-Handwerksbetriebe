@@ -54,10 +54,10 @@ const FUNKTIONEN = [
 /** Nur erfundene Test-Modelle. */
 export const KI_MODELLE: KiModellListe = {
     modelle: [
-        { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-large-latest', name: 'Mistral Large', bilder: true },
-        { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-medium-latest', name: 'Mistral Medium', bilder: true },
-        { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-small-latest', name: 'Mistral Small', bilder: false },
-        { anbieter: 'GEMINI', anbieterName: 'Google Gemini', modell: 'gemini-test-pro', name: 'Gemini Test Pro', bilder: true },
+        { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-large-latest', name: 'Mistral Large', bilder: true, ton: false },
+        { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-medium-latest', name: 'Mistral Medium', bilder: true, ton: false },
+        { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-small-latest', name: 'Mistral Small', bilder: false, ton: false },
+        { anbieter: 'GEMINI', anbieterName: 'Google Gemini', modell: 'gemini-test-pro', name: 'Gemini Test Pro', bilder: true, ton: null },
     ],
     hinweise: [],
 };
