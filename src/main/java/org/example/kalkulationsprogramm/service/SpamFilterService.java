@@ -475,9 +475,10 @@ public class SpamFilterService {
             return;
         }
 
-        // WICHTIG: Zugeordnete Emails dürfen niemals als Spam oder Newsletter markiert
-        // werden
-        if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
+        // WICHTIG: Zugeordnete Emails (auch Steuerberater-Post wie Lohnabrechnungen)
+        // dürfen niemals als Spam oder Newsletter markiert werden
+        if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null
+                || email.getSteuerberater() != null) {
             email.setSpam(false);
             email.setNewsletter(false);
             email.setSpamScore(0);

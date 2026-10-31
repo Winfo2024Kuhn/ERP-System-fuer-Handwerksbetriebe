@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
@@ -140,6 +141,20 @@ class SpamFilterServiceTest {
 
     @Nested
     class ZugeordneteEmails {
+
+        @Test
+        void steuerberaterPostWirdNieSpam() {
+            Email email = erstelleEmail("spammer@unknown.com", "You Won the Lottery!", "Congratulations winner prize");
+            SteuerberaterKontakt kanzlei = new SteuerberaterKontakt();
+            kanzlei.setName("Mustermann Steuerberatung");
+            email.assignToSteuerberater(kanzlei);
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamScore()).isZero();
+            verifyNoInteractions(spamBayesService);
+        }
 
         @Test
         void emailMitProjektZuordnungIstNieSpam() {

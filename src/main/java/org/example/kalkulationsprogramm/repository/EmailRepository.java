@@ -414,7 +414,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   /**
    * Findet alle Emails die noch nicht auf Spam geprüft wurden.
-   * Nur nicht-zugeordnete, nicht-gelöschte eingehende Emails.
+   * Nur nicht-zugeordnete (auch nicht dem Steuerberater), nicht-gelöschte eingehende
+   * Emails ohne Handentscheidung, die nicht schon als Spam oder Newsletter markiert sind.
    */
   @Query("""
       SELECT e FROM Email e
@@ -424,6 +425,10 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
         AND e.projekt IS NULL
         AND e.anfrage IS NULL
         AND e.lieferant IS NULL
+        AND e.steuerberater IS NULL
+        AND e.userSpamVerdict IS NULL
+        AND e.isSpam = false
+        AND e.isNewsletter = false
       ORDER BY e.sentAt DESC
       """)
   List<Email> findUnanalyzedForSpam();
