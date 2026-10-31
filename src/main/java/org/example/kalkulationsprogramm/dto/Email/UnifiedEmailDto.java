@@ -62,6 +62,12 @@ public class UnifiedEmailDto {
 
     // Spam
     private Integer spamScore;
+    /** true = „Vielleicht Spam“: Stufe UNSICHER, nicht als Spam markiert und noch nicht von Hand entschieden. */
+    private boolean spamVerdacht;
+    /** Kürzel der erkannten Spam-Signale (z. B. ABSENDER_GEFAELSCHT); leer, wenn keine. */
+    private List<String> spamGruende = List.of();
+    /** Erkannte Betrugsmasche (Name aus AbzockeArt) oder null. */
+    private String warnhinweis;
 
     // Thread-Informationen
     /** ID der übergeordneten E-Mail; null für Thread-Wurzeln (Root-Emails). */

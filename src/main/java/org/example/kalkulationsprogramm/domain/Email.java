@@ -91,6 +91,19 @@ public class Email {
     private String replyToAddress;
 
     /**
+     * Anzeigename des Absenders (z. B. „Sparkasse“ vor einer fremden Adresse). Grundlage für die
+     * Erkennung gefälschter Absender; auf 255 Zeichen gekürzt.
+     */
+    @Column(length = 255)
+    private String fromName;
+
+    /**
+     * TRUE, wenn der Mail-Anbieter die Mail mit "X-Spam-Flag: YES" markiert hat; null = Header fehlte.
+     */
+    @Column
+    private Boolean anbieterSpamFlag;
+
+    /**
      * Roh-Header "Authentication-Results" (SPF, DKIM, DMARC).
      * Wird vom SpamFilterService geparst und ist für ML-Modelle als Feature nutzbar.
      */
@@ -257,6 +270,33 @@ public class Email {
      */
     @Column
     private Double bayesScore;
+
+    /**
+     * Stufe der automatischen Erkennung. Nur SPAM setzt isSpam (und verschiebt auf dem Server);
+     * UNSICHER bleibt im Posteingang mit Hinweis. null = vor V444 bewertet oder von Hand entschieden.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private SpamStufe spamStufe;
+
+    /**
+     * Kürzel der erkannten Spam-Signale, kommagetrennt (z. B. "ABSENDER_GEFAELSCHT,ANTWORT_UMGELEITET").
+     */
+    @Column(length = 500)
+    private String spamGruende;
+
+    /**
+     * Erkannte Betrugsmasche (nur Warnhinweis, verschiebt nichts).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 40)
+    private AbzockeArt warnhinweis;
+
+    /**
+     * Version des Bayes-Zerlegers beim Training dieser Mail; null = Version 1.
+     */
+    @Column
+    private Short spamTokenVersion;
 
     // ═══════════════════════════════════════════════════════════════
     // ANFRAGEN-ERKENNUNG (Inquiry Detection)
