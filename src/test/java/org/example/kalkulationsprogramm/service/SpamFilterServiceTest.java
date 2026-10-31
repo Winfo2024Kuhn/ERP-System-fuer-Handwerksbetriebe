@@ -1097,23 +1097,15 @@ class SpamFilterServiceTest {
         }
 
         @Test
-        void fastSichererLernfilterReichtNurMitGenugTraining() {
-            lernfilterSagt(0.995);
-            when(spamBayesService.getTotalSpam()).thenReturn(50L);
-            when(spamBayesService.getTotalHam()).thenReturn(49L);
+        void lernfilterAlleinVerschiebtNie() {
+            // Probelauf gegen eine Prod-Kopie: Der Lernfilter gab echten Mails ≥ 0,99.
+            lernfilterSagt(0.999);
             Email email = erstelleEmail("info@musterfirma.example", "Angebot", "Hallo, anbei unser Angebot.");
 
             service.analyzeAndMarkSpam(email);
 
             assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.UNSICHER);
             assertThat(email.isSpam()).isFalse();
-
-            when(spamBayesService.getTotalHam()).thenReturn(50L);
-            Email zweite = erstelleEmail("info@musterfirma.example", "Angebot", "Hallo, anbei unser Angebot.");
-            service.analyzeAndMarkSpam(zweite);
-
-            assertThat(zweite.getSpamStufe()).isEqualTo(SpamStufe.SPAM);
-            assertThat(zweite.isSpam()).isTrue();
         }
 
         @Test

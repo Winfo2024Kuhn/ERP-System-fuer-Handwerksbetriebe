@@ -16,10 +16,8 @@ import org.junit.jupiter.params.provider.CsvSource;
  */
 class SpamStufenRegelTest {
 
-    private static final long VIEL = 1_000;
-
     private static SpamStufe stufe(Double b, int r) {
-        return SpamStufenRegel.bestimme(b, r, false, VIEL, VIEL);
+        return SpamStufenRegel.bestimme(b, r, false);
     }
 
     @Nested
@@ -33,22 +31,18 @@ class SpamStufenRegelTest {
                 "0.97, 85, SPAM"
         })
         void sichererLernfilterBrauchtMindestens25Regelpunkte(double b, int r, SpamStufe erwartet) {
-            assertThat(SpamStufenRegel.bestimme(b, r, false, 0, 0)).isEqualTo(erwartet);
+            assertThat(SpamStufenRegel.bestimme(b, r, false)).isEqualTo(erwartet);
         }
     }
 
     @Nested
     class LernfilterAllein {
 
-        @ParameterizedTest(name = "B={0}, Spam={1}, KeinSpam={2} → {3}")
-        @CsvSource({
-                "0.99, 50, 50, SPAM",
-                "0.99, 49, 50, UNSICHER",
-                "0.99, 50, 49, UNSICHER",
-                "0.989, 50, 50, UNSICHER"
-        })
-        void fastSichererLernfilterReichtNurMitGenugTraining(double b, long spam, long ham, SpamStufe erwartet) {
-            assertThat(SpamStufenRegel.bestimme(b, 0, false, spam, ham)).isEqualTo(erwartet);
+        @ParameterizedTest(name = "B={0} → {1}")
+        @CsvSource({"0.999, UNSICHER", "1.0, UNSICHER", "0.95, UNSICHER", "0.60, UNSICHER", "0.59, KEIN_SPAM"})
+        void lernfilterAlleinErgibtNieSpam(double b, SpamStufe erwartet) {
+            // Probelauf gegen eine Prod-Kopie: Der Lernfilter gab echten Mails ≥ 0,99.
+            assertThat(SpamStufenRegel.bestimme(b, 0, false)).isEqualTo(erwartet);
         }
     }
 
@@ -96,15 +90,15 @@ class SpamStufenRegelTest {
 
         @Test
         void gefaehrlicherAnhangAlleinIstUnsicher() {
-            assertThat(SpamStufenRegel.bestimme(null, 0, true, 0, 0)).isEqualTo(SpamStufe.UNSICHER);
-            assertThat(SpamStufenRegel.bestimme(0.4, 0, true, VIEL, VIEL)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(null, 0, true)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.4, 0, true)).isEqualTo(SpamStufe.UNSICHER);
         }
 
         @Test
         void gefaehrlicherAnhangBleibtUnsicherTrotzHarmlosemLernfilter() {
             // Inhaber-Entscheidung: Der Hinweis erscheint immer, verschoben wird nichts.
-            assertThat(SpamStufenRegel.bestimme(0.1, 0, true, VIEL, VIEL)).isEqualTo(SpamStufe.UNSICHER);
-            assertThat(SpamStufenRegel.bestimme(0.0, 39, true, VIEL, VIEL)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.1, 0, true)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.0, 39, true)).isEqualTo(SpamStufe.UNSICHER);
         }
 
         @Test

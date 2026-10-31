@@ -492,19 +492,15 @@ public class SpamFilterService {
 
         // 2. Lernfilter (wenn Modell bereit)
         Double lernfilter = null;
-        long spamTrainiert = 0;
-        long keinSpamTrainiert = 0;
         if (spamBayesService.isModelReady()) {
             double p = spamBayesService.predict(spamBayesService.tokenize(email));
             lernfilter = p >= 0 ? p : null;
             email.setBayesScore(lernfilter);
-            spamTrainiert = spamBayesService.getTotalSpam();
-            keinSpamTrainiert = spamBayesService.getTotalHam();
         }
 
         // 3. Stufe: nur SPAM setzt isSpam – UNSICHER bleibt im Posteingang mit Hinweis
         SpamStufe stufe = SpamStufenRegel.bestimme(lernfilter, regeln.punkte(),
-                regeln.signale().contains(SpamSignal.GEFAEHRLICHER_ANHANG), spamTrainiert, keinSpamTrainiert);
+                regeln.signale().contains(SpamSignal.GEFAEHRLICHER_ANHANG));
         email.setSpamStufe(stufe);
         email.setSpamGruende(alsKuerzel(regeln.signale()));
         email.setSpamScore(SpamStufenRegel.anzeigeWert(regeln.punkte(), lernfilter));

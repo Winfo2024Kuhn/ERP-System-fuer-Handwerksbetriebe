@@ -11,8 +11,9 @@ import org.example.kalkulationsprogramm.domain.SpamStufe;
  * durchgelassener Spam.
  *
  * <ul>
- *   <li><b>SPAM:</b> (B ≥ 0,95 und R ≥ 25) oder (B ≥ 0,99 und je mindestens 50 Spam- und
- *       Kein-Spam-Trainingsmails) oder (R ≥ 85 und B fehlt oder B &gt; 0,20).</li>
+ *   <li><b>SPAM:</b> (B ≥ 0,95 und R ≥ 25) oder (R ≥ 85 und B fehlt oder B &gt; 0,20). Der Lernfilter
+ *       allein reicht nie: Im Probelauf gegen eine Prod-Kopie gab er sogar zugeordneten, also sicher
+ *       echten Mails ≥ 0,99 (er ist großteils mit englischen SMS angelernt).</li>
  *   <li><b>UNSICHER:</b> gefährlicher Anhang (immer, auch bei harmlosem B).</li>
  *   <li><b>KEIN_SPAM:</b> B ≤ 0,20 und R &lt; 40.</li>
  *   <li><b>UNSICHER:</b> B ≥ 0,60 oder R ≥ 40.</li>
@@ -24,12 +25,6 @@ public final class SpamStufenRegel {
 
     /** Lernfilter sehr sicher – zusammen mit {@link #REGEL_MIT_LERNFILTER} reicht das für Spam. */
     public static final double LERNFILTER_SICHER = 0.95;
-
-    /** Lernfilter fast sicher – reicht allein, wenn er genug gelernt hat. */
-    public static final double LERNFILTER_FAST_SICHER = 0.99;
-
-    /** So viele Spam- und so viele Kein-Spam-Mails muss der Lernfilter je gesehen haben. */
-    public static final long MIN_TRAINING_JE_SEITE = 50;
 
     /** Bis hierhin hält der Lernfilter die Mail für harmlos. */
     public static final double LERNFILTER_HARMLOS = 0.20;
@@ -65,18 +60,11 @@ public final class SpamStufenRegel {
      * @param lernfilter         B zwischen 0 und 1; {@code null}, wenn das Modell noch nicht bereit ist
      * @param regelPunkte        R zwischen 0 und 100
      * @param gefaehrlicherAnhang die Mail hat einen Anhang, der Programme ausführen kann
-     * @param spamTrainiert      so viele Spam-Mails hat der Lernfilter gelernt
-     * @param keinSpamTrainiert  so viele Kein-Spam-Mails hat der Lernfilter gelernt
      */
-    public static SpamStufe bestimme(Double lernfilter, int regelPunkte, boolean gefaehrlicherAnhang,
-            long spamTrainiert, long keinSpamTrainiert) {
+    public static SpamStufe bestimme(Double lernfilter, int regelPunkte, boolean gefaehrlicherAnhang) {
         Double b = lernfilter == null || lernfilter.isNaN() ? null : lernfilter;
-        boolean genugGelernt = spamTrainiert >= MIN_TRAINING_JE_SEITE && keinSpamTrainiert >= MIN_TRAINING_JE_SEITE;
 
         if (b != null && b >= LERNFILTER_SICHER && regelPunkte >= REGEL_MIT_LERNFILTER) {
-            return SpamStufe.SPAM;
-        }
-        if (b != null && b >= LERNFILTER_FAST_SICHER && genugGelernt) {
             return SpamStufe.SPAM;
         }
         if (regelPunkte >= REGEL_SICHER && (b == null || b > LERNFILTER_HARMLOS)) {
