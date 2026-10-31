@@ -158,6 +158,13 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 - [ ] **Typografie/Farbe:** feste Stufen, `tabular-nums` bei Zahlen, Kontrast ≥ 4,5 : 1, eine Rose-Primäraktion pro Screen, Zustände nie nur über Farbe, Leer-Zustand mit nächstem Schritt
 - [ ] Spec unter `e2e/` für den geänderten Ablauf vorhanden, Screenshots in 1440 und 1920 (PC) bzw. Handy angeschaut (`PRUEFUNG.md`)
 
+### 2.9 / 1.7 Zuständigkeit & Größe (Backend: BACKEND_ARCH.md, Frontend: FRONTEND_UI.md „Zuständigkeiten und Größe“)
+- [ ] Neue/geänderte Klasse bzw. Datei im Rahmen: Java-Klasse ≤ ca. 400 Zeilen (🔴 ab 600), Methode ≤ ca. 40; Komponentendatei ≤ ca. 300 (🔴 ab 500), Hook ≤ ca. 150
+- [ ] Genau eine Zuständigkeit (Satz ohne „und“); Seiten ohne Fachlogik, Controller ohne Logik; Konstruktor nicht über ca. 7 Abhängigkeiten
+- [ ] Nichts kopiert, was es schon gibt (vorhandene Komponente/Hook/Util/Service genutzt); zweites Vorkommen derselben Logik ausgelagert
+- [ ] Logik testbar herausgelöst (reine Funktion/Hook/Service mit Test)
+- [ ] Wächst eine bereits zu große Bestandsdatei weiter, ist das ein 🟡-Befund mit konkretem Auslagerungsvorschlag; der Hauptagent legt ihn dem Nutzer zur Entscheidung vor
+
 ---
 
 ## 3. Security-Review (Quellen: „Sicherheit im Backend“ in BACKEND_ARCH.md, „Sicherheit im Frontend“ in FRONTEND_UI.md, OWASP Top 10, DSGVO)

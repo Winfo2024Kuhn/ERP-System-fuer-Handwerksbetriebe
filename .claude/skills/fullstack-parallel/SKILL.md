@@ -146,6 +146,7 @@ bleibt:
 
 - Logik in einen Service (Controller bleibt dünn), Constructor Injection, Flyway nur
   neu und idempotent.
+- **Klein und zuständig:** neue Klassen unter ca. 400 Zeilen, eine Zuständigkeit, Vorhandenes wiederverwenden (siehe „Zuständigkeiten und Größe“ in `BACKEND_ARCH.md`). Betrifft die Aufgabe eine zu große Bestandsklasse oder meldet der Frontend-Agent eine zu große Bestandsdatei, **dem Nutzer den Auslagerungsvorschlag vorlegen und fragen**, bevor umgebaut wird.
 - **Listen-Endpoints immer paginiert** (`page`/`size`, Maximum serverseitig, `gesamt`; siehe „Große Datenmengen“ in `BACKEND_ARCH.md`), nie `findAll()` auf wachsenden Tabellen. Im API-Vertrag (Schritt 2) Standardgröße, Maximum und Antwortfelder festhalten, damit der Frontend-Agent Seiten bzw. „Mehr laden“ baut.
 - Endpoints mit Sichtbarkeits-/Rechteprüfung wie die Nachbar-Endpoints, Validierung
   (`@Valid`, `@Positive`), verständliche 400-Meldungen.

@@ -22,6 +22,7 @@ Nicht lesen und nicht beachten musst du `BACKEND_ARCH.md` und die Backend-Sicher
 - Zuerst Bestehendes suchen und wiederverwenden (Pflicht-Komponenten, Hooks, `components/ui/`). Wiederkehrendes in gemeinsame Bausteine auslagern, keine Sonderlösung pro Seite.
 - Alles in Handwerker-Sprache, Texte nach Abschnitt 4b des Skills (kurz, konkret, ohne KI-Floskeln, einheitliche Anrede). Erklärungsbedürftige Stellen bekommen einen `InfoButton` mit den Texten, die der Hauptagent dir vorgibt.
 - **Wachsende Listen nie komplett laden:** Seiten, „Mehr laden“ oder Suche mit ~20 Treffern (Regeln im Skill Abschnitt 3b und in `FRONTEND_UI.md`). Fehlt im Vertrag die Paginierung, melde das sofort, statt alles zu holen.
+- **Klein und zuständig halten** (Skill Abschnitt 3c): Dateien unter ca. 300 Zeilen, Logik in Hooks/Funktionen mit Test, Vorhandenes wiederverwenden, nichts in bereits zu große Dateien anhängen. Auffällige große Bestandsdateien mit konkretem Auslagerungsvorschlag im Bericht nennen.
 - Jede Aktion: Ladezustand, Ergebnis, Fehler-Toast. Keine stillen `catch`-Blöcke.
 - Tests: Vitest + Testing Library neben der Quelldatei; für den geänderten Ablauf eine Playwright-Spec unter `e2e/` mit gestubbtem `/api` (Muster in `PRUEFUNG.md`). Nur **deine** Spec fahren, auf eigenem Port (`E2E_PORT=<port>`), nie die ganze Suite.
 - Danach `npm run lint`, `npm run test -- --run`, `npm run build` im betroffenen Ordner.

@@ -93,3 +93,14 @@ Alles, was mit der Zeit wächst (Kunden, Artikel, Projekte, Rechnungen, E-Mails,
 - **Keine N+1-Abfragen** beim Mappen einer Seite (Fetch-Join oder `@EntityGraph`); Join-Fetch auf Collections zusammen mit Paging liefert falsche Seiten (Hibernate paged im Speicher). Dann erst IDs der Seite holen, danach nachladen.
 - Auswertungen (Summen, Zähler für Reiter-Badges) als eigene Aggregat-Abfrage, nicht durch Laden aller Zeilen.
 - **Test:** Endpoint mit `size=100000` und `page=-1` → wird auf Maximum bzw. 0 begrenzt; mehr als eine Seite Testdaten → zweite Seite liefert andere Einträge, `gesamt` stimmt.
+
+## 🧩 Zuständigkeiten und Größe (Pflicht, Backend)
+
+Das Programm wächst weiter, deshalb bleibt jede Klasse klein, testbar und für genau eine Sache zuständig.
+
+- **Eine Klasse, eine Zuständigkeit.** Faustregel: lässt sich die Klasse nicht in einem Satz ohne „und“ beschreiben, sind es zwei Klassen. Controller reichen nur durch, Services tragen die Fachlogik, Mapper wandeln um, Repositories fragen ab. PDF-Aufbau, Berechnung, Versand, Dateiablage und Datenbank-Zugriff gehören nicht in dieselbe Klasse.
+- **Größenrahmen:** Klasse **bis ca. 400 Zeilen**, ab **600** ist sie zu groß; Methode **bis ca. 40 Zeilen**, höchstens 5 Parameter, flache Verschachtelung (früh zurückkehren statt tief einrücken). Konstruktor mit mehr als ca. 7 Abhängigkeiten ist ein Zeichen, dass die Klasse zu viel macht.
+- **Wiederverwenden vor neu schreiben.** Vor jeder neuen Hilfsmethode im Bestand suchen (`util/`, vorhandene Services, `PortableSortierung`, `PdfWriterFabrik`, `HtmlKlartext` …). Gleiche Logik an zwei Stellen wird in einen gemeinsamen Service oder eine Util-Klasse gezogen, mit Tests; fachliche Unterschiede bleiben erhalten (Abstraktion nach gemeinsamer Verantwortung schneiden, nicht nach Zeilenähnlichkeit).
+- **Testbar bauen:** Abhängigkeiten per Konstruktor, reine Berechnungen als eigene Klasse ohne Spring/Datenbank (einfach per JUnit prüfbar), keine statischen Zugriffe auf Zeit/Zufall ohne Austauschmöglichkeit (`Clock`).
+- **Neuer Code verschlechtert nichts:** In eine Klasse über 600 Zeilen kommt keine neue Zuständigkeit mehr hinein. Neue Logik geht in eine neue Klasse, die alte ruft sie nur auf.
+- **Bei Auffälligkeit fragen:** Fasst die Aufgabe eine bestehende Klasse an, die über der Grenze liegt (Beispiele im Bestand: `AusgangsGeschaeftsDokumentService`, `DokumentAnalyseService`, `RechnungPdfService`, `UnifiedEmailController`), **meldest du das dem Nutzer** mit einem konkreten Schnittvorschlag („PDF-Aufbau in `RechnungPdfAufbau`, Berechnung in `RechnungsSummen` auslagern?“) und fragst, ob das Stück jetzt mit ausgelagert werden soll. Nicht ungefragt große Umbauten an fremdem Bestand starten; im eigenen neuen Code ist das Aufteilen ohnehin Pflicht (siehe `.claude/CLAUDE.md`, „Auslagern und wiederverwenden“).

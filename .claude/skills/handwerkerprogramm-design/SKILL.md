@@ -74,6 +74,15 @@ Typischer Fehler: eine Liste lädt alles auf einmal. Das ist hier **verboten** f
 - Gesamtzahl bzw. „es gibt mehr“ immer anzeigen. Badge-Zahlen kommen vom Backend, nicht aus `liste.length`.
 - Gibt es für den Fall noch keinen paginierten Endpoint, wird er **mit angelegt** (Backend: `Page`/`Slice`, Obergrenze serverseitig) statt `findAll` im Frontend zu verwenden. Muster und Regeln: Abschnitt „Große Listen“ in `FRONTEND_UI.md`; Vorbilder `ArtikelSuche.tsx` (Seiten) und `bestellungenNachladen.ts` (Mehr laden).
 
+## 3c. Zuständigkeiten und Größe
+
+Das Programm wächst, also bleibt alles klein, wiederverwendbar und testbar. Volle Regeln: „Zuständigkeiten und Größe“ in `FRONTEND_UI.md`.
+
+- Komponentendatei bis ca. 300 Zeilen, ab 500 zu groß; Hook bis ca. 150; Seiten setzen nur zusammen. Logik in Hooks und reine Funktionen (mit Test), wiederkehrende Oberfläche in gemeinsame Komponenten.
+- **Vor dem Bauen suchen**, ob es das schon gibt. Zweites Vorkommen = auslagern und an beiden Stellen nutzen, nicht kopieren.
+- Neues kommt nie in eine bereits zu große Datei, sondern in eine neue Komponente/einen neuen Hook.
+- **Fällt eine bestehende große Datei auf, die du anfasst: fragen bzw. im Bericht vorschlagen**, was mit welchem Schnitt ausgelagert werden könnte.
+
 ## 4. Typografie, Farbe, Nutzerführung
 
 **Typografie** (Systemschrift, Hierarchie über Größe und Gewicht, nicht über Schmuck):

@@ -203,3 +203,12 @@ Jede Liste, die wachsen kann, fragt **eine Seite** ab (`page`, `size`) und zeigt
 - Leer-Zustand, Laden und Fehler bleiben drei verschiedene Anzeigen (siehe Bedienbarkeit).
 - Zähler/Badges (z. B. „Offene Angebote: 14“) kommen vom Backend als eigene Zahl, nicht aus `liste.length`.
 - Ein geladener Datensatz-Satz, der an anderer Stelle gebraucht wird, wird geteilt (Hook/Kontext), nicht pro Komponente erneut geladen.
+
+## 🧩 Zuständigkeiten und Größe (Pflicht, Frontend)
+
+- **Eine Datei, eine Zuständigkeit.** Seiten (`pages/`) setzen zusammen, sie enthalten keine Fachlogik, keine API-Aufrufe im Rohzustand und keine großen Formular- oder Tabellenblöcke. Logik gehört in Hooks (`src/hooks/`, `src/features/{name}/`), reine Berechnungen in `src/lib/` oder Feature-Hilfsdateien (testbar ohne React), wiederkehrende Oberfläche in `src/components/`.
+- **Größenrahmen:** Komponentendatei **bis ca. 300 Zeilen**, ab **500** ist sie zu groß; Hook bis ca. 150; Funktion bis ca. 40 Zeilen; höchstens ca. 8 `useState` je Komponente (sonst `useReducer` oder eigener Hook); keine Verschachtelung tiefer als 3 JSX-Ebenen ohne Teilkomponente.
+- **Wiederverwenden vor neu bauen.** Vor jeder neuen Komponente, jedem Hook und jeder Hilfsfunktion suchen (`components/ui/`, `components/`, `hooks/`, `lib/`). Taucht dasselbe zum zweiten Mal auf (Dialog, Tabelle, Filterleiste, Formularzeile, Format-Funktion), wird es **ausgelagert und an beiden Stellen genutzt**, nicht kopiert. Fachliche Unterschiede bleiben als Props/Optionen erhalten.
+- **Testbar bauen:** Logik in Hooks und reine Funktionen mit Vitest-Test; Komponenten nehmen Daten und Callbacks als Props statt selbst zu laden, wo es geht.
+- **Neuer Code verschlechtert nichts:** In eine Datei über 500 Zeilen kommt kein neuer Block mehr. Neues wird eigene Komponente/Hook; die große Datei bindet es nur ein.
+- **Bei Auffälligkeit fragen:** Fasst die Aufgabe eine bestehende Datei über der Grenze an (Beispiele im Bestand: `document-editor/index.tsx`, `ProjektEditor.tsx`, `ZeiterfassungKalender.tsx`, `EmailCenter.tsx`, `AnfrageEditor.tsx`), melde das mit einem konkreten Schnitt („Positionstabelle als `PositionenTabelle`, Speichern-Logik als `useProjektSpeichern` auslagern?“) und frage den Nutzer, ob es jetzt mit ausgelagert werden soll. Als Subagent: den Vorschlag im Bericht an den Hauptagenten nennen, der den Nutzer fragt.
