@@ -1127,32 +1127,23 @@ public class EmailImportService {
     }
 
     /**
-     * Re-analyzes existing emails for spam/newsletter (e.g. after rule updates).
+     * Bewertet Mails, die noch nie auf Spam geprüft wurden. Schon bewertete Mails
+     * bleiben bewusst unangetastet: Eine Neubewertung alter Posteingangs-Mails würde
+     * sie auch auf dem Mailserver in den Spam-Ordner verschieben.
      */
     @Transactional
     public int reprocessSpam() {
-        // Wir nehmen alle aktiven Emails, die noch nicht als Spam/Newsletter markiert
-        // sind
-        // oder wir überprüfen einfach alle "unsicheren" Kandidaten
-        List<Email> candidates = emailRepository.findAll();
+        List<Email> candidates = emailRepository.findUnanalyzedForSpam();
 
         int updated = 0;
         for (Email e : candidates) {
-            if (e.getDeletedAt() != null)
-                continue;
-            // Wir checken auch welche, die schon flaggen haben?
-            // Nein, wir wollen nur false negatives finden, nicht false positives
-            // korrigieren (optional)
-            if (e.isNewsletter() || e.isSpam())
-                continue;
-
             boolean wasNewsletter = e.isNewsletter();
             boolean wasSpam = e.isSpam();
 
             spamFilterService.analyzeAndMarkSpam(e);
+            emailRepository.save(e);
 
             if (e.isNewsletter() != wasNewsletter || e.isSpam() != wasSpam) {
-                emailRepository.save(e);
                 updated++;
             }
         }

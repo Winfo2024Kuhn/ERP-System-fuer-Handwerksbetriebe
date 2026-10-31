@@ -141,13 +141,6 @@ await fetch('/api/emails/scan-inquiries',{method:'POST',headers:{'X-XSRF-TOKEN':
 await fetch('/api/emails/scan-steuerberater',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
 ```
 
-### Alle Mails mit dem Spam-Modell neu bewerten (nur Admin)
-Geht durch **alle** Mails. Antwortet mit `400`, solange das Modell nicht
-trainiert ist (siehe `spam-model/stats`).
-```js
-await fetch('/api/emails/spam-model/rescore',{method:'POST',headers:{'X-XSRF-TOKEN':document.cookie.match(/XSRF-TOKEN=([^;]+)/)[1]}}).then(r=>r.json())
-```
-
 ### Eine Mail per KI einordnen (angemeldet)
 Geht nur für Mails, die man selbst sehen darf, sonst kommt `404`.
 Nur ansehen, was die KI vorschlägt:
@@ -270,7 +263,7 @@ await fetch('/api/zeitverwaltung/saldo-cache/warmup',{method:'POST',headers:{'X-
   - `POST /api/mahnwesen/lauf`
   - die Massenläufe (`SecurityConfig.ADMIN_MASSENLAEUFE`, jede Methode):
     Postfach-Abruf `POST /api/emails/import`, `scan-*`, `backfill-parents`,
-    das Spam-Modell (`rescore`, `bootstrap`), die `process-*`-Läufe der
+    das Anlernen des Spam-Modells (`bootstrap`), die `process-*`-Läufe der
     Lieferanten-Dokumente und `POST /api/zeitverwaltung/saldo-cache/warmup`
 - **„angemeldet“** heißt: jede angemeldete Person darf es, eine Rolle wird
   nicht geprüft. Das gilt für den Stand des Spam-Modells (`stats`), die
@@ -290,7 +283,7 @@ await fetch('/api/zeitverwaltung/saldo-cache/warmup',{method:'POST',headers:{'X-
 | Code | Bedeutung |
 | --- | --- |
 | `200` | Hat geklappt, Ergebnis steht in der Antwort |
-| `400` | Aufruf passt nicht, z. B. Spam-Modell noch nicht angelernt (`rescore`) |
+| `400` | Aufruf passt nicht, z. B. fehlende oder falsche Angaben |
 | `401` | Nicht angemeldet: erst im ERP einloggen |
 | `403` | Angemeldet, aber kein Admin bzw. Recht fehlt, oder CSRF-Token fehlt (Seite neu laden und nochmal) |
 | `404` | Gibt es nicht, oder man darf es nicht sehen (Mail, Dokument, Lieferant) |

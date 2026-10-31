@@ -222,7 +222,6 @@ public class SecurityConfig {
             "/api/emails/scan-assignments",
             "/api/emails/scan-steuerberater",
             "/api/emails/backfill-parents",
-            "/api/emails/spam-model/rescore",
             "/api/emails/spam-model/bootstrap",
             "/api/lieferant-dokumente/process-assigned-emails",
             "/api/lieferant-dokumente/process-email/*",
