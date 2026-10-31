@@ -2,6 +2,7 @@ package org.example.kalkulationsprogramm.dto.Artikel;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.domain.Verrechnungseinheit;
 
 import java.math.BigDecimal;
@@ -24,4 +25,9 @@ public class ArtikelCreateDto {
     // Optional: erster Preis beim Lieferanten. Preis und externe Nummer nur mit Lieferant.
     private Long lieferantId;
     private BigDecimal preis;
+    /**
+     * Optional: Herkunft des ersten Preises. Erlaubt sind nur {@code MANUELL} (Standard) und {@code IDS_SHOP}
+     * (Artikel aus einem Warenkorb im Lieferanten-Shop angelegt); alles andere lehnt der Controller ab.
+     */
+    private PreisQuelle preisQuelle;
 }

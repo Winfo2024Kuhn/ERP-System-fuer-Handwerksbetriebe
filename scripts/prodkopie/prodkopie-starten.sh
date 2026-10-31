@@ -5,6 +5,11 @@
 #   scripts/prodkopie/prodkopie-starten.sh --neu      neueste Sicherung frisch einspielen, dann starten
 #   scripts/prodkopie/prodkopie-starten.sh --nur-db   nur einspielen, kein Backend
 #   scripts/prodkopie/prodkopie-starten.sh --loeschen Kopie samt Daten-Volume restlos entfernen
+#   scripts/prodkopie/prodkopie-starten.sh --wegwerf-schluessel
+#        wie ohne Option, aber mit einem zufälligen Verschlüsselungsschlüssel nur für diesen Lauf,
+#        damit man z. B. einen Shop-Zugang (IDS) mit Passwort testen kann. Der Schlüssel wird nirgends
+#        gespeichert; nach einem Neustart sind so gespeicherte Passwörter nicht mehr lesbar.
+#        Echte Zugänge aus der Sicherung leert abschotten.sql trotzdem.
 #
 # Code und Daten bleiben getrennt aktuell: Das Backend läuft aus dem Checkout bzw.
 # Worktree, aus dem das Skript aufgerufen wird (also mit dessen Git-Stand), die
@@ -35,11 +40,13 @@ port=5434
 neu=false
 nur_db=false
 loeschen=false
+wegwerf_schluessel=false
 for arg in "$@"; do
     case "$arg" in
         --neu) neu=true ;;
         --nur-db) neu=true; nur_db=true ;;
         --loeschen) loeschen=true ;;
+        --wegwerf-schluessel) wegwerf_schluessel=true ;;
         *) echo "Unbekannte Option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -159,7 +166,6 @@ argumente=(
     --ai.spamfilter.external.api-key=
     --smtp.host= --smtp.username= --smtp.password=
     --imap.host= --imap.username= --imap.password=
-    --mail.credentials.encryption-key=
     --vendor.microsoft.enabled=false
     --vendor.microsoft.client-secret=
     --vendor.amazon.enabled=false
@@ -172,6 +178,17 @@ argumente=(
     --push.vapid.public-key=
     --push.vapid.private-key=
 )
+# Verschlüsselungsschlüssel: normal leer (Startparameter, Vorrang vor allem). Mit
+# --wegwerf-schluessel ein Zufallswert nur für diesen Lauf – als Umgebungsvariable, nicht als
+# Startparameter (Prozessliste); sie hat Vorrang vor application-local.properties.
+if [[ "$wegwerf_schluessel" == true ]]; then
+    MAIL_CREDENTIALS_ENCRYPTIONKEY="$(openssl rand -hex 16)"
+    export MAIL_CREDENTIALS_ENCRYPTIONKEY
+    echo "Wegwerf-Schlüssel aktiv: Passwörter lassen sich speichern, nach einem Neustart sind sie unlesbar."
+else
+    argumente+=(--mail.credentials.encryption-key=)
+fi
+
 # Toter Proxy als zweiter Riegel: HTTP(S)-Aufrufe laufen ins Leere, nur localhost
 # bleibt direkt erreichbar (Ollama). Ein SOCKS-Proxy ginge auch auf die JDBC-
 # Verbindung zu 127.0.0.1 und ist deshalb bewusst nicht gesetzt.

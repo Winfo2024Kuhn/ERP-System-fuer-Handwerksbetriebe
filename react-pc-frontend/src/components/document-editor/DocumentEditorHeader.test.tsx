@@ -6,9 +6,11 @@
  * DSGVO: nur Dummy-Daten (`Max Mustermann`).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
+import { shopUnterzeile } from './shopUnterzeile';
 import type { VerlaufKnoepfeProps } from './VerlaufKnoepfe';
 
 function baueProps(
@@ -78,5 +80,95 @@ describe('DocumentEditorHeader Verlauf-Integration', () => {
 
         expect(screen.queryByRole('button', { name: 'Rückgängig' })).not.toBeInTheDocument();
         expect(screen.queryByText('Textbaustein')).not.toBeInTheDocument();
+    });
+});
+
+describe('DocumentEditorHeader – Material (Artikelstamm oder Lieferanten-Shop)', () => {
+    it('ohne Shop-Anbindung öffnet „Material“ direkt den Artikelstamm – kein Menü', async () => {
+        const onOpenMaterialPicker = vi.fn();
+        render(<DocumentEditorHeader {...baueProps({ onOpenMaterialPicker })} />);
+        const knopf = screen.getByRole('button', { name: 'Material' });
+        expect(knopf).not.toHaveAttribute('aria-haspopup');
+        await userEvent.click(knopf);
+        expect(onOpenMaterialPicker).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+        expect(screen.queryByText('Aus Lieferanten-Shop')).not.toBeInTheDocument();
+    });
+
+    it('mit Shop-Anbindung ist „Material“ ein Menü mit zwei beschriebenen Wegen', async () => {
+        const onOpenMaterialPicker = vi.fn();
+        const onOpenShopWarenkorb = vi.fn();
+        render(<DocumentEditorHeader {...baueProps({ onOpenMaterialPicker, onOpenShopWarenkorb, shopLieferantenNamen: ['Muster Großhandel'] })} />);
+        const knopf = screen.getByRole('button', { name: 'Material' });
+        expect(knopf).toHaveAttribute('aria-haspopup', 'menu');
+        expect(knopf).toHaveAttribute('aria-expanded', 'false');
+
+        await userEvent.click(knopf);
+        const menue = await screen.findByRole('menu');
+        expect(knopf).toHaveAttribute('aria-expanded', 'true');
+        const eintraege = within(menue).getAllByRole('menuitem');
+        expect(eintraege).toHaveLength(2);
+        expect(eintraege[0]).toHaveTextContent('Aus Artikelstamm');
+        expect(eintraege[0]).toHaveTextContent('Artikel, die schon im Programm gepflegt sind');
+        expect(eintraege[1]).toHaveTextContent('Aus Lieferanten-Shop');
+        expect(eintraege[1]).toHaveTextContent('Muster Großhandel – aktuelle Einkaufspreise holen');
+
+        await userEvent.click(eintraege[1]);
+        expect(onOpenShopWarenkorb).toHaveBeenCalledTimes(1);
+        expect(onOpenMaterialPicker).not.toHaveBeenCalled();
+        await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+
+        await userEvent.click(knopf);
+        await userEvent.click(await screen.findByRole('menuitem', { name: /Aus Artikelstamm/ }));
+        expect(onOpenMaterialPicker).toHaveBeenCalledTimes(1);
+    });
+
+    it('lässt sich ganz mit der Tastatur bedienen', async () => {
+        const onOpenShopWarenkorb = vi.fn();
+        render(<DocumentEditorHeader {...baueProps({ onOpenShopWarenkorb })} />);
+        const knopf = screen.getByRole('button', { name: 'Material' });
+        knopf.focus();
+        await userEvent.keyboard('{Enter}');
+        const menue = await screen.findByRole('menu');
+        await waitFor(() => expect(within(menue).getAllByRole('menuitem')[0]).toHaveFocus());
+        await userEvent.keyboard('{ArrowDown}');
+        expect(within(menue).getAllByRole('menuitem')[1]).toHaveFocus();
+        await userEvent.keyboard('{Enter}');
+        expect(onOpenShopWarenkorb).toHaveBeenCalledTimes(1);
+
+        await userEvent.click(knopf);
+        await screen.findByRole('menu');
+        await userEvent.keyboard('{Escape}');
+        await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+        expect(knopf).toHaveFocus();
+    });
+
+    it('zeigt bei gesperrtem Dokument kein Material-Menü', () => {
+        render(<DocumentEditorHeader {...baueProps({ onOpenShopWarenkorb: vi.fn(), isLocked: true })} />);
+        expect(screen.queryByRole('button', { name: 'Material' })).not.toBeInTheDocument();
+    });
+});
+
+describe('shopUnterzeile', () => {
+    it('nennt den oder die Lieferanten', () => {
+        expect(shopUnterzeile()).toBe('Würth & Co. – aktuelle Einkaufspreise holen');
+        expect(shopUnterzeile(['  '])).toBe('Würth & Co. – aktuelle Einkaufspreise holen');
+        expect(shopUnterzeile(['Muster Großhandel'])).toBe('Muster Großhandel – aktuelle Einkaufspreise holen');
+        expect(shopUnterzeile(['Muster AG', 'Beispiel KG'])).toBe('Muster AG & Beispiel KG – aktuelle Einkaufspreise holen');
+        expect(shopUnterzeile(['Muster AG', 'Beispiel KG', 'Dritte GmbH'])).toBe('Muster AG, Beispiel KG & weitere – aktuelle Einkaufspreise holen');
+    });
+});
+
+describe('DocumentEditorHeader – lange Dokumentnummer', () => {
+    it('kürzt die Nummer statt sie zu überlappen und zeigt sie samt Kunde voll im Tooltip', () => {
+        const { rerender } = render(<DocumentEditorHeader {...baueProps({ dokumentNummer: 'RE-2026/10/00031' })} />);
+        const titel = screen.getByRole('heading', { name: 'RE-2026/10/00031' });
+        expect(titel).toHaveAttribute('title', 'RE-2026/10/00031 – Max Mustermann');
+        expect(titel.className).toContain('truncate');
+        expect(titel.className).not.toContain('flex-shrink-0');
+        expect(titel.parentElement?.className).toContain('flex-1');
+
+        rerender(<DocumentEditorHeader {...baueProps({ dokumentNummer: '', kontextInfo: '' })} />);
+        expect(screen.getByRole('heading', { name: 'Neues Dokument' })).toHaveAttribute('title', 'Neues Dokument');
     });
 });

@@ -12,19 +12,8 @@ export const MAX_BILD_BYTES = 1024 * 1024;
 
 const ERLAUBTE_BILD_TYPEN = ['png', 'jpeg', 'gif', 'webp'] as const;
 
-const ESCAPE: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-};
-
-/** Escaped Text für HTML-Inhalt und Attribute (immer in doppelten Anführungszeichen). */
-export function escapeHtml(text: string | null | undefined): string {
-    if (!text) return '';
-    return text.replace(/[&<>"']/g, (zeichen) => ESCAPE[zeichen]);
-}
+/** Escaped Text für HTML-Inhalt und Attribute – gemeinsame Funktion aus `lib/htmlSanitizer.ts`. */
+export { escapeHtml } from '../../../lib/htmlSanitizer';
 
 const HAT_SCHEMA = /^[a-z][a-z\d+.-]*:/i;
 

@@ -55,6 +55,7 @@ const FirstLoginSetupPage = lazy(() => import('./pages/FirstLoginSetupPage'));
 const WebsiteEditor = lazy(() => import('./pages/WebsiteEditor'));
 const TelefonPage = lazy(() => import('./pages/TelefonPage'));
 const BenachrichtigungenPage = lazy(() => import('./pages/BenachrichtigungenPage'));
+const IdsWarenkorbAngekommen = lazy(() => import('./pages/IdsWarenkorbAngekommen'));
 
 // Install the global fetch interceptor once at module load time so that
 // any HTTP 401 response from a non-auth endpoint triggers a session-expiry event.
@@ -69,6 +70,8 @@ const router = createBrowserRouter(createRoutesFromElements(
 
               {/* Fullscreen pages outside MainLayout — still require authentication */}
               <Route path="/dokument-editor" element={<RequireAuth><><Seite vollbild><DocumentEditorPage /></Seite><AnrufFensterHost akteInNeuemTab /></></RequireAuth>} />
+              {/* Rücksprung aus dem Lieferanten-Shop (IDS) im Shop-Tab – eigene Vollbild-Seite ohne Menü. */}
+              <Route path="/ids/warenkorb-angekommen" element={<RequireAuth><Seite vollbild><IdsWarenkorbAngekommen /></Seite></RequireAuth>} />
               <Route path="/onboarding" element={<RequireAdmin><Seite vollbild><FirstLoginSetupPage /></Seite></RequireAdmin>} />
 
               <Route element={<RequireAuth><MainLayout /></RequireAuth>}>

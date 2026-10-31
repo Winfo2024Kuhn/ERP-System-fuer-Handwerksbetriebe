@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.Artikel;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelDokumenttexteRequest;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelStammdatenRequest;
@@ -15,6 +16,9 @@ import org.springframework.data.jpa.domain.Specification;
 public interface ArtikelServiceContract {
     /** Legt einen Artikel an; ohne eigene Artikelnummer wird die naechste freie vergeben. */
     Artikel erstelleArtikel(ArtikelCreateDto dto);
+
+    /** Wie {@link #erstelleArtikel(ArtikelCreateDto)}, mit der Herkunft des ersten Lieferantenpreises. */
+    Artikel erstelleArtikel(ArtikelCreateDto dto, PreisQuelle quelle);
 
     /** Die Nummer, die ein neuer Artikel ohne eigene Nummer bekaeme ("A-004143"). Reserviert nichts. */
     String naechsteArtikelnummer();

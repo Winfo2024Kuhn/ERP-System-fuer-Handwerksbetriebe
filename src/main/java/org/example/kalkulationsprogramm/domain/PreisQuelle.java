@@ -27,6 +27,8 @@ public enum PreisQuelle {
     CSV_IMPORT("Aus Preisliste importiert"),
     RECHNUNG("Aus einer Rechnung übernommen"),
     SYSTEM("Vom System angelegt"),
+    /** Aus einem Warenkorb im Online-Shop des Lieferanten (IDS-Connect) übernommen. */
+    IDS_SHOP("Aus dem Lieferanten-Shop übernommen"),
     UNBEKANNT("Herkunft nicht erfasst");
 
     private final String anzeigename;
