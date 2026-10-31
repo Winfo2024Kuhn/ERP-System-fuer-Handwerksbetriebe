@@ -202,7 +202,7 @@ Grenzen: Nach 75 s wird nicht mehr nachgeschlagen, nach 150 s meldet die KI-Hilf
 lange gebraucht …“. Höchstens 8 Fragen laufen im Betrieb gleichzeitig, die neunte bekommt 429
 „gerade ausgelastet“. Schließt der Nutzer den Chat, werden laufende Gemini-Aufrufe abgebrochen.
 Lehnt Gemini die Anfrage mit Werkzeugen ab (HTTP 400, z. B. ein älteres Modell in
-`ai.ki-hilfe.model`), antwortet die KI-Hilfe wie früher ohne Nachschlagen – im Log steht dann
+Stufe „Standard“ von Gemini unter Einstellungen → KI-Funktionen), antwortet die KI-Hilfe wie früher ohne Nachschlagen – im Log steht dann
 „Gemini lehnt die Anfrage mit Werkzeugen ab“.
 
 Wie gut die Wortsuche typische Fragen beantwortet, misst `KiHilfeSuchqualitaetTest`

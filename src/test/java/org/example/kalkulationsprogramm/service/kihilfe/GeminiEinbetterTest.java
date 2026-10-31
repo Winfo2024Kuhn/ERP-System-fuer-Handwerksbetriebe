@@ -115,10 +115,12 @@ class GeminiEinbetterTest {
     void anfrageEinbetten() throws Exception {
         doReturn(antwort(200, "{\"embedding\":{\"values\":" + werte(0.3f) + "}}")).when(httpClient).send(any(), any());
 
-        float[] vektor = einbetter.anfrageEinbetten("x".repeat(9000));
+        float[] vektor = einbetter.anfrageEinbetten("x".repeat(9000), "test-frage-schluessel");
 
         assertThat(vektor[0]).isEqualTo(0.3f);
         HttpRequest anfrage = gesendeteAnfrage();
+        // Der Schluessel der Frage kommt vom Aufrufer, nicht aus dem Konstruktor
+        assertThat(anfrage.headers().firstValue("x-goog-api-key")).hasValue("test-frage-schluessel");
         assertThat(anfrage.uri().toString()).endsWith(":embedContent");
         String body = koerper(anfrage);
         assertThat(body).contains("RETRIEVAL_QUERY").contains("x".repeat(8000)).doesNotContain("x".repeat(8001));
@@ -142,7 +144,7 @@ class GeminiEinbetterTest {
     void frageWiederholtNurKurz() throws Exception {
         doReturn(antwort(429, "{\"error\":\"RESOURCE_EXHAUSTED\"}")).when(httpClient).send(any(), any());
 
-        assertThatThrownBy(() -> einbetter.anfrageEinbetten("Wie schreibe ich eine Rechnung?"))
+        assertThatThrownBy(() -> einbetter.anfrageEinbetten("Wie schreibe ich eine Rechnung?", key))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("HTTP 429 nach 2 Versuchen");
         assertThat(pausen).containsExactly(Duration.ofSeconds(1));
@@ -168,7 +170,7 @@ class GeminiEinbetterTest {
         HttpResponse<String> ok = antwort(200, "{\"embedding\":{\"values\":" + werte(2f) + "}}");
         doThrow(new HttpTimeoutException("zu langsam")).doReturn(ok).when(httpClient).send(any(), any());
 
-        assertThat(einbetter.anfrageEinbetten("Frage")[0]).isEqualTo(2f);
+        assertThat(einbetter.anfrageEinbetten("Frage", key)[0]).isEqualTo(2f);
         assertThat(pausen).containsExactly(Duration.ofSeconds(1));
     }
 
@@ -190,7 +192,10 @@ class GeminiEinbetterTest {
     void ohneSchluessel() throws Exception {
         key = " ";
 
-        assertThatThrownBy(() -> einbetter.anfrageEinbetten("Frage"))
+        assertThatThrownBy(() -> einbetter.einbetten(List.of("Text")))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Key fehlt");
+        assertThatThrownBy(() -> einbetter.anfrageEinbetten("Frage", null))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("Key fehlt");
         verify(httpClient, never()).send(any(), any());
@@ -201,7 +206,7 @@ class GeminiEinbetterTest {
     void zuKurzerVektor() throws Exception {
         doReturn(antwort(200, "{\"embedding\":{\"values\":[0.1,0.2]}}")).when(httpClient).send(any(), any());
 
-        assertThatThrownBy(() -> einbetter.anfrageEinbetten("Frage"))
+        assertThatThrownBy(() -> einbetter.anfrageEinbetten("Frage", key))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("2 statt 768");
     }

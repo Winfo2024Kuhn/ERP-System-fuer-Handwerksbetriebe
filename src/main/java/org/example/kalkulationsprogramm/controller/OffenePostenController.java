@@ -28,7 +28,7 @@ import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.service.AusgangsGeschaeftsDokumentService;
 import org.example.kalkulationsprogramm.service.DateiSpeicherService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -67,7 +67,7 @@ public class OffenePostenController {
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final FrontendUserProfileService frontendUserProfileService;
-    private final GeminiDokumentAnalyseService geminiDokumentAnalyseService;
+    private final DokumentAnalyseService dokumentAnalyseService;
     private final ProjektRepository projektRepository;
     private final ProjektDokumentRepository projektDokumentRepository;
     private final DateiSpeicherService dateiSpeicherService;
@@ -267,7 +267,7 @@ public class OffenePostenController {
 
             try {
                 LieferantDokumentDto.AnalyzeResponse result =
-                        geminiDokumentAnalyseService.analyzeFile(tempFile, originalFilename);
+                        dokumentAnalyseService.analyzeFile(tempFile, originalFilename);
                 if (result == null) {
                     return ResponseEntity.ok(Map.of("error", "Analyse fehlgeschlagen - bitte manuell ausfüllen"));
                 }

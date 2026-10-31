@@ -81,7 +81,8 @@ public class SpracheingabeController {
     public ResponseEntity<Map<String, Object>> handleKiAus(SpracheingabeService.KiNichtEingerichtet ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
                 "success", false,
-                "message", "Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist."));
+                "message", "Die Spracheingabe ist gerade aus. Ein Administrator sieht unter "
+                        + "Einstellungen → KI-Funktionen, warum."));
     }
 
     @ExceptionHandler(SpracheingabeService.AufnahmeZuGross.class)
@@ -99,7 +100,7 @@ public class SpracheingabeController {
     public ResponseEntity<Map<String, Object>> handleFehler(IllegalStateException ex) {
         // DSGVO: ex.getMessage() ist hier unbedenklich - SpracheingabeService wirft
         // niemals Audio-Bytes oder das Transkript in einer Exception-Message, siehe
-        // SpracheingabeService.sendeUndLies(). Trotzdem geht nur eine feste, neutrale
+        // SpracheingabeService.transkribiere(). Trotzdem geht nur eine feste, neutrale
         // Meldung an den Client; ex.getMessage() landet ausschliesslich im Server-Log.
         log.warn("[Spracheingabe] Transkription fehlgeschlagen: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(

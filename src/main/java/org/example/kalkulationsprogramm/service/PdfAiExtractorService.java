@@ -11,6 +11,11 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -35,7 +40,8 @@ import java.util.Optional;
 
 /**
  * Service zur KI-gestützten Analyse von PDF-Dokumenten.
- * Unterstützt Google Gemini API (PDF direkt) und Ollama (Fallback).
+ * Läuft über den KI-Anbieter aus den Einstellungen ({@link KiFunktion#DOKUMENT_ANALYSE});
+ * mit {@code ai.pdf.backend=ollama} stattdessen über ein lokales Ollama.
  */
 @Slf4j
 @Service
@@ -110,19 +116,15 @@ public class PdfAiExtractorService {
     private static final int PDF_RENDER_DPI = 150;
 
     private final ObjectMapper objectMapper;
-    private final SystemSettingsService systemSettingsService;
+    private final KiDienst kiDienst;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
     // ========== KONFIGURATION ==========
-    // Backend: "gemini" oder "ollama"
-    @Value("${ai.pdf.backend:gemini}")
+    // Backend: "ollama" für ein lokales Ollama, sonst der KI-Anbieter aus den Einstellungen
+    @Value("${ai.pdf.backend:ki}")
     private String aiBackend;
-
-    // ========== GEMINI API ==========
-    @Value("${ai.gemini.model.pdf-extractor:gemini-3-flash-preview}")
-    private String geminiModel;
 
     // ========== OLLAMA (Fallback) ==========
     @Value("${ai.pdf.timeout-seconds:180}")
@@ -143,190 +145,59 @@ public class PdfAiExtractorService {
                 ? SYSTEM_PROMPT_OFFER
                 : SYSTEM_PROMPT_INVOICE;
 
-        if ("gemini".equalsIgnoreCase(aiBackend)) {
-            return analyzeWithGemini(pdfPath, prompt);
-        } else {
+        if ("ollama".equalsIgnoreCase(aiBackend)) {
             return analyzeWithOllama(pdfPath, prompt);
         }
+        return analyzeWithKi(pdfPath, prompt);
     }
 
-    // ==================== GEMINI API (PDF direkt als Base64) ====================
+    // ==================== KI-Anbieter (PDF direkt) ====================
 
-    private Optional<ZugferdDaten> analyzeWithGemini(String pdfPath, String systemPrompt) {
+    private Optional<ZugferdDaten> analyzeWithKi(String pdfPath, String systemPrompt) {
+        if (!kiDienst.verfuegbar(KiFunktion.DOKUMENT_ANALYSE)) {
+            log.warn("[PdfAI/KI] Keine KI für das Auslesen von Dokumenten eingerichtet.");
+            return Optional.empty();
+        }
         try {
             Path path = Path.of(pdfPath);
             if (!Files.exists(path)) {
-                // Ohne Pfad: der Dateiname trägt Namen aus den Rechnungen (DSGVO).
-                log.warn("[PdfAI/Gemini] PDF nicht gefunden");
+                log.warn("[PdfAI/KI] PDF nicht gefunden");
                 return Optional.empty();
             }
 
-            // PDF direkt als Base64 lesen
             byte[] pdfBytes = Files.readAllBytes(path);
-            String base64Pdf = Base64.getEncoder().encodeToString(pdfBytes);
-
             // Ohne Pfad: der Dateiname trägt Namen aus den Rechnungen (DSGVO).
-            log.info("[PdfAI/Gemini] PDF geladen ({} KB)", pdfBytes.length / 1024);
-            return callGeminiApiWithPdf(base64Pdf, systemPrompt);
+            log.info("[PdfAI/KI] PDF geladen ({} KB)", pdfBytes.length / 1024);
+
+            KiAnfrage anfrage = KiAnfrage.mitAnweisung(systemPrompt)
+                    .nutzer(KiTeil.datei(pdfBytes, "application/pdf"),
+                            KiTeil.text("Analysiere dieses PDF-Dokument und extrahiere die Daten gemäß den Anweisungen."))
+                    .temperatur(0.1)
+                    .maxAusgabe(8192)
+                    .zeitlimit(Duration.ofSeconds(Math.max(90, timeoutSeconds)))
+                    .bauen();
+            KiErgebnis ergebnis = kiDienst.sende(KiFunktion.DOKUMENT_ANALYSE, anfrage);
+            log.info("[PdfAI/KI] Antwort von {} erhalten ({} Zeichen)", ergebnis.anbieter(), ergebnis.text().length());
+            return parseKiAntwort(ergebnis.text());
 
         } catch (Exception e) {
-            log.warn("[PdfAI/Gemini] Fehler: {}", e.getClass().getSimpleName());
+            log.warn("[PdfAI/KI] Fehler: {}", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }
 
-    private Optional<ZugferdDaten> callGeminiApiWithPdf(String base64Pdf, String systemPrompt) {
-        try {
-            // Key zur Laufzeit aus System-Setup lesen.
-            String geminiApiKey = systemSettingsService.getGeminiApiKey();
-            if (geminiApiKey == null || geminiApiKey.isBlank() || geminiApiKey.equals("DEIN_API_KEY_HIER")) {
-                log.error("[PdfAI/Gemini] Kein API-Key! Im System-Setup hinterlegen.");
-                return Optional.empty();
-            }
-
-            // Request Body erstellen
-            ObjectNode requestBody = objectMapper.createObjectNode();
-
-            // System Instruction
-            ObjectNode systemInstruction = objectMapper.createObjectNode();
-            ArrayNode systemPartsArray = objectMapper.createArrayNode();
-            ObjectNode systemTextPart = objectMapper.createObjectNode();
-            systemTextPart.put("text", systemPrompt);
-            systemPartsArray.add(systemTextPart);
-            systemInstruction.set("parts", systemPartsArray);
-            requestBody.set("systemInstruction", systemInstruction);
-
-            // Contents: PDF als inline_data + Text
-            ArrayNode contents = objectMapper.createArrayNode();
-            ObjectNode userContent = objectMapper.createObjectNode();
-            userContent.put("role", "user");
-
-            ArrayNode parts = objectMapper.createArrayNode();
-
-            // PDF als inline_data (direkt an Gemini senden)
-            ObjectNode pdfPart = objectMapper.createObjectNode();
-            ObjectNode inlineData = objectMapper.createObjectNode();
-            inlineData.put("mimeType", "application/pdf");
-            inlineData.put("data", base64Pdf);
-            pdfPart.set("inlineData", inlineData);
-            parts.add(pdfPart);
-
-            // Text-Anweisung
-            ObjectNode textPart = objectMapper.createObjectNode();
-            textPart.put("text", "Analysiere dieses PDF-Dokument und extrahiere die Daten gemäß den Anweisungen.");
-            parts.add(textPart);
-
-            userContent.set("parts", parts);
-            contents.add(userContent);
-            requestBody.set("contents", contents);
-
-            // Generation Config
-            ObjectNode generationConfig = objectMapper.createObjectNode();
-            generationConfig.put("temperature", 0.1);
-            generationConfig.put("maxOutputTokens", 8192);
-            requestBody.set("generationConfig", generationConfig);
-
-            String body = objectMapper.writeValueAsString(requestBody);
-
-            // API URL
-            HttpRequest request = GeminiAnfrage.generateContent(geminiModel, geminiApiKey)
-                    .timeout(Duration.ofSeconds(Math.max(90, timeoutSeconds)))
-                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .build();
-
-            log.info("[PdfAI/Gemini] Sende PDF direkt an Gemini API (Modell: {})", geminiModel);
-            HttpResponse<String> response = httpClient.send(request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.warn("[PdfAI/Gemini] API Fehler {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
-                return Optional.empty();
-            }
-
-            return parseGeminiResponse(response.body());
-
-        } catch (Exception e) {
-            log.warn("[PdfAI/Gemini] Anfrage-Fehler: {}", e.getClass().getSimpleName());
+    /** Liest die JSON-Antwort der KI. Nie den Inhalt loggen: er ist das Rechnungs-JSON (DSGVO). */
+    Optional<ZugferdDaten> parseKiAntwort(String content) {
+        if (content == null || content.isBlank()) {
+            log.warn("[PdfAI/KI] Leere Antwort");
             return Optional.empty();
         }
-    }
-
-    private Optional<ZugferdDaten> parseGeminiResponse(String responseBody) {
         try {
-            // Nie die Antwort selbst: sie enthält die Rechnungsdaten.
-            log.info("[PdfAI/Gemini] Antwort erhalten ({} Zeichen)", responseBody.length());
-            JsonNode responseJson = objectMapper.readTree(responseBody);
-
-            // Prüfe auf API-Fehler
-            JsonNode errorNode = responseJson.path("error");
-            if (!errorNode.isMissingNode()) {
-                log.error("[PdfAI/Gemini] API-Fehler: {}", errorNode);
-                return Optional.empty();
-            }
-
-            JsonNode candidates = responseJson.path("candidates");
-            if (!candidates.isArray() || candidates.isEmpty()) {
-                // Prüfe auf promptFeedback (blockierte Anfrage)
-                JsonNode promptFeedback = responseJson.path("promptFeedback");
-                if (!promptFeedback.isMissingNode()) {
-                    log.error("[PdfAI/Gemini] Anfrage blockiert! PromptFeedback: {}", promptFeedback);
-                }
-                log.warn("[PdfAI/Gemini] Keine Candidates in Antwort ({} Zeichen)", responseBody.length());
-                return Optional.empty();
-            }
-
-            JsonNode firstCandidate = candidates.get(0);
-            if (firstCandidate == null) {
-                log.warn("[PdfAI/Gemini] Erster Candidate ist null");
-                return Optional.empty();
-            }
-
-            // Prüfe finishReason - zeigt warum Gemini gestoppt hat
-            String finishReason = firstCandidate.path("finishReason").asString("UNKNOWN");
-            log.info("[PdfAI/Gemini] finishReason: {}", finishReason);
-
-            // Prüfe safetyRatings
-            JsonNode safetyRatings = firstCandidate.path("safetyRatings");
-            if (!safetyRatings.isMissingNode() && safetyRatings.isArray()) {
-                for (JsonNode rating : safetyRatings) {
-                    String category = rating.path("category").asString("");
-                    String probability = rating.path("probability").asString("");
-                    if (!"NEGLIGIBLE".equals(probability) && !"LOW".equals(probability)) {
-                        log.warn("[PdfAI/Gemini] Safety-Warnung: {} = {}", category, probability);
-                    }
-                }
-            }
-
-            JsonNode contentNode = firstCandidate.path("content");
-            JsonNode partsNode = contentNode.path("parts");
-
-            if (!partsNode.isArray() || partsNode.isEmpty()) {
-                log.warn("[PdfAI/Gemini] Keine Parts in Antwort. FinishReason: {}", finishReason);
-                return Optional.empty();
-            }
-
-            JsonNode firstPart = partsNode.get(0);
-            if (firstPart == null) {
-                log.warn("[PdfAI/Gemini] Erster Part ist null");
-                return Optional.empty();
-            }
-
-            String content = firstPart.path("text").asString("");
-
-            if (content == null || content.isBlank()) {
-                log.warn("[PdfAI/Gemini] Leere Antwort");
-                return Optional.empty();
-            }
-
-            content = cleanJsonResponse(content);
-            // Nie den Inhalt: er ist das herausgelesene Rechnungs-JSON (DSGVO).
-            log.debug("[PdfAI/Gemini] Antwort bereinigt ({} Zeichen)", content.length());
-
-            JsonNode dataJson = objectMapper.readTree(content);
-            return Optional.of(mapToZugferdDaten(dataJson));
-
+            String bereinigt = cleanJsonResponse(content);
+            log.debug("[PdfAI/KI] Antwort bereinigt ({} Zeichen)", bereinigt.length());
+            return Optional.of(mapToZugferdDaten(objectMapper.readTree(bereinigt)));
         } catch (Exception e) {
-            log.warn("[PdfAI/Gemini] Parse-Fehler: {}", e.getClass().getSimpleName());
+            log.warn("[PdfAI/KI] Parse-Fehler: {}", e.getClass().getSimpleName());
             return Optional.empty();
         }
     }

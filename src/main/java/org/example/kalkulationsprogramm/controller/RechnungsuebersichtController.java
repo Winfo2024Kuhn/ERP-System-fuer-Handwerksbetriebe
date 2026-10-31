@@ -25,7 +25,7 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.example.kalkulationsprogramm.dto.Rechnungsuebersicht.AusgangsrechnungDto;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDateiablage;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
@@ -89,7 +89,7 @@ public class RechnungsuebersichtController {
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     private final MitarbeiterRepository mitarbeiterRepository;
     private final LieferantenRepository lieferantenRepository;
-    private final GeminiDokumentAnalyseService geminiService;
+    private final DokumentAnalyseService dokumentAnalyseService;
     private final LieferantDokumentRepository lieferantDokumentRepository;
     private final LieferantDokumentZugriffService zugriffService;
     private final LieferantDokumentDateiService dokumentDateiService;
@@ -383,7 +383,7 @@ public class RechnungsuebersichtController {
             datei.transferTo(tempPath);
 
             // Multi-Invoice-Analyse durchführen
-            var results = geminiService.analyzeFileForMultipleInvoices(tempPath, originalFilename);
+            var results = dokumentAnalyseService.analyzeFileForMultipleInvoices(tempPath, originalFilename);
 
             if (results.isEmpty()) {
                 // Fallback: Leere Antwort

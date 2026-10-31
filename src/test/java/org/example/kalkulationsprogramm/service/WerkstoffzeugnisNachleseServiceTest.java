@@ -30,7 +30,7 @@ class WerkstoffzeugnisNachleseServiceTest {
     private LieferantDokumentPositionRepository positionRepository;
 
     @Mock
-    private GeminiDokumentAnalyseService analyseService;
+    private DokumentAnalyseService analyseService;
 
     @InjectMocks
     private WerkstoffzeugnisNachleseService service;

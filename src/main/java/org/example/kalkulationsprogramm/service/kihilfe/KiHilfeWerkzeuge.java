@@ -8,7 +8,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.service.LocalRagService;
 import org.example.kalkulationsprogramm.service.LocalRagService.Bereich;
 import org.example.kalkulationsprogramm.service.LocalRagService.CodeChunkResult;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
+import org.example.kalkulationsprogramm.service.ki.KiWerkzeug;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -16,7 +19,8 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * Werkzeuge, mit denen die KI-Hilfe selbst im Programm nachschlaegt (Gemini Function Calling):
+ * Werkzeuge, mit denen die KI-Hilfe selbst im Programm nachschlaegt (Function Calling, ueber jeden
+ * Anbieter mit {@link org.example.kalkulationsprogramm.service.ki.KiFaehigkeit#WERKZEUGE}):
  * {@value #SUCHEN} und {@value #LESEN}.
  * <p>
  * Ein Objekt je Chat-Anfrage. Es merkt sich, welche Abschnitte die KI schon kennt (keine
@@ -62,9 +66,9 @@ public final class KiHilfeWerkzeuge {
         }
     }
 
-    /** Die Werkzeug-Beschreibungen fuer Gemini ({@code functionDeclarations}). */
-    public ArrayNode deklarationen() {
-        ArrayNode deklarationen = objectMapper.createArrayNode();
+    /** Die Werkzeug-Beschreibungen fuer die KI. */
+    public List<KiWerkzeug> deklarationen() {
+        List<KiWerkzeug> deklarationen = new ArrayList<>();
 
         ObjectNode suchen = parameter();
         ObjectNode suchenFelder = (ObjectNode) suchen.get("properties");
@@ -81,7 +85,7 @@ public final class KiHilfeWerkzeuge {
         bereich.putArray("enum").add("bedienung").add("technik").add("alles");
         hinweisFeld(suchenFelder, "Wie man eine Rechnung storniert");
         suchen.putArray("required").add("suchbegriffe").add("hinweis");
-        deklarationen.add(deklaration(SUCHEN,
+        deklarationen.add(new KiWerkzeug(SUCHEN,
                 "Sucht in der Wissensbasis des Programms (Anleitungen, Bildschirmseiten, Regeln im Hintergrund) "
                         + "nach passenden Abschnitten. Liefert nur Abschnitte, die du in diesem Gespraech noch "
                         + "nicht bekommen hast. Nutze es, wenn das Bisherige fuer eine sichere Antwort nicht reicht.",
@@ -93,7 +97,7 @@ public final class KiHilfeWerkzeuge {
                 "Dateipfad genau so, wie er in einem Treffer unter 'datei' oder im Kontext steht.");
         hinweisFeld(lesenFelder, "Die Seite Projekte");
         lesen.putArray("required").add("datei").add("hinweis");
-        deklarationen.add(deklaration(LESEN,
+        deklarationen.add(new KiWerkzeug(LESEN,
                 "Liest eine Datei aus den Treffern komplett (bis etwa " + MAX_ZEICHEN_DATEI + " Zeichen), z. B. "
                         + "eine ganze Bildschirmseite, wenn ein Treffer nur einen Teil zeigt und du alle Knoepfe, "
                         + "Reiter oder Dialoge sehen musst.",
@@ -101,17 +105,17 @@ public final class KiHilfeWerkzeuge {
         return deklarationen;
     }
 
-    /** Fuehrt einen Werkzeug-Aufruf ({@code functionCall}) aus und liefert die Antwort fuer Gemini. */
-    public ObjectNode ausfuehren(JsonNode aufruf) {
-        JsonNode args = aufruf.path("args");
-        return switch (aufruf.path("name").asString("")) {
+    /** Fuehrt einen Werkzeug-Aufruf der KI aus und liefert das Ergebnis fuer die naechste Runde. */
+    public ObjectNode ausfuehren(KiTeil.WerkzeugAufruf aufruf) {
+        JsonNode args = aufruf.argumente();
+        return switch (aufruf.name()) {
             case SUCHEN -> suchen(args);
             case LESEN -> lesen(args);
             default -> hinweis("Dieses Werkzeug gibt es nicht. Verfuegbar sind " + SUCHEN + " und " + LESEN + ".");
         };
     }
 
-    /** Antwort auf Aufrufe ueber der Grenze je Runde - Gemini erwartet auf jeden Aufruf eine Antwort. */
+    /** Antwort auf Aufrufe ueber der Grenze je Runde - die KI erwartet auf jeden Aufruf eine Antwort. */
     public ObjectNode zuVieleAufrufe() {
         return hinweis("Zu viele Suchen auf einmal. Nutze erst die Ergebnisse der anderen Aufrufe.");
     }
@@ -262,13 +266,5 @@ public final class KiHilfeWerkzeuge {
         felder.putObject("hinweis").put("type", "STRING").put("description",
                 "Ein kurzer Satz in einfacher Sprache, was du nachschaust. Der Nutzer sieht ihn live, z. B. '"
                         + beispiel + "'. Keine Dateinamen, hoechstens " + MAX_HINWEIS + " Zeichen.");
-    }
-
-    private ObjectNode deklaration(String name, String beschreibung, ObjectNode parameter) {
-        ObjectNode d = objectMapper.createObjectNode();
-        d.put("name", name);
-        d.put("description", beschreibung);
-        d.set("parameters", parameter);
-        return d;
     }
 }

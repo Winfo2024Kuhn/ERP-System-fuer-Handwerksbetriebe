@@ -56,7 +56,7 @@ class OffenePostenControllerTest {
     private org.example.kalkulationsprogramm.service.FrontendUserProfileService frontendUserProfileService;
 
     @MockitoBean
-    private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiDokumentAnalyseService;
+    private org.example.kalkulationsprogramm.service.DokumentAnalyseService dokumentAnalyseService;
 
     @MockitoBean
     private org.example.kalkulationsprogramm.repository.ProjektRepository projektRepository;

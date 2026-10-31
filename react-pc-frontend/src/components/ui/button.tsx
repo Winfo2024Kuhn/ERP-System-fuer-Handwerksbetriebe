@@ -16,7 +16,8 @@ const sizeClasses: Record<Size, string> = {
   sm: 'px-3 py-1.5 text-sm rounded'
 };
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+// ComponentProps statt ButtonHTMLAttributes: enthält in React 19 auch `ref` (z. B. um den Fokus zurückzugeben).
+export interface ButtonProps extends React.ComponentProps<'button'> {
   variant?: Variant;
   size?: Size;
 }

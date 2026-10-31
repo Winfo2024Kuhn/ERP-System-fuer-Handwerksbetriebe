@@ -1,5 +1,18 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterTyp;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiFaehigkeit;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiNachricht;
+import org.example.kalkulationsprogramm.service.ki.KiNichtVerfuegbar;
+import org.example.kalkulationsprogramm.service.ki.KiQuelle;
+import org.example.kalkulationsprogramm.service.ki.KiRohZug;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
+import org.example.kalkulationsprogramm.service.ki.KiWerkzeug;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -7,24 +20,20 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Flow;
 import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
@@ -42,8 +51,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 @ExtendWith(MockitoExtension.class)
 class KiHilfeServiceTest {
@@ -53,11 +62,9 @@ class KiHilfeServiceTest {
     @Mock
     private LocalRagService localRagService;
     @Mock
-    private SystemSettingsService systemSettingsService;
+    private KiDienst kiDienst;
     @Mock
     private FirmeninformationRepository firmeninformationRepository;
-    @Mock
-    private HttpClient httpClient;
 
     private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
     private KiHilfeService service;
@@ -65,9 +72,7 @@ class KiHilfeServiceTest {
     @BeforeEach
     void setUp() {
         service = new KiHilfeService(objectMapper, codebaseIndexService, localRagService,
-                systemSettingsService, firmeninformationRepository);
-        ReflectionTestUtils.setField(service, "httpClient", httpClient);
-        ReflectionTestUtils.setField(service, "model", "test-modell");
+                kiDienst, firmeninformationRepository);
         ReflectionTestUtils.setField(service, "temperature", 0.4);
         ReflectionTestUtils.setField(service, "maxOutputTokens", 1024);
         ReflectionTestUtils.setField(service, "webSearchEnabled", true);
@@ -141,71 +146,55 @@ class KiHilfeServiceTest {
         assertThat(service.buildSystemPrompt("")).endsWith("INDEX-INHALT");
     }
 
-    // ── Nachschlage-Schleife ──
+    // ── Nachschlage-Schleife (die KI selbst ist gemockt; die Übersetzung prüfen die Anbieter-Tests) ──
 
     private static final String SEITE = "react-pc-frontend/src/pages/ProjektEditor.tsx";
     private static final List<ChatMessage> FRAGE = List.of(new ChatMessage("user", "Wie storniere ich eine Rechnung?"));
 
-    @SuppressWarnings("unchecked")
-    private static HttpResponse<String> antwort(int status, String body) {
-        HttpResponse<String> response = mock(HttpResponse.class);
-        lenient().when(response.statusCode()).thenReturn(status);
-        lenient().when(response.body()).thenReturn(body);
-        return response;
+    private static KiErgebnis text(String text) {
+        return new KiErgebnis(text, false, KiAnbieterTyp.GEMINI, "test-modell");
     }
 
-    private static HttpResponse<String> text(String text) {
-        return antwort(200, "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"" + text + "\"}]}}]}");
+    private KiErgebnis aufrufe(KiTeil.WerkzeugAufruf... aufrufe) {
+        ObjectNode roh = objectMapper.createObjectNode().put("role", "model");
+        roh.putArray("parts").addObject().put("thoughtSignature", "sig-" + aufrufe[0].id());
+        return new KiErgebnis("", false, KiAnbieterTyp.GEMINI, "test-modell", List.of(aufrufe), false,
+                List.of(), List.of(), new KiRohZug(KiAnbieterTyp.GEMINI, roh));
     }
 
-    private static HttpResponse<String> aufruf(String id, String name, String args) {
-        return antwort(200, "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"functionCall\":{\"id\":\""
-                + id + "\",\"name\":\"" + name + "\",\"args\":" + args + "},\"thoughtSignature\":\"sig-" + id + "\"}]}}]}");
+    private KiErgebnis aufruf(String id, String name, String args) throws Exception {
+        return aufrufe(new KiTeil.WerkzeugAufruf(id, name, objectMapper.readTree(args)));
     }
 
-    private void geminiAntwortet(HttpResponse<?>... antworten) throws Exception {
-        doReturn(antworten[0], (Object[]) java.util.Arrays.copyOfRange(antworten, 1, antworten.length))
-                .when(httpClient).send(any(HttpRequest.class), any());
+    private static KiAnbieterFehler fehler(int status) {
+        return new KiAnbieterFehler("Google Gemini hat die Anfrage abgelehnt (HTTP " + status + ").", status,
+                status == 429 || status >= 500);
     }
 
-    private List<JsonNode> gesendeteAnfragen(int anzahl) throws Exception {
-        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
-        verify(httpClient, times(anzahl)).send(anfragen.capture(), any());
-        List<JsonNode> koerper = new ArrayList<>();
-        for (HttpRequest anfrage : anfragen.getAllValues()) koerper.add(objectMapper.readTree(koerper(anfrage)));
-        return koerper;
-    }
-
-    /** Liest den JSON-Koerper einer HttpRequest. */
-    private static String koerper(HttpRequest anfrage) {
-        StringBuilder text = new StringBuilder();
-        anfrage.bodyPublisher().orElseThrow().subscribe(new Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
-            @Override
-            public void onNext(ByteBuffer item) {
-                text.append(StandardCharsets.UTF_8.decode(item));
-            }
-
-            @Override
-            public void onError(Throwable throwable) {
-                throw new IllegalStateException(throwable);
-            }
-
-            @Override
-            public void onComplete() {
-                // fertig
-            }
+    /** Die KI antwortet der Reihe nach: Ergebnisse werden geliefert, Ausnahmen geworfen. */
+    private void kiAntwortet(Object... antworten) {
+        Deque<Object> reihe = new ArrayDeque<>(List.of(antworten));
+        when(kiDienst.sende(eq(KiFunktion.PROGRAMM_HILFE), any(KiAnfrage.class))).thenAnswer(aufruf -> {
+            Object naechste = reihe.size() > 1 ? reihe.poll() : reihe.peek();
+            if (naechste instanceof RuntimeException fehler) throw fehler;
+            return naechste;
         });
-        return text.toString();
+    }
+
+    private List<KiAnfrage> gesendeteAnfragen(int anzahl) {
+        ArgumentCaptor<KiAnfrage> anfragen = ArgumentCaptor.forClass(KiAnfrage.class);
+        verify(kiDienst, times(anzahl)).sende(eq(KiFunktion.PROGRAMM_HILFE), anfragen.capture());
+        return anfragen.getAllValues();
+    }
+
+    private void kiEingerichtet(boolean mitInternet) {
+        when(kiDienst.verfuegbar(KiFunktion.PROGRAMM_HILFE)).thenReturn(true);
+        lenient().when(kiDienst.kann(KiFunktion.PROGRAMM_HILFE, KiFaehigkeit.WEBSUCHE)).thenReturn(mitInternet);
+        lenient().when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
     }
 
     private void wissenVorhanden() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
-        lenient().when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
+        kiEingerichtet(true);
         when(localRagService.isAvailable()).thenReturn(true);
         when(localRagService.search(anyString(), any(), any())).thenReturn(List.of(
                 new CodeChunkResult(SEITE + "::a", "Kopf", SEITE, "frontend-page", "component", "Teil 1", true)));
@@ -213,20 +202,20 @@ class KiHilfeServiceTest {
     }
 
     private void ohneWissen() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
-        lenient().when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
+        kiEingerichtet(true);
         when(localRagService.isAvailable()).thenReturn(false);
+    }
+
+    private static List<String> werkzeugNamen(KiAnfrage anfrage) {
+        return anfrage.werkzeuge().stream().map(KiWerkzeug::name).toList();
     }
 
     @Test
     void ohneWissensbasisAntwortetDieKiDirektMitWebsucheUndQuellen() throws Exception {
         ohneWissen();
-        geminiAntwortet(antwort(200, """
-                {"candidates":[{"content":{"parts":[{"text":"Laut DIN EN 1090 ..."}]},
-                  "groundingMetadata":{"webSearchQueries":["DIN EN 1090"],
-                    "groundingChunks":[{"web":{"uri":"https://example.org/din","title":"DIN"}},
-                                       {"web":{"uri":"https://example.org/din","title":"doppelt"}},
-                                       {"web":{"uri":"","title":"leer"}}]}}]}"""));
+        kiAntwortet(new KiErgebnis("Laut DIN EN 1090 ...", false, KiAnbieterTyp.GEMINI, "m", List.of(), false,
+                List.of("DIN EN 1090"), List.of(new KiQuelle("DIN", "https://example.org/din"),
+                        new KiQuelle("doppelt", "https://example.org/din")), null));
         List<String> live = new ArrayList<>();
 
         ChatResult result = service.chat(FRAGE, null, live::add);
@@ -235,10 +224,13 @@ class KiHilfeServiceTest {
         assertThat(result.sources()).containsExactly(new KiHilfeService.SourceLink("DIN", "https://example.org/din"));
         assertThat(result.schritte()).containsExactly("Sucht im Internet: DIN EN 1090");
         assertThat(live).isEqualTo(result.schritte());
-        JsonNode anfrage = gesendeteAnfragen(1).get(0);
-        assertThat(anfrage.path("tools").toString()).contains("googleSearch").doesNotContain("functionDeclarations");
-        assertThat(anfrage.has("toolConfig")).isFalse();
-        assertThat(anfrage.path("systemInstruction").toString()).doesNotContain("Selbst nachschlagen");
+        KiAnfrage anfrage = gesendeteAnfragen(1).get(0);
+        assertThat(anfrage.websuche()).isTrue();
+        assertThat(anfrage.werkzeuge()).isEmpty();
+        assertThat(anfrage.systemAnweisung()).doesNotContain("Selbst nachschlagen").contains("Google-Suche");
+        assertThat(anfrage.temperatur()).isEqualTo(0.4);
+        assertThat(anfrage.maxAusgabe()).isEqualTo(1024);
+        assertThat(anfrage.zeitlimit()).isLessThanOrEqualTo(Duration.ofSeconds(60));
     }
 
     @Test
@@ -247,7 +239,7 @@ class KiHilfeServiceTest {
         when(localRagService.suchen(eq("Storno stornieren"), eq(Bereich.BEDIENUNG), eq(4), any())).thenReturn(List.of(
                 new CodeChunkResult(SEITE + "::b", "<Button>Stornieren</Button>", SEITE, "frontend-page", "component",
                         "Teil 2", false)));
-        geminiAntwortet(
+        kiAntwortet(
                 aufruf("a1", KiHilfeWerkzeuge.SUCHEN, "{\"suchbegriffe\":\"Storno stornieren\",\"hinweis\":\"Wie man storniert\"}"),
                 text("Klicke auf Stornieren."));
         List<String> live = new ArrayList<>();
@@ -260,23 +252,26 @@ class KiHilfeServiceTest {
         verify(localRagService).search(eq("Wie storniere ich eine Rechnung?"), eq("Seite: Projekte (/projekte/7)"),
                 eq("/projekte/7"));
 
-        List<JsonNode> anfragen = gesendeteAnfragen(2);
-        JsonNode erste = anfragen.get(0);
-        assertThat(erste.path("systemInstruction").toString()).contains("Selbst nachschlagen", "AUTOMATISCHER-KONTEXT");
-        assertThat(erste.path("tools").toString()).contains("googleSearch", KiHilfeWerkzeuge.SUCHEN, KiHilfeWerkzeuge.LESEN);
-        assertThat(erste.path("toolConfig").path("includeServerSideToolInvocations").asBoolean(false)).isTrue();
-        assertThat(erste.path("toolConfig").has("functionCallingConfig")).isFalse();
+        List<KiAnfrage> anfragen = gesendeteAnfragen(2);
+        KiAnfrage erste = anfragen.get(0);
+        assertThat(erste.systemAnweisung()).contains("Selbst nachschlagen", "AUTOMATISCHER-KONTEXT");
+        assertThat(werkzeugNamen(erste)).containsExactly(KiHilfeWerkzeuge.SUCHEN, KiHilfeWerkzeuge.LESEN);
+        assertThat(erste.werkzeugModus()).isEqualTo(KiAnfrage.WerkzeugModus.AUTO);
+        assertThat(erste.websuche()).isTrue();
 
-        JsonNode verlauf = anfragen.get(1).path("contents");
+        List<KiNachricht> verlauf = anfragen.get(1).nachrichten();
         assertThat(verlauf).hasSize(3);
-        assertThat(verlauf.get(0).path("parts").get(0).path("text").asString(""))
-                .startsWith("Wie storniere ich eine Rechnung?").contains("Seite: /projekte/7");
-        // Modell-Zug unveraendert zurueck, inkl. Gedanken-Signatur
-        assertThat(verlauf.get(1).path("role").asString("")).isEqualTo("model");
-        assertThat(verlauf.get(1).path("parts").get(0).path("thoughtSignature").asString("")).isEqualTo("sig-a1");
-        JsonNode antwortTeil = verlauf.get(2).path("parts").get(0).path("functionResponse");
-        assertThat(antwortTeil.path("id").asString("")).isEqualTo("a1");
-        assertThat(antwortTeil.path("response").path("treffer").get(0).path("inhalt").asString("")).contains("Stornieren");
+        assertThat(verlauf.get(0).rolle()).isEqualTo(KiNachricht.Rolle.NUTZER);
+        assertThat(verlauf.get(0).text()).startsWith("Wie storniere ich eine Rechnung?").contains("Seite: /projekte/7");
+        // Der Zug der KI geht samt Rohform (Gedanken-Signatur) zurück
+        assertThat(verlauf.get(1).rolle()).isEqualTo(KiNachricht.Rolle.KI);
+        assertThat(verlauf.get(1).roh().inhalt().toString()).contains("sig-a1");
+        assertThat(verlauf.get(1).werkzeugAufrufe()).extracting(KiTeil.WerkzeugAufruf::id).containsExactly("a1");
+        assertThat(verlauf.get(2).rolle()).isEqualTo(KiNachricht.Rolle.WERKZEUG);
+        KiTeil.WerkzeugErgebnis antwort = (KiTeil.WerkzeugErgebnis) verlauf.get(2).teile().get(0);
+        assertThat(antwort.id()).isEqualTo("a1");
+        assertThat(antwort.name()).isEqualTo(KiHilfeWerkzeuge.SUCHEN);
+        assertThat(antwort.ergebnis().path("treffer").get(0).path("inhalt").asString("")).contains("Stornieren");
     }
 
     @Test
@@ -284,20 +279,21 @@ class KiHilfeServiceTest {
         wissenVorhanden();
         when(localRagService.suchen(anyString(), any(), anyInt(), any())).thenReturn(List.of());
         String args = "{\"suchbegriffe\":\"x\",\"hinweis\":\"x\"}";
-        geminiAntwortet(aufruf("1", KiHilfeWerkzeuge.SUCHEN, args), aufruf("2", KiHilfeWerkzeuge.SUCHEN, args),
+        kiAntwortet(aufruf("1", KiHilfeWerkzeuge.SUCHEN, args), aufruf("2", KiHilfeWerkzeuge.SUCHEN, args),
                 aufruf("3", KiHilfeWerkzeuge.SUCHEN, args), aufruf("4", KiHilfeWerkzeuge.SUCHEN, args),
                 text("Das weiss ich nicht sicher."));
 
         ChatResult result = service.chat(FRAGE, null);
 
         assertThat(result.reply()).isEqualTo("Das weiss ich nicht sicher.");
-        List<JsonNode> anfragen = gesendeteAnfragen(KiHilfeService.MAX_NACHSCHLAGE_RUNDEN + 1);
+        List<KiAnfrage> anfragen = gesendeteAnfragen(KiHilfeService.MAX_NACHSCHLAGE_RUNDEN + 1);
         for (int i = 0; i < KiHilfeService.MAX_NACHSCHLAGE_RUNDEN; i++) {
-            assertThat(anfragen.get(i).path("toolConfig").has("functionCallingConfig")).isFalse();
+            assertThat(anfragen.get(i).werkzeugModus()).isEqualTo(KiAnfrage.WerkzeugModus.AUTO);
         }
-        JsonNode letzte = anfragen.get(KiHilfeService.MAX_NACHSCHLAGE_RUNDEN);
-        assertThat(letzte.path("toolConfig").path("functionCallingConfig").path("mode").asString("")).isEqualTo("NONE");
-        assertThat(letzte.path("tools").toString()).contains(KiHilfeWerkzeuge.SUCHEN);
+        KiAnfrage letzte = anfragen.get(KiHilfeService.MAX_NACHSCHLAGE_RUNDEN);
+        assertThat(letzte.werkzeugModus()).isEqualTo(KiAnfrage.WerkzeugModus.KEINE);
+        assertThat(werkzeugNamen(letzte)).contains(KiHilfeWerkzeuge.SUCHEN);
+        assertThat(letzte.nachrichten()).hasSize(1 + 2 * KiHilfeService.MAX_NACHSCHLAGE_RUNDEN);
     }
 
     @Test
@@ -306,49 +302,44 @@ class KiHilfeServiceTest {
         ReflectionTestUtils.setField(service, "webSearchEnabled", false);
         when(localRagService.suchen(anyString(), any(), anyInt(), any())).thenReturn(List.of());
         String args = "{\"suchbegriffe\":\"x\"}";
-        geminiAntwortet(aufruf("1", KiHilfeWerkzeuge.SUCHEN, args), aufruf("2", KiHilfeWerkzeuge.SUCHEN, args),
+        kiAntwortet(aufruf("1", KiHilfeWerkzeuge.SUCHEN, args), aufruf("2", KiHilfeWerkzeuge.SUCHEN, args),
                 aufruf("3", KiHilfeWerkzeuge.SUCHEN, args), aufruf("4", KiHilfeWerkzeuge.SUCHEN, args),
                 aufruf("5", KiHilfeWerkzeuge.SUCHEN, args));
 
         assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class)
                 .hasMessage("Keine Textantwort von der KI erhalten");
-        List<JsonNode> anfragen = gesendeteAnfragen(5);
-        // Ohne Websuche: nur eigene Werkzeuge, toolConfig erst in der letzten Runde
-        assertThat(anfragen.get(0).path("tools").toString()).doesNotContain("googleSearch");
-        assertThat(anfragen.get(0).has("toolConfig")).isFalse();
-        assertThat(anfragen.get(4).path("toolConfig").has("includeServerSideToolInvocations")).isFalse();
-        assertThat(anfragen.get(4).path("toolConfig").path("functionCallingConfig").path("mode").asString("")).isEqualTo("NONE");
+        List<KiAnfrage> anfragen = gesendeteAnfragen(5);
+        // Websuche abgeschaltet: nur eigene Werkzeuge
+        assertThat(anfragen).allSatisfy(anfrage -> assertThat(anfrage.websuche()).isFalse());
+        assertThat(anfragen.get(4).werkzeugModus()).isEqualTo(KiAnfrage.WerkzeugModus.KEINE);
     }
 
     @Test
     void mehrAlsDreiGleichzeitigeAufrufeWerdenNichtAusgefuehrtAberBeantwortet() throws Exception {
         wissenVorhanden();
         when(localRagService.suchen(anyString(), any(), anyInt(), any())).thenReturn(List.of());
-        StringBuilder teile = new StringBuilder();
+        List<KiTeil.WerkzeugAufruf> vier = new ArrayList<>();
         for (int i = 1; i <= 4; i++) {
-            if (i > 1) teile.append(',');
-            teile.append("{\"functionCall\":{\"id\":\"c").append(i).append("\",\"name\":\"").append(KiHilfeWerkzeuge.SUCHEN)
-                    .append("\",\"args\":{\"suchbegriffe\":\"wort").append(i).append("\"}}}");
+            vier.add(new KiTeil.WerkzeugAufruf("c" + i, KiHilfeWerkzeuge.SUCHEN,
+                    objectMapper.readTree("{\"suchbegriffe\":\"wort" + i + "\"}")));
         }
-        geminiAntwortet(antwort(200, "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[" + teile + "]}}]}"),
-                text("Fertig."));
+        kiAntwortet(aufrufe(vier.toArray(KiTeil.WerkzeugAufruf[]::new)), text("Fertig."));
 
         service.chat(FRAGE, null);
 
         verify(localRagService, times(KiHilfeService.MAX_AUFRUFE_JE_RUNDE)).suchen(anyString(), any(), anyInt(), any());
-        JsonNode antworten = gesendeteAnfragen(2).get(1).path("contents").get(2).path("parts");
+        List<KiTeil> antworten = gesendeteAnfragen(2).get(1).nachrichten().get(2).teile();
         assertThat(antworten).hasSize(4);
-        assertThat(antworten.get(3).path("functionResponse").path("id").asString("")).isEqualTo("c4");
-        assertThat(antworten.get(3).path("functionResponse").path("response").path("hinweis").asString(""))
-                .startsWith("Zu viele Suchen");
+        KiTeil.WerkzeugErgebnis vierte = (KiTeil.WerkzeugErgebnis) antworten.get(3);
+        assertThat(vierte.id()).isEqualTo("c4");
+        assertThat(vierte.ergebnis().path("hinweis").asString("")).startsWith("Zu viele Suchen");
     }
 
     @Test
     void websuchenWerdenHoechstensDreimalUndOhneDoppelteGemeldet() throws Exception {
         ohneWissen();
-        geminiAntwortet(antwort(200, """
-                {"candidates":[{"content":{"parts":[{"text":"ok"}]},
-                  "groundingMetadata":{"webSearchQueries":["Wetter Berlin","Wetter Berlin"," ","Regen","Wind","Sturm"]}}]}"""));
+        kiAntwortet(new KiErgebnis("ok", false, KiAnbieterTyp.GEMINI, "m", List.of(), false,
+                List.of("Wetter Berlin", "Wetter Berlin", " ", "Regen", "Wind", "Sturm"), List.of(), null));
 
         ChatResult result = service.chat(FRAGE, null);
 
@@ -358,47 +349,44 @@ class KiHilfeServiceTest {
 
     @Test
     void scheitertDieErsteSucheAntwortetDieKiTrotzdem() throws Exception {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
-        when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
+        kiEingerichtet(true);
         when(localRagService.isAvailable()).thenReturn(true);
         when(localRagService.search(anyString(), isNull(), isNull())).thenThrow(new IllegalStateException("kaputt"));
-        geminiAntwortet(text("Antwort"));
+        kiAntwortet(text("Antwort"));
 
         ChatResult result = service.chat(FRAGE, null);
 
         assertThat(result.reply()).isEqualTo("Antwort");
         assertThat(result.schritte()).isEmpty();
-        assertThat(gesendeteAnfragen(1).get(0).path("systemInstruction").toString()).contains("Selbst nachschlagen");
+        assertThat(gesendeteAnfragen(1).get(0).systemAnweisung()).contains("Selbst nachschlagen");
     }
 
     @Test
     void ohneTrefferDerErstenSucheKeinSchrittUndKeinKontext() throws Exception {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
-        when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
+        kiEingerichtet(true);
         when(localRagService.isAvailable()).thenReturn(true);
         when(localRagService.search(anyString(), any(), any())).thenReturn(List.of());
-        geminiAntwortet(text("Antwort"));
+        kiAntwortet(text("Antwort"));
 
         ChatResult result = service.chat(FRAGE, null);
 
         assertThat(result.schritte()).isEmpty();
-        assertThat(gesendeteAnfragen(1).get(0).path("systemInstruction").toString())
-                .doesNotContain("Automatisch gefundene Abschnitte");
+        assertThat(gesendeteAnfragen(1).get(0).systemAnweisung()).doesNotContain("Automatisch gefundene Abschnitte");
     }
 
     @Test
     void beiUeberlastungEinZweiterVersuch() throws Exception {
         ohneWissen();
-        geminiAntwortet(antwort(503, "{\"error\":\"overloaded\"}"), text("Hat geklappt"));
+        kiAntwortet(fehler(503), text("Hat geklappt"));
 
         assertThat(service.chat(FRAGE, null).reply()).isEqualTo("Hat geklappt");
         gesendeteAnfragen(2);
     }
 
     @Test
-    void dauerhafteFehlerWerdenNichtWiederholt() throws Exception {
+    void dauerhafteFehlerWerdenNichtWiederholt() {
         ohneWissen();
-        geminiAntwortet(antwort(400, "{\"error\":\"bad request\"}"));
+        kiAntwortet(fehler(400));
 
         assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class)
                 .hasMessageContaining("Fehler 400");
@@ -406,36 +394,54 @@ class KiHilfeServiceTest {
     }
 
     @Test
-    void zweimalUeberlastetGibtEinenFehler() throws Exception {
+    void zweimalUeberlastetGibtEinenFehler() {
         ohneWissen();
-        geminiAntwortet(antwort(429, ""), antwort(503, ""));
+        kiAntwortet(fehler(429), fehler(503));
 
         assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class)
                 .hasMessageContaining("Fehler 503");
     }
 
     @Test
-    void leereAntwortenSindFehler() throws Exception {
+    void netzfehlerWirdNichtWiederholtUndBleibtEinFehler() {
         ohneWissen();
-        geminiAntwortet(antwort(200, "{\"candidates\":[]}"),
-                antwort(200, "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"\"}]}}]}"));
+        kiAntwortet(new KiAnbieterFehler("Google Gemini ist gerade nicht erreichbar.", true, new IOException("weg")));
 
-        assertThatThrownBy(() -> service.chat(FRAGE, null)).hasMessage("Keine Antwort von der KI erhalten");
+        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class)
+                .hasMessage("Google Gemini ist gerade nicht erreichbar.");
+        gesendeteAnfragen(1);
+    }
+
+    @Test
+    void leereAntwortenSindFehler() {
+        ohneWissen();
+        kiAntwortet(new KiAnbieterFehler("Google Gemini hat keine Antwort geliefert.", 200, false), text(""));
+
+        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class);
         assertThatThrownBy(() -> service.chat(FRAGE, null)).hasMessage("Keine Textantwort von der KI erhalten");
     }
 
     @Test
-    void ohneSchluesselOderNachrichtenKeinAufruf() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn(" ", "test-schluessel");
+    void ohneAnbieterOderNachrichtenKeinAufruf() {
+        when(kiDienst.verfuegbar(KiFunktion.PROGRAMM_HILFE)).thenReturn(false, true);
 
-        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(KiHilfeService.KeinPassenderAnbieter.class);
         assertThatThrownBy(() -> service.chat(List.of(), null)).isInstanceOf(IllegalArgumentException.class);
+        verify(kiDienst, never()).sende(any(), any(KiAnfrage.class));
+    }
+
+    @Test
+    void wirdDieFunktionMittendrinAusgeschaltetKeinPassenderAnbieter() {
+        ohneWissen();
+        kiAntwortet(new KiNichtVerfuegbar(KiFunktion.PROGRAMM_HILFE, "aus"));
+
+        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(KiHilfeService.KeinPassenderAnbieter.class);
     }
 
     @Test
     void seitenkontextHaengtGekuerztAnDerLetztenFrage() throws Exception {
         ohneWissen();
-        geminiAntwortet(text("ok"));
+        kiAntwortet(text("ok"));
         List<ChatMessage> verlauf = new ArrayList<>();
         for (int i = 0; i < 24; i++) {
             verlauf.add(new ChatMessage(i % 2 == 0 ? "user" : "assistant", "Nachricht " + i));
@@ -445,14 +451,14 @@ class KiHilfeServiceTest {
 
         service.chat(verlauf, seite);
 
-        JsonNode contents = gesendeteAnfragen(1).get(0).path("contents");
-        assertThat(contents).hasSize(20);
-        assertThat(contents.get(19).path("role").asString("")).isEqualTo("user");
-        String letzte = contents.get(19).path("parts").get(0).path("text").asString("");
+        List<KiNachricht> nachrichten = gesendeteAnfragen(1).get(0).nachrichten();
+        assertThat(nachrichten).hasSize(20);
+        assertThat(nachrichten.get(19).rolle()).isEqualTo(KiNachricht.Rolle.NUTZER);
+        String letzte = nachrichten.get(19).text();
         assertThat(letzte).startsWith("Letzte Frage").contains("[Aktueller Bildschirmkontext]", "Titel: Projekte",
                 "Fehlermeldungen: Pflichtfeld fehlt", "Breitengrad 52.5", "x".repeat(2_000) + "…")
                 .doesNotContain("x".repeat(2_001));
-        assertThat(contents.get(18).path("role").asString("")).isEqualTo("model");
+        assertThat(nachrichten.get(18).rolle()).isEqualTo(KiNachricht.Rolle.KI);
     }
 
     @Test
@@ -481,26 +487,25 @@ class KiHilfeServiceTest {
     }
 
     @Test
-    void lehntGeminiDieWerkzeugeAbAntwortetDieKiOhneNachschlagen() throws Exception {
+    void lehntDieKiDieWerkzeugeAbAntwortetSieOhneNachschlagen() throws Exception {
         wissenVorhanden();
-        geminiAntwortet(antwort(400, "{\"error\":{\"status\":\"INVALID_ARGUMENT\"}}"), text("Antwort wie frueher"));
+        kiAntwortet(fehler(400), text("Antwort wie frueher"));
 
         ChatResult result = service.chat(FRAGE, null);
 
         assertThat(result.reply()).isEqualTo("Antwort wie frueher");
-        List<JsonNode> anfragen = gesendeteAnfragen(2);
-        assertThat(anfragen.get(1).path("tools").toString()).contains("googleSearch").doesNotContain("functionDeclarations");
-        assertThat(anfragen.get(1).has("toolConfig")).isFalse();
-        assertThat(anfragen.get(1).path("systemInstruction").toString())
-                .contains("AUTOMATISCHER-KONTEXT").doesNotContain("Selbst nachschlagen");
+        KiAnfrage rueckfall = gesendeteAnfragen(2).get(1);
+        assertThat(rueckfall.websuche()).isTrue();
+        assertThat(rueckfall.werkzeuge()).isEmpty();
+        assertThat(rueckfall.systemAnweisung()).contains("AUTOMATISCHER-KONTEXT").doesNotContain("Selbst nachschlagen");
         // Der Verlauf beginnt neu, ohne halbe Werkzeug-Runden
-        assertThat(anfragen.get(1).path("contents")).hasSize(1);
+        assertThat(rueckfall.nachrichten()).hasSize(1);
     }
 
     @Test
-    void andereAblehnungenGehenOhneSicherheitsnetzDurch() throws Exception {
+    void andereAblehnungenGehenOhneSicherheitsnetzDurch() {
         wissenVorhanden();
-        geminiAntwortet(antwort(403, "{\"error\":\"PERMISSION_DENIED\"}"));
+        kiAntwortet(fehler(403));
 
         assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class)
                 .hasMessageContaining("Fehler 403");
@@ -508,41 +513,58 @@ class KiHilfeServiceTest {
     }
 
     @Test
-    void gesamtfristAbgelaufenOhneAufrufBeiGemini() throws Exception {
+    void gesamtfristAbgelaufenOhneAufrufBeiDerKi() {
         ohneWissen();
         ReflectionTestUtils.setField(service, "gesamtZeitlimit", Duration.ZERO);
 
         assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(KiHilfeService.ZeitlimitErreicht.class);
-        verify(httpClient, times(0)).send(any(HttpRequest.class), any());
+        verify(kiDienst, never()).sende(any(), any(KiAnfrage.class));
     }
 
     @Test
-    void zeitueberschreitungNachDerFristWirdZumZeitlimit() throws Exception {
+    void zeitueberschreitungNachDerFristWirdZumZeitlimit() {
         ohneWissen();
         ReflectionTestUtils.setField(service, "gesamtZeitlimit", Duration.ofMillis(200));
-        when(httpClient.send(any(HttpRequest.class), any())).thenAnswer(aufruf -> {
+        when(kiDienst.sende(eq(KiFunktion.PROGRAMM_HILFE), any(KiAnfrage.class))).thenAnswer(aufruf -> {
+            KiAnfrage anfrage = aufruf.getArgument(1);
+            assertThat(anfrage.zeitlimit()).isLessThanOrEqualTo(Duration.ofMillis(200));
             Thread.sleep(250);
-            throw new java.net.http.HttpTimeoutException("zu langsam");
+            throw new KiAnbieterFehler("Google Gemini hat nicht rechtzeitig geantwortet.", true,
+                    new HttpTimeoutException("zu langsam"));
         });
 
         assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(KiHilfeService.ZeitlimitErreicht.class);
     }
 
     @Test
-    void zeitueberschreitungVorDerFristBleibtEinNormalerFehler() throws Exception {
+    void zeitueberschreitungVorDerFristBleibtEinNormalerFehler() {
         ohneWissen();
-        when(httpClient.send(any(HttpRequest.class), any())).thenThrow(new java.net.http.HttpTimeoutException("zu langsam"));
+        kiAntwortet(new KiAnbieterFehler("Google Gemini hat nicht rechtzeitig geantwortet.", true,
+                new HttpTimeoutException("zu langsam")));
 
-        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(java.net.http.HttpTimeoutException.class);
+        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(HttpTimeoutException.class);
     }
 
     @Test
-    void schliesstDerNutzerDenChatBrichtDieErsteSucheAb() throws Exception {
+    void unterbrochenerAufrufBleibtEineUnterbrechung() {
+        ohneWissen();
+        when(kiDienst.sende(eq(KiFunktion.PROGRAMM_HILFE), any(KiAnfrage.class))).thenAnswer(aufruf -> {
+            Thread.currentThread().interrupt();
+            throw new KiAnbieterFehler("Der Aufruf bei Google Gemini wurde unterbrochen.", false,
+                    new InterruptedException());
+        });
+
+        assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(InterruptedException.class);
+        assertThat(Thread.interrupted()).isFalse();
+    }
+
+    @Test
+    void schliesstDerNutzerDenChatBrichtDieErsteSucheAb() {
         wissenVorhanden();
         IllegalStateException verbindungZu = new IllegalStateException("Browser weg");
 
         assertThatThrownBy(() -> service.chat(FRAGE, null, schritt -> { throw verbindungZu; })).isSameAs(verbindungZu);
-        verify(httpClient, times(0)).send(any(HttpRequest.class), any());
+        verify(kiDienst, never()).sende(any(), any(KiAnfrage.class));
     }
 
     @Test
@@ -556,12 +578,11 @@ class KiHilfeServiceTest {
     @Test
     void kaputterWerkzeugAufrufFuehrtZurAntwortOhneWerkzeuge() throws Exception {
         wissenVorhanden();
-        geminiAntwortet(antwort(200, "{\"candidates\":[{\"finishReason\":\"MALFORMED_FUNCTION_CALL\",\"content\":{\"parts\":[]}}]}"),
+        kiAntwortet(new KiErgebnis("", false, KiAnbieterTyp.GEMINI, "m", List.of(), true, List.of(), List.of(), null),
                 text("Trotzdem eine Antwort"));
 
         assertThat(service.chat(FRAGE, null).reply()).isEqualTo("Trotzdem eine Antwort");
-        List<JsonNode> anfragen = gesendeteAnfragen(2);
-        assertThat(anfragen.get(1).path("toolConfig").path("functionCallingConfig").path("mode").asString("")).isEqualTo("NONE");
+        assertThat(gesendeteAnfragen(2).get(1).werkzeugModus()).isEqualTo(KiAnfrage.WerkzeugModus.KEINE);
     }
 
     @Test
@@ -569,10 +590,41 @@ class KiHilfeServiceTest {
         wissenVorhanden();
         // Weniger als die Reserve fuer die Antwort: gleich die erste Runde muss antworten
         ReflectionTestUtils.setField(service, "gesamtZeitlimit", Duration.ofSeconds(59));
-        geminiAntwortet(text("Kurze Antwort"));
+        kiAntwortet(text("Kurze Antwort"));
 
         assertThat(service.chat(FRAGE, null).reply()).isEqualTo("Kurze Antwort");
-        assertThat(gesendeteAnfragen(1).get(0).path("toolConfig").path("functionCallingConfig").path("mode").asString(""))
-                .isEqualTo("NONE");
+        assertThat(gesendeteAnfragen(1).get(0).werkzeugModus()).isEqualTo(KiAnfrage.WerkzeugModus.KEINE);
+    }
+
+    // ── Anbieter ohne Internet-Suche (z. B. Mistral) ──
+
+    @Test
+    void ohneInternetSucheWeissDieKiDasUndNachschlagenGehtWeiter() throws Exception {
+        kiEingerichtet(false);
+        when(localRagService.isAvailable()).thenReturn(true);
+        when(localRagService.search(anyString(), any(), any())).thenReturn(List.of());
+        kiAntwortet(text("Antwort aus dem Programm"));
+
+        service.chat(FRAGE, null);
+
+        KiAnfrage anfrage = gesendeteAnfragen(1).get(0);
+        assertThat(anfrage.websuche()).isFalse();
+        assertThat(werkzeugNamen(anfrage)).containsExactly(KiHilfeWerkzeuge.SUCHEN, KiHilfeWerkzeuge.LESEN);
+        assertThat(anfrage.systemAnweisung())
+                .contains("KEINEN Zugriff auf das Internet", "Selbst nachschlagen",
+                        "Fragen außerhalb des Programms beantwortest du ohne diese Werkzeuge.")
+                .doesNotContain("Google", "googleSearch", "Web-Suche", "{{WEB");
+    }
+
+    @Test
+    void mitInternetSucheBleibtDerPromptWieBisher() {
+        when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
+
+        String prompt = service.buildSystemPrompt("Kontext", true);
+
+        assertThat(prompt).contains("## Web-Suche & Allgemeinwissen", "googleSearch Tool",
+                        "- Wenn der user eine Frage außerhalb des Programms stellt, nutze die Web-Suche",
+                        "beantwortest du mit der Google-Suche,\n  nicht mit diesen Werkzeugen.")
+                .doesNotContain("{{WEB", "KEINEN Zugriff");
     }
 }

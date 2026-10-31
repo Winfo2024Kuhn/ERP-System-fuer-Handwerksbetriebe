@@ -1,24 +1,7 @@
 import { InfoAbschnitt, InfoButton } from '../ui/info-button';
 import { cn } from '../../lib/utils';
+import { Schalter } from '../ui/schalter';
 import type { Briefform } from './normMasse';
-
-/** Kleiner Ein/Aus-Schalter (role="switch"), rose wenn an. */
-export function Schalter({ an, onChange, beschriftung }: { an: boolean; onChange: (an: boolean) => void; beschriftung: string }) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={an}
-            onClick={() => onChange(!an)}
-            className="group inline-flex items-center gap-2 rounded-md px-1 py-1 text-sm font-medium text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-        >
-            <span className={cn('relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors', an ? 'bg-rose-600' : 'bg-slate-300 group-hover:bg-slate-400')}>
-                <span className={cn('inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform', an ? 'translate-x-[18px]' : 'translate-x-0.5')} />
-            </span>
-            {beschriftung}
-        </button>
-    );
-}
 
 /** Umschalter Form A / Form B. */
 export function BriefformWahl({ form, onChange }: { form: Briefform; onChange: (form: Briefform) => void }) {

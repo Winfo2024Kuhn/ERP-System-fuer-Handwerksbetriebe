@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { SystemSetupConfigurator } from './SystemSetupConfigurator';
 import { ToastProvider } from '../ui/toast';
 import { ConfirmProvider } from '../ui/confirm-dialog';
+import { kiEinstellungen } from '../../features/ki/kiTestdaten';
 
 interface StubOptions {
     /** Zugangsdaten des Haupt-Postfachs für die Häkchen-Prüfung (Dummy-Daten, DSGVO). */
@@ -18,7 +19,7 @@ function stubFetch(options: StubOptions = {}) {
             new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
         if (url.includes('/api/settings/smtp'))
             return json(options.smtp ?? { host: '', port: 465, username: '', passwordSet: false });
-        if (url.includes('/api/settings/gemini')) return json({ apiKeySet: false });
+        if (url.includes('/api/settings/ki')) return json(kiEinstellungen());
         if (url.includes('/api/settings/anfrage-funnel-spamfilter')) return json({ aktiv: true });
         if (url.includes('/api/postfaecher')) return json([{
             id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb', aktiv: true,
@@ -97,6 +98,7 @@ describe('SystemSetupConfigurator – Reiter', () => {
         await oeffneReiter(/KI-Funktionen/i);
 
         expect(await screen.findByText(/Anfragen von der Webseite/i)).toBeInTheDocument();
+        expect(screen.getByRole('radiogroup', { name: 'KI-Anbieter wählen' })).toBeInTheDocument();
         expect(window.location.hash).toBe('#ki');
     });
 });

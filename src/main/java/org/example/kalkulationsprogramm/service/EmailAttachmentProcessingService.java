@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  * 1. Email ist Lieferanten-Email mit Anhängen
  * 2. Für jeden PDF/XML Anhang → LieferantDokument erstellen (eigene
  * Transaktion!)
- * 3. GeminiDokumentAnalyseService aufrufen (handhabt ZUGFeRD, XML und KI)
+ * 3. DokumentAnalyseService aufrufen (handhabt ZUGFeRD, XML und KI)
  * 4. Wenn kein Geschäftsdokument erkannt → LieferantDokument löschen
  */
 @Slf4j
@@ -44,7 +44,7 @@ public class EmailAttachmentProcessingService {
     private final LieferantDokumentRepository lieferantDokumentRepository;
     private final LieferantenRepository lieferantenRepository;
     private final LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
-    private final GeminiDokumentAnalyseService geminiAnalyseService;
+    private final DokumentAnalyseService dokumentAnalyseService;
     private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     private final LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
     private final BelegZuordnungService belegZuordnungService;
@@ -422,7 +422,7 @@ public class EmailAttachmentProcessingService {
         // 1. Analyse durchführen (InMemory, noch keine DB-Erstellung)
         // Das verhindert, dass leere Dokumente im Frontend auftauchen während die
         // Analyse läuft. Metadaten kommen aus der Metadaten-Datei (XML bei einem Paar).
-        LieferantGeschaeftsdokument geschaeftsdaten = geminiAnalyseService.analyzeAndReturnData(metaPath, metaFilename);
+        LieferantGeschaeftsdokument geschaeftsdaten = dokumentAnalyseService.analyzeAndReturnData(metaPath, metaFilename);
 
         // 2. Lieferant laden (Referenz)
         Lieferanten lieferant = lieferantenRepository.findById(lieferantId).orElse(null);

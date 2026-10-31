@@ -98,7 +98,7 @@ class LieferantenControllerTest {
   @MockitoBean
   private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
   @MockitoBean
-  private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiDokumentAnalyseService;
+  private org.example.kalkulationsprogramm.service.DokumentAnalyseService dokumentAnalyseService;
   @MockitoBean
   private org.springframework.context.ApplicationEventPublisher applicationEventPublisher;
   @MockitoBean

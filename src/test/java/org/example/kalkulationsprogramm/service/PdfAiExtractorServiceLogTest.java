@@ -1,77 +1,111 @@
 package org.example.kalkulationsprogramm.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
-import tools.jackson.databind.json.JsonMapper;
+
+import org.example.kalkulationsprogramm.dto.Zugferd.ZugferdDaten;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterTyp;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.example.kalkulationsprogramm.testsupport.LogMitschnitt;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 
-import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
-/** Was die PDF-Auslesung per Gemini ins Log schreibt: nie Rechnungsinhalte oder Pfade. Nur Dummy-Daten. */
+/** Was die PDF-Auslesung per KI ins Log schreibt: nie Rechnungsinhalte oder Pfade. Nur Dummy-Daten. */
 class PdfAiExtractorServiceLogTest {
 
+    private final KiDienst kiDienst = mock(KiDienst.class);
     private final PdfAiExtractorService service =
-            new PdfAiExtractorService(JsonMapper.builderWithJackson2Defaults().build(), mock(SystemSettingsService.class));
+            new PdfAiExtractorService(JsonMapper.builderWithJackson2Defaults().build(), kiDienst);
+
+    @TempDir
+    Path ordner;
 
     @Test
     void antwortMitRechnungsdatenLandetNichtImLog() {
-        String antwort = """
-                {"candidates":[{"content":{"parts":[{"text":
-                "```json\\n{\\"rechnungsnummer\\":\\"RE-2026-0905\\",\\"kunde\\":\\"Max Mustermann\\"}\\n```"}]}}]}
-                """;
+        String antwort = "```json\n{\"dokumentnummer\":\"RE-2026-0905\",\"kundenName\":\"Max Mustermann\"}\n```";
 
         List<String> log = LogMitschnitt.von(PdfAiExtractorService.class,
-                () -> assertThat(parse(antwort)).isPresent());
+                () -> assertThat(service.parseKiAntwort(antwort)).isPresent());
 
-        assertThat(log).isNotEmpty()
-                .noneMatch(zeile -> zeile.contains("Max Mustermann") || zeile.contains("RE-2026-0905"));
-        assertThat(log).anyMatch(zeile -> zeile.startsWith("[PdfAI/Gemini] Antwort erhalten ("));
+        assertThat(log).noneMatch(zeile -> zeile.contains("Max Mustermann") || zeile.contains("RE-2026-0905"));
     }
 
     @Test
-    void antwortOhneTextUndKaputteAntwortNennenNurFehlerart() {
-        String ohneParts = """
-                {"candidates":[{"finishReason":"SAFETY","citationMetadata":{"titel":"Max Mustermann"}}]}
-                """;
-        String kaputt = "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{\\\"kunde\\\":\\\"Max Mustermann\"}]}}]}";
+    void leereUndKaputteAntwortNennenNurFehlerart() {
+        String kaputt = "{\"kunde\":\"Max Mustermann\"";
 
         List<String> log = LogMitschnitt.von(PdfAiExtractorService.class, () -> {
-            assertThat(parse(ohneParts)).isEmpty();
-            assertThat(parse(kaputt)).isEmpty();
-            assertThat(parse("Mustermann sagt nein")).isEmpty();
+            assertThat(service.parseKiAntwort("  ")).isEmpty();
+            assertThat(service.parseKiAntwort(kaputt)).isEmpty();
+            assertThat(service.parseKiAntwort("Mustermann sagt nein")).isEmpty();
         });
 
         // Jackson zitiert das erste Token ('Mustermann') – das darf nicht ins Log.
         assertThat(log).noneMatch(zeile -> zeile.contains("Mustermann"));
-        assertThat(log).contains(
-                "[PdfAI/Gemini] Keine Parts in Antwort. FinishReason: SAFETY",
-                "[PdfAI/Gemini] Parse-Fehler: StreamReadException");
+        assertThat(log).contains("[PdfAI/KI] Leere Antwort");
+        assertThat(log).anyMatch(zeile -> zeile.startsWith("[PdfAI/KI] Parse-Fehler: "));
     }
 
     @Test
     void fehlendesPdfNenntKeinenPfad() {
-        ReflectionTestUtils.setField(service, "aiBackend", "gemini");
+        when(kiDienst.verfuegbar(KiFunktion.DOKUMENT_ANALYSE)).thenReturn(true);
         List<String> log = LogMitschnitt.von(PdfAiExtractorService.class,
                 () -> service.analyze("/nicht-erlaubt/0b1c2d3e_Rechnung_Max_Mustermann.pdf"));
 
         assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann") || zeile.contains("nicht-erlaubt"));
-        assertThat(log).contains("[PdfAI/Gemini] PDF nicht gefunden");
+        assertThat(log).contains("[PdfAI/KI] PDF nicht gefunden");
     }
 
-    @SuppressWarnings("unchecked")
-    private Optional<Object> parse(String antwort) {
-        try {
-            Method parse = PdfAiExtractorService.class.getDeclaredMethod("parseGeminiResponse", String.class);
-            parse.setAccessible(true);
-            return (Optional<Object>) parse.invoke(service, antwort);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
+    @Test
+    void ohneKiWirdNichtsGeschickt() {
+        when(kiDienst.verfuegbar(KiFunktion.DOKUMENT_ANALYSE)).thenReturn(false);
+
+        assertThat(service.analyze("/tmp/egal.pdf")).isEmpty();
+        verify(kiDienst, never()).sende(any(), any());
+    }
+
+    @Test
+    void pdfGehtAlsDateiAnDenEingestelltenAnbieter() throws Exception {
+        Path pdf = ordner.resolve("rechnung.pdf");
+        Files.write(pdf, new byte[] {'%', 'P', 'D', 'F'});
+        when(kiDienst.verfuegbar(KiFunktion.DOKUMENT_ANALYSE)).thenReturn(true);
+        when(kiDienst.sende(eq(KiFunktion.DOKUMENT_ANALYSE), any())).thenReturn(new KiErgebnis(
+                "{\"dokumentnummer\":\"2026/01/00001\",\"betrag\":119.0}", false, KiAnbieterTyp.MISTRAL, "m"));
+
+        assertThat(service.analyze(pdf.toString())).get()
+                .extracting(ZugferdDaten::getRechnungsnummer).isEqualTo("2026/01/00001");
+
+        ArgumentCaptor<KiAnfrage> anfrage = ArgumentCaptor.forClass(KiAnfrage.class);
+        verify(kiDienst).sende(eq(KiFunktion.DOKUMENT_ANALYSE), anfrage.capture());
+        assertThat(anfrage.getValue().dateien()).singleElement()
+                .extracting(KiTeil.Datei::mimeType).isEqualTo("application/pdf");
+    }
+
+    @Test
+    void anbieterFehlerFuehrtZuLeeremErgebnis() throws Exception {
+        Path pdf = ordner.resolve("rechnung.pdf");
+        Files.write(pdf, new byte[] {'%', 'P', 'D', 'F'});
+        when(kiDienst.verfuegbar(KiFunktion.DOKUMENT_ANALYSE)).thenReturn(true);
+        when(kiDienst.sende(eq(KiFunktion.DOKUMENT_ANALYSE), any()))
+                .thenThrow(new KiAnbieterFehler("Mistral hat gerade eine Störung (HTTP 503).", 503, true));
+
+        assertThat(service.analyze(pdf.toString())).isEmpty();
     }
 }

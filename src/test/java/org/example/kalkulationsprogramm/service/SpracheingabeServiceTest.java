@@ -1,8 +1,14 @@
 package org.example.kalkulationsprogramm.service;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterTyp;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiInhaltNichtLesbar;
+import org.example.kalkulationsprogramm.service.ki.KiNichtVerfuegbar;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.example.kalkulationsprogramm.dto.SpracheingabeErgebnis;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,13 +18,9 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Arrays;
-import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,16 +39,23 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SpracheingabeServiceTest {
 
-    private SystemSettingsService systemSettingsService;
-    private HttpClient httpClient;
+    private KiDienst kiDienst;
     private SpracheingabeService service;
 
     @BeforeEach
     void setUp() {
-        systemSettingsService = mock(SystemSettingsService.class);
-        httpClient = mock(HttpClient.class);
-        service = new SpracheingabeService(
-                systemSettingsService, JsonMapper.builderWithJackson2Defaults().build(), httpClient, "gemini-flash-latest");
+        kiDienst = mock(KiDienst.class);
+        service = new SpracheingabeService(kiDienst);
+    }
+
+    private void kiEingerichtet() {
+        when(kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE)).thenReturn(true);
+    }
+
+    private void kiAntwortet(String text) {
+        kiEingerichtet();
+        when(kiDienst.sende(Mockito.eq(KiFunktion.SPRACHEINGABE), Mockito.any(KiAnfrage.class)))
+                .thenReturn(new KiErgebnis(text, false, KiAnbieterTyp.MISTRAL, "voxtral-small-latest"));
     }
 
     private static byte[] audioBytes(int laenge) {
@@ -98,23 +107,6 @@ class SpracheingabeServiceTest {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private HttpResponse<String> mockGeminiAntwort(int status, String body) throws IOException, InterruptedException {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
-        HttpResponse<String> antwort = mock(HttpResponse.class);
-        when(antwort.statusCode()).thenReturn(status);
-        // lenient() unterdrueckt hier NUR Mockitos "Stub nie benutzt"-Warnung,
-        // weil der 200-Erfolgsfall den Stub braucht und der Fehlerfall nicht.
-        // lenient() belegt fuer sich allein NICHTS ueber das Verhalten des
-        // Dienstes - der eigentliche Beweis, dass antwort.body() im Fehlerfall
-        // nie gelesen wird, ist die explizite verify(antwort, never()).body()
-        // im aufrufenden Test.
-        Mockito.lenient().when(antwort.body()).thenReturn(body);
-        when(httpClient.send(Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<String>>any()))
-                .thenReturn(antwort);
-        return antwort;
-    }
-
     @Test
     void systemanweisungEnthaeltDieKernregeln() {
         String anweisung = SpracheingabeService.SYSTEM_ANWEISUNG;
@@ -140,28 +132,30 @@ class SpracheingabeServiceTest {
     }
 
     @Test
-    void koerperHatGenauEinenInlineDataPartUndKeinenText() {
+    void anfrageHatGenauEineTondateiUndKeinenText() {
         byte[] audio = {1, 2, 3, 4};
 
-        JsonNode koerper = service.baueKoerper(audio, "audio/webm");
-        JsonNode contents = koerper.path("contents");
+        KiAnfrage anfrage = service.baueAnfrage(audio, "audio/webm");
 
-        assertThat(contents.size()).isEqualTo(1);
-        JsonNode parts = contents.get(0).path("parts");
-        assertThat(parts.size()).isEqualTo(1);
-        assertThat(parts.get(0).path("inlineData").path("mimeType").asString("")).isEqualTo("audio/webm");
-        assertThat(parts.get(0).path("inlineData").path("data").asString(""))
-                .isEqualTo(Base64.getEncoder().encodeToString(audio));
+        assertThat(anfrage.systemAnweisung()).isEqualTo(SpracheingabeService.SYSTEM_ANWEISUNG);
+        assertThat(anfrage.nachrichten()).singleElement().satisfies(nachricht -> {
+            assertThat(nachricht.teile()).singleElement().isInstanceOfSatisfying(KiTeil.Datei.class, datei -> {
+                assertThat(datei.mimeType()).isEqualTo("audio/webm");
+                assertThat(datei.daten()).isEqualTo(audio);
+            });
+        });
     }
 
     @Test
-    void generationConfigHatTemperaturNullUndKeinSchema() {
-        JsonNode koerper = service.baueKoerper(new byte[] {1}, "audio/webm");
-        JsonNode konfiguration = koerper.path("generationConfig");
+    void anfrageHatTemperaturNullUndKeinSchemaUndKeineWerkzeuge() {
+        KiAnfrage anfrage = service.baueAnfrage(new byte[] {1}, "audio/webm");
 
-        assertThat(konfiguration.path("temperature").asDouble(0.0)).isEqualTo(0.0);
-        assertThat(konfiguration.path("responseMimeType").asString("")).isEqualTo("text/plain");
-        assertThat(konfiguration.has("responseSchema")).isFalse();
+        assertThat(anfrage.temperatur()).isEqualTo(0.0);
+        assertThat(anfrage.jsonAntwort()).isFalse();
+        assertThat(anfrage.schema()).isNull();
+        assertThat(anfrage.werkzeuge()).isEmpty();
+        assertThat(anfrage.websuche()).isFalse();
+        assertThat(anfrage.zeitlimit()).isEqualTo(Duration.ofSeconds(90));
     }
 
     @Test
@@ -190,7 +184,7 @@ class SpracheingabeServiceTest {
 
     @Test
     void zuGrosseAufnahmeWirdAbgewiesen() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        kiEingerichtet();
         InputStream zuGross = new ByteArrayInputStream(audioBytes(SpracheingabeService.MAX_AUDIO_BYTES + 1));
 
         assertThatThrownBy(() -> service.transkribiere(zuGross, "audio/webm"))
@@ -203,7 +197,7 @@ class SpracheingabeServiceTest {
         // Lesens ab, sondern puffert er (fehlerhaft) erst alles und prueft die
         // Groesse erst danach, liest er weit mehr als MAX_AUDIO_BYTES - genau
         // das soll dieser Test aufdecken.
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        kiEingerichtet();
         long angebotenGesamt = (long) SpracheingabeService.MAX_AUDIO_BYTES + 5_000_000;
         ZaehlenderStrom strom = new ZaehlenderStrom(angebotenGesamt);
 
@@ -219,7 +213,7 @@ class SpracheingabeServiceTest {
 
     @Test
     void ohneApiSchluesselFliegtEinEhrlicherFehler() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("");
+        when(kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE)).thenReturn(false);
         ZaehlenderStrom audio = new ZaehlenderStrom(10);
 
         assertThatThrownBy(() -> service.transkribiere(audio, "audio/webm"))
@@ -228,65 +222,82 @@ class SpracheingabeServiceTest {
         assertThat(audio.geleseneBytes())
                 .as("ohne Schluessel wird die Aufnahme gar nicht erst gelesen")
                 .isZero();
-        Mockito.verifyNoInteractions(httpClient);
+        Mockito.verify(kiDienst, Mockito.never()).sende(Mockito.any(), Mockito.any(KiAnfrage.class));
     }
 
     @Test
     void leereAufnahmeWirdMitSchluesselAbgewiesen() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        kiEingerichtet();
 
         assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(new byte[0]), "audio/webm"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Die Aufnahme ist leer.");
 
-        Mockito.verifyNoInteractions(httpClient);
+        Mockito.verify(kiDienst, Mockito.never()).sende(Mockito.any(), Mockito.any(KiAnfrage.class));
     }
 
     @Test
     void ohneApiSchluesselIstDieSpracheingabeAus() {
-        when(systemSettingsService.isGeminiConfigured()).thenReturn(false);
+        when(kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE)).thenReturn(false);
 
         assertThat(service.istVerfuegbar()).isFalse();
     }
 
     @Test
     void mitApiSchluesselIstDieSpracheingabeAn() {
-        when(systemSettingsService.isGeminiConfigured()).thenReturn(true);
+        when(kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE)).thenReturn(true);
 
         assertThat(service.istVerfuegbar()).isTrue();
     }
 
     @Test
-    void geminiFehlerAntwortLandetNichtInDerFehlermeldung() throws IOException, InterruptedException {
-        HttpResponse<String> antwort = mockGeminiAntwort(500, "{\"error\":\"Geheimes Transkript von Max Mustermann\"}");
+    void anbieterFehlerWirdZuNeutralerMeldung() {
+        kiEingerichtet();
+        when(kiDienst.sende(Mockito.eq(KiFunktion.SPRACHEINGABE), Mockito.any(KiAnfrage.class)))
+                .thenThrow(new KiAnbieterFehler("Mistral hat gerade eine Störung (HTTP 500).", 500, true));
         InputStream audio = new ByteArrayInputStream(audioBytes(10));
 
+        // Die Meldung des Anbieters enthaelt nie Inhalte (KiAnbieterFehler); der Dienst gibt
+        // trotzdem nur einen festen Satz weiter.
         assertThatThrownBy(() -> service.transkribiere(audio, "audio/webm"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageNotContaining("Geheimes Transkript");
-
-        // Der eigentliche Beweis (nicht nur die Fehlermeldung): der Dienst darf
-        // den Antwortkoerper im Fehlerfall nicht einmal LESEN, egal wohin er
-        // ihn danach schreiben wuerde. Sonst koennte das Transkript z.B. per
-        // Debugger, APM-Tool oder einer spaeteren Codeaenderung doch noch nach
-        // aussen dringen, ohne dass ein Test das je gemerkt haette.
-        Mockito.verify(antwort, Mockito.never()).body();
+                .hasMessage("Die Spracherkennung hat mit einem Fehler geantwortet.");
     }
 
     @Test
-    void antwortTextKommtGetrimmtZurueck() throws IOException, InterruptedException {
-        mockGeminiAntwort(200, """
-                {"candidates":[{"content":{"parts":[{"text":" Gelaender montiert.\\n"}]}}]}
-                """);
+    void nichtLesbaresFormatKommtMitKlartextBeimNutzerAn() {
+        kiEingerichtet();
+        when(kiDienst.sende(Mockito.eq(KiFunktion.SPRACHEINGABE), Mockito.any(KiAnfrage.class)))
+                .thenThrow(new KiInhaltNichtLesbar("Mistral kann dieses Aufnahmeformat nicht lesen (audio/mp4)."));
+
+        // Dauerhaft statt „gerade nicht erreichbar“: 400 mit dem Grund (nur Anbieter und Format).
+        assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(audioBytes(10)), "audio/mp4"))
+                .isInstanceOf(SpracheingabeService.FormatNichtUnterstuetzt.class)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Aufnahmeformat");
+    }
+
+    @Test
+    void wirdDieFunktionMittendrinAusgeschaltetIstSieNichtEingerichtet() {
+        kiEingerichtet();
+        when(kiDienst.sende(Mockito.eq(KiFunktion.SPRACHEINGABE), Mockito.any(KiAnfrage.class)))
+                .thenThrow(new KiNichtVerfuegbar(KiFunktion.SPRACHEINGABE, "aus"));
+
+        assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(audioBytes(10)), "audio/webm"))
+                .isInstanceOf(SpracheingabeService.KiNichtEingerichtet.class);
+    }
+
+    @Test
+    void antwortTextKommtGetrimmtZurueck() {
+        kiAntwortet(" Gelaender montiert.\n");
         InputStream audio = new ByteArrayInputStream(audioBytes(10));
 
-        SpracheingabeErgebnis ergebnis = service.transkribiere(audio, "audio/webm");
+        SpracheingabeErgebnis ergebnis = service.transkribiere(audio, "audio/webm;codecs=opus");
 
         assertThat(ergebnis.text()).isEqualTo("Gelaender montiert.");
-        // Schlüssel im Header, nie in der URL (die steht in Fehlermeldungen)
-        ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
-        Mockito.verify(httpClient).send(anfrage.capture(), Mockito.any());
-        assertThat(anfrage.getValue().uri().toString()).doesNotContain("dummy-test-key");
-        assertThat(anfrage.getValue().headers().firstValue("x-goog-api-key")).hasValue("dummy-test-key");
+        ArgumentCaptor<KiAnfrage> anfrage = ArgumentCaptor.forClass(KiAnfrage.class);
+        Mockito.verify(kiDienst).sende(Mockito.eq(KiFunktion.SPRACHEINGABE), anfrage.capture());
+        assertThat(anfrage.getValue().dateien()).singleElement()
+                .satisfies(datei -> assertThat(datei.mimeType()).isEqualTo("audio/webm"));
     }
 }

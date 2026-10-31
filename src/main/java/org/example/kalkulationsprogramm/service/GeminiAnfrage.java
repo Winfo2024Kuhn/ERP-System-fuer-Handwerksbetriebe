@@ -37,12 +37,9 @@ public final class GeminiAnfrage {
         return mitSchluessel(URI.create(MODELLE_URL), schluessel);
     }
 
-    /**
-     * Lohnt ein zweiter Versuch? Bei Ueberlastung (429) und Stoerungen bei Google (5xx) ja; andere
-     * Fehler (falscher Schluessel, ungueltige Anfrage) kommen beim naechsten Mal genauso.
-     */
-    public static boolean istVoruebergehend(int status) {
-        return status == 429 || (status >= 500 && status < 600);
+    /** Liste der Modelle mit großer Seite, um eingestellte Modellnamen nachzuschlagen. */
+    public static HttpRequest.Builder modellListe(String schluessel, int seitenGroesse) {
+        return mitSchluessel(URI.create(MODELLE_URL + "?pageSize=" + seitenGroesse), schluessel);
     }
 
     /** Fehlerantwort der API gekürzt fürs Log. */

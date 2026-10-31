@@ -12,7 +12,7 @@ import { Input } from './ui/input';
 import { Select } from './ui/select-custom';
 import { DatePicker } from './ui/datepicker';
 import type { LieferantDokument } from '../types';
-import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../features/ki/useKiAktiv';
+import { KI_AUS_ERKLAERUNG, useKiFunktionAktiv } from '../features/ki/useKiAktiv';
 
 interface LieferantDokumentImportModalProps {
     isOpen: boolean;
@@ -79,7 +79,7 @@ export function LieferantDokumentImportModal({
 }: LieferantDokumentImportModalProps) {
     // Ohne KI liest das Backend nur E-Rechnungen (ZUGFeRD-PDF, XRechnung-XML) selbst aus;
     // alles andere kommt leer zurück und wird von Hand eingetragen.
-    const kiAktiv = useKiAktiv();
+    const kiAktiv = useKiFunktionAktiv('DOKUMENT_ANALYSE');
     const [step, setStep] = useState<Step>('upload');
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);

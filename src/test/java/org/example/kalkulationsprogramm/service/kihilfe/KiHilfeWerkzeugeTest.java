@@ -3,11 +3,12 @@ package org.example.kalkulationsprogramm.service.kihilfe;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import org.example.kalkulationsprogramm.service.LocalRagService;
 import org.example.kalkulationsprogramm.service.LocalRagService.Bereich;
 import org.example.kalkulationsprogramm.service.LocalRagService.CodeChunkResult;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
+import org.example.kalkulationsprogramm.service.ki.KiWerkzeug;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,23 +46,24 @@ class KiHilfeWerkzeugeTest {
         return new CodeChunkResult(SEITE + "::" + name, inhalt, SEITE, "frontend-page", "component", name, false);
     }
 
-    private JsonNode aufruf(String name, String args) throws Exception {
-        return objectMapper.readTree("{\"id\":\"a1\",\"name\":\"" + name + "\",\"args\":" + args + "}");
+    private KiTeil.WerkzeugAufruf aufruf(String name, String args) throws Exception {
+        return new KiTeil.WerkzeugAufruf("a1", name, objectMapper.readTree(args));
     }
 
     @Test
     @DisplayName("Deklarationen: zwei Werkzeuge mit Pflichtfeldern und Bereichen")
     void deklarationen() {
-        ArrayNode deklarationen = werkzeuge.deklarationen();
+        List<KiWerkzeug> deklarationen = werkzeuge.deklarationen();
 
-        assertThat(deklarationen).extracting(d -> d.path("name").asString(""))
+        assertThat(deklarationen).extracting(KiWerkzeug::name)
                 .containsExactly(KiHilfeWerkzeuge.SUCHEN, KiHilfeWerkzeuge.LESEN);
-        JsonNode suchen = deklarationen.get(0).path("parameters");
+        assertThat(deklarationen.get(0).beschreibung()).contains("Wissensbasis");
+        JsonNode suchen = deklarationen.get(0).parameter();
         assertThat(suchen.path("required").toString()).contains("suchbegriffe", "hinweis");
         assertThat(suchen.path("properties").path("bereich").path("enum").toString())
                 .contains("bedienung", "technik", "alles");
         assertThat(suchen.path("properties").path("bereich").path("format").asString("")).isEqualTo("enum");
-        assertThat(deklarationen.get(1).path("parameters").path("required").toString()).contains("datei");
+        assertThat(deklarationen.get(1).parameter().path("required").toString()).contains("datei");
     }
 
     @Test

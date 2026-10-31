@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class EmailKiClassificationService {
 
-    private final EmailClassificationGeminiClient geminiClient;
+    private final EmailClassificationKiClient kiClient;
     private final EmailRepository emailRepository;
     private final ObjectMapper objectMapper;
 
@@ -127,9 +127,9 @@ public class EmailKiClassificationService {
      */
     @Transactional(readOnly = true)
     public ClassificationResult classify(Email email, List<Projekt> projekte, List<Anfrage> anfragen) {
-        if (!geminiClient.isEnabled()) {
-            log.debug("[KI-Classify] Gemini deaktiviert (kein API-Key) – überspringe KI-Zuordnung");
-            return ClassificationResult.none("Gemini deaktiviert");
+        if (!kiClient.isEnabled()) {
+            log.debug("[KI-Classify] Keine KI für die E-Mail-Zuordnung eingerichtet – überspringe KI-Zuordnung");
+            return ClassificationResult.none("KI nicht eingerichtet");
         }
 
         if (projekte.isEmpty() && anfragen.isEmpty()) {
@@ -138,7 +138,7 @@ public class EmailKiClassificationService {
 
         try {
             String userPrompt = buildUserPrompt(email, projekte, anfragen);
-            String response = geminiClient.chat(CLASSIFICATION_SYSTEM_PROMPT, userPrompt);
+            String response = kiClient.chat(CLASSIFICATION_SYSTEM_PROMPT, userPrompt);
             return parseResponse(response, projekte, anfragen);
         } catch (Exception e) {
             // Nur die Fehlerart: Parse-Fehler zitieren die Antwort, die auf E-Mail-Inhalten beruht.

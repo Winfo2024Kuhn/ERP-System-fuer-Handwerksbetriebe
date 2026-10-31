@@ -5,7 +5,7 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.example.kalkulationsprogramm.service.EmailClassificationGeminiClient;
+import org.example.kalkulationsprogramm.service.EmailClassificationKiClient;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService.ClassificationResult;
 import org.junit.jupiter.api.Test;
@@ -35,7 +35,7 @@ class EmailKiClassificationControllerTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private EmailClassificationGeminiClient geminiClient;
+    private EmailClassificationKiClient geminiClient;
 
     @MockitoBean
     private EmailKiClassificationService classificationService;
@@ -62,6 +62,7 @@ class EmailKiClassificationControllerTest {
     @Test
     void getStatus_returnsGeminiEnabledState() throws Exception {
         when(geminiClient.isEnabled()).thenReturn(true);
+        when(geminiClient.anbieter()).thenReturn("gemini");
 
         mockMvc.perform(get("/api/email-ki/status"))
                 .andExpect(status().isOk())
@@ -73,6 +74,7 @@ class EmailKiClassificationControllerTest {
     @Test
     void getStatus_geminiMissingKey_returnsDisabled() throws Exception {
         when(geminiClient.isEnabled()).thenReturn(false);
+        when(geminiClient.anbieter()).thenReturn("keiner");
 
         mockMvc.perform(get("/api/email-ki/status"))
                 .andExpect(status().isOk())

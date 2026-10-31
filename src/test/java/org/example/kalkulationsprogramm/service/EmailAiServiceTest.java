@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.service;
 
 import org.example.kalkulationsprogramm.dto.Email.EmailSchreibstil;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,14 +21,14 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class EmailAiServiceTest {
 
     @Mock
-    private SystemSettingsService systemSettingsService;
+    private KiDienst kiDienst;
 
     private EmailAiService service;
 
     @BeforeEach
     void setUp() {
-        service = new EmailAiService(new ObjectMapper(), systemSettingsService);
-        // Kein echter Gemini-Aufruf in Unit-Tests
+        service = new EmailAiService(new ObjectMapper(), kiDienst);
+        // Kein echter KI-Aufruf in Unit-Tests
         ReflectionTestUtils.setField(service, "enabled", false);
     }
 
@@ -39,7 +40,7 @@ class EmailAiServiceTest {
                     assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
                     assertThat(ex.getReason()).isEqualTo("Kein Mail-Verlauf vorhanden – bitte einen anderen Stil wählen.");
                 });
-        verifyNoInteractions(systemSettingsService);
+        verifyNoInteractions(kiDienst);
     }
 
     @Test

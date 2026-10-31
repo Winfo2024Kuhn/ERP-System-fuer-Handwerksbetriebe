@@ -5,12 +5,12 @@ import { KiHilfeChat } from '../KiHilfeChat';
 import { AnrufFensterHost } from '../../features/telefon/AnrufFensterHost';
 import { useBerechtigungenJeBenutzer } from '../../hooks/useBerechtigungenJeBenutzer';
 import { ZeiterfassungSchutz } from '../../features/zeiterfassung/ZeiterfassungSchutz';
-import { useKiAktiv } from '../../features/ki/useKiAktiv';
+import { useKiFunktionAktiv } from '../../features/ki/useKiAktiv';
 
 export function MainLayout() {
   const { pathname } = useLocation();
   useBerechtigungenJeBenutzer();
-  const kiAktiv = useKiAktiv();
+  const kiHilfeAktiv = useKiFunktionAktiv('PROGRAMM_HILFE');
   const isEmailCenter = pathname === '/emails' || pathname.startsWith('/emails/');
   return (
     <div className="h-dvh bg-slate-50 flex flex-col overflow-hidden">
@@ -44,7 +44,7 @@ export function MainLayout() {
         stellt seinen Offen-Zustand aus dem localStorage wieder her und ginge
         sonst von selbst auf, obwohl niemand eine Antwort bekäme.
       */}
-      {kiAktiv && <KiHilfeChat />}
+      {kiHilfeAktiv && <KiHilfeChat />}
 
       {/* Großes Anruf-Fenster bei eingehenden Anrufen (nur mit Telefon-Recht) */}
       <AnrufFensterHost />

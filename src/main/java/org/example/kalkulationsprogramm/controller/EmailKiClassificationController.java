@@ -6,7 +6,7 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.example.kalkulationsprogramm.service.EmailClassificationGeminiClient;
+import org.example.kalkulationsprogramm.service.EmailClassificationKiClient;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService.ClassificationResult;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class EmailKiClassificationController {
 
-    private final EmailClassificationGeminiClient geminiClient;
+    private final EmailClassificationKiClient kiClient;
     private final EmailKiClassificationService classificationService;
     private final EmailRepository emailRepository;
     private final ProjektRepository projektRepository;
@@ -43,13 +43,13 @@ public class EmailKiClassificationController {
     }
 
     /**
-     * Status der KI-Email-Zuordnung (Gemini-API verfuegbar?).
+     * Status der KI-Email-Zuordnung: läuft sie, und über welchen Anbieter?
      */
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {
-        boolean enabled = geminiClient.isEnabled();
+        boolean enabled = kiClient.isEnabled();
         return ResponseEntity.ok(Map.of(
-                "provider", "gemini",
+                "provider", kiClient.anbieter(),
                 "enabled", enabled,
                 "available", enabled
         ));

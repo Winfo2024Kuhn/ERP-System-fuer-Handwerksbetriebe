@@ -30,7 +30,7 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDateiablage;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.testsupport.LieferantDateiablageImTestordner;
@@ -72,7 +72,7 @@ class RechnungsuebersichtUploadTest {
     @MockitoBean private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @MockitoBean private MitarbeiterRepository mitarbeiterRepository;
     @MockitoBean private LieferantenRepository lieferantenRepository;
-    @MockitoBean private GeminiDokumentAnalyseService geminiService;
+    @MockitoBean private DokumentAnalyseService dokumentAnalyseService;
     @MockitoBean private LieferantDokumentRepository lieferantDokumentRepository;
     @MockitoBean private LieferantDokumentZugriffService zugriffService;
     @MockitoBean private LieferantDokumentDateiService dokumentDateiService;
@@ -347,13 +347,13 @@ class RechnungsuebersichtUploadTest {
 
         private void analyseLiefert(String dateiname) {
             var ergebnis = LieferantDokumentDto.MultiInvoiceAnalyzeResponse.builder().pageRange("1-2").build();
-            given(geminiService.analyzeFileForMultipleInvoices(any(), eq(dateiname)))
+            given(dokumentAnalyseService.analyzeFileForMultipleInvoices(any(), eq(dateiname)))
                     .willReturn(new ArrayList<>(List.of(ergebnis)));
         }
 
         private Path analysierterPfad(String dateiname) {
             ArgumentCaptor<Path> captor = ArgumentCaptor.forClass(Path.class);
-            verify(geminiService).analyzeFileForMultipleInvoices(captor.capture(), eq(dateiname));
+            verify(dokumentAnalyseService).analyzeFileForMultipleInvoices(captor.capture(), eq(dateiname));
             return captor.getValue();
         }
 
@@ -394,7 +394,7 @@ class RechnungsuebersichtUploadTest {
             mockMvc.perform(multipart("/api/rechnungsuebersicht/analyze-upload").file(zuGrosseDatei()))
                     .andExpect(status().isBadRequest());
 
-            verifyNoInteractions(geminiService);
+            verifyNoInteractions(dokumentAnalyseService);
         }
 
         @ParameterizedTest(name = "[{index}] »{0}«")
@@ -406,7 +406,7 @@ class RechnungsuebersichtUploadTest {
             mockMvc.perform(multipart("/api/rechnungsuebersicht/analyze-upload").file(datei(rohName)))
                     .andExpect(status().isBadRequest());
 
-            verifyNoInteractions(geminiService);
+            verifyNoInteractions(dokumentAnalyseService);
         }
 
         @Test
@@ -417,13 +417,13 @@ class RechnungsuebersichtUploadTest {
             mockMvc.perform(multipart("/api/rechnungsuebersicht/analyze-upload").file(leer))
                     .andExpect(status().isBadRequest());
 
-            verifyNoInteractions(geminiService);
+            verifyNoInteractions(dokumentAnalyseService);
         }
 
         @Test
         @DisplayName("Fehler in der Analyse: 500, Temp-Datei wird trotzdem gelöscht")
         void fehlerInDerAnalyseRaeumtAuf() throws Exception {
-            given(geminiService.analyzeFileForMultipleInvoices(any(), eq("rechnung.pdf")))
+            given(dokumentAnalyseService.analyzeFileForMultipleInvoices(any(), eq("rechnung.pdf")))
                     .willThrow(new IllegalStateException("Dienst nicht erreichbar"));
 
             mockMvc.perform(multipart("/api/rechnungsuebersicht/analyze-upload").file(datei("rechnung.pdf")))

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, PenLine, Sparkles, X } from 'lucide-react';
-import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../../features/ki/useKiAktiv';
+import { KI_AUS_ERKLAERUNG, useKiFunktionAktiv } from '../../features/ki/useKiAktiv';
 import { Button } from '../ui/button';
 import { ProjektSearchModal } from '../ProjektSearchModal';
 import { SchrittBilder, type GewaehltesBild } from './schritte/SchrittBilder';
@@ -35,7 +35,7 @@ const LEERER_STAND: TextStand = { titel: '', kurzbeschreibung: '', textHtml: '' 
  */
 export function BeitragAssistent({ offen, onAbbrechen, onFertig }: BeitragAssistentProps) {
     // Ohne KI-Schlüssel bleibt der KI-Weg sichtbar, aber gesperrt (mit Grund).
-    const kiAktiv = useKiAktiv();
+    const kiAktiv = useKiFunktionAktiv('BEITRAG_ENTWURF');
     const kiAusId = useId();
     const [schritt, setSchritt] = useState<Schritt>('projekt');
     const [projekt, setProjekt] = useState<Projekt | null>(null);

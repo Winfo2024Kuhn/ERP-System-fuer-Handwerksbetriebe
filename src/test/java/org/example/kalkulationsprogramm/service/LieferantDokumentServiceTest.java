@@ -49,7 +49,7 @@ class LieferantDokumentServiceTest {
     @Mock
     private EmailAttachmentRepository emailAttachmentRepository;
     @Mock
-    private GeminiDokumentAnalyseService geminiService;
+    private DokumentAnalyseService dokumentAnalyseService;
     @Mock
     private BelegZuordnungService belegZuordnungService;
     @Mock
@@ -544,7 +544,7 @@ class LieferantDokumentServiceTest {
                 .willAnswer(inv -> inv.getArgument(0));
 
         String kiAntwort = "{\"dokumentTyp\":\"ANGEBOT\",\"kommission\":\"BV Mustermann\"}";
-        given(geminiService.analyzeFile(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("angebot.pdf"),
+        given(dokumentAnalyseService.analyzeFile(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("angebot.pdf"),
                 org.mockito.ArgumentMatchers.anyBoolean()))
                 .willReturn(LieferantDokumentDto.AnalyzeResponse.builder()
                         .dokumentTyp(LieferantDokumentTyp.ANGEBOT)

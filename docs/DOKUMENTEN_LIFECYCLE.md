@@ -460,6 +460,6 @@ Unabhängig davon:
 | `RechnungPdfService` | PDF-Generierung mit OpenPDF |
 | `ZugferdErstellService` | ZUGFeRD-PDF erstellen |
 | `ZugferdExtractorService` | ZUGFeRD-Daten aus PDFs extrahieren |
-| `GeminiDokumentAnalyseService` | Analyse von Lieferanten-Dokumenten (ZUGFeRD → XML → KI) |
+| `DokumentAnalyseService` | Analyse von Lieferanten-Dokumenten (ZUGFeRD → XML → KI) |
 | `AutoMahnVersandService` | Automatische Zahlungserinnerungen und Mahnungen |
 | `ZugferdConverterService` | Baut `ZugferdDaten` aus einem Projekt-Offenen-Posten (derzeit ohne Aufrufer) |

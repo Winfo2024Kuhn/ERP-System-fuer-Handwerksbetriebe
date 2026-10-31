@@ -16,7 +16,7 @@ import { Button } from '../ui/button';
 import { Select } from '../ui/select-custom';
 import { useToast } from '../ui/toast';
 import { cn } from '../../lib/utils';
-import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../../features/ki/useKiAktiv';
+import { KI_AUS_ERKLAERUNG, useKiFunktionAktiv } from '../../features/ki/useKiAktiv';
 import {
     formatEuro,
     formatMenge,
@@ -72,7 +72,7 @@ interface ZiehDaten {
 export function PositionsAufteilung({ aufteilung, ziele, zielKarten, onProjektHinzufuegen }: PositionsAufteilungProps) {
     const toast = useToast();
     // Positionen liest nur die KI aus. Ohne KI-Schlüssel bleibt der Knopf sichtbar, aber gesperrt (mit Grund).
-    const kiAktiv = useKiAktiv();
+    const kiAktiv = useKiFunktionAktiv('DOKUMENT_ANALYSE');
     const kiAusId = useId();
     const { uebersicht, positionen, zuweisungen, weiseZu, weiseOffeneZu, anzahlOffen, anzahlWare, bezuege, setzeBezug } = aufteilung;
     const [ausgewaehlt, setAusgewaehlt] = useState<Set<number>>(() => new Set());

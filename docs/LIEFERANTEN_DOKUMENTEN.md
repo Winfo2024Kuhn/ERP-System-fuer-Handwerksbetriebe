@@ -88,7 +88,7 @@ Der alte Wert `EINGANGSRECHNUNG` wird beim Lesen auf `RECHNUNG` abgebildet (`Lie
 
 ### 3.1 Reihenfolge
 
-`GeminiDokumentAnalyseService` liest jedes Dokument in dieser Reihenfolge – beim E-Mail-Import (`analyzeAndReturnData`), beim Import am PC (`analyzeFile`) und bei einer Neuanalyse (`analysiereDokument`):
+`DokumentAnalyseService` liest jedes Dokument in dieser Reihenfolge – beim E-Mail-Import (`analyzeAndReturnData`), beim Import am PC (`analyzeFile`) und bei einer Neuanalyse (`analysiereDokument`):
 
 ```
 Datei
@@ -395,7 +395,7 @@ Die Endpunkte der Bestellübersicht (`/api/bestellungen-uebersicht/...`) stehen 
 
 | Service | Verantwortung |
 |---|---|
-| `GeminiDokumentAnalyseService` | Auslesen: ZUGFeRD → XML → KI |
+| `DokumentAnalyseService` | Auslesen: ZUGFeRD → XML → KI |
 | `ZugferdExtractorService` | ZUGFeRD-Daten aus PDFs |
 | `EmailAttachmentProcessingService` | E-Mail-Anhänge zu Lieferanten-Dokumenten machen |
 | `LieferantDokumentService` | Upload, Rechte je Abteilung, Löschen (GoBD) |

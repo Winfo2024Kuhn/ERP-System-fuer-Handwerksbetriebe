@@ -187,7 +187,7 @@ ZugferdDaten convertRechnung(Projekt projekt, ProjektGeschaeftsdokument rechnung
 
 ## 4. Auslese-Kette bei Eingangsrechnungen
 
-### 4.1 Priorisierte Extraktionsmethoden (`GeminiDokumentAnalyseService`)
+### 4.1 Priorisierte Extraktionsmethoden (`DokumentAnalyseService`)
 
 ```
 [1] PDF mit eingebettetem ZUGFeRD-XML?
@@ -381,6 +381,6 @@ Die Endpunkte unter `/api/anfragen` und `/api/projekte` stammen aus dem frühere
 | `RabattRechner` | Rabattbetrag und Rabatt-Text („Rabatt 2,5 %“) für PDF und E-Rechnung |
 | `ZugferdExtractorService` | ZUGFeRD-Daten aus eingehenden PDFs extrahieren |
 | `ZugferdConverterService` | `ZugferdDaten` aus einem Projekt-Offenen-Posten bauen (ohne Aufrufer, zur Entfernung vorgeschlagen) |
-| `GeminiDokumentAnalyseService` | Auslese-Kette ZUGFeRD → XML → KI für Lieferanten-Dokumente |
+| `DokumentAnalyseService` | Auslese-Kette ZUGFeRD → XML → KI für Lieferanten-Dokumente |
 | `PdfAiExtractorService` | PDF-Inhaltsextraktion per KI (Gemini, Ausweichlösung Ollama) |
 | `RechnungPdfService` | Erzeugt das sichtbare PDF, in das das XML eingebettet wird |

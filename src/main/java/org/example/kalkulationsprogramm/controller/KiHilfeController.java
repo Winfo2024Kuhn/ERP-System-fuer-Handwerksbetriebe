@@ -49,6 +49,8 @@ public class KiHilfeController {
     static final int MAX_FEHLERMELDUNGEN = 2_000;
     static final int MAX_SICHTBARER_INHALT = 10_000;
 
+    static final String FEHLER_KEIN_ANBIETER =
+            "Die KI-Hilfe ist gerade aus. Unter Einstellungen → KI-Funktionen steht, warum.";
     static final String FEHLER_ALLGEMEIN = "KI-Hilfe ist gerade nicht verfügbar. Bitte versuche es später erneut.";
     static final String FEHLER_ZU_LANGE = "Die KI hat zu lange gebraucht. Bitte stelle die Frage noch einmal, gern etwas genauer.";
     static final String FEHLER_AUSGELASTET = "Die KI-Hilfe ist gerade ausgelastet. Bitte versuche es gleich noch einmal.";
@@ -125,6 +127,9 @@ public class KiHilfeController {
             emitter.complete();
         } catch (VerbindungBeendet e) {
             log.info("KI-Hilfe: Browser hat die Verbindung beendet");
+        } catch (KiHilfeService.KeinPassenderAnbieter e) {
+            log.info("KI-Hilfe: kein passender KI-Anbieter eingerichtet");
+            fehlerMelden(emitter, FEHLER_KEIN_ANBIETER);
         } catch (KiHilfeService.ZeitlimitErreicht e) {
             log.warn("KI-Hilfe: Gesamtfrist erreicht");
             fehlerMelden(emitter, FEHLER_ZU_LANGE);
