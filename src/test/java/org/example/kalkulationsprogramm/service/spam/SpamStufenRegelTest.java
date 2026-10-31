@@ -101,9 +101,10 @@ class SpamStufenRegelTest {
         }
 
         @Test
-        void harmloserLernfilterGehtVorGefaehrlichemAnhangAllein() {
-            // Reihenfolge laut Regel: KEIN_SPAM (B ≤ 0,20 und R < 40) wird vor UNSICHER geprüft.
-            assertThat(SpamStufenRegel.bestimme(0.1, 0, true, VIEL, VIEL)).isEqualTo(SpamStufe.KEIN_SPAM);
+        void gefaehrlicherAnhangBleibtUnsicherTrotzHarmlosemLernfilter() {
+            // Inhaber-Entscheidung: Der Hinweis erscheint immer, verschoben wird nichts.
+            assertThat(SpamStufenRegel.bestimme(0.1, 0, true, VIEL, VIEL)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.0, 39, true, VIEL, VIEL)).isEqualTo(SpamStufe.UNSICHER);
         }
 
         @Test

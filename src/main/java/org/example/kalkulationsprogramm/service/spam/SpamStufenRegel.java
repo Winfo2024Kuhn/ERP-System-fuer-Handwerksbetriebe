@@ -13,8 +13,9 @@ import org.example.kalkulationsprogramm.domain.SpamStufe;
  * <ul>
  *   <li><b>SPAM:</b> (B ≥ 0,95 und R ≥ 25) oder (B ≥ 0,99 und je mindestens 50 Spam- und
  *       Kein-Spam-Trainingsmails) oder (R ≥ 85 und B fehlt oder B &gt; 0,20).</li>
+ *   <li><b>UNSICHER:</b> gefährlicher Anhang (immer, auch bei harmlosem B).</li>
  *   <li><b>KEIN_SPAM:</b> B ≤ 0,20 und R &lt; 40.</li>
- *   <li><b>UNSICHER:</b> B ≥ 0,60 oder R ≥ 40 oder gefährlicher Anhang.</li>
+ *   <li><b>UNSICHER:</b> B ≥ 0,60 oder R ≥ 40.</li>
  *   <li>Sonst KEIN_SPAM.</li>
  * </ul>
  * Reine Logik ohne Datenbank.
@@ -81,10 +82,15 @@ public final class SpamStufenRegel {
         if (regelPunkte >= REGEL_SICHER && (b == null || b > LERNFILTER_HARMLOS)) {
             return SpamStufe.SPAM;
         }
+        // Inhaber-Entscheidung: Ein Anhang, der Programme starten kann, bekommt immer den Hinweis –
+        // auch wenn der Lernfilter die Mail für harmlos hält. Verschoben wird dadurch nichts.
+        if (gefaehrlicherAnhang) {
+            return SpamStufe.UNSICHER;
+        }
         if (b != null && b <= LERNFILTER_HARMLOS && regelPunkte < REGEL_VERDACHT) {
             return SpamStufe.KEIN_SPAM;
         }
-        if ((b != null && b >= LERNFILTER_VERDACHT) || regelPunkte >= REGEL_VERDACHT || gefaehrlicherAnhang) {
+        if ((b != null && b >= LERNFILTER_VERDACHT) || regelPunkte >= REGEL_VERDACHT) {
             return SpamStufe.UNSICHER;
         }
         return SpamStufe.KEIN_SPAM;

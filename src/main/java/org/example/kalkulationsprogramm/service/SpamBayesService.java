@@ -95,18 +95,6 @@ public class SpamBayesService {
     /** Erlaubte Anhang-Endung (nach Kleinschreibung). */
     private static final Pattern ANHANG_ENDUNG = Pattern.compile("[a-z0-9]{1,10}");
 
-    /**
-     * Anhänge, die Programme oder Makros ausführen können. Gleiche Liste wie
-     * {@code SpamFilterService.DANGEROUS_EXTENSIONS}; zusammenführen, sobald {@code service/spam}
-     * eine gemeinsame Liste anbietet.
-     */
-    private static final Set<String> GEFAEHRLICHE_ENDUNGEN = Set.of(
-            "exe", "bat", "cmd", "com", "scr", "pif", "cpl",
-            "js", "vbs", "wsf", "wsh", "ps1", "sh",
-            "jar", "msi", "msp", "mst",
-            "docm", "xlsm", "pptm", "dotm", "xltm",
-            "hta", "inf", "reg", "rgs", "sct", "lnk", "iso", "img");
-
     /** Max. Tokens pro Email (verhindert Dominanz langer Emails). */
     private static final int MAX_TOKENS_PER_EMAIL = 500;
 
@@ -290,32 +278,22 @@ public class SpamBayesService {
 
     /**
      * Zerleger Version 2: Endungen der Anhänge ({@code anhang_pdf}, höchstens fünf verschiedene,
-     * alphabetisch – unabhängig von der Reihenfolge, in der die Anhänge geladen werden) und
-     * {@code anhang_gefaehrlich}. Eingebettete Bilder (Signatur-Logos) zählen nicht als Anhang;
-     * die Gefahr-Prüfung sieht trotzdem alle Dateien.
+     * alphabetisch – unabhängig von der Reihenfolge, in der die Anhänge geladen werden).
+     * Eingebettete Bilder (Signatur-Logos) zählen nicht als Anhang. Gefährliche Anhänge kommen
+     * über {@code signal_gefaehrlicher_anhang} (siehe {@link SpamSignale}), nicht doppelt.
      */
     private void addAnhangTokens(Set<String> tokens, Collection<EmailAttachment> anhaenge) {
         if (anhaenge == null || anhaenge.isEmpty()) {
             return;
         }
         Set<String> endungen = new TreeSet<>();
-        boolean gefaehrlich = false;
         for (EmailAttachment anhang : anhaenge) {
             String endung = anhang != null ? dateiEndung(anhang.getOriginalFilename()) : null;
-            if (endung == null) {
-                continue;
-            }
-            if (GEFAEHRLICHE_ENDUNGEN.contains(endung)) {
-                gefaehrlich = true;
-            }
-            if (!anhang.isInline()) {
+            if (endung != null && !anhang.isInline()) {
                 endungen.add(endung);
             }
         }
         endungen.stream().limit(MAX_ANHANG_ENDUNGEN).forEach(e -> tokens.add("anhang_" + e));
-        if (gefaehrlich) {
-            tokens.add("anhang_gefaehrlich");
-        }
     }
 
     /**

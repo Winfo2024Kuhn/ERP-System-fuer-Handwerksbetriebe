@@ -773,7 +773,7 @@ class SpamBayesServiceTest {
             assertThat(tokens).contains(
                     "angebot", "from_domain_gmx.de", "from_tld_de",
                     "from_freemail", "replyto_domain_abzocke-beispiel.com", "replyto_abweichend",
-                    "anhang_pdf", "anhang_exe", "anhang_gefaehrlich");
+                    "anhang_pdf", "anhang_exe", "signal_gefaehrlicher_anhang");
             // eingebettete Bilder sind kein Anhang
             assertThat(tokens).doesNotContain("anhang_png");
         }
@@ -854,7 +854,8 @@ class SpamBayesServiceTest {
 
             Set<String> tokens = service.tokenize(email);
 
-            assertThat(tokens).contains("anhang_gefaehrlich");
+            // Kommt über das gemeinsame Signal, kein eigenes Anhang-Token (sonst zählte es doppelt).
+            assertThat(tokens).contains("signal_gefaehrlicher_anhang").doesNotContain("anhang_gefaehrlich");
             assertThat(tokens).doesNotContain("anhang_js");
         }
 

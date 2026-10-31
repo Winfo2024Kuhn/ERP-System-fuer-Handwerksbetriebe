@@ -106,6 +106,9 @@ public final class SpamSignale {
             return false;
         }
         for (EmailAttachment anhang : email.getAttachments()) {
+            if (anhang == null) {
+                continue;
+            }
             String name = anhang.getOriginalFilename();
             int punkt = name == null ? -1 : name.lastIndexOf('.');
             if (punkt > 0 && GEFAEHRLICHE_ENDUNGEN.contains(name.substring(punkt + 1).toLowerCase(Locale.ROOT))) {

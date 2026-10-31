@@ -162,6 +162,15 @@ class SpamSignaleTest {
         }
 
         @Test
+        void leererListeneintragWirdUebersprungen() {
+            Email email = mail("info@musterfirma.example");
+            email.getAttachments().add(null);
+            email.getAttachments().add(anhang("start.exe"));
+
+            assertThat(SpamSignale.hatGefaehrlichenAnhang(email)).isTrue();
+        }
+
+        @Test
         void ohneAnhangListeKeinSignal() {
             Email email = mail("info@musterfirma.example");
             email.setAttachments(null);
