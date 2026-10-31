@@ -361,6 +361,170 @@ class UnifiedEmailControllerTest {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // SPAM-STUFEN: „Vielleicht Spam“ und Warnhinweise
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    @DisplayName("Spam-Verdacht, Gründe und Warnhinweis im DTO")
+    class SpamHinweise {
+
+        private Email unsicher(Long id) {
+            Email email = createTestEmail(id, "Ihr Konto wurde gesperrt", "service@example.com");
+            email.setSpamStufe(org.example.kalkulationsprogramm.domain.SpamStufe.UNSICHER);
+            given(emailRepository.findById(id)).willReturn(Optional.of(email));
+            return email;
+        }
+
+        @Test
+        @DisplayName("Liste: UNSICHER ohne Handentscheidung ergibt Verdacht, Gründe getrimmt, Unbekanntes bleibt")
+        void listeLiefertVerdachtUndGruende() throws Exception {
+            Email email = unsicher(60L);
+            email.setSpamGruende(" ABSENDER_GEFAELSCHT, ,ANTWORT_UMGELEITET,NEU_UNBEKANNT ");
+            email.setWarnhinweis(org.example.kalkulationsprogramm.domain.AbzockeArt.BRANCHENBUCH);
+            given(emailRepository.findUnassigned()).willReturn(Collections.emptyList());
+            given(emailRepository.findInboxFiltered()).willReturn(List.of(email));
+
+            mockMvc.perform(get("/api/emails/inbox"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].spamVerdacht").value(true))
+                    .andExpect(jsonPath("$[0].spamGruende").value(org.hamcrest.Matchers.contains(
+                            "ABSENDER_GEFAELSCHT", "ANTWORT_UMGELEITET", "NEU_UNBEKANNT")))
+                    .andExpect(jsonPath("$[0].warnhinweis").value("BRANCHENBUCH"));
+        }
+
+        @Test
+        @DisplayName("Detail: dieselben Felder wie in der Liste")
+        void detailLiefertVerdachtUndWarnhinweis() throws Exception {
+            Email email = unsicher(61L);
+            email.setSpamGruende("GEFAEHRLICHER_ANHANG");
+            email.setWarnhinweis(org.example.kalkulationsprogramm.domain.AbzockeArt.BANKVERBINDUNG_GEAENDERT);
+
+            mockMvc.perform(get("/api/emails/61"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.spamVerdacht").value(true))
+                    .andExpect(jsonPath("$.spamGruende[0]").value("GEFAEHRLICHER_ANHANG"))
+                    .andExpect(jsonPath("$.warnhinweis").value("BANKVERBINDUNG_GEAENDERT"));
+        }
+
+        @Test
+        @DisplayName("Ohne Stufe, Gründe und Warnung: kein Verdacht, leere Liste, kein Warnhinweis")
+        void ohneAllesLeer() throws Exception {
+            Email email = createTestEmail(62L, "Angebot Treppe", "max@example.com");
+            email.setSpamGruende("   ");
+            given(emailRepository.findById(62L)).willReturn(Optional.of(email));
+
+            mockMvc.perform(get("/api/emails/62"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.spamVerdacht").value(false))
+                    .andExpect(jsonPath("$.spamGruende").isEmpty())
+                    .andExpect(jsonPath("$.warnhinweis").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("Kein Verdacht, wenn die Mail schon Spam ist")
+        void keinVerdachtBeiSpam() throws Exception {
+            unsicher(63L).setSpam(true);
+            mockMvc.perform(get("/api/emails/63"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.spamVerdacht").value(false));
+        }
+
+        @Test
+        @DisplayName("Kein Verdacht, wenn jemand schon entschieden hat")
+        void keinVerdachtNachHandentscheidung() throws Exception {
+            unsicher(64L).setUserSpamVerdict("HAM");
+            mockMvc.perform(get("/api/emails/64"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.spamVerdacht").value(false));
+        }
+
+        @Test
+        @DisplayName("Stufe SPAM oder KEIN_SPAM ist kein Verdacht")
+        void andereStufenKeinVerdacht() throws Exception {
+            unsicher(65L).setSpamStufe(org.example.kalkulationsprogramm.domain.SpamStufe.KEIN_SPAM);
+            unsicher(66L).setSpamStufe(org.example.kalkulationsprogramm.domain.SpamStufe.SPAM);
+            mockMvc.perform(get("/api/emails/65")).andExpect(jsonPath("$.spamVerdacht").value(false));
+            mockMvc.perform(get("/api/emails/66")).andExpect(jsonPath("$.spamVerdacht").value(false));
+        }
+
+        @Test
+        @DisplayName("Gründe mit HTML kommen unverändert als Text zurück (Anzeige maskiert)")
+        void gruendeMitHtmlUnveraendert() throws Exception {
+            unsicher(67L).setSpamGruende("<script>alert(1)</script>,ABSENDER_GEFAELSCHT");
+            mockMvc.perform(get("/api/emails/67"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.spamGruende[0]").value("<script>alert(1)</script>"))
+                    .andExpect(jsonPath("$.spamGruende[1]").value("ABSENDER_GEFAELSCHT"));
+        }
+
+        @Test
+        @DisplayName("„Ist Spam“ leert die Stufe, markiert als Spam und trainiert")
+        void markSpamLeertStufe() throws Exception {
+            Email email = unsicher(68L);
+
+            mockMvc.perform(post("/api/emails/68/mark-spam")).andExpect(status().isOk());
+
+            org.assertj.core.api.Assertions.assertThat(email.getSpamStufe()).isNull();
+            org.assertj.core.api.Assertions.assertThat(email.isSpam()).isTrue();
+            org.assertj.core.api.Assertions.assertThat(email.getUserSpamVerdict()).isEqualTo("SPAM");
+            verify(spamBayesService).train(email, true);
+        }
+
+        @Test
+        @DisplayName("„Kein Spam“ im Posteingang: nur Hinweis weg und lernen – Ordner bleibt")
+        void markNotSpamImPosteingangLaesstOrdner() throws Exception {
+            Email email = unsicher(69L);
+            email.setNewsletter(true);
+
+            mockMvc.perform(post("/api/emails/69/mark-not-spam")).andExpect(status().isOk());
+
+            org.assertj.core.api.Assertions.assertThat(email.getSpamStufe()).isNull();
+            org.assertj.core.api.Assertions.assertThat(email.isSpam()).isFalse();
+            org.assertj.core.api.Assertions.assertThat(email.isNewsletter())
+                    .as("Newsletter bleibt Newsletter – „Kein Spam“ verschiebt hier nichts").isTrue();
+            org.assertj.core.api.Assertions.assertThat(email.getDeletedAt()).isNull();
+            org.assertj.core.api.Assertions.assertThat(email.getUserSpamVerdict()).isEqualTo("HAM");
+            verify(spamBayesService).train(email, false);
+            verify(emailImportService, never()).deleteEmailFromServer(any());
+        }
+
+        @Test
+        @DisplayName("„Kein Spam“ aus dem Spam-Ordner holt die Mail wie bisher in den Posteingang")
+        void markNotSpamAusSpamOrdner() throws Exception {
+            Email email = unsicher(70L);
+            email.setSpam(true);
+            email.setNewsletter(true);
+
+            mockMvc.perform(post("/api/emails/70/mark-not-spam")).andExpect(status().isOk());
+
+            org.assertj.core.api.Assertions.assertThat(email.isSpam()).isFalse();
+            org.assertj.core.api.Assertions.assertThat(email.isNewsletter()).isFalse();
+            org.assertj.core.api.Assertions.assertThat(email.getSpamStufe()).isNull();
+        }
+
+        @Test
+        @DisplayName("Verschieben nach Posteingang oder Spam ist auch eine Handentscheidung und leert die Stufe")
+        void verschiebenLeertStufe() throws Exception {
+            Email inbox = unsicher(71L);
+            Email spam = unsicher(72L);
+            given(emailRepository.findAllById(List.of(71L))).willReturn(List.of(inbox));
+            given(emailRepository.findAllById(List.of(72L))).willReturn(List.of(spam));
+
+            mockMvc.perform(post("/api/emails/bulk/move-to-folder")
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                            .content("{\"ids\":[71],\"targetFolder\":\"inbox\"}"))
+                    .andExpect(status().isOk());
+            mockMvc.perform(post("/api/emails/bulk/move-to-folder")
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                            .content("{\"ids\":[72],\"targetFolder\":\"spam\"}"))
+                    .andExpect(status().isOk());
+
+            org.assertj.core.api.Assertions.assertThat(inbox.getSpamStufe()).isNull();
+            org.assertj.core.api.Assertions.assertThat(spam.getSpamStufe()).isNull();
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // BLOCK SENDER
     // ═══════════════════════════════════════════════════════════════
 

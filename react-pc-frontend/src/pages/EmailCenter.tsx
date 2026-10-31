@@ -1,6 +1,8 @@
 import { EmailNavigationGuard } from '../features/email/EmailNavigationGuard';
 import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailDetailHeader } from '../features/email/EmailDetailHeader';
+import { SpamListenSchilder } from '../features/email/SpamHinweise';
+import { keinSpamNimmtAusListe } from '../features/email/spamHinweisTexte';
 import { EmailZuordnungLink } from '../features/email/EmailZuordnungLink';
 import { PostfachSchild } from '../features/email/PostfachSchild';
 import { useAbsenderPostfaecher } from '../features/email/useAbsenderPostfaecher';
@@ -1138,9 +1140,39 @@ export default function EmailCenter() {
         }
     };
 
+    /**
+     * „Kein Spam“ außerhalb des Spam-Ordners („Vielleicht Spam“): Die Mail bleibt in der Liste,
+     * nur der Hinweis verschwindet. Schlägt es fehl, kommt der Hinweis zurück.
+     */
+    const handleSpamVerdachtVerwerfen = async (ids: number[]) => {
+        const idsSet = new Set(ids);
+        const setzeVerdacht = (verdacht: boolean) => {
+            const anpassen = (email: EmailItem) => idsSet.has(email.id) ? { ...email, spamVerdacht: verdacht } : email;
+            setEmails(prev => prev.map(anpassen));
+            setGlobalSearchResults(prev => prev.map(anpassen));
+            setSelectedEmail(prev => prev ? anpassen(prev) : prev);
+        };
+        setzeVerdacht(false);
+        try {
+            const antworten = await Promise.all(ids.map(id => fetch(`/api/emails/${id}/mark-not-spam`, { method: 'POST' })));
+            if (antworten.some(res => !res.ok)) throw new Error('mark-not-spam fehlgeschlagen');
+            toast.info(ids.length === 1 ? 'Kein Spam – das Programm merkt es sich' : `${ids.length} E-Mails als kein Spam markiert`);
+            folderCacheRef.current.clear();
+        } catch (err) {
+            console.error(err);
+            setzeVerdacht(true);
+            toast.error('„Kein Spam“ konnte nicht gespeichert werden.');
+            refreshEmailsSilently();
+        }
+    };
+
     const handleMarkNotSpam = async (emailIds?: number[]) => {
         const ids = emailIds || (selectedEmail ? [selectedEmail.id] : []);
         if (ids.length === 0) return;
+        if (!keinSpamNimmtAusListe(activeFolder)) {
+            await handleSpamVerdachtVerwerfen(ids);
+            return;
+        }
 
         // Optimistic: remove from list immediately
         const idsSet = new Set(ids);
@@ -2163,17 +2195,7 @@ export default function EmailCenter() {
                                                 {email.attachments.length}
                                             </div>
                                         )}
-                                        {email.spamScore != null && email.spamScore > 0 && (
-                                            <div className={cn(
-                                                "flex items-center gap-1 text-xs px-1.5 py-0.5 rounded",
-                                                email.spamScore >= 90 ? "text-red-700 bg-red-100 border border-red-200 font-semibold" :
-                                                email.spamScore >= 50 ? "text-orange-700 bg-orange-50 border border-orange-200" :
-                                                "text-slate-500 bg-slate-50 border border-slate-200"
-                                            )}>
-                                                <ShieldAlert className="w-3 h-3" />
-                                                {email.spamScore}% Spam
-                                            </div>
-                                        )}
+                                        <SpamListenSchilder email={email} />
                                         <PostfachSchild postfaecher={email.postfaecher} />
                                         <EmailZuordnungLink zuordnung={ermittleEmailZuordnung(email)} variante="liste" />
                                         {draftsByEmailId.has(email.id) && (

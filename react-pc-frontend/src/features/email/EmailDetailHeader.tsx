@@ -12,6 +12,7 @@ import { getSenderName, type EmailItem, type FolderType } from './emailCenterMod
 import { ermittleEmailZuordnung } from './emailZuordnung';
 import { EmailZuordnungLink } from './EmailZuordnungLink';
 import { PostfachSchild } from './PostfachSchild';
+import { SpamHinweise } from './SpamHinweise';
 
 type Action = () => void | Promise<void>;
 type MoveTarget = 'inbox' | 'trash' | 'spam' | 'newsletter';
@@ -123,5 +124,7 @@ export function EmailDetailHeader({ email, folder, onReply, onReplyAll, onForwar
             <span className="shrink-0 text-slate-500">Gehört zu:</span>
             <EmailZuordnungLink zuordnung={zuordnung} variante="kopf" />
         </div>}
+        <SpamHinweise email={email} folder={folder} busy={busy}
+            onSpam={() => void run(onSpam)} onNotSpam={() => void run(onNotSpam)} />
     </header>;
 }
