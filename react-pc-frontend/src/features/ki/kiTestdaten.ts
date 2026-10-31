@@ -129,11 +129,11 @@ export function berechneFunktionen(
 export function kiModellListe(teil: Partial<KiModellListe> = {}): KiModellListe {
     return {
         modelle: [
-            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-large-latest', name: 'Mistral Large', bilder: true },
-            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-medium-latest', name: 'Mistral Medium', bilder: true },
-            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-small-latest', name: 'Mistral Small', bilder: false },
-            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-test-text', name: 'Mistral Test Text', bilder: null },
-            { anbieter: 'GEMINI', anbieterName: 'Google Gemini', modell: 'gemini-test-pro', name: 'Gemini Test Pro', bilder: true },
+            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-large-latest', name: 'Mistral Large', bilder: true, ton: false },
+            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-medium-latest', name: 'Mistral Medium', bilder: true, ton: false },
+            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-small-latest', name: 'Mistral Small', bilder: false, ton: false },
+            { anbieter: 'MISTRAL', anbieterName: 'Mistral', modell: 'mistral-test-text', name: 'Mistral Test Text', bilder: null, ton: null },
+            { anbieter: 'GEMINI', anbieterName: 'Google Gemini', modell: 'gemini-test-pro', name: 'Gemini Test Pro', bilder: true, ton: null },
         ],
         hinweise: [],
         ...teil,

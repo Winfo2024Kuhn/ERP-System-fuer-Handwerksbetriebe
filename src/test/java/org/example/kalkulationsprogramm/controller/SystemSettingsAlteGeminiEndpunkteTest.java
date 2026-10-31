@@ -1,9 +1,11 @@
 package org.example.kalkulationsprogramm.controller;
 
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.example.kalkulationsprogramm.config.CloudflareAccessJwtFilter;
@@ -15,18 +17,23 @@ import org.example.kalkulationsprogramm.service.PostfachUmzugService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** KI-Schlüssel entfernen (Issue #274): nur Admins, nur mit CSRF-Token. */
+/**
+ * Die alten Gemini-Endpunkte unter {@code /api/settings/gemini} gibt es nicht mehr: Schlüssel
+ * pflegt die Oberfläche über {@code /api/settings/ki/**} (prüft auch die Schlüsselzeichen, siehe
+ * {@code KiEinstellungenControllerTest}). Auch ein Admin mit CSRF-Token erreicht hier nichts mehr.
+ */
 @WebMvcTest(SystemSettingsController.class)
-@Import({ SecurityConfig.class, SystemSettingsGeminiSecurityTest.Filters.class })
-class SystemSettingsGeminiSecurityTest {
+@Import({ SecurityConfig.class, SystemSettingsAlteGeminiEndpunkteTest.Filters.class })
+class SystemSettingsAlteGeminiEndpunkteTest {
 
     @TestConfiguration
     static class Filters {
@@ -45,29 +52,15 @@ class SystemSettingsGeminiSecurityTest {
     @MockitoBean private org.example.kalkulationsprogramm.service.openfile.ContainerFreigabe containerFreigabe;
 
     @Test
-    void ohneAnmeldungAbgewiesen() throws Exception {
-        mvc.perform(delete("/api/settings/gemini").with(csrf())).andExpect(status().isUnauthorized());
-        verify(settings, never()).entferneGeminiApiKey();
-    }
-
-    @Test
-    @WithMockUser(roles = "USER")
-    void ohneAdminrechtVerboten() throws Exception {
-        mvc.perform(delete("/api/settings/gemini").with(csrf())).andExpect(status().isForbidden());
-        verify(settings, never()).entferneGeminiApiKey();
-    }
-
-    @Test
     @WithMockUser(roles = "ADMIN")
-    void ohneCsrfVerboten() throws Exception {
-        mvc.perform(delete("/api/settings/gemini")).andExpect(status().isForbidden());
-        verify(settings, never()).entferneGeminiApiKey();
-    }
+    void alteGeminiEndpunkteSindWeg() throws Exception {
+        mvc.perform(get("/api/settings/gemini")).andExpect(status().isNotFound());
+        mvc.perform(put("/api/settings/gemini").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"apiKey\":\"test-gemini\\n456\"}")).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/settings/gemini").with(csrf())).andExpect(status().isNotFound());
+        mvc.perform(post("/api/settings/gemini/test").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"apiKey\":\"test-gemini-456\"}")).andExpect(status().isNotFound());
 
-    @Test
-    @WithMockUser(roles = "ADMIN")
-    void adminEntferntSchluessel() throws Exception {
-        mvc.perform(delete("/api/settings/gemini").with(csrf())).andExpect(status().isOk());
-        verify(settings).entferneGeminiApiKey();
+        verifyNoInteractions(settings);
     }
 }

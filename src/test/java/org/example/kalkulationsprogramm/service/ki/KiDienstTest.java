@@ -244,6 +244,46 @@ class KiDienstTest {
     }
 
     @Test
+    void verfuegbarkeitGleichtDenEinzelabfragenUndLiestDieEinstellungenNurEinmal() {
+        mitBegrenztemMistral();
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, false);
+        dienst.waehleFuerFunktion(KiFunktion.EMAIL_TEXT, new KiFunktionsWahl(KiAnbieterTyp.GEMINI, "gemini-eigen"));
+
+        long vorher = speicher.lesezugriffe();
+        boolean einzelnEingerichtet = dienst.irgendeinAnbieterEingerichtet();
+        List<KiFunktion> einzeln = java.util.Arrays.stream(KiFunktion.values()).filter(dienst::verfuegbar).toList();
+        long einzelZugriffe = speicher.lesezugriffe() - vorher;
+
+        vorher = speicher.lesezugriffe();
+        KiVerfuegbarkeit verfuegbarkeit = dienst.verfuegbarkeit();
+        long gemeinsameZugriffe = speicher.lesezugriffe() - vorher;
+
+        assertThat(verfuegbarkeit.irgendeinAnbieterEingerichtet()).isEqualTo(einzelnEingerichtet).isTrue();
+        assertThat(verfuegbarkeit.funktionen()).isEqualTo(einzeln)
+                // Ohne Ersatz fehlt, was der begrenzte Mistral nicht kann; die eigene Wahl läuft über Gemini.
+                .contains(KiFunktion.DOKUMENT_ANALYSE, KiFunktion.EMAIL_TEXT)
+                .doesNotContain(KiFunktion.SPRACHEINGABE, KiFunktion.PROGRAMM_HILFE, KiFunktion.KOSTENKONTO_VORSCHLAG);
+        // Auswahl, Ersatz-Schalter, je Anbieter der Schlüssel, je Funktion die eigene Wahl (eine mit Modell).
+        assertThat(gemeinsameZugriffe)
+                .isLessThanOrEqualTo(2 + 2 + KiFunktion.values().length + 1)
+                .isLessThan(einzelZugriffe / 2);
+    }
+
+    @Test
+    void verfuegbarkeitOhneSchluesselUndMitUnlesbaremSchluessel() {
+        assertThat(dienst.verfuegbarkeit()).isEqualTo(new KiVerfuegbarkeit(false, List.of()));
+
+        speicher.einstellungen.speichereSchluessel(gemini, GEMINI_SCHLUESSEL);
+        speicher.werte.put("ai.mistral.api-key", "v1:kaputt");
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, true);
+        dienst.waehleFuerFunktion(KiFunktion.SPRACHEINGABE, new KiFunktionsWahl(KiAnbieterTyp.GEMINI, null));
+
+        // Kein stiller Ersatz bei unlesbarem Schlüssel – nur die eigene Gemini-Wahl läuft.
+        assertThat(dienst.verfuegbarkeit())
+                .isEqualTo(new KiVerfuegbarkeit(true, List.of(KiFunktion.SPRACHEINGABE)));
+    }
+
+    @Test
     void sendeNimmtModellDerStufeUndDenSchluessel() {
         beideEingerichtet();
         speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, true);
@@ -362,15 +402,24 @@ class KiDienstTest {
     void modellListeNurChatModelleUndHinweisBeiFehlendemSchluessel() {
         speicher.einstellungen.speichereSchluessel(mistral, MISTRAL_SCHLUESSEL);
         mistral.modelle = List.of(
-                new KiModellInfo("mistral-large-latest", "Mistral Large", true, true, List.of()),
-                new KiModellInfo("mistral-ocr-latest", "OCR", null, false, List.of()));
+                new KiModellInfo("mistral-large-latest", "Mistral Large", true, false, true, List.of()),
+                new KiModellInfo("voxtral-small-latest", "Voxtral Small", false, true, true, List.of()),
+                new KiModellInfo("mistral-ocr-latest", "OCR", null, null, false, List.of()));
 
         KiModellListeDto liste = dienst.modellListe();
 
-        assertThat(liste.modelle()).singleElement().satisfies(modell -> {
+        assertThat(liste.modelle()).hasSize(2);
+        assertThat(liste.modelle().get(0)).satisfies(modell -> {
             assertThat(modell.anbieter()).isEqualTo("MISTRAL");
             assertThat(modell.modell()).isEqualTo("mistral-large-latest");
             assertThat(modell.bilder()).isTrue();
+            assertThat(modell.ton()).isFalse();
+        });
+        // Bilder und Ton reicht der Dienst so durch, wie der Anbieter sie meldet.
+        assertThat(liste.modelle().get(1)).satisfies(modell -> {
+            assertThat(modell.modell()).isEqualTo("voxtral-small-latest");
+            assertThat(modell.bilder()).isFalse();
+            assertThat(modell.ton()).isTrue();
         });
         assertThat(liste.hinweise()).singleElement().asString().startsWith("Google Gemini: Für diesen Anbieter");
     }

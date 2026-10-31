@@ -15,8 +15,8 @@ class KiModellPruefungTest {
     @Test
     void namenEnthaltenModellnamenUndAliasse() {
         List<KiModellInfo> modelle = List.of(
-                new KiModellInfo("mistral-medium-latest", "Mistral Medium", true, true, List.of("mistral-medium-2508")),
-                new KiModellInfo("voxtral-small-latest", null, null, false, null));
+                new KiModellInfo("mistral-medium-latest", "Mistral Medium", true, false, true, List.of("mistral-medium-2508")),
+                new KiModellInfo("voxtral-small-latest", null, null, true, false, null));
 
         assertThat(KiModellPruefung.namen(modelle))
                 .containsExactlyInAnyOrder("mistral-medium-latest", "mistral-medium-2508", "voxtral-small-latest");

@@ -26,6 +26,18 @@ function bilderText(bilder: boolean | null): string {
     return 'Bilder: unbekannt';
 }
 
+/** Ton nur nennen, wenn der Anbieter es sagt – „unbekannt“ stünde sonst fast überall. */
+function tonText(ton: boolean | null | undefined): string | null {
+    if (ton === true) return 'versteht Ton';
+    if (ton === false) return 'kein Ton';
+    return null;
+}
+
+function unterzeile(m: KiModellEintrag): string {
+    const teile = [m.name && m.name !== m.modell ? m.modell : null, bilderText(m.bilder), tonText(m.ton)];
+    return teile.filter((teil): teil is string => !!teil).join(' · ');
+}
+
 interface KiModellSucheProps {
     id?: string;
     /** Nur Modelle dieses Anbieters werden angeboten. */
@@ -38,7 +50,7 @@ interface KiModellSucheProps {
     modellListe: KiModellListeZustand;
     /** Name für Screenreader, wenn kein Label mit `htmlFor` auf `id` zeigt. */
     ariaLabel?: string;
-    /** Was die Funktion braucht – für den Hinweis, wenn das Modell keine Bilder kann. */
+    /** Was die Funktion braucht – für den Hinweis, wenn das Modell keine Bilder oder keinen Ton kann. */
     braucht?: KiFaehigkeit[];
     disabled?: boolean;
 }
@@ -62,10 +74,16 @@ export function KiModellSuche({
     const optionen: SearchableSelectOption[] = sichtbar.map((m: KiModellEintrag) => ({
         value: m.modell,
         label: m.name && m.name !== m.modell ? m.name : m.modell,
-        sublabel: m.name && m.name !== m.modell ? `${m.modell} · ${bilderText(m.bilder)}` : bilderText(m.bilder),
+        sublabel: unterzeile(m),
     }));
     const gewaehlt = vomAnbieter.find((m) => m.modell === wert);
-    const brauchtBilder = braucht.includes('BILD');
+    // Nur warnen, wenn der Anbieter es ausdrücklich verneint (null = er sagt es nicht).
+    const warnungen = [
+        braucht.includes('BILD') && gewaehlt?.bilder === false
+            ? `Dieses Modell kann laut ${anbieter.name} keine Bilder lesen – diese Funktion braucht das.` : null,
+        braucht.includes('AUDIO') && gewaehlt?.ton === false
+            ? `Dieses Modell kann laut ${anbieter.name} keinen Ton verstehen – diese Funktion braucht das.` : null,
+    ].filter((warnung): warnung is string => !!warnung);
 
     const filterLeiste = (
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -137,12 +155,12 @@ export function KiModellSuche({
                 leerenText="Zurück auf das Standard-Modell"
                 disabled={disabled}
             />
-            {brauchtBilder && gewaehlt?.bilder === false && (
-                <p className="mt-1 flex items-start gap-1.5 text-xs text-amber-800">
+            {warnungen.map((warnung) => (
+                <p key={warnung} className="mt-1 flex items-start gap-1.5 text-xs text-amber-800">
                     <AlertTriangle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    Dieses Modell kann laut {anbieter.name} keine Bilder lesen – diese Funktion braucht das.
+                    {warnung}
                 </p>
-            )}
+            ))}
         </div>
     );
 }

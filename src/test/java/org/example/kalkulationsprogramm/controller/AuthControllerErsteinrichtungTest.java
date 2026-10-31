@@ -1,11 +1,14 @@
 package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiVerfuegbarkeit;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -74,7 +77,7 @@ class AuthControllerErsteinrichtungTest {
         @DisplayName("Admin mit Mailserver, ohne Gemini: keine Ersteinrichtung, KI aus")
         void adminOhneGeminiMussNichtZurErsteinrichtung() throws Exception {
             given(settingsService.isInitialConfigurationRequired()).willReturn(false);
-            given(kiDienst.irgendeinAnbieterEingerichtet()).willReturn(false);
+            given(kiDienst.verfuegbarkeit()).willReturn(new KiVerfuegbarkeit(false, List.of()));
 
             mockMvc.perform(get("/api/auth/me").principal(anmeldung(FrontendUserRole.ADMIN)))
                     .andExpect(status().isOk())
@@ -87,7 +90,7 @@ class AuthControllerErsteinrichtungTest {
         @DisplayName("Admin ohne Mailserver: muss zur Ersteinrichtung")
         void adminOhneMailserverMussZurErsteinrichtung() throws Exception {
             given(settingsService.isInitialConfigurationRequired()).willReturn(true);
-            given(kiDienst.irgendeinAnbieterEingerichtet()).willReturn(true);
+            given(kiDienst.verfuegbarkeit()).willReturn(new KiVerfuegbarkeit(true, List.of()));
 
             mockMvc.perform(get("/api/auth/me").principal(anmeldung(FrontendUserRole.ADMIN)))
                     .andExpect(status().isOk())
@@ -99,9 +102,8 @@ class AuthControllerErsteinrichtungTest {
         @DisplayName("Normaler Nutzer: nie Ersteinrichtung, KI-Status kommt trotzdem mit")
         void nutzerSiehtKiStatusAberNieErsteinrichtung() throws Exception {
             given(settingsService.isInitialConfigurationRequired()).willReturn(true);
-            given(kiDienst.irgendeinAnbieterEingerichtet()).willReturn(true);
-            given(kiDienst.verfuegbar(org.example.kalkulationsprogramm.service.ki.KiFunktion.DOKUMENT_ANALYSE))
-                    .willReturn(true);
+            given(kiDienst.verfuegbarkeit())
+                    .willReturn(new KiVerfuegbarkeit(true, List.of(KiFunktion.DOKUMENT_ANALYSE)));
 
             mockMvc.perform(get("/api/auth/me").principal(anmeldung(FrontendUserRole.USER)))
                     .andExpect(status().isOk())

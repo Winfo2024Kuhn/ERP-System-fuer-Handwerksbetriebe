@@ -13,7 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.example.kalkulationsprogramm.repository.SystemSettingRepository;
 import org.junit.jupiter.api.Test;
 
-/** Schlüssel-Test der KI-Einstellungen: ungültige Zeichen ohne Netzaufruf und ohne Schlüssel in der Meldung. */
+/** Gemini-Schlüssel in den Einstellungen: Entfernen schaltet die KI aus. Prüfen und Speichern: {@code KiEinstellungen}. */
 class SystemSettingsServiceGeminiSchluesselTest {
 
     private final SystemSettingRepository repository = mock(SystemSettingRepository.class);
@@ -31,20 +31,5 @@ class SystemSettingsServiceGeminiSchluesselTest {
         assertThat(gespeichert.getValue().getValue()).isEmpty();
         when(repository.findById("ai.gemini.api-key")).thenReturn(Optional.of(gespeichert.getValue()));
         assertThat(service.isGeminiConfigured()).isFalse();
-    }
-
-    @Test
-    void leererSchluesselWirdAbgewiesen() {
-        assertThat(service.testGeminiApiKey("  ").message()).isEqualTo("Kein API Key angegeben.");
-    }
-
-    @Test
-    void schluesselMitZeilenumbruchNenntSichNichtSelbst() {
-        var ergebnis = service.testGeminiApiKey("dummy-test\n-key");
-
-        assertThat(ergebnis.success()).isFalse();
-        assertThat(ergebnis.message())
-                .isEqualTo("Der API Key enthält ungültige Zeichen. Bitte neu kopieren.")
-                .doesNotContain("dummy-test");
     }
 }

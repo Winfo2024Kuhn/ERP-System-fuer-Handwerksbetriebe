@@ -10,7 +10,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -132,7 +134,22 @@ public class KiDienst {
 
     /** Hat irgendein Anbieter einen Schlüssel? Dann sind KI-Knöpfe grundsätzlich an. */
     public boolean irgendeinAnbieterEingerichtet() {
-        return anbieterListe.stream().anyMatch(einstellungen::hatSchluessel);
+        return new Stand().irgendeinAnbieterEingerichtet();
+    }
+
+    /**
+     * Was die Oberfläche beim Anmelden wissen muss: ob überhaupt ein Anbieter eingerichtet ist und
+     * welche Funktionen gerade laufen. Liest die Einstellungen dafür nur einmal (ein {@link Stand}
+     * für alle Funktionen) – sonst läse jede Funktion Auswahl, Ersatz-Schalter und Schlüssel neu.
+     * Das Ergebnis ist dasselbe wie {@link #irgendeinAnbieterEingerichtet()} und
+     * {@link #verfuegbar(KiFunktion)} je Funktion.
+     */
+    public KiVerfuegbarkeit verfuegbarkeit() {
+        Stand stand = new Stand();
+        List<KiFunktion> funktionen = Arrays.stream(KiFunktion.values())
+                .filter(funktion -> zuordnung(funktion, List.of(), stand).verfuegbar())
+                .toList();
+        return new KiVerfuegbarkeit(stand.irgendeinAnbieterEingerichtet(), funktionen);
     }
 
     // ==================== Zuordnung ====================
@@ -142,21 +159,26 @@ public class KiDienst {
         return zuordnung(funktion, List.of());
     }
 
+    private KiZuordnung zuordnung(KiFunktion funktion, List<KiTeil.Datei> dateien) {
+        return zuordnung(funktion, dateien, new Stand());
+    }
+
     /**
      * @param dateien die Dateien einer konkreten Anfrage; ein Anbieter, der eines ihrer Formate
      *                nicht liest, kommt für diese Anfrage nicht in Frage (leer: nur die Fähigkeiten zählen)
+     * @param stand   die Einstellungen, auf denen die Entscheidung beruht
      */
-    private KiZuordnung zuordnung(KiFunktion funktion, List<KiTeil.Datei> dateien) {
-        Optional<KiFunktionsWahl> wahl = einstellungen.funktionsWahl(funktion);
+    private KiZuordnung zuordnung(KiFunktion funktion, List<KiTeil.Datei> dateien, Stand stand) {
+        Optional<KiFunktionsWahl> wahl = stand.funktionsWahl(funktion);
         KiAnbieter gewaehlt = anbieter(wahl.map(KiFunktionsWahl::anbieter)
-                .orElseGet(einstellungen::gewaehlterAnbieter));
+                .orElseGet(stand::gewaehlterAnbieter));
         Optional<String> hindernis = hindernis(gewaehlt, funktion, dateien);
-        if (hindernis.isEmpty() && einstellungen.hatSchluessel(gewaehlt)) {
+        if (hindernis.isEmpty() && stand.hatSchluessel(gewaehlt)) {
             return new KiZuordnung(funktion, KiZuordnung.Status.AKTIV, gewaehlt,
                     wahl.map(KiFunktionsWahl::modell).orElse(null), zusatzHinweis(gewaehlt, funktion).orElse(null));
         }
         if (hindernis.isEmpty()
-                && einstellungen.schluesselZustand(gewaehlt) == KiEinstellungen.SchluesselZustand.NICHT_LESBAR) {
+                && stand.schluesselZustand(gewaehlt) == KiEinstellungen.SchluesselZustand.NICHT_LESBAR) {
             // Der Betrieb hat diesen Anbieter eingerichtet, nur der Server kann den Schlüssel gerade nicht
             // lesen. Kein Ersatz: Sonst gingen Daten unbemerkt an einen anderen Anbieter (DSGVO).
             return new KiZuordnung(funktion, KiZuordnung.Status.AUS, null, null,
@@ -170,10 +192,10 @@ public class KiDienst {
         Optional<KiAnbieter> ersatz = anbieterListe.stream()
                 .filter(a -> a != gewaehlt)
                 .filter(a -> hindernis(a, funktion, dateien).isEmpty())
-                .filter(einstellungen::hatSchluessel)
+                .filter(stand::hatSchluessel)
                 .findFirst();
 
-        if (!einstellungen.ersatzErlaubt()) {
+        if (!stand.ersatzErlaubt()) {
             String zusatz = ersatz.isPresent() ? " Ersatz-Anbieter sind ausgeschaltet." : "";
             return new KiZuordnung(funktion, KiZuordnung.Status.AUS, null, null, grund + zusatz);
         }
@@ -185,6 +207,50 @@ public class KiDienst {
         }
         return new KiZuordnung(funktion, KiZuordnung.Status.AUS, null, null,
                 grund + " Kein anderer eingerichteter Anbieter kann das.");
+    }
+
+    /**
+     * Ein Blick auf die KI-Einstellungen, der jede Einstellung höchstens einmal liest (jeder Zugriff
+     * auf {@link KiEinstellungen} ist ein Datenbank-Read, ein Schlüssel wird dabei auch entschlüsselt).
+     * Gelesen wird erst, wenn eine Entscheidung den Wert braucht. Gilt nur für einen Aufruf: Jede
+     * einzelne Zuordnung nimmt einen frischen Stand, damit Änderungen sofort wirken.
+     */
+    private final class Stand {
+        private KiAnbieterTyp gewaehlterAnbieter;
+        private Boolean ersatzErlaubt;
+        private final Map<KiFunktion, Optional<KiFunktionsWahl>> wahlen = new EnumMap<>(KiFunktion.class);
+        private final Map<KiAnbieterTyp, KiEinstellungen.SchluesselZustand> schluessel =
+                new EnumMap<>(KiAnbieterTyp.class);
+
+        KiAnbieterTyp gewaehlterAnbieter() {
+            if (gewaehlterAnbieter == null) {
+                gewaehlterAnbieter = einstellungen.gewaehlterAnbieter();
+            }
+            return gewaehlterAnbieter;
+        }
+
+        boolean ersatzErlaubt() {
+            if (ersatzErlaubt == null) {
+                ersatzErlaubt = einstellungen.ersatzErlaubt();
+            }
+            return ersatzErlaubt;
+        }
+
+        Optional<KiFunktionsWahl> funktionsWahl(KiFunktion funktion) {
+            return wahlen.computeIfAbsent(funktion, einstellungen::funktionsWahl);
+        }
+
+        KiEinstellungen.SchluesselZustand schluesselZustand(KiAnbieter anbieter) {
+            return schluessel.computeIfAbsent(anbieter.typ(), typ -> einstellungen.schluesselZustand(anbieter));
+        }
+
+        boolean hatSchluessel(KiAnbieter anbieter) {
+            return schluesselZustand(anbieter) == KiEinstellungen.SchluesselZustand.VORHANDEN;
+        }
+
+        boolean irgendeinAnbieterEingerichtet() {
+            return anbieterListe.stream().anyMatch(this::hatSchluessel);
+        }
     }
 
     /**
@@ -304,7 +370,7 @@ public class KiDienst {
                 for (KiModellInfo info : modelleVon(anbieter, schluessel)) {
                     if (info.chat()) {
                         modelle.add(new KiModellListeDto.Modell(anbieter.typ().name(), anbieter.name(),
-                                info.modell(), info.name(), info.bilder()));
+                                info.modell(), info.name(), info.bilder(), info.ton()));
                     }
                 }
             } catch (KiAnbieterFehler e) {
@@ -336,21 +402,22 @@ public class KiDienst {
     // ==================== Übersicht ====================
 
     public KiEinstellungenDto uebersicht() {
+        Stand stand = new Stand();
         List<KiEinstellungenDto.Anbieter> anbieter = anbieterListe.stream()
-                .map(this::alsDto)
+                .map(a -> alsDto(a, stand))
                 .toList();
-        List<KiEinstellungenDto.Funktion> funktionen = List.of(KiFunktion.values()).stream()
-                .map(this::alsDto)
+        List<KiEinstellungenDto.Funktion> funktionen = Arrays.stream(KiFunktion.values())
+                .map(funktion -> alsDto(funktion, stand))
                 .toList();
         return new KiEinstellungenDto(
-                einstellungen.gewaehlterAnbieter().name(),
-                einstellungen.ersatzErlaubt(),
+                stand.gewaehlterAnbieter().name(),
+                stand.ersatzErlaubt(),
                 einstellungen.verschluesselungBereit(),
                 anbieter,
                 funktionen);
     }
 
-    private KiEinstellungenDto.Anbieter alsDto(KiAnbieter anbieter) {
+    private KiEinstellungenDto.Anbieter alsDto(KiAnbieter anbieter, Stand stand) {
         List<KiEinstellungenDto.Modell> modelle = List.of(KiModellStufe.values()).stream()
                 .map(stufe -> new KiEinstellungenDto.Modell(stufe.name(),
                         einstellungen.modell(anbieter, stufe), anbieter.standardModelle().get(stufe)))
@@ -360,17 +427,17 @@ public class KiDienst {
                 anbieter.name(),
                 anbieter.beschreibung(),
                 anbieter.datenstandort().name(),
-                einstellungen.hatSchluessel(anbieter),
-                einstellungen.schluesselZustand(anbieter) == KiEinstellungen.SchluesselZustand.NICHT_LESBAR,
+                stand.hatSchluessel(anbieter),
+                stand.schluesselZustand(anbieter) == KiEinstellungen.SchluesselZustand.NICHT_LESBAR,
                 anbieter.schluesselVerschluesselt(),
                 namen(anbieter.faehigkeiten()),
                 modelle);
     }
 
-    private KiEinstellungenDto.Funktion alsDto(KiFunktion funktion) {
-        KiZuordnung zuordnung = zuordnung(funktion);
+    private KiEinstellungenDto.Funktion alsDto(KiFunktion funktion, Stand stand) {
+        KiZuordnung zuordnung = zuordnung(funktion, List.of(), stand);
         KiAnbieter anbieter = zuordnung.anbieter();
-        KiEinstellungenDto.EigeneWahl eigeneWahl = einstellungen.funktionsWahl(funktion)
+        KiEinstellungenDto.EigeneWahl eigeneWahl = stand.funktionsWahl(funktion)
                 .map(wahl -> new KiEinstellungenDto.EigeneWahl(wahl.anbieter().name(), wahl.modell()))
                 .orElse(null);
         return new KiEinstellungenDto.Funktion(

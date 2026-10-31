@@ -86,6 +86,8 @@ export interface KiModellEintrag {
     name: string;
     /** Kann das Modell Bilder lesen? `null` = unbekannt. */
     bilder: boolean | null;
+    /** Versteht das Modell Ton? `null` = Anbieter sagt es nicht; fehlt bei älteren Servern. */
+    ton?: boolean | null;
 }
 
 export interface KiModellListe {

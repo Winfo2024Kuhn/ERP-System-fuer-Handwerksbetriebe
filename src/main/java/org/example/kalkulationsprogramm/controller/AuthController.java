@@ -1,6 +1,5 @@
 package org.example.kalkulationsprogramm.controller;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -22,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.service.ki.KiDienst;
-import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiVerfuegbarkeit;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -85,11 +84,12 @@ public class AuthController {
         boolean isAdmin = profile.hasRole(FrontendUserRole.ADMIN);
         boolean requiresInitialSetup = isAdmin && settingsService.isInitialConfigurationRequired();
         // Für alle Nutzer: ohne KI-Schlüssel blendet die Oberfläche KI-Knöpfe aus oder sperrt sie.
-        boolean kiAktiv = kiDienst.irgendeinAnbieterEingerichtet();
         // Je Funktion, ob sie gerade läuft: Knöpfe einer abgeschalteten Funktion (z. B. die
         // Programm-Hilfe, wenn nur Mistral eingerichtet ist) blendet die Oberfläche aus.
-        List<String> kiFunktionen = Arrays.stream(KiFunktion.values())
-                .filter(kiDienst::verfuegbar)
+        // Ein Aufruf, der die Einstellungen nur einmal liest – /me läuft bei jedem Seitenaufruf.
+        KiVerfuegbarkeit ki = kiDienst.verfuegbarkeit();
+        boolean kiAktiv = ki.irgendeinAnbieterEingerichtet();
+        List<String> kiFunktionen = ki.funktionen().stream()
                 .map(Enum::name)
                 .toList();
 

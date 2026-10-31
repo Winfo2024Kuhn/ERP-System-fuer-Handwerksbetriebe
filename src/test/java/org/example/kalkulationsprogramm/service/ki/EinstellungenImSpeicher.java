@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -43,5 +44,13 @@ final class EinstellungenImSpeicher {
         lenient().doAnswer(aufruf -> werte.put("ai.gemini.api-key", ""))
                 .when(settings).entferneGeminiApiKey();
         einstellungen = new KiEinstellungen(settings, secrets, umgebung);
+    }
+
+    /** Wie oft bisher aus {@code system_setting} gelesen wurde (jeder Aufruf ist im Betrieb ein DB-Read). */
+    long lesezugriffe() {
+        return mockingDetails(settings).getInvocations().stream()
+                .map(aufruf -> aufruf.getMethod().getName())
+                .filter(name -> name.equals("get") || name.equals("getGeminiApiKey"))
+                .count();
     }
 }

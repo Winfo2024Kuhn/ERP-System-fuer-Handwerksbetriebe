@@ -1,9 +1,5 @@
 package org.example.kalkulationsprogramm.service;
 
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -795,45 +791,6 @@ public class SystemSettingsService {
         } catch (MessagingException e) {
             log.warn("IMAP-Verbindung fehlgeschlagen: {}", e.getMessage());
             return TestResult.failure("Verbindung fehlgeschlagen: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Testet den Gemini API Key durch einen einfachen API-Aufruf.
-     */
-    public TestResult testGeminiApiKey(String eingabe) {
-        if (eingabe == null || eingabe.isBlank()) {
-            return TestResult.failure("Kein API Key angegeben.");
-        }
-        String apiKey = eingabe.strip();
-
-        try {
-            // Einfacher Model-List-Aufruf um den Key zu verifizieren
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
-            HttpRequest request = GeminiAnfrage.modellListe(apiKey)
-                    .timeout(Duration.ofSeconds(10))
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 200) {
-                return TestResult.success("API Key gültig! Verbindung zu Google Gemini erfolgreich.");
-            } else if (response.statusCode() == 400 || response.statusCode() == 403) {
-                return TestResult.failure("API Key ungültig oder keine Berechtigung (HTTP " + response.statusCode() + ").");
-            } else {
-                return TestResult.failure("Unerwartete Antwort von Google (HTTP " + response.statusCode() + ").");
-            }
-        } catch (IllegalArgumentException e) {
-            // Die JDK-Meldung zitiert den Header-Wert, also den Schlüssel.
-            log.warn("Gemini API Test: Schlüssel enthält ungültige Zeichen");
-            return TestResult.failure("Der API Key enthält ungültige Zeichen. Bitte neu kopieren.");
-        } catch (Exception e) {
-            log.warn("Gemini API Test fehlgeschlagen: {}", e.getClass().getSimpleName());
-            return TestResult.failure("Verbindungsfehler: " + e.getMessage());
         }
     }
 
