@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiZugang;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -92,15 +95,12 @@ public class BelegKiKostenkontoService {
     private final KostenstelleRepository kostenstelleRepository;
     private final SachkontoRepository sachkontoRepository;
     private final BelegRepository belegRepository;
-    private final SystemSettingsService systemSettingsService;
+    private final KiDienst kiDienst;
     private final ObjectMapper objectMapper;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .build();
-
-    @Value("${ai.gemini.model.dokument-analyse:gemini-3-flash-preview}")
-    private String geminiModel;
 
     @Value("${upload.path:uploads}")
     private String uploadPath = "uploads";
@@ -121,11 +121,13 @@ public class BelegKiKostenkontoService {
             return;
         }
 
-        String apiKey = systemSettingsService.getGeminiApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
+        // Werkzeuge kann bislang nur Gemini; darf die Funktion nicht ueber Gemini laufen, geht nichts an Google.
+        KiZugang zugang = kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG).orElse(null);
+        if (zugang == null) {
             beleg.setKiKostenkontoHinweis(
-                    "Kein KI-Schlüssel hinterlegt – das Programm kann nichts vorschlagen.");
-            log.warn("Kein Gemini-API-Key konfiguriert — KI-Agent uebersprungen fuer Beleg {}", beleg.getId());
+                    "Keine passende KI eingerichtet – das Programm kann nichts vorschlagen.");
+            log.warn("Keine KI fuer den Kostenkonto-Vorschlag eingerichtet — KI-Agent uebersprungen fuer Beleg {}",
+                    beleg.getId());
             return;
         }
 
@@ -138,7 +140,7 @@ public class BelegKiKostenkontoService {
         do {
             iteration++;
             log.debug("KI-Agent Beleg {} — Iteration {}", beleg.getId(), iteration);
-            JsonNode antwort = callGemini(apiKey, contents);
+            JsonNode antwort = callGemini(zugang, contents);
             if (antwort == null) {
                 log.warn("KI-Agent Beleg {}: leere Antwort in Iteration {}", beleg.getId(), iteration);
                 beleg.setKiKostenkontoHinweis("Die KI hat nicht geantwortet. Bitte von Hand wählen.");
@@ -412,7 +414,7 @@ public class BelegKiKostenkontoService {
     // Gemini-API mit Function-Calling
     // ---------------------------------------------------------------------
 
-    private JsonNode callGemini(String apiKey, ArrayNode contents) {
+    private JsonNode callGemini(KiZugang zugang, ArrayNode contents) {
         String requestBody;
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -427,7 +429,7 @@ public class BelegKiKostenkontoService {
             return null;
         }
 
-        HttpRequest req = GeminiAnfrage.generateContent(geminiModel, apiKey)
+        HttpRequest req = GeminiAnfrage.generateContent(zugang.modell(), zugang.schluessel())
                 .timeout(Duration.ofSeconds(45))
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();

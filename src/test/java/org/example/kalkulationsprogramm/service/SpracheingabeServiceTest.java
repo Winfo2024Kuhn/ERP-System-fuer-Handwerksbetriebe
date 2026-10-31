@@ -1,7 +1,10 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiZugang;
+import java.util.Optional;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.dto.SpracheingabeErgebnis;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,16 +40,19 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class SpracheingabeServiceTest {
 
-    private SystemSettingsService systemSettingsService;
+    private static final Optional<KiZugang> ZUGANG =
+            Optional.of(new KiZugang("dummy-test-key", "gemini-flash-latest"));
+
+    private KiDienst kiDienst;
     private HttpClient httpClient;
     private SpracheingabeService service;
 
     @BeforeEach
     void setUp() {
-        systemSettingsService = mock(SystemSettingsService.class);
+        kiDienst = mock(KiDienst.class);
         httpClient = mock(HttpClient.class);
         service = new SpracheingabeService(
-                systemSettingsService, JsonMapper.builderWithJackson2Defaults().build(), httpClient, "gemini-flash-latest");
+                kiDienst, JsonMapper.builderWithJackson2Defaults().build(), httpClient);
     }
 
     private static byte[] audioBytes(int laenge) {
@@ -100,7 +106,7 @@ class SpracheingabeServiceTest {
 
     @SuppressWarnings("unchecked")
     private HttpResponse<String> mockGeminiAntwort(int status, String body) throws IOException, InterruptedException {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        when(kiDienst.geminiZugang(KiFunktion.SPRACHEINGABE)).thenReturn(ZUGANG);
         HttpResponse<String> antwort = mock(HttpResponse.class);
         when(antwort.statusCode()).thenReturn(status);
         // lenient() unterdrueckt hier NUR Mockitos "Stub nie benutzt"-Warnung,
@@ -190,7 +196,7 @@ class SpracheingabeServiceTest {
 
     @Test
     void zuGrosseAufnahmeWirdAbgewiesen() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        when(kiDienst.geminiZugang(KiFunktion.SPRACHEINGABE)).thenReturn(ZUGANG);
         InputStream zuGross = new ByteArrayInputStream(audioBytes(SpracheingabeService.MAX_AUDIO_BYTES + 1));
 
         assertThatThrownBy(() -> service.transkribiere(zuGross, "audio/webm"))
@@ -203,7 +209,7 @@ class SpracheingabeServiceTest {
         // Lesens ab, sondern puffert er (fehlerhaft) erst alles und prueft die
         // Groesse erst danach, liest er weit mehr als MAX_AUDIO_BYTES - genau
         // das soll dieser Test aufdecken.
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        when(kiDienst.geminiZugang(KiFunktion.SPRACHEINGABE)).thenReturn(ZUGANG);
         long angebotenGesamt = (long) SpracheingabeService.MAX_AUDIO_BYTES + 5_000_000;
         ZaehlenderStrom strom = new ZaehlenderStrom(angebotenGesamt);
 
@@ -219,7 +225,7 @@ class SpracheingabeServiceTest {
 
     @Test
     void ohneApiSchluesselFliegtEinEhrlicherFehler() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("");
+        when(kiDienst.geminiZugang(KiFunktion.SPRACHEINGABE)).thenReturn(Optional.empty());
         ZaehlenderStrom audio = new ZaehlenderStrom(10);
 
         assertThatThrownBy(() -> service.transkribiere(audio, "audio/webm"))
@@ -233,7 +239,7 @@ class SpracheingabeServiceTest {
 
     @Test
     void leereAufnahmeWirdMitSchluesselAbgewiesen() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        when(kiDienst.geminiZugang(KiFunktion.SPRACHEINGABE)).thenReturn(ZUGANG);
 
         assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(new byte[0]), "audio/webm"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -244,14 +250,14 @@ class SpracheingabeServiceTest {
 
     @Test
     void ohneApiSchluesselIstDieSpracheingabeAus() {
-        when(systemSettingsService.isGeminiConfigured()).thenReturn(false);
+        when(kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE)).thenReturn(false);
 
         assertThat(service.istVerfuegbar()).isFalse();
     }
 
     @Test
     void mitApiSchluesselIstDieSpracheingabeAn() {
-        when(systemSettingsService.isGeminiConfigured()).thenReturn(true);
+        when(kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE)).thenReturn(true);
 
         assertThat(service.istVerfuegbar()).isTrue();
     }

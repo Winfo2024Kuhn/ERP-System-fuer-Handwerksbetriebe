@@ -24,3 +24,16 @@ export function useKiAktiv(): boolean {
     if (!auth) return true;
     return !!auth.user?.kiAktiv;
 }
+
+/**
+ * Läuft diese KI-Funktion gerade? Kann der gewählte KI-Anbieter sie nicht
+ * (z. B. die Programm-Hilfe, wenn nur Mistral eingerichtet ist), ist sie aus,
+ * obwohl andere KI-Knöpfe gehen. Ohne {@link AuthProvider} wie {@link useKiAktiv}.
+ */
+export function useKiFunktionAktiv(funktion: string): boolean {
+    const auth = useOptionalAuth();
+    if (!auth) return true;
+    const user = auth.user;
+    if (!user?.kiAktiv) return false;
+    return Array.isArray(user.kiFunktionen) ? user.kiFunktionen.includes(funktion) : true;
+}

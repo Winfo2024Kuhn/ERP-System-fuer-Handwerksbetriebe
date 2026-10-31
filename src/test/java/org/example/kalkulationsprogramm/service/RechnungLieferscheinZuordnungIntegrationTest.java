@@ -89,6 +89,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
     // Externes: KI-Aufruf (über Spy) und Dienste ohne Bezug zur Zuordnung
     @MockitoSpyBean private GeminiDokumentAnalyseService analyseSpy;
     @MockitoBean private ZugferdExtractorService zugferdExtractorService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ki.KiDienst kiDienst;
     @MockitoBean private BelegKiKostenkontoService kostenkontoService;
     @MockitoBean private BelegSplitService belegSplitService;
     @MockitoBean private BelegAuditService belegAuditService;

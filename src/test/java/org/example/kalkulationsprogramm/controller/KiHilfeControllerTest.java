@@ -284,6 +284,14 @@ class KiHilfeControllerTest {
     }
 
     @Test
+    void chat_ohnePassendenAnbieter_erklaertWarum() throws Exception {
+        given(kiHilfeService.chat(anyList(), any(), any())).willThrow(new KiHilfeService.KeinPassenderAnbieter());
+
+        assertThat(streamLesen(anfrage(frage("Frage"), null)))
+                .contains("event:fehler", KiHilfeController.FEHLER_KEIN_ANBIETER);
+    }
+
+    @Test
     void chat_streamZeitlimit_brichtDenDienstAb() throws Exception {
         CountDownLatch unterbrochen = haengenderDienst();
         MvcResult result = mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON).content(anfrage(frage("Hallo"), null)))

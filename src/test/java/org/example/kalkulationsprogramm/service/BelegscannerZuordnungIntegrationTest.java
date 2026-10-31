@@ -84,6 +84,7 @@ class BelegscannerZuordnungIntegrationTest {
     // Externes (KI über Spy) und Nachbardienste ohne Bezug zur Zuordnung
     @MockitoSpyBean private GeminiDokumentAnalyseService analyseSpy;
     @MockitoBean private ZugferdExtractorService zugferdExtractorService;
+    @MockitoBean private org.example.kalkulationsprogramm.service.ki.KiDienst kiDienst;
     @MockitoBean private BelegKiKostenkontoService kostenkontoService;
     @MockitoBean private BelegSplitService belegSplitService;
     @MockitoBean private KasseSaldoService kasseSaldoService;

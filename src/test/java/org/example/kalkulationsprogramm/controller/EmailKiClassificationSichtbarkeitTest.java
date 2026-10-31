@@ -27,7 +27,7 @@ import org.example.kalkulationsprogramm.repository.EmailAbsenderRepository;
 import org.example.kalkulationsprogramm.repository.EmailPostfachZuordnungRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.example.kalkulationsprogramm.service.EmailClassificationGeminiClient;
+import org.example.kalkulationsprogramm.service.EmailClassificationKiClient;
 import org.example.kalkulationsprogramm.service.EmailKiClassificationService;
 import org.example.kalkulationsprogramm.service.FrontendUserProfileService;
 import org.example.kalkulationsprogramm.service.PostfachSichtbarkeitService;
@@ -61,7 +61,7 @@ class EmailKiClassificationSichtbarkeitTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
-    @MockitoBean private EmailClassificationGeminiClient geminiClient;
+    @MockitoBean private EmailClassificationKiClient geminiClient;
     @MockitoBean private EmailKiClassificationService classificationService;
     @MockitoBean private EmailRepository emailRepository;
     @MockitoBean private ProjektRepository projektRepository;

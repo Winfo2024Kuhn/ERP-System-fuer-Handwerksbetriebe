@@ -2,11 +2,13 @@ package org.example.kalkulationsprogramm.service;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.Email.EmailSchreibstil;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.example.kalkulationsprogramm.util.EmailAiPostProcessor;
 import org.example.kalkulationsprogramm.util.EmailHtmlSanitizer;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,10 +17,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.regex.Pattern;
 
@@ -70,14 +68,10 @@ public class EmailAiService {
             "Entferne Signaturen, Grußformeln und den Namen des Absenders am Ende vollständig (z.B. 'LG Max', 'Max Mustermann', 'Mit freundlichen Grüßen'), da diese vom Programm automatisch angefügt werden. Der Text soll ohne Schlussformel enden.\n" +
             "Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im Format { \"email\": \"...\" }, wobei der Wert der verbesserte E-Mail-Text als HTML (ohne <html>/<body> Tags, nur <p>...) ist.";
 
-    private final ObjectMapper objectMapper;
-    private final SystemSettingsService systemSettingsService;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(60))
-            .build();
+    private static final Duration ZEITLIMIT = Duration.ofSeconds(90);
 
-    @Value("${ai.email.model:gemini-3-flash-preview}")
-    private String model;
+    private final ObjectMapper objectMapper;
+    private final KiDienst kiDienst;
 
     @Value("${ai.email.temperature:0.2}")
     private double temperature;
@@ -111,9 +105,9 @@ public class EmailAiService {
         String userPrompt = baueUserPrompt(trimmed, normalizedContext, gewaehlt);
 
         try {
-            String jsonResponse = rufGeminiApi(systemPrompt(gewaehlt), userPrompt);
-            if (jsonResponse == null) {
-                log.warn("Keine Antwort von Gemini AI");
+            String jsonResponse = rufKi(systemPrompt(gewaehlt), userPrompt);
+            if (jsonResponse.isBlank()) {
+                log.warn("Keine Antwort von der KI");
                 throw new IOException("Keine Antwort von KI erhalten");
             }
             
@@ -140,7 +134,7 @@ public class EmailAiService {
 
         } catch (Exception e) {
             // Nur die Fehlerart: Parse-Fehler zitieren die Antwort (E-Mail-Inhalte).
-            log.error("Fehler bei Gemini-Aufruf: {}", e.getClass().getSimpleName());
+            log.error("Fehler beim KI-Aufruf: {}", e.getClass().getSimpleName());
             throw new IOException("KI-Verarbeitung fehlgeschlagen", e);
         }
     }
@@ -163,7 +157,7 @@ public class EmailAiService {
             if (stil == EmailSchreibstil.VERLAUF) {
                 prompt.append("\nBisheriger Mail-Verlauf (darauf wird geantwortet):\n");
             } else {
-                // Kontext hilft Gemini, den Sinn der Antwort zu verstehen
+                // Kontext hilft der KI, den Sinn der Antwort zu verstehen
                 prompt.append("\nKontext (Antwort auf vorherige E-Mail):\n");
             }
             prompt.append("<verlauf>\n").append(ohneBegrenzer(kontext)).append("\n</verlauf>\n");
@@ -199,69 +193,15 @@ public class EmailAiService {
         return EmailAiPostProcessor.sanitizePlainText(plain).trim();
     }
 
-    private String rufGeminiApi(String systemPrompt, String userMessage) {
-        try {
-            // Key zur Laufzeit aus System-Setup lesen, damit Aenderungen
-            // ohne Spring-Neustart wirksam werden.
-            String geminiApiKey = systemSettingsService.getGeminiApiKey();
-            if (geminiApiKey == null || geminiApiKey.isBlank()) {
-                throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
-            }
-
-            ObjectNode requestBody = objectMapper.createObjectNode();
-
-            // System Prompt
-            ObjectNode systemInstruction = objectMapper.createObjectNode();
-            ArrayNode sysParts = objectMapper.createArrayNode();
-            sysParts.add(objectMapper.createObjectNode().put("text", systemPrompt));
-            systemInstruction.set("parts", sysParts);
-            requestBody.set("systemInstruction", systemInstruction);
-
-            // User Content
-            ArrayNode contents = objectMapper.createArrayNode();
-            ObjectNode userMsg = objectMapper.createObjectNode().put("role", "user");
-            ArrayNode parts = objectMapper.createArrayNode();
-            parts.add(objectMapper.createObjectNode().put("text", userMessage));
-            userMsg.set("parts", parts);
-            contents.add(userMsg);
-            requestBody.set("contents", contents);
-
-            // Config
-            ObjectNode config = objectMapper.createObjectNode();
-            config.put("temperature", temperature);
-            config.put("responseMimeType", "application/json"); // Force JSON output
-            requestBody.set("generationConfig", config);
-
-            String body = objectMapper.writeValueAsString(requestBody);
-
-            HttpRequest request = GeminiAnfrage.generateContent(model, geminiApiKey)
-                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-            if (response.statusCode() != 200) {
-                log.error("Gemini API Error {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
-                throw new IOException("Gemini API Error: " + response.statusCode());
-            }
-
-            JsonNode root = objectMapper.readTree(response.body());
-            
-            // Extract text from Gemini response structure
-            JsonNode candidates = root.path("candidates");
-            if (candidates.isArray() && !candidates.isEmpty()) {
-                JsonNode partsNode = candidates.get(0).path("content").path("parts");
-                if (partsNode.isArray() && !partsNode.isEmpty()) {
-                    return partsNode.get(0).path("text").asString("");
-                }
-            }
-            
-            return null;
-
-        } catch (Exception e) {
-            log.error("Fehler beim Aufruf der Gemini API: {}", e.getClass().getSimpleName());
-            throw new RuntimeException(e);
-        }
+    /** Schickt die Anfrage an den KI-Anbieter, der für {@link KiFunktion#EMAIL_TEXT} eingestellt ist. */
+    private String rufKi(String systemPrompt, String userMessage) {
+        KiAnfrage anfrage = KiAnfrage.mitAnweisung(systemPrompt)
+                .nutzer(KiTeil.text(userMessage))
+                .temperatur(temperature)
+                .json()
+                .zeitlimit(ZEITLIMIT)
+                .bauen();
+        return kiDienst.sende(KiFunktion.EMAIL_TEXT, anfrage).text();
     }
 
     private String normalizeLineEndings(String value) {

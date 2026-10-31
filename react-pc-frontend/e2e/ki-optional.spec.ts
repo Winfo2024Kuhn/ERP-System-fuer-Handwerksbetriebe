@@ -7,6 +7,7 @@ import {
 } from './hilfen/design';
 import { stubbeEmailCenter } from './hilfen/postfaecher';
 import { oeffneNeuigkeiten, stubbeWebsiteApi } from './hilfen/api';
+import { geminiAnbieter, mistralAnbieter, stubbeKiEinstellungen } from './hilfen/ki';
 
 /**
  * KI ist freiwillig: Ohne hinterlegten Gemini-Schlüssel bleiben die
@@ -81,6 +82,8 @@ async function stubbeAdminOhneKi(page: Page, einrichtungOffen = false): Promise<
         return json(route, { apiKeySet: false });
     });
     await page.route('**/api/settings/anfrage-funnel-spamfilter', route => json(route, { aktiv: true }));
+    // KI-Anbieter: keiner hat einen Schlüssel.
+    await stubbeKiEinstellungen(page);
     await page.route('**/api/postfaecher', route => json(route, [{
         id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb', aktiv: true, sortierung: 0,
         hauptpostfach: true, fuerGeschaeftsdokumente: false, benutzername: 'info@musterbetrieb.example', passwortGesetzt: true,
@@ -204,36 +207,29 @@ test('Webseiten-Beitrag ohne KI-Schlüssel: KI-Weg gesperrt mit Grund, Textschri
 
 test('Einstellungen → KI-Funktionen: „Schlüssel entfernen“ fragt nach und schaltet die KI aus', async ({ page }, info) => {
     await stubbeAdminOhneKi(page);
-    // Nach stubbeAdminOhneKi registriert, damit diese Routen zuerst greifen: Schlüssel ist hinterlegt.
-    let schluesselDa = true;
-    const loeschungen: string[] = [];
-    await page.route('**/api/settings/gemini', route => {
-        if (route.request().method() === 'DELETE') {
-            loeschungen.push(route.request().url());
-            schluesselDa = false;
-            return json(route, { message: 'KI-Schlüssel entfernt.' });
-        }
-        return json(route, { apiKeySet: schluesselDa });
-    });
+    // Nach stubbeAdminOhneKi registriert, damit diese Routen zuerst greifen: Gemini hat einen Schlüssel.
+    const ki = await stubbeKiEinstellungen(page, { anbieterListe: [mistralAnbieter(), geminiAnbieter(true)] });
     await page.route('**/api/auth/me', route => json(route, {
         id: 1, displayName: 'Erika Mustermann', username: 'erika', active: true,
-        roles: ['ADMIN'], admin: true, requiresInitialSetup: false, kiAktiv: schluesselDa,
+        roles: ['ADMIN'], admin: true, requiresInitialSetup: false,
+        kiAktiv: ki.stand().anbieterListe.some(a => a.schluesselGesetzt),
     }));
     await page.goto('/einstellungen#ki');
 
     await expect(page.getByRole('region', { name: 'KI-Funktionen sind an' })).toBeVisible();
-    const entfernen = page.getByRole('button', { name: 'Schlüssel entfernen', exact: true });
+    const entfernen = page.getByRole('button', { name: 'Schlüssel für Google Gemini entfernen' });
     await entfernen.click();
-    const rueckfrage = page.getByRole('dialog', { name: 'KI-Schlüssel entfernen?' });
+    const rueckfrage = page.getByRole('dialog', { name: 'Schlüssel für Google Gemini entfernen?' });
     await expect(rueckfrage).toContainText('Schon ausgelesene Daten bleiben erhalten.');
     await designPruefung(page, info, 'ki-schluessel-entfernen-rueckfrage');
 
-    const loeschung = page.waitForRequest(req => req.method() === 'DELETE' && new URL(req.url()).pathname === '/api/settings/gemini');
+    const loeschung = page.waitForRequest(req => req.method() === 'DELETE'
+        && new URL(req.url()).pathname === '/api/settings/ki/anbieter/GEMINI/schluessel');
     await rueckfrage.getByRole('button', { name: 'Schlüssel entfernen', exact: true }).click();
     await loeschung;
 
-    await expect(page.getByRole('region', { name: 'Meldungen' }).getByText('KI-Schlüssel entfernt.')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Meldungen' }).getByText('Schlüssel für Google Gemini entfernt.')).toBeVisible();
     await expect(page.getByRole('region', { name: 'KI-Funktionen sind aus' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Schlüssel entfernen', exact: true })).toHaveCount(0);
-    expect(loeschungen).toHaveLength(1);
+    await expect(entfernen).toHaveCount(0);
+    expect(ki.aenderungen.filter(a => a.methode === 'DELETE')).toHaveLength(1);
 });

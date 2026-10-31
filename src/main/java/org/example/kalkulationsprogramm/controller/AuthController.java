@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -29,6 +32,7 @@ public class AuthController {
     private final FrontendUserProfileService profileService;
     private final FrontendUserProfileRepository profileRepository;
     private final SystemSettingsService settingsService;
+    private final KiDienst kiDienst;
 
     @GetMapping("/bootstrap-status")
     public ResponseEntity<BootstrapStatusResponse> bootstrapStatus() {
@@ -80,8 +84,14 @@ public class AuthController {
 
         boolean isAdmin = profile.hasRole(FrontendUserRole.ADMIN);
         boolean requiresInitialSetup = isAdmin && settingsService.isInitialConfigurationRequired();
-        // Für alle Nutzer: ohne Gemini-Schlüssel blendet die Oberfläche KI-Knöpfe aus oder sperrt sie.
-        boolean kiAktiv = settingsService.isGeminiConfigured();
+        // Für alle Nutzer: ohne KI-Schlüssel blendet die Oberfläche KI-Knöpfe aus oder sperrt sie.
+        boolean kiAktiv = kiDienst.irgendeinAnbieterEingerichtet();
+        // Je Funktion, ob sie gerade läuft: Knöpfe einer abgeschalteten Funktion (z. B. die
+        // Programm-Hilfe, wenn nur Mistral eingerichtet ist) blendet die Oberfläche aus.
+        List<String> kiFunktionen = Arrays.stream(KiFunktion.values())
+                .filter(kiDienst::verfuegbar)
+                .map(Enum::name)
+                .toList();
 
         MitarbeiterInfo mitarbeiter = null;
         if (profile.getMitarbeiter() != null) {
@@ -97,6 +107,7 @@ public class AuthController {
                 isAdmin,
                 requiresInitialSetup,
                 kiAktiv,
+                kiFunktionen,
                 mitarbeiter
         ));
     }
@@ -156,6 +167,7 @@ public class AuthController {
             boolean admin,
             boolean requiresInitialSetup,
             boolean kiAktiv,
+            List<String> kiFunktionen,
             MitarbeiterInfo mitarbeiter
     ) {
     }

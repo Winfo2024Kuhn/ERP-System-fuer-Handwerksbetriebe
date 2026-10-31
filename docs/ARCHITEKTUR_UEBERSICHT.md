@@ -203,7 +203,7 @@ Details: [MOBILE_TOKEN_SECURITY.md](MOBILE_TOKEN_SECURITY.md).
 - **Zweck:** Dokumentenanalyse, OCR, E-Mail-Formulierung, KI-Hilfe, Spracheingabe
 - **Optional:** Ohne Schlüssel bleiben die KI-Funktionen aus, alles andere funktioniert. Der Schlüssel wird im ERP unter *System-Einstellungen → KI-Funktionen* gespeichert (Ausweichwert: Property `ai.gemini.api-key`)
 - **Service:** `GeminiDokumentAnalyseService`, `KiHilfeController`
-- **Modell:** je Funktion konfigurierbar (`ai.gemini.model.*`, `ai.email.model`, `ai.ki-hilfe.model`)
+- **Anbieter und Modell:** je Funktion unter Einstellungen → KI-Funktionen wählbar (Gemini, Mistral; `service/ki/KiDienst`); Standard-Modelle je Stufe in `ai.gemini.model.*` bzw. `ai.mistral.model.*`
 - **Einsatz:** Lieferantenrechnungen ohne ZUGFeRD-Daten werden per KI analysiert
 
 ### 5.2 IMAP E-Mail-Import

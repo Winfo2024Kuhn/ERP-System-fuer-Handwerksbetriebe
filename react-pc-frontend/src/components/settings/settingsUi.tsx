@@ -56,6 +56,12 @@ interface PasswordFieldProps {
     placeholder?: string;
     /** Platzhalter, solange schon ein Passwort gespeichert ist. */
     isSetPlaceholder?: string;
+    /** Gesperrt, z. B. weil der Server den Schlüssel gerade nicht speichern kann. */
+    disabled?: boolean;
+    /** Id eines Erklärtextes, den Screenreader zum Feld vorlesen. */
+    beschreibungId?: string;
+    /** Optionaler Info-Knopf (`InfoButton`) direkt neben der Beschriftung. */
+    info?: React.ReactNode;
     className?: string;
 }
 
@@ -75,33 +81,46 @@ export function PasswordField({
     isSet = false,
     placeholder,
     isSetPlaceholder = '(leer lassen = unverändert)',
+    disabled = false,
+    beschreibungId,
+    info,
     className,
 }: PasswordFieldProps) {
     const [visible, setVisible] = useState(false);
+    const beschriftung = (
+        <Label htmlFor={id} className={info ? 'mb-0' : undefined}>
+            {label}
+            {isSet && !value && (
+                <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
+            )}
+        </Label>
+    );
     return (
         <div className={className}>
-            <Label htmlFor={id}>
-                {label}
-                {isSet && !value && (
-                    <span className="ml-2 text-xs text-emerald-600 font-normal">✓ gesetzt</span>
-                )}
-            </Label>
+            {/* Der Info-Knopf steht neben, nicht im Label – sonst hieße das Feld „… Mehr zu: …“. */}
+            {info ? <div className="mb-1.5 flex items-center gap-1">{beschriftung}{info}</div> : beschriftung}
             {/* Auge NEBEN statt über dem Eingabefeld (gemeinsamer Rahmen): so verdeckt der
                 Knopf nie Text und überlappt das Feld nicht – auch nicht in Dialogen. */}
-            <div className="flex items-center rounded border border-slate-200 bg-white focus-within:ring-2 focus-within:ring-rose-500">
+            <div className={cn(
+                'flex items-center rounded border border-slate-200 focus-within:ring-2 focus-within:ring-rose-500',
+                disabled ? 'bg-slate-50' : 'bg-white',
+            )}>
                 <Input
                     id={id}
+                    disabled={disabled}
+                    aria-describedby={beschreibungId}
                     type={visible ? 'text' : 'password'}
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     placeholder={isSet ? isSetPlaceholder : placeholder}
                     autoComplete="new-password"
-                    className="min-w-0 flex-1 border-0 bg-transparent focus:ring-0"
+                    className="min-w-0 flex-1 border-0 bg-transparent focus:ring-0 disabled:cursor-not-allowed disabled:text-slate-400"
                 />
                 <button
                     type="button"
+                    disabled={disabled}
                     aria-label={visible ? 'Passwort verbergen' : 'Passwort anzeigen'}
-                    className="mr-1 shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                    className="mr-1 shrink-0 rounded p-1 text-slate-400 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:cursor-not-allowed disabled:hover:text-slate-400"
                     onClick={() => setVisible((prev) => !prev)}
                 >
                     {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

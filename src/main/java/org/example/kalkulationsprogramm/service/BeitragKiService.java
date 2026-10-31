@@ -13,19 +13,22 @@ import org.example.kalkulationsprogramm.dto.Beitraege.BeitragKiEntwurf;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiNachricht;
+import org.example.kalkulationsprogramm.service.ki.KiNichtVerfuegbar;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import tools.jackson.core.JacksonException;
 
 import java.io.IOException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -40,12 +43,12 @@ import java.util.Optional;
  * Systemanweisung wiederholt das Verbot zusaetzlich, und der Nutzer sieht den
  * Text vor dem Veroeffentlichen.
  *
- * <p>Der Gemini-Aufruf ist hier bewusst eigenstaendig gebaut, nach dem Muster
- * von {@link KiHilfeService}. Ein gemeinsamer Client fuer alle drei
- * KI-Dienste ist eine eigene Aufgabe.
+ * <p>Der Aufruf laeuft ueber {@link KiDienst} ({@link KiFunktion#BEITRAG_ENTWURF}),
+ * also ueber den Anbieter, den der Betrieb unter Einstellungen → KI-Funktionen gewaehlt hat.
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class BeitragKiService {
 
     static final String SYSTEM_ANWEISUNG = """
@@ -93,40 +96,8 @@ public class BeitragKiService {
     private final ProjektRepository projektRepository;
     private final ProjektNotizRepository notizRepository;
     private final AusgangsGeschaeftsDokumentRepository dokumentRepository;
-    private final SystemSettingsService systemSettingsService;
+    private final KiDienst kiDienst;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
-    private final String modell;
-
-    @Autowired
-    public BeitragKiService(ProjektRepository projektRepository,
-                            ProjektNotizRepository notizRepository,
-                            AusgangsGeschaeftsDokumentRepository dokumentRepository,
-                            SystemSettingsService systemSettingsService,
-                            ObjectMapper objectMapper,
-                            @Value("${ai.gemini.model.pro:gemini-pro-latest}") String modell) {
-        this(projektRepository, notizRepository, dokumentRepository, systemSettingsService,
-                objectMapper,
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build(),
-                modell);
-    }
-
-    /** Test-Konstruktor mit injizierbarem HttpClient. */
-    BeitragKiService(ProjektRepository projektRepository,
-                     ProjektNotizRepository notizRepository,
-                     AusgangsGeschaeftsDokumentRepository dokumentRepository,
-                     SystemSettingsService systemSettingsService,
-                     ObjectMapper objectMapper,
-                     HttpClient httpClient,
-                     String modell) {
-        this.projektRepository = projektRepository;
-        this.notizRepository = notizRepository;
-        this.dokumentRepository = dokumentRepository;
-        this.systemSettingsService = systemSettingsService;
-        this.objectMapper = objectMapper;
-        this.httpClient = httpClient;
-        this.modell = modell;
-    }
 
     /**
      * Baut den Sachkontext zum Projekt. Sichtbar fuer den Test, weil genau
@@ -254,20 +225,24 @@ public class BeitragKiService {
     }
 
     /**
-     * Ruft Gemini und gibt den Vorschlag zurueck. Die Bilder gehen als
-     * inline_data mit, hoechstens {@value #MAX_BILDER} Stueck.
+     * Ruft die KI ({@link KiFunktion#BEITRAG_ENTWURF}) und gibt den Vorschlag
+     * zurueck. Die Bilder gehen mit, hoechstens {@value #MAX_BILDER} Stueck.
      */
     public BeitragKiEntwurf erzeugeEntwurf(BeitragKiAnfrage anfrage, List<MultipartFile> bilder) {
-        String apiKey = systemSettingsService.getGeminiApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("Kein Gemini-Schluessel hinterlegt.");
+        if (!kiDienst.verfuegbar(KiFunktion.BEITRAG_ENTWURF)) {
+            throw new IllegalStateException("Fuer Beitraege ist keine KI eingerichtet.");
         }
-
-        return sendeUndLies(baueKoerper(anfrage, bilder), apiKey);
+        KiErgebnis ergebnis;
+        try {
+            ergebnis = kiDienst.sende(KiFunktion.BEITRAG_ENTWURF, baueAnfrage(anfrage, bilder));
+        } catch (KiNichtVerfuegbar | KiAnbieterFehler e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        }
+        return liesEntwurf(ergebnis.text());
     }
 
     /**
-     * Baut den Request-Koerper fuer Gemini. Sichtbar fuer den Test, weil hier
+     * Baut die Anfrage an die KI. Sichtbar fuer den Test, weil hier
      * feststeht, in welcher Reihenfolge Chatverlauf und aktueller Auftrag
      * beim Modell ankommen.
      *
@@ -277,13 +252,8 @@ public class BeitragKiService {
      * ersten, sonst fliegen bei einem langen Chat genau die neuesten (und
      * damit wichtigsten) Nachrichten raus.
      */
-    ObjectNode baueKoerper(BeitragKiAnfrage anfrage, List<MultipartFile> bilder) {
-        ObjectNode koerper = objectMapper.createObjectNode();
-
-        ObjectNode systemAnweisung = koerper.putObject("system_instruction");
-        systemAnweisung.putArray("parts").addObject().put("text", SYSTEM_ANWEISUNG);
-
-        ArrayNode contents = koerper.putArray("contents");
+    KiAnfrage baueAnfrage(BeitragKiAnfrage anfrage, List<MultipartFile> bilder) {
+        KiAnfrage.Bauer bauer = KiAnfrage.mitAnweisung(SYSTEM_ANWEISUNG).zeitlimit(READ_TIMEOUT);
 
         // Bisheriger Chat zuerst und in chronologischer Reihenfolge, sonst
         // liest das Modell die Antwort vor der Frage.
@@ -291,25 +261,20 @@ public class BeitragKiService {
         List<BeitragKiAnfrage.ChatNachricht> beschnitten = verlauf.size() > MAX_VERLAUF
                 ? verlauf.subList(verlauf.size() - MAX_VERLAUF, verlauf.size())
                 : verlauf;
-        beschnitten.forEach(nachricht -> {
-            ObjectNode eintrag = contents.addObject();
-            eintrag.put("role", "model".equals(nachricht.rolle()) ? "model" : "user");
-            eintrag.putArray("parts").addObject().put("text", sicher(nachricht.text()));
-        });
+        beschnitten.forEach(nachricht -> bauer.nachricht("model".equals(nachricht.rolle())
+                ? KiNachricht.ki(sicher(nachricht.text()))
+                : KiNachricht.nutzer(sicher(nachricht.text()))));
 
         // Aktuelle Runde, immer als letztes: Sachkontext plus Bilder plus Auftrag.
-        ObjectNode aktuelle = contents.addObject();
-        aktuelle.put("role", "user");
-        ArrayNode teile = aktuelle.putArray("parts");
-        teile.addObject().put("text", baueKontext(anfrage.projektId()));
+        List<KiTeil> teile = new ArrayList<>();
+        teile.add(KiTeil.text(baueKontext(anfrage.projektId())));
 
         List<MultipartFile> verwendbar = bilder == null ? List.of()
                 : bilder.stream().filter(b -> b != null && !b.isEmpty()).limit(MAX_BILDER).toList();
         for (MultipartFile bild : verwendbar) {
             try {
-                ObjectNode inline = teile.addObject().putObject("inline_data");
-                inline.put("mime_type", bild.getContentType() == null ? "image/jpeg" : bild.getContentType());
-                inline.put("data", Base64.getEncoder().encodeToString(bild.getBytes()));
+                teile.add(KiTeil.datei(bild.getBytes(),
+                        bild.getContentType() == null ? "image/jpeg" : bild.getContentType()));
             } catch (IOException e) {
                 log.warn("[BeitragKi] Bild konnte nicht gelesen werden, wird uebersprungen: {}",
                         e.getClass().getSimpleName());
@@ -318,19 +283,16 @@ public class BeitragKiService {
 
         String aktuellerText = sicher(anfrage.aktuellerText());
         if (aktuellerText.isBlank()) {
-            teile.addObject().put("text",
-                    "Schreibe daraus einen Beitrag fuer den Bereich Aktuelles. "
-                    + "Gib Titel, Kurzbeschreibung und Text zurueck.");
+            teile.add(KiTeil.text("Schreibe daraus einen Beitrag fuer den Bereich Aktuelles. "
+                    + "Gib Titel, Kurzbeschreibung und Text zurueck."));
         } else {
-            teile.addObject().put("text",
-                    "Das steht gerade im Editor und ist die Grundlage fuer Aenderungen.\n\n"
-                    + "Titel: " + sicher(anfrage.aktuellerTitel()) + "\n\n" + aktuellerText);
+            teile.add(KiTeil.text("Das steht gerade im Editor und ist die Grundlage fuer Aenderungen.\n\n"
+                    + "Titel: " + sicher(anfrage.aktuellerTitel()) + "\n\n" + aktuellerText));
         }
+        bauer.nachricht(KiNachricht.nutzer(teile));
 
         // Feste Antwortform, damit kein Parsen von Freitext noetig ist.
-        ObjectNode konfiguration = koerper.putObject("generationConfig");
-        konfiguration.put("responseMimeType", "application/json");
-        ObjectNode schema = konfiguration.putObject("responseSchema");
+        ObjectNode schema = objectMapper.createObjectNode();
         schema.put("type", "OBJECT");
         ObjectNode eigenschaften = schema.putObject("properties");
         eigenschaften.putObject("titel").put("type", "STRING");
@@ -343,40 +305,11 @@ public class BeitragKiService {
         pflicht.add("text");
         pflicht.add("antwort");
 
-        return koerper;
+        return bauer.json(schema).bauen();
     }
 
-    private BeitragKiEntwurf sendeUndLies(ObjectNode koerper, String apiKey) {
-        HttpRequest request;
+    private BeitragKiEntwurf liesEntwurf(String text) {
         try {
-            request = GeminiAnfrage.generateContent(modell, apiKey)
-                    .timeout(READ_TIMEOUT)
-                    .POST(HttpRequest.BodyPublishers.ofString(
-                            objectMapper.writeValueAsString(koerper), StandardCharsets.UTF_8))
-                    .build();
-        } catch (JacksonException e) {
-            throw new IllegalStateException("Anfrage an die KI konnte nicht gebaut werden.", e);
-        }
-
-        HttpResponse<String> antwort;
-        try {
-            antwort = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new IllegalStateException("Die KI ist nicht erreichbar.", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Der Aufruf der KI wurde unterbrochen.", e);
-        }
-
-        if (antwort.statusCode() >= 400) {
-            log.warn("[BeitragKi] Gemini HTTP {} - {}", antwort.statusCode(), GeminiAnfrage.fuerLog(antwort.body()));
-            throw new IllegalStateException("Die KI hat mit einem Fehler geantwortet.");
-        }
-
-        try {
-            JsonNode wurzel = objectMapper.readTree(antwort.body());
-            String text = wurzel.path("candidates").path(0).path("content")
-                    .path("parts").path(0).path("text").asString("");
             JsonNode entwurf = objectMapper.readTree(text);
             return new BeitragKiEntwurf(
                     entwurf.path("titel").asString(""),

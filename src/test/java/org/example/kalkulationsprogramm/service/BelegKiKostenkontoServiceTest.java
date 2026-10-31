@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiZugang;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -64,17 +67,17 @@ class BelegKiKostenkontoServiceTest {
 
     private KostenstelleRepository kostenstelleRepository;
     private SachkontoRepository sachkontoRepository;
-    private SystemSettingsService systemSettingsService;
+    private KiDienst kiDienst;
 
     private BelegKiKostenkontoService service() {
         kostenstelleRepository = Mockito.mock(KostenstelleRepository.class);
         sachkontoRepository = Mockito.mock(SachkontoRepository.class);
-        systemSettingsService = Mockito.mock(SystemSettingsService.class);
+        kiDienst = Mockito.mock(KiDienst.class);
         return new BelegKiKostenkontoService(
                 kostenstelleRepository,
                 sachkontoRepository,
                 Mockito.mock(BelegRepository.class),
-                systemSettingsService,
+                kiDienst,
                 JsonMapper.builderWithJackson2Defaults().build());
     }
 
@@ -92,21 +95,19 @@ class BelegKiKostenkontoServiceTest {
                 "Es war schon eine Baustelle zugeordnet – die KI hat nicht nachgeschaut.");
         assertThat(beleg.getKostenstelle()).isSameAs(gewaehlt);
         assertThat(beleg.getSachkonto()).isNull();
-        Mockito.verifyNoInteractions(systemSettingsService);
+        Mockito.verifyNoInteractions(kiDienst);
     }
 
-    @ParameterizedTest
-    @org.junit.jupiter.params.provider.NullAndEmptySource
-    @ValueSource(strings = "   ")
-    void fehlenderSchluesselErklaertAusbleibendenVorschlag(String key) {
+    @Test
+    void ohnePassendeKiErklaertAusbleibendenVorschlag() {
         BelegKiKostenkontoService svc = service();
-        Mockito.when(systemSettingsService.getGeminiApiKey()).thenReturn(key);
+        Mockito.when(kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG)).thenReturn(Optional.empty());
         Beleg beleg = new Beleg();
 
         svc.klassifiziereBeleg(beleg);
 
         assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo(
-                "Kein KI-Schlüssel hinterlegt – das Programm kann nichts vorschlagen.");
+                "Keine passende KI eingerichtet – das Programm kann nichts vorschlagen.");
         assertKeineZuordnung(beleg);
     }
 
@@ -202,7 +203,8 @@ class BelegKiKostenkontoServiceTest {
 
     @SuppressWarnings("unchecked")
     private HttpClient mockAntwort(BelegKiKostenkontoService svc, int status, String body) throws Exception {
-        Mockito.when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        Mockito.when(kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG))
+                .thenReturn(Optional.of(new KiZugang("dummy-test-key", "dummy-test-model")));
         HttpClient client = Mockito.mock(HttpClient.class);
         HttpResponse<String> response = Mockito.mock(HttpResponse.class);
         Mockito.when(response.statusCode()).thenReturn(status);
@@ -210,7 +212,6 @@ class BelegKiKostenkontoServiceTest {
         Mockito.when(client.send(Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<String>>any()))
                 .thenReturn(response);
         ReflectionTestUtils.setField(svc, "httpClient", client);
-        ReflectionTestUtils.setField(svc, "geminiModel", "dummy-test-model");
         return client;
     }
 
@@ -450,14 +451,14 @@ class BelegKiKostenkontoServiceTest {
     }
 
     private HttpClient mockAntworten(BelegKiKostenkontoService svc, String... koerper) throws Exception {
-        Mockito.when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
+        Mockito.when(kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG))
+                .thenReturn(Optional.of(new KiZugang("dummy-test-key", "dummy-test-model")));
         HttpClient client = Mockito.mock(HttpClient.class);
         HttpResponse<?>[] antworten = java.util.Arrays.stream(koerper).map(BelegKiKostenkontoServiceTest::geminiAntwort)
                 .toArray(HttpResponse[]::new);
         Mockito.doReturn(antworten[0], (Object[]) java.util.Arrays.copyOfRange(antworten, 1, antworten.length))
                 .when(client).send(Mockito.any(HttpRequest.class), Mockito.any());
         ReflectionTestUtils.setField(svc, "httpClient", client);
-        ReflectionTestUtils.setField(svc, "geminiModel", "dummy-test-model");
         return client;
     }
 

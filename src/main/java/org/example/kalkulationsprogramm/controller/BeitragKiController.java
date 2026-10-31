@@ -47,7 +47,8 @@ public class BeitragKiController {
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Map<String, Object>> handleKiFehler(IllegalStateException ex) {
-        log.warn("[BeitragKi] Vorschlag fehlgeschlagen: {}", ex.getMessage(), ex);
+        // Ohne Stacktrace: Die Ursache kann Teile der KI-Antwort zitieren.
+        log.warn("[BeitragKi] Vorschlag fehlgeschlagen: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                 "success", false,
                 "message", "Die KI konnte gerade keinen Vorschlag erstellen."));

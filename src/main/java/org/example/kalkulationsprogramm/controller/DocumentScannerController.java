@@ -7,7 +7,7 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
-import org.example.kalkulationsprogramm.service.GeminiScannerService;
+import org.example.kalkulationsprogramm.service.ScanDateinameService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -23,7 +23,7 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class DocumentScannerController {
 
-    private final GeminiScannerService geminiService;
+    private final ScanDateinameService scanDateinameService;
 
     // AI Cloud Scan removed as per request to focus on Manual Scan + AI Naming.
 
@@ -36,7 +36,7 @@ public class DocumentScannerController {
             // 1. Generate Filename (AI)
             // User requested: "bevor dokument gespeichert wird soll es an gemini geschickt
             // werden"
-            String filename = geminiService.generateFilename(imageBytes);
+            String filename = scanDateinameService.generateFilename(imageBytes);
             log.info("Generated filename: {}", filename);
 
             // 2. Direct PDF conversion

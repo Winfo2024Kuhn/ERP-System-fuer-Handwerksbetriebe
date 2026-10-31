@@ -1,7 +1,5 @@
 package org.example.kalkulationsprogramm.service;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokument;
 import org.example.kalkulationsprogramm.domain.AusgangsGeschaeftsDokumentTyp;
@@ -12,6 +10,10 @@ import org.example.kalkulationsprogramm.dto.Beitraege.BeitragKiAnfrage;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
 import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiNachricht;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,8 +50,7 @@ class BeitragKiServiceTest {
         dokumentRepository = mock(AusgangsGeschaeftsDokumentRepository.class);
         service = new BeitragKiService(
                 projektRepository, notizRepository, dokumentRepository,
-                mock(SystemSettingsService.class), JsonMapper.builderWithJackson2Defaults().build(),
-                mock(java.net.http.HttpClient.class), "gemini-pro-latest");
+                mock(KiDienst.class), JsonMapper.builderWithJackson2Defaults().build());
     }
 
     private Projekt projektMitKunde() {
@@ -264,17 +265,17 @@ class BeitragKiServiceTest {
                 new BeitragKiAnfrage.ChatNachricht("model", "Erste Antwort"));
         BeitragKiAnfrage anfrage = new BeitragKiAnfrage(1L, verlauf, null, null);
 
-        JsonNode contents = service.baueKoerper(anfrage, List.of()).path("contents");
+        List<KiNachricht> nachrichten = service.baueAnfrage(anfrage, List.of()).nachrichten();
 
-        assertThat(contents.size()).isEqualTo(3);
-        assertThat(contents.get(0).path("role").asString("")).isEqualTo("user");
-        assertThat(contents.get(0).path("parts").get(0).path("text").asString("")).isEqualTo("Erster Wunsch");
-        assertThat(contents.get(1).path("role").asString("")).isEqualTo("model");
-        assertThat(contents.get(1).path("parts").get(0).path("text").asString("")).isEqualTo("Erste Antwort");
+        assertThat(nachrichten).hasSize(3);
+        assertThat(nachrichten.get(0).rolle()).isEqualTo(KiNachricht.Rolle.NUTZER);
+        assertThat(text(nachrichten.get(0))).isEqualTo("Erster Wunsch");
+        assertThat(nachrichten.get(1).rolle()).isEqualTo(KiNachricht.Rolle.KI);
+        assertThat(text(nachrichten.get(1))).isEqualTo("Erste Antwort");
         // Die aktuelle Runde (Sachkontext plus Auftrag) steht als letztes,
         // sonst liest das Modell die eigene Antwort vor der Frage.
-        assertThat(contents.get(2).path("role").asString("")).isEqualTo("user");
-        assertThat(contents.get(2).path("parts").get(0).path("text").asString("")).contains("Hallentor Neubau");
+        assertThat(nachrichten.get(2).rolle()).isEqualTo(KiNachricht.Rolle.NUTZER);
+        assertThat(text(nachrichten.get(2))).contains("Hallentor Neubau");
     }
 
     @Test
@@ -290,11 +291,35 @@ class BeitragKiServiceTest {
                 .toList();
         BeitragKiAnfrage anfrage = new BeitragKiAnfrage(1L, verlauf, null, null);
 
-        JsonNode contents = service.baueKoerper(anfrage, List.of()).path("contents");
+        List<KiNachricht> nachrichten = service.baueAnfrage(anfrage, List.of()).nachrichten();
 
         // 20 Verlauf-Eintraege plus 1 aktuelle Runde.
-        assertThat(contents.size()).isEqualTo(21);
-        assertThat(contents.get(0).path("parts").get(0).path("text").asString("")).isEqualTo("Nachricht 6");
-        assertThat(contents.get(19).path("parts").get(0).path("text").asString("")).isEqualTo("Nachricht 25");
+        assertThat(nachrichten).hasSize(21);
+        assertThat(text(nachrichten.get(0))).isEqualTo("Nachricht 6");
+        assertThat(text(nachrichten.get(19))).isEqualTo("Nachricht 25");
+    }
+
+    @Test
+    void anfrageVerlangtJsonMitFesterForm() {
+        when(projektRepository.findById(1L)).thenReturn(Optional.of(projektMitKunde()));
+        when(dokumentRepository.findByProjektIdOrderByDatumDesc(1L)).thenReturn(List.of());
+        when(notizRepository.findByProjektIdOrderByErstelltAmDesc(1L)).thenReturn(List.of());
+
+        KiAnfrage ki = service.baueAnfrage(new BeitragKiAnfrage(1L, List.of(), null, null), List.of());
+
+        assertThat(ki.jsonAntwort()).isTrue();
+        assertThat(ki.schema().path("required").toString()).contains("titel", "kurzbeschreibung", "text", "antwort");
+        assertThat(ki.systemAnweisung()).isEqualTo(BeitragKiService.SYSTEM_ANWEISUNG);
+    }
+
+    /** Alle Textteile einer Nachricht hintereinander. */
+    private static String text(KiNachricht nachricht) {
+        StringBuilder sb = new StringBuilder();
+        nachricht.teile().forEach(teil -> {
+            if (teil instanceof KiTeil.Text t) {
+                sb.append(t.text());
+            }
+        });
+        return sb.toString();
     }
 }

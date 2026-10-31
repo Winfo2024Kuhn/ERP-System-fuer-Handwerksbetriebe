@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiZugang;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -53,11 +56,13 @@ class KiHilfeServiceTest {
     @Mock
     private LocalRagService localRagService;
     @Mock
-    private SystemSettingsService systemSettingsService;
+    private KiDienst kiDienst;
     @Mock
     private FirmeninformationRepository firmeninformationRepository;
     @Mock
     private HttpClient httpClient;
+
+    private static final Optional<KiZugang> ZUGANG = Optional.of(new KiZugang("test-schluessel", "test-modell"));
 
     private final ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
     private KiHilfeService service;
@@ -65,9 +70,8 @@ class KiHilfeServiceTest {
     @BeforeEach
     void setUp() {
         service = new KiHilfeService(objectMapper, codebaseIndexService, localRagService,
-                systemSettingsService, firmeninformationRepository);
+                kiDienst, firmeninformationRepository);
         ReflectionTestUtils.setField(service, "httpClient", httpClient);
-        ReflectionTestUtils.setField(service, "model", "test-modell");
         ReflectionTestUtils.setField(service, "temperature", 0.4);
         ReflectionTestUtils.setField(service, "maxOutputTokens", 1024);
         ReflectionTestUtils.setField(service, "webSearchEnabled", true);
@@ -204,7 +208,7 @@ class KiHilfeServiceTest {
     }
 
     private void wissenVorhanden() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
+        when(kiDienst.geminiZugang(KiFunktion.PROGRAMM_HILFE)).thenReturn(ZUGANG);
         lenient().when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
         when(localRagService.isAvailable()).thenReturn(true);
         when(localRagService.search(anyString(), any(), any())).thenReturn(List.of(
@@ -213,7 +217,7 @@ class KiHilfeServiceTest {
     }
 
     private void ohneWissen() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
+        when(kiDienst.geminiZugang(KiFunktion.PROGRAMM_HILFE)).thenReturn(ZUGANG);
         lenient().when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
         when(localRagService.isAvailable()).thenReturn(false);
     }
@@ -358,7 +362,7 @@ class KiHilfeServiceTest {
 
     @Test
     void scheitertDieErsteSucheAntwortetDieKiTrotzdem() throws Exception {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
+        when(kiDienst.geminiZugang(KiFunktion.PROGRAMM_HILFE)).thenReturn(ZUGANG);
         when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
         when(localRagService.isAvailable()).thenReturn(true);
         when(localRagService.search(anyString(), isNull(), isNull())).thenThrow(new IllegalStateException("kaputt"));
@@ -373,7 +377,7 @@ class KiHilfeServiceTest {
 
     @Test
     void ohneTrefferDerErstenSucheKeinSchrittUndKeinKontext() throws Exception {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn("test-schluessel");
+        when(kiDienst.geminiZugang(KiFunktion.PROGRAMM_HILFE)).thenReturn(ZUGANG);
         when(firmeninformationRepository.findFirmeninformation()).thenReturn(Optional.empty());
         when(localRagService.isAvailable()).thenReturn(true);
         when(localRagService.search(anyString(), any(), any())).thenReturn(List.of());
@@ -426,7 +430,7 @@ class KiHilfeServiceTest {
 
     @Test
     void ohneSchluesselOderNachrichtenKeinAufruf() {
-        when(systemSettingsService.getGeminiApiKey()).thenReturn(" ", "test-schluessel");
+        when(kiDienst.geminiZugang(KiFunktion.PROGRAMM_HILFE)).thenReturn(Optional.empty(), ZUGANG);
 
         assertThatThrownBy(() -> service.chat(FRAGE, null)).isInstanceOf(IOException.class);
         assertThatThrownBy(() -> service.chat(List.of(), null)).isInstanceOf(IllegalArgumentException.class);

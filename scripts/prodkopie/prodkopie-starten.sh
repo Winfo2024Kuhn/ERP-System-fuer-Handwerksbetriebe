@@ -154,6 +154,7 @@ argumente=(
     --ai.ollama.enabled=false
     --ai.ki-hilfe.web-search-enabled=false
     --ai.gemini.api-key=
+    --ai.mistral.api-key=
     --ai.spamfilter.external.url=
     --ai.spamfilter.external.api-key=
     --smtp.host= --smtp.username= --smtp.password=

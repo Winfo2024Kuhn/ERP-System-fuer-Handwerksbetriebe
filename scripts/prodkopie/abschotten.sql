@@ -16,7 +16,7 @@ BEGIN;
 -- Automatischer Mahnlauf (täglich 09:00) würde echte Mahnungen verschicken.
 UPDATE firmeninformation SET mahnverfahren_aktiv = false;
 
--- Zugänge und Ziele aus den Einstellungen: SMTP/IMAP, FRITZ!Box, KI-Schlüssel und
+-- Zugänge und Ziele aus den Einstellungen: SMTP/IMAP, FRITZ!Box, KI-Schlüssel (Gemini, Mistral) und
 -- vorsorglich alles, was nach Adresse, Schlüssel oder Zugang aussieht.
 -- datei.ordner-network-url ist ein lokaler Dateipfad, kein Außen-Ziel.
 UPDATE system_setting

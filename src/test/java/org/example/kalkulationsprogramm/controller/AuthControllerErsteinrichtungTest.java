@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,6 +46,9 @@ class AuthControllerErsteinrichtungTest {
     @MockitoBean
     private SystemSettingsService settingsService;
 
+    @MockitoBean
+    private KiDienst kiDienst;
+
     private static FrontendUserProfile profil(FrontendUserRole rolle) {
         FrontendUserProfile profil = new FrontendUserProfile();
         profil.setId(42L);
@@ -70,7 +74,7 @@ class AuthControllerErsteinrichtungTest {
         @DisplayName("Admin mit Mailserver, ohne Gemini: keine Ersteinrichtung, KI aus")
         void adminOhneGeminiMussNichtZurErsteinrichtung() throws Exception {
             given(settingsService.isInitialConfigurationRequired()).willReturn(false);
-            given(settingsService.isGeminiConfigured()).willReturn(false);
+            given(kiDienst.irgendeinAnbieterEingerichtet()).willReturn(false);
 
             mockMvc.perform(get("/api/auth/me").principal(anmeldung(FrontendUserRole.ADMIN)))
                     .andExpect(status().isOk())
@@ -83,7 +87,7 @@ class AuthControllerErsteinrichtungTest {
         @DisplayName("Admin ohne Mailserver: muss zur Ersteinrichtung")
         void adminOhneMailserverMussZurErsteinrichtung() throws Exception {
             given(settingsService.isInitialConfigurationRequired()).willReturn(true);
-            given(settingsService.isGeminiConfigured()).willReturn(true);
+            given(kiDienst.irgendeinAnbieterEingerichtet()).willReturn(true);
 
             mockMvc.perform(get("/api/auth/me").principal(anmeldung(FrontendUserRole.ADMIN)))
                     .andExpect(status().isOk())
@@ -95,13 +99,18 @@ class AuthControllerErsteinrichtungTest {
         @DisplayName("Normaler Nutzer: nie Ersteinrichtung, KI-Status kommt trotzdem mit")
         void nutzerSiehtKiStatusAberNieErsteinrichtung() throws Exception {
             given(settingsService.isInitialConfigurationRequired()).willReturn(true);
-            given(settingsService.isGeminiConfigured()).willReturn(true);
+            given(kiDienst.irgendeinAnbieterEingerichtet()).willReturn(true);
+            given(kiDienst.verfuegbar(org.example.kalkulationsprogramm.service.ki.KiFunktion.DOKUMENT_ANALYSE))
+                    .willReturn(true);
 
             mockMvc.perform(get("/api/auth/me").principal(anmeldung(FrontendUserRole.USER)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.admin").value(false))
                     .andExpect(jsonPath("$.requiresInitialSetup").value(false))
-                    .andExpect(jsonPath("$.kiAktiv").value(true));
+                    .andExpect(jsonPath("$.kiAktiv").value(true))
+                    // Nur was wirklich läuft: die Programm-Hilfe fehlt hier, ihr Knopf bleibt weg.
+                    .andExpect(jsonPath("$.kiFunktionen.length()").value(1))
+                    .andExpect(jsonPath("$.kiFunktionen[0]").value("DOKUMENT_ANALYSE"));
         }
 
         @Test

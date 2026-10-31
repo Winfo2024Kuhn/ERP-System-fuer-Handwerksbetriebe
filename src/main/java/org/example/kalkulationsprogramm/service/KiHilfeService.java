@@ -1,5 +1,8 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiZugang;
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -284,7 +287,7 @@ public class KiHilfeService {
     private final ObjectMapper objectMapper;
     private final CodebaseIndexService codebaseIndexService;
     private final LocalRagService localRagService;
-    private final SystemSettingsService systemSettingsService;
+    private final KiDienst kiDienst;
     private final FirmeninformationRepository firmeninformationRepository;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -298,9 +301,6 @@ public class KiHilfeService {
      * als das Zeitlimit des Chats ({@code KiHilfeController}), damit der Nutzer eine Meldung bekommt.
      */
     private Duration gesamtZeitlimit = Duration.ofSeconds(150);
-
-    @Value("${ai.ki-hilfe.model:gemini-3-flash-preview}")
-    private String model;
 
     @Value("${ai.ki-hilfe.temperature:0.4}")
     private double temperature;
@@ -390,11 +390,9 @@ public class KiHilfeService {
      */
     public ChatResult chat(List<ChatMessage> messages, PageContext pageContext, Consumer<String> fortschritt)
             throws IOException, InterruptedException {
-        // Key zur Laufzeit aus System-Setup lesen.
-        String geminiApiKey = systemSettingsService.getGeminiApiKey();
-        if (geminiApiKey == null || geminiApiKey.isBlank()) {
-            throw new IOException("Gemini API Key fehlt (ai.gemini.api-key)");
-        }
+        // Zugang zur Laufzeit lesen: Die Programm-Hilfe braucht Werkzeuge und Programm-Wissen,
+        // das kann bislang nur Gemini. Darf sie nicht über Gemini laufen, geht nichts an Google.
+        KiZugang zugang = kiDienst.geminiZugang(KiFunktion.PROGRAMM_HILFE).orElseThrow(KeinPassenderAnbieter::new);
 
         if (messages == null || messages.isEmpty()) {
             throw new IllegalArgumentException("Keine Nachrichten angegeben");
@@ -432,15 +430,15 @@ public class KiHilfeService {
 
         String systemPrompt = buildSystemPrompt(ragContext, werkzeuge != null);
         try {
-            return beantworten(geminiApiKey, systemPrompt, verlauf(limitedMessages, pageContextInfo),
+            return beantworten(zugang, systemPrompt, verlauf(limitedMessages, pageContextInfo),
                     werkzeuge, melden, schritte, frist);
         } catch (AnfrageAbgelehnt e) {
             // Sicherheitsnetz: Kann das eingestellte Modell eigene Werkzeuge (zusammen mit der
             // Google-Suche) nicht, antwortet die KI-Hilfe wie frueher - ohne selbst nachzuschlagen.
             if (werkzeuge == null || e.status != 400) throw e;
             log.warn("Gemini lehnt die Anfrage mit Werkzeugen ab (HTTP 400) - Antwort ohne Nachschlagen. "
-                    + "Unterstuetzt das Modell '{}' Function Calling zusammen mit der Google-Suche?", model);
-            return beantworten(geminiApiKey, buildSystemPrompt(ragContext, false),
+                    + "Unterstuetzt das Modell '{}' Function Calling zusammen mit der Google-Suche?", zugang.modell());
+            return beantworten(zugang, buildSystemPrompt(ragContext, false),
                     verlauf(limitedMessages, pageContextInfo), null, melden, schritte, frist);
         }
     }
@@ -463,6 +461,13 @@ public class KiHilfeService {
     }
 
     /** Die Frage hat die Gesamtzeit ueberschritten; der Nutzer soll es noch einmal versuchen. */
+    /** Die Programm-Hilfe darf gerade über keinen Anbieter laufen (Einstellungen → KI-Funktionen). */
+    public static final class KeinPassenderAnbieter extends IOException {
+        public KeinPassenderAnbieter() {
+            super("Für die Programm-Hilfe ist kein passender KI-Anbieter eingerichtet.");
+        }
+    }
+
     public static final class ZeitlimitErreicht extends IOException {
         public ZeitlimitErreicht() {
             super("Zeitlimit der KI-Hilfe erreicht");
@@ -550,7 +555,7 @@ public class KiHilfeService {
      * den Verlauf, und es geht in die naechste Runde. In der letzten Runde sind Werkzeug-Aufrufe
      * abgeschaltet ({@code mode NONE}) - dann muss eine Antwort kommen.
      */
-    private ChatResult beantworten(String geminiApiKey, String systemPrompt, ArrayNode contents,
+    private ChatResult beantworten(KiZugang zugang, String systemPrompt, ArrayNode contents,
                                    KiHilfeWerkzeuge werkzeuge, Consumer<String> melden, List<String> schritte,
                                    Frist frist) throws IOException, InterruptedException {
         Map<String, SourceLink> quellen = new LinkedHashMap<>();
@@ -560,7 +565,7 @@ public class KiHilfeService {
             boolean nachschlagen = werkzeuge != null && runde < MAX_NACHSCHLAGE_RUNDEN && !antwortErzwingen
                     && frist.nachschlagenErlaubt();
             JsonNode kandidat = GeminiVerlauf.kandidat(
-                    senden(anfrage(systemPrompt, contents, werkzeuge, nachschlagen), geminiApiKey, frist));
+                    senden(anfrage(systemPrompt, contents, werkzeuge, nachschlagen), zugang, frist));
 
             websuchenMelden(kandidat, websuchen, melden);
             for (SourceLink quelle : extractGroundingSources(kandidat)) {
@@ -639,7 +644,7 @@ public class KiHilfeService {
         return requestBody;
     }
 
-    private JsonNode senden(ObjectNode requestBody, String geminiApiKey, Frist frist)
+    private JsonNode senden(ObjectNode requestBody, KiZugang zugang, Frist frist)
             throws IOException, InterruptedException {
         String body = objectMapper.writeValueAsString(requestBody);
         for (int versuch = 1; ; versuch++) {
@@ -647,7 +652,7 @@ public class KiHilfeService {
             if (rest.isNegative() || rest.isZero()) {
                 throw new ZeitlimitErreicht();
             }
-            HttpRequest request = GeminiAnfrage.generateContent(model, geminiApiKey)
+            HttpRequest request = GeminiAnfrage.generateContent(zugang.modell(), zugang.schluessel())
                     .timeout(rest.compareTo(GEMINI_ZEITLIMIT) < 0 ? rest : GEMINI_ZEITLIMIT)
                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .build();

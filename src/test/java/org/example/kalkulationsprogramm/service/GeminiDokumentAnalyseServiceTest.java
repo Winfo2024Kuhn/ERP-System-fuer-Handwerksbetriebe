@@ -1,5 +1,11 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.GeminiKiAnbieter;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiEinstellungen;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiModellStufe;
+import org.example.kalkulationsprogramm.service.mail.MailSecretService;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
@@ -55,6 +61,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private ZugferdExtractorService zugferdExtractorService;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock private SystemSettingsService systemSettingsService;
+    @Mock private KiDienst kiDienst;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository sperreRepository;
     @Mock private LieferantDokumentPositionService positionService;
@@ -73,7 +80,7 @@ class GeminiDokumentAnalyseServiceTest {
                 dokumentRepository,
                 zugferdExtractorService,
                 lieferantGeschaeftsdokumentRepository,
-                systemSettingsService,
+                kiDienst,
                 eventPublisher,
                 new LieferantDokumentAbgleich(JsonMapper.builderWithJackson2Defaults().build()),
                 sperreRepository,
@@ -1042,13 +1049,20 @@ class GeminiDokumentAnalyseServiceTest {
         /** Service mit echtem Mapper, gemocktem {@code httpClient} und der übergebenen Dateisuche. */
         private GeminiDokumentAnalyseService baueService(LieferantDokumentDateiService dateiService)
                 throws Exception {
+            // Echte KI-Kette (Zuordnung -> Gemini-Anbieter), nur das HTTP ist gemockt.
+            httpClientMock = mock(HttpClient.class);
+            GeminiKiAnbieter gemini = new GeminiKiAnbieter(JsonMapper.builderWithJackson2Defaults().build(),
+                    "gemini-flash", "gemini-flash", "gemini-pro");
+            ReflectionTestUtils.setField(gemini, "httpClient", httpClientMock);
+            KiDienst echterKiDienst = new KiDienst(List.of(gemini), new KiEinstellungen(systemSettingsService,
+                    mock(MailSecretService.class), mock(org.springframework.core.env.Environment.class)));
             GeminiDokumentAnalyseService neu = new GeminiDokumentAnalyseService(
                     JsonMapper.builderWithJackson2Defaults().build(),
                     lieferantenRepository,
                     dokumentRepository,
                     zugferdExtractorService,
                     lieferantGeschaeftsdokumentRepository,
-                    systemSettingsService,
+                    echterKiDienst,
                     eventPublisher,
                     new LieferantDokumentAbgleich(JsonMapper.builderWithJackson2Defaults().build()),
                     sperreRepository,
@@ -1057,8 +1071,6 @@ class GeminiDokumentAnalyseServiceTest {
                     new org.springframework.transaction.support.TransactionTemplate(
                             mock(org.springframework.transaction.PlatformTransactionManager.class)),
                     dateiService);
-            httpClientMock = mock(HttpClient.class);
-            setField(neu, "httpClient", httpClientMock);
             return neu;
         }
 
@@ -1522,7 +1534,7 @@ class GeminiDokumentAnalyseServiceTest {
                     .anyMatch(zeile -> zeile.startsWith(
                             "Fehler beim Parsen der KI-Response (" + abgeschnitten.length() + " Zeichen): "))
                     .anyMatch(zeile -> zeile.startsWith("Fehler beim Parsen der KI-Antwort"))
-                    .contains("Gemini Multi-Doc API-Aufruf fehlgeschlagen: IOException");
+                    .contains("KI-Multi-Doc-Aufruf fehlgeschlagen: KiAnbieterFehler");
             // Der Schlüssel reist im Header, nie in der URL – die steht in Fehlermeldungen.
             ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
             verify(httpClientMock).send(anfrage.capture(), any());
@@ -1543,8 +1555,8 @@ class GeminiDokumentAnalyseServiceTest {
 
             assertThat(log).noneMatch(zeile -> zeile.contains("Max_Mustermann"));
             assertThat(log).contains(
-                    "[Gemini API] Exception bei Attempt 1/3: IllegalStateException",
-                    "[Gemini API] Alle 3 Retries fehlgeschlagen. Letzte Exception: IllegalStateException");
+                    "[KI] Exception bei Versuch 1/3: IllegalStateException",
+                    "[KI] Alle Versuche fehlgeschlagen. Letzter Fehler: IllegalStateException");
             ArgumentCaptor<HttpRequest> anfrage = ArgumentCaptor.forClass(HttpRequest.class);
             verify(httpClientMock).send(anfrage.capture(), any());
             assertThat(anfrage.getValue().uri().toString()).doesNotContain("dummy-test-key");
@@ -2117,11 +2129,6 @@ class GeminiDokumentAnalyseServiceTest {
             return baumapper.writeValueAsString(envelope);
         }
 
-        private void setField(Object target, String feldName, Object wert) throws Exception {
-            var feld = GeminiDokumentAnalyseService.class.getDeclaredField(feldName);
-            feld.setAccessible(true);
-            feld.set(target, wert);
-        }
     }
 
     @org.junit.jupiter.params.ParameterizedTest
@@ -2437,16 +2444,20 @@ class GeminiDokumentAnalyseServiceTest {
 
         @Test
         void gleichesModelHeisstKeinNachversuch() throws Exception {
-            ReflectionTestUtils.setField(service, "geminiModel", "gemini-flash");
-            ReflectionTestUtils.setField(service, "geminiProModel", "gemini-flash");
+            when(kiDienst.modell(KiFunktion.DOKUMENT_ANALYSE, KiModellStufe.STANDARD))
+                    .thenReturn(Optional.of("gemini-flash"));
+            when(kiDienst.modell(KiFunktion.DOKUMENT_ANALYSE, KiModellStufe.GRUENDLICH))
+                    .thenReturn(Optional.of("gemini-flash"));
 
             assertThat(hatEigenesProModel()).isFalse();
         }
 
         @Test
         void anderesModelHeisstNachversuch() throws Exception {
-            ReflectionTestUtils.setField(service, "geminiModel", "gemini-flash");
-            ReflectionTestUtils.setField(service, "geminiProModel", "gemini-pro");
+            when(kiDienst.modell(KiFunktion.DOKUMENT_ANALYSE, KiModellStufe.STANDARD))
+                    .thenReturn(Optional.of("gemini-flash"));
+            when(kiDienst.modell(KiFunktion.DOKUMENT_ANALYSE, KiModellStufe.GRUENDLICH))
+                    .thenReturn(Optional.of("gemini-pro"));
 
             assertThat(hatEigenesProModel()).isTrue();
         }

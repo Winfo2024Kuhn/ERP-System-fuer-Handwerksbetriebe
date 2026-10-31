@@ -12,10 +12,15 @@ export interface AuthUser {
     /** Admin muss noch die Ersteinrichtung abschließen (Mailserver unvollständig). */
     requiresInitialSetup: boolean;
     /**
-     * Ein brauchbarer KI-Schlüssel (Gemini) ist hinterlegt. Ohne ihn bleiben
+     * Für irgendeinen KI-Anbieter ist ein Schlüssel hinterlegt. Ohne ihn bleiben
      * die KI-Funktionen aus, alles andere läuft normal. Gilt für alle Nutzer.
      */
     kiAktiv: boolean;
+    /**
+     * KI-Funktionen, die gerade wirklich laufen (z. B. `PROGRAMM_HILFE`). Fehlt
+     * die Liste (älterer Server), gilt `kiAktiv` für alle Funktionen.
+     */
+    kiFunktionen?: string[];
     mitarbeiter?: {
         id: number;
         loginToken?: string;

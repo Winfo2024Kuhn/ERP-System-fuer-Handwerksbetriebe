@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 class EmailKiClassificationServiceTest {
 
     @Mock
-    private EmailClassificationGeminiClient ollamaService;
+    private EmailClassificationKiClient ollamaService;
 
     @Mock
     private EmailRepository emailRepository;
@@ -91,7 +91,7 @@ class EmailKiClassificationServiceTest {
                 testEmail, List.of(projektA), List.of());
 
         assertThat(result.isAssigned()).isFalse();
-        assertThat(result.reason()).contains("deaktiviert");
+        assertThat(result.reason()).contains("nicht eingerichtet");
     }
 
     @Test

@@ -15,8 +15,10 @@ vi.mock('./MobileBottomNav', () => ({ MobileBottomNav: () => null }));
 vi.mock('../../features/telefon/AnrufFensterHost', () => ({ AnrufFensterHost: () => null }));
 vi.mock('../../hooks/useBerechtigungenJeBenutzer', () => ({ useBerechtigungenJeBenutzer: () => undefined }));
 
-function zeige(kiAktiv: boolean) {
-    stubbeFetch((url) => (url.pathname === '/api/auth/me' ? antwort(benutzer({ kiAktiv })) : undefined));
+function zeige(kiAktiv: boolean, kiFunktionen?: string[]) {
+    stubbeFetch((url) => (url.pathname === '/api/auth/me'
+        ? antwort(benutzer({ kiAktiv, ...(kiFunktionen ? { kiFunktionen } : {}) }))
+        : undefined));
     return render(
         <ToastProvider>
             <MemoryRouter initialEntries={['/projekte']}>
@@ -56,6 +58,19 @@ describe('MainLayout – KI-Hilfe-Chat', () => {
         zeige(true);
 
         expect(await screen.findByText('Projektliste')).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: 'KI-Hilfe' })).toBeInTheDocument();
+    });
+
+    it('bleibt zu, wenn der gewählte KI-Anbieter die Programm-Hilfe nicht kann', async () => {
+        zeige(true, ['DOKUMENT_ANALYSE', 'EMAIL_TEXT']);
+
+        expect(await screen.findByText('Projektliste')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'KI-Hilfe' })).not.toBeInTheDocument();
+    });
+
+    it('geht auf, wenn die Programm-Hilfe unter den laufenden Funktionen ist', async () => {
+        zeige(true, ['PROGRAMM_HILFE']);
+
         expect(await screen.findByRole('heading', { name: 'KI-Hilfe' })).toBeInTheDocument();
     });
 });

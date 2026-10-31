@@ -195,7 +195,7 @@ Ort: **Kommunikation › E-Mail › E-Mail Vorlagen**. Je Dokumenttyp eine Vorla
 | `mail.credentials.encryption-key` / `MAIL_CREDENTIALS_ENCRYPTIONKEY` | Schlüssel für die Postfach-Passwörter (16, 24 oder 32 Byte) |
 | `email.threading.subject-fallback-lookback` | Wie viele Mails die Verlaufs-Erkennung über den Betreff zurückschaut (Standard 500) |
 | `file.mail-attachment-dir`, `file.supplier-mail-attachment-dir` | Ablage der Anhänge |
-| `ai.email.enabled`, `ai.email.model`, `ai.gemini.model.email-classification` | KI für E-Mails |
+| `ai.email.enabled`, `ai.gemini.model.email-classification` (Stufe „Schnell“) | KI für E-Mails; Anbieter und Modell unter Einstellungen → KI-Funktionen |
 | Systemeinstellung `mail.sent-kopie.aktiv` | Kopie gesendeter Mails in den „Gesendet“-Ordner des Anbieters |
 
 Server, Benutzernamen und Passwörter der Postfächer werden in der Oberfläche gepflegt, nicht in den Properties. Secrets gehören nur in `application-local.properties` bzw. die Umgebung.

@@ -8,7 +8,7 @@ import { NotificationBell } from './NotificationBell';
 import { useAuth } from '../../auth/AuthContext';
 import { useTelefonBerechtigung } from '../../features/telefon/useTelefonBerechtigung';
 import { useNeueSprachnachrichten } from '../../features/telefon/useNeueSprachnachrichten';
-import { useKiAktiv } from '../../features/ki/useKiAktiv';
+import { useKiFunktionAktiv } from '../../features/ki/useKiAktiv';
 import { useZeiterfassungSichtbarkeit } from '../../features/zeiterfassung/useZeiterfassungSichtbarkeit';
 import { NAVIGATION, ZEITERFASSUNG_KATEGORIE, type NavCategory } from './navigation';
 
@@ -22,7 +22,7 @@ export function RibbonNavigation() {
     const location = useLocation();
     const navigate = useNavigate();
     const { user, isAdmin, logout } = useAuth();
-    const kiAktiv = useKiAktiv();
+    const kiHilfeAktiv = useKiFunktionAktiv('PROGRAMM_HILFE');
     const darfTelefon = useTelefonBerechtigung() === true;
     // Während der Prüfung (null) bleibt der Bereich verborgen – so blitzt der Reiter nicht kurz auf.
     const darfZeiterfassung = useZeiterfassungSichtbarkeit() === true;
@@ -136,8 +136,8 @@ export function RibbonNavigation() {
                     ))}
                 </div>
 
-                {/* KI-Hilfe Button – ohne KI-Schlüssel gar nicht da (Erklärung steht in Einstellungen → KI-Funktionen) */}
-                {kiAktiv && (
+                {/* KI-Hilfe Button – nur da, wenn die Programm-Hilfe gerade laufen kann (Einstellungen → KI-Funktionen) */}
+                {kiHilfeAktiv && (
                     <button
                         onClick={() => window.dispatchEvent(new CustomEvent('ki-hilfe-open'))}
                         className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors"

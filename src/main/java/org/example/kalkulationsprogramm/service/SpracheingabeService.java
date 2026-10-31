@@ -5,8 +5,10 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.SpracheingabeErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiZugang;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
 
@@ -101,37 +103,29 @@ public class SpracheingabeService {
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(90);
     private static final int LESE_PUFFER_BYTES = 8192;
 
-    private final SystemSettingsService systemSettingsService;
+    private final KiDienst kiDienst;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
-    private final String modell;
 
     @Autowired
-    public SpracheingabeService(SystemSettingsService systemSettingsService,
-                                 ObjectMapper objectMapper,
-                                 @Value("${ai.gemini.model.spracheingabe:gemini-3.8-flash}") String modell) {
-        this(systemSettingsService, objectMapper,
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build(),
-                modell);
+    public SpracheingabeService(KiDienst kiDienst, ObjectMapper objectMapper) {
+        this(kiDienst, objectMapper, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build());
     }
 
     /** Test-Konstruktor mit injizierbarem HttpClient. */
-    SpracheingabeService(SystemSettingsService systemSettingsService,
-                          ObjectMapper objectMapper,
-                          HttpClient httpClient,
-                          String modell) {
-        this.systemSettingsService = systemSettingsService;
+    SpracheingabeService(KiDienst kiDienst, ObjectMapper objectMapper, HttpClient httpClient) {
+        this.kiDienst = kiDienst;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
-        this.modell = modell;
     }
 
     /**
      * Die Spracheingabe gehoert zu den freiwilligen KI-Funktionen: ohne
-     * Gemini-Schluessel ist sie aus, und die App blendet den Mikrofon-Knopf aus.
+     * passenden KI-Anbieter (bislang nur Gemini) ist sie aus, und die App
+     * blendet den Mikrofon-Knopf aus.
      */
     public boolean istVerfuegbar() {
-        return systemSettingsService.isGeminiConfigured();
+        return kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE);
     }
 
     /** Liest den Strom begrenzt in den Speicher, prueft, ruft Gemini, liefert den Text. */
@@ -142,17 +136,15 @@ public class SpracheingabeService {
         }
 
         // Vor dem Lesen pruefen: ohne Schluessel muss die Aufnahme gar nicht erst in den Speicher.
-        String apiKey = systemSettingsService.getGeminiApiKey();
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new KiNichtEingerichtet();
-        }
+        // Sprache kann bislang nur Gemini; darf die Funktion nicht ueber Gemini laufen, geht nichts an Google.
+        KiZugang zugang = kiDienst.geminiZugang(KiFunktion.SPRACHEINGABE).orElseThrow(KiNichtEingerichtet::new);
 
         byte[] audio = leseHoechstens(audioStrom, MAX_AUDIO_BYTES);
         if (audio.length == 0) {
             throw new IllegalArgumentException("Die Aufnahme ist leer.");
         }
 
-        return sendeUndLies(baueKoerper(audio, normalisiert), apiKey, audio.length, normalisiert);
+        return sendeUndLies(baueKoerper(audio, normalisiert), zugang, audio.length, normalisiert);
     }
 
     /**
@@ -179,10 +171,10 @@ public class SpracheingabeService {
         return koerper;
     }
 
-    private SpracheingabeErgebnis sendeUndLies(ObjectNode koerper, String apiKey, int audioBytes, String inhaltstyp) {
+    private SpracheingabeErgebnis sendeUndLies(ObjectNode koerper, KiZugang zugang, int audioBytes, String inhaltstyp) {
         HttpRequest request;
         try {
-            request = GeminiAnfrage.generateContent(modell, apiKey)
+            request = GeminiAnfrage.generateContent(zugang.modell(), zugang.schluessel())
                     .timeout(READ_TIMEOUT)
                     .POST(HttpRequest.BodyPublishers.ofString(
                             objectMapper.writeValueAsString(koerper), StandardCharsets.UTF_8))
@@ -253,7 +245,7 @@ public class SpracheingabeService {
     /** 503 statt 502: kein Ausfall, sondern bewusst ausgeschaltet (kein KI-Schluessel). */
     public static class KiNichtEingerichtet extends IllegalStateException {
         public KiNichtEingerichtet() {
-            super("Kein Gemini-Schluessel hinterlegt.");
+            super("Fuer die Spracheingabe ist keine KI eingerichtet.");
         }
     }
 
