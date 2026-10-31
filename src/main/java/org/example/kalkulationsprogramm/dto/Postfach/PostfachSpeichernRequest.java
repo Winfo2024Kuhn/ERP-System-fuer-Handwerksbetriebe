@@ -12,6 +12,8 @@ import java.util.List;
  *       Bei „für alle sichtbar“ werden sie gespeichert, wirken aber nicht.</li>
  * </ul>
  * <p>{@code laeuftAus} {@code null} = unverändert (neu: läuft nicht aus).</p>
+ * <p>Spam auf dem Server: {@code spamAufServerVerschieben} {@code null} = unverändert (neu: an).
+ * {@code spamOrdner} {@code null} = unverändert, leer = automatisch erkennen, sonst der Ordnername.</p>
  */
 public record PostfachSpeichernRequest(
         String emailAdresse,
@@ -29,7 +31,9 @@ public record PostfachSpeichernRequest(
         Boolean sichtbarFuerAlle,
         List<Long> abteilungIds,
         List<Long> benutzerIds,
-        Boolean laeuftAus) {
+        Boolean laeuftAus,
+        Boolean spamAufServerVerschieben,
+        String spamOrdner) {
 
     /** Ohne Sichtbarkeits-Angaben (wie in Etappe 1): Sichtbarkeit bleibt unverändert. */
     public PostfachSpeichernRequest(String emailAdresse, String anzeigename, Boolean aktiv, Integer sortierung,
@@ -37,5 +41,15 @@ public record PostfachSpeichernRequest(
             String smtpHost, Integer smtpPort, String imapHost, Integer imapPort) {
         this(emailAdresse, anzeigename, aktiv, sortierung, hauptpostfach, fuerGeschaeftsdokumente, benutzername,
                 passwort, smtpHost, smtpPort, imapHost, imapPort, null, null, null, null);
+    }
+
+    /** Ohne Spam-Abgleich-Angaben: Schalter und Spam-Ordner bleiben unverändert. */
+    public PostfachSpeichernRequest(String emailAdresse, String anzeigename, Boolean aktiv, Integer sortierung,
+            Boolean hauptpostfach, Boolean fuerGeschaeftsdokumente, String benutzername, String passwort,
+            String smtpHost, Integer smtpPort, String imapHost, Integer imapPort, Boolean sichtbarFuerAlle,
+            List<Long> abteilungIds, List<Long> benutzerIds, Boolean laeuftAus) {
+        this(emailAdresse, anzeigename, aktiv, sortierung, hauptpostfach, fuerGeschaeftsdokumente, benutzername,
+                passwort, smtpHost, smtpPort, imapHost, imapPort, sichtbarFuerAlle, abteilungIds, benutzerIds,
+                laeuftAus, null, null);
     }
 }

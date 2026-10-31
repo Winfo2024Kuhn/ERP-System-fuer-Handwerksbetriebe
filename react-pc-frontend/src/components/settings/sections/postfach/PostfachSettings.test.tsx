@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PostfachSettings } from './PostfachSettings';
 import { ToastProvider } from '../../../ui/toast';
@@ -159,6 +159,9 @@ describe('PostfachSettings – Anlegen', () => {
             sichtbarFuerAlle: null,
             abteilungIds: null,
             benutzerIds: null,
+            // Neues Postfach: Spam wandert auf dem Server mit, Ordner wird automatisch erkannt.
+            spamAufServerVerschieben: true,
+            spamOrdner: '',
         });
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
         expect(await screen.findByText('Postfach angelegt.')).toBeInTheDocument();
@@ -647,5 +650,146 @@ describe('PostfachDialog – Läuft aus', () => {
         await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }));
         expect(await screen.findByText('Änderungen verwerfen?')).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+    });
+});
+
+describe('PostfachDialog – Spam auf dem Server', () => {
+    const ORDNER_URL = '/api/postfaecher/3/server-ordner';
+    // Posteingang, Papierkorb & Co. liefert der Server gar nicht erst als Auswahl.
+    const ordnerAntwort = { ordner: [{ name: 'INBOX.Werbung', spamOrdner: false }, { name: 'Junk', spamOrdner: true }], erkannterSpamOrdner: 'Junk' };
+    const ordnerAbrufe = (fetchMock: ReturnType<typeof stubFetch>) =>
+        fetchMock.mock.calls.filter(([u]) => String(u) === ORDNER_URL).length;
+
+    async function oeffneInfo(user: ReturnType<typeof userEvent.setup>, postfach: PostfachDto, handler?: Handler) {
+        const fetchMock = stubFetch([postfach], (url, init) => {
+            if (url === '/api/postfaecher/3' && init?.method === 'PUT') return { body: postfach };
+            return handler?.(url, init);
+        });
+        renderSettings();
+        await user.click(await screen.findByRole('button', { name: 'Postfach info@musterbetrieb.example bearbeiten' }));
+        const dialog = await screen.findByRole('dialog');
+        return { fetchMock, dialog };
+    }
+
+    it('zeigt den Abschnitt nur mit Server für den Abruf; neue Postfächer erkennen den Ordner nach dem Speichern', async () => {
+        const user = userEvent.setup();
+        stubFetch([info]);
+        renderSettings();
+        await user.click(await screen.findByRole('button', { name: /Neues Postfach/ }));
+        const dialog = await screen.findByRole('dialog');
+
+        const abschnitt = within(dialog).getByTestId('postfach-spam');
+        expect(within(abschnitt).getByRole('checkbox', { name: /Spam auch auf dem Mail-Server in den Spam-Ordner verschieben/ })).toBeChecked();
+        expect(within(abschnitt).getByText('Der Spam-Ordner wird nach dem Speichern automatisch erkannt.')).toBeInTheDocument();
+        expect(within(abschnitt).queryByRole('combobox')).not.toBeInTheDocument();
+
+        await user.click(within(dialog).getByRole('button', { name: /^Server-Einstellungen/ }));
+        await user.clear(within(dialog).getByLabelText('Server für den Abruf (IMAP)'));
+        expect(within(dialog).queryByTestId('postfach-spam')).not.toBeInTheDocument();
+    });
+
+    it('lädt die Ordner erst beim Aufklappen und schickt den gewählten Ordner mit', async () => {
+        const user = userEvent.setup();
+        const { fetchMock, dialog } = await oeffneInfo(user, { ...info, spamOrdnerErkannt: 'Junk' },
+            (url) => (url === ORDNER_URL ? { body: ordnerAntwort } : undefined));
+        expect(within(dialog).getByTestId('spam-ordner-zuletzt')).toHaveTextContent('Zuletzt benutzt: Junk');
+        // Öffnen des Dialogs allein baut keine Verbindung zum Mail-Server auf.
+        expect(ordnerAbrufe(fetchMock)).toBe(0);
+
+        const auswahl = within(dialog).getByRole('combobox', { name: 'Spam-Ordner auf dem Server' });
+        expect(auswahl).toHaveTextContent('Automatisch erkennen (empfohlen)');
+        await user.click(auswahl);
+        await user.click(await screen.findByRole('option', { name: 'Junk (Spam-Ordner)' }));
+        expect(auswahl).toHaveTextContent('Junk (Spam-Ordner)');
+        expect(within(dialog).queryByTestId('spam-ordner-ladefehler')).not.toBeInTheDocument();
+        expect(ordnerAbrufe(fetchMock)).toBe(1);
+
+        // Erneutes Aufklappen lädt nicht noch einmal.
+        await user.click(auswahl);
+        expect(await screen.findByRole('option', { name: 'INBOX.Werbung' })).toBeInTheDocument();
+        await user.keyboard('{Escape}');
+        expect(ordnerAbrufe(fetchMock)).toBe(1);
+
+        await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(bodyVon(fetchMock, '/api/postfaecher/3', 'PUT')).toMatchObject({
+            spamAufServerVerschieben: true, spamOrdner: 'Junk',
+        }));
+    });
+
+    it('ausgeschaltet sperrt die Auswahl, zählt als Änderung und schickt false mit „Automatisch erkennen“', async () => {
+        const user = userEvent.setup();
+        const { fetchMock, dialog } = await oeffneInfo(user, info);
+        await user.click(within(dialog).getByRole('checkbox', { name: /Spam auch auf dem Mail-Server/ }));
+        const gesperrt = within(dialog).getByRole('combobox', { name: 'Spam-Ordner auf dem Server' });
+        expect(gesperrt).toBeDisabled();
+        // Auch ein Klick auf die gesperrte Auswahl baut keine Verbindung zum Mail-Server auf.
+        fireEvent.pointerDown(gesperrt);
+
+        await user.click(within(dialog).getByRole('link', { name: 'Einstellungen → Abteilungen & Rechte' }));
+        expect(await screen.findByText('Änderungen verwerfen?')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+
+        await user.click(within(dialog).getByRole('button', { name: 'Speichern' }));
+        await waitFor(() => expect(bodyVon(fetchMock, '/api/postfaecher/3', 'PUT')).toMatchObject({
+            spamAufServerVerschieben: false, spamOrdner: '',
+        }));
+        expect(ordnerAbrufe(fetchMock)).toBe(0);
+    });
+
+    it('zeigt einen Ladefehler dezent, behält den gespeicherten Ordner und lädt auf Knopfdruck neu', async () => {
+        const user = userEvent.setup();
+        let versuch = 0;
+        const { fetchMock, dialog } = await oeffneInfo(user, { ...info, spamOrdner: 'Alter Spam' }, (url) => {
+            if (url !== ORDNER_URL) return undefined;
+            versuch += 1;
+            return versuch === 1
+                ? { status: 400, body: { message: 'Verbindung zum Posteingangs-Server fehlgeschlagen. Bitte den Zugang prüfen.' } }
+                : { body: ordnerAntwort };
+        });
+        const auswahl = within(dialog).getByRole('combobox', { name: 'Spam-Ordner auf dem Server' });
+        expect(auswahl).toHaveTextContent('Alter Spam');
+
+        await user.click(auswahl);
+        expect(await within(dialog).findByTestId('spam-ordner-ladefehler'))
+            .toHaveTextContent('Verbindung zum Posteingangs-Server fehlgeschlagen. Bitte den Zugang prüfen.');
+        expect(screen.getByRole('option', { name: 'Automatisch erkennen (empfohlen)' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Alter Spam' })).toBeInTheDocument();
+        await user.keyboard('{Escape}');
+
+        await user.click(within(dialog).getByRole('button', { name: 'Erneut versuchen' }));
+        await waitFor(() => expect(within(dialog).queryByTestId('spam-ordner-ladefehler')).not.toBeInTheDocument());
+        expect(ordnerAbrufe(fetchMock)).toBe(2);
+        await user.click(auswahl);
+        expect(await screen.findByRole('option', { name: 'Alter Spam (nicht auf dem Server gefunden)' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Junk (Spam-Ordner)' })).toBeInTheDocument();
+    });
+
+    it('zeigt einen Fehler des letzten Abgleichs als Warnung', async () => {
+        const user = userEvent.setup();
+        const meldung = 'Auf dem Server wurde kein Spam-Ordner gefunden. Bitte den Spam-Ordner im Postfach auswählen.';
+        const { dialog } = await oeffneInfo(user, { ...info, spamAbgleichFehler: meldung });
+        const warnung = within(dialog).getByTestId('spam-abgleich-fehler');
+        expect(warnung).toHaveTextContent(meldung);
+        expect(warnung).toHaveClass('text-amber-800');
+        expect(within(dialog).queryByTestId('spam-ordner-zuletzt')).not.toBeInTheDocument();
+    });
+
+    it('lädt ohne vollständigen Abruf-Zugang keine Ordner und sagt warum', async () => {
+        const user = userEvent.setup();
+        const { fetchMock, dialog } = await oeffneInfo(user, { ...info, abrufAktiv: false });
+        expect(within(dialog).getByText('Die Ordner vom Server erscheinen hier, sobald der Zugang zum Abruf vollständig gespeichert ist.')).toBeInTheDocument();
+        await user.click(within(dialog).getByRole('combobox', { name: 'Spam-Ordner auf dem Server' }));
+        expect(await screen.findByRole('option', { name: 'Automatisch erkennen (empfohlen)' })).toBeInTheDocument();
+        expect(ordnerAbrufe(fetchMock)).toBe(0);
+    });
+
+    it('erklärt Schalter und Ordner-Auswahl per Info-Knopf', async () => {
+        const user = userEvent.setup();
+        const { dialog } = await oeffneInfo(user, info);
+        await user.click(within(dialog).getByRole('button', { name: 'Mehr zu: Spam auf dem Server verschieben' }));
+        expect(await screen.findByRole('dialog', { name: 'Spam auf dem Server verschieben' })).toHaveTextContent('Alle zwei Minuten schaut das ERP');
+        await user.keyboard('{Escape}');
+        await user.click(within(dialog).getByRole('button', { name: 'Mehr zu: Spam-Ordner' }));
+        expect(await screen.findByRole('dialog', { name: 'Spam-Ordner' })).toHaveTextContent('Nur in diesen Ordner verschiebt das ERP Spam');
     });
 });

@@ -47,6 +47,7 @@ Supervised Multinomial Naive Bayes in reinem Java.
 - **Ensemble:** 40% Regel-Score (`SpamFilterService`) + 60% Bayes-Score (`SpamBayesService`).
 - **Daten:** Token-Frequenzen in `spam_token_count` (Entity `SpamTokenCount`), In-Memory-Cache (5-Min-Refresh).
 - **Feedback:** User trainiert das Modell über die Endpoints `POST /api/emails/{emailId}/mark-spam` bzw. `mark-not-spam` (`UnifiedEmailController`) weiter.
+- **Auf dem Server:** `service/mail/ServerSpamAbgleichService` verschiebt Spam alle zwei Minuten auch auf dem IMAP-Server aus `INBOX` in den Spam-Ordner und bei „Kein Spam“ zurück (Schalter je Postfach). Wer `imap_ordner`/`imap_uid` einer `EmailPostfachZuordnung` liest, muss damit rechnen, dass sie auf den Spam-Ordner zeigen.
 - **Keine Neubewertung aller Mails:** Ein Lauf, der alte Mails neu bewertet und `isSpam` setzt, muss die Handentscheidung (`userSpamVerdict`) stehen lassen und darf zugeordnete Mails (Projekt/Anfrage/Lieferant) nie zu Spam machen – Spam wird auch auf dem Mailserver in den Spam-Ordner verschoben. `SpamFilterService.analyzeAndMarkSpam` lässt Mails mit Handentscheidung deshalb unverändert, `EmailImportService.reprocessSpam` (läuft bei `POST /api/emails/import` und `scan-assignments`) prüft nur noch nie bewertete Mails (`findUnanalyzedForSpam`), und den früheren Endpunkt `spam-model/rescore` gibt es nicht mehr (`AdminMassenlaeufeSecurityTest`).
 
 ## Externe Dienste (Config)

@@ -10,6 +10,8 @@
  * brechen das Hot-Reload (react-refresh).</p>
  */
 
+import { leseFehlermeldung } from '../../lib/apiFehler';
+
 /** Kurzform, wie sie an jeder Mail hängt (`postfaecher`, `antwortPostfach`). */
 export interface PostfachKurz {
     id: number;
@@ -59,6 +61,17 @@ export interface PostfachDto extends PostfachKurz {
     sichtbarFuerAbteilungen: SichtbarAbteilung[];
     /** Einzeln freigegebene Benutzer (wirken nur bei `sichtbarFuerAlle = false`). */
     sichtbarFuerBenutzer: SichtbarBenutzer[];
+    /**
+     * Spam auch auf dem Mail-Server aus dem Posteingang in den Spam-Ordner verschieben.
+     * Fehlt bei älteren Antworten → gilt als `true` (Standard).
+     */
+    spamAufServerVerschieben?: boolean;
+    /** Von Hand gewählter Spam-Ordner; `null` = automatisch erkennen. */
+    spamOrdner?: string | null;
+    /** Ordner, den der letzte Abgleich benutzt hat; `null` = noch keiner bzw. keiner gefunden. */
+    spamOrdnerErkannt?: string | null;
+    /** Verständlicher Satz, wenn der letzte Abgleich nicht klappte, sonst `null`. */
+    spamAbgleichFehler?: string | null;
 }
 
 /** Abteilung, die ein Postfach sehen darf. */
@@ -96,6 +109,10 @@ export interface PostfachSpeichernRequest {
     abteilungIds: number[] | null;
     /** `null` = unverändert, `[]` = leeren. */
     benutzerIds: number[] | null;
+    /** `null` = unverändert (bei neuem Postfach: `true`). */
+    spamAufServerVerschieben: boolean | null;
+    /** `null` = unverändert, `""` = automatisch erkennen, sonst der exakte Ordnername. */
+    spamOrdner: string | null;
 }
 
 /** Body für `POST /api/postfaecher/test`. */
@@ -115,6 +132,84 @@ export interface PostfachTestErgebnis {
     versandOk: boolean;
     abrufOk: boolean;
     message: string;
+}
+
+/** Ein Ordner auf dem Mail-Server aus `GET /api/postfaecher/{id}/server-ordner`. */
+export interface ServerOrdner {
+    name: string;
+    /** `true` = diesen Ordner würde das ERP automatisch als Spam-Ordner nehmen. */
+    spamOrdner: boolean;
+}
+
+/** Antwort von `GET /api/postfaecher/{id}/server-ordner`. */
+export interface ServerOrdnerAntwort {
+    ordner: ServerOrdner[];
+    /** Automatisch erkannter Spam-Ordner; `null` = keiner erkannt. */
+    erkannterSpamOrdner: string | null;
+}
+
+/** Wert der Auswahl „Spam-Ordner auf dem Server“ für „Automatisch erkennen“. */
+export const SPAM_ORDNER_AUTOMATISCH = '';
+
+/** Spam-Schalter des Postfachs; fehlt das Feld (ältere Antwort), gilt der Standard „an“. */
+export function spamVerschiebenAn(postfach: Pick<PostfachDto, 'spamAufServerVerschieben'>): boolean {
+    return postfach.spamAufServerVerschieben !== false;
+}
+
+/** Liest die Ordnerliste robust ein – Einträge ohne Namen fliegen raus. */
+export function parseServerOrdner(data: unknown): ServerOrdnerAntwort {
+    const roh = data && typeof data === 'object' ? data as { ordner?: unknown; erkannterSpamOrdner?: unknown } : {};
+    const ordner = Array.isArray(roh.ordner)
+        ? roh.ordner
+            .filter((e): e is { name: string; spamOrdner?: unknown } =>
+                !!e && typeof e === 'object' && typeof (e as { name?: unknown }).name === 'string'
+                && (e as { name: string }).name.length > 0)
+            .map(e => ({ name: e.name, spamOrdner: e.spamOrdner === true }))
+        : [];
+    const erkannt = typeof roh.erkannterSpamOrdner === 'string' && roh.erkannterSpamOrdner
+        ? roh.erkannterSpamOrdner
+        : null;
+    return { ordner, erkannterSpamOrdner: erkannt };
+}
+
+const SERVER_ORDNER_FEHLER = 'Die Ordner vom Mail-Server konnten nicht geladen werden.';
+const SERVER_ORDNER_NETZFEHLER = 'Verbindung zum Server fehlgeschlagen. Die Ordner konnten nicht geladen werden.';
+
+/**
+ * Lädt die Ordnerliste vom Mail-Server des gespeicherten Postfachs.
+ * Bei einem Fehler wird mit der Meldung des Servers (oder einem Ersatztext) abgelehnt.
+ */
+export function ladeServerOrdner(postfachId: number): Promise<ServerOrdnerAntwort> {
+    return fetch(`/api/postfaecher/${encodeURIComponent(postfachId)}/server-ordner`)
+        .catch(() => { throw new Error(SERVER_ORDNER_NETZFEHLER); })
+        .then(res => res.ok
+            ? res.json().then(parseServerOrdner, () => { throw new Error(SERVER_ORDNER_FEHLER); })
+            : leseFehlermeldung(res, SERVER_ORDNER_FEHLER).then(text => { throw new Error(text); }));
+}
+
+export interface SpamOrdnerOption {
+    value: string;
+    label: string;
+}
+
+/**
+ * Auswahl „Spam-Ordner auf dem Server“: zuerst „Automatisch erkennen“, dann die Ordner
+ * vom Server. Ein gespeicherter Ordner, der (noch) nicht in der Liste steht, bleibt wählbar.
+ * `ordner = null` heißt: Liste noch nicht geladen.
+ */
+export function spamOrdnerOptionen(ordner: ServerOrdner[] | null, gespeichert: string | null | undefined): SpamOrdnerOption[] {
+    const optionen: SpamOrdnerOption[] = [{ value: SPAM_ORDNER_AUTOMATISCH, label: 'Automatisch erkennen (empfohlen)' }];
+    for (const eintrag of ordner ?? []) {
+        if (optionen.some(o => o.value === eintrag.name)) continue;
+        optionen.push({ value: eintrag.name, label: eintrag.spamOrdner ? `${eintrag.name} (Spam-Ordner)` : eintrag.name });
+    }
+    if (gespeichert && !optionen.some(o => o.value === gespeichert)) {
+        optionen.push({
+            value: gespeichert,
+            label: ordner && ordner.length > 0 ? `${gespeichert} (nicht auf dem Server gefunden)` : gespeichert,
+        });
+    }
+    return optionen;
 }
 
 /** Lokaler Teil der Adresse mit @, z. B. „info@“ – für das kleine Postfach-Schild. */
