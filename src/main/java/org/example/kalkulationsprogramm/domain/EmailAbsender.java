@@ -114,6 +114,25 @@ public class EmailAbsender {
     private boolean laeuftAus = false;
 
     /**
+     * Spam auch auf dem Mail-Server aus dem Posteingang in den Spam-Ordner verschieben
+     * ({@code ServerSpamAbgleichService}); „Kein Spam“ holt die Mail zurück.
+     */
+    @Column(name = "spam_auf_server_verschieben", nullable = false)
+    private boolean spamAufServerVerschieben = true;
+
+    /** Von Hand gewählter Spam-Ordner auf dem Server; {@code null} = automatisch erkennen. */
+    @Column(name = "spam_ordner", length = 255)
+    private String spamOrdner;
+
+    /** Ordner, den der letzte Spam-Abgleich benutzt hat – nur zur Anzeige. */
+    @Column(name = "spam_ordner_erkannt", length = 255)
+    private String spamOrdnerErkannt;
+
+    /** Verständlicher Satz, wenn der letzte Spam-Abgleich scheiterte; sonst {@code null}. */
+    @Column(name = "spam_abgleich_fehler", length = 500)
+    private String spamAbgleichFehler;
+
+    /**
      * Freigegebene Abteilungen. Bleibt bei „für alle sichtbar“ gespeichert (wirkt dann nicht),
      * damit ein späteres Umschalten die Auswahl nicht verliert. Nie als JSON ausliefern.
      */

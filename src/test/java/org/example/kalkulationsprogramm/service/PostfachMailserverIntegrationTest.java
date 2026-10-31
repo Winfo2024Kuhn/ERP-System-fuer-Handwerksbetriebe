@@ -55,7 +55,8 @@ import jakarta.mail.internet.MimeMessage;
 @DataJpaTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import({ EmailImportService.class, PostfachService.class, PostfachZugangService.class, PostfachVersandService.class,
-        SystemSettingsService.class, MailSecretService.class, SentMailArchiver.class })
+        SystemSettingsService.class, MailSecretService.class, SentMailArchiver.class,
+        org.example.kalkulationsprogramm.service.mail.ServerSpamAbgleichService.class })
 @TestPropertySource(properties = {
         "mail.credentials.encryption-key=0123456789abcdef",
         "email.features.enabled=true"
@@ -76,6 +77,7 @@ class PostfachMailserverIntegrationTest {
     @MockitoBean private SeenSenderDomainRepository seenSenderDomainRepository;
 
     @Autowired private EmailImportService emailImportService;
+    @Autowired private org.example.kalkulationsprogramm.service.mail.ServerSpamAbgleichService serverSpamAbgleichService;
     @Autowired private PostfachVersandService postfachVersandService;
     @Autowired private MailSecretService mailSecretService;
     @Autowired private EmailAbsenderRepository postfachRepository;
@@ -354,6 +356,63 @@ class PostfachMailserverIntegrationTest {
             Folder sent = store.getFolder("INBOX.Sent");
             sent.open(Folder.READ_ONLY);
             assertThat(sent.getMessageCount()).isEqualTo(3);
+        }
+    }
+
+    /**
+     * Endgültiges Löschen nach dem Spam-Abgleich: Die Mail im Spam-Ordner wird dort gefunden.
+     * Eine Mail, die jemand am Handy aus dem Spam zurück in den Posteingang geholt hat, bleibt
+     * dagegen stehen – die Ersatzsuche geht bei verschobenen Mails nie in den Posteingang.
+     */
+    @Test
+    void endgueltigesLoeschenFindetVerschobenenSpamUndLaesstGeretteteMailStehen() throws Exception {
+        try (Store store = imap("info@example.com", "pw-info")) {
+            store.getFolder("Junk").create(Folder.HOLDS_MESSAGES);
+        }
+        MAILSERVER.getUserManager().getUser("info@example.com")
+                .deliver(nachricht("<spam-a@example.org>", "info@example.com", null, "Gewinnspiel"));
+        MAILSERVER.getUserManager().getUser("info@example.com")
+                .deliver(nachricht("<spam-b@example.org>", "info@example.com", null, "Rabattaktion"));
+        emailImportService.doImport();
+        new TransactionTemplate(transactionManager).executeWithoutResult(s -> emailRepository.findAll().forEach(e -> {
+            e.setSpam(true);
+            emailRepository.save(e);
+        }));
+
+        serverSpamAbgleichService.gleicheAb();
+        try (Store store = imap("info@example.com", "pw-info")) {
+            Folder junk = store.getFolder("Junk");
+            junk.open(Folder.READ_ONLY);
+            assertThat(junk.getMessageCount()).isEqualTo(2);
+            junk.close(false);
+        }
+
+        // Am Handy: „Rabattaktion“ ist doch kein Spam und kommt zurück in den Posteingang.
+        try (Store store = imap("info@example.com", "pw-info")) {
+            Folder junk = store.getFolder("Junk");
+            junk.open(Folder.READ_WRITE);
+            for (Message m : junk.getMessages()) {
+                if ("<spam-b@example.org>".equals(m.getHeader("Message-ID")[0])) {
+                    junk.copyMessages(new Message[] { m }, store.getFolder("INBOX"));
+                    m.setFlag(jakarta.mail.Flags.Flag.DELETED, true);
+                }
+            }
+            junk.close(true);
+        }
+
+        emailImportService.deleteEmailFromServer(emailRepository.findByMessageId("<spam-a@example.org>").orElseThrow());
+        emailImportService.deleteEmailFromServer(emailRepository.findByMessageId("<spam-b@example.org>").orElseThrow());
+
+        try (Store store = imap("info@example.com", "pw-info")) {
+            Folder junk = store.getFolder("Junk");
+            junk.open(Folder.READ_ONLY);
+            assertThat(junk.getMessageCount()).isZero();
+            junk.close(false);
+            Folder inbox = store.getFolder("INBOX");
+            inbox.open(Folder.READ_ONLY);
+            assertThat(inbox.getMessages()).extracting(m -> m.getHeader("Message-ID")[0])
+                    .containsExactly("<spam-b@example.org>");
+            inbox.close(false);
         }
     }
 }

@@ -72,6 +72,35 @@ class EmailCleanupServiceLueckenTest {
     }
 
     @Test
+    @DisplayName("Papierkorb: zugeordnete Mails (Projekt, Anfrage, Lieferant) werden nie automatisch geloescht")
+    void papierkorbZugeordneteBleiben() {
+        Email projektMail = mail(1L);
+        projektMail.setDeletedAt(LocalDateTime.now().minusDays(400));
+        projektMail.setProjekt(new org.example.kalkulationsprogramm.domain.Projekt());
+        Email anfrageMail = mail(2L);
+        anfrageMail.setDeletedAt(LocalDateTime.now().minusDays(400));
+        anfrageMail.setAnfrage(new org.example.kalkulationsprogramm.domain.Anfrage());
+        Email lieferantMail = mail(3L);
+        lieferantMail.setDeletedAt(LocalDateTime.now().minusDays(400));
+        lieferantMail.setLieferant(new org.example.kalkulationsprogramm.domain.Lieferanten());
+        Email lose = mail(4L);
+        lose.setDeletedAt(LocalDateTime.now().minusDays(400));
+        when(emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc())
+                .thenReturn(List.of(projektMail, anfrageMail, lieferantMail, lose));
+        when(emailRepository.findSpam()).thenReturn(List.of());
+        when(emailRepository.findNewsletter()).thenReturn(List.of());
+
+        service.cleanupEmails();
+
+        verify(emailRepository).delete(lose);
+        verify(emailImportService).deleteEmailFromServer(lose);
+        for (Email bleibt : List.of(projektMail, anfrageMail, lieferantMail)) {
+            verify(emailRepository, never()).delete(bleibt);
+            verify(emailImportService, never()).deleteEmailFromServer(bleibt);
+        }
+    }
+
+    @Test
     @DisplayName("Papierkorb: hoher Spam-Score (>=85) markiert die Mail vor dem Loeschen als Spam")
     void papierkorbSpamScoreMarkiert() {
         Email alt = mail(1L);

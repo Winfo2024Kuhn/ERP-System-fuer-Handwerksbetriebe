@@ -388,7 +388,7 @@ public class EmailImportService {
      * die betroffenen Werte nennt – das können Adressen sein. Bei ungültigen
      * Adressen steht die Adresse schon in der ersten Zeile, dort nur die Art.
      */
-    static String fehlerKurz(Throwable e) {
+    public static String fehlerKurz(Throwable e) {
         Throwable ursache = e;
         for (int tiefe = 0; tiefe < 20 && ursache.getCause() != null; tiefe++) {
             ursache = ursache.getCause();
@@ -1414,13 +1414,22 @@ public class EmailImportService {
      * Anzeigenamen („Max Mustermann &lt;max@example.com&gt;“).
      */
     static boolean passtZurGespeichertenMail(Email gespeichert, Message msg) throws MessagingException {
+        return passtZu(gespeichert.getFromAddress(), gespeichert.getSubject(), msg);
+    }
+
+    /**
+     * Gleicher Absender und gleicher Betreff wie gespeichert – Schutz gegen eine fremde Mail,
+     * die eine bekannte Message-ID wiederverwendet. Auch für den Spam-Abgleich.
+     */
+    public static boolean passtZu(String gespeicherterAbsender, String gespeicherterBetreff, Message msg)
+            throws MessagingException {
         String absender = null;
         Address[] von = msg.getFrom();
         if (von != null && von.length > 0 && von[0] != null) {
             absender = von[0] instanceof InternetAddress ia ? ia.getAddress() : von[0].toString();
         }
-        return normalisierteAdresse(absender).equals(normalisierteAdresse(gespeichert.getFromAddress()))
-                && normalisierterBetreff(msg.getSubject()).equals(normalisierterBetreff(gespeichert.getSubject()));
+        return normalisierteAdresse(absender).equals(normalisierteAdresse(gespeicherterAbsender))
+                && normalisierterBetreff(msg.getSubject()).equals(normalisierterBetreff(gespeicherterBetreff));
     }
 
     /** Nackte Adresse in Kleinbuchstaben; aus „Name &lt;adresse&gt;“ wird „adresse“. */
@@ -1555,7 +1564,7 @@ public class EmailImportService {
         if (zuordnungen.isEmpty()) {
             // Mail aus der Zeit vor den Postfächern: wie bisher im Hauptpostfach löschen.
             loescheAufServer(email, systemSettingsService.getStandardImapZugang(),
-                    email.getImapFolder(), email.getImapUid(), true);
+                    email.getImapFolder(), email.getImapUid(), true, false);
             return;
         }
         // Liegt die Mail in mehreren Postfächern, verschwindet sie aus allen.
@@ -1568,12 +1577,23 @@ public class EmailImportService {
             }
             String ordner = zuordnung.getImapOrdner() != null ? zuordnung.getImapOrdner() : email.getImapFolder();
             Long uid = zuordnung.getImapUid() != null ? zuordnung.getImapUid() : email.getImapUid();
-            loescheAufServer(email, zugang.imapZugang(), ordner, uid, zugang.hauptpostfach());
+            loescheAufServer(email, zugang.imapZugang(), ordner, uid, zugang.hauptpostfach(),
+                    nurImBekanntenOrdner(zuordnung, ordner));
         }
     }
 
+    /**
+     * Hat der Spam-Abgleich die Mail aus dem Posteingang bewegt, wird nur in dem Ordner gelöscht,
+     * in den das ERP sie gelegt hat. Hat jemand sie am Handy in den Posteingang zurückgeholt,
+     * darf die Ersatzsuche sie dort nicht finden und endgültig löschen.
+     */
+    static boolean nurImBekanntenOrdner(org.example.kalkulationsprogramm.domain.EmailPostfachZuordnung zuordnung,
+            String ordner) {
+        return zuordnung.getServerSpamStatus() != null && ordner != null && !"INBOX".equalsIgnoreCase(ordner);
+    }
+
     private void loescheAufServer(Email email, SystemSettingsService.ImapZugang zugang, String imapOrdner,
-            Long imapUid, boolean hauptpostfach) {
+            Long imapUid, boolean hauptpostfach, boolean nurBekannterOrdner) {
         String user = zugang.username();
         String pass = zugang.password();
         String host = zugang.host();
@@ -1645,8 +1665,14 @@ public class EmailImportService {
             log.debug("[EmailDeletion] Fallback: Suche nach Message-ID {} in allen Ordnern", email.getMessageId());
 
             // Alle Ordner durchsuchen
-            List<String> foldersToCheck = new ArrayList<>(hauptpostfach ? INCOMING_FOLDERS : WEITERE_INCOMING_FOLDERS);
-            foldersToCheck.addAll(hauptpostfach ? OUTGOING_FOLDERS : WEITERE_OUTGOING_FOLDERS);
+            List<String> foldersToCheck = new ArrayList<>();
+            if (nurBekannterOrdner) {
+                // Vom Spam-Abgleich verschoben: nur dort suchen, nie im Posteingang.
+                foldersToCheck.add(imapOrdner);
+            } else {
+                foldersToCheck.addAll(hauptpostfach ? INCOMING_FOLDERS : WEITERE_INCOMING_FOLDERS);
+                foldersToCheck.addAll(hauptpostfach ? OUTGOING_FOLDERS : WEITERE_OUTGOING_FOLDERS);
+            }
 
             for (String folderName : foldersToCheck) {
                 try {

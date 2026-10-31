@@ -1,20 +1,26 @@
 import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
-import { ChevronDown, ChevronUp, Eye, Loader2, PlugZap, Save, Server, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, Eye, Loader2, PlugZap, RotateCw, Save, Server, ShieldAlert, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../ui/dialog';
 import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
 import { Label } from '../../../ui/label';
+import { Select } from '../../../ui/select-custom';
 import { useToast } from '../../../ui/toast';
 import { useConfirm } from '../../../ui/confirm-dialog';
 import { PasswordField, TestResultBanner } from '../../settingsUi';
 import { InfoAbschnitt, InfoButton } from '../../../ui/info-button';
 import { parseErrorMessage } from '../../settingsApi';
 import { cn } from '../../../../lib/utils';
-import type {
-    PostfachDto,
-    PostfachSpeichernRequest,
-    PostfachTestErgebnis,
-    PostfachTestRequest,
+import {
+    ladeServerOrdner,
+    SPAM_ORDNER_AUTOMATISCH,
+    spamOrdnerOptionen,
+    spamVerschiebenAn,
+    type PostfachDto,
+    type PostfachSpeichernRequest,
+    type PostfachTestErgebnis,
+    type PostfachTestRequest,
+    type ServerOrdner,
 } from '../../../../features/email/postfach';
 
 const AUSLAUFEND_KEIN_HAUPTPOSTFACH = 'Ein auslaufendes Postfach kann nicht Hauptpostfach werden. Zuerst „Läuft aus“ abwählen.';
@@ -37,7 +43,17 @@ interface Formular {
     smtpPort: string;
     imapHost: string;
     imapPort: string;
+    spamAufServerVerschieben: boolean;
+    /** `""` = automatisch erkennen. */
+    spamOrdner: string;
 }
+
+/** Ordnerliste vom Mail-Server für die Spam-Ordner-Auswahl. */
+type ServerOrdnerStand =
+    | { status: 'offen' }
+    | { status: 'laedt' }
+    | { status: 'fertig'; liste: ServerOrdner[] }
+    | { status: 'fehler'; meldung: string };
 
 const alsText = (wert: string | number | null | undefined) => (wert == null ? '' : String(wert));
 
@@ -62,6 +78,8 @@ function startwerte(postfach: PostfachDto | null, vorlage: PostfachDto | undefin
             smtpPort: alsText(postfach.smtpPort),
             imapHost: alsText(postfach.imapHost),
             imapPort: alsText(postfach.imapPort),
+            spamAufServerVerschieben: spamVerschiebenAn(postfach),
+            spamOrdner: postfach.spamOrdner ?? SPAM_ORDNER_AUTOMATISCH,
         };
     }
     return {
@@ -77,6 +95,8 @@ function startwerte(postfach: PostfachDto | null, vorlage: PostfachDto | undefin
         smtpPort: alsText(vorlage?.smtpPort) || SMTP_PORT_STANDARD,
         imapHost: alsText(vorlage?.imapHost),
         imapPort: alsText(vorlage?.imapPort) || IMAP_PORT_STANDARD,
+        spamAufServerVerschieben: true,
+        spamOrdner: SPAM_ORDNER_AUTOMATISCH,
     };
 }
 
@@ -134,6 +154,9 @@ export function PostfachDialog({
     const [testErgebnis, setTestErgebnis] = useState<PostfachTestErgebnis | null>(null);
     const [fehler, setFehler] = useState<string | null>(null);
     const fehlerRef = useRef<HTMLDivElement>(null);
+    const [serverOrdner, setServerOrdner] = useState<ServerOrdnerStand>({ status: 'offen' });
+    /** Verhindert doppeltes Laden, wenn Zeiger und Fokus kurz hintereinander kommen. */
+    const ordnerLaedtRef = useRef(false);
 
     // Die Meldung steht oben im scrollbaren Inhalt – wer weiter unten speichert, soll sie trotzdem sehen.
     useEffect(() => {
@@ -192,6 +215,8 @@ export function PostfachDialog({
             sichtbarFuerAlle: null,
             abteilungIds: null,
             benutzerIds: null,
+            spamAufServerVerschieben: formular.spamAufServerVerschieben,
+            spamOrdner: formular.spamOrdner,
         };
         setSpeichert(true);
         try {
@@ -265,6 +290,36 @@ export function PostfachDialog({
             setTestet(false);
         }
     };
+
+    /** Ordner vom Server gibt es nur beim gespeicherten Postfach mit vollständigem Abruf-Zugang. */
+    const ordnerLadbar = !!postfach?.abrufAktiv;
+
+    /**
+     * Lädt die Ordner erst beim ersten Aufklappen bzw. Fokus der Auswahl – sonst
+     * würde jedes Öffnen des Dialogs eine Verbindung zum Mail-Server aufbauen.
+     */
+    const ordnerLaden = (erneut = false) => {
+        // Gesperrte Auswahl (Haken aus) baut keine Verbindung zum Mail-Server auf.
+        if (!postfach || !ordnerLadbar || !formular.spamAufServerVerschieben || ordnerLaedtRef.current) return;
+        if (!erneut && serverOrdner.status !== 'offen') return;
+        ordnerLaedtRef.current = true;
+        setServerOrdner({ status: 'laedt' });
+        ladeServerOrdner(postfach.id)
+            .then(
+                antwort => setServerOrdner({ status: 'fertig', liste: antwort.ordner }),
+                (err: unknown) => setServerOrdner({
+                    status: 'fehler',
+                    meldung: err instanceof Error ? err.message : 'Die Ordner vom Mail-Server konnten nicht geladen werden.',
+                }),
+            )
+            .finally(() => { ordnerLaedtRef.current = false; });
+    };
+
+    const spamOptionen = spamOrdnerOptionen(
+        serverOrdner.status === 'fertig' ? serverOrdner.liste : null,
+        postfach?.spamOrdner,
+    );
+    const spamAbschnittSichtbar = !!formular.imapHost.trim();
 
     const serverZusammenfassung = [
         formular.smtpHost.trim() || null,
@@ -552,6 +607,114 @@ export function PostfachDialog({
                             </div>
                         )}
                     </div>
+
+                    {spamAbschnittSichtbar && (
+                        <section aria-labelledby={feldId('spamTitel')} className="space-y-3 rounded-xl border border-slate-200 p-4" data-testid="postfach-spam">
+                            <h3 id={feldId('spamTitel')} className="flex items-center gap-2 font-medium text-slate-900">
+                                <ShieldAlert className="h-4 w-4 shrink-0 text-rose-600" aria-hidden="true" />
+                                Spam
+                            </h3>
+                            <div className="flex items-start gap-1">
+                                <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={formular.spamAufServerVerschieben}
+                                        onChange={(e) => setze('spamAufServerVerschieben', e.target.checked)}
+                                        className="mt-1 h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                                    />
+                                    <span>
+                                        <span className="font-medium text-slate-900">Spam auch auf dem Mail-Server in den Spam-Ordner verschieben</span>
+                                        <span className="block text-xs text-slate-500">
+                                            Dann verschwindet Spam auch am Handy und in Outlook aus dem Posteingang.
+                                        </span>
+                                    </span>
+                                </label>
+                                <InfoButton titel="Spam auf dem Server verschieben">
+                                    <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                        <p>Alle zwei Minuten schaut das ERP nach Mails, die es als Spam erkannt hat oder die jemand mit „Spam“ markiert hat. Diese verschiebt es auf dem Mail-Server aus dem Posteingang in den Spam-Ordner. Klickt jemand „Kein Spam“, holt das ERP die Mail dort wieder in den Posteingang.</p>
+                                    </InfoAbschnitt>
+                                    <InfoAbschnitt titel="Was bewirkt das?">
+                                        <p>Die Mail verschwindet auch am Handy, in Outlook und im Webmail aus dem Posteingang. Gelöscht wird dabei nichts. Mails, die einem Projekt, einem Lieferanten oder einer Anfrage zugeordnet sind, und Mails in Unterordnern bleiben, wo sie sind. Ist der Haken aus, verschiebt das ERP keinen neuen Spam mehr – „Kein Spam“ holt schon verschobene Mails aber weiterhin zurück.</p>
+                                    </InfoAbschnitt>
+                                </InfoButton>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <div className="flex items-center gap-1">
+                                    <Label htmlFor={feldId('spamOrdner')} className={cn(!formular.spamAufServerVerschieben && 'text-slate-400')}>
+                                        Spam-Ordner auf dem Server
+                                    </Label>
+                                    <InfoButton titel="Spam-Ordner">
+                                        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                                            <p>Die meisten Mail-Anbieter kennzeichnen ihren Spam-Ordner. Das ERP findet ihn dann von selbst. Gibt es mehrere oder heißt er bei Ihrem Anbieter anders, wählen Sie ihn hier aus.</p>
+                                        </InfoAbschnitt>
+                                        <InfoAbschnitt titel="Was bewirkt das?">
+                                            <p>Nur in diesen Ordner verschiebt das ERP Spam. Posteingang, Papierkorb, Gesendet und Entwürfe stehen nicht zur Wahl – dort bliebe die Mail im Posteingang oder würde vom Anbieter gelöscht.</p>
+                                        </InfoAbschnitt>
+                                    </InfoButton>
+                                </div>
+                                {bearbeiten ? (
+                                    <>
+                                        <div
+                                            className="sm:max-w-sm"
+                                            title={formular.spamAufServerVerschieben ? undefined : 'Zuerst „Spam auch auf dem Mail-Server in den Spam-Ordner verschieben“ einschalten.'}
+                                            onPointerDownCapture={() => ordnerLaden()}
+                                            onFocusCapture={() => ordnerLaden()}
+                                        >
+                                            <Select
+                                                id={feldId('spamOrdner')}
+                                                aria-label="Spam-Ordner auf dem Server"
+                                                options={spamOptionen}
+                                                value={formular.spamOrdner}
+                                                onChange={(wert) => setze('spamOrdner', wert)}
+                                                disabled={!formular.spamAufServerVerschieben}
+                                            />
+                                        </div>
+                                        <div aria-live="polite" className="space-y-1 text-xs">
+                                            {!ordnerLadbar && (
+                                                <p className="text-slate-500">Die Ordner vom Server erscheinen hier, sobald der Zugang zum Abruf vollständig gespeichert ist.</p>
+                                            )}
+                                            {serverOrdner.status === 'laedt' && (
+                                                <p className="flex items-center gap-1.5 text-slate-500">
+                                                    <Loader2 className="h-3.5 w-3.5 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
+                                                    Ordner werden vom Mail-Server geladen …
+                                                </p>
+                                            )}
+                                            {serverOrdner.status === 'fehler' && (
+                                                <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-500" data-testid="spam-ordner-ladefehler">
+                                                    <span>{serverOrdner.meldung}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => ordnerLaden(true)}
+                                                        className="inline-flex items-center gap-1 rounded font-medium text-rose-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                                                    >
+                                                        <RotateCw className="h-3 w-3" aria-hidden="true" />
+                                                        Erneut versuchen
+                                                    </button>
+                                                </p>
+                                            )}
+                                            {serverOrdner.status === 'fertig' && serverOrdner.liste.length === 0 && (
+                                                <p className="text-slate-500">Auf dem Server wurden keine Ordner gefunden.</p>
+                                            )}
+                                            {postfach.spamOrdnerErkannt && (
+                                                <p className="text-slate-500" data-testid="spam-ordner-zuletzt">
+                                                    Zuletzt benutzt: <span className="font-medium text-slate-700">{postfach.spamOrdnerErkannt}</span>
+                                                </p>
+                                            )}
+                                            {postfach.spamAbgleichFehler && (
+                                                <p className="flex items-start gap-1.5 text-amber-800" data-testid="spam-abgleich-fehler">
+                                                    <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
+                                                    <span>{postfach.spamAbgleichFehler}</span>
+                                                </p>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <p className="text-xs text-slate-500">Der Spam-Ordner wird nach dem Speichern automatisch erkannt.</p>
+                                )}
+                            </div>
+                        </section>
+                    )}
 
                     <div className="space-y-2">
                         <Label htmlFor={feldId('testEmpfaenger')}>Test-Mail an (optional)</Label>

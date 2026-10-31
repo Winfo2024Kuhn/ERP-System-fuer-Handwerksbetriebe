@@ -24,7 +24,9 @@ import org.example.kalkulationsprogramm.config.SecurityConfig;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachDto;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachSpeichernRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachTestErgebnis;
+import org.example.kalkulationsprogramm.dto.Postfach.PostfachServerOrdnerDto;
 import org.example.kalkulationsprogramm.service.PostfachService;
+import org.example.kalkulationsprogramm.service.mail.ServerSpamAbgleichService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -54,12 +56,13 @@ class PostfachControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private PostfachService postfachService;
+    @MockitoBean private ServerSpamAbgleichService serverSpamAbgleichService;
     @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;
 
     /** Verschachtelte Testklassen teilen den Kontext – Mock vor jedem Test leeren. */
     @org.junit.jupiter.api.BeforeEach
     void mockLeeren() {
-        org.mockito.Mockito.reset(postfachService);
+        org.mockito.Mockito.reset(postfachService, serverSpamAbgleichService);
     }
 
     private static final String GUELTIG = """
@@ -435,6 +438,91 @@ class PostfachControllerTest {
                             .content("{\"emailAdresse\":\"betrieb@t-online.de\",\"laeuftAus\":\"<script>alert(1)</script>\"}"))
                     .andExpect(status().isBadRequest());
             verify(postfachService, never()).aendern(any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Spam auf dem Server")
+    class SpamAufDemServer {
+
+        @Test
+        void serverOrdnerOhneAnmeldung401UndOhneAdmin403() throws Exception {
+            mockMvc.perform(get("/api/postfaecher/5/server-ordner")).andExpect(status().isUnauthorized());
+            verifyNoInteractions(serverSpamAbgleichService);
+        }
+
+        @Test
+        @WithMockUser(roles = "USER")
+        void serverOrdnerNormalerBenutzer403() throws Exception {
+            mockMvc.perform(get("/api/postfaecher/5/server-ordner")).andExpect(status().isForbidden());
+            verifyNoInteractions(serverSpamAbgleichService);
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void serverOrdnerLiefertListeUndErkanntenOrdner() throws Exception {
+            given(serverSpamAbgleichService.serverOrdner(5L)).willReturn(new PostfachServerOrdnerDto(
+                    List.of(new PostfachServerOrdnerDto.Ordner("INBOX", false),
+                            new PostfachServerOrdnerDto.Ordner("Junk", true)),
+                    "Junk"));
+
+            mockMvc.perform(get("/api/postfaecher/5/server-ordner"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.erkannterSpamOrdner").value("Junk"))
+                    .andExpect(jsonPath("$.ordner[0].name").value("INBOX"))
+                    .andExpect(jsonPath("$.ordner[0].spamOrdner").value(false))
+                    .andExpect(jsonPath("$.ordner[1].spamOrdner").value(true));
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void serverOrdnerOhneZugang400MitSatz() throws Exception {
+            given(serverSpamAbgleichService.serverOrdner(5L)).willThrow(
+                    new IllegalArgumentException("Für dieses Postfach ist noch kein Abruf-Zugang gespeichert."));
+
+            mockMvc.perform(get("/api/postfaecher/5/server-ordner"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Für dieses Postfach ist noch kein Abruf-Zugang gespeichert."));
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void serverOrdnerUnbekanntesPostfach404() throws Exception {
+            given(serverSpamAbgleichService.serverOrdner(any())).willThrow(
+                    new NoSuchElementException("Postfach nicht gefunden."));
+
+            mockMvc.perform(get("/api/postfaecher/" + Long.MAX_VALUE + "/server-ordner"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.message").value("Postfach nicht gefunden."));
+            mockMvc.perform(get("/api/postfaecher/-1/server-ordner")).andExpect(status().isNotFound());
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void serverOrdnerUngueltigeId400() throws Exception {
+            mockMvc.perform(get("/api/postfaecher/'; DROP TABLE email; --/server-ordner"))
+                    .andExpect(status().isBadRequest());
+            mockMvc.perform(get("/api/postfaecher/abc/server-ordner")).andExpect(status().isBadRequest());
+            verifyNoInteractions(serverSpamAbgleichService);
+        }
+
+        @Test
+        @WithMockUser(roles = "ADMIN")
+        void spamFelderKommenBeimSpeichernAn() throws Exception {
+            given(postfachService.aendern(eq(6L), any())).willReturn(dto(6, "max@example.com"));
+
+            mockMvc.perform(put("/api/postfaecher/6").with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"emailAdresse\":\"max@example.com\",\"spamAufServerVerschieben\":false,"
+                                    + "\"spamOrdner\":\"<script>alert(1)</script>\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.spamAufServerVerschieben").value(true));
+
+            org.mockito.ArgumentCaptor<PostfachSpeichernRequest> captor =
+                    org.mockito.ArgumentCaptor.forClass(PostfachSpeichernRequest.class);
+            verify(postfachService).aendern(eq(6L), captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().spamAufServerVerschieben()).isFalse();
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().spamOrdner())
+                    .isEqualTo("<script>alert(1)</script>");
         }
     }
 }

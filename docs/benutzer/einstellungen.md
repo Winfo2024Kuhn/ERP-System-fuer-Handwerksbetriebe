@@ -23,6 +23,8 @@ Häkchen im Postfach:
 - „Eingeschaltet“: aus heißt keine Abholung und nicht als Absender wählbar.
 - „Läuft aus“: E-Mails kommen noch an, neue gehen aber nicht mehr darüber raus.
 
+Spam auf dem Mail-Server: Ist im Postfach „Spam auch auf dem Mail-Server in den Spam-Ordner verschieben“ eingeschaltet (Standard), verschiebt das Programm alle zwei Minuten, was es als Spam führt, auch auf dem Server aus dem Posteingang in den Spam-Ordner – die E-Mail verschwindet dann auch am Handy und in Outlook aus dem Posteingang. „Kein Spam“ holt sie dort zurück – auch wenn der Haken inzwischen aus ist. Gelöscht wird dabei nichts; E-Mails mit Projekt, Lieferant oder Anfrage und E-Mails in Unterordnern bleiben, wo sie sind. Den Spam-Ordner erkennt das Programm selbst; unter „Spam-Ordner auf dem Server“ lässt er sich von Hand wählen (Posteingang, Papierkorb, Gesendet und Entwürfe stehen nicht zur Wahl). Holt jemand eine E-Mail am Handy aus dem Spam-Ordner zurück, löscht das Programm sie dort nicht.
+
 Ein Postfach, das schon E-Mails hat, lässt sich nicht löschen, nur ausschalten. Welcher Benutzer welches Postfach als eigenes hat, legt man unter „Benutzer verwalten“ fest.
 
 ## Wer sieht welches Postfach?
