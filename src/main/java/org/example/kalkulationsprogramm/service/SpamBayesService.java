@@ -6,18 +6,27 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.SpamModelStats;
 import org.example.kalkulationsprogramm.repository.SpamModelStatsRepository;
 import org.example.kalkulationsprogramm.repository.SpamTokenCountRepository;
+import org.example.kalkulationsprogramm.service.spam.SpamSignal;
+import org.example.kalkulationsprogramm.service.spam.SpamSignale;
+import org.example.kalkulationsprogramm.util.FreemailDomains;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,13 +36,22 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Multinomial Naive Bayes Spam-Klassifikator.
+ * Lernender Spam-Filter nach Robinson/Fisher (wie Bogofilter und SpamBayes).
  *
  * Lernt supervised aus User-Feedback (mark-spam / mark-not-spam)
  * und kann mit CSV-Daten (z.B. Kaggle SMS Spam Collection) vortrainiert werden.
  *
- * Token-Frequenzen werden in der Datenbank persistiert und beim Start in einen
+ * <p>Jedes Wort zählt je Mail höchstens einmal ({@link #tokenize} liefert eine Menge). Die Zähler in
+ * {@code spam_token_count} sind deshalb Dokument-Häufigkeiten: „in wie vielen Spam- bzw.
+ * Ham-Mails kam das Wort vor“; {@code total_spam}/{@code total_ham} zählen die trainierten Mails.
+ * Genau das braucht Robinson: {@code p(w) = (s/S) / (s/S + h/H)}.
+ *
+ * <p>Token-Frequenzen werden in der Datenbank persistiert und beim Start in einen
  * In-Memory-Cache geladen für schnelle Prediction.
+ *
+ * <p>Der Zerleger ist versioniert ({@link #AKTUELLE_ZERLEGER_VERSION}): {@link #train} merkt sich
+ * die Version an der Mail, {@link #untrain} zerlegt wieder mit genau dieser Version, damit nur die
+ * Zähler zurückgenommen werden, die damals hochgezählt wurden.
  */
 @Slf4j
 @Service
@@ -50,8 +68,44 @@ public class SpamBayesService {
     /** Minimale Anzahl trainierter Dokumente bevor das Modell aktiv wird. */
     private static final int MIN_TRAINING_SAMPLES = 20;
 
-    /** Laplace-Smoothing Parameter (verhindert Zero-Probability). */
-    private static final double LAPLACE_ALPHA = 1.0;
+    /**
+     * Aktuelle Zerleger-Version. Version 1 (an der Mail {@code null}): Betreff, Text und
+     * Absender-Domain. Version 2 zusätzlich Free-Mail, Reply-To, Anhangtypen und Spam-Signale.
+     */
+    static final int AKTUELLE_ZERLEGER_VERSION = 2;
+
+    /** Robinson: angenommene Wahrscheinlichkeit für ein Wort, über das noch nichts bekannt ist. */
+    private static final double ROBINSON_X = 0.5;
+
+    /** Robinson: Gewicht dieser Annahme (in „Mails“); kleine Zähler werden zur Mitte gezogen. */
+    private static final double ROBINSON_S = 0.45;
+
+    /** Nur Wörter, die mindestens so weit von 0,5 entfernt sind, gehen in die Bewertung ein. */
+    private static final double MIN_ABWEICHUNG = 0.1;
+
+    /** Höchstens so viele Wörter (die mit der größten Abweichung) bewerten eine Mail. */
+    static final int MAX_BEWERTETE_TOKENS = 150;
+
+    /** Ergebnis, wenn kein Wort etwas aussagt. */
+    private static final double NEUTRAL = 0.5;
+
+    /** Höchstens so viele verschiedene Anhang-Endungen je Mail als Token. */
+    private static final int MAX_ANHANG_ENDUNGEN = 5;
+
+    /** Erlaubte Anhang-Endung (nach Kleinschreibung). */
+    private static final Pattern ANHANG_ENDUNG = Pattern.compile("[a-z0-9]{1,10}");
+
+    /**
+     * Anhänge, die Programme oder Makros ausführen können. Gleiche Liste wie
+     * {@code SpamFilterService.DANGEROUS_EXTENSIONS}; zusammenführen, sobald {@code service/spam}
+     * eine gemeinsame Liste anbietet.
+     */
+    private static final Set<String> GEFAEHRLICHE_ENDUNGEN = Set.of(
+            "exe", "bat", "cmd", "com", "scr", "pif", "cpl",
+            "js", "vbs", "wsf", "wsh", "ps1", "sh",
+            "jar", "msi", "msp", "mst",
+            "docm", "xlsm", "pptm", "dotm", "xltm",
+            "hta", "inf", "reg", "rgs", "sct", "lnk", "iso", "img");
 
     /** Max. Tokens pro Email (verhindert Dominanz langer Emails). */
     private static final int MAX_TOKENS_PER_EMAIL = 500;
@@ -77,8 +131,6 @@ public class SpamBayesService {
     private volatile Map<String, int[]> tokenCache = new ConcurrentHashMap<>();
     private volatile long totalSpam = 0;
     private volatile long totalHam = 0;
-    private volatile long totalSpamTokens = 0;
-    private volatile long totalHamTokens = 0;
     private volatile int vocabularySize = 0;
 
     // ═══════════════════════════════════════════════════════════════
@@ -103,20 +155,13 @@ public class SpamBayesService {
 
             // Lade alle Tokens in neuen Cache
             Map<String, int[]> newCache = new ConcurrentHashMap<>();
-            long spamTokenSum = 0;
-            long hamTokenSum = 0;
-
             var allTokens = tokenRepo.findAll();
             for (var tc : allTokens) {
                 newCache.put(tc.getToken(), new int[]{tc.getSpamCount(), tc.getHamCount()});
-                spamTokenSum += tc.getSpamCount();
-                hamTokenSum += tc.getHamCount();
             }
 
             // Atomisch swappen
             this.tokenCache = newCache;
-            this.totalSpamTokens = spamTokenSum;
-            this.totalHamTokens = hamTokenSum;
             this.vocabularySize = newCache.size();
         } catch (Exception e) {
             log.error("[SpamBayes] Fehler beim Laden des Modells", e);
@@ -167,9 +212,28 @@ public class SpamBayesService {
      * das fehlt, wenn man nur Body-Tokens betrachtet.
      */
     public Set<String> tokenize(Email email) {
+        return tokenize(email, AKTUELLE_ZERLEGER_VERSION);
+    }
+
+    /**
+     * Zerlegt eine Mail mit einer bestimmten Zerleger-Version. {@code untrain} braucht das, um
+     * genau die Tokens zurückzunehmen, die beim Training gezählt wurden.
+     *
+     * @param version 1 (oder kleiner) = nur Betreff, Text und Absender; ab 2 zusätzlich die
+     *                Kopf-, Anhang- und Signal-Tokens. Höhere Versionen als die aktuelle werden
+     *                wie die aktuelle behandelt.
+     */
+    public Set<String> tokenize(Email email, int version) {
         String body = combineBody(email);
         Set<String> tokens = tokenize(email.getSubject(), body);
         addSenderTokens(tokens, email.getFromAddress());
+        if (version >= 2) {
+            // Version-2-Tokens kommen nach den Version-1-Tokens und ohne die Obergrenze von
+            // MAX_TOKENS_PER_EMAIL (es sind nur wenige), damit der Version-1-Teil gleich bleibt.
+            addKopfTokens(tokens, email);
+            addAnhangTokens(tokens, email.getAttachments());
+            tokens.addAll(signalTokens(SpamSignale.erkenne(email)));
+        }
         return tokens;
     }
 
@@ -178,29 +242,14 @@ public class SpamBayesService {
      * Praefix verhindert Kollisionen mit normalen Body-Tokens.
      */
     private void addSenderTokens(Set<String> tokens, String fromAddress) {
-        if (fromAddress == null || fromAddress.isBlank()) return;
-
-        // Pure E-Mail aus "Name <email@domain.com>" extrahieren.
-        // lastIndexOf('>') / lastIndexOf('<') statt indexOf, damit Adressen
-        // mit doppelten Bracket-Paaren (z.B. "Foo <bar> <real@x.de>")
-        // korrekt das letzte (= echte Adresse) Paar treffen.
-        String email = fromAddress;
-        int lt = fromAddress.lastIndexOf('<');
-        int gt = fromAddress.lastIndexOf('>');
-        if (lt >= 0 && gt > lt) {
-            email = fromAddress.substring(lt + 1, gt);
-        }
+        String email = reineAdresse(fromAddress);
+        if (email == null) return;
         int at = email.indexOf('@');
         if (at <= 0 || at >= email.length() - 1) return;
 
         String localPart = email.substring(0, at);
-        String domain = email.substring(at + 1).toLowerCase().trim();
-
-        // Extrem lange Domains skippen — sind selten echt und blaehen
-        // das Token-Set unnoetig auf. Schranke gilt fuer alle drei
-        // Sender-Tokens, damit bei langen Domains kein TLD-Token ohne
-        // Domain-Token entsteht.
-        if (domain.isBlank() || domain.length() > MAX_TOKEN_LENGTH + 10) {
+        String domain = brauchbareDomain(email);
+        if (domain == null) {
             return;
         }
 
@@ -214,6 +263,126 @@ public class SpamBayesService {
         if (looksRandomLocalPart(localPart) && tokens.size() < MAX_TOKENS_PER_EMAIL) {
             tokens.add("from_random_local");
         }
+    }
+
+    /**
+     * Zerleger Version 2: Free-Mail-Absender und Reply-To. Kontaktformulare (Absender beim
+     * Hoster, Reply-To beim Kunden) lösen {@code replyto_abweichend} auch aus – der Lernfilter
+     * lernt aus den Zählern, wie viel das bedeutet.
+     */
+    private void addKopfTokens(Set<String> tokens, Email email) {
+        String fromAdresse = reineAdresse(email.getFromAddress());
+        String fromDomain = fromAdresse != null ? brauchbareDomain(fromAdresse) : null;
+        if (fromDomain != null && FreemailDomains.istFreemailDomain(fromDomain)) {
+            tokens.add("from_freemail");
+        }
+
+        String replyToAdresse = reineAdresse(email.getReplyToAddress());
+        String replyToDomain = replyToAdresse != null ? brauchbareDomain(replyToAdresse) : null;
+        if (replyToDomain == null) {
+            return;
+        }
+        tokens.add("replyto_domain_" + replyToDomain);
+        if (fromDomain != null && !hauptDomain(fromDomain).equals(hauptDomain(replyToDomain))) {
+            tokens.add("replyto_abweichend");
+        }
+    }
+
+    /**
+     * Zerleger Version 2: Endungen der Anhänge ({@code anhang_pdf}, höchstens fünf verschiedene,
+     * alphabetisch – unabhängig von der Reihenfolge, in der die Anhänge geladen werden) und
+     * {@code anhang_gefaehrlich}. Eingebettete Bilder (Signatur-Logos) zählen nicht als Anhang;
+     * die Gefahr-Prüfung sieht trotzdem alle Dateien.
+     */
+    private void addAnhangTokens(Set<String> tokens, Collection<EmailAttachment> anhaenge) {
+        if (anhaenge == null || anhaenge.isEmpty()) {
+            return;
+        }
+        Set<String> endungen = new TreeSet<>();
+        boolean gefaehrlich = false;
+        for (EmailAttachment anhang : anhaenge) {
+            String endung = anhang != null ? dateiEndung(anhang.getOriginalFilename()) : null;
+            if (endung == null) {
+                continue;
+            }
+            if (GEFAEHRLICHE_ENDUNGEN.contains(endung)) {
+                gefaehrlich = true;
+            }
+            if (!anhang.isInline()) {
+                endungen.add(endung);
+            }
+        }
+        endungen.stream().limit(MAX_ANHANG_ENDUNGEN).forEach(e -> tokens.add("anhang_" + e));
+        if (gefaehrlich) {
+            tokens.add("anhang_gefaehrlich");
+        }
+    }
+
+    /**
+     * Übersetzt erkannte Spam-Signale in Tokens ({@code signal_absender_gefaelscht} …), in fester
+     * Reihenfolge der Aufzählung.
+     */
+    static List<String> signalTokens(Set<SpamSignal> signale) {
+        if (signale == null || signale.isEmpty()) {
+            return List.of();
+        }
+        return EnumSet.copyOf(signale).stream()
+                .map(signal -> "signal_" + signal.name().toLowerCase(Locale.ROOT))
+                .toList();
+    }
+
+    /** Endung eines Dateinamens, kleingeschrieben, nur {@code [a-z0-9]{1,10}}; sonst {@code null}. */
+    private static String dateiEndung(String dateiname) {
+        if (dateiname == null) {
+            return null;
+        }
+        String name = dateiname.trim();
+        int punkt = name.lastIndexOf('.');
+        if (punkt < 0 || punkt == name.length() - 1) {
+            return null;
+        }
+        String endung = name.substring(punkt + 1).toLowerCase(Locale.ROOT);
+        return ANHANG_ENDUNG.matcher(endung).matches() ? endung : null;
+    }
+
+    /**
+     * Pure E-Mail aus "Name <email@domain.com>" extrahieren.
+     * lastIndexOf('>') / lastIndexOf('<') statt indexOf, damit Adressen
+     * mit doppelten Bracket-Paaren (z.B. "Foo <bar> <real@x.de>")
+     * korrekt das letzte (= echte Adresse) Paar treffen.
+     */
+    private static String reineAdresse(String adresse) {
+        if (adresse == null || adresse.isBlank()) return null;
+        int lt = adresse.lastIndexOf('<');
+        int gt = adresse.lastIndexOf('>');
+        if (lt >= 0 && gt > lt) {
+            return adresse.substring(lt + 1, gt);
+        }
+        return adresse;
+    }
+
+    /**
+     * Domain einer reinen Adresse, kleingeschrieben – oder {@code null}, wenn keine da ist.
+     * Extrem lange Domains skippen — sind selten echt und blaehen
+     * das Token-Set unnoetig auf. Schranke gilt fuer alle
+     * Sender-Tokens, damit bei langen Domains kein TLD-Token ohne
+     * Domain-Token entsteht.
+     */
+    private static String brauchbareDomain(String reineAdresse) {
+        int at = reineAdresse.indexOf('@');
+        if (at <= 0 || at >= reineAdresse.length() - 1) return null;
+        String domain = reineAdresse.substring(at + 1).toLowerCase().trim();
+        if (domain.isBlank() || domain.length() > MAX_TOKEN_LENGTH + 10) {
+            return null;
+        }
+        return domain;
+    }
+
+    /** Grobe Haupt-Domain: die letzten zwei Teile ({@code mail.firma.de} → {@code firma.de}). */
+    private static String hauptDomain(String domain) {
+        int letzterPunkt = domain.lastIndexOf('.');
+        int vorletzterPunkt = letzterPunkt > 0 ? domain.lastIndexOf('.', letzterPunkt - 1) : -1;
+        return vorletzterPunkt >= 0 ? domain.substring(vorletzterPunkt + 1) : domain;
     }
 
     /**
@@ -262,11 +431,14 @@ public class SpamBayesService {
     /**
      * Trainiert das Modell mit einer Email.
      * Wird aufgerufen wenn der User eine Email als Spam/Ham markiert.
+     *
+     * <p>Setzt {@code spamTokenVersion} an der Mail; speichern muss der Aufrufer.
      */
     @Transactional
     public void train(Email email, boolean isSpam) {
-        Set<String> tokens = tokenize(email);
+        Set<String> tokens = tokenize(email, AKTUELLE_ZERLEGER_VERSION);
         trainTokens(tokens, isSpam);
+        email.setSpamTokenVersion((short) AKTUELLE_ZERLEGER_VERSION);
     }
 
     /**
@@ -301,10 +473,8 @@ public class SpamBayesService {
         }
         if (isSpam) {
             totalSpam++;
-            totalSpamTokens += tokens.size();
         } else {
             totalHam++;
-            totalHamTokens += tokens.size();
         }
         vocabularySize = tokenCache.size();
     }
@@ -319,12 +489,17 @@ public class SpamBayesService {
      * damit die alten Token-Zähler korrigiert werden bevor die neue Klassifizierung
      * trainiert wird. Verhindert doppelte Zählung.
      *
+     * <p>Zerlegt mit der Version, mit der die Mail trainiert wurde ({@code spamTokenVersion},
+     * {@code null} = Version 1), damit genau die damals gezählten Tokens zurückgehen.
+     *
      * @param email   die Email deren vorherige Klassifizierung rückgängig gemacht wird
      * @param wasSpam true wenn die Email bisher als Spam trainiert war
      */
     @Transactional
     public void untrain(Email email, boolean wasSpam) {
-        Set<String> tokens = tokenize(email);
+        Short gespeicherteVersion = email.getSpamTokenVersion();
+        int version = gespeicherteVersion != null ? gespeicherteVersion : 1;
+        Set<String> tokens = tokenize(email, version);
         untrainTokens(tokens, wasSpam);
     }
 
@@ -350,11 +525,9 @@ public class SpamBayesService {
             });
         }
         if (wasSpam) {
-            totalSpam      = Math.max(0, totalSpam      - 1);
-            totalSpamTokens = Math.max(0, totalSpamTokens - tokens.size());
+            totalSpam = Math.max(0, totalSpam - 1);
         } else {
-            totalHam      = Math.max(0, totalHam      - 1);
-            totalHamTokens = Math.max(0, totalHamTokens - tokens.size());
+            totalHam = Math.max(0, totalHam - 1);
         }
         vocabularySize = tokenCache.size();
     }
@@ -364,43 +537,128 @@ public class SpamBayesService {
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Berechnet die Spam-Wahrscheinlichkeit für gegebene Tokens.
+     * Berechnet die Spam-Wahrscheinlichkeit für gegebene Tokens (Robinson/Fisher).
      *
-     * @return Wahrscheinlichkeit 0.0-1.0, oder -1.0 wenn Modell nicht bereit
+     * <ol>
+     *   <li>Je Wort {@code p(w) = (s/S) / (s/S + h/H)} aus den Dokument-Häufigkeiten.</li>
+     *   <li>Robinson-Glättung {@code f = (0,45·0,5 + n·p) / (0,45 + n)} mit {@code n = s + h}:
+     *       selten gesehene Wörter bleiben nahe 0,5, unbekannte sind genau 0,5.</li>
+     *   <li>Nur Wörter mit {@code |f − 0,5| ≥ 0,1}, höchstens die 150 deutlichsten.</li>
+     *   <li>Fisher: {@code S' = 1 − chi2Q(−2·Σ ln(1−f), 2k)}, {@code H' = 1 − chi2Q(−2·Σ ln f, 2k)},
+     *       Ergebnis {@code (1 + S' − H') / 2}. Werte um 0,5 heißen „unsicher“.</li>
+     * </ol>
+     *
+     * @return Wahrscheinlichkeit 0.0-1.0 (0,5, wenn kein Wort etwas aussagt), oder -1.0 wenn
+     *         Modell nicht bereit
      */
     public double predict(Set<String> tokens) {
-        if (!isModelReady() || tokens.isEmpty()) {
+        if (!isModelReady()) {
             return -1.0;
         }
+        return fisherKombination(deutlichsteWahrscheinlichkeiten(tokens));
+    }
 
-        long totalDocs = totalSpam + totalHam;
-        double logPriorSpam = Math.log((double) totalSpam / totalDocs);
-        double logPriorHam = Math.log((double) totalHam / totalDocs);
-
-        double logLikelihoodSpam = 0.0;
-        double logLikelihoodHam = 0.0;
-
-        int vocabSize = Math.max(vocabularySize, 1);
-
-        for (String token : tokens) {
-            int[] counts = tokenCache.get(token);
-            int sc = (counts != null) ? counts[0] : 0;
-            int hc = (counts != null) ? counts[1] : 0;
-
-            // Multinomial Naive Bayes mit Laplace-Smoothing
-            logLikelihoodSpam += Math.log((sc + LAPLACE_ALPHA) / (totalSpamTokens + LAPLACE_ALPHA * vocabSize));
-            logLikelihoodHam += Math.log((hc + LAPLACE_ALPHA) / (totalHamTokens + LAPLACE_ALPHA * vocabSize));
+    /**
+     * Geglättete Wahrscheinlichkeiten der Wörter, die etwas aussagen: mindestens
+     * {@link #MIN_ABWEICHUNG} von 0,5 entfernt, die {@link #MAX_BEWERTETE_TOKENS} deutlichsten
+     * zuerst (bei Gleichstand alphabetisch, damit das Ergebnis reproduzierbar ist).
+     */
+    List<Double> deutlichsteWahrscheinlichkeiten(Set<String> tokens) {
+        if (tokens == null || tokens.isEmpty()) {
+            return List.of();
         }
+        long spamDocs = totalSpam;
+        long hamDocs = totalHam;
+        Map<String, int[]> cache = tokenCache;
 
-        double logSpam = logPriorSpam + logLikelihoodSpam;
-        double logHam = logPriorHam + logLikelihoodHam;
+        record Bewertet(String token, double f) {
+            double abweichung() {
+                return Math.abs(f - NEUTRAL);
+            }
+        }
+        List<Bewertet> aussagekraeftig = new ArrayList<>();
+        for (String token : tokens) {
+            int[] counts = cache.get(token);
+            if (counts == null) {
+                continue; // unbekannt = neutral
+            }
+            double f = geglaetteteWahrscheinlichkeit(counts[0], counts[1], spamDocs, hamDocs);
+            if (Math.abs(f - NEUTRAL) >= MIN_ABWEICHUNG) {
+                aussagekraeftig.add(new Bewertet(token, f));
+            }
+        }
+        return aussagekraeftig.stream()
+                .sorted(Comparator.comparingDouble(Bewertet::abweichung).reversed()
+                        .thenComparing(Bewertet::token))
+                .limit(MAX_BEWERTETE_TOKENS)
+                .map(Bewertet::f)
+                .toList();
+    }
 
-        // Log-Sum-Exp-Trick für numerische Stabilität
-        double maxLog = Math.max(logSpam, logHam);
-        double expSpam = Math.exp(logSpam - maxLog);
-        double expHam = Math.exp(logHam - maxLog);
+    /**
+     * Robinson: {@code p = (s/S) / (s/S + h/H)}, geglättet zu {@code f = (s_x·x + n·p) / (s_x + n)}.
+     * Fehlt eine Seite ganz ({@code S = 0} oder {@code H = 0}), zählt ihr Anteil als 0; sagt keine
+     * Seite etwas, ist das Wort neutral.
+     */
+    static double geglaetteteWahrscheinlichkeit(int spamCount, int hamCount, long spamDocs, long hamDocs) {
+        int s = Math.max(0, spamCount);
+        int h = Math.max(0, hamCount);
+        // Anteile auf 1 begrenzt: nach einem CSV-Import oder Untrain können Zähler kurz größer
+        // sein als die Mail-Summe.
+        double spamAnteil = spamDocs > 0 ? Math.min(1.0, (double) s / spamDocs) : 0.0;
+        double hamAnteil = hamDocs > 0 ? Math.min(1.0, (double) h / hamDocs) : 0.0;
+        if (spamAnteil + hamAnteil <= 0.0) {
+            return ROBINSON_X;
+        }
+        double p = spamAnteil / (spamAnteil + hamAnteil);
+        double n = (double) s + h;
+        return (ROBINSON_S * ROBINSON_X + n * p) / (ROBINSON_S + n);
+    }
 
-        return expSpam / (expSpam + expHam);
+    /**
+     * Fisher-Kombination nach Robinson: {@code (1 + S' − H') / 2}; ohne Wörter 0,5.
+     */
+    static double fisherKombination(List<Double> wahrscheinlichkeiten) {
+        int k = wahrscheinlichkeiten.size();
+        if (k == 0) {
+            return NEUTRAL;
+        }
+        double summeLnSpam = 0.0; // Σ ln(1 − f)
+        double summeLnHam = 0.0;  // Σ ln f
+        for (double f : wahrscheinlichkeiten) {
+            summeLnSpam += Math.log1p(-f);
+            summeLnHam += Math.log(f);
+        }
+        double spamBeleg = 1.0 - chi2Q(-2.0 * summeLnSpam, 2 * k);
+        double hamBeleg = 1.0 - chi2Q(-2.0 * summeLnHam, 2 * k);
+        return klemme((1.0 + spamBeleg - hamBeleg) / 2.0);
+    }
+
+    /**
+     * Obere Wahrscheinlichkeit der Chi²-Verteilung {@code P(X ≥ x2)} für gerade Freiheitsgrade:
+     * {@code e^{-m} · Σ_{i=0}^{v/2-1} m^i / i!} mit {@code m = x2/2}. Die Summanden werden im
+     * Logarithmus gebildet, damit {@code e^{-m}} bei großem {@code m} nicht vorzeitig zu 0 wird.
+     */
+    static double chi2Q(double x2, int freiheitsgrade) {
+        if (freiheitsgrade <= 0 || freiheitsgrade % 2 != 0) {
+            throw new IllegalArgumentException("Freiheitsgrade müssen gerade und positiv sein: " + freiheitsgrade);
+        }
+        if (!(x2 > 0.0)) {
+            return 1.0;
+        }
+        double m = x2 / 2.0;
+        double logM = Math.log(m);
+        double logSummand = -m;
+        double summe = Math.exp(logSummand);
+        for (int i = 1; i < freiheitsgrade / 2; i++) {
+            logSummand += logM - Math.log(i);
+            summe += Math.exp(logSummand);
+        }
+        return klemme(summe);
+    }
+
+    private static double klemme(double wert) {
+        return Math.min(1.0, Math.max(0.0, wert));
     }
 
     /**
