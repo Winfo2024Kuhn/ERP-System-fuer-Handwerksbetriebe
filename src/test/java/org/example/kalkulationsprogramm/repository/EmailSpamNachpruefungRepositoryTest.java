@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.SpamStufe;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,5 +73,34 @@ class EmailSpamNachpruefungRepositoryTest {
         assertThat(emailRepository.findUnanalyzedForSpam())
                 .extracting(Email::getId)
                 .containsExactly(offen.getId());
+    }
+
+    /**
+     * Das tägliche implizite Lernen „2 Monate im Posteingang = kein Spam“ darf Mails mit
+     * „Vielleicht Spam“ nicht als Kein-Spam lernen – über sie hat nur niemand entschieden.
+     */
+    @Test
+    void implizitesLernenLaesstVielleichtSpamAus() {
+        Email altbestand = eingang("<alt@example.org>");
+        altbestand.setSentAt(LocalDateTime.of(2026, 6, 1, 8, 0));
+        emailRepository.save(altbestand);
+
+        Email keinSpam = eingang("<kein-spam@example.org>");
+        keinSpam.setSentAt(LocalDateTime.of(2026, 6, 1, 8, 0));
+        keinSpam.setSpamStufe(SpamStufe.KEIN_SPAM);
+        emailRepository.save(keinSpam);
+
+        Email vielleichtSpam = eingang("<vielleicht@example.org>");
+        vielleichtSpam.setSentAt(LocalDateTime.of(2026, 6, 1, 8, 0));
+        vielleichtSpam.setSpamStufe(SpamStufe.UNSICHER);
+        emailRepository.save(vielleichtSpam);
+
+        Email zuNeu = eingang("<neu@example.org>");
+        emailRepository.save(zuNeu);
+        entityManager.flush();
+
+        assertThat(emailRepository.findLongLivedInboxEmailsWithoutVerdict(LocalDateTime.of(2026, 9, 1, 0, 0)))
+                .extracting(Email::getId)
+                .containsExactlyInAnyOrder(altbestand.getId(), keinSpam.getId());
     }
 }

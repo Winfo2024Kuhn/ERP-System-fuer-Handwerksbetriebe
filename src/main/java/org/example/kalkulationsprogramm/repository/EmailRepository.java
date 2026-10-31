@@ -461,6 +461,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
    * Findet Posteingang-Emails die älter als der angegebene Zeitpunkt sind und noch
    * kein explizites Spam/Ham-Urteil haben.
    * Wird täglich für implizites Ham-Training verwendet (2 Monate im Posteingang = Vertrauen).
+   * Mails mit „Vielleicht Spam“ (Stufe UNSICHER) bleiben draußen: Dass niemand entschieden
+   * hat, heißt bei ihnen nicht „kein Spam“.
    */
   @Query("SELECT e FROM Email e " +
       "WHERE e.direction = 'IN' " +
@@ -469,6 +471,7 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
       "AND e.isSpam = false " +
       "AND e.isNewsletter = false " +
       "AND e.userSpamVerdict IS NULL " +
+      "AND (e.spamStufe IS NULL OR e.spamStufe <> org.example.kalkulationsprogramm.domain.SpamStufe.UNSICHER) " +
       "AND e.sentAt < :cutoff " +
       "AND e.projekt IS NULL " +
       "AND e.anfrage IS NULL " +

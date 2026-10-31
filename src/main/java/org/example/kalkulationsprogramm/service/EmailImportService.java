@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.example.email.EmailService;
+import org.example.kalkulationsprogramm.domain.AbzockeArt;
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailAbsender;
 import org.example.kalkulationsprogramm.domain.EmailAttachment;
@@ -28,6 +29,7 @@ import org.example.kalkulationsprogramm.repository.EmailAttachmentRepository;
 import org.example.kalkulationsprogramm.repository.EmailPostfachZuordnungRepository;
 import org.example.kalkulationsprogramm.service.mail.PostfachZugang;
 import org.example.kalkulationsprogramm.service.mail.PostfachZugangService;
+import org.example.kalkulationsprogramm.service.spam.AbzockeErkennung;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
@@ -107,6 +109,9 @@ public class EmailImportService {
     private EmailImportService self;
 
     private final EmailImportFehlversuche fehlversuche = new EmailImportFehlversuche();
+
+    /** Länge der Spalte {@code email.from_name}. */
+    private static final int MAX_FROM_NAME = 255;
 
     // IMAP-Ordner für eingehende E-Mails
     private static final List<String> INCOMING_FOLDERS = List.of(
@@ -532,6 +537,8 @@ public class EmailImportService {
         if (fromArr != null && fromArr.length > 0) {
             if (fromArr[0] instanceof InternetAddress ia) {
                 email.setFromAddress(ia.getAddress());
+                // Anzeigename für die Erkennung gefälschter Absender („PayPal“ vor fremder Adresse)
+                email.setFromName(kuerze(ia.getPersonal(), MAX_FROM_NAME));
             } else {
                 email.setFromAddress(fromArr[0].toString());
             }
@@ -578,6 +585,9 @@ public class EmailImportService {
                     ? authResults.substring(0, 2000)
                     : authResults);
         }
+
+        // Spam-Markierung des Mail-Anbieters: nur ein klares YES/NO zählt, sonst unbekannt
+        email.setAnbieterSpamFlag(leseAnbieterSpamFlag(firstHeader(msg, "X-Spam-Flag")));
 
         // Subject
         email.setSubject(msg.getSubject());
@@ -689,6 +699,11 @@ public class EmailImportService {
         if (email.getZuordnungTyp() == EmailZuordnungTyp.KEINE) {
             postProcessEmail(email);
         } else {
+            // Schon über den Thread zugeordnet: Abzocke trotzdem prüfen (gefälschte
+            // „neue Bankverbindung“ kommt gerade als Antwort in bestehenden Verläufen).
+            if (pruefeAbzocke(email)) {
+                emailRepository.save(email);
+            }
             // Nur Lieferant-Attachments verarbeiten für bereits zugeordnete
             if (email.getLieferant() != null && email.getDirection() == EmailDirection.IN) {
                 emailAttachmentProcessingService.processLieferantAttachments(email);
@@ -723,6 +738,29 @@ public class EmailImportService {
         // NACH dem Commit dieser Transaktion — siehe pruefeRuecklaeufer(..).
 
         return true;
+    }
+
+    /**
+     * {@code X-Spam-Flag}: TRUE nur bei „YES“, FALSE nur bei „NO“, sonst (fehlt/unbekannt) null.
+     */
+    static Boolean leseAnbieterSpamFlag(String header) {
+        if (header == null) {
+            return null;
+        }
+        String wert = header.trim();
+        if (wert.equalsIgnoreCase("YES")) {
+            return Boolean.TRUE;
+        }
+        return wert.equalsIgnoreCase("NO") ? Boolean.FALSE : null;
+    }
+
+    /** Kürzt auf {@code max} Zeichen; leer wird zu null. */
+    private static String kuerze(String text, int max) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String t = text.trim();
+        return t.length() > max ? t.substring(0, max) : t;
     }
 
     /**
@@ -1048,15 +1086,20 @@ public class EmailImportService {
     /**
      * Nachverarbeitung einer importierten Email:
      * 0. Steuerberater-Erkennung (Lohnabrechnungen, BWA)
-     * 1. Spam-Prüfung
-     * 2. Automatische Zuordnung
-     * 3. Bei Lieferanten: Attachment-Analyse
+     * 1. Automatische Zuordnung
+     * 2. Spam-Prüfung
+     * 3. Abzocke-Warnung (für jede Eingangsmail, auch zugeordnete)
+     * 4. Bei Lieferanten: Attachment-Analyse
      */
     @Transactional
     public void postProcessEmail(Email email) {
         // 0. Steuerberater-Erkennung (höchste Priorität)
         if (steuerberaterEmailProcessingService.processSteuerberaterEmail(email)) {
             log.info("[EmailImport] E-Mail {} als Steuerberater-Mail verarbeitet", email.getId());
+            // Die Steuerberater-Verarbeitung hat schon gespeichert – nur bei Warnung erneut.
+            if (pruefeAbzocke(email)) {
+                emailRepository.save(email);
+            }
             return; // Wurde vollständig verarbeitet
         }
 
@@ -1073,7 +1116,11 @@ public class EmailImportService {
         spamFilterService.analyzeAndMarkSpam(email);
         markDomainSeen(email);
 
-        // 3. Bei Lieferanten-Emails: Spam/Newsletter-Flags bereinigen und Attachments analysieren
+        // 3. Abzocke-Warnung – unabhängig von Spam und Zuordnung (IBAN-Wechsel kommt im
+        //    Namen echter Lieferanten). Verschiebt nie etwas.
+        pruefeAbzocke(email);
+
+        // 4. Bei Lieferanten-Emails: Spam/Newsletter-Flags bereinigen und Attachments analysieren
         if (email.getZuordnungTyp() == EmailZuordnungTyp.LIEFERANT && email.getLieferant() != null) {
             // Zugeordnete Lieferanten-Emails sind NIEMALS Spam/Newsletter
             if (email.isSpam() || email.isNewsletter()) {
@@ -1096,6 +1143,29 @@ public class EmailImportService {
 
         // Spam-Score und Zuordnungs-Änderungen persistieren
         emailRepository.save(email);
+    }
+
+    /**
+     * Setzt den Warnhinweis, wenn eine Eingangsmail nach einer bekannten Betrugsmasche aussieht.
+     * Ein Fehler hier darf den Import nie aufhalten – sonst ginge die Mail verloren.
+     *
+     * @return true, wenn ein Warnhinweis gesetzt wurde
+     */
+    private boolean pruefeAbzocke(Email email) {
+        if (email.getDirection() != EmailDirection.IN) {
+            return false;
+        }
+        try {
+            AbzockeArt art = AbzockeErkennung.erkenne(email);
+            if (art != null) {
+                email.setWarnhinweis(art);
+                return true;
+            }
+        } catch (RuntimeException e) {
+            log.warn("[EmailImport] Abzocke-Prüfung für Email {} fehlgeschlagen: {}", email.getId(),
+                    e.getClass().getSimpleName());
+        }
+        return false;
     }
 
     /**
