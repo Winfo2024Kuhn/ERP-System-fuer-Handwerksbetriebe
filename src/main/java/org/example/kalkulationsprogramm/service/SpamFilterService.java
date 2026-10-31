@@ -16,6 +16,8 @@ import org.example.kalkulationsprogramm.service.spam.MailDomain;
 import org.example.kalkulationsprogramm.service.spam.SpamSignal;
 import org.example.kalkulationsprogramm.service.spam.SpamSignale;
 import org.example.kalkulationsprogramm.service.spam.SpamStufenRegel;
+import org.example.kalkulationsprogramm.service.spam.Textsuche;
+import org.example.kalkulationsprogramm.util.HtmlKlartext;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
@@ -68,6 +70,9 @@ public class SpamFilterService {
      * Ab so vielen Wort-Punkten zählen die Spam-Wörter als eigenes {@link SpamSignal#SPAM_WOERTER}.
      */
     static final int SPAM_WOERTER_MINDESTPUNKTE = 30;
+
+    /** Die Wortsuche prüft höchstens so viele Zeichen (lineare Suche, trotzdem begrenzt). */
+    private static final int MAX_WORTSUCHE_LAENGE = 50_000;
 
     /**
      * Kleine Auffälligkeiten zusammen geben höchstens so viele Punkte – weniger als
@@ -499,8 +504,7 @@ public class SpamFilterService {
         }
 
         // 3. Stufe: nur SPAM setzt isSpam – UNSICHER bleibt im Posteingang mit Hinweis
-        SpamStufe stufe = SpamStufenRegel.bestimme(lernfilter, regeln.punkte(),
-                regeln.signale().contains(SpamSignal.GEFAEHRLICHER_ANHANG));
+        SpamStufe stufe = SpamStufenRegel.bestimme(lernfilter, regeln.punkte(), regeln.signale());
         email.setSpamStufe(stufe);
         email.setSpamGruende(alsKuerzel(regeln.signale()));
         email.setSpamScore(SpamStufenRegel.anzeigeWert(regeln.punkte(), lernfilter));
@@ -630,10 +634,13 @@ public class SpamFilterService {
         // SPAM-SCORING
         // ═══════════════════════════════════════════════════════════════
 
-        // 1. Gewichtete Spam-Wörter
+        // 1. Gewichtete Spam-Wörter – nur ganze Wörter im sichtbaren Text, kein rohes HTML:
+        //    „porn“ darf nicht in „Ansporn“ treffen, „xxx“ nicht in einer Klassen-ID.
+        String sichtbarerText = Textsuche.normalisiere(java.util.Objects.toString(email.getSubject(), "") + " " + sichtbarerInhalt(email),
+                MAX_WORTSUCHE_LAENGE);
         int woerter = 0;
         for (SpamKeyword keyword : SPAM_KEYWORDS) {
-            if (combinedText.contains(keyword.keyword)) {
+            if (Textsuche.enthaeltWort(sichtbarerText, Textsuche.normalisiere(keyword.keyword))) {
                 woerter += keyword.weight;
             }
         }
@@ -755,6 +762,18 @@ public class SpamFilterService {
             if (domains.size() >= 50) break; // Schutz gegen Riesen-Bodies
         }
         return domains;
+    }
+
+    /** Text, den der Empfänger sieht: Klartext, sonst das HTML ohne Tags. */
+    private static String sichtbarerInhalt(Email email) {
+        if (email.getBody() != null && !email.getBody().isBlank()) {
+            return email.getBody();
+        }
+        String html = email.getHtmlBody();
+        if (html == null || html.isBlank()) {
+            return "";
+        }
+        return HtmlKlartext.zuText(html.length() > MAX_WORTSUCHE_LAENGE * 4 ? html.substring(0, MAX_WORTSUCHE_LAENGE * 4) : html);
     }
 
     private String getCombinedBody(Email email) {

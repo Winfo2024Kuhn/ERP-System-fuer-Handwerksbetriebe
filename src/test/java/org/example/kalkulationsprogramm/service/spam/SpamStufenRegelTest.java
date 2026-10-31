@@ -16,8 +16,12 @@ import org.junit.jupiter.params.provider.CsvSource;
  */
 class SpamStufenRegelTest {
 
+    private static final Set<SpamSignal> KEINE = Set.of();
+    private static final Set<SpamSignal> ANHANG = EnumSet.of(SpamSignal.GEFAEHRLICHER_ANHANG);
+    private static final Set<SpamSignal> BELEG = EnumSet.of(SpamSignal.ANTWORT_UMGELEITET);
+
     private static SpamStufe stufe(Double b, int r) {
-        return SpamStufenRegel.bestimme(b, r, false);
+        return SpamStufenRegel.bestimme(b, r, KEINE);
     }
 
     @Nested
@@ -31,7 +35,17 @@ class SpamStufenRegelTest {
                 "0.97, 85, SPAM"
         })
         void sichererLernfilterBrauchtMindestens25Regelpunkte(double b, int r, SpamStufe erwartet) {
-            assertThat(SpamStufenRegel.bestimme(b, r, false)).isEqualTo(erwartet);
+            assertThat(SpamStufenRegel.bestimme(b, r, BELEG)).isEqualTo(erwartet);
+        }
+
+        @Test
+        void spamWoerterSindKeinZweiterZeuge() {
+            // Review: „gewonnen“ (25 Punkte) + Lernfilter 0,96 schob echte Mails in den Spam-Ordner.
+            assertThat(SpamStufenRegel.bestimme(0.96, 25, KEINE)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.99, 60, EnumSet.of(SpamSignal.SPAM_WOERTER)))
+                    .isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.96, 25, EnumSet.of(SpamSignal.SPAM_WOERTER, SpamSignal.ANTWORT_UMGELEITET)))
+                    .isEqualTo(SpamStufe.SPAM);
         }
     }
 
@@ -42,7 +56,7 @@ class SpamStufenRegelTest {
         @CsvSource({"0.999, UNSICHER", "1.0, UNSICHER", "0.95, UNSICHER", "0.60, UNSICHER", "0.59, KEIN_SPAM"})
         void lernfilterAlleinErgibtNieSpam(double b, SpamStufe erwartet) {
             // Probelauf gegen eine Prod-Kopie: Der Lernfilter gab echten Mails ≥ 0,99.
-            assertThat(SpamStufenRegel.bestimme(b, 0, false)).isEqualTo(erwartet);
+            assertThat(SpamStufenRegel.bestimme(b, 0, BELEG)).isEqualTo(erwartet);
         }
     }
 
@@ -90,15 +104,15 @@ class SpamStufenRegelTest {
 
         @Test
         void gefaehrlicherAnhangAlleinIstUnsicher() {
-            assertThat(SpamStufenRegel.bestimme(null, 0, true)).isEqualTo(SpamStufe.UNSICHER);
-            assertThat(SpamStufenRegel.bestimme(0.4, 0, true)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(null, 0, ANHANG)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.4, 0, ANHANG)).isEqualTo(SpamStufe.UNSICHER);
         }
 
         @Test
         void gefaehrlicherAnhangBleibtUnsicherTrotzHarmlosemLernfilter() {
             // Inhaber-Entscheidung: Der Hinweis erscheint immer, verschoben wird nichts.
-            assertThat(SpamStufenRegel.bestimme(0.1, 0, true)).isEqualTo(SpamStufe.UNSICHER);
-            assertThat(SpamStufenRegel.bestimme(0.0, 39, true)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.1, 0, ANHANG)).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(SpamStufenRegel.bestimme(0.0, 39, ANHANG)).isEqualTo(SpamStufe.UNSICHER);
         }
 
         @Test
@@ -129,9 +143,12 @@ class SpamStufenRegelTest {
         }
 
         @Test
-        void gefaehrlicherAnhangMitEinemWeiterenSignal() {
+        void gefaehrlicherAnhangBrauchtZweiWeitereSignale() {
+            // Review: .xlsm (Aufmaß) + dmarc=fail einer weitergeleiteten Mail ist kein sicherer Spam.
             assertThat(SpamStufenRegel.gruppenPunkte(
-                    EnumSet.of(SpamSignal.GEFAEHRLICHER_ANHANG, SpamSignal.DATUM_FEHLT))).isEqualTo(85);
+                    EnumSet.of(SpamSignal.GEFAEHRLICHER_ANHANG, SpamSignal.ECHTHEIT_FEHLGESCHLAGEN))).isEqualTo(40);
+            assertThat(SpamStufenRegel.gruppenPunkte(EnumSet.of(SpamSignal.GEFAEHRLICHER_ANHANG,
+                    SpamSignal.ECHTHEIT_FEHLGESCHLAGEN, SpamSignal.DATUM_FEHLT))).isEqualTo(85);
         }
     }
 

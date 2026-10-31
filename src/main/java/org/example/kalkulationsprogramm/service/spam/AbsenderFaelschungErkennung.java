@@ -41,6 +41,7 @@ public final class AbsenderFaelschungErkennung {
      * Häufig gefälschte Marken. Bewusst ohne kurze, mehrdeutige Wörter wie „ING“ (Dipl.-Ing.)
      * oder „Hermes“ (auch ein Schleifmittel-Lieferant).
      */
+    // Änderung hier ändert Lernfilter-Tokens (signal_*): SpamBayesService.AKTUELLE_ZERLEGER_VERSION erhöhen.
     static final List<Marke> MARKEN = List.of(
             new Marke("paypal", "paypal.com", "paypal.de", "paypal.at", "paypal.ch", "paypal.co.uk",
                     "paypal.eu", "paypal-communication.com"),

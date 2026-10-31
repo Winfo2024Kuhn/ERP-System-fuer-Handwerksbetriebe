@@ -22,6 +22,7 @@ public final class SpamSignale {
     /**
      * Anhänge, die Programme oder Makros ausführen können.
      */
+    // Änderung hier ändert Lernfilter-Tokens (signal_*): SpamBayesService.AKTUELLE_ZERLEGER_VERSION erhöhen.
     public static final Set<String> GEFAEHRLICHE_ENDUNGEN = Set.of(
             // Ausführbare Dateien
             "exe", "bat", "cmd", "com", "scr", "pif", "cpl",

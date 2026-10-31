@@ -8,7 +8,7 @@ import java.util.Locale;
  * Mails oder Anzeigenamen kein Backtracking auslösen. Groß/Klein und Umlaute werden über
  * {@link #normalisiere(String)} vereinheitlicht ({@code Änderung} → {@code aenderung}).
  */
-final class Textsuche {
+public final class Textsuche {
 
     /** Höchstens so viele Fundstellen je Wort werden auf Nachbarschaft geprüft. */
     private static final int MAX_FUNDSTELLEN = 50;
@@ -20,7 +20,7 @@ final class Textsuche {
      * Kleinbuchstaben, Umlaute als ae/oe/ue/ss, jede Folge von Leerraum als ein Leerzeichen.
      * Texte über {@code maxLaenge} werden vorher abgeschnitten.
      */
-    static String normalisiere(String text, int maxLaenge) {
+    public static String normalisiere(String text, int maxLaenge) {
         if (text == null || text.isEmpty()) {
             return "";
         }
@@ -49,12 +49,12 @@ final class Textsuche {
         return sb.toString();
     }
 
-    static String normalisiere(String text) {
+    public static String normalisiere(String text) {
         return normalisiere(text, Integer.MAX_VALUE);
     }
 
     /** Kommt {@code wort} als ganzes Wort vor (links und rechts kein Buchstabe/keine Ziffer)? */
-    static boolean enthaeltWort(String text, String wort) {
+    public static boolean enthaeltWort(String text, String wort) {
         return finde(text, wort, 0, true) >= 0;
     }
 

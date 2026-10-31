@@ -760,7 +760,11 @@ public class EmailImportService {
             return null;
         }
         String t = text.trim();
-        return t.length() > max ? t.substring(0, max) : t;
+        if (t.codePointCount(0, t.length()) <= max) {
+            return t;
+        }
+        // Nach Zeichen kürzen, nicht nach UTF-16-Einheiten: sonst zerfällt ein Emoji im Namen.
+        return t.substring(0, t.offsetByCodePoints(0, max));
     }
 
     /**

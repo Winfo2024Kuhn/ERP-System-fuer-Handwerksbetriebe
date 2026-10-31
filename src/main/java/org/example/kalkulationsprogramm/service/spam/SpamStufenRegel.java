@@ -11,7 +11,7 @@ import org.example.kalkulationsprogramm.domain.SpamStufe;
  * durchgelassener Spam.
  *
  * <ul>
- *   <li><b>SPAM:</b> (B ≥ 0,95 und R ≥ 25) oder (R ≥ 85 und B fehlt oder B &gt; 0,20). Der Lernfilter
+ *   <li><b>SPAM:</b> (B ≥ 0,95 und R ≥ 25 und mindestens ein Signal außer Spam-Wörtern) oder (R ≥ 85 und B fehlt oder B &gt; 0,20). Der Lernfilter
  *       allein reicht nie: Im Probelauf gegen eine Prod-Kopie gab er sogar zugeordneten, also sicher
  *       echten Mails ≥ 0,99 (er ist großteils mit englischen SMS angelernt).</li>
  *   <li><b>UNSICHER:</b> gefährlicher Anhang (immer, auch bei harmlosem B).</li>
@@ -47,7 +47,7 @@ public final class SpamStufenRegel {
     /** Punkte, wenn drei oder mehr unabhängige Signale zusammenkommen. */
     public static final int PUNKTE_DREI_SIGNALE = 70;
 
-    /** Punkte für einen gefährlichen Anhang mit mindestens einem weiteren Signal. */
+    /** Punkte für einen gefährlichen Anhang mit mindestens zwei weiteren Signalen. */
     public static final int PUNKTE_ANHANG_MIT_SIGNAL = 85;
 
     private static final double ANTEIL_REGELN = 0.4;
@@ -57,14 +57,17 @@ public final class SpamStufenRegel {
     }
 
     /**
-     * @param lernfilter         B zwischen 0 und 1; {@code null}, wenn das Modell noch nicht bereit ist
-     * @param regelPunkte        R zwischen 0 und 100
-     * @param gefaehrlicherAnhang die Mail hat einen Anhang, der Programme ausführen kann
+     * @param lernfilter  B zwischen 0 und 1; {@code null}, wenn das Modell noch nicht bereit ist
+     * @param regelPunkte R zwischen 0 und 100
+     * @param signale     erkannte Signalgruppen der Mail
      */
-    public static SpamStufe bestimme(Double lernfilter, int regelPunkte, boolean gefaehrlicherAnhang) {
+    public static SpamStufe bestimme(Double lernfilter, int regelPunkte, Set<SpamSignal> signale) {
         Double b = lernfilter == null || lernfilter.isNaN() ? null : lernfilter;
+        Set<SpamSignal> s = signale == null ? Set.of() : signale;
 
-        if (b != null && b >= LERNFILTER_SICHER && regelPunkte >= REGEL_MIT_LERNFILTER) {
+        // Der Lernfilter braucht einen zweiten, unabhängigen Zeugen: ein echtes Signal. Spam-Wörter
+        // zählen dafür nicht – sie sind dieselbe Art Beleg wie der Lernfilter (Wörter im Text).
+        if (b != null && b >= LERNFILTER_SICHER && regelPunkte >= REGEL_MIT_LERNFILTER && hatBelegSignal(s)) {
             return SpamStufe.SPAM;
         }
         if (regelPunkte >= REGEL_SICHER && (b == null || b > LERNFILTER_HARMLOS)) {
@@ -72,7 +75,7 @@ public final class SpamStufenRegel {
         }
         // Inhaber-Entscheidung: Ein Anhang, der Programme starten kann, bekommt immer den Hinweis –
         // auch wenn der Lernfilter die Mail für harmlos hält. Verschoben wird dadurch nichts.
-        if (gefaehrlicherAnhang) {
+        if (s.contains(SpamSignal.GEFAEHRLICHER_ANHANG)) {
             return SpamStufe.UNSICHER;
         }
         if (b != null && b <= LERNFILTER_HARMLOS && regelPunkte < REGEL_VERDACHT) {
@@ -84,14 +87,20 @@ public final class SpamStufenRegel {
         return SpamStufe.KEIN_SPAM;
     }
 
+    private static boolean hatBelegSignal(Set<SpamSignal> signale) {
+        return signale.stream().anyMatch(signal -> signal != SpamSignal.SPAM_WOERTER);
+    }
+
     /**
      * Punkte für zusammentreffende Signale: ein Signal allein gibt nichts (es trifft zu oft echte
      * Kunden), zwei geben {@value #PUNKTE_ZWEI_SIGNALE}, ab drei {@value #PUNKTE_DREI_SIGNALE}.
-     * Ein gefährlicher Anhang mit mindestens einem weiteren Signal gibt {@value #PUNKTE_ANHANG_MIT_SIGNAL}.
+     * Ein gefährlicher Anhang mit mindestens zwei weiteren Signalen gibt {@value #PUNKTE_ANHANG_MIT_SIGNAL}
+     * – mit nur einem nicht, denn Makro-Dateien (Aufmaß, LV-Kalkulation) sind im Handwerk üblich und
+     * weitergeleitete Mails scheitern oft an DMARC.
      */
     public static int gruppenPunkte(Set<SpamSignal> signale) {
         int anzahl = signale == null ? 0 : signale.size();
-        if (anzahl >= 2 && signale.contains(SpamSignal.GEFAEHRLICHER_ANHANG)) {
+        if (anzahl >= 3 && signale.contains(SpamSignal.GEFAEHRLICHER_ANHANG)) {
             return PUNKTE_ANHANG_MIT_SIGNAL;
         }
         if (anzahl >= 3) {

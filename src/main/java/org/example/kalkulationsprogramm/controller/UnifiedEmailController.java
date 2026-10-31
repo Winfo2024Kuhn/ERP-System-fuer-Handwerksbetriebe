@@ -497,17 +497,7 @@ public class UnifiedEmailController {
         email.setSpamStufe(null); // Handentscheidung ersetzt die automatische Stufe
         emailRepository.save(email);
 
-        if ("SPAM".equals(previousVerdict)) {
-            // Bereits als Spam trainiert – kein doppeltes Training
-            log.debug("[SpamML] Email {} bereits als Spam trainiert, Training übersprungen", emailId);
-        } else {
-            // Vorheriges HAM-Training rückgängig machen (falls vorhanden)
-            if ("HAM".equals(previousVerdict) || "HAM_IMPLICIT".equals(previousVerdict)) {
-                spamBayesService.untrain(email, false);
-                log.debug("[SpamML] Vorheriges HAM-Training für Email {} rückgängig gemacht", emailId);
-            }
-            spamBayesService.train(email, true);
-        }
+        lerneHandentscheidung(email, previousVerdict, true);
 
         log.info("[SpamML] Email {} als Spam markiert (User-Feedback), subject='{}'",
                 emailId, email.getSubject());
@@ -533,21 +523,29 @@ public class UnifiedEmailController {
         email.setSpamStufe(null); // Handentscheidung ersetzt die automatische Stufe
         emailRepository.save(email);
 
-        if ("HAM".equals(previousVerdict) || "HAM_IMPLICIT".equals(previousVerdict)) {
-            // Bereits als Ham trainiert – kein doppeltes Training
-            log.debug("[SpamML] Email {} bereits als Ham trainiert, Training übersprungen", emailId);
-        } else {
-            // Vorheriges SPAM-Training rückgängig machen (falls vorhanden)
-            if ("SPAM".equals(previousVerdict)) {
-                spamBayesService.untrain(email, true);
-                log.debug("[SpamML] Vorheriges Spam-Training für Email {} rückgängig gemacht", emailId);
-            }
-            spamBayesService.train(email, false);
-        }
+        lerneHandentscheidung(email, previousVerdict, false);
 
         log.info("[SpamML] Email {} als Nicht-Spam markiert (User-Feedback), subject='{}'",
                 emailId, email.getSubject());
         return ResponseEntity.ok("Email als kein Spam markiert und Modell trainiert.");
+    }
+
+    /**
+     * Lernt aus einer Handentscheidung: Ein früheres Training mit dem anderen Urteil wird erst
+     * zurückgenommen (mit der Zerleger-Version, mit der es gezählt wurde), ein gleiches Urteil
+     * nicht doppelt gezählt.
+     */
+    private void lerneHandentscheidung(Email email, String vorherigesUrteil, boolean istSpam) {
+        boolean warSpam = "SPAM".equals(vorherigesUrteil);
+        boolean warKeinSpam = "HAM".equals(vorherigesUrteil) || "HAM_IMPLICIT".equals(vorherigesUrteil);
+        if (istSpam ? warSpam : warKeinSpam) {
+            log.debug("[SpamML] Email {} bereits so trainiert, Training übersprungen", email.getId());
+            return;
+        }
+        if (warSpam || warKeinSpam) {
+            spamBayesService.untrain(email, warSpam);
+        }
+        spamBayesService.train(email, istSpam);
     }
 
     /**
@@ -1213,24 +1211,24 @@ public class UnifiedEmailController {
         for (Email email : emails) {
             switch (target) {
                 case "inbox" -> {
+                    String vorher = email.getUserSpamVerdict();
                     email.setDeletedAt(null);
                     email.setSpam(false);
                     email.setNewsletter(false);
                     email.setUserSpamVerdict("HAM");
                     email.setSpamScore(0);
                     email.setSpamStufe(null);
-                    if (spamBayesService.isModelReady()) {
-                        spamBayesService.train(email, false);
-                    }
+                    lerneHandentscheidung(email, vorher, false);
                 }
                 case "trash" -> email.setDeletedAt(LocalDateTime.now());
                 case "spam" -> {
+                    String vorher = email.getUserSpamVerdict();
                     email.setDeletedAt(null);
                     email.setSpam(true);
                     email.setUserSpamVerdict("SPAM");
                     email.setSpamScore(100);
                     email.setSpamStufe(null);
-                    spamBayesService.train(email, true);
+                    lerneHandentscheidung(email, vorher, true);
                 }
                 case "newsletter" -> {
                     email.setDeletedAt(null);
