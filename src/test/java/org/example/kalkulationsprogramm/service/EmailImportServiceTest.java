@@ -1222,4 +1222,44 @@ class EmailImportServiceTest {
             assertThat(text).hasSize("IllegalStateException: ".length() + 201).endsWith("…");
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Nachträgliche Spam-Prüfung nur für noch nie geprüfte Mails
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class SpamNachpruefung {
+
+        @Test
+        void prueftNurNochNieBewerteteMails() {
+            Email neu = erstelleEmail(1L, "<neu@test.com>", "max.mustermann@example.com");
+            when(emailRepository.findUnanalyzedForSpam()).thenReturn(List.of(neu));
+            doAnswer(invocation -> {
+                Email e = invocation.getArgument(0);
+                e.setSpam(true);
+                return null;
+            }).when(spamFilterService).analyzeAndMarkSpam(neu);
+
+            int umgestuft = service.reprocessSpam();
+
+            assertThat(umgestuft).isEqualTo(1);
+            verify(emailRepository).save(neu);
+            // Bereits bewertete Mails (auch mit Handentscheidung) werden gar nicht erst geladen.
+            verify(emailRepository, never()).findAll();
+        }
+
+        @Test
+        void zaehltUnveraenderteMailsNichtAlsUmgestuft() {
+            Email neu = erstelleEmail(2L, "<ok@test.com>", "max.mustermann@example.com");
+            when(emailRepository.findUnanalyzedForSpam()).thenReturn(List.of(neu));
+
+            int umgestuft = service.reprocessSpam();
+
+            assertThat(umgestuft).isZero();
+            // Gespeichert wird trotzdem, damit der Spam-Score gesetzt ist und die Mail
+            // beim nächsten Lauf nicht wieder geprüft wird.
+            verify(spamFilterService).analyzeAndMarkSpam(neu);
+            verify(emailRepository).save(neu);
+        }
+    }
 }

@@ -54,7 +54,7 @@ class AdminMassenlaeufeSecurityTest {
         @RequestMapping({
                 "/api/emails/import", "/api/emails/scan-spam", "/api/emails/scan-inquiries",
                 "/api/emails/scan-assignments", "/api/emails/scan-steuerberater", "/api/emails/backfill-parents",
-                "/api/emails/spam-model/rescore", "/api/emails/spam-model/bootstrap",
+                "/api/emails/spam-model/bootstrap",
                 "/api/lieferant-dokumente/process-assigned-emails",
                 "/api/lieferant-dokumente/process-email/{emailId}",
                 "/api/lieferant-dokumente/lieferant/{lieferantId}/process-emails",
@@ -110,6 +110,19 @@ class AdminMassenlaeufeSecurityTest {
     /** Schützt vor Tippfehlern: Jeder gesperrte Pfad muss ein echtes POST-Mapping treffen. */
     @Test
     void jederGesperrtePfadGehoertZuEinemEchtenEndpunkt() {
+        assertThat(echtePostPfade()).contains(SecurityConfig.ADMIN_MASSENLAEUFE);
+    }
+
+    /**
+     * Die Neubewertung aller Mails überging die Handentscheidungen der Nutzer und hätte seit dem
+     * Spam-Abgleich alte Posteingangs-Mails auch auf dem Mailserver in den Spam-Ordner geschoben.
+     */
+    @Test
+    void neubewertungAllerMailsGibtEsNichtMehr() {
+        assertThat(echtePostPfade()).noneMatch(pfad -> pfad.contains("rescore"));
+    }
+
+    private static Set<String> echtePostPfade() {
         Set<String> echtePostPfade = new HashSet<>();
         for (Class<?> controller : new Class<?>[] {
                 UnifiedEmailController.class, LieferantDokumentController.class, ZeitverwaltungController.class}) {
@@ -122,7 +135,6 @@ class AdminMassenlaeufeSecurityTest {
                 }
             }
         }
-
-        assertThat(echtePostPfade).contains(SecurityConfig.ADMIN_MASSENLAEUFE);
+        return echtePostPfade;
     }
 }

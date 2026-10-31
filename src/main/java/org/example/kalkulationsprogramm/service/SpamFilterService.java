@@ -460,6 +460,13 @@ public class SpamFilterService {
      * Setzt auch isSpam und isNewsletter.
      */
     public void analyzeAndMarkSpam(Email email) {
+        // Die Handentscheidung (SPAM/HAM/HAM_IMPLICIT) hat immer Vorrang. Eine erneute
+        // Bewertung würde sie überschreiben, und Spam wandert auch auf dem Mailserver
+        // in den Spam-Ordner.
+        if (email.getUserSpamVerdict() != null) {
+            return;
+        }
+
         // Ausgehende Emails sind niemals Spam
         if (email.getDirection() == EmailDirection.OUT) {
             email.setSpam(false);

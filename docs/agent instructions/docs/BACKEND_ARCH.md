@@ -47,6 +47,7 @@ Supervised Multinomial Naive Bayes in reinem Java.
 - **Ensemble:** 40% Regel-Score (`SpamFilterService`) + 60% Bayes-Score (`SpamBayesService`).
 - **Daten:** Token-Frequenzen in `spam_token_count` (Entity `SpamTokenCount`), In-Memory-Cache (5-Min-Refresh).
 - **Feedback:** User trainiert das Modell über die Endpoints `POST /api/emails/{emailId}/mark-spam` bzw. `mark-not-spam` (`UnifiedEmailController`) weiter.
+- **Keine Neubewertung aller Mails:** Ein Lauf, der alte Mails neu bewertet und `isSpam` setzt, muss die Handentscheidung (`userSpamVerdict`) stehen lassen und darf zugeordnete Mails (Projekt/Anfrage/Lieferant) nie zu Spam machen – Spam wird auch auf dem Mailserver in den Spam-Ordner verschoben. `SpamFilterService.analyzeAndMarkSpam` lässt Mails mit Handentscheidung deshalb unverändert, `EmailImportService.reprocessSpam` (läuft bei `POST /api/emails/import` und `scan-assignments`) prüft nur noch nie bewertete Mails (`findUnanalyzedForSpam`), und den früheren Endpunkt `spam-model/rescore` gibt es nicht mehr (`AdminMassenlaeufeSecurityTest`).
 
 ## Externe Dienste (Config)
 - **Gemini (Google KI):** Der API-Key steht **nicht** in den Properties. Er wird in der Oberfläche gepflegt (System-Einstellungen → KI-Funktionen) und liegt in der Tabelle `system_setting` (`SystemSettingsService`). In den Properties stehen nur die Modelle (`ai.gemini.model.*`).
