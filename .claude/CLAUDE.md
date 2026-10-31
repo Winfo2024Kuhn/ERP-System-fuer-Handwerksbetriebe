@@ -45,6 +45,7 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 1. **Auslagern und wiederverwenden (dauerhafte Nutzerfreigabe vom 09.09.2026, bestätigt am 12.10.2026):**
    Wiederkehrende UI und Logik in gemeinsame Komponenten, Hooks, Services oder Hilfsfunktionen auslagern und vorhandene Bausteine konsequent wiederverwenden. Keine kopierten Sonderlösungen pro Seite. Das dafür nötige Refactoring ist ausdrücklich autorisiert und benötigt keine erneute Freigabe. Abstraktionen nach gemeinsamer Verantwortung schneiden; fachliche Unterschiede erhalten.
 
+   **Größe und Zuständigkeit (Nutzervorgabe 31.10.2026):** Klassen und Komponenten bleiben klein (Java ca. 400, Komponente ca. 300 Zeilen; ab 600 bzw. 500 zu groß), jede mit einer Zuständigkeit, damit das Programm wartbar und testbar wächst. Im eigenen neuen Code wird ohne Rückfrage aufgeteilt. **Fällt eine zu große Bestandsklasse oder -datei auf, die du anfasst, fragst du den Nutzer mit einem konkreten Schnittvorschlag, ob sie jetzt mit ausgelagert werden soll** – nicht stillschweigend weiterwachsen lassen und nicht ungefragt umbauen. Regeln: „Zuständigkeiten und Größe“ in `BACKEND_ARCH.md` und `FRONTEND_UI.md`.
 2. **Sprache und Wording in der UI:**
    Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
 
@@ -63,6 +64,7 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 2. **Datenschutz (DSGVO):** Nutzer-, Mitarbeiter- und Zeitdaten sind personenbezogen. In Tests NUR Dummy-Daten (`Max Mustermann`). Logs/Dumps immer anonymisieren.
 3. **Sperrzone für Commits:** `application-local.properties`, `*.env`, `uploads/`, `*.key/pem/p12`, DB-Dumps.
 4. **CodeQL & Injection-Prävention (dauerhafte Pflicht):**
+   - **Getrennte Sichten:** Backend-Arbeit richtet sich nach „Sicherheit im Backend“ in `BACKEND_ARCH.md`, Frontend-Arbeit nach „Sicherheit im Frontend“ in `FRONTEND_UI.md`. Die Liste hier gilt für beide zusammen; ausführlich und nach Seite getrennt stehen die Regeln in den beiden Docs.
    - **ReDoS:** Keine verschachtelten Wiederholungen `(\w+.*)*`. In Java possessive Quantifizierer (`*+`, `++`) oder atomare Gruppen `(?>...)` nutzen.
    - **Path Traversal:** Niemals `MultipartFile.getOriginalFilename()` ungeprüft in Pfade/Files einsetzen. Bereinigen mit `Path.of(name).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_")` und prüfen mit `.normalize()` und `dst.startsWith(baseDir)`. E-Mail-Anhänge in `EmailService` als In-Memory-Bytes (`ByteArrayDataSource`) übertragen.
    - **Spring CSRF:** Niemals `.csrf(csrf -> csrf.disable())` aufrufen. Wenn Endpoints ausgenommen werden müssen, immer `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))` verwenden.
@@ -78,7 +80,7 @@ Bevor du Code schreibst oder änderst, lädst du **zwingend** die passende Dokum
 | Du willst editieren … | Pflicht VORHER |
 | --- | --- |
 | `*.java` (Backend, Tests, Config) | `Read` → `docs/agent instructions/docs/BACKEND_ARCH.md` |
-| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `Read` → `docs/agent instructions/docs/FRONTEND_UI.md` **+ zusätzlich** `Skill` → einer der Design-Skills (Details in `.claude/rules/frontend.md`) |
+| `*.tsx` / `*.ts` / `*.jsx` / `*.js` in `react-pc-frontend/` oder `react-zeiterfassung/` | `Read` → `docs/agent instructions/docs/FRONTEND_UI.md` **+ zusätzlich** `Skill` → `handwerkerprogramm-design` (der eine Frontend-Skill, Details in `.claude/rules/frontend.md`) |
 | Test-Dateien (`*Test.java`, `*Tests.java`, `*.test.tsx`, `*.spec.ts`, …) | `Read` → `docs/agent instructions/docs/TESTING_SECURITY.md` |
 
 Das Flag wird pro Session einmalig gesetzt – ein einzelner Read pro Doc reicht für die gesamte Session. Wenn dich der Hook blockt: **nicht umgehen**, sondern das genannte Doc per Read laden und den Edit/Write danach erneut versuchen.

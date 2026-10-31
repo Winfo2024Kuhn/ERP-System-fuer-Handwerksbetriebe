@@ -3,7 +3,7 @@ import path from 'node:path';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 
 /**
- * Hilfen fuer die Design-Pruefung (siehe .claude/skills/playwright-design-pruefung).
+ * Hilfen fuer die Design-Pruefung (siehe .claude/skills/handwerkerprogramm-design/PRUEFUNG.md).
  *
  * Prueft automatisch, was sich automatisch pruefen laesst -- Ueberlauf,
  * Ueberschneidungen, Sichtbarkeit der Primaeraktion -- und legt je

@@ -14,23 +14,9 @@
 - **Daten:** Immer Dummy-Daten nutzen (DSGVO!, z. B. `Max Mustermann`). Utils erfordern 100% Coverage.
 - **CI:** `.github/workflows/pr-ci.yml` muss vor dem Merge grün sein („PR Quality Gate“). Geprüft werden Backend-Tests, Datenbank-Kompatibilität, Lint, Unit-Tests, Build und E2E beider Frontends sowie die Syntax der OpenFile-Launcher-Skripte (PowerShell-Parser, `bash -n`).
 
-## Sicherheits-Pflichtcheckliste (Für JEDEN neuen Endpoint)
-Bevor ein Endpoint als "fertig" markiert wird, müssen folgende Angriffsvektoren im Code/Test abgedeckt sein:
-1. **SQL Injection:** `'; DROP TABLE x; --` in allen String-Parametern.
-2. **XSS:** `<script>alert(1)</script>` in allen Textfeldern.
-3. **Ungültige IDs:** Negative Werte, `Long.MAX_VALUE`, `0`.
-4. **Limits:** Leere Pflichtfelder und überlange Eingaben (> 10.000 Zeichen) abfangen.
-5. **Datei-Uploads/Downloads:** Path-Traversal verhindern (`../../etc/passwd`), gefährliche Dateitypen (`.exe`, `.bat`, `.js`) blockieren.
+## Sicherheit
+Die Sicherheitsregeln stehen dort, wo gebaut wird, getrennt nach Seite:
+- **Backend (Java):** `BACKEND_ARCH.md` → „Sicherheit im Backend“ (Endpoint-Checkliste, ReDoS, Path-Traversal, CSRF, `HtmlKlartext`).
+- **Frontend (React):** `FRONTEND_UI.md` → „Sicherheit im Frontend“ (`sanitizeHtml()`, `stripHtmlTags()`, `unescapeHtmlEntities()`, `toSafeResourceUrl()`, `parseHtmlInert()`).
 
-## CodeQL & Sicherheits-Vorgaben (dauerhafte Pflicht)
-1. **Reguläre Ausdrücke (ReDoS-Prävention):** Keine verschachtelten unbegrenzten Wiederholungen wie `(\w+.*)*` oder `(.*)+`. In Java possessive Quantifizierer (`*+`, `++`) oder atomare Gruppen `(?>...)` nutzen, um Catastrophic Backtracking auszuschließen.
-2. **Path Traversal & Datei-Uploads:** Dateinamen aus `MultipartFile.getOriginalFilename()` niemals ungeprüft in `Path.resolve()` oder `new File()` verwenden. Immer mit `Path.of(name).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_")` bereinigen und mit `.normalize()` sowie `dst.startsWith(baseDir)` absichern. Für E-Mail-Anhänge in `EmailService` In-Memory-Bytes (`byte[] data` mit `ByteArrayDataSource`) statt unnötiger temporärer Dateien auf Festplatte nutzen.
-3. **Spring CSRF:** Niemals `.csrf(csrf -> csrf.disable())` aufrufen. Wenn Endpoints (z. B. S2S / JWT / Machine-to-Machine) ausgenommen werden müssen, immer `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))` verwenden.
-4. **HTML Tag-Stripping & Multi-Character Sanitization:** Niemals ein simples `.replace(/<[^>]*>/g, '')` für Sanitization verwenden (CodeQL schlägt `incomplete-multi-character-sanitization` an). Immer die zentrale Hilfsfunktion `stripHtmlTags()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Fixpunktschleife) verwenden.
-5. **Entity-Unescaping & Double Escaping:** HTML-Entitäten niemals sequentiell mit mehreren `.replace()` entpacken. Immer die zentrale Hilfsfunktion `unescapeHtmlEntities()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (Single-Pass Regex) verwenden.
-6. **DOM-XSS in Vorschauen (iframes & img):** URLs für `<iframe>` und `<img>` immer über `toSafeResourceUrl()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` validieren (erlaubt nur `blob:`, `http:`, `https:` und relative Pfade `/`; blockiert `javascript:`, `data:` und protokoll-relative `//…`).
-7. **HTML-Anzeige & HTML-Parsen (Stored/DOM-XSS):** `dangerouslySetInnerHTML` nur mit `sanitizeHtml()` aus `react-pc-frontend/src/lib/htmlSanitizer.ts` (DOMPurify) (oder eine strengere eigene DOMPurify-Instanz mit Positivliste, Vorbild `bereinigeBeitragsHtml`; nie lockerer), auch bei serverseitig bereinigten Daten. Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren). `EmailHtmlSanitizer` ist Backend-Java und zählt im Frontend nicht. HTML nur zum Auslesen über `parseHtmlInert()`/`htmlToText()` parsen, nie über `document.createElement('div').innerHTML`. Tests decken `<img src=x onerror=…>` und `<script>` ab.
-
-**Backend (Java):** Für Punkt 4 und 5 gibt es `util/HtmlKlartext` (`entferneTags()` als Fixpunktschleife, `entpackeEntitaeten()` in einem Durchgang, `zuText()` = beides in dieser Reihenfolge). Keine eigenen `replaceAll("<[^>]*>", …)` und keine Ketten aus `.replace("&amp;", "&").replace("&lt;", "<")`, die aus `&amp;lt;` ein `<` machen.
-
-`htmlSanitizer.ts` gibt es nur im PC-Frontend. `react-zeiterfassung` hat kein Gegenstück. Braucht die Handy-App diese Funktionen, das vor dem Bau zur Freigabe stellen (Auslagerung, siehe `.claude/CLAUDE.md`).
+Tests prüfen die Regeln der jeweiligen Seite: Backend-Tests die Endpoint-Checkliste (SQL-Injection-, XSS-String-, ID- und Limit-Fälle), Frontend-Tests die Bereinigung (`<img src=x onerror=…>`, `<script>`).

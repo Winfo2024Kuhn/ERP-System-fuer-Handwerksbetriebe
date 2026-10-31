@@ -62,3 +62,47 @@ Supervised Multinomial Naive Bayes in reinem Java.
 - `ai.rag.*`: Wissen der KI-Hilfe – Hybrid-Suche im Prozess (Vektor + Wortsuche `StichwortIndex`, in `LocalRagService`; Zerlegen/Einbetten/RAG-Datei in `service/kihilfe/RagIndexer`, Embeddings über Gemini). Reicht das Gefundene nicht, schlägt die KI über `KiHilfeWerkzeuge` selbst nach (Function Calling über `KiDienst`, max. 4 Runden). Im Docker-Image liegt kein Quellcode: Die RAG-Datei entsteht beim Image-Bau und kommt mit dem Nachtupdate (`RAG_INDEXING.md`). **Neue Seite im PC-Frontend → Route in `LocalRagService.ROUTE_TO_FILE_KEYWORDS` eintragen.** Es braucht kein Qdrant; `QdrantRagService` wird nirgends verwendet.
 - `ai.ollama.*`: lokales Ollama (optional)
 - `spring.datasource.*` (PostgreSQL; Standard `jdbc:postgresql://localhost:5432/kalkulationsprogramm_db`, Zugangsdaten über `APP_DB_URL`/`APP_DB_USER`/`APP_DB_PASS` bzw. `application-local.properties`, im Docker-Profil der Dienst `postgres`)
+
+## 🔐 Sicherheit im Backend (dauerhafte Pflicht, nur Backend)
+
+Das ist die vollständige Sicherheitssicht für Java-Arbeit. Frontend-Sicherheit (HTML-Bereinigung, DOM-XSS) steht in `FRONTEND_UI.md` und gehört nicht hierher.
+
+**Pflichtcheckliste für JEDEN neuen Endpoint** – vor „fertig“ im Code oder Test abgedeckt:
+1. **SQL Injection:** `'; DROP TABLE x; --` in allen String-Parametern (Named-Params, nie String-Verkettung).
+2. **XSS-Strings:** `<script>alert(1)</script>` in allen Textfeldern darf nicht ungeprüft gespeichert oder ausgeliefert werden.
+3. **Ungültige IDs:** negative Werte, `Long.MAX_VALUE`, `0`.
+4. **Limits:** leere Pflichtfelder und überlange Eingaben (> 10.000 Zeichen) abfangen (`@Valid`, `@NotBlank`, `@Size`).
+5. **Datei-Uploads/-Downloads:** Path-Traversal (`../../etc/passwd`) verhindern, gefährliche Dateitypen (`.exe`, `.bat`, `.js`) blockieren.
+6. **Rechte:** Sichtbarkeits- und Rechteprüfung wie die Nachbar-Endpoints; 401/403/404 sauber trennen.
+
+**CodeQL-Vorgaben:**
+1. **ReDoS:** keine verschachtelten unbegrenzten Wiederholungen wie `(\w+.*)*` oder `(.*)+`. Possessive Quantifizierer (`*+`, `++`) oder atomare Gruppen `(?>...)`.
+2. **Path Traversal:** `MultipartFile.getOriginalFilename()` nie ungeprüft in `Path.resolve()` oder `new File()`. Bereinigen mit `Path.of(name).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_")`, dann `.normalize()` und `dst.startsWith(baseDir)`. E-Mail-Anhänge in `EmailService` als In-Memory-Bytes (`ByteArrayDataSource`), nicht über temporäre Dateien.
+3. **Spring CSRF:** nie `.csrf(csrf -> csrf.disable())`. Ausnahmen (S2S/JWT) nur über `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))`.
+4. **HTML im Backend:** `util/HtmlKlartext` benutzen (`entferneTags()` als Fixpunktschleife, `entpackeEntitaeten()` in einem Durchgang, `zuText()` = beides in dieser Reihenfolge). Keine eigenen `replaceAll("<[^>]*>", …)`, keine Ketten aus `.replace("&amp;", "&").replace("&lt;", "<")`. E-Mail-HTML nur über `EmailHtmlSanitizer`.
+
+**Geheimnisse und Datenschutz:** Keine Secrets in Code, Logs oder Commits (Ablageorte siehe `.claude/CLAUDE.md`). Personenbezogene Daten nicht in Logs. Tests nur mit Dummy-Daten (`Max Mustermann`).
+
+## 📄 Große Datenmengen: nie alles auf einmal laden (Pflicht, Backend)
+
+Alles, was mit der Zeit wächst (Kunden, Artikel, Projekte, Rechnungen, E-Mails, Dokumente, Zeitbuchungen, Belege, Positionen, Verläufe), wird **begrenzt abgefragt**. Kein `findAll()`, kein `List<…>`-Endpoint ohne Obergrenze, kein „holen wir erst mal alle und filtern im Frontend“.
+
+- **Pageable statt Liste:** Endpoint nimmt `page` (ab 0) und `size`; Repository liefert `Page<T>` (mit Gesamtzahl) oder `Slice<T>` (ohne teure Zählabfrage, wenn nur „Mehr laden“ gebraucht wird).
+- **Obergrenze serverseitig erzwingen**, egal was der Client schickt: `size = Math.min(Math.max(size, 1), MAX)`; `page = Math.max(page, 0)`. Standard je nach Kontext: Tabellen/Listen 25–50, Auswahllisten und Suchtreffer 20, Verläufe 25. Vorbild: `KundeController` (Standard und Maximum 50), Bestellübersicht (25 je Reiter).
+- **Stabile Sortierung** mitgeben (z. B. `datum desc, id desc`), sonst springen Einträge zwischen Seiten. Sortierung/Filter laufen in der Datenbank, nie im Speicher (`PortableSortierung` für frei wählbare Spalten).
+- **Antwort enthält**: Einträge, `gesamt` (bzw. `hatMehr` bei Slice), `seite`, `seitenGroesse`.
+- **Filter und Suche gehören in die Abfrage** (Specification/Query), nicht ins Frontend. Suchbegriffe mit Mindest- und Höchstlänge begrenzen.
+- **Keine N+1-Abfragen** beim Mappen einer Seite (Fetch-Join oder `@EntityGraph`); Join-Fetch auf Collections zusammen mit Paging liefert falsche Seiten (Hibernate paged im Speicher). Dann erst IDs der Seite holen, danach nachladen.
+- Auswertungen (Summen, Zähler für Reiter-Badges) als eigene Aggregat-Abfrage, nicht durch Laden aller Zeilen.
+- **Test:** Endpoint mit `size=100000` und `page=-1` → wird auf Maximum bzw. 0 begrenzt; mehr als eine Seite Testdaten → zweite Seite liefert andere Einträge, `gesamt` stimmt.
+
+## 🧩 Zuständigkeiten und Größe (Pflicht, Backend)
+
+Das Programm wächst weiter, deshalb bleibt jede Klasse klein, testbar und für genau eine Sache zuständig.
+
+- **Eine Klasse, eine Zuständigkeit.** Faustregel: lässt sich die Klasse nicht in einem Satz ohne „und“ beschreiben, sind es zwei Klassen. Controller reichen nur durch, Services tragen die Fachlogik, Mapper wandeln um, Repositories fragen ab. PDF-Aufbau, Berechnung, Versand, Dateiablage und Datenbank-Zugriff gehören nicht in dieselbe Klasse.
+- **Größenrahmen:** Klasse **bis ca. 400 Zeilen**, ab **600** ist sie zu groß; Methode **bis ca. 40 Zeilen**, höchstens 5 Parameter, flache Verschachtelung (früh zurückkehren statt tief einrücken). Konstruktor mit mehr als ca. 7 Abhängigkeiten ist ein Zeichen, dass die Klasse zu viel macht.
+- **Wiederverwenden vor neu schreiben.** Vor jeder neuen Hilfsmethode im Bestand suchen (`util/`, vorhandene Services, `PortableSortierung`, `PdfWriterFabrik`, `HtmlKlartext` …). Gleiche Logik an zwei Stellen wird in einen gemeinsamen Service oder eine Util-Klasse gezogen, mit Tests; fachliche Unterschiede bleiben erhalten (Abstraktion nach gemeinsamer Verantwortung schneiden, nicht nach Zeilenähnlichkeit).
+- **Testbar bauen:** Abhängigkeiten per Konstruktor, reine Berechnungen als eigene Klasse ohne Spring/Datenbank (einfach per JUnit prüfbar), keine statischen Zugriffe auf Zeit/Zufall ohne Austauschmöglichkeit (`Clock`).
+- **Neuer Code verschlechtert nichts:** In eine Klasse über 600 Zeilen kommt keine neue Zuständigkeit mehr hinein. Neue Logik geht in eine neue Klasse, die alte ruft sie nur auf.
+- **Bei Auffälligkeit fragen:** Fasst die Aufgabe eine bestehende Klasse an, die über der Grenze liegt (Beispiele im Bestand: `AusgangsGeschaeftsDokumentService`, `DokumentAnalyseService`, `RechnungPdfService`, `UnifiedEmailController`), **meldest du das dem Nutzer** mit einem konkreten Schnittvorschlag („PDF-Aufbau in `RechnungPdfAufbau`, Berechnung in `RechnungsSummen` auslagern?“) und fragst, ob das Stück jetzt mit ausgelagert werden soll. Nicht ungefragt große Umbauten an fremdem Bestand starten; im eigenen neuen Code ist das Aufteilen ohnehin Pflicht (siehe `.claude/CLAUDE.md`, „Auslagern und wiederverwenden“).

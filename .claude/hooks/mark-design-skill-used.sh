@@ -16,19 +16,12 @@ if [ -z "$sessionId" ]; then exit 0; fi
 skillName="$(printf '%s' "$payload" | jq -r '.tool_input.skill // .tool_input.name // empty' 2>/dev/null)" || exit 0
 if [ -z "$skillName" ]; then exit 0; fi
 
-# Alle Skills, die als Design-Pflichtlektuere zaehlen
+# Der Frontend-Skill, der als Design-Pflichtlektuere zaehlt
 # (PowerShell -contains vergleicht case-insensitive, deshalb hier ebenso.)
 shopt -s nocasematch
 case "$skillName" in
     handwerkerprogramm-design|\
-    handwerkerprogramm-design:handwerkerprogramm-design|\
-    ui-ux-pro-max|\
-    ui-ux-pro-max:ui-ux-pro-max|\
-    ui-ux-pro-max:design|\
-    ui-ux-pro-max:design-system|\
-    ui-ux-pro-max:ui-styling|\
-    frontend-design|\
-    frontend-design:frontend-design)
+    handwerkerprogramm-design:handwerkerprogramm-design)
         # Wie [System.IO.Path]::GetTempPath() unter Unix: $TMPDIR, sonst /tmp.
         tmpDir="${TMPDIR:-/tmp}"
         flagDir="${tmpDir%/}/claude-doc-flags"
