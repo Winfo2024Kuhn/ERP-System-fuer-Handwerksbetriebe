@@ -45,6 +45,7 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 1. **Auslagern und wiederverwenden (dauerhafte Nutzerfreigabe vom 09.09.2026, bestätigt am 12.10.2026):**
    Wiederkehrende UI und Logik in gemeinsame Komponenten, Hooks, Services oder Hilfsfunktionen auslagern und vorhandene Bausteine konsequent wiederverwenden. Keine kopierten Sonderlösungen pro Seite. Das dafür nötige Refactoring ist ausdrücklich autorisiert und benötigt keine erneute Freigabe. Abstraktionen nach gemeinsamer Verantwortung schneiden; fachliche Unterschiede erhalten.
 
+   **Größe und Zuständigkeit (Nutzervorgabe 31.10.2026):** Klassen und Komponenten bleiben klein (Java ca. 400, Komponente ca. 300 Zeilen; ab 600 bzw. 500 zu groß), jede mit einer Zuständigkeit, damit das Programm wartbar und testbar wächst. Im eigenen neuen Code wird ohne Rückfrage aufgeteilt. **Fällt eine zu große Bestandsklasse oder -datei auf, die du anfasst, fragst du den Nutzer mit einem konkreten Schnittvorschlag, ob sie jetzt mit ausgelagert werden soll** – nicht stillschweigend weiterwachsen lassen und nicht ungefragt umbauen. Regeln: „Zuständigkeiten und Größe“ in `BACKEND_ARCH.md` und `FRONTEND_UI.md`.
 2. **Sprache und Wording in der UI:**
    Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
 
