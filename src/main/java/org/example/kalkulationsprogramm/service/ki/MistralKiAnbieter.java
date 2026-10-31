@@ -25,6 +25,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -32,8 +33,11 @@ import java.util.Set;
  *
  * <p>Text und Bilder gehen direkt an den Chat. PDFs liest zuerst die
  * Texterkennung von Mistral ({@code /v1/ocr}); deren Text bekommt der Chat.
- * Sprache und Werkzeuge sind hier noch nicht gebaut – die Funktionen dafür
- * laufen über einen Ersatz-Anbieter oder sind aus ({@link KiDienst}).
+ * Ton geht als {@code input_audio} an ein Sprachmodell (Voxtral,
+ * {@code ai.mistral.model.sprache}), weil die Chat-Modelle der Stufen keinen Ton
+ * verstehen. Werkzeuge laufen über {@code tools}/{@code tool_calls} wie bei OpenAI.
+ * Eine Internet-Suche bietet der Chat von Mistral nicht: Der Wunsch danach
+ * ({@link KiAnfrage#websuche()}) entfällt still, die Einstellungsseite sagt es dazu.
  */
 @Slf4j
 @Component
@@ -44,10 +48,18 @@ public class MistralKiAnbieter implements KiAnbieter {
     private static final Duration LISTE_ZEITLIMIT = Duration.ofSeconds(10);
     /** Bildformate, die Mistral annimmt. */
     static final Set<String> BILDFORMATE = Set.of("image/png", "image/jpeg", "image/webp", "image/gif");
+    /**
+     * Aufnahmeformate, die Voxtral laut Mistral-Doku liest: WAV und MP3 für den Chat belegt,
+     * FLAC, OGG und WebM laut „Known limitations“ der Transkription. MP4/M4A/AAC (iPhone) sind
+     * nicht belegt und werden deshalb mit klarer Meldung abgelehnt, statt still zu scheitern.
+     */
+    static final Set<String> TONFORMATE = Set.of("audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg",
+            "audio/mp3", "audio/flac", "audio/ogg", "audio/webm");
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final String ocrModell;
+    private final String sprachModell;
     private final Map<KiModellStufe, String> standardModelle;
 
     @Autowired
@@ -55,17 +67,19 @@ public class MistralKiAnbieter implements KiAnbieter {
                              @Value("${ai.mistral.model.schnell:mistral-small-latest}") String schnell,
                              @Value("${ai.mistral.model.standard:mistral-large-latest}") String standard,
                              @Value("${ai.mistral.model.gruendlich:mistral-large-latest}") String gruendlich,
-                             @Value("${ai.mistral.model.texterkennung:mistral-ocr-latest}") String ocrModell) {
+                             @Value("${ai.mistral.model.texterkennung:mistral-ocr-latest}") String ocrModell,
+                             @Value("${ai.mistral.model.sprache:voxtral-small-latest}") String sprachModell) {
         this(objectMapper, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build(),
-                schnell, standard, gruendlich, ocrModell);
+                schnell, standard, gruendlich, ocrModell, sprachModell);
     }
 
     /** Test-Konstruktor mit injizierbarem HttpClient. */
     MistralKiAnbieter(ObjectMapper objectMapper, HttpClient httpClient,
-                      String schnell, String standard, String gruendlich, String ocrModell) {
+                      String schnell, String standard, String gruendlich, String ocrModell, String sprachModell) {
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
         this.ocrModell = ocrModell;
+        this.sprachModell = sprachModell;
         Map<KiModellStufe, String> modelle = new EnumMap<>(KiModellStufe.class);
         modelle.put(KiModellStufe.SCHNELL, schnell);
         modelle.put(KiModellStufe.STANDARD, standard);
@@ -95,7 +109,14 @@ public class MistralKiAnbieter implements KiAnbieter {
 
     @Override
     public Set<KiFaehigkeit> faehigkeiten() {
-        return EnumSet.of(KiFaehigkeit.TEXT, KiFaehigkeit.BILD, KiFaehigkeit.PDF);
+        return EnumSet.of(KiFaehigkeit.TEXT, KiFaehigkeit.BILD, KiFaehigkeit.PDF, KiFaehigkeit.AUDIO,
+                KiFaehigkeit.WERKZEUGE);
+    }
+
+    /** Ton versteht nur das Sprachmodell (Voxtral); es kann auch Text und Werkzeuge. */
+    @Override
+    public Optional<String> modellFuer(Set<KiFaehigkeit> gebraucht) {
+        return gebraucht.contains(KiFaehigkeit.AUDIO) ? Optional.of(sprachModell) : Optional.empty();
     }
 
     @Override
@@ -130,20 +151,22 @@ public class MistralKiAnbieter implements KiAnbieter {
             messages.addObject().put("role", "system").put("content", anfrage.systemAnweisung());
         }
         for (KiNachricht nachricht : anfrage.nachrichten()) {
-            if (nachricht.rolle() == KiNachricht.Rolle.KI) {
-                messages.addObject().put("role", "assistant").put("content", nurText(nachricht));
-                continue;
-            }
-            ObjectNode eintrag = messages.addObject().put("role", "user");
-            ArrayNode inhalt = eintrag.putArray("content");
-            for (KiTeil teil : nachricht.teile()) {
-                if (teil instanceof KiTeil.Text text) {
-                    inhalt.addObject().put("type", "text").put("text", text.text());
-                } else if (teil instanceof KiTeil.Datei datei) {
-                    haengeDateiAn(inhalt, datei, pdfLeser);
+            switch (nachricht.rolle()) {
+                case KI -> haengeKiZugAn(messages, nachricht);
+                case WERKZEUG -> haengeWerkzeugErgebnisseAn(messages, nachricht);
+                case NUTZER -> {
+                    ArrayNode inhalt = messages.addObject().put("role", "user").putArray("content");
+                    for (KiTeil teil : nachricht.teile()) {
+                        if (teil instanceof KiTeil.Text text) {
+                            inhalt.addObject().put("type", "text").put("text", text.text());
+                        } else if (teil instanceof KiTeil.Datei datei) {
+                            haengeDateiAn(inhalt, datei, pdfLeser);
+                        }
+                    }
                 }
             }
         }
+        haengeWerkzeugeAn(koerper, anfrage);
         if (anfrage.temperatur() != null) {
             koerper.put("temperature", anfrage.temperatur());
         }
@@ -164,12 +187,20 @@ public class MistralKiAnbieter implements KiAnbieter {
 
     private void haengeDateiAn(ArrayNode inhalt, KiTeil.Datei datei, PdfLeser pdfLeser) {
         if (datei.istBild() && !BILDFORMATE.contains(datei.mimeType())) {
-            throw new KiAnbieterFehler(NAME + " kann dieses Bildformat nicht lesen (" + datei.mimeType()
-                    + "). Bitte als JPG, PNG, WebP oder GIF speichern.", 0, false);
+            throw new KiInhaltNichtLesbar(NAME + " kann dieses Bildformat nicht lesen (" + datei.mimeType()
+                    + "). Bitte als JPG, PNG, WebP oder GIF speichern.");
         }
         if (datei.istBild()) {
             inhalt.addObject().put("type", "image_url").put("image_url",
                     "data:" + datei.mimeType() + ";base64," + Base64.getEncoder().encodeToString(datei.daten()));
+        } else if (datei.istAudio()) {
+            // Laut Mistral-Doku („Audio in chat“): die Datei base64-kodiert, ohne Formatangabe.
+            if (!TONFORMATE.contains(datei.mimeType())) {
+                throw new KiInhaltNichtLesbar(NAME + " kann dieses Aufnahmeformat nicht lesen (" + datei.mimeType()
+                        + "). Für die Spracheingabe bitte Google Gemini wählen (Einstellungen → KI-Funktionen).");
+            }
+            inhalt.addObject().put("type", "input_audio")
+                    .put("input_audio", Base64.getEncoder().encodeToString(datei.daten()));
         } else if (datei.istPdf()) {
             inhalt.addObject().put("type", "text").put("text",
                     "Inhalt des PDF-Dokuments (per Texterkennung gelesen):\n\n" + pdfLeser.lies(datei));
@@ -178,19 +209,62 @@ public class MistralKiAnbieter implements KiAnbieter {
                     "Inhalt der Datei (" + datei.mimeType() + "):\n\n"
                             + new String(datei.daten(), StandardCharsets.UTF_8));
         } else {
-            throw new KiAnbieterFehler(NAME + " kann diese Dateiart in diesem Programm noch nicht lesen ("
-                    + datei.mimeType() + ").", 0, false);
+            throw new KiInhaltNichtLesbar(NAME + " kann diese Dateiart in diesem Programm noch nicht lesen ("
+                    + datei.mimeType() + ").");
         }
     }
 
-    private static String nurText(KiNachricht nachricht) {
-        StringBuilder text = new StringBuilder();
-        for (KiTeil teil : nachricht.teile()) {
-            if (teil instanceof KiTeil.Text t) {
-                text.append(t.text());
+    /** Zug der KI: Text und Werkzeug-Aufrufe, die Argumente als JSON-Text. */
+    private void haengeKiZugAn(ArrayNode messages, KiNachricht nachricht) {
+        ObjectNode eintrag = messages.addObject().put("role", "assistant");
+        String text = nachricht.text();
+        List<KiTeil.WerkzeugAufruf> aufrufe = nachricht.werkzeugAufrufe();
+        if (!text.isEmpty() || aufrufe.isEmpty()) {
+            eintrag.put("content", text);
+        }
+        if (!aufrufe.isEmpty()) {
+            ArrayNode calls = eintrag.putArray("tool_calls");
+            for (KiTeil.WerkzeugAufruf aufruf : aufrufe) {
+                ObjectNode call = calls.addObject().put("id", aufruf.id()).put("type", "function");
+                call.putObject("function").put("name", aufruf.name())
+                        .put("arguments", alsText(aufruf.argumente()));
             }
         }
-        return text.toString();
+    }
+
+    /** Jedes Ergebnis als eigene Nachricht mit der Rolle „tool“ und der Kennung seines Aufrufs. */
+    private void haengeWerkzeugErgebnisseAn(ArrayNode messages, KiNachricht nachricht) {
+        for (KiTeil teil : nachricht.teile()) {
+            if (teil instanceof KiTeil.WerkzeugErgebnis ergebnis) {
+                messages.addObject().put("role", "tool")
+                        .put("tool_call_id", ergebnis.id())
+                        .put("name", ergebnis.name())
+                        .put("content", alsText(ergebnis.ergebnis()));
+            }
+        }
+    }
+
+    /** Eigene Werkzeuge; die Internet-Suche kann Mistral im Chat nicht – der Wunsch entfällt. */
+    private void haengeWerkzeugeAn(ObjectNode koerper, KiAnfrage anfrage) {
+        if (anfrage.werkzeuge().isEmpty()) {
+            return;
+        }
+        ArrayNode tools = koerper.putArray("tools");
+        for (KiWerkzeug werkzeug : anfrage.werkzeuge()) {
+            ObjectNode funktion = tools.addObject().put("type", "function").putObject("function");
+            funktion.put("name", werkzeug.name());
+            funktion.put("description", werkzeug.beschreibung());
+            funktion.set("parameters", alsJsonSchema(werkzeug.parameter()));
+        }
+        koerper.put("tool_choice", anfrage.werkzeugModus() == KiAnfrage.WerkzeugModus.KEINE ? "none" : "auto");
+    }
+
+    private String alsText(JsonNode json) {
+        try {
+            return objectMapper.writeValueAsString(json);
+        } catch (JacksonException e) {
+            throw new KiAnbieterFehler("Die Anfrage an " + NAME + " konnte nicht gebaut werden.", false, e);
+        }
     }
 
     /** Liest eine PDF-Datei mit der Texterkennung von Mistral; Ergebnis als Markdown je Seite. */
@@ -268,7 +342,34 @@ public class MistralKiAnbieter implements KiAnbieter {
             text = inhalt.asString("");
         }
         boolean abgeschnitten = "length".equals(wahl.path("finish_reason").asString(""));
-        return new KiErgebnis(text, abgeschnitten, KiAnbieterTyp.MISTRAL, modell);
+        List<KiTeil.WerkzeugAufruf> aufrufe = new ArrayList<>();
+        boolean fehlerhaft = false;
+        for (JsonNode call : wahl.path("message").path("tool_calls")) {
+            JsonNode funktion = call.path("function");
+            JsonNode argumente = leseArgumente(funktion.path("arguments"));
+            fehlerhaft |= argumente == null;
+            aufrufe.add(new KiTeil.WerkzeugAufruf(call.path("id").asString(""),
+                    funktion.path("name").asString(""), argumente));
+        }
+        return new KiErgebnis(text, abgeschnitten, KiAnbieterTyp.MISTRAL, modell, aufrufe, fehlerhaft,
+                List.of(), List.of(), null);
+    }
+
+    /** Argumente kommen als JSON-Text (manchmal schon als Objekt); {@code null}, wenn unlesbar. */
+    private JsonNode leseArgumente(JsonNode argumente) {
+        if (argumente.isObject()) {
+            return argumente;
+        }
+        String text = argumente.asString("");
+        if (text.isBlank()) {
+            return objectMapper.createObjectNode();
+        }
+        try {
+            JsonNode gelesen = objectMapper.readTree(text);
+            return gelesen.isObject() ? gelesen : null;
+        } catch (JacksonException e) {
+            return null;
+        }
     }
 
     /**
@@ -289,7 +390,9 @@ public class MistralKiAnbieter implements KiAnbieter {
         for (Map.Entry<String, JsonNode> feld : gemini.properties()) {
             String name = feld.getKey();
             JsonNode wert = feld.getValue();
-            if ("nullable".equals(name) || "propertyOrdering".equals(name)) {
+            if ("nullable".equals(name) || "propertyOrdering".equals(name)
+                    || ("format".equals(name) && "enum".equals(wert.asString("")))) {
+                // Gemini-Eigenheiten; „format: enum“ ergibt sich in JSON Schema schon aus „enum“.
                 continue;
             }
             if ("type".equals(name) && wert.isString()) {
@@ -345,11 +448,20 @@ public class MistralKiAnbieter implements KiAnbieter {
                 || klein.contains("transcribe") || klein.contains("tts");
     }
 
-    /** Prüft zusätzlich das Modell der Texterkennung, das PDFs liest. */
+    /** Aufnahmen vom iPhone (MP4/AAC) liest Voxtral nach heutigem Stand der Doku nicht ({@link #TONFORMATE}). */
+    @Override
+    public Optional<String> einschraenkung(KiFunktion funktion) {
+        return funktion.braucht().contains(KiFaehigkeit.AUDIO)
+                ? Optional.of("Aufnahmen vom iPhone (MP4) kann " + NAME + " nicht lesen – dafür Google Gemini wählen.")
+                : Optional.empty();
+    }
+
+    /** Prüft zusätzlich die Modelle der Texterkennung (PDFs) und der Sprache. */
     @Override
     public TestResult teste(String schluessel, Collection<String> modelle) {
         List<String> zuPruefen = new ArrayList<>(modelle);
         zuPruefen.add(ocrModell);
+        zuPruefen.add(sprachModell);
         return KiAnbieter.super.teste(schluessel, zuPruefen);
     }
 }

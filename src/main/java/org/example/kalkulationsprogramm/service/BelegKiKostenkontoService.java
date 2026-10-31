@@ -1,8 +1,14 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
 import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
 import org.example.kalkulationsprogramm.service.ki.KiFunktion;
-import org.example.kalkulationsprogramm.service.ki.KiZugang;
+import org.example.kalkulationsprogramm.service.ki.KiNachricht;
+import org.example.kalkulationsprogramm.service.ki.KiNichtVerfuegbar;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
+import org.example.kalkulationsprogramm.service.ki.KiWerkzeug;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -23,20 +29,17 @@ import tools.jackson.core.JacksonException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Locale;
 import java.util.List;
 
 /**
  * KI-Agent fuer Beleg-Kostenkontierung — laeuft in einer echten do-while-Schleife
- * mit Gemini Function-Calling als Werkzeug-Schnittstelle.
+ * mit Function-Calling als Werkzeug-Schnittstelle, ueber den Anbieter, den
+ * {@link KiDienst} fuer {@link KiFunktion#KOSTENKONTO_VORSCHLAG} waehlt.
  *
  * Ablauf jedes Durchgangs:
  *   1. Agent bekommt den aktuellen Konversations-Stand (System-Prompt + Beleg-
@@ -47,7 +50,7 @@ import java.util.List;
  *        - aehnliche_belege     : holt vergangene Belege desselben Lieferanten
  *                                 inkl. ihrer fruheren Kostenstellen-Zuordnung
  *        - finale_zuordnung     : Ergebnis, beendet die Schleife
- *   3. Tool wird ausgefuehrt, Ergebnis als functionResponse in den Verlauf
+ *   3. Tool wird ausgefuehrt, Ergebnis als Werkzeug-Ergebnis in den Verlauf
  *      gehaengt, naechste Iteration startet.
  *
  * Sicherheitsnetz: maximal {@value #MAX_ITERATIONS} Durchlaeufe — falls die KI
@@ -79,28 +82,30 @@ public class BelegKiKostenkontoService {
     private static final int MAX_PROMPT_POSITIONEN = 15;
 
     /**
-     * Max. Anzahl Versuche pro Gemini-Call bei transienten Fehlern (HTTP 429
-     * Rate-Limit, HTTP 5xx Service-Storungen). Beim ersten Schluckauf von
-     * Google reicht meist ein einziger Retry, bei laenger andauernden
+     * Max. Anzahl Versuche pro KI-Aufruf bei voruebergehenden Fehlern (HTTP 429
+     * Rate-Limit, HTTP 5xx Service-Storungen, Netz, Zeitlimit). Beim ersten
+     * Schluckauf reicht meist ein einziger Retry, bei laenger andauernden
      * Outages liefert der dritte Versuch ebenfalls keinen Erfolg mehr —
      * dann uebernimmt der Buchhalter manuell.
      */
-    static final int MAX_GEMINI_ATTEMPTS = 3;
+    static final int MAX_KI_VERSUCHE = 3;
+    /** Laengste Wartezeit auf eine Antwort der KI je Durchgang. */
+    private static final Duration KI_ZEITLIMIT = Duration.ofSeconds(45);
+    /** Werkzeug, das den Lauf mit dem Ergebnis beendet. */
+    static final String FINALE_ZUORDNUNG = "finale_zuordnung";
+
     /**
      * Backoff vor Versuch 2 und 3 (Versuch 1 hat keinen Wait). Exponentiell:
      * 1s, 3s. Halt kurz genug, dass der async-Worker nicht zu lange blockt.
+     * Nicht final: Tests warten nicht.
      */
-    private static final long[] RETRY_BACKOFF_MS = { 1_000L, 3_000L };
+    private long[] wiederholungsPausenMs = { 1_000L, 3_000L };
 
     private final KostenstelleRepository kostenstelleRepository;
     private final SachkontoRepository sachkontoRepository;
     private final BelegRepository belegRepository;
     private final KiDienst kiDienst;
     private final ObjectMapper objectMapper;
-
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(20))
-            .build();
 
     @Value("${upload.path:uploads}")
     private String uploadPath = "uploads";
@@ -121,9 +126,8 @@ public class BelegKiKostenkontoService {
             return;
         }
 
-        // Werkzeuge kann bislang nur Gemini; darf die Funktion nicht ueber Gemini laufen, geht nichts an Google.
-        KiZugang zugang = kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG).orElse(null);
-        if (zugang == null) {
+        // Ohne passenden Anbieter (Einstellungen -> KI-Funktionen) geht nichts raus.
+        if (!kiDienst.verfuegbar(KiFunktion.KOSTENKONTO_VORSCHLAG)) {
             beleg.setKiKostenkontoHinweis(
                     "Keine passende KI eingerichtet – das Programm kann nichts vorschlagen.");
             log.warn("Keine KI fuer den Kostenkonto-Vorschlag eingerichtet — KI-Agent uebersprungen fuer Beleg {}",
@@ -132,58 +136,55 @@ public class BelegKiKostenkontoService {
         }
 
         // Konversations-Verlauf: wird mit jedem Tool-Cycle erweitert.
-        ArrayNode contents = objectMapper.createArrayNode();
-        contents.add(buildInitialTurn(beleg));
+        List<KiNachricht> verlauf = new ArrayList<>();
+        verlauf.add(ersteNachricht(beleg));
 
         AgentErgebnis ergebnis = null;
         int iteration = 0;
         do {
             iteration++;
             log.debug("KI-Agent Beleg {} — Iteration {}", beleg.getId(), iteration);
-            JsonNode antwort = callGemini(zugang, contents);
+            KiErgebnis antwort = frageKi(verlauf);
             if (antwort == null) {
                 log.warn("KI-Agent Beleg {}: leere Antwort in Iteration {}", beleg.getId(), iteration);
                 beleg.setKiKostenkontoHinweis("Die KI hat nicht geantwortet. Bitte von Hand wählen.");
                 return;
             }
 
-            JsonNode kandidat = GeminiVerlauf.kandidat(antwort);
-            List<JsonNode> aufrufe = GeminiVerlauf.funktionsaufrufe(kandidat);
+            List<KiTeil.WerkzeugAufruf> aufrufe = antwort.werkzeugAufrufe();
             if (aufrufe.isEmpty()) {
                 // Modell antwortet ohne Tool-Aufruf → versuche, das Ergebnis aus dem
                 // freien Text zu parsen (Fallback fuer Modelle, die das End-Tool
                 // ignorieren) und beende die Schleife.
-                String text = GeminiVerlauf.text(kandidat);
-                ergebnis = parseFreienText(text);
+                ergebnis = parseFreienText(antwort.text());
                 break;
             }
 
-            // finale_zuordnung beendet den Lauf - auch wenn Gemini daneben noch
+            // finale_zuordnung beendet den Lauf - auch wenn die KI daneben noch
             // andere Werkzeuge aufruft; die werden dann nicht mehr ausgefuehrt.
-            JsonNode finale = aufrufe.stream()
-                    .filter(a -> "finale_zuordnung".equals(a.path("name").asString("")))
+            KiTeil.WerkzeugAufruf finale = aufrufe.stream()
+                    .filter(a -> FINALE_ZUORDNUNG.equals(a.name()))
                     .findFirst().orElse(null);
             if (finale != null) {
-                ergebnis = parseFinaleZuordnung(finale.path("args"));
+                ergebnis = parseFinaleZuordnung(finale.argumente());
                 break;
             }
 
-            // Modell-Turn aufzeichnen, damit die nachfolgenden functionResponses
-            // im Konversations-Strom korrekt referenziert werden.
-            contents.add(GeminiVerlauf.modellZug(kandidat));
+            // Zug der KI aufzeichnen, damit die nachfolgenden Werkzeug-Ergebnisse
+            // im Verlauf ihren Aufrufen zugeordnet werden.
+            verlauf.add(antwort.alsNachricht());
 
-            // Gemini kann mehrere Werkzeuge gleichzeitig aufrufen: Jeder Aufruf
+            // Die KI kann mehrere Werkzeuge gleichzeitig aufrufen: Jeder Aufruf
             // braucht eine Antwort (gleiche id) im selben Zug, sonst HTTP 400.
-            List<ObjectNode> antworten = new ArrayList<>();
+            List<KiTeil.WerkzeugErgebnis> antworten = new ArrayList<>();
             String unbekanntesTool = null;
-            for (JsonNode aufruf : aufrufe) {
-                String toolName = aufruf.path("name").asString("");
-                JsonNode toolResult = dispatch(toolName, aufruf.path("args"), beleg);
+            for (KiTeil.WerkzeugAufruf aufruf : aufrufe) {
+                JsonNode toolResult = dispatch(aufruf.name(), beleg);
                 if (toolResult != null && toolResult.has("fehler")) {
-                    unbekanntesTool = toolName;
+                    unbekanntesTool = aufruf.name();
                     break;
                 }
-                antworten.add(toolResponseTeil(aufruf, toolResult));
+                antworten.add(aufruf.ergebnis(toolResponse(aufruf.name(), toolResult)));
             }
             if (unbekanntesTool != null) {
                 // Modell halluziniert einen Tool-Namen, den wir nicht bedienen
@@ -193,7 +194,7 @@ public class BelegKiKostenkontoService {
                         beleg.getId(), unbekanntesTool);
                 break;
             }
-            contents.add(GeminiVerlauf.antwortZug(antworten));
+            verlauf.add(KiNachricht.werkzeugErgebnisse(antworten));
 
         } while (iteration < MAX_ITERATIONS);
 
@@ -209,7 +210,7 @@ public class BelegKiKostenkontoService {
     // Tool-Dispatch
     // ---------------------------------------------------------------------
 
-    private JsonNode dispatch(String name, JsonNode args, Beleg beleg) {
+    private JsonNode dispatch(String name, Beleg beleg) {
         return switch (name) {
             case "liste_kostenstellen" -> toolListeKostenstellen();
             case "liste_sachkonten" -> toolListeSachkonten();
@@ -316,7 +317,7 @@ public class BelegKiKostenkontoService {
     // Package-private statt private: die Uebernahme-Regeln (Confidence-Schwelle,
     // Fixkosten-/Investitions-Pruefung, Aktiv-Pruefung) sind die eigentliche
     // Fachlogik dieses Service und werden direkt getestet — ohne den Umweg ueber
-    // einen gemockten Gemini-HTTP-Call.
+    // eine gemockte KI.
     void wendeErgebnisAn(Beleg beleg, AgentErgebnis ergebnis) {
         // Vorschlaege immer protokollieren — selbst bei niedriger Confidence
         // dient das als Hinweis im UI ("KI haette das so eingeordnet").
@@ -411,86 +412,42 @@ public class BelegKiKostenkontoService {
     }
 
     // ---------------------------------------------------------------------
-    // Gemini-API mit Function-Calling
+    // KI-Aufruf mit Function-Calling
     // ---------------------------------------------------------------------
 
-    private JsonNode callGemini(KiZugang zugang, ArrayNode contents) {
-        String requestBody;
-        try {
-            ObjectNode body = objectMapper.createObjectNode();
-            body.set("contents", contents.deepCopy());
-            body.set("tools", buildToolDeclarations());
-            ObjectNode systemInstruction = body.putObject("systemInstruction");
-            ArrayNode sysParts = systemInstruction.putArray("parts");
-            sysParts.addObject().put("text", SYSTEM_INSTRUCTION);
-            requestBody = objectMapper.writeValueAsString(body);
-        } catch (Exception e) {
-            log.warn("KI-Agent Gemini-Call: Request konnte nicht serialisiert werden: {}", e.getClass().getSimpleName());
-            return null;
-        }
-
-        HttpRequest req = GeminiAnfrage.generateContent(zugang.modell(), zugang.schluessel())
-                .timeout(Duration.ofSeconds(45))
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .build();
-
-        // Retry-Loop: bei HTTP 429 / 5xx und IOExceptions bis zu MAX_GEMINI_ATTEMPTS
-        // Versuche. 4xx (auser 429) sind echte Client-Fehler und werden NICHT
-        // wiederholt — ein Retry wuerde nur dieselbe Antwort liefern.
-        for (int attempt = 1; attempt <= MAX_GEMINI_ATTEMPTS; attempt++) {
+    /**
+     * Ein Durchgang an die KI. Voruebergehende Fehler (429, 5xx, Netz, Zeitlimit)
+     * werden bis zu {@value #MAX_KI_VERSUCHE}-mal versucht; alles andere (falscher
+     * Schluessel, ungueltige Anfrage) kommt beim naechsten Mal genauso.
+     *
+     * @return {@code null}, wenn keine Antwort kam – dann entscheidet der Buchhalter
+     */
+    private KiErgebnis frageKi(List<KiNachricht> verlauf) {
+        KiAnfrage anfrage = KiAnfrage.mitAnweisung(SYSTEM_INSTRUCTION)
+                .nachrichten(verlauf)
+                .werkzeuge(werkzeuge(), KiAnfrage.WerkzeugModus.AUTO)
+                .zeitlimit(KI_ZEITLIMIT)
+                .bauen();
+        for (int versuch = 1; versuch <= MAX_KI_VERSUCHE; versuch++) {
             try {
-                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-                int status = resp.statusCode();
-                if (status == 200) {
-                    return objectMapper.readTree(resp.body());
+                return kiDienst.sende(KiFunktion.KOSTENKONTO_VORSCHLAG, anfrage);
+            } catch (KiNichtVerfuegbar e) {
+                log.warn("KI-Agent: keine KI mehr fuer den Kostenkonto-Vorschlag eingerichtet");
+                return null;
+            } catch (KiAnbieterFehler e) {
+                // Die Meldung enthaelt nie Beleg-Inhalte (siehe KiAnbieterFehler).
+                if (!e.voruebergehend() || versuch == MAX_KI_VERSUCHE || Thread.currentThread().isInterrupted()) {
+                    log.warn("KI-Agent KI-Aufruf (Versuch {}/{}) gescheitert: {}", versuch, MAX_KI_VERSUCHE,
+                            e.getMessage());
+                    return null;
                 }
-
-                String errBody = GeminiAnfrage.fuerLog(resp.body());
-
-                if (isRetryableStatus(status) && attempt < MAX_GEMINI_ATTEMPTS) {
-                    long backoff = RETRY_BACKOFF_MS[attempt - 1];
-                    log.warn("KI-Agent Gemini-Call Versuch {}/{}: HTTP {} — retry in {} ms",
-                            attempt, MAX_GEMINI_ATTEMPTS, status, backoff);
-                    sleepQuiet(backoff);
-                    continue;
-                }
-
-                log.warn("KI-Agent Gemini-Call (Versuch {}/{}): HTTP {} — {}",
-                        attempt, MAX_GEMINI_ATTEMPTS, status, errBody);
-                return null;
-
-            } catch (JacksonException | java.io.IOException ioe) {
-                // Netzwerk-/Timeout-Fehler: ebenfalls retry-bar.
-                if (attempt < MAX_GEMINI_ATTEMPTS) {
-                    long backoff = RETRY_BACKOFF_MS[attempt - 1];
-                    log.warn("KI-Agent Gemini-Call Versuch {}/{}: IO-Fehler ({}) — retry in {} ms",
-                            attempt, MAX_GEMINI_ATTEMPTS, ioe.getClass().getSimpleName(), backoff);
-                    sleepQuiet(backoff);
-                    continue;
-                }
-                log.warn("KI-Agent Gemini-Call fehlgeschlagen nach {} Versuchen: {}",
-                        MAX_GEMINI_ATTEMPTS, ioe.getClass().getSimpleName());
-                return null;
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                log.warn("KI-Agent Gemini-Call unterbrochen");
-                return null;
-            } catch (Exception e) {
-                log.warn("KI-Agent Gemini-Call fehlgeschlagen: {}", e.getClass().getSimpleName());
-                return null;
+                long backoff = wiederholungsPausenMs[versuch - 1];
+                log.warn("KI-Agent KI-Aufruf Versuch {}/{}: {} — retry in {} ms",
+                        versuch, MAX_KI_VERSUCHE, e.getMessage(), backoff);
+                sleepQuiet(backoff);
             }
         }
         return null;
-    }
-
-    /**
-     * HTTP-Status, bei dem ein Retry sinnvoll ist: Rate-Limit (429) und
-     * serverseitige Storungen (5xx, inkl. dem von Gemini gelieferten 503
-     * UNAVAILABLE). 4xx-Antworten (Bad Request, Unauthorized, Not Found)
-     * sind deterministisch und werden nicht wiederholt.
-     */
-    static boolean isRetryableStatus(int status) {
-        return GeminiAnfrage.istVoruebergehend(status);
     }
 
     private static void sleepQuiet(long ms) {
@@ -501,23 +458,7 @@ public class BelegKiKostenkontoService {
         }
     }
 
-    private ArrayNode buildToolDeclarations() {
-        ArrayNode tools = objectMapper.createArrayNode();
-        ObjectNode toolGroup = tools.addObject();
-        ArrayNode decls = toolGroup.putArray("functionDeclarations");
-
-        decls.add(decl("liste_kostenstellen",
-                "Liefert die Liste aller aktiven Kostenstellen aus der Datenbank (id, bezeichnung, typ, istFixkosten, istInvestition).",
-                emptyObjectSchema()));
-
-        decls.add(decl("liste_sachkonten",
-                "Liefert die Liste aller aktiven Sachkonten aus der Datenbank (id, nummer, bezeichnung, typ).",
-                emptyObjectSchema()));
-
-        decls.add(decl("aehnliche_belege",
-                "Liefert die letzten Belege desselben Lieferanten, die schon eine Kostenstellen-Zuordnung haben. Nutze das, um historische Zuordnungen als Lernmaterial zu sehen.",
-                emptyObjectSchema()));
-
+    private List<KiWerkzeug> werkzeuge() {
         ObjectNode finalSchema = objectMapper.createObjectNode();
         finalSchema.put("type", "OBJECT");
         ObjectNode props = finalSchema.putObject("properties");
@@ -532,19 +473,20 @@ public class BelegKiKostenkontoService {
         ArrayNode required = finalSchema.putArray("required");
         required.add("confidence");
         required.add("begruendung");
-        decls.add(decl("finale_zuordnung",
-                "Beendet den Agent-Lauf und liefert die finale Kostenstellen- und Sachkonto-Zuordnung. Rufe das erst auf, NACHDEM du die Listen geladen hast.",
-                finalSchema));
 
-        return tools;
-    }
-
-    private ObjectNode decl(String name, String description, ObjectNode parameters) {
-        ObjectNode d = objectMapper.createObjectNode();
-        d.put("name", name);
-        d.put("description", description);
-        d.set("parameters", parameters);
-        return d;
+        return List.of(
+                new KiWerkzeug("liste_kostenstellen",
+                        "Liefert die Liste aller aktiven Kostenstellen aus der Datenbank (id, bezeichnung, typ, istFixkosten, istInvestition).",
+                        emptyObjectSchema()),
+                new KiWerkzeug("liste_sachkonten",
+                        "Liefert die Liste aller aktiven Sachkonten aus der Datenbank (id, nummer, bezeichnung, typ).",
+                        emptyObjectSchema()),
+                new KiWerkzeug("aehnliche_belege",
+                        "Liefert die letzten Belege desselben Lieferanten, die schon eine Kostenstellen-Zuordnung haben. Nutze das, um historische Zuordnungen als Lernmaterial zu sehen.",
+                        emptyObjectSchema()),
+                new KiWerkzeug(FINALE_ZUORDNUNG,
+                        "Beendet den Agent-Lauf und liefert die finale Kostenstellen- und Sachkonto-Zuordnung. Rufe das erst auf, NACHDEM du die Listen geladen hast.",
+                        finalSchema));
     }
 
     private ObjectNode emptyObjectSchema() {
@@ -559,12 +501,12 @@ public class BelegKiKostenkontoService {
     // ---------------------------------------------------------------------
 
     // Der erste Turn wird separat aufgebaut, damit Datei-Auswahl und Prompt
-    // ohne HTTP getestet werden koennen. Folgeturns enthalten nur Tool-Antworten.
-    ObjectNode buildInitialTurn(Beleg beleg) {
+    // ohne KI getestet werden koennen. Folgeturns enthalten nur Tool-Antworten.
+    KiNachricht ersteNachricht(Beleg beleg) {
         String text = buildInitialPrompt(beleg);
         String dateiname = beleg.getGespeicherterDateiname();
         if (dateiname == null || dateiname.isBlank()) {
-            return userTurn(text);
+            return KiNachricht.nutzer(text);
         }
         try {
             Path basis = Path.of(uploadPath, "belege").toAbsolutePath().normalize();
@@ -573,28 +515,28 @@ public class BelegKiKostenkontoService {
                     || !datei.toRealPath().startsWith(basis.toRealPath())) {
                 log.info("KI-Agent Beleg {}: Bild fehlt oder liegt ausserhalb des Belegordners — nur Text",
                         beleg.getId());
-                return userTurn(text);
+                return KiNachricht.nutzer(text);
             }
             if (Files.size(datei) >= MAX_INLINE_BYTES) {
                 log.info("KI-Agent Beleg {}: Datei ist mindestens 8 MB gross — nur Text", beleg.getId());
-                return userTurn(text);
+                return KiNachricht.nutzer(text);
             }
             String lowerName = dateiname.toLowerCase(Locale.ROOT);
             String mimeType = lowerName.endsWith(".pdf") ? "application/pdf" : Files.probeContentType(datei);
             if (mimeType == null || (!mimeType.startsWith("image/") && !mimeType.equals("application/pdf"))) {
                 log.info("KI-Agent Beleg {}: Dateityp ist kein Bild oder PDF — nur Text", beleg.getId());
-                return userTurn(text);
+                return KiNachricht.nutzer(text);
             }
-            return userTurnMitBild(text, datei, mimeType);
+            return KiNachricht.nutzer(List.of(KiTeil.text(text), KiTeil.datei(lies(datei), mimeType)));
         } catch (IOException | RuntimeException e) {
             // Keine Dateipfade oder Datei-Inhalte im Log: der Text-Prompt bleibt nutzbar.
             log.warn("KI-Agent Beleg {}: Datei konnte nicht gelesen werden ({}) — nur Text",
                     beleg.getId(), e.getClass().getSimpleName());
-            return userTurn(text);
+            return KiNachricht.nutzer(text);
         }
     }
 
-    private ObjectNode userTurnMitBild(String text, Path datei, String mimeType) throws IOException {
+    private static byte[] lies(Path datei) throws IOException {
         byte[] bytes;
         try (var input = Files.newInputStream(datei)) {
             // Auch wenn die Datei zwischen Groessenpruefung und Lesen waechst,
@@ -604,26 +546,15 @@ public class BelegKiKostenkontoService {
         if (bytes.length >= MAX_INLINE_BYTES) {
             throw new IOException("Datei ist mindestens 8 MB gross");
         }
-        ObjectNode turn = userTurn(text);
-        ObjectNode inlineData = turn.withArray("parts").addObject().putObject("inline_data");
-        inlineData.put("mime_type", mimeType);
-        inlineData.put("data", Base64.getEncoder().encodeToString(bytes));
-        return turn;
+        return bytes;
     }
 
-    private ObjectNode userTurn(String text) {
-        ObjectNode turn = objectMapper.createObjectNode();
-        turn.put("role", "user");
-        ArrayNode parts = turn.putArray("parts");
-        parts.addObject().put("text", text);
-        return turn;
-    }
-
-    private ObjectNode toolResponseTeil(JsonNode functionCall, JsonNode result) {
+    /** Antwort eines Werkzeugs: mit Namen umhuellt, denn Listen sind als Antwort nicht ueberall erlaubt. */
+    private ObjectNode toolResponse(String name, JsonNode result) {
         ObjectNode responseWrapper = objectMapper.createObjectNode();
-        responseWrapper.put("name", functionCall.path("name").asString(""));
+        responseWrapper.put("name", name);
         responseWrapper.set("content", result);
-        return GeminiVerlauf.antwortTeil(functionCall, responseWrapper);
+        return responseWrapper;
     }
 
     // ---------------------------------------------------------------------

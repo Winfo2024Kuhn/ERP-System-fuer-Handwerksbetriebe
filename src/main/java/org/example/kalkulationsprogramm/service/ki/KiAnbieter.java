@@ -5,6 +5,7 @@ import org.example.kalkulationsprogramm.service.SystemSettingsService.TestResult
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -38,6 +39,15 @@ public interface KiAnbieter {
     Map<KiModellStufe, String> standardModelle();
 
     /**
+     * Ein eigenes Modell für Funktionen mit diesen Fähigkeiten, statt des Modells der Stufe –
+     * etwa ein Sprachmodell, wenn das Chat-Modell keinen Ton versteht. Ein Modell, das der
+     * Betrieb für die Funktion selbst gewählt hat, geht vor ({@link KiDienst}).
+     */
+    default Optional<String> modellFuer(Set<KiFaehigkeit> gebraucht) {
+        return Optional.empty();
+    }
+
+    /**
      * Schickt die Anfrage und liefert die Antwort.
      *
      * @throws KiAnbieterFehler wenn der Anbieter nicht oder mit einem Fehler antwortet
@@ -50,6 +60,14 @@ public interface KiAnbieter {
      * @throws KiAnbieterFehler wenn die Liste nicht geladen werden kann
      */
     List<KiModellInfo> ladeModelle(String schluessel);
+
+    /**
+     * Bekannte Grenze dieses Anbieters bei einer Funktion, die die Einstellungsseite
+     * dazuschreibt, auch wenn die Funktion läuft (z. B. nicht lesbare Aufnahmeformate).
+     */
+    default Optional<String> einschraenkung(KiFunktion funktion) {
+        return Optional.empty();
+    }
 
     /** Prüft Schlüssel und Modellnamen, ohne Inhalte zu schicken. */
     default TestResult teste(String schluessel, Collection<String> modelle) {

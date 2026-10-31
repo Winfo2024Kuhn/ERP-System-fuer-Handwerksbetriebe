@@ -167,7 +167,7 @@ describe('KiSettingsSection – Anbieter anzeigen', () => {
         expect(m).toHaveTextContent('Daten in der EU');
         expect(m).toHaveTextContent('Kein Schlüssel');
         expect(m).toHaveTextContent('Kann: Text, Bilder, PDF-Dokumente');
-        expect(m).toHaveTextContent('Kann in diesem Programm noch nicht: Sprache, Nachschlagen im Programm, Programm-Wissen');
+        expect(m).toHaveTextContent('Kann in diesem Programm noch nicht: Sprache, Nachschlagen im Programm, Internet-Suche');
 
         const g = karte('GEMINI');
         expect(g).toHaveTextContent('Daten auch außerhalb der EU');

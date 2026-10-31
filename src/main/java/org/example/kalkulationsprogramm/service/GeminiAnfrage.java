@@ -42,14 +42,6 @@ public final class GeminiAnfrage {
         return mitSchluessel(URI.create(MODELLE_URL + "?pageSize=" + seitenGroesse), schluessel);
     }
 
-    /**
-     * Lohnt ein zweiter Versuch? Bei Ueberlastung (429) und Stoerungen bei Google (5xx) ja; andere
-     * Fehler (falscher Schluessel, ungueltige Anfrage) kommen beim naechsten Mal genauso.
-     */
-    public static boolean istVoruebergehend(int status) {
-        return status == 429 || (status >= 500 && status < 600);
-    }
-
     /** Fehlerantwort der API gekürzt fürs Log. */
     public static String fuerLog(String antwort) {
         if (antwort == null) {

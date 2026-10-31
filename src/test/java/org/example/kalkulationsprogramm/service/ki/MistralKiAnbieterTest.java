@@ -30,7 +30,8 @@ class MistralKiAnbieterTest {
     private final ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
     private final HttpClient http = mock(HttpClient.class);
     private final MistralKiAnbieter anbieter = new MistralKiAnbieter(mapper, http,
-            "mistral-small-latest", "mistral-large-latest", "mistral-large-latest", "mistral-ocr-latest");
+            "mistral-small-latest", "mistral-large-latest", "mistral-large-latest", "mistral-ocr-latest",
+            "voxtral-small-latest");
 
     @SuppressWarnings("unchecked")
     private static HttpResponse<String> antwort(int status, String body) {
@@ -81,11 +82,28 @@ class MistralKiAnbieterTest {
 
     @Test
     void unbekannteDateiartIstEinFehler() {
-        KiAnfrage anfrage = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(new byte[] {1}, "audio/webm")).bauen();
+        KiAnfrage anfrage = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(new byte[] {1}, "video/mp4")).bauen();
 
         assertThatThrownBy(() -> anbieter.baueKoerper(anfrage, "m", datei -> ""))
                 .isInstanceOf(KiAnbieterFehler.class)
-                .hasMessage("Mistral kann diese Dateiart in diesem Programm noch nicht lesen (audio/webm).");
+                .hasMessage("Mistral kann diese Dateiart in diesem Programm noch nicht lesen (video/mp4).");
+    }
+
+    @Test
+    void iphoneAufnahmeWirdVerstaendlichAbgelehnt() {
+        KiAnfrage anfrage = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(new byte[] {1}, "audio/mp4")).bauen();
+
+        assertThatThrownBy(() -> anbieter.baueKoerper(anfrage, "voxtral-small-latest", datei -> ""))
+                .isInstanceOf(KiInhaltNichtLesbar.class)
+                .hasMessage("Mistral kann dieses Aufnahmeformat nicht lesen (audio/mp4). "
+                        + "Für die Spracheingabe bitte Google Gemini wählen (Einstellungen → KI-Funktionen).");
+    }
+
+    @Test
+    void spracheingabeNenntDieIphoneGrenze() {
+        assertThat(anbieter.einschraenkung(KiFunktion.SPRACHEINGABE))
+                .hasValue("Aufnahmen vom iPhone (MP4) kann Mistral nicht lesen – dafür Google Gemini wählen.");
+        assertThat(anbieter.einschraenkung(KiFunktion.DOKUMENT_ANALYSE)).isEmpty();
     }
 
     @Test
@@ -213,16 +231,173 @@ class MistralKiAnbieterTest {
     }
 
     @Test
-    void testPrueftAuchDieTexterkennung() throws Exception {
+    void testPrueftAuchTexterkennungUndSprache() throws Exception {
         HttpResponse<String> liste = antwort(200, """
                 {"data":[{"id":"mistral-large-2512","aliases":["mistral-large-latest"]}]}""");
         when(http.<String>send(any(HttpRequest.class), any())).thenReturn(liste);
 
         assertThat(anbieter.teste(SCHLUESSEL, List.of("mistral-large-latest")).message())
-                .isEqualTo("Der Schlüssel ist gültig, aber diese Modelle kennt Mistral nicht: mistral-ocr-latest. "
-                        + "Bitte die Schreibweise prüfen.");
+                .isEqualTo("Der Schlüssel ist gültig, aber diese Modelle kennt Mistral nicht: mistral-ocr-latest, "
+                        + "voxtral-small-latest. Bitte die Schreibweise prüfen.");
         assertThat(anbieter.teste("test\nkaputt", List.of()).message())
                 .isEqualTo("Der Schlüssel enthält ungültige Zeichen. Bitte neu kopieren.");
+    }
+
+    // ── Ton (Spracheingabe) ──
+
+    @Test
+    void tonGehtAlsInputAudioAnDenChat() {
+        KiAnfrage anfrage = KiAnfrage.mitAnweisung("Schreib mit.")
+                .nutzer(KiTeil.datei(new byte[] {1, 2, 3}, "audio/webm")).temperatur(0.0).bauen();
+
+        JsonNode koerper = anbieter.baueKoerper(anfrage, "voxtral-small-latest", datei -> "nie");
+
+        assertThat(koerper.path("model").asString("")).isEqualTo("voxtral-small-latest");
+        JsonNode teil = koerper.path("messages").get(1).path("content").get(0);
+        assertThat(teil.path("type").asString("")).isEqualTo("input_audio");
+        assertThat(teil.path("input_audio").asString("")).isEqualTo("AQID");
+        assertThat(koerper.has("tools")).isFalse();
+    }
+
+    @Test
+    void fuerTonNimmtMistralDasSprachmodell() {
+        assertThat(anbieter.modellFuer(java.util.EnumSet.of(KiFaehigkeit.AUDIO))).hasValue("voxtral-small-latest");
+        assertThat(anbieter.modellFuer(java.util.EnumSet.of(KiFaehigkeit.WERKZEUGE, KiFaehigkeit.PDF))).isEmpty();
+    }
+
+    // ── Werkzeuge (Programm-Hilfe, Kostenkonto-Vorschlag) ──
+
+    private KiWerkzeug suchen() throws Exception {
+        return new KiWerkzeug("im_programm_suchen", "Sucht im Programm.", mapper.readTree("""
+                {"type":"OBJECT","properties":{
+                  "suchbegriffe":{"type":"STRING"},
+                  "bereich":{"type":"STRING","format":"enum","enum":["bedienung","technik"]}},
+                 "required":["suchbegriffe"]}"""));
+    }
+
+    @Test
+    void werkzeugeAlsToolsMitModusUndOhneWebsuche() throws Exception {
+        KiAnfrage.Bauer frage = KiAnfrage.mitAnweisung("Hilf.").nutzer(KiTeil.text("Wie storniere ich?"))
+                .websuche(true);
+
+        JsonNode auto = anbieter.baueKoerper(frage.werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.AUTO)
+                .bauen(), "m", d -> "");
+        JsonNode funktion = auto.path("tools").get(0);
+        assertThat(funktion.path("type").asString("")).isEqualTo("function");
+        assertThat(funktion.path("function").path("name").asString("")).isEqualTo("im_programm_suchen");
+        assertThat(funktion.path("function").path("description").asString("")).isEqualTo("Sucht im Programm.");
+        JsonNode parameter = funktion.path("function").path("parameters");
+        assertThat(parameter.path("type").asString("")).isEqualTo("object");
+        assertThat(parameter.path("properties").path("bereich").has("format")).isFalse();
+        assertThat(parameter.path("properties").path("bereich").path("enum")).hasSize(2);
+        assertThat(auto.path("tool_choice").asString("")).isEqualTo("auto");
+        // Eine Internet-Suche kann der Chat von Mistral nicht: der Wunsch entfällt still
+        assertThat(auto.path("tools")).hasSize(1);
+        assertThat(auto.toString()).doesNotContain("web_search");
+
+        JsonNode keine = anbieter.baueKoerper(frage.werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.KEINE)
+                .bauen(), "m", d -> "");
+        assertThat(keine.path("tool_choice").asString("")).isEqualTo("none");
+        assertThat(keine.path("tools")).hasSize(1);
+    }
+
+    @Test
+    void ohneWerkzeugeKeineTools() {
+        JsonNode koerper = anbieter.baueKoerper(KiAnfrage.mitAnweisung("").nutzer(KiTeil.text("x")).websuche(true)
+                .bauen(), "m", d -> "");
+
+        assertThat(koerper.has("tools")).isFalse();
+        assertThat(koerper.has("tool_choice")).isFalse();
+    }
+
+    @Test
+    void mehrereRundenMitToolCallsUndToolNachrichten() throws Exception {
+        HttpResponse<String> runde1 = antwort(200, """
+                {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":"",
+                  "tool_calls":[
+                    {"id":"abc123def","type":"function",
+                     "function":{"name":"im_programm_suchen","arguments":"{\\"suchbegriffe\\":\\"Storno\\"}"}},
+                    {"id":"xyz987uvw","type":"function","function":{"name":"datei_lesen","arguments":{"datei":"a.tsx"}}}]}}]}""");
+        HttpResponse<String> runde2 = antwort(200,
+                "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"Klicke auf Stornieren.\"}}]}");
+        when(http.<String>send(any(HttpRequest.class), any())).thenReturn(runde1, runde2);
+        KiAnfrage erste = KiAnfrage.mitAnweisung("Hilf.").nutzer(KiTeil.text("Wie storniere ich?"))
+                .werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.AUTO).bauen();
+
+        KiErgebnis ergebnis = anbieter.sende(erste, "mistral-large-latest", SCHLUESSEL);
+
+        assertThat(ergebnis.werkzeugAufrufe()).hasSize(2);
+        KiTeil.WerkzeugAufruf aufruf = ergebnis.werkzeugAufrufe().get(0);
+        assertThat(aufruf.id()).isEqualTo("abc123def");
+        assertThat(aufruf.name()).isEqualTo("im_programm_suchen");
+        assertThat(aufruf.argumente().path("suchbegriffe").asString("")).isEqualTo("Storno");
+        assertThat(ergebnis.werkzeugAufrufe().get(1).argumente().path("datei").asString("")).isEqualTo("a.tsx");
+        assertThat(ergebnis.werkzeugAufrufFehlerhaft()).isFalse();
+        assertThat(ergebnis.roh()).isNull();
+
+        KiAnfrage zweite = KiAnfrage.mitAnweisung("Hilf.")
+                .nachrichten(erste.nachrichten())
+                .nachricht(ergebnis.alsNachricht())
+                .nachricht(KiNachricht.werkzeugErgebnisse(List.of(
+                        aufruf.ergebnis(mapper.createObjectNode().put("treffer", "Stornieren")),
+                        ergebnis.werkzeugAufrufe().get(1).ergebnis(mapper.createObjectNode().put("hinweis", "kurz")))))
+                .werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.KEINE).bauen();
+        KiErgebnis antwort = anbieter.sende(zweite, "mistral-large-latest", SCHLUESSEL);
+
+        assertThat(antwort.text()).isEqualTo("Klicke auf Stornieren.");
+        assertThat(antwort.werkzeugAufrufe()).isEmpty();
+        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(http, times(2)).send(anfragen.capture(), any());
+        JsonNode messages = mapper.readTree(koerperVon(anfragen.getAllValues().get(1))).path("messages");
+        assertThat(messages).hasSize(5);
+        JsonNode kiZug = messages.get(2);
+        assertThat(kiZug.path("role").asString("")).isEqualTo("assistant");
+        assertThat(kiZug.has("content")).isFalse();
+        assertThat(kiZug.path("tool_calls").get(0).path("id").asString("")).isEqualTo("abc123def");
+        assertThat(kiZug.path("tool_calls").get(0).path("type").asString("")).isEqualTo("function");
+        assertThat(mapper.readTree(kiZug.path("tool_calls").get(0).path("function").path("arguments").asString(""))
+                .path("suchbegriffe").asString("")).isEqualTo("Storno");
+        JsonNode werkzeug = messages.get(3);
+        assertThat(werkzeug.path("role").asString("")).isEqualTo("tool");
+        assertThat(werkzeug.path("tool_call_id").asString("")).isEqualTo("abc123def");
+        assertThat(werkzeug.path("name").asString("")).isEqualTo("im_programm_suchen");
+        assertThat(mapper.readTree(werkzeug.path("content").asString("")).path("treffer").asString(""))
+                .isEqualTo("Stornieren");
+        assertThat(messages.get(4).path("tool_call_id").asString("")).isEqualTo("xyz987uvw");
+    }
+
+    @Test
+    void unlesbareArgumenteMeldenEinenKaputtenAufruf() throws Exception {
+        HttpResponse<String> chat = antwort(200, """
+                {"choices":[{"message":{"content":null,"tool_calls":[
+                  {"id":"a","function":{"name":"liste_sachkonten","arguments":"{kaputt"}},
+                  {"id":"b","function":{"name":"liste_kostenstellen","arguments":""}}]}}]}""");
+        when(http.<String>send(any(HttpRequest.class), any())).thenReturn(chat);
+
+        KiErgebnis ergebnis = anbieter.sende(KiAnfrage.mitAnweisung("").nutzer(KiTeil.text("x")).bauen(),
+                "m", SCHLUESSEL);
+
+        assertThat(ergebnis.werkzeugAufrufFehlerhaft()).isTrue();
+        assertThat(ergebnis.werkzeugAufrufe()).extracting(KiTeil.WerkzeugAufruf::name)
+                .containsExactly("liste_sachkonten", "liste_kostenstellen");
+        assertThat(ergebnis.werkzeugAufrufe().get(0).argumente().isObject()).isTrue();
+        assertThat(ergebnis.text()).isEmpty();
+    }
+
+    @Test
+    void kiZugMitTextUndOhneAufrufeBleibtEinfacherText() {
+        KiAnfrage anfrage = KiAnfrage.mitAnweisung("").nachricht(KiNachricht.ki("Vorher"))
+                .nachricht(new KiNachricht(KiNachricht.Rolle.KI, List.of(KiTeil.text("Ich schaue nach."),
+                        new KiTeil.WerkzeugAufruf("id1", "liste_sachkonten", null))))
+                .nutzer(KiTeil.text("x")).bauen();
+
+        JsonNode messages = anbieter.baueKoerper(anfrage, "m", d -> "").path("messages");
+
+        assertThat(messages.get(0).path("content").asString("")).isEqualTo("Vorher");
+        assertThat(messages.get(0).has("tool_calls")).isFalse();
+        assertThat(messages.get(1).path("content").asString("")).isEqualTo("Ich schaue nach.");
+        assertThat(messages.get(1).path("tool_calls").get(0).path("function").path("arguments").asString(""))
+                .isEqualTo("{}");
     }
 
     @Test
@@ -230,8 +405,9 @@ class MistralKiAnbieterTest {
         assertThat(anbieter.typ()).isEqualTo(KiAnbieterTyp.MISTRAL);
         assertThat(anbieter.name()).isEqualTo("Mistral");
         assertThat(anbieter.datenstandort()).isEqualTo(KiDatenstandort.EU);
-        assertThat(anbieter.faehigkeiten())
-                .containsExactlyInAnyOrder(KiFaehigkeit.TEXT, KiFaehigkeit.BILD, KiFaehigkeit.PDF);
+        assertThat(anbieter.faehigkeiten()).containsExactlyInAnyOrder(KiFaehigkeit.TEXT, KiFaehigkeit.BILD,
+                KiFaehigkeit.PDF, KiFaehigkeit.AUDIO, KiFaehigkeit.WERKZEUGE);
+        assertThat(anbieter.faehigkeiten()).doesNotContain(KiFaehigkeit.WEBSUCHE);
         assertThat(anbieter.schluesselVerschluesselt()).isTrue();
         assertThat(anbieter.standardModelle()).containsEntry(KiModellStufe.SCHNELL, "mistral-small-latest");
         assertThat(anbieter.beschreibung()).contains("EU");

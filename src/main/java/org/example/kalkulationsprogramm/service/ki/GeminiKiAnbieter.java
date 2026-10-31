@@ -26,9 +26,13 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Google Gemini. Kann alles, was das Programm braucht; Werkzeuge, Programm-Wissen
- * und Sprache laufen bislang nur hier (die Dienste dafür sprechen Gemini direkt an
- * und holen Schlüssel und Modell über {@link KiDienst#geminiZugang(KiFunktion)}).
+ * Google Gemini. Kann alles, was das Programm braucht, auch die Google-Suche.
+ *
+ * <p>Werkzeuge: Gemini 3 hängt an Teile seiner Antwort Gedanken-Signaturen
+ * ({@code thoughtSignature}) und bei der Google-Suche eigene Aufruf-Teile
+ * ({@code toolCall}/{@code toolResponse}). Beides muss im nächsten Zug unverändert
+ * zurück – deshalb geht der Zug des Modells als {@link KiRohZug} mit und wird nie
+ * neu gebaut, solange er von Gemini stammt.
  */
 @Slf4j
 @Component
@@ -117,7 +121,7 @@ public class GeminiKiAnbieter implements KiAnbieter {
             throw new KiAnbieterFehler("Der Schlüssel für " + NAME + " enthält ungültige Zeichen.", 0, false);
         }
         HttpResponse<String> antwort = KiHttp.sende(httpClient, request, NAME);
-        return liesAntwort(antwort.body(), modell);
+        return liesAntwort(antwort.body(), modell, anfrage.mitWerkzeugen());
     }
 
     /** Sichtbar für den Test: der Gemini-Körper zur neutralen Anfrage. */
@@ -129,34 +133,105 @@ public class GeminiKiAnbieter implements KiAnbieter {
         }
         ArrayNode contents = koerper.putArray("contents");
         for (KiNachricht nachricht : anfrage.nachrichten()) {
+            KiRohZug roh = nachricht.rohVon(KiAnbieterTyp.GEMINI);
+            if (roh != null) {
+                contents.add(roh.inhalt().deepCopy());
+                continue;
+            }
             ObjectNode eintrag = contents.addObject();
+            // Gemini erwartet die Werkzeug-Ergebnisse mit der Rolle "user".
             eintrag.put("role", nachricht.rolle() == KiNachricht.Rolle.KI ? "model" : "user");
             ArrayNode parts = eintrag.putArray("parts");
             for (KiTeil teil : nachricht.teile()) {
-                if (teil instanceof KiTeil.Text text) {
-                    parts.addObject().put("text", text.text());
-                } else if (teil instanceof KiTeil.Datei datei) {
-                    ObjectNode inline = parts.addObject().putObject("inlineData");
-                    inline.put("mimeType", datei.mimeType());
-                    inline.put("data", Base64.getEncoder().encodeToString(datei.daten()));
-                }
+                haengeTeilAn(parts, teil);
             }
         }
         ObjectNode konfiguration = koerper.putObject("generationConfig");
         if (anfrage.temperatur() != null) {
             konfiguration.put("temperature", anfrage.temperatur());
         }
-        konfiguration.put("responseMimeType", anfrage.jsonAntwort() ? "application/json" : "text/plain");
+        if (anfrage.jsonAntwort()) {
+            konfiguration.put("responseMimeType", "application/json");
+        } else if (!anfrage.mitWerkzeugen()) {
+            // Mit Werkzeugen oder Google-Suche bleibt das Format offen – so schickte es die
+            // Programm-Hilfe schon immer, und Gemini lehnt feste Formate dort teils ab.
+            konfiguration.put("responseMimeType", "text/plain");
+        }
         if (anfrage.schema() != null) {
             konfiguration.set("responseSchema", anfrage.schema());
         }
         if (anfrage.maxAusgabe() != null) {
             konfiguration.put("maxOutputTokens", anfrage.maxAusgabe());
         }
+        haengeWerkzeugeAn(koerper, anfrage);
         return koerper;
     }
 
-    private KiErgebnis liesAntwort(String body, String modell) {
+    private void haengeTeilAn(ArrayNode parts, KiTeil teil) {
+        switch (teil) {
+            case KiTeil.Text text -> parts.addObject().put("text", text.text());
+            case KiTeil.Datei datei -> {
+                ObjectNode inline = parts.addObject().putObject("inlineData");
+                inline.put("mimeType", datei.mimeType());
+                inline.put("data", Base64.getEncoder().encodeToString(datei.daten()));
+            }
+            case KiTeil.WerkzeugAufruf aufruf -> {
+                ObjectNode call = parts.addObject().putObject("functionCall");
+                if (!aufruf.id().isEmpty()) {
+                    call.put("id", aufruf.id());
+                }
+                call.put("name", aufruf.name());
+                call.set("args", aufruf.argumente());
+            }
+            case KiTeil.WerkzeugErgebnis ergebnis -> {
+                // Die id des Aufrufs geht mit zurück - so ordnet Gemini bei mehreren
+                // gleichzeitigen Aufrufen jede Antwort ihrem Aufruf zu.
+                ObjectNode antwort = parts.addObject().putObject("functionResponse");
+                if (!ergebnis.id().isEmpty()) {
+                    antwort.put("id", ergebnis.id());
+                }
+                antwort.put("name", ergebnis.name());
+                // Gemini nimmt als Antwort nur ein Objekt an.
+                antwort.set("response", ergebnis.ergebnis().isObject() ? ergebnis.ergebnis()
+                        : objectMapper.createObjectNode().set("ergebnis", ergebnis.ergebnis()));
+            }
+        }
+    }
+
+    /** Google-Suche und eigene Werkzeuge ({@code functionDeclarations}) samt Modus. */
+    private void haengeWerkzeugeAn(ObjectNode koerper, KiAnfrage anfrage) {
+        ArrayNode tools = objectMapper.createArrayNode();
+        if (anfrage.websuche()) {
+            tools.addObject().putObject("googleSearch");
+        }
+        boolean eigene = !anfrage.werkzeuge().isEmpty();
+        if (eigene) {
+            ArrayNode deklarationen = tools.addObject().putArray("functionDeclarations");
+            for (KiWerkzeug werkzeug : anfrage.werkzeuge()) {
+                deklarationen.addObject()
+                        .put("name", werkzeug.name())
+                        .put("description", werkzeug.beschreibung())
+                        .set("parameters", werkzeug.parameter());
+            }
+        }
+        if (!tools.isEmpty()) {
+            koerper.set("tools", tools);
+        }
+        boolean antwortErzwingen = anfrage.werkzeugModus() == KiAnfrage.WerkzeugModus.KEINE;
+        if (eigene && (anfrage.websuche() || antwortErzwingen)) {
+            ObjectNode toolConfig = koerper.putObject("toolConfig");
+            if (anfrage.websuche()) {
+                // Google-Suche und eigene Werkzeuge in einer Anfrage (Gemini 3): Die Suchaufrufe
+                // kommen dann im Verlauf mit und gehen im nächsten Zug unverändert zurück.
+                toolConfig.put("includeServerSideToolInvocations", true);
+            }
+            if (antwortErzwingen) {
+                toolConfig.putObject("functionCallingConfig").put("mode", "NONE");
+            }
+        }
+    }
+
+    private KiErgebnis liesAntwort(String body, String modell, boolean mitWerkzeugen) {
         JsonNode wurzel;
         try {
             wurzel = objectMapper.readTree(body);
@@ -171,15 +246,62 @@ public class GeminiKiAnbieter implements KiAnbieter {
             throw new KiAnbieterFehler(NAME + " hat keine Antwort geliefert (womöglich vom Inhaltsfilter gesperrt).",
                     200, false);
         }
+        JsonNode teile = kandidat.path("content").path("parts");
+        // Gespräche mit Werkzeugen liefern Text in Abschnitten zwischen Aufrufen: eine Zeile dazwischen.
+        String trenner = mitWerkzeugen ? "\n" : "";
         StringBuilder text = new StringBuilder();
-        for (JsonNode teil : kandidat.path("content").path("parts")) {
+        List<KiTeil.WerkzeugAufruf> aufrufe = new ArrayList<>();
+        for (JsonNode teil : teile) {
+            JsonNode aufruf = teil.get("functionCall");
+            if (aufruf != null && aufruf.isObject()) {
+                aufrufe.add(new KiTeil.WerkzeugAufruf(aufruf.path("id").asString(""),
+                        aufruf.path("name").asString(""), aufruf.path("args")));
+            }
             // Gedanken-Teile der Denk-Modelle gehören nicht zur Antwort.
-            if (!teil.path("thought").asBoolean(false)) {
-                text.append(teil.path("text").asString(""));
+            String stueck = teil.path("thought").asBoolean(false) ? "" : teil.path("text").asString("");
+            if (!stueck.isEmpty()) {
+                if (!text.isEmpty()) {
+                    text.append(trenner);
+                }
+                text.append(stueck);
             }
         }
-        boolean abgeschnitten = "MAX_TOKENS".equals(kandidat.path("finishReason").asString(""));
-        return new KiErgebnis(text.toString(), abgeschnitten, KiAnbieterTyp.GEMINI, modell);
+        String ende = kandidat.path("finishReason").asString("");
+        return new KiErgebnis(text.toString(), "MAX_TOKENS".equals(ende), KiAnbieterTyp.GEMINI, modell,
+                aufrufe, "MALFORMED_FUNCTION_CALL".equals(ende), websuchen(kandidat), quellen(kandidat),
+                new KiRohZug(KiAnbieterTyp.GEMINI, modellZug(teile)));
+    }
+
+    /** Der Zug des Modells für den Verlauf: alle Teile unverändert (Signaturen, Suchaufrufe). */
+    private ObjectNode modellZug(JsonNode teile) {
+        ObjectNode zug = objectMapper.createObjectNode();
+        zug.put("role", "model");
+        if (teile.isArray()) {
+            zug.set("parts", teile.deepCopy());
+        } else {
+            zug.putArray("parts");
+        }
+        return zug;
+    }
+
+    private static List<String> websuchen(JsonNode kandidat) {
+        List<String> suchen = new ArrayList<>();
+        for (JsonNode suche : kandidat.path("groundingMetadata").path("webSearchQueries")) {
+            suchen.add(suche.asString(""));
+        }
+        return suchen;
+    }
+
+    private static List<KiQuelle> quellen(JsonNode kandidat) {
+        List<KiQuelle> quellen = new ArrayList<>();
+        for (JsonNode stueck : kandidat.path("groundingMetadata").path("groundingChunks")) {
+            JsonNode web = stueck.path("web");
+            String adresse = web.path("uri").asString("");
+            if (!adresse.isEmpty()) {
+                quellen.add(new KiQuelle(web.path("title").asString(""), adresse));
+            }
+        }
+        return quellen;
     }
 
     @Override

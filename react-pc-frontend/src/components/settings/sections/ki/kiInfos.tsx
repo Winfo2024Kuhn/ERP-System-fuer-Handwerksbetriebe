@@ -55,9 +55,10 @@ export function KiErsatzInfo() {
         <InfoButton titel="Ersatz-Anbieter">
             <InfoAbschnitt titel="Was passiert im Hintergrund?">
                 <p>
-                    Nicht jeder Anbieter kann alles – Mistral kann in diesem Programm zum Beispiel noch keine
-                    Spracheingabe. Ist der Schalter an, springt für solche Funktionen ein anderer Anbieter ein, für den
-                    ein Schlüssel hinterlegt ist.
+                    Nicht jeder Anbieter kann alles. Kann der gewählte Anbieter eine Funktion nicht, springt bei
+                    eingeschaltetem Schalter ein anderer Anbieter ein, für den ein Schlüssel hinterlegt ist. Fehlt nur
+                    ein Zusatz – Mistral kann zum Beispiel nicht im Internet suchen –, springt niemand ein: Die
+                    Funktion läuft beim gewählten Anbieter, nur ohne diesen Zusatz.
                 </p>
             </InfoAbschnitt>
             <InfoAbschnitt titel="Was bewirkt das?">
@@ -124,6 +125,11 @@ export function KiFunktionenListeInfo() {
                 <p>
                     „Läuft“: über Ihren gewählten Anbieter. „Ersatz“: Ihr Anbieter kann das noch nicht, ein anderer
                     springt ein. „Aus“: Kein eingerichteter Anbieter kann es – der Hinweis daneben sagt, was fehlt.
+                </p>
+                <p>
+                    Ein Hinweis bei „Läuft“ nennt, was der Anbieter dabei weglässt. Die Programm-Hilfe sucht über
+                    Mistral zum Beispiel nicht im Internet und findet Stellen im Programm nur über Stichwörter – dafür
+                    geht keine Frage an Google.
                 </p>
             </InfoAbschnitt>
         </InfoButton>

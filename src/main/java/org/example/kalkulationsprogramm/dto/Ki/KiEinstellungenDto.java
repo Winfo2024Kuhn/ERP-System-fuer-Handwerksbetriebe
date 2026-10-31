@@ -45,7 +45,7 @@ public record KiEinstellungenDto(
      * @param anbieter    {@code null} bei {@code AUS}
      * @param anbieterName {@code null} bei {@code AUS}
      * @param modell      {@code null} bei {@code AUS}
-     * @param hinweis     {@code null} bei {@code AKTIV}
+     * @param hinweis     bei {@code AKTIV} meist {@code null}; dort nur ein Zusatz wie „Läuft ohne Internet-Suche“
      * @param eigeneWahl  {@code null}, wenn die Funktion dem Standard-Anbieter folgt
      */
     public record Funktion(

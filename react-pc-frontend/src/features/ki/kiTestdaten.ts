@@ -56,7 +56,7 @@ export function gemini(teil: Partial<KiAnbieter> = {}): KiAnbieter {
         datenstandort: 'WELTWEIT',
         schluesselGesetzt: false,
         schluesselVerschluesselt: false,
-        faehigkeiten: ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WISSENSSUCHE'],
+        faehigkeiten: ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WEBSUCHE'],
         modelle: [
             { stufe: 'SCHNELL', modell: 'gemini-test-flash', standardModell: 'gemini-test-flash' },
             { stufe: 'STANDARD', modell: 'gemini-test-flash', standardModell: 'gemini-test-flash' },

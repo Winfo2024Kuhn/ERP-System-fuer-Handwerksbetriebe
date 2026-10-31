@@ -21,7 +21,7 @@ import type { TestResult } from '../../components/settings/settingsApi';
 export type KiAnbieterTyp = 'GEMINI' | 'MISTRAL' | (string & {});
 
 /** Was ein Anbieter in diesem Programm kann bzw. was eine Funktion braucht. */
-export type KiFaehigkeit = 'TEXT' | 'BILD' | 'PDF' | 'AUDIO' | 'WERKZEUGE' | 'WISSENSSUCHE' | (string & {});
+export type KiFaehigkeit = 'TEXT' | 'BILD' | 'PDF' | 'AUDIO' | 'WERKZEUGE' | 'WEBSUCHE' | (string & {});
 
 /** Modell-Stufen: kurze Aufgaben, Normalfall, zweiter Versuch bei schweren Dokumenten. */
 export type KiModellStufe = 'SCHNELL' | 'STANDARD' | 'GRUENDLICH' | (string & {});
@@ -65,7 +65,7 @@ export interface KiFunktion {
     anbieter: KiAnbieterTyp | null;
     anbieterName: string | null;
     modell: string | null;
-    /** Bei AKTIV `null`, sonst ein fertiger Satz zum Anzeigen. */
+    /** Fertiger Satz zum Anzeigen; bei AKTIV meist `null`, sonst z. B. „Läuft ohne Internet-Suche …“. */
     hinweis: string | null;
     /** `null` = folgt dem oben gewählten Standard-Anbieter. */
     eigeneWahl: KiEigeneWahl | null;
@@ -246,7 +246,7 @@ export async function testeKiAnbieter(typ: KiAnbieterTyp, apiKey: string | null)
 // ---------------------------------------------------------------------------
 
 /** Reihenfolge, in der Fähigkeiten angezeigt werden. */
-export const BEKANNTE_FAEHIGKEITEN: readonly KiFaehigkeit[] = ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WISSENSSUCHE'];
+export const BEKANNTE_FAEHIGKEITEN: readonly KiFaehigkeit[] = ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WEBSUCHE'];
 
 const FAEHIGKEIT_TEXT: Record<string, string> = {
     TEXT: 'Text',
@@ -254,7 +254,7 @@ const FAEHIGKEIT_TEXT: Record<string, string> = {
     PDF: 'PDF-Dokumente',
     AUDIO: 'Sprache',
     WERKZEUGE: 'Nachschlagen im Programm',
-    WISSENSSUCHE: 'Programm-Wissen',
+    WEBSUCHE: 'Internet-Suche',
 };
 
 /** Unbekannte Werte erscheinen so, wie der Server sie schickt – lieber roh als gar nicht. */

@@ -79,20 +79,27 @@ public class KiDienst {
     }
 
     /**
-     * Schlüssel und Modell für Dienste, die selbst mit Gemini sprechen. Leer,
-     * wenn die Funktion gerade nicht über Gemini laufen darf – dann darf der
-     * Dienst auch nichts an Google schicken.
+     * Kann der Anbieter, über den die Funktion gerade läuft, auch diese Fähigkeit – etwa die
+     * Internet-Suche? {@code false}, wenn die Funktion aus ist.
      */
-    public Optional<KiZugang> geminiZugang(KiFunktion funktion) {
-        return geminiZugang(funktion, funktion.stufe());
+    public boolean kann(KiFunktion funktion, KiFaehigkeit faehigkeit) {
+        KiZuordnung zuordnung = zuordnung(funktion);
+        return zuordnung.verfuegbar() && zuordnung.anbieter().faehigkeiten().contains(faehigkeit);
     }
 
-    public Optional<KiZugang> geminiZugang(KiFunktion funktion, KiModellStufe stufe) {
+    /**
+     * Gemini-Schlüssel, um eine Frage für die Suche im Programm-Wissen einzubetten. Der
+     * Wissens-Index besteht aus Gemini-Vektoren, also geht die Frage dafür an Google – aber nur,
+     * wenn die Funktion gerade ohnehin über Gemini läuft (gewählt oder als erlaubter Ersatz).
+     * Sonst leer: Die Suche nimmt dann nur die Wortsuche, und nichts geht an Google.
+     */
+    public Optional<String> geminiEinbettungsSchluessel(KiFunktion funktion) {
         KiZuordnung zuordnung = zuordnung(funktion);
         if (!zuordnung.verfuegbar() || zuordnung.anbieter().typ() != KiAnbieterTyp.GEMINI) {
             return Optional.empty();
         }
-        return Optional.of(new KiZugang(einstellungen.schluessel(zuordnung.anbieter()), modell(zuordnung, stufe)));
+        String schluessel = einstellungen.schluessel(zuordnung.anbieter());
+        return schluessel.isBlank() ? Optional.empty() : Optional.of(schluessel);
     }
 
     /** Modell, mit dem die Funktion auf dieser Stufe gerade liefe; leer, wenn sie aus ist. */
@@ -101,11 +108,17 @@ public class KiDienst {
         return zuordnung.verfuegbar() ? Optional.of(modell(zuordnung, stufe)) : Optional.empty();
     }
 
-    /** Ein eigenes Modell der Funktion gilt für jede Stufe; sonst das Modell der Stufe. */
+    /**
+     * Ein eigenes Modell der Funktion gilt für jede Stufe; sonst ein Modell, das der Anbieter für
+     * diese Fähigkeiten eigens nimmt (z. B. Ton); sonst das Modell der Stufe.
+     */
     private String modell(KiZuordnung zuordnung, KiModellStufe stufe) {
-        return zuordnung.modellVorgabe() != null
-                ? zuordnung.modellVorgabe()
-                : einstellungen.modell(zuordnung.anbieter(), stufe);
+        if (zuordnung.modellVorgabe() != null) {
+            return zuordnung.modellVorgabe();
+        }
+        KiAnbieter anbieter = zuordnung.anbieter();
+        return anbieter.modellFuer(zuordnung.funktion().braucht())
+                .orElseGet(() -> einstellungen.modell(anbieter, stufe));
     }
 
     /** Hat irgendein Anbieter einen Schlüssel? Dann sind KI-Knöpfe grundsätzlich an. */
@@ -122,7 +135,7 @@ public class KiDienst {
         Set<KiFaehigkeit> fehlend = fehlend(gewaehlt, funktion);
         if (fehlend.isEmpty() && einstellungen.hatSchluessel(gewaehlt)) {
             return new KiZuordnung(funktion, KiZuordnung.Status.AKTIV, gewaehlt,
-                    wahl.map(KiFunktionsWahl::modell).orElse(null), null);
+                    wahl.map(KiFunktionsWahl::modell).orElse(null), zusatzHinweis(gewaehlt, funktion).orElse(null));
         }
 
         String grund = fehlend.isEmpty()
@@ -142,7 +155,8 @@ public class KiDienst {
         if (ersatz.isPresent()) {
             // Das eigene Modell gehört zum gewählten Anbieter, nicht zum Ersatz.
             return new KiZuordnung(funktion, KiZuordnung.Status.ERSATZ, ersatz.get(), null,
-                    grund + " Es springt " + ersatz.get().name() + " ein.");
+                    grund + " Es springt " + ersatz.get().name() + " ein."
+                            + zusatzHinweis(ersatz.get(), funktion).map(zusatz -> " " + zusatz).orElse(""));
         }
         return new KiZuordnung(funktion, KiZuordnung.Status.AUS, null, null,
                 grund + " Kein anderer eingerichteter Anbieter kann das.");
@@ -163,6 +177,25 @@ public class KiDienst {
             }
         }
         einstellungen.speichereFunktionsWahl(funktion, wahl);
+    }
+
+    /** Hinweis auf Zusätze der Funktion, die der Anbieter nicht kann – sie läuft dann ohne. */
+    /** Fehlende Zusätze und bekannte Grenzen des Anbieters, als ein Hinweis. */
+    private static Optional<String> zusatzHinweis(KiAnbieter anbieter, KiFunktion funktion) {
+        List<String> teile = new ArrayList<>();
+        ohneZusatz(anbieter, funktion).ifPresent(teile::add);
+        anbieter.einschraenkung(funktion).ifPresent(teile::add);
+        return teile.isEmpty() ? Optional.empty() : Optional.of(String.join(" ", teile));
+    }
+
+    private static Optional<String> ohneZusatz(KiAnbieter anbieter, KiFunktion funktion) {
+        Set<KiFaehigkeit> fehlend = funktion.nutztWennMoeglich();
+        fehlend.removeAll(anbieter.faehigkeiten());
+        if (fehlend.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("Läuft ohne " + inWorten(fehlend) + " – das kann " + anbieter.name()
+                + " in diesem Programm nicht.");
     }
 
     private static Set<KiFaehigkeit> fehlend(KiAnbieter anbieter, KiFunktion funktion) {

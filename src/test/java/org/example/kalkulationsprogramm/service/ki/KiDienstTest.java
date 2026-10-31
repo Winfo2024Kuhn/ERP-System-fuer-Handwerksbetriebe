@@ -58,13 +58,60 @@ class KiDienstTest {
         }
     }
 
+    /** Wie {@link #dienst}, aber Mistral kann nur Text, Bilder und PDFs. */
+    private TestAnbieter mitBegrenztemMistral() {
+        TestAnbieter begrenzt = TestAnbieter.mistralNurDokumente();
+        dienst = new KiDienst(List.of(gemini, begrenzt), speicher.einstellungen, uhr);
+        speicher.einstellungen.speichereSchluessel(begrenzt, MISTRAL_SCHLUESSEL);
+        speicher.einstellungen.speichereSchluessel(gemini, GEMINI_SCHLUESSEL);
+        return begrenzt;
+    }
+
     @Test
-    void mistralUebernimmtWasEsKannUndGeminiSpringtEin() {
+    void mistralUebernimmtAlleFunktionenDieProgrammHilfeOhneInternetSuche() {
         beideEingerichtet();
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, false);
+
+        for (KiFunktion funktion : KiFunktion.values()) {
+            KiZuordnung zuordnung = dienst.zuordnung(funktion);
+            assertThat(zuordnung.status()).as(funktion.name()).isEqualTo(KiZuordnung.Status.AKTIV);
+            assertThat(zuordnung.anbieter()).as(funktion.name()).isSameAs(mistral);
+        }
+        assertThat(dienst.zuordnung(KiFunktion.PROGRAMM_HILFE).hinweis())
+                .isEqualTo("Läuft ohne Internet-Suche – das kann Mistral in diesem Programm nicht.");
+        assertThat(dienst.zuordnung(KiFunktion.KOSTENKONTO_VORSCHLAG).hinweis()).isNull();
+        assertThat(dienst.zuordnung(KiFunktion.SPRACHEINGABE).hinweis()).isNull();
+        assertThat(dienst.kann(KiFunktion.PROGRAMM_HILFE, KiFaehigkeit.WEBSUCHE)).isFalse();
+        assertThat(dienst.kann(KiFunktion.PROGRAMM_HILFE, KiFaehigkeit.WERKZEUGE)).isTrue();
+    }
+
+    @Test
+    void tonGehtAnDasSprachmodellDesAnbieters() {
+        beideEingerichtet();
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, false);
+
+        dienst.sende(KiFunktion.SPRACHEINGABE, anfrage());
+        dienst.sende(KiFunktion.PROGRAMM_HILFE, anfrage());
+
+        assertThat(mistral.aufrufe).extracting(TestAnbieter.Aufruf::modell)
+                .containsExactly("mistral-sprache", "mistral-standard");
+        assertThat(dienst.modell(KiFunktion.SPRACHEINGABE, KiModellStufe.GRUENDLICH)).hasValue("mistral-sprache");
+        KiEinstellungenDto.Funktion sprache = dienst.uebersicht().funktionen().stream()
+                .filter(f -> f.funktion().equals("SPRACHEINGABE")).findFirst().orElseThrow();
+        assertThat(sprache.modell()).isEqualTo("mistral-sprache");
+
+        // Ein selbst gewähltes Modell geht vor.
+        dienst.waehleFuerFunktion(KiFunktion.SPRACHEINGABE, new KiFunktionsWahl(KiAnbieterTyp.MISTRAL, "voxtral-mini"));
+        assertThat(dienst.modell(KiFunktion.SPRACHEINGABE, KiModellStufe.STANDARD)).hasValue("voxtral-mini");
+    }
+
+    @Test
+    void mistralOhneWerkzeugeUndTonGeminiSpringtEin() {
+        TestAnbieter begrenzt = mitBegrenztemMistral();
         speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, true);
 
         assertThat(dienst.zuordnung(KiFunktion.DOKUMENT_ANALYSE).status()).isEqualTo(KiZuordnung.Status.AKTIV);
-        assertThat(dienst.zuordnung(KiFunktion.DOKUMENT_ANALYSE).anbieter()).isSameAs(mistral);
+        assertThat(dienst.zuordnung(KiFunktion.DOKUMENT_ANALYSE).anbieter()).isSameAs(begrenzt);
 
         KiZuordnung sprache = dienst.zuordnung(KiFunktion.SPRACHEINGABE);
         assertThat(sprache.status()).isEqualTo(KiZuordnung.Status.ERSATZ);
@@ -74,16 +121,29 @@ class KiDienstTest {
     }
 
     @Test
+    void springtMistralEinFehltDieInternetSucheImHinweis() {
+        speicher.einstellungen.speichereSchluessel(mistral, MISTRAL_SCHLUESSEL);
+
+        KiZuordnung hilfe = dienst.zuordnung(KiFunktion.PROGRAMM_HILFE);
+
+        assertThat(hilfe.status()).isEqualTo(KiZuordnung.Status.ERSATZ);
+        assertThat(hilfe.anbieter()).isSameAs(mistral);
+        assertThat(hilfe.hinweis()).isEqualTo("Für Google Gemini ist noch kein Schlüssel hinterlegt. "
+                + "Es springt Mistral ein. Läuft ohne Internet-Suche – das kann Mistral in diesem Programm nicht.");
+    }
+
+    @Test
     void ohneErsatzGehtNichtsAnGoogle() {
-        beideEingerichtet();
+        mitBegrenztemMistral();
         speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, false);
 
         KiZuordnung hilfe = dienst.zuordnung(KiFunktion.PROGRAMM_HILFE);
         assertThat(hilfe.status()).isEqualTo(KiZuordnung.Status.AUS);
         assertThat(hilfe.anbieter()).isNull();
         assertThat(hilfe.hinweis()).isEqualTo("Mistral kann das in diesem Programm noch nicht "
-                + "(im Programm nachschlagen, Programm-Wissen). Ersatz-Anbieter sind ausgeschaltet.");
-        assertThat(dienst.geminiZugang(KiFunktion.PROGRAMM_HILFE)).isEmpty();
+                + "(im Programm nachschlagen). Ersatz-Anbieter sind ausgeschaltet.");
+        assertThat(dienst.geminiEinbettungsSchluessel(KiFunktion.PROGRAMM_HILFE)).isEmpty();
+        assertThat(dienst.kann(KiFunktion.PROGRAMM_HILFE, KiFaehigkeit.WERKZEUGE)).isFalse();
         assertThatThrownBy(() -> dienst.sende(KiFunktion.SPRACHEINGABE, anfrage()))
                 .isInstanceOf(KiNichtVerfuegbar.class)
                 .hasMessageContaining("Ersatz-Anbieter sind ausgeschaltet");
@@ -169,6 +229,8 @@ class KiDienstTest {
 
     @Test
     void anbieterOhneFaehigkeitKannNichtGewaehltWerden() {
+        mitBegrenztemMistral();
+
         assertThatThrownBy(() -> dienst.waehleFuerFunktion(KiFunktion.SPRACHEINGABE,
                 new KiFunktionsWahl(KiAnbieterTyp.MISTRAL, null)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -177,16 +239,26 @@ class KiDienstTest {
     }
 
     @Test
-    void geminiZugangNurWennDieFunktionUeberGeminiLaeuft() {
+    void geminiEinbettungNurWennDieFunktionUeberGeminiLaeuft() {
         beideEingerichtet();
+        assertThat(dienst.geminiEinbettungsSchluessel(KiFunktion.PROGRAMM_HILFE)).hasValue(GEMINI_SCHLUESSEL);
+        assertThat(dienst.kann(KiFunktion.PROGRAMM_HILFE, KiFaehigkeit.WEBSUCHE)).isTrue();
 
-        assertThat(dienst.geminiZugang(KiFunktion.SPRACHEINGABE)).hasValueSatisfying(zugang -> {
-            assertThat(zugang.schluessel()).isEqualTo(GEMINI_SCHLUESSEL);
-            assertThat(zugang.modell()).isEqualTo("gemini-standard");
-            assertThat(zugang.toString()).doesNotContain(GEMINI_SCHLUESSEL);
-        });
-        dienst.waehleFuerFunktion(KiFunktion.EMAIL_TEXT, new KiFunktionsWahl(KiAnbieterTyp.MISTRAL, null));
-        assertThat(dienst.geminiZugang(KiFunktion.EMAIL_TEXT)).isEmpty();
+        dienst.waehleFuerFunktion(KiFunktion.PROGRAMM_HILFE, new KiFunktionsWahl(KiAnbieterTyp.MISTRAL, null));
+        assertThat(dienst.geminiEinbettungsSchluessel(KiFunktion.PROGRAMM_HILFE)).isEmpty();
+        // Andere Funktionen laufen weiter über Gemini - das ändert für die Programm-Hilfe nichts.
+        assertThat(dienst.geminiEinbettungsSchluessel(KiFunktion.EMAIL_TEXT)).hasValue(GEMINI_SCHLUESSEL);
+    }
+
+    @Test
+    void geminiEinbettungAuchAlsErlaubterErsatzAberNichtOhneFunktion() {
+        mitBegrenztemMistral();
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, true);
+        assertThat(dienst.geminiEinbettungsSchluessel(KiFunktion.PROGRAMM_HILFE)).hasValue(GEMINI_SCHLUESSEL);
+
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, false);
+        assertThat(dienst.geminiEinbettungsSchluessel(KiFunktion.PROGRAMM_HILFE)).isEmpty();
+        assertThat(dienst.kann(KiFunktion.PROGRAMM_HILFE, KiFaehigkeit.WEBSUCHE)).isFalse();
     }
 
     @Test
@@ -209,7 +281,8 @@ class KiDienstTest {
         assertThat(dto.verschluesselungBereit()).isTrue();
         assertThat(dto.anbieterListe()).extracting(KiEinstellungenDto.Anbieter::typ).containsExactly("MISTRAL", "GEMINI");
         assertThat(dto.anbieterListe().get(0).schluesselGesetzt()).isTrue();
-        assertThat(dto.anbieterListe().get(0).faehigkeiten()).containsExactly("TEXT", "BILD", "PDF");
+        assertThat(dto.anbieterListe().get(0).faehigkeiten())
+                .containsExactly("TEXT", "BILD", "PDF", "AUDIO", "WERKZEUGE");
         assertThat(dto.anbieterListe().get(0).modelle()).extracting(KiEinstellungenDto.Modell::stufe)
                 .containsExactly("SCHNELL", "STANDARD", "GRUENDLICH");
         assertThat(dto.funktionen()).hasSize(KiFunktion.values().length);
@@ -282,6 +355,27 @@ class KiDienstTest {
         assertThat(mitPruefer.teste(pruefer, null).message()).isEqualTo(MISTRAL_SCHLUESSEL
                 + "|mistral-schnell,mistral-standard,mistral-gruendlich,mistral-medium-3-5");
         assertThat(mitPruefer.teste(pruefer, "test-eingabe-000").message()).startsWith("test-eingabe-000|");
+    }
+
+    @Test
+    void bekannteGrenzeDesAnbietersStehtAuchBeiLaeuftDabei() {
+        TestAnbieter mitGrenze = new TestAnbieter(KiAnbieterTyp.MISTRAL, true, KiFaehigkeit.TEXT, KiFaehigkeit.AUDIO) {
+            @Override
+            public java.util.Optional<String> einschraenkung(KiFunktion funktion) {
+                return funktion == KiFunktion.SPRACHEINGABE
+                        ? java.util.Optional.of("Aufnahmen vom iPhone (MP4) kann Mistral nicht lesen.")
+                        : java.util.Optional.empty();
+            }
+        };
+        KiDienst mitGrenzeDienst = new KiDienst(List.of(mitGrenze, gemini), speicher.einstellungen, uhr);
+        speicher.einstellungen.speichereSchluessel(mitGrenze, MISTRAL_SCHLUESSEL);
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, false);
+
+        KiZuordnung sprache = mitGrenzeDienst.zuordnung(KiFunktion.SPRACHEINGABE);
+
+        assertThat(sprache.status()).isEqualTo(KiZuordnung.Status.AKTIV);
+        assertThat(sprache.hinweis()).isEqualTo("Aufnahmen vom iPhone (MP4) kann Mistral nicht lesen.");
+        assertThat(mitGrenzeDienst.zuordnung(KiFunktion.EMAIL_TEXT).hinweis()).isNull();
     }
 
     /** Uhr, die der Test vorstellen kann. */

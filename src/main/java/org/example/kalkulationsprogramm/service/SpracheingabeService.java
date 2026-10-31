@@ -1,31 +1,25 @@
 package org.example.kalkulationsprogramm.service;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.example.kalkulationsprogramm.dto.SpracheingabeErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
 import org.example.kalkulationsprogramm.service.ki.KiDienst;
 import org.example.kalkulationsprogramm.service.ki.KiFunktion;
-import org.example.kalkulationsprogramm.service.ki.KiZugang;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.example.kalkulationsprogramm.service.ki.KiInhaltNichtLesbar;
+import org.example.kalkulationsprogramm.service.ki.KiNichtVerfuegbar;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.springframework.stereotype.Service;
-import tools.jackson.core.JacksonException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.Locale;
 import java.util.Set;
 
 /**
- * Wandelt eine Sprachaufnahme aus der mobilen Zeiterfassung per Gemini in
+ * Wandelt eine Sprachaufnahme aus der mobilen Zeiterfassung per KI in
  * nach Themen geordnete Stichpunkte um (Erledigt, Material verbraucht,
  * Probleme / Offen). Ein Handwerker diktiert damit unterwegs auf der
  * Baustelle einen Bautagebuch-Eintrag, oft in lauter Umgebung.
@@ -34,11 +28,12 @@ import java.util.Set;
  * im Arbeitsverhaeltnis, nicht um oeffentliche oder betriebliche Dokumente.
  * Audio und Transkript leben ausschliesslich im Arbeitsspeicher: die
  * Aufnahme wird nie auf Platte geschrieben, nicht zwischengespeichert und in
- * keiner Datenbank-Spalte abgelegt. Nach dem Gemini-Aufruf werden beide
+ * keiner Datenbank-Spalte abgelegt. Nach dem KI-Aufruf werden beide
  * verworfen. Weder die Audio-Bytes noch der zurueckgegebene Text duerfen
  * jemals in ein Log gelangen, auch nicht gekuerzt und auch nicht im
  * Fehlerfall. Log-Zeilen dieser Klasse enthalten ausschliesslich technische
- * Metadaten (Bytes, Inhaltstyp, HTTP-Status).
+ * Metadaten (Bytes, Inhaltstyp, HTTP-Status). Welcher Anbieter die Aufnahme
+ * bekommt, entscheidet {@link KiDienst} (Einstellungen → KI-Funktionen).
  */
 @Slf4j
 @Service
@@ -100,113 +95,67 @@ public class SpracheingabeService {
             "audio/webm", "audio/ogg", "audio/mp4", "audio/m4a",
             "audio/aac", "audio/wav", "audio/mpeg");
 
-    private static final Duration READ_TIMEOUT = Duration.ofSeconds(90);
+    private static final Duration ZEITLIMIT = Duration.ofSeconds(90);
     private static final int LESE_PUFFER_BYTES = 8192;
 
     private final KiDienst kiDienst;
-    private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
 
-    @Autowired
-    public SpracheingabeService(KiDienst kiDienst, ObjectMapper objectMapper) {
-        this(kiDienst, objectMapper, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build());
-    }
-
-    /** Test-Konstruktor mit injizierbarem HttpClient. */
-    SpracheingabeService(KiDienst kiDienst, ObjectMapper objectMapper, HttpClient httpClient) {
+    public SpracheingabeService(KiDienst kiDienst) {
         this.kiDienst = kiDienst;
-        this.objectMapper = objectMapper;
-        this.httpClient = httpClient;
     }
 
     /**
      * Die Spracheingabe gehoert zu den freiwilligen KI-Funktionen: ohne
-     * passenden KI-Anbieter (bislang nur Gemini) ist sie aus, und die App
-     * blendet den Mikrofon-Knopf aus.
+     * passenden KI-Anbieter ist sie aus, und die App blendet den Mikrofon-Knopf aus.
      */
     public boolean istVerfuegbar() {
         return kiDienst.verfuegbar(KiFunktion.SPRACHEINGABE);
     }
 
-    /** Liest den Strom begrenzt in den Speicher, prueft, ruft Gemini, liefert den Text. */
+    /** Liest den Strom begrenzt in den Speicher, prueft, fragt die KI, liefert den Text. */
     public SpracheingabeErgebnis transkribiere(InputStream audioStrom, String inhaltstyp) {
         String normalisiert = normalisiereInhaltstyp(inhaltstyp);
         if (!ERLAUBTE_INHALTSTYPEN.contains(normalisiert)) {
             throw new IllegalArgumentException("Dieses Audioformat wird nicht unterstuetzt.");
         }
 
-        // Vor dem Lesen pruefen: ohne Schluessel muss die Aufnahme gar nicht erst in den Speicher.
-        // Sprache kann bislang nur Gemini; darf die Funktion nicht ueber Gemini laufen, geht nichts an Google.
-        KiZugang zugang = kiDienst.geminiZugang(KiFunktion.SPRACHEINGABE).orElseThrow(KiNichtEingerichtet::new);
+        // Vor dem Lesen pruefen: ohne passenden Anbieter muss die Aufnahme gar nicht erst in den Speicher.
+        if (!istVerfuegbar()) {
+            throw new KiNichtEingerichtet();
+        }
 
         byte[] audio = leseHoechstens(audioStrom, MAX_AUDIO_BYTES);
         if (audio.length == 0) {
             throw new IllegalArgumentException("Die Aufnahme ist leer.");
         }
 
-        return sendeUndLies(baueKoerper(audio, normalisiert), zugang, audio.length, normalisiert);
+        try {
+            String text = kiDienst.sende(KiFunktion.SPRACHEINGABE, baueAnfrage(audio, normalisiert)).text();
+            return new SpracheingabeErgebnis(text.trim());
+        } catch (KiNichtVerfuegbar e) {
+            throw new KiNichtEingerichtet();
+        } catch (KiInhaltNichtLesbar e) {
+            // Kein Ausfall, sondern dauerhaft: der Nutzer bekommt den Grund (nur Anbieter und Format).
+            log.warn("[Spracheingabe] {} ({} Bytes)", e.getMessage(), audio.length);
+            throw new FormatNichtUnterstuetzt(e.getMessage());
+        } catch (KiAnbieterFehler e) {
+            // DSGVO: Die Meldung enthaelt nie Inhalte (KiAnbieterFehler), hier nur Metadaten.
+            log.warn("[Spracheingabe] KI-Aufruf gescheitert, HTTP {}: {} ({} Bytes, {})", e.status(), e.getMessage(),
+                    audio.length, normalisiert);
+            throw new IllegalStateException("Die Spracherkennung hat mit einem Fehler geantwortet.", e);
+        }
     }
 
     /**
-     * Sichtbar fuer den Test: baut den Gemini-Koerper. Genau ein
-     * inlineData-Part, kein begleitender Text-Part - die Aufnahme ist der
-     * gesamte fachliche Inhalt.
+     * Sichtbar fuer den Test: die Anfrage an die KI. Genau eine Datei, kein
+     * begleitender Text - die Aufnahme ist der gesamte fachliche Inhalt.
      */
-    ObjectNode baueKoerper(byte[] audio, String inhaltstyp) {
-        ObjectNode koerper = objectMapper.createObjectNode();
-
-        ObjectNode systemInstruction = koerper.putObject("systemInstruction");
-        systemInstruction.putArray("parts").addObject().put("text", SYSTEM_ANWEISUNG);
-
-        ObjectNode runde = koerper.putArray("contents").addObject();
-        runde.put("role", "user");
-        ObjectNode inlineData = runde.putArray("parts").addObject().putObject("inlineData");
-        inlineData.put("mimeType", inhaltstyp);
-        inlineData.put("data", Base64.getEncoder().encodeToString(audio));
-
-        ObjectNode konfiguration = koerper.putObject("generationConfig");
-        konfiguration.put("temperature", 0.0);
-        konfiguration.put("responseMimeType", "text/plain");
-
-        return koerper;
-    }
-
-    private SpracheingabeErgebnis sendeUndLies(ObjectNode koerper, KiZugang zugang, int audioBytes, String inhaltstyp) {
-        HttpRequest request;
-        try {
-            request = GeminiAnfrage.generateContent(zugang.modell(), zugang.schluessel())
-                    .timeout(READ_TIMEOUT)
-                    .POST(HttpRequest.BodyPublishers.ofString(
-                            objectMapper.writeValueAsString(koerper), StandardCharsets.UTF_8))
-                    .build();
-        } catch (JacksonException e) {
-            throw new IllegalStateException("Anfrage an die Spracherkennung konnte nicht gebaut werden.", e);
-        }
-
-        HttpResponse<String> antwort;
-        try {
-            antwort = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new IllegalStateException("Die Spracherkennung ist nicht erreichbar.", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Der Aufruf der Spracherkennung wurde unterbrochen.", e);
-        }
-
-        if (antwort.statusCode() >= 400) {
-            // DSGVO: NIEMALS antwort.body() mitloggen - der Koerper ist hier das Transkript.
-            log.warn("[Spracheingabe] Gemini HTTP {} ({} Bytes, {})", antwort.statusCode(), audioBytes, inhaltstyp);
-            throw new IllegalStateException("Die Spracherkennung hat mit einem Fehler geantwortet.");
-        }
-
-        try {
-            JsonNode wurzel = objectMapper.readTree(antwort.body());
-            String text = wurzel.path("candidates").path(0).path("content")
-                    .path("parts").path(0).path("text").asString("");
-            return new SpracheingabeErgebnis(text.trim());
-        } catch (JacksonException e) {
-            throw new IllegalStateException("Die Antwort der Spracherkennung war nicht lesbar.", e);
-        }
+    KiAnfrage baueAnfrage(byte[] audio, String inhaltstyp) {
+        return KiAnfrage.mitAnweisung(SYSTEM_ANWEISUNG)
+                .nutzer(KiTeil.datei(audio, inhaltstyp))
+                .temperatur(0.0)
+                .zeitlimit(ZEITLIMIT)
+                .bauen();
     }
 
     /**
@@ -246,6 +195,13 @@ public class SpracheingabeService {
     public static class KiNichtEingerichtet extends IllegalStateException {
         public KiNichtEingerichtet() {
             super("Fuer die Spracheingabe ist keine KI eingerichtet.");
+        }
+    }
+
+    /** 400 mit Klartext: Der eingestellte Anbieter kann dieses Aufnahmeformat nicht lesen. */
+    public static class FormatNichtUnterstuetzt extends IllegalArgumentException {
+        FormatNichtUnterstuetzt(String meldung) {
+            super(meldung);
         }
     }
 

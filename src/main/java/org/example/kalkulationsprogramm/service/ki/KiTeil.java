@@ -1,9 +1,15 @@
 package org.example.kalkulationsprogramm.service.ki;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+
 import java.util.Locale;
 import java.util.Objects;
 
-/** Ein Baustein einer {@link KiNachricht}: Text oder eine Datei (Bild, PDF, Ton, XML). */
+/**
+ * Ein Baustein einer {@link KiNachricht}: Text, eine Datei (Bild, PDF, Ton, XML),
+ * ein Werkzeug-Aufruf der KI oder das Ergebnis eines solchen Aufrufs.
+ */
 public sealed interface KiTeil {
 
     static KiTeil text(String text) {
@@ -17,6 +23,12 @@ public sealed interface KiTeil {
     record Text(String text) implements KiTeil {
         public Text {
             text = text == null ? "" : text;
+        }
+
+        /** Nur die Länge: Texte enthalten Fragen, Belege und E-Mails (DSGVO). */
+        @Override
+        public String toString() {
+            return "Text[" + text.length() + " Zeichen]";
         }
     }
 
@@ -56,6 +68,54 @@ public sealed interface KiTeil {
         public boolean istKlartext() {
             return mimeType.startsWith("text/") || mimeType.endsWith("/xml") || mimeType.endsWith("+xml")
                     || "application/json".equals(mimeType);
+        }
+    }
+
+    /**
+     * Die KI möchte ein Werkzeug ({@link KiWerkzeug}) aufrufen. Steht in einer
+     * Nachricht der KI; das Ergebnis geht mit {@link #ergebnis(JsonNode)} zurück.
+     *
+     * @param id        Kennung des Aufrufs, damit das Ergebnis seinem Aufruf zugeordnet wird;
+     *                  leer, wenn der Anbieter keine vergibt
+     * @param name      Name des Werkzeugs
+     * @param argumente Argumente als JSON-Objekt, nie {@code null}
+     */
+    record WerkzeugAufruf(String id, String name, JsonNode argumente) implements KiTeil {
+        public WerkzeugAufruf {
+            id = id == null ? "" : id;
+            name = name == null ? "" : name;
+            argumente = argumente == null || !argumente.isObject()
+                    ? JsonNodeFactory.instance.objectNode()
+                    : argumente;
+        }
+
+        /** Ohne Inhalt: Argumente und Ergebnisse enthalten Fragen und Geschäftsdaten (DSGVO). */
+        @Override
+        public String toString() {
+            return "WerkzeugAufruf[id=" + id + ", name=" + name + "]";
+        }
+
+        /** Das Ergebnis dieses Aufrufs, mit derselben Kennung. */
+        public WerkzeugErgebnis ergebnis(JsonNode ergebnis) {
+            return new WerkzeugErgebnis(id, name, ergebnis);
+        }
+    }
+
+    /**
+     * Ergebnis eines Werkzeug-Aufrufs, steht in einer Nachricht mit der Rolle
+     * {@link KiNachricht.Rolle#WERKZEUG}. Kann Geschäftsdaten enthalten: nie loggen.
+     */
+    record WerkzeugErgebnis(String id, String name, JsonNode ergebnis) implements KiTeil {
+        public WerkzeugErgebnis {
+            id = id == null ? "" : id;
+            name = name == null ? "" : name;
+            ergebnis = ergebnis == null ? JsonNodeFactory.instance.objectNode() : ergebnis;
+        }
+
+        /** Ohne Inhalt: Argumente und Ergebnisse enthalten Fragen und Geschäftsdaten (DSGVO). */
+        @Override
+        public String toString() {
+            return "WerkzeugErgebnis[id=" + id + ", name=" + name + "]";
         }
     }
 }

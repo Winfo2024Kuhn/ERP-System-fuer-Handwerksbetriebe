@@ -21,7 +21,8 @@ import java.util.function.Supplier;
 
 /**
  * Embeddings ueber die Gemini-API ({@value RagIndexer#MODELL}, {@value RagIndexer#DIMENSIONEN}
- * Dimensionen). Abschnitte der Wissensbasis als RETRIEVAL_DOCUMENT, Fragen als RETRIEVAL_QUERY.
+ * Dimensionen). Abschnitte der Wissensbasis als RETRIEVAL_DOCUMENT (Schluessel aus dem Konstruktor;
+ * nur Quellcode und Doku, keine Geschaeftsdaten), Fragen als RETRIEVAL_QUERY (Schluessel je Aufruf).
  * <p>
  * Der Schluessel geht im Header mit, nicht in der URL - so taucht er in keinem Log auf.
  * Ueberlastung (429/5xx) und Zeitueberschreitungen werden wiederholt: beim Aufbau der
@@ -73,7 +74,7 @@ public class GeminiEinbetter implements RagIndexer.Einbetter {
             request.put("model", "models/" + RagIndexer.MODELL);
             requests.add(request);
         }
-        JsonNode antwort = senden(":batchEmbedContents", body, Duration.ofSeconds(120), INDEX);
+        JsonNode antwort = senden(":batchEmbedContents", body, Duration.ofSeconds(120), INDEX, apiKey.get());
         List<float[]> vektoren = new ArrayList<>();
         for (JsonNode embedding : antwort.path("embeddings")) {
             vektoren.add(vektor(embedding.path("values")));
@@ -81,9 +82,13 @@ public class GeminiEinbetter implements RagIndexer.Einbetter {
         return vektoren;
     }
 
-    /** Vektor fuer eine Frage an die KI-Hilfe. */
-    public float[] anfrageEinbetten(String text) throws IOException, InterruptedException {
-        JsonNode antwort = senden(":embedContent", anfrageKoerper(text, "RETRIEVAL_QUERY"), Duration.ofSeconds(15), FRAGE);
+    /**
+     * Vektor fuer eine Frage an die KI-Hilfe. Der Schluessel kommt vom Aufrufer: Ob eine Frage
+     * an Google darf, entscheidet die Zuordnung der KI-Funktion (siehe {@code LocalRagService}).
+     */
+    public float[] anfrageEinbetten(String text, String schluessel) throws IOException, InterruptedException {
+        JsonNode antwort = senden(":embedContent", anfrageKoerper(text, "RETRIEVAL_QUERY"), Duration.ofSeconds(15),
+                FRAGE, schluessel);
         return vektor(antwort.path("embedding").path("values"));
     }
 
@@ -96,9 +101,8 @@ public class GeminiEinbetter implements RagIndexer.Einbetter {
         return request;
     }
 
-    private JsonNode senden(String methode, ObjectNode body, Duration zeitlimit, Wiederholung regel)
+    private JsonNode senden(String methode, ObjectNode body, Duration zeitlimit, Wiederholung regel, String key)
             throws IOException, InterruptedException {
-        String key = apiKey.get();
         if (key == null || key.isBlank()) {
             throw new IOException("Gemini API Key fehlt");
         }

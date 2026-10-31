@@ -1,17 +1,9 @@
 package org.example.kalkulationsprogramm.service;
 
-import org.example.kalkulationsprogramm.service.ki.KiDienst;
-import org.example.kalkulationsprogramm.service.ki.KiFunktion;
-import org.example.kalkulationsprogramm.service.ki.KiZugang;
 import java.io.IOException;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,13 +13,21 @@ import java.util.function.Consumer;
 
 import org.example.kalkulationsprogramm.domain.Firmeninformation;
 import org.example.kalkulationsprogramm.repository.FirmeninformationRepository;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
+import org.example.kalkulationsprogramm.service.ki.KiFaehigkeit;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
+import org.example.kalkulationsprogramm.service.ki.KiNachricht;
+import org.example.kalkulationsprogramm.service.ki.KiNichtVerfuegbar;
+import org.example.kalkulationsprogramm.service.ki.KiQuelle;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
 import org.example.kalkulationsprogramm.service.kihilfe.KiHilfeWerkzeuge;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import lombok.RequiredArgsConstructor;
@@ -65,7 +65,7 @@ public class KiHilfeService {
             - Bei Fachfragen (DIN, EN, ISO): Gib die Kerninfo als Tabelle, dann maximal 2-3 Saetze Erlaeuterung.
             - Vermeide redundante Tipps und "Falls du noch Fragen hast"-Floskeln.
             - Nur wenn der Benutzer explizit nach Details fragt, antworte ausfuehrlicher.
-            - Wenn der user eine Frage außerhalb des Programms stellt, nutze die Web-Suche um eine aktuelle und fundierte Antwort zu geben.
+            {{WEB_STIL}}
             
             ## Verhaltensregeln
             - Du hilfst Benutzern, sich im Programm zurechtzufinden: Wo finde ich was? Wie mache ich X?
@@ -139,29 +139,7 @@ public class KiHilfeService {
             PRINZIP: Nur Fakten aus dem FRONTEND-Code. Backend-Code ≠ UI-Verfügbarkeit. Lieber nur einen
             korrekten Weg nennen als zwei Wege, von denen einer erfunden ist.
             
-            ## Web-Suche & Allgemeinwissen
-            Du hast Zugriff auf die Google-Suche (googleSearch Tool) und kannst aktuelle Informationen aus dem Internet abrufen.
-            
-            REGEL: Wenn eine Frage NICHTS mit dem Kalkulationsprogramm zu tun hat, MUSST du IMMER
-            die Google-Suche verwenden um eine fundierte Antwort mit aktuellen Quellen zu geben.
-            
-            Nutze die Web-Suche IMMER fuer:
-            - Fragen zu technischen Normen und Standards (DIN, EN, ISO, z.B. DIN EN 1090, Schweissnahtpruefung)
-            - Aktuelle Informationen (Wetter, Nachrichten, Metallpreise, Stahlpreise)
-            - Gesetze, Vorschriften, Verordnungen (VOB, BGB, Arbeitszeitgesetz)
-            - Allgemeine Wissensfragen die NICHTS mit dem Programm zu tun haben
-            - Materialfragen, Werkstoffzeugnisse, Schweissverfahren, Prüfnormen
-            - Alles was mit Bauwesen, Stahl, Metall, Maschinenbau zu tun hat
-            
-            Wenn Geodaten (Breitengrad/Laengengrad) im Kontext mitgesendet werden, nutze diese fuer
-            ortsbezogene Anfragen (z.B. Wetter am Standort, lokale Informationen).
-            
-            WICHTIG: Bei Fragen zum Kalkulationsprogramm selbst, nutze IMMER den bereitgestellten Quellcode
-            und die interne Wissensbasis. Die Web-Suche ist fuer EXTERNE Themen.
-            
-            Wenn du Web-Quellen verwendest, werden die Quellen-Links automatisch an den Benutzer weitergegeben.
-            Du musst die URLs NICHT selbst in deiner Antwort auflisten.
-            
+            {{WEB_ABSCHNITT}}
             ## Navigationsstruktur (Ribbon-Menü)
             Das Programm hat ein Ribbon-Menü (obere Leiste) mit 5 Hauptreitern. Jeder Reiter enthält Untergruppen mit Menüpunkten.
             Beschreibe die Navigation IMMER als: Hauptreiter → Menüpunkt (z.B. "Projektmanagement → Anfragen").
@@ -260,9 +238,58 @@ public class KiHilfeService {
             - Mehrere Suchen in einer Runde sind erlaubt. Nach höchstens {{RUNDEN}} Runden antwortest du mit dem,
               was du sicher weißt.
             - Bevor du sagst, dass es etwas nicht gibt oder du es nicht weißt: Suche mindestens einmal gezielt danach.
+            {{WEB_NACHSCHLAGEN}}
+            """;
+
+    /** Teile des Prompts zur Internet-Suche: mit Suche (Gemini) wie seit jeher, ohne Suche ehrlich. */
+    private record WebTexte(String stil, String abschnitt, String nachschlagen) {}
+
+    private static final WebTexte MIT_INTERNET = new WebTexte("""
+            - Wenn der user eine Frage außerhalb des Programms stellt, nutze die Web-Suche um eine aktuelle und fundierte Antwort zu geben.
+            """, """
+            ## Web-Suche & Allgemeinwissen
+            Du hast Zugriff auf die Google-Suche (googleSearch Tool) und kannst aktuelle Informationen aus dem Internet abrufen.
+            
+            REGEL: Wenn eine Frage NICHTS mit dem Kalkulationsprogramm zu tun hat, MUSST du IMMER
+            die Google-Suche verwenden um eine fundierte Antwort mit aktuellen Quellen zu geben.
+            
+            Nutze die Web-Suche IMMER fuer:
+            - Fragen zu technischen Normen und Standards (DIN, EN, ISO, z.B. DIN EN 1090, Schweissnahtpruefung)
+            - Aktuelle Informationen (Wetter, Nachrichten, Metallpreise, Stahlpreise)
+            - Gesetze, Vorschriften, Verordnungen (VOB, BGB, Arbeitszeitgesetz)
+            - Allgemeine Wissensfragen die NICHTS mit dem Programm zu tun haben
+            - Materialfragen, Werkstoffzeugnisse, Schweissverfahren, Prüfnormen
+            - Alles was mit Bauwesen, Stahl, Metall, Maschinenbau zu tun hat
+            
+            Wenn Geodaten (Breitengrad/Laengengrad) im Kontext mitgesendet werden, nutze diese fuer
+            ortsbezogene Anfragen (z.B. Wetter am Standort, lokale Informationen).
+            
+            WICHTIG: Bei Fragen zum Kalkulationsprogramm selbst, nutze IMMER den bereitgestellten Quellcode
+            und die interne Wissensbasis. Die Web-Suche ist fuer EXTERNE Themen.
+            
+            Wenn du Web-Quellen verwendest, werden die Quellen-Links automatisch an den Benutzer weitergegeben.
+            Du musst die URLs NICHT selbst in deiner Antwort auflisten.
+            
+            """, """
             - Fragen außerhalb des Programms (Normen, Wetter, Preise) beantwortest du mit der Google-Suche,
               nicht mit diesen Werkzeugen.
-            """;
+            """);
+
+    private static final WebTexte OHNE_INTERNET = new WebTexte("""
+            - Bei Fragen außerhalb des Programms antwortest du kurz aus deinem Allgemeinwissen.
+            """, """
+            ## Fragen außerhalb des Programms
+            Du hast KEINEN Zugriff auf das Internet und kannst nichts nachsehen. Bei Fachfragen (Normen,
+            Vorschriften, Materialien) antwortest du kurz aus deinem Allgemeinwissen und sagst dazu, dass du
+            den aktuellen Stand nicht prüfen kannst. Aktuelle Dinge (Wetter, Preise, Nachrichten) kannst du
+            nicht beantworten - sag das ehrlich, statt etwas zu erfinden.
+
+            WICHTIG: Bei Fragen zum Kalkulationsprogramm selbst, nutze IMMER den bereitgestellten Quellcode
+            und die interne Wissensbasis.
+
+            """, """
+            - Fragen außerhalb des Programms beantwortest du ohne diese Werkzeuge.
+            """);
 
     /** Hoechstens so viele Nachschlage-Runden; danach muss die KI antworten. */
     static final int MAX_NACHSCHLAGE_RUNDEN = 4;
@@ -274,12 +301,10 @@ public class KiHilfeService {
     private static final int MAX_WOERTER_NACHFRAGE = 8;
     /** Danach wird nicht mehr nachgeschlagen, sondern geantwortet - der Nutzer wartet. */
     private static final Duration NACHSCHLAGEN_BIS = Duration.ofSeconds(75);
-    /** Laengste Wartezeit auf eine einzelne Gemini-Antwort. */
-    private static final Duration GEMINI_ZEITLIMIT = Duration.ofSeconds(60);
+    /** Laengste Wartezeit auf eine einzelne Antwort der KI. */
+    private static final Duration KI_ZEITLIMIT = Duration.ofSeconds(60);
     /** So viel Zeit muss fuer die Antwort selbst bleiben, sonst wird nicht mehr nachgeschlagen. */
-    private static final Duration RESERVE_FUER_ANTWORT = GEMINI_ZEITLIMIT;
-    /** Gemini meldet so einen kaputten Werkzeug-Aufruf; dann wird einmal ohne Werkzeuge geantwortet. */
-    private static final String KAPUTTER_AUFRUF = "MALFORMED_FUNCTION_CALL";
+    private static final Duration RESERVE_FUER_ANTWORT = KI_ZEITLIMIT;
 
     /** Schritt, den der Nutzer nach der ersten, automatischen Suche sieht. */
     static final String SCHRITT_ERSTE_SUCHE = "Passende Stellen im Programm gesucht";
@@ -289,11 +314,8 @@ public class KiHilfeService {
     private final LocalRagService localRagService;
     private final KiDienst kiDienst;
     private final FirmeninformationRepository firmeninformationRepository;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(30))
-            .build();
 
-    /** Pause vor dem zweiten Versuch, wenn Gemini kurz ueberlastet ist; in Tests ohne Warten. */
+    /** Pause vor dem zweiten Versuch, wenn die KI kurz ueberlastet ist; in Tests ohne Warten. */
     private Duration wiederholungsPause = Duration.ofSeconds(1);
 
     /**
@@ -318,15 +340,24 @@ public class KiHilfeService {
         return buildSystemPrompt(ragContext, false);
     }
 
+    String buildSystemPrompt(String ragContext, boolean mitWerkzeugen) {
+        return buildSystemPrompt(ragContext, mitWerkzeugen, true);
+    }
+
     /**
-     * System-Prompt mit den automatisch gefundenen Abschnitten (falls vorhanden). Sonst haengt ohne
+     * System-Prompt mit den automatisch gefundenen Abschnitten (falls vorhanden). Ohne Internet-Suche
+     * (der Anbieter kann sie nicht) sagt er der KI ehrlich, dass sie nichts nachsehen kann. Sonst haengt ohne
      * Werkzeuge der vollstaendige Codebase-Index als Rueckfall an; mit Werkzeugen nicht - er ginge
      * in jeder Runde neu mit, und die KI kann selbst suchen.
      */
-    String buildSystemPrompt(String ragContext, boolean mitWerkzeugen) {
-        String basisPrompt = BASE_SYSTEM_PROMPT.replace("{{BETRIEB}}", betriebsBezeichnung());
+    String buildSystemPrompt(String ragContext, boolean mitWerkzeugen, boolean mitInternet) {
+        WebTexte web = mitInternet ? MIT_INTERNET : OHNE_INTERNET;
+        String basisPrompt = BASE_SYSTEM_PROMPT.replace("{{BETRIEB}}", betriebsBezeichnung())
+                .replace("{{WEB_STIL}}\n", web.stil())
+                .replace("{{WEB_ABSCHNITT}}\n", web.abschnitt());
         if (mitWerkzeugen) {
-            basisPrompt += NACHSCHLAGEN_PROMPT.replace("{{RUNDEN}}", String.valueOf(MAX_NACHSCHLAGE_RUNDEN));
+            basisPrompt += NACHSCHLAGEN_PROMPT.replace("{{RUNDEN}}", String.valueOf(MAX_NACHSCHLAGE_RUNDEN))
+                    .replace("{{WEB_NACHSCHLAGEN}}\n", web.nachschlagen());
         }
         if (ragContext != null && !ragContext.isBlank()) {
             return basisPrompt +
@@ -384,15 +415,16 @@ public class KiHilfeService {
     /**
      * Beantwortet die letzte Frage. Zuerst sucht das Programm selbst passende Abschnitte; reichen
      * sie der KI nicht, schlaegt sie ueber Werkzeuge nach (hoechstens {@value #MAX_NACHSCHLAGE_RUNDEN}
-     * Runden), Fachfragen per Google-Suche.
+     * Runden), Fachfragen per Internet-Suche, wenn der Anbieter sie kann.
      *
      * @param fortschritt bekommt jeden Schritt als kurzen Text fuer den Nutzer ("Schaut nach: ...")
      */
     public ChatResult chat(List<ChatMessage> messages, PageContext pageContext, Consumer<String> fortschritt)
             throws IOException, InterruptedException {
-        // Zugang zur Laufzeit lesen: Die Programm-Hilfe braucht Werkzeuge und Programm-Wissen,
-        // das kann bislang nur Gemini. Darf sie nicht über Gemini laufen, geht nichts an Google.
-        KiZugang zugang = kiDienst.geminiZugang(KiFunktion.PROGRAMM_HILFE).orElseThrow(KeinPassenderAnbieter::new);
+        // Zur Laufzeit pruefen: Ohne passenden Anbieter (Einstellungen -> KI-Funktionen) geht nichts raus.
+        if (!kiDienst.verfuegbar(KiFunktion.PROGRAMM_HILFE)) {
+            throw new KeinPassenderAnbieter();
+        }
 
         if (messages == null || messages.isEmpty()) {
             throw new IllegalArgumentException("Keine Nachrichten angegeben");
@@ -428,20 +460,27 @@ public class KiHilfeService {
             log.info("  -> Seitenkontext ({} Zeichen) wird an Nachricht angehaengt", pageContextInfo.length());
         }
 
-        String systemPrompt = buildSystemPrompt(ragContext, werkzeuge != null);
+        // Die Internet-Suche gibt es nur, wenn der Anbieter sie kann (Gemini); sonst ohne, und die KI weiss es.
+        boolean mitInternet = kiDienst.kann(KiFunktion.PROGRAMM_HILFE, KiFaehigkeit.WEBSUCHE);
+        Runde runde = new Runde(webSearchEnabled && mitInternet, melden, schritte, frist);
+        // Der Systemtext verspricht die Internet-Suche nur, wenn sie wirklich mitgeht.
+        String systemPrompt = buildSystemPrompt(ragContext, werkzeuge != null, runde.websuche());
         try {
-            return beantworten(zugang, systemPrompt, verlauf(limitedMessages, pageContextInfo),
-                    werkzeuge, melden, schritte, frist);
+            return beantworten(systemPrompt, verlauf(limitedMessages, pageContextInfo), werkzeuge, runde);
         } catch (AnfrageAbgelehnt e) {
             // Sicherheitsnetz: Kann das eingestellte Modell eigene Werkzeuge (zusammen mit der
-            // Google-Suche) nicht, antwortet die KI-Hilfe wie frueher - ohne selbst nachzuschlagen.
+            // Internet-Suche) nicht, antwortet die KI-Hilfe wie frueher - ohne selbst nachzuschlagen.
             if (werkzeuge == null || e.status != 400) throw e;
-            log.warn("Gemini lehnt die Anfrage mit Werkzeugen ab (HTTP 400) - Antwort ohne Nachschlagen. "
-                    + "Unterstuetzt das Modell '{}' Function Calling zusammen mit der Google-Suche?", zugang.modell());
-            return beantworten(zugang, buildSystemPrompt(ragContext, false),
-                    verlauf(limitedMessages, pageContextInfo), null, melden, schritte, frist);
+            log.warn("Die KI lehnt die Anfrage mit Werkzeugen ab (HTTP 400) - Antwort ohne Nachschlagen. "
+                    + "Unterstuetzt das Modell '{}' Function Calling (zusammen mit der Internet-Suche)?",
+                    kiDienst.modell(KiFunktion.PROGRAMM_HILFE, KiFunktion.PROGRAMM_HILFE.stufe()).orElse("?"));
+            return beantworten(buildSystemPrompt(ragContext, false, runde.websuche()),
+                    verlauf(limitedMessages, pageContextInfo), null, runde);
         }
     }
+
+    /** Was fuer alle Runden einer Frage gleich bleibt, auch im Rueckfall ohne Werkzeuge. */
+    private record Runde(boolean websuche, Consumer<String> melden, List<String> schritte, Frist frist) {}
 
     /** Gesamtzeit einer Frage; gemessen ab dem Start, gilt auch fuer den Rueckfall. */
     private record Frist(long startNanos, Duration gesamt) {
@@ -460,7 +499,6 @@ public class KiHilfeService {
         }
     }
 
-    /** Die Frage hat die Gesamtzeit ueberschritten; der Nutzer soll es noch einmal versuchen. */
     /** Die Programm-Hilfe darf gerade über keinen Anbieter laufen (Einstellungen → KI-Funktionen). */
     public static final class KeinPassenderAnbieter extends IOException {
         public KeinPassenderAnbieter() {
@@ -468,18 +506,19 @@ public class KiHilfeService {
         }
     }
 
+    /** Die Frage hat die Gesamtzeit ueberschritten; der Nutzer soll es noch einmal versuchen. */
     public static final class ZeitlimitErreicht extends IOException {
         public ZeitlimitErreicht() {
             super("Zeitlimit der KI-Hilfe erreicht");
         }
     }
 
-    /** Gemini hat die Anfrage abgelehnt; ein zweiter Versuch mit derselben Anfrage hilft nicht. */
+    /** Der Anbieter hat die Anfrage abgelehnt; ein zweiter Versuch mit derselben Anfrage hilft nicht. */
     static final class AnfrageAbgelehnt extends IOException {
         final int status;
 
-        AnfrageAbgelehnt(int status) {
-            super("KI-Hilfe nicht verfügbar (Fehler " + status + ")");
+        AnfrageAbgelehnt(int status, Throwable ursache) {
+            super("KI-Hilfe nicht verfügbar (Fehler " + status + ")", ursache);
             this.status = status;
         }
     }
@@ -533,55 +572,49 @@ public class KiHilfeService {
         return fragen.get(fragen.size() - 2) + "\n" + letzte;
     }
 
-    /** Gespraechsverlauf fuer Gemini; der Seitenkontext haengt an der letzten Frage. */
-    private ArrayNode verlauf(List<ChatMessage> messages, String pageContextInfo) {
-        ArrayNode contents = objectMapper.createArrayNode();
+    /** Gespraechsverlauf fuer die KI; der Seitenkontext haengt an der letzten Frage. */
+    private static List<KiNachricht> verlauf(List<ChatMessage> messages, String pageContextInfo) {
+        List<KiNachricht> verlauf = new ArrayList<>();
         for (int i = 0; i < messages.size(); i++) {
             ChatMessage msg = messages.get(i);
-            String role = "user".equals(msg.role()) ? "user" : "model";
+            boolean vomNutzer = "user".equals(msg.role());
             String text = msg.text();
-            boolean isLastUserMessage = "user".equals(msg.role()) && i == messages.size() - 1;
+            boolean isLastUserMessage = vomNutzer && i == messages.size() - 1;
             if (isLastUserMessage && pageContextInfo != null && !pageContextInfo.isBlank()) {
                 text = text + "\n\n" + pageContextInfo;
             }
-            ObjectNode msgNode = contents.addObject().put("role", role);
-            msgNode.putArray("parts").addObject().put("text", text);
+            verlauf.add(vomNutzer ? KiNachricht.nutzer(text) : KiNachricht.ki(text));
         }
-        return contents;
+        return verlauf;
     }
 
     /**
-     * Die Nachschlage-Schleife: Gemini antwortet oder ruft Werkzeuge auf; deren Ergebnisse gehen in
+     * Die Nachschlage-Schleife: Die KI antwortet oder ruft Werkzeuge auf; deren Ergebnisse gehen in
      * den Verlauf, und es geht in die naechste Runde. In der letzten Runde sind Werkzeug-Aufrufe
-     * abgeschaltet ({@code mode NONE}) - dann muss eine Antwort kommen.
+     * abgeschaltet ({@link KiAnfrage.WerkzeugModus#KEINE}) - dann muss eine Antwort kommen.
      */
-    private ChatResult beantworten(KiZugang zugang, String systemPrompt, ArrayNode contents,
-                                   KiHilfeWerkzeuge werkzeuge, Consumer<String> melden, List<String> schritte,
-                                   Frist frist) throws IOException, InterruptedException {
+    private ChatResult beantworten(String systemPrompt, List<KiNachricht> verlauf, KiHilfeWerkzeuge werkzeuge,
+                                   Runde gespraech) throws IOException, InterruptedException {
+        Frist frist = gespraech.frist();
         Map<String, SourceLink> quellen = new LinkedHashMap<>();
         Set<String> websuchen = new LinkedHashSet<>();
         boolean antwortErzwingen = false;
         for (int runde = 0; ; runde++) {
             boolean nachschlagen = werkzeuge != null && runde < MAX_NACHSCHLAGE_RUNDEN && !antwortErzwingen
                     && frist.nachschlagenErlaubt();
-            JsonNode kandidat = GeminiVerlauf.kandidat(
-                    senden(anfrage(systemPrompt, contents, werkzeuge, nachschlagen), zugang, frist));
+            KiErgebnis ergebnis = senden(systemPrompt, verlauf, werkzeuge, nachschlagen, gespraech);
 
-            websuchenMelden(kandidat, websuchen, melden);
-            for (SourceLink quelle : extractGroundingSources(kandidat)) {
-                quellen.putIfAbsent(quelle.url(), quelle);
+            websuchenMelden(ergebnis.websuchen(), websuchen, gespraech.melden());
+            for (KiQuelle quelle : ergebnis.quellen()) {
+                quellen.putIfAbsent(quelle.adresse(), new SourceLink(quelle.titel(), quelle.adresse()));
             }
 
-            List<JsonNode> aufrufe = GeminiVerlauf.funktionsaufrufe(kandidat);
+            List<KiTeil.WerkzeugAufruf> aufrufe = ergebnis.werkzeugAufrufe();
             if (aufrufe.isEmpty() || !nachschlagen) {
-                if (kandidat.isMissingNode()) {
-                    throw new IOException("Keine Antwort von der KI erhalten");
-                }
-                String replyText = GeminiVerlauf.text(kandidat);
-                if (replyText.isBlank() && nachschlagen
-                        && KAPUTTER_AUFRUF.equals(kandidat.path("finishReason").asString(""))) {
+                String replyText = ergebnis.text();
+                if (replyText.isBlank() && nachschlagen && ergebnis.werkzeugAufrufFehlerhaft()) {
                     // Die KI hat einen Werkzeug-Aufruf verbockt: noch einmal, dann aber mit Antwortpflicht
-                    log.warn("  -> Gemini: kaputter Werkzeug-Aufruf, Antwort ohne weiteres Nachschlagen");
+                    log.warn("  -> KI: kaputter Werkzeug-Aufruf, Antwort ohne weiteres Nachschlagen");
                     antwortErzwingen = true;
                     continue;
                 }
@@ -589,100 +622,86 @@ public class KiHilfeService {
                     throw new IOException("Keine Textantwort von der KI erhalten");
                 }
                 log.info("  -> Antwort nach {} Nachschlage-Runde(n), {} Web-Quellen", runde, quellen.size());
-                return new ChatResult(replyText, List.copyOf(quellen.values()), List.copyOf(schritte));
+                return new ChatResult(replyText, List.copyOf(quellen.values()), List.copyOf(gespraech.schritte()));
             }
 
-            contents.add(GeminiVerlauf.modellZug(kandidat));
-            List<ObjectNode> antworten = new ArrayList<>();
+            verlauf.add(ergebnis.alsNachricht());
+            List<KiTeil.WerkzeugErgebnis> antworten = new ArrayList<>();
             for (int i = 0; i < aufrufe.size(); i++) {
-                JsonNode aufruf = aufrufe.get(i);
+                KiTeil.WerkzeugAufruf aufruf = aufrufe.get(i);
                 // Je Aufruf pruefen: Auch das Einbetten der Werkzeug-Suchen kostet Zeit
                 boolean nochZeit = frist.nachschlagenErlaubt();
                 antwortErzwingen |= !nochZeit;
-                ObjectNode ergebnis = !nochZeit ? werkzeuge.keineZeitMehr()
+                ObjectNode antwort = !nochZeit ? werkzeuge.keineZeitMehr()
                         : i < MAX_AUFRUFE_JE_RUNDE ? werkzeuge.ausfuehren(aufruf) : werkzeuge.zuVieleAufrufe();
-                antworten.add(GeminiVerlauf.antwortTeil(aufruf, ergebnis));
+                antworten.add(aufruf.ergebnis(antwort));
             }
-            contents.add(GeminiVerlauf.antwortZug(antworten));
+            verlauf.add(KiNachricht.werkzeugErgebnisse(antworten));
             log.info("  -> Nachschlage-Runde {}: {} Werkzeug-Aufruf(e)", runde + 1, aufrufe.size());
         }
     }
 
-    private ObjectNode anfrage(String systemPrompt, ArrayNode contents, KiHilfeWerkzeuge werkzeuge,
-                               boolean nachschlagen) {
-        ObjectNode requestBody = objectMapper.createObjectNode();
-        requestBody.putObject("systemInstruction").putArray("parts").addObject().put("text", systemPrompt);
-        requestBody.set("contents", contents);
-
-        ObjectNode config = requestBody.putObject("generationConfig");
-        config.put("temperature", temperature);
-        config.put("maxOutputTokens", maxOutputTokens);
-
-        ArrayNode tools = objectMapper.createArrayNode();
-        // Google Search grounding tool – allows Gemini to search the web
-        if (webSearchEnabled) {
-            tools.addObject().putObject("googleSearch");
-        }
+    private KiAnfrage anfrage(String systemPrompt, List<KiNachricht> verlauf, KiHilfeWerkzeuge werkzeuge,
+                              boolean nachschlagen, boolean websuche, Duration zeitlimit) {
+        KiAnfrage.Bauer bauer = KiAnfrage.mitAnweisung(systemPrompt)
+                .nachrichten(verlauf)
+                .temperatur(temperature)
+                .maxAusgabe(maxOutputTokens)
+                .websuche(websuche)
+                .zeitlimit(zeitlimit);
         if (werkzeuge != null) {
-            tools.addObject().set("functionDeclarations", werkzeuge.deklarationen());
+            bauer.werkzeuge(werkzeuge.deklarationen(),
+                    nachschlagen ? KiAnfrage.WerkzeugModus.AUTO : KiAnfrage.WerkzeugModus.KEINE);
         }
-        if (!tools.isEmpty()) {
-            requestBody.set("tools", tools);
-        }
-
-        if (werkzeuge != null && (webSearchEnabled || !nachschlagen)) {
-            ObjectNode toolConfig = requestBody.putObject("toolConfig");
-            if (webSearchEnabled) {
-                // Google-Suche und eigene Werkzeuge in einer Anfrage (Gemini 3): Die Suchaufrufe
-                // kommen dann im Verlauf mit und gehen im naechsten Zug unveraendert zurueck.
-                toolConfig.put("includeServerSideToolInvocations", true);
-            }
-            if (!nachschlagen) {
-                toolConfig.putObject("functionCallingConfig").put("mode", "NONE");
-            }
-        }
-        return requestBody;
+        return bauer.bauen();
     }
 
-    private JsonNode senden(ObjectNode requestBody, KiZugang zugang, Frist frist)
-            throws IOException, InterruptedException {
-        String body = objectMapper.writeValueAsString(requestBody);
+    /**
+     * Eine Runde an die KI. Jeder Aufruf wartet hoechstens {@link #KI_ZEITLIMIT} und nie laenger als
+     * die Frist; bei Ueberlastung (429/5xx) gibt es einen zweiten Versuch.
+     */
+    private KiErgebnis senden(String systemPrompt, List<KiNachricht> verlauf, KiHilfeWerkzeuge werkzeuge,
+                              boolean nachschlagen, Runde gespraech) throws IOException, InterruptedException {
+        Frist frist = gespraech.frist();
         for (int versuch = 1; ; versuch++) {
             Duration rest = frist.rest();
             if (rest.isNegative() || rest.isZero()) {
                 throw new ZeitlimitErreicht();
             }
-            HttpRequest request = GeminiAnfrage.generateContent(zugang.modell(), zugang.schluessel())
-                    .timeout(rest.compareTo(GEMINI_ZEITLIMIT) < 0 ? rest : GEMINI_ZEITLIMIT)
-                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .build();
-            HttpResponse<String> response;
+            Duration zeitlimit = rest.compareTo(KI_ZEITLIMIT) < 0 ? rest : KI_ZEITLIMIT;
             try {
-                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            } catch (HttpTimeoutException e) {
-                if (!frist.rest().isPositive()) throw new ZeitlimitErreicht();
-                throw e;
+                return kiDienst.sende(KiFunktion.PROGRAMM_HILFE,
+                        anfrage(systemPrompt, verlauf, werkzeuge, nachschlagen, gespraech.websuche(), zeitlimit));
+            } catch (KiNichtVerfuegbar e) {
+                // Die Einstellungen haben sich mitten in der Frage geaendert.
+                throw new KeinPassenderAnbieter();
+            } catch (KiAnbieterFehler e) {
+                if (Thread.interrupted()) {
+                    throw new InterruptedException("KI-Hilfe abgebrochen");
+                }
+                if (e.getCause() instanceof HttpTimeoutException zeit) {
+                    if (!frist.rest().isPositive()) throw new ZeitlimitErreicht();
+                    throw zeit;
+                }
+                if (e.status() == 0) {
+                    throw new IOException(e.getMessage(), e);
+                }
+                if (versuch == 1 && e.voruebergehend()) {
+                    log.warn("KI-Hilfe: HTTP {} - neuer Versuch", e.status());
+                    Thread.sleep(wiederholungsPause.toMillis());
+                    continue;
+                }
+                throw new AnfrageAbgelehnt(e.status(), e);
             }
-            if (response.statusCode() == 200) {
-                return objectMapper.readTree(response.body());
-            }
-            if (versuch == 1 && GeminiAnfrage.istVoruebergehend(response.statusCode())) {
-                log.warn("Gemini KI-Hilfe: HTTP {} - neuer Versuch", response.statusCode());
-                Thread.sleep(wiederholungsPause.toMillis());
-                continue;
-            }
-            log.error("Gemini KI-Hilfe API Error {}: {}", response.statusCode(), GeminiAnfrage.fuerLog(response.body()));
-            throw new AnfrageAbgelehnt(response.statusCode());
         }
     }
 
     /** Neue Internet-Suchen der Runde als Schritt melden; ins Log nur die Anzahl (sie enthalten die Frage). */
-    private void websuchenMelden(JsonNode kandidat, Set<String> bisher, Consumer<String> melden) {
-        JsonNode queries = kandidat.path("groundingMetadata").path("webSearchQueries");
-        if (!queries.isArray() || queries.isEmpty()) return;
-        log.info("  -> Google Search Queries: {}", queries.size());
-        for (JsonNode query : queries) {
-            String text = query.asString("").strip();
+    private void websuchenMelden(List<String> suchen, Set<String> bisher, Consumer<String> melden) {
+        if (suchen.isEmpty()) return;
+        log.info("  -> Internet-Suchen: {}", suchen.size());
+        for (String suche : suchen) {
+            String text = suche.strip();
             if (text.isEmpty() || bisher.size() >= MAX_WEBSUCHEN_ANZEIGE || !bisher.add(text)) continue;
             melden.accept("Sucht im Internet: " + text);
         }
@@ -718,26 +737,5 @@ public class KiHilfeService {
               .append(", Laengengrad ").append(ctx.longitude()).append("\n");
         }
         return sb.toString();
-    }
-
-    /**
-     * Extracts source links from Gemini Google Search grounding metadata.
-     */
-    private List<SourceLink> extractGroundingSources(JsonNode candidate) {
-        JsonNode chunks = candidate.path("groundingMetadata").path("groundingChunks");
-        if (!chunks.isArray() || chunks.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<SourceLink> sources = new ArrayList<>();
-        for (JsonNode chunk : chunks) {
-            JsonNode web = chunk.path("web");
-            String uri = web.path("uri").asString("");
-            String title = web.path("title").asString("");
-            if (!uri.isEmpty()) {
-                sources.add(new SourceLink(title.isEmpty() ? uri : title, uri));
-            }
-        }
-        return sources;
     }
 }

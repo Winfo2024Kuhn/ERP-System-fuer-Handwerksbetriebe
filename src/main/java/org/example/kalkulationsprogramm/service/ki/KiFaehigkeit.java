@@ -12,8 +12,11 @@ public enum KiFaehigkeit {
     AUDIO("Sprache"),
     /** Function Calling: die KI schlägt über mehrere Runden selbst im Programm nach. */
     WERKZEUGE("im Programm nachschlagen"),
-    /** Suche im eingebetteten Programm-Wissen (RAG); der Index ist mit Gemini-Vektoren gebaut. */
-    WISSENSSUCHE("Programm-Wissen");
+    /**
+     * Die KI sucht selbst im Internet. Keine Funktion braucht sie zwingend; wer sie nicht
+     * kann, antwortet ohne ({@link KiFunktion#nutztWennMoeglich()}).
+     */
+    WEBSUCHE("Internet-Suche");
 
     private final String bezeichnung;
 

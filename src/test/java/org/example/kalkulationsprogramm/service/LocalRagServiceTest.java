@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +36,9 @@ class LocalRagServiceTest {
     private final GeminiEinbetter einbetter = mock(GeminiEinbetter.class);
     private final SystemSettingsService einstellungen = mock(SystemSettingsService.class);
     private LocalRagService service;
+    /** Gemini-Schluessel fuer Fragen; leer = die Programm-Hilfe laeuft nicht ueber Gemini. */
+    private Optional<String> frageSchluessel = Optional.of(FRAGE_SCHLUESSEL);
+    private static final String FRAGE_SCHLUESSEL = "test-gemini-123";
 
     @TempDir
     Path projekt;
@@ -44,7 +48,7 @@ class LocalRagServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new LocalRagService(indexer, einbetter, einstellungen);
+        service = new LocalRagService(indexer, einbetter, einstellungen, () -> frageSchluessel);
         ReflectionTestUtils.setField(service, "ragEnabled", true);
         ReflectionTestUtils.setField(service, "topK", 4);
         ReflectionTestUtils.setField(service, "scoreThreshold", 0.3);
@@ -94,7 +98,7 @@ class LocalRagServiceTest {
 
         assertThat(service.isReady()).isFalse();
         assertThat(service.search("Wie schreibe ich eine Rechnung?", null, "/projekte")).isEmpty();
-        verify(einbetter, never()).anfrageEinbetten(anyString());
+        verify(einbetter, never()).anfrageEinbetten(anyString(), anyString());
     }
 
     @Test
@@ -107,7 +111,7 @@ class LocalRagServiceTest {
                 abschnitt("docs/RECHNUNGSWESEN.md", "documentation", "Rechnung schreiben", richtung(1, 0.1f)),
                 abschnitt("react-pc-frontend/src/components/RechnungDialog.tsx", "frontend-component", "RechnungDialog", richtung(1, 0.2f))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenReturn(richtung(1, 0));
 
         List<LocalRagService.CodeChunkResult> treffer =
                 service.search("Wie schreibe ich eine Rechnung?", "Seite: Projekte (/projekte)", "/projekte/42");
@@ -117,7 +121,7 @@ class LocalRagServiceTest {
                 .containsExactly("ProjektEditor", "Rechnung schreiben", "RechnungDialog");
         assertThat(treffer.get(0).aktuelleSeite()).isTrue();
         assertThat(treffer.get(1).aktuelleSeite()).isFalse();
-        verify(einbetter).anfrageEinbetten("Wie schreibe ich eine Rechnung?\n\nSeitenkontext: Seite: Projekte (/projekte)");
+        verify(einbetter).anfrageEinbetten("Wie schreibe ich eine Rechnung?\n\nSeitenkontext: Seite: Projekte (/projekte)", FRAGE_SCHLUESSEL);
 
         String kontext = service.buildContextFromResults(treffer);
         assertThat(kontext).contains(">>> AKTUELLE SEITE DES BENUTZERS <<<", "| Technische Beschreibung",
@@ -136,7 +140,7 @@ class LocalRagServiceTest {
         ragDateiImImage(teile);
         service.indexAufbauen();
         // Die Frage passt zu Teil 6 (Achse 16)
-        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(16, 0));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenReturn(richtung(16, 0));
 
         List<LocalRagService.CodeChunkResult> treffer = service.search("Wo ist der Knopf Rechnung erstellen?", null, "/projekte");
 
@@ -153,7 +157,7 @@ class LocalRagServiceTest {
                 abschnitt("react-pc-frontend/src/pages/ProjektEditor.tsx", "frontend-page", "ProjektEditor", richtung(5, 0)),
                 abschnitt("docs/A.md", "documentation", "A", richtung(1, 0))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenReturn(richtung(1, 0));
 
         assertThat(service.search("Frage", null, "/projekte")).extracting(LocalRagService.CodeChunkResult::name)
                 .containsExactly("ProjektEditor");
@@ -166,10 +170,10 @@ class LocalRagServiceTest {
     void sucheOhneRoute() throws Exception {
         ragDateiImImage(List.of(abschnitt("docs/A.md", "documentation", "A", richtung(1, 0))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenReturn(richtung(1, 0));
 
         assertThat(service.search("Frage", null, null)).extracting(LocalRagService.CodeChunkResult::name).containsExactly("A");
-        verify(einbetter).anfrageEinbetten("Frage");
+        verify(einbetter).anfrageEinbetten("Frage", FRAGE_SCHLUESSEL);
     }
 
     @Test
@@ -282,7 +286,7 @@ class LocalRagServiceTest {
                 abschnitt("react-pc-frontend/src/components/StornoDialog.tsx", "frontend-component", "StornoDialog",
                         "<Button>Stornieren</Button>", richtung(9, 0))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenReturn(richtung(1, 0));
 
         assertThat(service.search("Wie kann ich stornieren?", null, null))
                 .extracting(LocalRagService.CodeChunkResult::name)
@@ -300,7 +304,7 @@ class LocalRagServiceTest {
                 abschnitt("docs/benutzer/storno.md", "documentation", "Storno", "Eine Rechnung stornieren", richtung(1, 0)),
                 abschnitt("docs/benutzer/urlaub.md", "documentation", "Urlaub", "Urlaub beantragen", richtung(2, 0))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenThrow(new java.io.IOException("Gemini Embedding Fehler 503"));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenThrow(new java.io.IOException("Gemini Embedding Fehler 503"));
 
         List<LocalRagService.CodeChunkResult> treffer = service.search("Rechnung stornieren", null, "/projekte");
 
@@ -315,11 +319,33 @@ class LocalRagServiceTest {
         ragDateiImImage(List.of(abschnitt("docs/benutzer/storno.md", "documentation", "Storno", "Rechnung stornieren",
                 richtung(1, 0))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenThrow(new InterruptedException());
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenThrow(new InterruptedException());
 
         assertThat(service.search("stornieren", null, null)).extracting(LocalRagService.CodeChunkResult::name)
                 .containsExactly("Storno");
         assertThat(Thread.interrupted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Programm-Hilfe nicht ueber Gemini: nur Wortsuche, keine Frage geht an Google")
+    void ohneGeminiNurWortsuche() throws Exception {
+        frageSchluessel = Optional.empty();
+        ragDateiImImage(List.of(
+                abschnitt("react-pc-frontend/src/pages/ProjektEditor.tsx", "frontend-page", "ProjektEditor (Teil 1/2)",
+                        "Kopf der Seite", richtung(5, 0)),
+                abschnitt("react-pc-frontend/src/pages/ProjektEditor.tsx", "frontend-page", "ProjektEditor (Teil 2/2)",
+                        "<Button>Rechnung stornieren</Button>", richtung(6, 0)),
+                abschnitt("docs/benutzer/storno.md", "documentation", "Storno", "Eine Rechnung stornieren", richtung(1, 0)),
+                abschnitt("docs/benutzer/urlaub.md", "documentation", "Urlaub", "Urlaub beantragen", richtung(2, 0))));
+        service.indexAufbauen();
+
+        assertThat(service.search("Rechnung stornieren", null, "/projekte"))
+                .extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("ProjektEditor (Teil 2/2)", "Storno");
+        assertThat(service.suchen("Urlaub", LocalRagService.Bereich.BEDIENUNG, 3, Set.of()))
+                .extracting(LocalRagService.CodeChunkResult::name)
+                .containsExactly("Urlaub");
+        verify(einbetter, never()).anfrageEinbetten(anyString(), anyString());
     }
 
     @Test
@@ -331,7 +357,7 @@ class LocalRagServiceTest {
                 abschnitt("docs/A.md", "documentation", "A", "rechnung", richtung(1, 0.3f)),
                 abschnitt("react-pc-frontend/src/components/R.tsx", "frontend-component", "R", "rechnung", richtung(1, 0.4f))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenReturn(richtung(1, 0));
 
         List<LocalRagService.CodeChunkResult> treffer = service.search("rechnung", null, null);
 
@@ -348,7 +374,7 @@ class LocalRagServiceTest {
                 abschnitt("react-pc-frontend/src/components/R.tsx", "frontend-component", "R", "Rechnung Knopf", richtung(1, 0.2f)),
                 abschnitt("react-pc-frontend/src/components/S.tsx", "frontend-component", "S", "Rechnung Liste", richtung(1, 0.3f))));
         service.indexAufbauen();
-        when(einbetter.anfrageEinbetten(anyString())).thenReturn(richtung(1, 0));
+        when(einbetter.anfrageEinbetten(anyString(), anyString())).thenReturn(richtung(1, 0));
 
         String gesehen = service.suchen("Rechnung", LocalRagService.Bereich.BEDIENUNG, 9, Set.of())
                 .get(0).schluessel();
@@ -369,7 +395,7 @@ class LocalRagServiceTest {
     void werkzeugSucheOhneWissen() throws Exception {
         assertThat(service.suchen("Rechnung", LocalRagService.Bereich.ALLES, 3, Set.of())).isEmpty();
         assertThat(service.search(" ", null, null)).isEmpty();
-        verify(einbetter, never()).anfrageEinbetten(anyString());
+        verify(einbetter, never()).anfrageEinbetten(anyString(), anyString());
     }
 
     @Test

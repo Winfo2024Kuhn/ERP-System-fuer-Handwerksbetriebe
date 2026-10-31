@@ -1,8 +1,16 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiAnbieterTyp;
+import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
 import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
 import org.example.kalkulationsprogramm.service.ki.KiFunktion;
-import org.example.kalkulationsprogramm.service.ki.KiZugang;
+import org.example.kalkulationsprogramm.service.ki.KiNachricht;
+import org.example.kalkulationsprogramm.service.ki.KiNichtVerfuegbar;
+import org.example.kalkulationsprogramm.service.ki.KiRohZug;
+import org.example.kalkulationsprogramm.service.ki.KiTeil;
+import org.example.kalkulationsprogramm.service.ki.KiWerkzeug;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -26,39 +34,28 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.RandomAccessFile;
-import java.util.Base64;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pruef-Tests fuer die Retry-Klassifizierung des KI-Kostenkonto-Agenten.
- * Netzwerkzugriffe werden am HttpClient ersetzt; Agent-Schleife und
- * Uebernahme-Regeln laufen mit der echten Service-Implementierung.
+ * Pruef-Tests fuer den KI-Kostenkonto-Agenten. Die KI selbst ist gemockt
+ * ({@link KiDienst}); Agent-Schleife und Uebernahme-Regeln laufen mit der
+ * echten Service-Implementierung. Die Uebersetzung der Werkzeuge pruefen die
+ * Anbieter-Tests.
  */
 class BelegKiKostenkontoServiceTest {
-
-    @ParameterizedTest(name = "HTTP {0} ist transient und sollte retried werden")
-    @ValueSource(ints = { 429, 500, 502, 503, 504, 599 })
-    void retryableStatusCodes(int status) {
-        assertThat(BelegKiKostenkontoService.isRetryableStatus(status)).isTrue();
-    }
-
-    @ParameterizedTest(name = "HTTP {0} ist deterministisch und sollte NICHT retried werden")
-    @ValueSource(ints = { 200, 201, 301, 400, 401, 403, 404, 422, 600, 0 })
-    void nonRetryableStatusCodes(int status) {
-        assertThat(BelegKiKostenkontoService.isRetryableStatus(status)).isFalse();
-    }
 
     @Test
     void maxAttemptsIstDrei() {
         // Vertraglich festgeschrieben (User-Anforderung: max 3 Versuche).
         // Schuetzt vor versehentlichem Hochdrehen der Retry-Zahl, die jedem
         // async-Worker bis zu 3*45s Wartezeit kosten wuerde.
-        assertThat(BelegKiKostenkontoService.MAX_GEMINI_ATTEMPTS).isEqualTo(3);
+        assertThat(BelegKiKostenkontoService.MAX_KI_VERSUCHE).isEqualTo(3);
     }
 
     // =====================================================================
@@ -73,12 +70,46 @@ class BelegKiKostenkontoServiceTest {
         kostenstelleRepository = Mockito.mock(KostenstelleRepository.class);
         sachkontoRepository = Mockito.mock(SachkontoRepository.class);
         kiDienst = Mockito.mock(KiDienst.class);
-        return new BelegKiKostenkontoService(
+        BelegKiKostenkontoService svc = new BelegKiKostenkontoService(
                 kostenstelleRepository,
                 sachkontoRepository,
                 Mockito.mock(BelegRepository.class),
                 kiDienst,
                 JsonMapper.builderWithJackson2Defaults().build());
+        ReflectionTestUtils.setField(svc, "wiederholungsPausenMs", new long[] {0L, 0L});
+        return svc;
+    }
+
+    private final ObjectMapper mapper = JsonMapper.builderWithJackson2Defaults().build();
+
+    /** Die KI antwortet der Reihe nach (die letzte Antwort wiederholt sich): Ergebnisse oder Ausnahmen. */
+    private void kiAntwortet(Object... antworten) {
+        Mockito.when(kiDienst.verfuegbar(KiFunktion.KOSTENKONTO_VORSCHLAG)).thenReturn(true);
+        Deque<Object> reihe = new ArrayDeque<>(List.of(antworten));
+        Mockito.when(kiDienst.sende(Mockito.eq(KiFunktion.KOSTENKONTO_VORSCHLAG), Mockito.any(KiAnfrage.class)))
+                .thenAnswer(aufruf -> {
+                    Object naechste = reihe.size() > 1 ? reihe.poll() : reihe.peek();
+                    if (naechste instanceof RuntimeException fehler) throw fehler;
+                    return naechste;
+                });
+    }
+
+    private List<KiAnfrage> gesendeteAnfragen(int anzahl) {
+        ArgumentCaptor<KiAnfrage> anfragen = ArgumentCaptor.forClass(KiAnfrage.class);
+        Mockito.verify(kiDienst, Mockito.times(anzahl))
+                .sende(Mockito.eq(KiFunktion.KOSTENKONTO_VORSCHLAG), anfragen.capture());
+        return anfragen.getAllValues();
+    }
+
+    private KiTeil.WerkzeugAufruf aufruf(String id, String name, String args) throws Exception {
+        return new KiTeil.WerkzeugAufruf(id, name, mapper.readTree(args));
+    }
+
+    private KiErgebnis aufrufe(KiTeil.WerkzeugAufruf... aufrufe) {
+        ObjectNode roh = mapper.createObjectNode().put("role", "model");
+        roh.putArray("parts").addObject().put("thoughtSignature", "sig");
+        return new KiErgebnis("", false, KiAnbieterTyp.GEMINI, "test-modell", List.of(aufrufe), false,
+                List.of(), List.of(), new KiRohZug(KiAnbieterTyp.GEMINI, roh));
     }
 
     @Test
@@ -101,7 +132,7 @@ class BelegKiKostenkontoServiceTest {
     @Test
     void ohnePassendeKiErklaertAusbleibendenVorschlag() {
         BelegKiKostenkontoService svc = service();
-        Mockito.when(kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG)).thenReturn(Optional.empty());
+        Mockito.when(kiDienst.verfuegbar(KiFunktion.KOSTENKONTO_VORSCHLAG)).thenReturn(false);
         Beleg beleg = new Beleg();
 
         svc.klassifiziereBeleg(beleg);
@@ -109,12 +140,13 @@ class BelegKiKostenkontoServiceTest {
         assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo(
                 "Keine passende KI eingerichtet – das Programm kann nichts vorschlagen.");
         assertKeineZuordnung(beleg);
+        Mockito.verify(kiDienst, Mockito.never()).sende(Mockito.any(), Mockito.any(KiAnfrage.class));
     }
 
     @Test
-    void leereAntwortErhaeltEigenenHinweis() throws Exception {
+    void dauerhafterFehlerWirdNichtWiederholtUndErhaeltEigenenHinweis() {
         BelegKiKostenkontoService svc = service();
-        mockAntwort(svc, 204, "");
+        kiAntwortet(new KiAnbieterFehler("Mistral nimmt den Schlüssel nicht an (HTTP 401).", 401, false));
         Beleg beleg = new Beleg();
         beleg.setKiKostenkontoHinweis("Veralteter Hinweis");
 
@@ -123,16 +155,52 @@ class BelegKiKostenkontoServiceTest {
         assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo(
                 "Die KI hat nicht geantwortet. Bitte von Hand wählen.");
         assertKeineZuordnung(beleg);
+        gesendeteAnfragen(1);
+    }
+
+    @Test
+    void voruebergehendeFehlerWerdenBisZuDreimalVersucht() throws Exception {
+        BelegKiKostenkontoService svc = service();
+        KiAnbieterFehler ueberlastet = new KiAnbieterFehler("Ausgelastet (HTTP 429).", 429, true);
+        kiAntwortet(ueberlastet, new KiAnbieterFehler("Nicht erreichbar.", true, new java.io.IOException("weg")),
+                aufrufe(aufruf("a1", BelegKiKostenkontoService.FINALE_ZUORDNUNG,
+                        "{\"confidence\":0.3,\"begruendung\":\"Unklar\"}")));
+        Beleg beleg = new Beleg();
+
+        svc.klassifiziereBeleg(beleg);
+
+        gesendeteAnfragen(3);
+        assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo("KI unsicher (0,30) – bitte prüfen.");
+    }
+
+    @Test
+    void dreiVoruebergehendeFehlerGebenAuf() {
+        BelegKiKostenkontoService svc = service();
+        kiAntwortet(new KiAnbieterFehler("Störung (HTTP 503).", 503, true));
+        Beleg beleg = new Beleg();
+
+        svc.klassifiziereBeleg(beleg);
+
+        gesendeteAnfragen(BelegKiKostenkontoService.MAX_KI_VERSUCHE);
+        assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo("Die KI hat nicht geantwortet. Bitte von Hand wählen.");
+    }
+
+    @Test
+    void wirdDieFunktionMittendrinAusgeschaltetKeinVorschlag() {
+        BelegKiKostenkontoService svc = service();
+        kiAntwortet(new KiNichtVerfuegbar(KiFunktion.KOSTENKONTO_VORSCHLAG, "aus"));
+        Beleg beleg = new Beleg();
+
+        svc.klassifiziereBeleg(beleg);
+
+        assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo("Die KI hat nicht geantwortet. Bitte von Hand wählen.");
+        gesendeteAnfragen(1);
     }
 
     @Test
     void sechsRundenOhneEntscheidungErhaltenHinweis() throws Exception {
         BelegKiKostenkontoService svc = service();
-        HttpClient client = mockAntwort(svc, 200, """
-                {"candidates":[{"content":{"parts":[
-                  {"functionCall":{"name":"liste_kostenstellen","args":{}}}
-                ]}}]}
-                """);
+        kiAntwortet(aufrufe(aufruf("", "liste_kostenstellen", "{}")));
         Beleg beleg = new Beleg();
         beleg.setKiKostenkontoHinweis("Veralteter Hinweis");
 
@@ -141,13 +209,44 @@ class BelegKiKostenkontoServiceTest {
         assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo(
                 "Die KI konnte sich nicht entscheiden. Bitte von Hand wählen.");
         assertKeineZuordnung(beleg);
-        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
-        Mockito.verify(client, Mockito.times(6)).send(anfragen.capture(), Mockito.any());
-        // Schlüssel im Header, nie in der URL (die steht in Fehlermeldungen)
-        assertThat(anfragen.getAllValues()).allSatisfy(anfrage -> {
-            assertThat(anfrage.uri().toString()).doesNotContain("dummy-test-key");
-            assertThat(anfrage.headers().firstValue("x-goog-api-key")).hasValue("dummy-test-key");
+        List<KiAnfrage> anfragen = gesendeteAnfragen(6);
+        assertThat(anfragen).allSatisfy(anfrage -> {
+            assertThat(anfrage.werkzeuge()).extracting(KiWerkzeug::name).containsExactly("liste_kostenstellen",
+                    "liste_sachkonten", "aehnliche_belege", BelegKiKostenkontoService.FINALE_ZUORDNUNG);
+            assertThat(anfrage.werkzeugModus()).isEqualTo(KiAnfrage.WerkzeugModus.AUTO);
+            assertThat(anfrage.websuche()).isFalse();
+            assertThat(anfrage.zeitlimit()).isEqualTo(Duration.ofSeconds(45));
+            assertThat(anfrage.systemAnweisung()).contains("autonomer Buchhaltungs-Agent");
         });
+        // Jede Runde haengt Zug der KI und Werkzeug-Ergebnis an
+        assertThat(anfragen.get(5).nachrichten()).hasSize(11);
+        KiWerkzeug finale = anfragen.get(0).werkzeuge().get(3);
+        assertThat(finale.parameter().path("required").toString()).contains("confidence", "begruendung");
+    }
+
+    @Test
+    void freierTextOhneWerkzeugWirdAlsErgebnisGelesen() {
+        BelegKiKostenkontoService svc = service();
+        kiAntwortet(new KiErgebnis("```json\n{\"kostenstelleId\":null,\"confidence\":0.2,\"begruendung\":\"Material\"}\n```",
+                false, KiAnbieterTyp.MISTRAL, "m"));
+        Beleg beleg = new Beleg();
+
+        svc.klassifiziereBeleg(beleg);
+
+        assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo("KI unsicher (0,20) – bitte prüfen.");
+        assertThat(beleg.getKiKostenkontoBegruendung()).isEqualTo("Material");
+    }
+
+    @Test
+    void unbekanntesWerkzeugBrichtDenLaufAb() throws Exception {
+        BelegKiKostenkontoService svc = service();
+        kiAntwortet(aufrufe(aufruf("x", "rm_rf", "{}")));
+        Beleg beleg = new Beleg();
+
+        svc.klassifiziereBeleg(beleg);
+
+        gesendeteAnfragen(1);
+        assertThat(beleg.getKiKostenkontoHinweis()).isEqualTo("Die KI konnte sich nicht entscheiden. Bitte von Hand wählen.");
     }
 
     @Test
@@ -201,20 +300,6 @@ class BelegKiKostenkontoServiceTest {
         assertKeineZuordnung(beleg);
     }
 
-    @SuppressWarnings("unchecked")
-    private HttpClient mockAntwort(BelegKiKostenkontoService svc, int status, String body) throws Exception {
-        Mockito.when(kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG))
-                .thenReturn(Optional.of(new KiZugang("dummy-test-key", "dummy-test-model")));
-        HttpClient client = Mockito.mock(HttpClient.class);
-        HttpResponse<String> response = Mockito.mock(HttpResponse.class);
-        Mockito.when(response.statusCode()).thenReturn(status);
-        Mockito.when(response.body()).thenReturn(body);
-        Mockito.when(client.send(Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<String>>any()))
-                .thenReturn(response);
-        ReflectionTestUtils.setField(svc, "httpClient", client);
-        return client;
-    }
-
     private static void assertKeineZuordnung(Beleg beleg) {
         assertThat(beleg.getKostenstelle()).isNull();
         assertThat(beleg.getSachkonto()).isNull();
@@ -234,16 +319,15 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setGespeicherterDateiname(dateiname);
 
-        ObjectNode turn = svc.buildInitialTurn(beleg);
+        KiNachricht nachricht = svc.ersteNachricht(beleg);
 
-        assertThat(turn.path("role").asString("")).isEqualTo("user");
-        assertThat(turn.path("parts").size()).isEqualTo(2);
-        assertThat(turn.path("parts").path(0).path("text").asString("")).contains("BELEG-DATEN:");
-        assertThat(turn.path("parts").path(1).path("inline_data").path("mime_type").asString(""))
-                .isEqualTo(mimeType);
-        assertThat(Base64.getDecoder().decode(
-                turn.path("parts").path(1).path("inline_data").path("data").asString("")))
-                .isEqualTo(dummyDatei);
+        assertThat(nachricht.rolle()).isEqualTo(KiNachricht.Rolle.NUTZER);
+        assertThat(nachricht.teile()).hasSize(2);
+        assertThat(nachricht.text()).contains("BELEG-DATEN:");
+        assertThat(nachricht.teile().get(1)).isInstanceOfSatisfying(KiTeil.Datei.class, datei -> {
+            assertThat(datei.mimeType()).isEqualTo(mimeType);
+            assertThat(datei.daten()).isEqualTo(dummyDatei);
+        });
     }
 
     @Test
@@ -253,9 +337,7 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setGespeicherterDateiname("fehlt.pdf");
 
-        ObjectNode turn = svc.buildInitialTurn(beleg);
-
-        assertNurText(turn);
+        assertNurText(svc.ersteNachricht(beleg));
     }
 
     @ParameterizedTest
@@ -270,7 +352,7 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setGespeicherterDateiname("gross.pdf");
 
-        assertNurText(svc.buildInitialTurn(beleg));
+        assertNurText(svc.ersteNachricht(beleg));
     }
 
     @Test
@@ -282,7 +364,7 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setGespeicherterDateiname("../fremd.pdf");
 
-        assertNurText(svc.buildInitialTurn(beleg));
+        assertNurText(svc.ersteNachricht(beleg));
     }
 
     @Test
@@ -295,7 +377,7 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setGespeicherterDateiname("link.pdf");
 
-        assertNurText(svc.buildInitialTurn(beleg));
+        assertNurText(svc.ersteNachricht(beleg));
     }
 
     @Test
@@ -312,7 +394,7 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setKiExtraktionJson(mapper.writeValueAsString(extraktion));
 
-        String text = svc.buildInitialTurn(beleg).path("parts").path(0).path("text").asString("");
+        String text = svc.ersteNachricht(beleg).text();
 
         assertThat(text).contains("1,5 × Musterartikel 1 — 12,50", "1,5 × Musterartikel 15 — 12,50");
         assertThat(text).doesNotContain("Musterartikel 16");
@@ -328,13 +410,13 @@ class BelegKiKostenkontoServiceTest {
         Beleg beleg = new Beleg();
         beleg.setKiExtraktionJson(json);
 
-        assertNurText(svc.buildInitialTurn(beleg));
+        assertNurText(svc.ersteNachricht(beleg));
     }
 
-    private static void assertNurText(ObjectNode turn) {
-        assertThat(turn.path("parts").size()).isEqualTo(1);
-        assertThat(turn.path("parts").path(0).path("text").asString("")).contains("BELEG-DATEN:");
-        assertThat(turn.path("parts").path(0).has("inline_data")).isFalse();
+    private static void assertNurText(KiNachricht nachricht) {
+        assertThat(nachricht.teile()).hasSize(1);
+        assertThat(nachricht.text()).contains("BELEG-DATEN:");
+        assertThat(nachricht.teile().get(0)).isInstanceOf(KiTeil.Text.class);
     }
 
     private Sachkonto sachkonto(long id, String bezeichnung, boolean aktiv) {
@@ -442,83 +524,30 @@ class BelegKiKostenkontoServiceTest {
 
     // ── Parallele Werkzeug-Aufrufe ──
 
-    @SuppressWarnings("unchecked")
-    private static HttpResponse<String> geminiAntwort(String body) {
-        HttpResponse<String> response = Mockito.mock(HttpResponse.class);
-        Mockito.lenient().when(response.statusCode()).thenReturn(200);
-        Mockito.lenient().when(response.body()).thenReturn(body);
-        return response;
-    }
-
-    private HttpClient mockAntworten(BelegKiKostenkontoService svc, String... koerper) throws Exception {
-        Mockito.when(kiDienst.geminiZugang(KiFunktion.KOSTENKONTO_VORSCHLAG))
-                .thenReturn(Optional.of(new KiZugang("dummy-test-key", "dummy-test-model")));
-        HttpClient client = Mockito.mock(HttpClient.class);
-        HttpResponse<?>[] antworten = java.util.Arrays.stream(koerper).map(BelegKiKostenkontoServiceTest::geminiAntwort)
-                .toArray(HttpResponse[]::new);
-        Mockito.doReturn(antworten[0], (Object[]) java.util.Arrays.copyOfRange(antworten, 1, antworten.length))
-                .when(client).send(Mockito.any(HttpRequest.class), Mockito.any());
-        ReflectionTestUtils.setField(svc, "httpClient", client);
-        return client;
-    }
-
-    /** Liest den JSON-Koerper einer HttpRequest. */
-    private static String anfrageKoerper(HttpRequest anfrage) {
-        StringBuilder text = new StringBuilder();
-        anfrage.bodyPublisher().orElseThrow().subscribe(new java.util.concurrent.Flow.Subscriber<>() {
-            @Override
-            public void onSubscribe(java.util.concurrent.Flow.Subscription subscription) {
-                subscription.request(Long.MAX_VALUE);
-            }
-
-            @Override
-            public void onNext(java.nio.ByteBuffer item) {
-                text.append(StandardCharsets.UTF_8.decode(item));
-            }
-
-            @Override
-            public void onError(Throwable throwable) {
-                throw new IllegalStateException(throwable);
-            }
-
-            @Override
-            public void onComplete() {
-                // fertig
-            }
-        });
-        return text.toString();
-    }
-
     @Test
     void mehrereGleichzeitigeAufrufeWerdenAlleInEinemZugBeantwortet() throws Exception {
         BelegKiKostenkontoService svc = service();
-        HttpClient client = mockAntworten(svc, """
-                {"candidates":[{"content":{"role":"model","parts":[
-                  {"functionCall":{"id":"a1","name":"liste_kostenstellen","args":{}},"thoughtSignature":"sig"},
-                  {"functionCall":{"id":"a2","name":"liste_sachkonten","args":{}}}
-                ]}}]}
-                """, """
-                {"candidates":[{"content":{"parts":[
-                  {"functionCall":{"id":"a3","name":"finale_zuordnung","args":{"confidence":0.3,"begruendung":"Unklar"}}}
-                ]}}]}
-                """);
+        kiAntwortet(aufrufe(aufruf("a1", "liste_kostenstellen", "{}"), aufruf("a2", "liste_sachkonten", "{}")),
+                aufrufe(aufruf("a3", BelegKiKostenkontoService.FINALE_ZUORDNUNG,
+                        "{\"confidence\":0.3,\"begruendung\":\"Unklar\"}")));
 
         svc.klassifiziereBeleg(new Beleg());
 
-        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
-        Mockito.verify(client, Mockito.times(2)).send(anfragen.capture(), Mockito.any());
-        var contents = JsonMapper.builderWithJackson2Defaults().build().readTree(anfrageKoerper(anfragen.getAllValues().get(1))).path("contents");
-        assertThat(contents).hasSize(3);
-        assertThat(contents.get(1).path("parts").get(0).path("thoughtSignature").asString("")).isEqualTo("sig");
-        var antworten = contents.get(2).path("parts");
-        assertThat(contents.get(2).path("role").asString("")).isEqualTo("user");
+        List<KiNachricht> verlauf = gesendeteAnfragen(2).get(1).nachrichten();
+        assertThat(verlauf).hasSize(3);
+        // Der Zug der KI geht samt Rohform (Gedanken-Signatur) zurück
+        assertThat(verlauf.get(1).rolle()).isEqualTo(KiNachricht.Rolle.KI);
+        assertThat(verlauf.get(1).roh().inhalt().toString()).contains("sig");
+        assertThat(verlauf.get(2).rolle()).isEqualTo(KiNachricht.Rolle.WERKZEUG);
+        List<KiTeil> antworten = verlauf.get(2).teile();
         assertThat(antworten).hasSize(2);
-        assertThat(antworten.get(0).path("functionResponse").path("id").asString("")).isEqualTo("a1");
-        assertThat(antworten.get(0).path("functionResponse").path("response").path("name").asString(""))
-                .isEqualTo("liste_kostenstellen");
-        assertThat(antworten.get(1).path("functionResponse").path("id").asString("")).isEqualTo("a2");
-        assertThat(antworten.get(1).path("functionResponse").path("response").path("name").asString(""))
-                .isEqualTo("liste_sachkonten");
+        KiTeil.WerkzeugErgebnis erste = (KiTeil.WerkzeugErgebnis) antworten.get(0);
+        assertThat(erste.id()).isEqualTo("a1");
+        assertThat(erste.ergebnis().path("name").asString("")).isEqualTo("liste_kostenstellen");
+        assertThat(erste.ergebnis().path("content").isArray()).isTrue();
+        KiTeil.WerkzeugErgebnis zweite = (KiTeil.WerkzeugErgebnis) antworten.get(1);
+        assertThat(zweite.id()).isEqualTo("a2");
+        assertThat(zweite.ergebnis().path("name").asString("")).isEqualTo("liste_sachkonten");
         Mockito.verify(kostenstelleRepository).findByAktivTrueOrderBySortierungAsc();
         Mockito.verify(sachkontoRepository).findByAktivTrueOrderBySortierungAscBezeichnungAsc();
     }
@@ -526,17 +555,14 @@ class BelegKiKostenkontoServiceTest {
     @Test
     void finaleZuordnungNebenAnderenAufrufenBeendetDenLauf() throws Exception {
         BelegKiKostenkontoService svc = service();
-        HttpClient client = mockAntworten(svc, """
-                {"candidates":[{"content":{"parts":[
-                  {"functionCall":{"id":"a1","name":"liste_kostenstellen","args":{}}},
-                  {"functionCall":{"id":"a2","name":"finale_zuordnung","args":{"confidence":0.3,"begruendung":"Unklar"}}}
-                ]}}]}
-                """);
+        kiAntwortet(aufrufe(aufruf("a1", "liste_kostenstellen", "{}"),
+                aufruf("a2", BelegKiKostenkontoService.FINALE_ZUORDNUNG,
+                        "{\"confidence\":0.3,\"begruendung\":\"Unklar\"}")));
         Beleg beleg = new Beleg();
 
         svc.klassifiziereBeleg(beleg);
 
-        Mockito.verify(client, Mockito.times(1)).send(Mockito.any(HttpRequest.class), Mockito.any());
+        gesendeteAnfragen(1);
         Mockito.verify(kostenstelleRepository, Mockito.never()).findByAktivTrueOrderBySortierungAsc();
         assertThat(beleg.getKiKostenkontoHinweis()).isNotEqualTo("Die KI konnte sich nicht entscheiden. Bitte von Hand wählen.");
         assertKeineZuordnung(beleg);

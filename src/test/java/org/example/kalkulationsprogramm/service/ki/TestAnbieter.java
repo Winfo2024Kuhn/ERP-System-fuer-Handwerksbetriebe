@@ -20,6 +20,8 @@ class TestAnbieter implements KiAnbieter {
     List<KiModellInfo> modelle = List.of();
     int modellAbrufe;
     KiAnbieterFehler fehlerBeimLaden;
+    /** Eigenes Modell für Ton (wie Voxtral bei Mistral); {@code null} = keins. */
+    String tonModell;
 
     TestAnbieter(KiAnbieterTyp typ, boolean verschluesselt, KiFaehigkeit... faehigkeiten) {
         this.typ = typ;
@@ -29,6 +31,14 @@ class TestAnbieter implements KiAnbieter {
     }
 
     static TestAnbieter mistral() {
+        TestAnbieter mistral = new TestAnbieter(KiAnbieterTyp.MISTRAL, true, KiFaehigkeit.TEXT, KiFaehigkeit.BILD,
+                KiFaehigkeit.PDF, KiFaehigkeit.AUDIO, KiFaehigkeit.WERKZEUGE);
+        mistral.tonModell = "mistral-sprache";
+        return mistral;
+    }
+
+    /** Ein Anbieter, der nur Text, Bilder und PDFs kann – für Ersatz und „aus“. */
+    static TestAnbieter mistralNurDokumente() {
         return new TestAnbieter(KiAnbieterTyp.MISTRAL, true, KiFaehigkeit.TEXT, KiFaehigkeit.BILD, KiFaehigkeit.PDF);
     }
 
@@ -73,6 +83,12 @@ class TestAnbieter implements KiAnbieter {
             modelle.put(stufe, typ.kuerzel() + "-" + stufe.name().toLowerCase());
         }
         return modelle;
+    }
+
+    @Override
+    public java.util.Optional<String> modellFuer(Set<KiFaehigkeit> gebraucht) {
+        return tonModell != null && gebraucht.contains(KiFaehigkeit.AUDIO)
+                ? java.util.Optional.of(tonModell) : java.util.Optional.empty();
     }
 
     @Override

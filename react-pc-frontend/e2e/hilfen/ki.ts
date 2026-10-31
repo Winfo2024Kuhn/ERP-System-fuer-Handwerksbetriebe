@@ -10,6 +10,7 @@ import type { KiAnbieter, KiEigeneWahl, KiEinstellungen, KiFunktion, KiModellLis
  * Nur Test-Werte, keine echten Schlüssel.
  */
 
+/** Bewusst ein Anbieter, der nicht alles kann – so lassen sich Ersatz und „aus“ durchspielen. */
 export function mistralAnbieter(schluesselGesetzt = false): KiAnbieter {
     return {
         typ: 'MISTRAL',
@@ -35,7 +36,7 @@ export function geminiAnbieter(schluesselGesetzt = false): KiAnbieter {
         datenstandort: 'WELTWEIT',
         schluesselGesetzt,
         schluesselVerschluesselt: false,
-        faehigkeiten: ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WISSENSSUCHE'],
+        faehigkeiten: ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WEBSUCHE'],
         modelle: [
             { stufe: 'SCHNELL', modell: 'gemini-test-flash', standardModell: 'gemini-test-flash' },
             { stufe: 'STANDARD', modell: 'gemini-test-flash', standardModell: 'gemini-test-flash' },
@@ -46,7 +47,7 @@ export function geminiAnbieter(schluesselGesetzt = false): KiAnbieter {
 
 const FUNKTIONEN = [
     { funktion: 'DOKUMENT_ANALYSE', name: 'Rechnungen, Lieferscheine und Belege auslesen', braucht: ['PDF', 'BILD'] },
-    { funktion: 'PROGRAMM_HILFE', name: 'KI-Hilfe in der Menüleiste', braucht: ['WERKZEUGE', 'WISSENSSUCHE'] },
+    { funktion: 'PROGRAMM_HILFE', name: 'KI-Hilfe in der Menüleiste', braucht: ['WERKZEUGE'] },
     { funktion: 'SPRACHEINGABE', name: 'Spracheingabe in der Handy-App', braucht: ['AUDIO'] },
 ];
 

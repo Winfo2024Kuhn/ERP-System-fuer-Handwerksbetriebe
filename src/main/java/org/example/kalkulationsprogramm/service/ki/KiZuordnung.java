@@ -6,7 +6,8 @@ package org.example.kalkulationsprogramm.service.ki;
  *
  * @param anbieter      {@code null} bei {@link Status#AUS}
  * @param modellVorgabe eigenes Modell aus der Wahl je Funktion, sonst {@code null} (dann gilt die Stufe)
- * @param hinweis       {@code null} bei {@link Status#AKTIV}, sonst ein Satz für die Oberfläche
+ * @param hinweis       ein Satz für die Oberfläche: warum Ersatz oder aus, oder was der Anbieter
+ *                      bei dieser Funktion weglässt (z. B. die Internet-Suche); sonst {@code null}
  */
 public record KiZuordnung(KiFunktion funktion, Status status, KiAnbieter anbieter, String modellVorgabe,
                           String hinweis) {

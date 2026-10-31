@@ -3,6 +3,8 @@ package org.example.kalkulationsprogramm.service;
 import tools.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.example.kalkulationsprogramm.service.ki.KiDienst;
+import org.example.kalkulationsprogramm.service.ki.KiFunktion;
 import org.example.kalkulationsprogramm.service.kihilfe.GeminiEinbetter;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer;
 import org.example.kalkulationsprogramm.service.kihilfe.RagIndexer.Abschnitt;
@@ -19,7 +21,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Wissen der KI-Hilfe (RAG): Suche im Prozess, ohne Qdrant oder andere Dienste.
@@ -35,6 +39,10 @@ import java.util.Set;
  * Gesucht wird zweifach (Hybrid-Suche): nach Bedeutung (Vektor; die Frage wird mit dem Gemini-Key
  * des Betriebs eingebettet) und nach Woertern ({@link StichwortIndex}). Beide Ranglisten werden per
  * Reciprocal Rank Fusion verschmolzen. Faellt das Einbetten aus, sucht die Wortsuche allein weiter.
+ * <p>
+ * Die Frage geht nur zum Einbetten an Google, wenn die Programm-Hilfe gerade ueber Gemini laeuft
+ * ({@link KiDienst#geminiEinbettungsSchluessel(KiFunktion)}). Laeuft sie z. B. ueber Mistral oder
+ * ist sie aus, sucht nur die Wortsuche - keine Frage verlaesst dafuer den Betrieb.
  */
 @Slf4j
 @Service
@@ -134,6 +142,8 @@ public class LocalRagService {
     private final RagIndexer indexer;
     private final GeminiEinbetter einbetter;
     private final SystemSettingsService systemSettingsService;
+    /** Gemini-Schluessel fuer Fragen; leer, wenn keine Frage an Google darf. */
+    private final Supplier<Optional<String>> frageSchluessel;
 
     private volatile Wissen wissen = Wissen.LEER;
     private volatile boolean ready = false;
@@ -156,16 +166,22 @@ public class LocalRagService {
     private String ragDatei;
 
     @Autowired
-    public LocalRagService(ObjectMapper objectMapper, SystemSettingsService systemSettingsService) {
+    public LocalRagService(ObjectMapper objectMapper, SystemSettingsService systemSettingsService,
+                           KiDienst kiDienst) {
+        // Einbetten des Quellcodes (nur Entwicklung, keine Geschaeftsdaten) mit dem Gemini-Key direkt;
+        // Fragen nur, wenn die Programm-Hilfe gerade ueber Gemini laeuft.
         this(new RagIndexer(objectMapper),
                 new GeminiEinbetter(objectMapper, systemSettingsService::getGeminiApiKey),
-                systemSettingsService);
+                systemSettingsService,
+                () -> kiDienst.geminiEinbettungsSchluessel(KiFunktion.PROGRAMM_HILFE));
     }
 
-    LocalRagService(RagIndexer indexer, GeminiEinbetter einbetter, SystemSettingsService systemSettingsService) {
+    LocalRagService(RagIndexer indexer, GeminiEinbetter einbetter, SystemSettingsService systemSettingsService,
+                    Supplier<Optional<String>> frageSchluessel) {
         this.indexer = indexer;
         this.einbetter = einbetter;
         this.systemSettingsService = systemSettingsService;
+        this.frageSchluessel = frageSchluessel;
     }
 
     // ── Public API ──
@@ -228,7 +244,7 @@ public class LocalRagService {
 
         log.info("    Hybrid-Suche: {} Treffer in {} ms (Seitenteile={}, Bedeutungssuche={}, top-k={}, Abschnitte={})",
                 ergebnis.size(), System.currentTimeMillis() - t0, Math.min(seitenPlaetze, seitenTeile.size()),
-                frageVektor != null ? "ja" : "ausgefallen", topK, stand.abschnitte().size());
+                frageVektor != null ? "ja" : "aus", topK, stand.abschnitte().size());
         return ergebnis;
     }
 
@@ -294,11 +310,18 @@ public class LocalRagService {
 
     // ── Suche ──
 
-    /** Frage als Vektor; {@code null}, wenn das Einbetten scheitert - dann sucht die Wortsuche allein. */
+    /**
+     * Frage als Vektor; {@code null}, wenn keine Frage an Google darf oder das Einbetten scheitert -
+     * dann sucht die Wortsuche allein.
+     */
     private float[] frageEinbetten(String text) {
+        Optional<String> schluessel = frageSchluessel.get();
+        if (schluessel.isEmpty()) {
+            return null;
+        }
         long t0 = System.currentTimeMillis();
         try {
-            float[] vektor = einbetter.anfrageEinbetten(text);
+            float[] vektor = einbetter.anfrageEinbetten(text, schluessel.get());
             log.info("    Embedding erstellt in {} ms", System.currentTimeMillis() - t0);
             return vektor;
         } catch (InterruptedException e) {

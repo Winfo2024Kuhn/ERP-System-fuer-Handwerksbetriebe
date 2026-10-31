@@ -27,8 +27,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('kiEinstellungenApi – Anzeige-Texte', () => {
     it('übersetzt Fähigkeiten, Stufen und Datenstandort in Handwerker-Sprache und lässt Unbekanntes roh stehen', () => {
-        expect(['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WISSENSSUCHE'].map(faehigkeitText))
-            .toEqual(['Text', 'Bilder', 'PDF-Dokumente', 'Sprache', 'Nachschlagen im Programm', 'Programm-Wissen']);
+        expect(['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WEBSUCHE'].map(faehigkeitText))
+            .toEqual(['Text', 'Bilder', 'PDF-Dokumente', 'Sprache', 'Nachschlagen im Programm', 'Internet-Suche']);
         expect(faehigkeitText('VIDEO')).toBe('VIDEO');
         expect(['SCHNELL', 'STANDARD', 'GRUENDLICH', 'TURBO'].map(stufeText)).toEqual(['Schnell', 'Standard', 'Gründlich', 'TURBO']);
         expect(datenstandortText('EU')).toBe('Daten in der EU');
@@ -38,7 +38,7 @@ describe('kiEinstellungenApi – Anzeige-Texte', () => {
 
     it('nennt, was ein Anbieter nicht kann – auch Fähigkeiten, die nur eine Funktion braucht', () => {
         const stand = kiEinstellungen({ funktionen: [funktion({ braucht: ['VIDEO'] })] });
-        expect(fehlendeFaehigkeiten(mistral(), stand)).toEqual(['AUDIO', 'WERKZEUGE', 'WISSENSSUCHE', 'VIDEO']);
+        expect(fehlendeFaehigkeiten(mistral(), stand)).toEqual(['AUDIO', 'WERKZEUGE', 'WEBSUCHE', 'VIDEO']);
         expect(fehlendeFaehigkeiten(gemini(), stand)).toEqual(['VIDEO']);
     });
 

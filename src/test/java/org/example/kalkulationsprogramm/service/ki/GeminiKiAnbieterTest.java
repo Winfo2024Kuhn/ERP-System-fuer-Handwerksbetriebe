@@ -174,6 +174,156 @@ class GeminiKiAnbieterTest {
                 .isEqualTo("Der Schlüssel enthält ungültige Zeichen. Bitte neu kopieren.");
     }
 
+    // ── Werkzeuge und Google-Suche (Programm-Hilfe, Kostenkonto-Vorschlag) ──
+
+    private KiWerkzeug suchen() {
+        ObjectNode parameter = mapper.createObjectNode().put("type", "OBJECT");
+        parameter.putObject("properties").putObject("suchbegriffe").put("type", "STRING");
+        return new KiWerkzeug("im_programm_suchen", "Sucht im Programm.", parameter);
+    }
+
+    private KiAnfrage.Bauer frage() {
+        return KiAnfrage.mitAnweisung("Hilf.").nutzer(KiTeil.text("Wie storniere ich eine Rechnung?"));
+    }
+
+    @Test
+    void werkzeugeMitGoogleSucheWieBisher() {
+        JsonNode koerper = anbieter.baueKoerper(frage()
+                .werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.AUTO).websuche(true).temperatur(0.4).bauen());
+
+        JsonNode tools = koerper.path("tools");
+        assertThat(tools.get(0).has("googleSearch")).isTrue();
+        JsonNode deklaration = tools.get(1).path("functionDeclarations").get(0);
+        assertThat(deklaration.path("name").asString("")).isEqualTo("im_programm_suchen");
+        assertThat(deklaration.path("description").asString("")).isEqualTo("Sucht im Programm.");
+        assertThat(deklaration.path("parameters").path("type").asString("")).isEqualTo("OBJECT");
+        assertThat(koerper.path("toolConfig").path("includeServerSideToolInvocations").asBoolean(false)).isTrue();
+        assertThat(koerper.path("toolConfig").has("functionCallingConfig")).isFalse();
+        // Mit Werkzeugen kein festes Antwortformat - so schickte es die Programm-Hilfe schon immer.
+        assertThat(koerper.path("generationConfig").has("responseMimeType")).isFalse();
+        assertThat(koerper.path("generationConfig").path("temperature").asDouble(0)).isEqualTo(0.4);
+    }
+
+    @Test
+    void letzteRundeErzwingtDieAntwort() {
+        JsonNode ohneSuche = anbieter.baueKoerper(frage()
+                .werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.KEINE).bauen());
+        assertThat(ohneSuche.path("tools").toString()).doesNotContain("googleSearch").contains("im_programm_suchen");
+        assertThat(ohneSuche.path("toolConfig").has("includeServerSideToolInvocations")).isFalse();
+        assertThat(ohneSuche.path("toolConfig").path("functionCallingConfig").path("mode").asString(""))
+                .isEqualTo("NONE");
+
+        JsonNode mitSuche = anbieter.baueKoerper(frage()
+                .werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.KEINE).websuche(true).bauen());
+        assertThat(mitSuche.path("toolConfig").path("includeServerSideToolInvocations").asBoolean(false)).isTrue();
+        assertThat(mitSuche.path("toolConfig").path("functionCallingConfig").path("mode").asString(""))
+                .isEqualTo("NONE");
+    }
+
+    @Test
+    void nurGoogleSucheOhneToolConfigUndEigeneWerkzeugeOhneSucheAuchNicht() {
+        JsonNode nurSuche = anbieter.baueKoerper(frage().websuche(true).bauen());
+        assertThat(nurSuche.path("tools").toString()).contains("googleSearch").doesNotContain("functionDeclarations");
+        assertThat(nurSuche.has("toolConfig")).isFalse();
+
+        JsonNode nurWerkzeuge = anbieter.baueKoerper(frage()
+                .werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.AUTO).bauen());
+        assertThat(nurWerkzeuge.has("toolConfig")).isFalse();
+        assertThat(nurWerkzeuge.path("tools")).hasSize(1);
+    }
+
+    @Test
+    void werkzeugRundeGehtMitSignaturUndIdUnveraendertZurueck() throws Exception {
+        antwortet(200, """
+                {"candidates":[{"content":{"role":"model","parts":[
+                  {"text":"Ich schaue nach."},
+                  {"functionCall":{"id":"a1","name":"im_programm_suchen","args":{"suchbegriffe":"Storno"}},
+                   "thoughtSignature":"sig-a1"},
+                  {"functionCall":{"name":"datei_lesen"}}]},
+                  "groundingMetadata":{"webSearchQueries":["DIN EN 1090"],
+                    "groundingChunks":[{"web":{"uri":"https://example.org/din","title":""}},
+                                       {"web":{"uri":"","title":"leer"}}]}}]}""");
+        KiAnfrage erste = frage().werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.AUTO).websuche(true).bauen();
+
+        KiErgebnis ergebnis = anbieter.sende(erste, "gemini-standard", SCHLUESSEL);
+
+        assertThat(ergebnis.text()).isEqualTo("Ich schaue nach.");
+        assertThat(ergebnis.werkzeugAufrufe()).hasSize(2);
+        KiTeil.WerkzeugAufruf aufruf = ergebnis.werkzeugAufrufe().get(0);
+        assertThat(aufruf.id()).isEqualTo("a1");
+        assertThat(aufruf.name()).isEqualTo("im_programm_suchen");
+        assertThat(aufruf.argumente().path("suchbegriffe").asString("")).isEqualTo("Storno");
+        assertThat(ergebnis.werkzeugAufrufe().get(1).argumente().isObject()).isTrue();
+        assertThat(ergebnis.websuchen()).containsExactly("DIN EN 1090");
+        assertThat(ergebnis.quellen()).containsExactly(new KiQuelle("https://example.org/din", "https://example.org/din"));
+        assertThat(ergebnis.werkzeugAufrufFehlerhaft()).isFalse();
+
+        KiAnfrage zweite = KiAnfrage.mitAnweisung("Hilf.")
+                .nachrichten(erste.nachrichten())
+                .nachricht(ergebnis.alsNachricht())
+                .nachricht(KiNachricht.werkzeugErgebnisse(List.of(
+                        aufruf.ergebnis(mapper.createObjectNode().put("treffer", "Stornieren")),
+                        ergebnis.werkzeugAufrufe().get(1).ergebnis(mapper.createArrayNode().add("Liste")))))
+                .werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.AUTO).bauen();
+        JsonNode contents = anbieter.baueKoerper(zweite).path("contents");
+
+        assertThat(contents).hasSize(3);
+        // Der Zug des Modells geht unverändert zurück, samt Gedanken-Signatur
+        assertThat(contents.get(1).path("role").asString("")).isEqualTo("model");
+        assertThat(contents.get(1).path("parts").get(1).path("thoughtSignature").asString("")).isEqualTo("sig-a1");
+        JsonNode antworten = contents.get(2).path("parts");
+        assertThat(contents.get(2).path("role").asString("")).isEqualTo("user");
+        assertThat(antworten.get(0).path("functionResponse").path("id").asString("")).isEqualTo("a1");
+        assertThat(antworten.get(0).path("functionResponse").path("name").asString("")).isEqualTo("im_programm_suchen");
+        assertThat(antworten.get(0).path("functionResponse").path("response").path("treffer").asString(""))
+                .isEqualTo("Stornieren");
+        // Ohne id keine id; eine Liste als Antwort wird in ein Objekt gehüllt
+        assertThat(antworten.get(1).path("functionResponse").has("id")).isFalse();
+        assertThat(antworten.get(1).path("functionResponse").path("response").path("ergebnis").get(0).asString(""))
+                .isEqualTo("Liste");
+    }
+
+    @Test
+    void zugEinesAnderenAnbietersWirdAusDenTeilenGebaut() {
+        KiNachricht vonMistral = new KiNachricht(KiNachricht.Rolle.KI, List.of(KiTeil.text("Moment."),
+                new KiTeil.WerkzeugAufruf("", "liste_sachkonten", null)),
+                new KiRohZug(KiAnbieterTyp.MISTRAL, mapper.createObjectNode().put("role", "assistant")));
+
+        JsonNode zug = anbieter.baueKoerper(frage().nachricht(vonMistral).bauen()).path("contents").get(1);
+
+        assertThat(zug.path("role").asString("")).isEqualTo("model");
+        assertThat(zug.path("parts").get(0).path("text").asString("")).isEqualTo("Moment.");
+        JsonNode aufruf = zug.path("parts").get(1).path("functionCall");
+        assertThat(aufruf.has("id")).isFalse();
+        assertThat(aufruf.path("name").asString("")).isEqualTo("liste_sachkonten");
+        assertThat(aufruf.path("args").isObject()).isTrue();
+    }
+
+    @Test
+    void kaputterWerkzeugAufrufUndTextabschnitteMitWerkzeugen() throws Exception {
+        antwortet(200, """
+                {"candidates":[{"finishReason":"MALFORMED_FUNCTION_CALL","content":{"parts":[
+                  {"text":"Gedanke","thought":true},{"text":"Erster Teil"},{"text":"Zweiter Teil"}]}}]}""");
+
+        KiErgebnis ergebnis = anbieter.sende(frage().werkzeuge(List.of(suchen()), KiAnfrage.WerkzeugModus.AUTO)
+                .bauen(), "m", SCHLUESSEL);
+
+        assertThat(ergebnis.werkzeugAufrufFehlerhaft()).isTrue();
+        assertThat(ergebnis.text()).isEqualTo("Erster Teil\nZweiter Teil");
+        assertThat(ergebnis.werkzeugAufrufe()).isEmpty();
+    }
+
+    @Test
+    void zugOhneTeileBleibtEinGueltigerZug() throws Exception {
+        antwortet(200, "{\"candidates\":[{\"finishReason\":\"STOP\"}]}");
+
+        KiErgebnis ergebnis = anbieter.sende(frage().bauen(), "m", SCHLUESSEL);
+
+        assertThat(ergebnis.text()).isEmpty();
+        assertThat(ergebnis.roh().inhalt().path("parts").isArray()).isTrue();
+        assertThat(ergebnis.alsNachricht().teile()).isEmpty();
+    }
+
     @Test
     void steckbrief() {
         assertThat(anbieter.typ()).isEqualTo(KiAnbieterTyp.GEMINI);
