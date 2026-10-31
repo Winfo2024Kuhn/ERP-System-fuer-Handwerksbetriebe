@@ -147,11 +147,13 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 - [ ] Keine ungenutzten Imports
 - [ ] React-Keys nicht über `index` bei dynamischen Listen
 
-### 2.8 Bedienbarkeit & Bewegung (Quelle: Skill `handwerkerprogramm-design`, Abschnitte 2–4)
+### 2.8 Bedienbarkeit, Performance & Führung (Quelle: Skill `handwerkerprogramm-design`, Abschnitte 2–4)
 - [ ] **Gulf of Execution:** eine klare Primäraktion pro Screen; Klickbares sieht klickbar aus; Icon-Knöpfe mit Tooltip/`aria-label`; deaktivierte Knöpfe erklären *warum*; Löschen/Stornieren mit `useConfirm`; Pflichtfelder und Formate vorher sichtbar
 - [ ] **Gulf of Evaluation:** jede async Aktion mit Ladezustand und Ergebnis; Erfolg und **jeder** Fehler als Toast (kein stiller `catch`); Laden, leer und Fehler unterscheidbar
 - [ ] **Nielsen:** Handwerker-Wording (kein Buchhalter-Deutsch); „Abbrechen“/Rückgängig vorhanden; gleiche Sache = gleiche Komponente (keine Sonderlösung pro Seite); Fehlervermeidung statt nur Fehlermeldung; Namen statt IDs zum Abtippen; Fehlertext sagt *was* und *was tun*; Info-Button an erklärungsbedürftigen Stellen
-- [ ] **Bewegung:** kein `transition-all`; nur `transform`/`opacity` animiert; kein `ease-in`; UI-Animationen ≤ 300 ms; `active:scale-[0.97]` an Druckelementen; Start nie bei `scale-0`; Animationen hinter `motion-safe:`; keine Animation auf Tastatur-Aktionen
+- [ ] **Performance statt Animation:** keine Zier-Animationen, kein `transition-all`, keine neue Animations-Bibliothek; große Listen paginiert/virtualisiert, Suchfelder entprellt, keine doppelten Ladevorgänge, keine unnötigen Re-Renders, kein schweres Paket für Kleinigkeiten
+- [ ] **Löschen:** Rückgängig-Toast oder `useConfirm` (`danger`); Dialog nennt Namen, Abhängiges und ob rückgängig; Knopf mit Verb; „Abbrechen“ vorbelegt; gesperrtes Löschen erklärt den Grund
+- [ ] **Typografie/Farbe:** feste Stufen, `tabular-nums` bei Zahlen, Kontrast ≥ 4,5 : 1, eine Rose-Primäraktion pro Screen, Zustände nie nur über Farbe, Leer-Zustand mit nächstem Schritt
 - [ ] Spec unter `e2e/` für den geänderten Ablauf vorhanden, Screenshots in 1440 und 1920 (PC) bzw. Handy angeschaut (`PRUEFUNG.md`)
 
 ---

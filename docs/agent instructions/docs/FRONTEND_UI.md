@@ -2,7 +2,7 @@
 
 ## 🧠 Frontend-Skill-Pflicht — HOOK-ERZWUNGEN
 
-**Vor JEDER Frontend-Änderung** rufst du den Skill `handwerkerprogramm-design` per `Skill`-Tool auf und liest ihn vollständig. Er ist der **eine** Frontend-Skill: Design-System, Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Bewegung, Feinschliff, Frontend-Sicherheit und die Playwright-Design-Prüfung (`PRUEFUNG.md`). Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange er in dieser Session nicht lief. Das Flag gilt pro Session.
+**Vor JEDER Frontend-Änderung** rufst du den Skill `handwerkerprogramm-design` per `Skill`-Tool auf und liest ihn vollständig. Er ist der **eine** Frontend-Skill: Design-System, Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Performance, Typografie/Farbe/Nutzerführung, Frontend-Sicherheit und die Playwright-Design-Prüfung (`PRUEFUNG.md`). Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange er in dieser Session nicht lief. Das Flag gilt pro Session.
 
 ## 🧭 Kern-Prinzip: Gulf of Execution & Gulf of Evaluation
 
@@ -52,7 +52,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 | MCP | Wofür |
 | --- | --- |
 | `shadcn` | Der Standard. Greift direkt auf shadcn-Bausteine und -Blöcke zu, zieht sie passend ins Projekt und installiert sie automatisch. Kein manuelles Kopieren aus dem Netz. |
-| `magic` (21st.dev) | Moderne Layouts mit Animationen auf Tailwind-Basis. Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
+| `magic` (21st.dev) | Moderne Layouts auf Tailwind-Basis (Animationen weglassen, siehe Skill: Performance statt Animation). Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
 
 **Wichtig:** Gezogene Komponenten immer auf unser Design-System umstellen (rose/slate statt der shadcn-Default-Farben) und die Pflicht-Komponenten unten haben Vorrang vor neu gezogenen.
 
