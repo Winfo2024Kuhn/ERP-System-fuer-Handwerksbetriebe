@@ -1,17 +1,40 @@
 ---
 name: fullstack-parallel
-description: Ablauf für Aufgaben im ERP, die Backend (Spring Boot) UND Frontend (react-pc-frontend / react-zeiterfassung) betreffen – kurzes Brainstorming mit dem Nutzer, API-Vertrag festlegen, Frontend parallel per Subagent bauen lassen, Backend selbst bauen, und erst wenn beides fertig ist EIN gemeinsames /review-and-ship. Unbedingt verwenden, sobald ein Wunsch neue oder geänderte Endpoints plus neue Knöpfe/Dialoge/Seiten braucht („mach das auch im Frontend“, „neuer Dialog mit Vorschlägen“, „Endpoint + Anzeige“), auch wenn der Nutzer nicht „parallel“ sagt. Auch explizit über „/fullstack-parallel“. NICHT für reine Backend- oder reine Frontend-Änderungen und nicht für kleine Fixes; für große, mehrteilige Features mit Issue/PR-Pipeline ist /loese-problem gedacht.
+description: Ablauf für Aufgaben im ERP, die Backend (Spring Boot) UND Frontend (react-pc-frontend / react-zeiterfassung) betreffen – die Hauptsession ist Orchestrator: kurzes Brainstorming mit dem Nutzer, API-Vertrag festlegen, dann Backend-Agent und Frontend-Agent parallel per Subagent bauen lassen, und erst wenn beides fertig ist EIN gemeinsames /review-and-ship. Unbedingt verwenden, sobald ein Wunsch neue oder geänderte Endpoints plus neue Knöpfe/Dialoge/Seiten braucht („mach das auch im Frontend“, „neuer Dialog mit Vorschlägen“, „Endpoint + Anzeige“), auch wenn der Nutzer nicht „parallel“ sagt. Auch explizit über „/fullstack-parallel“. NICHT für reine Backend- oder reine Frontend-Änderungen und nicht für kleine Fixes; für große, mehrteilige Features mit Issue/PR-Pipeline ist /loese-problem gedacht.
 ---
 
-# fullstack-parallel – Backend selbst, Frontend parallel, Review am Schluss
+# fullstack-parallel – du orchestrierst, Backend- und Frontend-Agent bauen parallel, Review am Schluss
 
-**Ankündigen:** „Ich nutze den fullstack-parallel-Skill: kurzes Brainstorming, dann Backend und Frontend parallel, Review am Schluss.“
+**Ankündigen:** „Ich nutze den fullstack-parallel-Skill: kurzes Brainstorming, dann bauen Backend- und Frontend-Agent parallel, ich koordiniere und prüfe am Schluss.“
+
+**Rollen (feste Aufteilung):**
+
+| Wer | Was | Liest | Sicherheit |
+| --- | --- | --- | --- |
+| **Orchestrator (du, Hauptsession)** | Brainstorming, API-Vertrag, Briefing beider Agenten, Info-Button-Texte, Gegenproben, Review, Commit, PR. **Schreibt selbst keinen Produktivcode.** | `FRONTEND_UI.md` + Skill `handwerkerprogramm-design` und `BACKEND_ARCH.md` – du briefst beide Seiten und musst ihre Regeln kennen | prüft im Briefing, dass jede Seite ihre Sicherheitssicht mitbekommt |
+| **Backend-Agent** (`erp-backend`, Hintergrund) | Service, Controller, Flyway, Backend-Tests | `BACKEND_ARCH.md` (inkl. „Sicherheit im Backend“), `TESTING_SECURITY.md` | nur Backend-Sicherheitssicht |
+| **Frontend-Agent** (`erp-frontend`, Hintergrund) | Oberflächen in `react-pc-frontend` / `react-zeiterfassung`, Frontend-Tests, Playwright-Spec | `FRONTEND_UI.md` (inkl. „Sicherheit im Frontend“), Skill `handwerkerprogramm-design` | nur Frontend-Sicherheitssicht |
+| **Reviewer** (`erp-code-reviewer`, einmal am Ende) | prüft **beide** Seiten, Findings getrennt nach `[BACKEND]` und `[FRONTEND]` | alle drei Docs + Skill | beide Sichten |
 
 Warum dieser Ablauf: Backend und Frontend hängen nur über die API zusammen. Steht der
 Vertrag (Endpoints, Parameter, JSON-Felder, Fehlercodes) einmal fest, können beide Seiten
-gleichzeitig entstehen – das halbiert die Wartezeit. Ein Review über halbfertigen Code
+gleichzeitig entstehen – das halbiert die Wartezeit. Jede Seite baut ein Experte, der nur
+die Regeln seines Gebiets im Kopf hat; du hältst den Überblick, sprichst mit dem Nutzer
+und sorgst dafür, dass beide Hälften zusammenpassen. Ein Review über halbfertigen Code
 kostet dagegen eine Runde und findet Dinge, die sich ohnehin noch ändern. Deshalb:
 parallel bauen, aber **einmal** am Ende prüfen.
+
+## 0. Leitlinien beider Seiten lesen
+
+Bevor du dem Nutzer etwas vorschlägst, lädst du die Regeln beider Seiten – du briefst
+beide Agenten und musst wissen, was ihr Gebiet verlangt (Pflicht-Komponenten,
+Paginierung, Info-Buttons, Größenregeln, Sicherheitssichten):
+
+- `Read` → `docs/agent instructions/docs/FRONTEND_UI.md`
+- `Skill` → `handwerkerprogramm-design` (vollständig lesen)
+- `Read` → `docs/agent instructions/docs/BACKEND_ARCH.md`
+
+`TESTING_SECURITY.md` brauchst du nur, wenn du selbst Tests anfasst.
 
 ## 1. Kurzes Brainstorming (Minuten, nicht Stunden)
 
@@ -39,22 +62,36 @@ zwischen beiden Hälften:
 
 - Methode + Pfad, Query-/Body-Parameter mit Typen und Pflichtfeldern
 - Antwort-JSON Feld für Feld (Namen exakt, `null`-Fälle)
+- Bei Listen: `page`/`size`, Standard- und Höchstgröße, Sortierung, `gesamt` bzw. `hatMehr`
 - Statuscodes: 200, 400 (mit `{message}` in Handwerker-Sprache), 401, 403, 404
 - Welche alten Endpoints bleiben (die das Frontend weiter nutzt)
 
 Bestehende DTOs wiederverwenden, wo die Felder passen (z. B. `DokumentRef`) – dann muss
 das Frontend keine neuen Typen erfinden.
 
-## 3. Frontend-Subagent starten (Hintergrund)
+## 3. Beide Agenten starten (Hintergrund, in einer Nachricht)
 
-`Agent` mit `subagent_type: "general-purpose"`, `run_in_background: true`, **im selben
-Working Tree** (kein Worktree – die Dateien überschneiden sich nicht, und ein späteres
-Zusammenführen entfällt). Der Prompt muss allein tragen; der Agent kennt das Gespräch
-nicht. Hinein gehört:
+Backend- und Frontend-Agent **in derselben Nachricht** starten, damit sie wirklich
+gleichzeitig laufen: zwei `Agent`-Aufrufe mit `subagent_type: "erp-backend"` bzw.
+`"erp-frontend"`, `run_in_background: true`, beide **im selben Working Tree** (kein
+Worktree – die Dateien überschneiden sich nicht, und ein späteres Zusammenführen
+entfällt). Jeder Prompt muss allein tragen; die Agenten kennen das Gespräch nicht.
 
-1. **Pflichtlektüre & Hooks:** `Read` auf `docs/agent instructions/docs/FRONTEND_UI.md`
-   und `TESTING_SECURITY.md`, `Skill` `handwerkerprogramm-design` – sonst blockt der
-   Edit-Hook.
+### 3a. Briefing Backend-Agent
+
+1. **Pflichtlektüre:** steht in der Agent-Definition `erp-backend` (`BACKEND_ARCH.md`, `TESTING_SECURITY.md`). Im Prompt nur kurz daran erinnern. Frontend-Dokumente bekommt er bewusst nicht.
+2. **Ziel aus Nutzersicht** inkl. eines konkreten Beispiels aus dem Gespräch.
+3. **Bestehende Basis** mit Pfaden (Services, Controller, Entities, DTOs, Nachbar-Endpoints, deren Rechteprüfung er übernimmt, vorhandene Tests).
+4. **Der API-Vertrag aus Schritt 2** wörtlich, inkl. Paginierung und 400-Meldungstexten.
+5. **Fachliche Regeln** aus dem Brainstorming (was passiert im Hintergrund, was ändert sich nicht, Grenzfälle) – daraus entstehen auch die Info-Button-Texte, die du dem Frontend-Agenten gibst.
+6. **Grenzen:** nur Backend-Dateien, Frontend nicht anfassen, **nicht committen**.
+7. **Bericht:** wie in der Agent-Definition, vor allem jede Abweichung vom Vertrag und das tatsächliche Verhalten für die Info-Texte.
+
+### 3b. Briefing Frontend-Agent
+
+Hinein gehört:
+
+1. **Pflichtlektüre:** steht in der Agent-Definition `erp-frontend` (`FRONTEND_UI.md`, Skill `handwerkerprogramm-design` samt `PRUEFUNG.md`, `TESTING_SECURITY.md`). Im Prompt nur kurz daran erinnern: „Lies zuerst deine Pflichtlektüre, sonst blockt der Edit-Hook.“ Backend-Dokumente bekommt er bewusst nicht.
 2. **Ziel aus Nutzersicht** inkl. eines konkreten Beispiels aus dem Gespräch.
 3. **Bestehende Basis** mit Pfaden und ungefähren Zeilen (Komponenten, Hilfsdateien, Tests).
 4. **Der API-Vertrag aus Schritt 2** wörtlich.
@@ -62,19 +99,20 @@ nicht. Hinein gehört:
 6. **Info-Buttons mit fertigen Texten:** Für jede erklärungsbedürftige Stelle aus dem
    Brainstorming den Ort (neben welchem Feld/welcher Überschrift) und den Inhalt
    vorgeben – „Was passiert im Hintergrund?“ und „Was bewirkt das?“. Du kennst das
-   Backend-Verhalten, der Frontend-Agent nicht; deshalb schreibst **du** die Texte.
+   Backend-Verhalten aus Brainstorming und Vertrag, der Frontend-Agent nicht; deshalb
+   schreibst **du** die Texte.
    Baustein: `react-pc-frontend/src/components/ui/info-button.tsx` (Regeln unten).
 7. **Tests:** Vitest + Testing Library, bestehende grün halten, E2E unter
    `react-pc-frontend/e2e/` mit `page.route`-Mocks; `npm run lint`, `npm run test -- --run`,
-   `npm run build`; wenn möglich Skill `playwright-design-pruefung`. Den Abschnitt
+   `npm run build`; Playwright-Design-Prüfung nach `PRUEFUNG.md` (im Skill `handwerkerprogramm-design`). Den Abschnitt
    „Schnelle E2E-Tests“ unten wörtlich in den Prompt übernehmen.
 8. **Grenzen:** nur Dateien unter `react-pc-frontend/` (bzw. `react-zeiterfassung/`),
    `src/main/java` nicht anfassen, **nicht committen**.
 9. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
    Lint/Build-Status, alle Info-Button-Stellen, offene Punkte.
 
-Ändert sich der Vertrag später, dem laufenden Agenten per `SendMessage` Bescheid geben –
-nicht einen zweiten starten.
+Ändert sich der Vertrag später (z. B. weil der Backend-Agent eine Abweichung meldet),
+**beiden** laufenden Agenten per `SendMessage` Bescheid geben – nicht neue starten.
 
 ### Info-Buttons (Wunsch des Nutzers, gilt für jedes Feature)
 
@@ -133,41 +171,48 @@ bleibt:
   Schnelle Einzelläufe decken Wettläufe auf, die unter Last verborgen bleiben.
   (PowerShell: `$env:E2E_PORT=<port>; npx playwright test …`)
 
-## 4. Backend selbst bauen (währenddessen)
+## 4. Währenddessen: koordinieren, nicht selbst bauen
 
-`docs/agent instructions/docs/BACKEND_ARCH.md` und `TESTING_SECURITY.md` lesen, dann:
+Du schreibst keinen Backend- oder Frontend-Code, solange die Agenten laufen – sonst
+überschreibt ihr euch gegenseitig, und die Aufteilung nach Experten geht verloren.
 
-- Logik in einen Service (Controller bleibt dünn), Constructor Injection, Flyway nur
-  neu und idempotent.
-- Endpoints mit Sichtbarkeits-/Rechteprüfung wie die Nachbar-Endpoints, Validierung
-  (`@Valid`, `@Positive`), verständliche 400-Meldungen.
-- Tests: Service (Mockito), Controller/Security (MockMvc: 401, CSRF 403, 404 nicht
-  sichtbar, 400 ungültige IDs/SQL-Injection/XSS-Strings), Dummy-Daten („Max Mustermann“).
-- Alle Konstruktor-Aufrufe in bestehenden Tests mitziehen (`grep -rn "new <Klasse>("`).
-- `./mvnw -q compile`, gezielte Tests, danach die **komplette Suite im Hintergrund**.
+- Rückfragen und Meldungen der Agenten beantworten; betrifft eine den Vertrag, beide
+  Agenten informieren (siehe oben).
+- Meldet ein Agent eine zu große Bestandsklasse oder -datei, **dem Nutzer den
+  Auslagerungsvorschlag vorlegen und fragen** und die Antwort an den Agenten weitergeben.
+- Fachliche Fragen, die nur der Nutzer beantworten kann, sofort an ihn weiterreichen.
+- Nicht pollen: die Benachrichtigungen kommen von selbst.
 
 ## 5. Warten, bis beides fertig ist
 
-Kein Review, kein Commit, solange der Frontend-Agent läuft oder Tests offen sind –
+Kein Review, kein Commit, solange einer der beiden Agenten läuft oder Tests offen sind –
 auch wenn der Stop-Hook „uncommitted changes“ meldet. Dem Nutzer kurz sagen, worauf
 gewartet wird. Nicht pollen: die Benachrichtigungen kommen von selbst.
 
-Wenn der Frontend-Bericht da ist:
+Wenn beide Berichte da sind:
 
-- Gegenprobe Vertrag: Endpoints und Feldnamen im Frontend greppen und mit dem Backend
-  vergleichen (häufigster Fehler: ein umbenanntes Feld).
+- Gegenprobe Vertrag: Endpoints und Feldnamen im Frontend greppen und mit den Java-DTOs
+  und Controllern vergleichen (häufigster Fehler: ein umbenanntes Feld).
 - Gegenprobe Info-Buttons: Sind alle geplanten Stellen da, und stimmen die Texte noch
-  mit dem gebauten Backend überein (Backend-Details ändern sich beim Bauen oft)?
-- Frontend selbst einmal `lint`, `test -- --run`, `build` laufen lassen.
+  mit dem Verhalten überein, das der Backend-Agent berichtet (Details ändern sich beim
+  Bauen oft)? Abweichungen per `SendMessage` an den Frontend-Agenten.
+- Beide Seiten selbst einmal laufen lassen: `./mvnw -q compile` + Backend-Tests,
+  Frontend `lint`, `test -- --run`, `build`.
 - Rote Tests, die nichts mit der Änderung zu tun haben: mehrfach einzeln laufen lassen,
   als unzuverlässig benennen statt still zu ignorieren.
 
 ## 6. Ein gemeinsames /review-and-ship
 
-Jetzt `Skill` → `review-and-ship` über den **gesamten** Diff (Backend + Frontend). Dort
+Jetzt `Skill` → `review-and-ship` über den **gesamten** Diff (Backend + Frontend). Der Reviewer prüft beide Seiten, jede gegen ihre eigene Sicherheitssicht und ihre Checkliste. Dort
 gelten dessen Regeln: ein Reviewer-Subagent, höchstens 2 Runden, nur eigene Dateien
-stagen (die Liste aus deinen Edits + dem Bericht des Frontend-Agenten), Build-Artefakte
+stagen (die Listen aus den Berichten beider Agenten), Build-Artefakte
 aus `npm run build` dürfen mit.
+
+**Findings einarbeiten lassen:** `[BACKEND]`-Findings per `SendMessage` an den
+Backend-Agenten, `[FRONTEND]`-Findings an den Frontend-Agenten – sie haben den Kontext
+und kennen die Regeln ihres Gebiets. Du prüfst danach Build und Tests und startest die
+zweite Review-Runde. Nur bei reinen Kleinigkeiten (Tippfehler, ein Import) darfst du
+selbst korrigieren.
 
 ## 7. Pull Request bis zum Merge begleiten (Nutzervorgabe 11.10.2026, immer)
 

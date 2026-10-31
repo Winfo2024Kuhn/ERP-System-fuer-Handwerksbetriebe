@@ -19,7 +19,7 @@ import { defineConfig, devices } from '@playwright/test';
  * anderen. --strictPort sorgt dafuer, dass Vite nicht still auf den
  * naechsten freien Port ausweicht.
  *
- * Bildschirmgroessen (siehe .claude/skills/playwright-design-pruefung):
+ * Bildschirmgroessen (siehe .claude/skills/handwerkerprogramm-design/PRUEFUNG.md):
  *   pc-14zoll    1440 x 900   -- 14-Zoll-MacBook, das Kleinste, was es geben soll
  *   pc-uebergang 1536 x 960   -- Luecke zwischen den beiden Pflichtgroessen (Task 10b,
  *                                Design-Review Abschnitt 6, Befund c): "2xl:"-Klassen

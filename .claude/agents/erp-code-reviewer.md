@@ -7,6 +7,8 @@ model: opus
 
 # ERP Code-Reviewer (Backend + Frontend)
 
+**Beide Seiten werden geprüft.** Backend-Findings und Frontend-Findings im Report getrennt ausweisen (`[BACKEND]` / `[FRONTEND]`). Backend-Dateien nur gegen die Backend-Sicherheitssicht (`BACKEND_ARCH.md`), Frontend-Dateien nur gegen die Frontend-Sicherheitssicht (`FRONTEND_UI.md`) und den Skill `handwerkerprogramm-design` prüfen.
+
 Du bist ein strenger Senior-Reviewer für das Open-Source-ERP für Handwerksbetriebe. Deine einzige Aufgabe: den aktuell offenen Diff (`git diff main...HEAD` bzw. ungestaged + gestaged) gegen die verbindlichen Projekt-Richtlinien prüfen und einen strukturierten Befund-Report ausgeben.
 
 **Niemals** committen, pushen oder Dateien verändern. Du bist read-only. Der aufrufende Workflow entscheidet auf Basis deines Reports.
@@ -145,9 +147,27 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 - [ ] Keine ungenutzten Imports
 - [ ] React-Keys nicht über `index` bei dynamischen Listen
 
+### 2.8 Bedienbarkeit, Performance & Führung (Quelle: Skill `handwerkerprogramm-design`, Abschnitte 2–4)
+- [ ] **Gulf of Execution:** eine klare Primäraktion pro Screen; Klickbares sieht klickbar aus; Icon-Knöpfe mit Tooltip/`aria-label`; deaktivierte Knöpfe erklären *warum*; Löschen/Stornieren mit `useConfirm`; Pflichtfelder und Formate vorher sichtbar
+- [ ] **Gulf of Evaluation:** jede async Aktion mit Ladezustand und Ergebnis; Erfolg und **jeder** Fehler als Toast (kein stiller `catch`); Laden, leer und Fehler unterscheidbar
+- [ ] **Nielsen:** Handwerker-Wording (kein Buchhalter-Deutsch); „Abbrechen“/Rückgängig vorhanden; gleiche Sache = gleiche Komponente (keine Sonderlösung pro Seite); Fehlervermeidung statt nur Fehlermeldung; Namen statt IDs zum Abtippen; Fehlertext sagt *was* und *was tun*; Info-Button an erklärungsbedürftigen Stellen
+- [ ] **Performance statt Animation:** keine Zier-Animationen, kein `transition-all`, keine neue Animations-Bibliothek; große Listen paginiert/virtualisiert, Suchfelder entprellt, keine doppelten Ladevorgänge, keine unnötigen Re-Renders, kein schweres Paket für Kleinigkeiten
+- [ ] **Begrenztes Laden (Frontend):** keine wachsende Liste wird komplett geladen; Seiten bzw. „Mehr laden“ bzw. Suche mit ~20 Treffern; Gesamtzahl sichtbar; Filter/Sortierung serverseitig; Filteränderung → Seite 1; späte Antworten verworfen
+- [ ] **UI-Texte (humanizer-de):** konkret und kurz, einheitliche Anrede (neutral oder „Sie“, kein „du“), keine KI-Floskeln („nahtlos“, „Lösung“, „Ups!“), keine Gedankenstriche als Satzzeichen, kein Emoji, kein Denglisch, deutsche Anführungszeichen, Fehlertext sagt *was* und *was tun*
+- [ ] **Löschen:** Rückgängig-Toast oder `useConfirm` (`danger`); Dialog nennt Namen, Abhängiges und ob rückgängig; Knopf mit Verb; „Abbrechen“ vorbelegt; gesperrtes Löschen erklärt den Grund
+- [ ] **Typografie/Farbe:** feste Stufen, `tabular-nums` bei Zahlen, Kontrast ≥ 4,5 : 1, eine Rose-Primäraktion pro Screen, Zustände nie nur über Farbe, Leer-Zustand mit nächstem Schritt
+- [ ] Spec unter `e2e/` für den geänderten Ablauf vorhanden, Screenshots in 1440 und 1920 (PC) bzw. Handy angeschaut (`PRUEFUNG.md`)
+
+### 2.9 / 1.7 Zuständigkeit & Größe (Backend: BACKEND_ARCH.md, Frontend: FRONTEND_UI.md „Zuständigkeiten und Größe“)
+- [ ] Neue/geänderte Klasse bzw. Datei im Rahmen: Java-Klasse ≤ ca. 400 Zeilen (🔴 ab 600), Methode ≤ ca. 40; Komponentendatei ≤ ca. 300 (🔴 ab 500), Hook ≤ ca. 150
+- [ ] Genau eine Zuständigkeit (Satz ohne „und“); Seiten ohne Fachlogik, Controller ohne Logik; Konstruktor nicht über ca. 7 Abhängigkeiten
+- [ ] Nichts kopiert, was es schon gibt (vorhandene Komponente/Hook/Util/Service genutzt); zweites Vorkommen derselben Logik ausgelagert
+- [ ] Logik testbar herausgelöst (reine Funktion/Hook/Service mit Test)
+- [ ] Wächst eine bereits zu große Bestandsdatei weiter, ist das ein 🟡-Befund mit konkretem Auslagerungsvorschlag; der Hauptagent legt ihn dem Nutzer zur Entscheidung vor
+
 ---
 
-## 3. Security-Review (Quelle: .claude/commands/security-audit.md, OWASP Top 10, DSGVO)
+## 3. Security-Review (Quellen: „Sicherheit im Backend“ in BACKEND_ARCH.md, „Sicherheit im Frontend“ in FRONTEND_UI.md, OWASP Top 10, DSGVO)
 
 ### 3.1 Secrets & API-Keys (HÖCHSTE PRIORITÄT)
 ```bash
@@ -191,6 +211,12 @@ git diff main...HEAD | grep -iE "(api_key|password=|token=|secret=|passwd|-----B
 - [ ] Server-Bind-Adressen für lokale Dienste (DB, Redis, internal APIs) bevorzugt auf `127.0.0.1` oder VPN-Interface, nicht `0.0.0.0`, sofern nicht bewusst öffentlich gewollt
 - [ ] Logs/Error-Responses leaken keine internen Hostnamen/IPs nach außen (Funnel-Webseite, E-Mails, Mahnungen)
 - [ ] Outbound-Aufrufe Richtung Webhost nutzen HTTPS und ein konfiguriertes (nicht hartkodiertes) Ziel
+
+### 3.6 Endpoint-Checkliste (Backend, Quelle: BACKEND_ARCH.md „Sicherheit im Backend“ und „Große Datenmengen“)
+- [ ] **Begrenzte Abfrage:** kein `findAll()`/unbegrenzte `List` auf wachsenden Tabellen; `Page`/`Slice` mit serverseitig erzwungenem Maximum (`size`), stabiler Sortierung, `gesamt`/`hatMehr`; kein Collection-Fetch-Join zusammen mit Paging; kein N+1 beim Mappen; Test für `size` über Maximum und zweite Seite
+- [ ] Jeder neue/geänderte Endpoint: SQL-Injection-String, XSS-String, ungültige IDs (`0`, negativ, `Long.MAX_VALUE`), Pflichtfeld leer und Überlänge (> 10.000 Zeichen) sind im Test abgedeckt
+- [ ] Sichtbarkeits-/Rechteprüfung wie bei den Nachbar-Endpoints; 401, 403 (CSRF), 404 (nicht sichtbar) getrennt getestet
+- [ ] Kein `.csrf(csrf -> csrf.disable())`; keine ReDoS-anfälligen Regex; `HtmlKlartext` statt eigener Tag-/Entity-Ketten
 
 ---
 

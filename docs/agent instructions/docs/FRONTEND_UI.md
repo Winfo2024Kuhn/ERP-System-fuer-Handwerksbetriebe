@@ -1,18 +1,8 @@
 # 🎨 Frontend & UI-Guidelines
 
-## 🧠 KI-Skill-Pflicht (UI/UX) — HOOK-ERZWUNGEN
+## 🧠 Frontend-Skill-Pflicht — HOOK-ERZWUNGEN
 
-**Vor JEDER Frontend-Änderung** musst du einen der folgenden Skills per `Skill`-Tool aufrufen. Das ist keine Empfehlung: Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange in dieser Session keiner davon lief.
-
-| Skill | Wofür |
-| --- | --- |
-| `handwerkerprogramm-design` | **Pflicht-Standard, immer zuerst.** Unser eigenes Design-System für dieses Produkt: Farben, Typografie, Icon-Vokabular (Lucide), Wording/Terminologie, fertige UI-Kits für Desktop-ERP + Mobile-PWA, echte Screenshots/Logos zum Wiederverwenden. Ersetzt keine der anderen Skills, geht ihnen aber vor. |
-| `ui-ux-pro-max:ui-ux-pro-max` | Generisch. Styles, Farbpaletten, Typografie, 99 UX-Regeln (Accessibility, Touch, Performance, Animation) — nur ergänzend, wenn `handwerkerprogramm-design` etwas offenlässt |
-| `frontend-design:frontend-design` | Visuelle Ausrichtung neuer UI, wenn es nicht nach Template aussehen soll |
-| `ui-ux-pro-max:design-system` | Design-Tokens, Komponenten-Specs, systematische Skalen |
-| `ui-ux-pro-max:design` | Logos, Banner, Icons, Präsentationen, Corporate Identity |
-
-Das Flag gilt pro Session — ein Aufruf reicht für alle folgenden Frontend-Edits.
+**Vor JEDER Frontend-Änderung** rufst du den Skill `handwerkerprogramm-design` per `Skill`-Tool auf und liest ihn vollständig. Er ist der **eine** Frontend-Skill: Design-System, Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Performance, Typografie/Farbe/Nutzerführung, Frontend-Sicherheit und die Playwright-Design-Prüfung (`PRUEFUNG.md`). Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange er in dieser Session nicht lief. Das Flag gilt pro Session.
 
 ## 🧭 Kern-Prinzip: Gulf of Execution & Gulf of Evaluation
 
@@ -62,11 +52,11 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 | MCP | Wofür |
 | --- | --- |
 | `shadcn` | Der Standard. Greift direkt auf shadcn-Bausteine und -Blöcke zu, zieht sie passend ins Projekt und installiert sie automatisch. Kein manuelles Kopieren aus dem Netz. |
-| `magic` (21st.dev) | Moderne Layouts mit Animationen auf Tailwind-Basis. Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
+| `magic` (21st.dev) | Moderne Layouts auf Tailwind-Basis (Animationen weglassen, siehe Skill: Performance statt Animation). Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
 
 **Wichtig:** Gezogene Komponenten immer auf unser Design-System umstellen (rose/slate statt der shadcn-Default-Farben) und die Pflicht-Komponenten unten haben Vorrang vor neu gezogenen.
 
-**Farbpaletten-Pflicht:** `ui-ux-pro-max`, `frontend-design` & Co. schlagen von sich aus oft fremde Paletten vor (blue/indigo/violet als Default-Theme). Diese Vorschläge sind nur Ausgangspunkt für Struktur, Spacing und Komponenten-Auswahl — Farben werden **immer** auf unser Schema unten (rose/slate) umgestellt, bevor Code committet wird. Kein Fallback auf Skill- oder MCP-Default-Farben, auch nicht "nur vorübergehend" oder in Mockups/Prototypen.
+**Farbpaletten-Pflicht:** Fremde Skills und MCP-Bausteine (z. B. `shadcn`) schlagen von sich aus oft fremde Paletten vor (blue/indigo/violet als Default-Theme). Diese Vorschläge sind nur Ausgangspunkt für Struktur, Spacing und Komponenten-Auswahl — Farben werden **immer** auf unser Schema unten (rose/slate) umgestellt, bevor Code committet wird. Kein Fallback auf Skill- oder MCP-Default-Farben, auch nicht "nur vorübergehend" oder in Mockups/Prototypen.
 
 ## Build & Coding-Regeln
 - Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!). Der Build schreibt nach `src/main/resources/static/` (PC) bzw. `static/zeiterfassung/` (Handy-App). Diese Dateien sind eingecheckt und werden mitcommittet (siehe `review-and-ship`). Die CI (`.github/workflows/pr-ci.yml`) prüft je Frontend außerdem `npm run lint`, `npm test` und `npm run test:e2e`.
@@ -76,7 +66,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
   - `EmailHtmlSanitizer` ist eine Backend-Klasse (Java) und bereinigt nur E-Mails. Im Frontend ersetzt sie `sanitizeHtml()` nicht. Fremdes E-Mail-HTML zeigt `EmailContentFrame` im iframe mit `sandbox` an.
   - Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren).
   - HTML nur auslesen oder umbauen (Text, `querySelector`, `dataset`): `parseHtmlInert()` bzw. `htmlToText()`, nie `document.createElement('div').innerHTML = …`. In so einem div führt `<img onerror>` Code aus, auch wenn es nie angezeigt wird. Wird geparstes HTML danach wieder in die Seite geschrieben, gilt die Regel oben: vorher `sanitizeHtml()`.
-  - Tags entfernen, Entities entpacken, URLs prüfen: ebenfalls nur über `src/lib/htmlSanitizer.ts` (siehe `TESTING_SECURITY.md`).
+  - Tags entfernen, Entities entpacken, URLs prüfen: ebenfalls nur über `src/lib/htmlSanitizer.ts` (siehe „Sicherheit im Frontend“ unten).
   - `react-zeiterfassung` hat kein `htmlSanitizer.ts` und derzeit keine HTML-Stelle. Vor der ersten das Gegenstück zur Freigabe stellen.
 - URL-Parameter immer mit `encodeURIComponent()`.
 - CSS-Klassen bedingt zusammensetzen mit `cn()` aus `src/lib/utils.ts`.
@@ -180,3 +170,45 @@ Im PC-Frontend erzeugt `<PageLayout ribbonCategory="Kategorie" title="Seitentite
   </div>
   <div className="flex gap-2">{/* Buttons */}</div>
 </div>
+
+## 🔐 Sicherheit im Frontend (dauerhafte Pflicht, nur Frontend)
+
+Das ist die vollständige Sicherheitssicht für TypeScript/React-Arbeit. Backend-Sicherheit (SQL-Injection, Path-Traversal, CSRF, ReDoS in Java) steht in `BACKEND_ARCH.md` und gehört nicht hierher.
+
+1. **HTML anzeigen:** `dangerouslySetInnerHTML` nur mit `sanitizeHtml()` aus `src/lib/htmlSanitizer.ts` (DOMPurify), auch bei serverseitig bereinigten Daten; Regeln im Abschnitt „Build & Coding-Regeln“ oben.
+2. **Tags entfernen:** nie `.replace(/<[^>]*>/g, '')` (CodeQL `incomplete-multi-character-sanitization`), immer `stripHtmlTags()` (Fixpunktschleife).
+3. **Entities entpacken:** nie mehrere `.replace()` hintereinander (Double Escaping), immer `unescapeHtmlEntities()` (Single-Pass).
+4. **URLs in Vorschauen:** `<iframe>`- und `<img>`-URLs immer über `toSafeResourceUrl()` (erlaubt `blob:`, `http:`, `https:`, relative Pfade mit `/`; blockt `javascript:`, `data:`, `//…`).
+5. **HTML nur auslesen:** `parseHtmlInert()`/`htmlToText()`, nie `document.createElement('div').innerHTML`.
+6. **Tests** decken `<img src=x onerror=…>` und `<script>` ab; nur Dummy-Daten (`Max Mustermann`).
+7. **Keine Geheimnisse** im Frontend-Code, in `localStorage`-Schlüsseln oder Logs.
+
+`htmlSanitizer.ts` gibt es nur im PC-Frontend. `react-zeiterfassung` hat kein Gegenstück; braucht die Handy-App diese Funktionen, das vor dem Bau zur Freigabe stellen.
+
+## 📄 Große Listen: begrenzt laden, nachladen (Pflicht, Frontend)
+
+Jede Liste, die wachsen kann, fragt **eine Seite** ab (`page`, `size`) und zeigt sie an; der Rest kommt auf Wunsch. Nie alle Datensätze auf einmal holen und im Browser filtern oder sortieren. Die Obergrenze erzwingt zusätzlich das Backend (`BACKEND_ARCH.md`, „Große Datenmengen“).
+
+**Welches Muster wann:**
+- **Tabelle mit Seiten** (Blättern, „Seite 3 von 12“, Gesamtzahl): Stammdaten, die man gezielt durchsucht und sortiert, z. B. Kunden, Artikel. Seite und Filter in der URL halten (Zurück-Knopf und Lesezeichen funktionieren). Vorbild `components/artikel/ArtikelSuche.tsx`.
+- **„Mehr laden“-Knopf** (nächste 25 anhängen, mit Zähler „25 von 140 angezeigt“): Verläufe, Übersichten nach Alter, E-Mails, Dokumentlisten. Vorbild `features/bestellungen/bestellungenNachladen.ts`.
+- **Auswahllisten und Suchfelder** (Kunde/Lieferant/Projekt wählen): nur die ersten ~20 Treffer, Suche entprellt (400 ms) und serverseitig, Hinweis „weitere Treffer: Suche eingrenzen“. Nie die komplette Tabelle in ein Dropdown laden.
+- **Endloses Scrollen** nur, wenn der Nutzer ohnehin nur von oben nach unten liest (Chat-/Aktivitätsverlauf); sonst Knopf oder Seiten.
+
+**Regeln:**
+- Standardgröße 25–50 (Tabelle), 20 (Auswahl). Die Zahl steht als Konstante an einer Stelle, nicht verstreut.
+- Gesamtzahl bzw. „es gibt mehr“ immer anzeigen, damit klar ist, dass die Liste nicht vollständig ist.
+- Beim Nachladen bleibt die bisherige Liste stehen; nur der Knopf zeigt Ladezustand (Spinner, gesperrt gegen Doppelklick). Fehler → Toast, Liste bleibt.
+- Filter, Suche oder Sortierung ändern → zurück auf Seite 1 (bzw. Liste leeren). Späte Antworten alter Abfragen verwerfen (Zähler oder `AbortController`), sonst überschreiben sie neuere.
+- Leer-Zustand, Laden und Fehler bleiben drei verschiedene Anzeigen (siehe Bedienbarkeit).
+- Zähler/Badges (z. B. „Offene Angebote: 14“) kommen vom Backend als eigene Zahl, nicht aus `liste.length`.
+- Ein geladener Datensatz-Satz, der an anderer Stelle gebraucht wird, wird geteilt (Hook/Kontext), nicht pro Komponente erneut geladen.
+
+## 🧩 Zuständigkeiten und Größe (Pflicht, Frontend)
+
+- **Eine Datei, eine Zuständigkeit.** Seiten (`pages/`) setzen zusammen, sie enthalten keine Fachlogik, keine API-Aufrufe im Rohzustand und keine großen Formular- oder Tabellenblöcke. Logik gehört in Hooks (`src/hooks/`, `src/features/{name}/`), reine Berechnungen in `src/lib/` oder Feature-Hilfsdateien (testbar ohne React), wiederkehrende Oberfläche in `src/components/`.
+- **Größenrahmen:** Komponentendatei **bis ca. 300 Zeilen**, ab **500** ist sie zu groß; Hook bis ca. 150; Funktion bis ca. 40 Zeilen; höchstens ca. 8 `useState` je Komponente (sonst `useReducer` oder eigener Hook); keine Verschachtelung tiefer als 3 JSX-Ebenen ohne Teilkomponente.
+- **Wiederverwenden vor neu bauen.** Vor jeder neuen Komponente, jedem Hook und jeder Hilfsfunktion suchen (`components/ui/`, `components/`, `hooks/`, `lib/`). Taucht dasselbe zum zweiten Mal auf (Dialog, Tabelle, Filterleiste, Formularzeile, Format-Funktion), wird es **ausgelagert und an beiden Stellen genutzt**, nicht kopiert. Fachliche Unterschiede bleiben als Props/Optionen erhalten.
+- **Testbar bauen:** Logik in Hooks und reine Funktionen mit Vitest-Test; Komponenten nehmen Daten und Callbacks als Props statt selbst zu laden, wo es geht.
+- **Neuer Code verschlechtert nichts:** In eine Datei über 500 Zeilen kommt kein neuer Block mehr. Neues wird eigene Komponente/Hook; die große Datei bindet es nur ein.
+- **Bei Auffälligkeit fragen:** Fasst die Aufgabe eine bestehende Datei über der Grenze an (Beispiele im Bestand: `document-editor/index.tsx`, `ProjektEditor.tsx`, `ZeiterfassungKalender.tsx`, `EmailCenter.tsx`, `AnfrageEditor.tsx`), melde das mit einem konkreten Schnitt („Positionstabelle als `PositionenTabelle`, Speichern-Logik als `useProjektSpeichern` auslagern?“) und frage den Nutzer, ob es jetzt mit ausgelagert werden soll. Als Subagent: den Vorschlag im Bericht an den Hauptagenten nennen, der den Nutzer fragt.

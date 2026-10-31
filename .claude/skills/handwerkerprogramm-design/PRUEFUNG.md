@@ -1,9 +1,6 @@
----
-name: playwright-design-pruefung
-description: Pflicht bei jeder Frontend-Änderung (react-pc-frontend, react-zeiterfassung) - prüft den geänderten Ablauf end-to-end mit Playwright, und zwar zweifach - funktioniert er, und sieht er richtig aus. Feste Bildschirmgrößen (14-Zoll-MacBook und großer Monitor für die PC-App, Handy für die Zeiterfassung), Screenshots je Größe, Checkliste zu Farben, Design-System, Look-and-Feel, UX, Auffindbarkeit und Überschneidungen. Trigger - jeder Task, der .tsx/.ts unter react-pc-frontend/src oder react-zeiterfassung/src ändert, jeder Abschnitts-Review dazu, und "Design prüfen", "sieht das gut aus", "Playwright".
----
-
 # Playwright-Design-Prüfung
+
+Teil des Skills `handwerkerprogramm-design`. Pflicht bei jeder Änderung unter `react-pc-frontend/src` oder `react-zeiterfassung/src`.
 
 Vorgabe des Nutzers vom 04.09.2026, gilt dauerhaft: **Jede Frontend-Änderung wird mit
 Playwright end-to-end geprüft — funktional und gestalterisch.** Unit-Tests prüfen
@@ -47,7 +44,7 @@ trennen lassen — nicht nur per Text. Text auf Fläche hat mindestens 4,5 : 1 K
 Screen mit mehr als einer rosafarbenen Primäraktion ist falsch.
 
 **2. Wird das Design-System eingehalten?**
-Maßstab ist der Skill `handwerkerprogramm-design`, sonst nichts. Farben nur rose/slate
+Maßstab ist `SKILL.md` in diesem Ordner, sonst nichts. Farben nur rose/slate
 (kein blue/indigo/violet aus Skill- oder MCP-Defaults), Icons nur Lucide, kein Emoji,
 Systemschrift, `rounded-lg` als Standard, `shadow-sm` für Karten, PageHeader-Muster
 (Eyebrow + Titel + Untertitel + Aktionen), drei Chip-Arten und nicht mehr, Ladezustand
@@ -135,26 +132,19 @@ Muster: `e2e/kalender-design.spec.ts`. Zwei Stolpersteine, die dort Zeit gekoste
 
 ## Wer prüft was
 
-- **Coding-Agent:** schreibt die Spec für seinen Ablauf und fährt **nur diese
+- **Frontend-Agent:** schreibt die Spec für seinen Ablauf und fährt **nur diese
   Spec** auf eigenem Port (`E2E_PORT=<port> npx playwright test e2e/<spec>`).
   Nie die ganze E2E-Suite, nie die ganze Unit-Suite — Vorgabe des Nutzers,
-  es dauert zu lang. Ein kurzer Blick auf die eigenen Screenshots schadet
-  nicht, die formale Beurteilung ist aber nicht seine.
-- **Design-Reviewer** (`loese-problem-design-review`, eigener Agent, nur bei
-  Frontend-Änderungen): fährt `npm run test:e2e` komplett (alle Specs, beide
-  Größen) in einem **eigenen Worktree** auf dem gemergten Stand, schaut jeden
-  Screenshot unter `test-results/design/` mit dem Read-Tool an und beantwortet
-  die sechs Fragen je Größe schriftlich im Kontext-Log. Wo ein Screenshot nicht
-  reicht, klickt er mit dem Playwright-MCP (`browser_navigate`,
-  `browser_resize`, `browser_take_screenshot`) selbst durch die laufende App.
+  es dauert zu lang. Er schaut seine eigenen Screenshots an, beantwortet die
+  sechs Fragen schriftlich im Bericht und meldet Auffälligkeiten.
+- **Reviewer** (`erp-code-reviewer`, im gemeinsamen `review-and-ship`): prüft den
+  Frontend-Code gegen `FRONTEND_UI.md` und diesen Skill. Wo ein Screenshot nicht
+  reicht, klickt er mit dem Playwright-MCP (`browser_navigate`, `browser_resize`,
+  `browser_take_screenshot`) selbst durch die laufende App.
   Ampel: 🔴 bei Frage 5 oder 6 verletzt (nicht auffindbar, Überschneidung,
   Abschneiden auf 14 Zoll) oder Bruch des Design-Systems (fremde Farbe, Emoji,
   handgemaltes SVG); Geschmacksfragen zu 3 sind 🟡.
-- **Code-Reviewer** (`loese-problem-review`): läuft parallel, fasst E2E und
-  Design nicht an — Code, Korrektheit, Performance, Datenschutz, Sicherheit,
-  volle Unit-/Backend-Suiten.
-- **Orchestrator:** merged vorher, legt den Review-Worktree an, startet beide
-  Reviewer in einer Nachricht.
+- **Hauptagent:** fährt die komplette E2E-Suite nur, wenn der Nutzer es verlangt.
 
 ## Was NICHT hierher gehört
 
