@@ -1262,4 +1262,165 @@ class EmailImportServiceTest {
             verify(emailRepository).save(neu);
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Spam-Merkmale beim Import: Anzeigename, Anbieter-Markierung, Abzocke-Warnung
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class SpamMerkmaleBeimImport {
+
+        private static final String BANKWECHSEL =
+                "Bitte beachten Sie unsere neue Bankverbindung: IBAN DE89 3704 0044 0532 0130 00";
+
+        private IMAPFolder mockFolder;
+        private Message mockMessage;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            mockFolder = mock(IMAPFolder.class);
+            mockMessage = mock(Message.class);
+            lenient().when(mockMessage.getHeader("Message-ID")).thenReturn(new String[]{"<merkmale@example.com>"});
+            lenient().when(mockFolder.getUID(mockMessage)).thenReturn(4711L);
+            lenient().when(mockFolder.getFullName()).thenReturn("INBOX");
+            lenient().when(mockMessage.getFrom()).thenReturn(new Address[]{
+                    new InternetAddress("info@stahlhandel-muster.de", "Stahlhandel Muster GmbH")
+            });
+            lenient().when(mockMessage.getSubject()).thenReturn("Rechnung 4711");
+            lenient().when(mockMessage.getSentDate()).thenReturn(new Date());
+            lenient().when(mockMessage.getContentType()).thenReturn("text/plain");
+            lenient().when(mockMessage.getContent()).thenReturn("Anbei die Rechnung.");
+            lenient().when(emailRepository.existsByMessageId(any())).thenReturn(false);
+            lenient().when(emailRepository.save(any(Email.class))).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(lieferantenRepository.findByEmailDomain(any())).thenReturn(Collections.emptyList());
+            lenient().when(steuerberaterEmailProcessingService.processSteuerberaterEmail(any())).thenReturn(false);
+        }
+
+        private Email importiere() throws Exception {
+            org.mockito.ArgumentCaptor<Email> captor = org.mockito.ArgumentCaptor.forClass(Email.class);
+            assertThat(service.importMessage(mockMessage, mockFolder, EmailDirection.IN)).isTrue();
+            verify(emailRepository, atLeastOnce()).save(captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        void speichertAnzeigenameDesAbsenders() throws Exception {
+            assertThat(importiere().getFromName()).isEqualTo("Stahlhandel Muster GmbH");
+        }
+
+        @Test
+        void kuerztLangenAnzeigenameAuf255Zeichen() throws Exception {
+            when(mockMessage.getFrom()).thenReturn(new Address[]{
+                    new InternetAddress("info@stahlhandel-muster.de", "M".repeat(300))
+            });
+
+            assertThat(importiere().getFromName()).hasSize(255);
+        }
+
+        @Test
+        void ohneAnzeigenameBleibtFeldLeer() throws Exception {
+            when(mockMessage.getFrom()).thenReturn(new Address[]{new InternetAddress("info@stahlhandel-muster.de")});
+
+            assertThat(importiere().getFromName()).isNull();
+        }
+
+        @Test
+        void anbieterSpamFlagYesWirdGespeichert() throws Exception {
+            lenient().when(mockMessage.getHeader("X-Spam-Flag")).thenReturn(new String[]{"YES"});
+
+            assertThat(importiere().getAnbieterSpamFlag()).isTrue();
+        }
+
+        @Test
+        void anbieterSpamFlagNoWirdFalse() throws Exception {
+            lenient().when(mockMessage.getHeader("X-Spam-Flag")).thenReturn(new String[]{"NO"});
+
+            assertThat(importiere().getAnbieterSpamFlag()).isFalse();
+        }
+
+        @Test
+        void fehlendesAnbieterSpamFlagBleibtUnbekannt() throws Exception {
+            assertThat(importiere().getAnbieterSpamFlag()).isNull();
+        }
+
+        @Test
+        void anbieterSpamFlagLesenIstTolerant() {
+            assertThat(EmailImportService.leseAnbieterSpamFlag(" yes ")).isTrue();
+            assertThat(EmailImportService.leseAnbieterSpamFlag("no")).isFalse();
+            assertThat(EmailImportService.leseAnbieterSpamFlag("vielleicht")).isNull();
+            assertThat(EmailImportService.leseAnbieterSpamFlag(null)).isNull();
+        }
+
+        @Test
+        void warnhinweisAuchAnZugeordneterLieferantenMail() {
+            Email email = erstelleEmail(1L, "<bank@example.com>", "info@stahlhandel-muster.de");
+            email.setBody(BANKWECHSEL);
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(5L);
+            doAnswer(inv -> {
+                Email e = inv.getArgument(0);
+                e.assignToLieferant(lieferant);
+                return true;
+            }).when(emailAutoAssignmentService).tryAutoAssign(email);
+
+            service.postProcessEmail(email);
+
+            assertThat(email.getWarnhinweis()).isEqualTo(AbzockeArt.BANKVERBINDUNG_GEAENDERT);
+            assertThat(email.isSpam()).isFalse();
+            verify(emailRepository).save(email);
+        }
+
+        @Test
+        void warnhinweisAuchAnSteuerberaterMail() {
+            Email email = erstelleEmail(1L, "<kanzlei@example.com>", "kanzlei@steuerberatung-muster.de");
+            email.setBody(BANKWECHSEL);
+            when(steuerberaterEmailProcessingService.processSteuerberaterEmail(email)).thenReturn(true);
+
+            service.postProcessEmail(email);
+
+            assertThat(email.getWarnhinweis()).isEqualTo(AbzockeArt.BANKVERBINDUNG_GEAENDERT);
+            verify(emailRepository).save(email);
+            verifyNoInteractions(spamFilterService);
+        }
+
+        @Test
+        void steuerberaterMailOhneWarnungWirdNichtNochmalGespeichert() {
+            Email email = erstelleEmail(1L, "<kanzlei@example.com>", "kanzlei@steuerberatung-muster.de");
+            email.setBody("Anbei die Lohnabrechnungen.");
+            when(steuerberaterEmailProcessingService.processSteuerberaterEmail(email)).thenReturn(true);
+
+            service.postProcessEmail(email);
+
+            assertThat(email.getWarnhinweis()).isNull();
+            verify(emailRepository, never()).save(any(Email.class));
+        }
+
+        @Test
+        void warnhinweisAuchBeiZuordnungUeberDenVerlauf() throws Exception {
+            Email parent = erstelleEmail(1L, "<anfrage@example.com>", "info@musterfirma.de");
+            Lieferanten lieferant = new Lieferanten();
+            lieferant.setId(5L);
+            parent.assignToLieferant(lieferant);
+            lenient().when(mockMessage.getHeader("In-Reply-To")).thenReturn(new String[]{"<anfrage@example.com>"});
+            when(emailRepository.findByMessageIdIn(List.of("<anfrage@example.com>"))).thenReturn(List.of(parent));
+            when(mockMessage.getContent()).thenReturn(BANKWECHSEL);
+
+            Email importiert = importiere();
+
+            assertThat(importiert.getLieferant()).isEqualTo(lieferant);
+            assertThat(importiert.getWarnhinweis()).isEqualTo(AbzockeArt.BANKVERBINDUNG_GEAENDERT);
+            verify(emailAutoAssignmentService, never()).tryAutoAssign(any());
+        }
+
+        @Test
+        void ausgehendeMailBekommtKeinenWarnhinweis() {
+            Email email = erstelleEmail(1L, "<aus@example.com>", "info@musterfirma.de");
+            email.setDirection(EmailDirection.OUT);
+            email.setBody(BANKWECHSEL);
+
+            service.postProcessEmail(email);
+
+            assertThat(email.getWarnhinweis()).isNull();
+        }
+    }
 }

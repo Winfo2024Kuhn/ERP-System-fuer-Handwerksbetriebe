@@ -1,8 +1,10 @@
 package org.example.kalkulationsprogramm.service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import org.example.kalkulationsprogramm.domain.Email;
@@ -10,6 +12,7 @@ import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.SpamStufe;
 import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
@@ -17,6 +20,8 @@ import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import org.example.kalkulationsprogramm.repository.SeenSenderDomainRepository;
+import org.example.kalkulationsprogramm.service.spam.SpamSignal;
+import org.example.kalkulationsprogramm.service.spam.SpamSignale;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -54,6 +59,8 @@ class SpamFilterServiceTest {
         email.setBody(body);
         email.setZuordnungTyp(EmailZuordnungTyp.KEINE);
         email.setAttachments(new ArrayList<>());
+        // Echte Mails haben ein Sendedatum; ohne wäre „Datum fehlt“ in jedem Test ein Signal.
+        email.setSentAt(LocalDateTime.of(2026, 10, 31, 9, 0));
         if (fromAddress != null && fromAddress.contains("@")) {
             email.setSenderDomain(fromAddress.substring(fromAddress.lastIndexOf('@') + 1).toLowerCase());
         }
@@ -337,37 +344,37 @@ class SpamFilterServiceTest {
     @Nested
     class GefaehrlicheDateitypen {
 
-        @Test
-        void exeDateiErhoehtScoreAuf100() {
+        // Früher: allein +100 = sofort Spam. Ein gefährlicher Anhang allein ist aber nur ein
+        // Signal (z. B. Makro-Excel eines Kunden) – er macht die Mail „Vielleicht Spam“.
+        @ParameterizedTest
+        @ValueSource(strings = {"rechnung.exe", "setup.bat", "payload.js"})
+        void gefaehrlicherAnhangAlleinGibtKeinePunkte(String dateiname) {
             Email email = erstelleEmail("unknown@suspicious.com", "Dokument", "Siehe Anhang");
-            EmailAttachment exeAtt = erstelleAttachment("rechnung.exe", false);
-            email.getAttachments().add(exeAtt);
+            email.getAttachments().add(erstelleAttachment(dateiname, false));
 
-            int score = service.calculateSpamScore(email);
-
-            assertThat(score).isEqualTo(100);
+            assertThat(service.calculateSpamScore(email)).isZero();
+            assertThat(SpamSignale.erkenne(email)).containsExactly(SpamSignal.GEFAEHRLICHER_ANHANG);
         }
 
         @Test
-        void batDateiErhoehtScoreAuf100() {
+        void gefaehrlicherAnhangMitWeiteremSignalGibt85() {
             Email email = erstelleEmail("unknown@suspicious.com", "Dokument", "Siehe Anhang");
-            EmailAttachment batAtt = erstelleAttachment("setup.bat", false);
-            email.getAttachments().add(batAtt);
+            email.getAttachments().add(erstelleAttachment("rechnung.exe", false));
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
 
-            int score = service.calculateSpamScore(email);
-
-            assertThat(score).isEqualTo(100);
+            assertThat(service.calculateSpamScore(email)).isEqualTo(85);
         }
 
         @Test
-        void jsDateiErhoehtScoreAuf100() {
+        void gefaehrlicherAnhangAlleinWirdVielleichtSpamAberNieVerschoben() {
             Email email = erstelleEmail("unknown@suspicious.com", "Dokument", "Siehe Anhang");
-            EmailAttachment jsAtt = erstelleAttachment("payload.js", false);
-            email.getAttachments().add(jsAtt);
+            email.getAttachments().add(erstelleAttachment("rechnung.exe", false));
 
-            int score = service.calculateSpamScore(email);
+            service.analyzeAndMarkSpam(email);
 
-            assertThat(score).isEqualTo(100);
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamGruende()).isEqualTo("GEFAEHRLICHER_ANHANG");
         }
     }
 
@@ -379,9 +386,11 @@ class SpamFilterServiceTest {
     class ImageSpam {
 
         @Test
-        void bildOnlyMailMitButtonWirdAlsAutoSpamErkannt() {
+        void bildOnlyMailMitButtonIstNurEinSignalUndKeinAutoSpam() {
             // Reproduziert die Beispiel-Mail: kryptischer Sender, Bild als
             // ganze Mail, ein Klick-Button als Link, kein sichtbarer Text.
+            // Früher allein +85 = sofort Spam; heute nur ein Signal (Handwerker
+            // schicken auch Fotos mit Link in der Signatur).
             Email email = erstelleEmail(
                     "jAWULxW.irYpfHK@adventurecentral.com",
                     "Warum Urlauber dieses Gadget feiern Office32",
@@ -395,9 +404,9 @@ class SpamFilterServiceTest {
 
             int score = service.calculateSpamScore(email);
 
-            // Bild-only +75, Cryptic-Sender (Mixed-Case) +10 -> >= 85
-            // (AUTO_SPAM_THRESHOLD), wird automatisch in Spam verschoben.
-            assertThat(score).isGreaterThanOrEqualTo(85);
+            // Nur das Absender-Muster (+10) zählt; das Bild-Signal allein gibt nichts.
+            assertThat(score).isEqualTo(10);
+            assertThat(SpamSignale.erkenne(email)).containsExactly(SpamSignal.NUR_BILD_MIT_LINK);
         }
 
         @Test
@@ -458,9 +467,7 @@ class SpamFilterServiceTest {
                             + "</a>"
                             + "</body></html>");
 
-            int score = service.calculateSpamScore(email);
-
-            assertThat(score).isGreaterThanOrEqualTo(85);
+            assertThat(SpamSignale.erkenne(email)).contains(SpamSignal.NUR_BILD_MIT_LINK);
         }
 
         @Test
@@ -721,34 +728,79 @@ class SpamFilterServiceTest {
     @Nested
     class StrukturelleFeatures {
 
+        // Früher +25: SPF bricht bei jeder Weiterleitung – zählt gar nicht mehr.
         @Test
-        void spfFailErhoehtSpamScore() {
+        void spfFailGibtKeinePunkte() {
             Email email = erstelleEmail("info@firma-mustermann.de", "Angebot", "Hallo, kurze Anfrage.");
             email.setAuthenticationResults("mx.example.com; spf=fail smtp.mailfrom=firma-mustermann.de");
 
-            int score = service.calculateSpamScore(email);
-
-            assertThat(score).isGreaterThanOrEqualTo(25);
+            assertThat(service.calculateSpamScore(email)).isZero();
+            assertThat(SpamSignale.erkenne(email)).isEmpty();
         }
 
+        // Früher +55: DMARC-Fehler allein ist nur ein Signal und gibt keine Punkte.
         @Test
-        void dkimUndDmarcFailKombinierenSichZuHohemScore() {
+        void dkimUndDmarcFailSindNurEinSignal() {
             Email email = erstelleEmail("ceo@beispielfirma.de", "Re: Rechnung", "Bitte überweisen.");
             email.setAuthenticationResults("mx.example.com; dkim=fail (signature did not verify); dmarc=fail");
 
-            int score = service.calculateSpamScore(email);
-
-            assertThat(score).isGreaterThanOrEqualTo(55);
+            assertThat(service.calculateSpamScore(email)).isZero();
+            assertThat(SpamSignale.erkenne(email)).containsExactly(SpamSignal.ECHTHEIT_FEHLGESCHLAGEN);
         }
 
+        // Früher +25: Reply-To auf andere Domain allein (z. B. Rechnungsprogramme) ist nur ein Signal.
         @Test
-        void replyToAufAndererDomainIstVerdaechtig() {
+        void replyToAufAndererDomainIstNurEinSignal() {
             Email email = erstelleEmail("noreply@firma-original.de", "Konto", "Bitte einloggen.");
             email.setReplyToAddress("payments@phisher-xyz.tk");
 
             int score = service.calculateSpamScore(email);
 
-            assertThat(score).isGreaterThanOrEqualTo(25);
+            // nur das noreply-Muster (+10)
+            assertThat(score).isEqualTo(10);
+            assertThat(SpamSignale.erkenne(email)).containsExactly(SpamSignal.ANTWORT_UMGELEITET);
+        }
+
+        @Test
+        void zweiSignaleGeben40Punkte() {
+            Email email = erstelleEmail("buchhaltung@firma-original.de", "Konto", "Bitte einloggen.");
+            email.setReplyToAddress("payments@phisher-xyz.tk");
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
+
+            assertThat(service.calculateSpamScore(email)).isEqualTo(40);
+        }
+
+        @Test
+        void dreiSignaleGeben70Punkte() {
+            Email email = erstelleEmail("buchhaltung@firma-original.de", "Konto", "Bitte einloggen.");
+            email.setReplyToAddress("payments@phisher-xyz.tk");
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
+            email.setAnbieterSpamFlag(true);
+
+            assertThat(service.calculateSpamScore(email)).isEqualTo(70);
+        }
+
+        @Test
+        void spamWoerterZaehlenAlsSignal() {
+            Email email = erstelleEmail("buchhaltung@firma-original.de", "Gewinnspiel", "Lotterie");
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
+
+            // gewinnspiel 30 + lotterie 35 = 65 Wort-Punkte, dazu 2 Signale = +40
+            assertThat(service.calculateSpamScore(email)).isEqualTo(100);
+            assertThat(service.bewerteRegeln(email).signale())
+                    .containsExactlyInAnyOrder(SpamSignal.SPAM_WOERTER, SpamSignal.ECHTHEIT_FEHLGESCHLAGEN);
+        }
+
+        @Test
+        void kleineAuffaelligkeitenSindGedeckelt() {
+            // noreply (+10), leerer Betreff (+15), > 10 Links (+15) = 40 → gedeckelt auf 20
+            StringBuilder body = new StringBuilder();
+            for (int i = 0; i < 12; i++) {
+                body.append("https://firma.example/").append(i).append(' ');
+            }
+            Email email = erstelleEmail("noreply@firma.example", "", body.toString());
+
+            assertThat(service.calculateSpamScore(email)).isEqualTo(20);
         }
 
         @Test
@@ -763,16 +815,15 @@ class SpamFilterServiceTest {
             assertThat(scoreMit).isEqualTo(scoreOhne);
         }
 
+        // Früher bis +35: Privatkunden schreiben von Free-Mailern und schicken Links
+        // (Ideen, Fotos, Pläne). Free-Mail gibt nie Punkte.
         @Test
-        void freeMailerMitVielenLinksIstVerdaechtig() {
+        void freeMailerMitVielenLinksGibtKeinePunkte() {
             String body = "Hallo, schauen Sie hier: https://promo-a.tk/x https://promo-b.tk/y https://promo-c.tk/z";
             Email email = erstelleEmail("max.mueller@gmail.com", "Spannendes Angebot", body);
 
-            int score = service.calculateSpamScore(email);
-
-            // 3 Links, alle auf andere Domain als gmail.com → Domain-Mismatch (15)
-            // + Free-Mailer + ≥3 Links → +20  (kumulativ +35)
-            assertThat(score).isGreaterThanOrEqualTo(30);
+            assertThat(service.calculateSpamScore(email)).isZero();
+            verifyNoInteractions(seenSenderDomainRepository);
         }
 
         @Test
@@ -878,17 +929,13 @@ class SpamFilterServiceTest {
     @Nested
     class ErstkontaktHeuristik {
 
+        // Früher +25: Jede Neuanfrage eines Privatkunden ist ein Erstkontakt von einem Free-Mailer.
         @Test
-        void neueFreeMailerDomainMitZweiLinksWirdAufgewertet() {
+        void neueFreeMailerDomainMitZweiLinksGibtKeinePunkte() {
             String body = "Hallo, schauen Sie sich das an: https://promo-x.tk/a https://promo-y.tk/b";
             Email email = erstelleEmail("max.mustermann@gmail.com", "Tolle Sache", body);
-            // Default-Mock: existsByDomain → false (= neuer Erstkontakt)
 
-            int score = service.calculateSpamScore(email);
-
-            // Erstkontakt + Free-Mailer + 2 Links → +25
-            // Plus Domain-Mismatch (gmail.com vs promo-*.tk) → +15
-            assertThat(score).isGreaterThanOrEqualTo(25);
+            assertThat(service.calculateSpamScore(email)).isZero();
         }
 
         @Test
@@ -904,17 +951,14 @@ class SpamFilterServiceTest {
             assertThat(score).isLessThan(25);
         }
 
+        // Früher +10 für Zahlen bzw. lange Namen vor dem @ – trifft echte Kunden bei Free-Mailern.
         @Test
-        void bekannteFreeMailerDomainOhneErstkontaktBonus() {
-            String body = "Hallo, schauen Sie sich das an: https://promo-x.tk/a https://promo-y.tk/b";
-            Email email = erstelleEmail("max.mustermann@gmail.com", "Tolle Sache", body);
-            when(seenSenderDomainRepository.existsByDomain("gmail.com")).thenReturn(true);
+        void freeMailerAdresseMitZahlenUndLangemNamenGibtKeinePunkte() {
+            String body = "Hallo, schauen Sie sich das an: https://promo-x.tk/a https://promo-y.tk/b https://promo-z.tk/c";
+            Email email = erstelleEmail("maxmustermannbau12345@gmail.com", "Tolle Sache", body);
 
-            int score = service.calculateSpamScore(email);
-
-            // Ohne Erstkontakt-Bonus bleibt nur der Domain-Mismatch (15).
-            // Score < 25 belegt, dass die +25 NICHT addiert wurden.
-            assertThat(score).isLessThan(25);
+            assertThat(service.calculateSpamScore(email)).isZero();
+            verifyNoInteractions(seenSenderDomainRepository);
         }
 
         @Test
@@ -994,6 +1038,179 @@ class SpamFilterServiceTest {
             assertThat(email.isSpam()).isTrue();
             assertThat(email.getSpamScore()).isEqualTo(100);
             verifyNoInteractions(spamBayesService);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Drei Stufen: nur SPAM verschiebt (auch auf dem Mail-Server)
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class SpamStufen {
+
+        private void lernfilterSagt(double wert) {
+            when(spamBayesService.isModelReady()).thenReturn(true);
+            when(spamBayesService.tokenize(any(Email.class))).thenReturn(Set.of("x"));
+            when(spamBayesService.predict(any())).thenReturn(wert);
+        }
+
+        @Test
+        void vielleichtSpamDurchLernfilterSetztNieIsSpam() {
+            lernfilterSagt(0.94);
+            Email email = erstelleEmail("info@musterfirma.example", "Angebot", "Hallo, anbei unser Angebot.");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamScore()).isEqualTo(56);
+        }
+
+        @Test
+        void vielleichtSpamDurchRegelnSetztNieIsSpam() {
+            // Zwei Signale = 40 Punkte, kein Lernfilter → UNSICHER, nicht SPAM
+            Email email = erstelleEmail("buchhaltung@firma-original.de", "Konto", "Bitte einloggen.");
+            email.setReplyToAddress("payments@phisher-xyz.tk");
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamGruende()).isEqualTo("ANTWORT_UMGELEITET,ECHTHEIT_FEHLGESCHLAGEN");
+            assertThat(email.getSpamScore()).isEqualTo(40);
+        }
+
+        @Test
+        void sichererLernfilterMitZweiSignalenIstSpam() {
+            lernfilterSagt(0.96);
+            Email email = erstelleEmail("buchhaltung@firma-original.de", "Konto", "Bitte einloggen.");
+            email.setReplyToAddress("payments@phisher-xyz.tk");
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.SPAM);
+            assertThat(email.isSpam()).isTrue();
+            assertThat(email.isNewsletter()).isFalse();
+            assertThat(email.getBayesScore()).isEqualTo(0.96);
+        }
+
+        @Test
+        void fastSichererLernfilterReichtNurMitGenugTraining() {
+            lernfilterSagt(0.995);
+            when(spamBayesService.getTotalSpam()).thenReturn(50L);
+            when(spamBayesService.getTotalHam()).thenReturn(49L);
+            Email email = erstelleEmail("info@musterfirma.example", "Angebot", "Hallo, anbei unser Angebot.");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(email.isSpam()).isFalse();
+
+            when(spamBayesService.getTotalHam()).thenReturn(50L);
+            Email zweite = erstelleEmail("info@musterfirma.example", "Angebot", "Hallo, anbei unser Angebot.");
+            service.analyzeAndMarkSpam(zweite);
+
+            assertThat(zweite.getSpamStufe()).isEqualTo(SpamStufe.SPAM);
+            assertThat(zweite.isSpam()).isTrue();
+        }
+
+        @Test
+        void harmloseMailIstKeinSpamOhneGruende() {
+            lernfilterSagt(0.05);
+            Email email = erstelleEmail("max.mustermann@gmail.com", "Anfrage Treppe",
+                    "Guten Tag, hier ein paar Ideen: https://a.example/1 https://b.example/2 https://c.example/3");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.KEIN_SPAM);
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamGruende()).isNull();
+            assertThat(email.getSpamScore()).isEqualTo(3);
+        }
+
+        @Test
+        void lernfilterWertUnterNullGiltAlsNichtBereit() {
+            when(spamBayesService.isModelReady()).thenReturn(true);
+            when(spamBayesService.tokenize(any(Email.class))).thenReturn(Set.of());
+            when(spamBayesService.predict(any())).thenReturn(-1.0);
+            Email email = erstelleEmail("info@musterfirma.example", "Angebot", "Hallo.");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getBayesScore()).isNull();
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.KEIN_SPAM);
+        }
+
+        @Test
+        void kontaktformularDerEigenenWebsiteBekommtKeinSignal() {
+            Email email = erstelleEmail("noreply@hoster.example", "Neue Anfrage über die Website",
+                    "Name: Max Mustermann, Nachricht: Bitte um Angebot für ein Geländer.");
+            email.setFromName("max.mustermann@web.de");
+            email.setReplyToAddress("max.mustermann@web.de");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamGruende()).isNull();
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.KEIN_SPAM);
+            assertThat(email.isSpam()).isFalse();
+        }
+
+        @Test
+        void zugeordneteMailWirdKeinSpamOhneLernfilter() {
+            Email email = erstelleEmail("buchhaltung@firma-original.de", "Konto", "Bitte einloggen.");
+            email.setReplyToAddress("payments@phisher-xyz.tk");
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
+            email.setProjekt(new Projekt());
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.KEIN_SPAM);
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamGruende()).isNull();
+            verifyNoInteractions(spamBayesService);
+        }
+
+        @Test
+        void handentscheidungLaesstStufeUndGruendeUnveraendert() {
+            Email email = erstelleEmail("buchhaltung@firma-original.de", "Konto", "Bitte einloggen.");
+            email.setReplyToAddress("payments@phisher-xyz.tk");
+            email.setAuthenticationResults("mx.example.com; dmarc=fail");
+            email.setUserSpamVerdict("HAM");
+            email.setSpamStufe(SpamStufe.UNSICHER);
+            email.setSpamGruende("ANTWORT_UMGELEITET");
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(email.getSpamGruende()).isEqualTo("ANTWORT_UMGELEITET");
+            assertThat(email.isSpam()).isFalse();
+            verifyNoInteractions(spamBayesService, emailBlacklistRepository);
+        }
+
+        @Test
+        void ausgehendeMailIstKeinSpam() {
+            Email email = erstelleEmail("info@musterfirma.example", "Angebot", "Hallo.");
+            email.setDirection(org.example.kalkulationsprogramm.domain.EmailDirection.OUT);
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.KEIN_SPAM);
+            verifyNoInteractions(spamBayesService);
+        }
+
+        @Test
+        void rechnungMitPdfUndGefaehrlichemAnhangWirdVielleichtSpam() {
+            Email email = erstelleEmail("info@unknown-firma.de", "Rechnung Nr. 12345", "Anbei Ihre Rechnung");
+            email.getAttachments().add(erstelleAttachment("Rechnung_12345.pdf", false));
+            email.getAttachments().add(erstelleAttachment("Rechnung_12345.pdf.exe", false));
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.getSpamScore()).isZero();
+            assertThat(email.getSpamStufe()).isEqualTo(SpamStufe.UNSICHER);
+            assertThat(email.isSpam()).isFalse();
         }
     }
 }

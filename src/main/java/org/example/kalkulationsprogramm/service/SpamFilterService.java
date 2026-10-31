@@ -3,34 +3,44 @@ package org.example.kalkulationsprogramm.service;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
+import org.example.kalkulationsprogramm.domain.SpamStufe;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.example.kalkulationsprogramm.util.HtmlKlartext;
+import org.example.kalkulationsprogramm.service.spam.MailDomain;
+import org.example.kalkulationsprogramm.service.spam.SpamSignal;
+import org.example.kalkulationsprogramm.service.spam.SpamSignale;
+import org.example.kalkulationsprogramm.service.spam.SpamStufenRegel;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Hybrid Spam-Filter: Regelbasiert + Naive Bayes ML.
+ * Spam-Filter aus Regeln und Lernfilter (Naive Bayes, lernt aus „Spam“/„Kein Spam“).
  *
- * Berechnet einen Spam-Score (0-100) basierend auf:
- * - Keyword-Blacklist im Betreff/Body (Regeln)
- * - Absender-Domain-Blacklist (Regeln)
- * - Verdächtige Muster (Regeln)
- * - Naive Bayes Klassifikator (ML, lernt aus User-Feedback)
+ * <p>Regelpunkte R (0-100):
+ * <ul>
+ *   <li>Gesperrter Absender (Blacklist): 100.</li>
+ *   <li>Gewichtete Spam-Wörter im Betreff/Text, Wegwerf-Adressen (+40).</li>
+ *   <li>Zusammentreffende {@link SpamSignal Signale}: eines allein 0, zwei +40, ab drei +70,
+ *       gefährlicher Anhang mit einem weiteren +85 ({@link SpamStufenRegel#gruppenPunkte}).</li>
+ *   <li>Kleine Auffälligkeiten (noreply, Großbuchstaben, viele Links …) zusammen höchstens
+ *       {@value #MAX_AUFFAELLIGKEITEN} – allein reichen sie nie für einen Verdacht.</li>
+ *   <li>Ein Free-Mail-Absender (gmail.com, web.de …) gibt nie Punkte.</li>
+ * </ul>
  *
- * Ensemble: 40% Regel-Score + 60% Bayes-Score (wenn Modell bereit).
- * Cold-Start: 100% Regel-Score bis genug Trainingsbeispiele vorhanden.
+ * <p>Aus R und dem Lernfilter-Wert entscheidet {@link SpamStufenRegel} die Stufe. Nur
+ * {@link SpamStufe#SPAM} setzt {@code isSpam} (und verschiebt die Mail damit auch auf dem
+ * Mail-Server); {@link SpamStufe#UNSICHER} bleibt im Posteingang mit Hinweis.
  *
- * Whitelist (kein Spam):
- * - Rechnungs-Emails mit PDF/XML Attachment
- * - Emails von bekannten Lieferanten
+ * <p>Nie Spam: Handentscheidungen, ausgehende und zugeordnete Mails, bekannte Lieferanten und
+ * Kunden. Rechnungen mit PDF/XML-Anhang bekommen 0 Regelpunkte.
  */
 @Slf4j
 @Service
@@ -45,21 +55,28 @@ public class SpamFilterService {
     private final org.example.kalkulationsprogramm.repository.SeenSenderDomainRepository seenSenderDomainRepository;
     private final SpamBayesService spamBayesService;
 
-    // ... (rest of configuration)
-
     // ═══════════════════════════════════════════════════════════════
     // KONFIGURATION
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Ab diesem Score wird eine Email als Spam markiert.
+     * Ab diesem Regel-Score meldet {@link #isSpam(Email)} Spam (nur Prüfung, setzt nichts).
      */
     private static final int SPAM_THRESHOLD = 50;
 
     /**
-     * Ab diesem Score wird eine Email automatisch in Spam verschoben (ohne User-Eingriff).
+     * Ab so vielen Wort-Punkten zählen die Spam-Wörter als eigenes {@link SpamSignal#SPAM_WOERTER}.
      */
-    private static final int AUTO_SPAM_THRESHOLD = 85;
+    static final int SPAM_WOERTER_MINDESTPUNKTE = 30;
+
+    /**
+     * Kleine Auffälligkeiten zusammen geben höchstens so viele Punkte – weniger als
+     * {@link SpamStufenRegel#REGEL_MIT_LERNFILTER}, damit sie allein nie zu Spam führen.
+     */
+    static final int MAX_AUFFAELLIGKEITEN = 20;
+
+    /** Absender von Wegwerf-Adressen und Link-Kürzern ({@link #BLOCKED_DOMAINS}). */
+    private static final int PUNKTE_WEGWERF_DOMAIN = 40;
 
     /**
      * Keywords die auf Newsletter hinweisen - KEIN Spam, nur Kategorie.
@@ -387,10 +404,9 @@ public class SpamFilterService {
     );
 
     /**
-     * Kostenlose Mailprovider. Eine Mail von hier ist NICHT automatisch Spam,
-     * aber in Kombination mit Firmensignatur, vielen Links oder verdächtigen
-     * Mustern ein wertvolles Signal (KI-generierte Cold-Mails kommen oft
-     * von Free-Mailern, weil diese ohne Domain-Setup sofort verfügbar sind).
+     * Kostenlose Mailprovider. Ein Free-Mail-Absender gibt nie Punkte: Viele Privatkunden
+     * schreiben von dort. Auffälligkeiten, die an der Absender-Adresse hängen (Zahlen im Namen,
+     * Erstkontakt, keine Links auf die eigene Domain), werden für sie deshalb gar nicht gewertet.
      */
     private static final Set<String> FREE_MAIL_DOMAINS = Set.of(
             // Deutsche Provider
@@ -410,14 +426,6 @@ public class SpamFilterService {
             "yandex.com", "yandex.ru");
 
     /**
-     * Pattern für SPF/DKIM/DMARC-Fail im Authentication-Results-Header.
-     * Format laut RFC 8601, z.B. "spf=fail", "dkim=fail", "dmarc=fail".
-     */
-    private static final Pattern SPF_FAIL = Pattern.compile("\\bspf=(fail|softfail)\\b", Pattern.CASE_INSENSITIVE);
-    private static final Pattern DKIM_FAIL = Pattern.compile("\\bdkim=fail\\b", Pattern.CASE_INSENSITIVE);
-    private static final Pattern DMARC_FAIL = Pattern.compile("\\bdmarc=fail\\b", Pattern.CASE_INSENSITIVE);
-
-    /**
      * Pattern für Links im Body (zur Domain-Extraktion).
      */
     private static final Pattern LINK_PATTERN = Pattern.compile(
@@ -430,34 +438,13 @@ public class SpamFilterService {
             "<img[^>]*(?:width=[\"']?1[\"']?|height=[\"']?1[\"']?)[^>]*>",
             Pattern.CASE_INSENSITIVE);
 
-    /**
-     * Beliebiges <img>-Tag — fuer den Bild-only-Check (Image-Spam).
-     */
-    private static final Pattern IMG_TAG = Pattern.compile(
-            "<img\\b[^>]*>", Pattern.CASE_INSENSITIVE);
-
-    /**
-     * Gefährliche Dateiendungen (Ausführbare Dateien + Makro-Dokumente).
-     */
-    private static final List<String> DANGEROUS_EXTENSIONS = List.of(
-            // Ausführbare Dateien
-            "exe", "bat", "cmd", "com", "scr", "pif", "cpl",
-            // Skripte
-            "js", "vbs", "wsf", "wsh", "ps1", "sh",
-            // Installer / Archive mit Code
-            "jar", "msi", "msp", "mst",
-            // Office-Makros (häufig für Malware)
-            "docm", "xlsm", "pptm", "dotm", "xltm",
-            // Andere gefährliche Formate
-            "hta", "inf", "reg", "rgs", "sct", "lnk", "iso", "img");
-
     // ═══════════════════════════════════════════════════════════════
     // SPAM-ANALYSE
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Analysiert eine Email und berechnet den Spam-Score.
-     * Setzt auch isSpam und isNewsletter.
+     * Bewertet eine Mail: setzt Spam-Stufe, Gründe, Anzeige-Score, {@code isSpam} (nur bei
+     * {@link SpamStufe#SPAM}) und {@code isNewsletter}.
      */
     public void analyzeAndMarkSpam(Email email) {
         // Die Handentscheidung (SPAM/HAM/HAM_IMPLICIT) hat immer Vorrang. Eine erneute
@@ -469,9 +456,7 @@ public class SpamFilterService {
 
         // Ausgehende Emails sind niemals Spam
         if (email.getDirection() == EmailDirection.OUT) {
-            email.setSpam(false);
-            email.setNewsletter(false);
-            email.setSpamScore(0);
+            markiereAlsKeinSpam(email);
             return;
         }
 
@@ -479,10 +464,8 @@ public class SpamFilterService {
         // dürfen niemals als Spam oder Newsletter markiert werden
         if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null
                 || email.getSteuerberater() != null) {
-            email.setSpam(false);
-            email.setNewsletter(false);
-            email.setSpamScore(0);
-            log.debug("[SpamFilter] Email übersprungen (zugeordnet): subject='{}'", email.getSubject());
+            markiereAlsKeinSpam(email);
+            log.debug("[SpamFilter] Email übersprungen (zugeordnet): id={}", email.getId());
             return;
         }
 
@@ -491,56 +474,48 @@ public class SpamFilterService {
         // Lieferanten senden oft über Newsletter-Tools (Mailchimp etc.),
         // verwenden noreply@-Adressen oder haben "news"/"update" Keywords.
         if (email.getFromAddress() != null && isFromLieferant(email.getFromAddress())) {
-            email.setSpam(false);
-            email.setNewsletter(false);
-            email.setSpamScore(0);
-            log.debug("[SpamFilter] Email von bekanntem Lieferant übersprungen: from='{}', subject='{}'",
-                    email.getFromAddress(), email.getSubject());
+            markiereAlsKeinSpam(email);
+            log.debug("[SpamFilter] Email von bekanntem Lieferant übersprungen: id={}", email.getId());
             return;
         }
 
         // WICHTIG: Emails von bekannten Kunden (Kunde, Projekt, Anfrage)
         // dürfen NIEMALS als Spam markiert werden.
         if (email.getFromAddress() != null && isFromKnownKunde(email.getFromAddress())) {
-            email.setSpam(false);
-            email.setNewsletter(false);
-            email.setSpamScore(0);
-            log.debug("[SpamFilter] Email von bekanntem Kunden übersprungen: from='{}', subject='{}'",
-                    email.getFromAddress(), email.getSubject());
+            markiereAlsKeinSpam(email);
+            log.debug("[SpamFilter] Email von bekanntem Kunden übersprungen: id={}", email.getId());
             return;
         }
 
-        // 1. Spam Check (Regel-basiert)
-        int ruleScore = calculateSpamScore(email);
+        // 1. Regeln
+        RegelBewertung regeln = bewerteRegeln(email);
 
-        // 2. Bayes ML-Score (wenn Modell bereit)
-        double bayesProb = -1.0;
+        // 2. Lernfilter (wenn Modell bereit)
+        Double lernfilter = null;
+        long spamTrainiert = 0;
+        long keinSpamTrainiert = 0;
         if (spamBayesService.isModelReady()) {
-            java.util.Set<String> tokens = spamBayesService.tokenize(email);
-            bayesProb = spamBayesService.predict(tokens);
-            email.setBayesScore(bayesProb >= 0 ? bayesProb : null);
+            double p = spamBayesService.predict(spamBayesService.tokenize(email));
+            lernfilter = p >= 0 ? p : null;
+            email.setBayesScore(lernfilter);
+            spamTrainiert = spamBayesService.getTotalSpam();
+            keinSpamTrainiert = spamBayesService.getTotalHam();
         }
 
-        // 3. Ensemble: Regel + Bayes kombinieren
-        int finalScore;
-        if (bayesProb < 0) {
-            // Cold-Start: nur Regel-Score
-            finalScore = ruleScore;
-        } else {
-            // Ensemble: 40% Regeln, 60% Bayes
-            int bayesScore = (int) (bayesProb * 100);
-            finalScore = (int) (ruleScore * 0.4 + bayesScore * 0.6);
-        }
-
-        email.setSpamScore(finalScore);
-        email.setSpam(finalScore >= AUTO_SPAM_THRESHOLD);
+        // 3. Stufe: nur SPAM setzt isSpam – UNSICHER bleibt im Posteingang mit Hinweis
+        SpamStufe stufe = SpamStufenRegel.bestimme(lernfilter, regeln.punkte(),
+                regeln.signale().contains(SpamSignal.GEFAEHRLICHER_ANHANG), spamTrainiert, keinSpamTrainiert);
+        email.setSpamStufe(stufe);
+        email.setSpamGruende(alsKuerzel(regeln.signale()));
+        email.setSpamScore(SpamStufenRegel.anzeigeWert(regeln.punkte(), lernfilter));
+        email.setSpam(stufe == SpamStufe.SPAM);
 
         if (email.isSpam()) {
             // Echter Spam überschreibt Newsletter-Flag – Spam hat Vorrang
             email.setNewsletter(false);
-            log.info("[SpamFilter] Email automatisch als Spam verschoben (Score ≥ {}%): finalScore={} (rule={}, bayes={}), subject='{}'",
-                    AUTO_SPAM_THRESHOLD, finalScore, ruleScore, bayesProb >= 0 ? String.format("%.2f", bayesProb) : "n/a",
-                    email.getSubject());
+            log.info("[SpamFilter] Email {} als Spam erkannt: regeln={}, lernfilter={}, gruende={}",
+                    email.getId(), regeln.punkte(),
+                    lernfilter != null ? String.format("%.2f", lernfilter) : "n/a", email.getSpamGruende());
             return;
         }
 
@@ -551,6 +526,23 @@ public class SpamFilterService {
                 email.setNewsletter(true);
             }
         }
+    }
+
+    /** Ausgehend, zugeordnet oder bekannt: nie Spam, nie Newsletter. */
+    private static void markiereAlsKeinSpam(Email email) {
+        email.setSpam(false);
+        email.setNewsletter(false);
+        email.setSpamScore(0);
+        email.setSpamStufe(SpamStufe.KEIN_SPAM);
+        email.setSpamGruende(null);
+    }
+
+    /** Kommagetrennte Kürzel in fester Reihenfolge, {@code null} ohne Signale. */
+    private static String alsKuerzel(Set<SpamSignal> signale) {
+        if (signale.isEmpty()) {
+            return null;
+        }
+        return signale.stream().sorted().map(Enum::name).collect(Collectors.joining(","));
     }
 
     private static final List<String> NEWSLETTER_SENDER_KEYWORDS = List.of(
@@ -598,195 +590,143 @@ public class SpamFilterService {
     }
 
     /**
-     * Berechnet den Spam-Score für eine Email (0-100).
+     * Regelpunkte R einer Email (0-100), ohne Lernfilter. Setzt nichts an der Mail.
      */
     public int calculateSpamScore(Email email) {
+        return bewerteRegeln(email).punkte();
+    }
+
+    /**
+     * Regelpunkte und erkannte Signale. Die Signale bleiben auch bei Blacklist und Whitelist
+     * erhalten, damit ein gefährlicher Anhang in einer „Rechnung“ zumindest „Vielleicht Spam“ wird.
+     */
+    RegelBewertung bewerteRegeln(Email email) {
         String subject = email.getSubject() != null ? email.getSubject().toLowerCase() : "";
         String body = getCombinedBody(email);
         String fromAddress = email.getFromAddress() != null ? email.getFromAddress().toLowerCase() : "";
         String senderDomain = email.getSenderDomain() != null ? email.getSenderDomain().toLowerCase() : "";
         String combinedText = subject + " " + body;
+        Set<SpamSignal> signale = SpamSignale.erkenne(email);
 
-        // 0. Blacklist Check (Sofort-Spam)
+        // 0. Blacklist: bewusste Nutzerentscheidung → sofort sicher
         if (emailBlacklistRepository.existsByEmailAddress(fromAddress)) {
-            log.debug("[SpamFilter] Absender ist auf Blacklist: {}", fromAddress);
-            return 100;
+            log.debug("[SpamFilter] Absender ist auf Blacklist: id={}", email.getId());
+            return new RegelBewertung(100, signale);
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // WHITELIST - sofort 0 zurückgeben wenn zutreffend
+        // WHITELIST - 0 Punkte wenn zutreffend
         // ═══════════════════════════════════════════════════════════════
 
         // 1. Emails von bekannten Lieferanten → NIEMALS Spam
         if (isFromLieferant(fromAddress)) {
-            log.debug("[SpamFilter] Whitelist: Email von Lieferant erkannt: {}", fromAddress);
-            return 0;
+            log.debug("[SpamFilter] Whitelist: Email von Lieferant erkannt: id={}", email.getId());
+            return new RegelBewertung(0, signale);
         }
 
         // 2. Rechnungs-Emails mit PDF/XML Attachment → kein Spam
         if (combinedText.contains("rechnung") && hasRelevantAttachment(email)) {
-            log.debug("[SpamFilter] Whitelist: Rechnungs-Email mit PDF/XML erkannt: '{}'", email.getSubject());
-            return 0;
-        }
-
-        // 3. Rechnungs-Emails von bekannten Lieferanten → kein Spam (auch ohne Attachment)
-        if (combinedText.contains("rechnung") && isFromLieferant(fromAddress)) {
-            log.debug("[SpamFilter] Whitelist: Rechnung von Lieferant erkannt: '{}'", email.getSubject());
-            return 0;
+            log.debug("[SpamFilter] Whitelist: Rechnungs-Email mit PDF/XML erkannt: id={}", email.getId());
+            return new RegelBewertung(0, signale);
         }
 
         // ═══════════════════════════════════════════════════════════════
         // SPAM-SCORING
         // ═══════════════════════════════════════════════════════════════
 
-        int score = 0;
-
-        // 1. Keyword-Check
+        // 1. Gewichtete Spam-Wörter
+        int woerter = 0;
         for (SpamKeyword keyword : SPAM_KEYWORDS) {
             if (combinedText.contains(keyword.keyword)) {
-                score += keyword.weight;
+                woerter += keyword.weight;
             }
         }
+        if (woerter >= SPAM_WOERTER_MINDESTPUNKTE) {
+            signale.add(SpamSignal.SPAM_WOERTER);
+        }
 
-        // 2. Domain-Blacklist
+        int score = woerter;
+
+        // 2. Wegwerf-Adressen und Link-Kürzer als Absender
         if (BLOCKED_DOMAINS.contains(senderDomain)) {
-            score += 40;
+            score += PUNKTE_WEGWERF_DOMAIN;
         }
 
-        // 3. Verdächtige Absender-Muster
-        // Patterns werden gegen den ORIGINAL-fromAddress getestet, weil
-        // Mixed-Case-Random-Strings ("jAWULxW.irYpfHK@...") nach Lowercase
-        // wie ein normales Wort aussehen wuerden. Die existing Patterns
-        // (noreply, Zahlen, [a-z]{15,}) sind unbeeintraechtigt, weil die
-        // entweder CASE_INSENSITIVE laufen oder auf Zahlen prufen.
+        // 3. Zusammentreffende Signale (eines allein gibt nichts)
+        score += SpamStufenRegel.gruppenPunkte(signale);
+
+        // 4. Kleine Auffälligkeiten, gedeckelt
+        score += Math.min(MAX_AUFFAELLIGKEITEN, kleineAuffaelligkeiten(email, subject, body, senderDomain));
+
+        return new RegelBewertung(Math.min(100, Math.max(0, score)), signale);
+    }
+
+    /**
+     * Kleine Auffälligkeiten. Jede für sich trifft auch echte Mails; deshalb gedeckelt auf
+     * {@value #MAX_AUFFAELLIGKEITEN} Punkte. Für Free-Mail-Absender zählt nichts, was an der
+     * Absender-Adresse hängt.
+     */
+    private int kleineAuffaelligkeiten(Email email, String subject, String body, String senderDomain) {
+        int delta = 0;
+        boolean isFreeMail = !senderDomain.isBlank() && FREE_MAIL_DOMAINS.contains(senderDomain);
+
+        // Verdächtige Absender-Muster. Patterns werden gegen den ORIGINAL-fromAddress
+        // getestet, weil Mixed-Case-Random-Strings ("jAWULxW.irYpfHK@...") nach Lowercase
+        // wie ein normales Wort aussehen würden.
         String fromAddressOriginal = email.getFromAddress() != null ? email.getFromAddress() : "";
-        for (Pattern pattern : SUSPICIOUS_SENDER_PATTERNS) {
-            if (pattern.matcher(fromAddressOriginal).matches()) {
-                score += 10;
-                break; // Nur einmal zählen
-            }
-        }
-
-        // 4. Leerer Betreff
-        if (subject.isBlank()) {
-            score += 15;
-        }
-
-        // 5. Zu viele GROSSBUCHSTABEN im Betreff
-        if (email.getSubject() != null) {
-            long upperCount = email.getSubject().chars().filter(Character::isUpperCase).count();
-            long totalLetters = email.getSubject().chars().filter(Character::isLetter).count();
-            if (totalLetters > 5 && (double) upperCount / totalLetters > 0.7) {
-                score += 20;
-            }
-        }
-
-        // 6. Zu viele Links im Body
-        if (body.length() > 0) {
-            int linkCount = countOccurrences(body, "http://") + countOccurrences(body, "https://");
-            if (linkCount > 10) {
-                score += 15;
-            }
-        }
-
-        // 7. Security Check: Gefährliche Anhänge
-        if (email.getAttachments() != null) {
-            for (org.example.kalkulationsprogramm.domain.EmailAttachment attachment : email.getAttachments()) {
-                String filename = attachment.getOriginalFilename();
-                if (filename != null) {
-                    String ext = getExtension(filename);
-                    if (DANGEROUS_EXTENSIONS.contains(ext)) {
-                        log.warn("[SpamFilter] SECURITY: Gefährlicher Anhang gefunden: {}", filename);
-                        score += 100; // Sofort Spam
-                        break;
-                    }
+        if (!isFreeMail) {
+            for (Pattern pattern : SUSPICIOUS_SENDER_PATTERNS) {
+                if (pattern.matcher(fromAddressOriginal).matches()) {
+                    delta += 10;
+                    break; // Nur einmal zählen
                 }
             }
         }
 
-        // 8. Strukturelle / Header-Features (Issue #56, Phase 1)
-        score += scoreStructuralFeatures(email, senderDomain, body);
-
-        // Score auf 0-100 begrenzen
-        return Math.min(100, Math.max(0, score));
-    }
-
-    /**
-     * Strukturelle und Header-basierte Spam-Indikatoren.
-     * Fängt gut formulierten Spam (KI-generierte Cold-Mails, Phishing mit
-     * sauberer Sprache), den die reine Keyword-/Bayes-Analyse durchwinkt.
-     */
-    private int scoreStructuralFeatures(Email email, String senderDomain, String body) {
-        int delta = 0;
-
-        // ─── Authentication-Results (SPF/DKIM/DMARC) ─────────────────
-        // Mailserver schreiben hier rein, ob der Sender authentifiziert ist.
-        // Fail = Phishing-Verdacht (Domain-Spoofing).
-        String authResults = email.getAuthenticationResults();
-        if (authResults != null && !authResults.isBlank()) {
-            if (SPF_FAIL.matcher(authResults).find()) delta += 25;
-            if (DKIM_FAIL.matcher(authResults).find()) delta += 25;
-            if (DMARC_FAIL.matcher(authResults).find()) delta += 30;
-        }
-
-        // ─── From-Domain ≠ Reply-To-Domain ───────────────────────────
-        // Klassischer Phishing-Marker: Antwort soll an andere Domain gehen.
-        String replyTo = email.getReplyToAddress();
-        if (replyTo != null && replyTo.contains("@") && !senderDomain.isBlank()) {
-            String replyDomain = replyTo.substring(replyTo.lastIndexOf('@') + 1).toLowerCase().trim();
-            if (!replyDomain.isBlank() && !replyDomain.equals(senderDomain)
-                    && !isSameOrganizationDomain(replyDomain, senderDomain)) {
-                delta += 25;
-            }
-        }
-
-        // ─── Free-Mailer-Domain ──────────────────────────────────────
-        // Free-Mailer alleine ist NICHT verdächtig (viele Privatkunden).
-        // Aber Free-Mailer + viele Links + langer englischer Text ist
-        // typisch für KI-generierte Cold-Mails.
-        boolean isFreeMail = !senderDomain.isBlank() && FREE_MAIL_DOMAINS.contains(senderDomain);
-
-        // ─── Links: Domain-Mismatch & Text-Link-Ratio ────────────────
-        Set<String> linkDomains = extractLinkDomains(body);
-        int linkCount = linkDomains.size();
-
-        // Mehr als 3 Links und KEINE führt auf die Sender-Domain → fishy
-        if (linkCount >= 3 && !senderDomain.isBlank()
-                && linkDomains.stream().noneMatch(d -> isSameOrganizationDomain(d, senderDomain))) {
+        // Leerer Betreff
+        if (subject.isBlank()) {
             delta += 15;
         }
 
-        // Free-Mailer + viele Links → +20 (KI-Cold-Mail-Indikator)
-        if (isFreeMail && linkCount >= 3) {
-            delta += 20;
-        }
-
-        // ─── Erstkontakt-Heuristik ───────────────────────────────────
-        // Domain noch nie gesehen + Free-Mailer + ≥2 Links ist klassisches
-        // Cold-Mail-Signal (KI-Anschreiben, SEO-Pitches, Branchenbuch-Maschen).
-        // Whitelists (Lieferant/Kunde) wurden vor diesem Block schon geprueft —
-        // wer hier landet, ist niemand Bekanntes. Beim allerersten Deployment
-        // ist die Tabelle aus existierenden Mails backfilled (siehe V293), damit
-        // Bestandsdomains nicht faelschlich als "neu" gelten.
-        if (!senderDomain.isBlank() && !seenSenderDomainRepository.existsByDomain(senderDomain)) {
-            if (isFreeMail && linkCount >= 2) {
-                delta += 25;
-            } else if (linkCount >= 3) {
-                // Auch ohne Free-Mailer: neue Domain mit mehreren Links bleibt verdaechtig.
-                delta += 10;
+        // Zu viele GROSSBUCHSTABEN im Betreff
+        if (email.getSubject() != null) {
+            long upperCount = email.getSubject().chars().filter(Character::isUpperCase).count();
+            long totalLetters = email.getSubject().chars().filter(Character::isLetter).count();
+            if (totalLetters > 5 && (double) upperCount / totalLetters > 0.7) {
+                delta += 20;
             }
         }
 
-        // ─── Text-Link-Ratio ─────────────────────────────────────────
-        // Sehr wenig Text + viele Links = klassisches Spam-Signal.
-        int textLength = body == null ? 0 : body.replaceAll("\\s+", " ").length();
+        // Zu viele Links im Body
+        int linkVorkommen = countOccurrences(body, "http://") + countOccurrences(body, "https://");
+        if (linkVorkommen > 10) {
+            delta += 15;
+        }
+
+        Set<String> linkDomains = extractLinkDomains(body);
+        int linkCount = linkDomains.size();
+
+        // Mehr als 3 Links und KEINE führt auf die Sender-Domain. Free-Mailer verlinken
+        // nie auf gmail.com & Co., deshalb gilt das nur für Firmen-Domains.
+        if (!isFreeMail && linkCount >= 3 && !senderDomain.isBlank()
+                && linkDomains.stream().noneMatch(d -> MailDomain.gleicheOrganisation(d, senderDomain))) {
+            delta += 15;
+        }
+
+        // Erstkontakt: neue Firmen-Domain mit mehreren Links. Erstkontakt allein zählt nie –
+        // jede Neuanfrage ist ein Erstkontakt.
+        if (!isFreeMail && linkCount >= 3 && !senderDomain.isBlank()
+                && !seenSenderDomainRepository.existsByDomain(senderDomain)) {
+            delta += 10;
+        }
+
+        // Sehr wenig Text + viele Links
+        int textLength = body.replaceAll("\\s++", " ").length();
         if (linkCount >= 5 && textLength > 0 && textLength < 200) {
             delta += 15;
         }
 
-        // ─── Tracking-Pixel ──────────────────────────────────────────
-        // Newsletter haben oft 1-2; Spam oft 5+. htmlBody nutzen statt body
-        // (combined body), weil <img> nur im HTML steht.
+        // Tracking-Pixel: Newsletter haben oft 1-2; Spam oft 5+.
         if (email.getHtmlBody() != null) {
             int pixelCount = 0;
             var pixelMatcher = TRACKING_PIXEL.matcher(email.getHtmlBody());
@@ -795,34 +735,6 @@ public class SpamFilterService {
             }
             if (pixelCount >= 5) {
                 delta += 10;
-            }
-        }
-
-        // ─── Bild-only Werbe-Mail (Image-Spam) ───────────────────────
-        // Eine Mail, die fast ausschliesslich aus IMG-Tags besteht und
-        // kaum sichtbaren Text hat, ist mit hoher Wahrscheinlichkeit
-        // Werbung/Spam. Bayes ist hier blind, weil Tokenisierung leer
-        // bleibt. Whitelists (Lieferant/Kunde) wurden vor dieser Methode
-        // schon angewendet — wer hier noch durchkommt, ist niemand
-        // Bekanntes. textLength im Body-Combined zaehlt HTML mit, also
-        // strippen wir Tags hier explizit, um den sichtbaren Text zu
-        // messen. Score 85 reicht allein zum Auto-Spam (Threshold 85)
-        // — gerechtfertigt, weil eine echte Geschaeftsmail niemals
-        // reines Bild + Klick-Button ohne Text ist.
-        String htmlBody = email.getHtmlBody();
-        if (htmlBody != null && !htmlBody.isBlank()) {
-            int imgCount = 0;
-            var imgMatcher = IMG_TAG.matcher(htmlBody);
-            while (imgMatcher.find() && imgCount < 5) {
-                imgCount++;
-            }
-            if (imgCount >= 1 && linkCount >= 1) {
-                // Bis zum Fixpunkt: verschachtelte Tags wie "<<b>b>" dürfen nicht als Text zählen.
-                String visible = HtmlKlartext.entferneTags(htmlBody, " ")
-                        .replaceAll("\\s++", " ").trim();
-                if (visible.length() < 100) {
-                    delta += 85;
-                }
             }
         }
 
@@ -849,25 +761,6 @@ public class SpamFilterService {
         return domains;
     }
 
-    /**
-     * Prüft ob zwei Domains zur gleichen Organisation gehören.
-     * Vergleicht die letzten zwei Labels (z.B. "mail.wuerth.com" == "wuerth.com").
-     * Vereinfachung — kennt keine Public-Suffix-Liste; "foo.co.uk" und "bar.co.uk"
-     * würden also fälschlich als gleiche Org gelten. In der Spam-Heuristik führt
-     * das zu fehlenden Aufschlägen (False-Negatives für Spam) — akzeptabel,
-     * weil eine PSL-Integration den Aufwand hier nicht rechtfertigt.
-     */
-    private boolean isSameOrganizationDomain(String a, String b) {
-        if (a == null || b == null) return false;
-        return registrableDomain(a).equals(registrableDomain(b));
-    }
-
-    private String registrableDomain(String domain) {
-        String[] parts = domain.split("\\.");
-        if (parts.length < 2) return domain;
-        return parts[parts.length - 2] + "." + parts[parts.length - 1];
-    }
-
     private String getCombinedBody(Email email) {
         StringBuilder sb = new StringBuilder();
         if (email.getBody() != null) {
@@ -877,14 +770,6 @@ public class SpamFilterService {
             sb.append(email.getHtmlBody().toLowerCase());
         }
         return sb.toString();
-    }
-
-    private String getExtension(String filename) {
-        int dot = filename.lastIndexOf('.');
-        if (dot > 0) {
-            return filename.substring(dot + 1).toLowerCase();
-        }
-        return "";
     }
 
     /**
@@ -997,6 +882,12 @@ public class SpamFilterService {
      * Internes Record für gewichtete Keywords.
      */
     private record SpamKeyword(String keyword, int weight) {
+    }
+
+    /**
+     * Regelpunkte R (0-100) und die dabei erkannten Signale.
+     */
+    record RegelBewertung(int punkte, Set<SpamSignal> signale) {
     }
 
     // ═══════════════════════════════════════════════════════════════
