@@ -60,3 +60,23 @@ Supervised Multinomial Naive Bayes in reinem Java.
 - `ai.rag.*`: Wissen der KI-Hilfe – Hybrid-Suche im Prozess (Vektor + Wortsuche `StichwortIndex`, in `LocalRagService`; Zerlegen/Einbetten/RAG-Datei in `service/kihilfe/RagIndexer`, Embeddings über Gemini). Reicht das Gefundene nicht, schlägt die KI über `KiHilfeWerkzeuge` selbst nach (Function Calling über `KiDienst`, max. 4 Runden). Im Docker-Image liegt kein Quellcode: Die RAG-Datei entsteht beim Image-Bau und kommt mit dem Nachtupdate (`RAG_INDEXING.md`). **Neue Seite im PC-Frontend → Route in `LocalRagService.ROUTE_TO_FILE_KEYWORDS` eintragen.** Es braucht kein Qdrant; `QdrantRagService` wird nirgends verwendet.
 - `ai.ollama.*`: lokales Ollama (optional)
 - `spring.datasource.*` (PostgreSQL; Standard `jdbc:postgresql://localhost:5432/kalkulationsprogramm_db`, Zugangsdaten über `APP_DB_URL`/`APP_DB_USER`/`APP_DB_PASS` bzw. `application-local.properties`, im Docker-Profil der Dienst `postgres`)
+
+## 🔐 Sicherheit im Backend (dauerhafte Pflicht, nur Backend)
+
+Das ist die vollständige Sicherheitssicht für Java-Arbeit. Frontend-Sicherheit (HTML-Bereinigung, DOM-XSS) steht in `FRONTEND_UI.md` und gehört nicht hierher.
+
+**Pflichtcheckliste für JEDEN neuen Endpoint** – vor „fertig“ im Code oder Test abgedeckt:
+1. **SQL Injection:** `'; DROP TABLE x; --` in allen String-Parametern (Named-Params, nie String-Verkettung).
+2. **XSS-Strings:** `<script>alert(1)</script>` in allen Textfeldern darf nicht ungeprüft gespeichert oder ausgeliefert werden.
+3. **Ungültige IDs:** negative Werte, `Long.MAX_VALUE`, `0`.
+4. **Limits:** leere Pflichtfelder und überlange Eingaben (> 10.000 Zeichen) abfangen (`@Valid`, `@NotBlank`, `@Size`).
+5. **Datei-Uploads/-Downloads:** Path-Traversal (`../../etc/passwd`) verhindern, gefährliche Dateitypen (`.exe`, `.bat`, `.js`) blockieren.
+6. **Rechte:** Sichtbarkeits- und Rechteprüfung wie die Nachbar-Endpoints; 401/403/404 sauber trennen.
+
+**CodeQL-Vorgaben:**
+1. **ReDoS:** keine verschachtelten unbegrenzten Wiederholungen wie `(\w+.*)*` oder `(.*)+`. Possessive Quantifizierer (`*+`, `++`) oder atomare Gruppen `(?>...)`.
+2. **Path Traversal:** `MultipartFile.getOriginalFilename()` nie ungeprüft in `Path.resolve()` oder `new File()`. Bereinigen mit `Path.of(name).getFileName().toString().replaceAll("[\\\\/:*?\"<>|]", "_")`, dann `.normalize()` und `dst.startsWith(baseDir)`. E-Mail-Anhänge in `EmailService` als In-Memory-Bytes (`ByteArrayDataSource`), nicht über temporäre Dateien.
+3. **Spring CSRF:** nie `.csrf(csrf -> csrf.disable())`. Ausnahmen (S2S/JWT) nur über `.csrf(csrf -> csrf.ignoringRequestMatchers("/api/..."))`.
+4. **HTML im Backend:** `util/HtmlKlartext` benutzen (`entferneTags()` als Fixpunktschleife, `entpackeEntitaeten()` in einem Durchgang, `zuText()` = beides in dieser Reihenfolge). Keine eigenen `replaceAll("<[^>]*>", …)`, keine Ketten aus `.replace("&amp;", "&").replace("&lt;", "<")`. E-Mail-HTML nur über `EmailHtmlSanitizer`.
+
+**Geheimnisse und Datenschutz:** Keine Secrets in Code, Logs oder Commits (Ablageorte siehe `.claude/CLAUDE.md`). Personenbezogene Daten nicht in Logs. Tests nur mit Dummy-Daten (`Max Mustermann`).

@@ -15,17 +15,10 @@ $skillName = $payload.tool_input.skill
 if (-not $skillName) { $skillName = $payload.tool_input.name }
 if (-not $skillName) { exit 0 }
 
-# Alle Skills, die als Design-Pflichtlektuere zaehlen
+# Der Frontend-Skill, der als Design-Pflichtlektuere zaehlt
 $designSkills = @(
     'handwerkerprogramm-design',
-    'handwerkerprogramm-design:handwerkerprogramm-design',
-    'ui-ux-pro-max',
-    'ui-ux-pro-max:ui-ux-pro-max',
-    'ui-ux-pro-max:design',
-    'ui-ux-pro-max:design-system',
-    'ui-ux-pro-max:ui-styling',
-    'frontend-design',
-    'frontend-design:frontend-design'
+    'handwerkerprogramm-design:handwerkerprogramm-design'
 )
 
 if ($designSkills -contains $skillName) {

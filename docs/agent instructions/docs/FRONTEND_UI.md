@@ -1,18 +1,8 @@
 # 🎨 Frontend & UI-Guidelines
 
-## 🧠 KI-Skill-Pflicht (UI/UX) — HOOK-ERZWUNGEN
+## 🧠 Frontend-Skill-Pflicht — HOOK-ERZWUNGEN
 
-**Vor JEDER Frontend-Änderung** musst du einen der folgenden Skills per `Skill`-Tool aufrufen. Das ist keine Empfehlung: Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange in dieser Session keiner davon lief.
-
-| Skill | Wofür |
-| --- | --- |
-| `handwerkerprogramm-design` | **Pflicht-Standard, immer zuerst.** Unser eigenes Design-System für dieses Produkt: Farben, Typografie, Icon-Vokabular (Lucide), Wording/Terminologie, fertige UI-Kits für Desktop-ERP + Mobile-PWA, echte Screenshots/Logos zum Wiederverwenden. Ersetzt keine der anderen Skills, geht ihnen aber vor. |
-| `ui-ux-pro-max:ui-ux-pro-max` | Generisch. Styles, Farbpaletten, Typografie, 99 UX-Regeln (Accessibility, Touch, Performance, Animation) — nur ergänzend, wenn `handwerkerprogramm-design` etwas offenlässt |
-| `frontend-design:frontend-design` | Visuelle Ausrichtung neuer UI, wenn es nicht nach Template aussehen soll |
-| `ui-ux-pro-max:design-system` | Design-Tokens, Komponenten-Specs, systematische Skalen |
-| `ui-ux-pro-max:design` | Logos, Banner, Icons, Präsentationen, Corporate Identity |
-
-Das Flag gilt pro Session — ein Aufruf reicht für alle folgenden Frontend-Edits.
+**Vor JEDER Frontend-Änderung** rufst du den Skill `handwerkerprogramm-design` per `Skill`-Tool auf und liest ihn vollständig. Er ist der **eine** Frontend-Skill: Design-System, Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Bewegung, Feinschliff, Frontend-Sicherheit und die Playwright-Design-Prüfung (`PRUEFUNG.md`). Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange er in dieser Session nicht lief. Das Flag gilt pro Session.
 
 ## 🧭 Kern-Prinzip: Gulf of Execution & Gulf of Evaluation
 
@@ -66,7 +56,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 
 **Wichtig:** Gezogene Komponenten immer auf unser Design-System umstellen (rose/slate statt der shadcn-Default-Farben) und die Pflicht-Komponenten unten haben Vorrang vor neu gezogenen.
 
-**Farbpaletten-Pflicht:** `ui-ux-pro-max`, `frontend-design` & Co. schlagen von sich aus oft fremde Paletten vor (blue/indigo/violet als Default-Theme). Diese Vorschläge sind nur Ausgangspunkt für Struktur, Spacing und Komponenten-Auswahl — Farben werden **immer** auf unser Schema unten (rose/slate) umgestellt, bevor Code committet wird. Kein Fallback auf Skill- oder MCP-Default-Farben, auch nicht "nur vorübergehend" oder in Mockups/Prototypen.
+**Farbpaletten-Pflicht:** Fremde Skills und MCP-Bausteine (z. B. `shadcn`) schlagen von sich aus oft fremde Paletten vor (blue/indigo/violet als Default-Theme). Diese Vorschläge sind nur Ausgangspunkt für Struktur, Spacing und Komponenten-Auswahl — Farben werden **immer** auf unser Schema unten (rose/slate) umgestellt, bevor Code committet wird. Kein Fallback auf Skill- oder MCP-Default-Farben, auch nicht "nur vorübergehend" oder in Mockups/Prototypen.
 
 ## Build & Coding-Regeln
 - Nach JEDER Änderung: `npm run build` im jeweiligen Ordner ausführen (Fail Fast!). Der Build schreibt nach `src/main/resources/static/` (PC) bzw. `static/zeiterfassung/` (Handy-App). Diese Dateien sind eingecheckt und werden mitcommittet (siehe `review-and-ship`). Die CI (`.github/workflows/pr-ci.yml`) prüft je Frontend außerdem `npm run lint`, `npm test` und `npm run test:e2e`.
@@ -76,7 +66,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
   - `EmailHtmlSanitizer` ist eine Backend-Klasse (Java) und bereinigt nur E-Mails. Im Frontend ersetzt sie `sanitizeHtml()` nicht. Fremdes E-Mail-HTML zeigt `EmailContentFrame` im iframe mit `sandbox` an.
   - Gleiches gilt für `element.innerHTML = …` und `insertAdjacentHTML` an angezeigten Elementen (z. B. contentEditable-Editoren).
   - HTML nur auslesen oder umbauen (Text, `querySelector`, `dataset`): `parseHtmlInert()` bzw. `htmlToText()`, nie `document.createElement('div').innerHTML = …`. In so einem div führt `<img onerror>` Code aus, auch wenn es nie angezeigt wird. Wird geparstes HTML danach wieder in die Seite geschrieben, gilt die Regel oben: vorher `sanitizeHtml()`.
-  - Tags entfernen, Entities entpacken, URLs prüfen: ebenfalls nur über `src/lib/htmlSanitizer.ts` (siehe `TESTING_SECURITY.md`).
+  - Tags entfernen, Entities entpacken, URLs prüfen: ebenfalls nur über `src/lib/htmlSanitizer.ts` (siehe „Sicherheit im Frontend“ unten).
   - `react-zeiterfassung` hat kein `htmlSanitizer.ts` und derzeit keine HTML-Stelle. Vor der ersten das Gegenstück zur Freigabe stellen.
 - URL-Parameter immer mit `encodeURIComponent()`.
 - CSS-Klassen bedingt zusammensetzen mit `cn()` aus `src/lib/utils.ts`.
@@ -180,3 +170,17 @@ Im PC-Frontend erzeugt `<PageLayout ribbonCategory="Kategorie" title="Seitentite
   </div>
   <div className="flex gap-2">{/* Buttons */}</div>
 </div>
+
+## 🔐 Sicherheit im Frontend (dauerhafte Pflicht, nur Frontend)
+
+Das ist die vollständige Sicherheitssicht für TypeScript/React-Arbeit. Backend-Sicherheit (SQL-Injection, Path-Traversal, CSRF, ReDoS in Java) steht in `BACKEND_ARCH.md` und gehört nicht hierher.
+
+1. **HTML anzeigen:** `dangerouslySetInnerHTML` nur mit `sanitizeHtml()` aus `src/lib/htmlSanitizer.ts` (DOMPurify), auch bei serverseitig bereinigten Daten; Regeln im Abschnitt „Build & Coding-Regeln“ oben.
+2. **Tags entfernen:** nie `.replace(/<[^>]*>/g, '')` (CodeQL `incomplete-multi-character-sanitization`), immer `stripHtmlTags()` (Fixpunktschleife).
+3. **Entities entpacken:** nie mehrere `.replace()` hintereinander (Double Escaping), immer `unescapeHtmlEntities()` (Single-Pass).
+4. **URLs in Vorschauen:** `<iframe>`- und `<img>`-URLs immer über `toSafeResourceUrl()` (erlaubt `blob:`, `http:`, `https:`, relative Pfade mit `/`; blockt `javascript:`, `data:`, `//…`).
+5. **HTML nur auslesen:** `parseHtmlInert()`/`htmlToText()`, nie `document.createElement('div').innerHTML`.
+6. **Tests** decken `<img src=x onerror=…>` und `<script>` ab; nur Dummy-Daten (`Max Mustermann`).
+7. **Keine Geheimnisse** im Frontend-Code, in `localStorage`-Schlüsseln oder Logs.
+
+`htmlSanitizer.ts` gibt es nur im PC-Frontend. `react-zeiterfassung` hat kein Gegenstück; braucht die Handy-App diese Funktionen, das vor dem Bau zur Freigabe stellen.
