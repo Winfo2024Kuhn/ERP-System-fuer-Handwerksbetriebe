@@ -49,7 +49,10 @@ Du schreibst Code, der einfach zu verstehen, wartbar, testbar und skalierbar ist
 2. **Sprache und Wording in der UI:**
    Nutze immer "Handwerker-Sprache". Beispiel: Statt "Debitorenbuchhaltung" -> "Kundenrechnungen". Statt "Ertrags- und Aufwands-Konsolidierung" -> "Einnahmen & Ausgaben".
 
-3. **Abschluss jeder Aufgabe (Skill-Execution):**
+3. **Jede Implementierung läuft über `/fullstack-parallel` (Nutzervorgabe 31.10.2026):**
+   Ob Feature, Umbau, Redesign oder Erweiterung – immer zuerst den Skill `fullstack-parallel` aufrufen und seinem Ablauf folgen (Brainstorming, API-Vertrag, Backend- und Frontend-Agent parallel, toten Code löschen, ein gemeinsames Review, PR bis zum Merge, Aufräumen inkl. Issues und Branches). Betrifft die Aufgabe nur Backend oder nur Frontend, läuft nur der passende Agent. `/bugfix` oder `/loese-problem` nur, wenn der Nutzer sie ausdrücklich aufruft.
+
+4. **Abschluss jeder Aufgabe (Skill-Execution):**
    Wenn du am Ende einer Aufgabe angekommen bist und Code geschrieben oder refactored hast, führe IMMER diesen Skill / diese Aktion aus:
    `.claude/commands/review-and-ship.md`.
 

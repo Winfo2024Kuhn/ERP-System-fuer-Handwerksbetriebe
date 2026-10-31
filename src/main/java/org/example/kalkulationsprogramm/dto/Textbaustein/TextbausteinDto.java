@@ -30,9 +30,11 @@ public class TextbausteinDto {
 
     private String html;
 
-    private List<String> placeholders = new ArrayList<>();
+    @Size(max = 50)
+    private List<@Size(max = 120) String> placeholders = new ArrayList<>();
 
-    private List<String> dokumenttypen = new ArrayList<>();
+    @Size(max = 30)
+    private List<@Size(max = 40) String> dokumenttypen = new ArrayList<>();
 
     private Integer sortOrder;
 

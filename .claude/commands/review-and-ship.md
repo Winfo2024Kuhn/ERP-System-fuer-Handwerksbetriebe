@@ -231,6 +231,9 @@ Closes #<issue>
 ## Lösung
 <was die Änderung tut>
 
+## Offene Restpunkte
+<nur bei teilweise erledigten Issues: was bewusst nicht umgesetzt ist – sonst Abschnitt weglassen>
+
 ## Tests
 <welche Suiten, wie viele, lokal gelaufen>
 
@@ -238,6 +241,13 @@ Closes #<issue>
 EOF
 )
 ```
+
+> 🔒 **Pflichtzeile, technisch erzwungen (Nutzervorgabe 31.10.2026):** Die PR-Automatik
+> mergt nur, wenn der PR-Text jedes bearbeitete Issue mit `Closes #<nr>` verlinkt –
+> **auch teilweise erledigte** (die Restpunkte kommen unter `## Offene Restpunkte`
+> und landen automatisch im Schließ-Kommentar des Issues) – oder ausdrücklich
+> `Kein Issue` sagt. Fehlt beides, bleibt der PR liegen und bekommt einen Hinweis.
+> `Refs #<nr>` allein reicht nicht.
 
 > ⚠️ **Nur englische Schlüsselwörter schließen ein Issue.** GitHub erkennt
 > `Closes`, `Fixes`, `Resolves` (samt `closed`/`fixed`/`resolved`). **„Behebt #84",
@@ -325,7 +335,9 @@ done
 gh pr view <nr> --json state -q .state   # muss MERGED sein, sonst nicht schließen
 ```
 
-Verlass dich **nicht** darauf, dass der Merge das Issue geschlossen hat — prüf es nach:
+Die PR-Automatik schließt verlinkte Issues nach ihrem Merge selbst (mit den
+Restpunkten im Kommentar). Verlass dich trotzdem **nicht** darauf — beim Merge über
+GitHubs eigenes Auto-Merge fehlt z. B. der Restpunkte-Kommentar. Prüf es nach:
 
 ```bash
 gh issue view <nr> --json state -q .state
@@ -335,6 +347,13 @@ Steht dort `OPEN`, schließ es selbst und sag im Kommentar, was passiert ist:
 
 ```bash
 gh issue close <nr> --comment "Gelöst mit #<pr> (<commit-hash> auf main)."
+```
+
+Ist das Issue schon zu, aber der PR hatte `## Offene Restpunkte` und der
+Schließ-Kommentar nennt sie nicht, die Restpunkte als Kommentar nachtragen:
+
+```bash
+gh issue comment <nr> --body "Offene Restpunkte aus #<pr>: …"
 ```
 
 Häufigste Ursachen für ein offen gebliebenes Issue:

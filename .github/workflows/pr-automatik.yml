@@ -22,6 +22,9 @@ name: PR-Automatik (aktualisieren und mergen)
 #   Ebenso schliesst GitHub bei einem Merge mit dem GITHUB_TOKEN keine Issues,
 #   die der PR mit "Closes/Fixes/Resolves #N" verlinkt (gesehen bei #287 und
 #   #299). Deshalb schliesst dieser Workflow sie nach dem Merge selbst.
+#   Damit das sicher klappt, mergt er nur PRs, deren Text ein Issue verlinkt
+#   ("Closes #N") oder ausdruecklich "Kein Issue" sagt; ein Abschnitt
+#   "## Offene Restpunkte" landet im Schliess-Kommentar des Issues.
 #   Merge-Queue waere die eingebaute Loesung, gibt es aber nur fuer Repos von
 #   Organisationen. Ein eigenes Token (PAT) waere die Alternative.
 #
@@ -92,8 +95,19 @@ jobs:
           # bei einem Merge mit dem GITHUB_TOKEN nicht. Nur Issues dieses Repos (ein
           # "Closes anderer/repo#5" darf nicht #5 hier schliessen). Bereits
           # geschlossene bleiben unberuehrt; Fehler bremsen den Lauf nicht.
+          # Abschnitt "## Offene Restpunkte" aus dem PR-Text (bis zur naechsten
+          # Ueberschrift, Trennlinie oder Fusszeile "🤖 Generated with ..."). Wird an den Schliess-Kommentar gehaengt, damit bei teilweise
+          # erledigten Issues nichts verloren geht. Nur Text, nie ausgefuehrt.
+          restpunkte() {
+            gh pr view "$1" --json body --jq .body 2>/dev/null | tr -d '\r' | awk '
+              /^##[[:space:]]+Offene Restpunkte/ { drin = 1; next }
+              drin && /^(##[[:space:]]|---|🤖)/ { exit }
+              drin { print }' | sed '/./,$!d' || true
+          }
+
           schliesse_issues() {
-            local pr="$1" issues issue zustand
+            local pr="$1" issues issue zustand rest kommentar
+            rest="$(restpunkte "$pr")"
             if ! issues="$(gh pr view "$pr" --json closingIssuesReferences \
                 --jq '.closingIssuesReferences[]
                   | select(.repository.owner.login + "/" + .repository.name == env.GH_REPO)
@@ -108,13 +122,46 @@ jobs:
                 continue
               fi
               [ "$zustand" = "OPEN" ] || continue
-              if gh issue close "$issue" --reason completed \
-                  --comment "Erledigt mit #$pr (automatisch geschlossen, weil der PR es verlinkt)."; then
+              kommentar="Erledigt mit #$pr (automatisch geschlossen, weil der PR es verlinkt)."
+              if [ -n "$rest" ]; then
+                kommentar="$kommentar"$'\n\n'"**Offene Restpunkte** (nicht in diesem PR umgesetzt):"$'\n'"$rest"
+              fi
+              if gh issue close "$issue" --reason completed --comment "$kommentar"; then
                 echo "Issue #$issue geschlossen (verlinkt in PR #$pr)."
               else
                 echo "::warning::Issue #$issue liess sich nicht schliessen - bitte von Hand (PR #$pr)."
               fi
             done
+          }
+
+          # Vor dem Merge: Jeder PR sagt, welches Issue dieses Repos er erledigt ("Closes #N", auch
+          # bei teilweise erledigten - Restpunkte unter "## Offene Restpunkte") oder
+          # ausdruecklich "Kein Issue". Sonst bliebe das Issue nach dem Merge still
+          # offen. Fehlt beides, wird nicht gemergt und einmal im PR nachgefragt;
+          # nach dem Nachtragen mergt ein spaeterer Lauf (spaetestens 15 Minuten).
+          MARKE_ISSUE='<!-- pr-automatik:issue-fehlt -->'
+          issue_angegeben() {
+            local pr="$1" anzahl body
+            anzahl="$(gh pr view "$pr" --json closingIssuesReferences \
+              --jq '[.closingIssuesReferences[]
+                | select(.repository.owner.login + "/" + .repository.name == env.GH_REPO)] | length' \
+              2>/dev/null || echo 0)"
+            [[ "$anzahl" =~ ^[0-9]+$ ]] && [ "$anzahl" -gt 0 ] && return 0
+            body="$(gh pr view "$pr" --json body --jq .body 2>/dev/null || true)"
+            grep -Eiq '^[[:space:]]*kein issue([[:space:].:,(-]|$)' <<< "$body"
+          }
+          frage_nach_issue() {
+            local pr="$1" schon
+            schon="$(gh pr view "$pr" --json comments \
+              --jq "[.comments[].body | select(contains(\"$MARKE_ISSUE\"))] | length" 2>/dev/null || echo 0)"
+            [ "$schon" = "0" ] || return 0
+            gh pr comment "$pr" --body "$MARKE_ISSUE
+          Nicht gemergt: Der PR-Text nennt kein Issue. Bitte eine Zeile ergänzen:
+          - \`Closes #<nr>\` für jedes bearbeitete Issue (auch teilweise erledigte – Restpunkte unter \`## Offene Restpunkte\`), oder
+          - \`Kein Issue\`, wenn es keins gibt.
+
+          Danach mergt die Automatik beim nächsten Lauf." \
+              || echo "::warning::PR #$pr: Hinweis auf fehlendes Issue liess sich nicht schreiben."
           }
 
           # Eigener Kanal (3): gh in der Schleife darf die Liste nicht von stdin wegessen.
@@ -167,6 +214,12 @@ jobs:
               2>/dev/null || echo "offen")"
             if [ "$gate" != "success" ]; then
               echo "PR #$nummer: PR Quality Gate ist \"$gate\" - kein Merge."
+              continue
+            fi
+
+            if ! issue_angegeben "$nummer"; then
+              echo "::warning::PR #$nummer: kein Issue angegeben (\"Closes #N\" oder \"Kein Issue\") - kein Merge."
+              frage_nach_issue "$nummer"
               continue
             fi
 

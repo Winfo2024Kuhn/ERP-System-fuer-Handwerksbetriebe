@@ -1,9 +1,18 @@
 ---
 name: fullstack-parallel
-description: Ablauf für Aufgaben im ERP, die Backend (Spring Boot) UND Frontend (react-pc-frontend / react-zeiterfassung) betreffen – die Hauptsession ist Orchestrator: kurzes Brainstorming mit dem Nutzer, API-Vertrag festlegen, dann Backend-Agent und Frontend-Agent parallel per Subagent bauen lassen, und erst wenn beides fertig ist EIN gemeinsames /review-and-ship. Unbedingt verwenden, sobald ein Wunsch neue oder geänderte Endpoints plus neue Knöpfe/Dialoge/Seiten braucht („mach das auch im Frontend“, „neuer Dialog mit Vorschlägen“, „Endpoint + Anzeige“), auch wenn der Nutzer nicht „parallel“ sagt. Auch explizit über „/fullstack-parallel“. NICHT für reine Backend- oder reine Frontend-Änderungen und nicht für kleine Fixes; für große, mehrteilige Features mit Issue/PR-Pipeline ist /loese-problem gedacht.
+description: Standard-Ablauf für JEDE Implementierung im ERP (Feature, Umbau, Redesign, Erweiterung) – Pflicht laut CLAUDE.md seit 31.10.2026. Die Hauptsession ist Orchestrator: kurzes Brainstorming mit dem Nutzer, API-Vertrag festlegen, dann Backend-Agent und Frontend-Agent parallel per Subagent bauen lassen, toten Code löschen, erst wenn alles fertig ist EIN gemeinsames /review-and-ship, PR bis zum Merge begleiten, aufräumen (Server, Container, Issues, Branches). Betrifft die Aufgabe nur Backend oder nur Frontend, läuft nur der passende Agent, alle übrigen Schritte gelten. Auch explizit über „/fullstack-parallel“. Andere Abläufe (/bugfix, /loese-problem) nur, wenn der Nutzer sie ausdrücklich aufruft.
 ---
 
 # fullstack-parallel – du orchestrierst, Backend- und Frontend-Agent bauen parallel, Review am Schluss
+
+**Gilt für jede Implementierung** (Nutzervorgabe 31.10.2026, verankert in `.claude/CLAUDE.md`).
+Betrifft die Aufgabe nur eine Seite, läuft nur der passende Agent:
+
+- **Nur Backend:** Schritte 0–2, 3 nur mit Backend-Agent (3a), Toten Code löschen, 5–8; kein
+  API-Vertrag für ein neues Frontend, aber bestehende Aufrufer im Frontend greppen, damit nichts bricht.
+- **Nur Frontend:** Schritte 0–2, 3 nur mit Frontend-Agent (3b), Toten Code löschen, 5–8; den
+  bestehenden API-Vertrag aus den Java-DTOs/Controllern lesen statt neu festlegen.
+- Kleine Korrekturen innerhalb einer laufenden Aufgabe brauchen keinen neuen Durchlauf.
 
 **Ankündigen:** „Ich nutze den fullstack-parallel-Skill: kurzes Brainstorming, dann bauen Backend- und Frontend-Agent parallel, ich koordiniere und prüfe am Schluss.“
 
@@ -108,8 +117,10 @@ Hinein gehört:
    „Schnelle E2E-Tests“ unten wörtlich in den Prompt übernehmen.
 8. **Grenzen:** nur Dateien unter `react-pc-frontend/` (bzw. `react-zeiterfassung/`),
    `src/main/java` nicht anfassen, **nicht committen**.
-9. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
-   Lint/Build-Status, alle Info-Button-Stellen, offene Punkte.
+9. **Toten Code löschen:** den Abschnitt „Toten Code immer löschen“ unten wörtlich in den
+   Prompt übernehmen.
+10. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
+   Lint/Build-Status, alle Info-Button-Stellen, gelöschter toter Code, offene Punkte.
 
 Ändert sich der Vertrag später (z. B. weil der Backend-Agent eine Abweichung meldet),
 **beiden** laufenden Agenten per `SendMessage` Bescheid geben – nicht neue starten.
@@ -171,6 +182,24 @@ bleibt:
   Schnelle Einzelläufe decken Wettläufe auf, die unter Last verborgen bleiben.
   (PowerShell: `$env:E2E_PORT=<port>; npx playwright test …`)
 
+### Toten Code immer löschen (Nutzervorgabe 31.10.2026, gilt für Backend und Frontend)
+
+Was durch die Änderung niemand mehr benutzt, wird im selben PR gelöscht – nicht
+auskommentiert, nicht „für später“ stehen gelassen, nicht mit `@Deprecated` markiert.
+
+- **Was:** Endpoints, die kein Frontend (PC, Zeiterfassung) und kein anderer Dienst mehr
+  aufruft; Services/Methoden/DTOs/Repository-Abfragen ohne Aufrufer; Komponenten, Hooks,
+  Hilfsfunktionen, Typen, CSS-Klassen und Konstanten ohne Verwendung; doppelt gepflegte
+  Listen, die durch eine gemeinsame Quelle ersetzt wurden; Tests, die nur toten Code prüfen.
+- **Wie prüfen:** vor dem Löschen greppen – Backend über `src/main/java` und `src/test/java`,
+  Frontend über `react-pc-frontend/src`, `react-zeiterfassung/src` und `e2e/`; bei
+  Endpoints zusätzlich nach dem Pfad suchen (auch Skripte, `deployment/`, `MobileApiPolicy`,
+  `LocalRagService.ROUTE_TO_FILE_KEYWORDS`). Bei breiter Wirkung `scripts/graphify affected "X"`.
+- **Grenze:** nur, was durch die eigene Änderung tot wurde oder im angefassten Bereich
+  offensichtlich tot ist. Größere Aufräumaktionen in fremdem Bestand dem Nutzer vorschlagen.
+- **Im Bericht/PR nennen**, was gelöscht wurde, damit der Reviewer es gegenprüfen kann.
+- **In beide Briefings** (3a und 3b) diesen Abschnitt wörtlich übernehmen.
+
 ## 4. Währenddessen: koordinieren, nicht selbst bauen
 
 Du schreibst keinen Backend- oder Frontend-Code, solange die Agenten laufen – sonst
@@ -196,6 +225,8 @@ Wenn beide Berichte da sind:
 - Gegenprobe Info-Buttons: Sind alle geplanten Stellen da, und stimmen die Texte noch
   mit dem Verhalten überein, das der Backend-Agent berichtet (Details ändern sich beim
   Bauen oft)? Abweichungen per `SendMessage` an den Frontend-Agenten.
+- Gegenprobe toter Code: Endpoints und Bausteine, die das neue Frontend nicht mehr nutzt,
+  greppen und vom zuständigen Agenten löschen lassen (siehe „Toten Code immer löschen“).
 - Beide Seiten selbst einmal laufen lassen: `./mvnw -q compile` + Backend-Tests,
   Frontend `lint`, `test -- --run`, `build`.
 - Rote Tests, die nichts mit der Änderung zu tun haben: mehrfach einzeln laufen lassen,
@@ -229,7 +260,38 @@ selbst korrigieren.
      nicht still ignorieren, sondern im Thread begründen und dem Nutzer vorlegen.
    - **Merge-Konflikt:** Branch mit `origin/main` zusammenführen (im App-Worktree über
      `mcp__ccd_host__sync_with_base_branch`), Konflikte lösen, bei Asset-Konflikten neu bauen.
-3. **Nach dem Merge:** Issue-Status prüfen (`review-and-ship` Phase 4d), Worktree aufräumen.
+3. **Nach dem Merge:** Issue-Status prüfen (`review-and-ship` Phase 4d), dann aufräumen
+   (siehe „Aufräumen“).
+
+## 8. Aufräumen (Nutzervorgabe 31.10.2026, immer)
+
+Nichts bleibt liegen, was die Aufgabe angelegt oder gestartet hat:
+
+- **Server und Prozesse:** selbst gestartete Dev-Server, `vite preview`, Backends
+  (`spring-boot:run`, Prod-Kopie-Backend) und Hintergrund-Testläufe beenden, sobald sie
+  nicht mehr gebraucht werden – spätestens vor dem Abschlussbericht. Gezielt über die
+  eigene Prozess- bzw. Server-ID (`preview_stop`, Hintergrund-Task stoppen), nie breit per
+  `pkill -f`, sonst trifft es parallele Sessions.
+- **Container und Images:** selbst angelegte Wegwerf-Container (z. B. `postgres:16` für
+  `DatenbankKompatibilitaet*Test`) stoppen und löschen (`docker rm -f <name>`), dazu
+  ungenutzte, selbst gezogene Images/Volumes, wenn sie nur für diese Aufgabe da waren.
+  **Wenn es Sinn macht** heißt: Dauer-Container wie `erp-dev-pg` oder die Prod-Kopie
+  (`erp-prodkopie-db`, eigenes Lösch-Kommando `prodkopie-starten.sh --loeschen`) bleiben,
+  solange der Nutzer sie weiter braucht – im Zweifel im Abschluss nennen statt löschen.
+  Erzeugte PDFs unter `uploads/` des Worktrees vor dem Entfernen löschen.
+- **Issues schließen oder kommentieren:** Der PR-Text verlinkt jedes bearbeitete Issue mit
+  `Closes #<nr>` (auch teilweise erledigte, Restpunkte unter `## Offene Restpunkte`) oder
+  sagt `Kein Issue` – ohne das mergt die PR-Automatik nicht. Nach dem Merge jedes Issue mit
+  `gh issue view <nr> --json state` nachprüfen und notfalls selbst schließen bzw. die
+  Restpunkte kommentieren (`review-and-ship` Phase 4d).
+- **Branches nach dem Merge immer löschen:** Remote-Branch (`git push origin --delete <branch>`,
+  falls GitHub ihn nicht schon automatisch gelöscht hat) und lokalen Branch
+  (`git branch -D <branch>`, nach Squash-Merge ist `-d` wirkungslos). Vorher prüfen, dass
+  der PR wirklich gemergt ist (`gh pr view <nr> --json state` = `MERGED`) und kein anderer
+  offener PR auf dem Branch aufbaut (gestapelte PRs: erst den Folge-PR auf `main` umstellen).
+- **Worktree:** nach dem Merge entfernen (im App-Worktree über die App bzw.
+  `mcp__ccd_host__clean_up_worktrees`, sonst `git worktree remove`).
+- Im Abschlussbericht kurz nennen, was aufgeräumt wurde und was bewusst stehen bleibt.
 
 ## Abschluss an den Nutzer
 

@@ -39,7 +39,7 @@ describe('htmlSanitizer', () => {
                 '<p><strong>Fett</strong> <em>kursiv</em></p>' +
                 '<ul><li>Punkt</li></ul>' +
                 '<table><tbody><tr><td style="color: red;">Zelle</td></tr></tbody></table>' +
-                '<span class="chip" data-preview-placeholder="true">{{Kundenname}}</span>' +
+                '<span data-platzhalter-chip="{{Kundenname}}" data-label="Kundenname">Max Mustermann</span>' +
                 '<div class="email-signature" style="margin-top: 20px;">Max Mustermann</div>';
             expect(sanitizeHtml(html)).toBe(html);
         });
