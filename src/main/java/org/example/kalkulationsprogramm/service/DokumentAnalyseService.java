@@ -61,12 +61,12 @@ import lombok.extern.slf4j.Slf4j;
  * Reihenfolge der Datenextraktion:
  * 1. ZUGFeRD-PDF prüfen (strukturierte Daten eingebettet)
  * 2. XML-Datei prüfen (maschinenlesbar)
- * 3. Fallback: Gemini AI für OCR/Analyse
+ * 3. Fallback: KI-Anbieter aus den Einstellungen für Texterkennung und Analyse
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class GeminiDokumentAnalyseService {
+public class DokumentAnalyseService {
 
     private final ObjectMapper objectMapper;
     private final LieferantenRepository lieferantenRepository;
@@ -94,7 +94,7 @@ public class GeminiDokumentAnalyseService {
     private static final int MAX_RETRIES = 3;
     private static final long INITIAL_RETRY_DELAY_MS = 2000; // 2 seconds, doubles each retry
 
-    /** Ausgabelimit je Gemini-Aufruf; Flash-Modelle erlauben bis 65.536. */
+    /** Ausgabelimit je KI-Aufruf; Gemini-Flash-Modelle erlauben bis 65.536. */
     @Value("${ai.gemini.dokument-analyse.max-output-tokens:65536}")
     private int maxOutputTokens = 65536;
 
@@ -377,7 +377,7 @@ public class GeminiDokumentAnalyseService {
      * Reihenfolge:
      * 1. ZUGFeRD-PDF prüfen
      * 2. XML-Datei prüfen
-     * 3. Fallback: Gemini AI
+     * 3. Fallback: KI-Anbieter aus den Einstellungen
      */
     @Transactional
     public LieferantGeschaeftsdokument analysiereDokument(LieferantDokument dokument) {
@@ -492,7 +492,7 @@ public class GeminiDokumentAnalyseService {
             // KI fragen: Wie viele Dokumente sind in dieser PDF?
             byte[] pdfBytes = Files.readAllBytes(dateiPfad);
             String multiDocPrompt = buildMultiDocumentPrompt();
-            String jsonResponse = rufGeminiApiMitPrompt(pdfBytes, "application/pdf", multiDocPrompt);
+            String jsonResponse = rufKiMitPrompt(pdfBytes, "application/pdf", multiDocPrompt);
 
             if (jsonResponse == null) {
                 // Fallback: Einzelne Analyse
@@ -622,11 +622,11 @@ public class GeminiDokumentAnalyseService {
                 """;
     }
 
-    public String rufGeminiApiMitPrompt(byte[] bytes, String mimeType, String customPrompt) {
-        return rufGeminiApiMitPrompt(bytes, mimeType, customPrompt, false);
+    public String rufKiMitPrompt(byte[] bytes, String mimeType, String customPrompt) {
+        return rufKiMitPrompt(bytes, mimeType, customPrompt, false);
     }
 
-    public String rufGeminiApiMitPrompt(byte[] bytes, String mimeType, String customPrompt, boolean useProModel) {
+    public String rufKiMitPrompt(byte[] bytes, String mimeType, String customPrompt, boolean useProModel) {
         // Ohne eingerichtete KI verlässt das Dokument den Betrieb gar nicht erst.
         if (!kiDienst.verfuegbar(KiFunktion.DOKUMENT_ANALYSE)) {
             log.debug("[KI] Keine KI für Dokumente eingerichtet – Multi-Doc-Aufruf übersprungen");
@@ -850,7 +850,7 @@ public class GeminiDokumentAnalyseService {
             byte[] bytes = Files.readAllBytes(dateiPfad);
             String mimeType = getMimeTypeFromFilename(originalFilename);
 
-            String jsonResponse = rufGeminiApi(bytes, mimeType, useProModel);
+            String jsonResponse = rufDokumentAnalyse(bytes, mimeType, useProModel);
             if (jsonResponse == null) {
                 return null;
             }
@@ -1641,7 +1641,7 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
-     * Fallback: Analyse per Gemini AI mit Validierung und Retry bei unvollständigen
+     * Fallback: Analyse per KI mit Validierung und Retry bei unvollständigen
      * Daten. Bei fehlgeschlagener Validierung wird das Dokument trotzdem
      * gespeichert,
      * aber mit manuellePruefungErforderlich=true markiert.
@@ -1690,7 +1690,7 @@ public class GeminiDokumentAnalyseService {
     }
 
     /**
-     * Fallback: Analyse per Gemini AI mit Validierung und Retry bei unvollständigen
+     * Fallback: Analyse per KI mit Validierung und Retry bei unvollständigen
      * Daten. Bei fehlgeschlagener Validierung wird das Dokument trotzdem
      * gespeichert,
      * aber mit manuellePruefungErforderlich=true markiert.
@@ -1716,8 +1716,8 @@ public class GeminiDokumentAnalyseService {
             byte[] bytes = Files.readAllBytes(dateiPfad);
             // mimeType ist bereits übergeben
 
-            // Erster Versuch mit Standard-Model (Retry-Logik ist in rufGeminiApi eingebaut)
-            KiAntwort ersteAntwort = rufGeminiApiMitStatus(bytes, mimeType, false, false);
+            // Erster Versuch mit Standard-Model (Retry-Logik ist in rufDokumentAnalyse eingebaut)
+            KiAntwort ersteAntwort = rufDokumentAnalyseMitStatus(bytes, mimeType, false, false);
             String jsonResponse = ersteAntwort != null ? ersteAntwort.text() : null;
             // true, sobald die verwendete Antwort ohne Positionen angefordert wurde
             boolean ohnePositionen = false;
@@ -1736,17 +1736,17 @@ public class GeminiDokumentAnalyseService {
             }
 
             // Prüfe ob JSON abgeschnitten wurde (häufig bei vielen Artikelpositionen).
-            // Gemini meldet das selbst (MAX_TOKENS); die Klammerprüfung bleibt als Rückfall.
+            // Der Anbieter meldet das selbst (abgeschnitten); die Klammerprüfung bleibt als Rückfall.
             boolean jsonTruncated = ersteAntwort.abgeschnitten() || isJsonTruncated(jsonResponse);
             if (jsonTruncated) {
                 log.warn(
                         "[KI-Analyse] JSON-Antwort wurde abgeschnitten für Dokument {}. Kopfdaten ohne Positionen, Positionen seitenweise...",
                         docIdForLog);
                 // Retry mit Flag um Artikelpositionen zu überspringen
-                jsonResponse = rufGeminiApi(bytes, mimeType, false, true); // skipArtikelPositionen=true
+                jsonResponse = rufDokumentAnalyse(bytes, mimeType, false, true); // skipArtikelPositionen=true
                 if (jsonResponse == null || isJsonTruncated(jsonResponse)) {
                     log.warn("[KI-Analyse] Auch vereinfachte Anfrage abgeschnitten - versuche Pro-Model...");
-                    jsonResponse = rufGeminiApi(bytes, mimeType, true, true); // Pro-Model + skipArtikelPositionen
+                    jsonResponse = rufDokumentAnalyse(bytes, mimeType, true, true); // Pro-Model + skipArtikelPositionen
                 }
                 ohnePositionen = true;
             }
@@ -1765,17 +1765,17 @@ public class GeminiDokumentAnalyseService {
                 if (isJsonTruncated(jsonResponse)) {
                     log.warn(
                             "[KI-Analyse] JSON nach wie vor abgeschnitten - versuche nochmal mit Pro-Model ohne Artikel...");
-                    jsonResponse = rufGeminiApi(bytes, mimeType, true, true);
+                    jsonResponse = rufDokumentAnalyse(bytes, mimeType, true, true);
                     result = jsonResponse != null ? mapJsonToData(jsonResponse) : null;
                     ohnePositionen = true;
                 } else {
-                    // isJsonTruncated() kann false-negative liefern wenn Gemini bei Token-Limit
+                    // isJsonTruncated() kann false-negative liefern wenn die KI beim Ausgabelimit
                     // eine schließende } anhängt, der JSON-Inhalt aber intern unvollständig ist.
                     // In diesem Fall noch einmal mit Pro-Model versuchen.
                     log.warn(
                             "[KI-Analyse] JSON-Parsing fehlgeschlagen für Dokument {} trotz scheinbar vollständiger Antwort - Pro-Model Fallback...",
                             docIdForLog);
-                    KiAntwort proAntwort = rufGeminiApiMitStatus(bytes, mimeType, true, false);
+                    KiAntwort proAntwort = rufDokumentAnalyseMitStatus(bytes, mimeType, true, false);
                     if (proAntwort != null && !proAntwort.abgeschnitten()) {
                         result = mapJsonToData(proAntwort.text());
                         ohnePositionen = false;
@@ -1812,7 +1812,7 @@ public class GeminiDokumentAnalyseService {
                         docIdForLog, result.getDetectedTyp());
 
                 // Retry mit Pro-Model; eine abgeschnittene Antwort hätte eine halbe Positionsliste
-                KiAntwort proAntwort = rufGeminiApiMitStatus(bytes, mimeType, true, false);
+                KiAntwort proAntwort = rufDokumentAnalyseMitStatus(bytes, mimeType, true, false);
                 jsonResponse = proAntwort != null && !proAntwort.abgeschnitten() ? proAntwort.text() : null;
                 if (jsonResponse != null) {
                     LieferantGeschaeftsdokument retryResult = mapJsonToData(jsonResponse);
@@ -2351,23 +2351,23 @@ public class GeminiDokumentAnalyseService {
         return openBraces != 0 || openBrackets != 0;
     }
 
-    private String rufGeminiApi(byte[] dokumentBytes, String mimeType, boolean useProModel) {
-        return rufGeminiApi(dokumentBytes, mimeType, useProModel, false);
+    private String rufDokumentAnalyse(byte[] dokumentBytes, String mimeType, boolean useProModel) {
+        return rufDokumentAnalyse(dokumentBytes, mimeType, useProModel, false);
     }
 
-    private String rufGeminiApi(byte[] dokumentBytes, String mimeType, boolean useProModel,
+    private String rufDokumentAnalyse(byte[] dokumentBytes, String mimeType, boolean useProModel,
             boolean skipArtikelPositionen) {
-        KiAntwort antwort = rufGeminiApiMitStatus(dokumentBytes, mimeType, useProModel, skipArtikelPositionen);
+        KiAntwort antwort = rufDokumentAnalyseMitStatus(dokumentBytes, mimeType, useProModel, skipArtikelPositionen);
         return antwort != null ? antwort.text() : null;
     }
 
-    private KiAntwort rufGeminiApiMitStatus(byte[] dokumentBytes, String mimeType, boolean useProModel,
+    private KiAntwort rufDokumentAnalyseMitStatus(byte[] dokumentBytes, String mimeType, boolean useProModel,
             boolean skipArtikelPositionen) {
         // Bei skipArtikelPositionen: Kürzere Anfrage um Tokenlimit zu vermeiden
         String userText = skipArtikelPositionen
                 ? "Analysiere dieses Dokument. WICHTIG: Gib artikelPositionen als leeres Array [] zurück um die Antwort kurz zu halten."
                 : "Analysiere dieses Dokument.";
-        return rufGemini(dokumentBytes, mimeType, SYSTEM_PROMPT_DOKUMENT_ANALYSE, userText, useProModel);
+        return rufKi(dokumentBytes, mimeType, SYSTEM_PROMPT_DOKUMENT_ANALYSE, userText, useProModel);
     }
 
     /**
@@ -2375,7 +2375,7 @@ public class GeminiDokumentAnalyseService {
      * Prompt kommt als System-Anweisung, das Standardmodell liest.
      */
     private KiAntwort rufNurPositionen(byte[] dokumentBytes, String mimeType, String prompt) {
-        return rufGemini(dokumentBytes, mimeType, prompt, "Lies alle Positionen dieses Dokuments aus.", false);
+        return rufKi(dokumentBytes, mimeType, prompt, "Lies alle Positionen dieses Dokuments aus.", false);
     }
 
     /**
@@ -2387,7 +2387,7 @@ public class GeminiDokumentAnalyseService {
      * {@value #MAX_RETRIES}-mal mit wachsender Pause wiederholt; der letzte Versuch
      * nimmt die Stufe „Gründlich“.
      */
-    private KiAntwort rufGemini(byte[] dokumentBytes, String mimeType, String systemPrompt, String userText,
+    private KiAntwort rufKi(byte[] dokumentBytes, String mimeType, String systemPrompt, String userText,
             boolean useProModel) {
         if (!kiDienst.verfuegbar(KiFunktion.DOKUMENT_ANALYSE)) {
             log.warn("[KI] Keine KI für das Auslesen von Dokumenten eingerichtet");

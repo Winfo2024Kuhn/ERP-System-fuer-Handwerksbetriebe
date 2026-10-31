@@ -48,7 +48,7 @@ public class LieferantDokumentService {
         private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
         private final EmailAttachmentRepository emailAttachmentRepository;
         @Lazy
-        private final GeminiDokumentAnalyseService geminiService;
+        private final DokumentAnalyseService dokumentAnalyseService;
         @Lazy
         private final BelegZuordnungService belegZuordnungService;
         private final LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
@@ -254,7 +254,7 @@ public class LieferantDokumentService {
                 // SYNCHRONE AI-Analyse durchführen
                 try {
                         log.info("Starte synchrone Analyse für Dokument {}", dokument.getId());
-                        var analyzeResult = geminiService.analyzeFile(targetPath, originalFilename, useProModel);
+                        var analyzeResult = dokumentAnalyseService.analyzeFile(targetPath, originalFilename, useProModel);
 
                         if (analyzeResult != null) {
                                 log.info("Analyse erfolgreich: Typ={}, Nummer={}, Betrag={}",

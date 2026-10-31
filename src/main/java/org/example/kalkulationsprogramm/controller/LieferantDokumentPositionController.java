@@ -6,7 +6,7 @@ import java.util.NoSuchElementException;
 import org.example.kalkulationsprogramm.domain.FrontendUserProfile;
 import org.example.kalkulationsprogramm.dto.Bestellung.DokumentPositionenDto;
 import org.example.kalkulationsprogramm.service.BelegService;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService;
 import org.example.kalkulationsprogramm.service.PositionenNichtLesbarException;
@@ -40,7 +40,7 @@ import lombok.RequiredArgsConstructor;
 public class LieferantDokumentPositionController {
 
     private final LieferantDokumentZuordnungService zuordnungService;
-    private final GeminiDokumentAnalyseService analyseService;
+    private final DokumentAnalyseService analyseService;
     private final BelegService belegService;
     private final LieferantDokumentZugriffService zugriffService;
 

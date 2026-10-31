@@ -53,7 +53,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
-class GeminiDokumentAnalyseServiceTest {
+class DokumentAnalyseServiceTest {
 
     @Mock private ObjectMapper objectMapper;
     @Mock private LieferantenRepository lieferantenRepository;
@@ -66,7 +66,7 @@ class GeminiDokumentAnalyseServiceTest {
     @Mock private org.example.kalkulationsprogramm.repository.LieferantDokumentVerknuepfungSperreRepository sperreRepository;
     @Mock private LieferantDokumentPositionService positionService;
 
-    private GeminiDokumentAnalyseService service;
+    private DokumentAnalyseService service;
 
     /** Ablage der Dateisuche – nie das echte uploads/ im Arbeitsverzeichnis. */
     @org.junit.jupiter.api.io.TempDir
@@ -74,7 +74,7 @@ class GeminiDokumentAnalyseServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GeminiDokumentAnalyseService(
+        service = new DokumentAnalyseService(
                 objectMapper,
                 lieferantenRepository,
                 dokumentRepository,
@@ -110,7 +110,7 @@ class GeminiDokumentAnalyseServiceTest {
             "null, null"
     })
     void typAusKiAntwortBeiKopien(String roh, LieferantDokumentTyp erwartet) {
-        assertThat(GeminiDokumentAnalyseService.typAusKiAntwort(roh)).isEqualTo(erwartet);
+        assertThat(DokumentAnalyseService.typAusKiAntwort(roh)).isEqualTo(erwartet);
     }
 
     @Nested
@@ -981,7 +981,7 @@ class GeminiDokumentAnalyseServiceTest {
         private void invokeVerarbeiteArtikelPositionen(String json, Lieferanten lieferant,
                 LieferantDokumentTyp typ, java.time.LocalDate dokumentDatum, String belegnummer)
                 throws Exception {
-            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+            Method method = DokumentAnalyseService.class.getDeclaredMethod(
                     "verarbeiteArtikelPositionen", tools.jackson.databind.JsonNode.class,
                     Lieferanten.class, LieferantDokumentTyp.class, java.time.LocalDate.class,
                     String.class);
@@ -1006,7 +1006,7 @@ class GeminiDokumentAnalyseServiceTest {
      *
      * <p>Dafuer laeuft hier der komplette Weg: {@code analysiereDokument()} ->
      * ZUGFeRD-Versuch (schlaegt fuer die Test-Dummy-Datei erwartungsgemaess
-     * fehl) -> KI-Fallback -> {@code rufGeminiApi} (mit gemocktem
+     * fehl) -> KI-Fallback -> {@code rufDokumentAnalyse} (mit gemocktem
      * {@code httpClient}) -> {@code mapJsonToData} ->
      * {@code verarbeiteArtikelPositionen} -> {@code eventPublisher.publishEvent}.
      *
@@ -1028,7 +1028,7 @@ class GeminiDokumentAnalyseServiceTest {
         private static final String DATEINAME_MIT_NAMEN =
                 "0b1c2d3e-4f50-4617-8899-aabbccddeeff_" + ORIGINALNAME_MIT_NAMEN;
 
-        private GeminiDokumentAnalyseService serviceMitEchtemMapper;
+        private DokumentAnalyseService serviceMitEchtemMapper;
         private HttpClient httpClientMock;
         private Path tempUploadRoot;
 
@@ -1047,7 +1047,7 @@ class GeminiDokumentAnalyseServiceTest {
         }
 
         /** Service mit echtem Mapper, gemocktem {@code httpClient} und der übergebenen Dateisuche. */
-        private GeminiDokumentAnalyseService baueService(LieferantDokumentDateiService dateiService)
+        private DokumentAnalyseService baueService(LieferantDokumentDateiService dateiService)
                 throws Exception {
             // Echte KI-Kette (Zuordnung -> Gemini-Anbieter), nur das HTTP ist gemockt.
             httpClientMock = mock(HttpClient.class);
@@ -1056,7 +1056,7 @@ class GeminiDokumentAnalyseServiceTest {
             ReflectionTestUtils.setField(gemini, "httpClient", httpClientMock);
             KiDienst echterKiDienst = new KiDienst(List.of(gemini), new KiEinstellungen(systemSettingsService,
                     mock(MailSecretService.class), mock(org.springframework.core.env.Environment.class)));
-            GeminiDokumentAnalyseService neu = new GeminiDokumentAnalyseService(
+            DokumentAnalyseService neu = new DokumentAnalyseService(
                     JsonMapper.builderWithJackson2Defaults().build(),
                     lieferantenRepository,
                     dokumentRepository,
@@ -1469,7 +1469,7 @@ class GeminiDokumentAnalyseServiceTest {
             when(dokumentRepository.findById(611L)).thenReturn(Optional.of(ausserhalb));
 
             List<String> log = new java.util.ArrayList<>();
-            for (Class<?> quelle : List.of(GeminiDokumentAnalyseService.class, LieferantDokumentDateiService.class)) {
+            for (Class<?> quelle : List.of(DokumentAnalyseService.class, LieferantDokumentDateiService.class)) {
                 log.addAll(LogMitschnitt.von(quelle, () -> {
                     assertThat(serviceMitEchtemMapper.analysiereDokument(fehlt)).isNull();
                     assertThat(serviceMitEchtemMapper.analysiereDokument(ausserhalb)).isNull();
@@ -1525,7 +1525,7 @@ class GeminiDokumentAnalyseServiceTest {
             List<String> log = mitLog(() -> {
                 assertThat(rufePrivat("mapJsonToData", text, abgeschnitten)).isNull();
                 assertThat(rufePrivat("parseJsonToAnalyzeResponse", text, abgeschnitten)).isNull();
-                assertThat(serviceMitEchtemMapper.rufGeminiApiMitPrompt(
+                assertThat(serviceMitEchtemMapper.rufKiMitPrompt(
                         new byte[] {1, 2, 3}, "application/pdf", "Wie viele Dokumente?")).isNull();
             });
 
@@ -1543,13 +1543,13 @@ class GeminiDokumentAnalyseServiceTest {
         }
 
         @Test
-        @org.junit.jupiter.api.DisplayName("Gemini-Fehler mit Wiederholung: Log nennt nur Fehlerart, Schluessel im Header")
-        void geminiWiederholungOhneInhaltImLog() throws Exception {
+        @org.junit.jupiter.api.DisplayName("KI-Fehler mit Wiederholung: Log nennt nur Fehlerart, Schluessel im Header")
+        void kiWiederholungOhneInhaltImLog() throws Exception {
             when(systemSettingsService.getGeminiApiKey()).thenReturn("dummy-test-key");
             when(httpClientMock.<String>send(any(HttpRequest.class), any()))
                     .thenThrow(new IllegalStateException("Antwort nicht lesbar: Max_Mustermann"));
 
-            List<String> log = mitLog(() -> assertThat(rufePrivat("rufGeminiApi",
+            List<String> log = mitLog(() -> assertThat(rufePrivat("rufDokumentAnalyse",
                     new Class<?>[] {byte[].class, String.class, boolean.class},
                     new byte[] {1, 2, 3}, "application/pdf", false)).isNull());
 
@@ -1566,7 +1566,7 @@ class GeminiDokumentAnalyseServiceTest {
         /** Ruft eine private Methode des Service auf; Fehler kommen ohne Reflection-Hülle heraus. */
         private Object rufePrivat(String methode, Class<?>[] parameterTypen, Object... argumente) {
             try {
-                Method privat = GeminiDokumentAnalyseService.class.getDeclaredMethod(methode, parameterTypen);
+                Method privat = DokumentAnalyseService.class.getDeclaredMethod(methode, parameterTypen);
                 privat.setAccessible(true);
                 return privat.invoke(serviceMitEchtemMapper, argumente);
             } catch (java.lang.reflect.InvocationTargetException e) {
@@ -1579,7 +1579,7 @@ class GeminiDokumentAnalyseServiceTest {
         /** Fehler der privaten Datei-Prüfung (Temp-Dateien erlaubt), ohne Reflection-Hülle. */
         private Throwable fehlerDerDateiPruefung(Path pfad) {
             return catchThrowable(() -> {
-                Method pruefung = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+                Method pruefung = DokumentAnalyseService.class.getDeclaredMethod(
                         "validiereAnalyseDateiPfad", Path.class, boolean.class);
                 pruefung.setAccessible(true);
                 try {
@@ -1591,7 +1591,7 @@ class GeminiDokumentAnalyseServiceTest {
         }
 
         private List<String> mitLog(Runnable aktion) {
-            return LogMitschnitt.von(GeminiDokumentAnalyseService.class, aktion);
+            return LogMitschnitt.von(DokumentAnalyseService.class, aktion);
         }
 
         @Test
@@ -1599,7 +1599,7 @@ class GeminiDokumentAnalyseServiceTest {
         void ohneSchluesselKeinAufrufAnGemini() {
             when(systemSettingsService.getGeminiApiKey()).thenReturn("");
 
-            String antwort = serviceMitEchtemMapper.rufGeminiApiMitPrompt(
+            String antwort = serviceMitEchtemMapper.rufKiMitPrompt(
                     new byte[] {1, 2, 3}, "application/pdf", "Wie viele Dokumente?");
 
             org.assertj.core.api.Assertions.assertThat(antwort).isNull();
@@ -1710,7 +1710,7 @@ class GeminiDokumentAnalyseServiceTest {
             neu.setDokumentNummer("NEU-1");
             neu.setAusgelesenePositionen(List.of());
 
-            LieferantGeschaeftsdokument result = GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+            LieferantGeschaeftsdokument result = DokumentAnalyseService.bindeAnDokument(dokument, neu);
 
             assertThat(result).isSameAs(vorhanden);
             assertThat(result.getDokumentNummer()).isEqualTo("NEU-1");
@@ -1736,7 +1736,7 @@ class GeminiDokumentAnalyseServiceTest {
             LieferantGeschaeftsdokument neu = new LieferantGeschaeftsdokument();
             neu.setDokumentNummer("RE-2026-0613");
 
-            GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+            DokumentAnalyseService.bindeAnDokument(dokument, neu);
 
             assertThat(vorhanden.getBereitsGezahlt()).isTrue();
             assertThat(vorhanden.getBezahlt()).isTrue();
@@ -1756,7 +1756,7 @@ class GeminiDokumentAnalyseServiceTest {
             LieferantGeschaeftsdokument neu = new LieferantGeschaeftsdokument();
             neu.setBereitsGezahlt(true);
 
-            GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+            DokumentAnalyseService.bindeAnDokument(dokument, neu);
 
             assertThat(vorhanden.getBereitsGezahlt()).isTrue();
         }
@@ -1776,7 +1776,7 @@ class GeminiDokumentAnalyseServiceTest {
             neu.setAiRawJson("{kaputt");
             neu.setAusgelesenePositionen(List.of());
 
-            LieferantGeschaeftsdokument result = GeminiDokumentAnalyseService.bindeAnDokument(dokument, neu);
+            LieferantGeschaeftsdokument result = DokumentAnalyseService.bindeAnDokument(dokument, neu);
 
             assertThat(result).isSameAs(vorhanden);
             assertThat(result.getDatenquelle()).isEqualTo("AI");
@@ -2067,13 +2067,13 @@ class GeminiDokumentAnalyseServiceTest {
             anders.setDokument(lieferschein);
             LieferantGeschaeftsdokument ohneDokument = new LieferantGeschaeftsdokument();
 
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), gleich)).isTrue();
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isFalse();
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), ohneDokument)).isTrue();
+            assertThat(DokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), gleich)).isTrue();
+            assertThat(DokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isFalse();
+            assertThat(DokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), ohneDokument)).isTrue();
             rechnung.setTyp(LieferantDokumentTyp.SONSTIG);
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isTrue();
+            assertThat(DokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isTrue();
             rechnung.setTyp(null);
-            assertThat(GeminiDokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isTrue();
+            assertThat(DokumentAnalyseService.gleicherBelegTyp(rechnung.getTyp(), anders)).isTrue();
         }
 
         private HttpResponse<String> antwort(String text, String finishReason) throws Exception {
@@ -2356,7 +2356,7 @@ class GeminiDokumentAnalyseServiceTest {
     // --- Helper methods to invoke private methods via reflection ---
 
     private boolean invokeIsJsonTruncated(String json) throws Exception {
-        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+        Method method = DokumentAnalyseService.class.getDeclaredMethod(
                 "isJsonTruncated", String.class);
         method.setAccessible(true);
         return (boolean) method.invoke(service, json);
@@ -2364,7 +2364,7 @@ class GeminiDokumentAnalyseServiceTest {
 
     private LieferantGeschaeftsdokument invokeZugferdExtraktion(Path dateiPfad, String dateiname,
             LieferantDokument dokument) throws Exception {
-        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+        Method method = DokumentAnalyseService.class.getDeclaredMethod(
                 "versucheZugferdExtraktion", Path.class, String.class, LieferantDokument.class);
         method.setAccessible(true);
         return (LieferantGeschaeftsdokument) method.invoke(service, dateiPfad, dateiname, dokument);
@@ -2372,7 +2372,7 @@ class GeminiDokumentAnalyseServiceTest {
 
     private LieferantGeschaeftsdokument invokeXmlExtraktion(Path dateiPfad,
             LieferantDokument dokument) throws Exception {
-        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+        Method method = DokumentAnalyseService.class.getDeclaredMethod(
             "versucheXmlExtraktion", String.class, LieferantDokument.class);
         method.setAccessible(true);
         return (LieferantGeschaeftsdokument) method.invoke(service, Files.readString(dateiPfad), dokument);
@@ -2380,14 +2380,14 @@ class GeminiDokumentAnalyseServiceTest {
 
         private org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse invokeParseJsonToAnalyzeResponse(
             String json) throws Exception {
-        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+        Method method = DokumentAnalyseService.class.getDeclaredMethod(
             "parseJsonToAnalyzeResponse", String.class);
         method.setAccessible(true);
         return (org.example.kalkulationsprogramm.dto.LieferantDokumentDto.AnalyzeResponse) method.invoke(service, json);
         }
 
         private LieferantGeschaeftsdokument invokeMapJsonToData(String json) throws Exception {
-        Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+        Method method = DokumentAnalyseService.class.getDeclaredMethod(
             "mapJsonToData", String.class);
         method.setAccessible(true);
         return (LieferantGeschaeftsdokument) method.invoke(service, json);
@@ -2401,7 +2401,7 @@ class GeminiDokumentAnalyseServiceTest {
     class WerkstoffzeugnisValidierung {
 
         private boolean validiere(LieferantGeschaeftsdokument gd, LieferantDokumentTyp typ) throws Exception {
-            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod(
+            Method method = DokumentAnalyseService.class.getDeclaredMethod(
                     "validiereGeschaeftsdaten", LieferantGeschaeftsdokument.class, LieferantDokumentTyp.class);
             method.setAccessible(true);
             return (boolean) method.invoke(service, gd, typ);
@@ -2437,7 +2437,7 @@ class GeminiDokumentAnalyseServiceTest {
     class ProModelNachversuch {
 
         private boolean hatEigenesProModel() throws Exception {
-            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod("hatEigenesProModel");
+            Method method = DokumentAnalyseService.class.getDeclaredMethod("hatEigenesProModel");
             method.setAccessible(true);
             return (boolean) method.invoke(service);
         }
@@ -2471,7 +2471,7 @@ class GeminiDokumentAnalyseServiceTest {
     class SonstigesIstKeinLesefehler {
 
         private boolean istKeinGeschaeftsdokument(String json) throws Exception {
-            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod("istKeinGeschaeftsdokument",
+            Method method = DokumentAnalyseService.class.getDeclaredMethod("istKeinGeschaeftsdokument",
                     tools.jackson.databind.JsonNode.class);
             method.setAccessible(true);
             return (boolean) method.invoke(null, JsonMapper.builderWithJackson2Defaults().build().readTree(json));
@@ -2497,7 +2497,7 @@ class GeminiDokumentAnalyseServiceTest {
 
         @Test
         void sonstigesErgebnisBrauchtKeinePruefung() throws Exception {
-            Method method = GeminiDokumentAnalyseService.class.getDeclaredMethod("sonstigesErgebnis", String.class);
+            Method method = DokumentAnalyseService.class.getDeclaredMethod("sonstigesErgebnis", String.class);
             method.setAccessible(true);
             String json = "{\"dokumentTyp\": \"SONSTIG\"}";
 

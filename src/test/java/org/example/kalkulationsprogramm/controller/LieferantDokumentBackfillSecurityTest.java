@@ -15,7 +15,7 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -49,7 +49,7 @@ class LieferantDokumentBackfillSecurityTest {
     private MockMvc mockMvc;
 
     @MockitoBean
-    private GeminiDokumentAnalyseService analyseService;
+    private DokumentAnalyseService analyseService;
     @MockitoBean
     private LieferantDokumentRepository dokumentRepository;
     @MockitoBean

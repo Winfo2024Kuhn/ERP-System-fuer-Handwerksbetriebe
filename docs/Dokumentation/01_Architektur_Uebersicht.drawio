@@ -107,7 +107,7 @@
         <mxCell id="svc-4" value="&lt;b&gt;Zeiterfassung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;ZeiterfassungApiService&lt;br&gt;ZeitkontoService&lt;br&gt;MonatsSaldoService&lt;br&gt;ZeitbuchungAuditService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="740" y="505" width="200" height="85" as="geometry"/>
         </mxCell>
-        <mxCell id="svc-5" value="&lt;b&gt;KI &amp; Dokumente&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;GeminiDokumentAnalyseService&lt;br&gt;GeminiScannerService&lt;br&gt;ZugferdExtractorService&lt;br&gt;PdfAiExtractorService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="svc-5" value="&lt;b&gt;KI &amp; Dokumente&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;DokumentAnalyseService&lt;br&gt;ScanDateinameService&lt;br&gt;ZugferdExtractorService&lt;br&gt;PdfAiExtractorService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="955" y="505" width="210" height="85" as="geometry"/>
         </mxCell>
         <mxCell id="svc-6" value="&lt;b&gt;PDF-Generierung&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;BestellungPdfService&lt;br&gt;StuecklistePdfService&lt;br&gt;ProjektAuswertungPdfService&lt;br&gt;MietabrechnungPdfService&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=11;" vertex="1" parent="1">

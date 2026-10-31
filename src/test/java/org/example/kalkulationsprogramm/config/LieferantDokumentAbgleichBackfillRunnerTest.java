@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,7 +24,7 @@ class LieferantDokumentAbgleichBackfillRunnerTest {
 
     private static final String VERSION = String.valueOf(LieferantDokumentAbgleichBackfillRunner.ABGLEICH_VERSION);
 
-    @Mock private GeminiDokumentAnalyseService analyseService;
+    @Mock private DokumentAnalyseService analyseService;
     @Mock private SystemSettingsService einstellungen;
 
     private LieferantDokumentAbgleichBackfillRunner runner() {

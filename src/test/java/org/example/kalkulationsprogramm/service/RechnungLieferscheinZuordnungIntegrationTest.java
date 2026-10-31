@@ -50,7 +50,7 @@ import jakarta.persistence.EntityManager;
  * gemockt. Alle Nummern sind erfunden, der Lieferant ist ein Dummy.
  */
 @DataJpaTest
-@Import({ GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, RechnungsVorschlagService.class, KettenVorschlagService.class,
+@Import({ DokumentAnalyseService.class, LieferantDokumentAbgleich.class, RechnungsVorschlagService.class, KettenVorschlagService.class,
         BelegZuordnungService.class, BelegKiAnalyseService.class, SystemSettingsService.class,
         BestellungsUebersichtController.class, BestellungsUebersichtService.class,
         LieferantDokumentPositionService.class, LieferantDokumentPositionLeser.class,
@@ -74,7 +74,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
         }
     }
 
-    @Autowired private GeminiDokumentAnalyseService analyseService;
+    @Autowired private DokumentAnalyseService analyseService;
     @Autowired private RechnungsVorschlagService vorschlagService;
     @Autowired private BelegKiAnalyseService belegKiAnalyseService;
     @Autowired private SystemSettingsService systemSettingsService;
@@ -87,7 +87,7 @@ class RechnungLieferscheinZuordnungIntegrationTest {
     @Autowired private EntityManager entityManager;
 
     // Externes: KI-Aufruf (über Spy) und Dienste ohne Bezug zur Zuordnung
-    @MockitoSpyBean private GeminiDokumentAnalyseService analyseSpy;
+    @MockitoSpyBean private DokumentAnalyseService analyseSpy;
     @MockitoBean private ZugferdExtractorService zugferdExtractorService;
     @MockitoBean private org.example.kalkulationsprogramm.service.ki.KiDienst kiDienst;
     @MockitoBean private BelegKiKostenkontoService kostenkontoService;

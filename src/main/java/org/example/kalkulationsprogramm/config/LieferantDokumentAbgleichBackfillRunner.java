@@ -1,6 +1,6 @@
 package org.example.kalkulationsprogramm.config;
 
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.SystemSettingsService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -36,11 +36,11 @@ public class LieferantDokumentAbgleichBackfillRunner {
     public static final int ABGLEICH_VERSION = 2;
     static final String EINSTELLUNG = "lieferant.abgleich.version";
 
-    private final GeminiDokumentAnalyseService analyseService;
+    private final DokumentAnalyseService analyseService;
     private final SystemSettingsService einstellungen;
     private final TaskExecutor taskExecutor;
 
-    public LieferantDokumentAbgleichBackfillRunner(GeminiDokumentAnalyseService analyseService,
+    public LieferantDokumentAbgleichBackfillRunner(DokumentAnalyseService analyseService,
             SystemSettingsService einstellungen, @Qualifier("taskExecutor") TaskExecutor taskExecutor) {
         this.analyseService = analyseService;
         this.einstellungen = einstellungen;

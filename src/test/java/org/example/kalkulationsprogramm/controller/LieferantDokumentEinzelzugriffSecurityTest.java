@@ -38,7 +38,7 @@ import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRe
 import org.example.kalkulationsprogramm.service.BelegService;
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
@@ -90,7 +90,7 @@ class LieferantDokumentEinzelzugriffSecurityTest {
     @MockitoBean
     private BelegService belegService;
     @MockitoBean
-    private GeminiDokumentAnalyseService analyseService;
+    private DokumentAnalyseService analyseService;
     @MockitoBean
     private LieferantDokumentRepository dokumentRepository;
     @MockitoBean

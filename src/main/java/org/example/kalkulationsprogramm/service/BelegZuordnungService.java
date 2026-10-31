@@ -47,7 +47,7 @@ public class BelegZuordnungService {
     static final Set<LieferantDokumentTyp> SCANNER_TYPEN = Set.of(
             LieferantDokumentTyp.RECHNUNG, LieferantDokumentTyp.GUTSCHRIFT, LieferantDokumentTyp.LIEFERSCHEIN);
 
-    private final GeminiDokumentAnalyseService analyseService;
+    private final DokumentAnalyseService analyseService;
     private final LieferantDokumentRepository lieferantDokumentRepository;
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final BelegRepository belegRepository;
@@ -55,7 +55,7 @@ public class BelegZuordnungService {
     private final TransactionTemplate neueTransaktion;
     private final TaskExecutor taskExecutor;
 
-    public BelegZuordnungService(GeminiDokumentAnalyseService analyseService,
+    public BelegZuordnungService(DokumentAnalyseService analyseService,
             LieferantDokumentRepository lieferantDokumentRepository,
             LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository,
             BelegRepository belegRepository,

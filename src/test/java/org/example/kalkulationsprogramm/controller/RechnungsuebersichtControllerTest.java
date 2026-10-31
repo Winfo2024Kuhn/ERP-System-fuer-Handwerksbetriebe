@@ -2,7 +2,7 @@ package org.example.kalkulationsprogramm.controller;
 
 import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.repository.*;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.junit.jupiter.api.Test;
@@ -22,7 +22,7 @@ class RechnungsuebersichtControllerTest {
     @Mock LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
     @Mock MitarbeiterRepository mitarbeiterRepository;
     @Mock LieferantenRepository lieferantenRepository;
-    @Mock GeminiDokumentAnalyseService geminiService;
+    @Mock DokumentAnalyseService dokumentAnalyseService;
     @Mock LieferantDokumentRepository lieferantDokumentRepository;
     @Mock LieferantDokumentZugriffService zugriffService;
     @org.junit.jupiter.api.io.TempDir java.nio.file.Path uploads;
@@ -42,7 +42,7 @@ class RechnungsuebersichtControllerTest {
                 ablage.resolve("attachments").toString(), ablage.resolve("attachments").resolve("lieferanten").toString());
         return new RechnungsuebersichtController(
                 new org.example.kalkulationsprogramm.service.RechnungsuebersichtService(ausgangsRepository, projektDokumentRepository, uploads.toString()),
-                lieferantGeschaeftsdokumentRepository, mitarbeiterRepository, lieferantenRepository, geminiService,
+                lieferantGeschaeftsdokumentRepository, mitarbeiterRepository, lieferantenRepository, dokumentAnalyseService,
                 lieferantDokumentRepository, zugriffService, dateiService,
                 new org.example.kalkulationsprogramm.service.LieferantDateiablage(ablage.toString()));
     }

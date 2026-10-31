@@ -23,7 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Asynchrone Belegextraktion via GeminiDokumentAnalyseService.
+ * Asynchrone Belegextraktion via DokumentAnalyseService.
  *
  * Wird vom BelegService nach erfolgreichem Upload aufgerufen. Befüllt
  * Geschäftsdaten + KI-Vorschlag-Felder am Beleg. Der Mitarbeiter am Handy
@@ -37,7 +37,7 @@ public class BelegKiAnalyseService {
 
     private final BelegRepository belegRepository;
     private final LieferantenRepository lieferantenRepository;
-    private final GeminiDokumentAnalyseService geminiService;
+    private final DokumentAnalyseService dokumentAnalyseService;
     private final BelegZuordnungService zuordnungService;
     private final BelegKiKostenkontoService kostenkontoService;
     private final BelegSplitService belegSplitService;
@@ -94,7 +94,7 @@ public class BelegKiAnalyseService {
 
         try {
             Path datei = Path.of(uploadPath, "belege", beleg.getGespeicherterDateiname());
-            var ergebnis = geminiService.analyzeFile(datei, beleg.getOriginalDateiname());
+            var ergebnis = dokumentAnalyseService.analyzeFile(datei, beleg.getOriginalDateiname());
 
             if (ergebnis == null) {
                 beleg.setKiAnalyseStatus(BelegKiAnalyseStatus.FAILED);
@@ -236,7 +236,7 @@ public class BelegKiAnalyseService {
     private void extrahiereUndSpeicherePositionen(Beleg beleg, Path datei) throws Exception {
         byte[] bytes = Files.readAllBytes(datei);
         String mimeType = beleg.getMimeType() != null ? beleg.getMimeType() : "application/pdf";
-        String json = geminiService.rufGeminiApiMitPrompt(bytes, mimeType, POSITIONS_PROMPT);
+        String json = dokumentAnalyseService.rufKiMitPrompt(bytes, mimeType, POSITIONS_PROMPT);
         if (json == null || json.isBlank()) {
             log.info("Positions-Extraktion fuer Beleg {} lieferte kein JSON", beleg.getId());
             return;

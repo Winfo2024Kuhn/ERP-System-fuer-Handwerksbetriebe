@@ -39,7 +39,7 @@ public class LieferantDokumentPositionLeser {
     static final int MAX_SEITEN = 60;
 
     /**
-     * Gemeinsame Prompt-Regel (auch in {@code GeminiDokumentAnalyseService}): gedruckte
+     * Gemeinsame Prompt-Regel (auch in {@code DokumentAnalyseService}): gedruckte
      * Positionsnummer und – bei Nebenkosten/Rabatten – die Ware, zu der die Zeile gehört
      * (Issue #242). {@link LieferantDokumentPositionService} löst die Nummern auf.
      */

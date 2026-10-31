@@ -24,7 +24,7 @@ import lombok.extern.slf4j.Slf4j;
  * das Zeugnis über die automatische Verknüpfung an seinen Lieferschein.</p>
  *
  * <p>Ohne eigene Transaktion: jedes Dokument läuft über
- * {@link GeminiDokumentAnalyseService#reanalysiereDokumentById(Long)} in einer
+ * {@link DokumentAnalyseService#reanalysiereDokumentById(Long)} in einer
  * eigenen – ein Fehler bei einem Zeugnis bricht den Lauf nicht ab. Es läuft
  * höchstens ein Lauf gleichzeitig (KI-Kosten, gleiche Dokumente).</p>
  */
@@ -35,7 +35,7 @@ public class WerkstoffzeugnisNachleseService {
 
     private final LieferantDokumentRepository dokumentRepository;
     private final LieferantDokumentPositionRepository positionRepository;
-    private final GeminiDokumentAnalyseService analyseService;
+    private final DokumentAnalyseService analyseService;
 
     private final AtomicBoolean laeuft = new AtomicBoolean(false);
 

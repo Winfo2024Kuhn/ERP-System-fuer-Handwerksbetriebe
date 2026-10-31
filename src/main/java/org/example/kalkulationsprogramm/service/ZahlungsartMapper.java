@@ -7,7 +7,7 @@ import java.util.Set;
 
 /**
  * Bildet einen KI-erkannten Zahlungsart-Code (siehe
- * {@code GeminiDokumentAnalyseService.normalizeZahlungsart}) auf die
+ * {@code DokumentAnalyseService.normalizeZahlungsart}) auf die
  * Stammdaten-Bezeichnung aus der {@code zahlungsart}-Tabelle (V308) ab, und
  * davon weiter auf die buchhalterische {@link BelegKategorie}.
  *
@@ -59,7 +59,7 @@ public final class ZahlungsartMapper {
     );
 
     /**
-     * KI-Code (GeminiDokumentAnalyseService) -&gt; Stammdaten-Bezeichnung aus
+     * KI-Code (DokumentAnalyseService) -&gt; Stammdaten-Bezeichnung aus
      * {@code zahlungsart}. Liefert null, wenn kein eindeutiges Ziel existiert
      * (SONSTIGE, leer, unbekannt). Akzeptiert zusaetzlich die Klartext-
      * Bezeichnungen selbst ("Bar", "Überweisung", ...) und gibt sie

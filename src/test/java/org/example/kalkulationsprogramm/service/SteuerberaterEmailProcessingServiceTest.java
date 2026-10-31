@@ -48,7 +48,7 @@ class SteuerberaterEmailProcessingServiceTest {
     @Mock
     private EmailRepository emailRepository;
     @Mock
-    private GeminiDokumentAnalyseService geminiService;
+    private DokumentAnalyseService dokumentAnalyseService;
     @Spy
     private ObjectMapper objectMapper = JsonMapper.builderWithJackson2Defaults().build();
 
@@ -132,7 +132,7 @@ class SteuerberaterEmailProcessingServiceTest {
                 .thenReturn(false);
         when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(anyLong(), any(), any()))
                 .thenReturn(Optional.empty());
-        when(geminiService.rufGeminiApiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
+        when(dokumentAnalyseService.rufKiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn("""
                         {
                           "dokumentTyp": "LOHNABRECHNUNG",
@@ -182,7 +182,7 @@ class SteuerberaterEmailProcessingServiceTest {
                 .thenReturn(false);
         when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(anyLong(), any(), any()))
                 .thenReturn(Optional.empty());
-        when(geminiService.rufGeminiApiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
+        when(dokumentAnalyseService.rufKiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn("""
                         {
                           "dokumentTyp": "LOHNABRECHNUNG",
@@ -231,7 +231,7 @@ class SteuerberaterEmailProcessingServiceTest {
         when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(1L, 2026, 5))
                 .thenReturn(Optional.of(bestehend));
 
-        when(geminiService.rufGeminiApiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
+        when(dokumentAnalyseService.rufKiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn("""
                         {
                           "dokumentTyp": "LOHNABRECHNUNG",
@@ -266,7 +266,7 @@ class SteuerberaterEmailProcessingServiceTest {
 
         service.processSteuerberaterEmail(email);
 
-        verify(geminiService, never()).rufGeminiApiMitPrompt(any(), anyString(), anyString(), anyBoolean());
+        verify(dokumentAnalyseService, never()).rufKiMitPrompt(any(), anyString(), anyString(), anyBoolean());
         verify(lohnabrechnungRepository, never()).save(any());
     }
 
@@ -282,7 +282,7 @@ class SteuerberaterEmailProcessingServiceTest {
                 .thenReturn(false);
         when(lohnabrechnungRepository.findByMitarbeiterIdAndJahrAndMonat(anyLong(), any(), any()))
                 .thenReturn(Optional.empty());
-        when(geminiService.rufGeminiApiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
+        when(dokumentAnalyseService.rufKiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn("""
                         {
                           "dokumentTyp": "LOHNABRECHNUNG",
@@ -309,7 +309,7 @@ class SteuerberaterEmailProcessingServiceTest {
         mockSteuerberaterErkannt();
         when(lohnabrechnungRepository.existsBySourceEmailIdAndOriginalDateiname(anyLong(), anyString()))
                 .thenReturn(false);
-        when(geminiService.rufGeminiApiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
+        when(dokumentAnalyseService.rufKiMitPrompt(any(), anyString(), anyString(), anyBoolean()))
                 .thenReturn("{\"dokumentTyp\": \"SONSTIGES\", \"abrechnungen\": []}");
 
         service.processSteuerberaterEmail(email);
@@ -329,7 +329,7 @@ class SteuerberaterEmailProcessingServiceTest {
         boolean verarbeitet = service.processSteuerberaterEmail(email);
 
         assertThat(verarbeitet).isFalse();
-        verifyNoInteractions(geminiService);
+        verifyNoInteractions(dokumentAnalyseService);
     }
 
     /**

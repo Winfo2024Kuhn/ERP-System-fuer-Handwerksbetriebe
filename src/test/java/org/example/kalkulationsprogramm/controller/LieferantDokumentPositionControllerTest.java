@@ -25,7 +25,7 @@ import org.example.kalkulationsprogramm.config.FrontendUserDetailsService;
 import org.example.kalkulationsprogramm.config.SecurityConfig;
 import org.example.kalkulationsprogramm.dto.Bestellung.DokumentPositionenDto;
 import org.example.kalkulationsprogramm.service.BelegService;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZuordnungService;
 import org.example.kalkulationsprogramm.domain.LieferantDokumentTyp;
@@ -63,7 +63,7 @@ class LieferantDokumentPositionControllerTest {
     @Autowired private MockMvc mockMvc;
 
     @MockitoBean private LieferantDokumentZuordnungService zuordnungService;
-    @MockitoBean private GeminiDokumentAnalyseService analyseService;
+    @MockitoBean private DokumentAnalyseService analyseService;
     @MockitoBean private BelegService belegService;
     @MockitoBean private LieferantDokumentZugriffService zugriffService;
     @MockitoBean private FrontendUserDetailsService frontendUserDetailsService;

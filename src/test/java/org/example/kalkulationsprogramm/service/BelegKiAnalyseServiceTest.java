@@ -52,7 +52,7 @@ import static org.mockito.Mockito.verify;
  *  - Doppel-Anlegen verhindern (Re-Analyse, Duplikat-Rechnungsnummer)
  *
  * Statt das Gemini-API zu mocken, testen wir den uebergeordneten Flow:
- * geminiService.analyzeFile(...) wird gestubbt und liefert ein AnalyzeResponse.
+ * dokumentAnalyseService.analyzeFile(...) wird gestubbt und liefert ein AnalyzeResponse.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -62,7 +62,7 @@ class BelegKiAnalyseServiceTest {
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private LieferantDokumentRepository lieferantDokumentRepository;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
-    @Mock private GeminiDokumentAnalyseService geminiService;
+    @Mock private DokumentAnalyseService dokumentAnalyseService;
     @Mock private BelegKiKostenkontoService kostenkontoService;
     // Auch das automatische Auslesen aendert Werte am Beleg und wird deshalb
     // protokolliert. Hier gemockt; der Protokoll-Pfad selbst haengt in
@@ -84,7 +84,7 @@ class BelegKiAnalyseServiceTest {
         setField("objectMapper", objectMapper);
         // Echte zentrale Zuordnung mit den Mocks: So prüfen die Tests weiter, was
         // beim Scannen tatsächlich gespeichert wird.
-        setField("zuordnungService", new BelegZuordnungService(geminiService, lieferantDokumentRepository,
+        setField("zuordnungService", new BelegZuordnungService(dokumentAnalyseService, lieferantDokumentRepository,
                 lieferantGeschaeftsdokumentRepository, belegRepository, objectMapper,
                 org.mockito.Mockito.mock(org.springframework.transaction.PlatformTransactionManager.class),
                 Runnable::run));
@@ -103,7 +103,7 @@ class BelegKiAnalyseServiceTest {
         Beleg beleg = beleg(7L, lief);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(analyzeResponseRechnung("RE-2026-001"));
         given(lieferantDokumentRepository.findByBelegId(7L)).willReturn(Optional.empty());
         given(lieferantGeschaeftsdokumentRepository.existsByLieferantIdAndDokumentNummer(
@@ -149,7 +149,7 @@ class BelegKiAnalyseServiceTest {
         Beleg beleg = beleg(7L, lief);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(analyzeResponseTyp(LieferantDokumentTyp.SONSTIG, null));
 
         service.analysiereBelegAsync(7L);
@@ -164,7 +164,7 @@ class BelegKiAnalyseServiceTest {
         Beleg beleg = beleg(7L, null);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(analyzeResponseRechnung("RE-X"));
         given(lieferantenRepository.findByLieferantennameIgnoreCase(anyString()))
                 .willReturn(Optional.empty());
@@ -183,7 +183,7 @@ class BelegKiAnalyseServiceTest {
         Beleg beleg = beleg(7L, lief);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(analyzeResponseRechnung("RE-1"));
         given(lieferantDokumentRepository.findByBelegId(7L))
                 .willReturn(Optional.of(new LieferantDokument()));
@@ -201,7 +201,7 @@ class BelegKiAnalyseServiceTest {
         Beleg beleg = beleg(7L, lief);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(analyzeResponseRechnung("RE-DUPL"));
         given(lieferantDokumentRepository.findByBelegId(7L)).willReturn(Optional.empty());
         given(lieferantGeschaeftsdokumentRepository.existsByLieferantIdAndDokumentNummer(
@@ -219,7 +219,7 @@ class BelegKiAnalyseServiceTest {
         Beleg beleg = beleg(7L, null);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(LieferantDokumentDto.AnalyzeResponse.builder()
                         .dokumentTyp(LieferantDokumentTyp.SONSTIG)
                         .lieferantName("Q1 Energie AG")
@@ -240,7 +240,7 @@ class BelegKiAnalyseServiceTest {
         Beleg beleg = beleg(7L, null);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(LieferantDokumentDto.AnalyzeResponse.builder()
                         .dokumentTyp(LieferantDokumentTyp.SONSTIG)
                         .lieferantName("aral tankstelle")
@@ -286,7 +286,7 @@ class BelegKiAnalyseServiceTest {
         beleg.setBelegKategorie(BelegKategorie.BANK);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(LieferantDokumentDto.AnalyzeResponse.builder()
                         .dokumentTyp(LieferantDokumentTyp.SONSTIG)
                         .zahlungsart("KREDITKARTE")
@@ -304,7 +304,7 @@ class BelegKiAnalyseServiceTest {
         assertThat(beleg.getBelegKategorie()).isEqualTo(BelegKategorie.UNZUGEORDNET);
 
         given(belegRepository.findById(7L)).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString()))
+        given(dokumentAnalyseService.analyzeFile(any(), anyString()))
                 .willReturn(LieferantDokumentDto.AnalyzeResponse.builder()
                         .dokumentTyp(LieferantDokumentTyp.SONSTIG)
                         .zahlungsart("KREDITKARTE")
@@ -434,7 +434,7 @@ class BelegKiAnalyseServiceTest {
 
     private void analysiere(Beleg beleg, LieferantDokumentDto.AnalyzeResponse ergebnis) {
         given(belegRepository.findById(beleg.getId())).willReturn(Optional.of(beleg));
-        given(geminiService.analyzeFile(any(), anyString())).willReturn(ergebnis);
+        given(dokumentAnalyseService.analyzeFile(any(), anyString())).willReturn(ergebnis);
         service.analysiereBelegAsync(beleg.getId());
         assertThat(beleg.getKiAnalyseStatus()).isEqualTo(BelegKiAnalyseStatus.DONE);
     }

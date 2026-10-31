@@ -26,7 +26,7 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
@@ -62,7 +62,7 @@ public class LieferantDokumentController {
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     private final LieferantDokumentService dokumentService;
     private final LieferantDokumentZugriffService zugriffService;
-    private final GeminiDokumentAnalyseService analyseService;
+    private final DokumentAnalyseService analyseService;
     private final EmailRepository emailRepository;
     private final EmailAttachmentProcessingService emailAttachmentProcessingService;
     private final org.example.kalkulationsprogramm.repository.EmailAttachmentRepository emailAttachmentRepository;

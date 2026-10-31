@@ -124,7 +124,7 @@ class LieferantDokumentRechteSecurityTest {
     @MockitoBean
     private org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     @MockitoBean
-    private org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;
+    private org.example.kalkulationsprogramm.service.DokumentAnalyseService dokumentAnalyseService;
     @MockitoBean
     private org.example.kalkulationsprogramm.service.BelegZuordnungService belegZuordnungService;
     @MockitoBean

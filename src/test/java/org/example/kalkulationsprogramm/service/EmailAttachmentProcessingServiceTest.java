@@ -36,7 +36,7 @@ class EmailAttachmentProcessingServiceTest {
     @Mock private LieferantDokumentRepository lieferantDokumentRepository;
     @Mock private LieferantenRepository lieferantenRepository;
     @Mock private LieferantGeschaeftsdokumentRepository lieferantGeschaeftsdokumentRepository;
-    @Mock private GeminiDokumentAnalyseService geminiAnalyseService;
+    @Mock private DokumentAnalyseService dokumentAnalyseService;
     @Mock private LieferantStandardKostenstelleAutoAssigner standardKostenstelleAutoAssigner;
     @Mock private LieferantVorauskasseAutoAssigner vorauskasseAutoAssigner;
     @Mock private BelegZuordnungService belegZuordnungService;
@@ -51,7 +51,7 @@ class EmailAttachmentProcessingServiceTest {
     void setUp() {
         service = new EmailAttachmentProcessingService(
                 emailRepository, emailAttachmentRepository, lieferantDokumentRepository,
-                lieferantenRepository, lieferantGeschaeftsdokumentRepository, geminiAnalyseService,
+                lieferantenRepository, lieferantGeschaeftsdokumentRepository, dokumentAnalyseService,
                 standardKostenstelleAutoAssigner, vorauskasseAutoAssigner, belegZuordnungService,
                 positionService);
         ReflectionTestUtils.setField(service, "attachmentDir", tempDir.toString());
@@ -108,7 +108,7 @@ class EmailAttachmentProcessingServiceTest {
         daten.setBetragNetto(netto);
         daten.setBetragBrutto(brutto);
         when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-        when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("beleg.pdf"))).thenReturn(daten);
+        when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("beleg.pdf"))).thenReturn(daten);
         when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
         when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> {
             LieferantDokument gespeichert = inv.getArgument(0);
@@ -144,7 +144,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setDetectedTyp(LieferantDokumentTyp.RECHNUNG);
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung_2025.pdf")))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung_2025.pdf")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
@@ -191,7 +191,7 @@ class EmailAttachmentProcessingServiceTest {
             int result = service.processLieferantAttachments(email);
 
             assertThat(result).isEqualTo(0);
-            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), any());
+            verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(Path.class), any());
             verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
         }
 
@@ -219,7 +219,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setDetectedTyp(LieferantDokumentTyp.RECHNUNG);
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung_2025.pdf")))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung_2025.pdf")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
@@ -254,7 +254,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setDetectedTyp(LieferantDokumentTyp.AUFTRAGSBESTAETIGUNG);
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), anyString()))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), anyString()))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
@@ -284,7 +284,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setDetectedTyp(null); // Kein KI-Typ
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), anyString()))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), anyString()))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
@@ -347,7 +347,7 @@ class EmailAttachmentProcessingServiceTest {
             int result = service.processLieferantAttachments(email);
 
             assertThat(result).isEqualTo(0);
-            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(), any());
+            verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(), any());
         }
 
         @Test
@@ -368,7 +368,7 @@ class EmailAttachmentProcessingServiceTest {
             int result = service.processLieferantAttachments(email);
 
             assertThat(result).isEqualTo(0);
-            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(), any());
+            verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(), any());
         }
     }
 
@@ -395,7 +395,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setDatenquelle("AI");
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung.pdf")))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung.pdf")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
@@ -439,7 +439,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setAusgelesenePositionen(positionen);
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Angebot.pdf")))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Angebot.pdf")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class)))
@@ -497,7 +497,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setDatenquelle("XML");
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung2026-0814.xml")))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung2026-0814.xml")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantGeschaeftsdokumentRepository
@@ -519,8 +519,8 @@ class EmailAttachmentProcessingServiceTest {
             assertThat(saved.getOriginalDateiname()).isEqualTo("ReNr. 2026-0814.pdf");
 
             // Metadaten kommen aus der XML -> nur die XML wurde analysiert, nie die PDF
-            verify(geminiAnalyseService).analyzeAndReturnData(any(Path.class), eq("Rechnung2026-0814.xml"));
-            verify(geminiAnalyseService, never())
+            verify(dokumentAnalyseService).analyzeAndReturnData(any(Path.class), eq("Rechnung2026-0814.xml"));
+            verify(dokumentAnalyseService, never())
                     .analyzeAndReturnData(any(Path.class), eq("ReNr. 2026-0814.pdf"));
 
             // Beide Anhänge sind verarbeitet und mit dem Dokument verknüpft
@@ -555,7 +555,7 @@ class EmailAttachmentProcessingServiceTest {
             geschaeftsdaten.setDatenquelle("XML");
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("invoice.xml")))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("invoice.xml")))
                     .thenReturn(geschaeftsdaten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantGeschaeftsdokumentRepository
@@ -569,7 +569,7 @@ class EmailAttachmentProcessingServiceTest {
             ArgumentCaptor<LieferantDokument> captor = ArgumentCaptor.forClass(LieferantDokument.class);
             verify(lieferantDokumentRepository).saveAndFlush(captor.capture());
             assertThat(captor.getValue().getGespeicherterDateiname()).isEqualTo(pdfAtt.getStoredFilename());
-            verify(geminiAnalyseService, never())
+            verify(dokumentAnalyseService, never())
                     .analyzeAndReturnData(any(Path.class), eq("scan.pdf"));
         }
 
@@ -599,7 +599,7 @@ class EmailAttachmentProcessingServiceTest {
             gd.setDatenquelle("XML");
 
             when(emailRepository.findById(1L)).thenReturn(Optional.of(email));
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung2026-0814.xml")))
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Rechnung2026-0814.xml")))
                     .thenReturn(gd);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantGeschaeftsdokumentRepository
@@ -827,7 +827,7 @@ class EmailAttachmentProcessingServiceTest {
 
             assertThat(service.processLieferantAttachments(email)).isZero();
 
-            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
             verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             assertThat(pdfAtt.getAiProcessed()).isTrue();
             assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
@@ -844,7 +844,7 @@ class EmailAttachmentProcessingServiceTest {
             pdfAtt.setLieferantDokument(fremd);
             LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
             daten.setDokumentNummer("LS-2026-001");
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -879,7 +879,7 @@ class EmailAttachmentProcessingServiceTest {
 
             assertThat(service.processLieferantAttachments(email)).isZero();
 
-            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
             verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             assertThat(pdfAtt.getAiProcessed()).isTrue();
             assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
@@ -898,7 +898,7 @@ class EmailAttachmentProcessingServiceTest {
             when(emailAttachmentRepository.findVerarbeiteteMitGleicherGroesse(10L, 4L, 1L)).thenReturn(List.of(alt));
             LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
             daten.setDokumentNummer("LS-2026-002");
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -916,7 +916,7 @@ class EmailAttachmentProcessingServiceTest {
 
             assertThat(service.processLieferantAttachments(email)).isZero();
 
-            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
             assertThat(pdfAtt.getAiProcessed()).isTrue();
             assertThat(pdfAtt.getLieferantDokument()).isNull();
         }
@@ -933,7 +933,7 @@ class EmailAttachmentProcessingServiceTest {
             when(emailAttachmentRepository.findVerarbeiteteMitGleicherGroesse(10L, 4L, 1L)).thenReturn(List.of(alt));
             LieferantGeschaeftsdokument daten = new LieferantGeschaeftsdokument();
             daten.setDokumentNummer("RE-2026-0870");
-            when(geminiAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
+            when(dokumentAnalyseService.analyzeAndReturnData(any(Path.class), eq("Werkszeugnis.pdf"))).thenReturn(daten);
             when(lieferantenRepository.findById(10L)).thenReturn(Optional.of(lieferant));
             when(lieferantDokumentRepository.saveAndFlush(any(LieferantDokument.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -955,7 +955,7 @@ class EmailAttachmentProcessingServiceTest {
             try {
                 assertThat(service.processLieferantAttachments(email)).isZero();
 
-                verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+                verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
                 verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             } finally {
                 Files.deleteIfExists(aussen);
@@ -974,7 +974,7 @@ class EmailAttachmentProcessingServiceTest {
 
             assertThat(service.processLieferantAttachments(email)).isZero();
 
-            verify(geminiAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
+            verify(dokumentAnalyseService, never()).analyzeAndReturnData(any(Path.class), anyString());
             verify(lieferantDokumentRepository, never()).saveAndFlush(any(LieferantDokument.class));
             assertThat(pdfAtt.getLieferantDokument()).isSameAs(vorhanden);
         }

@@ -15,7 +15,7 @@ import org.example.kalkulationsprogramm.repository.LieferantDokumentRepository;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 import org.example.kalkulationsprogramm.service.DatensatzLockService;
 import org.example.kalkulationsprogramm.service.EmailAttachmentProcessingService;
-import org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService;
+import org.example.kalkulationsprogramm.service.DokumentAnalyseService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentDateiService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentService;
 import org.example.kalkulationsprogramm.service.LieferantDokumentZugriffService;
@@ -76,7 +76,7 @@ class LieferantDokumentControllerTest {
     private LieferantDokumentService dokumentService;
 
     @MockitoBean
-    private GeminiDokumentAnalyseService analyseService;
+    private DokumentAnalyseService analyseService;
 
     @MockitoBean
     private EmailRepository emailRepository;

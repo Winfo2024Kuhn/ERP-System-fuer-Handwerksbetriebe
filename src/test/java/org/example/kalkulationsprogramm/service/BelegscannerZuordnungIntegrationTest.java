@@ -52,7 +52,7 @@ import tools.jackson.databind.ObjectMapper;
 @DataJpaTest
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import({ BelegService.class, BelegKiAnalyseService.class, BelegZuordnungService.class,
-        GeminiDokumentAnalyseService.class, LieferantDokumentAbgleich.class, SystemSettingsService.class,
+        DokumentAnalyseService.class, LieferantDokumentAbgleich.class, SystemSettingsService.class,
         LieferantDokumentPositionService.class, LieferantDokumentPositionLeser.class,
         LieferantDokumentDateiService.class, BelegscannerZuordnungIntegrationTest.Konfiguration.class })
 class BelegscannerZuordnungIntegrationTest {
@@ -82,7 +82,7 @@ class BelegscannerZuordnungIntegrationTest {
     @Autowired private PlatformTransactionManager transactionManager;
 
     // Externes (KI über Spy) und Nachbardienste ohne Bezug zur Zuordnung
-    @MockitoSpyBean private GeminiDokumentAnalyseService analyseSpy;
+    @MockitoSpyBean private DokumentAnalyseService analyseSpy;
     @MockitoBean private ZugferdExtractorService zugferdExtractorService;
     @MockitoBean private org.example.kalkulationsprogramm.service.ki.KiDienst kiDienst;
     @MockitoBean private BelegKiKostenkontoService kostenkontoService;

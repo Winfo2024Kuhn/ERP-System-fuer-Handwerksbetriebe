@@ -36,7 +36,7 @@ import tools.jackson.databind.ObjectMapper;
 @ExtendWith(MockitoExtension.class)
 class BelegZuordnungServiceTest {
 
-    @Mock private GeminiDokumentAnalyseService analyseService;
+    @Mock private DokumentAnalyseService analyseService;
     @Mock private LieferantDokumentRepository dokumentRepository;
     @Mock private LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
     @Mock private BelegRepository belegRepository;

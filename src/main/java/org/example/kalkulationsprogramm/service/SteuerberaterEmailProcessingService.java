@@ -36,7 +36,7 @@ public class SteuerberaterEmailProcessingService {
     private final LohnabrechnungRepository lohnabrechnungRepository;
     private final BwaUploadRepository bwaUploadRepository;
     private final EmailRepository emailRepository;
-    private final GeminiDokumentAnalyseService geminiService;
+    private final DokumentAnalyseService dokumentAnalyseService;
     private final ObjectMapper objectMapper;
 
     /** "1.234" / "12.500" / "1.234.567" -- Punkte als Tausendertrenner. */
@@ -223,7 +223,7 @@ public class SteuerberaterEmailProcessingService {
                 Bei BWA oder SONSTIGES: "abrechnungen" als leeres Array.
                 """;
 
-            String aiResponse = geminiService.rufGeminiApiMitPrompt(fileBytes, "application/pdf", aiPrompt, true);
+            String aiResponse = dokumentAnalyseService.rufKiMitPrompt(fileBytes, "application/pdf", aiPrompt, true);
 
             JsonNode root = parseAiJson(aiResponse);
             String dokumentTyp = root != null && root.has("dokumentTyp")
@@ -566,7 +566,7 @@ public class SteuerberaterEmailProcessingService {
                 }
                 """;
 
-            String aiResponse = geminiService.rufGeminiApiMitPrompt(fileBytes, "application/pdf", aiPrompt, true);
+            String aiResponse = dokumentAnalyseService.rufKiMitPrompt(fileBytes, "application/pdf", aiPrompt, true);
 
             // JSON Parsen
             Integer jahr = null;

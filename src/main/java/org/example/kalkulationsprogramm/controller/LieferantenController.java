@@ -98,7 +98,7 @@ public class LieferantenController {
     private final org.example.kalkulationsprogramm.service.LieferantDateiablage dateiablage;
     private final org.example.kalkulationsprogramm.repository.LieferantDokumentRepository lieferantDokumentRepository;
     private final org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
-    private final org.example.kalkulationsprogramm.service.GeminiDokumentAnalyseService geminiService;
+    private final org.example.kalkulationsprogramm.service.DokumentAnalyseService dokumentAnalyseService;
     private final org.example.kalkulationsprogramm.service.BelegZuordnungService belegZuordnungService;
     private final LieferantNotizRepository notizRepository;
 
@@ -679,7 +679,7 @@ public class LieferantenController {
 
             try {
                 // Multi-Invoice-Analyse durchführen
-                var results = geminiService.analyzeFileForMultipleInvoices(tempPath, originalFilename);
+                var results = dokumentAnalyseService.analyzeFileForMultipleInvoices(tempPath, originalFilename);
 
                 if (results.isEmpty()) {
                     // Fallback: Leere Antwort mit Defaults
