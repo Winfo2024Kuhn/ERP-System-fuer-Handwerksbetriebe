@@ -1,5 +1,9 @@
 package org.example.kalkulationsprogramm.controller;
 
+import org.springframework.web.server.ResponseStatusException;
+
+import org.example.kalkulationsprogramm.domain.PreisQuelle;
+
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -110,7 +114,11 @@ public class ArtikelController {
     @Transactional
     public ResponseEntity<ArtikelResponseDto> erstelle(
             @RequestBody org.example.kalkulationsprogramm.dto.Artikel.ArtikelCreateDto dto) {
-        Artikel erstellt = artikelService.erstelleArtikel(dto);
+        PreisQuelle quelle = dto.getPreisQuelle() == null ? PreisQuelle.MANUELL : dto.getPreisQuelle();
+        if (quelle != PreisQuelle.MANUELL && quelle != PreisQuelle.IDS_SHOP) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Diese Preis-Herkunft kann man beim Anlegen nicht wählen.");
+        }
+        Artikel erstellt = artikelService.erstelleArtikel(dto, quelle);
         return ResponseEntity.ok(toDto(erstellt, null));
     }
 

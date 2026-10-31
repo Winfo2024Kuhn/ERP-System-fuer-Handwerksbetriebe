@@ -156,20 +156,8 @@ export function formatRecipientList(input?: string, singleNameOverride?: string)
     }).join(", ");
 }
 
-/**
- * Maskiert Sonderzeichen in Texten für die sichere Einbettung in HTML (z.B. Zitatköpfe).
- * Verhindert, dass E-Mail-Adressen in spitzen Klammern (<user@example.com>) vom Browser
- * als HTML-Tags interpretiert werden und im Zitat verschwinden.
- */
-export function escapeHtml(text?: string): string {
-    if (!text) return "";
-    return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
+/** Maskiert Sonderzeichen für HTML (z. B. Zitatköpfe) – gemeinsame Funktion aus `htmlSanitizer.ts`. */
+export { escapeHtml } from './htmlSanitizer';
 
 /** Liefert den Domain-Teil einer Adresse in Kleinbuchstaben, sonst einen leeren String. */
 function domainVon(value?: string): string {

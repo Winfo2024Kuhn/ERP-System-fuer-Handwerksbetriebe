@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+    escapeHtml,
     htmlToText,
     htmlZuEinzeiler,
     parseHtmlInert,
@@ -139,6 +140,25 @@ describe('htmlSanitizer', () => {
             expect(htmlZuEinzeiler('')).toBe('');
             expect(htmlZuEinzeiler(null)).toBe('');
             expect(htmlZuEinzeiler(undefined)).toBe('');
+        });
+    });
+
+    describe('escapeHtml', () => {
+        it('macht alle HTML-Sonderzeichen in einem Durchlauf unschädlich', () => {
+            expect(escapeHtml('<script>alert("x")</script> & \'y\'')).toBe('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;');
+            expect(escapeHtml('<img src=x onerror=alert(1)>')).toBe('&lt;img src=x onerror=alert(1)&gt;');
+            expect(escapeHtml('&lt;')).toBe('&amp;lt;');
+        });
+
+        it('liefert für leere Werte einen leeren Text', () => {
+            expect(escapeHtml('')).toBe('');
+            expect(escapeHtml(null)).toBe('');
+            expect(escapeHtml(undefined)).toBe('');
+        });
+
+        it('ist das Gegenstück zu unescapeHtmlEntities', () => {
+            const text = 'Max & Söhne <GmbH> "Muster" \'1\'';
+            expect(unescapeHtmlEntities(escapeHtml(text))).toBe(text);
         });
     });
 

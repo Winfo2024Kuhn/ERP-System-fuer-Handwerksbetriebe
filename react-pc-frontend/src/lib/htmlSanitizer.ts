@@ -99,6 +99,24 @@ export function htmlZuEinzeiler(html?: string | null): string {
     return unescapeHtmlEntities(stripHtmlTags(html, ' ')).replace(/\s+/g, ' ').trim();
 }
 
+const HTML_ESCAPE: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+};
+
+/**
+ * Macht Text sicher für HTML-Inhalt und Attribute (in doppelten Anführungszeichen):
+ * `<script>` wird zu `&lt;script&gt;`. Einmaliger Durchlauf, leer/`null` ergibt `''`.
+ * Die eine gemeinsame Funktion dafür – keine eigenen Kopien in Seiten oder Modulen.
+ */
+export function escapeHtml(text: string | null | undefined): string {
+    if (!text) return '';
+    return text.replace(/[&<>"']/g, (zeichen) => HTML_ESCAPE[zeichen]);
+}
+
 /**
  * Wandelt bekannte HTML-Entitäten in einem einzigen Durchlauf um.
  * Ein Single-Pass-Verfahren schließt doppeltes Entpacken (Double-Unescaping)

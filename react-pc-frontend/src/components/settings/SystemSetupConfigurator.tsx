@@ -1,11 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Brain, Check, Clock, FolderOpen, Mail, Phone, Shield } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Brain, Check, Clock, FolderOpen, Mail, Phone, Shield, ShoppingCart } from 'lucide-react';
 import { EmailSettingsSection } from './sections/EmailSettingsSection';
 import { DateiOrdnerSection } from './sections/DateiOrdnerSection';
 import { KiSettingsSection } from './sections/KiSettingsSection';
 import { ZeiterfassungSection } from './sections/ZeiterfassungSection';
 import { TelefonSettingsSection } from './sections/TelefonSettingsSection';
 import { BerechtigungenSection } from './sections/BerechtigungenSection';
+import { IdsSettingsSection } from './sections/IdsSettingsSection';
+import { useOptionalAuth } from '../../auth/AuthContext';
 
 /**
  * Die System-Einstellungen als Reiter statt als eine endlose Rolle.
@@ -21,12 +23,14 @@ import { BerechtigungenSection } from './sections/BerechtigungenSection';
  * mehr an.</p>
  */
 
-type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung' | 'telefon' | 'berechtigungen';
+type TabId = 'email' | 'dateien' | 'ki' | 'zeiterfassung' | 'telefon' | 'ids' | 'berechtigungen';
 
 interface TabDefinition {
     id: TabId;
     label: string;
     icon: React.ReactNode;
+    /** Nur für Administratoren sichtbar (zusätzlich zur Sperre der ganzen Seite). */
+    nurAdmin?: boolean;
 }
 
 const TABS: TabDefinition[] = [
@@ -35,14 +39,15 @@ const TABS: TabDefinition[] = [
     { id: 'ki', label: 'KI-Funktionen', icon: <Brain className="w-4 h-4" /> },
     { id: 'zeiterfassung', label: 'Zeiterfassung', icon: <Clock className="w-4 h-4" /> },
     { id: 'telefon', label: 'Telefon', icon: <Phone className="w-4 h-4" /> },
+    { id: 'ids', label: 'Lieferanten-Shops', icon: <ShoppingCart className="w-4 h-4" />, nurAdmin: true },
     { id: 'berechtigungen', label: 'Abteilungen & Rechte', icon: <Shield className="w-4 h-4" /> },
 ];
 
 /** Welche Bereiche sind fertig eingerichtet — für die Häkchen an den Reitern. */
 type SetupStatus = Partial<Record<TabId, boolean>>;
 
-function istGueltigerTab(value: string): value is TabId {
-    return TABS.some((tab) => tab.id === value);
+function istGueltigerTab(value: string, tabs: TabDefinition[]): value is TabId {
+    return tabs.some((tab) => tab.id === value);
 }
 
 /**
@@ -53,21 +58,21 @@ function istGueltigerTab(value: string): value is TabId {
  * Seite überhaupt zu verlassen. So bleibt die Adresse trotzdem teilbar und
  * ein Lesezeichen landet im richtigen Reiter.</p>
  */
-function useTabInHash(): [TabId, (tab: TabId) => void] {
+function useTabInHash(tabs: TabDefinition[]): [TabId, (tab: TabId) => void] {
     const [activeTab, setActiveTab] = useState<TabId>(() => {
         const raw = window.location.hash.replace(/^#/, '');
-        return istGueltigerTab(raw) ? raw : 'email';
+        return istGueltigerTab(raw, tabs) ? raw : 'email';
     });
 
     // Links wie „Einstellungen → Abteilungen & Rechte“ (`href="#berechtigungen"`) wechseln den Reiter über die Adresse.
     useEffect(() => {
         const beiHashWechsel = () => {
             const raw = window.location.hash.replace(/^#/, '');
-            if (istGueltigerTab(raw)) setActiveTab(raw);
+            if (istGueltigerTab(raw, tabs)) setActiveTab(raw);
         };
         window.addEventListener('hashchange', beiHashWechsel);
         return () => window.removeEventListener('hashchange', beiHashWechsel);
-    }, []);
+    }, [tabs]);
 
     const wechsleTab = useCallback((tab: TabId) => {
         setActiveTab(tab);
@@ -86,7 +91,7 @@ function useTabInHash(): [TabId, (tab: TabId) => void] {
  * <p>Reine Abfrage ohne eigenen Zustand: So bleibt das Setzen des Zustands
  * im Aufrufer und passiert erst, wenn die Antwort da ist.</p>
  */
-async function holeSetupStatus(): Promise<SetupStatus> {
+async function holeSetupStatus(istAdmin: boolean): Promise<SetupStatus> {
     try {
         const [smtpRes, kiRes, dateiOrdnerRes, telefonRes] = await Promise.all([
             fetch('/api/settings/smtp'),
@@ -114,6 +119,14 @@ async function holeSetupStatus(): Promise<SetupStatus> {
             const data = await telefonRes.json();
             status.telefon = !!data?.aktiv && !!data?.host?.trim() && !!data?.passwortGesetzt;
         }
+        if (istAdmin) {
+            const idsRes = await fetch('/api/ids/einstellungen');
+            if (idsRes?.ok) {
+                const data = await idsRes.json();
+                status.ids = !!data?.aktiv && Array.isArray(data?.zugaenge)
+                    && data.zugaenge.some((z: { aktiv?: boolean }) => !!z?.aktiv);
+            }
+        }
         return status;
     } catch {
         // Häkchen sind nur ein Hinweis — schlägt der Abruf fehl, bleiben die
@@ -128,7 +141,10 @@ interface SystemSetupConfiguratorProps {
 }
 
 export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProps) {
-    const [activeTab, wechsleTab] = useTabInHash();
+    // Die Seite ist ohnehin nur für Administratoren; Admin-Reiter bleiben trotzdem ohne Anmeldung unsichtbar.
+    const istAdmin = !!useOptionalAuth()?.isAdmin;
+    const tabs = useMemo(() => TABS.filter((tab) => !tab.nurAdmin || istAdmin), [istAdmin]);
+    const [activeTab, wechsleTab] = useTabInHash(tabs);
     const [status, setStatus] = useState<SetupStatus>({});
     // Hochzählen erzwingt ein erneutes Laden der Häkchen nach dem Speichern.
     const [statusVersion, setStatusVersion] = useState(0);
@@ -136,14 +152,14 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
 
     useEffect(() => {
         let abgebrochen = false;
-        holeSetupStatus().then((neu) => {
+        holeSetupStatus(istAdmin).then((neu) => {
             // Nicht mehr setzen, wenn die Seite inzwischen verlassen wurde.
             if (!abgebrochen) setStatus(neu);
         });
         return () => {
             abgebrochen = true;
         };
-    }, [statusVersion]);
+    }, [statusVersion, istAdmin]);
 
     /** Nach jedem Speichern die Häkchen nachziehen und die Seite informieren. */
     const handleSaved = useCallback(() => {
@@ -156,7 +172,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
         if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
         event.preventDefault();
         const richtung = event.key === 'ArrowRight' ? 1 : -1;
-        const nächster = TABS[(index + richtung + TABS.length) % TABS.length];
+        const nächster = tabs[(index + richtung + tabs.length) % tabs.length];
         wechsleTab(nächster.id);
         tabRefs.current[nächster.id]?.focus();
     };
@@ -164,7 +180,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
     return (
         <div>
             <div role="tablist" aria-label="Bereiche der Einstellungen" className="flex flex-wrap items-center gap-1 border-b border-slate-200 mb-6">
-                {TABS.map((tab, index) => {
+                {tabs.map((tab, index) => {
                     const aktiv = activeTab === tab.id;
                     const eingerichtet = status[tab.id];
                     return (
@@ -217,6 +233,7 @@ export function SystemSetupConfigurator({ onSaved }: SystemSetupConfiguratorProp
                 {activeTab === 'ki' && <KiSettingsSection onSaved={handleSaved} />}
                 {activeTab === 'zeiterfassung' && <ZeiterfassungSection onSaved={handleSaved} />}
                 {activeTab === 'telefon' && <TelefonSettingsSection onSaved={handleSaved} />}
+                {activeTab === 'ids' && istAdmin && <IdsSettingsSection onSaved={handleSaved} />}
                 {activeTab === 'berechtigungen' && <BerechtigungenSection />}
             </div>
         </div>

@@ -146,6 +146,16 @@ public class ArtikelService implements ArtikelServiceContract {
      */
     @Transactional
     public Artikel erstelleArtikel(ArtikelCreateDto dto) {
+        return erstelleArtikel(dto, PreisQuelle.MANUELL);
+    }
+
+    /**
+     * Wie {@link #erstelleArtikel(ArtikelCreateDto)}, aber mit der Herkunft des ersten Preises
+     * (z. B. {@link PreisQuelle#IDS_SHOP}, wenn der Artikel aus einem Shop-Warenkorb angelegt wird).
+     */
+    @Override
+    @Transactional
+    public Artikel erstelleArtikel(ArtikelCreateDto dto, PreisQuelle quelle) {
         String externeNummer = leerAlsNull(dto.getExterneArtikelnummer());
         String eigeneNummer = leerAlsNull(dto.getArtikelnummer());
         if ((dto.getPreis() != null || externeNummer != null) && dto.getLieferantId() == null) {
@@ -204,7 +214,7 @@ public class ArtikelService implements ArtikelServiceContract {
             preis.setPreis(dto.getPreis());
             preis.setExterneArtikelnummer(externeNummer);
             preis.setPreisAenderungsdatum(new java.util.Date());
-            preis.setQuelle(PreisQuelle.MANUELL);
+            preis.setQuelle(quelle != null ? quelle : PreisQuelle.MANUELL);
             preis.setAktuell(true);
             saved.getArtikelpreis().add(preis);
             artikelRepository.save(saved);

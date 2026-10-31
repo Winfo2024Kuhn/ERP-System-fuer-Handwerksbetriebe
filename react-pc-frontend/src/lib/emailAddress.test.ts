@@ -275,7 +275,7 @@ describe('escapeHtml', () => {
 
     it('maskiert alle HTML-relevanten Sonderzeichen (&, <, >, ", \')', () => {
         expect(escapeHtml('<script>alert("XSS & test \'")</script>'))
-            .toBe('&lt;script&gt;alert(&quot;XSS &amp; test &#039;&quot;)&lt;/script&gt;');
+            .toBe('&lt;script&gt;alert(&quot;XSS &amp; test &#39;&quot;)&lt;/script&gt;');
     });
 
     it('behandelt leere oder undefinierte Werte', () => {

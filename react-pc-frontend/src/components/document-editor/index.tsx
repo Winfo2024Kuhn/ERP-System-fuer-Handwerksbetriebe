@@ -144,6 +144,8 @@ import { AlternativGruppeBox } from './AlternativGruppeBox';
 import { AlternativGruppeDialog } from './AlternativGruppeDialog';
 import { DocumentEditorHeader } from './DocumentEditorHeader';
 import { ArtikelAuswahlDialog, type ArtikelAuswahl } from '../artikel/ArtikelAuswahlDialog';
+import { ShopWarenkorbDialog } from '../ids/ShopWarenkorbDialog';
+import { useIdsVerfuegbar } from '../ids/useIdsVerfuegbar';
 import { ServiceBlock } from './ServiceBlock';
 import { TextBlock } from './TextBlock';
 import { ClosureBlock } from './ClosureBlock';
@@ -438,6 +440,10 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
     // Wird UNCONDITIONAL gemountet (siehe Rendering weiter unten) - der Dialog
     // setzt seine eigene Auswahl beim Uebergang false -> true selbst zurueck.
     const [materialDialogOffen, setMaterialDialogOffen] = useState(false);
+    // Warenkorb aus dem Lieferanten-Shop (IDS). Ohne freigeschaltete Shops bleibt der Knopf weg.
+    const [shopDialogOffen, setShopDialogOffen] = useState(false);
+    const idsLieferanten = useIdsVerfuegbar();
+    const idsLieferantenNamen = useMemo(() => idsLieferanten.map((l) => l.lieferantName), [idsLieferanten]);
     // Auswahl-Dialog "Was hinzufuegen?" (Leistung / Stundensatz / Textbaustein),
     // ausgeloest ueber das "+"-Symbol unter einer Karte oder im Bauabschnitt.
     const [showAddTypeDialog, setShowAddTypeDialog] = useState(false);
@@ -2019,7 +2025,7 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
         || showUnsavedWarning || showAddTypeDialog || showTextbausteinPicker
         || showLeistungPicker || showStundensatzPicker || showRabattDialog || neueLeistungDialogOffen
         || alternativDialogAnker !== null || pendingLeistungInsert !== null
-        || showFormatDialog || showValidityDialog || showOnlineAnnahmeDialog || showEmailModal || materialDialogOffen;
+        || showFormatDialog || showValidityDialog || showOnlineAnnahmeDialog || showEmailModal || materialDialogOffen || shopDialogOffen;
 
     useVerlaufTastatur({
         aktiv: !isLocked && !einDialogOffen,
@@ -2446,6 +2452,21 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
             ziel: { blockId: neueBloecke[0].id },
         });
         setMaterialDialogOffen(false);
+    };
+
+    /**
+     * Uebernimmt die Positionen aus dem Lieferanten-Shop -- wie
+     * uebernehmeMaterial in einem einzigen Verlaufsschritt. Der Dialog bleibt
+     * offen: danach fragt er noch nach dem Artikelstamm.
+     */
+    const uebernehmeShopArtikel = (bloecke: DocBlock[]) => {
+        if (isLocked || bloecke.length === 0) return;
+        verlauf.aendern({
+            bezeichnung: 'Shop-Artikel eingefügt',
+            berechne: stand => ({ blocks: insertBlocksBeforeClosure(stand.blocks, bloecke) }),
+            buendelSchluessel: null,
+            ziel: { blockId: bloecke[0].id },
+        });
     };
 
     const handleKategorieBestaetigt = async (kategorieId: number) => {
@@ -3950,6 +3971,8 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                     setShowStundensatzPicker(true);
                 }}
                 onOpenMaterialPicker={() => setMaterialDialogOffen(true)}
+                onOpenShopWarenkorb={idsLieferanten.length > 0 ? () => setShopDialogOffen(true) : undefined}
+                shopLieferantenNamen={idsLieferantenNamen}
                 onAddSeparator={() => {
                     pendingAnchorRef.current = DEFAULT_ANCHOR;
                     addBlock('SEPARATOR');
@@ -4455,6 +4478,14 @@ const DocumentEditor = forwardRef<DocumentEditorHandle, DocumentEditorProps>(fun
                 offen={materialDialogOffen}
                 onSchliessen={() => setMaterialDialogOffen(false)}
                 onUebernehmen={uebernehmeMaterial}
+            />
+
+            {/* Warenkorb aus dem Lieferanten-Shop (IDS). Unconditional gemountet wie das Materialfenster. */}
+            <ShopWarenkorbDialog
+                offen={shopDialogOffen && !isLocked}
+                lieferanten={idsLieferanten}
+                onSchliessen={() => setShopDialogOffen(false)}
+                onEinfuegen={uebernehmeShopArtikel}
             />
         </div>
     );

@@ -1,6 +1,6 @@
 # Einstellungen, Firma und Benutzer
 
-Die Grundeinrichtung des Programms darf nur ein Admin vornehmen. Er findet sie unter **Vorlagen & Stammdaten → Einstellungen** (Reiter „E-Mail“, „Dateien“, „KI-Funktionen“, „Zeiterfassung“, „Telefon“, „Abteilungen & Rechte“), unter **Vorlagen & Stammdaten → Firma** und oben rechts im Benutzermenü unter „Benutzer verwalten“. Für alle anderen Benutzer sind diese Menüpunkte ausgeblendet. Jeder Reiter speichert für sich; ein grünes Häkchen am Reiter heißt „Eingerichtet“.
+Die Grundeinrichtung des Programms darf nur ein Admin vornehmen. Er findet sie unter **Vorlagen & Stammdaten → Einstellungen** (Reiter „E-Mail“, „Dateien“, „KI-Funktionen“, „Zeiterfassung“, „Telefon“, „Lieferanten-Shops“, „Abteilungen & Rechte“), unter **Vorlagen & Stammdaten → Firma** und oben rechts im Benutzermenü unter „Benutzer verwalten“. Für alle anderen Benutzer sind diese Menüpunkte ausgeblendet. Jeder Reiter speichert für sich; ein grünes Häkchen am Reiter heißt „Eingerichtet“.
 
 ## Ersteinrichtung
 
@@ -96,6 +96,19 @@ Unter **Einstellungen → Telefon**:
 4. „Telefon-Einstellungen speichern“.
 
 „Ältere Anrufe nachholen“ holt einmalig frühere Anrufe. Unter „Telefon an diesem Rechner“ wählt man, welches Telefon bei „Zurückrufen“ klingelt. Wer die Anrufe sieht, regelt das Abteilungsrecht „Anrufe & Anrufbeantworter“.
+
+## Lieferanten-Shops (IDS) anbinden
+
+IDS ist ein Standard der Großhändler (z. B. Würth, Berner, Sonepar). Damit holt man im Dokument-Editor Artikel samt Einkaufspreis direkt aus dem Online-Shop des Lieferanten (siehe [Rechnungen](rechnungen.md#material-aus-dem-lieferanten-shop-einfügen)). Einrichten darf das nur ein Admin, unter **Einstellungen → Lieferanten-Shops**:
+
+1. „Shop-Anbindung nutzen“ einschalten. Ist der Schalter aus, ist der Knopf im Dokument-Editor für alle ausgeblendet; gespeicherte Zugänge bleiben erhalten.
+2. „Zugang hinzufügen“, den Lieferanten wählen und eintragen: **Shop-Adresse** (die Einstiegsadresse für IDS, die der Lieferant mitteilt – nicht die normale Shop-Startseite, beginnt mit `https://`), **Kundennummer**, **Benutzername**, **Passwort**. Die Zugangsdaten bekommt man vom Lieferanten (bei Würth unter „Mein Würth → Kundeneinstellungen → IDS“ oder über den Außendienst).
+3. „Eingeschaltet“ anhaken und speichern.
+4. **Feld-Format:** „IDS-Connect 2.5 (Standard)“ passt für die meisten Shops. Steht im Zugangsblatt des Lieferanten nur `kndnr`, `name_kunde`, `pw_kunde` und `hookurl` (so bei Würth), oder meldet der Shop „Parameter ungültig“, „Nur Zugangsfelder“ wählen. Die Rücksprung-Adresse (`hookurl`) setzt das Programm selbst.
+
+**Würth:** Das IDS-Zugangsblatt von Würth nennt Shop-Adresse (`…/ViewIDSCatalogService-IDSInBound`), `kndnr`, `name_kunde` und `pw_kunde`. Würth funktioniert mit „IDS-Connect 2.5 (Standard)“. Meldet der Würth-Tab „Error.Login.failed“, stimmt meist das Passwort nicht: Es endet oft mit einem **Punkt**, der beim Abtippen leicht verloren geht – mit dem Auge am Passwortfeld prüfen. In Würths eigenen Einstellungen sollte „Bestellauslösung im Warenkorb“ aus sein, dann wird im Shop nichts bestellt.
+
+Was im Hintergrund passiert: Das Passwort wird verschlüsselt gespeichert (mit demselben Schlüssel wie die E-Mail-Postfächer) und nie wieder angezeigt; ein leeres Passwortfeld lässt das bisherige stehen. Beim Öffnen des Shops schickt der Browser die Zugangsdaten an den Shop. Den Warenkorb schickt der Shop über den Browser zurück an das Programm – im Shop wird nichts bestellt. Ist der Verschlüsselungsschlüssel nicht eingerichtet, lassen sich keine Passwörter speichern; die Seite weist darauf hin. Weil der Browser das Passwort an den Shop schickt, kann jeder, der am PC mit dem Programm arbeitet, es technisch einsehen – beim Lieferanten deshalb am besten einen eigenen IDS-Zugang ohne Bestellrechte anlegen lassen.
 
 ## Firmendaten pflegen
 

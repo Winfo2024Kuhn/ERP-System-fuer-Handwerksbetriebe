@@ -6,6 +6,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.example.kalkulationsprogramm.repository.MitarbeiterRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -98,6 +100,47 @@ public class SecurityConfig {
                 .addFilterAfter(new WebsiteInternalApiKeyFilter(websiteKey, objectMapper), CloudflareAccessJwtFilter.class)
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
+        return http.build();
+    }
+
+    /** Rücksprung-Adresse, an die der Lieferanten-Shop den Warenkorb über den Browser schickt. */
+    static final String IDS_RUECKGABE = "/api/ids/rueckgabe/**";
+
+    /**
+     * Rücksprung aus dem Lieferanten-Shop (IDS-Connect). Der Shop leitet den Browser per POST hierher;
+     * das ist eine Navigation von einer fremden Seite, deshalb schickt der Browser das Sitzungs-Cookie
+     * (SameSite=Lax) nicht mit – eine Anmeldung kann hier gar nicht ankommen.
+     *
+     * <p><b>CSRF-Threat-Model (CodeQL java/spring-disabled-csrf-protection):</b>
+     * CSRF bleibt eingeschaltet und nimmt nur diesen Pfad per {@code ignoringRequestMatchers} aus:
+     * <ul>
+     *   <li>Die Kette ist <i>stateless</i> und kennt keine Anmeldung; es gibt nichts, was ein Angreifer
+     *       im Namen eines angemeldeten Benutzers auslösen könnte.</li>
+     *   <li>Ausweis ist allein der 256-Bit-Zufallsschlüssel im Pfad, den nur der Benutzer kennt, der
+     *       den Shop geöffnet hat. Er ist einmal einlösbar und 60 Minuten gültig, in der Datenbank steht
+     *       nur sein Hash ({@code IdsShopBesuchService}).</li>
+     *   <li>Ein gültiger Rücksprung legt nur einen Warenkorb ab; erst der angemeldete Benutzer holt ihn
+     *       über {@code /api/ids/vorgaenge/**} (Session + CSRF) ab und entscheidet, was damit geschieht.</li>
+     *   <li>Nur POST, Größe begrenzt (1 MB, {@link IdsRueckgabeGroessenFilter}), kein CORS.</li>
+     * </ul>
+     */
+    @Bean
+    @Order(-1)
+    public SecurityFilterChain idsRueckgabeFilterChain(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher(IDS_RUECKGABE)
+                .cors(AbstractHttpConfigurer::disable)
+                // CSRF ignored: stateless, key-in-path shop return without any session, see Javadoc above.
+                .csrf(csrf -> csrf.ignoringRequestMatchers(IDS_RUECKGABE))
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .requestCache(AbstractHttpConfigurer::disable)
+                .addFilterBefore(new IdsRueckgabeGroessenFilter(), CsrfFilter.class)
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.POST, IDS_RUECKGABE).permitAll()
+                        .anyRequest().denyAll())
+                .headers(headers -> headers
+                        .frameOptions(frame -> frame.sameOrigin())
+                        .referrerPolicy(r -> r.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER)));
         return http.build();
     }
 
@@ -258,6 +301,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/register", "/api/auth/bootstrap-status").permitAll()
                 .requestMatchers("/api/auth/me", "/api/auth/me/credentials").authenticated()
+                // Shop-Zugänge (IDS) mit Passwörtern pflegen nur Admins; den Shop öffnen darf jeder am PC.
+                .requestMatchers("/api/ids/einstellungen", "/api/ids/einstellungen/**").hasRole("ADMIN")
                 // Steuerberater-Kontakte und Firmenstammdaten werden beim Versand der
                 // Stundenaufstellung und beim Belegexport nur gelesen (Ansprechpartner
                 // auswaehlen, Firmenname im Betreff). Das duerfen alle angemeldeten

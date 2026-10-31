@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CreateArticleModal } from './CreateArticleModal';
+import { CreateArticleModal, type ArtikelVorbelegung } from './CreateArticleModal';
 import { ToastProvider } from './ui/toast';
 
 /** Dummy-Lieferant und -Werkstoff (DSGVO: keine echten Firmen). */
@@ -14,12 +14,12 @@ let vorschauAntwort: { ok: boolean; body: unknown };
 /** Dateinamen, deren Upload der Server ablehnt. */
 let abgelehnteDateien: string[];
 
-function renderModal() {
+function renderModal(vorbelegung?: ArtikelVorbelegung) {
     const onSave = vi.fn();
     const onClose = vi.fn();
     render(
         <ToastProvider>
-            <CreateArticleModal onSave={onSave} onClose={onClose} />
+            <CreateArticleModal onSave={onSave} onClose={onClose} vorbelegung={vorbelegung} />
         </ToastProvider>,
     );
     return { onSave, onClose };
@@ -317,5 +317,84 @@ describe('CreateArticleModal', () => {
         freigeben(null);
         await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
         expect(artikelPosts()).toHaveLength(1);
+    });
+
+    describe('mit Vorbelegung (z. B. aus dem Lieferanten-Shop)', () => {
+        const SHOP: ArtikelVorbelegung = {
+            produktname: 'SILDI-NEUT-BETONGRAU-310ML',
+            externeArtikelnummer: '0892 100',
+            lieferant: { id: 5, name: 'Muster Stahlhandel' },
+            preis: 4.2,
+            verrechnungseinheit: 'KILOGRAMM',
+            preiseinheit: 'kg',
+            preisQuelle: 'IDS_SHOP',
+            hinweis: 'Vom Lieferanten-Shop übernommen. Bitte Namen und Kategorie wählen.',
+        };
+
+        it('füllt die Felder vor, zeigt den Hinweis und markiert den Namen', async () => {
+            renderModal(SHOP);
+            expect(screen.getByRole('note')).toHaveTextContent('Vom Lieferanten-Shop übernommen. Bitte Namen und Kategorie wählen.');
+            const name = screen.getByLabelText('Produktname *') as HTMLInputElement;
+            expect(name).toHaveValue('SILDI-NEUT-BETONGRAU-310ML');
+            expect(name).toHaveFocus();
+            expect([name.selectionStart, name.selectionEnd]).toEqual([0, name.value.length]);
+            expect(screen.getByRole('combobox', { name: 'Einheit' })).toHaveTextContent('Kilogramm');
+
+            await userEvent.click(screen.getByRole('tab', { name: /Preis & Lieferant/ }));
+            expect(screen.getByRole('button', { name: 'Lieferant' })).toHaveTextContent('Muster Stahlhandel');
+            expect(screen.getByLabelText('Artikelnummer beim Lieferanten')).toHaveValue('0892 100');
+            expect(screen.getByLabelText('Preis in Euro')).toHaveValue('4,2');
+            await userEvent.click(screen.getByRole('tab', { name: /Mehr Angaben/ }));
+            expect(screen.getByLabelText('Preiseinheit (Text)')).toHaveValue('kg');
+        });
+
+        it('schickt die Vorbelegung samt preisQuelle IDS_SHOP, solange der Preis unverändert ist', async () => {
+            const { onSave } = renderModal(SHOP);
+            // Der Name ist markiert: einfach lostippen ersetzt den Kurztext des Lieferanten.
+            await userEvent.keyboard('Neutralsilikon betongrau 310 ml');
+            await userEvent.click(screen.getByRole('button', { name: 'Artikel anlegen' }));
+
+            await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ id: 77, artikelnummer: 'A-004143' })));
+            expect(postBody()).toMatchObject({
+                produktname: 'Neutralsilikon betongrau 310 ml',
+                externeArtikelnummer: '0892 100',
+                lieferantId: 5,
+                preis: 4.2,
+                verrechnungseinheit: 'KILOGRAMM',
+                preiseinheit: 'kg',
+                preisQuelle: 'IDS_SHOP',
+            });
+        });
+
+        it('schickt MANUELL, wenn der Preis im Fenster geändert wurde', async () => {
+            renderModal(SHOP);
+            await userEvent.click(screen.getByRole('tab', { name: /Preis & Lieferant/ }));
+            const preis = screen.getByLabelText('Preis in Euro');
+            await userEvent.clear(preis);
+            await userEvent.type(preis, '5,10');
+            await userEvent.click(screen.getByRole('button', { name: 'Artikel anlegen' }));
+
+            await waitFor(() => expect(postBody()).not.toBeNull());
+            expect(postBody()).toMatchObject({ preis: 5.1, preisQuelle: 'MANUELL' });
+        });
+
+        it('schickt MANUELL, wenn die Vorbelegung den Preis schon als eigene Angabe meldet', async () => {
+            renderModal({ ...SHOP, preisQuelle: 'MANUELL', hinweis: undefined });
+            expect(screen.queryByRole('note')).not.toBeInTheDocument();
+            await userEvent.click(screen.getByRole('button', { name: 'Artikel anlegen' }));
+            await waitFor(() => expect(postBody()).not.toBeNull());
+            expect(postBody().preisQuelle).toBe('MANUELL');
+        });
+
+        it('ohne Vorbelegung bleibt alles wie bisher: leer, kein Hinweis, keine preisQuelle', async () => {
+            renderModal();
+            expect(screen.queryByRole('note')).not.toBeInTheDocument();
+            expect(screen.getByLabelText('Produktname *')).toHaveValue('');
+            await nameEintragen();
+            await userEvent.click(screen.getByRole('button', { name: 'Artikel anlegen' }));
+            await waitFor(() => expect(postBody()).not.toBeNull());
+            expect(postBody()).not.toHaveProperty('preisQuelle');
+            expect(postBody().preiseinheit).toBe('1');
+        });
     });
 });
