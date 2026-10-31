@@ -38,6 +38,8 @@ public final class AbzockeErkennung {
             "kontoverbindungsaenderung");
     private static final int ABSTAND_BANK = 25;
     private static final int ABSTAND_IBAN = 12;
+    /** So nah müssen Verzeichnis- und Kosten-Wort beieinanderstehen (Zeichen). */
+    private static final int ABSTAND_BRANCHE = 120;
 
     /** Kandidat für eine IBAN im normalisierten Text; geprüft wird danach mit Länge und Prüfziffer. */
     private static final Pattern IBAN_KANDIDAT =
@@ -230,8 +232,9 @@ public final class AbzockeErkennung {
         if (gehoertZuEinerDavon(domain, ECHTE_VERZEICHNISSE) || istAmtlich(domain)) {
             return false;
         }
-        boolean verzeichnis = Textsuche.enthaeltIrgendeinenWortanfang(text, VERZEICHNIS_WOERTER)
-                && Textsuche.enthaeltIrgendeinenWortanfang(text, KOSTEN_WOERTER);
+        // Nah beieinander statt irgendwo im Text: Firmen-Signaturen nennen das „Handelsregister“,
+        // echte Aufträge bitten um „unterschrieben zurücksenden“ – zusammen ergab das Fehlalarme.
+        boolean verzeichnis = Textsuche.naheBeieinander(text, VERZEICHNIS_WOERTER, KOSTEN_WOERTER, ABSTAND_BRANCHE);
         boolean eintrag = Textsuche.enthaeltIrgendeinWort(text, EINTRAG_WOERTER)
                 && Textsuche.enthaeltIrgendeinenWortanfang(text, STARKE_KOSTEN_WOERTER);
         return verzeichnis || eintrag;

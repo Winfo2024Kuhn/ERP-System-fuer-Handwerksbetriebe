@@ -223,6 +223,19 @@ class AbzockeErkennungTest {
         }
 
         @Test
+        void signaturMitHandelsregisterUndZuruecksendenIstKeinBranchenbuch() {
+            // Fehlalarm aus dem Probelauf: Auftragsbestätigung mit Bitte um Rücksendung,
+            // das „Handelsregister“ steht weit entfernt in der Signatur.
+            Email email = mail("info@musterfirma.example", "Auftragsbestätigung 4711",
+                    "Hallo Herr Mustermann, anbei die Auftragsbestätigung. Bitte unterschrieben zurücksenden. "
+                            + "Die Laufzeit der Lieferung beträgt zwei Wochen. ".repeat(3)
+                            + "Mit freundlichen Grüßen Max Mustermann, Musterfirma GmbH, Musterstraße 1, 12345 Musterstadt, "
+                            + "Geschäftsführer Max Mustermann, Handelsregister: Amtsgericht Musterstadt HRB 12345");
+
+            assertThat(AbzockeErkennung.erkenne(email)).isNull();
+        }
+
+        @Test
         void echtesVerzeichnisWirdNichtGewarnt() {
             Email email = mail("rechnung@gelbeseiten.de", "Ihr Branchenbuch-Eintrag",
                     "Ihr Eintrag im Branchenbuch, Jahresgebühr wie vereinbart.");
