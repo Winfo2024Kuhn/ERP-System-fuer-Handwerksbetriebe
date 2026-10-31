@@ -65,6 +65,15 @@ Das ERP ist ein Arbeitswerkzeug, kein Schaufenster. **Keine Animationen zum Schm
 - Alles hinter `motion-safe:`; keine neue Animations-Bibliothek (kein Framer Motion o. Ä.).
 - **Performance ist Pflicht:** große Listen virtualisieren oder paginieren; teure Berechnungen mit `useMemo`, Handler stabil halten, wo Kinder davon abhängen; Suchfelder entprellen; Daten nicht doppelt laden; Bilder und PDFs erst bei Bedarf; keine unnötigen Re-Renders ganzer Seiten; Bundle klein halten (kein schweres Paket für eine Kleinigkeit, `React.lazy` für selten genutzte große Seiten). Spürbar langsame Stellen auf 14 Zoll mit realistischer Datenmenge prüfen (500+ Zeilen).
 
+## 3b. Große Listen: begrenzt laden
+
+Typischer Fehler: eine Liste lädt alles auf einmal. Das ist hier **verboten** für alles, was wachsen kann (Kunden, Artikel, Projekte, Rechnungen, E-Mails, Dokumente, Zeitbuchungen, Verläufe).
+
+- Immer **eine Seite** abfragen (`page`/`size`, Standard 25–50; Auswahllisten 20) und den Rest nachladen: **Tabelle mit Seiten** (Stammdaten, Seite in der URL), **„Mehr laden“-Knopf** mit Zähler „25 von 140“ (Verläufe, Übersichten) oder bei Auswahlfeldern **Suche mit den ersten ~20 Treffern** (entprellt, serverseitig).
+- Filtern, Suchen und Sortieren macht das Backend, nie der Browser auf einer vollen Liste. Filteränderung → zurück auf Seite 1; späte Antworten alter Abfragen verwerfen.
+- Gesamtzahl bzw. „es gibt mehr“ immer anzeigen. Badge-Zahlen kommen vom Backend, nicht aus `liste.length`.
+- Gibt es für den Fall noch keinen paginierten Endpoint, wird er **mit angelegt** (Backend: `Page`/`Slice`, Obergrenze serverseitig) statt `findAll` im Frontend zu verwenden. Muster und Regeln: Abschnitt „Große Listen“ in `FRONTEND_UI.md`; Vorbilder `ArtikelSuche.tsx` (Seiten) und `bestellungenNachladen.ts` (Mehr laden).
+
 ## 4. Typografie, Farbe, Nutzerführung
 
 **Typografie** (Systemschrift, Hierarchie über Größe und Gewicht, nicht über Schmuck):
@@ -93,6 +102,19 @@ Das ERP ist ein Arbeitswerkzeug, kein Schaufenster. **Keine Animationen zum Schm
 - Lange Abläufe in sichtbaren Schritten; der Nutzer sieht, wo er ist und was noch fehlt.
 - Handy: Daumenzone, mindestens 44 × 44 px Tippfläche, nur oben Safe-Area, unten nichts; die Seite ist eine eigene Komposition, nicht die verkleinerte PC-Seite.
 - Zustände vollständig bauen (Laden, leer, Fehler, gesperrt, Fokus, deaktiviert), sichtbarer Fokus-Ring, Alt-Texte, mit Worst-Case-Daten prüfen (langer Firmenname, 0 und 500 Einträge, Umlaute, große Beträge).
+
+## 4b. Texte in der Oberfläche (nach humanizer-de)
+
+Alle sichtbaren Texte (Knöpfe, Toasts, Fehlermeldungen, Leer-Zustände, Platzhalter, Info-Buttons, Tooltips) klingen wie ein Kollege im Betrieb, nicht wie eine KI und nicht wie ein Formular von der Behörde. Modus **Sachlich**.
+
+- **Kurz und konkret.** Sagen, was passiert ist oder was zu tun ist, mit dem Namen der Sache: „Rechnung RE-2026-014 gespeichert.“ statt „Der Vorgang wurde erfolgreich abgeschlossen.“ Fehler: *was* ging schief und *was* kann der Nutzer tun.
+- **Anrede einheitlich:** neutral im Imperativ/Infinitiv („Kunde auswählen“, „Bitte Datum eintragen“) oder „Sie“. Kein „du“ in der App-Oberfläche, nie innerhalb einer Seite mischen. Wörter wie „Wir“ und „Ich“ nur, wenn wirklich jemand spricht.
+- **Keine KI-Floskeln:** nicht „nahtlos“, „intuitiv“, „leistungsstark“, „umfassend“, „Lösung“, „entdecken“, „eintauchen“, „Los geht’s“, „Ups!“, „Großartig!“. Keine Chatbot-Höflichkeit („Gerne helfe ich“, „Hoffentlich hilft das“), keine Ausrufezeichen-Ketten, kein Emoji.
+- **Keine Muster-Stapel:** keine Dreierlisten aus Gewohnheit („schnell, einfach und sicher“), kein „nicht nur … sondern auch“, keine Gegenüberstellung „Nicht X, sondern Y“, kein Doppelpunkt-Titel nach Schema, keine Gedankenstriche als Satzzeichen (Punkt, Komma oder Doppelpunkt). Konnektoren („außerdem“, „zudem“, „darüber hinaus“) weglassen.
+- **Handwerker-Wörter statt Abstrakta und Anglizismen:** „Rechnung“ statt „Dokument“, „speichern“ statt „persistieren“, „Eintrag“ statt „Entität“; kein Denglisch („Feedback submitten“, „Item“, „Workflow ausrollen“). Etablierte Begriffe bleiben (Angebot, Nachkalkulation, KI-Hilfe).
+- **Typografie im Text:** deutsche Anführungszeichen „…“, Auslassung `…`, geschütztes Leerzeichen zwischen Zahl und Einheit (`12 Std.`), Beträge `1.234,50 €`, Datum `31.10.2026`.
+- **Nichts erfinden:** keine Zahlen, Fristen oder Rechtsaussagen in Texten, die nicht aus dem Auftrag oder dem Code stammen. Im Zweifel den Nutzer fragen.
+- **Kurz gegenlesen:** Bevor ein Text bleibt: Würde ein Meister das so am Telefon sagen? Wenn nicht, kürzer und direkter. Bei größeren Textmengen (Hilfetexte, Info-Buttons, Onboarding) kann der Skill `humanizer-de` auf die Texte angewendet werden.
 
 ## 5. Frontend-Sicherheit (nur Frontend)
 

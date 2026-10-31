@@ -184,3 +184,22 @@ Das ist die vollständige Sicherheitssicht für TypeScript/React-Arbeit. Backend
 7. **Keine Geheimnisse** im Frontend-Code, in `localStorage`-Schlüsseln oder Logs.
 
 `htmlSanitizer.ts` gibt es nur im PC-Frontend. `react-zeiterfassung` hat kein Gegenstück; braucht die Handy-App diese Funktionen, das vor dem Bau zur Freigabe stellen.
+
+## 📄 Große Listen: begrenzt laden, nachladen (Pflicht, Frontend)
+
+Jede Liste, die wachsen kann, fragt **eine Seite** ab (`page`, `size`) und zeigt sie an; der Rest kommt auf Wunsch. Nie alle Datensätze auf einmal holen und im Browser filtern oder sortieren. Die Obergrenze erzwingt zusätzlich das Backend (`BACKEND_ARCH.md`, „Große Datenmengen“).
+
+**Welches Muster wann:**
+- **Tabelle mit Seiten** (Blättern, „Seite 3 von 12“, Gesamtzahl): Stammdaten, die man gezielt durchsucht und sortiert, z. B. Kunden, Artikel. Seite und Filter in der URL halten (Zurück-Knopf und Lesezeichen funktionieren). Vorbild `components/artikel/ArtikelSuche.tsx`.
+- **„Mehr laden“-Knopf** (nächste 25 anhängen, mit Zähler „25 von 140 angezeigt“): Verläufe, Übersichten nach Alter, E-Mails, Dokumentlisten. Vorbild `features/bestellungen/bestellungenNachladen.ts`.
+- **Auswahllisten und Suchfelder** (Kunde/Lieferant/Projekt wählen): nur die ersten ~20 Treffer, Suche entprellt (400 ms) und serverseitig, Hinweis „weitere Treffer: Suche eingrenzen“. Nie die komplette Tabelle in ein Dropdown laden.
+- **Endloses Scrollen** nur, wenn der Nutzer ohnehin nur von oben nach unten liest (Chat-/Aktivitätsverlauf); sonst Knopf oder Seiten.
+
+**Regeln:**
+- Standardgröße 25–50 (Tabelle), 20 (Auswahl). Die Zahl steht als Konstante an einer Stelle, nicht verstreut.
+- Gesamtzahl bzw. „es gibt mehr“ immer anzeigen, damit klar ist, dass die Liste nicht vollständig ist.
+- Beim Nachladen bleibt die bisherige Liste stehen; nur der Knopf zeigt Ladezustand (Spinner, gesperrt gegen Doppelklick). Fehler → Toast, Liste bleibt.
+- Filter, Suche oder Sortierung ändern → zurück auf Seite 1 (bzw. Liste leeren). Späte Antworten alter Abfragen verwerfen (Zähler oder `AbortController`), sonst überschreiben sie neuere.
+- Leer-Zustand, Laden und Fehler bleiben drei verschiedene Anzeigen (siehe Bedienbarkeit).
+- Zähler/Badges (z. B. „Offene Angebote: 14“) kommen vom Backend als eigene Zahl, nicht aus `liste.length`.
+- Ein geladener Datensatz-Satz, der an anderer Stelle gebraucht wird, wird geteilt (Hook/Kontext), nicht pro Komponente erneut geladen.

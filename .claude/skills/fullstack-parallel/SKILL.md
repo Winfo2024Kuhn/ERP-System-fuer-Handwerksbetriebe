@@ -47,6 +47,7 @@ zwischen beiden Hälften:
 
 - Methode + Pfad, Query-/Body-Parameter mit Typen und Pflichtfeldern
 - Antwort-JSON Feld für Feld (Namen exakt, `null`-Fälle)
+- Bei Listen: `page`/`size`, Standard- und Höchstgröße, Sortierung, `gesamt` bzw. `hatMehr`
 - Statuscodes: 200, 400 (mit `{message}` in Handwerker-Sprache), 401, 403, 404
 - Welche alten Endpoints bleiben (die das Frontend weiter nutzt)
 
@@ -145,6 +146,7 @@ bleibt:
 
 - Logik in einen Service (Controller bleibt dünn), Constructor Injection, Flyway nur
   neu und idempotent.
+- **Listen-Endpoints immer paginiert** (`page`/`size`, Maximum serverseitig, `gesamt`; siehe „Große Datenmengen“ in `BACKEND_ARCH.md`), nie `findAll()` auf wachsenden Tabellen. Im API-Vertrag (Schritt 2) Standardgröße, Maximum und Antwortfelder festhalten, damit der Frontend-Agent Seiten bzw. „Mehr laden“ baut.
 - Endpoints mit Sichtbarkeits-/Rechteprüfung wie die Nachbar-Endpoints, Validierung
   (`@Valid`, `@Positive`), verständliche 400-Meldungen.
 - Tests: Service (Mockito), Controller/Security (MockMvc: 401, CSRF 403, 404 nicht

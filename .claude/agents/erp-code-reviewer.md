@@ -152,6 +152,8 @@ Für jede geänderte `*.tsx` / `*.ts`-Datei in `react-pc-frontend/` und `react-z
 - [ ] **Gulf of Evaluation:** jede async Aktion mit Ladezustand und Ergebnis; Erfolg und **jeder** Fehler als Toast (kein stiller `catch`); Laden, leer und Fehler unterscheidbar
 - [ ] **Nielsen:** Handwerker-Wording (kein Buchhalter-Deutsch); „Abbrechen“/Rückgängig vorhanden; gleiche Sache = gleiche Komponente (keine Sonderlösung pro Seite); Fehlervermeidung statt nur Fehlermeldung; Namen statt IDs zum Abtippen; Fehlertext sagt *was* und *was tun*; Info-Button an erklärungsbedürftigen Stellen
 - [ ] **Performance statt Animation:** keine Zier-Animationen, kein `transition-all`, keine neue Animations-Bibliothek; große Listen paginiert/virtualisiert, Suchfelder entprellt, keine doppelten Ladevorgänge, keine unnötigen Re-Renders, kein schweres Paket für Kleinigkeiten
+- [ ] **Begrenztes Laden (Frontend):** keine wachsende Liste wird komplett geladen; Seiten bzw. „Mehr laden“ bzw. Suche mit ~20 Treffern; Gesamtzahl sichtbar; Filter/Sortierung serverseitig; Filteränderung → Seite 1; späte Antworten verworfen
+- [ ] **UI-Texte (humanizer-de):** konkret und kurz, einheitliche Anrede (neutral oder „Sie“, kein „du“), keine KI-Floskeln („nahtlos“, „Lösung“, „Ups!“), keine Gedankenstriche als Satzzeichen, kein Emoji, kein Denglisch, deutsche Anführungszeichen, Fehlertext sagt *was* und *was tun*
 - [ ] **Löschen:** Rückgängig-Toast oder `useConfirm` (`danger`); Dialog nennt Namen, Abhängiges und ob rückgängig; Knopf mit Verb; „Abbrechen“ vorbelegt; gesperrtes Löschen erklärt den Grund
 - [ ] **Typografie/Farbe:** feste Stufen, `tabular-nums` bei Zahlen, Kontrast ≥ 4,5 : 1, eine Rose-Primäraktion pro Screen, Zustände nie nur über Farbe, Leer-Zustand mit nächstem Schritt
 - [ ] Spec unter `e2e/` für den geänderten Ablauf vorhanden, Screenshots in 1440 und 1920 (PC) bzw. Handy angeschaut (`PRUEFUNG.md`)
@@ -203,7 +205,8 @@ git diff main...HEAD | grep -iE "(api_key|password=|token=|secret=|passwd|-----B
 - [ ] Logs/Error-Responses leaken keine internen Hostnamen/IPs nach außen (Funnel-Webseite, E-Mails, Mahnungen)
 - [ ] Outbound-Aufrufe Richtung Webhost nutzen HTTPS und ein konfiguriertes (nicht hartkodiertes) Ziel
 
-### 3.6 Endpoint-Checkliste (Backend, Quelle: BACKEND_ARCH.md „Sicherheit im Backend“)
+### 3.6 Endpoint-Checkliste (Backend, Quelle: BACKEND_ARCH.md „Sicherheit im Backend“ und „Große Datenmengen“)
+- [ ] **Begrenzte Abfrage:** kein `findAll()`/unbegrenzte `List` auf wachsenden Tabellen; `Page`/`Slice` mit serverseitig erzwungenem Maximum (`size`), stabiler Sortierung, `gesamt`/`hatMehr`; kein Collection-Fetch-Join zusammen mit Paging; kein N+1 beim Mappen; Test für `size` über Maximum und zweite Seite
 - [ ] Jeder neue/geänderte Endpoint: SQL-Injection-String, XSS-String, ungültige IDs (`0`, negativ, `Long.MAX_VALUE`), Pflichtfeld leer und Überlänge (> 10.000 Zeichen) sind im Test abgedeckt
 - [ ] Sichtbarkeits-/Rechteprüfung wie bei den Nachbar-Endpoints; 401, 403 (CSRF), 404 (nicht sichtbar) getrennt getestet
 - [ ] Kein `.csrf(csrf -> csrf.disable())`; keine ReDoS-anfälligen Regex; `HtmlKlartext` statt eigener Tag-/Entity-Ketten
