@@ -76,7 +76,7 @@ public class KundenDetailService {
         dto.setAnonymisiertAm(kunde.getAnonymisiertAm());
         dto.setProjekte(mapProjekte(projekte));
         dto.setAnfragen(mapAnfragen(anfragen));
-        dto.setGeschaeftsdokumente(mapGeschaeftsdokumente(projekte, anfragen));
+        dto.setGeschaeftsdokumente(mapGeschaeftsdokumente(kunde, projekte, anfragen));
         dto.setNotizen(mapNotizen(kunde.getId()));
         dto.setAggregierteEmails(aggregateEmails(kunde, projekte, anfragen));
         try {
@@ -157,10 +157,11 @@ public class KundenDetailService {
 
     /**
      * Alle Geschäftsdokumente (Angebote, Rechnungen, Mahnungen ...) der Projekte
-     * UND Anfragen dieses Kunden – aggregiert über die bestehenden Projekt-/Anfrage-Abfragen.
-     * Neueste zuerst (nach Dokumentdatum).
+     * UND Anfragen dieses Kunden – aggregiert über die bestehenden Projekt-/Anfrage-Abfragen –
+     * plus Dokumente, die direkt am Kunden hängen (ohne Projekt/Anfrage). Sonst zeigt die Akte
+     * „0 Dokumente“, während die Datenschutz-Löschung sie zählt. Neueste zuerst (nach Dokumentdatum).
      */
-    private List<AusgangsGeschaeftsDokumentResponseDto> mapGeschaeftsdokumente(List<Projekt> projekte,
+    private List<AusgangsGeschaeftsDokumentResponseDto> mapGeschaeftsdokumente(Kunde kunde, List<Projekt> projekte,
             List<Anfrage> anfragen) {
         List<AusgangsGeschaeftsDokumentResponseDto> result = new ArrayList<>();
         for (Projekt projekt : Objects.requireNonNullElse(projekte, List.<Projekt>of())) {
@@ -171,6 +172,13 @@ public class KundenDetailService {
         for (Anfrage anfrage : Objects.requireNonNullElse(anfragen, List.<Anfrage>of())) {
             if (anfrage.getId() != null) {
                 result.addAll(ausgangsGeschaeftsDokumentService.findByAnfrage(anfrage.getId()));
+            }
+        }
+        Set<Long> bekannt = result.stream().map(AusgangsGeschaeftsDokumentResponseDto::getId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        for (AusgangsGeschaeftsDokumentResponseDto d : ausgangsGeschaeftsDokumentService.findByKunde(kunde.getId())) {
+            if (d.getId() == null || bekannt.add(d.getId())) {
+                result.add(d);
             }
         }
         result.sort(Comparator.comparing(
