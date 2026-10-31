@@ -1,6 +1,6 @@
 ---
 name: handwerkerprogramm-design
-description: Der EINE Frontend-Skill für Handwerkerprogramm (react-pc-frontend, react-zeiterfassung). Pflicht vor jeder Frontend-Arbeit, vom Hook erzwungen. Enthält Design-System (Rose/Slate, Lucide, Wording), Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Bewegung (Animations-Entscheidungen, Dauer, Kurven), Handwerk-Feinschliff, Frontend-Sicherheit und die Playwright-Design-Prüfung. Bringt UI-Kits für Desktop und Handy, Design-Tokens und echte Screenshots mit.
+description: Der EINE Frontend-Skill für Handwerkerprogramm (react-pc-frontend, react-zeiterfassung). Pflicht vor jeder Frontend-Arbeit, vom Hook erzwungen. Enthält Design-System (Rose/Slate, Lucide, Wording), Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Performance statt Animation, Typografie, Farbwahl, Nutzerführung und Lösch-UX, Frontend-Sicherheit und die Playwright-Design-Prüfung. Bringt UI-Kits für Desktop und Handy, Design-Tokens und echte Screenshots mit.
 user-invocable: true
 ---
 
