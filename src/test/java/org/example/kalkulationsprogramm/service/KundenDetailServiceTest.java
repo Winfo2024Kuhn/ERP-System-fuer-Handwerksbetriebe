@@ -160,6 +160,46 @@ class KundenDetailServiceTest {
         }
 
         @Test
+        void zeigtDokumentOhneProjektUndAnfrageDasDirektAmKundenHaengt() {
+            // Bug: Akte zeigte „Dokumente 0“, die Datenschutz-Löschung zählte aber „1 Angebot/Rechnung“.
+            Kunde kunde = erstelleKunde(1L);
+            when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
+            when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of());
+            setupAnfrageMocks(kunde, List.of(), List.of());
+            when(ausgangsGeschaeftsDokumentService.findByKunde(1L)).thenReturn(List.of(dokument(88L, "AN-2026-001")));
+
+            KundeDetailDto dto = service.loadDetails(1L).orElseThrow();
+
+            assertThat(dto.getGeschaeftsdokumente())
+                    .extracting(d -> d.getDokumentNummer())
+                    .containsExactly("AN-2026-001");
+        }
+
+        @Test
+        void zeigtDokumentAmProjektUndAmKundenNurEinmal() {
+            Kunde kunde = erstelleKunde(1L);
+            Projekt projekt = erstelleProjekt(10L, kunde);
+            when(kundeRepository.findById(1L)).thenReturn(Optional.of(kunde));
+            when(projektRepository.findByKundenId_Id(1L)).thenReturn(List.of(projekt));
+            setupAnfrageMocks(kunde, List.of(projekt), List.of());
+            when(ausgangsGeschaeftsDokumentService.findByProjekt(10L)).thenReturn(List.of(dokument(77L, "RE-2026-001")));
+            when(ausgangsGeschaeftsDokumentService.findByKunde(1L)).thenReturn(List.of(dokument(77L, "RE-2026-001")));
+
+            KundeDetailDto dto = service.loadDetails(1L).orElseThrow();
+
+            assertThat(dto.getGeschaeftsdokumente()).hasSize(1);
+        }
+
+        private org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto dokument(
+                Long id, String nummer) {
+            var dok = new org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto();
+            dok.setId(id);
+            dok.setDokumentNummer(nummer);
+            dok.setDatum(java.time.LocalDate.of(2026, 10, 1));
+            return dok;
+        }
+
+        @Test
         void mapptKommunikationMitParentEmailId() {
             Kunde kunde = erstelleKunde(1L);
             Projekt projekt = erstelleProjekt(10L, kunde);
