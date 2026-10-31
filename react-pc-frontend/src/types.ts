@@ -1,12 +1,5 @@
 import type { KostenstellenSplit } from './components/kasse/KostenstellenSplitsEditor';
 
-export interface TextTemplate {
-  id: string;
-  name: string;
-  content: string;
-  docTypes?: string[];
-}
-
 export interface Kunde {
   id: string | number;
   name: string;

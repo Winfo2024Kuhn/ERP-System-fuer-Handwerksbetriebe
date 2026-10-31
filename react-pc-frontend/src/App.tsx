@@ -13,7 +13,7 @@ import { BESTELLBEDARF_PFAD, istFreigegeben } from './lib/freigaben';
 
 // Jede Seite ist eine eigene Datei und wird erst beim Öffnen geladen – der erste Aufruf
 // (von unterwegs über Tailscale) lädt so nur das Gerüst und die aktuelle Seite.
-const TextbausteinEditor = lazy(() => import('./pages/TextbausteinEditor'));
+const Textbausteine = lazy(() => import('./pages/Textbausteine'));
 const LeistungenUndKategorien = lazy(() => import('./pages/leistungen/LeistungenUndKategorien'));
 const Kundeneditor = lazy(() => import('./pages/Kundeneditor'));
 const LieferantenEditor = lazy(() => import('./pages/LieferantenEditor'));
@@ -74,7 +74,7 @@ const router = createBrowserRouter(createRoutesFromElements(
               <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
                 <Route path="/" element={<Navigate to="/projekte" replace />} />
 
-                <Route path="/textbausteine" element={<Seite><TextbausteinEditor /></Seite>} />
+                <Route path="/textbausteine" element={<Seite><Textbausteine /></Seite>} />
                 <Route path="/leistungen" element={<Seite><LeistungenUndKategorien /></Seite>} />
                 <Route path="/arbeitszeitarten" element={<Seite><ArbeitszeitartEditor /></Seite>} />
                 <Route path="/kunden" element={<Seite><Kundeneditor /></Seite>} />

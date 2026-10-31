@@ -51,28 +51,6 @@ body {
   padding: 0 !important;
 }
 
-[data-placeholder-chip] {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  background: #e0e7ff;
-  color: #4338ca;
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 14px;
-}
-
-[data-preview-placeholder] {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  background: #fef08a;
-  color: #0f172a;
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 14px;
-}
-
 .prose img {
   max-width: 100%;
   height: auto;
@@ -233,6 +211,64 @@ body {
 [data-zahlungsziel-chip]:hover {
   background-color: #ffe4e6; /* rose-100 */
   border-color: #fda4af; /* rose-300 */
+}
+
+/* Platzhalter-Chip in Textbausteinen (Karte und Editor, siehe
+   components/textbaustein/platzhalter.ts): „Bezeichnung · Beispiel“.
+   Nicht klickbar – deshalb kein Zeiger und kein Hover wie beim Zahlungsziel-Chip.
+   Inline mit box-decoration-break, damit lange Beispiele sauber umbrechen. */
+[data-platzhalter-chip] {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background-color: #fff1f2; /* rose-50 */
+  border: 1px solid #fecdd3; /* rose-200 */
+  user-select: none;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+[data-platzhalter-chip] [data-chip-bezeichnung] {
+  font-size: 0.8em;
+  font-weight: 500;
+  color: #be123c; /* rose-700 */
+  white-space: nowrap;
+}
+
+[data-platzhalter-chip] [data-chip-beispiel] {
+  font-weight: 600;
+  color: #0f172a; /* slate-900 */
+}
+
+[data-platzhalter-chip] [data-chip-beispiel]::before {
+  content: '·';
+  margin: 0 4px;
+  font-weight: 400;
+  color: #fb7185; /* rose-400 */
+}
+
+[data-platzhalter-chip][data-platzhalter-bekannt="false"] {
+  background-color: #f1f5f9; /* slate-100 */
+  border-color: #cbd5e1; /* slate-300 */
+}
+
+[data-platzhalter-chip][data-platzhalter-bekannt="false"] [data-chip-bezeichnung] {
+  color: #475569; /* slate-600 */
+}
+
+[data-platzhalter-chip][data-platzhalter-bekannt="false"] [data-chip-beispiel] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 500;
+  color: #334155; /* slate-700 */
+}
+
+[data-platzhalter-chip][data-platzhalter-bekannt="false"] [data-chip-beispiel]::before {
+  color: #94a3b8; /* slate-400 */
+}
+
+.ProseMirror-selectednode[data-platzhalter-chip] {
+  outline: 2px solid #f43f5e; /* rose-500 */
+  outline-offset: 1px;
 }
 
 /* ========================================

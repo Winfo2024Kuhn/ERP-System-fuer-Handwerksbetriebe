@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { Extensions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
@@ -53,6 +54,12 @@ interface TiptapEditorProps {
      * fuer E-Mail-Vorlagen). Wie verlaufsModus nur beim Erzeugen ausgewertet.
      */
     emailButtons?: boolean;
+    /**
+     * Zusaetzliche Tiptap-Erweiterungen (z. B. Platzhalter-Chips im
+     * Textbaustein-Dialog). Wie verlaufsModus nur beim Erzeugen ausgewertet –
+     * die rufende Stelle uebergibt eine feste Liste.
+     */
+    zusatzErweiterungen?: Extensions;
 }
 
 /** Offener Button-Dialog: `pos` null = neu einfügen, sonst vorhandenen Button ändern. */
@@ -521,7 +528,9 @@ export const TiptapToolbar: React.FC<{ editor: ReturnType<typeof useEditor> | nu
     );
 };
 
-export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hideToolbar = false, compactMode = false, readOnly = false, onFocus, onEditorReady, verlaufsModus = false, emailButtons = false }) => {
+const KEINE_ZUSATZ_ERWEITERUNGEN: Extensions = [];
+
+export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hideToolbar = false, compactMode = false, readOnly = false, onFocus, onEditorReady, verlaufsModus = false, emailButtons = false, zusatzErweiterungen = KEINE_ZUSATZ_ERWEITERUNGEN }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const editorContainerRef = useRef<HTMLDivElement>(null);
     /** Tracks the value the editor was initialized with so the first sync can be skipped
@@ -569,6 +578,7 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                     onBearbeiten: (vorhanden, pos) => setButtonDialog({ pos, vorhanden }),
                 })]
                 : []),
+            ...zusatzErweiterungen,
         ],
         content: value,
         editable: !readOnly,
@@ -917,7 +927,8 @@ export const TiptapEditor: React.FC<TiptapEditorProps> = ({ value, onChange, hid
                 />
             </div>
 
-            {!compactMode && (
+            {/* Mit Toolbar steht der Tipp schon darueber – nicht doppelt zeigen. */}
+            {!compactMode && hideToolbar && (
                 <p className="text-xs text-slate-500">
                     Tipp: Bilder per Drag & Drop oder Einfügen (Ctrl+V) hinzufügen. Klicken Sie auf ein Bild, um es zu bearbeiten.
                 </p>

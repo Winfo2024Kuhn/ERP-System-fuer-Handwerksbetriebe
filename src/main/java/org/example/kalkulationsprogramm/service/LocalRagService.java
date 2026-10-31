@@ -61,7 +61,7 @@ public class LocalRagService {
             Map.entry("/artikel/:id", List.of("ArtikelDetail")),
             Map.entry("/bestellungen", List.of("BestellungenUebersicht")),
             Map.entry("/bestellungen/bedarf", List.of("BestellungEditor")),
-            Map.entry("/textbausteine", List.of("TextbausteinEditor")),
+            Map.entry("/textbausteine", List.of("Textbausteine", "TextbausteinBearbeitenDialog", "PlatzhalterLeiste")),
             Map.entry("/leistungen", List.of("LeistungenUndKategorien", "OrdnerBaum", "AuswertungReiter")),
             Map.entry("/arbeitsgaenge", List.of("ArbeitsgangEditor")),
             Map.entry("/mitarbeiter", List.of("MitarbeiterEditor")),
