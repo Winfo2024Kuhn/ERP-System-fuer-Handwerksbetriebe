@@ -10,6 +10,7 @@ import org.example.kalkulationsprogramm.domain.EmailAttachment;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
+import org.example.kalkulationsprogramm.domain.SteuerberaterKontakt;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.EmailBlacklistRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
@@ -20,8 +21,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import static org.mockito.ArgumentMatchers.any;
 import org.mockito.Mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -137,6 +141,20 @@ class SpamFilterServiceTest {
 
     @Nested
     class ZugeordneteEmails {
+
+        @Test
+        void steuerberaterPostWirdNieSpam() {
+            Email email = erstelleEmail("spammer@unknown.com", "You Won the Lottery!", "Congratulations winner prize");
+            SteuerberaterKontakt kanzlei = new SteuerberaterKontakt();
+            kanzlei.setName("Mustermann Steuerberatung");
+            email.assignToSteuerberater(kanzlei);
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamScore()).isZero();
+            verifyNoInteractions(spamBayesService);
+        }
 
         @Test
         void emailMitProjektZuordnungIstNieSpam() {
@@ -940,6 +958,42 @@ class SpamFilterServiceTest {
             int score = service.calculateSpamScore(email);
 
             assertThat(score).isLessThan(10);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Handentscheidung (userSpamVerdict) hat immer Vorrang
+    // ═══════════════════════════════════════════════════════════════
+
+    @Nested
+    class HandentscheidungHatVorrang {
+
+        @ParameterizedTest
+        @ValueSource(strings = {"HAM", "HAM_IMPLICIT"})
+        void keinSpamEntscheidungBleibtTrotzSpamInhalt(String verdict) {
+            Email email = erstelleEmail("spammer@unknown.com", "You Won the Lottery!", "Congratulations winner prize");
+            email.setUserSpamVerdict(verdict);
+            email.setSpamScore(0);
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isFalse();
+            assertThat(email.getSpamScore()).isZero();
+            verifyNoInteractions(spamBayesService, emailBlacklistRepository);
+        }
+
+        @Test
+        void spamEntscheidungBleibtTrotzHarmlosemInhalt() {
+            Email email = erstelleEmail("max.mustermann@example.com", "Angebot Treppengeländer", "Hallo, anbei die Maße.");
+            email.setUserSpamVerdict("SPAM");
+            email.setSpam(true);
+            email.setSpamScore(100);
+
+            service.analyzeAndMarkSpam(email);
+
+            assertThat(email.isSpam()).isTrue();
+            assertThat(email.getSpamScore()).isEqualTo(100);
+            verifyNoInteractions(spamBayesService);
         }
     }
 }

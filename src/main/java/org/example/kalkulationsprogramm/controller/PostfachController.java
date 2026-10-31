@@ -5,11 +5,13 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachDto;
+import org.example.kalkulationsprogramm.dto.Postfach.PostfachServerOrdnerDto;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachSichtbarkeitRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachSpeichernRequest;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachTestErgebnis;
 import org.example.kalkulationsprogramm.dto.Postfach.PostfachTestRequest;
 import org.example.kalkulationsprogramm.service.PostfachService;
+import org.example.kalkulationsprogramm.service.mail.ServerSpamAbgleichService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,6 +35,7 @@ import lombok.RequiredArgsConstructor;
 public class PostfachController {
 
     private final PostfachService postfachService;
+    private final ServerSpamAbgleichService serverSpamAbgleichService;
 
     @GetMapping
     public List<PostfachDto> alle() {
@@ -59,6 +62,12 @@ public class PostfachController {
     public ResponseEntity<Void> loeschen(@PathVariable Long id) {
         postfachService.loeschen(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Ordner auf dem Mail-Server – Auswahl des Spam-Ordners im Postfach-Dialog. */
+    @GetMapping("/{id}/server-ordner")
+    public PostfachServerOrdnerDto serverOrdner(@PathVariable Long id) {
+        return serverSpamAbgleichService.serverOrdner(id);
     }
 
     @PostMapping("/test")

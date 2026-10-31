@@ -1109,7 +1109,10 @@ describe('EmailCenter – Zuordnen, Entwürfe und Ordner-Hinweise', () => {
     it.each(['trash', 'spam', 'newsletter'])('zeigt im Ordner %s den 30-Tage-Hinweis', async (ordner) => {
         vi.stubGlobal('fetch', mockFetchResponses());
         renderEmailCenter(ordner);
-        expect(await screen.findByText('E-Mails in diesem Ordner werden nach 30 Tagen automatisch endgültig gelöscht.')).toBeInTheDocument();
+        expect(await screen.findByText('E-Mails in diesem Ordner werden nach 30 Tagen automatisch endgültig gelöscht. '
+            + 'Mails, die einem Projekt, Lieferanten oder einer Anfrage zugeordnet sind, bleiben erhalten.')).toBeInTheDocument();
+        // Nur der Spam-Ordner erklärt zusätzlich das Verschieben auf dem Mail-Server.
+        expect(screen.queryAllByRole('button', { name: 'Mehr zu: Spam' })).toHaveLength(ordner === 'spam' ? 1 : 0);
     });
 
     it('zeigt den 30-Tage-Hinweis nicht im Posteingang und erklärt „Nicht zugeordnet“', async () => {

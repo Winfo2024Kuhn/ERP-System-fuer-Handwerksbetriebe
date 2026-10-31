@@ -460,6 +460,13 @@ public class SpamFilterService {
      * Setzt auch isSpam und isNewsletter.
      */
     public void analyzeAndMarkSpam(Email email) {
+        // Die Handentscheidung (SPAM/HAM/HAM_IMPLICIT) hat immer Vorrang. Eine erneute
+        // Bewertung würde sie überschreiben, und Spam wandert auch auf dem Mailserver
+        // in den Spam-Ordner.
+        if (email.getUserSpamVerdict() != null) {
+            return;
+        }
+
         // Ausgehende Emails sind niemals Spam
         if (email.getDirection() == EmailDirection.OUT) {
             email.setSpam(false);
@@ -468,9 +475,10 @@ public class SpamFilterService {
             return;
         }
 
-        // WICHTIG: Zugeordnete Emails dürfen niemals als Spam oder Newsletter markiert
-        // werden
-        if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
+        // WICHTIG: Zugeordnete Emails (auch Steuerberater-Post wie Lohnabrechnungen)
+        // dürfen niemals als Spam oder Newsletter markiert werden
+        if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null
+                || email.getSteuerberater() != null) {
             email.setSpam(false);
             email.setNewsletter(false);
             email.setSpamScore(0);

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    beschreibeAbruf, beschreibeSichtbarkeit, formatPostfach, immerFuerAlleSichtbar, formatVorZeit, lokalerTeil, nurWaehlbareAbsender, parseAbsenderPostfaecher,
+    beschreibeAbruf, beschreibeSichtbarkeit, ladeServerOrdner, parseServerOrdner, SPAM_ORDNER_AUTOMATISCH, spamOrdnerOptionen, spamVerschiebenAn, formatPostfach, immerFuerAlleSichtbar, formatVorZeit, lokalerTeil, nurWaehlbareAbsender, parseAbsenderPostfaecher,
     parsePostfach, parsePostfaecher, parseSichtbarkeitsAbteilungen, parseSichtbarkeitsBenutzer, passtZurSuche,
     sichtbarkeitAusPostfach, sichtbarkeitGeaendert,
     waehleStandardAbsender, type AbsenderPostfach, type PostfachDto,
@@ -209,5 +209,71 @@ describe('postfach – Sichtbarkeit bearbeiten', () => {
         expect(parsePostfaecher(null)).toEqual([]);
         expect(parsePostfaecher([postfach(), null, { id: 'x', emailAdresse: 'a@example.org' }, { id: 4 }]))
             .toEqual([postfach()]);
+    });
+});
+
+describe('postfach – Spam auf dem Server', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    const antwort = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+        status, headers: { 'Content-Type': 'application/json' },
+    });
+
+    it('nimmt den Spam-Schalter als an, solange er nicht ausdrücklich aus ist', () => {
+        expect(spamVerschiebenAn(postfach())).toBe(true);
+        expect(spamVerschiebenAn(postfach({ spamAufServerVerschieben: true }))).toBe(true);
+        expect(spamVerschiebenAn(postfach({ spamAufServerVerschieben: false }))).toBe(false);
+    });
+
+    it('liest die Ordnerliste robust ein', () => {
+        expect(parseServerOrdner({
+            ordner: [{ name: 'INBOX', spamOrdner: false }, { name: 'Junk', spamOrdner: true }, { name: '' }, { spamOrdner: true }, null, { name: 'Archiv' }],
+            erkannterSpamOrdner: 'Junk',
+        })).toEqual({
+            ordner: [{ name: 'INBOX', spamOrdner: false }, { name: 'Junk', spamOrdner: true }, { name: 'Archiv', spamOrdner: false }],
+            erkannterSpamOrdner: 'Junk',
+        });
+        expect(parseServerOrdner({ ordner: 'kaputt', erkannterSpamOrdner: '' })).toEqual({ ordner: [], erkannterSpamOrdner: null });
+        expect(parseServerOrdner(null)).toEqual({ ordner: [], erkannterSpamOrdner: null });
+    });
+
+    it('baut die Auswahl: Automatisch zuerst, erkannter Ordner markiert, gespeicherter bleibt wählbar', () => {
+        expect(spamOrdnerOptionen(null, null)).toEqual([{ value: SPAM_ORDNER_AUTOMATISCH, label: 'Automatisch erkennen (empfohlen)' }]);
+        expect(spamOrdnerOptionen(null, 'Werbung')).toEqual([
+            { value: '', label: 'Automatisch erkennen (empfohlen)' },
+            { value: 'Werbung', label: 'Werbung' },
+        ]);
+        const ordner = [{ name: 'INBOX', spamOrdner: false }, { name: 'Junk', spamOrdner: true }, { name: 'Junk', spamOrdner: false }];
+        expect(spamOrdnerOptionen(ordner, 'Junk')).toEqual([
+            { value: '', label: 'Automatisch erkennen (empfohlen)' },
+            { value: 'INBOX', label: 'INBOX' },
+            { value: 'Junk', label: 'Junk (Spam-Ordner)' },
+        ]);
+        expect(spamOrdnerOptionen(ordner, 'Alter Spam').at(-1)).toEqual({ value: 'Alter Spam', label: 'Alter Spam (nicht auf dem Server gefunden)' });
+        expect(spamOrdnerOptionen([], 'Alter Spam').at(-1)).toEqual({ value: 'Alter Spam', label: 'Alter Spam' });
+        expect(spamOrdnerOptionen(ordner, '')).toHaveLength(3);
+    });
+
+    it('lädt die Ordner vom Server', async () => {
+        const fetchMock = vi.fn(async () => antwort({ ordner: [{ name: 'Junk', spamOrdner: true }], erkannterSpamOrdner: 'Junk' }));
+        vi.stubGlobal('fetch', fetchMock);
+        await expect(ladeServerOrdner(3)).resolves.toEqual({ ordner: [{ name: 'Junk', spamOrdner: true }], erkannterSpamOrdner: 'Junk' });
+        expect(fetchMock).toHaveBeenCalledWith('/api/postfaecher/3/server-ordner');
+    });
+
+    it('lehnt mit der Meldung des Servers ab, sonst mit einem Ersatztext', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => antwort({ message: 'Für dieses Postfach ist noch kein Abruf-Zugang gespeichert.' }, 400)));
+        await expect(ladeServerOrdner(3)).rejects.toThrow('Für dieses Postfach ist noch kein Abruf-Zugang gespeichert.');
+
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('kaputt', { status: 500 })));
+        await expect(ladeServerOrdner(3)).rejects.toThrow('Die Ordner vom Mail-Server konnten nicht geladen werden.');
+
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('kein json', { status: 200 })));
+        await expect(ladeServerOrdner(3)).rejects.toThrow('Die Ordner vom Mail-Server konnten nicht geladen werden.');
+
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+        await expect(ladeServerOrdner(3)).rejects.toThrow('Verbindung zum Server fehlgeschlagen. Die Ordner konnten nicht geladen werden.');
     });
 });

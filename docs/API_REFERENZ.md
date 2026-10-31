@@ -78,7 +78,7 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 - `POST /api/emails/admin/**`
 - Massenläufe ohne Knopf (`ADMIN_MASSENLAEUFE`, jede Methode): `/api/emails/import`,
   `/api/emails/scan-spam|scan-inquiries|scan-assignments|scan-steuerberater`,
-  `/api/emails/backfill-parents`, `/api/emails/spam-model/rescore|bootstrap`,
+  `/api/emails/backfill-parents`, `/api/emails/spam-model/bootstrap`,
   `/api/lieferant-dokumente/process-assigned-emails`,
   `/api/lieferant-dokumente/process-email/*`,
   `/api/lieferant-dokumente/lieferant/*/process-emails`,
@@ -832,7 +832,6 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `POST` | `/{emailId}/confirm-newsletter` | Newsletter bestätigen |
 | `POST` | `/spam-model/bootstrap` | Spam-Modell aus einer CSV-Datei anlernen *(nur Admin)* |
 | `GET` | `/spam-model/stats` | Stand des Spam-Lernmodells |
-| `POST` | `/spam-model/rescore` | Alle Mails mit dem Spam-Modell neu bewerten (`400`, solange nicht angelernt) *(nur Admin)* |
 | `GET` | `/projekt/{projektId}` | Mails eines Projekts |
 | `GET` | `/anfrage/{anfrageId}` | Mails einer Anfrage |
 | `GET` | `/lieferant/{lieferantId}` | Mails eines Lieferanten |
@@ -993,6 +992,7 @@ Ganzer Pfad nur für Admins.
 | `PUT` | `/{id}` | Postfach ändern *(nur Admin)* |
 | `PUT` | `/{id}/sichtbarkeit` | Festlegen, wer das Postfach sehen darf *(nur Admin)* |
 | `DELETE` | `/{id}` | Postfach löschen *(nur Admin)* |
+| `GET` | `/{id}/server-ordner` | Ordner auf dem Mail-Server samt erkanntem Spam-Ordner (Auswahl im Postfach-Dialog) *(nur Admin)* |
 | `POST` | `/test` | Verbindung testen *(nur Admin)* |
 
 ---
@@ -1833,7 +1833,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 65 | `NotificationController` | `/api/notifications` | 3 | 13 |
 | 66 | `OffenePostenController` | `/api/offene-posten` | 6 | 6 |
 | 67 | `OutOfOfficeController` | `/api/email/outofoffice` | 4 | 9 |
-| 68 | `PostfachController` | `/api/postfaecher` | 6 | 9 |
+| 68 | `PostfachController` | `/api/postfaecher` | 7 | 9 |
 | 69 | `ProduktkategorieController` | `/api/produktkategorien` | 14 | 8 |
 | 70 | `ProjektController` | `/api/projekte` | 50 | 3 |
 | 71 | `ProjektWartungController` | `/api/admin/projekte` | 2 | 3 |

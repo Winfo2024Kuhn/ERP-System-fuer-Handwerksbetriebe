@@ -633,25 +633,6 @@ public class UnifiedEmailController {
         ));
     }
 
-    @PostMapping("/spam-model/rescore")
-    @Transactional
-    public ResponseEntity<Map<String, Object>> rescoreAllEmails() {
-        if (!spamBayesService.isModelReady()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Spam-Modell noch nicht trainiert."));
-        }
-        List<Email> allEmails = emailRepository.findAll();
-        int rescored = 0;
-        for (Email email : allEmails) {
-            spamFilterService.analyzeAndMarkSpam(email);
-            emailRepository.save(email);
-            rescored++;
-        }
-        return ResponseEntity.ok(Map.of(
-                "message", rescored + " Emails neu bewertet.",
-                "rescored", rescored
-        ));
-    }
-
     // ═══════════════════════════════════════════════════════════════
     // EMAILS FÜR PROJEKTE
     // ═══════════════════════════════════════════════════════════════
