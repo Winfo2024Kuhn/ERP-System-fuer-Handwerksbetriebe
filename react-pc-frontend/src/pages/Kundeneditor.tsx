@@ -214,7 +214,8 @@ const KundenAnfrageKarte: React.FC<{ anfrage: KundeAnfrageKurz; onOpen: () => vo
 const KundenDokumentKarte: React.FC<{ dok: AusgangsGeschaeftsDokument; onOpen: () => void }> = ({ dok, onOpen }) => {
     const herkunft = dok.projektBauvorhaben
         ? `Projekt: ${dok.projektBauvorhaben}`
-        : dok.anfrageId ? 'Aus Anfrage' : null;
+        : dok.anfrageId ? 'Aus Anfrage'
+            : dok.projektId ? null : 'Ohne Projekt';
     return (
         <Card className="group cursor-pointer hover:shadow-md transition-all border-slate-200 bg-white" onClick={onOpen}>
             <div className="p-4 flex items-center justify-between gap-4">
@@ -478,6 +479,11 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                                         onOpen={() => {
                                             if (d.projektId) navigate(`/projekte?projektId=${d.projektId}`);
                                             else if (d.anfrageId) navigate(`/anfragen?anfrageId=${d.anfrageId}`);
+                                            else {
+                                                // Hängt nur am Kunden: direkt im Dokument-Editor öffnen (wie in der Dokumentübersicht).
+                                                const params = new URLSearchParams({ dokumentId: String(d.id), dokumentTyp: d.typ });
+                                                window.open(`/dokument-editor?${params.toString()}`, '_blank');
+                                            }
                                         }}
                                     />
                                 ))}
