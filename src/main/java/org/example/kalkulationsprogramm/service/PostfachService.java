@@ -31,6 +31,7 @@ import org.example.kalkulationsprogramm.repository.EmailPostfachZuordnungReposit
 import org.example.kalkulationsprogramm.repository.FrontendUserProfileRepository;
 import org.example.kalkulationsprogramm.service.mail.MailSecretService;
 import org.example.kalkulationsprogramm.service.mail.PostfachZugang;
+import org.example.kalkulationsprogramm.service.mail.SpamOrdnerRegeln;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -185,6 +186,21 @@ public class PostfachService {
         });
     }
 
+    /**
+     * Merkt sich das Ergebnis des Spam-Abgleichs (benutzter Ordner, Fehlertext) für die
+     * Anzeige im Postfach. Eigene Transaktion wie {@link #merkeAbruf(Long, String)}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void merkeSpamAbgleich(Long postfachId, String benutzterOrdner, String fehler) {
+        if (postfachId == null) {
+            return;
+        }
+        // Gezieltes Update: ein gleichzeitig gespeicherter Postfach-Dialog wird nicht überschrieben.
+        repository.merkeSpamAbgleich(postfachId,
+                benutzterOrdner == null ? null : kuerze(benutzterOrdner, MAX_FELD_LAENGE),
+                fehler == null ? null : kuerze(fehler, 500));
+    }
+
     // ==================== Verbindungstest ====================
 
     @Transactional(readOnly = true)
@@ -246,9 +262,10 @@ public class PostfachService {
             throw new IllegalArgumentException("Daten fehlen.");
         }
         pruefeLaenge(request.emailAdresse(), request.anzeigename(), request.benutzername(), request.passwort(),
-                request.smtpHost(), request.imapHost());
+                request.smtpHost(), request.imapHost(), request.spamOrdner());
         pruefePort(request.smtpPort());
         pruefePort(request.imapPort());
+        pruefeSpamOrdner(request.spamOrdner());
 
         String adresse = request.emailAdresse() == null ? "" : request.emailAdresse().trim();
         if (adresse.isEmpty()) {
@@ -324,6 +341,8 @@ public class PostfachService {
             uebernehmeSichtbarkeit(postfach, request.sichtbarFuerAlle(), request.abteilungIds(), request.benutzerIds(), neu);
         }
 
+        uebernehmeSpamAbgleich(postfach, request.spamAufServerVerschieben(), request.spamOrdner());
+
         postfach.setLaeuftAus(laeuftAus);
         postfach.setHauptpostfach(wirdHaupt);
         postfach.setFuerGeschaeftsdokumente(wirdGeschaeftsdokumente);
@@ -349,6 +368,23 @@ public class PostfachService {
         // Bewusst ohne Passwort geloggt.
         log.info("[Postfach] Postfach {} gespeichert (Hauptpostfach: {}, Rechnungen: {}, aktiv: {})",
                 gespeichert.getId(), wirdHaupt, wirdGeschaeftsdokumente, aktiv);
+    }
+
+    /**
+     * Spam auf dem Server: {@code null} = unverändert. Ein leerer Ordnername heißt „automatisch
+     * erkennen“. Wechselt der Ordner, gilt der alte Hinweis aus dem letzten Abgleich nicht mehr.
+     */
+    private static void uebernehmeSpamAbgleich(EmailAbsender postfach, Boolean verschieben, String spamOrdner) {
+        if (verschieben != null) {
+            postfach.setSpamAufServerVerschieben(verschieben);
+        }
+        if (spamOrdner != null) {
+            String neu = gesetzt(spamOrdner) ? spamOrdner.trim() : null;
+            if (!Objects.equals(neu, postfach.getSpamOrdner())) {
+                postfach.setSpamOrdner(neu);
+                postfach.setSpamAbgleichFehler(null);
+            }
+        }
     }
 
     /**
@@ -465,7 +501,11 @@ public class PostfachService {
                                 Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
                         .map(u -> new PostfachDto.BenutzerRefDto(u.getId(), u.getDisplayName()))
                         .toList(),
-                p.isLaeuftAus());
+                p.isLaeuftAus(),
+                p.isSpamAufServerVerschieben(),
+                p.getSpamOrdner(),
+                p.getSpamOrdnerErkannt(),
+                p.getSpamAbgleichFehler());
     }
 
     /** Hauptpostfach und Postfach für Rechnungen & Mahnungen sieht jeder im Betrieb. */
@@ -487,6 +527,17 @@ public class PostfachService {
                 throw new IllegalArgumentException("Eine der Eingaben ist zu lang (höchstens "
                         + MAX_FELD_LAENGE + " Zeichen).");
             }
+        }
+    }
+
+    /** Leer = automatisch erkennen. Sonst nie Posteingang, Papierkorb, Gesendet oder Entwürfe. */
+    private static void pruefeSpamOrdner(String spamOrdner) {
+        if (spamOrdner == null || spamOrdner.isBlank()) {
+            return;
+        }
+        if (!SpamOrdnerRegeln.eignetSichDemNamenNach(spamOrdner)) {
+            throw new IllegalArgumentException("Dieser Ordner eignet sich nicht als Spam-Ordner. Posteingang, "
+                    + "Papierkorb, Gesendet und Entwürfe sind nicht erlaubt – bitte einen anderen Ordner wählen.");
         }
     }
 

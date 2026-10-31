@@ -1,9 +1,47 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { DatePicker } from './datepicker';
 
 describe('DatePicker', () => {
+    describe('Lage auf dem Bildschirm', () => {
+        /** Feld unten im Fenster (14-Zoll-MacBook), Inhalt eines Monats mit sechs Wochenzeilen. */
+        function oeffneUnten(user: ReturnType<typeof userEvent.setup>, inhalt: number) {
+            vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(900);
+            vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(inhalt);
+            render(<DatePicker value="2026-10-31" onChange={() => {}} aria-label="Gültig ab" />);
+            const feld = screen.getByRole('button', { name: 'Gültig ab' });
+            vi.spyOn(feld, 'getBoundingClientRect').mockReturnValue(
+                { top: 432, bottom: 472, left: 336, right: 710, width: 374, height: 40, x: 336, y: 432, toJSON: () => ({}) });
+            return user.click(feld);
+        }
+
+        afterEach(() => vi.restoreAllMocks());
+
+        it('passt der volle Inhalt weder darunter noch darüber, bleibt er ganz im Fenster statt abgeschnitten zu werden', async () => {
+            await oeffneUnten(userEvent.setup(), 445);
+            const kalender = screen.getByRole('dialog', { name: 'Gültig ab auswählen' });
+            const top = parseFloat(kalender.style.top);
+            const maxHeight = parseFloat(kalender.style.maxHeight);
+            expect(maxHeight).toBeGreaterThanOrEqual(447);
+            expect(top).toBeGreaterThanOrEqual(8);
+            expect(top + maxHeight).toBeLessThanOrEqual(892);
+        });
+
+        it('passt der Inhalt darunter, öffnet er sich unterhalb des Felds', async () => {
+            await oeffneUnten(userEvent.setup(), 380);
+            const kalender = screen.getByRole('dialog', { name: 'Gültig ab auswählen' });
+            expect(parseFloat(kalender.style.top)).toBeGreaterThanOrEqual(472);
+        });
+
+        it('passt der Inhalt nur darüber, öffnet er sich oberhalb des Felds', async () => {
+            await oeffneUnten(userEvent.setup(), 418);
+            const kalender = screen.getByRole('dialog', { name: 'Gültig ab auswählen' });
+            expect(parseFloat(kalender.style.top)).toBeGreaterThanOrEqual(8);
+            expect(parseFloat(kalender.style.top) + parseFloat(kalender.style.maxHeight)).toBeLessThanOrEqual(428);
+        });
+    });
+
     it('rendert mit Platzhaltertext', () => {
         render(<DatePicker value="" onChange={() => {}} placeholder="Datum wählen" />);
         expect(screen.getByText('Datum wählen')).toBeInTheDocument();

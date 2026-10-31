@@ -47,6 +47,7 @@ Supervised Multinomial Naive Bayes in reinem Java.
 - **Ensemble:** 40% Regel-Score (`SpamFilterService`) + 60% Bayes-Score (`SpamBayesService`).
 - **Daten:** Token-Frequenzen in `spam_token_count` (Entity `SpamTokenCount`), In-Memory-Cache (5-Min-Refresh).
 - **Feedback:** User trainiert das Modell über die Endpoints `POST /api/emails/{emailId}/mark-spam` bzw. `mark-not-spam` (`UnifiedEmailController`) weiter.
+- **Auf dem Server:** `service/mail/ServerSpamAbgleichService` verschiebt Spam alle zwei Minuten auch auf dem IMAP-Server aus `INBOX` in den Spam-Ordner und bei „Kein Spam“ zurück (Schalter je Postfach). Wer `imap_ordner`/`imap_uid` einer `EmailPostfachZuordnung` liest, muss damit rechnen, dass sie auf den Spam-Ordner zeigen.
 
 ## Externe Dienste (Config)
 - **Gemini (Google KI):** Der API-Key steht **nicht** in den Properties. Er wird in der Oberfläche gepflegt (System-Einstellungen → KI-Funktionen) und liegt in der Tabelle `system_setting` (`SystemSettingsService`). In den Properties stehen nur die Modelle (`ai.gemini.model.*`).

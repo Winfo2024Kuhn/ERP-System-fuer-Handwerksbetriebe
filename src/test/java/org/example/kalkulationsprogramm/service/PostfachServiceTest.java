@@ -1025,4 +1025,114 @@ class PostfachServiceTest {
         assertThat(PostfachService.domainVon("ohne-at")).isEmpty();
         assertThat(PostfachService.domainVon(null)).isEmpty();
     }
+
+    @Nested
+    class SpamAufDemServer {
+
+        private PostfachSpeichernRequest mitSpam(Boolean verschieben, String spamOrdner) {
+            return new PostfachSpeichernRequest("max@example.com", "Max Mustermann", true, 10, false, false,
+                    null, "geheim", "mail.example.com", 465, "mail.example.com", 993, null, null, null, null,
+                    verschieben, spamOrdner);
+        }
+
+        private EmailAbsender vorhanden() {
+            EmailAbsender p = postfach(7L, "max@example.com", false);
+            p.setSmtpHost("mail.example.com");
+            p.setImapHost("mail.example.com");
+            p.setSpamAufServerVerschieben(false);
+            p.setSpamOrdner("Junk");
+            p.setSpamOrdnerErkannt("Junk");
+            p.setSpamAbgleichFehler("Der gewählte Spam-Ordner „Junk“ ist auf dem Server nicht vorhanden.");
+            when(repository.findById(7L)).thenReturn(Optional.of(p));
+            return p;
+        }
+
+        @Test
+        void neuesPostfachVerschiebtSpamUndErkenntOrdnerAutomatisch() {
+            PostfachDto dto = service.anlegen(request("max@example.com"));
+
+            assertThat(dto.spamAufServerVerschieben()).isTrue();
+            assertThat(dto.spamOrdner()).isNull();
+            assertThat(dto.spamOrdnerErkannt()).isNull();
+            assertThat(dto.spamAbgleichFehler()).isNull();
+        }
+
+        @Test
+        void ohneAngabenBleibtAllesWieGespeichert() {
+            vorhanden();
+
+            PostfachDto dto = service.aendern(7L, mitSpam(null, null));
+
+            assertThat(dto.spamAufServerVerschieben()).isFalse();
+            assertThat(dto.spamOrdner()).isEqualTo("Junk");
+            assertThat(dto.spamOrdnerErkannt()).isEqualTo("Junk");
+            assertThat(dto.spamAbgleichFehler()).startsWith("Der gewählte Spam-Ordner");
+        }
+
+        @Test
+        void neuerOrdnerWirdGetrimmtUndAlterHinweisVerschwindet() {
+            vorhanden();
+
+            PostfachDto dto = service.aendern(7L, mitSpam(true, "  INBOX.Spam  "));
+
+            assertThat(dto.spamAufServerVerschieben()).isTrue();
+            assertThat(dto.spamOrdner()).isEqualTo("INBOX.Spam");
+            assertThat(dto.spamAbgleichFehler()).isNull();
+        }
+
+        @Test
+        void leererOrdnerHeisstAutomatischErkennen() {
+            vorhanden();
+
+            PostfachDto dto = service.aendern(7L, mitSpam(null, "   "));
+
+            assertThat(dto.spamOrdner()).isNull();
+            assertThat(dto.spamAbgleichFehler()).isNull();
+        }
+
+        @Test
+        void gleicherOrdnerBehaeltDenHinweis() {
+            vorhanden();
+
+            PostfachDto dto = service.aendern(7L, mitSpam(false, "Junk"));
+
+            assertThat(dto.spamAbgleichFehler()).isNotNull();
+        }
+
+        @Test
+        void zuLangerOrdnernameWirdAbgelehnt() {
+            vorhanden();
+            String lang = "x".repeat(10_001);
+
+            assertThatThrownBy(() -> service.aendern(7L, mitSpam(true, lang)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("zu lang");
+        }
+
+        @Test
+        void merktSichErgebnisDesAbgleichsGezieltOhneDasPostfachZuSpeichern() {
+            service.merkeSpamAbgleich(7L, "INBOX.Spam", "f".repeat(600));
+
+            verify(repository).merkeSpamAbgleich(7L, "INBOX.Spam", "f".repeat(500));
+            verify(repository, never()).save(any(EmailAbsender.class));
+        }
+
+        @Test
+        void merkeSpamAbgleichOhnePostfachTutNichts() {
+            service.merkeSpamAbgleich(null, "Junk", null);
+
+            verify(repository, never()).merkeSpamAbgleich(any(), any(), any());
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { "INBOX", "inbox", "Trash", "INBOX.Papierkorb", "Gesendet", "Entwürfe", "Junk\nINBOX" })
+        void ungeeigneterSpamOrdnerWirdAbgelehnt(String ordner) {
+            vorhanden();
+
+            assertThatThrownBy(() -> service.aendern(7L, mitSpam(true, ordner)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("eignet sich nicht als Spam-Ordner");
+            verify(repository, never()).save(any(EmailAbsender.class));
+        }
+    }
 }

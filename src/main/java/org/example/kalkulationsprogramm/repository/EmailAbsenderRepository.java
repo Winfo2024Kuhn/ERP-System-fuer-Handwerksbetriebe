@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.example.kalkulationsprogramm.domain.EmailAbsender;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -29,6 +30,11 @@ public interface EmailAbsenderRepository extends JpaRepository<EmailAbsender, Lo
     List<EmailAbsender> findByHauptpostfachTrue();
 
     List<EmailAbsender> findByFuerGeschaeftsdokumenteTrue();
+
+    /** Nur die beiden Anzeige-Spalten des Spam-Abgleichs – überschreibt keine gleichzeitige Änderung im Dialog. */
+    @Modifying
+    @Query("UPDATE EmailAbsender p SET p.spamOrdnerErkannt = :ordner, p.spamAbgleichFehler = :fehler WHERE p.id = :id")
+    int merkeSpamAbgleich(@Param("id") Long id, @Param("ordner") String ordner, @Param("fehler") String fehler);
 
     /** Postfächer, die dem Benutzer einzeln freigegeben sind (unabhängig von „für alle sichtbar“). */
     @Query("SELECT DISTINCT p.id FROM EmailAbsender p JOIN p.sichtbarFuerBenutzer b WHERE b.id = :benutzerId")

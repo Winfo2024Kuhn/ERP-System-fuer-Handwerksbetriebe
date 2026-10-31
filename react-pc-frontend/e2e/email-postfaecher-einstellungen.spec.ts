@@ -14,6 +14,8 @@ interface Postfach {
     smtpHost: string | null; smtpPort: number | null; imapHost: string | null; imapPort: number | null;
     abrufAktiv: boolean; letzterAbrufAm: string | null; letzterAbrufFehler: string | null;
     zugewieseneBenutzer: { id: number; displayName: string }[];
+    spamAufServerVerschieben: boolean; spamOrdner: string | null;
+    spamOrdnerErkannt: string | null; spamAbgleichFehler: string | null;
 }
 
 const vorMinuten = (minuten: number) => {
@@ -24,17 +26,20 @@ const vorMinuten = (minuten: number) => {
 
 function startbestand(): Postfach[] {
     const server = { smtpHost: 'mail.your-server.de', smtpPort: 465, imapHost: 'mail.your-server.de', imapPort: 993 };
+    const spam = { spamAufServerVerschieben: true, spamOrdner: null, spamOrdnerErkannt: null, spamAbgleichFehler: null };
     return [
         {
             id: 3, emailAdresse: 'info@musterbetrieb.example', anzeigename: 'Musterbetrieb', aktiv: true, sortierung: 0,
             hauptpostfach: true, fuerGeschaeftsdokumente: false, benutzername: 'info@musterbetrieb.example', passwortGesetzt: true,
             ...server, abrufAktiv: true, letzterAbrufAm: vorMinuten(2), letzterAbrufFehler: null, zugewieseneBenutzer: [],
+            ...spam, spamOrdnerErkannt: 'Junk',
         },
         {
             id: 4, emailAdresse: 'rechnungen@musterbetrieb.example', anzeigename: 'Musterbetrieb – Buchhaltung', aktiv: true, sortierung: 10,
             hauptpostfach: false, fuerGeschaeftsdokumente: true, benutzername: 'rechnungen@musterbetrieb.example', passwortGesetzt: true,
             ...server, abrufAktiv: true, letzterAbrufAm: vorMinuten(30), letzterAbrufFehler: 'Anmeldung fehlgeschlagen – Passwort prüfen',
             zugewieseneBenutzer: [{ id: 7, displayName: 'Max Mustermann' }],
+            ...spam, spamAbgleichFehler: 'Auf dem Server wurde kein Spam-Ordner gefunden. Bitte den Spam-Ordner im Postfach auswählen.',
         },
     ];
 }
@@ -52,7 +57,10 @@ async function stubbeEinstellungen(page: Page): Promise<Mitschrift> {
     const uebernehmen = (id: number, body: Record<string, unknown>): Postfach => {
         const alt = bestand.find(p => p.id === id);
         const neu: Postfach = {
-            ...(alt ?? { letzterAbrufAm: null, letzterAbrufFehler: null, zugewieseneBenutzer: [], passwortGesetzt: false }),
+            ...(alt ?? {
+                letzterAbrufAm: null, letzterAbrufFehler: null, zugewieseneBenutzer: [], passwortGesetzt: false,
+                spamOrdnerErkannt: null, spamAbgleichFehler: null,
+            }),
             ...(body as unknown as Postfach),
             id,
             passwortGesetzt: !!body.passwort || !!alt?.passwortGesetzt,
@@ -76,6 +84,15 @@ async function stubbeEinstellungen(page: Page): Promise<Mitschrift> {
             return json(route, { versandOk: true, abrufOk: true, message: 'Anmeldung für Versand und Abruf hat geklappt.' });
         }
         if (pfad === '/api/postfaecher' && methode === 'GET') return json(route, bestand);
+        if (pfad === '/api/postfaecher/3/server-ordner' && methode === 'GET') {
+            return json(route, {
+                ordner: [{ name: 'Junk', spamOrdner: true }, { name: 'Werbung', spamOrdner: false }],
+                erkannterSpamOrdner: 'Junk',
+            });
+        }
+        if (pfad === '/api/postfaecher/4/server-ordner' && methode === 'GET') {
+            return json(route, { message: 'Verbindung zum Posteingangs-Server fehlgeschlagen. Bitte den Zugang prüfen.' }, 400);
+        }
         if (pfad === '/api/postfaecher' && methode === 'POST') {
             const body = anfrage.postDataJSON();
             mitschrift.angelegt.push(body);
@@ -191,4 +208,48 @@ test('Läuft aus: altes Postfach auslaufen lassen – Request und Schild in der 
     await expect(altZeile.getByText('läuft aus', { exact: true })).toBeVisible();
     await expect(rechnungenZeile.getByText('läuft aus', { exact: true })).toHaveCount(0);
     await designPruefung(page, info, 'postfaecher-liste-laeuft-aus', { primaerAktion: page.getByRole('button', { name: 'Neues Postfach' }) });
+});
+
+test('Spam auf dem Server: Ordner vom Mail-Server laden, wählen und speichern', async ({ page }, info) => {
+    const mitschrift = await stubbeEinstellungen(page);
+    await page.goto('/einstellungen#email');
+
+    // Fehler beim letzten Abgleich und beim Laden der Ordner: dezent, Auswahl bleibt bedienbar.
+    await page.getByRole('button', { name: 'Postfach rechnungen@musterbetrieb.example bearbeiten' }).click();
+    let dialog = page.getByRole('dialog');
+    await expect(dialog.getByTestId('spam-abgleich-fehler')).toContainText('Auf dem Server wurde kein Spam-Ordner gefunden.');
+    await dialog.getByRole('combobox', { name: 'Spam-Ordner auf dem Server' }).click();
+    await expect(dialog.getByTestId('spam-ordner-ladefehler')).toContainText('Verbindung zum Posteingangs-Server fehlgeschlagen.');
+    await expect(page.getByRole('option', { name: 'Automatisch erkennen (empfohlen)' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await dialog.getByRole('button', { name: 'Abbrechen' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Postfach info@musterbetrieb.example bearbeiten' }).click();
+    dialog = page.getByRole('dialog');
+    const abschnitt = dialog.getByTestId('postfach-spam');
+    await expect(abschnitt.getByRole('checkbox', { name: /Spam auch auf dem Mail-Server/ })).toBeChecked();
+    await expect(abschnitt.getByTestId('spam-ordner-zuletzt')).toHaveText('Zuletzt benutzt: Junk');
+
+    const auswahl = abschnitt.getByRole('combobox', { name: 'Spam-Ordner auf dem Server' });
+    await abschnitt.scrollIntoViewIfNeeded();
+    await auswahl.click();
+    // Erst die Ordner vom Server abwarten, dann wählen.
+    const junk = page.getByRole('option', { name: 'Junk (Spam-Ordner)' });
+    await expect(junk).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Werbung' })).toBeVisible();
+    await designPruefung(page, info, 'postfach-dialog-spam-ordner');
+    await page.getByRole('option', { name: 'Werbung' }).click();
+    await expect(auswahl).toHaveText('Werbung');
+
+    await abschnitt.getByRole('button', { name: 'Mehr zu: Spam auf dem Server verschieben' }).click();
+    await expect(page.getByRole('dialog', { name: 'Spam auf dem Server verschieben' })).toContainText('Alle zwei Minuten');
+    await designPruefung(page, info, 'postfach-dialog-spam-info');
+    await page.keyboard.press('Escape');
+
+    await dialog.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(mitschrift.geaendert.at(-1)).toMatchObject({
+        emailAdresse: 'info@musterbetrieb.example', spamAufServerVerschieben: true, spamOrdner: 'Werbung',
+    });
 });

@@ -1,17 +1,60 @@
 package org.example.kalkulationsprogramm.repository;
 
+import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailPostfachZuordnung;
+import org.example.kalkulationsprogramm.domain.ServerSpamStatus;
+import org.example.kalkulationsprogramm.dto.Email.ServerSpamKandidat;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.NativeQuery;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface EmailPostfachZuordnungRepository extends JpaRepository<EmailPostfachZuordnung, Long> {
 
     boolean existsByPostfachId(Long postfachId);
 
     java.util.List<EmailPostfachZuordnung> findByEmailId(Long emailId);
+
+    /**
+     * Spam, der in diesem Postfach auf dem Server noch im Ordner {@code ordner} (Posteingang)
+     * liegt und dort weg soll. Mails im ERP-Papierkorb und Mails mit Projekt, Anfrage oder
+     * Lieferant bleiben, wo sie sind.
+     */
+    @Query("SELECT new org.example.kalkulationsprogramm.dto.Email.ServerSpamKandidat("
+            + "z.id, z.imapOrdner, z.imapUid, e.messageId, e.fromAddress, e.subject) "
+            + "FROM EmailPostfachZuordnung z JOIN z.email e "
+            + "WHERE z.postfach.id = :postfachId AND z.imapOrdner = :ordner AND z.serverSpamStatus IS NULL "
+            + "AND e.isSpam = true AND e.deletedAt IS NULL AND e.direction = :richtung "
+            + "AND e.projekt IS NULL AND e.anfrage IS NULL AND e.lieferant IS NULL "
+            + "ORDER BY z.id ASC")
+    java.util.List<ServerSpamKandidat> findSpamZumVerschieben(@Param("postfachId") Long postfachId,
+            @Param("ordner") String ordner, @Param("richtung") EmailDirection richtung, Limit limit);
+
+    /** Vom ERP in den Spam-Ordner verschobene Mails, die inzwischen „Kein Spam“ sind. */
+    @Query("SELECT new org.example.kalkulationsprogramm.dto.Email.ServerSpamKandidat("
+            + "z.id, z.imapOrdner, z.imapUid, e.messageId, e.fromAddress, e.subject) "
+            + "FROM EmailPostfachZuordnung z JOIN z.email e "
+            + "WHERE z.postfach.id = :postfachId AND z.serverSpamStatus = :status "
+            + "AND e.isSpam = false AND e.deletedAt IS NULL "
+            + "ORDER BY z.id ASC")
+    java.util.List<ServerSpamKandidat> findZurueckZuHolen(@Param("postfachId") Long postfachId,
+            @Param("status") ServerSpamStatus status, Limit limit);
+
+    /** Neuer Ort der Mail auf dem Server nach dem Verschieben. */
+    @Transactional
+    @Modifying
+    @Query("UPDATE EmailPostfachZuordnung z SET z.imapOrdner = :ordner, z.imapUid = :uid, "
+            + "z.serverSpamStatus = :status WHERE z.id = :id")
+    int merkeServerOrt(@Param("id") Long id, @Param("ordner") String ordner, @Param("uid") Long uid,
+            @Param("status") ServerSpamStatus status);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE EmailPostfachZuordnung z SET z.serverSpamStatus = :status WHERE z.id = :id")
+    int merkeServerSpamStatus(@Param("id") Long id, @Param("status") ServerSpamStatus status);
 
     /**
      * Ausgangsmails ohne Postfach (z. B. aus Mahnlauf, Rechnungsversand, Anfrage-Bestätigung)

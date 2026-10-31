@@ -60,21 +60,30 @@ export function DatePicker({ value, onChange, placeholder = 'Datum wählen', cla
         setView(parseDate(date) ?? new Date()); setActiveDate(date);
         setAnsicht('tage'); setEntwurf(''); setEntwurfFehler(''); setIsOpen(true);
     };
+    // Lage nach dem tatsächlichen Inhalt: Ein Monat mit sechs Wochenzeilen ist höher als einer
+    // mit fünf. Deshalb neu messen, sobald Monat oder Ansicht wechseln, sonst rutscht die
+    // Knopfzeile unten aus dem Bild.
     useLayoutEffect(() => {
         if (!isOpen || disabled) return;
         const update = () => {
             const rect = triggerRef.current?.getBoundingClientRect(); if (!rect) return;
-            const height = Math.min(440, Math.max(120, window.innerHeight - 16));
+            const inhalt = popupRef.current ? popupRef.current.scrollHeight + 2 : 440;
+            const height = Math.min(Math.max(inhalt, 120), window.innerHeight - 16);
             const below = window.innerHeight - rect.bottom - 12;
-            const upward = below < height && rect.top > below;
-            const maxHeight = Math.max(80, Math.min(height, upward ? rect.top - 12 : below));
+            const above = rect.top - 12;
             const width = Math.min(304, window.innerWidth - 16);
-            setPosition({ top: upward ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width, maxHeight });
+            const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+            let top: number;
+            if (height <= below) top = rect.bottom + 4;
+            else if (height <= above) top = rect.top - height - 4;
+            // Weder darunter noch darüber genug Platz: ganz sichtbar halten, auch wenn das Feld verdeckt wird.
+            else top = Math.max(8, window.innerHeight - height - 8);
+            setPosition({ top, left, width, maxHeight: height });
         };
         const outside = (event: MouseEvent) => { const target = event.target as Node; if (!triggerRef.current?.contains(target) && !popupRef.current?.contains(target)) setIsOpen(false); };
         update(); window.addEventListener('resize', update); window.addEventListener('scroll', update, true); document.addEventListener('mousedown', outside);
         return () => { window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); document.removeEventListener('mousedown', outside); };
-    }, [isOpen, disabled]);
+    }, [isOpen, disabled, view, ansicht, entwurfFehler]);
     useEffect(() => {
         if (isOpen && !disabled && ansicht === 'tage') popupRef.current?.querySelector<HTMLButtonElement>(`[data-date="${activeDate}"]:not(:disabled)`)?.focus();
     }, [isOpen, activeDate, disabled, ansicht]);
