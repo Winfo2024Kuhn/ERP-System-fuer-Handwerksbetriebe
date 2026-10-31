@@ -64,12 +64,17 @@ export function DatePicker({ value, onChange, placeholder = 'Datum wählen', cla
         if (!isOpen || disabled) return;
         const update = () => {
             const rect = triggerRef.current?.getBoundingClientRect(); if (!rect) return;
-            const height = Math.min(440, Math.max(120, window.innerHeight - 16));
+            // 460 px fassen auch Monate mit sechs Wochenzeilen samt Direkteingabe.
+            const height = Math.min(460, Math.max(120, window.innerHeight - 16));
             const below = window.innerHeight - rect.bottom - 12;
-            const upward = below < height && rect.top > below;
-            const maxHeight = Math.max(80, Math.min(height, upward ? rect.top - 12 : below));
+            const above = rect.top - 12;
+            // Passt der Kalender weder unter noch über das Feld, wird er ganz ins
+            // Fenster gelegt (darf das Feld überdecken) statt abgeschnitten zu werden.
+            const top = below >= height ? rect.bottom + 4
+                : above >= height ? rect.top - height - 4
+                    : Math.max(8, window.innerHeight - height - 8);
             const width = Math.min(304, window.innerWidth - 16);
-            setPosition({ top: upward ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width, maxHeight });
+            setPosition({ top, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width, maxHeight: height });
         };
         const outside = (event: MouseEvent) => { const target = event.target as Node; if (!triggerRef.current?.contains(target) && !popupRef.current?.contains(target)) setIsOpen(false); };
         update(); window.addEventListener('resize', update); window.addEventListener('scroll', update, true); document.addEventListener('mousedown', outside);
