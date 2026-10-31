@@ -34,8 +34,8 @@ const MAIL: RecentItemDto = {
     id: 'EMAIL:456', type: 'EMAIL', title: 'Anfrage Treppe', subtitle: 'Von: Max Mustermann', timestamp: '2026-10-10T14:12:00', link: '/emails/inbox/456',
 };
 
-const SPAM: RecentItemDto = {
-    id: 'EMAIL:789', type: 'EMAIL', title: 'Gewinnspiel', subtitle: '<script>alert(1)</script>', timestamp: '2026-10-01T08:00:00', link: '/emails/spam/789',
+const PROJEKT_MAIL: RecentItemDto = {
+    id: 'EMAIL:789', type: 'EMAIL', title: 'Aufmaß Geländer', subtitle: '<script>alert(1)</script>', timestamp: '2026-10-01T08:00:00', link: '/emails/projects/789',
 };
 
 const VOLL: NotificationSummary = {
@@ -43,12 +43,12 @@ const VOLL: NotificationSummary = {
     categories: [
         { type: 'TERMINE', label: 'Bevorstehende Termine', count: 1, icon: 'CalendarClock', link: '/kalender' },
         { type: 'EMAILS', label: 'Ungelesene E-Mails', count: 1, icon: 'Mail', link: '/emails/inbox' },
-        { type: 'EMAILS_SPAM', label: 'Spam', count: 1234, icon: 'ShieldAlert', link: '/emails/spam' },
+        { type: 'EMAILS_PROJECTS', label: 'Projekt-E-Mails', count: 1234, icon: 'Mail', link: '/emails/projects' },
         { type: 'SICHERUNG', label: 'Sicherung', count: 1, icon: 'HardDrive', link: '' },
         { type: 'UPDATE', label: 'Update', count: 1, icon: 'RefreshCw', link: '' },
         { type: 'RECHNUNGEN', label: 'Neue Lieferantenrechnungen', count: 2, icon: 'Truck', link: '/offeneposten?tab=eingang' },
     ],
-    recentItems: [TERMIN, MAIL, SPAM, SICHERUNG, UPDATE],
+    recentItems: [TERMIN, MAIL, PROJEKT_MAIL, SICHERUNG, UPDATE],
 };
 
 const LEER: NotificationSummary = { totalCount: 0, categories: [], recentItems: [] };
@@ -220,7 +220,7 @@ describe('Sicherung & Updates', () => {
             ...VOLL,
             totalCount: 1238,
             categories: VOLL.categories.filter(c => !['SICHERUNG', 'UPDATE'].includes(c.type)),
-            recentItems: [TERMIN, MAIL, SPAM],
+            recentItems: [TERMIN, MAIL, PROJEKT_MAIL],
         };
         stubbeApi([VOLL, nachher], 200);
         renderSeite();
@@ -314,7 +314,7 @@ describe('Erledigt und Öffnen', () => {
         expect(screen.queryByText('Anfrage Treppe')).toBeNull();
         expect(screen.getByText('Aufmaß Bad')).toBeInTheDocument();
         await waitFor(() => expect(postAufrufe()).toEqual([
-            { url: '/api/notifications/erledigt/kategorien', body: { kategorien: ['EMAILS', 'EMAILS_SPAM'] } },
+            { url: '/api/notifications/erledigt/kategorien', body: { kategorien: ['EMAILS', 'EMAILS_PROJECTS'] } },
         ]));
         await waitFor(() => expect(emails).toHaveBeenCalledTimes(1));
         window.removeEventListener('emails:refresh', emails);
@@ -400,11 +400,11 @@ describe('Inhalte vom Server', () => {
         renderSeite();
 
         const post = await screen.findByRole('region', { name: 'Posteingänge' });
-        expect(within(post).getByText((_, el) => el?.tagName === 'P' && el.textContent === 'und 1.233 weitere · Spam')).toBeInTheDocument();
+        expect(within(post).getByText((_, el) => el?.tagName === 'P' && el.textContent === 'und 1.233 weitere · Projekt-E-Mails')).toBeInTheDocument();
         expect(within(post).getByText('1.235 Meldungen')).toBeInTheDocument();
 
-        fireEvent.click(within(post).getByRole('button', { name: 'Spam: zur Übersicht' }));
-        expect(screen.getByTestId('ort')).toHaveTextContent('/emails/spam');
+        fireEvent.click(within(post).getByRole('button', { name: 'Projekt-E-Mails: zur Übersicht' }));
+        expect(screen.getByTestId('ort')).toHaveTextContent('/emails/projects');
         expect(postAufrufe()).toEqual([]);
     });
 

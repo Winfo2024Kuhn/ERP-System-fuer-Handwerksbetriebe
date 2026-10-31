@@ -105,13 +105,22 @@ public class BenachrichtigungService {
     /** Seite „Benachrichtigungen“: so viele Einträge je Kategorie; der Zähler nennt trotzdem alle. */
     static final int SEITE_EINTRAEGE_JE_KATEGORIE = 100;
 
-    /** Alle Kategorien, die die Glocke kennt (für die Prüfung beim Erledigen ganzer Spalten). */
+    /**
+     * Alle Kategorien, die die Glocke kennt (für die Prüfung beim Erledigen ganzer Spalten).
+     * Spam und Newsletter gehören bewusst nicht dazu: Sie sollen den Inhaber nicht anklingeln.
+     */
     public static final Set<String> KATEGORIEN = Set.of(
             "ANFRAGEN_WEBSEITE", "EMAILS", "EMAILS_PROJECTS", "EMAILS_OFFERS", "EMAILS_SUPPLIERS",
-            "EMAILS_SPAM", "EMAILS_NEWSLETTER", "URLAUBSANTRAEGE", "BAUTAGEBUCH", "EINGANG_FAELLIG",
+            "URLAUBSANTRAEGE", "BAUTAGEBUCH", "EINGANG_FAELLIG",
             "AUSGANG_UEBERFAELLIG", "RECHNUNGEN", "TERMINE", "LIEFERSCHEINE", "REKLAMATIONEN",
             "FREIGABEN_ANGENOMMEN", "ZEITEN_AUTO_BEENDET", "ZEITEN_UEBERSCHNEIDUNG", "MONATSABSCHLUSS", "SPRACHNACHRICHTEN",
             "VERPASSTE_ANRUFE", "SICHERUNG", "UPDATE");
+
+    /**
+     * Frühere Kategorien, die es nicht mehr gibt. Ein noch offener alter Browser-Tab kann sie beim
+     * Erledigen ganzer Spalten mitschicken – sie werden still übergangen statt abgelehnt.
+     */
+    public static final Set<String> ENTFALLENE_KATEGORIEN = Set.of("EMAILS_SPAM", "EMAILS_NEWSLETTER");
 
     private static final String EMAIL_ART = "EMAIL";
 
@@ -395,10 +404,7 @@ public class BenachrichtigungService {
                     ungelesen, "EMAILS_OFFERS", "Ungelesene Angebots-E-Mails", "offers")));
             quellen.add(new QuellenAufruf("EMAILS_SUPPLIERS", () -> mailOrdner(emailRepository.findLieferantEmails(),
                     ungelesen, "EMAILS_SUPPLIERS", "Ungelesene Lieferanten-E-Mails", "suppliers")));
-            quellen.add(new QuellenAufruf("EMAILS_SPAM", () -> mailOrdner(emailRepository.findSpamOrdner(),
-                    ungelesen, "EMAILS_SPAM", "Ungelesene Spam-E-Mails", "spam")));
-            quellen.add(new QuellenAufruf("EMAILS_NEWSLETTER", () -> mailOrdner(emailRepository.findNewsletterOrdner(),
-                    ungelesen, "EMAILS_NEWSLETTER", "Ungelesene Newsletter", "newsletter")));
+            // Spam und Newsletter klingeln nie – sie liegen nur in ihren Ordnern unter „E-Mails“.
         }
 
         // Urlaubsanträge und automatisch beendete Zeiten gehören zur Zeiterfassung – nur mit deren Recht.
@@ -471,6 +477,7 @@ public class BenachrichtigungService {
                 .collect(Collectors.toSet());
         List<Email> offen = emailRepository.findInboxFiltered().stream()
                 .filter(e -> !nichtZugeordnet.contains(e.getId()))
+                .filter(e -> !istSpamOderNewsletter(e))
                 .filter(ungelesen)
                 .sorted(Comparator.comparing(Email::getSentAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
@@ -478,19 +485,25 @@ public class BenachrichtigungService {
     }
 
     /**
-     * Selbst gesendete E-Mails (OUT) tauchen in den Ordnern Projekte/Angebote/Lieferanten sowie
-     * Spam/Newsletter mit auf, weil die Repo-Queries dort nicht nach Direction filtern. Für die
-     * Glocke zählen nur eingehende, ungelesene Mails – sonst klingelt es bei jeder eigenen Antwort.
+     * Für die Glocke zählen nur eingehende, ungelesene, nicht gelöschte Mails – sonst klingelt es bei
+     * jeder eigenen Antwort. Spam und Newsletter fallen auch dann heraus, wenn sie einem Projekt,
+     * einer Anfrage oder einem Lieferanten zugeordnet sind (z. B. von Hand als Spam markiert).
      */
     private Quelle<?> mailOrdner(List<Email> mails, Predicate<Email> ungelesen, String typ, String label,
             String ordner) {
         List<Email> offen = mails.stream()
                 .filter(e -> e.getDirection() == EmailDirection.IN)
                 .filter(e -> e.getDeletedAt() == null)
+                .filter(e -> !istSpamOderNewsletter(e))
                 .filter(ungelesen)
                 .sorted(Comparator.comparing(Email::getSentAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
         return mailQuelle(typ, label, ordner, offen);
+    }
+
+    /** Spam (automatisch erkannt oder von Hand markiert) und Newsletter gehören nie in die Glocke. */
+    private static boolean istSpamOderNewsletter(Email email) {
+        return email.isSpam() || email.isNewsletter() || "SPAM".equals(email.getUserSpamVerdict());
     }
 
     private static Quelle<Email> mailQuelle(String typ, String label, String ordner, List<Email> ungelesen) {

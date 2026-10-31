@@ -85,7 +85,7 @@ export const GRUPPEN: BenachrichtigungsGruppe[] = [
         icon: Inbox,
         accentText: 'text-blue-600',
         accentBg: 'bg-blue-50',
-        types: ['EMAILS', 'EMAILS_PROJECTS', 'EMAILS_OFFERS', 'EMAILS_SUPPLIERS', 'EMAILS_SPAM', 'EMAILS_NEWSLETTER'],
+        types: ['EMAILS', 'EMAILS_PROJECTS', 'EMAILS_OFFERS', 'EMAILS_SUPPLIERS'],
         recentTypes: ['EMAIL'],
     },
     {

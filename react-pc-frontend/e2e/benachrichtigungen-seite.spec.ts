@@ -41,13 +41,13 @@ const TERMIN = {
     link: '/kalender?date=2026-10-11',
 };
 
-const SPAM_MAIL = {
+const PROJEKT_MAIL = {
     id: 'EMAIL:789',
     type: 'EMAIL',
-    title: 'Gewinnspiel',
-    subtitle: 'Von: werbung@example.com',
+    title: 'Aufmaß Treppengeländer',
+    subtitle: 'Von: max.mustermann@example.com',
     timestamp: '2026-10-10T08:00:00',
-    link: '/emails/spam/789',
+    link: '/emails/projects/789',
 };
 
 interface Mitschrift {
@@ -83,15 +83,15 @@ async function stubbeApi(page: Page): Promise<Mitschrift> {
                 { type: 'SICHERUNG', label: 'Sicherung', count: ids.has(SICHERUNG.id) ? 0 : 1, icon: 'HardDrive', link: '' },
                 { type: 'UPDATE', label: 'Update', count: ids.has(UPDATE.id) ? 0 : 1, icon: 'RefreshCw', link: '' },
                 { type: 'TERMINE', label: 'Bevorstehende Termine', count: ids.has(TERMIN.id) ? 0 : 1, icon: 'CalendarClock', link: '/kalender' },
-                { type: 'EMAILS_SPAM', label: 'Spam', count: 1234, icon: 'ShieldAlert', link: '/emails/spam' },
+                { type: 'EMAILS_PROJECTS', label: 'Projekt-E-Mails', count: 1234, icon: 'Mail', link: '/emails/projects' },
             ].filter(c => c.count > 0 && !kategorien.has(c.type));
-            const recentItems = [SICHERUNG, UPDATE, TERMIN, SPAM_MAIL]
+            const recentItems = [SICHERUNG, UPDATE, TERMIN, PROJEKT_MAIL]
                 .filter(i => !ids.has(i.id))
-                .filter(i => categories.some(c => c.type === (i.type === 'EMAIL' ? 'EMAILS_SPAM' : i.type === 'TERMIN' ? 'TERMINE' : i.type)));
+                .filter(i => categories.some(c => c.type === (i.type === 'EMAIL' ? 'EMAILS_PROJECTS' : i.type === 'TERMIN' ? 'TERMINE' : i.type)));
             return json(route, { totalCount: categories.reduce((s, c) => s + c.count, 0), categories, recentItems });
         }
         if (pfad === '/api/emails/stats') {
-            return json(route, { inboxCount: 0, sentCount: 0, trashCount: 0, spamCount: 1234, newsletterCount: 0, unassignedCount: 0, projectCount: 0, offerCount: 0, supplierCount: 0, taxAdvisorCount: 0, inboxTotal: 0 });
+            return json(route, { inboxCount: 0, sentCount: 0, trashCount: 0, spamCount: 0, newsletterCount: 0, unassignedCount: 0, projectCount: 1234, offerCount: 0, supplierCount: 0, taxAdvisorCount: 0, inboxTotal: 0 });
         }
         if (pfad === '/api/emails/drafts/count') return json(route, { count: 0 });
         // Fallback für sonstige Endpunkte (Kalender, Projekte …)
@@ -137,10 +137,10 @@ test.describe('Seite „Benachrichtigungen“', () => {
             zeilen.map(z => [getComputedStyle(z).borderLeftWidth, getComputedStyle(z).borderLeftColor]));
         expect(raender).toEqual([['4px', 'rgb(239, 68, 68)'], ['4px', 'rgb(239, 68, 68)']]);
 
-        // 4. „und X weitere“ bei vielen ungelesenen Spam-Mails.
+        // 4. „und X weitere“ bei vielen ungelesenen Projekt-E-Mails.
         const post = seite.getByRole('region', { name: 'Posteingänge' });
         await expect(post.getByText(/und\s*1\.233\s*weitere/)).toBeVisible();
-        await expect(post.getByRole('button', { name: 'Spam: zur Übersicht' })).toBeVisible();
+        await expect(post.getByRole('button', { name: 'Projekt-E-Mails: zur Übersicht' })).toBeVisible();
 
         await designPruefung(page, testInfo, 'benachrichtigungen-seite', {
             primaerAktion: betrieb.getByRole('button', { name: 'Erledigt: Sicherung nur teilweise' }),

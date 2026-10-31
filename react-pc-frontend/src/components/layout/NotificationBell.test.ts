@@ -26,13 +26,13 @@ const basis: NotificationSummary = {
     totalCount: 9,
     categories: [
         { type: 'EMAILS', label: 'Ungelesene E-Mails', count: 5, icon: 'Mail', link: '/emails/inbox' },
-        { type: 'EMAILS_SPAM', label: 'Spam', count: 1, icon: 'ShieldAlert', link: '/emails/spam' },
+        { type: 'EMAILS_PROJECTS', label: 'Ungelesene Projekt-E-Mails', count: 1, icon: 'Mail', link: '/emails/projects' },
         { type: 'TERMINE', label: 'Bevorstehende Termine', count: 2, icon: 'CalendarClock', link: '/kalender' },
         { type: 'URLAUBSANTRAEGE', label: 'Offene Anträge', count: 1, icon: 'Plane', link: '/urlaubsantraege' },
     ],
     recentItems: [
         eintrag('EMAIL:456', 'EMAIL', '/emails/inbox/456', 'Angebot Treppe'),
-        eintrag('EMAIL:789', 'EMAIL', '/emails/spam/789', 'Gewinnspiel'),
+        eintrag('EMAIL:789', 'EMAIL', '/emails/projects/789', 'Aufmaß Geländer'),
         eintrag('TERMIN:123', 'TERMIN', '/kalender?date=2026-10-11', 'Aufmaß Bad'),
         eintrag('URLAUBSANTRAG:7', 'URLAUBSANTRAG', '/urlaubsantraege?antragId=7', 'URLAUB: Max Mustermann'),
     ],
@@ -44,10 +44,12 @@ describe('kategorieFuerEintrag', () => {
         ['projects', 'EMAILS_PROJECTS'],
         ['offers', 'EMAILS_OFFERS'],
         ['suppliers', 'EMAILS_SUPPLIERS'],
-        ['spam', 'EMAILS_SPAM'],
-        ['newsletter', 'EMAILS_NEWSLETTER'],
     ])('E-Mail im Ordner %s gehört zu %s', (ordner, kategorie) => {
         expect(kategorieFuerEintrag({ type: 'EMAIL', link: `/emails/${ordner}/42` })).toBe(kategorie);
+    });
+
+    it.each(['spam', 'newsletter'])('E-Mail im Ordner %s gehört zu keiner Kategorie – Spam und Newsletter klingeln nicht', ordner => {
+        expect(kategorieFuerEintrag({ type: 'EMAIL', link: `/emails/${ordner}/42` })).toBeUndefined();
     });
 
     it('E-Mail ohne erkennbaren Ordner hat keine Kategorie', () => {
@@ -138,12 +140,12 @@ describe('ohneEintrag', () => {
     it('senkt bei E-Mails den Zähler des Ordners aus dem Link', () => {
         const ergebnis = ohneEintrag(basis, basis.recentItems[0]);
         expect(ergebnis.categories.find(c => c.type === 'EMAILS')?.count).toBe(4);
-        expect(ergebnis.categories.find(c => c.type === 'EMAILS_SPAM')?.count).toBe(1);
+        expect(ergebnis.categories.find(c => c.type === 'EMAILS_PROJECTS')?.count).toBe(1);
     });
 
     it('lässt eine Kategorie bei 0 wegfallen', () => {
         const ergebnis = ohneEintrag(basis, basis.recentItems[1]);
-        expect(ergebnis.categories.map(c => c.type)).not.toContain('EMAILS_SPAM');
+        expect(ergebnis.categories.map(c => c.type)).not.toContain('EMAILS_PROJECTS');
         expect(ergebnis.totalCount).toBe(8);
     });
 
@@ -164,7 +166,7 @@ describe('ohneEintrag', () => {
 
 describe('ohneSpalte', () => {
     it('leert alle Kategorien und Einträge der Spalte und rechnet die Summe neu', () => {
-        const ergebnis = ohneSpalte(basis, ['EMAILS', 'EMAILS_SPAM'], ['EMAIL']);
+        const ergebnis = ohneSpalte(basis, ['EMAILS', 'EMAILS_PROJECTS'], ['EMAIL']);
         expect(ergebnis.categories.map(c => c.type)).toEqual(['TERMINE', 'URLAUBSANTRAEGE']);
         expect(ergebnis.recentItems.map(i => i.id)).toEqual(['TERMIN:123', 'URLAUBSANTRAG:7']);
         expect(ergebnis.totalCount).toBe(3);
@@ -173,7 +175,8 @@ describe('ohneSpalte', () => {
 
 describe('enthaeltEmailKategorie', () => {
     it('erkennt E-Mail-Ordner', () => {
-        expect(enthaeltEmailKategorie(['TERMINE', 'EMAILS_NEWSLETTER'])).toBe(true);
+        expect(enthaeltEmailKategorie(['TERMINE', 'EMAILS_SUPPLIERS'])).toBe(true);
+        expect(enthaeltEmailKategorie(['EMAILS_SPAM', 'EMAILS_NEWSLETTER'])).toBe(false);
         expect(enthaeltEmailKategorie(['TERMINE', 'URLAUBSANTRAEGE'])).toBe(false);
         expect(enthaeltEmailKategorie([])).toBe(false);
     });

@@ -50,9 +50,12 @@ export function entferneAlteMerker(): void {
     try { sessionStorage.removeItem(ALTE_SPEICHER_SCHLUESSEL.kategorien); } catch { /* ignore */ }
 }
 
-/** Kategorie-Typen der sechs E-Mail-Ordner in der Glocke. */
+/**
+ * Kategorie-Typen der vier E-Mail-Ordner in der Glocke. Spam und Newsletter
+ * klingeln bewusst nicht – sie liegen nur in ihren Ordnern im E-Mail-Center.
+ */
 export const EMAIL_KATEGORIEN: ReadonlyArray<string> = [
-    'EMAILS', 'EMAILS_PROJECTS', 'EMAILS_OFFERS', 'EMAILS_SUPPLIERS', 'EMAILS_SPAM', 'EMAILS_NEWSLETTER',
+    'EMAILS', 'EMAILS_PROJECTS', 'EMAILS_OFFERS', 'EMAILS_SUPPLIERS',
 ];
 
 const EMAIL_ORDNER_ZU_KATEGORIE: Record<string, string> = {
@@ -60,8 +63,6 @@ const EMAIL_ORDNER_ZU_KATEGORIE: Record<string, string> = {
     projects: 'EMAILS_PROJECTS',
     offers: 'EMAILS_OFFERS',
     suppliers: 'EMAILS_SUPPLIERS',
-    spam: 'EMAILS_SPAM',
-    newsletter: 'EMAILS_NEWSLETTER',
 };
 
 // Item-Type → Category-Type, wenn die Zuordnung eindeutig ist. EMAIL fehlt

@@ -115,11 +115,60 @@ class NotificationErledigtEndpointTest {
     @Test
     @WithMockUser(username = "max")
     void kategorienErledigen200() throws Exception {
-        given(benachrichtigungService.kategorienErledigen(eq(List.of("EMAILS_SPAM", "TERMINE")), any())).willReturn(12);
+        given(benachrichtigungService.kategorienErledigen(eq(List.of("EMAILS_PROJECTS", "TERMINE")), any())).willReturn(12);
         mockMvc.perform(post("/api/notifications/erledigt/kategorien").with(csrf())
-                .contentType(MediaType.APPLICATION_JSON).content("{\"kategorien\":[\"EMAILS_SPAM\",\"TERMINE\"]}"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"kategorien\":[\"EMAILS_PROJECTS\",\"TERMINE\"]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.erledigt").value(12));
+    }
+
+    /** Ein alter, noch offener Browser-Tab schickt die früheren Spalten Spam/Newsletter mit. */
+    @Test
+    @WithMockUser(username = "max")
+    void entfalleneKategorienWerdenStillUebergangen() throws Exception {
+        given(benachrichtigungService.kategorienErledigen(eq(List.of("EMAILS", "TERMINE")), any())).willReturn(3);
+        mockMvc.perform(post("/api/notifications/erledigt/kategorien").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"kategorien\":[\"EMAILS\",\"EMAILS_SPAM\",\"EMAILS_NEWSLETTER\",\"TERMINE\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.erledigt").value(3));
+        verify(benachrichtigungService).kategorienErledigen(eq(List.of("EMAILS", "TERMINE")), any());
+    }
+
+    @Test
+    @WithMockUser(username = "max")
+    void nurEntfalleneKategorienErledigenNichts() throws Exception {
+        mockMvc.perform(post("/api/notifications/erledigt/kategorien").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"kategorien\":[\"EMAILS_SPAM\",\"EMAILS_NEWSLETTER\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.erledigt").value(0));
+        verify(benachrichtigungService, never()).kategorienErledigen(any(), any());
+    }
+
+    @Test
+    void entfalleneKategorienOhneAnmeldung401() throws Exception {
+        mockMvc.perform(post("/api/notifications/erledigt/kategorien").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"kategorien\":[\"EMAILS_SPAM\"]}"))
+                .andExpect(status().isUnauthorized());
+        verify(benachrichtigungService, never()).kategorienErledigen(any(), any());
+    }
+
+    @Test
+    @WithMockUser(username = "max")
+    void entfalleneKategorienOhneCsrf403() throws Exception {
+        mockMvc.perform(post("/api/notifications/erledigt/kategorien").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"kategorien\":[\"EMAILS_SPAM\",\"TERMINE\"]}"))
+                .andExpect(status().isForbidden());
+        verify(benachrichtigungService, never()).kategorienErledigen(any(), any());
+    }
+
+    @Test
+    @WithMockUser(username = "max")
+    void entfalleneKategorieNebenUnbekannterBleibt400() throws Exception {
+        mockMvc.perform(post("/api/notifications/erledigt/kategorien").with(csrf())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"kategorien\":[\"EMAILS_SPAM\",\"GIBT_ES_NICHT\"]}"))
+                .andExpect(status().isBadRequest());
+        verify(benachrichtigungService, never()).kategorienErledigen(any(), any());
     }
 
     @ParameterizedTest

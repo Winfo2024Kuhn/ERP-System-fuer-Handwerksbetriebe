@@ -62,6 +62,8 @@ Im Menü „…“ einer E-Mail:
 
 Mehrere E-Mails markiert man mit Strg- bzw. Cmd-Klick oder Umschalt-Klick; E-Mails lassen sich auch auf einen Ordner links ziehen. Papierkorb, Spam und Newsletter leert das Programm nach 30 Tagen von selbst – außer E-Mails, die einem Projekt, einer Anfrage oder einem Lieferanten zugeordnet sind: Die bleiben, bis jemand sie selbst endgültig löscht. Spam verschiebt das Programm auch auf dem Mail-Server in den Spam-Ordner, wenn das beim Postfach eingeschaltet ist (siehe [Einstellungen](einstellungen.md)).
 
+Spam und Newsletter melden sich nicht in der Glocke oben rechts – auch dann nicht, wenn sie einem Projekt, einer Anfrage oder einem Lieferanten zugeordnet sind oder von Hand als Spam markiert wurden. Ungelesene Spam- und Newsletter-Mails sieht man nur in ihren Ordnern hier im E-Mail-Center. Wer eine Mail mit „Kein Spam“ zurückholt, bekommt sie wieder gemeldet, solange sie ungelesen ist.
+
 ## Rechnungen von Lieferanten aus E-Mails
 
 Dafür ist nichts zu tun: Kommt eine E-Mail von einem bekannten Lieferanten, liest das Programm PDF- und XML-Anhänge aus und legt sie beim Lieferanten im Reiter „Dokumente“ ab (siehe [Lieferanten](lieferanten.md)). Voraussetzung ist, dass die E-Mail-Adresse beim Lieferanten eingetragen ist.

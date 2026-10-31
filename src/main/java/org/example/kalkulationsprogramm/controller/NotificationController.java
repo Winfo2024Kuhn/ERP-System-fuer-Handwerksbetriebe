@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.controller;
 
+import java.util.List;
 import java.util.Map;
 
 import org.example.kalkulationsprogramm.dto.Benachrichtigung.BenachrichtigungErledigtRequest;
@@ -53,15 +54,24 @@ public class NotificationController {
         return ResponseEntity.noContent().build();
     }
 
-    /** Ganze Spalten erledigen – alle Einträge der Kategorien, nicht nur die angezeigten. */
+    /**
+     * Ganze Spalten erledigen – alle Einträge der Kategorien, nicht nur die angezeigten. Entfallene
+     * Kategorien (früher Spam/Newsletter) aus alten offenen Browser-Tabs werden still übergangen.
+     */
     @PostMapping("/erledigt/kategorien")
     public Map<String, Integer> kategorienErledigen(
             @Valid @RequestBody BenachrichtigungKategorienErledigtRequest request, Authentication authentication) {
-        if (!BenachrichtigungService.KATEGORIEN.containsAll(request.kategorien())) {
+        List<String> kategorien = request.kategorien().stream()
+                .filter(k -> !BenachrichtigungService.ENTFALLENE_KATEGORIEN.contains(k))
+                .toList();
+        if (!BenachrichtigungService.KATEGORIEN.containsAll(kategorien)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Diese Kategorie gibt es nicht.");
         }
+        if (kategorien.isEmpty()) {
+            return Map.of("erledigt", 0);
+        }
         try {
-            return Map.of("erledigt", benachrichtigungService.kategorienErledigen(request.kategorien(), authentication));
+            return Map.of("erledigt", benachrichtigungService.kategorienErledigen(kategorien, authentication));
         } catch (BenachrichtigungService.NichtAngemeldetException e) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, e.getMessage());
         }

@@ -11,7 +11,7 @@ const SUMMARY: NotificationSummary = {
     categories: [
         { type: 'TERMINE', label: 'Bevorstehende Termine', count: 1, icon: 'CalendarClock', link: '/kalender' },
         { type: 'EMAILS', label: 'Ungelesene E-Mails', count: 2, icon: 'Mail', link: '/emails/inbox' },
-        { type: 'EMAILS_SPAM', label: 'Spam', count: 1234, icon: 'ShieldAlert', link: '/emails/spam' },
+        { type: 'EMAILS_PROJECTS', label: 'Ungelesene Projekt-E-Mails', count: 1234, icon: 'Mail', link: '/emails/projects' },
         { type: 'UPDATE', label: 'Update', count: 1, icon: 'RefreshCw', link: '' },
         { type: 'SICHERUNG', label: 'Sicherung', count: 1, icon: 'HardDrive', link: '' },
         { type: 'RECHNUNGEN', label: 'Neue Lieferantenrechnungen', count: 1, icon: 'Truck', link: '/offeneposten?tab=eingang' },
@@ -20,7 +20,7 @@ const SUMMARY: NotificationSummary = {
         eintrag('TERMIN:1', 'TERMIN', '/kalender?date=2026-10-11'),
         eintrag('EMAIL:1', 'EMAIL', '/emails/inbox/1'),
         eintrag('EMAIL:2', 'EMAIL', '/emails/inbox/2'),
-        eintrag('EMAIL:3', 'EMAIL', '/emails/spam/3'),
+        eintrag('EMAIL:3', 'EMAIL', '/emails/projects/3'),
         eintrag('SICHERUNG:20261011-020017', 'SICHERUNG'),
         eintrag('UPDATE:20261011-030000', 'UPDATE'),
     ],
@@ -44,8 +44,8 @@ describe('GRUPPEN', () => {
         const alle = GRUPPEN.flatMap(g => g.types);
         expect(new Set(alle).size).toBe(alle.length);
         expect([...alle].sort()).toEqual([
-            'ANFRAGEN_WEBSEITE', 'AUSGANG_UEBERFAELLIG', 'BAUTAGEBUCH', 'EINGANG_FAELLIG', 'EMAILS', 'EMAILS_NEWSLETTER',
-            'EMAILS_OFFERS', 'EMAILS_PROJECTS', 'EMAILS_SPAM', 'EMAILS_SUPPLIERS', 'FREIGABEN_ANGENOMMEN', 'LIEFERSCHEINE',
+            'ANFRAGEN_WEBSEITE', 'AUSGANG_UEBERFAELLIG', 'BAUTAGEBUCH', 'EINGANG_FAELLIG', 'EMAILS',
+            'EMAILS_OFFERS', 'EMAILS_PROJECTS', 'EMAILS_SUPPLIERS', 'FREIGABEN_ANGENOMMEN', 'LIEFERSCHEINE',
             'MONATSABSCHLUSS', 'RECHNUNGEN', 'REKLAMATIONEN', 'SICHERUNG', 'SPRACHNACHRICHTEN', 'TERMINE', 'UPDATE',
             'URLAUBSANTRAEGE', 'VERPASSTE_ANRUFE', 'ZEITEN_AUTO_BEENDET', 'ZEITEN_UEBERSCHNEIDUNG',
         ]);

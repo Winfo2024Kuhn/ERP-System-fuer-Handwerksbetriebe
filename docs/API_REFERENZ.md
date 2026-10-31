@@ -1299,6 +1299,8 @@ Lohnabrechnungen, die vom Steuerberater kommen.
 | `POST` | `/erledigt` | Einzelne Einträge erledigen (Mails gelten dann als gelesen) |
 | `POST` | `/erledigt/kategorien` | Ganze Kategorien erledigen |
 
+E-Mail-Kategorien der Glocke: `EMAILS` (Posteingang), `EMAILS_PROJECTS`, `EMAILS_OFFERS`, `EMAILS_SUPPLIERS`. Spam und Newsletter erscheinen nicht mehr in der Glocke – auch keine zugeordneten Mails mit Spam-/Newsletter-Kennzeichen oder Hand-Urteil „Spam“. Die früheren Kategorien `EMAILS_SPAM` und `EMAILS_NEWSLETTER` übergeht `/erledigt/kategorien` still (kein 400), damit alte offene Browser-Tabs keinen Fehler sehen; enthält die Anfrage nur sie, lautet die Antwort `{"erledigt": 0}`.
+
 ---
 
 ## 14. Buchhaltung, Belege und Kasse

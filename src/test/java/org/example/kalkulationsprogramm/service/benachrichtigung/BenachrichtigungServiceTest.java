@@ -218,24 +218,80 @@ class BenachrichtigungServiceTest {
     }
 
     @Test
-    @DisplayName("Spam-Ordner: OUT-Mails zählen nicht (eigene Antworten in Spam dürfen nicht klingeln)")
-    void outboundEmailsAreIgnoredInSpamFolder() {
-        Email spamEingehend = email("Gewinnspiel", "spam@example.com",
-                EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
-        spamEingehend.setSpam(true);
-        Email spamSelbstGesendet = email("Antwort an Spammer", "max.mustermann@firma.example",
-                EmailDirection.OUT, false, EmailZuordnungTyp.KEINE);
-        spamSelbstGesendet.setSpam(true);
-
-        given(emailRepository.findSpamOrdner())
-                .willReturn(List.of(spamEingehend, spamSelbstGesendet));
+    @DisplayName("Spam und Newsletter klingeln nie – weder als eigene Spalte noch im Posteingang")
+    void spamUndNewsletterErscheinenNichtInDerGlocke() {
+        Email spam = email("Gewinnspiel", "spam@example.com", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        spam.setSpam(true);
+        Email newsletter = email("Angebote der Woche", "news@example.com", EmailDirection.IN, false,
+                EmailZuordnungTyp.KEINE);
+        newsletter.setNewsletter(true);
+        Email vonHandSpam = email("Dringend: Konto prüfen", "betrug@example.com", EmailDirection.IN, false,
+                EmailZuordnungTyp.KEINE);
+        vonHandSpam.setUserSpamVerdict("SPAM");
+        given(emailRepository.findSpamOrdner()).willReturn(List.of(spam));
+        given(emailRepository.findNewsletterOrdner()).willReturn(List.of(newsletter));
+        given(emailRepository.findInboxFiltered()).willReturn(List.of(vonHandSpam));
 
         BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
 
-        assertThat(summary.categories())
-                .filteredOn(c -> "EMAILS_SPAM".equals(c.type()))
-                .singleElement()
+        assertThat(summary.categories()).extracting(c -> c.type())
+                .doesNotContain("EMAILS", "EMAILS_SPAM", "EMAILS_NEWSLETTER");
+        assertThat(summary.recentItems()).noneMatch(i -> "EMAIL".equals(i.type()));
+        assertThat(summary.totalCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("Zugeordnete Mails mit Spam-/Newsletter-Kennzeichen oder Hand-Urteil Spam klingeln nicht")
+    void zugeordneteSpamMailsErscheinenNichtInDerGlocke() {
+        Email projektMail = email("Aufmaß Treppengeländer", "max.mustermann@example.org", EmailDirection.IN, false,
+                EmailZuordnungTyp.PROJEKT);
+        Email projektSpam = email("Gewinnspiel", "spam@example.com", EmailDirection.IN, false,
+                EmailZuordnungTyp.PROJEKT);
+        projektSpam.setSpam(true);
+        Email projektVonHandSpam = email("Rechnung offen", "betrug@example.com", EmailDirection.IN, false,
+                EmailZuordnungTyp.PROJEKT);
+        projektVonHandSpam.setUserSpamVerdict("SPAM");
+        Email anfrageNewsletter = email("Messe-Einladung", "news@example.com", EmailDirection.IN, false,
+                EmailZuordnungTyp.ANFRAGE);
+        anfrageNewsletter.setNewsletter(true);
+        Email lieferantSpam = email("Preisliste", "spam@example.com", EmailDirection.IN, false,
+                EmailZuordnungTyp.LIEFERANT);
+        lieferantSpam.setUserSpamVerdict("SPAM");
+        given(emailRepository.findProjectEmails()).willReturn(List.of(projektMail, projektSpam, projektVonHandSpam));
+        given(emailRepository.findAnfrageEmails()).willReturn(List.of(anfrageNewsletter));
+        given(emailRepository.findLieferantEmails()).willReturn(List.of(lieferantSpam));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
+
+        assertThat(summary.categories()).filteredOn(c -> "EMAILS_PROJECTS".equals(c.type())).singleElement()
                 .satisfies(c -> assertThat(c.count()).isEqualTo(1));
+        assertThat(summary.categories()).extracting(c -> c.type())
+                .doesNotContain("EMAILS_OFFERS", "EMAILS_SUPPLIERS");
+        assertThat(summary.recentItems()).filteredOn(i -> "EMAIL".equals(i.type()))
+                .extracting(BenachrichtigungEintragDto::title)
+                .containsExactly("Aufmaß Treppengeländer");
+    }
+
+    @Test
+    @DisplayName("Ein Hand-Urteil „Kein Spam“ lässt eine Mail wieder klingeln")
+    void handUrteilKeinSpamKlingelt() {
+        Email keinSpam = email("Angebot Vordach", "max.mustermann@example.org", EmailDirection.IN, false,
+                EmailZuordnungTyp.PROJEKT);
+        keinSpam.setUserSpamVerdict("NOT_SPAM");
+        given(emailRepository.findProjectEmails()).willReturn(List.of(keinSpam));
+
+        BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
+
+        assertThat(summary.categories()).filteredOn(c -> "EMAILS_PROJECTS".equals(c.type())).singleElement()
+                .satisfies(c -> assertThat(c.count()).isEqualTo(1));
+    }
+
+    @Test
+    void spamUndNewsletterSindKeineKategorienMehr() {
+        assertThat(BenachrichtigungService.KATEGORIEN).doesNotContain("EMAILS_SPAM", "EMAILS_NEWSLETTER");
+        assertThat(BenachrichtigungService.ENTFALLENE_KATEGORIEN)
+                .containsExactlyInAnyOrder("EMAILS_SPAM", "EMAILS_NEWSLETTER")
+                .doesNotContainAnyElementsOf(BenachrichtigungService.KATEGORIEN);
     }
 
     @Test
@@ -397,14 +453,16 @@ class BenachrichtigungServiceTest {
         nichtZugeordnet.setId(40L);
         given(emailRepository.findUnassigned()).willReturn(List.of(nichtZugeordnet));
         given(emailRepository.findInboxFiltered()).willReturn(List.of(sichtbar, verborgen, gelesen, nichtZugeordnet));
-        Email geloeschterNewsletter = email("Alt", "news@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
-        geloeschterNewsletter.setDeletedAt(LocalDateTime.now());
-        Email newsletter = email("Neu", "news@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
-        newsletter.setId(50L);
-        given(emailRepository.findNewsletterOrdner()).willReturn(List.of(geloeschterNewsletter, newsletter));
-        Email geloeschterSpam = email("Spam alt", "spam@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
-        geloeschterSpam.setDeletedAt(LocalDateTime.now());
-        given(emailRepository.findSpamOrdner()).willReturn(List.of(geloeschterSpam));
+        Email geloeschteProjektMail = email("Alt", "kunde@example.org", EmailDirection.IN, false,
+                EmailZuordnungTyp.PROJEKT);
+        geloeschteProjektMail.setDeletedAt(LocalDateTime.now());
+        Email projektMail = email("Neu", "kunde@example.org", EmailDirection.IN, false, EmailZuordnungTyp.PROJEKT);
+        projektMail.setId(50L);
+        given(emailRepository.findProjectEmails()).willReturn(List.of(geloeschteProjektMail, projektMail));
+        Email geloeschteAnfrageMail = email("Anfrage alt", "kunde@example.org", EmailDirection.IN, false,
+                EmailZuordnungTyp.ANFRAGE);
+        geloeschteAnfrageMail.setDeletedAt(LocalDateTime.now());
+        given(emailRepository.findAnfrageEmails()).willReturn(List.of(geloeschteAnfrageMail));
         given(postfachSichtbarkeitService.verborgeneEmailIds(any())).willReturn(java.util.Set.of(20L));
 
         BenachrichtigungZusammenfassungDto summary = service.zusammenfassung(null, null);
@@ -416,9 +474,9 @@ class BenachrichtigungServiceTest {
                     assertThat(i.title()).isEqualTo("Kein Betreff");
                     assertThat(i.subtitle()).isEqualTo("Von: Unbekannt");
                 });
-        assertThat(summary.categories()).filteredOn(c -> "EMAILS_NEWSLETTER".equals(c.type())).singleElement()
+        assertThat(summary.categories()).filteredOn(c -> "EMAILS_PROJECTS".equals(c.type())).singleElement()
                 .satisfies(c -> assertThat(c.count()).isEqualTo(1));
-        assertThat(summary.categories()).noneMatch(c -> "EMAILS_SPAM".equals(c.type()));
+        assertThat(summary.categories()).noneMatch(c -> "EMAILS_OFFERS".equals(c.type()));
     }
 
     // ── Erledigt-Speicher ─────────────────────────────────────────────────
@@ -606,6 +664,22 @@ class BenachrichtigungServiceTest {
         assertThat(ungelesen).allSatisfy(e -> assertThat(e.isRead()).isTrue());
         assertThat(spam.isRead()).as("Spam wurde nicht angefordert").isFalse();
         org.mockito.Mockito.verify(erledigtService).merken(7L, List.of("TERMIN:1", "TERMIN:2", "TERMIN:3"));
+    }
+
+    @Test
+    @DisplayName("Ganze Spalte: frühere Spam-Spalte liest keine Spam-Mails mehr")
+    void kategorienErledigenMitEntfallenerSpalteLiestNichts() {
+        maxAngemeldet();
+        Email spam = email("Gewinnspiel", "spam@example.org", EmailDirection.IN, false, EmailZuordnungTyp.KEINE);
+        spam.setSpam(true);
+        given(emailRepository.findSpamOrdner()).willReturn(List.of(spam));
+        given(postfachSichtbarkeitService.verborgeneEmailIds(any())).willReturn(java.util.Set.of());
+
+        int anzahl = service.kategorienErledigen(List.of("EMAILS_SPAM"), MAX);
+
+        assertThat(anzahl).isZero();
+        assertThat(spam.isRead()).isFalse();
+        org.mockito.Mockito.verify(emailRepository, org.mockito.Mockito.never()).findSpamOrdner();
     }
 
     @Test

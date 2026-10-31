@@ -523,7 +523,7 @@ function EintragZeile({ item, hervorheben, onErledigt, onOeffnen }: {
 
 /**
  * Der Server meldet mehr, als er Einträge mitschickt (z. B. 1.234 ungelesene
- * Spam-Mails): Hinweis „und X weitere“ mit Weg zur passenden Übersicht.
+ * E-Mails): Hinweis „und X weitere“ mit Weg zur passenden Übersicht.
  */
 function RestZeile({ rest, onZurUebersicht }: { rest: Rest; onZurUebersicht: (link: string) => void }) {
     const { kategorie, angezeigt, weitere } = rest;
