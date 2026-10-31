@@ -60,7 +60,7 @@ Im Menü „…“ einer E-Mail:
 - „Kein Newsletter“ / „Newsletter bestätigen“,
 - „Absender sperren“: löscht alle bisherigen E-Mails dieses Absenders und blockiert neue.
 
-Mehrere E-Mails markiert man mit Strg- bzw. Cmd-Klick oder Umschalt-Klick; E-Mails lassen sich auch auf einen Ordner links ziehen. Papierkorb, Spam und Newsletter leert das Programm nach 30 Tagen von selbst.
+Mehrere E-Mails markiert man mit Strg- bzw. Cmd-Klick oder Umschalt-Klick; E-Mails lassen sich auch auf einen Ordner links ziehen. Papierkorb, Spam und Newsletter leert das Programm nach 30 Tagen von selbst – außer E-Mails, die einem Projekt, einer Anfrage oder einem Lieferanten zugeordnet sind: Die bleiben, bis jemand sie selbst endgültig löscht. Spam verschiebt das Programm auch auf dem Mail-Server in den Spam-Ordner, wenn das beim Postfach eingeschaltet ist (siehe [Einstellungen](einstellungen.md)).
 
 ## Rechnungen von Lieferanten aus E-Mails
 

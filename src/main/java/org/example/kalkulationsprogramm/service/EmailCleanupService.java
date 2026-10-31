@@ -26,7 +26,8 @@ public class EmailCleanupService {
 
     /**
      * Bereinigt Papierkorb, Spam und Newsletter: Löscht Elemente, die älter als 30
-     * Tage sind.
+     * Tage sind – außer Mails, die einem Projekt, einer Anfrage oder einem Lieferanten
+     * zugeordnet sind.
      * Läuft täglich um 03:00 Uhr.
      */
     @Scheduled(cron = "0 0 3 * * *")
@@ -41,9 +42,15 @@ public class EmailCleanupService {
         int deletedCount = 0;
         int errorCount = 0;
 
-        // 1. PAPIERKORB (Basis: DeletedAt)
+        // 1. PAPIERKORB (Basis: DeletedAt) - Zugeordnete Emails NICHT löschen!
+        // Eine versehentlich weggeworfene Projekt-Mail soll nicht nach 30 Tagen unbemerkt
+        // verschwinden; sie bleibt im Papierkorb, bis jemand sie selbst endgültig löscht.
         List<Email> trashEmails = emailRepository.findByDeletedAtIsNotNullOrderByDeletedAtDesc();
         for (Email email : trashEmails) {
+            if (istZugeordnet(email)) {
+                log.debug("Email-Cleanup übersprungen (zugeordnet, im Papierkorb): id={}", email.getId());
+                continue;
+            }
             if (email.getDeletedAt().isBefore(retentionLimit)) {
                 // Emails mit hoher Spam-Wahrscheinlichkeit (>= 85%) vor dem Löschen als Spam klassifizieren
                 // damit sie als Trainingsdaten für den Filter dienen
@@ -64,7 +71,7 @@ public class EmailCleanupService {
         List<Email> spamEmails = emailRepository.findSpam();
         for (Email email : spamEmails) {
             // Zugeordnete Emails überspringen
-            if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
+            if (istZugeordnet(email)) {
                 log.debug("Email-Cleanup übersprungen (zugeordnet): id={}", email.getId());
                 continue;
             }
@@ -80,7 +87,7 @@ public class EmailCleanupService {
         List<Email> newsletters = emailRepository.findNewsletter();
         for (Email email : newsletters) {
             // Zugeordnete Emails überspringen
-            if (email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null) {
+            if (istZugeordnet(email)) {
                 log.debug("Email-Cleanup übersprungen (zugeordnet): id={}", email.getId());
                 continue;
             }
@@ -130,6 +137,11 @@ public class EmailCleanupService {
         }
         emailRepository.saveAll(candidates);
         log.info("[ImplizitHAM] {} Posteingang-Emails (>2 Monate) implizit als Ham trainiert", trained);
+    }
+
+    /** Projekt, Anfrage oder Lieferant: solche Mails löscht der Aufräumlauf nie von selbst. */
+    private static boolean istZugeordnet(Email email) {
+        return email.getLieferant() != null || email.getProjekt() != null || email.getAnfrage() != null;
     }
 
     private boolean deleteEmail(Email email) {

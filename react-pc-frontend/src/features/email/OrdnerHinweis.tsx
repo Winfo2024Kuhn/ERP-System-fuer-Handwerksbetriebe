@@ -5,7 +5,9 @@ import type { FolderType } from './emailCenterModel';
 /** Ordner, die der nächtliche Aufräumlauf nach 30 Tagen endgültig leert (EmailCleanupService). */
 const AUTOMATISCH_GELEERT: ReadonlySet<FolderType> = new Set(['trash', 'spam', 'newsletter']);
 
-const DREISSIG_TAGE_HINWEIS = 'E-Mails in diesem Ordner werden nach 30 Tagen automatisch endgültig gelöscht.';
+/** Zugeordnete Mails schützt der Aufräumlauf in allen drei Ordnern. */
+const DREISSIG_TAGE_HINWEIS = 'E-Mails in diesem Ordner werden nach 30 Tagen automatisch endgültig gelöscht. '
+    + 'Mails, die einem Projekt, Lieferanten oder einer Anfrage zugeordnet sind, bleiben erhalten.';
 
 /**
  * Schmale Kopfzeile über der Mailliste, die erklärt, was in einem Ordner
@@ -14,10 +16,21 @@ const DREISSIG_TAGE_HINWEIS = 'E-Mails in diesem Ordner werden nach 30 Tagen aut
 export function OrdnerHinweis({ ordner }: { ordner: FolderType }) {
     if (AUTOMATISCH_GELEERT.has(ordner)) {
         return (
-            <p className="flex items-start gap-1.5 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            <div className="flex items-start gap-1.5 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
                 <Clock className="mt-px h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
-                {DREISSIG_TAGE_HINWEIS}
-            </p>
+                <p className="min-w-0 flex-1">{DREISSIG_TAGE_HINWEIS}</p>
+                {ordner === 'spam' && (
+                    // -my-1: Das (i) ist höher als die Textzeile und soll die Kopfzeile nicht aufblähen.
+                    <InfoButton titel="Spam" className="-my-1">
+                        <InfoAbschnitt titel="Was passiert im Hintergrund?">
+                            <p>Mails in diesem Ordner verschiebt das ERP auch auf dem Mail-Server in den Spam-Ordner, sofern ein Admin das beim Postfach nicht ausgeschaltet hat (Einstellungen → E-Mail → Postfächer). Mails mit Projekt, Lieferant oder Anfrage bleiben im Posteingang.</p>
+                        </InfoAbschnitt>
+                        <InfoAbschnitt titel="Was bewirkt das?">
+                            <p>Mit „Kein Spam“ kommt die Mail im ERP und auf dem Server zurück in den Posteingang. Nach 30 Tagen wird Spam endgültig gelöscht – außer die Mail ist einem Projekt, Lieferanten oder einer Anfrage zugeordnet.</p>
+                        </InfoAbschnitt>
+                    </InfoButton>
+                )}
+            </div>
         );
     }
     if (ordner === 'drafts') {

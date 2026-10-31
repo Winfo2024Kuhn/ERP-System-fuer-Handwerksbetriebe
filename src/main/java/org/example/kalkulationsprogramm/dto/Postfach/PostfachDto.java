@@ -32,7 +32,11 @@ public record PostfachDto(
         boolean sichtbarFuerAlle,
         List<AbteilungRefDto> sichtbarFuerAbteilungen,
         List<BenutzerRefDto> sichtbarFuerBenutzer,
-        boolean laeuftAus) {
+        boolean laeuftAus,
+        boolean spamAufServerVerschieben,
+        String spamOrdner,
+        String spamOrdnerErkannt,
+        String spamAbgleichFehler) {
 
     /** Postfach ohne Sichtbarkeits-Angaben (wie in Etappe 1): für alle sichtbar, läuft nicht aus. */
     public PostfachDto(Long id, String emailAdresse, String anzeigename, boolean aktiv, int sortierung,
@@ -42,6 +46,19 @@ public record PostfachDto(
         this(id, emailAdresse, anzeigename, aktiv, sortierung, hauptpostfach, fuerGeschaeftsdokumente, benutzername,
                 passwortGesetzt, smtpHost, smtpPort, imapHost, imapPort, abrufAktiv, letzterAbrufAm, letzterAbrufFehler,
                 zugewieseneBenutzer, true, List.of(), List.of(), false);
+    }
+
+    /** Postfach ohne Spam-Abgleich-Angaben: Spam wird verschoben, Ordner automatisch, noch kein Abgleich. */
+    public PostfachDto(Long id, String emailAdresse, String anzeigename, boolean aktiv, int sortierung,
+            boolean hauptpostfach, boolean fuerGeschaeftsdokumente, String benutzername, boolean passwortGesetzt,
+            String smtpHost, Integer smtpPort, String imapHost, Integer imapPort, boolean abrufAktiv,
+            LocalDateTime letzterAbrufAm, String letzterAbrufFehler, List<BenutzerRefDto> zugewieseneBenutzer,
+            boolean sichtbarFuerAlle, List<AbteilungRefDto> sichtbarFuerAbteilungen,
+            List<BenutzerRefDto> sichtbarFuerBenutzer, boolean laeuftAus) {
+        this(id, emailAdresse, anzeigename, aktiv, sortierung, hauptpostfach, fuerGeschaeftsdokumente, benutzername,
+                passwortGesetzt, smtpHost, smtpPort, imapHost, imapPort, abrufAktiv, letzterAbrufAm, letzterAbrufFehler,
+                zugewieseneBenutzer, sichtbarFuerAlle, sichtbarFuerAbteilungen, sichtbarFuerBenutzer, laeuftAus,
+                true, null, null, null);
     }
 
     public record BenutzerRefDto(Long id, String displayName) {

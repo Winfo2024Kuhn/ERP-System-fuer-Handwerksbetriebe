@@ -993,6 +993,7 @@ Ganzer Pfad nur für Admins.
 | `PUT` | `/{id}` | Postfach ändern *(nur Admin)* |
 | `PUT` | `/{id}/sichtbarkeit` | Festlegen, wer das Postfach sehen darf *(nur Admin)* |
 | `DELETE` | `/{id}` | Postfach löschen *(nur Admin)* |
+| `GET` | `/{id}/server-ordner` | Ordner auf dem Mail-Server samt erkanntem Spam-Ordner (Auswahl im Postfach-Dialog) *(nur Admin)* |
 | `POST` | `/test` | Verbindung testen *(nur Admin)* |
 
 ---
@@ -1833,7 +1834,7 @@ Digitale Freigabe von Angeboten durch Kunden über die Website.
 | 65 | `NotificationController` | `/api/notifications` | 3 | 13 |
 | 66 | `OffenePostenController` | `/api/offene-posten` | 6 | 6 |
 | 67 | `OutOfOfficeController` | `/api/email/outofoffice` | 4 | 9 |
-| 68 | `PostfachController` | `/api/postfaecher` | 6 | 9 |
+| 68 | `PostfachController` | `/api/postfaecher` | 7 | 9 |
 | 69 | `ProduktkategorieController` | `/api/produktkategorien` | 14 | 8 |
 | 70 | `ProjektController` | `/api/projekte` | 50 | 3 |
 | 71 | `ProjektWartungController` | `/api/admin/projekte` | 2 | 3 |

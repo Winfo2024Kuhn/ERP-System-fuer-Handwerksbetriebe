@@ -60,26 +60,30 @@ export function DatePicker({ value, onChange, placeholder = 'Datum wählen', cla
         setView(parseDate(date) ?? new Date()); setActiveDate(date);
         setAnsicht('tage'); setEntwurf(''); setEntwurfFehler(''); setIsOpen(true);
     };
+    // Lage nach dem tatsächlichen Inhalt: Ein Monat mit sechs Wochenzeilen ist höher als einer
+    // mit fünf. Deshalb neu messen, sobald Monat oder Ansicht wechseln, sonst rutscht die
+    // Knopfzeile unten aus dem Bild.
     useLayoutEffect(() => {
         if (!isOpen || disabled) return;
         const update = () => {
             const rect = triggerRef.current?.getBoundingClientRect(); if (!rect) return;
-            // 460 px fassen auch Monate mit sechs Wochenzeilen samt Direkteingabe.
-            const height = Math.min(460, Math.max(120, window.innerHeight - 16));
+            const inhalt = popupRef.current ? popupRef.current.scrollHeight + 2 : 440;
+            const height = Math.min(Math.max(inhalt, 120), window.innerHeight - 16);
             const below = window.innerHeight - rect.bottom - 12;
             const above = rect.top - 12;
-            // Passt der Kalender weder unter noch über das Feld, wird er ganz ins
-            // Fenster gelegt (darf das Feld überdecken) statt abgeschnitten zu werden.
-            const top = below >= height ? rect.bottom + 4
-                : above >= height ? rect.top - height - 4
-                    : Math.max(8, window.innerHeight - height - 8);
             const width = Math.min(304, window.innerWidth - 16);
-            setPosition({ top, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width, maxHeight: height });
+            const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+            let top: number;
+            if (height <= below) top = rect.bottom + 4;
+            else if (height <= above) top = rect.top - height - 4;
+            // Weder darunter noch darüber genug Platz: ganz sichtbar halten, auch wenn das Feld verdeckt wird.
+            else top = Math.max(8, window.innerHeight - height - 8);
+            setPosition({ top, left, width, maxHeight: height });
         };
         const outside = (event: MouseEvent) => { const target = event.target as Node; if (!triggerRef.current?.contains(target) && !popupRef.current?.contains(target)) setIsOpen(false); };
         update(); window.addEventListener('resize', update); window.addEventListener('scroll', update, true); document.addEventListener('mousedown', outside);
         return () => { window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); document.removeEventListener('mousedown', outside); };
-    }, [isOpen, disabled]);
+    }, [isOpen, disabled, view, ansicht, entwurfFehler]);
     useEffect(() => {
         if (isOpen && !disabled && ansicht === 'tage') popupRef.current?.querySelector<HTMLButtonElement>(`[data-date="${activeDate}"]:not(:disabled)`)?.focus();
     }, [isOpen, activeDate, disabled, ansicht]);
