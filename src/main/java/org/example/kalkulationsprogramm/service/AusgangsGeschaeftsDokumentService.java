@@ -1469,6 +1469,16 @@ public class AusgangsGeschaeftsDokumentService {
     }
 
     /**
+     * Findet alle Dokumente, die direkt am Kunden hängen – auch die ohne Projekt und Anfrage.
+     */
+    @Transactional(readOnly = true)
+    public List<AusgangsGeschaeftsDokumentResponseDto> findByKunde(Long kundeId) {
+        return dokumentRepository.findByKundeIdOrderByDatumDesc(kundeId).stream()
+                .map(this::toResponseDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Migriert alle AusgangsGeschaeftsDokumente von einem Anfrage zum Projekt.
      * Wird aufgerufen, wenn ein Anfrage in ein Projekt überführt wird.
      * Setzt das Projekt und entfernt die Anfrage-Referenz, damit das Anfrage gelöscht werden kann.
