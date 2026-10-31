@@ -51,11 +51,8 @@ EOF
     # Zusaetzlich: Design-Skill muss in dieser Session aufgerufen worden sein
     if [ ! -e "$flagDir/$sessionId-design.flag" ]; then
         cat >&2 <<'EOF'
-DESIGN-SKILL-GUARD: Frontend-Aenderungen erfordern zusaetzlich einen der Design-Skills. Rufe VORHER per Skill-Tool auf:
-  handwerkerprogramm-design      (PFLICHT-STANDARD: unser eigenes Design-System - Farben, Typografie, Icons, Wording, UI-Kits, echte Screenshots)
-  ui-ux-pro-max:ui-ux-pro-max    (generisch: Styles, Farben, Typografie, UX-Regeln - nur wenn handwerkerprogramm-design keine Antwort liefert)
-  frontend-design:frontend-design (visuelle Ausrichtung neuer UI)
-  ui-ux-pro-max:design-system    (Design-Tokens, Komponenten-Specs)
+DESIGN-SKILL-GUARD: Frontend-Aenderungen erfordern zusaetzlich den Frontend-Skill. Rufe VORHER per Skill-Tool auf und lies ihn vollstaendig:
+  handwerkerprogramm-design      (der EINE Frontend-Skill: Design-System, Bedienbarkeit, Bewegung, Frontend-Sicherheit, Design-Pruefung)
 Nutze fuer Komponenten ausserdem die MCP-Server 'shadcn' (fertige Bausteine) und 'magic' (21st.dev, animierte Layouts), statt Komponenten von Hand nachzubauen - Farben danach immer auf unser Schema (rose/slate) umstellen.
 Erst nach dem Skill-Aufruf darf editiert werden. Wiederhole danach den Edit/Write-Aufruf.
 EOF

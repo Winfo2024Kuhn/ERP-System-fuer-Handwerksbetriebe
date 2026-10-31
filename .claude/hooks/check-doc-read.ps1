@@ -43,11 +43,8 @@ if ($normalized -match '/(react-pc-frontend|react-zeiterfassung)/' -and $normali
     $designFlag = Join-Path $flagDir "$sessionId-design.flag"
     if (-not (Test-Path $designFlag)) {
         [Console]::Error.WriteLine(
-            "DESIGN-SKILL-GUARD: Frontend-Aenderungen erfordern zusaetzlich einen der Design-Skills. Rufe VORHER per Skill-Tool auf:`n" +
-            "  handwerkerprogramm-design      (PFLICHT-STANDARD: unser eigenes Design-System - Farben, Typografie, Icons, Wording, UI-Kits, echte Screenshots)`n" +
-            "  ui-ux-pro-max:ui-ux-pro-max    (generisch: Styles, Farben, Typografie, UX-Regeln - nur wenn handwerkerprogramm-design keine Antwort liefert)`n" +
-            "  frontend-design:frontend-design (visuelle Ausrichtung neuer UI)`n" +
-            "  ui-ux-pro-max:design-system    (Design-Tokens, Komponenten-Specs)`n" +
+            "DESIGN-SKILL-GUARD: Frontend-Aenderungen erfordern zusaetzlich den Frontend-Skill. Rufe VORHER per Skill-Tool auf und lies ihn vollstaendig:`n" +
+            "  handwerkerprogramm-design      (der EINE Frontend-Skill: Design-System, Bedienbarkeit, Bewegung, Frontend-Sicherheit, Design-Pruefung)`n" +
             "Nutze fuer Komponenten ausserdem die MCP-Server 'shadcn' (fertige Bausteine) und 'magic' (21st.dev, animierte Layouts), statt Komponenten von Hand nachzubauen - Farben danach immer auf unser Schema (rose/slate) umstellen.`n" +
             "Erst nach dem Skill-Aufruf darf editiert werden. Wiederhole danach den Edit/Write-Aufruf."
         )

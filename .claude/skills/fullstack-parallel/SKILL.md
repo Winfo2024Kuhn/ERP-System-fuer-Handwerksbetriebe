@@ -7,6 +7,14 @@ description: Ablauf für Aufgaben im ERP, die Backend (Spring Boot) UND Frontend
 
 **Ankündigen:** „Ich nutze den fullstack-parallel-Skill: kurzes Brainstorming, dann Backend und Frontend parallel, Review am Schluss.“
 
+**Rollen (feste Aufteilung):**
+
+| Wer | Was | Liest | Sicherheit |
+| --- | --- | --- | --- |
+| **Hauptsession (du)** | Backend: Service, Controller, Flyway, Backend-Tests; Vertrag, Brainstorming, Review, Commit, PR | `BACKEND_ARCH.md` (inkl. „Sicherheit im Backend“), `TESTING_SECURITY.md` | nur Backend-Sicherheitssicht |
+| **Frontend-Agent** (`erp-frontend`, Hintergrund) | Oberflächen in `react-pc-frontend` / `react-zeiterfassung`, Frontend-Tests, Playwright-Spec | `FRONTEND_UI.md` (inkl. „Sicherheit im Frontend“), Skill `handwerkerprogramm-design` | nur Frontend-Sicherheitssicht |
+| **Reviewer** (`erp-code-reviewer`, einmal am Ende) | prüft **beide** Seiten, Findings getrennt nach `[BACKEND]` und `[FRONTEND]` | alle drei Docs + Skill | beide Sichten |
+
 Warum dieser Ablauf: Backend und Frontend hängen nur über die API zusammen. Steht der
 Vertrag (Endpoints, Parameter, JSON-Felder, Fehlercodes) einmal fest, können beide Seiten
 gleichzeitig entstehen – das halbiert die Wartezeit. Ein Review über halbfertigen Code
@@ -47,14 +55,12 @@ das Frontend keine neuen Typen erfinden.
 
 ## 3. Frontend-Subagent starten (Hintergrund)
 
-`Agent` mit `subagent_type: "general-purpose"`, `run_in_background: true`, **im selben
+`Agent` mit `subagent_type: "erp-frontend"`, `run_in_background: true`, **im selben
 Working Tree** (kein Worktree – die Dateien überschneiden sich nicht, und ein späteres
 Zusammenführen entfällt). Der Prompt muss allein tragen; der Agent kennt das Gespräch
 nicht. Hinein gehört:
 
-1. **Pflichtlektüre & Hooks:** `Read` auf `docs/agent instructions/docs/FRONTEND_UI.md`
-   und `TESTING_SECURITY.md`, `Skill` `handwerkerprogramm-design` – sonst blockt der
-   Edit-Hook.
+1. **Pflichtlektüre:** steht in der Agent-Definition `erp-frontend` (`FRONTEND_UI.md`, Skill `handwerkerprogramm-design` samt `PRUEFUNG.md`, `TESTING_SECURITY.md`). Im Prompt nur kurz daran erinnern: „Lies zuerst deine Pflichtlektüre, sonst blockt der Edit-Hook.“ Backend-Dokumente bekommt er bewusst nicht.
 2. **Ziel aus Nutzersicht** inkl. eines konkreten Beispiels aus dem Gespräch.
 3. **Bestehende Basis** mit Pfaden und ungefähren Zeilen (Komponenten, Hilfsdateien, Tests).
 4. **Der API-Vertrag aus Schritt 2** wörtlich.
@@ -66,7 +72,7 @@ nicht. Hinein gehört:
    Baustein: `react-pc-frontend/src/components/ui/info-button.tsx` (Regeln unten).
 7. **Tests:** Vitest + Testing Library, bestehende grün halten, E2E unter
    `react-pc-frontend/e2e/` mit `page.route`-Mocks; `npm run lint`, `npm run test -- --run`,
-   `npm run build`; wenn möglich Skill `playwright-design-pruefung`. Den Abschnitt
+   `npm run build`; Playwright-Design-Prüfung nach `PRUEFUNG.md` (im Skill `handwerkerprogramm-design`). Den Abschnitt
    „Schnelle E2E-Tests“ unten wörtlich in den Prompt übernehmen.
 8. **Grenzen:** nur Dateien unter `react-pc-frontend/` (bzw. `react-zeiterfassung/`),
    `src/main/java` nicht anfassen, **nicht committen**.
@@ -135,7 +141,7 @@ bleibt:
 
 ## 4. Backend selbst bauen (währenddessen)
 
-`docs/agent instructions/docs/BACKEND_ARCH.md` und `TESTING_SECURITY.md` lesen, dann:
+`docs/agent instructions/docs/BACKEND_ARCH.md` (mit „Sicherheit im Backend“) und `TESTING_SECURITY.md` lesen, dann (nur Backend; Frontend-Sicherheit ist Sache des Frontend-Agenten):
 
 - Logik in einen Service (Controller bleibt dünn), Constructor Injection, Flyway nur
   neu und idempotent.
@@ -164,7 +170,7 @@ Wenn der Frontend-Bericht da ist:
 
 ## 6. Ein gemeinsames /review-and-ship
 
-Jetzt `Skill` → `review-and-ship` über den **gesamten** Diff (Backend + Frontend). Dort
+Jetzt `Skill` → `review-and-ship` über den **gesamten** Diff (Backend + Frontend). Der Reviewer prüft beide Seiten, jede gegen ihre eigene Sicherheitssicht und ihre Checkliste. Dort
 gelten dessen Regeln: ein Reviewer-Subagent, höchstens 2 Runden, nur eigene Dateien
 stagen (die Liste aus deinen Edits + dem Bericht des Frontend-Agenten), Build-Artefakte
 aus `npm run build` dürfen mit.
