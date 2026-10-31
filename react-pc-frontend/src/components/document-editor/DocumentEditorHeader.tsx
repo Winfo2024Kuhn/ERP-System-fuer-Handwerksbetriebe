@@ -86,7 +86,7 @@ export function DocumentEditorHeader({
     verlauf,
 }: DocumentEditorHeaderProps) {
     return (
-        <div className="bg-white border-b border-slate-200 px-3 h-11 flex items-center justify-between gap-3 flex-shrink-0">
+        <div className="bg-white border-b border-slate-200 px-3 h-11 flex items-center justify-between gap-2 flex-shrink-0">
             {/* Left: close + doc info. Darf schrumpfen – die Nummer wird dann
                 gekürzt (voller Text im Tooltip), statt in die Knöpfe zu laufen. */}
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -263,10 +263,14 @@ export function DocumentEditorHeader({
                     variant="ghost"
                     size="sm"
                     onClick={onPrint}
+                    aria-label="Drucken"
+                    title="Drucken"
                     className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                 >
                     <Printer className="w-3 h-3" />
-                    Drucken
+                    {/* Unter 1536 px nur das Drucker-Symbol: schafft Platz, damit die
+                        Dokumentnummer auch neben „Ungespeichert“ ganz lesbar bleibt. */}
+                    <span className="hidden 2xl:inline">Drucken</span>
                 </Button>
                 <Button
                     variant="ghost"
