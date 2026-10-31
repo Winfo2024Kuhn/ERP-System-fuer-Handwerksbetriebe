@@ -2,7 +2,7 @@
 
 ## 🧠 Frontend-Skill-Pflicht — HOOK-ERZWUNGEN
 
-**Vor JEDER Frontend-Änderung** rufst du den Skill `handwerkerprogramm-design` per `Skill`-Tool auf und liest ihn vollständig. Er ist der **eine** Frontend-Skill: Design-System, Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Bewegung, Feinschliff, Frontend-Sicherheit und die Playwright-Design-Prüfung (`PRUEFUNG.md`). Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange er in dieser Session nicht lief. Das Flag gilt pro Session.
+**Vor JEDER Frontend-Änderung** rufst du den Skill `handwerkerprogramm-design` per `Skill`-Tool auf und liest ihn vollständig. Er ist der **eine** Frontend-Skill: Design-System, Bedienbarkeit (Gulf of Execution/Evaluation, Nielsen-Heuristiken), Performance, Typografie/Farbe/Nutzerführung, Frontend-Sicherheit und die Playwright-Design-Prüfung (`PRUEFUNG.md`). Der PreToolUse-Hook `.claude/hooks/check-doc-read.ps1` (auf macOS/Linux ohne `pwsh` die Bash-Fassung `check-doc-read.sh`, Auswahl über `run-hook.sh`) blockt deine Edit/Write-Aufrufe auf `react-pc-frontend/` und `react-zeiterfassung/` mit Exit 2 (DESIGN-SKILL-GUARD), solange er in dieser Session nicht lief. Das Flag gilt pro Session.
 
 ## 🧭 Kern-Prinzip: Gulf of Execution & Gulf of Evaluation
 
@@ -52,7 +52,7 @@ Baue Komponenten **nicht von Hand nach**, wenn ein MCP-Server sie liefern kann. 
 | MCP | Wofür |
 | --- | --- |
 | `shadcn` | Der Standard. Greift direkt auf shadcn-Bausteine und -Blöcke zu, zieht sie passend ins Projekt und installiert sie automatisch. Kein manuelles Kopieren aus dem Netz. |
-| `magic` (21st.dev) | Moderne Layouts mit Animationen auf Tailwind-Basis. Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
+| `magic` (21st.dev) | Moderne Layouts auf Tailwind-Basis (Animationen weglassen, siehe Skill: Performance statt Animation). Braucht die Umgebungsvariable `TWENTYFIRST_API_KEY` (**niemals** den Key in `.mcp.json` schreiben — die Datei ist eingecheckt). |
 
 **Wichtig:** Gezogene Komponenten immer auf unser Design-System umstellen (rose/slate statt der shadcn-Default-Farben) und die Pflicht-Komponenten unten haben Vorrang vor neu gezogenen.
 
@@ -184,3 +184,31 @@ Das ist die vollständige Sicherheitssicht für TypeScript/React-Arbeit. Backend
 7. **Keine Geheimnisse** im Frontend-Code, in `localStorage`-Schlüsseln oder Logs.
 
 `htmlSanitizer.ts` gibt es nur im PC-Frontend. `react-zeiterfassung` hat kein Gegenstück; braucht die Handy-App diese Funktionen, das vor dem Bau zur Freigabe stellen.
+
+## 📄 Große Listen: begrenzt laden, nachladen (Pflicht, Frontend)
+
+Jede Liste, die wachsen kann, fragt **eine Seite** ab (`page`, `size`) und zeigt sie an; der Rest kommt auf Wunsch. Nie alle Datensätze auf einmal holen und im Browser filtern oder sortieren. Die Obergrenze erzwingt zusätzlich das Backend (`BACKEND_ARCH.md`, „Große Datenmengen“).
+
+**Welches Muster wann:**
+- **Tabelle mit Seiten** (Blättern, „Seite 3 von 12“, Gesamtzahl): Stammdaten, die man gezielt durchsucht und sortiert, z. B. Kunden, Artikel. Seite und Filter in der URL halten (Zurück-Knopf und Lesezeichen funktionieren). Vorbild `components/artikel/ArtikelSuche.tsx`.
+- **„Mehr laden“-Knopf** (nächste 25 anhängen, mit Zähler „25 von 140 angezeigt“): Verläufe, Übersichten nach Alter, E-Mails, Dokumentlisten. Vorbild `features/bestellungen/bestellungenNachladen.ts`.
+- **Auswahllisten und Suchfelder** (Kunde/Lieferant/Projekt wählen): nur die ersten ~20 Treffer, Suche entprellt (400 ms) und serverseitig, Hinweis „weitere Treffer: Suche eingrenzen“. Nie die komplette Tabelle in ein Dropdown laden.
+- **Endloses Scrollen** nur, wenn der Nutzer ohnehin nur von oben nach unten liest (Chat-/Aktivitätsverlauf); sonst Knopf oder Seiten.
+
+**Regeln:**
+- Standardgröße 25–50 (Tabelle), 20 (Auswahl). Die Zahl steht als Konstante an einer Stelle, nicht verstreut.
+- Gesamtzahl bzw. „es gibt mehr“ immer anzeigen, damit klar ist, dass die Liste nicht vollständig ist.
+- Beim Nachladen bleibt die bisherige Liste stehen; nur der Knopf zeigt Ladezustand (Spinner, gesperrt gegen Doppelklick). Fehler → Toast, Liste bleibt.
+- Filter, Suche oder Sortierung ändern → zurück auf Seite 1 (bzw. Liste leeren). Späte Antworten alter Abfragen verwerfen (Zähler oder `AbortController`), sonst überschreiben sie neuere.
+- Leer-Zustand, Laden und Fehler bleiben drei verschiedene Anzeigen (siehe Bedienbarkeit).
+- Zähler/Badges (z. B. „Offene Angebote: 14“) kommen vom Backend als eigene Zahl, nicht aus `liste.length`.
+- Ein geladener Datensatz-Satz, der an anderer Stelle gebraucht wird, wird geteilt (Hook/Kontext), nicht pro Komponente erneut geladen.
+
+## 🧩 Zuständigkeiten und Größe (Pflicht, Frontend)
+
+- **Eine Datei, eine Zuständigkeit.** Seiten (`pages/`) setzen zusammen, sie enthalten keine Fachlogik, keine API-Aufrufe im Rohzustand und keine großen Formular- oder Tabellenblöcke. Logik gehört in Hooks (`src/hooks/`, `src/features/{name}/`), reine Berechnungen in `src/lib/` oder Feature-Hilfsdateien (testbar ohne React), wiederkehrende Oberfläche in `src/components/`.
+- **Größenrahmen:** Komponentendatei **bis ca. 300 Zeilen**, ab **500** ist sie zu groß; Hook bis ca. 150; Funktion bis ca. 40 Zeilen; höchstens ca. 8 `useState` je Komponente (sonst `useReducer` oder eigener Hook); keine Verschachtelung tiefer als 3 JSX-Ebenen ohne Teilkomponente.
+- **Wiederverwenden vor neu bauen.** Vor jeder neuen Komponente, jedem Hook und jeder Hilfsfunktion suchen (`components/ui/`, `components/`, `hooks/`, `lib/`). Taucht dasselbe zum zweiten Mal auf (Dialog, Tabelle, Filterleiste, Formularzeile, Format-Funktion), wird es **ausgelagert und an beiden Stellen genutzt**, nicht kopiert. Fachliche Unterschiede bleiben als Props/Optionen erhalten.
+- **Testbar bauen:** Logik in Hooks und reine Funktionen mit Vitest-Test; Komponenten nehmen Daten und Callbacks als Props statt selbst zu laden, wo es geht.
+- **Neuer Code verschlechtert nichts:** In eine Datei über 500 Zeilen kommt kein neuer Block mehr. Neues wird eigene Komponente/Hook; die große Datei bindet es nur ein.
+- **Bei Auffälligkeit fragen:** Fasst die Aufgabe eine bestehende Datei über der Grenze an (Beispiele im Bestand: `document-editor/index.tsx`, `ProjektEditor.tsx`, `ZeiterfassungKalender.tsx`, `EmailCenter.tsx`, `AnfrageEditor.tsx`), melde das mit einem konkreten Schnitt („Positionstabelle als `PositionenTabelle`, Speichern-Logik als `useProjektSpeichern` auslagern?“) und frage den Nutzer, ob es jetzt mit ausgelagert werden soll. Als Subagent: den Vorschlag im Bericht an den Hauptagenten nennen, der den Nutzer fragt.
