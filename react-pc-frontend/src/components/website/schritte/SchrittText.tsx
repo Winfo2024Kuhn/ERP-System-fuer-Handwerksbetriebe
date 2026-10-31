@@ -6,7 +6,7 @@ import { BeitragVorschau } from '../BeitragVorschau';
 import { erzeugeBeitragsvorschlag } from '../api';
 import { htmlZuKlartext, klartextZuHtml, leiteKurzbeschreibungAb } from '../textumwandlung';
 import type { ChatNachricht } from '../typen';
-import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../../../features/ki/useKiAktiv';
+import { KI_AUS_ERKLAERUNG, useKiFunktionAktiv } from '../../../features/ki/useKiAktiv';
 
 export interface TextStand {
     titel: string;
@@ -41,7 +41,7 @@ export interface SchrittTextProps {
 export function SchrittText({
     projektId, kiBilder, vorschauBilder, stand, onStandAendern, mitKi,
 }: SchrittTextProps) {
-    const kiAktiv = useKiAktiv();
+    const kiAktiv = useKiFunktionAktiv('BEITRAG_ENTWURF');
     const [verlauf, setVerlauf] = useState<ChatNachricht[]>([]);
     const [eingabe, setEingabe] = useState('');
     const [laeuft, setLaeuft] = useState(false);

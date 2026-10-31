@@ -18,8 +18,11 @@ public record KiEinstellungenDto(
         List<Funktion> funktionen) {
 
     /**
-     * @param datenstandort {@code EU} oder {@code WELTWEIT}
-     * @param faehigkeiten  z. B. {@code TEXT}, {@code BILD}, {@code PDF}
+     * @param datenstandort         {@code EU} oder {@code WELTWEIT}
+     * @param schluesselGesetzt     ein lesbarer Schlüssel ist hinterlegt
+     * @param schluesselNichtLesbar ein Schlüssel ist gespeichert, lässt sich auf diesem Server aber nicht
+     *                              entschlüsseln – der Anbieter ist dann aus, und kein Ersatz springt ein
+     * @param faehigkeiten          z. B. {@code TEXT}, {@code BILD}, {@code PDF}
      */
     public record Anbieter(
             String typ,
@@ -27,6 +30,7 @@ public record KiEinstellungenDto(
             String beschreibung,
             String datenstandort,
             boolean schluesselGesetzt,
+            boolean schluesselNichtLesbar,
             boolean schluesselVerschluesselt,
             List<String> faehigkeiten,
             List<Modell> modelle) {

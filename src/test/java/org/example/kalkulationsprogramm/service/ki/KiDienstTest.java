@@ -151,6 +151,75 @@ class KiDienstTest {
     }
 
     @Test
+    void iphoneAufnahmeGehtAnDenErsatzWennMistralSieNichtLiest() {
+        beideEingerichtet();
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, true);
+        KiAnfrage iphone = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(new byte[] {1}, "audio/mp4")).bauen();
+        KiAnfrage android = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(new byte[] {1}, "audio/webm")).bauen();
+
+        KiErgebnis ergebnis = dienst.sende(KiFunktion.SPRACHEINGABE, iphone);
+        dienst.sende(KiFunktion.SPRACHEINGABE, android);
+
+        // MP4 liest Mistral nicht: Google Gemini springt ein, WebM bleibt bei Mistral.
+        assertThat(ergebnis.anbieter()).isEqualTo(KiAnbieterTyp.GEMINI);
+        assertThat(gemini.aufrufe).hasSize(1);
+        assertThat(mistral.aufrufe).hasSize(1);
+        assertThat(mistral.aufrufe.get(0).anfrage()).isSameAs(android);
+        // Die Zuordnung ohne konkrete Datei bleibt bei Mistral – mit dem Hinweis auf die Grenze.
+        KiZuordnung sprache = dienst.zuordnung(KiFunktion.SPRACHEINGABE);
+        assertThat(sprache.status()).isEqualTo(KiZuordnung.Status.AKTIV);
+        assertThat(sprache.anbieter()).isSameAs(mistral);
+    }
+
+    @Test
+    void iphoneAufnahmeOhneErsatzIstEinVerstaendlicherFehlerUndNichtsGehtAnGoogle() {
+        beideEingerichtet();
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, false);
+        KiAnfrage iphone = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(new byte[] {1}, "audio/mp4")).bauen();
+
+        // Die Funktion ist an (Einstellungsseite: „Läuft“), nur dieses Format geht nicht: Das ist ein
+        // dauerhafter Datei-Fehler mit Grund für den Nutzer (400), kein „Spracheingabe aus“ (503).
+        assertThatThrownBy(() -> dienst.sende(KiFunktion.SPRACHEINGABE, iphone))
+                .isInstanceOf(KiInhaltNichtLesbar.class)
+                .hasMessage("Mistral kann dieses Aufnahmeformat nicht lesen (audio/mp4). Ersatz-Anbieter sind ausgeschaltet.");
+        assertThat(dienst.zuordnung(KiFunktion.SPRACHEINGABE).status()).isEqualTo(KiZuordnung.Status.AKTIV);
+        assertThat(gemini.aufrufe).isEmpty();
+        assertThat(mistral.aufrufe).isEmpty();
+
+        // Ohne jeden Anbieter für die Funktion bleibt es „aus“ – auch mit einer Datei.
+        speicher.einstellungen.entferneSchluessel(mistral);
+        assertThatThrownBy(() -> dienst.sende(KiFunktion.SPRACHEINGABE, iphone))
+                .isInstanceOf(KiNichtVerfuegbar.class);
+    }
+
+    @Test
+    void nichtEntschluesselbarerSchluesselSchaltetAusStattErsatz() {
+        speicher.einstellungen.speichereSchluessel(gemini, GEMINI_SCHLUESSEL);
+        speicher.werte.put("ai.mistral.api-key", "v1:kaputt");
+        speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, true);
+
+        KiZuordnung zuordnung = dienst.zuordnung(KiFunktion.EMAIL_ZUORDNUNG);
+
+        // Der Betrieb hat Mistral eingerichtet – ohne lesbaren Schlüssel darf nichts still zu Google gehen.
+        assertThat(zuordnung.status()).isEqualTo(KiZuordnung.Status.AUS);
+        assertThat(zuordnung.hinweis()).isEqualTo("Der Schlüssel für Mistral lässt sich auf diesem Server nicht "
+                + "entschlüsseln. Bitte unter Einstellungen → KI-Funktionen neu eintragen. "
+                + "Bis dahin springt kein anderer Anbieter ein.");
+        assertThatThrownBy(() -> dienst.sende(KiFunktion.EMAIL_ZUORDNUNG, anfrage()))
+                .isInstanceOf(KiNichtVerfuegbar.class);
+        assertThat(gemini.aufrufe).isEmpty();
+        KiEinstellungenDto.Anbieter mistralDto = dienst.uebersicht().anbieterListe().stream()
+                .filter(a -> a.typ().equals("MISTRAL")).findFirst().orElseThrow();
+        assertThat(mistralDto.schluesselGesetzt()).isFalse();
+        assertThat(mistralDto.schluesselNichtLesbar()).isTrue();
+
+        // Kann Mistral die Funktion ohnehin nicht, zählt der Schlüssel nicht: Ersatz wie sonst.
+        TestAnbieter begrenzt = TestAnbieter.mistralNurDokumente();
+        dienst = new KiDienst(List.of(gemini, begrenzt), speicher.einstellungen, uhr);
+        assertThat(dienst.zuordnung(KiFunktion.SPRACHEINGABE).status()).isEqualTo(KiZuordnung.Status.ERSATZ);
+    }
+
+    @Test
     void fehlenderSchluesselWirdBenanntUndErsatzSpringtEin() {
         speicher.einstellungen.speichereSchluessel(gemini, GEMINI_SCHLUESSEL);
         speicher.einstellungen.speichereAuswahl(KiAnbieterTyp.MISTRAL, true);

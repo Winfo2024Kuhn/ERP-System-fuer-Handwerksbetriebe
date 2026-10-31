@@ -88,9 +88,9 @@ function useTabInHash(): [TabId, (tab: TabId) => void] {
  */
 async function holeSetupStatus(): Promise<SetupStatus> {
     try {
-        const [smtpRes, geminiRes, dateiOrdnerRes, telefonRes] = await Promise.all([
+        const [smtpRes, kiRes, dateiOrdnerRes, telefonRes] = await Promise.all([
             fetch('/api/settings/smtp'),
-            fetch('/api/settings/gemini'),
+            fetch('/api/settings/ki'),
             fetch('/api/settings/datei-ordner'),
             fetch('/api/telefon/einstellungen'),
         ]);
@@ -99,9 +99,12 @@ async function holeSetupStatus(): Promise<SetupStatus> {
             const data = await smtpRes.json();
             status.email = !!data?.host?.trim() && !!data?.username?.trim() && !!data?.passwordSet;
         }
-        if (geminiRes.ok) {
-            const data = await geminiRes.json();
-            status.ki = !!data?.apiKeySet;
+        if (kiRes.ok) {
+            // „KI eingerichtet“ heißt: mindestens eine KI-Funktion läuft wirklich – egal über welchen Anbieter.
+            const data = await kiRes.json();
+            const funktionen: unknown = data?.funktionen;
+            status.ki = Array.isArray(funktionen)
+                && funktionen.some((f) => !!f && typeof f === 'object' && (f as { status?: string }).status !== 'AUS');
         }
         if (dateiOrdnerRes.ok) {
             const data = await dateiOrdnerRes.json();

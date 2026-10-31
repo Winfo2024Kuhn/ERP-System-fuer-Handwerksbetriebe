@@ -81,7 +81,8 @@ public class SpracheingabeController {
     public ResponseEntity<Map<String, Object>> handleKiAus(SpracheingabeService.KiNichtEingerichtet ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
                 "success", false,
-                "message", "Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist."));
+                "message", "Die Spracheingabe ist gerade aus. Ein Administrator sieht unter "
+                        + "Einstellungen → KI-Funktionen, warum."));
     }
 
     @ExceptionHandler(SpracheingabeService.AufnahmeZuGross.class)

@@ -7,7 +7,7 @@ import { ToastProvider } from './ui/toast';
 import { ConfirmProvider } from './ui/confirm-dialog';
 import type { LieferantDokument, LieferantDokumentTyp } from '../types';
 
-// useOptionalAuth: der eingebettete Import-Dialog fragt über useKiAktiv(), ob die KI an ist (ohne Rahmen: an).
+// useOptionalAuth: der eingebettete Import-Dialog fragt über useKiFunktionAktiv(), ob die KI an ist (ohne Rahmen: an).
 const auth = vi.hoisted(() => ({ isAdmin: false }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ isAdmin: auth.isAdmin }), useOptionalAuth: () => null }));
 vi.mock('./ui/PdfCanvasViewer', () => ({

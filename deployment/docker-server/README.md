@@ -160,9 +160,17 @@ Punkte werden zu `_`, Bindestriche entfallen, alles groß. Werte in einfachen An
 
 ```ini
 AI_GEMINI_APIKEY='...'
+AI_MISTRAL_APIKEY='...'
 MAIL_CREDENTIALS_ENCRYPTIONKEY='...'
 EMAIL_FEATURES_ENABLED='true'
 ```
+
+KI-Schlüssel in der `app.env` sind nur der Rückfall – normal werden sie unter *System-Einstellungen →
+KI-Funktionen* eingetragen (Mistral verschlüsselt mit `MAIL_CREDENTIALS_ENCRYPTIONKEY`; ändert sich der,
+muss der Mistral-Schlüssel neu eingetragen werden, bis dahin ist Mistral aus). Die früheren
+Modell-Schalter `AI_EMAIL_MODEL`, `AI_KIHILFE_MODEL`, `AI_GEMINI_MODEL_SPRACHEINGABE`, `…_SCANNER` und
+`…_PDFEXTRACTOR` gibt es nicht mehr; Modelle je Stufe (`AI_GEMINI_MODEL_SCHNELL|STANDARD|GRUENDLICH`,
+`AI_MISTRAL_MODEL_…`) und je Funktion stellt man in der Oberfläche ein.
 
 Nach einer Änderung: `docker compose up -d app`.
 

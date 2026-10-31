@@ -36,6 +36,7 @@ export function mistral(teil: Partial<KiAnbieter> = {}): KiAnbieter {
         beschreibung: 'Europäischer Anbieter – die Daten werden nach Angabe von Mistral in der EU verarbeitet.',
         datenstandort: 'EU',
         schluesselGesetzt: false,
+        schluesselNichtLesbar: false,
         schluesselVerschluesselt: true,
         faehigkeiten: ['TEXT', 'BILD', 'PDF'],
         modelle: [
@@ -55,6 +56,7 @@ export function gemini(teil: Partial<KiAnbieter> = {}): KiAnbieter {
         beschreibung: 'KI von Google – die Daten können auch außerhalb der EU verarbeitet werden.',
         datenstandort: 'WELTWEIT',
         schluesselGesetzt: false,
+        schluesselNichtLesbar: false,
         schluesselVerschluesselt: false,
         faehigkeiten: ['TEXT', 'BILD', 'PDF', 'AUDIO', 'WERKZEUGE', 'WEBSUCHE'],
         modelle: [

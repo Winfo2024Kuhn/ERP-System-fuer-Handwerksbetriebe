@@ -50,6 +50,8 @@ export async function stubbeEmailCenter(page: Page, optionen: {
     sendeAntwort?: { status: number; body: unknown };
     /** Ist ein KI-Schluessel hinterlegt? Standard: ja (wie bisher). */
     kiAktiv?: boolean;
+    /** Welche KI-Funktionen laufen wirklich (z. B. `EMAIL_TEXT`)? Ohne Angabe: alle. */
+    kiFunktionen?: string[];
 } = {}): Promise<EmailCenterStub> {
     const stub: EmailCenterStub = { gesendet: [] };
     await page.route('**/api/**', async route => {
@@ -57,7 +59,11 @@ export async function stubbeEmailCenter(page: Page, optionen: {
         const pfad = new URL(anfrage.url()).pathname;
         const methode = anfrage.method();
         if (pfad === '/api/auth/me') {
-            return json(route, { id: 1, displayName: 'Max Mustermann', username: 'max', active: true, roles: ['USER'], admin: false, requiresInitialSetup: false, kiAktiv: optionen.kiAktiv ?? true });
+            return json(route, {
+                id: 1, displayName: 'Max Mustermann', username: 'max', active: true, roles: ['USER'], admin: false,
+                requiresInitialSetup: false, kiAktiv: optionen.kiAktiv ?? true,
+                ...(optionen.kiFunktionen ? { kiFunktionen: optionen.kiFunktionen } : {}),
+            });
         }
         if (pfad === '/api/emails/stats') return json(route, { inboxCount: 1 });
         if (pfad === '/api/emails/absender-postfaecher') return json(route, ABSENDER_POSTFAECHER);

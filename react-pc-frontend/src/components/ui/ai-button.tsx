@@ -2,26 +2,30 @@ import React, { useId } from 'react';
 import { Gem } from 'lucide-react';
 import { Button } from './button';
 import { cn } from '../../lib/utils';
-import { KI_AUS_ERKLAERUNG, useKiAktiv } from '../../features/ki/useKiAktiv';
+import { KI_AUS_ERKLAERUNG, useKiFunktionAktiv } from '../../features/ki/useKiAktiv';
 
 interface AiButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     isLoading?: boolean;
     label?: string;
+    /** Die KI-Funktion hinter dem Knopf (z. B. `EMAIL_TEXT`) – ist sie aus, sperrt sich der Knopf. */
+    funktion: string;
 }
 
 /**
  * Knopf für KI-Aktionen mitten in Formularen (z. B. „KI-Optimierung“ beim
  * E-Mail-Schreiben).
  *
- * <p>Ist kein KI-Schlüssel hinterlegt, sperrt er sich selbst und erklärt
- * warum: per Tooltip beim Drüberfahren und für Screenreader über
+ * <p>Läuft die KI-Funktion gerade nicht (kein Schlüssel, oder der gewählte
+ * Anbieter kann sie nicht), sperrt er sich selbst und erklärt warum: per Tooltip beim Drüberfahren und für Screenreader über
  * `aria-describedby`. Der Knopf bleibt sichtbar, damit man sieht, dass es die
  * Funktion gibt. Gesperrte Knöpfe bekommen in manchen Browsern kein Hover –
  * deshalb hängt der Tooltip an einer Hülle und der Knopf selbst lässt die
  * Maus durch (`pointer-events-none`).</p>
  */
-export function AiButton({ isLoading, label = "KI-Optimierung", className, disabled, onClick, ...props }: AiButtonProps) {
-    const kiAktiv = useKiAktiv();
+export function AiButton({
+    isLoading, label = "KI-Optimierung", funktion, className, disabled, onClick, ...props
+}: AiButtonProps) {
+    const kiAktiv = useKiFunktionAktiv(funktion);
     const erklaerungId = useId();
 
     if (!kiAktiv) {

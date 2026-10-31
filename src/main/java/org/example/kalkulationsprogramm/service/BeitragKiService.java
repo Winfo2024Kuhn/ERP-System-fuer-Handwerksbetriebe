@@ -15,6 +15,7 @@ import org.example.kalkulationsprogramm.repository.ProjektNotizRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
 import lombok.RequiredArgsConstructor;
 import org.example.kalkulationsprogramm.service.ki.KiAnbieterFehler;
+import org.example.kalkulationsprogramm.service.ki.KiInhaltNichtLesbar;
 import org.example.kalkulationsprogramm.service.ki.KiAnfrage;
 import org.example.kalkulationsprogramm.service.ki.KiDienst;
 import org.example.kalkulationsprogramm.service.ki.KiErgebnis;
@@ -235,6 +236,10 @@ public class BeitragKiService {
         KiErgebnis ergebnis;
         try {
             ergebnis = kiDienst.sende(KiFunktion.BEITRAG_ENTWURF, baueAnfrage(anfrage, bilder));
+        } catch (KiInhaltNichtLesbar e) {
+            // Kein Ausfall: Der Anbieter liest dieses Bildformat nicht. Die Meldung nennt nur Anbieter
+            // und Format und darf zum Nutzer (400), damit er das Bild anders speichern kann.
+            throw new IllegalArgumentException(e.getMessage(), e);
         } catch (KiNichtVerfuegbar | KiAnbieterFehler e) {
             throw new IllegalStateException(e.getMessage(), e);
         }

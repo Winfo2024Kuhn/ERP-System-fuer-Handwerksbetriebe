@@ -1,6 +1,6 @@
 import { forwardRef, useId, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
-import { ChevronDown, Globe, KeyRound, Loader2, Lock, PlugZap, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Globe, KeyRound, Loader2, Lock, PlugZap, RotateCcw, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../../../ui/button';
 import { Label } from '../../../ui/label';
 import { useToast } from '../../../ui/toast';
@@ -128,6 +128,11 @@ export const KiAnbieterKarte = forwardRef<HTMLButtonElement, KiAnbieterKarteProp
                             <Plakette klassen="border-emerald-200 bg-emerald-50 text-emerald-800">
                                 <KeyRound aria-hidden="true" className="h-3.5 w-3.5" />
                                 Schlüssel hinterlegt
+                            </Plakette>
+                        ) : anbieter.schluesselNichtLesbar ? (
+                            <Plakette klassen="border-red-200 bg-red-50 text-red-800">
+                                <KeyRound aria-hidden="true" className="h-3.5 w-3.5" />
+                                Schlüssel nicht lesbar
                             </Plakette>
                         ) : (
                             <Plakette klassen="border-slate-300 bg-slate-100 text-slate-700">
@@ -306,6 +311,17 @@ function SchluesselBereich({ anbieter, verschluesselungBereit, onAenderung }: Be
             </div>
 
             <TestResultBanner result={testResult} className="mt-3" />
+
+            {anbieter.schluesselNichtLesbar && !anbieter.schluesselGesetzt && (
+                <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                        Der gespeicherte Schlüssel lässt sich auf diesem Server nicht entschlüsseln – meist, weil der
+                        Server neu aufgesetzt oder umgezogen wurde. Bitte den Schlüssel oben neu eintragen. Bis dahin
+                        ist {anbieter.name} aus, und kein anderer Anbieter springt dafür ein.
+                    </span>
+                </p>
+            )}
 
             {anbieter.schluesselGesetzt && (
                 <div className="mt-2">

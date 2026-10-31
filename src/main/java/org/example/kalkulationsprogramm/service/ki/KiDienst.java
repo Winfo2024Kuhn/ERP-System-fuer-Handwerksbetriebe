@@ -62,12 +62,21 @@ public class KiDienst {
     }
 
     /**
-     * @throws KiNichtVerfuegbar wenn für die Funktion kein Anbieter eingerichtet ist
-     * @throws KiAnbieterFehler  wenn der Anbieter nicht oder mit einem Fehler antwortet
+     * @throws KiNichtVerfuegbar  wenn für die Funktion kein Anbieter eingerichtet ist
+     * @throws KiInhaltNichtLesbar wenn die Funktion läuft, aber kein erlaubter Anbieter ein Dateiformat
+     *                             dieser Anfrage liest (dauerhaft, die Meldung darf zum Nutzer)
+     * @throws KiAnbieterFehler   wenn der Anbieter nicht oder mit einem Fehler antwortet
      */
     public KiErgebnis sende(KiFunktion funktion, KiModellStufe stufe, KiAnfrage anfrage) {
-        KiZuordnung zuordnung = zuordnung(funktion);
+        // Mit den Dateien der Anfrage: Ein Format, das der gewählte Anbieter nicht liest, zählt wie
+        // eine fehlende Fähigkeit (Ersatz, wenn erlaubt – sonst eine klare Meldung).
+        KiZuordnung zuordnung = zuordnung(funktion, anfrage.dateien());
         if (!zuordnung.verfuegbar()) {
+            if (!anfrage.dateien().isEmpty() && zuordnung(funktion).verfuegbar()) {
+                // Die Funktion ist an, nur dieses Format liest kein erlaubter Anbieter: kein „aus“,
+                // sondern der Grund – so erfährt der Nutzer, was er an der Datei ändern kann.
+                throw new KiInhaltNichtLesbar(zuordnung.hinweis());
+            }
             throw new KiNichtVerfuegbar(funktion, zuordnung.hinweis());
         }
         KiAnbieter anbieter = zuordnung.anbieter();
@@ -128,23 +137,39 @@ public class KiDienst {
 
     // ==================== Zuordnung ====================
 
+    /** Die Zuordnung der Funktion im Allgemeinen – so zeigt sie die Einstellungsseite. */
     public KiZuordnung zuordnung(KiFunktion funktion) {
+        return zuordnung(funktion, List.of());
+    }
+
+    /**
+     * @param dateien die Dateien einer konkreten Anfrage; ein Anbieter, der eines ihrer Formate
+     *                nicht liest, kommt für diese Anfrage nicht in Frage (leer: nur die Fähigkeiten zählen)
+     */
+    private KiZuordnung zuordnung(KiFunktion funktion, List<KiTeil.Datei> dateien) {
         Optional<KiFunktionsWahl> wahl = einstellungen.funktionsWahl(funktion);
         KiAnbieter gewaehlt = anbieter(wahl.map(KiFunktionsWahl::anbieter)
                 .orElseGet(einstellungen::gewaehlterAnbieter));
-        Set<KiFaehigkeit> fehlend = fehlend(gewaehlt, funktion);
-        if (fehlend.isEmpty() && einstellungen.hatSchluessel(gewaehlt)) {
+        Optional<String> hindernis = hindernis(gewaehlt, funktion, dateien);
+        if (hindernis.isEmpty() && einstellungen.hatSchluessel(gewaehlt)) {
             return new KiZuordnung(funktion, KiZuordnung.Status.AKTIV, gewaehlt,
                     wahl.map(KiFunktionsWahl::modell).orElse(null), zusatzHinweis(gewaehlt, funktion).orElse(null));
         }
+        if (hindernis.isEmpty()
+                && einstellungen.schluesselZustand(gewaehlt) == KiEinstellungen.SchluesselZustand.NICHT_LESBAR) {
+            // Der Betrieb hat diesen Anbieter eingerichtet, nur der Server kann den Schlüssel gerade nicht
+            // lesen. Kein Ersatz: Sonst gingen Daten unbemerkt an einen anderen Anbieter (DSGVO).
+            return new KiZuordnung(funktion, KiZuordnung.Status.AUS, null, null,
+                    "Der Schlüssel für " + gewaehlt.name() + " lässt sich auf diesem Server nicht entschlüsseln. "
+                            + "Bitte unter Einstellungen → KI-Funktionen neu eintragen. "
+                            + "Bis dahin springt kein anderer Anbieter ein.");
+        }
 
-        String grund = fehlend.isEmpty()
-                ? "Für " + gewaehlt.name() + " ist noch kein Schlüssel hinterlegt."
-                : gewaehlt.name() + " kann das in diesem Programm noch nicht (" + inWorten(fehlend) + ").";
+        String grund = hindernis.orElseGet(() -> "Für " + gewaehlt.name() + " ist noch kein Schlüssel hinterlegt.");
 
         Optional<KiAnbieter> ersatz = anbieterListe.stream()
                 .filter(a -> a != gewaehlt)
-                .filter(a -> fehlend(a, funktion).isEmpty())
+                .filter(a -> hindernis(a, funktion, dateien).isEmpty())
                 .filter(einstellungen::hatSchluessel)
                 .findFirst();
 
@@ -179,7 +204,6 @@ public class KiDienst {
         einstellungen.speichereFunktionsWahl(funktion, wahl);
     }
 
-    /** Hinweis auf Zusätze der Funktion, die der Anbieter nicht kann – sie läuft dann ohne. */
     /** Fehlende Zusätze und bekannte Grenzen des Anbieters, als ein Hinweis. */
     private static Optional<String> zusatzHinweis(KiAnbieter anbieter, KiFunktion funktion) {
         List<String> teile = new ArrayList<>();
@@ -196,6 +220,24 @@ public class KiDienst {
         }
         return Optional.of("Läuft ohne " + inWorten(fehlend) + " – das kann " + anbieter.name()
                 + " in diesem Programm nicht.");
+    }
+
+    /**
+     * Warum der Anbieter die Funktion (mit diesen Dateien) nicht übernehmen kann – als Satz für
+     * die Oberfläche; leer, wenn nichts dagegenspricht.
+     */
+    private static Optional<String> hindernis(KiAnbieter anbieter, KiFunktion funktion, List<KiTeil.Datei> dateien) {
+        Set<KiFaehigkeit> fehlend = fehlend(anbieter, funktion);
+        if (!fehlend.isEmpty()) {
+            return Optional.of(anbieter.name() + " kann das in diesem Programm noch nicht (" + inWorten(fehlend) + ").");
+        }
+        for (KiTeil.Datei datei : dateien) {
+            if (!anbieter.liest(datei)) {
+                String art = datei.istAudio() ? "Aufnahmeformat" : datei.istBild() ? "Bildformat" : "Dateiformat";
+                return Optional.of(anbieter.name() + " kann dieses " + art + " nicht lesen (" + datei.mimeType() + ").");
+            }
+        }
+        return Optional.empty();
     }
 
     private static Set<KiFaehigkeit> fehlend(KiAnbieter anbieter, KiFunktion funktion) {
@@ -319,6 +361,7 @@ public class KiDienst {
                 anbieter.beschreibung(),
                 anbieter.datenstandort().name(),
                 einstellungen.hatSchluessel(anbieter),
+                einstellungen.schluesselZustand(anbieter) == KiEinstellungen.SchluesselZustand.NICHT_LESBAR,
                 anbieter.schluesselVerschluesselt(),
                 namen(anbieter.faehigkeiten()),
                 modelle);

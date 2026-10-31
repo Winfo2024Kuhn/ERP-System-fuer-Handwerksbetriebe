@@ -54,6 +54,17 @@ class KiEinstellungenTest {
         speicher.werte.put("ai.mistral.api-key", "v1:kaputt");
 
         assertThat(einstellungen.schluessel(mistral)).isEmpty();
+        assertThat(einstellungen.hatSchluessel(mistral)).isFalse();
+        // … aber der Zustand bleibt sichtbar, damit kein Ersatz-Anbieter still einspringt.
+        assertThat(einstellungen.schluesselZustand(mistral)).isEqualTo(KiEinstellungen.SchluesselZustand.NICHT_LESBAR);
+    }
+
+    @Test
+    void platzhalterAusDenPropertiesZaehltNichtAlsSchluessel() {
+        speicher.umgebung.setProperty("ai.mistral.api-key", "OVERRIDE_IN_LOCAL");
+
+        assertThat(einstellungen.schluessel(mistral)).isEmpty();
+        assertThat(einstellungen.schluesselZustand(mistral)).isEqualTo(KiEinstellungen.SchluesselZustand.FEHLT);
     }
 
     @Test

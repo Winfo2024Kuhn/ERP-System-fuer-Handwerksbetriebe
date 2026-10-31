@@ -63,6 +63,9 @@ final class KiHttp {
         if (status == 401 || status == 403) {
             return anbieterName + " nimmt den Schlüssel nicht an (HTTP " + status + ").";
         }
+        if (status == 413) {
+            return "Die Datei ist für " + anbieterName + " zu groß (HTTP 413). Bitte eine kleinere Datei nehmen.";
+        }
         if (status == 429) {
             return anbieterName + " ist gerade ausgelastet oder das Kontingent ist aufgebraucht (HTTP 429).";
         }

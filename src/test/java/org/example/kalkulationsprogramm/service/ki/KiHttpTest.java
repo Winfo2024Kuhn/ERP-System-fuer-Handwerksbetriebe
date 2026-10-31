@@ -36,6 +36,8 @@ class KiHttpTest {
     @Test
     void meldungenJeStatus() {
         assertThat(KiHttp.meldungFuerStatus("Mistral", 400)).isEqualTo("Mistral hat die Anfrage abgelehnt (HTTP 400).");
+        assertThat(KiHttp.meldungFuerStatus("Mistral", 413))
+                .isEqualTo("Die Datei ist für Mistral zu groß (HTTP 413). Bitte eine kleinere Datei nehmen.");
         assertThat(KiHttp.istVoruebergehend(500)).isTrue();
         assertThat(KiHttp.istVoruebergehend(404)).isFalse();
     }

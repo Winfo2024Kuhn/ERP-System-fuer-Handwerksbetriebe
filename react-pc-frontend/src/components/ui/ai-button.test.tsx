@@ -7,8 +7,10 @@ import { KI_AUS_ERKLAERUNG } from '../../features/ki/useKiAktiv';
 import { antwort, stubbeFetch } from '../../features/telefon/telefonTestdaten';
 import { benutzer } from '../../features/ki/kiTestdaten';
 
-function stubbeKi(kiAktiv: boolean) {
-    return stubbeFetch((url) => (url.pathname === '/api/auth/me' ? antwort(benutzer({ kiAktiv })) : undefined));
+function stubbeKi(kiAktiv: boolean, kiFunktionen?: string[]) {
+    return stubbeFetch((url) => (url.pathname === '/api/auth/me'
+        ? antwort(benutzer({ kiAktiv, ...(kiFunktionen ? { kiFunktionen } : {}) }))
+        : undefined));
 }
 
 /** Zeigt den Namen, sobald die Anmeldung geladen ist – so wartet der Test auf den echten Stand. */
@@ -18,7 +20,7 @@ function Angemeldet() {
 
 async function zeige(props: Partial<React.ComponentProps<typeof AiButton>> = {}) {
     const onClick = vi.fn();
-    render(<AuthProvider><Angemeldet /><AiButton onClick={onClick} {...props} /></AuthProvider>);
+    render(<AuthProvider><Angemeldet /><AiButton funktion="EMAIL_TEXT" onClick={onClick} {...props} /></AuthProvider>);
     await screen.findByText('Max Mustermann');
     return onClick;
 }
@@ -37,6 +39,17 @@ describe('AiButton', () => {
         // Tooltip an der Hülle – ein gesperrter Knopf bekommt nicht in jedem Browser ein Hover.
         expect(knopf().parentElement).toHaveAttribute('title', KI_AUS_ERKLAERUNG);
 
+        fireEvent.click(knopf());
+        expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('ist gesperrt, wenn zwar ein Schlüssel da ist, aber gerade seine Funktion aus ist', async () => {
+        // Z. B. nur ein Mistral-Schlüssel bei gewähltem Gemini und abgeschaltetem Ersatz.
+        stubbeKi(true, ['DOKUMENT_ANALYSE']);
+        const onClick = await zeige();
+
+        expect(knopf()).toBeDisabled();
+        expect(knopf()).toHaveAccessibleDescription(KI_AUS_ERKLAERUNG);
         fireEvent.click(knopf());
         expect(onClick).not.toHaveBeenCalled();
     });
@@ -73,7 +86,7 @@ describe('AiButton', () => {
 
     it('funktioniert ohne Anmelde-Rahmen wie bisher (KI gilt als an)', async () => {
         const onClick = vi.fn();
-        render(<AiButton onClick={onClick} />);
+        render(<AiButton funktion="EMAIL_TEXT" onClick={onClick} />);
 
         expect(knopf()).toBeEnabled();
         await userEvent.click(knopf());

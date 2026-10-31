@@ -91,33 +91,69 @@ public class KiEinstellungen {
 
     // ==================== Schlüssel ====================
 
-    /** Der Schlüssel des Anbieters, leer ohne Schlüssel. Nie loggen. */
+    /** Wie es um den Schlüssel eines Anbieters steht. */
+    public enum SchluesselZustand {
+        /** Kein Schlüssel hinterlegt. */
+        FEHLT,
+        /** Ein Schlüssel ist hinterlegt und lesbar. */
+        VORHANDEN,
+        /**
+         * Ein Schlüssel ist gespeichert, lässt sich auf diesem Server aber nicht entschlüsseln
+         * (anderer {@code mail.credentials.encryption-key}, etwa nach einem Umzug). Der Betrieb hat
+         * den Anbieter also eingerichtet – {@link KiDienst} lässt dann keinen Ersatz einspringen.
+         */
+        NICHT_LESBAR
+    }
+
+    /** Der Schlüssel des Anbieters, leer ohne lesbaren Schlüssel. Nie loggen. */
     public String schluessel(KiAnbieter anbieter) {
+        return lies(anbieter).wert();
+    }
+
+    public boolean hatSchluessel(KiAnbieter anbieter) {
+        return lies(anbieter).zustand() == SchluesselZustand.VORHANDEN;
+    }
+
+    public SchluesselZustand schluesselZustand(KiAnbieter anbieter) {
+        return lies(anbieter).zustand();
+    }
+
+    private record GelesenerSchluessel(String wert, SchluesselZustand zustand) {
+        static GelesenerSchluessel von(String wert) {
+            String bereinigt = wert == null ? "" : wert.strip();
+            return new GelesenerSchluessel(bereinigt,
+                    bereinigt.isEmpty() ? SchluesselZustand.FEHLT : SchluesselZustand.VORHANDEN);
+        }
+    }
+
+    private GelesenerSchluessel lies(KiAnbieter anbieter) {
         // Klartext-Ablage gibt es nur für den Altbestand Gemini, über die bisherigen Methoden.
         if (!anbieter.schluesselVerschluesselt()) {
-            String wert = settings.getGeminiApiKey();
-            return wert == null ? "" : wert.strip();
+            return GelesenerSchluessel.von(settings.getGeminiApiKey());
         }
         String gespeichert = settings.get(schluesselEinstellung(anbieter.typ()), null);
         if (gespeichert == null) {
             // Rückfall: application-local.properties bzw. app.env (CLAUDE.md, Sicherheitsregel 1)
-            return environment.getProperty(schluesselEinstellung(anbieter.typ()), "").strip();
+            return GelesenerSchluessel.von(
+                    ohnePlatzhalter(environment.getProperty(schluesselEinstellung(anbieter.typ()), "")));
         }
         if (gespeichert.isBlank()) {
-            return "";
+            return GelesenerSchluessel.von("");
         }
         try {
-            return secrets.decrypt(gespeichert);
+            return GelesenerSchluessel.von(secrets.decrypt(gespeichert));
         } catch (RuntimeException e) {
-            // Falscher Verschlüsselungsschlüssel auf dem Server: wie kein Schlüssel behandeln.
+            // Falscher Verschlüsselungsschlüssel auf dem Server: nicht nutzbar, aber auch kein „fehlt“.
             log.warn("KI-Schlüssel für {} lässt sich nicht entschlüsseln ({})", anbieter.typ(),
                     e.getClass().getSimpleName());
-            return "";
+            return new GelesenerSchluessel("", SchluesselZustand.NICHT_LESBAR);
         }
     }
 
-    public boolean hatSchluessel(KiAnbieter anbieter) {
-        return !schluessel(anbieter).isBlank();
+    /** Platzhalter aus Vorlagen ({@code OVERRIDE_IN_LOCAL}) sind kein Schlüssel – wie bei den E-Mail-Zugängen. */
+    private static String ohnePlatzhalter(String wert) {
+        String bereinigt = wert == null ? "" : wert.strip();
+        return "override_in_local".equals(bereinigt.toLowerCase(Locale.ROOT)) ? "" : bereinigt;
     }
 
     /** Kann der Server Schlüssel verschlüsselt ablegen? */

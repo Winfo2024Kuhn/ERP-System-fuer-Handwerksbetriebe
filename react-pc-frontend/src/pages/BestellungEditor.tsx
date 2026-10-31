@@ -593,7 +593,8 @@ export const BestellungEmailModal: React.FC<BestellungEmailModalProps> = ({
                         <div>
                             <div className="flex items-center justify-between mb-1">
                                 <label className="block text-sm font-medium text-slate-700">Nachricht</label>
-                                <AiButton 
+                                <AiButton
+                                    funktion="EMAIL_TEXT"
                                     onClick={handleBeautify}
                                     isLoading={beautifying}
                                     label="KI Formulierung"

@@ -95,14 +95,20 @@ class MistralKiAnbieterTest {
 
         assertThatThrownBy(() -> anbieter.baueKoerper(anfrage, "voxtral-small-latest", datei -> ""))
                 .isInstanceOf(KiInhaltNichtLesbar.class)
-                .hasMessage("Mistral kann dieses Aufnahmeformat nicht lesen (audio/mp4). "
-                        + "Für die Spracheingabe bitte Google Gemini wählen (Einstellungen → KI-Funktionen).");
+                .hasMessage("Mistral kann dieses Aufnahmeformat nicht lesen (audio/mp4).");
+        assertThat(anbieter.liest(new KiTeil.Datei(new byte[] {1}, "audio/mp4"))).isFalse();
+        assertThat(anbieter.liest(new KiTeil.Datei(new byte[] {1}, "audio/webm"))).isTrue();
+        assertThat(anbieter.liest(new KiTeil.Datei(new byte[] {1}, "image/heic"))).isFalse();
+        assertThat(anbieter.liest(new KiTeil.Datei(new byte[] {1}, "image/png"))).isTrue();
+        assertThat(anbieter.liest(new KiTeil.Datei(new byte[] {1}, "application/pdf"))).isTrue();
+        assertThat(anbieter.liest(new KiTeil.Datei(new byte[] {1}, "application/zip"))).isFalse();
     }
 
     @Test
     void spracheingabeNenntDieIphoneGrenze() {
         assertThat(anbieter.einschraenkung(KiFunktion.SPRACHEINGABE))
-                .hasValue("Aufnahmen vom iPhone (MP4) kann Mistral nicht lesen – dafür Google Gemini wählen.");
+                .hasValue("Aufnahmen vom iPhone (MP4) kann Mistral nicht lesen – sie laufen nur, "
+                        + "wenn ein anderer eingerichteter Anbieter einspringen darf.");
         assertThat(anbieter.einschraenkung(KiFunktion.DOKUMENT_ANALYSE)).isEmpty();
     }
 
@@ -167,6 +173,52 @@ class MistralKiAnbieterTest {
         assertThat(anfragen.getValue().headers().firstValue("Authorization")).hasValue("Bearer " + SCHLUESSEL);
         assertThat(anfragen.getValue().uri().toString()).doesNotContain(SCHLUESSEL);
         assertThat(koerperVon(anfragen.getAllValues().get(1))).contains("Seite 1\\n\\nSeite 2");
+    }
+
+    @Test
+    void dieselbePdfWirdNurEinmalDurchDieTexterkennungGeschickt() throws Exception {
+        HttpResponse<String> ocr = antwort(200, "{\"pages\":[{\"markdown\":\"Seite 1\"}]}");
+        HttpResponse<String> chat = antwort(200,
+                "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"ok\"}}]}");
+        when(http.<String>send(any(HttpRequest.class), any())).thenReturn(ocr, chat, chat, ocr, chat);
+        byte[] pdf = {'%', 'P', 'D', 'F', '-', '1'};
+        KiAnfrage runde1 = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(pdf, "application/pdf")).bauen();
+        // Runde 2 trägt dieselbe Datei im Verlauf noch einmal (so arbeiten die Werkzeug-Dienste).
+        KiAnfrage runde2 = KiAnfrage.mitAnweisung("")
+                .nutzer(KiTeil.datei(pdf.clone(), "application/pdf"))
+                .nachricht(KiNachricht.ki("Ich schaue nach."))
+                .nutzer(KiTeil.text("Und weiter?")).bauen();
+        KiAnfrage andere = KiAnfrage.mitAnweisung("").nutzer(KiTeil.datei(new byte[] {'%', 'P'}, "application/pdf")).bauen();
+
+        anbieter.sende(runde1, "m", SCHLUESSEL);
+        anbieter.sende(runde2, "m", SCHLUESSEL);
+        anbieter.sende(andere, "m", SCHLUESSEL);
+
+        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(http, times(5)).send(anfragen.capture(), any());
+        List<String> pfade = anfragen.getAllValues().stream().map(a -> a.uri().getPath()).toList();
+        assertThat(pfade).containsExactly("/v1/ocr", "/v1/chat/completions", "/v1/chat/completions",
+                "/v1/ocr", "/v1/chat/completions");
+        assertThat(koerperVon(anfragen.getAllValues().get(2))).contains("Seite 1");
+    }
+
+    @Test
+    void leeresTexterkennungsErgebnisWirdNichtGemerkt() throws Exception {
+        HttpResponse<String> leer = antwort(200, "{\"pages\":[]}");
+        HttpResponse<String> ocr = antwort(200, "{\"pages\":[{\"markdown\":\"Seite 1\"}]}");
+        HttpResponse<String> chat = antwort(200,
+                "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"ok\"}}]}");
+        when(http.<String>send(any(HttpRequest.class), any())).thenReturn(leer, chat, ocr, chat);
+        KiAnfrage anfrage = KiAnfrage.mitAnweisung("")
+                .nutzer(KiTeil.datei(new byte[] {'%', 'P', 'D', 'F'}, "application/pdf")).bauen();
+
+        anbieter.sende(anfrage, "m", SCHLUESSEL);
+        anbieter.sende(anfrage, "m", SCHLUESSEL);
+
+        ArgumentCaptor<HttpRequest> anfragen = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(http, times(4)).send(anfragen.capture(), any());
+        assertThat(anfragen.getAllValues().stream().map(a -> a.uri().getPath()))
+                .containsExactly("/v1/ocr", "/v1/chat/completions", "/v1/ocr", "/v1/chat/completions");
     }
 
     @Test

@@ -62,6 +62,17 @@ public interface KiAnbieter {
     List<KiModellInfo> ladeModelle(String schluessel);
 
     /**
+     * Kann der Anbieter diese Datei lesen? Die Fähigkeit ({@link KiFaehigkeit#AUDIO},
+     * {@link KiFaehigkeit#BILD}) sagt nur, dass die Dateiart grundsätzlich geht; hier zählt das
+     * einzelne Format (z. B. MP4-Aufnahmen vom iPhone, die Mistral nicht liest). Sagt der Anbieter
+     * hier Nein, sucht {@link KiDienst} für diese Anfrage einen Ersatz wie bei einer fehlenden
+     * Fähigkeit – oder lehnt sie verständlich ab, wenn kein Ersatz erlaubt ist.
+     */
+    default boolean liest(KiTeil.Datei datei) {
+        return true;
+    }
+
+    /**
      * Bekannte Grenze dieses Anbieters bei einer Funktion, die die Einstellungsseite
      * dazuschreibt, auch wenn die Funktion läuft (z. B. nicht lesbare Aufnahmeformate).
      */

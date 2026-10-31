@@ -178,6 +178,20 @@ describe('KiSettingsSection – Anbieter anzeigen', () => {
         expect(screen.queryByText(/API Key|API testen|Gemini Key/)).not.toBeInTheDocument();
     });
 
+    it('warnt, wenn ein gespeicherter Schlüssel sich nicht entschlüsseln lässt – ohne stillen Ersatz', async () => {
+        stubbeServer(kiEinstellungen({
+            anbieter: 'MISTRAL',
+            anbieterListe: [mistral({ schluesselNichtLesbar: true }), gemini({ schluesselGesetzt: true })],
+        }));
+        zeige();
+
+        const m = await screen.findByTestId('ki-anbieter-MISTRAL');
+        expect(m).toHaveTextContent('Schlüssel nicht lesbar');
+        expect(m).not.toHaveTextContent('Kein Schlüssel');
+        expect(within(m).getByRole('alert')).toHaveTextContent(/nicht entschlüsseln/);
+        expect(within(m).getByRole('alert')).toHaveTextContent(/kein anderer Anbieter springt dafür ein/);
+    });
+
     it('hat alle Info-Knöpfe mit „Hintergrund“ und „Bewirkt“', async () => {
         stubbeServer();
         const user = userEvent.setup();

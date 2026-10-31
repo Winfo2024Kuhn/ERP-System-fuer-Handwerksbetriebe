@@ -17,8 +17,9 @@ import { geminiAnbieter, mistralAnbieter, stubbeKiEinstellungen } from './hilfen
  * Kein Backend: alle /api-Routen sind gestubbt. Nur Dummy-Daten (DSGVO).
  */
 
-const KI_AUS_ERKLAERUNG = 'KI-Funktionen sind aus, weil kein KI-Schlüssel hinterlegt ist. '
-    + 'Ein Administrator kann ihn unter Einstellungen → KI-Funktionen eintragen.';
+const KI_AUS_ERKLAERUNG = 'Diese KI-Funktion ist gerade aus – etwa, weil kein KI-Schlüssel hinterlegt ist oder der gewählte '
+    + 'KI-Anbieter sie nicht kann. Ein Administrator sieht unter Einstellungen → KI-Funktionen, warum, '
+    + 'und kann sie dort einschalten.';
 
 function json(route: Route, body: unknown, status = 200) {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -164,6 +165,18 @@ test('Beim E-Mail-Schreiben ist „KI-Optimierung“ ohne KI-Schlüssel gesperrt
     await expect(huelle).toHaveAttribute('title', KI_AUS_ERKLAERUNG);
     await huelle.hover();
     await designPruefung(page, info, 'ki-optional-email-ki-gesperrt');
+});
+
+test('Mit KI-Schlüssel, aber abgeschalteter E-Mail-Funktion ist „KI-Optimierung“ trotzdem gesperrt', async ({ page }) => {
+    // Z. B. nur ein Mistral-Schlüssel bei gewähltem Gemini und abgeschaltetem Ersatz: Der Server meldet,
+    // welche Funktionen wirklich laufen – der Knopf folgt seiner eigenen Funktion, nicht „irgendein Schlüssel“.
+    await stubbeEmailCenter(page, { kiAktiv: true, kiFunktionen: ['DOKUMENT_ANALYSE'] });
+    await page.goto('/emails/inbox');
+    await page.getByRole('button', { name: 'Neue E-Mail' }).click();
+
+    const kiKnopf = page.getByRole('button', { name: /KI-Optimierung/ });
+    await expect(kiKnopf).toBeDisabled();
+    await expect(kiKnopf).toHaveAccessibleDescription(KI_AUS_ERKLAERUNG);
 });
 
 test('Mit KI-Schlüssel bleibt „KI-Optimierung“ klickbar', async ({ page }) => {

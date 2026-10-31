@@ -268,8 +268,7 @@ class SpracheingabeServiceTest {
     void nichtLesbaresFormatKommtMitKlartextBeimNutzerAn() {
         kiEingerichtet();
         when(kiDienst.sende(Mockito.eq(KiFunktion.SPRACHEINGABE), Mockito.any(KiAnfrage.class)))
-                .thenThrow(new KiInhaltNichtLesbar("Mistral kann dieses Aufnahmeformat nicht lesen (audio/mp4). "
-                        + "Für die Spracheingabe bitte Google Gemini wählen (Einstellungen → KI-Funktionen)."));
+                .thenThrow(new KiInhaltNichtLesbar("Mistral kann dieses Aufnahmeformat nicht lesen (audio/mp4)."));
 
         // Dauerhaft statt „gerade nicht erreichbar“: 400 mit dem Grund (nur Anbieter und Format).
         assertThatThrownBy(() -> service.transkribiere(new ByteArrayInputStream(audioBytes(10)), "audio/mp4"))

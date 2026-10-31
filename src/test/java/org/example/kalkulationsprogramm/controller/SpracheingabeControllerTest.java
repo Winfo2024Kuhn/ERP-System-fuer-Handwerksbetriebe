@@ -207,7 +207,7 @@ class SpracheingabeControllerTest {
                     .andExpect(status().isServiceUnavailable())
                     .andExpect(jsonPath("$.success").value(false))
                     .andExpect(jsonPath("$.message")
-                            .value("Die Spracheingabe ist aus, weil kein KI-Schlüssel hinterlegt ist."));
+                            .value("Die Spracheingabe ist gerade aus. Ein Administrator sieht unter Einstellungen → KI-Funktionen, warum."));
         }
 
         @Test

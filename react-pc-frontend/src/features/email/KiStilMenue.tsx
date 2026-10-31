@@ -67,7 +67,7 @@ export function KiStilMenue({ isLoading, hatVerlauf, onWaehlen }: KiStilMenuePro
         <div className="flex items-center gap-0.5">
             <DropdownMenu open={offen} onOpenChange={oeffnenAendern} modal={false}>
                 <DropdownMenuTrigger asChild>
-                    <AiButton isLoading={isLoading} label="KI-Optimierung" />
+                    <AiButton isLoading={isLoading} label="KI-Optimierung" funktion="EMAIL_TEXT" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" collisionPadding={12} className="w-72 rounded-xl p-1.5 shadow-lg">
                     <DropdownMenuLabel className="px-2 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">

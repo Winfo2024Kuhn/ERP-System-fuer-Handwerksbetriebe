@@ -22,6 +22,8 @@ class TestAnbieter implements KiAnbieter {
     KiAnbieterFehler fehlerBeimLaden;
     /** Eigenes Modell für Ton (wie Voxtral bei Mistral); {@code null} = keins. */
     String tonModell;
+    /** Formate, die dieser Anbieter trotz passender Fähigkeit nicht liest (wie MP4-Ton bei Mistral). */
+    Set<String> nichtLesbareFormate = Set.of();
 
     TestAnbieter(KiAnbieterTyp typ, boolean verschluesselt, KiFaehigkeit... faehigkeiten) {
         this.typ = typ;
@@ -34,6 +36,7 @@ class TestAnbieter implements KiAnbieter {
         TestAnbieter mistral = new TestAnbieter(KiAnbieterTyp.MISTRAL, true, KiFaehigkeit.TEXT, KiFaehigkeit.BILD,
                 KiFaehigkeit.PDF, KiFaehigkeit.AUDIO, KiFaehigkeit.WERKZEUGE);
         mistral.tonModell = "mistral-sprache";
+        mistral.nichtLesbareFormate = Set.of("audio/mp4", "audio/aac");
         return mistral;
     }
 
@@ -89,6 +92,11 @@ class TestAnbieter implements KiAnbieter {
     public java.util.Optional<String> modellFuer(Set<KiFaehigkeit> gebraucht) {
         return tonModell != null && gebraucht.contains(KiFaehigkeit.AUDIO)
                 ? java.util.Optional.of(tonModell) : java.util.Optional.empty();
+    }
+
+    @Override
+    public boolean liest(KiTeil.Datei datei) {
+        return !nichtLesbareFormate.contains(datei.mimeType());
     }
 
     @Override

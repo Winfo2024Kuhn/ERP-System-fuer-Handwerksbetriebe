@@ -16,7 +16,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
@@ -27,6 +30,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Mistral AI (Frankreich), Verarbeitung nach Angabe von Mistral in der EU.
@@ -56,8 +60,14 @@ public class MistralKiAnbieter implements KiAnbieter {
     static final Set<String> TONFORMATE = Set.of("audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg",
             "audio/mp3", "audio/flac", "audio/ogg", "audio/webm");
 
+    /** So lange gilt ein Texterkennungs-Ergebnis; Dienste schicken dieselbe PDF über mehrere Runden und Versuche. */
+    static final Duration TEXTERKENNUNG_GUELTIG = Duration.ofMinutes(15);
+    /** Höchstens so viele erkannte Dokumente bleiben im Speicher. */
+    static final int TEXTERKENNUNG_MAX = 32;
+
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final Map<String, GemerkterText> texterkennung = new ConcurrentHashMap<>();
     private final String ocrModell;
     private final String sprachModell;
     private final Map<KiModellStufe, String> standardModelle;
@@ -111,6 +121,18 @@ public class MistralKiAnbieter implements KiAnbieter {
     public Set<KiFaehigkeit> faehigkeiten() {
         return EnumSet.of(KiFaehigkeit.TEXT, KiFaehigkeit.BILD, KiFaehigkeit.PDF, KiFaehigkeit.AUDIO,
                 KiFaehigkeit.WERKZEUGE);
+    }
+
+    /** Bilder nur in den belegten Formaten, Ton nur in den von Voxtral gelesenen; PDFs und Klartext immer. */
+    @Override
+    public boolean liest(KiTeil.Datei datei) {
+        if (datei.istBild()) {
+            return BILDFORMATE.contains(datei.mimeType());
+        }
+        if (datei.istAudio()) {
+            return TONFORMATE.contains(datei.mimeType());
+        }
+        return datei.istPdf() || datei.istKlartext();
     }
 
     /** Ton versteht nur das Sprachmodell (Voxtral); es kann auch Text und Werkzeuge. */
@@ -197,7 +219,7 @@ public class MistralKiAnbieter implements KiAnbieter {
             // Laut Mistral-Doku („Audio in chat“): die Datei base64-kodiert, ohne Formatangabe.
             if (!TONFORMATE.contains(datei.mimeType())) {
                 throw new KiInhaltNichtLesbar(NAME + " kann dieses Aufnahmeformat nicht lesen (" + datei.mimeType()
-                        + "). Für die Spracheingabe bitte Google Gemini wählen (Einstellungen → KI-Funktionen).");
+                        + ").");
             }
             inhalt.addObject().put("type", "input_audio")
                     .put("input_audio", Base64.getEncoder().encodeToString(datei.daten()));
@@ -267,8 +289,52 @@ public class MistralKiAnbieter implements KiAnbieter {
         }
     }
 
-    /** Liest eine PDF-Datei mit der Texterkennung von Mistral; Ergebnis als Markdown je Seite. */
+    /**
+     * Liest eine PDF-Datei mit der Texterkennung von Mistral; Ergebnis als Markdown je Seite.
+     * Dasselbe Dokument wird nur einmal gelesen ({@link #TEXTERKENNUNG_GUELTIG}): Die Dienste
+     * schicken es über mehrere Werkzeug-Runden und Wiederholungsversuche immer wieder mit.
+     */
     private String leseText(KiTeil.Datei datei, String schluessel, Duration zeitlimit) {
+        String kennung = fingerabdruck(datei.daten()) + "|" + ocrModell;
+        Instant jetzt = Instant.now();
+        GemerkterText gemerkt = texterkennung.get(kennung);
+        if (gemerkt != null && gemerkt.gueltigUm(jetzt)) {
+            return gemerkt.text();
+        }
+        String text = erkenneText(datei, schluessel, zeitlimit);
+        if (!text.isBlank()) {
+            // Leer heißt meist: Störung oder gescannt ohne Text – ein neuer Versuch soll neu lesen dürfen.
+            merkeText(kennung, text, jetzt);
+        }
+        return text;
+    }
+
+    private record GemerkterText(String text, Instant geladen) {
+        boolean gueltigUm(Instant jetzt) {
+            return geladen.plus(TEXTERKENNUNG_GUELTIG).isAfter(jetzt);
+        }
+    }
+
+    private void merkeText(String kennung, String text, Instant jetzt) {
+        texterkennung.values().removeIf(eintrag -> !eintrag.gueltigUm(jetzt));
+        while (texterkennung.size() >= TEXTERKENNUNG_MAX) {
+            texterkennung.entrySet().stream()
+                    .min(Map.Entry.comparingByValue(java.util.Comparator.comparing(GemerkterText::geladen)))
+                    .ifPresent(aeltester -> texterkennung.remove(aeltester.getKey()));
+        }
+        texterkennung.put(kennung, new GemerkterText(text, jetzt));
+    }
+
+    /** SHA-256 der Datei als Schlüssel für den Zwischenspeicher – der Inhalt selbst bleibt draußen. */
+    private static String fingerabdruck(byte[] daten) {
+        try {
+            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(daten));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 fehlt in dieser Java-Umgebung.", e);
+        }
+    }
+
+    private String erkenneText(KiTeil.Datei datei, String schluessel, Duration zeitlimit) {
         ObjectNode koerper = objectMapper.createObjectNode();
         koerper.put("model", ocrModell);
         ObjectNode dokument = koerper.putObject("document");
@@ -452,7 +518,8 @@ public class MistralKiAnbieter implements KiAnbieter {
     @Override
     public Optional<String> einschraenkung(KiFunktion funktion) {
         return funktion.braucht().contains(KiFaehigkeit.AUDIO)
-                ? Optional.of("Aufnahmen vom iPhone (MP4) kann " + NAME + " nicht lesen – dafür Google Gemini wählen.")
+                ? Optional.of("Aufnahmen vom iPhone (MP4) kann " + NAME + " nicht lesen – sie laufen nur, "
+                        + "wenn ein anderer eingerichteter Anbieter einspringen darf.")
                 : Optional.empty();
     }
 

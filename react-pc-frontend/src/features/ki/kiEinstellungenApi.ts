@@ -45,6 +45,11 @@ export interface KiAnbieter {
     beschreibung: string;
     datenstandort: KiDatenstandort;
     schluesselGesetzt: boolean;
+    /**
+     * Ein Schlüssel ist gespeichert, lässt sich auf diesem Server aber nicht entschlüsseln
+     * (z. B. nach einem Umzug). Der Anbieter ist dann aus, kein Ersatz springt ein. Fehlt bei älteren Servern.
+     */
+    schluesselNichtLesbar?: boolean;
     /** Wird der Schlüssel verschlüsselt gespeichert? */
     schluesselVerschluesselt: boolean;
     faehigkeiten: KiFaehigkeit[];
