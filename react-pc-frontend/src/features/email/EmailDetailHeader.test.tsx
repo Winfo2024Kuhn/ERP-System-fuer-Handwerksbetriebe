@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../../components/ui/toast';
@@ -74,5 +75,42 @@ describe('EmailDetailHeader – Postfach-Schild', () => {
     it('zeigt kein Schild ohne Postfach', () => {
         renderKopf({ ...basis, postfaecher: [] });
         expect(screen.queryByTestId('postfach-schild')).not.toBeInTheDocument();
+    });
+});
+
+describe('EmailDetailHeader – Spam-Hinweise', () => {
+    function renderMitSpam(email: EmailItem, folder: 'inbox' | 'trash' = 'inbox') {
+        const onSpam = vi.fn();
+        const onNotSpam = vi.fn();
+        const leer = vi.fn();
+        render(<MemoryRouter>
+            <ToastProvider>
+                <EmailDetailHeader email={email} folder={folder} onReply={leer} onForward={leer} onAssign={leer}
+                    onStar={leer} onDelete={leer} onMove={leer} onSpam={onSpam} onNotSpam={onNotSpam} onBlock={leer}
+                    onNotNewsletter={leer} onConfirmNewsletter={leer} />
+            </ToastProvider>
+        </MemoryRouter>);
+        return { onSpam, onNotSpam };
+    }
+
+    it('zeigt „Vielleicht Spam“ im Kopf und leitet die Knöpfe an die vorhandenen Aktionen weiter', async () => {
+        const { onSpam, onNotSpam } = renderMitSpam({ ...basis, spamVerdacht: true, spamGruende: ['ANBIETER_SPAM'] });
+        const kopf = screen.getByTestId('email-detail-header');
+        const zeile = within(kopf).getByTestId('spam-verdacht-hinweis');
+        await userEvent.click(within(zeile).getByRole('button', { name: 'Kein Spam' }));
+        expect(onNotSpam).toHaveBeenCalledTimes(1);
+        await userEvent.click(within(zeile).getByRole('button', { name: 'Ist Spam' }));
+        expect(onSpam).toHaveBeenCalledTimes(1);
+    });
+
+    it('zeigt den Warnhinweis im Kopf', () => {
+        renderMitSpam({ ...basis, warnhinweis: 'BEHOERDE_GERICHT' });
+        expect(within(screen.getByTestId('email-detail-header'))
+            .getByRole('note', { name: 'Vorsicht: angebliche Post von Gericht oder Behörde' })).toBeInTheDocument();
+    });
+
+    it('zeigt ohne Verdacht und Warnung keine Hinweiszeile', () => {
+        renderMitSpam(basis);
+        expect(screen.queryByTestId('spam-hinweise')).not.toBeInTheDocument();
     });
 });

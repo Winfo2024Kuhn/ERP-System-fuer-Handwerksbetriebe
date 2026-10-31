@@ -46,6 +46,12 @@ export interface EmailItem {
     /** Reply-To-Kopfzeile: Antworten gehen dorthin statt an fromAddress. */
     replyToAddress?: string;
     spamScore?: number;
+    /** „Vielleicht Spam“: verdächtig, bleibt aber im Posteingang, bis jemand entscheidet. */
+    spamVerdacht?: boolean;
+    /** Kürzel der erkannten Spam-Signale (z. B. ABSENDER_GEFAELSCHT); Klartext in spamHinweisTexte.ts. */
+    spamGruende?: string[];
+    /** Erkannte Betrugsmasche (z. B. BRANCHENBUCH) oder null. */
+    warnhinweis?: string | null;
     // Assignment IDs
     projektId?: number;
     anfrageId?: number;

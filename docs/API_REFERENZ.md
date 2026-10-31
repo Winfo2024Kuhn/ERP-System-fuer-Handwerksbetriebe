@@ -826,8 +826,8 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `GET` | `/{emailId}/attachments/{attachmentId}` | Anhang herunterladen |
 | `POST` | `/import` | Postfach sofort abrufen *(nur Admin)* |
 | `POST` | `/{emailId}/block-sender` | Absender sperren |
-| `POST` | `/{emailId}/mark-spam` | Als Spam markieren |
-| `POST` | `/{emailId}/mark-not-spam` | Kein Spam |
+| `POST` | `/{emailId}/mark-spam` | Als Spam markieren (Handentscheidung, leert die Spam-Stufe) |
+| `POST` | `/{emailId}/mark-not-spam` | Kein Spam (Handentscheidung, leert die Spam-Stufe; nur eine Mail aus dem Spam-Ordner kommt zurück in den Posteingang) |
 | `POST` | `/{emailId}/mark-not-newsletter` | Newsletter zurück in den Posteingang |
 | `POST` | `/{emailId}/confirm-newsletter` | Newsletter bestätigen |
 | `POST` | `/spam-model/bootstrap` | Spam-Modell aus einer CSV-Datei anlernen *(nur Admin)* |
@@ -877,6 +877,17 @@ Gemeinsames Postfach. Jeder sieht nur Mails aus Postfächern, die für ihn freig
 | `POST` | `/scan-steuerberater` | Steuerberater-Mails nachträglich verarbeiten (Lohnabrechnungen, BWA) *(nur Admin)* |
 | `POST` | `/send` | Neue Mail senden (multipart, mit Anhängen) |
 | `POST` | `/{emailId}/reply` | Auf eine Mail antworten (multipart) |
+
+**Spam-Felder an jeder Mail (Listen und Einzelmail, `UnifiedEmailDto`):**
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `spamScore` | Zahl 0–100 | Spam-Wert zur Anzeige (Regeln + Lernfilter); die Oberfläche zeigt ihn nicht mehr in der Liste |
+| `spamVerdacht` | boolean | „Vielleicht Spam“: Spam-Stufe `UNSICHER`, nicht als Spam markiert und noch nicht von Hand entschieden. Die Mail bleibt im Posteingang |
+| `spamGruende` | Liste von Kürzeln | Erkannte Spam-Signale (`SpamSignal`, z. B. `ABSENDER_GEFAELSCHT`, `ANTWORT_UMGELEITET`); leer, wenn keine. Unbekannte Kürzel kommen mit, die Oberfläche blendet sie aus |
+| `warnhinweis` | Text oder `null` | Erkannte Betrugsmasche (`AbzockeArt`: `BRANCHENBUCH`, `GOOGLE_PROFIL`, `BEHOERDE_GERICHT`, `BANKVERBINDUNG_GEAENDERT`). Nur Hinweis, verschiebt nichts |
+
+`mark-spam`, `mark-not-spam` und `bulk/move-to-folder` nach `inbox`/`spam` sind Handentscheidungen: Sie setzen `userSpamVerdict` und leeren die Spam-Stufe, danach ist `spamVerdacht` immer `false`.
 
 ### EmailDraftController
 

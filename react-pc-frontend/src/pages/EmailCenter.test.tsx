@@ -1127,3 +1127,100 @@ describe('EmailCenter – Zuordnen, Entwürfe und Ordner-Hinweise', () => {
         expect(await screen.findByText(/Mails von unbekannten Absendern bleiben im Posteingang/)).toBeInTheDocument();
     });
 });
+
+describe('EmailCenter – Vielleicht Spam und Warnhinweise', () => {
+    const verdaechtig = {
+        ...mockEmails[0], spamScore: 55, spamVerdacht: true,
+        spamGruende: ['ABSENDER_GEFAELSCHT'], warnhinweis: 'BRANCHENBUCH',
+    };
+
+    beforeEach(() => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        vi.useRealTimers();
+    });
+
+    function mitVerdacht(extra: Record<string, unknown> = {}) {
+        const fetchMock = mockFetchResponses({
+            '/api/emails/inbox': [verdaechtig, mockEmails[1]],
+            '/api/emails/1': verdaechtig,
+            ...extra,
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        return fetchMock;
+    }
+
+    it('zeigt in der Liste „Spam-Verdacht“ und ein Warnzeichen statt Prozent', async () => {
+        mitVerdacht();
+        renderEmailCenter('inbox');
+        await screen.findByText('Angebot für Treppe');
+        expect(screen.getByTestId('spam-verdacht-schild')).toHaveTextContent('Spam-Verdacht');
+        expect(screen.getByRole('img', { name: 'Vorsicht: mögliche Branchenbuch-Abzocke' })).toBeInTheDocument();
+        expect(screen.queryByText(/% Spam/)).toBeNull();
+    });
+
+    it('„Kein Spam“ im Posteingang lässt die Mail stehen und nimmt nur den Hinweis weg', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        const fetchMock = mitVerdacht();
+        renderEmailCenter('inbox');
+        await user.click(await screen.findByText('Angebot für Treppe'));
+
+        const zeile = await screen.findByTestId('spam-verdacht-hinweis');
+        await user.click(within(zeile).getByRole('button', { name: 'Kein Spam' }));
+
+        await waitFor(() => expect(screen.queryByTestId('spam-verdacht-hinweis')).toBeNull());
+        expect(fetchMock).toHaveBeenCalledWith('/api/emails/1/mark-not-spam', { method: 'POST' });
+        expect(await screen.findByText('Kein Spam – das Programm merkt es sich')).toBeInTheDocument();
+        // Mail bleibt in Liste und Ansicht, nur das Schild ist weg; der Warnhinweis bleibt stehen.
+        expect(screen.getAllByText('Angebot für Treppe').length).toBeGreaterThan(0);
+        expect(screen.getByTestId('email-detail-header')).toBeInTheDocument();
+        expect(screen.queryByTestId('spam-verdacht-schild')).toBeNull();
+        expect(within(screen.getByTestId('email-detail-header'))
+            .getByRole('note', { name: 'Vorsicht: mögliche Branchenbuch-Abzocke' })).toBeInTheDocument();
+    });
+
+    it('holt den Hinweis zurück und meldet den Fehler, wenn „Kein Spam“ scheitert', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        const basisMock = mitVerdacht();
+        vi.stubGlobal('fetch', vi.fn((url: string, options?: RequestInit) =>
+            url === '/api/emails/1/mark-not-spam'
+                ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) })
+                : basisMock(url, options)));
+        renderEmailCenter('inbox');
+        await user.click(await screen.findByText('Angebot für Treppe'));
+
+        await user.click(within(await screen.findByTestId('spam-verdacht-hinweis')).getByRole('button', { name: 'Kein Spam' }));
+
+        expect(await screen.findByText('„Kein Spam“ konnte nicht gespeichert werden.')).toBeInTheDocument();
+        expect(await screen.findByTestId('spam-verdacht-hinweis')).toBeInTheDocument();
+    });
+
+    it('„Ist Spam“ im Hinweis nimmt die Mail aus dem Posteingang und trainiert', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        const fetchMock = mitVerdacht();
+        renderEmailCenter('inbox');
+        await user.click(await screen.findByText('Angebot für Treppe'));
+
+        await user.click(within(await screen.findByTestId('spam-verdacht-hinweis')).getByRole('button', { name: 'Ist Spam' }));
+
+        await waitFor(() => expect(screen.queryByText('Angebot für Treppe')).toBeNull());
+        expect(fetchMock).toHaveBeenCalledWith('/api/emails/1/mark-spam', { method: 'POST' });
+    });
+
+    it('„Kein Spam“ im Spam-Ordner holt die Mail wie bisher aus der Liste', async () => {
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null });
+        const fetchMock = mockFetchResponses({ '/api/emails/spam': [mockEmails[0]] });
+        vi.stubGlobal('fetch', fetchMock);
+        renderEmailCenter('spam');
+        await user.click(await screen.findByText('Angebot für Treppe'));
+        await user.click(await screen.findByRole('button', { name: 'Weitere E-Mail-Aktionen' }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Kein Spam' }));
+
+        await waitFor(() => expect(screen.queryByText('Angebot für Treppe')).toBeNull());
+        expect(fetchMock).toHaveBeenCalledWith('/api/emails/1/mark-not-spam', { method: 'POST' });
+    });
+});

@@ -18,6 +18,7 @@ import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import org.example.kalkulationsprogramm.domain.ProjektDokument;
+import org.example.kalkulationsprogramm.domain.SpamStufe;
 import org.example.kalkulationsprogramm.dto.ContactDto;
 import org.example.kalkulationsprogramm.dto.SteuerberaterKontaktDto;
 import org.example.kalkulationsprogramm.dto.Email.UnifiedEmailDto;
@@ -493,6 +494,7 @@ public class UnifiedEmailController {
         email.setUserSpamVerdict("SPAM");
         email.setSpam(true);
         email.setSpamScore(100);
+        email.setSpamStufe(null); // Handentscheidung ersetzt die automatische Stufe
         emailRepository.save(email);
 
         if ("SPAM".equals(previousVerdict)) {
@@ -520,10 +522,15 @@ public class UnifiedEmailController {
                         HttpStatus.NOT_FOUND, "Email not found"));
 
         String previousVerdict = email.getUserSpamVerdict();
+        // Nur eine Mail aus dem Spam-Ordner kommt zurück in den Posteingang. Bei „Vielleicht Spam“
+        // (Posteingang oder Newsletter) verschwindet nur der Hinweis – der Ordner bleibt, wie er ist.
+        if (email.isSpam()) {
+            email.setNewsletter(false);
+        }
         email.setUserSpamVerdict("HAM");
         email.setSpam(false);
-        email.setNewsletter(false);
         email.setSpamScore(0);
+        email.setSpamStufe(null); // Handentscheidung ersetzt die automatische Stufe
         emailRepository.save(email);
 
         if ("HAM".equals(previousVerdict) || "HAM_IMPLICIT".equals(previousVerdict)) {
@@ -1211,6 +1218,7 @@ public class UnifiedEmailController {
                     email.setNewsletter(false);
                     email.setUserSpamVerdict("HAM");
                     email.setSpamScore(0);
+                    email.setSpamStufe(null);
                     if (spamBayesService.isModelReady()) {
                         spamBayesService.train(email, false);
                     }
@@ -1221,6 +1229,7 @@ public class UnifiedEmailController {
                     email.setSpam(true);
                     email.setUserSpamVerdict("SPAM");
                     email.setSpamScore(100);
+                    email.setSpamStufe(null);
                     spamBayesService.train(email, true);
                 }
                 case "newsletter" -> {
@@ -2124,6 +2133,7 @@ public class UnifiedEmailController {
         dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
         dto.setSpamScore(email.getSpamScore());
+        applySpamHinweise(email, dto);
 
         applyZuordnungsInfo(email, dto);
         // Hinweis: applyKundeLookup() und das Antwort-Postfach bewusst NICHT in der Liste, um N+1 zu vermeiden.
@@ -2156,6 +2166,32 @@ public class UnifiedEmailController {
         }
 
         return dto;
+    }
+
+    /**
+     * „Vielleicht Spam“ und Warnhinweis für Liste und Detail. Der Verdacht gilt nur, solange die Mail
+     * nicht schon als Spam markiert und noch nicht von Hand entschieden ist.
+     */
+    static void applySpamHinweise(Email email, UnifiedEmailDto dto) {
+        dto.setSpamVerdacht(email.getSpamStufe() == SpamStufe.UNSICHER
+                && !email.isSpam()
+                && email.getUserSpamVerdict() == null);
+        dto.setSpamGruende(zerlegeSpamGruende(email.getSpamGruende()));
+        dto.setWarnhinweis(email.getWarnhinweis() != null ? email.getWarnhinweis().name() : null);
+    }
+
+    /**
+     * Kommagetrennte Kürzel als Liste; Leerzeichen weg, leere Teile weg. Unbekannte Kürzel bleiben
+     * drin – die Oberfläche blendet aus, was sie nicht kennt.
+     */
+    static List<String> zerlegeSpamGruende(String gruende) {
+        if (gruende == null || gruende.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(gruende.split(","))
+                .map(String::trim)
+                .filter(teil -> !teil.isEmpty())
+                .toList();
     }
 
     /**
@@ -2202,6 +2238,7 @@ public class UnifiedEmailController {
         dto.setDirection(email.getDirection() != null ? email.getDirection().name() : null);
         dto.setZuordnungTyp(email.getZuordnungTyp() != null ? email.getZuordnungTyp().name() : null);
         dto.setSpamScore(email.getSpamScore());
+        applySpamHinweise(email, dto);
 
         applyZuordnungsInfo(email, dto);
         applyPostfachInfo(email, dto, kontext);

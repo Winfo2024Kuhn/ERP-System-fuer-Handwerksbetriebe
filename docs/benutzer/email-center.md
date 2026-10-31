@@ -62,6 +62,26 @@ Im Menü „…“ einer E-Mail:
 
 Mehrere E-Mails markiert man mit Strg- bzw. Cmd-Klick oder Umschalt-Klick; E-Mails lassen sich auch auf einen Ordner links ziehen. Papierkorb, Spam und Newsletter leert das Programm nach 30 Tagen von selbst – außer E-Mails, die einem Projekt, einer Anfrage oder einem Lieferanten zugeordnet sind: Die bleiben, bis jemand sie selbst endgültig löscht. Spam verschiebt das Programm auch auf dem Mail-Server in den Spam-Ordner, wenn das beim Postfach eingeschaltet ist (siehe [Einstellungen](einstellungen.md)).
 
+## Vielleicht Spam
+
+Ist sich das Programm nicht sicher, ob eine E-Mail Spam ist, bleibt sie im Posteingang. In der Liste steht dann das Schild „Spam-Verdacht“, in der geöffneten E-Mail die gelbe Zeile „Vielleicht Spam“. Du entscheidest selbst:
+
+- **Ist Spam:** Die E-Mail wandert in den Spam-Ordner – auch auf dem Mail-Server, wenn das beim Postfach eingeschaltet ist – und das Programm lernt dazu.
+- **Kein Spam:** Die E-Mail bleibt, wo sie ist. Nur der Hinweis verschwindet, und das Programm merkt es sich für ähnliche E-Mails.
+
+Das (i) „Warum?“ neben dem Hinweis zeigt, was aufgefallen ist, zum Beispiel „Der Absendername passt nicht zur Adresse.“ oder „Der Anhang kann Programme starten.“ Nur sehr sichere Fälle schiebt das Programm von selbst in den Spam-Ordner.
+
+## Warnhinweise
+
+Manche E-Mails sehen echt aus, sind aber eine bekannte Betrugsmasche. Dann steht oben in der E-Mail ein gelber Warnhinweis, zum Beispiel:
+
+- „Vorsicht: mögliche Branchenbuch-Abzocke“ – wer unterschreibt oder antwortet, schließt oft einen teuren Vertrag über mehrere Jahre ab.
+- „Vorsicht: angebliche Google-Profil-Mail“ – Google verlangt kein Geld für dein Profil.
+- „Vorsicht: angebliche Post von Gericht oder Behörde“ – Zahlungsaufforderungen kommen per Brief.
+- „Achtung: neue Bankverbindung“ – vor der Überweisung beim Absender anrufen, unter der bekannten Nummer.
+
+Der Warnhinweis verschiebt nichts und lässt sich nicht wegklicken; er steht auch an E-Mails von bekannten Lieferanten, denn gerade dort fälschen Betrüger gern Rechnungen. In der Liste erkennst du solche E-Mails am kleinen Warnzeichen. Das (i) „Woran erkennt das Programm das?“ erklärt, was den Hinweis ausgelöst hat.
+
 ## Rechnungen von Lieferanten aus E-Mails
 
 Dafür ist nichts zu tun: Kommt eine E-Mail von einem bekannten Lieferanten, liest das Programm PDF- und XML-Anhänge aus und legt sie beim Lieferanten im Reiter „Dokumente“ ab (siehe [Lieferanten](lieferanten.md)). Voraussetzung ist, dass die E-Mail-Adresse beim Lieferanten eingetragen ist.

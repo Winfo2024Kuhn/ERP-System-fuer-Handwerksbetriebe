@@ -236,6 +236,32 @@ class UnifiedEmailSichtbarkeitSecurityTest {
             mockMvc.perform(post("/api/emails/mark-all-read").param("folder", "inbox")).andExpect(status().isForbidden());
             verify(emailRepository, never()).findById(any());
         }
+
+        @Test
+        void spamEntscheidungOhneAnmeldung401() throws Exception {
+            mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/mark-spam").with(csrf())).andExpect(status().isUnauthorized());
+            mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/mark-not-spam").with(csrf())).andExpect(status().isUnauthorized());
+            verify(emailRepository, never()).findById(any());
+            verify(spamBayesService, never()).train(any(), anyBoolean());
+        }
+
+        @Test
+        @WithMockUser(username = "erika", roles = "USER")
+        void spamEntscheidungOhneCsrf403() throws Exception {
+            mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/mark-spam")).andExpect(status().isForbidden());
+            mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/mark-not-spam")).andExpect(status().isForbidden());
+            verify(emailRepository, never()).findById(any());
+            verify(spamBayesService, never()).train(any(), anyBoolean());
+        }
+
+        @Test
+        @WithMockUser(username = "erika", roles = "USER")
+        void spamEntscheidungSichtbareMail200() throws Exception {
+            infoMail.setSpamStufe(org.example.kalkulationsprogramm.domain.SpamStufe.UNSICHER);
+            mockMvc.perform(post("/api/emails/" + INFO_MAIL + "/mark-not-spam").with(csrf())).andExpect(status().isOk());
+            org.assertj.core.api.Assertions.assertThat(infoMail.getSpamStufe()).isNull();
+            org.assertj.core.api.Assertions.assertThat(infoMail.isSpam()).isFalse();
+        }
     }
 
     @Nested
