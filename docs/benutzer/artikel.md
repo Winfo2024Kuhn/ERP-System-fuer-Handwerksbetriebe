@@ -103,7 +103,7 @@ Ein Klick auf einen Artikel unter **Vorlagen & Stammdaten → Artikel** öffnet 
 
 **Neuer Lieferant:** Im Reiter „Preise & Lieferanten“ „Preis von weiterem Lieferanten eintragen“ klicken, den Lieferanten wählen, Nummer und Preis eintragen und speichern.
 
-Der bisherige Preis bleibt im „Preisverlauf“ erhalten. Neue Angebotspositionen rechnen mit dem günstigsten aktuellen Preis; Angebote und Rechnungen, die schon geschrieben sind, ändern sich nicht. Preise aus Angeboten und Rechnungen von Lieferanten, die per E-Mail kommen, trägt das Programm oft selbst ein; im Preisverlauf steht dann die Herkunft.
+Der bisherige Preis bleibt im „Preisverlauf“ erhalten. Neue Angebotspositionen rechnen mit dem günstigsten aktuellen Preis; Angebote und Rechnungen, die schon geschrieben sind, ändern sich nicht. Preise aus Angeboten und Rechnungen von Lieferanten, die per E-Mail kommen, trägt das Programm oft selbst ein; im Preisverlauf steht dann die Herkunft. Auch beim Einfügen von Material aus dem Lieferanten-Shop (Dokument-Editor, „Material“ → „Aus Lieferanten-Shop“) kann man Preise nachziehen oder über das vorausgefüllte Fenster „Artikel anlegen“ neue Artikel anlegen; Herkunft dann „Aus dem Lieferanten-Shop übernommen“. Tipp: Lieferanten-Kurztexte wie „SILDI-NEUT-BETONGRAU-310ML“ findet die Suche nach „Silikon“ nicht – beim Anlegen einen verständlichen Namen vergeben.
 
 ## Verkaufspreis und Text für das Angebot festlegen
 

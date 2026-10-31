@@ -634,6 +634,38 @@ Rechnungsabruf bei Händlern (Microsoft, Amazon). Ganzer Pfad nur für Admins.
 | `POST` | `/fetch/microsoft` | Nur Microsoft-Rechnungen abrufen *(nur Admin)* |
 | `POST` | `/fetch/amazon` | Nur Amazon-Rechnungen abrufen *(nur Admin)* |
 
+### IdsEinstellungenController
+
+**Basis-URL:** `/api/ids/einstellungen`
+
+Shop-Anbindung (IDS-Connect) einrichten: Grundschalter und Shop-Zugang je Lieferant. Passwörter werden verschlüsselt gespeichert und nie zurückgegeben (`passwortGesetzt`). Ganzer Pfad nur für Admins.
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Grundschalter, ob der Verschlüsselungsschlüssel eingerichtet ist, alle Zugänge *(nur Admin)* |
+| `PUT` | `/` | Grundschalter setzen (`{aktiv}`) *(nur Admin)* |
+| `PUT` | `/zugaenge/{lieferantId}` | Zugang anlegen oder ändern; leeres `passwort` = bisheriges bleibt *(nur Admin)* |
+| `DELETE` | `/zugaenge/{lieferantId}` | Zugang entfernen *(nur Admin)* |
+
+### IdsShopController
+
+**Basis-URL:** `/api/ids`
+
+Lieferanten-Shop öffnen und den Warenkorb abholen (Dokumenteditor, später Beschaffung). Ein Warenkorb gehört dem Benutzer, der den Shop geöffnet hat; für andere `404`.
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/verfuegbar` | Ob der Knopf „Aus Lieferanten-Shop“ erscheint und welche Lieferanten wählbar sind |
+| `POST` | `/vorgaenge` | Shop-Besuch starten (`{lieferantId}`); Antwort `201` mit dem Formular für den Shop (enthält das Shop-Passwort, `Cache-Control: no-store`) |
+| `GET` | `/vorgaenge/{vorgangId}` | Stand des Shop-Besuchs (`WARTET`, `EMPFANGEN`, `ABGELAUFEN`, `FEHLER`) mit Warenkorb, Treffern im Artikelstamm und geltendem Aufschlag |
+| `POST` | `/vorgaenge/{vorgangId}/artikelstamm` | Preise bekannter Artikel aktualisieren und/oder unbekannte anlegen (Preis-Herkunft `IDS_SHOP`) |
+
+### IdsRueckgabeController
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `POST` | `/api/ids/rueckgabe/{schluessel}` | Rücksprung aus dem Shop (Feld `warenkorb`, multipart oder url-kodiert). **Ohne Anmeldung und ohne CSRF** (eigene Filterkette, höchstens 1 MB); Ausweis ist der einmal einlösbare Schlüssel. Antwort `303` auf `/ids/warenkorb-angekommen?ergebnis=…&vorgang=…` |
+
 ---
 
 ## 8. Artikel, Kategorien und Kalkulation

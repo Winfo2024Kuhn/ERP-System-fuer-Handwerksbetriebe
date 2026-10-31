@@ -79,6 +79,20 @@ class ArtikelServiceErstellenTest {
     }
 
     @Test
+    void mitQuelle_ersterPreisTraegtDieseHerkunft() {
+        lieferant();
+        when(artikelRepository.saveAndFlush(any(Artikel.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(artikelRepository.save(any(Artikel.class))).thenAnswer(inv -> inv.getArgument(0));
+        ArtikelCreateDto dto = dto();
+        dto.setLieferantId(7L);
+        dto.setPreis(new BigDecimal("8.40"));
+
+        Artikel artikel = service.erstelleArtikel(dto, PreisQuelle.IDS_SHOP);
+
+        assertThat(artikel.getArtikelpreis().getFirst().getQuelle()).isEqualTo(PreisQuelle.IDS_SHOP);
+    }
+
+    @Test
     void ohnePreisUndNummer_entstehtKeinPreisstand() {
         when(artikelRepository.saveAndFlush(any(Artikel.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(artikelRepository.save(any(Artikel.class))).thenAnswer(inv -> inv.getArgument(0));

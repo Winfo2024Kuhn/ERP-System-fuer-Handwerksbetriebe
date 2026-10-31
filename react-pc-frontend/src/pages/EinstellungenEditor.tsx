@@ -15,7 +15,7 @@ export default function EinstellungenEditor() {
         <PageLayout
             ribbonCategory="Administration"
             title="System-Einstellungen"
-            subtitle="E-Mail, Dateiablage, KI-Funktionen, Zeiterfassung, Telefon sowie Abteilungen & Rechte einrichten"
+            subtitle="E-Mail, Dateiablage, KI-Funktionen, Zeiterfassung, Telefon, Lieferanten-Shops sowie Abteilungen & Rechte einrichten"
         >
             <SystemSetupConfigurator />
         </PageLayout>

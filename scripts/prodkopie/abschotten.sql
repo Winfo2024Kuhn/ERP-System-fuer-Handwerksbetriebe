@@ -32,7 +32,8 @@ VALUES ('telefon.aktiv', 'false'),
        ('telefon.telefonbuch.aktiv', 'false'),
        ('smtp.dokumente.aktiv', 'false'),
        ('mail.sent-kopie.aktiv', 'false'),
-       ('zeiterfassung.tailscale-funnel.freigegeben', 'false')
+       ('zeiterfassung.tailscale-funnel.freigegeben', 'false'),
+       ('ids.aktiv', 'false')
 ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value;
 
 -- Postfächer der Mitarbeiter: kein Server, kein Passwort, ausgeschaltet.
@@ -45,6 +46,27 @@ BEGIN
            SET aktiv = false, smtp_host = NULL, imap_host = NULL, passwort_verschluesselt = NULL;
     END IF;
 END $$;
+
+-- Shop-Zugänge (IDS) der Lieferanten: ausgeschaltet, ohne Zugangsdaten. Die Tabelle gibt es erst ab V444.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ids_zugang') THEN
+        UPDATE ids_zugang
+           SET aktiv = false, shop_url = NULL, kundennummer = NULL, benutzername = NULL,
+               passwort_verschluesselt = NULL;
+    END IF;
+END $$;
+
+-- Platzhalter-Mailserver ins Leere (nichts lauscht auf 127.0.0.1:1). Ohne Mailserver erzwingt das
+-- Programm die Seite „System einrichten“, und man käme in der Kopie nicht weiter. Ein Sendeversuch
+-- scheitert so sofort auf dem eigenen Rechner; zusätzlich sind Postfächer, Versand-Schalter und
+-- Mahnlauf oben ausgeschaltet. Steht nach dem Leeren oben, damit der Platzhalter bleibt.
+INSERT INTO system_setting (setting_key, setting_value)
+VALUES ('smtp.host', '127.0.0.1'),
+       ('smtp.port', '1'),
+       ('smtp.username', 'prodkopie@example.invalid'),
+       ('smtp.password', 'keine-mail')
+ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value;
 
 -- Push-Abos zeigen auf die Push-Dienste von Apple/Google und damit auf echte Handys.
 DELETE FROM push_subscription;

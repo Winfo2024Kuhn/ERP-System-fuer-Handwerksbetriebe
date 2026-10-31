@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, FileText, ImageOff, ImagePlus, Loader2, Paperclip, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowRight, FileText, ImageOff, Info, ImagePlus, Loader2, Paperclip, Plus, Search, Trash2, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { DecimalInput } from "./ui/decimal-input";
@@ -13,13 +13,39 @@ import { KategorieAuswahlFeld } from "./artikel/KategorieAuswahlFeld";
 import { useToast } from './ui/toast';
 import { InfoButton } from './ui/info-button';
 import { parseDecimal } from './verrechnungslohnFormat';
+import { formatDecimalInput } from '../lib/numberInput';
 import { leseFehlermeldung } from '../lib/apiFehler';
 import { ARTIKEL_DOKUMENT_TYPEN, type Artikel, type ArtikelDokumentTyp } from '../types';
 
+export type ArtikelVerrechnungseinheit = 'STUECK' | 'LAUFENDE_METER' | 'QUADRATMETER' | 'KILOGRAMM' | 'LITER';
+
+/**
+ * Startwerte für das Anlegen-Fenster, z. B. aus einem Warenkorb des
+ * Lieferanten-Shops. Alles bleibt im Fenster änderbar.
+ */
+export interface ArtikelVorbelegung {
+    produktname?: string;
+    externeArtikelnummer?: string;
+    lieferant?: { id: number; name: string };
+    /** Einkaufspreis je Einheit beim vorbelegten Lieferanten. */
+    preis?: number;
+    verrechnungseinheit?: ArtikelVerrechnungseinheit;
+    preiseinheit?: string;
+    /**
+     * Woher der Preis stammt. `IDS_SHOP` gilt nur, solange Preis und
+     * Lieferant unverändert bleiben – sonst wird `MANUELL` gesendet.
+     */
+    preisQuelle?: 'MANUELL' | 'IDS_SHOP';
+    /** Hinweis oben im Fenster, warum es vorausgefüllt ist und was noch fehlt. */
+    hinweis?: string;
+}
+
 interface CreateArticleModalProps {
     onClose: () => void;
-    /** Der Artikel ist angelegt (Dateien sind hochgeladen oder als Warnung gemeldet). */
+    /** Der Artikel ist angelegt (Dateien sind hochgeladen oder als Warnung gemeldet) – mit ID und Artikel-Nr. vom Server. */
     onSave: (artikel: Artikel) => void;
+    /** Optional vorausgefüllte Felder; ohne sie startet das Fenster leer. */
+    vorbelegung?: ArtikelVorbelegung;
 }
 
 const VERRECHNUNGSEINHEITEN = [
@@ -53,14 +79,20 @@ const typLabel = (typ: ArtikelDokumentTyp) => ARTIKEL_DOKUMENT_TYPEN.find((t) =>
  * vergibt der Server automatisch, solange man keine eigene eintraegt.
  * Gewaehlte Bilder und Unterlagen werden direkt nach dem Anlegen hochgeladen.
  */
-export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps) {
+export function CreateArticleModal({ onClose, onSave, vorbelegung }: CreateArticleModalProps) {
     const toast = useToast();
     const [reiter, setReiter] = useState<AnlegenReiterId>("wichtig");
+    // Startwerte nur beim Öffnen übernehmen; danach gehört das Formular dem Nutzer.
+    const [start] = useState(() => ({
+        lieferant: vorbelegung?.lieferant ?? null,
+        preis: vorbelegung?.lieferant && vorbelegung.preis != null && Number.isFinite(vorbelegung.preis)
+            ? formatDecimalInput(vorbelegung.preis) : "",
+    }));
 
     // Das Wichtigste
-    const [produktname, setProduktname] = useState("");
+    const [produktname, setProduktname] = useState(vorbelegung?.produktname ?? "");
     const [nameFehlt, setNameFehlt] = useState(false);
-    const [einheit, setEinheit] = useState("STUECK");
+    const [einheit, setEinheit] = useState<string>(vorbelegung?.verrechnungseinheit ?? "STUECK");
     const [kategorie, setKategorie] = useState<{ id: number; name: string } | null>(null);
     const [werkstoffId, setWerkstoffId] = useState("");
     // Werkstoffe mit ID, weil der Artikel die ID braucht - nicht nur den Namen.
@@ -70,10 +102,10 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
     const [vorschau, setVorschau] = useState<{ status: "laedt" | "da" | "fehler"; nummer?: string }>({ status: "laedt" });
 
     // Preis & Lieferant
-    const [lieferant, setLieferant] = useState<{ id: number; name: string } | null>(null);
-    const [lieferantenNummer, setLieferantenNummer] = useState("");
+    const [lieferant, setLieferant] = useState<{ id: number; name: string } | null>(start.lieferant);
+    const [lieferantenNummer, setLieferantenNummer] = useState(start.lieferant ? vorbelegung?.externeArtikelnummer ?? "" : "");
     // Als Text: leer heisst "kein Preis", nicht 0 Euro.
-    const [preis, setPreis] = useState("");
+    const [preis, setPreis] = useState(start.preis);
 
     // Bilder & Unterlagen
     const [bild, setBild] = useState<File | null>(null);
@@ -85,7 +117,7 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
     const [produktlinie, setProduktlinie] = useState("");
     const [produkttext, setProdukttext] = useState("");
     const [verpackungseinheit, setVerpackungseinheit] = useState("1");
-    const [preiseinheit, setPreiseinheit] = useState("1");
+    const [preiseinheit, setPreiseinheit] = useState(vorbelegung?.preiseinheit?.trim() || "1");
 
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -98,7 +130,12 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
     const bildInputRef = useRef<HTMLInputElement>(null);
     const unterlagenInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => { nameRef.current?.focus(); }, []);
+    // Vorbelegt: Namen gleich markieren, damit man den Kurztext des Lieferanten einfach überschreibt.
+    const namenMarkieren = vorbelegung?.produktname !== undefined;
+    useEffect(() => {
+        nameRef.current?.focus();
+        if (namenMarkieren) nameRef.current?.select();
+    }, [namenMarkieren]);
 
     useEffect(() => {
         let abgebrochen = false;
@@ -128,6 +165,16 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
     const anzahlDateien = (bild ? 1 : 0) + unterlagen.length;
     const mehrAusgefuellt = produktlinie.trim() !== "" || produkttext.trim() !== ""
         || verpackungseinheit.trim() !== "1" || preiseinheit.trim() !== "1";
+
+    /**
+     * Woher der Preis stammt – nur bei vorbelegtem Fenster mitgeschickt.
+     * Hat der Nutzer Preis oder Lieferant geändert, ist es seine Angabe.
+     */
+    const preisQuelle = (): 'MANUELL' | 'IDS_SHOP' | undefined => {
+        if (!vorbelegung) return undefined;
+        const unveraendert = lieferant !== null && lieferant.id === start.lieferant?.id && preis.trim() === start.preis;
+        return vorbelegung.preisQuelle === 'IDS_SHOP' && unveraendert ? 'IDS_SHOP' : 'MANUELL';
+    };
 
     const reiterListe: ReiterEintrag<AnlegenReiterId>[] = [
         {
@@ -244,6 +291,7 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                 werkstoffId: werkstoffId ? Number(werkstoffId) : null,
                 preis: preisWert,
                 lieferantId: lieferant?.id ?? null,
+                ...(vorbelegung ? { preisQuelle: preisQuelle() } : {}),
             };
 
             const res = await fetch('/api/artikel', {
@@ -307,6 +355,13 @@ export function CreateArticleModal({ onClose, onSave }: CreateArticleModalProps)
                         Nur der Name ist Pflicht. Alles andere kannst du gleich oder später auf der Artikelseite ergänzen.
                     </DialogDescription>
                 </DialogHeader>
+
+                {vorbelegung?.hinweis && (
+                    <div role="note" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+                        <p>{vorbelegung.hinweis}</p>
+                    </div>
+                )}
 
                 <Reiter reiter={reiterListe} aktiv={reiter} onWechsel={setReiter}
                     ariaLabel="Bereiche des neuen Artikels" idPrefix="artikel-anlegen" />

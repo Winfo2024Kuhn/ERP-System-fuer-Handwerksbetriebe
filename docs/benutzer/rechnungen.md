@@ -36,7 +36,7 @@ Tipp: Die gewünschte Karte immer bewusst anklicken, bevor man bestätigt.
 
 ## Rechnung im Editor ausfüllen
 
-Im Dokument-Editor (öffnet sich aus dem Projekt) stehen oben die Knöpfe zum Einfügen: „Textbaustein“, „Leistung“, „Stundensätze“, „Material“, „Bauabschnitt“ (Überschrift für eine Gruppe von Positionen), „Trennlinie“ und „Rabatt“. Das Plus an jeder Position fügt direkt darunter eine Leistung, einen Stundensatz oder einen Textbaustein ein.
+Im Dokument-Editor (öffnet sich aus dem Projekt) stehen oben die Knöpfe zum Einfügen: „Textbaustein“, „Leistung“, „Stundensätze“, „Material“ (aus dem Artikelstamm oder – wenn eingerichtet – aus dem Lieferanten-Shop, siehe unten), „Bauabschnitt“ (Überschrift für eine Gruppe von Positionen), „Trennlinie“ und „Rabatt“. Das Plus an jeder Position fügt direkt darunter eine Leistung, einen Stundensatz oder einen Textbaustein ein.
 
 - Bei einer Leistung lassen sich „Titel / Kurztext“, „Menge“, „Einheit“ und „Einzelpreis“ ändern.
 - Kopf- und Schlusstext kommen automatisch aus den Vorlagen und lassen sich im Dokument ändern.
@@ -46,6 +46,24 @@ Im Dokument-Editor (öffnet sich aus dem Projekt) stehen oben die Knöpfe zum Ei
 - **Andere Rechnungsadresse:** über „Rechnungsadresse bearbeiten“.
 - Gespeichert wird alle 10 Sekunden automatisch, zusätzlich über „Speichern“.
 - Rechts steht die „Vorschau“. Solange die Rechnung nicht festgeschrieben ist, trägt sie den Aufdruck „VORSCHAU / ENTWURF“.
+
+## Material aus dem Lieferanten-Shop einfügen
+
+Für Material, das aus dem Lager genommen wurde (z. B. Kartuschen Silikon, Injektionsmörtel, Schrauben), muss der Artikel nicht erst im Artikelstamm gepflegt sein. Im Dokument-Editor (Angebot, Auftragsbestätigung, Rechnung) öffnet der Knopf **„Material“** ein kleines Menü: **„Aus Artikelstamm“** (Artikel, die schon im Programm gepflegt sind) oder **„Aus Lieferanten-Shop“** (z. B. Würth – holt die Artikel mit deinen aktuellen Einkaufspreisen direkt aus dem Online-Shop). Den Eintrag „Aus Lieferanten-Shop“ gibt es nur, wenn ein Admin die Shop-Anbindung eingerichtet hat (siehe [Einstellungen](einstellungen.md#lieferanten-shops-ids-anbinden)); sonst öffnet „Material“ direkt den Artikelstamm.
+
+1. **Shop wählen** und „Shop öffnen“. Der Shop öffnet sich in einem neuen Tab, du bist dort schon angemeldet. Ist für den Shop kein Passwort gespeichert, warnt das Programm vorher – der Shop würde die Anmeldung ablehnen („Login failed“).
+2. Im Shop den Warenkorb zusammenstellen und **„Warenkorb übernehmen“** bzw. die Übergabe an die Software klicken. Im Shop wird dabei **nichts bestellt**. Der Shop-Tab zeigt danach „Warenkorb übernommen“ und kann geschlossen werden; der Editor springt von selbst weiter. Ein Shop-Besuch gilt 60 Minuten.
+3. **Preise prüfen:** Alles läuft **nach Stück**: Die Menge kommt in Stück (Würth: 1 Verpackungseinheit à 24 = 24 Stk), der Einkaufspreis wird je Stück berechnet – auch wenn der Shop den Preis der ganzen Zeile oder je 100 Stück schickt. Je Artikel stehen Einkaufspreis, Aufschlag in % und Verkaufspreis. Oben lässt sich ein Aufschlag für alle setzen, jede Zeile einzeln ändern. Vorbelegt ist der Aufschlag, der im Programm gilt (am Artikel, sonst an der Kategorie, sonst der allgemeine Material-Aufschlag). Hinweise des Shops (z. B. „nicht lieferbar“) stehen an der Zeile; fehlt ein Preis, trägst du ihn selbst ein.
+   - **Bezeichnung umformulieren:** Was in der Spalte „Bezeichnung“ steht, kommt so ins Angebot. Würth schickt nur Kurztexte wie „SILDI-NEUT-BETONGRAU-310ML“ – hier verständlich machen, z. B. „Neutralsilikon betongrau 310 ml“.
+   - **Artikel entfernen:** Papierkorb an der Zeile; „Rückgängig“ in der Meldung holt ihn zurück.
+   - **Weitere Artikel aus dem Shop holen:** öffnet den Shop erneut. Die neuen Artikel kommen unten an die Liste, was du oben schon geändert hast, bleibt.
+4. **Wie einfügen:** „Jeder Artikel eine Position“ oder „Alles in einer Position“. Der Kunde sieht als Text die Bezeichnung (bei einer Position die Liste „5× Neutralsilikon, 2× Injektionsmörtel, …“, Menge 1 pauschal, Preis = Summe) – **keine** Lieferanten-Artikelnummer und keinen Lieferantennamen. Dann „In Dokument einfügen“.
+5. **Artikelstamm:** Danach fragt das Programm je Artikel:
+   - **Schon im Artikelstamm** (gleiche Artikelnummer beim selben Lieferanten): „Preis alt → neu“, „Preis aktualisieren“ ist vorausgewählt. Der alte Preis bleibt im Preisverlauf; als Herkunft steht „Aus dem Lieferanten-Shop übernommen“ (hast du den Preis im Dialog geändert: „Von Hand eingetragen“).
+   - **Noch nicht im Artikelstamm:** „Als Artikel anlegen…“ öffnet das gewohnte Fenster „Artikel anlegen“, vorausgefüllt mit Bezeichnung, Lieferanten-Artikelnummer, Lieferant, Einkaufspreis und Einheit. Dort Kategorie wählen (auch eine neue anlegen, z. B. „Silikon“), einen Namen vergeben, unter dem du den Artikel wiederfindest, und bei Bedarf Bild und Datenblatt hochladen – der Shop liefert keine Bilder, Langtexte oder Datenblätter.
+   - „Überspringen“ ändert nichts. Das Dokument selbst ändert sich in diesem Schritt nicht mehr.
+
+Meldet der Shop, dass der Warenkorb dort schon **bestellt** wurde, weist das Programm deutlich darauf hin – dann nicht noch einmal bestellen.
 
 ## Rechnung festschreiben und verschicken
 

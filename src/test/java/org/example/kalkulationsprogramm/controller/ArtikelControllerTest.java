@@ -450,4 +450,29 @@ class ArtikelControllerTest {
     private void mockArtikelSuche(List<Artikel> artikel) {
         when(artikelService.suche(any(), any())).thenReturn(new PageImpl<>(artikel));
     }
+
+    @Test
+    void anlegen_mitPreisHerkunftLieferantenShop_undAndereHerkunftAbgelehnt() throws Exception {
+        Artikel neu = new Artikel();
+        neu.setId(9L);
+        neu.setProduktname("Neutralsilikon betongrau 310 ml");
+        when(artikelService.erstelleArtikel(any(), org.mockito.ArgumentMatchers.eq(org.example.kalkulationsprogramm.domain.PreisQuelle.IDS_SHOP)))
+                .thenReturn(neu);
+        when(artikelService.erstelleArtikel(any(), org.mockito.ArgumentMatchers.eq(org.example.kalkulationsprogramm.domain.PreisQuelle.MANUELL)))
+                .thenReturn(neu);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/artikel")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"produktname\":\"Neutralsilikon betongrau 310 ml\",\"preisQuelle\":\"IDS_SHOP\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/artikel")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"produktname\":\"Max Mustermann Profil\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/artikel")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"produktname\":\"x\",\"preisQuelle\":\"RECHNUNG\"}"))
+                .andExpect(status().isBadRequest());
+        org.mockito.Mockito.verify(artikelService).erstelleArtikel(any(), org.mockito.ArgumentMatchers.eq(org.example.kalkulationsprogramm.domain.PreisQuelle.IDS_SHOP));
+    }
 }

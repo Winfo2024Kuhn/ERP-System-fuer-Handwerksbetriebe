@@ -14,16 +14,5 @@ export function isLikelyPlainText(html: string | null | undefined): boolean {
     return !/<[a-zA-Z]/.test(html);
 }
 
-/**
- * HTML-Entity-Escaping für Strings, die als Plain-Text in einen
- * HTML-Body eingesetzt werden sollen. Verhindert, dass eingebettete
- * `<script>` / `<img onerror>` etc. als HTML interpretiert werden.
- */
-export function escapeHtml(input: string): string {
-    return input
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
+/** HTML-Escaping für Plain-Text im HTML-Body – gemeinsame Funktion aus `lib/htmlSanitizer.ts`. */
+export { escapeHtml } from '../lib/htmlSanitizer';

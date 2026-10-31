@@ -21,7 +21,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select-custom';
 import { cn } from '../lib/utils';
-import { htmlToText, sanitizeHtml } from '../lib/htmlSanitizer';
+import { escapeHtml, htmlToText, sanitizeHtml } from '../lib/htmlSanitizer';
 import { type Kunde, type TextTemplate } from '../types';
 import { PageLayout } from '../components/layout/PageLayout';
 import { TiptapEditor } from '../components/TiptapEditor';
@@ -88,25 +88,6 @@ function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      case "'":
-        return '&#39;';
-      default:
-        return char;
-    }
-  });
 }
 
 function highlightPlaceholder(token: string) {

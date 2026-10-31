@@ -7,7 +7,7 @@ import {
 describe('escapeHtml', () => {
     it('maskiert alle fuenf Sonderzeichen', () => {
         expect(escapeHtml(`<a href="x">Tom & 'Jerry'</a>`))
-            .toBe('&lt;a href=&quot;x&quot;&gt;Tom &amp; &#039;Jerry&#039;&lt;/a&gt;');
+            .toBe('&lt;a href=&quot;x&quot;&gt;Tom &amp; &#39;Jerry&#39;&lt;/a&gt;');
     });
     it('verhindert Script-Injection in Zitatkoepfen', () => {
         const out = escapeHtml('Max <max@example.com><script>alert(1)</script>');

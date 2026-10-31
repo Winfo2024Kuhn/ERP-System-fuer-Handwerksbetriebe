@@ -1,8 +1,9 @@
-import { X, Save, Upload, Download, FileText, Wrench, Clock, Package, Printer, Minus, FolderOpen, Percent, Mail, FileEdit, Lock } from 'lucide-react';
+import { X, Save, Upload, Download, FileText, Wrench, Clock, Printer, Minus, FolderOpen, Percent, Mail, FileEdit, Lock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import type { AusgangsGeschaeftsDokument } from './types';
 import { VerlaufKnoepfe, type VerlaufKnoepfeProps } from './VerlaufKnoepfe';
+import { MaterialKnopf } from './MaterialKnopf';
 
 interface DocumentEditorHeaderProps {
     dokumentNummer: string;
@@ -27,6 +28,15 @@ interface DocumentEditorHeaderProps {
     onOpenLeistungPicker: () => void;
     onOpenStundensatzPicker: () => void;
     onOpenMaterialPicker: () => void;
+    /**
+     * Öffnet den Warenkorb aus dem Lieferanten-Shop (IDS). Mit dieser Prop
+     * wird „Material“ zum Menü (Artikelstamm oder Lieferanten-Shop); ohne –
+     * etwa wenn die Anbindung aus ist oder kein Lieferant einen aktiven
+     * Shop-Zugang hat – öffnet „Material“ direkt den Artikelstamm.
+     */
+    onOpenShopWarenkorb?: () => void;
+    /** Namen der verfügbaren Shops für die Unterzeile im Material-Menü. */
+    shopLieferantenNamen?: string[];
     onAddSeparator: () => void;
     onAddSectionHeader: () => void;
     onOpenRabattDialog: () => void;
@@ -61,6 +71,8 @@ export function DocumentEditorHeader({
     onOpenLeistungPicker,
     onOpenStundensatzPicker,
     onOpenMaterialPicker,
+    onOpenShopWarenkorb,
+    shopLieferantenNamen,
     onAddSeparator,
     onAddSectionHeader,
     onOpenRabattDialog,
@@ -75,8 +87,9 @@ export function DocumentEditorHeader({
 }: DocumentEditorHeaderProps) {
     return (
         <div className="bg-white border-b border-slate-200 px-3 h-11 flex items-center justify-between gap-2 flex-shrink-0">
-            {/* Left: close + doc info */}
-            <div className="flex items-center gap-2 min-w-0">
+            {/* Left: close + doc info. Darf schrumpfen – die Nummer wird dann
+                gekürzt (voller Text im Tooltip), statt in die Knöpfe zu laufen. */}
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <button
                     onClick={onClose}
                     aria-label="Editor schließen"
@@ -86,8 +99,8 @@ export function DocumentEditorHeader({
                 </button>
                 <div className="h-4 w-px bg-slate-200 flex-shrink-0" />
                 <h1
-                    className="text-sm font-bold text-slate-800 truncate flex-shrink-0"
-                    title={dokumentNummer || 'Neues Dokument'}
+                    className="text-sm font-bold text-slate-800 truncate min-w-[4rem]"
+                    title={kontextInfo ? `${dokumentNummer || 'Neues Dokument'} – ${kontextInfo}` : dokumentNummer || 'Neues Dokument'}
                     data-kuerzung-erlaubt="true"
                 >
                     {dokumentNummer || 'Neues Dokument'}
@@ -110,8 +123,10 @@ export function DocumentEditorHeader({
                         Ungespeichert
                     </span>
                 )}
+                {/* Kunde/Bauvorhaben nur bei breitem Bildschirm (sonst im Tooltip der Nummer) und
+                    zuerst gekürzt (shrink-[100]) – die Dokumentnummer erst, wenn hier nichts mehr übrig ist. */}
                 <span
-                    className="text-[11px] text-slate-400 truncate hidden lg:block"
+                    className="text-[11px] text-slate-400 truncate hidden min-[1700px]:block min-w-0 shrink-[100]"
                     title={kontextInfo}
                     data-kuerzung-erlaubt="true"
                 >
@@ -131,7 +146,7 @@ export function DocumentEditorHeader({
                         size="sm"
                         onClick={onOpenTextbausteinPicker}
                         disabled={isLocked}
-                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                     >
                         <FileText className="w-3 h-3" />
                         Textbaustein
@@ -141,7 +156,7 @@ export function DocumentEditorHeader({
                         size="sm"
                         onClick={onOpenLeistungPicker}
                         disabled={isLocked}
-                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                     >
                         <Wrench className="w-3 h-3" />
                         Leistung
@@ -151,28 +166,24 @@ export function DocumentEditorHeader({
                         size="sm"
                         onClick={onOpenStundensatzPicker}
                         disabled={isLocked}
-                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                     >
                         <Clock className="w-3 h-3" />
                         Stundensätze
                     </Button>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={onOpenMaterialPicker}
+                    <MaterialKnopf
+                        onArtikelstamm={onOpenMaterialPicker}
+                        onShop={onOpenShopWarenkorb}
+                        shopLieferantenNamen={shopLieferantenNamen}
                         disabled={isLocked}
-                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
-                    >
-                        <Package className="w-3 h-3" />
-                        Material
-                    </Button>
+                    />
                     <div className="w-px h-5 bg-slate-200 mx-0.5" />
                     <Button
                         variant="ghost"
                         size="sm"
                         onClick={onAddSectionHeader}
                         disabled={isLocked}
-                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                     >
                         <FolderOpen className="w-3 h-3" />
                         Bauabschnitt
@@ -182,7 +193,7 @@ export function DocumentEditorHeader({
                         size="sm"
                         onClick={onAddSeparator}
                         disabled={isLocked}
-                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                     >
                         <Minus className="w-3 h-3" />
                         Trennlinie
@@ -193,7 +204,7 @@ export function DocumentEditorHeader({
                         size="sm"
                         onClick={onOpenRabattDialog}
                         disabled={isLocked}
-                        className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                        className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                     >
                         <Percent className="w-3 h-3" />
                         Rabatt
@@ -217,7 +228,7 @@ export function DocumentEditorHeader({
                             size="sm"
                             onClick={onGaebImport}
                             disabled={isLocked}
-                            className="h-7 px-2 text-[11px] text-slate-500 gap-1 hover:text-slate-700"
+                            className="h-7 px-1.5 text-[11px] text-slate-500 gap-1 hover:text-slate-700"
                         >
                             <Upload className="w-3 h-3" />
                             GAEB
@@ -229,7 +240,7 @@ export function DocumentEditorHeader({
                             onClick={onSave}
                             disabled={saving || isLocked}
                             className={cn(
-                                "h-7 px-2 text-[11px] gap-1 rounded-md transition-all duration-300",
+                                "h-7 px-1.5 text-[11px] gap-1 rounded-md transition-all duration-300",
                                 saveSuccess
                                     ? "text-emerald-600 bg-emerald-50"
                                     : "text-slate-500 hover:text-slate-700"
@@ -252,17 +263,21 @@ export function DocumentEditorHeader({
                     variant="ghost"
                     size="sm"
                     onClick={onPrint}
-                    className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
+                    aria-label="Drucken"
+                    title="Drucken"
+                    className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-slate-700"
                 >
                     <Printer className="w-3 h-3" />
-                    Drucken
+                    {/* Unter 1536 px nur das Drucker-Symbol: schafft Platz, damit die
+                        Dokumentnummer auch neben „Ungespeichert“ ganz lesbar bleibt. */}
+                    <span className="hidden 2xl:inline">Drucken</span>
                 </Button>
                 <Button
                     variant="ghost"
                     size="sm"
                     onClick={onSendDraft}
                     disabled={emailLoading}
-                    className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
+                    className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
                     title="Entwurf mit Wasserzeichen senden – Dokument bleibt offen und änderbar"
                 >
                     {emailLoading ? (
@@ -277,7 +292,7 @@ export function DocumentEditorHeader({
                     size="sm"
                     onClick={onSendEmail}
                     disabled={emailLoading}
-                    className="h-7 px-2 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
+                    className="h-7 px-1.5 text-[11px] gap-1 rounded-md text-slate-500 hover:text-rose-600"
                     title="Dokument per E-Mail senden"
                 >
                     {emailLoading ? (

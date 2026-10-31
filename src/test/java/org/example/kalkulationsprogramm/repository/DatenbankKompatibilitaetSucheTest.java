@@ -118,7 +118,10 @@ class DatenbankKompatibilitaetSucheTest {
     @BeforeEach
     void vorbereiten() {
         tx = new TransactionTemplate(transaktionen);
-        kennung = UUID.randomUUID().toString().substring(0, 8);
+        // ohne Ziffern: eine zufaellige "10" in der Kennung wuerde die Zahlensuche verfaelschen
+        kennung = UUID.randomUUID().toString().substring(0, 8)
+                .chars().map(c -> Character.isDigit(c) ? 'g' + (c - '0') : c)
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
     }
 
     // ------------------------------------------------------------------
