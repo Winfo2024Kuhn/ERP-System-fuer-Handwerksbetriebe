@@ -5,7 +5,7 @@
 # Braucht dafuer das Recht NET_ADMIN im Netz des Rechners - und sonst nichts:
 # kein Docker-Socket, keine Daten, keine Ports.
 # =============================================================================
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN apk add --no-cache iptables iptables-legacy
 
