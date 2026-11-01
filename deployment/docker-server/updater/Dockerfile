@@ -12,7 +12,7 @@
 # aktualisieren. Neu bauen (docker compose build updater) nur, wenn sich
 # diese Datei aendert.
 # =============================================================================
-FROM alpine:3.22
+FROM alpine:3.24
 
 # rsync: hochgeladene Dateien auf Festplatte/Cloud-Ordner spiegeln (sicherung.sh)
 RUN apk add --no-cache bash curl gzip coreutils util-linux findutils grep sed tzdata rsync \
