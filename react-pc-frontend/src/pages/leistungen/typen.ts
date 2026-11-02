@@ -105,15 +105,7 @@ export interface AuswertungZeile {
 export type ReiterId = 'leistungen' | 'ordner' | 'auswertung';
 
 /** Ein möglicher Ziel-Ordner in einer Auswahl (Verschieben, Umziehen). */
-export interface ZielEintrag {
-    /** `null` = oberste Ebene (kein übergeordneter Ordner). */
-    id: number | null;
-    name: string;
-    /** Einrückung in der Liste (0 = Hauptordner). */
-    ebene: number;
-    /** Grund, warum das Ziel nicht geht – `null`, wenn es wählbar ist. */
-    gesperrt: string | null;
-}
+export type { ZielEintrag } from '../../lib/ordnerBaum';
 
 /** Was gerade gezogen wird – während eines Ziehvorgangs innerhalb der Seite. */
 export type ZiehObjekt = { art: 'ordner'; id: number } | { art: 'leistung'; id: number };

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { heuteIso, isoDatum, parseDeutschesDatum } from './datum';
+import { formatDatum, heuteIso, isoDatum, parseDeutschesDatum } from './datum';
 
 describe('Datumsumwandlung', () => {
     afterEach(() => { vi.useRealTimers(); });
@@ -32,5 +32,15 @@ describe('Deutsche Datumseingabe', () => {
         expect(parseDeutschesDatum('9.9.67')).toBeNull();
         expect(parseDeutschesDatum('9.1967')).toBeNull();
         expect(parseDeutschesDatum('')).toBeNull();
+    });
+});
+
+describe('formatDatum', () => {
+    it('zeigt Datum und Zeitpunkt deutsch, leer bei fehlendem oder kaputtem Wert', () => {
+        expect(formatDatum('2026-03-02')).toBe('02.03.2026');
+        expect(formatDatum('2026-03-02T10:00:00')).toBe('02.03.2026');
+        expect(formatDatum(null)).toBe('');
+        expect(formatDatum(undefined)).toBe('');
+        expect(formatDatum('gestern')).toBe('');
     });
 });

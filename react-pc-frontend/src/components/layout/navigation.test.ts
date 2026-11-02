@@ -5,8 +5,8 @@ describe('Reiter „Vorlagen & Stammdaten“', () => {
     const gruppen = NAVIGATION.find((kategorie) => kategorie.category === 'Vorlagen & Stammdaten')!.subgroups;
     const namenIn = (label: string) => gruppen.find((gruppe) => gruppe.label === label)!.items.map((eintrag) => eintrag.name);
 
-    it('zeigt Leistungen & Kategorien unter Dokumente links vor den Textvorlagen', () => {
-        expect(namenIn('Dokumente')).toEqual(['Leistungen & Kategorien', 'Textvorlagen', 'Stundensätze']);
+    it('zeigt Leistungen & Kategorien unter Dokumente links vor den Textvorlagen und die Firmendokumente zuletzt', () => {
+        expect(namenIn('Dokumente')).toEqual(['Leistungen & Kategorien', 'Textvorlagen', 'Stundensätze', 'Firmendokumente']);
         expect(namenIn('Katalog')).toEqual(['Artikel']);
     });
 

@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useRef, useEffect, useState } from 'react
 import { ZoomIn, ZoomOut, Maximize2, Printer } from 'lucide-react';
 import { ladePdfjs, oeffnePdf } from '../../lib/pdfjs';
 import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
+import { istPdfBlob, oeffneDruckFenster } from '../../lib/pdfDrucken';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -26,17 +27,6 @@ function clampZoom(z: number): number {
     return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 100) / 100));
 }
 
-async function isPdfBlob(blob: Blob): Promise<boolean> {
-    try {
-        if (!blob || blob.size < 5) return false;
-        const headerBuffer = await blob.slice(0, 5).arrayBuffer();
-        const header = new TextDecoder('latin1').decode(headerBuffer);
-        return header.startsWith('%PDF-');
-    } catch {
-        return false;
-    }
-}
-
 function buildSafePdfIframeSrc(rawUrl?: string | null): string | undefined {
     const safeUrl = toSafeResourceUrl(rawUrl);
     if (!safeUrl || !safeUrl.startsWith('blob:')) {
@@ -44,71 +34,6 @@ function buildSafePdfIframeSrc(rawUrl?: string | null): string | undefined {
     }
 
     return `${safeUrl}#toolbar=0&navpanes=0&view=FitH`;
-}
-
-/** Aufräumfrist, falls der Browser kein `afterprint` meldet – großzügig, damit niemand mitten im Druckdialog abgeschnitten wird. */
-const PRINT_FRAME_TIMEOUT_MS = 10 * 60 * 1000;
-
-/**
- * Öffnet den Druckdialog des Browsers für ein PDF – bewusst außerhalb des React-Lifecycles.
- *
- * Das unsichtbare iframe hängt direkt am `document.body` und überlebt deshalb, wenn die
- * Vorschau während des Druckdialogs geschlossen wird (z.B. Escape im Modal). Aufgeräumt
- * wird erst nach `afterprint` – vorher würde der Browser den Druck abbrechen.
- *
- * @param ownsUrl true, wenn `src` eine eigens erzeugte Object-URL ist, die hier wieder freigegeben werden muss.
- */
-function openPrintFrame(src: string, ownsUrl: boolean): void {
-    const frame = document.createElement('iframe');
-    frame.setAttribute('aria-hidden', 'true');
-    frame.style.position = 'fixed';
-    frame.style.right = '0';
-    frame.style.bottom = '0';
-    frame.style.width = '0';
-    frame.style.height = '0';
-    frame.style.border = '0';
-    frame.style.visibility = 'hidden';
-
-    let done = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const cleanup = () => {
-        if (done) return;
-        done = true;
-        if (timer !== undefined) clearTimeout(timer);
-        frame.remove();
-        if (ownsUrl) URL.revokeObjectURL(src);
-    };
-    const armTimer = () => {
-        if (timer !== undefined) clearTimeout(timer);
-        timer = setTimeout(cleanup, PRINT_FRAME_TIMEOUT_MS);
-    };
-
-    frame.onload = () => {
-        const win = frame.contentWindow;
-        if (!win) { cleanup(); return; }
-        win.addEventListener('afterprint', cleanup, { once: true });
-        armTimer();
-        try {
-            win.focus();
-            win.print();
-        } catch (fehler) {
-            // Kein Toast hier – die Komponente ist ein Atom ohne solche Abhängigkeit.
-            // Der Hinweis in der Konsole verhindert immerhin, dass ein stiller Fehlschlag unbemerkt bleibt.
-            console.warn('Drucken nicht möglich:', fehler);
-            cleanup();
-        }
-    };
-    const safeSrc = toSafeResourceUrl(src);
-    if (!safeSrc) {
-        cleanup();
-        return;
-    }
-    frame.src = safeSrc;
-    document.body.appendChild(frame);
-    // Bewusst schon hier scharfstellen: Bleibt `onload` aus (z.B. Content-Disposition
-    // "attachment" oder ein geblockter Frame), gäbe es sonst nie ein Aufräumen.
-    // Ist bereits aufgeräumt, braucht es keinen Timer mehr, der ins Leere läuft.
-    if (!done) armTimer();
 }
 
 /**
@@ -231,7 +156,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
             // Umweg über den Blob, damit dieselben Bytes auch zum Drucken zur Verfügung
             // stehen – PDF.js übernimmt den ArrayBuffer und leert ihn dabei.
             const blob = await response.blob();
-            if (!(await isPdfBlob(blob))) {
+            if (!(await istPdfBlob(blob))) {
                 throw new Error('Geladene Datei ist kein gültiges PDF-Dokument.');
             }
             const data = await blob.arrayBuffer();
@@ -264,7 +189,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
         if (!cached || cached.src !== url) return;
         // Frische Object-URL pro Druck – der Druck-Frame gibt sie selbst wieder frei.
         // Dadurch kann kein Aufräumen der Vorschau die Quelle unter dem Druck wegziehen.
-        openPrintFrame(URL.createObjectURL(cached.blob), true);
+        oeffneDruckFenster(URL.createObjectURL(cached.blob), true);
     }, [url]);
 
     /** Ohne Bytes zur aktuell angezeigten URL würde ein leeres Dokument im Drucker landen. */
@@ -336,7 +261,7 @@ export function PdfCanvasViewer({ url, className, showZoomControls = true, showP
             .then(async res => {
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const blob = await res.blob();
-                const isValidPdf = await isPdfBlob(blob);
+                const isValidPdf = await istPdfBlob(blob);
                 if (!isValidPdf) {
                     throw new Error('Geladene Datei ist kein gültiges PDF-Dokument.');
                 }

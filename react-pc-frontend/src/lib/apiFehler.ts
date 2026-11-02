@@ -22,3 +22,34 @@ export async function leseFehlermeldung(res: Response, ersatz: string): Promise<
     }
     return ersatz;
 }
+
+/** Meldung, wenn der Server gar nicht erreichbar ist. */
+export const KEINE_VERBINDUNG = 'Keine Verbindung zum Server. Bitte prüfen Sie die Verbindung und versuchen Sie es erneut.';
+
+/**
+ * `fetch` mit verständlichen Fehlern: Jeder Fehlschlag wirft einen `Error` mit
+ * einem Satz, den man dem Nutzer zeigen kann – die Meldung des Servers, sonst
+ * `ersatz` (bzw. {@link KEINE_VERBINDUNG}, wenn der Server nicht antwortet).
+ * CSRF ergänzt der globale Abfangjäger in `main.tsx`.
+ */
+export async function apiAnfrage(url: string, init: RequestInit | undefined, ersatz: string): Promise<Response> {
+    let res: Response;
+    try {
+        res = await fetch(url, init);
+    } catch {
+        throw new Error(KEINE_VERBINDUNG);
+    }
+    if (!res.ok) throw new Error(await leseFehlermeldung(res, ersatz));
+    return res;
+}
+
+/** Wie {@link apiAnfrage}, liefert aber den JSON-Inhalt der Antwort. */
+export async function apiJson<T>(url: string, init: RequestInit | undefined, ersatz: string): Promise<T> {
+    const res = await apiAnfrage(url, init, ersatz);
+    return res.json() as Promise<T>;
+}
+
+/** Text eines gefangenen Fehlers für den Nutzer – bei Nicht-`Error` der Ersatztext. */
+export function fehlerText(err: unknown, ersatz: string): string {
+    return err instanceof Error ? err.message : ersatz;
+}

@@ -3,7 +3,6 @@ import {
     BILD_MAX_EINGABE_BYTES,
     BILD_ZIEL_BYTES,
     bildVerkleinern,
-    formatBytes,
     pruefeBildDatei,
     zielGroesse,
 } from './bildVerkleinern';
@@ -31,14 +30,6 @@ describe('zielGroesse', () => {
     });
     it('ungültige Maße ergeben 0', () => {
         expect(zielGroesse(0, 50, 300)).toEqual({ breite: 0, hoehe: 0 });
-    });
-});
-
-describe('formatBytes', () => {
-    it('KB und MB mit Komma', () => {
-        expect(formatBytes(86_000)).toBe('84 KB');
-        expect(formatBytes(10)).toBe('1 KB');
-        expect(formatBytes(1.5 * 1024 * 1024)).toBe('1,5 MB');
     });
 });
 

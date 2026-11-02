@@ -4,7 +4,8 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { useToast } from '../../../components/ui/toast';
 import { cn } from '../../../lib/utils';
-import { bildVerkleinern, ERLAUBTE_BILD_TYPEN, formatBytes, type BildArt } from './bildVerkleinern';
+import { formatBytes } from '../../../lib/dateiGroesse';
+import { bildVerkleinern, ERLAUBTE_BILD_TYPEN, type BildArt } from './bildVerkleinern';
 import { bildLinkAufbereiten, dataUriBytes, sichereBildUrl } from './signaturSicherheit';
 
 /**

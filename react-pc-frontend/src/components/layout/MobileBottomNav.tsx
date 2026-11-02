@@ -6,7 +6,7 @@ import {
     X, FileText, User, Truck, ShoppingCart, FileCheck,
     BarChart3, Euro, Home, Layers, Calendar,
     CalendarDays, Plane, FileJson, ChevronRight, Stethoscope,
-    Phone, Voicemail
+    Phone, Voicemail, FolderOpen
 } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 import { useTelefonBerechtigung } from '../../features/telefon/useTelefonBerechtigung';
@@ -66,6 +66,7 @@ const MORE_SECTIONS: NavSection[] = [
         items: [
             { name: 'Leistungen & Kategorien', href: '/leistungen', icon: Layers },
             { name: 'Textvorlagen', href: '/textbausteine', icon: FileText },
+            { name: 'Firmendokumente', href: '/firmendokumente', icon: FolderOpen },
         ]
     },
     {

@@ -20,6 +20,7 @@ import org.example.kalkulationsprogramm.domain.TelefonAnruf;
 import org.example.kalkulationsprogramm.domain.TelefonAnrufArt;
 import org.example.kalkulationsprogramm.domain.TelefonZuordnung;
 import org.example.kalkulationsprogramm.dto.Telefon.KontaktKurzDto;
+import org.example.kalkulationsprogramm.util.LikeMuster;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDate;
@@ -44,7 +45,7 @@ final class AnrufSuche {
 
     static final int MAX_SUCHE = 100;
     static final int MAX_WOERTER = 6;
-    private static final char ESCAPE = '\\';
+    private static final char ESCAPE = LikeMuster.ESCAPE;
 
     private AnrufSuche() {
     }
@@ -110,7 +111,7 @@ final class AnrufSuche {
                 .filter(w -> !w.isEmpty())
                 .distinct()
                 .limit(MAX_WOERTER)
-                .map(w -> "%" + escapeLike(w) + "%")
+                .map(w -> "%" + LikeMuster.escape(w) + "%")
                 .toList();
     }
 
@@ -230,17 +231,5 @@ final class AnrufSuche {
                 cb.or(wie(cb, a.get("bauvorhaben"), muster),
                         wie(cb, a.get("projektStrasse"), muster),
                         wie(cb, a.get("projektOrt"), muster)));
-    }
-
-    static String escapeLike(String s) {
-        StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '%' || c == '_' || c == ESCAPE) {
-                sb.append(ESCAPE);
-            }
-            sb.append(c);
-        }
-        return sb.toString();
     }
 }

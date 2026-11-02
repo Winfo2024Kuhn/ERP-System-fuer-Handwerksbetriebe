@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-    GRUND, MAX_BILD_BYTES, einfuegenTaste, OBERSTE_EBENE, anzahlText, baueBaum, beschreibungsVorschlag, dokumentTypText,
-    einheitJe, einheitKurz, einheitName, ersteDatei, formatDatum, formatPreis, formatZahl, hatUnterordner,
+    GRUND, MAX_BILD_BYTES, einfuegenTaste, anzahlText, baueBaum, beschreibungsVorschlag, dokumentTypText,
+    einheitJe, einheitKurz, einheitName, ersteDatei, formatPreis, formatZahl, hatUnterordner,
     jahresOptionen, kinderVon, leistungPasst, leistungenImOrdner, leistungenWandernHinweis, leistungsZaehler,
-    leistungZielSperre, nachfahren, normalisiereLeistung, normalisiereOrdner, ordnerKette, ordnerZielSperre,
-    passtZurSuche, pfadText, projekteSatz, pruefeBilddatei, relativerPfad, sichtbareZeilen, suche,
+    leistungZielSperre, normalisiereLeistung, normalisiereOrdner, ordnerKette, ordnerZielSperre,
+    pfadText, projekteSatz, pruefeBilddatei, relativerPfad, sichtbareZeilen, suche,
     umzugZielSperre, weitereAnzahl, zaehlerAriaLabel, zieleFuerLeistung, zieleFuerOrdnerVerschieben,
     zieleFuerUmzug,
 } from './ordnerLogik';
 import type { Leistung, Ordner } from './typen';
 import type { Baum } from './ordnerLogik';
+import { OBERSTE_EBENE } from '../../lib/ordnerBaum';
 
 function ordner(id: number, name: string, parentId: number | null, extra: Partial<Ordner> = {}): Ordner {
     return {
@@ -93,11 +94,9 @@ describe('Baum', () => {
         expect(kinderVon(verwaist, null).map((o) => o.id)).toEqual([1]);
     });
 
-    it('kennt Unterordner, Nachfahren, Kette und Pfad', () => {
+    it('kennt Unterordner, Kette und Pfad', () => {
         expect(hatUnterordner(baum, 2)).toBe(true);
         expect(hatUnterordner(baum, 3)).toBe(false);
-        expect([...nachfahren(baum, 1)].sort()).toEqual([2, 3, 4, 5]);
-        expect(nachfahren(baum, 6).size).toBe(0);
         expect(ordnerKette(baum, 3).map((o) => o.id)).toEqual([1, 2, 3]);
         expect(ordnerKette(baum, 99)).toEqual([]);
         expect(pfadText(baum, 3)).toBe('Metallbau › Geländer › Edelstahl');
@@ -113,7 +112,6 @@ describe('Baum', () => {
             kinder: new Map([[1, [ordner(2, 'B', 1)]], [2, [ordner(1, 'A', 2)]]]),
         };
         expect(ordnerKette(zyklus, 1).map((o) => o.id)).toEqual([2, 1]);
-        expect([...nachfahren(zyklus, 1)]).toEqual([2]);
         expect(sichtbareZeilen({ ...zyklus, kinder: new Map([[null, [ordner(1, 'A', null)]], [1, [ordner(1, 'A', null)]]]) }, new Set([1])))
             .toHaveLength(1);
     });
@@ -161,7 +159,6 @@ describe('Suche', () => {
         expect(perBeschreibung.leistungen.map((l) => l.id)).toEqual([10]);
         expect([...perBeschreibung.ordnerIds].sort()).toEqual([1, 2, 3]);
         expect(suche(baum, LEISTUNGEN, 'ohne ordner')!.leistungen).toEqual([]);
-        expect(passtZurSuche('Geländer', ' GELÄN ')).toBe(true);
         expect(leistungPasst(LEISTUNGEN[1], 'stahl')).toBe(true);
         expect(leistungPasst(LEISTUNGEN[1], 'holz')).toBe(false);
     });
@@ -253,10 +250,6 @@ describe('Texte und Zahlen', () => {
         expect(formatZahl(1.744, 2)).toBe('1,74');
         expect(formatZahl(3)).toBe('3');
         expect(formatPreis(12.5).replace(/\s/g, ' ')).toBe('12,50 €');
-        expect(formatDatum('2026-03-02')).toBe('02.03.2026');
-        expect(formatDatum('2026-03-02T10:00:00')).toBe('02.03.2026');
-        expect(formatDatum(null)).toBe('');
-        expect(formatDatum('gestern')).toBe('');
     });
 
     it('kennt Kurzformen der Einheiten', () => {

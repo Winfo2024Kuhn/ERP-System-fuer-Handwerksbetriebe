@@ -1,10 +1,10 @@
 import { useId, useState, type ReactNode } from 'react';
 import { FolderInput, Loader2 } from 'lucide-react';
-import { Button } from '../../components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
-import { useToast } from '../../components/ui/toast';
+import { Button } from '../ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import { useToast } from '../ui/toast';
 import { OrdnerZielAuswahl } from './OrdnerZielAuswahl';
-import type { ZielEintrag } from './typen';
+import type { ZielEintrag } from '../../lib/ordnerBaum';
 
 export interface VerschiebenDialogProps {
     titel: string;

@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service.telefon;
 
+import org.example.kalkulationsprogramm.service.datei.UuidDateiablage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,7 +25,7 @@ class SprachnachrichtDateiablageTest {
         SprachnachrichtDateiablage ablage = new SprachnachrichtDateiablage(tmp.toString());
         String name = ablage.speichere(new byte[]{1, 2, 3});
 
-        assertThat(SprachnachrichtDateiablage.istGueltigerName(name)).isTrue();
+        assertThat(UuidDateiablage.istGueltigerName(name, ".wav")).isTrue();
         Path pfad = ablage.pfad(name);
         assertThat(pfad).startsWith(tmp.resolve("sprachnachrichten").toAbsolutePath());
         assertThat(Files.readAllBytes(pfad)).containsExactly(1, 2, 3);
@@ -42,7 +43,7 @@ class SprachnachrichtDateiablageTest {
     @DisplayName("Fremde oder bösartige Dateinamen werden abgelehnt (Path Traversal)")
     void ungueltigeNamen(String name) {
         SprachnachrichtDateiablage ablage = new SprachnachrichtDateiablage(tmp.toString());
-        assertThat(SprachnachrichtDateiablage.istGueltigerName(name)).isFalse();
+        assertThat(UuidDateiablage.istGueltigerName(name, ".wav")).isFalse();
         assertThatThrownBy(() -> ablage.pfad(name)).isInstanceOf(IllegalArgumentException.class);
         ablage.loesche(name);
     }
