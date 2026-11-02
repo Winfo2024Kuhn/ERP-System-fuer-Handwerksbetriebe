@@ -351,7 +351,7 @@ jobs:
   # ubuntu-latest vorinstalliert; die PCs laufen mit Windows PowerShell 5, also weiter
   # nur PS5-Syntax verwenden (kein ??, kein ?:, kein &&).
   launcher_skripte:
-    name: Launcher-Skripte (Syntax)
+    name: Skripte (Syntax & Tests)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -378,10 +378,15 @@ jobs:
       - name: Bash-Skripte pruefen
         run: |
           fehler=0
-          for f in src/main/resources/openfile-launcher/launcher-mac.sh src/main/resources/openfile-launcher/einrichten-mac.command; do
+          for f in src/main/resources/openfile-launcher/launcher-mac.sh src/main/resources/openfile-launcher/einrichten-mac.command \
+                   scripts/claude-haupt-checkout-pruefen.sh scripts/claude-haupt-checkout-pruefen.test.sh; do
             if bash -n "$f"; then echo "OK $f"; else echo "::error file=$f::Syntaxfehler"; fehler=1; fi
           done
           exit "$fehler"
+
+      # SessionStart-Hook, der den Haupt-Checkout fuer Claude-Sitzungen aktuell haelt.
+      - name: Haupt-Checkout-Hook testen
+        run: bash scripts/claude-haupt-checkout-pruefen.test.sh
 
   quality_gate:
     name: PR Quality Gate
