@@ -42,3 +42,9 @@ export function parseDeutschesDatum(entwurf: string): string | null {
     const iso = `${jahr}-${monat.padStart(2, '0')}-${tag.padStart(2, '0')}`;
     return parseIsoDatum(iso) ? iso : null;
 }
+
+/** ISO-Datum oder -Zeitpunkt (`2026-03-02`, `2026-03-02T10:00:00`) als „02.03.2026“; leer bei fehlendem oder kaputtem Wert. */
+export function formatDatum(iso: string | null | undefined): string {
+    const treffer = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
+    return treffer ? `${treffer[3]}.${treffer[2]}.${treffer[1]}` : '';
+}

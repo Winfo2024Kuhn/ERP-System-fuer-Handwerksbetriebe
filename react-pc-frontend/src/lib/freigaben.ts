@@ -5,7 +5,7 @@
  * erreichbar: kein Menüpunkt, kein Link aus der KI-Hilfe, und die Adresse
  * leitet um. Freigeben heißt: Schalter auf `true` setzen,
  * `docs/BESTELLWESEN.md` anpassen und die Seite im KI-Hilfe-Prompt
- * (`KiHilfeService.BASE_SYSTEM_PROMPT`) wieder eintragen.
+ * (`src/main/resources/kihilfe/hinweistext.md`) wieder eintragen.
  */
 
 /** Seite „Bedarf“ (Einkauf): Material, das für Projekte noch bestellt werden muss. */

@@ -1,5 +1,9 @@
 import { VERRECHNUNGSEINHEITEN, type VerrechnungseinheitName } from '../../types';
 import { htmlZuEinzeiler } from '../../lib/htmlSanitizer';
+import {
+    alleInReihenfolge, baueBaum, OBERSTE_EBENE, hatUnterordner, kinderVon, nachfahren, nachName, ordnerKette, passtZurSuche, pfadText,
+    sichtbareZeilen, type Baum as AllgemeinerBaum, type BaumZeile as AllgemeineBaumZeile,
+} from '../../lib/ordnerBaum';
 import type { Leistung, LeistungDto, Ordner, OrdnerDto, ZielEintrag } from './typen';
 
 /**
@@ -59,70 +63,12 @@ export function normalisiereLeistung(dto: LeistungDto): Leistung {
 }
 
 // ---------------------------------------------------------------------------
-// Baum
+// Baum (gemeinsame Logik aus `lib/ordnerBaum.ts`, hier auf den Leistungs-Ordner festgelegt)
 // ---------------------------------------------------------------------------
 
-export interface Baum {
-    byId: Map<number, Ordner>;
-    /** Kinder je Eltern-ID (`null` = Hauptordner), nach Name sortiert. */
-    kinder: Map<number | null, Ordner[]>;
-}
-
-const nachName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' });
-
-export function baueBaum(ordner: Ordner[]): Baum {
-    const byId = new Map(ordner.map((o) => [o.id, o]));
-    const kinder = new Map<number | null, Ordner[]>();
-    for (const o of ordner) {
-        // Unbekannter Eltern-Ordner (z. B. gerade ausgeblendet): als Hauptordner zeigen statt verschwinden lassen.
-        const eltern = o.parentId !== null && byId.has(o.parentId) ? o.parentId : null;
-        const liste = kinder.get(eltern) ?? [];
-        liste.push(o);
-        kinder.set(eltern, liste);
-    }
-    for (const liste of kinder.values()) liste.sort(nachName);
-    return { byId, kinder };
-}
-
-export function kinderVon(baum: Baum, id: number | null): Ordner[] {
-    return baum.kinder.get(id) ?? [];
-}
-
-export function hatUnterordner(baum: Baum, id: number): boolean {
-    return kinderVon(baum, id).length > 0;
-}
-
-/** Alle Unterordner (beliebig tief), ohne den Ordner selbst. */
-export function nachfahren(baum: Baum, id: number): Set<number> {
-    const ergebnis = new Set<number>();
-    const stapel = [id];
-    while (stapel.length) {
-        const aktuell = stapel.pop() as number;
-        for (const kind of kinderVon(baum, aktuell)) {
-            if (kind.id === id || ergebnis.has(kind.id)) continue;
-            ergebnis.add(kind.id);
-            stapel.push(kind.id);
-        }
-    }
-    return ergebnis;
-}
-
-/** Kette vom Hauptordner bis zum Ordner selbst. Sicher gegen kaputte (zyklische) Daten. */
-export function ordnerKette(baum: Baum, id: number): Ordner[] {
-    const kette: Ordner[] = [];
-    const gesehen = new Set<number>();
-    let aktuell = baum.byId.get(id);
-    while (aktuell && !gesehen.has(aktuell.id)) {
-        gesehen.add(aktuell.id);
-        kette.unshift(aktuell);
-        aktuell = aktuell.parentId === null ? undefined : baum.byId.get(aktuell.parentId);
-    }
-    return kette;
-}
-
-export function pfadText(baum: Baum, id: number, trenner = ' › '): string {
-    return ordnerKette(baum, id).map((o) => o.name).join(trenner);
-}
+export type Baum = AllgemeinerBaum<Ordner>;
+export type BaumZeile = AllgemeineBaumZeile<Ordner>;
+export { baueBaum, hatUnterordner, kinderVon, ordnerKette, pfadText, sichtbareZeilen };
 
 export interface Zaehler {
     /** Leistungen direkt in diesem Ordner. */
@@ -173,10 +119,6 @@ export interface Suchergebnis {
     leistungen: Leistung[];
 }
 
-export function passtZurSuche(text: string, suchtext: string): boolean {
-    return text.toLocaleLowerCase('de').includes(suchtext.trim().toLocaleLowerCase('de'));
-}
-
 export function leistungPasst(leistung: Leistung, suchtext: string): boolean {
     return passtZurSuche(leistung.name, suchtext) || passtZurSuche(htmlZuEinzeiler(leistung.beschreibung), suchtext);
 }
@@ -201,34 +143,6 @@ export function suche(baum: Baum, leistungen: Leistung[], suchtext: string): Suc
     for (const id of namensTreffer) zeige(id);
     for (const l of leistungsTreffer) zeige(l.ordnerId as number);
     return { ordnerIds, aufklappen, namensTreffer, leistungen: leistungsTreffer.sort(nachName) };
-}
-
-// ---------------------------------------------------------------------------
-// Sichtbare Zeilen (für Tastatur-Bedienung des Baums)
-// ---------------------------------------------------------------------------
-
-export interface BaumZeile {
-    ordner: Ordner;
-    ebene: number;
-    hatKinder: boolean;
-    aufgeklappt: boolean;
-}
-
-export function sichtbareZeilen(baum: Baum, aufgeklappt: Set<number>, filter?: Set<number> | null): BaumZeile[] {
-    const zeilen: BaumZeile[] = [];
-    const gesehen = new Set<number>();
-    const besuche = (elternId: number | null, ebene: number) => {
-        for (const o of kinderVon(baum, elternId)) {
-            if (gesehen.has(o.id) || (filter && !filter.has(o.id))) continue;
-            gesehen.add(o.id);
-            const kinder = kinderVon(baum, o.id).filter((k) => !filter || filter.has(k.id));
-            const offen = kinder.length > 0 && aufgeklappt.has(o.id);
-            zeilen.push({ ordner: o, ebene, hatKinder: kinder.length > 0, aufgeklappt: offen });
-            if (offen) besuche(o.id, ebene + 1);
-        }
-    };
-    besuche(null, 0);
-    return zeilen;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,13 +200,6 @@ export function umzugZielSperre(baum: Baum, zaehler: Map<number, Zaehler>, id: n
     return null;
 }
 
-/** Alle Ordner in Baum-Reihenfolge, je mit Einrückung. */
-function alleInReihenfolge(baum: Baum): { ordner: Ordner; ebene: number }[] {
-    const alle = new Set(baum.byId.keys());
-    return sichtbareZeilen(baum, alle).map((z) => ({ ordner: z.ordner, ebene: z.ebene }));
-}
-
-export const OBERSTE_EBENE = 'Oberste Ebene (kein übergeordneter Ordner)';
 
 export function zieleFuerOrdnerVerschieben(baum: Baum, zaehler: Map<number, Zaehler>, id: number): ZielEintrag[] {
     return [
@@ -428,12 +335,6 @@ export function dokumentTypText(typ: string | null | undefined): string {
     if (bekannt) return bekannt;
     const klein = typ.replace(/_/g, ' ').toLocaleLowerCase('de');
     return klein.charAt(0).toLocaleUpperCase('de') + klein.slice(1);
-}
-
-/** ISO-Datum (`2026-03-02`) als „02.03.2026“; leer bei fehlendem oder kaputtem Wert. */
-export function formatDatum(iso: string | null | undefined): string {
-    const treffer = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
-    return treffer ? `${treffer[3]}.${treffer[2]}.${treffer[1]}` : '';
 }
 
 /** Jahresauswahl: „Alle Jahre“ + die letzten 10 Jahre. */

@@ -25,7 +25,7 @@ import {
     pruefeBilddatei, zieleFuerLeistung, zieleFuerOrdnerVerschieben, zieleFuerUmzug,
 } from './ordnerLogik';
 import { UebersichtAuswertung } from './UebersichtAuswertung';
-import { VerschiebenDialog } from './VerschiebenDialog';
+import { VerschiebenDialog } from '../../components/ordner/VerschiebenDialog';
 import { useVerzoegertesLoeschen } from './useVerzoegertesLoeschen';
 import type { Leistung, LeistungVerwendung, Loeschpruefung, LoeschModus, Ordner, ReiterId, ZiehObjekt } from './typen';
 

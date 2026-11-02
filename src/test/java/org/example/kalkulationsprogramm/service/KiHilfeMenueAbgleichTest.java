@@ -1,5 +1,6 @@
 package org.example.kalkulationsprogramm.service;
 
+import org.example.kalkulationsprogramm.service.kihilfe.KiHilfeHinweistext;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -66,7 +67,7 @@ class KiHilfeMenueAbgleichTest {
             ROUTEN.add(r.group(1));
         }
 
-        String prompt = KiHilfeService.BASE_SYSTEM_PROMPT;
+        String prompt = KiHilfeHinweistext.basis();
         int nav = prompt.indexOf("## Navigationsstruktur");
         int links = prompt.indexOf("## Seitenlinks");
         int tabelle = prompt.indexOf("| Seite | Link |", links);
@@ -106,7 +107,7 @@ class KiHilfeMenueAbgleichTest {
                         .forEach(name -> fehlt.add(kategorie + " → " + gruppe + " → „" + name + "“"));
             });
         });
-        assertThat(fehlt).as("Im Hinweistext der KI-Hilfe (KiHilfeService) fehlen Menüpunkte").isEmpty();
+        assertThat(fehlt).as("Im Hinweistext der KI-Hilfe (" + KiHilfeHinweistext.RESSOURCE + ") fehlen Menüpunkte").isEmpty();
     }
 
     @Test

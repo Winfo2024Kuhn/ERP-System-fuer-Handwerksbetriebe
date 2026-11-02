@@ -1,4 +1,4 @@
-import { leseFehlermeldung } from '../../lib/apiFehler';
+import { apiAnfrage as anfrage, apiJson as json } from '../../lib/apiFehler';
 import { normalisiereLeistung, normalisiereOrdner } from './ordnerLogik';
 import type {
     AuswertungZeile, Leistung, LeistungDto, LeistungVerwendung, Loeschpruefung, LoeschModus, Ordner, OrdnerDto,
@@ -11,24 +11,6 @@ import type {
  * dem Nutzer zeigen kann – bei 400/409 die `message` aus dem Backend, sonst
  * einen Ersatztext. CSRF ergänzt der globale Abfangjäger in `main.tsx`.
  */
-
-const KEINE_VERBINDUNG = 'Keine Verbindung zum Server. Bitte prüfen Sie die Verbindung und versuchen Sie es erneut.';
-
-async function anfrage(url: string, init: RequestInit | undefined, ersatz: string): Promise<Response> {
-    let res: Response;
-    try {
-        res = await fetch(url, init);
-    } catch {
-        throw new Error(KEINE_VERBINDUNG);
-    }
-    if (!res.ok) throw new Error(await leseFehlermeldung(res, ersatz));
-    return res;
-}
-
-async function json<T>(url: string, init: RequestInit | undefined, ersatz: string): Promise<T> {
-    const res = await anfrage(url, init, ersatz);
-    return res.json() as Promise<T>;
-}
 
 const JSON_KOPF = { 'Content-Type': 'application/json' };
 

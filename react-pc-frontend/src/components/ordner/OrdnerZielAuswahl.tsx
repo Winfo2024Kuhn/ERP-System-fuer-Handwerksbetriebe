@@ -1,9 +1,8 @@
 import { useId, useMemo, useState } from 'react';
 import { Folder, Search } from 'lucide-react';
-import { Input } from '../../components/ui/input';
+import { Input } from '../ui/input';
 import { cn } from '../../lib/utils';
-import { passtZurSuche } from './ordnerLogik';
-import type { ZielEintrag } from './typen';
+import { passtZurSuche, type ZielEintrag } from '../../lib/ordnerBaum';
 
 export interface OrdnerZielAuswahlProps {
     ziele: ZielEintrag[];

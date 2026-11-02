@@ -4,7 +4,8 @@ import { Button } from '../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { useToast } from '../../components/ui/toast';
 import { InfoLeistungLoeschen } from './InfoTexte';
-import { dokumentTypText, formatDatum, weitereAnzahl } from './ordnerLogik';
+import { formatDatum } from '../../lib/datum';
+import { dokumentTypText, weitereAnzahl } from './ordnerLogik';
 import type { LeistungVerwendung } from './typen';
 
 export interface LeistungLoeschenDialogProps {

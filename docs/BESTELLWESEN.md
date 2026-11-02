@@ -22,7 +22,7 @@ Das Bestellen aus dem Programm ist fachlich noch nicht fertig. Die Schalter daf�
 | `BESTELLBEDARF_AKTIV` | Kein Menüpunkt „Bedarf“. Die Adresse `/bestellungen/bedarf` leitet auf `/bestellungen` um, und die KI-Hilfe verlinkt die Seite nicht. Die Seite selbst (`BestellungEditor`) bleibt im Code. Positionen mit „Bestellen“ entstehen im Projekt weiterhin, sie sind nur nicht als Liste je Lieferant zu sehen. |
 | `BESTELLANFRAGE_PER_EMAIL_AKTIV` | Kein Knopf „E-Mail“ je Lieferant auf der Seite „Bedarf“ (Abschnitt 4.2). |
 
-Bei der Freigabe von „Bedarf“ außerdem den KI-Hilfe-Prompt wieder ergänzen (`KiHilfeService.BASE_SYSTEM_PROMPT`: Menüpunkt unter „Einkauf“ und Zeile in der Linkliste).
+Bei der Freigabe von „Bedarf“ außerdem den KI-Hilfe-Prompt wieder ergänzen (`src/main/resources/kihilfe/hinweistext.md`: Menüpunkt unter „Einkauf“ und Zeile in der Linkliste).
 
 **Vor der Freigabe zu klären:** Bringt ein Lieferanten-Angebot einen neuen Preis, legt `OfferPriceService` einen neuen Preisstand an und schreibt den Preis je Einheit in `preisProStueck` der offenen Positionen. Die Positionen zeigen aber weiter auf den alten Preisstand (`lieferantenArtikelPreis`), und der hat in Anzeige, Nachkalkulation und beim Abhaken Vorrang (Abschnitt 3.2). Deshalb wirkt der Angebotspreis heute nur bei offenen Positionen ohne Preisstand. Ob offene Positionen auf den Angebotspreis umgehängt werden sollen oder bis zum Abhaken beim Kalkulationspreis bleiben, ist noch nicht entschieden.
 

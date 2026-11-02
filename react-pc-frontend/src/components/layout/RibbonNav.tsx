@@ -317,14 +317,16 @@ export function RibbonNavigation() {
                                                         </span>
                                                     )}
                                                 </div>
-                                                {/* max-w-[5.5rem] + break-words statt truncate:
+                                                {/* max-w-[6rem] + break-words statt truncate:
                                                     zweizeilig statt gekuerzt -- "Dokumentenrechte"
                                                     und "Mietabrechnung" stehen sonst als "..." da,
                                                     unabhaengig von der Fenstergroesse (Spec C,
                                                     Befund 3). Macht die Menuezeile hoechstens
-                                                    12px hoeher. */}
+                                                    12px hoeher. 6rem statt 5.5rem, damit ein langes
+                                                    Einzelwort wie "Firmendokumente" nicht mitten im
+                                                    Wort umbricht. */}
                                                 <span className={cn(
-                                                    "text-[10px] font-medium text-center leading-tight max-w-[5.5rem] break-words",
+                                                    "text-[10px] font-medium text-center leading-tight max-w-[6rem] break-words",
                                                     isActive ? "text-rose-700" : "text-slate-600"
                                                 )}>
                                                     {item.name}

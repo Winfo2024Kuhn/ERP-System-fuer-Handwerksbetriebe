@@ -1,0 +1,1 @@
+function e(e){return e<1048576?`${Math.max(1,Math.round(e/1024))} KB`:`${(e/1048576).toFixed(1).replace(`.`,`,`)} MB`}export{e as t};

@@ -65,6 +65,7 @@ public class LocalRagService {
             Map.entry("/textbausteine", List.of("Textbausteine", "TextbausteinBearbeitenDialog", "PlatzhalterLeiste")),
             Map.entry("/leistungen", List.of("LeistungenUndKategorien", "OrdnerBaum", "AuswertungReiter")),
             Map.entry("/arbeitsgaenge", List.of("ArbeitsgangEditor")),
+            Map.entry("/firmendokumente", List.of("Firmendokumente", "FirmendokumentService")),
             Map.entry("/mitarbeiter", List.of("MitarbeiterEditor")),
             Map.entry("/arbeitszeitarten", List.of("ArbeitszeitartEditor")),
             Map.entry("/kalender", List.of("TerminKalender")),

@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { ToastProvider } from '../../components/ui/toast';
+import { ToastProvider } from '../ui/toast';
 import { VerschiebenDialog } from './VerschiebenDialog';
-import type { ZielEintrag } from './typen';
+import type { ZielEintrag } from '../../lib/ordnerBaum';
 
 const ZIELE: ZielEintrag[] = [
     { id: null, name: 'Oberste Ebene (kein übergeordneter Ordner)', ebene: 0, gesperrt: null },

@@ -125,8 +125,3 @@ function fertig(dataUri: string, breite: number, hoehe: number): VerkleinertesBi
     return { dataUri, bytes: dataUriBytes(dataUri), breite, hoehe };
 }
 
-/** „84 KB“ / „1,2 MB“ für die Anzeige. */
-export function formatBytes(bytes: number): string {
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
-}

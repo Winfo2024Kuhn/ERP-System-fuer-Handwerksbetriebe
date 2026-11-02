@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from '../../components/ui/toast';
 import { cn } from '../../lib/utils';
 import { InfoAllesLoeschen, InfoUmziehen } from './InfoTexte';
-import { OrdnerZielAuswahl } from './OrdnerZielAuswahl';
+import { OrdnerZielAuswahl } from '../../components/ordner/OrdnerZielAuswahl';
 import { anzahlText, weitereAnzahl } from './ordnerLogik';
 import type { Loeschpruefung, LoeschModus, Ordner, ZielEintrag } from './typen';
 
