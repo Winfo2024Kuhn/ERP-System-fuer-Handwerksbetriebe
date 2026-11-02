@@ -48,9 +48,12 @@ class BenachrichtigungErledigtServiceTest {
                 eintrag("LIEFERSCHEIN:1", jetzt.minusDays(20)),
                 eintrag("EINGANG_FAELLIG:2", jetzt.minusDays(3)),
                 eintrag("EINGANG_FAELLIG:3", jetzt.minusDays(8)),
-                eintrag("MONATSABSCHLUSS:2026-09", jetzt.minusDays(10))));
+                eintrag("MONATSABSCHLUSS:2026-09", jetzt.minusDays(10)),
+                eintrag("ANFRAGE_WEBSEITE:4", jetzt.minusDays(30))));
 
-        assertThat(service.erledigteSchluessel(7L)).containsExactlyInAnyOrder("LIEFERSCHEIN:1", "EINGANG_FAELLIG:2");
+        // Eine weggeklickte Webseiten-Anfrage ist für immer erledigt (z. B. nach einem Anruf).
+        assertThat(service.erledigteSchluessel(7L))
+                .containsExactlyInAnyOrder("LIEFERSCHEIN:1", "EINGANG_FAELLIG:2", "ANFRAGE_WEBSEITE:4");
     }
 
     @Test
@@ -100,10 +103,10 @@ class BenachrichtigungErledigtServiceTest {
 
     @Test
     void aufraeumenLoeschtNachAufbewahrungsfrist() {
-        given(repository.deleteAelterAls(any())).willReturn(3);
+        given(repository.deleteAelterAls(any(), any())).willReturn(3);
         service.aufraeumen();
         ArgumentCaptor<LocalDateTime> grenze = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(repository).deleteAelterAls(grenze.capture());
+        verify(repository).deleteAelterAls(grenze.capture(), eq("ANFRAGE_WEBSEITE:%"));
         assertThat(grenze.getValue()).isBefore(LocalDateTime.now().minusDays(44));
         verify(repository, never()).saveAllAndFlush(any());
     }
@@ -112,6 +115,7 @@ class BenachrichtigungErledigtServiceTest {
     void dauerHinweisErkennung() {
         assertThat(BenachrichtigungErledigtService.istDauerHinweis("VERPASSTER_ANRUF:7")).isTrue();
         assertThat(BenachrichtigungErledigtService.istDauerHinweis("TERMIN:7")).isFalse();
+        assertThat(BenachrichtigungErledigtService.istDauerHinweis("ANFRAGE_WEBSEITE:7")).isFalse();
         assertThat(BenachrichtigungErledigtService.istDauerHinweis("REKLAMATION")).isFalse();
         assertThat(BenachrichtigungErledigtService.istDauerHinweis(null)).isFalse();
     }

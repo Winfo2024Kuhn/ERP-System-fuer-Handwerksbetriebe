@@ -448,9 +448,9 @@ public class BenachrichtigungService {
                 1);
     }
 
-    /** Webseiten-Anfragen (Funnel) – immer zuoberst. Umgewandelte/abgeschlossene fallen raus. */
+    /** Webseiten-Anfragen (Funnel) – immer zuoberst. Nur solange wir dem Kunden noch nicht geantwortet haben. */
     private Quelle<?> webseitenAnfragen() {
-        List<Anfrage> anfragen = anfrageRepository.findOffeneFunnelAnfragen(AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN);
+        List<Anfrage> anfragen = anfrageRepository.findUnbeantworteteFunnelAnfragen(AnfrageFunnelService.SYSTEM_MITARBEITER_TOKEN);
         return Quelle.von("ANFRAGEN_WEBSEITE", "Neue Anfragen über Webseite", "Globe", "/anfragen", anfragen,
                 a -> "ANFRAGE_WEBSEITE:" + a.getId(),
                 a -> {

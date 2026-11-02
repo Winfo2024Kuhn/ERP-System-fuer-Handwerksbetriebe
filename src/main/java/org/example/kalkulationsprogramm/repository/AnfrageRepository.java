@@ -102,10 +102,14 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
      List<Anfrage> findByKundenEmail(@org.springframework.data.repository.query.Param("email") String email);
 
      /**
-      * Findet alle noch nicht in ein Projekt umgewandelten Anfragen, die über den
-      * Webseiten-Funnel hereingekommen sind (Notiz vom System-Mitarbeiter mit dem
-      * gegebenen Login-Token). Sortiert nach Anfrage-Anlagezeit absteigend, damit
-      * im Notification Center die neueste Anfrage zuerst erscheint.
+      * Findet alle Anfragen aus dem Webseiten-Funnel (Notiz vom System-Mitarbeiter mit dem
+      * gegebenen Login-Token), die noch auf eine Antwort warten: nicht in ein Projekt
+      * umgewandelt, nicht abgeschlossen, und es ging weder eine eigene E-Mail (die
+      * automatische Eingangsbestätigung zählt nicht) noch ein Dokument an den Kunden raus.
+      * Eine als unzustellbar zurückgekommene Mail ist keine Antwort – der Kunde hat sie nie
+      * bekommen. Eine verschickte Mail im Papierkorb zählt dagegen weiter: Sie ging ja raus.
+      * Sortiert nach Anfrage-Anlagezeit absteigend, damit in der Glocke die neueste
+      * Anfrage zuerst erscheint.
       */
      @Query("""
                SELECT DISTINCT a FROM Anfrage a
@@ -115,14 +119,24 @@ public interface AnfrageRepository extends JpaRepository<Anfrage, Long> {
                WHERE a.projekt IS NULL
                  AND a.abgeschlossen = false
                  AND m.loginToken = :token
+                 AND NOT EXISTS (
+                     SELECT 1 FROM Email e
+                     WHERE e.anfrage = a
+                       AND e.direction = org.example.kalkulationsprogramm.domain.EmailDirection.OUT
+                       AND e.automatischeBestaetigung = false
+                       AND e.zustellStatus <> org.example.kalkulationsprogramm.domain.ZustellStatus.UNZUSTELLBAR)
+                 AND NOT EXISTS (
+                     SELECT 1 FROM AusgangsGeschaeftsDokument d
+                     WHERE d.anfrage = a
+                       AND d.versandDatum IS NOT NULL)
                ORDER BY a.createdAt DESC
                """)
-     List<Anfrage> findOffeneFunnelAnfragen(@org.springframework.data.repository.query.Param("token") String token);
+     List<Anfrage> findUnbeantworteteFunnelAnfragen(@org.springframework.data.repository.query.Param("token") String token);
 
      /**
       * IDs aller Anfragen, die über den Webseiten-Funnel hereingekommen sind –
       * unabhängig davon, ob sie noch offen sind. Erkennungsmerkmal ist wie bei
-      * {@link #findOffeneFunnelAnfragen} die Notiz des System-Mitarbeiters.
+      * {@link #findUnbeantworteteFunnelAnfragen} die Notiz des System-Mitarbeiters.
       */
      @Query("""
                SELECT DISTINCT a.id FROM Anfrage a

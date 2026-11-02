@@ -28,6 +28,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>Ereignisse (neuer Lieferschein, Termin, Bautagebuch …) bleiben nach dem Wegklicken weg.
  * Dauer-Hinweise – Dinge, die offen bleiben, bis jemand sie bearbeitet (überfällige Rechnung,
  * offener Urlaubsantrag …) – erinnern nach {@link #ERINNERN_NACH_TAGEN} Tagen erneut.
+ *
+ * <p>Webseiten-Anfragen verschwinden von selbst, sobald wir dem Kunden geantwortet haben.
+ * Wer eine trotzdem wegklickt (z. B. nach einem Anruf), hat sie erledigt – für immer.
  */
 @Slf4j
 @Service
@@ -41,12 +44,18 @@ public class BenachrichtigungErledigtService {
     static final int AUFBEWAHREN_TAGE = 45;
 
     /**
+     * Webseiten-Anfragen haben kein Zeitfenster: Eine offene Anfrage taucht auch nach Monaten
+     * noch auf. Ihr „Erledigt“ darf deshalb beim Aufräumen nicht gelöscht werden.
+     */
+    static final String NIE_AUFRAEUMEN_MUSTER = "ANFRAGE_WEBSEITE:%";
+
+    /**
      * Arten, die offen bleiben, bis jemand sie bearbeitet – sie erinnern nach einer Woche erneut.
      * SICHERUNG/UPDATE: Eine weggeklickte Meldung „seit über einem Tag keine Sicherung“ darf nicht
      * für immer verschwinden, solange die Sicherung weiter ausfällt.
      */
     static final Set<String> DAUER_HINWEISE = Set.of(
-            "ANFRAGE_WEBSEITE", "URLAUBSANTRAG", "EINGANG_FAELLIG", "AUSGANG_UEBERFAELLIG",
+            "URLAUBSANTRAG", "EINGANG_FAELLIG", "AUSGANG_UEBERFAELLIG",
             "REKLAMATION", "MONATSABSCHLUSS", "SPRACHNACHRICHT", "VERPASSTER_ANRUF", "SICHERUNG", "UPDATE");
 
     private final BenachrichtigungErledigtRepository repository;
@@ -112,7 +121,8 @@ public class BenachrichtigungErledigtService {
     @Scheduled(cron = "0 20 3 * * *")
     @Transactional
     public void aufraeumen() {
-        int geloescht = repository.deleteAelterAls(LocalDateTime.now().minusDays(AUFBEWAHREN_TAGE));
+        int geloescht = repository.deleteAelterAls(
+                LocalDateTime.now().minusDays(AUFBEWAHREN_TAGE), NIE_AUFRAEUMEN_MUSTER);
         if (geloescht > 0) {
             log.info("Glocke: {} alte erledigte Einträge gelöscht", geloescht);
         }
