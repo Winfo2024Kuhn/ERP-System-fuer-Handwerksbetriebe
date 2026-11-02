@@ -20,6 +20,6 @@ public interface BenachrichtigungErledigtRepository extends JpaRepository<Benach
             @Param("schluessel") Collection<String> schluessel);
 
     @Modifying
-    @Query("DELETE FROM BenachrichtigungErledigt e WHERE e.erledigtAm < :grenze")
-    int deleteAelterAls(@Param("grenze") LocalDateTime grenze);
+    @Query("DELETE FROM BenachrichtigungErledigt e WHERE e.erledigtAm < :grenze AND e.schluessel NOT LIKE :behalten")
+    int deleteAelterAls(@Param("grenze") LocalDateTime grenze, @Param("behalten") String behaltenMuster);
 }

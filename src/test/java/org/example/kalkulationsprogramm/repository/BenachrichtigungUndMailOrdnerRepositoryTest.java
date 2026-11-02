@@ -47,15 +47,19 @@ class BenachrichtigungUndMailOrdnerRepositoryTest {
         erledigt(max, "TERMIN:1", jetzt);
         erledigt(max, "LIEFERSCHEIN:2", jetzt.minusDays(50));
         erledigt(erika, "TERMIN:1", jetzt);
+        erledigt(max, "ANFRAGE_WEBSEITE:3", jetzt.minusDays(90));
 
         assertThat(erledigtRepository.findByBenutzerId(max.getId()))
                 .extracting(BenachrichtigungErledigt::getSchluessel)
-                .containsExactlyInAnyOrder("TERMIN:1", "LIEFERSCHEIN:2");
+                .containsExactlyInAnyOrder("TERMIN:1", "LIEFERSCHEIN:2", "ANFRAGE_WEBSEITE:3");
         assertThat(erledigtRepository.findByBenutzerIdAndSchluesselIn(max.getId(), List.of("TERMIN:1", "TERMIN:9")))
                 .singleElement().satisfies(e -> assertThat(e.getSchluessel()).isEqualTo("TERMIN:1"));
 
-        assertThat(erledigtRepository.deleteAelterAls(jetzt.minusDays(45))).isEqualTo(1);
-        assertThat(erledigtRepository.findByBenutzerId(max.getId())).hasSize(1);
+        // Eine erledigte Webseiten-Anfrage bleibt erledigt, auch wenn sie alt ist.
+        assertThat(erledigtRepository.deleteAelterAls(jetzt.minusDays(45), "ANFRAGE_WEBSEITE:%")).isEqualTo(1);
+        assertThat(erledigtRepository.findByBenutzerId(max.getId()))
+                .extracting(BenachrichtigungErledigt::getSchluessel)
+                .containsExactlyInAnyOrder("TERMIN:1", "ANFRAGE_WEBSEITE:3");
         assertThat(erledigtRepository.findByBenutzerId(erika.getId())).hasSize(1);
     }
 
