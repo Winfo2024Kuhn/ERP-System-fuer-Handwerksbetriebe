@@ -6,7 +6,9 @@ Vor jeder anderen Aktion einer Sitzung – noch vor dem ersten Code-Lesen – `g
 - **Haupt-Checkout auf `main`:** `git pull --ff-only`. Bricht das ab, weil lokale Änderungen (oft von anderen Sessions) im Weg sind: nichts stashen, verwerfen oder überschreiben, sondern dem Nutzer melden und für die eigene Arbeit einen Worktree von `origin/main` anlegen.
 - **Eigener Worktree / Feature-Branch:** `origin/main` hineinholen (im App-Worktree über `mcp__ccd_host__sync_with_base_branch`).
 
-**Warum:** Am 12.10.2026 lag der lokale `main` 56 Commits hinter GitHub – Skills, Hooks und Regeln waren veraltet, ohne dass es auffiel.
+**Skills und Agenten kommen aus dem Haupt-Checkout**, auch in Worktree-Sitzungen (`.claude/skills/`, `.claude/agents/`, `.claude/commands/`). Der SessionStart-Hook `scripts/claude-haupt-checkout-pruefen.sh` spult ihn beim Start auf `origin/main` vor, wenn er sauber auf `main` steht; sonst fasst er nichts an und meldet „VERALTETE SKILLS/AGENTEN“. Dann den Nutzer informieren und vor jedem Skill oder Agenten die Fassung aus dem eigenen Worktree per Read lesen. **Widersprechen sich geladener Skill und Worktree-Datei, gilt die Worktree-Datei.**
+
+**Warum:** Am 12.10.2026 lag der lokale `main` 56 Commits hinter GitHub – Skills, Hooks und Regeln waren veraltet, ohne dass es auffiel. Am 02.11.2026 waren es 114 Commits: eine Sitzung bekam eine alte `fullstack-parallel`-Fassung, die Agenten `erp-backend`/`erp-frontend` fehlten.
 
 ## 🔍 graphify: Code-Landkarte für breite Fragen (Empfehlung)
 

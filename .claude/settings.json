@@ -29,6 +29,11 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/claude-cloud/setup.sh\" --session",
             "timeout": 300
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/scripts/claude-haupt-checkout-pruefen.sh\"",
+            "timeout": 20
           }
         ]
       }
