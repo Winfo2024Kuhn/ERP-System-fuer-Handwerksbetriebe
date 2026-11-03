@@ -70,6 +70,22 @@ describe('DokumentListe', () => {
         expect(screen.queryByRole('button', { name: 'Mehr laden' })).toBeNull();
     });
 
+    it('zeigt rechts neben dem Namen den Dateityp – „–“ ohne erkennbare Endung', () => {
+        zeige({
+            dokumente: [dok(1, 'Prüfbericht'), dok(2, 'Foto Halle', null, { dateiart: 'BILD', originalDateiname: 'IMG_0042.JPG' }),
+                dok(3, 'ZAUNFELD_GZ75', null, { dateiart: 'SONSTIGE', originalDateiname: 'ZAUNFELD_GZ75' }),
+                dok(4, 'Altes Prüfprotokoll', null, { originalDateiname: 'pruefprotokoll' })],
+            gesamt: 4,
+        });
+        const kopf = screen.getAllByRole('columnheader').map((th) => th.textContent);
+        expect(kopf.slice(0, 3)).toEqual(['Name', 'Dateityp', 'Fällig am']);
+        const typ = (name: string) => within(screen.getByRole('row', { name: new RegExp(name) })).getAllByRole('cell')[1];
+        expect(typ('Prüfbericht')).toHaveTextContent(/^PDF$/);
+        expect(typ('Foto Halle')).toHaveTextContent(/^JPG$/);
+        expect(typ('ZAUNFELD_GZ75')).toHaveTextContent(/^–$/);
+        expect(typ('Altes Prüfprotokoll')).toHaveTextContent(/^PDF$/);
+    });
+
     it('bietet „Mehr laden“, solange der Server mehr hat, und sperrt es beim Laden', async () => {
         const user = userEvent.setup();
         const onMehrLaden = vi.fn();
@@ -183,8 +199,10 @@ describe('DokumentListe', () => {
     it('zeigt in Listen über mehrere Ordner den Pfad und „Im Ordner zeigen“', async () => {
         const user = userEvent.setup();
         zeige({ dokumente: [dok(7, 'Torprüfung')], gesamt: 1, ordnerPfad: () => 'Prüfungen › Tore' });
-        expect(screen.getByRole('columnheader', { name: 'Ordner' })).toBeInTheDocument();
-        expect(screen.getByText('Prüfungen › Tore')).toBeInTheDocument();
+        expect(screen.getAllByRole('columnheader').map((th) => th.textContent).slice(0, 4)).toEqual(['Name', 'Dateityp', 'Ordner', 'Fällig am']);
+        const zellen = within(screen.getByRole('row', { name: /Torprüfung/ })).getAllByRole('cell');
+        expect(zellen[1]).toHaveTextContent(/^PDF$/);
+        expect(zellen[2]).toHaveTextContent('Prüfungen › Tore');
         await user.click(screen.getByRole('button', { name: 'Weitere Aktionen für „Torprüfung“' }));
         expect(await screen.findByRole('menuitem', { name: 'Im Ordner zeigen' })).toBeInTheDocument();
     });
@@ -193,7 +211,7 @@ describe('DokumentListe', () => {
 describe('useHochladen', () => {
     const datei = (name: string, type = '') => new File(['inhalt'], name, { type });
 
-    it('nimmt jede erlaubte Datei, lehnt Programmdateien mit Meldung ab und reiht die übrigen nacheinander', () => {
+    it('nimmt jede erlaubte Datei, lehnt Programmdateien mit Meldung ab und reiht die übrigen mit ihrem Ordner nacheinander', () => {
         const melde = vi.fn();
         const { result } = renderHook(() => useHochladen(melde));
         act(() => result.current.annehmen([datei('setup.EXE')], 2));
@@ -207,19 +225,23 @@ describe('useHochladen', () => {
         act(() => result.current.annehmen([datei('angebot.docx')], 9));
         expect(result.current.aktuelle).toMatchObject({ ordnerId: 2, nummer: 1, anzahl: 3 });
 
-        act(() => result.current.weiter(4));
-        expect(result.current.aktuelle).toMatchObject({ ordnerId: 4, nummer: 2, anzahl: 3 });
+        // Jede Datei bleibt beim Ordner, auf dem sie abgelegt wurde.
+        act(() => result.current.weiter());
+        expect(result.current.aktuelle).toMatchObject({ ordnerId: 2, nummer: 2, anzahl: 3 });
         expect(result.current.aktuelle?.datei.name).toBe('foto.jpg');
+        act(() => result.current.weiter());
+        expect(result.current.aktuelle).toMatchObject({ ordnerId: 9, nummer: 3, anzahl: 3 });
+        expect(result.current.aktuelle?.datei.name).toBe('angebot.docx');
         act(() => result.current.abbrechen());
         expect(result.current.aktuelle).toBeNull();
-        act(() => result.current.weiter(4));
+        act(() => result.current.weiter());
         expect(result.current.aktuelle).toBeNull();
     });
 
     it('ist nach der letzten Datei fertig', () => {
         const { result } = renderHook(() => useHochladen(vi.fn()));
         act(() => result.current.annehmen([datei('a.pdf')], 2));
-        act(() => result.current.weiter(2));
+        act(() => result.current.weiter());
         expect(result.current.aktuelle).toBeNull();
     });
 });

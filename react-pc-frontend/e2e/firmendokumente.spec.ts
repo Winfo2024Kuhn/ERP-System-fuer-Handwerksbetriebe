@@ -1,6 +1,6 @@
 import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
-import { pdfDatei, stubbeFirmendokumenteApi } from './hilfen/firmendokumente';
+import { grundbestand, pdfDatei, stubbeFirmendokumenteApi } from './hilfen/firmendokumente';
 
 /**
  * Seite „Firmendokumente“ (/firmendokumente): Firmen-PDFs in Ordnern ablegen,
@@ -32,6 +32,11 @@ test('Nicht-Admin findet „Firmendokumente“ im Menü und sieht die fälligen 
     await expect(faellig.getByRole('row').nth(2)).toContainText('bald fällig');
     await designPruefung(page, testInfo, 'firmendokumente-uebersicht');
 
+    // Auch aus der Übersicht lässt sich ein Dokument auf einen Ordner ziehen; die Ordner-Spalte zieht nach.
+    await faellig.getByRole('row', { name: /Leiterprüfung 2026/ }).dragTo(baum.getByRole('treeitem', { name: /^Arbeitsschutz,/ }));
+    await expect(page.getByText('„Leiterprüfung 2026“ nach „Arbeitsschutz“ verschoben.')).toBeVisible();
+    await expect(faellig.getByRole('row', { name: /Leiterprüfung 2026/ }).getByRole('cell').nth(2)).toHaveText('Arbeitsschutz');
+
     await page.getByRole('button', { name: 'Mehr zu: Firmendokumente' }).click();
     const info = page.getByRole('dialog', { name: 'Firmendokumente' });
     await expect(info.getByText(/werden mit der nächtlichen Sicherung mitgesichert/)).toBeVisible();
@@ -40,7 +45,13 @@ test('Nicht-Admin findet „Firmendokumente“ im Menü und sieht die fälligen 
 });
 
 test('Ordner wählen, PDF hochladen und per Suche wiederfinden', async ({ page }, testInfo) => {
-    const stand = await stubbeFirmendokumenteApi(page);
+    // Eine HiCAD-Datei ohne Endung im Namen und eine mit Endung, beide mit langem Namen (Spalte „Dateityp“).
+    const bestand = grundbestand();
+    bestand.dokumente.push(
+        { id: 13, ordnerId: 2, name: 'Zaunfeld GZ75 Füllung Rolltor Halle 2 Nordseite mit Schlupftür', originalDateiname: 'ZAUNFELD_GZ75', groesseBytes: 268_288, hochgeladenAm: '2026-10-30T07:45:00', hochgeladenVon: 'Max Mustermann', faelligAm: null },
+        { id: 14, ordnerId: 2, name: 'Zaunfeld GZ75 Füllung Halle 2 Ausführungszeichnung', originalDateiname: 'ZAUNFELD_GZ75.sza', groesseBytes: 268_288, hochgeladenAm: '2026-10-30T07:46:00', hochgeladenVon: 'Max Mustermann', faelligAm: null },
+    );
+    const stand = await stubbeFirmendokumenteApi(page, bestand);
     await page.goto('/firmendokumente');
 
     const baum = page.getByRole('tree', { name: 'Ordner' });
@@ -50,6 +61,11 @@ test('Ordner wählen, PDF hochladen und per Suche wiederfinden', async ({ page }
     await expect(page).toHaveURL(/ordner=2/);
     const liste = page.getByRole('table', { name: 'Dokumente in Tore' });
     await expect(liste.getByText('Torprüfung Halle 1 – 2025')).toBeVisible();
+    await expect(liste.getByRole('columnheader')).toHaveText(['Name', 'Dateityp', 'Fällig am', 'Hochgeladen am', 'Größe', 'Aktionen']);
+    const dateitypIn = (zeile: string) => liste.getByRole('row', { name: zeile }).getByRole('cell').nth(1);
+    await expect(dateitypIn('Torprüfung Halle 1 – 2025')).toHaveText('PDF');
+    await expect(dateitypIn('Zaunfeld GZ75 Füllung Rolltor Halle 2 Nordseite mit Schlupftür')).toHaveText('–');
+    await expect(dateitypIn('Zaunfeld GZ75 Füllung Halle 2 Ausführungszeichnung')).toHaveText('SZA');
 
     const auswahl = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Datei hochladen' }).click();
@@ -58,7 +74,8 @@ test('Ordner wählen, PDF hochladen und per Suche wiederfinden', async ({ page }
     const dialog = page.getByRole('dialog', { name: 'Datei hochladen' });
     const name = dialog.getByLabel('Name *');
     await expect(name).toHaveValue('scan_0042');
-    await expect(dialog.getByRole('combobox', { name: 'Ordner' })).toHaveText(/Prüfungen › Tore/);
+    await expect(dialog.getByText('Kommt in: Prüfungen › Tore')).toBeVisible();
+    await expect(dialog.getByRole('combobox')).toHaveCount(0);
     await name.fill('Torprüfung Halle 2 – 2026');
     await designPruefung(page, testInfo, 'firmendokumente-hochladen', { primaerAktion: dialog.getByRole('button', { name: 'Hochladen' }) });
     await dialog.getByRole('button', { name: 'Hochladen' }).click();
@@ -66,23 +83,30 @@ test('Ordner wählen, PDF hochladen und per Suche wiederfinden', async ({ page }
     await expect(dialog).toBeHidden();
     await expect(page.getByText('„Torprüfung Halle 2 – 2026“ abgelegt.')).toBeVisible();
     await expect(liste.getByText('Torprüfung Halle 2 – 2026')).toBeVisible();
-    await expect(page.getByText('2 von 2 angezeigt')).toBeVisible();
+    await expect(page.getByText('4 von 4 angezeigt')).toBeVisible();
     expect(stand.hochgeladen).toEqual([{ datei: '<datei>', ordnerId: '2', name: 'Torprüfung Halle 2 – 2026' }]);
     await designPruefung(page, testInfo, 'firmendokumente-ordner', { primaerAktion: page.getByRole('button', { name: 'Datei hochladen' }) });
 
     await page.getByRole('searchbox', { name: 'Dokumente in allen Ordnern suchen' }).fill('halle 2');
     const treffer = page.getByRole('table', { name: 'Suchtreffer' });
-    await expect(treffer.getByRole('row')).toHaveCount(2);
-    await expect(treffer.getByRole('row').nth(1)).toContainText('Torprüfung Halle 2 – 2026');
-    await expect(treffer.getByRole('row').nth(1)).toContainText('Prüfungen › Tore');
+    await expect(treffer.getByRole('row')).toHaveCount(4);
+    await expect(treffer.getByRole('columnheader')).toHaveText(['Name', 'Dateityp', 'Fällig am', 'Hochgeladen am', 'Größe', 'Aktionen']);
+    const neu = treffer.getByRole('row').nth(1);
+    await expect(neu).toContainText('Torprüfung Halle 2 – 2026');
+    await expect(neu.getByRole('cell').nth(1)).toHaveText('PDF');
     await designPruefung(page, testInfo, 'firmendokumente-suche');
+
+    // Aus den Suchtreffern per Ziehen verschieben.
+    await treffer.getByRole('row', { name: /Ausführungszeichnung/ }).dragTo(baum.getByRole('treeitem', { name: /^Leitern,/ }));
+    await expect(page.getByText('„Zaunfeld GZ75 Füllung Halle 2 Ausführungszeichnung“ nach „Leitern“ verschoben.')).toBeVisible();
+    expect(stand.aenderungen.at(-1)).toEqual({ methode: 'PUT', pfad: '/14', body: { name: 'Zaunfeld GZ75 Füllung Halle 2 Ausführungszeichnung', ordnerId: 3, faelligAm: null } });
 
     await treffer.getByRole('button', { name: 'Torprüfung Halle 2 – 2026', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Torprüfung Halle 2 – 2026', level: 3 })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Drucken', exact: true })).toBeEnabled();
 });
 
-test('Dokument bearbeiten: umbenennen, in anderen Ordner verschieben, Fällig am setzen und wieder entfernen', async ({ page }, testInfo) => {
+test('Dokument bearbeiten: umbenennen und Fällig am setzen, per Ziehen verschieben, Datum wieder entfernen', async ({ page }, testInfo) => {
     const stand = await stubbeFirmendokumenteApi(page);
     await page.goto('/firmendokumente?ordner=2');
     const baum = page.getByRole('tree', { name: 'Ordner' });
@@ -92,9 +116,9 @@ test('Dokument bearbeiten: umbenennen, in anderen Ordner verschieben, Fällig am
 
     const dialog = page.getByRole('dialog', { name: 'Dokument bearbeiten' });
     await expect(dialog.getByText('Datei: scan_0040.pdf')).toBeVisible();
+    await expect(dialog.getByText('Liegt in: Prüfungen › Tore. Zum Verschieben die Zeile in der Liste auf einen Ordner links ziehen.')).toBeVisible();
+    await expect(dialog.getByRole('combobox')).toHaveCount(0);
     await dialog.getByLabel('Name *').fill('Torprüfung Halle 1 – 2026');
-    await dialog.getByRole('combobox', { name: 'Ordner' }).click();
-    await page.getByRole('option', { name: 'Prüfungen › Leitern' }).click();
     await dialog.getByRole('button', { name: 'Fällig am', exact: true }).click();
     await page.getByRole('textbox', { name: 'Datum eingeben' }).fill('31.12.2099');
     await page.keyboard.press('Enter');
@@ -103,10 +127,15 @@ test('Dokument bearbeiten: umbenennen, in anderen Ordner verschieben, Fällig am
     await dialog.getByRole('button', { name: 'Speichern' }).click();
 
     await expect(page.getByText('„Torprüfung Halle 1 – 2026“ gespeichert.')).toBeVisible();
+    expect(stand.aenderungen).toEqual([{ methode: 'PUT', pfad: '/10', body: { name: 'Torprüfung Halle 1 – 2026', ordnerId: 2, faelligAm: '2099-12-31' } }]);
+    // Nichts mehr überfällig in „Tore“: der rote Punkt ist weg.
+    await expect(baum.getByRole('treeitem', { name: 'Tore, 1 Dokument' })).toBeVisible();
+
+    // Verschieben geht nur per Ziehen auf den Baum.
+    await tore.getByRole('row', { name: /Torprüfung Halle 1 – 2026/ }).dragTo(baum.getByRole('treeitem', { name: /^Leitern,/ }));
+    await expect(page.getByText('„Torprüfung Halle 1 – 2026“ nach „Leitern“ verschoben.')).toBeVisible();
     await expect(page.getByText('In diesem Ordner liegt noch kein Dokument.')).toBeVisible();
-    expect(stand.aenderungen).toEqual([{ methode: 'PUT', pfad: '/10', body: { name: 'Torprüfung Halle 1 – 2026', ordnerId: 3, faelligAm: '2099-12-31' } }]);
-    // Nichts mehr überfällig in „Tore“: der rote Punkt ist weg, „Leitern“ zählt zwei Dokumente.
-    await expect(baum.getByRole('treeitem', { name: 'Tore, 0 Dokumente' })).toBeVisible();
+    expect(stand.aenderungen[1]).toEqual({ methode: 'PUT', pfad: '/10', body: { name: 'Torprüfung Halle 1 – 2026', ordnerId: 3, faelligAm: '2099-12-31' } });
     await baum.getByRole('treeitem', { name: 'Leitern, 2 Dokumente' }).click();
 
     const leitern = page.getByRole('table', { name: 'Dokumente in Leitern' });
@@ -114,13 +143,15 @@ test('Dokument bearbeiten: umbenennen, in anderen Ordner verschieben, Fällig am
     await expect(zeile).toContainText('31.12.2099');
     await zeile.getByRole('button', { name: 'Weitere Aktionen für „Torprüfung Halle 1 – 2026“' }).click();
     await page.getByRole('menuitem', { name: 'Bearbeiten …' }).click();
+    await expect(dialog.getByText(/^Liegt in: Prüfungen › Leitern\./)).toBeVisible();
     await dialog.getByRole('button', { name: 'Datum entfernen' }).click();
     await expect(dialog.getByRole('button', { name: 'Fällig am', exact: true })).toContainText('Kein Datum');
     await dialog.getByRole('button', { name: 'Speichern' }).click();
 
     await expect(dialog).toBeHidden();
-    await expect(zeile.getByRole('cell').nth(1)).toHaveText('–');
-    expect(stand.aenderungen[1]).toEqual({ methode: 'PUT', pfad: '/10', body: { name: 'Torprüfung Halle 1 – 2026', ordnerId: 3, faelligAm: null } });
+    // Spalten: Name, Dateityp, Fällig am …
+    await expect(zeile.getByRole('cell').nth(2)).toHaveText('–');
+    expect(stand.aenderungen[2]).toEqual({ methode: 'PUT', pfad: '/10', body: { name: 'Torprüfung Halle 1 – 2026', ordnerId: 3, faelligAm: null } });
 });
 
 test('Dokument löschen erst nach Rückfrage', async ({ page }, testInfo) => {

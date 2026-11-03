@@ -6,13 +6,11 @@ import { DokumentDialog } from './DokumentDialog';
 import { OrdnerNameDialog } from './OrdnerNameDialog';
 import type { DokumentAngaben } from './typen';
 
-const OPTIONEN = [{ value: '1', label: 'Prüfungen' }, { value: '2', label: 'Prüfungen › Tore' }];
-
 function zeigeDokumentDialog(onSpeichern: (a: DokumentAngaben) => Promise<void>, start: DokumentAngaben = { name: 'scan_0042', ordnerId: 2, faelligAm: null }) {
     const onAbbrechen = vi.fn();
     render(
         <ToastProvider>
-            <DokumentDialog titel="Datei hochladen" beschreibung="Datei: scan_0042.pdf" start={start} ordnerOptionen={OPTIONEN}
+            <DokumentDialog titel="Datei hochladen" beschreibung="Datei: scan_0042.pdf" start={start} ordnerText="Kommt in: Prüfungen › Tore"
                 knopfText="Hochladen" knopfSymbol={null} onAbbrechen={onAbbrechen} onSpeichern={onSpeichern} />
         </ToastProvider>,
     );
@@ -38,7 +36,6 @@ describe('DokumentDialog', () => {
         zeigeDokumentDialog(onSpeichern);
         const name = screen.getByLabelText('Name *');
         expect(name).toHaveValue('scan_0042');
-        expect(screen.getByRole('combobox', { name: 'Ordner' })).toHaveTextContent('Prüfungen › Tore');
         await user.clear(name);
         await user.click(screen.getByRole('button', { name: 'Hochladen' }));
         expect(screen.getByRole('alert')).toHaveTextContent('Bitte einen Namen für das Dokument eingeben.');
@@ -49,6 +46,17 @@ describe('DokumentDialog', () => {
         expect(screen.queryByRole('alert')).toBeNull();
         await user.click(screen.getByRole('button', { name: 'Hochladen' }));
         expect(onSpeichern).toHaveBeenCalledWith({ name: 'Torprüfung Halle 2 – 2026', ordnerId: 2, faelligAm: null });
+    });
+
+    it('zeigt den Ordner nur als Text – ohne Auswahlfeld – und speichert den Ordner, mit dem er geöffnet wurde', async () => {
+        const user = userEvent.setup();
+        const onSpeichern = vi.fn().mockResolvedValue(undefined);
+        zeigeDokumentDialog(onSpeichern, { name: 'Torprüfung', ordnerId: 7, faelligAm: null });
+        expect(screen.getByText('Kommt in: Prüfungen › Tore')).toBeInTheDocument();
+        expect(screen.queryByRole('combobox')).toBeNull();
+        expect(screen.queryByText('Ordner *')).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Hochladen' }));
+        expect(onSpeichern).toHaveBeenCalledWith({ name: 'Torprüfung', ordnerId: 7, faelligAm: null });
     });
 
     it('zeigt die Meldung des Servers im Dialog und als Toast', async () => {

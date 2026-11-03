@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { baueBaum, OBERSTE_EBENE } from '../../lib/ordnerBaum';
 import {
-    DOKUMENT_DATENTYP, dokumentDarfNach, HAUPTORDNER_GESPERRT_TEXT, hauptordnerWechselGesperrt, wurzelId, downloadDateiname, faelligkeit, faelligkeitText, GESPERRTE_ENDUNGEN, istSuche, liesGezogenesDokument,
-    MAX_DATEI_BYTES, nameAusDateiname, ordnerMitUeberfaelligem, ordnerOptionen, pruefeDatei, pruefeName, schreibeGezogenesDokument,
+    dateityp, DOKUMENT_DATENTYP, ordnerPfadOderStrich, dokumentDarfNach, HAUPTORDNER_GESPERRT_TEXT, hauptordnerWechselGesperrt, wurzelId, downloadDateiname, faelligkeit, faelligkeitText, GESPERRTE_ENDUNGEN, istSuche, liesGezogenesDokument,
+    MAX_DATEI_BYTES, nameAusDateiname, ordnerMitUeberfaelligem, pruefeDatei, pruefeName, schreibeGezogenesDokument,
     teileDateien, ziehtDateien, ziehtDokument, zieleFuerOrdner,
 } from './firmendokumenteLogik';
 import type { FirmenOrdner } from './typen';
@@ -54,6 +54,13 @@ describe('faelligkeit', () => {
     });
 });
 
+describe('ordnerPfadOderStrich', () => {
+    it('zeigt den vollen Pfad und einen Strich, wenn es den Ordner nicht gibt', () => {
+        expect(ordnerPfadOderStrich(BAUM, 3)).toBe('Prüfungen › Tore › Halle 2');
+        expect(ordnerPfadOderStrich(BAUM, 404)).toBe('–');
+    });
+});
+
 describe('ordnerMitUeberfaelligem', () => {
     it('markiert den Ordner und alle übergeordneten', () => {
         expect([...ordnerMitUeberfaelligem(BAUM)].sort()).toEqual([1, 2, 3]);
@@ -94,6 +101,63 @@ describe('Formatierung', () => {
         expect(downloadDateiname('verknuepfung.appref-ms', 'x')).toBe('verknuepfung_appref-ms');
         expect(downloadDateiname('Bericht.pdf', 'bericht')).toBe('Bericht.pdf');
         expect(downloadDateiname('setup.exe', 'setup.pdf')).toBe('setup.exe.pdf');
+    });
+});
+
+describe('dateityp', () => {
+    const typ = (originalDateiname: string, dateiart: 'PDF' | 'BILD' | 'SONSTIGE' = 'SONSTIGE') => dateityp({ originalDateiname, dateiart });
+
+    it('zeigt die Endung der Originaldatei in Großbuchstaben', () => {
+        expect(typ('scan.pdf', 'PDF')).toBe('PDF');
+        expect(typ('IMG_0042.JPG', 'BILD')).toBe('JPG');
+        expect(typ('ZAUNFELD_GZ75.sza')).toBe('SZA');
+        expect(typ('Angebot v2.1.docx')).toBe('DOCX');
+        expect(typ('archiv.tar.gz')).toBe('GZ');
+        expect(typ('verknuepfung.appref-ms')).toBe('APPREF-MS');
+        expect(typ('.htaccess')).toBe('HTACCESS');
+    });
+
+    it('übergeht Punkte und Leerzeichen am Ende wie Windows', () => {
+        expect(typ('bericht.pdf. ')).toBe('PDF');
+        expect(typ('bericht.dwg...')).toBe('DWG');
+        expect(typ('bericht.dwg\t')).toBe('DWG');
+        expect(typ('bericht.dwg\u2003\u3000\u001F')).toBe('DWG');
+    });
+
+    it('zählt geschützte Leerzeichen wie der Server nicht als Leerzeichen', () => {
+        expect(typ('bericht.pdf\u00A0')).toBeNull();
+        expect(typ('bericht.pdf\u2007')).toBeNull();
+        expect(typ('bericht.pdf\u202F')).toBeNull();
+        expect(typ('bericht.pdf\uFEFF')).toBeNull();
+    });
+
+    it('hat ohne erkennbare Endung keinen Dateityp', () => {
+        expect(typ('ZAUNFELD_GZ75')).toBeNull();
+        expect(typ('name.')).toBeNull();
+        expect(typ('x.ab cd')).toBeNull();
+        expect(typ('x.-ab')).toBeNull();
+        expect(typ('x.ab-')).toBeNull();
+        expect(typ('x.ab--cd')).toBeNull();
+        expect(typ('x.äöü')).toBeNull();
+        expect(typ(`x.${'a'.repeat(21)}`)).toBeNull();
+        expect(typ(`x.${'a'.repeat(20)}`)).toBe('A'.repeat(20));
+        expect(typ('')).toBeNull();
+        expect(typ('...')).toBeNull();
+    });
+
+    it('nimmt für Dateien der alten PDF-Ablage ohne Endung PDF an', () => {
+        expect(typ('ZAUNFELD_GZ75', 'PDF')).toBe('PDF');
+        expect(typ('name.', 'PDF')).toBe('PDF');
+        expect(typ('ZAUNFELD_GZ75', 'BILD')).toBeNull();
+        // dateiart PDF heißt: Endung auf dem Server ist „pdf“ (alte Ablage erkannte PDFs am Inhalt, egal wie der Name lautet).
+        expect(typ('rechnung.jpg', 'PDF')).toBe('PDF');
+    });
+
+    it('bleibt bei sehr langen Punktfolgen schnell', () => {
+        const start = performance.now();
+        expect(typ(`a${'.'.repeat(50_000)}b `)).toBe('B');
+        expect(typ(`a${' .'.repeat(50_000)}`)).toBeNull();
+        expect(performance.now() - start).toBeLessThan(1000);
     });
 });
 
@@ -246,12 +310,6 @@ describe('Eingeschränkte Zweige verlassen', () => {
         expect(grund(true, 2)).toBeNull();
     });
 
-    it('bietet beim Bearbeiten nur Ordner im selben Zweig an – Admins alle', () => {
-        expect(ordnerOptionen(MIT_RECHTEN, { ausOrdnerId: 12, istAdmin: false }).map((o) => o.value)).toEqual(['10', '11', '12']);
-        expect(ordnerOptionen(MIT_RECHTEN, { ausOrdnerId: 12, istAdmin: true })).toHaveLength(5);
-        expect(ordnerOptionen(MIT_RECHTEN, { ausOrdnerId: 2, istAdmin: false })).toHaveLength(5);
-    });
-
     it('nennt den Grund wie der Server', () => {
         expect(HAUPTORDNER_GESPERRT_TEXT).toBe('Aus einem eingeschränkten Ordner kann nur ein Admin in einen anderen Hauptordner verschieben.');
     });
@@ -272,15 +330,5 @@ describe('Ordner-Ziele', () => {
     it('sperrt die oberste Ebene für Hauptordner', () => {
         expect(zieleFuerOrdner(BAUM, 5)[0].gesperrt).toBe('Liegt schon hier');
         expect(zieleFuerOrdner(BAUM, 404)[0].gesperrt).toBe('Liegt schon hier');
-    });
-
-    it('bietet Ordner mit vollem Pfad zur Auswahl an', () => {
-        expect(ordnerOptionen(BAUM)).toEqual([
-            { value: '5', label: 'Arbeitsschutz' },
-            { value: '1', label: 'Prüfungen' },
-            { value: '4', label: 'Prüfungen › Leitern' },
-            { value: '2', label: 'Prüfungen › Tore' },
-            { value: '3', label: 'Prüfungen › Tore › Halle 2' },
-        ]);
     });
 });

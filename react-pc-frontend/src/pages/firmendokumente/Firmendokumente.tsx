@@ -11,7 +11,7 @@ import { toSafeResourceUrl } from '../../lib/htmlSanitizer';
 import { dateiUrl, ladeHoch, speichereDokument } from './api';
 import { DokumentDialog } from './DokumentDialog';
 import { DokumentOrdnerBaum } from './DokumentOrdnerBaum';
-import { MAX_SUCHE, MIN_SUCHE, nameAusDateiname, ordnerOptionen } from './firmendokumenteLogik';
+import { MAX_SUCHE, MIN_SUCHE, nameAusDateiname, ordnerPfadOderStrich } from './firmendokumenteLogik';
 import { SeitenInfo } from './InfoTexte';
 import { OrdnerDialoge, type OrdnerDialog } from './OrdnerDialoge';
 import { KeineOrdner, RechterBereich } from './RechterBereich';
@@ -43,7 +43,6 @@ export default function Firmendokumente() {
         imOrdnerZeigen: ansicht.art === 'ordner' ? undefined : (dok) => waehle(dok.ordnerId),
     });
     const ordnerLoeschen = useOrdnerLoeschen({ baum, gewaehlt, onGeloescht: (zurueck) => { ordnerStand.neuLaden(); waehle(zurueck); } });
-    const optionen = ordnerOptionen(baum);
     const ordnerFehlen = ordnerStand.ordner !== null && ordnerStand.ordner.length === 0;
     const upload = hochladen.aktuelle;
     const bearbeitet = dokAktionen.bearbeiten;
@@ -122,14 +121,14 @@ export default function Firmendokumente() {
                     titel={upload.anzahl > 1 ? `Datei hochladen (${upload.nummer} von ${upload.anzahl})` : 'Datei hochladen'}
                     beschreibung={`Datei: ${upload.datei.name}`}
                     start={{ name: nameAusDateiname(upload.datei.name), ordnerId: upload.ordnerId, faelligAm: null }}
-                    ordnerOptionen={optionen}
+                    ordnerText={`Kommt in: ${ordnerPfadOderStrich(baum, upload.ordnerId)}`}
                     knopfText="Hochladen"
                     knopfSymbol={<Upload className="h-4 w-4" aria-hidden="true" />}
                     onAbbrechen={hochladen.abbrechen}
                     onSpeichern={(angaben) => ladeHoch(upload.datei, angaben).then((dok) => {
                         toast.success(`„${dok.name}“ abgelegt.`);
                         nachAenderung();
-                        hochladen.weiter(dok.ordnerId);
+                        hochladen.weiter();
                     })}
                 />
             )}
@@ -139,7 +138,7 @@ export default function Firmendokumente() {
                     titel="Dokument bearbeiten"
                     beschreibung={`Datei: ${bearbeitet.originalDateiname}`}
                     start={{ name: bearbeitet.name, ordnerId: bearbeitet.ordnerId, faelligAm: bearbeitet.faelligAm }}
-                    ordnerOptionen={ordnerOptionen(baum, { ausOrdnerId: bearbeitet.ordnerId, istAdmin: isAdmin })}
+                    ordnerText={`Liegt in: ${ordnerPfadOderStrich(baum, bearbeitet.ordnerId)}. Zum Verschieben die Zeile in der Liste auf einen Ordner links ziehen.`}
                     knopfText="Speichern"
                     knopfSymbol={<Check className="h-4 w-4" aria-hidden="true" />}
                     onAbbrechen={dokAktionen.schliesseBearbeiten}

@@ -115,7 +115,8 @@ test('Bild per Ziehen auf einen Ordner ablegen und ein Dokument auf einen andere
     await dateiAblegen(page, baum.getByRole('treeitem', { name: /^Leitern,/ }), 'Baustelle Mustermann.png');
     const dialog = page.getByRole('dialog', { name: 'Datei hochladen' });
     await expect(dialog.getByLabel('Name *')).toHaveValue('Baustelle Mustermann');
-    await expect(dialog.getByRole('combobox', { name: 'Ordner' })).toHaveText(/Prüfungen › Leitern/);
+    await expect(dialog.getByText('Kommt in: Prüfungen › Leitern')).toBeVisible();
+    await expect(dialog.getByRole('combobox')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Hochladen' }).click();
     await expect(page.getByText('„Baustelle Mustermann“ abgelegt.')).toBeVisible();
     expect(stand.hochgeladen).toEqual([{ datei: '<datei>', ordnerId: '3', name: 'Baustelle Mustermann' }]);
@@ -158,14 +159,12 @@ test('Aus einem eingeschränkten Ordner bietet die Seite Nicht-Admins keinen and
     await page.keyboard.press('Escape');
     await verschieben.getByRole('button', { name: 'Abbrechen' }).click();
 
-    // Bearbeiten: nur Ordner im Zweig „Personal“ zur Auswahl.
+    // Bearbeiten: kein Ordner zur Auswahl – verschoben wird nur per Ziehen.
     await liste.getByRole('button', { name: 'Weitere Aktionen für „Arbeitsvertrag Max Mustermann“' }).click();
     await page.getByRole('menuitem', { name: 'Bearbeiten …' }).click();
     const bearbeiten = page.getByRole('dialog', { name: 'Dokument bearbeiten' });
-    await bearbeiten.getByRole('combobox', { name: 'Ordner' }).click();
-    await expect(page.getByRole('option', { name: 'Personal › Alt' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'Prüfungen' })).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await expect(bearbeiten.getByText(/^Liegt in: Personal › Verträge\. Zum Verschieben/)).toBeVisible();
+    await expect(bearbeiten.getByRole('combobox')).toHaveCount(0);
     await bearbeiten.getByRole('button', { name: 'Abbrechen' }).click();
     await expect(bearbeiten).toBeHidden();
 

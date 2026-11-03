@@ -6,7 +6,8 @@ import type { FirmenDokument, FirmenOrdner } from './typen';
 
 /**
  * Verschiebt ein per Ziehen abgelegtes Dokument in einen anderen Ordner –
- * über dasselbe Speichern wie „Bearbeiten …“ (Name und Fällig am bleiben).
+ * der einzige Weg zum Verschieben. Gespeichert wird wie bei „Bearbeiten …“
+ * (Name und Fällig am bleiben).
  * Name und Fällig am kommen aus der geladenen Liste, falls das Dokument darin
  * steht (die Zieh-Daten könnten älter sein). Danach Erfolg als Toast und
  * `onVerschoben` (Liste und Zähler neu laden).
