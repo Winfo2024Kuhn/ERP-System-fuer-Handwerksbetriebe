@@ -86,7 +86,8 @@ class FlywayMigrationenTest {
             Map.entry("V442__freigabe_wortlaut_vorzeitiger_beginn.sql", -1470402608),
             Map.entry("V443__spam_auf_server_verschieben.sql", 822764315),
             Map.entry("V444__ids_shop_anbindung.sql", -687615763),
-            Map.entry("V445__firmendokumente.sql", -1953449084));
+            Map.entry("V445__firmendokumente.sql", -1953449084),
+            Map.entry("V446__firmendokumente_ordnerrechte.sql", -2004351100));
 
     private static final char BOM = 0xFEFF;
 

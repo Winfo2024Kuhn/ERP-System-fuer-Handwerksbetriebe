@@ -11,9 +11,16 @@ export interface FirmenOrdner {
     anzahlDokumente: number;
     anzahlUeberfaellig: number;
     anzahlBaldFaellig: number;
+    /** Darf der Angemeldete hier hochladen, ändern, löschen und Unterordner anlegen/umbenennen/verschieben/löschen? */
+    darfAendern: boolean;
+    /** `true`, wenn der oberste Ordner dieses Zweigs nur für bestimmte Abteilungen sichtbar ist (Schloss-Symbol). */
+    eingeschraenkt: boolean;
 }
 
-/** Ein abgelegtes PDF. */
+/** Art der abgelegten Datei – entscheidet über Vorschau, Drucken und Symbol. */
+export type Dateiart = 'PDF' | 'BILD' | 'SONSTIGE';
+
+/** Ein abgelegtes Dokument (PDF, Bild oder andere Datei). */
 export interface FirmenDokument {
     id: number;
     ordnerId: number;
@@ -26,6 +33,9 @@ export interface FirmenDokument {
     /** `yyyy-MM-dd` oder `null`. */
     faelligAm: string | null;
     url: string;
+    dateiart: Dateiart;
+    /** Darf der Angemeldete das Dokument bearbeiten und löschen? */
+    darfAendern: boolean;
 }
 
 /** Eine Seite einer Liste. */
@@ -36,7 +46,7 @@ export interface DokumentSeite {
     seitenGroesse: number;
 }
 
-/** Angaben beim Hochladen eines PDFs. */
+/** Angaben beim Hochladen einer Datei. */
 export interface DokumentAngaben {
     name: string;
     ordnerId: number;
@@ -45,3 +55,21 @@ export interface DokumentAngaben {
 }
 
 export type Faelligkeit = 'ueberfaellig' | 'bald' | 'spaeter';
+
+/** Recht einer Abteilung an einem obersten Ordner (gilt für alle Unterordner). */
+export type RechteStufe = 'KEINE' | 'ANSEHEN' | 'AENDERN';
+
+/** Antwort von `GET/PUT /api/firmendokumente/ordner/{id}/rechte` – nur für Admins. */
+export interface OrdnerRechte {
+    ordnerId: number;
+    ordnerName: string;
+    eingeschraenkt: boolean;
+    /** Alle Abteilungen, nach Name sortiert. */
+    abteilungen: { abteilungId: number; name: string; stufe: RechteStufe }[];
+}
+
+/** Body von `PUT /api/firmendokumente/ordner/{id}/rechte`. */
+export interface OrdnerRechteAenderung {
+    eingeschraenkt: boolean;
+    abteilungen: { abteilungId: number; stufe: RechteStufe }[];
+}

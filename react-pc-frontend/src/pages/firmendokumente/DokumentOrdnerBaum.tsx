@@ -4,10 +4,13 @@ import { Button } from '../../components/ui/button';
 import { ordnerKette, sichtbareZeilen, type Baum } from '../../lib/ordnerBaum';
 import { OrdnerZeile, ZeilenRahmen, type OrdnerAktion } from './OrdnerZeile';
 import { UEBERSICHT, useBaumTastatur } from './useBaumTastatur';
+import { dokumentDarfNach, HAUPTORDNER_GESPERRT_TEXT, hauptordnerWechselGesperrt, type GezogenesDokument } from './firmendokumenteLogik';
 import type { FirmenOrdner } from './typen';
 
 export interface DokumentOrdnerBaumProps {
     baum: Baum<FirmenOrdner>;
+    /** Admins bekommen an obersten Ordnern „Wer darf das sehen?“. */
+    istAdmin: boolean;
     /** `null` = „Übersicht“. */
     gewaehlt: number | null;
     /** Ordner mit Überfälligem (auch darunter) – bekommen den roten Punkt. */
@@ -16,14 +19,19 @@ export interface DokumentOrdnerBaumProps {
     onNeuerOrdner: () => void;
     onAktion: (aktion: OrdnerAktion, ordner: FirmenOrdner) => void;
     onDateienAbgelegt: (ordnerId: number, dateien: FileList) => void;
+    /** Ein Dokument aus der Liste wurde auf einen anderen Ordner (mit Recht „Ändern“) gezogen. */
+    onDokumentAbgelegt: (dok: GezogenesDokument, ziel: FirmenOrdner) => void;
+    /** Ablegen nicht erlaubt (eingeschränkten Zweig verlassen) – die Seite zeigt den Grund als Toast. */
+    onAblageAbgelehnt: (meldung: string) => void;
 }
 
 /**
  * Ordnerbaum der Firmendokumente: oben „Übersicht“, darunter die Ordner zum
  * Auf- und Zuklappen, mit Anzahl, rotem Punkt bei Überfälligem und „…“-Menü.
- * PDFs lassen sich direkt auf einen Ordner ziehen.
+ * Dateien aus Explorer/Finder und Dokumente aus der Liste lassen sich direkt
+ * auf einen Ordner ziehen – aber nur auf Ordner mit Recht „Ändern“.
  */
-export function DokumentOrdnerBaum({ baum, gewaehlt, ueberfaellig, onWaehlen, onNeuerOrdner, onAktion, onDateienAbgelegt }: DokumentOrdnerBaumProps) {
+export function DokumentOrdnerBaum({ baum, istAdmin, gewaehlt, ueberfaellig, onWaehlen, onNeuerOrdner, onAktion, onDateienAbgelegt, onDokumentAbgelegt, onAblageAbgelehnt }: DokumentOrdnerBaumProps) {
     const [aufgeklappt, setAufgeklappt] = useState<Set<number>>(() => new Set());
     const [geprueft, setGeprueft] = useState<{ gewaehlt: number | null; baum: Baum<FirmenOrdner> } | null>(null);
 
@@ -43,6 +51,14 @@ export function DokumentOrdnerBaum({ baum, gewaehlt, ueberfaellig, onWaehlen, on
         if (offen) neu.add(id); else neu.delete(id);
         return neu;
     });
+    const dokumentAbgelegt = (dok: GezogenesDokument, ziel: FirmenOrdner) => {
+        if (!dokumentDarfNach(dok, ziel)) return;
+        if (hauptordnerWechselGesperrt(baum, dok.ordnerId, ziel.id, istAdmin)) {
+            onAblageAbgelehnt(HAUPTORDNER_GESPERRT_TEXT);
+            return;
+        }
+        onDokumentAbgelegt(dok, ziel);
+    };
     const tastatur = useBaumTastatur({ zeilen, gewaehlt, onWaehlen, onAufklappen: aufklappen });
 
     return (
@@ -72,6 +88,7 @@ export function DokumentOrdnerBaum({ baum, gewaehlt, ueberfaellig, onWaehlen, on
                         <OrdnerZeile
                             key={zeile.ordner.id}
                             zeile={zeile}
+                            istAdmin={istAdmin}
                             gewaehlt={gewaehlt === zeile.ordner.id}
                             aktiv={tastatur.aktiv === zeile.ordner.id}
                             ueberfaellig={ueberfaellig.has(zeile.ordner.id)}
@@ -82,6 +99,7 @@ export function DokumentOrdnerBaum({ baum, gewaehlt, ueberfaellig, onWaehlen, on
                             onAufklappen={(offen) => aufklappen(zeile.ordner.id, offen)}
                             onAktion={(aktion) => onAktion(aktion, zeile.ordner)}
                             onDateien={(dateien) => onDateienAbgelegt(zeile.ordner.id, dateien)}
+                            onDokument={(dok) => dokumentAbgelegt(dok, zeile.ordner)}
                         />
                     ))}
                 </div>

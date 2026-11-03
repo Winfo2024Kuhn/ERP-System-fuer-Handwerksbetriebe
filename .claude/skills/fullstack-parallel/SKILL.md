@@ -1,6 +1,6 @@
 ---
 name: fullstack-parallel
-description: Standard-Ablauf für JEDE Implementierung im ERP (Feature, Umbau, Redesign, Erweiterung) – Pflicht laut CLAUDE.md seit 31.10.2026. Die Hauptsession ist Orchestrator: kurzes Brainstorming mit dem Nutzer, API-Vertrag festlegen, dann Backend-Agent und Frontend-Agent parallel per Subagent bauen lassen, toten Code löschen, erst wenn alles fertig ist EIN gemeinsames /review-and-ship, PR bis zum Merge begleiten, aufräumen (Server, Container, Issues, Branches). Betrifft die Aufgabe nur Backend oder nur Frontend, läuft nur der passende Agent, alle übrigen Schritte gelten. Auch explizit über „/fullstack-parallel“. Andere Abläufe (/bugfix, /loese-problem) nur, wenn der Nutzer sie ausdrücklich aufruft.
+description: Standard-Ablauf für JEDE Implementierung im ERP (Feature, Umbau, Redesign, Erweiterung) – Pflicht laut CLAUDE.md seit 31.10.2026. Die Hauptsession ist Orchestrator: kurzes Brainstorming mit dem Nutzer, API-Vertrag festlegen, dann Backend-Agent und Frontend-Agent parallel per Subagent test-first (TDD) bauen lassen, Doku nachziehen, toten Code löschen, erst wenn alles fertig ist EIN gemeinsames /review-and-ship, PR bis zum Merge begleiten, aufräumen (Server, Container, Issues, Branches). Betrifft die Aufgabe nur Backend oder nur Frontend, läuft nur der passende Agent, alle übrigen Schritte gelten. Auch explizit über „/fullstack-parallel“. Andere Abläufe (/bugfix, /loese-problem) nur, wenn der Nutzer sie ausdrücklich aufruft.
 ---
 
 # fullstack-parallel – du orchestrierst, Backend- und Frontend-Agent bauen parallel, Review am Schluss
@@ -94,7 +94,8 @@ entfällt). Jeder Prompt muss allein tragen; die Agenten kennen das Gespräch ni
 4. **Der API-Vertrag aus Schritt 2** wörtlich, inkl. Paginierung und 400-Meldungstexten.
 5. **Fachliche Regeln** aus dem Brainstorming (was passiert im Hintergrund, was ändert sich nicht, Grenzfälle) – daraus entstehen auch die Info-Button-Texte, die du dem Frontend-Agenten gibst.
 6. **Grenzen:** nur Backend-Dateien, Frontend nicht anfassen, **nicht committen**.
-7. **Bericht:** wie in der Agent-Definition, vor allem jede Abweichung vom Vertrag und das tatsächliche Verhalten für die Info-Texte.
+7. **TDD und Doku:** den Abschnitt „Test-Driven Development und Doku nachziehen“ unten wörtlich übernehmen und die betroffenen Doku-Dateien nennen.
+8. **Bericht:** wie in der Agent-Definition, vor allem jede Abweichung vom Vertrag, das tatsächliche Verhalten für die Info-Texte, was test-first entstand und welche Doku angepasst wurde.
 
 ### 3b. Briefing Frontend-Agent
 
@@ -119,8 +120,11 @@ Hinein gehört:
    `src/main/java` nicht anfassen, **nicht committen**.
 9. **Toten Code löschen:** den Abschnitt „Toten Code immer löschen“ unten wörtlich in den
    Prompt übernehmen.
-10. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
-   Lint/Build-Status, alle Info-Button-Stellen, gelöschter toter Code, offene Punkte.
+10. **TDD und Doku:** den Abschnitt „Test-Driven Development und Doku nachziehen“ unten
+   wörtlich übernehmen und die betroffenen Doku-Stellen nennen.
+11. **Bericht:** vollständige Liste geänderter/neuer/gelöschter Dateien, Testzahlen,
+   Lint/Build-Status, alle Info-Button-Stellen, gelöschter toter Code, was test-first
+   entstand, angepasste Doku, offene Punkte.
 
 Ändert sich der Vertrag später (z. B. weil der Backend-Agent eine Abweichung meldet),
 **beiden** laufenden Agenten per `SendMessage` Bescheid geben – nicht neue starten.
@@ -182,6 +186,29 @@ bleibt:
   Schnelle Einzelläufe decken Wettläufe auf, die unter Last verborgen bleiben.
   (PowerShell: `$env:E2E_PORT=<port>; npx playwright test …`)
 
+### Test-Driven Development und Doku nachziehen (Nutzervorgabe 03.11.2026, gilt für Backend und Frontend)
+
+**Test zuerst, immer.** Jede Verhaltensänderung entsteht nach dem TDD-Kreislauf: erst den
+Test schreiben, der das gewünschte Verhalten beschreibt, ihn **rot** laufen sehen, dann
+nur so viel Produktivcode, bis er **grün** ist, dann aufräumen. Gilt für neue Funktionen
+genauso wie für Fehlerbehebungen (erst der Test, der den Fehler zeigt). Beide Agenten
+nutzen dafür den Skill `superpowers:test-driven-development` und sagen im Bericht ehrlich,
+was test-first entstand und was nicht.
+
+**Doku im selben PR nachziehen.** Was sich für Nutzer oder Entwickler ändert, wird im
+selben Zug dokumentiert – nicht „später“:
+
+- **Backend:** Fach-/API-Doku unter `docs/` (z. B. `docs/<bereich>-api.md`,
+  `docs/API_REFERENZ.md`, `docs/ADMIN_ENDPUNKTE.md` bei Admin-Endpunkten), Javadoc und
+  Klassenkommentare der geänderten Klassen, Kopfkommentar der Flyway-Migration; neue
+  Regeln oder Muster zusätzlich in `docs/agent instructions/docs/BACKEND_ARCH.md`.
+- **Frontend:** In-App-Hilfe (Seiten-Info, Info-Buttons), Anleitungen unter
+  `docs/benutzer/`, neue Bausteine oder Regeln in `docs/agent instructions/docs/FRONTEND_UI.md`.
+- **Veraltete Doku** (alte Felder, alte Einschränkungen wie „nur PDF“) wird angepasst
+  oder gelöscht, nicht stehen gelassen.
+- Im Bericht und im PR-Text die angepassten Doku-Stellen auflisten.
+- **In beide Briefings** (3a und 3b) diesen Abschnitt wörtlich übernehmen.
+
 ### Toten Code immer löschen (Nutzervorgabe 31.10.2026, gilt für Backend und Frontend)
 
 Was durch die Änderung niemand mehr benutzt, wird im selben PR gelöscht – nicht
@@ -225,6 +252,9 @@ Wenn beide Berichte da sind:
 - Gegenprobe Info-Buttons: Sind alle geplanten Stellen da, und stimmen die Texte noch
   mit dem Verhalten überein, das der Backend-Agent berichtet (Details ändern sich beim
   Bauen oft)? Abweichungen per `SendMessage` an den Frontend-Agenten.
+- Gegenprobe TDD und Doku: Gibt es zu jeder Verhaltensänderung einen Test? Sind die
+  Doku-Stellen angepasst, und steht nirgends mehr das alte Verhalten? Fehlendes per
+  `SendMessage` beim zuständigen Agenten nachfordern.
 - Gegenprobe toter Code: Endpoints und Bausteine, die das neue Frontend nicht mehr nutzt,
   greppen und vom zuständigen Agenten löschen lassen (siehe „Toten Code immer löschen“).
 - Beide Seiten selbst einmal laufen lassen: `./mvnw -q compile` + Backend-Tests,

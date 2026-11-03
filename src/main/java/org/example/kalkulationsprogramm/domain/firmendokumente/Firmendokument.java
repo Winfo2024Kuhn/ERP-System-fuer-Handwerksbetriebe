@@ -17,8 +17,9 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * Ein abgelegtes Firmen-PDF. Die Datei liegt unter {@code uploads/firmendokumente/} mit einem vom ERP
- * erzeugten Namen ({@link #gespeicherterDateiname}); der Originalname dient nur der Anzeige.
+ * Ein abgelegtes Firmendokument (beliebiges Format außer Programmdateien). Die Datei liegt unter
+ * {@code uploads/firmendokumente/} mit einem vom ERP erzeugten Namen ({@link #gespeicherterDateiname},
+ * {@code <UUID>.bin}, ältere PDFs {@code <UUID>.pdf}); der Originalname dient der Anzeige und bestimmt die Dateiart.
  */
 @Getter
 @Setter

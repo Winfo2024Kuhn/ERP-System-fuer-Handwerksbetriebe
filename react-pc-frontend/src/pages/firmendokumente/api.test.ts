@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     benenneOrdnerUm, dateiUrl, ladeDokumente, ladeFaellige, ladeHoch, ladeOrdner, legeOrdnerAn, loescheDokument, loescheOrdner,
-    sucheDokumente, speichereDokument, verschiebeOrdner,
+    ladeOrdnerRechte, sucheDokumente, speichereDokument, speichereOrdnerRechte, verschiebeOrdner,
 } from './api';
 
 const ok = (body: unknown, status = 200) => new Response(body === undefined ? null : JSON.stringify(body), { status });
@@ -57,7 +57,7 @@ describe('Firmendokumente-API', () => {
         expect(aufruf(2)[0]).toBe('/api/firmendokumente/faellig?page=1&size=50');
     });
 
-    it('lädt ein PDF als multipart hoch – Fällig am nur, wenn gesetzt', async () => {
+    it('lädt eine Datei als multipart hoch – Fällig am nur, wenn gesetzt', async () => {
         const datei = new File(['%PDF-1.7'], 'scan.pdf', { type: 'application/pdf' });
         await ladeHoch(datei, { name: 'Torprüfung', ordnerId: 2, faelligAm: '2027-10-31' });
         await ladeHoch(datei, { name: 'Ohne Datum', ordnerId: 2, faelligAm: null });
@@ -80,6 +80,28 @@ describe('Firmendokumente-API', () => {
     it('reicht die Meldung des Servers durch', async () => {
         abruf.mockImplementation(async () => ok({ status: 400, message: 'Hier gibt es schon einen Ordner „Tore“.', fields: {} }, 400));
         await expect(legeOrdnerAn('Tore', 1)).rejects.toThrow('Hier gibt es schon einen Ordner „Tore“.');
+    });
+
+    it('lädt und speichert die Rechte eines obersten Ordners', async () => {
+        const rechte = { ordnerId: 1, ordnerName: 'Prüfungen', eingeschraenkt: true, abteilungen: [{ abteilungId: 3, name: 'Werkstatt', stufe: 'ANSEHEN' }] };
+        abruf.mockImplementation(async () => ok(rechte));
+        await expect(ladeOrdnerRechte(1)).resolves.toEqual(rechte);
+        await speichereOrdnerRechte(1, { eingeschraenkt: true, abteilungen: [{ abteilungId: 3, stufe: 'AENDERN' }] });
+        expect(aufruf(0)[0]).toBe('/api/firmendokumente/ordner/1/rechte');
+        expect(aufruf(1)[0]).toBe('/api/firmendokumente/ordner/1/rechte');
+        expect(aufruf(1)[1]?.method).toBe('PUT');
+        expect(body(1)).toEqual({ eingeschraenkt: true, abteilungen: [{ abteilungId: 3, stufe: 'AENDERN' }] });
+    });
+
+    it('zeigt die 403-Meldung des Servers bei fehlenden Rechten', async () => {
+        abruf.mockImplementation(async () => ok({ status: 403, message: 'Du darfst in diesem Ordner nichts ändern.', fields: {} }, 403));
+        await expect(benenneOrdnerUm(2, 'Neu')).rejects.toThrow('Du darfst in diesem Ordner nichts ändern.');
+    });
+
+    it('meldet einen Fehler beim Hochladen ohne Server-Text als „Datei“', async () => {
+        abruf.mockImplementation(async () => new Response('kaputt', { status: 500 }));
+        const datei = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
+        await expect(ladeHoch(datei, { name: 'Foto', ordnerId: 2, faelligAm: null })).rejects.toThrow('Die Datei konnte nicht hochgeladen werden.');
     });
 
     it('baut die Datei-Adresse aus der ID', () => {

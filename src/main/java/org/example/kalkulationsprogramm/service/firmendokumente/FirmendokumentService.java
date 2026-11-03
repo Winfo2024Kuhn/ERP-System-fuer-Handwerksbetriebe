@@ -10,7 +10,10 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Locale;
+import java.util.List;
+import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import org.example.kalkulationsprogramm.domain.firmendokumente.Firmendokument;
 import org.example.kalkulationsprogramm.domain.firmendokumente.FirmendokumentOrdner;
@@ -21,7 +24,10 @@ import org.example.kalkulationsprogramm.mapper.FirmendokumentMapper;
 import org.example.kalkulationsprogramm.repository.FirmendokumentOrdnerRepository;
 import org.example.kalkulationsprogramm.repository.FirmendokumentRepository;
 import org.example.kalkulationsprogramm.util.LikeMuster;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -31,7 +37,11 @@ import org.springframework.web.multipart.MultipartFile;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/** Firmen-PDFs: auflisten, suchen, fällige zeigen, hochladen, ändern, löschen und ausliefern. */
+/**
+ * Firmendokumente (alle Formate außer Programmdateien): auflisten, suchen, fällige zeigen, hochladen, ändern,
+ * löschen und ausliefern – jeweils nur in Ordnern, die der Angemeldete sehen bzw. ändern darf
+ * ({@link FirmendokumentZugriff}).
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -43,27 +53,35 @@ public class FirmendokumentService {
     static final int SUCHE_MAX = 100;
 
     private static final String DOKUMENT_FEHLT = "Das Dokument gibt es nicht mehr.";
+    private static final String ORDNER_FEHLT = "Den Ordner gibt es nicht mehr.";
     private static final String NAME_FEHLT = "Bitte einen Namen für das Dokument eingeben.";
 
     private final FirmendokumentRepository dokumentRepository;
     private final FirmendokumentOrdnerRepository ordnerRepository;
     private final FirmendokumentDateiablage ablage;
+    private final FirmendokumentZugriff zugriff;
     private final Clock clock;
 
-    /** Datei zum Ausliefern: Pfad auf dem Server und Dateiname für den Browser. */
-    public record Datei(Path pfad, String dateiname) {
+    /**
+     * Datei zum Ausliefern: Pfad auf dem Server, Dateiname für den Browser, Content-Type und ob sie nie im Browser
+     * geöffnet werden darf (alles außer PDF und Bild).
+     */
+    public record Datei(Path pfad, String dateiname, MediaType mediaType, boolean immerAlsAnhang) {
+    }
+
+    /** Dokumente direkt in einem Ordner; unsichtbarer Ordner → 404 wie „gibt es nicht“. */
+    @Transactional(readOnly = true)
+    public FirmendokumentSeiteDto imOrdner(Long ordnerId, int page, int size, Authentication authentication) {
+        FirmendokumentOrdner ordner = ordnerRepository.findById(ordnerId)
+                .orElseThrow(() -> nichtGefunden(ORDNER_FEHLT));
+        boolean darfAendern = zugriff.verlangeAnsehen(ordner, authentication, () -> nichtGefunden(ORDNER_FEHLT))
+                .darfAendern();
+        return FirmendokumentMapper.zuSeite(dokumentRepository.findeImOrdner(ordnerId, seite(page, size)),
+                d -> darfAendern);
     }
 
     @Transactional(readOnly = true)
-    public FirmendokumentSeiteDto imOrdner(Long ordnerId, int page, int size) {
-        if (!ordnerRepository.existsById(ordnerId)) {
-            throw nichtGefunden("Den Ordner gibt es nicht mehr.");
-        }
-        return FirmendokumentMapper.zuSeite(dokumentRepository.findeImOrdner(ordnerId, seite(page, size)));
-    }
-
-    @Transactional(readOnly = true)
-    public FirmendokumentSeiteDto suche(String suchtext, int page, int size) {
+    public FirmendokumentSeiteDto suche(String suchtext, int page, int size, Authentication authentication) {
         String text = suchtext == null ? "" : suchtext.strip();
         if (text.length() < SUCHE_MIN) {
             throw fehler("Bitte mindestens " + SUCHE_MIN + " Zeichen eingeben.");
@@ -71,89 +89,131 @@ public class FirmendokumentService {
         if (text.length() > SUCHE_MAX) {
             throw fehler("Der Suchbegriff darf höchstens " + SUCHE_MAX + " Zeichen lang sein.");
         }
-        return FirmendokumentMapper.zuSeite(dokumentRepository.suche(LikeMuster.enthaelt(text), seite(page, size)));
+        String muster = LikeMuster.enthaelt(text);
+        return inSichtbarenOrdnern(authentication, seite(page, size),
+                s -> dokumentRepository.suche(muster, s),
+                (ids, s) -> dokumentRepository.sucheInOrdnern(muster, ids, s));
     }
 
     @Transactional(readOnly = true)
-    public FirmendokumentSeiteDto faellig(int page, int size) {
+    public FirmendokumentSeiteDto faellig(int page, int size, Authentication authentication) {
         LocalDate grenze = LocalDate.now(clock).plusDays(BALD_FAELLIG_TAGE);
-        return FirmendokumentMapper.zuSeite(dokumentRepository.findeFaelligBis(grenze, seite(page, size)));
+        return inSichtbarenOrdnern(authentication, seite(page, size),
+                s -> dokumentRepository.findeFaelligBis(grenze, s),
+                (ids, s) -> dokumentRepository.findeFaelligBisInOrdnern(grenze, ids, s));
     }
 
+    /** Hochladen braucht „Ändern“ am Zielordner; ein unsichtbarer Ordner gilt als „gibt es nicht mehr“ (400). */
     @Transactional
     public FirmendokumentDto hochladen(MultipartFile datei, Long ordnerId, String name, LocalDate faelligAm,
-            String hochgeladenVon) {
-        FirmendokumentPdfPruefung.pruefe(datei);
+            String hochgeladenVon, Authentication authentication) {
+        FirmendokumentDateiPruefung.pruefe(datei);
         String sauberName = FirmendokumentEingaben.name(name, NAME_FEHLT);
-        FirmendokumentOrdner ordner = zielOrdner(ordnerId);
+        FirmendokumentDateiPruefung.pruefeName(sauberName);
+        FirmendokumentOrdner ordner = zielOrdner(ordnerId, authentication);
 
         String gespeichert = speichere(datei);
         try {
             Firmendokument dokument = new Firmendokument();
             dokument.setOrdner(ordner);
             dokument.setName(sauberName);
-            dokument.setOriginalDateiname(FirmendokumentPdfPruefung.anzeigeName(datei.getOriginalFilename()));
+            dokument.setOriginalDateiname(FirmendokumentDateinamen.anzeigeName(datei.getOriginalFilename()));
             dokument.setGespeicherterDateiname(gespeichert);
             dokument.setGroesseBytes(datei.getSize());
             dokument.setHochgeladenAm(LocalDateTime.now(clock));
             dokument.setHochgeladenVon(hochgeladenVon);
             dokument.setFaelligAm(faelligAm);
-            return FirmendokumentMapper.zuDto(dokumentRepository.saveAndFlush(dokument));
+            return FirmendokumentMapper.zuDto(dokumentRepository.saveAndFlush(dokument), true);
         } catch (RuntimeException e) {
             ablage.loesche(gespeichert);
             throw e;
         }
     }
 
+    /**
+     * Umbenennen, Verschieben und Datum: braucht „Ändern“ am bisherigen und am neuen Ordner; aus einem eingeschränkten
+     * Zweig unter einen anderen obersten Ordner nur als Admin.
+     */
     @Transactional
-    public FirmendokumentDto aendern(Long id, FirmendokumentAendernDto eingabe) {
-        Firmendokument dokument = finde(id);
-        dokument.setName(FirmendokumentEingaben.name(eingabe.name(), NAME_FEHLT));
-        dokument.setOrdner(zielOrdner(eingabe.ordnerId()));
+    public FirmendokumentDto aendern(Long id, FirmendokumentAendernDto eingabe, Authentication authentication) {
+        Firmendokument dokument = aenderbaresDokument(id, authentication);
+        String name = FirmendokumentEingaben.name(eingabe.name(), NAME_FEHLT);
+        FirmendokumentDateiPruefung.pruefeName(name);
+        FirmendokumentOrdner ziel = dokument.getOrdner();
+        if (!ziel.getId().equals(eingabe.ordnerId())) {
+            ziel = zielOrdner(eingabe.ordnerId(), authentication);
+            zugriff.verlangeVerschieben(dokument.getOrdner(), ziel, authentication);
+        }
+        dokument.setName(name);
+        dokument.setOrdner(ziel);
         dokument.setFaelligAm(eingabe.faelligAm());
-        return FirmendokumentMapper.zuDto(dokument);
+        return FirmendokumentMapper.zuDto(dokument, true);
     }
 
     /**
-     * Löscht Eintrag und Datei endgültig. Die Datei verschwindet erst nach dem Commit: Scheitert die
-     * Transaktion, bleiben Eintrag und Datei zusammen erhalten.
+     * Löscht Eintrag und Datei endgültig (braucht „Ändern“). Die Datei verschwindet erst nach dem Commit: Scheitert
+     * die Transaktion, bleiben Eintrag und Datei zusammen erhalten.
      */
     @Transactional
-    public void loeschen(Long id) {
-        Firmendokument dokument = finde(id);
+    public void loeschen(Long id, Authentication authentication) {
+        Firmendokument dokument = aenderbaresDokument(id, authentication);
         dokumentRepository.delete(dokument);
         String gespeichert = dokument.getGespeicherterDateiname();
         nachCommit(() -> ablage.loesche(gespeichert));
     }
 
+    /** Datei zum Anzeigen/Herunterladen; „Ansehen“ reicht, unsichtbar → 404. */
     @Transactional(readOnly = true)
-    public Datei datei(Long id) {
+    public Datei datei(Long id, Authentication authentication) {
         Firmendokument dokument = finde(id);
+        zugriff.verlangeAnsehen(dokument.getOrdner(), authentication, () -> nichtGefunden(DOKUMENT_FEHLT));
         Path pfad = ablage.pfad(dokument.getGespeicherterDateiname());
         if (!Files.isReadable(pfad)) {
             throw nichtGefunden("Die Datei zu diesem Dokument wurde nicht gefunden.");
         }
-        return new Datei(pfad, downloadName(dokument.getName()));
+        String endung = FirmendokumentDateinamen.endungDesDokuments(dokument);
+        return new Datei(pfad, FirmendokumentDateinamen.downloadName(dokument.getName(), endung),
+                FirmendokumentDateiart.mediaType(endung), FirmendokumentDateiart.aus(endung).immerAlsAnhang());
     }
 
-    /** Dateiname für den Browser: Dokumentname ohne Sonderzeichen, mit „.pdf“. */
-    static String downloadName(String name) {
-        String sauber = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").strip();
-        if (sauber.isEmpty()) {
-            sauber = "dokument";
+    /**
+     * Seite über alle Ordner, wenn der Angemeldete alles sieht; sonst nur aus den sichtbaren Ordnern (keiner
+     * sichtbar → leere Seite ohne Abfrage). Das Ändern-Recht je Dokument kommt aus derselben Berechnung.
+     */
+    private FirmendokumentSeiteDto inSichtbarenOrdnern(Authentication authentication, PageRequest seite,
+            Function<PageRequest, Page<Firmendokument>> ueberAlle,
+            BiFunction<Set<Long>, PageRequest, Page<Firmendokument>> inOrdnern) {
+        FirmendokumentSichtbarkeit sichtbar = zugriff.sichtbarkeit(authentication);
+        if (sichtbar.allesSichtbar()) {
+            return FirmendokumentMapper.zuSeite(ueberAlle.apply(seite), d -> true);
         }
-        return sauber.toLowerCase(Locale.ROOT).endsWith(".pdf") ? sauber : sauber + ".pdf";
+        Set<Long> ordnerIds = sichtbar.sichtbareOrdnerIds();
+        if (ordnerIds.isEmpty()) {
+            return new FirmendokumentSeiteDto(List.of(), 0, seite.getPageNumber(), seite.getPageSize());
+        }
+        return FirmendokumentMapper.zuSeite(inOrdnern.apply(ordnerIds, seite),
+                d -> sichtbar.stufe(d.getOrdner().getId()).darfAendern());
     }
 
     private Firmendokument finde(Long id) {
         return dokumentRepository.findById(id).orElseThrow(() -> nichtGefunden(DOKUMENT_FEHLT));
     }
 
-    private FirmendokumentOrdner zielOrdner(Long ordnerId) {
+    /** Dokument, dessen Ordner der Angemeldete ändern darf; unsichtbar → 404, nur ansehen → 403. */
+    private Firmendokument aenderbaresDokument(Long id, Authentication authentication) {
+        Firmendokument dokument = finde(id);
+        zugriff.verlangeAendern(dokument.getOrdner(), authentication, () -> nichtGefunden(DOKUMENT_FEHLT));
+        return dokument;
+    }
+
+    /** Zielordner, in dem der Angemeldete ändern darf; fehlt oder unsichtbar → 400, nur ansehen → 403. */
+    private FirmendokumentOrdner zielOrdner(Long ordnerId, Authentication authentication) {
         if (ordnerId == null) {
             throw fehler("Bitte einen Ordner auswählen.");
         }
-        return ordnerRepository.findById(ordnerId).orElseThrow(() -> fehler("Den Ordner gibt es nicht mehr."));
+        FirmendokumentOrdner ordner = ordnerRepository.findById(ordnerId).orElseThrow(() -> fehler(ORDNER_FEHLT));
+        zugriff.verlangeAendern(ordner, authentication, () -> fehler(ORDNER_FEHLT));
+        return ordner;
     }
 
     private String speichere(MultipartFile datei) {

@@ -12,7 +12,7 @@ function zeigeDokumentDialog(onSpeichern: (a: DokumentAngaben) => Promise<void>,
     const onAbbrechen = vi.fn();
     render(
         <ToastProvider>
-            <DokumentDialog titel="PDF hochladen" beschreibung="Datei: scan_0042.pdf" start={start} ordnerOptionen={OPTIONEN}
+            <DokumentDialog titel="Datei hochladen" beschreibung="Datei: scan_0042.pdf" start={start} ordnerOptionen={OPTIONEN}
                 knopfText="Hochladen" knopfSymbol={null} onAbbrechen={onAbbrechen} onSpeichern={onSpeichern} />
         </ToastProvider>,
     );
@@ -20,6 +20,18 @@ function zeigeDokumentDialog(onSpeichern: (a: DokumentAngaben) => Promise<void>,
 }
 
 describe('DokumentDialog', () => {
+    it('lehnt einen Namen mit Programmendung vorab ab', async () => {
+        const user = userEvent.setup();
+        const onSpeichern = vi.fn().mockResolvedValue(undefined);
+        zeigeDokumentDialog(onSpeichern);
+        const name = screen.getByLabelText('Name *');
+        await user.clear(name);
+        await user.type(name, 'setup.exe');
+        await user.click(screen.getByRole('button', { name: 'Hochladen' }));
+        expect(screen.getByRole('alert')).toHaveTextContent('Der Name darf nicht auf eine Programmendung wie .exe enden.');
+        expect(onSpeichern).not.toHaveBeenCalled();
+    });
+
     it('füllt den Namen vor, verlangt ihn aber als Pflichtfeld', async () => {
         const user = userEvent.setup();
         const onSpeichern = vi.fn().mockResolvedValue(undefined);
@@ -41,9 +53,9 @@ describe('DokumentDialog', () => {
 
     it('zeigt die Meldung des Servers im Dialog und als Toast', async () => {
         const user = userEvent.setup();
-        zeigeDokumentDialog(vi.fn().mockRejectedValue(new Error('Es können nur PDF-Dateien abgelegt werden.')));
+        zeigeDokumentDialog(vi.fn().mockRejectedValue(new Error('Programmdateien (z. B. .exe oder .bat) können aus Sicherheitsgründen nicht abgelegt werden.')));
         await user.click(screen.getByRole('button', { name: 'Hochladen' }));
-        expect(await screen.findAllByText('Es können nur PDF-Dateien abgelegt werden.')).toHaveLength(2);
+        expect(await screen.findAllByText('Programmdateien (z. B. .exe oder .bat) können aus Sicherheitsgründen nicht abgelegt werden.')).toHaveLength(2);
         expect(screen.getByRole('button', { name: 'Hochladen' })).toBeEnabled();
     });
 

@@ -1,6 +1,7 @@
 package org.example.kalkulationsprogramm.repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 
 import org.example.kalkulationsprogramm.domain.firmendokumente.Firmendokument;
@@ -37,6 +38,22 @@ public interface FirmendokumentRepository extends JpaRepository<Firmendokument, 
             + "FROM Firmendokument d GROUP BY d.ordner.id")
     List<FirmendokumentOrdnerZaehler> zaehleJeOrdner(@Param("heute") LocalDate heute,
             @Param("grenze") LocalDate grenze);
+
+    /** Wie {@link #suche}, nur in den sichtbaren Ordnern ({@code ordnerIds} nie leer übergeben). */
+    @Query(value = "SELECT d FROM Firmendokument d WHERE d.ordner.id IN :ordnerIds AND (lower(d.name) LIKE :muster "
+            + "ESCAPE '\\' OR lower(d.originalDateiname) LIKE :muster ESCAPE '\\') ORDER BY lower(d.name), d.id",
+            countQuery = "SELECT count(d) FROM Firmendokument d WHERE d.ordner.id IN :ordnerIds AND "
+                    + "(lower(d.name) LIKE :muster ESCAPE '\\' OR lower(d.originalDateiname) LIKE :muster ESCAPE '\\')")
+    Page<Firmendokument> sucheInOrdnern(@Param("muster") String muster, @Param("ordnerIds") Collection<Long> ordnerIds,
+            Pageable pageable);
+
+    /** Wie {@link #findeFaelligBis}, nur in den sichtbaren Ordnern ({@code ordnerIds} nie leer übergeben). */
+    @Query(value = "SELECT d FROM Firmendokument d WHERE d.ordner.id IN :ordnerIds AND d.faelligAm IS NOT NULL "
+            + "AND d.faelligAm <= :grenze ORDER BY d.faelligAm ASC NULLS FIRST, lower(d.name), d.id",
+            countQuery = "SELECT count(d) FROM Firmendokument d WHERE d.ordner.id IN :ordnerIds "
+                    + "AND d.faelligAm IS NOT NULL AND d.faelligAm <= :grenze")
+    Page<Firmendokument> findeFaelligBisInOrdnern(@Param("grenze") LocalDate grenze,
+            @Param("ordnerIds") Collection<Long> ordnerIds, Pageable pageable);
 
     boolean existsByOrdnerId(Long ordnerId);
 }

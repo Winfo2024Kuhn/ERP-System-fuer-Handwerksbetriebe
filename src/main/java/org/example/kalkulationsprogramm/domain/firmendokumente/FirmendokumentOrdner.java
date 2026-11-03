@@ -33,6 +33,13 @@ public class FirmendokumentOrdner {
     @JoinColumn(name = "parent_id")
     private FirmendokumentOrdner parent;
 
+    /**
+     * Nur am obersten Ordner von Bedeutung: {@code true} = nur die eingetragenen Abteilungen
+     * ({@link FirmendokumentOrdnerRecht}) und Admins sehen bzw. ändern diesen Zweig. {@code false} = alle.
+     */
+    @Column(name = "rechte_eingeschraenkt", nullable = false)
+    private boolean rechteEingeschraenkt;
+
     @Column(name = "angelegt_am", nullable = false)
     private LocalDateTime angelegtAm;
 

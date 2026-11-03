@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronRight, FolderPlus, Upload } from 'lucide-react';
+import { ChevronRight, Eye, FolderPlus, Upload } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { ordnerKette, pfadText, type Baum } from '../../lib/ordnerBaum';
 import { cn } from '../../lib/utils';
@@ -62,18 +62,29 @@ export function RechterBereich({ ansicht, baum, liste, aktionen, onHochladen, on
 
     const ordner = baum.byId.get(ansicht.ordnerId);
     const kette = ordnerKette(baum, ansicht.ordnerId);
+    const darfAendern = ordner?.darfAendern ?? false;
     return (
-        <Ablage onDateien={(dateien) => onDateienAbgelegt(ansicht.ordnerId, dateien)}>
+        <Ablage onDateien={darfAendern ? (dateien) => onDateienAbgelegt(ansicht.ordnerId, dateien) : undefined}>
             <Bereich
                 titel={ordner?.name ?? ''}
                 kopfzeile={<Brotkrumen kette={kette} onWaehlen={onOrdnerWaehlen} />}
-                untertitel="PDFs hierher ziehen oder über den Knopf auswählen."
-                aktion={<Button onClick={onHochladen}><Upload className="h-4 w-4" aria-hidden="true" />PDF hochladen</Button>}
+                untertitel={darfAendern ? 'Dateien hierher ziehen oder über den Knopf auswählen.' : <NurAnsehenHinweis />}
+                aktion={darfAendern ? <Button onClick={onHochladen}><Upload className="h-4 w-4" aria-hidden="true" />Datei hochladen</Button> : undefined}
             >
                 <DokumentListe {...gemeinsam} beschriftung={`Dokumente in ${ordner?.name ?? 'diesem Ordner'}`} aktionen={aktionen}
-                    leer="In diesem Ordner liegt noch kein PDF. Über „PDF hochladen“ oder per Ziehen ablegen." />
+                    leer={darfAendern ? 'In diesem Ordner liegt noch kein Dokument. Über „Datei hochladen“ oder per Ziehen ablegen.' : 'In diesem Ordner liegt noch kein Dokument.'} />
             </Bereich>
         </Ablage>
+    );
+}
+
+/** Ruhiger Hinweis statt Hochladen, wenn der Angemeldete den Ordner nur ansehen darf. */
+function NurAnsehenHinweis() {
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            <Eye className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            Du kannst diesen Ordner nur ansehen.
+        </span>
     );
 }
 
@@ -83,13 +94,13 @@ export function KeineOrdner({ onNeuerOrdner }: { onNeuerOrdner: () => void }) {
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
             <FolderPlus className="h-6 w-6 text-slate-400" aria-hidden="true" />
             <p className="font-medium text-slate-900">Noch keine Ordner.</p>
-            <p className="max-w-sm text-sm text-slate-500">Zum Beispiel „Prüfungen“ oder „Arbeitsschutz“. Darin werden die PDFs abgelegt.</p>
+            <p className="max-w-sm text-sm text-slate-500">Zum Beispiel „Prüfungen“ oder „Arbeitsschutz“. Darin werden die Dokumente abgelegt.</p>
             <Button onClick={onNeuerOrdner}><FolderPlus className="h-4 w-4" aria-hidden="true" />Ersten Ordner anlegen</Button>
         </div>
     );
 }
 
-function Bereich({ titel, untertitel, kopfzeile, aktion, children }: { titel: string; untertitel: string; kopfzeile?: ReactNode; aktion?: ReactNode; children: ReactNode }) {
+function Bereich({ titel, untertitel, kopfzeile, aktion, children }: { titel: string; untertitel: ReactNode; kopfzeile?: ReactNode; aktion?: ReactNode; children: ReactNode }) {
     return (
         <section aria-label={titel} className="space-y-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -121,14 +132,14 @@ function Brotkrumen({ kette, onWaehlen }: { kette: FirmenOrdner[]; onWaehlen: (i
     );
 }
 
-/** Fläche, auf die man PDFs aus dem Explorer/Finder ziehen kann. */
-function Ablage({ onDateien, children }: { onDateien: (dateien: FileList) => void; children: ReactNode }) {
+/** Fläche, auf die man Dateien aus dem Explorer/Finder ziehen kann. Ohne `onDateien` (kein Recht „Ändern“) nimmt sie nichts an. */
+function Ablage({ onDateien, children }: { onDateien?: (dateien: FileList) => void; children: ReactNode }) {
     const [aktiv, setAktiv] = useState(false);
     return (
         <div
-            onDragOver={(e) => { if (!ziehtDateien(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setAktiv(true); }}
+            onDragOver={(e) => { if (!onDateien || !ziehtDateien(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setAktiv(true); }}
             onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setAktiv(false); }}
-            onDrop={(e) => { if (!ziehtDateien(e)) return; e.preventDefault(); setAktiv(false); onDateien(e.dataTransfer.files); }}
+            onDrop={(e) => { if (!onDateien || !ziehtDateien(e)) return; e.preventDefault(); setAktiv(false); onDateien(e.dataTransfer.files); }}
             className={cn('-m-2 rounded-lg p-2', aktiv && 'bg-rose-50 ring-2 ring-inset ring-rose-300')}
         >
             {children}
