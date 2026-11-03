@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { baueBaum, OBERSTE_EBENE } from '../../lib/ordnerBaum';
 import {
-    faelligkeit, faelligkeitText, istSuche, MAX_DATEI_BYTES, nameAusDateiname, ordnerMitUeberfaelligem,
-    ordnerOptionen, pdfDateiname, pruefeName, pruefePdfDatei, teilePdfDateien, ziehtDateien, zieleFuerOrdner,
+    DOKUMENT_DATENTYP, dokumentDarfNach, HAUPTORDNER_GESPERRT_TEXT, hauptordnerWechselGesperrt, wurzelId, downloadDateiname, faelligkeit, faelligkeitText, GESPERRTE_ENDUNGEN, istSuche, liesGezogenesDokument,
+    MAX_DATEI_BYTES, nameAusDateiname, ordnerMitUeberfaelligem, ordnerOptionen, pruefeDatei, pruefeName, schreibeGezogenesDokument,
+    teileDateien, ziehtDateien, ziehtDokument, zieleFuerOrdner,
 } from './firmendokumenteLogik';
 import type { FirmenOrdner } from './typen';
 
 const ordner = (id: number, name: string, parentId: number | null, anzahlUeberfaellig = 0): FirmenOrdner => ({
-    id, name, parentId, anzahlDokumente: 1, anzahlUeberfaellig, anzahlBaldFaellig: 0,
+    id, name, parentId, anzahlDokumente: 1, anzahlUeberfaellig, anzahlBaldFaellig: 0, darfAendern: true, eingeschraenkt: false,
 });
 
 // Prüfungen › Tore › Halle 2, Prüfungen › Leitern, Arbeitsschutz
@@ -65,39 +66,87 @@ describe('ordnerMitUeberfaelligem', () => {
 });
 
 describe('Formatierung', () => {
-    it('schlägt den Namen aus dem Dateinamen vor', () => {
+    it('schlägt den Namen aus dem Dateinamen vor – ohne Pfad und ohne Endung', () => {
         expect(nameAusDateiname('Torprüfung Halle 2.PDF')).toBe('Torprüfung Halle 2');
         expect(nameAusDateiname('C:\\Scans\\scan_0042.pdf')).toBe('scan_0042');
         expect(nameAusDateiname('ordner/bericht.pdf.pdf')).toBe('bericht.pdf');
+        expect(nameAusDateiname('Baustelle Mustermann.jpeg')).toBe('Baustelle Mustermann');
+        expect(nameAusDateiname('Angebot v2.1.docx')).toBe('Angebot v2.1');
+        expect(nameAusDateiname('Liste ohne Endung')).toBe('Liste ohne Endung');
+        expect(nameAusDateiname('.htaccess')).toBe('.htaccess');
         expect(nameAusDateiname(`${'a'.repeat(250)}.pdf`)).toHaveLength(200);
         expect(nameAusDateiname('')).toBe('');
     });
 
-    it('hängt beim Herunterladen genau ein „.pdf“ an', () => {
-        expect(pdfDateiname('Torprüfung')).toBe('Torprüfung.pdf');
-        expect(pdfDateiname('Bericht.PDF')).toBe('Bericht.PDF');
+    it('baut den Download-Namen aus Dokumentname und Endung der Originaldatei', () => {
+        expect(downloadDateiname('Haftpflicht 2026', 'scan_0040.docx')).toBe('Haftpflicht 2026.docx');
+        expect(downloadDateiname('Torprüfung', 'scan.PDF')).toBe('Torprüfung.PDF');
+        expect(downloadDateiname('Bericht.pdf', 'scan.pdf')).toBe('Bericht.pdf');
+        expect(downloadDateiname('Bericht.PDF', 'scan.pdf')).toBe('Bericht.PDF');
+        expect(downloadDateiname('Foto Halle', 'C:\\Bilder\\IMG_1.jpg')).toBe('Foto Halle.jpg');
+        expect(downloadDateiname('Notiz', 'notiz')).toBe('Notiz');
+        expect(downloadDateiname('Notiz', '.htaccess')).toBe('Notiz');
+    });
+
+    it('entschärft eine Programmendung im Namen, wenn die Originaldatei keine Endung hat', () => {
+        expect(downloadDateiname('setup.exe', 'setup')).toBe('setup_exe');
+        expect(downloadDateiname('Start.BAT', 'LIESMICH')).toBe('Start_BAT');
+        expect(downloadDateiname('verknuepfung.appref-ms', 'x')).toBe('verknuepfung_appref-ms');
+        expect(downloadDateiname('Bericht.pdf', 'bericht')).toBe('Bericht.pdf');
+        expect(downloadDateiname('setup.exe', 'setup.pdf')).toBe('setup.exe.pdf');
     });
 });
 
 describe('Prüfungen', () => {
-    it('nimmt nur PDFs an', () => {
-        expect(pruefePdfDatei(datei('bericht.pdf', 'application/pdf'))).toBeNull();
-        expect(pruefePdfDatei(datei('bericht.pdf', ''))).toBeNull();
-        expect(pruefePdfDatei(datei('bild.png', 'image/png'))).toBe('„bild.png“ ist kein PDF. Es können nur PDF-Dateien abgelegt werden.');
-        expect(pruefePdfDatei(datei('tarnung.pdf', 'text/html'))).toContain('ist kein PDF');
-        expect(pruefePdfDatei(datei('notiz.txt', ''))).toContain('ist kein PDF');
+    it('nimmt jede Datei an – PDF, Bild, Word, Excel, Zeichnung, ohne Endung', () => {
+        expect(pruefeDatei(datei('bericht.pdf', 'application/pdf'))).toBeNull();
+        expect(pruefeDatei(datei('foto.JPG', 'image/jpeg'))).toBeNull();
+        expect(pruefeDatei(datei('angebot.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))).toBeNull();
+        expect(pruefeDatei(datei('liste.xlsx', ''))).toBeNull();
+        expect(pruefeDatei(datei('zeichnung.dwg', ''))).toBeNull();
+        expect(pruefeDatei(datei('LIESMICH', ''))).toBeNull();
+    });
+
+    it('sperrt Programmdateien – auch in Großschreibung', () => {
+        const meldung = 'Programmdateien (z. B. .exe oder .bat) können aus Sicherheitsgründen nicht abgelegt werden.';
+        expect(pruefeDatei(datei('setup.exe', 'application/x-msdownload'))).toBe(`„setup.exe“: ${meldung}`);
+        expect(pruefeDatei(datei('SETUP.EXE', ''))).toBe(`„SETUP.EXE“: ${meldung}`);
+        expect(pruefeDatei(datei('start.Bat', ''))).toContain('Programmdateien');
+        expect(pruefeDatei(datei('bericht.pdf.exe', 'application/pdf'))).toContain('Programmdateien');
+        expect(pruefeDatei(datei('exe', ''))).toBeNull();
+        expect(pruefeDatei(datei('handbuch.exe.pdf', 'application/pdf'))).toBeNull();
+    });
+
+    it('sperrt genau die Endungen aus dem Vertrag', () => {
+        expect([...GESPERRTE_ENDUNGEN].sort()).toEqual([
+            'app', 'application', 'appref-ms', 'bat', 'chm', 'cmd', 'com', 'command', 'cpl', 'dll', 'dmg', 'exe', 'gadget', 'hta', 'img', 'inf', 'iso',
+            'jar', 'js', 'jse', 'library-ms', 'lnk', 'msc', 'msi', 'msp', 'mst', 'pif', 'pkg', 'ps1', 'ps1xml', 'psd1', 'psm1', 'reg', 'scf', 'scr',
+            'settingcontent-ms', 'sh', 'url', 'vbe', 'vbs', 'vhd', 'vhdx', 'website', 'wsf', 'wsh', 'xbap',
+        ]);
+    });
+
+    it('erkennt auch Endungen mit Bindestrich und lässt Office-Makrodateien zu', () => {
+        expect(pruefeDatei(datei('start.appref-ms', ''))).toContain('Programmdateien');
+        expect(pruefeDatei(datei('Einstellung.SettingContent-ms', ''))).toContain('Programmdateien');
+        expect(pruefeDatei(datei('abbild.iso', ''))).toContain('Programmdateien');
+        expect(pruefeDatei(datei('kalkulation.xlsm', ''))).toBeNull();
+        expect(pruefeDatei(datei('brief.docm', ''))).toBeNull();
+        expect(pruefeDatei(datei('vortrag.pptm', ''))).toBeNull();
     });
 
     it('lehnt leere und zu große Dateien ab', () => {
-        expect(pruefePdfDatei(datei('leer.pdf', 'application/pdf', 0))).toBe('„leer.pdf“ ist leer. Bitte eine andere PDF wählen.');
-        expect(pruefePdfDatei({ name: 'riesig.pdf', type: 'application/pdf', size: MAX_DATEI_BYTES + 1 })).toBe('„riesig.pdf“ ist größer als 50 MB. Bitte eine kleinere PDF wählen oder die Datei verkleinern.');
+        expect(pruefeDatei(datei('leer.jpg', 'image/jpeg', 0))).toBe('„leer.jpg“ ist leer. Bitte eine andere Datei wählen.');
+        expect(pruefeDatei({ name: 'riesig.mp4', type: 'video/mp4', size: MAX_DATEI_BYTES + 1 })).toBe('„riesig.mp4“ ist größer als 50 MB. Bitte eine kleinere Datei wählen.');
+        expect(pruefeDatei({ name: 'genau.pdf', type: 'application/pdf', size: MAX_DATEI_BYTES })).toBeNull();
     });
 
-    it('teilt eine Auswahl in PDFs und Meldungen', () => {
-        const { pdfs, meldungen } = teilePdfDateien([datei('a.pdf', 'application/pdf'), datei('b.docx', 'application/msword')]);
-        expect(pdfs.map((d) => d.name)).toEqual(['a.pdf']);
-        expect(meldungen).toEqual(['„b.docx“ ist kein PDF. Es können nur PDF-Dateien abgelegt werden.']);
-        expect(teilePdfDateien(null)).toEqual({ pdfs: [], meldungen: [] });
+    it('teilt eine Auswahl in brauchbare Dateien und Meldungen – die übrigen bleiben', () => {
+        const { dateien, meldungen } = teileDateien([datei('a.pdf', 'application/pdf'), datei('virus.exe', ''), datei('foto.png', 'image/png'), datei('leer.txt', '', 0)]);
+        expect(dateien.map((d) => d.name)).toEqual(['a.pdf', 'foto.png']);
+        expect(meldungen).toHaveLength(2);
+        expect(meldungen[0]).toContain('„virus.exe“');
+        expect(meldungen[1]).toContain('„leer.txt“ ist leer');
+        expect(teileDateien(null)).toEqual({ dateien: [], meldungen: [] });
     });
 
     it('prüft Namen von Dokumenten und Ordnern', () => {
@@ -105,6 +154,9 @@ describe('Prüfungen', () => {
         expect(pruefeName('', 'Ordner')).toBe('Bitte einen Namen für den Ordner eingeben.');
         expect(pruefeName('x'.repeat(201), 'Ordner')).toBe('Der Name darf höchstens 200 Zeichen lang sein.');
         expect(pruefeName('Tore', 'Ordner')).toBeNull();
+        expect(pruefeName('setup.exe', 'Dokument')).toBe('Der Name darf nicht auf eine Programmendung wie .exe enden.');
+        expect(pruefeName('Start.BAT ', 'Dokument')).toBe('Der Name darf nicht auf eine Programmendung wie .exe enden.');
+        expect(pruefeName('Prüfbericht v1.2', 'Dokument')).toBeNull();
     });
 
     it('sucht erst ab 2 Zeichen', () => {
@@ -116,6 +168,92 @@ describe('Prüfungen', () => {
         expect(ziehtDateien({ dataTransfer: { types: ['Files'] } })).toBe(true);
         expect(ziehtDateien({ dataTransfer: { types: ['text/plain'] } })).toBe(false);
         expect(ziehtDateien({ dataTransfer: null })).toBe(false);
+        expect(ziehtDateien({ dataTransfer: { types: [DOKUMENT_DATENTYP] } })).toBe(false);
+    });
+
+    it('erkennt ein gezogenes Dokument aus der Liste – getrennt von Dateien', () => {
+        expect(ziehtDokument({ dataTransfer: { types: [DOKUMENT_DATENTYP, 'text/plain'] } })).toBe(true);
+        expect(ziehtDokument({ dataTransfer: { types: ['Files'] } })).toBe(false);
+        expect(ziehtDokument({ dataTransfer: null })).toBe(false);
+    });
+});
+
+describe('Dokument per Ziehen verschieben', () => {
+    const dok = { id: 7, ordnerId: 2, name: 'Torprüfung', faelligAm: '2027-01-31', darfAendern: true };
+
+    it('schreibt und liest das gezogene Dokument', () => {
+        const daten = new Map<string, string>();
+        schreibeGezogenesDokument({ setData: (typ, wert) => { daten.set(typ, wert); } }, dok);
+        expect([...daten.keys()]).toEqual([DOKUMENT_DATENTYP, 'text/plain']);
+        expect(daten.get('text/plain')).toBe('Torprüfung');
+        expect(liesGezogenesDokument(daten.get(DOKUMENT_DATENTYP) ?? '')).toEqual({ id: 7, ordnerId: 2, name: 'Torprüfung', faelligAm: '2027-01-31' });
+    });
+
+    it('verwirft kaputte oder fremde Daten', () => {
+        expect(liesGezogenesDokument('')).toBeNull();
+        expect(liesGezogenesDokument('kein json')).toBeNull();
+        expect(liesGezogenesDokument('{"id":"7"}')).toBeNull();
+        expect(liesGezogenesDokument('{"id":7,"ordnerId":2,"name":"A","faelligAm":5}')).toBeNull();
+        expect(liesGezogenesDokument('{"id":7,"ordnerId":2,"name":"A"}')).toEqual({ id: 7, ordnerId: 2, name: 'A', faelligAm: null });
+    });
+
+    it('erlaubt das Ablegen nur in einen anderen Ordner mit Recht „Ändern“', () => {
+        const ziel = (id: number, darfAendern: boolean) => ({ ...ordner(id, 'Ziel', null), darfAendern });
+        expect(dokumentDarfNach(dok, ziel(3, true))).toBe(true);
+        expect(dokumentDarfNach(dok, ziel(2, true))).toBe(false);
+        expect(dokumentDarfNach(dok, ziel(3, false))).toBe(false);
+        expect(dokumentDarfNach({ ...dok, darfAendern: false }, ziel(3, true))).toBe(false);
+        expect(dokumentDarfNach(dok, undefined)).toBe(false);
+    });
+});
+
+// Geschäftsleitung (eingeschränkt) › Verträge › Alt, daneben Prüfungen › Tore (offen).
+const MIT_RECHTEN = baueBaum([
+    { ...ordner(10, 'Geschäftsleitung', null), eingeschraenkt: true },
+    { ...ordner(11, 'Verträge', 10), eingeschraenkt: true },
+    { ...ordner(12, 'Alt', 11), eingeschraenkt: true },
+    ordner(1, 'Prüfungen', null),
+    ordner(2, 'Tore', 1),
+]);
+
+describe('Eingeschränkte Zweige verlassen', () => {
+    it('findet den obersten Ordner – auch bei kaputten Kreisen', () => {
+        expect(wurzelId(MIT_RECHTEN, 12)).toBe(10);
+        expect(wurzelId(MIT_RECHTEN, 10)).toBe(10);
+        expect(wurzelId(MIT_RECHTEN, 2)).toBe(1);
+        expect(wurzelId(MIT_RECHTEN, 404)).toBeNull();
+        const kreis = baueBaum([ordner(1, 'A', 2), ordner(2, 'B', 1)]);
+        expect([1, 2]).toContain(wurzelId(kreis, 1));
+    });
+
+    it('sperrt für Nicht-Admins den Wechsel in einen anderen Hauptordner', () => {
+        expect(hauptordnerWechselGesperrt(MIT_RECHTEN, 12, 2, false)).toBe(true);
+        expect(hauptordnerWechselGesperrt(MIT_RECHTEN, 12, 1, false)).toBe(true);
+        // im selben Zweig und ganz nach oben bleibt erlaubt
+        expect(hauptordnerWechselGesperrt(MIT_RECHTEN, 12, 10, false)).toBe(false);
+        expect(hauptordnerWechselGesperrt(MIT_RECHTEN, 12, null, false)).toBe(false);
+        // Admins dürfen alles, offene Zweige sind frei
+        expect(hauptordnerWechselGesperrt(MIT_RECHTEN, 12, 2, true)).toBe(false);
+        expect(hauptordnerWechselGesperrt(MIT_RECHTEN, 2, 11, false)).toBe(false);
+    });
+
+    it('sperrt im Verschieben-Dialog Ziele in anderen Hauptordnern mit Grund', () => {
+        const grund = (istAdmin: boolean, id: number | null) => zieleFuerOrdner(MIT_RECHTEN, 11, istAdmin).find((z) => z.id === id)?.gesperrt;
+        expect(grund(false, 1)).toBe('Nur ein Admin kann in einen anderen Hauptordner verschieben');
+        expect(grund(false, 2)).toBe('Nur ein Admin kann in einen anderen Hauptordner verschieben');
+        expect(grund(false, null)).toBeNull();
+        expect(grund(true, 1)).toBeNull();
+        expect(grund(true, 2)).toBeNull();
+    });
+
+    it('bietet beim Bearbeiten nur Ordner im selben Zweig an – Admins alle', () => {
+        expect(ordnerOptionen(MIT_RECHTEN, { ausOrdnerId: 12, istAdmin: false }).map((o) => o.value)).toEqual(['10', '11', '12']);
+        expect(ordnerOptionen(MIT_RECHTEN, { ausOrdnerId: 12, istAdmin: true })).toHaveLength(5);
+        expect(ordnerOptionen(MIT_RECHTEN, { ausOrdnerId: 2, istAdmin: false })).toHaveLength(5);
+    });
+
+    it('nennt den Grund wie der Server', () => {
+        expect(HAUPTORDNER_GESPERRT_TEXT).toBe('Aus einem eingeschränkten Ordner kann nur ein Admin in einen anderen Hauptordner verschieben.');
     });
 });
 

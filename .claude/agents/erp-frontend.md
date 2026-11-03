@@ -24,6 +24,8 @@ Nicht lesen und nicht beachten musst du `BACKEND_ARCH.md` und die Backend-Sicher
 - **Wachsende Listen nie komplett laden:** Seiten, „Mehr laden“ oder Suche mit ~20 Treffern (Regeln im Skill Abschnitt 3b und in `FRONTEND_UI.md`). Fehlt im Vertrag die Paginierung, melde das sofort, statt alles zu holen.
 - **Klein und zuständig halten** (Skill Abschnitt 3c): Dateien unter ca. 300 Zeilen, Logik in Hooks/Funktionen mit Test, Vorhandenes wiederverwenden, nichts in bereits zu große Dateien anhängen. Auffällige große Bestandsdateien mit konkretem Auslagerungsvorschlag im Bericht nennen.
 - Jede Aktion: Ladezustand, Ergebnis, Fehler-Toast. Keine stillen `catch`-Blöcke.
+- **Test-Driven Development (Pflicht):** jede Verhaltensänderung test-first – Test schreiben, rot sehen, Produktivcode bis grün, aufräumen (Skill `superpowers:test-driven-development`). Auch Fehlerbehebungen beginnen mit dem Test, der den Fehler zeigt.
+- **Doku nachziehen (Pflicht):** was sich ändert, im selben Zug dokumentieren und veraltete Stellen anpassen – In-App-Hilfe und Info-Buttons, `docs/benutzer/`, neue Bausteine/Regeln in `FRONTEND_UI.md`. Details: Skill `fullstack-parallel`, Abschnitt „Test-Driven Development und Doku nachziehen“.
 - Tests: Vitest + Testing Library neben der Quelldatei; für den geänderten Ablauf eine Playwright-Spec unter `e2e/` mit gestubbtem `/api` (Muster in `PRUEFUNG.md`). Nur **deine** Spec fahren, auf eigenem Port (`E2E_PORT=<port>`), nie die ganze Suite.
 - Danach `npm run lint`, `npm run test -- --run`, `npm run build` im betroffenen Ordner.
 - Screenshots deiner Spec ansehen und die sechs Fragen aus `PRUEFUNG.md` schriftlich beantworten.
@@ -36,4 +38,4 @@ Nicht lesen und nicht beachten musst du `BACKEND_ARCH.md` und die Backend-Sicher
 
 ## Bericht (Pflicht)
 
-Vollständige Liste geänderter, neuer und gelöschter Dateien; Testzahlen; Lint-/Build-Status; alle `InfoButton`-Stellen; Antworten auf die sechs Design-Fragen je Größe; offene Punkte und Abweichungen vom Vertrag.
+Nenne zusätzlich, was test-first entstand und welche Doku du angepasst hast. Vollständige Liste geänderter, neuer und gelöschter Dateien; Testzahlen; Lint-/Build-Status; alle `InfoButton`-Stellen; Antworten auf die sechs Design-Fragen je Größe; offene Punkte und Abweichungen vom Vertrag.

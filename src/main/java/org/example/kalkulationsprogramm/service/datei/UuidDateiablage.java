@@ -5,6 +5,9 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -12,6 +15,9 @@ import java.util.UUID;
  * ausschließlich das ERP (UUID + feste Endung); Namen von außen werden nur akzeptiert, wenn sie
  * genau diesem Muster entsprechen. Dadurch ist Path-Traversal ausgeschlossen, und der
  * Originalname einer hochgeladenen Datei landet nie im Dateisystem.
+ *
+ * <p>Wechselt eine Ablage ihre Endung (Firmendokumente: früher {@code .pdf}, jetzt {@code .bin}), bekommen neue
+ * Dateien die neue Endung; die alten Endungen bleiben zum Lesen und Löschen gültig.</p>
  */
 public class UuidDateiablage {
 
@@ -19,10 +25,19 @@ public class UuidDateiablage {
 
     private final Path basis;
     private final String endung;
+    private final List<String> gueltigeEndungen;
 
-    protected UuidDateiablage(String uploadDir, String unterordner, String endung) {
+    /**
+     * @param endung       Endung neuer Dateien (mit Punkt)
+     * @param alteEndungen Endungen früher abgelegter Dateien, die weiter gelesen und gelöscht werden dürfen
+     */
+    protected UuidDateiablage(String uploadDir, String unterordner, String endung, String... alteEndungen) {
         this.basis = Path.of(uploadDir, unterordner).toAbsolutePath().normalize();
         this.endung = endung;
+        List<String> alle = new ArrayList<>();
+        alle.add(endung);
+        alle.addAll(Arrays.asList(alteEndungen));
+        this.gueltigeEndungen = List.copyOf(alle);
     }
 
     /** Speichert die Bytes und liefert den erzeugten Dateinamen. */
@@ -55,7 +70,7 @@ public class UuidDateiablage {
     }
 
     public void loesche(String dateiName) {
-        if (!istGueltigerName(dateiName, endung)) {
+        if (!kenntName(dateiName)) {
             return;
         }
         try {
@@ -81,12 +96,17 @@ public class UuidDateiablage {
         return true;
     }
 
+    /** Ein von dieser Ablage erzeugter Name (neue oder alte Endung)? */
+    private boolean kenntName(String dateiName) {
+        return gueltigeEndungen.stream().anyMatch(e -> istGueltigerName(dateiName, e));
+    }
+
     private String neuerName() {
         return UUID.randomUUID() + endung;
     }
 
     private Path aufloesen(String dateiName) {
-        if (!istGueltigerName(dateiName, endung)) {
+        if (!kenntName(dateiName)) {
             throw new IllegalArgumentException("Ungültiger Dateiname");
         }
         Path ziel = basis.resolve(dateiName).normalize();

@@ -1,29 +1,29 @@
 import { useState } from 'react';
-import { teilePdfDateien } from './firmendokumenteLogik';
+import { teileDateien } from './firmendokumenteLogik';
 
 interface Warteschlange {
     dateien: File[];
     ordnerId: number;
-    /** Wie viele PDFs zu Beginn in der Schlange standen (für „Datei 2 von 3“). */
+    /** Wie viele Dateien zu Beginn in der Schlange standen (für „Datei 2 von 3“). */
     anzahl: number;
 }
 
 /**
  * Warteschlange beim Hochladen: Ausgewählte oder abgelegte Dateien werden
- * geprüft (nur PDFs), Ablehnungen gehen an `meldeFehler`. Danach kommt je PDF
+ * geprüft (leer, zu groß, Programmdatei), Ablehnungen gehen an `meldeFehler`. Danach kommt je Datei
  * ein Dialog, eins nach dem anderen.
  */
 export function useHochladen(meldeFehler: (text: string) => void) {
     const [schlange, setSchlange] = useState<Warteschlange | null>(null);
 
     const annehmen = (dateien: ArrayLike<File> | null | undefined, ordnerId: number) => {
-        const { pdfs, meldungen } = teilePdfDateien(dateien);
+        const { dateien: brauchbar, meldungen } = teileDateien(dateien);
         meldungen.forEach((text) => meldeFehler(text));
-        if (pdfs.length === 0) return;
+        if (brauchbar.length === 0) return;
         setSchlange((alt) => (alt
             // Kommen während des Hochladens weitere Dateien, reihen sie sich hinten an.
-            ? { ...alt, dateien: [...alt.dateien, ...pdfs], anzahl: alt.anzahl + pdfs.length }
-            : { dateien: pdfs, ordnerId, anzahl: pdfs.length }));
+            ? { ...alt, dateien: [...alt.dateien, ...brauchbar], anzahl: alt.anzahl + brauchbar.length }
+            : { dateien: brauchbar, ordnerId, anzahl: brauchbar.length }));
     };
 
     /** Nächste Datei; sie startet im zuletzt gewählten Ordner. */

@@ -319,6 +319,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/abteilungen").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/abteilungen/*").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/abteilungen/*").hasRole("ADMIN")
+                // Wer welchen obersten Ordner der Firmendokumente sehen oder ändern darf, stellen nur Admins ein. Die
+                // Dokumente selbst sieht jeder Angemeldete, soweit die Ordnerrechte es erlauben (Prüfung im Dienst).
+                .requestMatchers("/api/firmendokumente/ordner/*/rechte").hasRole("ADMIN")
                 // Feiertage anlegen, anpassen, löschen wirkt auf Soll und Lohn aller Mitarbeiter (Issue #222).
                 .requestMatchers(HttpMethod.POST, "/api/zeitverwaltung/feiertage",
                         "/api/zeitverwaltung/feiertage/regenerieren").hasRole("ADMIN")

@@ -23,6 +23,8 @@ Nicht lesen und nicht beachten musst du `FRONTEND_UI.md`, den Design-Skill und d
 - **Listen-Endpoints immer paginiert** (`page`/`size`, Maximum serverseitig, `gesamt` bzw. `hatMehr`), nie `findAll()` auf wachsenden Tabellen. Fehlt das im Vertrag, melde es sofort, statt still alles zu liefern.
 - Endpoints mit derselben Sichtbarkeits- und Rechteprüfung wie die Nachbar-Endpoints, Validierung (`@Valid`, `@Positive`), 400-Meldungen als `{message}` in Handwerker-Sprache.
 - **Klein und zuständig halten:** neue Klassen unter ca. 400 Zeilen, eine Zuständigkeit. Nichts an bereits zu große Bestandsklassen anhängen; solche Klassen mit konkretem Auslagerungsvorschlag im Bericht nennen, nicht ungefragt umbauen.
+- **Test-Driven Development (Pflicht):** jede Verhaltensänderung test-first – Test schreiben, rot sehen, Produktivcode bis grün, aufräumen (Skill `superpowers:test-driven-development`). Auch Fehlerbehebungen beginnen mit dem Test, der den Fehler zeigt.
+- **Doku nachziehen (Pflicht):** was sich ändert, im selben Zug dokumentieren und veraltete Stellen anpassen – `docs/`-Fach- und API-Doku, Javadoc, Migrationskommentar, neue Regeln in `BACKEND_ARCH.md`. Details: Skill `fullstack-parallel`, Abschnitt „Test-Driven Development und Doku nachziehen“.
 - Tests: Service (Mockito), Controller/Security (MockMvc: 401, CSRF 403, 404 bei nicht sichtbaren Daten, 400 bei ungültigen IDs, SQL-Injection- und XSS-Strings). Alle Konstruktor-Aufrufe in bestehenden Tests mitziehen (`grep -rn "new <Klasse>("`).
 - `./mvnw -q compile`, gezielte Tests, danach die komplette Suite im Hintergrund. Rote Tests ohne Bezug zur Änderung mehrfach einzeln laufen lassen und als unzuverlässig benennen, nicht still ignorieren.
 
@@ -34,4 +36,4 @@ Nicht lesen und nicht beachten musst du `FRONTEND_UI.md`, den Design-Skill und d
 
 ## Bericht (Pflicht)
 
-Vollständige Liste geänderter, neuer und gelöschter Dateien; Testzahlen (gezielt und Gesamtsuite); Compile-Status; tatsächliches Verhalten der Endpoints, soweit es für die Info-Button-Texte zählt (was passiert im Hintergrund, was ändert sich nicht); offene Punkte und jede Abweichung vom Vertrag.
+Nenne zusätzlich, was test-first entstand und welche Doku du angepasst hast. Vollständige Liste geänderter, neuer und gelöschter Dateien; Testzahlen (gezielt und Gesamtsuite); Compile-Status; tatsächliches Verhalten der Endpoints, soweit es für die Info-Button-Texte zählt (was passiert im Hintergrund, was ändert sich nicht); offene Punkte und jede Abweichung vom Vertrag.

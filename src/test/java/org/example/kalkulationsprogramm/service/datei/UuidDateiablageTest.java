@@ -50,6 +50,27 @@ class UuidDateiablageTest {
     }
 
     @Test
+    @DisplayName("Ablage mit Alt-Endung: neue Dateien bekommen die neue Endung, alte bleiben lesbar und löschbar")
+    void altEndung() throws Exception {
+        UuidDateiablage ablage = new UuidDateiablage(tmp.toString(), "probe", ".bin", ".pdf");
+        String neu = ablage.speichere(new byte[] { 1, 2 });
+        assertThat(neu).endsWith(".bin");
+        assertThat(UuidDateiablage.istGueltigerName(neu, ".bin")).isTrue();
+
+        String alt = "0a4f113b-0000-0000-0000-000000000000.pdf";
+        Path altPfad = Files.write(tmp.resolve("probe").resolve(alt), new byte[] { 3 });
+        assertThat(ablage.pfad(alt)).isEqualTo(altPfad.toAbsolutePath().normalize());
+        ablage.loesche(alt);
+        assertThat(altPfad).doesNotExist();
+
+        String fremd = "0a4f113b-0000-0000-0000-000000000000.wav";
+        assertThatThrownBy(() -> ablage.pfad(fremd)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ablage.pfad("../0a4f113b-0000-0000-0000-000000000000.pdf"))
+                .isInstanceOf(IllegalArgumentException.class);
+        ablage.loesche(fremd);
+    }
+
+    @Test
     @DisplayName("Lesefehler beim Speichern wird als UncheckedIOException weitergereicht")
     void lesefehler() {
         InputStream kaputt = new InputStream() {

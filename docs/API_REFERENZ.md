@@ -67,6 +67,7 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 
 - `PUT /api/abteilungen/*/berechtigungen`
 - `POST /api/abteilungen`, `PUT /api/abteilungen/*`, `DELETE /api/abteilungen/*` (Abteilungen anlegen, umbenennen, löschen)
+- `GET` und `PUT /api/firmendokumente/ordner/*/rechte` (wer welchen obersten Ordner der Firmendokumente sehen oder ändern darf; Vertrag in [`firmendokumente-api.md`](firmendokumente-api.md))
 - `/api/firma/**` – außer lesend `GET /api/firma`, `GET /api/firma/logo`,
   `GET /api/firma/steuerberater` und `GET /api/firma/steuerberater/*`, die dürfen alle Angemeldeten
 - `/api/settings/**`, `/api/frontend-users/**`, `/api/postfaecher/**`
@@ -98,8 +99,9 @@ Die `SecurityConfig` hat fünf Filterketten, geprüft in dieser Reihenfolge:
 `@PreAuthorize` wird nirgends verwendet. Feinere Rechte prüfen die Controller
 bzw. Services selbst, meist über die Abteilungsrechte: Belege und Kasse,
 sichtbare Lieferanten-Dokumenttypen, Eingangsrechnungen sehen/genehmigen,
-Telefon (`darfTelefonSehen`), Aufschläge ändern (`darfAufschlaegeAendern`, Administratoren immer), Monatsabschluss, sichtbare Postfächer und
-Anmeldecodes der Mitarbeiter.
+Telefon (`darfTelefonSehen`), Aufschläge ändern (`darfAufschlaegeAendern`, Administratoren immer), Monatsabschluss, sichtbare Postfächer,
+Anmeldecodes der Mitarbeiter und die Ordnerrechte der Firmendokumente (je oberstem Ordner und Abteilung `ANSEHEN`/`AENDERN`,
+Administratoren immer; `FirmendokumentZugriff`).
 
 **Mit Handy-Token erlaubt** (`MobileApiPolicy`, abschließende Liste):
 

@@ -14,15 +14,17 @@ export interface DokumentAktionen {
     imOrdnerZeigen?: (dok: FirmenDokument) => void;
 }
 
-/** Drucken und Herunterladen direkt, alles Weitere im „…“-Menü. */
+/** Drucken (nur PDF) und Herunterladen direkt, alles Weitere im „…“-Menü. Bearbeiten und Löschen nur mit Recht „Ändern“. */
 export function DokumentZeilenAktionen({ dokument, aktionen }: { dokument: FirmenDokument; aktionen: DokumentAktionen }) {
     const name = dokument.name;
     return (
         <div className="flex items-center justify-end gap-0.5">
-            <Button variant="ghost" size="sm" onClick={() => aktionen.drucken(dokument)} aria-label={`„${name}“ drucken`} title="Drucken"
-                className="text-slate-500 hover:text-rose-700">
-                <Printer className="h-4 w-4" aria-hidden="true" />
-            </Button>
+            {dokument.dateiart === 'PDF' && (
+                <Button variant="ghost" size="sm" onClick={() => aktionen.drucken(dokument)} aria-label={`„${name}“ drucken`} title="Drucken"
+                    className="text-slate-500 hover:text-rose-700">
+                    <Printer className="h-4 w-4" aria-hidden="true" />
+                </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => aktionen.herunterladen(dokument)} aria-label={`„${name}“ herunterladen`} title="Herunterladen"
                 className="text-slate-500 hover:text-rose-700">
                 <Download className="h-4 w-4" aria-hidden="true" />
@@ -35,15 +37,19 @@ export function DokumentZeilenAktionen({ dokument, aktionen }: { dokument: Firme
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" collisionPadding={12} className="w-52 rounded-xl p-1.5 shadow-lg">
-                    <DropdownMenuItem onSelect={() => aktionen.ansehen(dokument)}><Eye />Ansehen</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => aktionen.bearbeiten(dokument)}><Pencil />Bearbeiten …</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => aktionen.ansehen(dokument)}>{dokument.dateiart === 'SONSTIGE' ? <><Download />Herunterladen</> : <><Eye />Ansehen</>}</DropdownMenuItem>
+                    {dokument.darfAendern && <DropdownMenuItem onSelect={() => aktionen.bearbeiten(dokument)}><Pencil />Bearbeiten …</DropdownMenuItem>}
                     {aktionen.imOrdnerZeigen && (
                         <DropdownMenuItem onSelect={() => aktionen.imOrdnerZeigen?.(dokument)}><FolderSearch />Im Ordner zeigen</DropdownMenuItem>
                     )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => aktionen.loeschen(dokument)} className="text-red-700 focus:bg-red-50 focus:text-red-700">
-                        <Trash2 />Löschen …
-                    </DropdownMenuItem>
+                    {dokument.darfAendern && (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => aktionen.loeschen(dokument)} className="text-red-700 focus:bg-red-50 focus:text-red-700">
+                                <Trash2 />Löschen …
+                            </DropdownMenuItem>
+                        </>
+                    )}
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>

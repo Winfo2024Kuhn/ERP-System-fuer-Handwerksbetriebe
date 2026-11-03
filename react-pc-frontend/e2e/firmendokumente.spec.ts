@@ -35,7 +35,7 @@ test('Nicht-Admin findet „Firmendokumente“ im Menü und sieht die fälligen 
     await page.getByRole('button', { name: 'Mehr zu: Firmendokumente' }).click();
     const info = page.getByRole('dialog', { name: 'Firmendokumente' });
     await expect(info.getByText(/werden mit der nächtlichen Sicherung mitgesichert/)).toBeVisible();
-    await expect(info.getByText(/Jeder, der sich am PC anmeldet, sieht alle Firmendokumente/)).toBeVisible();
+    await expect(info.getByText(/Wer sich am PC anmeldet, sieht die Firmendokumente/)).toBeVisible();
     await designPruefung(page, testInfo, 'firmendokumente-info');
 });
 
@@ -52,10 +52,10 @@ test('Ordner wählen, PDF hochladen und per Suche wiederfinden', async ({ page }
     await expect(liste.getByText('Torprüfung Halle 1 – 2025')).toBeVisible();
 
     const auswahl = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: 'PDF hochladen' }).click();
+    await page.getByRole('button', { name: 'Datei hochladen' }).click();
     await (await auswahl).setFiles(pdfDatei('scan_0042.pdf'));
 
-    const dialog = page.getByRole('dialog', { name: 'PDF hochladen' });
+    const dialog = page.getByRole('dialog', { name: 'Datei hochladen' });
     const name = dialog.getByLabel('Name *');
     await expect(name).toHaveValue('scan_0042');
     await expect(dialog.getByRole('combobox', { name: 'Ordner' })).toHaveText(/Prüfungen › Tore/);
@@ -68,7 +68,7 @@ test('Ordner wählen, PDF hochladen und per Suche wiederfinden', async ({ page }
     await expect(liste.getByText('Torprüfung Halle 2 – 2026')).toBeVisible();
     await expect(page.getByText('2 von 2 angezeigt')).toBeVisible();
     expect(stand.hochgeladen).toEqual([{ datei: '<datei>', ordnerId: '2', name: 'Torprüfung Halle 2 – 2026' }]);
-    await designPruefung(page, testInfo, 'firmendokumente-ordner', { primaerAktion: page.getByRole('button', { name: 'PDF hochladen' }) });
+    await designPruefung(page, testInfo, 'firmendokumente-ordner', { primaerAktion: page.getByRole('button', { name: 'Datei hochladen' }) });
 
     await page.getByRole('searchbox', { name: 'Dokumente in allen Ordnern suchen' }).fill('halle 2');
     const treffer = page.getByRole('table', { name: 'Suchtreffer' });
@@ -103,7 +103,7 @@ test('Dokument bearbeiten: umbenennen, in anderen Ordner verschieben, Fällig am
     await dialog.getByRole('button', { name: 'Speichern' }).click();
 
     await expect(page.getByText('„Torprüfung Halle 1 – 2026“ gespeichert.')).toBeVisible();
-    await expect(page.getByText('In diesem Ordner liegt noch kein PDF.')).toBeVisible();
+    await expect(page.getByText('In diesem Ordner liegt noch kein Dokument.')).toBeVisible();
     expect(stand.aenderungen).toEqual([{ methode: 'PUT', pfad: '/10', body: { name: 'Torprüfung Halle 1 – 2026', ordnerId: 3, faelligAm: '2099-12-31' } }]);
     // Nichts mehr überfällig in „Tore“: der rote Punkt ist weg, „Leitern“ zählt zwei Dokumente.
     await expect(baum.getByRole('treeitem', { name: 'Tore, 0 Dokumente' })).toBeVisible();
@@ -136,7 +136,7 @@ test('Dokument löschen erst nach Rückfrage', async ({ page }, testInfo) => {
     await rueckfrage.getByRole('button', { name: 'Dokument löschen' }).click();
 
     await expect(page.getByText('„Gefährdungsbeurteilung Werkstatt“ gelöscht.')).toBeVisible();
-    await expect(page.getByText('In diesem Ordner liegt noch kein PDF.')).toBeVisible();
+    await expect(page.getByText('In diesem Ordner liegt noch kein Dokument.')).toBeVisible();
     await expect(page.getByRole('tree', { name: 'Ordner' }).getByRole('treeitem', { name: 'Arbeitsschutz, 0 Dokumente' })).toBeVisible();
     expect(stand.aenderungen).toEqual([{ methode: 'DELETE', pfad: '/12', body: null }]);
 });

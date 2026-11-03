@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
 import { Check, Search, Upload, X } from 'lucide-react';
+import { useAuth } from '../../auth/AuthContext';
 import DocumentPreviewModal from '../../components/DocumentPreviewModal';
 import { PageLayout } from '../../components/layout/PageLayout';
+import { ImageViewer } from '../../components/ui/image-viewer';
 import { Input } from '../../components/ui/input';
 import { LadeAnzeige, VerbindungsHinweis } from '../../components/ui/lade-anzeige';
 import { useToast } from '../../components/ui/toast';
@@ -15,16 +17,19 @@ import { OrdnerDialoge, type OrdnerDialog } from './OrdnerDialoge';
 import { KeineOrdner, RechterBereich } from './RechterBereich';
 import { useAnsicht } from './useAnsicht';
 import { useDokumentAktionen } from './useDokumentAktionen';
+import { useDokumentVerschieben } from './useDokumentVerschieben';
 import { useFirmenOrdner } from './useFirmenOrdner';
 import { useHochladen } from './useHochladen';
 import { useOrdnerLoeschen } from './useOrdnerLoeschen';
 
 /**
- * Seite „Firmendokumente“: Firmen-PDFs (Prüfungen, Arbeitsschutz, Versicherungen …)
- * in Ordnern ablegen, wiederfinden, ansehen und drucken. Für jeden PC-Nutzer.
+ * Seite „Firmendokumente“: Firmen-Dateien (Prüfungen, Arbeitsschutz, Versicherungen,
+ * Fotos, Word/Excel …) in Ordnern ablegen, wiederfinden, ansehen und drucken.
+ * Für jeden PC-Nutzer; Admins stellen an obersten Ordnern ein, wer was sehen darf.
  */
 export default function Firmendokumente() {
     const toast = useToast();
+    const { isAdmin } = useAuth();
     const ordnerStand = useFirmenOrdner(toast.error);
     const { baum } = ordnerStand;
     const ansichtStand = useAnsicht(baum, ordnerStand.ordner !== null, toast.error);
@@ -48,13 +53,14 @@ export default function Firmendokumente() {
         ordnerStand.neuLaden();
         liste.neuLaden();
     };
+    const dokumentVerschieben = useDokumentVerschieben(nachAenderung, liste.eintraege);
 
     return (
         <PageLayout
             ribbonCategory="Stammdaten"
             title="Firmendokumente"
             titelInfo={<SeitenInfo />}
-            subtitle="Prüfberichte, Gefährdungsbeurteilungen, Versicherungen und andere Firmen-PDFs an einem Ort."
+            subtitle="Prüfberichte, Gefährdungsbeurteilungen, Versicherungen, Fotos und andere Firmendokumente an einem Ort."
             actions={<SuchFeld wert={ansichtStand.suchtext} onWert={ansichtStand.setSuchtext} />}
         >
             {ordnerStand.ordner === null ? (
@@ -66,6 +72,7 @@ export default function Firmendokumente() {
                     <div className="self-start rounded-lg border border-slate-200 bg-white shadow-sm lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100vh-12rem)] lg:flex-col">
                         <DokumentOrdnerBaum
                             baum={baum}
+                            istAdmin={isAdmin}
                             gewaehlt={gewaehlt}
                             ueberfaellig={ordnerStand.ueberfaellig}
                             onWaehlen={waehle}
@@ -75,6 +82,8 @@ export default function Firmendokumente() {
                                 else setOrdnerDialog(aktion === 'unterordner' ? { art: 'anlegen', eltern: ordner } : { art: aktion, ordner });
                             }}
                             onDateienAbgelegt={(ordnerId, dateien) => hochladen.annehmen(dateien, ordnerId)}
+                            onDokumentAbgelegt={(dok, ziel) => void dokumentVerschieben(dok, ziel)}
+                            onAblageAbgelehnt={toast.error}
                         />
                     </div>
                     <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:p-6">
@@ -98,10 +107,9 @@ export default function Firmendokumente() {
             <input
                 ref={dateiAuswahl}
                 type="file"
-                accept=".pdf,application/pdf"
                 multiple
                 hidden
-                aria-label="PDF-Dateien auswählen"
+                aria-label="Dateien auswählen"
                 onChange={(e) => {
                     if (gewaehlt !== null) hochladen.annehmen(e.target.files, gewaehlt);
                     e.target.value = '';
@@ -111,7 +119,7 @@ export default function Firmendokumente() {
             {upload && (
                 <DokumentDialog
                     key={`${upload.nummer}-${upload.datei.name}`}
-                    titel={upload.anzahl > 1 ? `PDF hochladen (${upload.nummer} von ${upload.anzahl})` : 'PDF hochladen'}
+                    titel={upload.anzahl > 1 ? `Datei hochladen (${upload.nummer} von ${upload.anzahl})` : 'Datei hochladen'}
                     beschreibung={`Datei: ${upload.datei.name}`}
                     start={{ name: nameAusDateiname(upload.datei.name), ordnerId: upload.ordnerId, faelligAm: null }}
                     ordnerOptionen={optionen}
@@ -131,7 +139,7 @@ export default function Firmendokumente() {
                     titel="Dokument bearbeiten"
                     beschreibung={`Datei: ${bearbeitet.originalDateiname}`}
                     start={{ name: bearbeitet.name, ordnerId: bearbeitet.ordnerId, faelligAm: bearbeitet.faelligAm }}
-                    ordnerOptionen={optionen}
+                    ordnerOptionen={ordnerOptionen(baum, { ausOrdnerId: bearbeitet.ordnerId, istAdmin: isAdmin })}
                     knopfText="Speichern"
                     knopfSymbol={<Check className="h-4 w-4" aria-hidden="true" />}
                     onAbbrechen={dokAktionen.schliesseBearbeiten}
@@ -143,7 +151,10 @@ export default function Firmendokumente() {
                 />
             )}
 
-            {vorschau && (
+            {vorschau?.dateiart === 'BILD' && (
+                <ImageViewer src={toSafeResourceUrl(dateiUrl(vorschau.id)) ?? null} alt={vorschau.name} onClose={dokAktionen.schliesseVorschau} />
+            )}
+            {vorschau?.dateiart === 'PDF' && (
                 <DocumentPreviewModal
                     doc={{ url: toSafeResourceUrl(dateiUrl(vorschau.id)) ?? '', title: vorschau.name }}
                     isPdf
@@ -154,6 +165,7 @@ export default function Firmendokumente() {
             <OrdnerDialoge
                 dialog={ordnerDialog}
                 baum={baum}
+                istAdmin={isAdmin}
                 onSchliessen={() => setOrdnerDialog(null)}
                 onFertig={(ordner, meldung) => {
                     toast.success(meldung);

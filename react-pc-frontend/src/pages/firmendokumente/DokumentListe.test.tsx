@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmProvider } from '../../components/ui/confirm-dialog';
@@ -16,14 +16,14 @@ const { loescheDokument } = await import('./api');
 const { druckePdfAusUrl } = await import('../../lib/pdfDrucken');
 const { starteDownload } = await import('../../lib/herunterladen');
 
-const dok = (id: number, name: string, faelligAm: string | null = null): FirmenDokument => ({
+const dok = (id: number, name: string, faelligAm: string | null = null, extra: Partial<FirmenDokument> = {}): FirmenDokument => ({
     id, ordnerId: 2, name, originalDateiname: 'scan.pdf', groesseBytes: 482_113, hochgeladenAm: '2026-11-02T09:14:00',
-    hochgeladenVon: 'Max Mustermann', faelligAm, url: `/api/firmendokumente/${id}/datei`,
+    hochgeladenVon: 'Max Mustermann', faelligAm, url: `/api/firmendokumente/${id}/datei`, dateiart: 'PDF', darfAendern: true, ...extra,
 });
 
 const LEER: Omit<DokumentListeProps, 'aktionen'> = {
     beschriftung: 'Dokumente in Tore', dokumente: [], gesamt: 0, laedt: false, laedtMehr: false, fehler: null,
-    leer: 'In diesem Ordner liegt noch kein PDF.', onMehrLaden: vi.fn(), onErneut: vi.fn(),
+    leer: 'In diesem Ordner liegt noch kein Dokument.', onMehrLaden: vi.fn(), onErneut: vi.fn(),
 };
 
 function Mit({ props, onGeloescht = vi.fn() }: { props: Partial<DokumentListeProps>; onGeloescht?: (d: FirmenDokument) => void }) {
@@ -53,7 +53,7 @@ describe('DokumentListe', () => {
         await user.click(screen.getByRole('button', { name: 'Erneut versuchen' }));
         expect(onErneut).toHaveBeenCalled();
         rerender(<ToastProvider><ConfirmProvider><Mit props={{}} /></ConfirmProvider></ToastProvider>);
-        expect(screen.getByText('In diesem Ordner liegt noch kein PDF.')).toBeInTheDocument();
+        expect(screen.getByText('In diesem Ordner liegt noch kein Dokument.')).toBeInTheDocument();
     });
 
     it('zeigt Name, Fällig am farbig, Datum und Größe – Namen mit HTML als reinen Text', () => {
@@ -92,6 +92,59 @@ describe('DokumentListe', () => {
         await user.click(screen.getByRole('button', { name: '„Torprüfung“ drucken' }));
         expect(druckePdfAusUrl).toHaveBeenCalledWith('/api/firmendokumente/7/datei');
         expect(await screen.findByText('Das Dokument konnte nicht geladen werden.')).toBeInTheDocument();
+    });
+
+    it('zeigt je Dateiart ein eigenes Symbol', () => {
+        zeige({
+            dokumente: [dok(1, 'Prüfbericht'), dok(2, 'Foto Halle', null, { dateiart: 'BILD', originalDateiname: 'foto.jpg' }),
+                dok(3, 'Angebot', null, { dateiart: 'SONSTIGE', originalDateiname: 'angebot.docx' })],
+            gesamt: 3,
+        });
+        const symbol = (name: string) => screen.getByRole('button', { name }).querySelector('svg')?.getAttribute('class') ?? '';
+        expect(symbol('Prüfbericht')).toContain('lucide-file-text');
+        expect(symbol('Foto Halle')).toContain('lucide-file-image');
+        expect(symbol('Angebot')).toMatch(/lucide-file(\s|$)/);
+    });
+
+    it('öffnet Bilder in der Vorschau, lädt andere Dateien beim Klick herunter und druckt nur PDFs', async () => {
+        const user = userEvent.setup();
+        zeige({
+            dokumente: [dok(2, 'Foto Halle', null, { dateiart: 'BILD', originalDateiname: 'IMG_0042.JPG' }),
+                dok(3, 'Haftpflicht 2026', null, { dateiart: 'SONSTIGE', originalDateiname: 'police.docx' })],
+            gesamt: 2,
+        });
+        expect(screen.queryByRole('button', { name: /drucken/ })).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Foto Halle' }));
+        expect(screen.getByText('Vorschau: Foto Halle')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Haftpflicht 2026' })).toHaveAttribute('title', '„Haftpflicht 2026“ herunterladen');
+        await user.click(screen.getByRole('button', { name: 'Haftpflicht 2026' }));
+        expect(starteDownload).toHaveBeenCalledWith('/api/firmendokumente/3/datei?download=true', 'Haftpflicht 2026.docx');
+        expect(screen.queryByText('Vorschau: Haftpflicht 2026')).toBeNull();
+        await user.click(screen.getByRole('button', { name: '„Foto Halle“ herunterladen' }));
+        expect(starteDownload).toHaveBeenLastCalledWith('/api/firmendokumente/2/datei?download=true', 'Foto Halle.JPG');
+    });
+
+    it('blendet Bearbeiten und Löschen ohne Recht „Ändern“ aus – Ansehen, Drucken, Herunterladen bleiben', async () => {
+        const user = userEvent.setup();
+        zeige({ dokumente: [dok(7, 'Torprüfung', null, { darfAendern: false })], gesamt: 1 });
+        expect(screen.getByRole('button', { name: '„Torprüfung“ drucken' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '„Torprüfung“ herunterladen' })).toBeInTheDocument();
+        expect(screen.getByRole('row', { name: /Torprüfung/ })).not.toHaveAttribute('draggable', 'true');
+        await user.click(screen.getByRole('button', { name: 'Weitere Aktionen für „Torprüfung“' }));
+        expect(await screen.findByRole('menuitem', { name: 'Ansehen' })).toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', { name: 'Bearbeiten …' })).toBeNull();
+        expect(screen.queryByRole('menuitem', { name: 'Löschen …' })).toBeNull();
+    });
+
+    it('lässt Dokumente mit Recht „Ändern“ ziehen und gibt sie mit eigenem Datentyp mit', () => {
+        zeige({ dokumente: [dok(7, 'Torprüfung', '2027-01-31')], gesamt: 1 });
+        const zeile = screen.getByRole('row', { name: /Torprüfung/ });
+        expect(zeile).toHaveAttribute('draggable', 'true');
+        const daten = new Map<string, string>();
+        const dataTransfer = { setData: (typ: string, wert: string) => daten.set(typ, wert), effectAllowed: '' };
+        fireEvent.dragStart(zeile, { dataTransfer });
+        expect(JSON.parse(daten.get('application/x-firmendokument') ?? '')).toEqual({ id: 7, ordnerId: 2, name: 'Torprüfung', faelligAm: '2027-01-31' });
+        expect(dataTransfer.effectAllowed).toBe('move');
     });
 
     it('fragt vor dem Löschen nach und löscht erst nach Bestätigung', async () => {
@@ -138,24 +191,25 @@ describe('DokumentListe', () => {
 });
 
 describe('useHochladen', () => {
-    const pdf = (name: string) => new File(['%PDF-1.7'], name, { type: 'application/pdf' });
+    const datei = (name: string, type = '') => new File(['inhalt'], name, { type });
 
-    it('lehnt Nicht-PDFs mit Meldung ab und nimmt PDFs nacheinander', () => {
+    it('nimmt jede erlaubte Datei, lehnt Programmdateien mit Meldung ab und reiht die übrigen nacheinander', () => {
         const melde = vi.fn();
         const { result } = renderHook(() => useHochladen(melde));
-        act(() => result.current.annehmen([new File(['x'], 'foto.jpg', { type: 'image/jpeg' })], 2));
-        expect(melde).toHaveBeenCalledWith('„foto.jpg“ ist kein PDF. Es können nur PDF-Dateien abgelegt werden.');
+        act(() => result.current.annehmen([datei('setup.EXE')], 2));
+        expect(melde).toHaveBeenCalledWith('„setup.EXE“: Programmdateien (z. B. .exe oder .bat) können aus Sicherheitsgründen nicht abgelegt werden.');
         expect(result.current.aktuelle).toBeNull();
 
-        act(() => result.current.annehmen([pdf('a.pdf'), pdf('b.pdf')], 2));
+        act(() => result.current.annehmen([datei('a.pdf', 'application/pdf'), datei('virus.bat'), datei('foto.jpg', 'image/jpeg')], 2));
+        expect(melde).toHaveBeenCalledTimes(2);
         expect(result.current.aktuelle).toMatchObject({ ordnerId: 2, nummer: 1, anzahl: 2 });
         expect(result.current.aktuelle?.datei.name).toBe('a.pdf');
-        act(() => result.current.annehmen([pdf('c.pdf')], 9));
+        act(() => result.current.annehmen([datei('angebot.docx')], 9));
         expect(result.current.aktuelle).toMatchObject({ ordnerId: 2, nummer: 1, anzahl: 3 });
 
         act(() => result.current.weiter(4));
         expect(result.current.aktuelle).toMatchObject({ ordnerId: 4, nummer: 2, anzahl: 3 });
-        expect(result.current.aktuelle?.datei.name).toBe('b.pdf');
+        expect(result.current.aktuelle?.datei.name).toBe('foto.jpg');
         act(() => result.current.abbrechen());
         expect(result.current.aktuelle).toBeNull();
         act(() => result.current.weiter(4));
@@ -164,7 +218,7 @@ describe('useHochladen', () => {
 
     it('ist nach der letzten Datei fertig', () => {
         const { result } = renderHook(() => useHochladen(vi.fn()));
-        act(() => result.current.annehmen([pdf('a.pdf')], 2));
+        act(() => result.current.annehmen([datei('a.pdf')], 2));
         act(() => result.current.weiter(2));
         expect(result.current.aktuelle).toBeNull();
     });

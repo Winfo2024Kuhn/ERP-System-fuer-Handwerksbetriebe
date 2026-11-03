@@ -1,6 +1,6 @@
 import { apiAnfrage, apiJson } from '../../lib/apiFehler';
 import { SEITEN_GROESSE } from './firmendokumenteLogik';
-import type { DokumentAngaben, DokumentSeite, FirmenDokument, FirmenOrdner } from './typen';
+import type { DokumentAngaben, DokumentSeite, FirmenDokument, FirmenOrdner, OrdnerRechte, OrdnerRechteAenderung } from './typen';
 
 /**
  * Netzwerkzugriffe der Seite „Firmendokumente“ (Vertrag: `docs/firmendokumente-api.md`).
@@ -44,6 +44,17 @@ export async function loescheOrdner(ordnerId: number): Promise<void> {
     await apiAnfrage(`${BASIS}/ordner/${id(ordnerId)}`, { method: 'DELETE' }, 'Der Ordner konnte nicht gelöscht werden.');
 }
 
+/** Wer den obersten Ordner sehen und ändern darf – nur für Admins. */
+export function ladeOrdnerRechte(ordnerId: number): Promise<OrdnerRechte> {
+    return apiJson(`${BASIS}/ordner/${id(ordnerId)}/rechte`, undefined, 'Die Rechte des Ordners konnten nicht geladen werden.');
+}
+
+export function speichereOrdnerRechte(ordnerId: number, rechte: OrdnerRechteAenderung): Promise<OrdnerRechte> {
+    return apiJson(`${BASIS}/ordner/${id(ordnerId)}/rechte`, {
+        method: 'PUT', headers: JSON_KOPF, body: JSON.stringify(rechte),
+    }, 'Die Rechte des Ordners konnten nicht gespeichert werden.');
+}
+
 // ---------------------------------------------------------------------------
 // Dokumente
 // ---------------------------------------------------------------------------
@@ -70,7 +81,7 @@ export function ladeHoch(datei: File, angaben: DokumentAngaben): Promise<FirmenD
     form.append('ordnerId', String(angaben.ordnerId));
     form.append('name', angaben.name);
     if (angaben.faelligAm) form.append('faelligAm', angaben.faelligAm);
-    return apiJson(BASIS, { method: 'POST', body: form }, 'Das PDF konnte nicht hochgeladen werden.');
+    return apiJson(BASIS, { method: 'POST', body: form }, 'Die Datei konnte nicht hochgeladen werden.');
 }
 
 /** Name, Ordner und Fällig am in einem – alle drei Felder gehen immer mit. */
@@ -85,7 +96,7 @@ export async function loescheDokument(dokumentId: number): Promise<void> {
     await apiAnfrage(`${BASIS}/${id(dokumentId)}`, { method: 'DELETE' }, 'Das Dokument konnte nicht gelöscht werden.');
 }
 
-/** Adresse der PDF – zum Ansehen bzw. mit `download` als Anhang. Aus der ID gebaut, nicht aus fremden Daten. */
+/** Adresse der Datei – zum Ansehen bzw. mit `download` als Anhang. Aus der ID gebaut, nicht aus fremden Daten. */
 export function dateiUrl(dokumentId: number, download = false): string {
     return `${BASIS}/${id(dokumentId)}/datei${download ? '?download=true' : ''}`;
 }
