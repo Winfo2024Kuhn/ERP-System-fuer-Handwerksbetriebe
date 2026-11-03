@@ -7,7 +7,7 @@ import { DokumentZeilenAktionen, type DokumentAktionen } from './DokumentZeilenA
 import { FaelligAmAnzeige } from './FaelligAmAnzeige';
 import { formatDatum } from '../../lib/datum';
 import { cn } from '../../lib/utils';
-import { schreibeGezogenesDokument } from './firmendokumenteLogik';
+import { dateityp, schreibeGezogenesDokument } from './firmendokumenteLogik';
 import type { Dateiart, FirmenDokument } from './typen';
 
 const SYMBOL: Record<Dateiart, LucideIcon> = { PDF: FileText, BILD: FileImage, SONSTIGE: File };
@@ -21,7 +21,7 @@ export interface DokumentListeProps {
     laedtMehr: boolean;
     fehler: string | null;
     leer: ReactNode;
-    /** Pfad eines Ordners – gesetzt, wenn die Liste Dokumente aus mehreren Ordnern zeigt. */
+    /** Pfad eines Ordners – gesetzt in der Übersicht „Fällige Dokumente“ (Spalte „Ordner“). Die Suche zeigt keine Ordner-Spalte. */
     ordnerPfad?: (ordnerId: number) => string;
     aktionen: DokumentAktionen;
     onMehrLaden: () => void;
@@ -30,10 +30,12 @@ export interface DokumentListeProps {
 
 /**
  * Tabelle der Dokumente: Symbol je Dateiart, Name (Klick öffnet bei PDF und
- * Bild die Vorschau, lädt andere Dateien herunter), optional Ordner,
- * Fällig am, Hochgeladen am, Größe, Aktionen. Unten „Mehr laden“, solange
+ * Bild die Vorschau, lädt andere Dateien herunter), Dateityp (Endung der
+ * Originaldatei in Großbuchstaben, z. B. „PDF“ oder „SZA“, sonst „–“),
+ * optional Ordner, Fällig am, Hochgeladen am, Größe, Aktionen. Unten „Mehr laden“, solange
  * der Server mehr hat. Laden, leer und Fehler sehen verschieden aus.
- * Dokumente mit Recht „Ändern“ lassen sich auf einen Ordner im Baum ziehen.
+ * Dokumente mit Recht „Ändern“ lassen sich auf einen Ordner im Baum ziehen –
+ * nur so werden sie verschoben (mit der Maus, ohne Tastatur-Weg).
  */
 export function DokumentListe(props: DokumentListeProps) {
     const { beschriftung, dokumente, gesamt, laedt, laedtMehr, fehler, leer, ordnerPfad, aktionen, onMehrLaden, onErneut } = props;
@@ -51,6 +53,7 @@ export function DokumentListe(props: DokumentListeProps) {
                     <thead className="whitespace-nowrap bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
                             <th scope="col" className="px-3 py-2">Name</th>
+                            <th scope="col" className="px-3 py-2">Dateityp</th>
                             {ordnerPfad && <th scope="col" className="px-3 py-2">Ordner</th>}
                             <th scope="col" className="px-3 py-2">Fällig am</th>
                             <th scope="col" className="px-3 py-2">Hochgeladen am</th>
@@ -76,7 +79,7 @@ export function DokumentListe(props: DokumentListeProps) {
     );
 }
 
-/** Eine Zeile der Tabelle. Mit Recht „Ändern“ lässt sie sich auf einen Ordner ziehen (Tastatur: „Bearbeiten …“). */
+/** Eine Zeile der Tabelle. Mit Recht „Ändern“ lässt sie sich auf einen Ordner im Baum ziehen, um sie zu verschieben. */
 function DokumentZeile({ dok, ordnerPfad, aktionen }: { dok: FirmenDokument; ordnerPfad?: (ordnerId: number) => string; aktionen: DokumentAktionen }) {
     const Symbol = SYMBOL[dok.dateiart] ?? File;
     const nurHerunterladen = dok.dateiart === 'SONSTIGE';
@@ -94,6 +97,7 @@ function DokumentZeile({ dok, ordnerPfad, aktionen }: { dok: FirmenDokument; ord
                     <span className="min-w-0 break-words">{dok.name}</span>
                 </button>
             </td>
+            <td className="whitespace-nowrap px-3 py-2 text-slate-600">{dateityp(dok) ?? <span className="text-slate-400">–</span>}</td>
             {ordnerPfad && <td className="px-3 py-2 text-slate-600">{ordnerPfad(dok.ordnerId)}</td>}
             <td className="px-3 py-2"><FaelligAmAnzeige faelligAm={dok.faelligAm} /></td>
             <td className="whitespace-nowrap px-3 py-2 tabular-nums text-slate-600" title={dok.hochgeladenVon ? `von ${dok.hochgeladenVon}` : undefined}>

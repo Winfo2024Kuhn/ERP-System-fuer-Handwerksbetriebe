@@ -1,10 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { baueBaum } from '../../lib/ordnerBaum';
 import type { DokumentAktionen } from './DokumentZeilenAktionen';
 import { RechterBereich, type ListenStand } from './RechterBereich';
-import type { FirmenOrdner } from './typen';
+import type { FirmenDokument, FirmenOrdner } from './typen';
 
 const o = (id: number, name: string, darfAendern: boolean): FirmenOrdner => ({
     id, name, parentId: null, anzahlDokumente: 0, anzahlUeberfaellig: 0, anzahlBaldFaellig: 0, darfAendern, eingeschraenkt: !darfAendern,
@@ -44,5 +44,23 @@ describe('RechterBereich', () => {
         expect(drueber).toBe(true);
         fireEvent.drop(ablage, { dataTransfer: { types: ['Files'], files: [new File(['x'], 'foto.jpg')] } });
         expect(onDateienAbgelegt).not.toHaveBeenCalled();
+    });
+
+    it('zeigt in den Suchtreffern keine Ordner-Spalte, in den fälligen Dokumenten schon', () => {
+        const dok: FirmenDokument = {
+            id: 7, ordnerId: 1, name: 'Torprüfung', originalDateiname: 'scan.pdf', groesseBytes: 1000, hochgeladenAm: '2026-11-02T09:14:00',
+            hochgeladenVon: 'Max Mustermann', faelligAm: null, url: '/api/firmendokumente/7/datei', dateiart: 'PDF', darfAendern: true,
+        };
+        const liste = { ...LISTE, eintraege: [dok], gesamt: 1 };
+        const spalten = (tabelle: string) => within(screen.getByRole('table', { name: tabelle })).getAllByRole('columnheader').map((th) => th.textContent);
+        const { rerender } = render(<RechterBereich ansicht={{ art: 'suche', suchbegriff: 'tor' }} baum={BAUM} liste={liste} aktionen={AKTIONEN}
+            onHochladen={vi.fn()} onDateienAbgelegt={vi.fn()} onOrdnerWaehlen={vi.fn()} />);
+        expect(spalten('Suchtreffer')).toEqual(['Name', 'Dateityp', 'Fällig am', 'Hochgeladen am', 'Größe', 'Aktionen']);
+        expect(screen.getByRole('row', { name: /Torprüfung/ })).toHaveAttribute('draggable', 'true');
+
+        rerender(<RechterBereich ansicht={{ art: 'uebersicht' }} baum={BAUM} liste={liste} aktionen={AKTIONEN}
+            onHochladen={vi.fn()} onDateienAbgelegt={vi.fn()} onOrdnerWaehlen={vi.fn()} />);
+        expect(spalten('Fällige Dokumente')).toEqual(['Name', 'Dateityp', 'Ordner', 'Fällig am', 'Hochgeladen am', 'Größe', 'Aktionen']);
+        expect(screen.getByRole('row', { name: /Torprüfung/ })).toHaveAttribute('draggable', 'true');
     });
 });

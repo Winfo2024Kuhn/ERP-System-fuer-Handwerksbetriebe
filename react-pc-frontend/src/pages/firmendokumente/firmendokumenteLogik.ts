@@ -1,6 +1,6 @@
 import { isoDatum, parseIsoDatum } from '../../lib/datum';
 import { alleInReihenfolge, nachfahren, OBERSTE_EBENE, pfadText, type Baum, type ZielEintrag } from '../../lib/ordnerBaum';
-import type { Faelligkeit, FirmenOrdner } from './typen';
+import type { Dateiart, Faelligkeit, FirmenOrdner } from './typen';
 
 /**
  * Reine Logik der Seite „Firmendokumente“: Fälligkeit, Formatierung,
@@ -88,6 +88,44 @@ export function downloadDateiname(name: string, originalDateiname: string): stri
     }
     if (name.toLowerCase().endsWith(`.${endung.toLowerCase()}`)) return name;
     return `${name}.${endung}`;
+}
+
+const MAX_ENDUNG = 20;
+/**
+ * Leerzeichen wie Javas `Character.isWhitespace`: \t \n \u000B \f \r, \u001C–\u001F und die
+ * Unicode-Leerzeichen – ohne die geschützten U+00A0, U+2007, U+202F (und ohne U+FEFF).
+ */
+function istLeerzeichenWieJava(zeichen: string): boolean {
+    const c = zeichen.charCodeAt(0);
+    return (c >= 0x09 && c <= 0x0d) || (c >= 0x1c && c <= 0x20) || c === 0x1680
+        || (c >= 0x2000 && c <= 0x200a && c !== 0x2007) || c === 0x2028 || c === 0x2029 || c === 0x205f || c === 0x3000;
+}
+
+/** Endung wie auf dem Server (`FirmendokumentDateinamen.endung`): klein, ohne Punkt, Punkte/Leerzeichen am Ende zählen nicht. Leer, wenn keine gültige. */
+function endungWieServer(dateiname: string): string {
+    let ende = dateiname.length;
+    while (ende > 0 && (dateiname[ende - 1] === '.' || istLeerzeichenWieJava(dateiname[ende - 1]))) ende--;
+    const punkt = dateiname.lastIndexOf('.', ende - 1);
+    if (punkt < 0) return '';
+    const endung = dateiname.slice(punkt + 1, ende).toLowerCase();
+    const gueltig = endung.length <= MAX_ENDUNG && /^[a-z0-9-]+$/.test(endung)
+        && !endung.startsWith('-') && !endung.endsWith('-') && !endung.includes('--');
+    return gueltig ? endung : '';
+}
+
+/**
+ * Dateityp für die Spalte „Dateityp“, z. B. „PDF“ oder „SZA“ – `null` ohne erkennbare Endung.
+ * `dateiart` PDF heißt: Die Endung auf dem Server ist „pdf“. Dateien der alten Ablage sind
+ * immer PDFs, egal wie der Originalname lautet (sie wurden am Inhalt erkannt).
+ */
+export function dateityp(dok: { originalDateiname: string; dateiart: Dateiart }): string | null {
+    if (dok.dateiart === 'PDF') return 'PDF';
+    return endungWieServer(dok.originalDateiname).toUpperCase() || null;
+}
+
+/** Voller Ordnerpfad („Prüfungen › Tore“), „–“ wenn es den Ordner im Baum nicht gibt. */
+export function ordnerPfadOderStrich(baum: Baum<FirmenOrdner>, ordnerId: number): string {
+    return pfadText(baum, ordnerId) || '–';
 }
 
 // ---------------------------------------------------------------------------
@@ -253,15 +291,4 @@ export function zieleFuerOrdner(baum: Baum<FirmenOrdner>, ordnerId: number, istA
         { id: null, name: OBERSTE_EBENE, ebene: 0, gesperrt: sperre(null) },
         ...alleInReihenfolge(baum).map(({ ordner, ebene }) => ({ id: ordner.id, name: ordner.name, ebene, gesperrt: sperre(ordner.id) })),
     ];
-}
-
-/**
- * Ordner als Auswahl mit vollem Pfad, z. B. „Prüfungen › Tore“. Mit `ausOrdnerId`
- * (Dokument bearbeiten) fehlen für Nicht-Admins die Ordner, in die das Dokument
- * aus einem eingeschränkten Zweig nicht darf.
- */
-export function ordnerOptionen(baum: Baum<FirmenOrdner>, wechsel?: { ausOrdnerId: number; istAdmin: boolean }): { value: string; label: string }[] {
-    return alleInReihenfolge(baum)
-        .filter(({ ordner }) => !wechsel || !hauptordnerWechselGesperrt(baum, wechsel.ausOrdnerId, ordner.id, wechsel.istAdmin))
-        .map(({ ordner }) => ({ value: String(ordner.id), label: pfadText(baum, ordner.id) }));
 }

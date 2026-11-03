@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { ChevronRight, Eye, FolderPlus, Upload } from 'lucide-react';
 import { Button } from '../../components/ui/button';
-import { ordnerKette, pfadText, type Baum } from '../../lib/ordnerBaum';
+import { ordnerKette, type Baum } from '../../lib/ordnerBaum';
 import { cn } from '../../lib/utils';
 import { DokumentListe } from './DokumentListe';
 import type { DokumentAktionen } from './DokumentZeilenAktionen';
-import { ziehtDateien } from './firmendokumenteLogik';
+import { ordnerPfadOderStrich, ziehtDateien } from './firmendokumenteLogik';
 import type { FirmenDokument, FirmenOrdner } from './typen';
 
 /** Was rechts angezeigt wird. */
@@ -36,7 +36,7 @@ export interface RechterBereichProps {
 
 /** Rechte Seite: fällige Dokumente (Übersicht), Inhalt eines Ordners oder Suchtreffer. */
 export function RechterBereich({ ansicht, baum, liste, aktionen, onHochladen, onDateienAbgelegt, onOrdnerWaehlen }: RechterBereichProps) {
-    const pfad = (id: number) => pfadText(baum, id) || '–';
+    const pfad = (id: number) => ordnerPfadOderStrich(baum, id);
     const gemeinsam = {
         dokumente: liste.eintraege, gesamt: liste.gesamt, laedt: liste.laedt, laedtMehr: liste.laedtMehr, fehler: liste.fehler,
         onMehrLaden: liste.mehrLaden, onErneut: liste.neuLaden,
@@ -45,7 +45,7 @@ export function RechterBereich({ ansicht, baum, liste, aktionen, onHochladen, on
     if (ansicht.art === 'suche') {
         return (
             <Bereich titel={`Suche nach „${ansicht.suchbegriff}“`} untertitel="Treffer in allen Ordnern, nach Name sortiert.">
-                <DokumentListe {...gemeinsam} beschriftung="Suchtreffer" ordnerPfad={pfad} aktionen={aktionen}
+                <DokumentListe {...gemeinsam} beschriftung="Suchtreffer" aktionen={aktionen}
                     leer={`Kein Dokument passt zu „${ansicht.suchbegriff}“.`} />
             </Bereich>
         );

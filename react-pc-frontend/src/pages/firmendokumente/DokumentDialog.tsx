@@ -1,11 +1,10 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { Folder, Loader2, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { DatePicker } from '../../components/ui/datepicker';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Select } from '../../components/ui/select-custom';
 import { useToast } from '../../components/ui/toast';
 import { MAX_NAME_LAENGE, pruefeName } from './firmendokumenteLogik';
 import { FaelligAmInfo } from './InfoTexte';
@@ -15,7 +14,8 @@ export interface DokumentDialogProps {
     titel: string;
     beschreibung: ReactNode;
     start: DokumentAngaben;
-    ordnerOptionen: { value: string; label: string }[];
+    /** Wohin das Dokument kommt bzw. wo es liegt, z. B. „Kommt in: Prüfungen › Tore“. Der Ordner selbst ist hier nicht wählbar. */
+    ordnerText: string;
     knopfText: string;
     knopfSymbol: ReactNode;
     onAbbrechen: () => void;
@@ -24,14 +24,14 @@ export interface DokumentDialogProps {
 }
 
 /**
- * Name, Ordner und „Fällig am“ eines Firmendokuments – gemeinsam für
- * „PDF hochladen“ und „Bearbeiten“.
+ * Name und „Fällig am“ eines Firmendokuments – gemeinsam für „Datei hochladen“
+ * und „Bearbeiten“. Der Ordner steht nur als Text da und wird unverändert
+ * (`start.ordnerId`) gespeichert: Verschoben wird per Ziehen auf den Ordnerbaum.
  */
-export function DokumentDialog({ titel, beschreibung, start, ordnerOptionen, knopfText, knopfSymbol, onAbbrechen, onSpeichern }: DokumentDialogProps) {
+export function DokumentDialog({ titel, beschreibung, start, ordnerText, knopfText, knopfSymbol, onAbbrechen, onSpeichern }: DokumentDialogProps) {
     const toast = useToast();
     const id = useId();
     const [name, setName] = useState(start.name);
-    const [ordnerId, setOrdnerId] = useState(String(start.ordnerId));
     const [faelligAm, setFaelligAm] = useState(start.faelligAm ?? '');
     const [nameFehler, setNameFehler] = useState<string | null>(null);
     const [fehler, setFehler] = useState<string | null>(null);
@@ -44,7 +44,7 @@ export function DokumentDialog({ titel, beschreibung, start, ordnerOptionen, kno
         if (meldung) return;
         setSendet(true);
         setFehler(null);
-        onSpeichern({ name: name.trim(), ordnerId: Number(ordnerId), faelligAm: faelligAm || null })
+        onSpeichern({ name: name.trim(), ordnerId: start.ordnerId, faelligAm: faelligAm || null })
             .catch((err: unknown) => {
                 const text = err instanceof Error ? err.message : 'Das Dokument konnte nicht gespeichert werden.';
                 setFehler(text);
@@ -59,6 +59,10 @@ export function DokumentDialog({ titel, beschreibung, start, ordnerOptionen, kno
                 <DialogHeader className="pr-10">
                     <DialogTitle id={`${id}-titel`}>{titel}</DialogTitle>
                     <DialogDescription className="break-words">{beschreibung}</DialogDescription>
+                    <p className="flex items-start gap-1.5 break-words text-sm text-slate-700">
+                        <Folder className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                        <span className="min-w-0">{ordnerText}</span>
+                    </p>
                 </DialogHeader>
                 <form id={`${id}-form`} onSubmit={absenden} noValidate className="space-y-4">
                     <div>
@@ -74,10 +78,6 @@ export function DokumentDialog({ titel, beschreibung, start, ordnerOptionen, kno
                             onChange={(e) => { setName(e.target.value); if (nameFehler) setNameFehler(null); }}
                         />
                         {nameFehler && <p id={`${id}-name-fehler`} role="alert" className="mt-1 text-sm text-red-700">{nameFehler}</p>}
-                    </div>
-                    <div>
-                        <Label htmlFor={`${id}-ordner`}>Ordner *</Label>
-                        <Select id={`${id}-ordner`} aria-label="Ordner" options={ordnerOptionen} value={ordnerId} onChange={setOrdnerId} />
                     </div>
                     <div>
                         <div className="mb-1.5 flex items-center gap-1">
