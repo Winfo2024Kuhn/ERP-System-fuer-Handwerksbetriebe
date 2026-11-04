@@ -129,10 +129,10 @@ class EmailTemplateControllerLueckenTest {
                 "Musterbank", "DE00 1234 5678 9012 3456 78", null, null));
         when(vorlagen.render(anyString(), any())).thenReturn(null);
 
-        sende("{\"dokumentTyp\":\"RECHNUNG\",\"kundenName\":\"<b>Max</b>\"}")
+        sende("{\"dokumentTyp\":\"RECHNUNG\",\"anrede\":\"HERR\",\"kundenName\":\"<b>Max</b>\"}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("IBAN: DE00 1234 5678 9012 3456 78")))
-                .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("&lt;b&gt;Max&lt;/b&gt;")));
+                .andExpect(jsonPath("$.body").value(org.hamcrest.Matchers.containsString("Sehr geehrter Herr &lt;b&gt;Max&lt;/b&gt;,")));
         verify(firma).firmenangabenFuerEmail();
     }
 

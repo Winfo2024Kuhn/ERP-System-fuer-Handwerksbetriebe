@@ -64,7 +64,9 @@ public class EmailTextTemplateController {
     }
 
     private static final List<Map<String, String>> PLACEHOLDERS = List.of(
-            Map.of("token", "{{ANREDE}}", "label", "Anrede (z. B. Sehr geehrter Herr Müller)"),
+            // Vor {{KUNDENNAME}}/{{ANSPRECHPARTNER}} setzt Briefanrede das Paar zusammen (Firma -> Damen und Herren).
+            Map.of("token", "{{ANREDE}}", "label", "Anrede. Mit {{KUNDENNAME}} dahinter: „Sehr geehrter Herr Müller“, "
+                    + "bei Firmen „Sehr geehrte Damen und Herren“"),
             Map.of("token", "{{KUNDENNAME}}", "label", "Kundenname (Firma / Name des Kunden)"),
             Map.of("token", "{{ANSPRECHPARTNER}}", "label", "Ansprechpartner (Person beim Kunden)"),
             Map.of("token", "{{BAUVORHABEN}}", "label", "Bauvorhaben"),

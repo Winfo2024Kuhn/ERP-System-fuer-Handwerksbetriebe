@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from './ui/toast';
-import { EmailComposeForm, anredeEnumToText, formatFileSize, MAX_ATTACHMENT_BYTES } from './EmailComposeForm';
+import { EmailComposeForm, formatFileSize, MAX_ATTACHMENT_BYTES } from './EmailComposeForm';
 
 /**
  * Lückentests für das Schreiben-Fenster: Anrede, Vorgangs-Daten, KI-Formulierung,
@@ -61,17 +61,8 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-describe('anredeEnumToText und formatFileSize', () => {
-    it('übersetzt jede Anrede', () => {
-        expect(anredeEnumToText(undefined)).toBe('Sehr geehrte Damen und Herren');
-        expect(anredeEnumToText('herr')).toBe('Sehr geehrter Herr');
-        expect(anredeEnumToText('FRAU')).toBe('Sehr geehrte Frau');
-        expect(anredeEnumToText('FAMILIE')).toBe('Sehr geehrte Familie');
-        expect(anredeEnumToText('FIRMA')).toBe('Sehr geehrte Damen und Herren');
-        expect(anredeEnumToText('DAMEN_HERREN')).toBe('Sehr geehrte Damen und Herren');
-        expect(anredeEnumToText('UNBEKANNT')).toBe('Sehr geehrte Damen und Herren');
-    });
-
+// Anredetexte prüft lib/briefanrede.test.ts.
+describe('formatFileSize', () => {
     it('zeigt Größen in KB und MB', () => {
         expect(formatFileSize(10)).toBe('1 KB');
         expect(formatFileSize(5 * 1024 * 1024)).toBe('5.0 MB');

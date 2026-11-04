@@ -65,6 +65,7 @@ import org.example.kalkulationsprogramm.service.ProjektListenPdfService;
 import org.example.kalkulationsprogramm.service.StuecklistePdfService;
 import org.example.kalkulationsprogramm.service.ZugferdErstellService;
 import org.example.kalkulationsprogramm.service.ZugferdExtractorService;
+import org.example.kalkulationsprogramm.util.Briefanrede;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -1008,7 +1009,8 @@ public class ProjektController {
             // Anrede aus Kunde ableiten
             Kunde kundeEntity = dokument.getProjekt().getKundenId();
             if (kundeEntity != null) {
-                dto.setAnrede(buildAnredeText(kundeEntity.getAnrede(), kundeEntity.getAnsprechspartner()));
+                dto.setAnrede(Briefanrede.briefanrede(
+                        kundeEntity.getAnrede(), kundeEntity.getAnsprechspartner()));
             }
             double arbeits = dateiSpeicherService.berechneProjektArbeitskosten(dokument.getProjekt());
             double material = dateiSpeicherService.berechneProjektMaterialkosten(dokument.getProjekt());
@@ -1041,23 +1043,6 @@ public class ProjektController {
             dto.setUploadedByNachname(dokument.getUploadedBy().getNachname());
         }
         return dto;
-    }
-
-    private String buildAnredeText(org.example.kalkulationsprogramm.domain.Anrede anrede, String ansprechspartner) {
-        if (anrede == null) {
-            return "Sehr geehrte Damen und Herren";
-        }
-        String displayText = switch (anrede) {
-            case HERR -> "Sehr geehrter Herr";
-            case FRAU -> "Sehr geehrte Frau";
-            case FAMILIE -> "Sehr geehrte Familie";
-            case FIRMA -> "Sehr geehrte Damen und Herren";
-            case DAMEN_HERREN -> "Sehr geehrte Damen und Herren";
-        };
-        if (ansprechspartner != null && !ansprechspartner.isBlank()) {
-            return displayText + " " + ansprechspartner.trim();
-        }
-        return displayText;
     }
 
     // @GetMapping("/{projektID}/dokumente/{dokumentID}/emailText")

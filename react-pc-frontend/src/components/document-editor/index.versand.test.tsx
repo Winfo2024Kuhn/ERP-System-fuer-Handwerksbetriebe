@@ -70,10 +70,12 @@ interface Einstellungen {
     /** Nettobetrag, den der Server beim Buchen übernimmt (Schlussrechnung). Standard: unverändert. */
     nettoNachBuchung?: number;
     pdfSpeichernOk?: boolean;
+    /** Antwort von /api/kunden/7 (Dokument mit kundeId 7). */
+    kunde?: Record<string, unknown>;
 }
 
 function mockFetch({
-    dokument: abweichung = {}, abzuloesende = [], buchenOk = true, nettoNachBuchung, pdfSpeichernOk = true,
+    dokument: abweichung = {}, abzuloesende = [], buchenOk = true, nettoNachBuchung, pdfSpeichernOk = true, kunde,
 }: Einstellungen = {}) {
     const dokument = { ...basisDokument, ...abweichung };
     let stand: Record<string, unknown> = { ...dokument };
@@ -93,6 +95,7 @@ function mockFetch({
         }
         if (url === '/api/ausgangs-dokumente/1/abzuloesende-freigaben') return jsonAntwort(abzuloesende);
         if (url === '/api/email/template') return jsonAntwort({ subject: 'Betreff', body: '<p>Hallo</p>' });
+        if (url === '/api/kunden/7' && kunde) return jsonAntwort(kunde);
         if (url.startsWith('/api/dokument-generator/')) return pdfAntwort();
         if (url.startsWith('/api/formulare/templates/selection')) return jsonAntwort({ templateName: null });
         return jsonAntwort([]);
@@ -312,6 +315,33 @@ describe('E-Mail-Versand eines Angebots', () => {
         expect(mailfenster.props?.vorDemSenden).toBeUndefined();
         expect(mailfenster.props?.freigabenAbloesenFuerDokumentId).toBeUndefined();
         expect(mailfenster.props?.entwurfSpeichern).toBe(true);
+    });
+
+    it('schickt die Anrede als Rohwert, die Briefanrede baut das Backend', async () => {
+        const user = userEvent.setup();
+        starte({
+            dokument: { ...angebot, kundeId: 7 },
+            kunde: { name: 'Landkreis Musterstadt', anrede: 'DAMEN_HERREN', ansprechpartner: '' },
+        });
+        await emailStarten(user);
+        const wahl = await screen.findByRole('dialog', { name: /online annehmen können/ });
+        await user.click(within(wahl).getByRole('button', { name: /Nein, nur das PDF schicken/ }));
+        await screen.findByTestId('mailfenster');
+
+        expect(templateAnfrage().anrede).toBe('DAMEN_HERREN');
+        expect(templateAnfrage().kundenName).toBe('Landkreis Musterstadt');
+        expect(templateAnfrage().ansprechpartner).toBe('');
+    });
+
+    it('schickt ohne hinterlegte Anrede null statt eines fertigen Texts', async () => {
+        const user = userEvent.setup();
+        starte({ dokument: angebot });
+        await emailStarten(user);
+        const wahl = await screen.findByRole('dialog', { name: /online annehmen können/ });
+        await user.click(within(wahl).getByRole('button', { name: /Nein, nur das PDF schicken/ }));
+        await screen.findByTestId('mailfenster');
+
+        expect(templateAnfrage().anrede).toBeNull();
     });
 
     it('„Ja“ fragt nach der Gültigkeit und verschickt mit Link', async () => {

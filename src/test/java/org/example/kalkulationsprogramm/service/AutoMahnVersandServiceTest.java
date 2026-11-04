@@ -622,4 +622,81 @@ class AutoMahnVersandServiceTest
 
         assertThat(result).isFalse();
     }
+
+    // ===== Briefanrede in Mahn-Mail und Mahn-PDF =====
+
+    private void versendeMahnungAn(org.example.kalkulationsprogramm.domain.Kunde kunde,
+                                   org.mockito.ArgumentCaptor<java.util.Map<String, String>> ctx,
+                                   org.mockito.ArgumentCaptor<RechnungPdfService.RechnungDto> pdf) throws Exception
+    {
+        AutoMahnVersandService service = vorbereiteterVersandService();
+        when(projektDokumentRepository.findById(4711L)).thenReturn(Optional.of(gespeicherteMahnung()));
+        ProjektGeschaeftsdokument rechnung = versandbereiteRechnung();
+        rechnung.getProjekt().setKundenId(kunde);
+
+        service.erzeugeUndVersende(rechnung, Mahnstufe.ZAHLUNGSERINNERUNG,
+                firmaMitAbstaenden(3, 7, 7), "max.mustermann@example.org", LocalDate.of(2026, 7, 11), 10);
+
+        org.mockito.Mockito.verify(emailTextTemplateService).render(
+                org.mockito.ArgumentMatchers.eq("ZAHLUNGSERINNERUNG"), ctx.capture());
+        org.mockito.Mockito.verify(rechnungPdfService).generatePdfBytes(pdf.capture());
+    }
+
+    private static org.example.kalkulationsprogramm.domain.Kunde kunde(
+            org.example.kalkulationsprogramm.domain.Anrede anrede, String name)
+    {
+        org.example.kalkulationsprogramm.domain.Kunde kunde = new org.example.kalkulationsprogramm.domain.Kunde();
+        kunde.setAnrede(anrede);
+        kunde.setName(name);
+        return kunde;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void briefanrede_behoerdeBekommtDamenUndHerrenOhneFirmennamen() throws Exception
+    {
+        org.mockito.ArgumentCaptor<java.util.Map<String, String>> ctx =
+                org.mockito.ArgumentCaptor.forClass(java.util.Map.class);
+        org.mockito.ArgumentCaptor<RechnungPdfService.RechnungDto> pdf =
+                org.mockito.ArgumentCaptor.forClass(RechnungPdfService.RechnungDto.class);
+
+        versendeMahnungAn(kunde(org.example.kalkulationsprogramm.domain.Anrede.DAMEN_HERREN,
+                "Landkreis Musterstadt Abfallwirtschaft"), ctx, pdf);
+
+        // Anrede-Art liegt im Kontext: die Mail-Vorlage "{{ANREDE}} {{KUNDENNAME}}," wird zur Briefanrede.
+        assertThat(org.example.kalkulationsprogramm.util.Briefanrede.artAus(ctx.getValue()))
+                .isEqualTo(org.example.kalkulationsprogramm.domain.Anrede.DAMEN_HERREN);
+        assertThat(ctx.getValue()).containsEntry("ANREDE", "Sehr geehrte Damen und Herren");
+        assertThat(pdf.getValue().contentBlocks().get(0).text()).isEqualTo("<p>Sehr geehrte Damen und Herren,</p>");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void briefanrede_herrBekommtNamenImMahnPdf() throws Exception
+    {
+        org.mockito.ArgumentCaptor<java.util.Map<String, String>> ctx =
+                org.mockito.ArgumentCaptor.forClass(java.util.Map.class);
+        org.mockito.ArgumentCaptor<RechnungPdfService.RechnungDto> pdf =
+                org.mockito.ArgumentCaptor.forClass(RechnungPdfService.RechnungDto.class);
+
+        versendeMahnungAn(kunde(org.example.kalkulationsprogramm.domain.Anrede.HERR, "Max Mustermann"), ctx, pdf);
+
+        assertThat(ctx.getValue()).containsEntry("ANREDE", "Sehr geehrter Herr");
+        assertThat(pdf.getValue().contentBlocks().get(0).text()).isEqualTo("<p>Sehr geehrter Herr Max Mustermann,</p>");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void briefanrede_nameWirdImMahnPdfMaskiert() throws Exception
+    {
+        org.mockito.ArgumentCaptor<java.util.Map<String, String>> ctx =
+                org.mockito.ArgumentCaptor.forClass(java.util.Map.class);
+        org.mockito.ArgumentCaptor<RechnungPdfService.RechnungDto> pdf =
+                org.mockito.ArgumentCaptor.forClass(RechnungPdfService.RechnungDto.class);
+
+        versendeMahnungAn(kunde(org.example.kalkulationsprogramm.domain.Anrede.HERR, "<b>Max</b> & Söhne"), ctx, pdf);
+
+        assertThat(pdf.getValue().contentBlocks().get(0).text())
+                .isEqualTo("<p>Sehr geehrter Herr &lt;b&gt;Max&lt;/b&gt; &amp; Söhne,</p>");
+    }
 }

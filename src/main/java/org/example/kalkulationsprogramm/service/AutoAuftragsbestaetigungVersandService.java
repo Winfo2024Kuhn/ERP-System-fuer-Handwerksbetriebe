@@ -22,6 +22,7 @@ import org.example.kalkulationsprogramm.service.RechnungPdfService.KopfdatenDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.LayoutDto;
 import org.example.kalkulationsprogramm.service.RechnungPdfService.RechnungDto;
 import org.example.kalkulationsprogramm.service.mail.SentMailArchiver;
+import org.example.kalkulationsprogramm.util.Briefanrede;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 
 /**
  * Versendet eine Auftragsbestätigung automatisch per E-Mail an den Kunden,
@@ -65,6 +67,9 @@ public class AutoAuftragsbestaetigungVersandService
 {
     private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builderWithJackson2Defaults().build();
     private static final DateTimeFormatter DATUM_FORMAT = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+    /** Einzel-Platzhalter in Textbausteinen: Groß/klein egal, wie im Frontend-DocumentEditor. */
+    private static final Briefanrede.Muster PLATZHALTER =
+            Briefanrede.muster("\\{\\{\\s*+([a-zA-Z0-9_äöüÄÖÜß]++)\\s*+\\}\\}");
 
     private final RechnungPdfService rechnungPdfService;
     private final SystemSettingsService systemSettingsService;
@@ -620,22 +625,14 @@ public class AutoAuftragsbestaetigungVersandService
      * Setzt {@code {{TOKEN}}}-Platzhalter im HTML auf. Wert-Lookup ist
      * case-insensitive (Token wird auf UPPERCASE normalisiert), unbekannte
      * Tokens bleiben unverändert stehen — symmetrisch zum Frontend
-     * {@code DocumentEditor.replacePlaceholders}.
+     * {@code DocumentEditor.replacePlaceholders}. Liegt die Anrede-Art im Kontext
+     * ({@link Briefanrede#inKontext}), wird {@code {{ANREDE}} {{ANSPRECHPARTNER}}} bzw.
+     * {@code {{ANREDE}} {{KUNDENNAME}}} im selben Durchlauf als Paar zur Briefanrede.
      */
     static String aufloesePlatzhalter(String text, Map<String, String> ctx)
     {
-        if (text == null || text.isEmpty()) return text;
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("\\{\\{\\s*([a-zA-Z0-9_äöüÄÖÜß]+)\\s*\\}\\}");
-        java.util.regex.Matcher m = p.matcher(text);
-        StringBuilder out = new StringBuilder();
-        while (m.find())
-        {
-            String key = m.group(1).toUpperCase(Locale.GERMAN);
-            String value = ctx.get(key);
-            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(value != null ? value : m.group()));
-        }
-        m.appendTail(out);
-        return out.toString();
+        return Briefanrede.ersetze(text, ctx, PLATZHALTER,
+                token -> ctx.get(token.toUpperCase(Locale.GERMAN)), UnaryOperator.identity());
     }
 
     /**
@@ -665,12 +662,8 @@ public class AutoAuftragsbestaetigungVersandService
             ctx.put("KUNDENNUMMER", nullSafe(kunde.getKundennummer()));
             ctx.put("KUNDENADRESSE", nullSafe(baueAdresseAusKunde(kunde)));
             ctx.put("ANSPRECHPARTNER", nullSafe(kunde.getAnsprechspartner()));
-            ctx.put("ANREDE", kunde.getAnrede() != null ? kunde.getAnrede().toAnredeText() : "Sehr geehrte Damen und Herren");
         }
-        else
-        {
-            ctx.put("ANREDE", "Sehr geehrte Damen und Herren");
-        }
+        Briefanrede.inKontext(ctx, kunde != null ? kunde.getAnrede() : null);
 
         if (vorgaenger != null)
         {
@@ -1121,11 +1114,11 @@ public class AutoAuftragsbestaetigungVersandService
         EmailService.EmailContent rendered = emailTextTemplateService.render("AUFTRAGSBESTAETIGUNG", ctx);
         if (rendered != null && rendered.subject() != null && !rendered.subject().isBlank()) return rendered;
 
-        // Fallback auf hartkodiertes Template
+        // Fallback auf hartkodiertes Template; Anrede + Name als fertige Briefanrede
         return EmailService.buildOrderConfirmationEmail(
                 null,
-                "Sehr geehrte Damen und Herren",
-                ctx.getOrDefault("KUNDENNAME", ""),
+                Briefanrede.briefanrede(Briefanrede.artAus(ctx), ctx.get("KUNDENNAME")),
+                "",
                 ctx.getOrDefault("BAUVORHABEN", ""),
                 ctx.getOrDefault("PROJEKTNUMMER", ""),
                 ctx.getOrDefault("DOKUMENTNUMMER", ab.getDokumentNummer()),
