@@ -64,8 +64,8 @@ describe('EmailThreadView', () => {
     it('rendert Skeleton-Loading wenn loading=true', () => {
         const thread = makeThread();
         const { container } = render(<EmailThreadView thread={thread} loading={true} />);
-        // Skeleton-Bubbles haben animate-pulse
-        const skeletons = container.querySelectorAll('.animate-pulse');
+        // Skeleton-Bubbles pulsieren (nur bei erlaubter Bewegung)
+        const skeletons = container.querySelectorAll('.motion-safe\\:animate-pulse');
         expect(skeletons.length).toBeGreaterThan(0);
     });
 

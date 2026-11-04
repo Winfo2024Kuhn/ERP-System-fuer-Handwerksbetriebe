@@ -5,7 +5,9 @@ import { designPruefung } from './hilfen/design';
 /**
  * E-Mail-Reiter (`EmailsTab`) in der Anfrage: Filter in Rose über die gemeinsame
  * Segment-Auswahl, Verlauf per Tastatur öffnen und per Escape schließen,
- * Bild-Anhang (Escape schließt nur die Vorschau), Entwurf löschen mit „Rückgängig“,
+ * Bild- und PDF-Anhang als eigenes Fenster über dem Verlauf (Fokus auf „Schließen“,
+ * Tab bleibt drin, Escape schließt nur die Vorschau, Fokus zurück an den Anhang),
+ * Entwurf löschen mit „Rückgängig“,
  * Antworten. Die Rückgängig-Frist läuft über `page.clock`, nicht über Warten.
  *
  * /api ist gestubbt, kein Backend; nur Dummy-Daten (DSGVO): Max Mustermann.
@@ -134,29 +136,43 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(dialog).toBeHidden();
         await expect(zeile).toBeFocused();
 
-        // Bild-Anhang: Escape schließt nur die Vorschau
+        // Bild-Anhang: eigenes Fenster über dem Verlauf, Fokus auf „Schließen“, Tab bleibt drin,
+        // Escape schließt nur die Vorschau und gibt den Fokus an den Anhang-Knopf zurück
         await page.keyboard.press('Enter');
         await expect(dialog).toBeVisible();
-        await dialog.getByRole('button', { name: /skizze\.png/ }).click();
-        const bild = page.getByAltText('skizze.png');
-        await expect(bild).toBeVisible();
-        await designPruefung(page, testInfo, 'emails-tab-bild-vorschau');
+        const bildAnhang = dialog.getByRole('button', { name: /skizze\.png/ });
+        await bildAnhang.click();
+        const bildVorschau = page.getByRole('dialog', { name: 'skizze.png' });
+        await expect(bildVorschau).toBeVisible();
+        await expect(page.getByAltText('skizze.png')).toBeVisible();
+        const bildSchliessen = bildVorschau.getByRole('button', { name: 'Vorschau schließen' });
+        await expect(bildSchliessen).toBeFocused();
+        await designPruefung(page, testInfo, 'emails-tab-bild-vorschau', { primaerAktion: bildSchliessen });
+        for (let i = 0; i < 5; i++) await page.keyboard.press('Tab');
+        await expect(bildVorschau.locator(':focus')).toHaveCount(1);
+        await page.keyboard.press('Shift+Tab');
+        await expect(bildVorschau.locator(':focus')).toHaveCount(1);
         await page.keyboard.press('Escape');
-        await expect(bild).toBeHidden();
+        await expect(bildVorschau).toBeHidden();
         await expect(dialog).toBeVisible();
+        await expect(bildAnhang).toBeFocused();
 
         // PDF-Anhang in der gemeinsamen Dokumentvorschau: auch hier schließt Escape nur die Vorschau
-        await dialog.getByRole('button', { name: /zeichnung\.pdf/ }).click();
-        const pdfSchliessen = page.getByRole('button', { name: 'Vorschau schließen' });
-        await expect(pdfSchliessen).toBeVisible();
+        const pdfAnhang = dialog.getByRole('button', { name: /zeichnung\.pdf/ });
+        await pdfAnhang.click();
+        const pdfVorschau = page.getByRole('dialog', { name: 'zeichnung.pdf' });
+        await expect(pdfVorschau.getByRole('button', { name: 'Vorschau schließen' })).toBeFocused();
         await page.keyboard.press('Escape');
-        await expect(pdfSchliessen).toBeHidden();
+        await expect(pdfVorschau).toBeHidden();
         await expect(dialog).toBeVisible();
+        await expect(pdfAnhang).toBeFocused();
 
         // Entwurf löschen: sofort weg, „Rückgängig“ holt ihn zurück
         const entwurf = dialog.getByText('Angebot folgt bis Freitag');
         await expect(entwurf).toBeVisible();
-        await dialog.getByTitle('Entwurf löschen').click();
+        const entwurfLoeschen = dialog.getByRole('button', { name: 'Entwurf löschen' });
+        await designPruefung(page, testInfo, 'emails-tab-verlauf-entwurf', { primaerAktion: entwurfLoeschen });
+        await entwurfLoeschen.click();
         await expect(entwurf).toBeHidden();
         await expect(dialog.getByText('2 Nachrichten im Verlauf', { exact: true })).toBeVisible();
         const meldung = page.getByText('Entwurf „Angebot folgt bis Freitag“ gelöscht.');
@@ -166,7 +182,7 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(entwurf).toBeVisible();
 
         // Noch einmal löschen und die Frist ablaufen lassen: erst jetzt geht das DELETE raus
-        await dialog.getByTitle('Entwurf löschen').click();
+        await entwurfLoeschen.click();
         await expect(entwurf).toBeHidden();
         expect(stand.loeschAufrufe).toBe(0);
         const neuGeladen = page.waitForResponse(r => r.url().endsWith('/api/emails/7/thread'));
