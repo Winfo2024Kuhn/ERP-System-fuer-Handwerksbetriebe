@@ -187,4 +187,14 @@ describe('Kontext eines gespeicherten Dokuments', () => {
         expect(dokumentKontextAusKunde({}, { ...dokument, zahlungszielTage: undefined }, { ...kunde, kundennummer: 'K-9' }, false))
             .toMatchObject({ kundennummer: 'K-9', kundenName: 'Max Mustermann', zahlungsziel: 21 });
     });
+
+    it('aus dem Kunden: gespeicherte Adresse erscheint beim Öffnen, obwohl sie als Nutzeränderung gilt', () => {
+        const gespeichert = 'Max Mustermann\nAndere Str. 5\n12345 Musterstadt';
+        const mitOverride = { ...dokument, kundeId: 7, rechnungsadresseOverride: gespeichert };
+        expect(dokumentKontextAusKunde({}, mitOverride, kunde, true).rechnungsadresse).toBe(gespeichert);
+        expect(dokumentKontextAusKunde({ rechnungsadresse: '' }, mitOverride, kunde, true).rechnungsadresse).toBe(gespeichert);
+        expect(dokumentKontextAusKunde({ rechnungsadresse: 'Getippt' }, mitOverride, kunde, true).rechnungsadresse).toBe('Getippt');
+        expect(dokumentKontextAusKunde({}, { ...dokument, kundeId: 7 }, kunde, true).rechnungsadresse)
+            .toBe('Max Mustermann\nMusterweg 1\n12345 Musterstadt');
+    });
 });

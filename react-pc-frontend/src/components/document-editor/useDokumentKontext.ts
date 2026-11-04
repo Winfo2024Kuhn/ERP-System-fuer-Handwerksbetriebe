@@ -101,18 +101,27 @@ export function useDokumentKontext({ dokumentId, projektId, anfrageId, dokumentT
     /**
      * Kontext eines gespeicherten Dokuments: erst Kunde/Projekt/Anfrage, dann
      * der Vorgaenger (abgewartet, damit umgewandelte Standardtexte nicht mit
-     * leerem {{BEZUGSDOKUMENTDATUM}} eingefroren werden). Ein gespeicherter
-     * Adress-Override gilt als Nutzeraenderung. Netzwerkfehler beim
+     * leerem {{BEZUGSDOKUMENTDATUM}} eingefroren werden). Netzwerkfehler beim
      * Stammdaten-Laden gehen an den Aufrufer weiter.
+     *
+     * Rechnungsadresse: Ein gespeicherter Override gilt als Nutzeraenderung und
+     * steht sofort im Kontext (ref-first). So bleibt er auch, wenn Kunde,
+     * Projekt oder Anfrage nicht laden, und das naechste Speichern schickt ihn
+     * unveraendert mit statt leer. Das Flag wird je Dokument neu gesetzt, denn
+     * der Editor kann ohne Neuaufbau zu einem anderen Dokument wechseln; ohne
+     * Override setzen die Ladezweige die Adresse.
      */
     const ladeFuerDokument = useCallback((data: AusgangsGeschaeftsDokument): Promise<void> => {
-        if (data.rechnungsadresseOverride) adresseUserEditedRef.current = true;
+        adresseUserEditedRef.current = !!data.rechnungsadresseOverride;
+        if (data.rechnungsadresseOverride) {
+            setzeKontextDaten({ ...kontextDatenRef.current, rechnungsadresse: data.rechnungsadresseOverride });
+        }
         const anwenden = (aenderung: KontextAenderung | null) => { if (aenderung) setKontextDaten(aenderung); };
         return ladeStammdatenKontext(data, () => adresseUserEditedRef.current)
             .then(anwenden)
             .then(() => ladeBezugKontext(data))
             .then(anwenden);
-    }, []);
+    }, [setzeKontextDaten]);
 
     return {
         kontextDaten,

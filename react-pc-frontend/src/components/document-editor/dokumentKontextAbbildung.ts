@@ -162,20 +162,26 @@ export function dokumentKontextAusAnfrage(dokument: DokumentFuerKontext, anfrage
     };
 }
 
-/** Gespeichertes Dokument, das nur an einem Kunden hängt. */
+/**
+ * Gespeichertes Dokument, das nur an einem Kunden hängt.
+ *
+ * Rechnungsadresse: eine schon im Kontext stehende Adresse bleibt nur, wenn
+ * `adresseBehalten` gilt und sie auch gesetzt ist. Ein gespeicherter Override
+ * setzt beim Öffnen schon `adresseBehalten`, der Kontext ist dann aber noch
+ * leer; deshalb folgt der Override, danach die Kundenadresse.
+ */
 export function dokumentKontextAusKunde(
     vorher: KontextDaten,
     dokument: DokumentFuerKontext,
     kunde: KundeKontextAntwort,
     adresseBehalten: boolean,
 ): KontextDaten {
+    const behalteneAdresse = adresseBehalten ? vorher.rechnungsadresse : undefined;
     return {
         kundennummer: kunde.kundennummer || dokument.kundennummer,
         kundenName: kunde.name || `${kunde.vorname || ''} ${kunde.nachname || ''}`.trim(),
         kundeId: dokument.kundeId,
-        rechnungsadresse: adresseBehalten
-            ? vorher.rechnungsadresse
-            : (dokument.rechnungsadresseOverride || buildAdresse(kunde)),
+        rechnungsadresse: behalteneAdresse || dokument.rechnungsadresseOverride || buildAdresse(kunde),
         anrede: kunde.anrede,
         ansprechpartner: kunde.ansprechspartner || kunde.ansprechpartner,
         bezugsdokument: dokument.vorgaengerNummer,
