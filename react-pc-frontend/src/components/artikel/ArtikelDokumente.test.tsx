@@ -109,7 +109,8 @@ describe('ArtikelDokumente', () => {
 
         await user.click(await screen.findByTitle('Bild groß anzeigen'));
 
-        expect(await screen.findByTitle('Schließen (ESC)')).toBeInTheDocument();
+        expect(await screen.findByRole('dialog', { name: 'handlaufhalter.jpg' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Vorschau schließen' })).toHaveFocus();
     });
 
     it('öffnet die PDF-Vorschau beim Klick auf eine Unterlage', async () => {

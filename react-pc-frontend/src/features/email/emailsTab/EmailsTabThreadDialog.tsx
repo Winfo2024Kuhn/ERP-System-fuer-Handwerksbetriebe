@@ -34,9 +34,10 @@ interface Anhang { url: string; type: 'image' | 'pdf'; name: string }
  * Verlauf im E-Mail-Reiter als gemeinsamer Dialog (Fokusfalle, Escape, Titel = Betreff)
  * mit Antwort-Formular und Anhang-Vorschau.
  *
- * Die Vorschau hängt im Dialog, damit Fokusfalle und Escape sie einschließen: Escape
- * schließt dann nur die Vorschau. Beim Schließen während einer Antwort wird der Entwurf
- * erst gespeichert; scheitert das, bleibt der Verlauf offen.
+ * Die Anhang-Vorschau ist eine eigene modale Ebene über dem Verlauf (ImageViewer bzw.
+ * DocumentPreviewModal): Escape schließt nur sie, danach steht der Fokus wieder auf dem
+ * Anhang-Knopf. Beim Schließen während einer Antwort wird der Entwurf erst gespeichert;
+ * scheitert das, bleibt der Verlauf offen.
  *
  * Während einer Antwort stellt der Dialog den einzigen Kopf: Pfeil „Zurück zum Verlauf“,
  * Titel „Antwort“, Betreff darunter, rechts nur das X des Dialogs. Das Formular läuft
@@ -84,7 +85,6 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
     };
 
     const schliessenWollen = () => {
-        if (anhang) { setAnhang(null); return; }
         nachDemSpeichern(onClose);
     };
     const zurueckZumVerlauf = () => nachDemSpeichern(reply.cancelReply);

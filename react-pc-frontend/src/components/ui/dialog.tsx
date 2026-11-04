@@ -3,34 +3,10 @@ import { createPortal } from "react-dom"
 import { X } from "lucide-react"
 
 import { cn } from "../../lib/utils"
+// Ebenen-Erkennung teilen sich Dialog und Vorschauen (ImageViewer, DocumentPreviewModal).
+import { DIALOG_Z_BASIS, FOKUS_SELEKTOR, meldungsBereiche, obersteModaleEbene, sichtbar } from "../../lib/modalEbene"
+import { DialogDepth } from "./dialogTiefe"
 
-const DialogDepth = React.createContext(0);
-const focusSelector = 'button, a[href], input, select, textarea, [tabindex], [contenteditable="true"]';
-
-function visible(element: HTMLElement): boolean {
-    for (let node: HTMLElement | null = element; node; node = node.parentElement) {
-        const style = getComputedStyle(node);
-        if (node.hidden || node.hasAttribute('inert') || node.getAttribute('aria-hidden') === 'true'
-            || style.display === 'none' || style.visibility === 'hidden') return false;
-    }
-    return true;
-}
-function topDialog(exclude?: HTMLElement): HTMLElement | undefined {
-    let result: HTMLElement | undefined;
-    let highest = -Infinity;
-    for (const panel of document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')) {
-        if (panel === exclude || !visible(panel)) continue;
-        let zIndex = 0;
-        for (let node: HTMLElement | null = panel; node; node = node.parentElement) {
-            zIndex = Math.max(zIndex, Number.parseInt(getComputedStyle(node).zIndex) || 0);
-        }
-        if (zIndex >= highest) { highest = zIndex; result = panel; }
-    }
-    return result;
-}
-function notificationRoots(): HTMLElement[] {
-    return Array.from(document.querySelectorAll<HTMLElement>('[data-pc-toasts]')).filter(visible);
-}
 /** Owned picker portals are linked to their trigger by aria-controls. */
 function focusRoots(panel: HTMLElement): HTMLElement[] {
     const roots = [panel];
@@ -40,14 +16,14 @@ function focusRoots(panel: HTMLElement): HTMLElement[] {
             if (popup && !roots.includes(popup)) roots.push(popup);
         }
     }
-    return [...roots, ...notificationRoots()];
+    return [...roots, ...meldungsBereiche()];
 }
 function focusable(panel: HTMLElement): HTMLElement[] {
-    const candidates = [panel, ...notificationRoots()].flatMap(root => [
-        ...(root !== panel ? [root] : []), ...root.querySelectorAll<HTMLElement>(focusSelector),
+    const candidates = [panel, ...meldungsBereiche()].flatMap(root => [
+        ...(root !== panel ? [root] : []), ...root.querySelectorAll<HTMLElement>(FOKUS_SELEKTOR),
     ]);
     return Array.from(new Set(candidates))
-        .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && visible(element));
+        .filter(element => element.tabIndex >= 0 && !element.matches(':disabled') && sichtbar(element));
 }
 
 const Dialog = React.forwardRef<
@@ -72,25 +48,25 @@ const Dialog = React.forwardRef<
         let lastDialogFocus: HTMLElement | null = null;
         const belongs = (element: Node | null) => !!element && focusRoots(panel).some(root => root.contains(element));
         const focusInside = () => {
-            const target = lastFocus?.isConnected && belongs(lastFocus) && visible(lastFocus)
-                ? lastFocus : lastDialogFocus?.isConnected && visible(lastDialogFocus) ? lastDialogFocus : focusable(panel)[0] ?? panel;
+            const target = lastFocus?.isConnected && belongs(lastFocus) && sichtbar(lastFocus)
+                ? lastFocus : lastDialogFocus?.isConnected && sichtbar(lastDialogFocus) ? lastDialogFocus : focusable(panel)[0] ?? panel;
             target.focus();
         };
         const onFocus = (event: FocusEvent) => {
-            if (topDialog() !== panel) return;
+            if (obersteModaleEbene() !== panel) return;
             if (belongs(event.target as Node)) {
                 lastFocus = event.target as HTMLElement;
-                if (!notificationRoots().some(root => root.contains(lastFocus))) lastDialogFocus = lastFocus;
+                if (!meldungsBereiche().some(root => root.contains(lastFocus))) lastDialogFocus = lastFocus;
             } else focusInside();
         };
         const onKey = (event: KeyboardEvent) => {
-            if (event.defaultPrevented || topDialog() !== panel) return;
+            if (event.defaultPrevented || obersteModaleEbene() !== panel) return;
             if (event.key === 'Escape') {
                 event.preventDefault(); event.stopPropagation();
-                if (notificationRoots().some(root => root.contains(event.target as Node))) {
+                if (meldungsBereiche().some(root => root.contains(event.target as Node))) {
                     // Escape in a notification returns to the unfinished form;
                     // it must never close that form as a side effect.
-                    const target = lastDialogFocus?.isConnected && visible(lastDialogFocus) ? lastDialogFocus : focusable(panel)[0] ?? panel;
+                    const target = lastDialogFocus?.isConnected && sichtbar(lastDialogFocus) ? lastDialogFocus : focusable(panel)[0] ?? panel;
                     target.focus();
                 } else onChangeRef.current?.(false);
             } else if (event.key === 'Tab') {
@@ -116,7 +92,7 @@ const Dialog = React.forwardRef<
         };
         document.addEventListener('focusin', onFocus);
         document.addEventListener('keydown', onKey);
-        if (topDialog() === panel) {
+        if (obersteModaleEbene() === panel) {
             if (belongs(document.activeElement)) { lastFocus = document.activeElement as HTMLElement; lastDialogFocus = lastFocus; }
             else focusInside();
         }
@@ -125,7 +101,7 @@ const Dialog = React.forwardRef<
             document.removeEventListener('keydown', onKey);
             // Wait until React has removed portals; never steal focus from a newer modal.
             queueMicrotask(() => {
-                const top = topDialog(panel);
+                const top = obersteModaleEbene(panel);
                 if (opener?.isConnected && (!top || focusRoots(top).some(root => root.contains(opener)))) opener.focus();
             });
         };
@@ -137,11 +113,11 @@ const Dialog = React.forwardRef<
             {/* Backdrop */}
             <div
                 className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-                style={{ zIndex: 50 + depth }}
+                style={{ zIndex: DIALOG_Z_BASIS + depth }}
                 // Kein Backdrop-Klick: Schließen über Dialogaktionen oder Escape.
             />
             {/* Dialog Container */}
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: 50 + depth }}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ zIndex: DIALOG_Z_BASIS + depth }}>
                 <div
                     ref={element => {
                         panelRef.current = element;
@@ -246,7 +222,7 @@ DialogDescription.displayName = "DialogDescription"
  */
 const DialogEbene = ({ ueberZIndex, children }: { ueberZIndex: number; children: React.ReactNode }) => {
     const depth = React.useContext(DialogDepth);
-    return <DialogDepth.Provider value={Math.max(depth, ueberZIndex - 50 + 1)}>{children}</DialogDepth.Provider>;
+    return <DialogDepth.Provider value={Math.max(depth, ueberZIndex - DIALOG_Z_BASIS + 1)}>{children}</DialogDepth.Provider>;
 }
 DialogEbene.displayName = "DialogEbene"
 
