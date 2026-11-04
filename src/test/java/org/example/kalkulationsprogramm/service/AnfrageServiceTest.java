@@ -41,7 +41,7 @@ class AnfrageServiceTest {
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
                 kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
@@ -86,7 +86,7 @@ class AnfrageServiceTest {
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
                 kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
@@ -113,6 +113,30 @@ class AnfrageServiceTest {
     }
 
     @Test
+    void findeDtoZaehltNurDieEmailVerlaeufeFuerDenReiter() {
+        AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
+        var emailRepository = mock(org.example.kalkulationsprogramm.repository.EmailRepository.class);
+        var reiterRepository = mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class);
+        AnfrageService service = new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
+                mock(AnfrageDokumentRepository.class), mock(KundeRepository.class), emailRepository, reiterRepository,
+                mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
+                null, mock(org.springframework.context.ApplicationEventPublisher.class),
+                mock(AusgangsGeschaeftsDokumentService.class), mock(DokumentFreigabeService.class),
+                new TransactionTemplate(mock(PlatformTransactionManager.class)));
+        Anfrage anfrage = new Anfrage();
+        anfrage.setId(5L);
+        when(anfrageRepository.findById(5L)).thenReturn(Optional.of(anfrage));
+        when(reiterRepository.anzahlVerlaeufe(org.example.kalkulationsprogramm.domain.EmailBezug.ANFRAGE, 5L))
+                .thenReturn(140L);
+
+        AnfrageResponseDto dto = service.findeDto(5L);
+
+        assertThat(dto.getEmailAnzahl()).isEqualTo(140L);
+        org.mockito.Mockito.verifyNoInteractions(emailRepository);
+    }
+
+    @Test
     void loescheEntferntDateienUndAktualisiertProjekt() {
         AnfrageRepository anfrageRepository = mock(AnfrageRepository.class);
         DateiSpeicherService dateiSpeicherService = mock(DateiSpeicherService.class);
@@ -122,7 +146,7 @@ class AnfrageServiceTest {
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
                 kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
@@ -162,7 +186,7 @@ class AnfrageServiceTest {
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
                 kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
@@ -186,7 +210,7 @@ class AnfrageServiceTest {
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
                 kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
@@ -225,7 +249,7 @@ class AnfrageServiceTest {
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         AnfrageService service = new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
                 kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
@@ -371,7 +395,7 @@ class AnfrageServiceTest {
         AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService = mock(AusgangsGeschaeftsDokumentService.class);
         return new AnfrageService(anfrageRepository, dateiSpeicherService, anfrageDokumentRepository,
                 kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, eventPublisher, ausgangsGeschaeftsDokumentService,
@@ -616,7 +640,7 @@ class AnfrageServiceTest {
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class);
         PlatformTransactionManager transaktionen = mock(PlatformTransactionManager.class);
         AnfrageService service = new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
-                anfrageDokumentRepository, kundeRepository, emailRepository, projektRepository, ausgangsRepository,
+                anfrageDokumentRepository, kundeRepository, emailRepository, mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class), projektRepository, ausgangsRepository,
                 null, mock(org.springframework.context.ApplicationEventPublisher.class),
                 mock(AusgangsGeschaeftsDokumentService.class), mock(DokumentFreigabeService.class),
                 new TransactionTemplate(transaktionen));
@@ -650,7 +674,7 @@ class AnfrageServiceTest {
         KundeRepository kundeRepository = mock(KundeRepository.class);
         AnfrageService service = new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
                 mock(AnfrageDokumentRepository.class), kundeRepository,
-                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class),
+                mock(org.example.kalkulationsprogramm.repository.EmailRepository.class), mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, mock(org.springframework.context.ApplicationEventPublisher.class),
@@ -683,7 +707,7 @@ class AnfrageServiceTest {
     private static AnfrageService serviceMitMails(AnfrageRepository anfrageRepository,
             org.example.kalkulationsprogramm.repository.EmailRepository emailRepository) {
         return new AnfrageService(anfrageRepository, mock(DateiSpeicherService.class),
-                mock(AnfrageDokumentRepository.class), mock(KundeRepository.class), emailRepository,
+                mock(AnfrageDokumentRepository.class), mock(KundeRepository.class), emailRepository, mock(org.example.kalkulationsprogramm.repository.EmailReiterRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.ProjektRepository.class),
                 mock(org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository.class),
                 null, mock(org.springframework.context.ApplicationEventPublisher.class),

@@ -9,7 +9,6 @@ import org.example.kalkulationsprogramm.domain.Email;
 import org.example.kalkulationsprogramm.domain.EmailDirection;
 import org.example.kalkulationsprogramm.domain.EmailProcessingStatus;
 import org.example.kalkulationsprogramm.domain.EmailZuordnungTyp;
-import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.Projekt;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
@@ -75,17 +74,8 @@ public interface EmailRepository extends JpaRepository<Email, Long> {
 
   List<Email> findByAnfrageOrderBySentAtDesc(Anfrage anfrage);
 
-  List<Email> findByLieferantOrderBySentAtDesc(Lieferanten lieferant);
-
-  List<Email> findByProjektInOrderBySentAtDesc(java.util.Collection<Projekt> projekte);
-
-  List<Email> findByAnfrageInOrderBySentAtDesc(java.util.Collection<Anfrage> anfragen);
-
   // ID-based methods for better performance/flexibility
   List<Email> findByLieferantIdOrderBySentAtDesc(Long lieferantId);
-
-  /** Nur die neuesten E-Mails eines Lieferanten – Größe über {@code PageRequest.of(0, n)}. */
-  List<Email> findByLieferantIdOrderBySentAtDesc(Long lieferantId, org.springframework.data.domain.Pageable seite);
 
   /**
    * Findet alle Emails eines Lieferanten mit vorgeladenen Attachments.

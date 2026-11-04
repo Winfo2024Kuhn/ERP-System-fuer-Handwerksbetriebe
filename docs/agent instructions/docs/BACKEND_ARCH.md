@@ -96,6 +96,7 @@ Alles, was mit der Zeit wächst (Kunden, Artikel, Projekte, Rechnungen, E-Mails,
 - **Filter und Suche gehören in die Abfrage** (Specification/Query), nicht ins Frontend. Suchbegriffe mit Mindest- und Höchstlänge begrenzen.
 - **Keine N+1-Abfragen** beim Mappen einer Seite (Fetch-Join oder `@EntityGraph`); Join-Fetch auf Collections zusammen mit Paging liefert falsche Seiten (Hibernate paged im Speicher). Dann erst IDs der Seite holen, danach nachladen.
 - Auswertungen (Summen, Zähler für Reiter-Badges) als eigene Aggregat-Abfrage, nicht durch Laden aller Zeilen.
+- **Seiten über Verläufe (Vorbild E-Mail-Reiter, `EmailReiterRepositoryErweiterung`):** Ist eine Zeile eine Kette (Mail mit Antworten über `parent_email_id`), sucht die Abfrage die Wurzel per `WITH RECURSIVE` nach oben (mit Tiefengrenze, damit ein Kreis abbricht), fasst per Wurzel zusammen, wählt die angezeigte Zeile per `ROW_NUMBER()` und sortiert und schneidet in der Datenbank. Zähler für die Reiter-Beschriftung kommen aus derselben Abfrage ohne Filter (`anzahlVerlaeufe`), nicht aus einem zweiten Zählverfahren. Kennzahlen je Zeile (Anzahl, Anhang, Status) holt danach je eine Abfrage für die ganze Seite. Postfach-Sichtbarkeit als SQL-Baustein: `EmailSichtbarkeitSql` (`SIEHT` wie im E-Mail-Center, `LIEST` = darf öffnen).
 - **Test:** Endpoint mit `size=100000` und `page=-1` → wird auf Maximum bzw. 0 begrenzt; mehr als eine Seite Testdaten → zweite Seite liefert andere Einträge, `gesamt` stimmt.
 
 ## 🧩 Zuständigkeiten und Größe (Pflicht, Backend)

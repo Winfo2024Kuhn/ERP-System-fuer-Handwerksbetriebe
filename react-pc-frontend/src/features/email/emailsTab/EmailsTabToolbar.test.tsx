@@ -31,6 +31,16 @@ describe('EmailsTabToolbar', () => {
         expect(suche).toHaveAttribute('placeholder', 'E-Mails durchsuchen…');
         fireEvent.change(suche, { target: { value: 'Geländer' } });
         expect(onSearchChange).toHaveBeenCalledWith('Geländer');
+        // Mehr nimmt der Server nicht an; das Feld lässt es gar nicht erst zu.
+        expect(suche).toHaveAttribute('maxLength', '200');
+    });
+
+    it('zeigt eine Erklärung neben Suche und Filter nur, wenn sie mitkommt', () => {
+        const { rerender } = rendere();
+        expect(screen.queryByTestId('info')).not.toBeInTheDocument();
+        rerender(<EmailsTabToolbar search="" filter="all" showCompose={false} info={<span data-testid="info" />}
+            onSearchChange={vi.fn()} onFilterChange={vi.fn()} onCompose={vi.fn()} />);
+        expect(screen.getByTestId('info')).toBeInTheDocument();
     });
 
     it('zeigt „Neue E-Mail“ nur, wenn gewünscht', () => {

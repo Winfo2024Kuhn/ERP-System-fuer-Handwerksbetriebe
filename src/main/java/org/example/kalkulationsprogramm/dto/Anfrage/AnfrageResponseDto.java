@@ -33,6 +33,12 @@ public class AnfrageResponseDto {
      * befüllt, sonst {@code null} (= nicht ermittelt).
      */
     private Boolean ausWebseite;
+    /**
+     * Zahl der E-Mail-Verläufe für die Reiter-Beschriftung „E-Mails (140)“. Nur in der Detailantwort
+     * ({@code GET /api/anfragen/{id}}) befüllt, sonst {@code null}; die Mails lädt der Reiter seitenweise
+     * über {@code GET /api/emails/reiter/anfrage/{id}}.
+     */
+    private Long emailAnzahl;
     // Erweiterte Kundendaten
     private String kundenStrasse;
     private String kundenPlz;

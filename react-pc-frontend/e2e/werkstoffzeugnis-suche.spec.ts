@@ -51,7 +51,7 @@ const DOKUMENTE = [
 
 const LIEFERANT = {
     id: LIEFERANT_ID, lieferantenname: 'Musterstahl GmbH', lieferantenTyp: 'Lieferant', rollen: [],
-    strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt', emails: [], kommunikation: [], notizen: [], kundenEmails: [],
+    strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt', emailAnzahl: 0, notizen: [], kundenEmails: [],
     dokumente: DOKUMENTE,
 };
 

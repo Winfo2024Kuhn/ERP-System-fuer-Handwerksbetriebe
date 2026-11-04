@@ -373,7 +373,7 @@ test.describe('Telefon – Einstellungen und Rechte', () => {
         await stubbeTelefonApi(page, { darf: false, admin: false });
         await page.goto('/kunden?kundeId=7');
         await expect(page.getByRole('heading', { name: 'Max Mustermann' })).toBeVisible();
-        await expect(page.getByRole('button', { name: /E-Mails/ })).toBeVisible();
+        await expect(page.getByRole('button', { name: /^E-Mails/ })).toBeVisible();
         await expect(page.getByRole('button', { name: /^Anrufe/ })).toHaveCount(0);
         // Gemerkte Nummern sieht jeder – entfernen nicht.
         await expect(page.getByText('0931 5555555')).toBeVisible();

@@ -49,7 +49,7 @@ Einen Kunden löschen geht nicht. Einzige Ausnahme: Hängt ein Kunde nur an eine
 Ein Klick auf einen Kunden unter **Vorlagen & Stammdaten → Kunden** öffnet seine Ansicht. Oben stehen Name, Kundennummer, Adresse sowie „Gesamtumsatz“ (alle Projekte zusammen) und „Gewinn“ (Umsatz minus Projektkosten).
 
 Darunter die Reiter, jeweils mit Anzahl:
-- **E-Mails:** alle E-Mails, die Projekten oder Anfragen des Kunden zugeordnet sind, mit Suche und Filter „Eingang“/„Ausgang“. Schreiben oder antworten geht hier nicht, sondern im E-Mail-Center.
+- **E-Mails:** alle E-Mails, die Projekten oder Anfragen des Kunden zugeordnet sind, mit Suche und Filter „Eingang“/„Ausgang“. Antworten sind zu einem Verlauf zusammengefasst; der Verlauf mit der neuesten Nachricht steht oben. Angezeigt werden zuerst 25 Verläufe, „Mehr laden“ holt die nächsten 25 (darunter steht z. B. „25 von 140 angezeigt“). Suche und Filter durchsuchen alle E-Mails, nicht nur die angezeigten; die Suche sucht in Absender, Empfänger, Betreff, Anhangnamen und Text. E-Mails, die noch keinem Projekt und keiner Anfrage zugeordnet sind, stehen hier nicht; die stehen im E-Mail-Center. Neue E-Mails und Antworten schreibt man im Projekt oder in der Anfrage. Das (i) neben dem Filter erklärt das in der Akte.
 - **Anrufe:** nur mit dem Recht „Anrufe & Anrufbeantworter“ (siehe unten).
 - **Projekte:** mit „Bezahlt“ / „Offen“ und „Beendet“. Klick öffnet das Projekt.
 - **Anfragen:** Klick öffnet die Anfrage.

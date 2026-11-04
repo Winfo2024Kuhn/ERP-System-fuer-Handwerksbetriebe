@@ -5,37 +5,37 @@ import org.example.kalkulationsprogramm.domain.*;
 import org.example.kalkulationsprogramm.dto.Kunde.*;
 import org.example.kalkulationsprogramm.dto.AusgangsGeschaeftsDokument.AusgangsGeschaeftsDokumentResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
+import org.example.kalkulationsprogramm.repository.EmailReiterRepository;
 import org.example.kalkulationsprogramm.repository.KundeNotizRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
-import org.jsoup.Jsoup;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/**
+ * Kundenakte ({@code GET /api/kunden/{id}}): Stammdaten, Projekte, Anfragen, Dokumente,
+ * Notizen und die Zahl der E-Mail-Verläufe. Die Mails selbst lädt der E-Mail-Reiter seitenweise
+ * ({@code GET /api/emails/reiter/kunde/{id}}).
+ */
 @Service
 @RequiredArgsConstructor
 public class KundenDetailService {
 
-    private static final Logger LOG = LoggerFactory.getLogger(KundenDetailService.class);
     private static final String QUELLE_STAMMDATEN = "STAMMDATEN";
     private static final String QUELLE_PROJEKT = "PROJEKT";
     private static final String QUELLE_ANFRAGE = "ANFRAGE";
-    private static final int MAX_KOMMUNIKATION_EINTRAEGE = 250;
 
     private final KundeRepository kundeRepository;
     private final ProjektRepository projektRepository;
     private final AnfrageRepository anfrageRepository;
-    private final org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
+    private final EmailReiterRepository emailReiterRepository;
     private final DateiSpeicherService dateiSpeicherService;
     private final AusgangsGeschaeftsDokumentService ausgangsGeschaeftsDokumentService;
     private final KundeNotizRepository kundeNotizRepository;
@@ -46,17 +46,11 @@ public class KundenDetailService {
                 .map(kunde -> {
                     List<Projekt> projekte = projektRepository.findByKundenId_Id(kunde.getId());
                     List<Anfrage> anfragen = loadAnfragenForKunde(kunde, projekte);
-                    
-                    // Lade Emails effizient über Repository
-                    List<Email> projektEmails = projekte.isEmpty() ? List.of() : emailRepository.findByProjektInOrderBySentAtDesc(projekte);
-                    List<Email> anfrageEmails = anfragen.isEmpty() ? List.of() : emailRepository.findByAnfrageInOrderBySentAtDesc(anfragen);
-                    
-                    return buildDetailDto(kunde, projekte, anfragen, projektEmails, anfrageEmails);
+                    return buildDetailDto(kunde, projekte, anfragen);
                 });
     }
 
-    private KundeDetailDto buildDetailDto(Kunde kunde, List<Projekt> projekte, List<Anfrage> anfragen,
-                                          List<Email> projektEmails, List<Email> anfrageEmails) {
+    private KundeDetailDto buildDetailDto(Kunde kunde, List<Projekt> projekte, List<Anfrage> anfragen) {
         KundeDetailDto dto = new KundeDetailDto();
         dto.setId(kunde.getId());
         dto.setKundennummer(kunde.getKundennummer());
@@ -78,41 +72,38 @@ public class KundenDetailService {
         dto.setAnfragen(mapAnfragen(anfragen));
         dto.setGeschaeftsdokumente(mapGeschaeftsdokumente(kunde, projekte, anfragen));
         dto.setNotizen(mapNotizen(kunde.getId()));
-        dto.setAggregierteEmails(aggregateEmails(kunde, projekte, anfragen));
-        try {
-            dto.setKommunikation(buildKommunikationsHistorie(projektEmails, anfrageEmails));
-        } catch (Exception ex) {
-            LOG.warn("Kommunikationsverlauf für Kunden {} konnte nicht erzeugt werden: {}", kunde.getId(),
-                    ex.getMessage(), ex);
-            dto.setKommunikation(List.of());
-        }
-        dto.setStatistik(buildStatistik(projekte, anfragen, dto.getAggregierteEmails()));
+        List<KundeAggregierteEmailDto> emailAdressen = aggregateEmails(kunde, projekte, anfragen);
+        dto.setEmailAnzahl(emailReiterRepository.anzahlVerlaeufe(EmailBezug.KUNDE, kunde.getId()));
+        dto.setStatistik(buildStatistik(projekte, anfragen, emailAdressen));
         return dto;
     }
 
+    /**
+     * Anfragen der Projekte des Kunden, Anfragen direkt an ihm und Anfragen mit seiner Kundennummer –
+     * dieselbe Menge, deren Mails der E-Mail-Reiter des Kunden zeigt ({@code EmailReiterSql}). Jede nur einmal.
+     */
     private List<Anfrage> loadAnfragenForKunde(Kunde kunde, List<Projekt> projekte) {
-        Set<Long> seenIds = new LinkedHashSet<>();
-        List<Anfrage> result = new ArrayList<>();
+        Map<Long, Anfrage> result = new LinkedHashMap<>();
         List<Long> projektIds = Objects.requireNonNullElse(projekte, List.<Projekt>of()).stream()
                 .map(Projekt::getId)
                 .filter(Objects::nonNull)
                 .toList();
         if (!projektIds.isEmpty()) {
-            anfrageRepository.findByProjektIdIn(projektIds).forEach(anfrage -> {
-                if (anfrage.getId() != null && seenIds.add(anfrage.getId())) {
-                    result.add(anfrage);
-                }
-            });
+            sammle(result, anfrageRepository.findByProjektIdIn(projektIds));
         }
+        sammle(result, anfrageRepository.findByKundeId(kunde.getId()));
         if (StringUtils.hasText(kunde.getKundennummer())) {
-            anfrageRepository.findByKunde_KundennummerIgnoreCase(kunde.getKundennummer())
-                    .forEach(anfrage -> {
-                        if (anfrage.getId() != null && seenIds.add(anfrage.getId())) {
-                            result.add(anfrage);
-                        }
-                    });
+            sammle(result, anfrageRepository.findByKunde_KundennummerIgnoreCase(kunde.getKundennummer()));
         }
-        return result;
+        return new ArrayList<>(result.values());
+    }
+
+    private static void sammle(Map<Long, Anfrage> result, List<Anfrage> anfragen) {
+        for (Anfrage anfrage : Objects.requireNonNullElse(anfragen, List.<Anfrage>of())) {
+            if (anfrage.getId() != null) {
+                result.putIfAbsent(anfrage.getId(), anfrage);
+            }
+        }
     }
 
     private List<KundeProjektKurzDto> mapProjekte(List<Projekt> projekte) {
@@ -297,134 +288,6 @@ public class KundenDetailService {
             return anfrage.getBauvorhaben();
         }
         return "Anfrage #" + anfrage.getId();
-    }
-
-    private List<KundeKommunikationDto> buildKommunikationsHistorie(List<Email> projektEmails, List<Email> anfrageEmails) {
-        List<KundeKommunikationDto> timeline = new ArrayList<>();
-        
-        for (Email email : projektEmails) {
-             String referenzName = buildProjektBeschreibung(email.getProjekt());
-             timeline.add(createKommunikationDto(email, QUELLE_PROJEKT, email.getProjekt().getId(), referenzName));
-        }
-        
-        for (Email email : anfrageEmails) {
-             String referenzName = buildAnfrageBeschreibung(email.getAnfrage());
-             timeline.add(createKommunikationDto(email, QUELLE_ANFRAGE, email.getAnfrage().getId(), referenzName));
-        }
-
-        timeline.sort(Comparator.comparing(
-                (KundeKommunikationDto dto) -> Optional.ofNullable(dto.getZeitpunkt()).orElse(LocalDateTime.MIN))
-                .reversed());
-        if (timeline.size() > MAX_KOMMUNIKATION_EINTRAEGE) {
-            return new ArrayList<>(timeline.subList(0, MAX_KOMMUNIKATION_EINTRAEGE));
-        }
-        return timeline;
-    }
-
-    private KundeKommunikationDto createKommunikationDto(Email email, String referenzTyp, Long referenzId, String referenzName) {
-        KundeKommunikationDto dto = new KundeKommunikationDto();
-        dto.setId(email.getId());
-        dto.setReferenzId(referenzId);
-        dto.setReferenzTyp(referenzTyp);
-        dto.setReferenzName(referenzName);
-        dto.setSubject(email.getSubject());
-        dto.setAbsender(email.getFromAddress());
-        dto.setEmpfaenger(combineRecipients(email.getRecipient(), email.getCc()));
-        dto.setZeitpunkt(email.getSentAt());
-        dto.setDirection(email.getDirection());
-        dto.setSnippet(buildSnippet(email.getHtmlBody(), email.getBody()));
-        dto.setBody(extractPlainText(email.getHtmlBody(), email.getBody()));
-        dto.setAttachments(mapAttachments(email.getAttachments(), referenzTyp, referenzId, email.getId()));
-        dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
-        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
-        // Zustellstatus mitgeben, damit die Kundenakte eine nicht angekommene
-        // Ausgangsmail sichtbar macht statt sie wie erfolgreich versendet zu zeigen.
-        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
-        dto.setZustellFehler(email.getZustellFehler());
-        return dto;
-    }
-
-    private int countAllReplies(org.example.kalkulationsprogramm.domain.Email email) {
-        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
-        int count = email.getReplies().size();
-        for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
-            count += countAllReplies(reply);
-        }
-        return count;
-    }
-
-    private int countAncestors(org.example.kalkulationsprogramm.domain.Email email) {
-        int count = 0;
-        java.util.Set<Long> visited = new java.util.HashSet<>();
-        org.example.kalkulationsprogramm.domain.Email current = email.getParentEmail();
-        while (current != null && !visited.contains(current.getId())) {
-            visited.add(current.getId());
-            count++;
-            current = current.getParentEmail();
-        }
-        return count;
-    }
-
-    private String combineRecipients(String recipient, String cc) {
-        List<String> parts = new ArrayList<>();
-        if (StringUtils.hasText(recipient)) {
-            parts.add(recipient.trim());
-        }
-        if (StringUtils.hasText(cc)) {
-            parts.add("CC: " + cc.trim());
-        }
-        if (parts.isEmpty()) {
-            return null;
-        }
-        return String.join(" | ", parts);
-    }
-
-    private String buildSnippet(String html, String fallbackText) {
-        String text = null;
-        if (StringUtils.hasText(html)) {
-            text = Jsoup.parse(html).text();
-        }
-        if (!StringUtils.hasText(text) && StringUtils.hasText(fallbackText)) {
-            text = fallbackText;
-        }
-        if (!StringUtils.hasText(text)) {
-            return null;
-        }
-        String condensed = text.trim().replaceAll("\\s+", " ");
-        if (condensed.length() > 220) {
-            return condensed.substring(0, 217).trim() + "…";
-        }
-        return condensed;
-    }
-
-    private List<KundeEmailAttachmentDto> mapAttachments(List<EmailAttachment> attachments, String referenzTyp, Long referenzId, Long emailId) {
-        if (attachments == null) return List.of();
-        return attachments.stream()
-                .filter(f -> !Boolean.TRUE.equals(f.getInlineAttachment()))
-                .map(f -> {
-                    KundeEmailAttachmentDto dto = new KundeEmailAttachmentDto();
-                    dto.setId(f.getId());
-                    dto.setFilename(f.getOriginalFilename());
-                    // Construct URL dependent on type, or generic
-                    String pathSegment = referenzTyp.equals(QUELLE_PROJEKT) ? "projekte" : "anfragen";
-                    // Using unified API would be better: /api/emails/{id}/attachments/{attId}
-                    // But sticking to legacy structure if needed, or using Unified Controller:
-                    // Let's use unified:
-                    dto.setUrl("/api/emails/" + emailId + "/attachments/" + f.getId());
-                    return dto;
-                })
-                .collect(Collectors.toList());
-    }
-
-    private String extractPlainText(String html, String fallbackText) {
-        String text = null;
-        if (StringUtils.hasText(html)) {
-            text = Jsoup.parse(html).text();
-        }
-        if (!StringUtils.hasText(text) && StringUtils.hasText(fallbackText)) {
-            text = fallbackText;
-        }
-        return text;
     }
 
     private KundeStatistikDto buildStatistik(List<Projekt> projekte,

@@ -16,11 +16,11 @@ import { setzeTelefonBerechtigungZurueck } from '../features/telefon/useTelefonB
 
 const KUNDE = {
     id: 7, kundennummer: 'K-1007', name: 'Max Mustermann', strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt',
-    telefon: '0931 1234567', mobiltelefon: '', kundenEmails: [], kommunikation: [], projekte: [], anfragen: [], geschaeftsdokumente: [], notizen: [],
+    telefon: '0931 1234567', mobiltelefon: '', kundenEmails: [], emailAnzahl: 0, projekte: [], anfragen: [], geschaeftsdokumente: [], notizen: [],
 };
 const LIEFERANT = {
     id: 3, lieferantenname: 'Mustermann GmbH', strasse: 'Musterweg 2', plz: '12345', ort: 'Würzburg', lieferantenTyp: 'Lieferant',
-    rollen: [], emails: [], kommunikation: [], dokumente: [], notizen: [], kundenEmails: [],
+    rollen: [], emailAnzahl: 0, dokumente: [], notizen: [], kundenEmails: [],
 };
 
 function stubbe(darf: boolean) {
@@ -75,7 +75,7 @@ describe('Kundenakte – Telefon', () => {
         stubbe(false);
         zeige(<Kundeneditor />, '/kunden?kundeId=7');
         expect(await screen.findByText('0931 5555555', {}, AKTE_GELADEN)).toBeInTheDocument();
-        await waitFor(() => expect(screen.getByRole('button', { name: /E-Mails/ })).toBeInTheDocument(), AKTE_GELADEN);
+        await waitFor(() => expect(screen.getByRole('button', { name: /^E-Mails/ })).toBeInTheDocument(), AKTE_GELADEN);
         expect(screen.queryByRole('button', { name: /^Anrufe/ })).toBeNull();
         expect(screen.queryByRole('button', { name: /entfernen/ })).toBeNull();
     });

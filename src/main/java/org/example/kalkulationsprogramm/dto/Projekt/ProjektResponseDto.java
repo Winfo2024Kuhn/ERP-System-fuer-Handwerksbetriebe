@@ -7,7 +7,6 @@ import org.example.kalkulationsprogramm.dto.ProjektZeit.ZeitResponseDto;
 import org.example.kalkulationsprogramm.dto.Materialkosten.MaterialkostenResponseDto;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageResponseDto;
 import org.example.kalkulationsprogramm.dto.Artikel.ArtikelInProjektResponseDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 import org.example.kalkulationsprogramm.dto.Kunde.KundeResponseDto;
 
 import java.math.BigDecimal;
@@ -45,5 +44,9 @@ public class ProjektResponseDto {
     private List<ProjektProduktkategorieResponseDto> produktkategorien;
     private List<ZeitResponseDto> zeiten;
     private List<AnfrageResponseDto> anfragen;
-    private List<ProjektEmailDto> emails;
+    /**
+     * Zahl der E-Mail-Verläufe für die Reiter-Beschriftung „E-Mails (140)“; die Mails selbst lädt der
+     * Reiter seitenweise über {@code GET /api/emails/reiter/projekt/{id}}.
+     */
+    private Long emailAnzahl;
 }

@@ -7,7 +7,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { cn } from "../lib/utils";
 import { extractEmailAddress, infoAdresseZuDomain } from "../lib/emailAddress";
-import type { Lieferant, LieferantDetail, LieferantNotiz, LieferantStatistik, ProjektEmail } from "../types";
+import type { Lieferant, LieferantDetail, LieferantNotiz, LieferantStatistik } from "../types";
 import { EmailsTab } from "../components/EmailsTab";
 import GoogleMapsEmbed from "../components/GoogleMapsEmbed";
 import LieferantDokumenteTab from "../components/LieferantDokumenteTab";
@@ -50,14 +50,14 @@ function istGueltigerTab(value: string | null): value is LieferantTab {
 }
 
 /**
- * Holt nach dem Öffnen der Detailseite Kennzahlen, E-Mail-Verlauf und Notizen parallel
- * nach. Die Seite selbst steht dann schon mit den Stammdaten da; `undefined` heißt
- * „lädt noch“, damit die Reiter einen Ladezustand statt einer leeren Liste zeigen.
+ * Holt nach dem Öffnen der Detailseite Kennzahlen und Notizen parallel nach (die
+ * E-Mails lädt der Reiter selbst seitenweise). Die Seite selbst steht dann schon mit
+ * den Stammdaten da; `undefined` heißt „lädt noch“, damit die Reiter einen Ladezustand
+ * statt einer leeren Liste zeigen.
  */
 function useLieferantNachladen(lieferantId: number | string, ladeVersion: number) {
     const toast = useToast();
     const [statistik, setStatistik] = useState<LieferantStatistik | null | undefined>(undefined);
-    const [emails, setEmails] = useState<ProjektEmail[] | undefined>(undefined);
     const [notizen, setNotizen] = useState<LieferantNotiz[] | undefined>(undefined);
 
     // Anderer Lieferant oder neu gespeichert: zurück auf „lädt noch“, bevor der Effekt nachlädt.
@@ -66,7 +66,6 @@ function useLieferantNachladen(lieferantId: number | string, ladeVersion: number
     if (geladenFuer !== ladeSchluessel) {
         setGeladenFuer(ladeSchluessel);
         setStatistik(undefined);
-        setEmails(undefined);
         setNotizen(undefined);
     }
 
@@ -87,13 +86,12 @@ function useLieferantNachladen(lieferantId: number | string, ladeVersion: number
             }
         };
         void lade<LieferantStatistik | null>('statistik', 'Kennzahlen des Lieferanten konnten nicht geladen werden.', setStatistik, null);
-        void lade<ProjektEmail[]>('email-verlauf', 'E-Mail-Verlauf konnte nicht geladen werden.', setEmails, []);
         void lade<LieferantNotiz[]>('notizen', 'Notizen konnten nicht geladen werden.', setNotizen, []);
         return () => { abgebrochen = true; };
         // toast ist stabil; neu laden bei anderem Lieferanten oder nach dem Speichern.
     }, [lieferantId, ladeVersion, toast]);
 
-    return { statistik, emails, notizen, setNotizen };
+    return { statistik, notizen, setNotizen };
 }
 
 /** Platzhalter für eine Kennzahl, solange sie noch lädt. */
@@ -259,7 +257,7 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, la
                     <Mail className="w-4 h-4" />
                     E-Mail-Verlauf
                     <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                        {lieferant.emailAnzahl ?? nachgeladen.emails?.length ?? 0}
+                        {lieferant.emailAnzahl ?? 0}
                     </span>
                 </button>
                 {darfTelefon && (
@@ -336,16 +334,12 @@ const LieferantDetailView: React.FC<LieferantDetailViewProps> = ({ lieferant, la
             <div className="flex-1 min-h-0 relative">
                 {activeTab === 'emails' && (
                     <div className="absolute inset-0 overflow-y-auto pr-2">
-                        {nachgeladen.emails !== undefined && (lieferant.emailAnzahl ?? 0) > nachgeladen.emails.length && (
-                            <p className="mb-3 text-xs text-slate-500">
-                                Hier stehen die neuesten {nachgeladen.emails.length} von {lieferant.emailAnzahl} E-Mails.
-                            </p>
-                        )}
-                        {nachgeladen.emails === undefined ? <ReiterLaedt text="E-Mails werden geladen…" /> : <EmailsTab
-                            emails={nachgeladen.emails}
+                        <EmailsTab
+                            bezug="lieferant"
+                            bezugId={Number(lieferant.id)}
                             showComposeButton={false}
                             showReplyButton={false}
-                        />}
+                        />
                     </div>
                 )}
                 {activeTab === 'anrufe' && lieferant.id && (

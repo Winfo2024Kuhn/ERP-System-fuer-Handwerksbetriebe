@@ -2,25 +2,28 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { EmailsTabListItem } from './EmailsTabListItem';
-import type { ThreadRootEmail } from './emailsTabThreadRoots';
+import type { EmailsTabEintrag } from './emailsTabTypes';
 
 /** Dummy-Daten (DSGVO): Max Mustermann, max@example.com. */
-function mail(overrides: Partial<ThreadRootEmail> = {}): ThreadRootEmail {
+function mail(overrides: Partial<EmailsTabEintrag> = {}): EmailsTabEintrag {
     return {
         id: 1,
         subject: 'Anfrage Geländer',
         fromAddress: 'max@example.com',
-        to: 'firma@example.com',
+        recipient: 'firma@example.com',
         direction: 'IN',
         sentAt: '2026-10-09T10:05:00',
-        bodyPreview: 'Bitte um Angebot',
-        _replyCount: 0,
+        vorschau: 'Bitte um Angebot',
+        nachrichtenAnzahl: 1,
+        mitAnhang: false,
+        zustellStatus: null,
+        zustellFehler: null,
         ...overrides,
     };
 }
 
-function rendere(email: ThreadRootEmail, preview: string | undefined = 'Bitte um Angebot', onOpen = vi.fn()) {
-    const view = render(<EmailsTabListItem email={email} preview={preview} onOpen={onOpen} />);
+function rendere(email: EmailsTabEintrag, onOpen = vi.fn()) {
+    const view = render(<EmailsTabListItem email={email} onOpen={onOpen} />);
     return { ...view, onOpen };
 }
 
@@ -35,18 +38,24 @@ describe('EmailsTabListItem', () => {
         expect(screen.queryByText(/Nachrichten$/)).not.toBeInTheDocument();
     });
 
-    it('zeigt Ausgang mit „An:“, Ersatztexte ohne Betreff, Absender und Text', () => {
-        rendere(mail({
-            direction: 'OUT', subject: undefined, fromAddress: undefined, bodyPreview: undefined, sentAt: undefined,
-        }), undefined);
+    it('zeigt bei Ausgang den Empfänger mit „An:“', () => {
+        rendere(mail({ direction: 'OUT', fromAddress: 'firma@example.com', recipient: 'max@example.com' }));
+        expect(screen.getByText(/An:/)).toHaveTextContent('An: max@example.com');
+    });
+
+    it('zeigt Ersatztexte ohne Betreff, Empfänger und Datum und lässt die leere Vorschau weg', () => {
+        const { container } = rendere(mail({
+            direction: 'OUT', subject: null, recipient: null, vorschau: '', sentAt: null,
+        }));
         expect(screen.getByText('Ausgang')).toBeInTheDocument();
         expect(screen.getByText('(kein Betreff)')).toBeInTheDocument();
         expect(screen.getByText(/An:/)).toHaveTextContent('An: Unbekannt');
         expect(screen.getByText('-')).toBeInTheDocument();
+        expect(container.querySelector('.line-clamp-2')).toBeNull();
     });
 
     it('zählt die Nachrichten eines Verlaufs im Chip, hell in Rose statt gefüllt', () => {
-        rendere(mail({ _replyCount: 2 }));
+        rendere(mail({ nachrichtenAnzahl: 3 }));
         const chip = screen.getByTitle('3 Nachrichten in diesem Verlauf');
         expect(chip).toHaveTextContent('3 Nachrichten');
         expect(chip.className).toContain('bg-rose-50');
@@ -67,13 +76,13 @@ describe('EmailsTabListItem', () => {
         expect(screen.getByTitle('550 5.1.1 User unknown')).toHaveTextContent('Diese E-Mail-Adresse gibt es nicht.');
     });
 
-    it('zeigt die Büroklammer nur bei echten Anhängen, nicht bei eingebetteten Bildern', () => {
-        const { container, rerender } = rendere(mail({ attachments: [{ id: 1, inline: true }] }));
+    it('zeigt die Büroklammer nur, wenn der Server einen Anhang meldet', () => {
+        const { container, rerender } = rendere(mail({ mitAnhang: false }));
         expect(container.querySelector('.lucide-paperclip')).toBeNull();
 
         expect(screen.getByRole('button', { name: 'Anfrage Geländer' })).not.toHaveAccessibleDescription(/mit Anhang/);
 
-        rerender(<EmailsTabListItem email={mail({ attachments: [{ id: 1, inline: true }, { id: 2 }] })} preview="" onOpen={vi.fn()} />);
+        rerender(<EmailsTabListItem email={mail({ mitAnhang: true })} onOpen={vi.fn()} />);
         expect(container.querySelector('.lucide-paperclip')).not.toBeNull();
         expect(screen.getByRole('button', { name: 'Anfrage Geländer' })).toHaveAccessibleDescription(/mit Anhang/);
     });
@@ -108,7 +117,7 @@ describe('EmailsTabListItem', () => {
         expect(eingang.querySelector('.lucide-arrow-down-left')).toHaveAttribute('aria-hidden', 'true');
         expect(container.innerHTML).not.toMatch(/blue-|green-|transition-all/);
 
-        rerender(<EmailsTabListItem email={mail({ direction: 'OUT' })} preview="" onOpen={vi.fn()} />);
+        rerender(<EmailsTabListItem email={mail({ direction: 'OUT' })} onOpen={vi.fn()} />);
         expect(screen.getByText('Ausgang').closest('span')!.querySelector('.lucide-arrow-up-right')).not.toBeNull();
     });
 });

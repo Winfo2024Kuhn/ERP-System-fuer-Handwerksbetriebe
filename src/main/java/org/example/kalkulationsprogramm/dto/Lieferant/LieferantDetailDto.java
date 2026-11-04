@@ -4,7 +4,6 @@ import lombok.Getter;
 import lombok.Setter;
 import org.example.kalkulationsprogramm.domain.LieferantRolle;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -34,13 +33,14 @@ public class LieferantDetailDto {
     private Boolean vorauskasse;
     private LieferantStatistikDto statistik;
     private List<LieferantArtikelpreisDto> artikelpreise;
-    private List<LieferantKommunikationDto> kommunikation;
     private List<LieferantDokumentDto.Response> dokumente;
     /** Anzahl der Dokumente, auch wenn die Liste selbst (noch) nicht mitgeladen wurde. */
     private Long dokumenteAnzahl;
-    /** Zähler für die Reiter, damit sie stimmen, bevor die Listen nachgeladen sind. */
+    /**
+     * Zähler für die Reiter, damit sie stimmen, bevor die Listen nachgeladen sind. {@code emailAnzahl}
+     * zählt E-Mail-Verläufe (wie der Reiter {@code GET /api/emails/reiter/lieferant/{id}}), nicht Mails.
+     */
     private Long emailAnzahl;
     private Long notizenAnzahl;
-    private List<ProjektEmailDto> emails; // Unified email structure for EmailsTab
     private List<LieferantNotizDto> notizen;
 }

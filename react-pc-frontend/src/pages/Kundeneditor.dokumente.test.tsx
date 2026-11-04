@@ -22,7 +22,7 @@ const AKTE = {
     anfragen: [],
     // Hängt nur am Kunden – ohne Projekt und ohne Anfrage.
     geschaeftsdokumente: [{ id: 88, dokumentNummer: 'AN-2026-001', typ: 'ANGEBOT', datum: '2026-10-01' }],
-    kommunikation: [],
+    emailAnzahl: 0,
     notizen: [],
     gesperrt: false,
 };

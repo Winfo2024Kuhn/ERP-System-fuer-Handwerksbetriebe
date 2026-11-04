@@ -22,11 +22,14 @@ public class KundeDetailDto {
     private Integer zahlungsziel;
     private List<String> kundenEmails;
     private KundeStatistikDto statistik;
-    private List<KundeAggregierteEmailDto> aggregierteEmails;
     private List<KundeProjektKurzDto> projekte;
     private List<KundeAnfrageKurzDto> anfragen;
     private List<AusgangsGeschaeftsDokumentResponseDto> geschaeftsdokumente;
-    private List<KundeKommunikationDto> kommunikation;
+    /**
+     * Zahl der E-Mail-Verläufe (Mails seiner Projekte und Anfragen) für die Reiter-Beschriftung; die
+     * Mails lädt der Reiter seitenweise über {@code GET /api/emails/reiter/kunde/{id}}.
+     */
+    private long emailAnzahl;
     private List<KundeNotizDto> notizen;
     /** Aus Datenschutzgründen gesperrt (Issue #264). */
     private boolean gesperrt;

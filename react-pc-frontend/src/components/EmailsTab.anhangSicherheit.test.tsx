@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import EmailsTab, { type GenericEmail } from './EmailsTab';
+import EmailsTab from './EmailsTab';
+import { jsonAntwort, mitReiter, reiterEintrag } from '../features/email/emailsTab/emailsTabTestApi';
 import type { EmailThread } from './EmailThreadView';
 import { ToastProvider } from './ui/toast';
 
@@ -23,16 +24,18 @@ vi.mock('./EmailThreadView', async importOriginal => ({
 }));
 vi.mock('./DocumentPreviewModal', () => ({ default: () => <div data-testid="pdf-vorschau" /> }));
 
-const mail: GenericEmail = { id: 7, subject: 'Anfrage Geländer', fromAddress: 'max@example.com', direction: 'IN', sentAt: '2026-10-09T10:05:00' };
+const mail = reiterEintrag(7, {
+    subject: 'Anfrage Geländer', fromAddress: 'max@example.com', sentAt: '2026-10-09T10:05:00',
+});
 const verlauf: EmailThread = { rootEmailId: 7, focusedEmailId: 7, emails: [{ id: 7, subject: 'Anfrage Geländer', attachments: [] }] };
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('EmailsTab – unsichere Anhang-Adressen', () => {
     it.each(['Bild javascript', 'PDF data', 'PDF fremd'])('„%s“: keine Vorschau, sondern eine Meldung; Escape schließt danach den Verlauf', async (knopf) => {
-        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(verlauf) } as Response)));
-        const { container } = render(<MemoryRouter><ToastProvider><EmailsTab emails={[mail]} projektId={3} /></ToastProvider></MemoryRouter>);
-        fireEvent.click(screen.getByRole('button', { name: 'Anfrage Geländer' }));
+        vi.stubGlobal('fetch', vi.fn(mitReiter([mail], () => jsonAntwort(verlauf))));
+        const { container } = render(<MemoryRouter><ToastProvider><EmailsTab bezug="projekt" bezugId={3} projektId={3} /></ToastProvider></MemoryRouter>);
+        fireEvent.click(await screen.findByRole('button', { name: 'Anfrage Geländer' }));
         fireEvent.click(await screen.findByText(knopf));
 
         expect(screen.getByText('Der Anhang kann nicht angezeigt werden. Bitte herunterladen.')).toBeInTheDocument();

@@ -21,6 +21,7 @@ import org.example.kalkulationsprogramm.domain.AnfrageDokument;
 import org.example.kalkulationsprogramm.domain.AnfrageGeschaeftsdokument;
 import org.example.kalkulationsprogramm.domain.DokumentFreigabe;
 import org.example.kalkulationsprogramm.domain.Email;
+import org.example.kalkulationsprogramm.domain.EmailBezug;
 import org.example.kalkulationsprogramm.domain.FreigabeStatus;
 import org.example.kalkulationsprogramm.domain.Kunde;
 import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageErstellenDto;
@@ -30,6 +31,7 @@ import org.example.kalkulationsprogramm.dto.Anfrage.AnfrageSeiteResponseDto;
 import org.example.kalkulationsprogramm.repository.AnfrageDokumentRepository;
 import org.example.kalkulationsprogramm.repository.AnfrageRepository;
 import org.example.kalkulationsprogramm.repository.AusgangsGeschaeftsDokumentRepository;
+import org.example.kalkulationsprogramm.repository.EmailReiterRepository;
 import org.example.kalkulationsprogramm.repository.EmailRepository;
 import org.example.kalkulationsprogramm.repository.KundeRepository;
 import org.example.kalkulationsprogramm.repository.ProjektRepository;
@@ -53,6 +55,7 @@ public class AnfrageService {
     private final AnfrageDokumentRepository anfrageDokumentRepository;
     private final KundeRepository kundeRepository;
     private final EmailRepository emailRepository;
+    private final EmailReiterRepository emailReiterRepository;
     private final ProjektRepository projektRepository;
     private final AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository;
     private final Path mailAttachmentBaseDir;
@@ -66,6 +69,7 @@ public class AnfrageService {
             AnfrageDokumentRepository anfrageDokumentRepository,
             KundeRepository kundeRepository,
             EmailRepository emailRepository,
+            EmailReiterRepository emailReiterRepository,
             ProjektRepository projektRepository,
             AusgangsGeschaeftsDokumentRepository ausgangsGeschaeftsDokumentRepository,
             @Value("${file.mail-attachment-dir}") String mailAttachmentDir,
@@ -78,6 +82,7 @@ public class AnfrageService {
         this.anfrageDokumentRepository = anfrageDokumentRepository;
         this.kundeRepository = kundeRepository;
         this.emailRepository = emailRepository;
+        this.emailReiterRepository = emailReiterRepository;
         this.projektRepository = projektRepository;
         this.ausgangsGeschaeftsDokumentRepository = ausgangsGeschaeftsDokumentRepository;
         this.mailAttachmentBaseDir = (mailAttachmentDir == null || mailAttachmentDir.isBlank()) ? null
@@ -430,7 +435,11 @@ public class AnfrageService {
 
     public AnfrageResponseDto findeDto(Long id) {
         ausgangsGeschaeftsDokumentService.aktualisiereAnfragePreisAusDokumenten(id);
-        return anfrageRepository.findById(id).map(this::mapToDto).orElse(null);
+        return anfrageRepository.findById(id).map(anfrage -> {
+            AnfrageResponseDto dto = mapToDto(anfrage);
+            dto.setEmailAnzahl(emailReiterRepository.anzahlVerlaeufe(EmailBezug.ANFRAGE, anfrage.getId()));
+            return dto;
+        }).orElse(null);
     }
 
     public AnfrageResponseDto aktualisiereAnfrage(Long id, AnfrageErstellenDto dto) {

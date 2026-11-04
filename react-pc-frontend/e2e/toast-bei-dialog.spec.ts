@@ -35,8 +35,7 @@ const DUMMY_LIEFERANT = {
     strasse: 'Musterweg 1',
     plz: '12345',
     ort: 'Musterstadt',
-    emails: [],
-    kommunikation: [],
+    emailAnzahl: 0,
     notizen: [],
     kundenEmails: [],
     dokumente: [DUMMY_DOKUMENT],
@@ -78,9 +77,11 @@ async function stubbeLieferantApi(page: Page, acquireVerhalten: AcquireVerhalten
         if (pfad === `/api/lieferanten/${LIEFERANT_ID}/statistik`) {
             return json(route, { bestellungAnzahl: 1, artikelAnzahl: 0, gesamtKosten: 100 });
         }
-        if (pfad === `/api/lieferanten/${LIEFERANT_ID}/email-verlauf`
-            || pfad === `/api/lieferanten/${LIEFERANT_ID}/notizen`) {
+        if (pfad === `/api/lieferanten/${LIEFERANT_ID}/notizen`) {
             return json(route, []);
+        }
+        if (pfad === `/api/emails/reiter/lieferant/${LIEFERANT_ID}`) {
+            return json(route, { eintraege: [], gesamt: 0, seite: 0, seitenGroesse: 25 });
         }
         if (pfad === '/api/lieferanten') {
             return json(route, { lieferanten: [], gesamt: 0 });
@@ -91,8 +92,7 @@ async function stubbeLieferantApi(page: Page, acquireVerhalten: AcquireVerhalten
             if (pfad === `/api/lieferanten/${LIEFERANT_ID}/statistik`) {
                 return json(route, { bestellungAnzahl: 0, artikelAnzahl: 0, gesamtKosten: 0 });
             }
-            if (pfad === `/api/lieferanten/${LIEFERANT_ID}/email-verlauf`
-                || pfad === `/api/lieferanten/${LIEFERANT_ID}/notizen`) {
+            if (pfad === `/api/lieferanten/${LIEFERANT_ID}/notizen`) {
                 return json(route, []);
             }
         }

@@ -281,7 +281,7 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
     const projekte = kunde.projekte || [];
     const anfragen = kunde.anfragen || [];
     const dokumente = kunde.geschaeftsdokumente || [];
-    const emailCount = kunde.kommunikation?.length || 0;
+    const emailCount = kunde.emailAnzahl ?? 0;
 
     // Formatter helpers
     const formatCurrency = (val?: number) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
@@ -408,26 +408,8 @@ const KundenDetailView: React.FC<KundenDetailViewProps> = ({ kunde, onBack, onEd
                 <div className="absolute inset-0 overflow-y-auto pr-2">
                     {activeTab === 'emails' && (
                         <EmailsTab
-                            emails={(kunde.kommunikation || []).map(k => ({
-                                id: k.id,
-                                subject: k.subject,
-                                fromAddress: k.absender,
-                                to: k.empfaenger,
-                                bodyPreview: k.snippet,
-                                bodyHtml: k.body,
-                                direction: k.direction,
-                                sentAt: k.zeitpunkt,
-                                zustellStatus: k.zustellStatus,
-                                zustellFehler: k.zustellFehler,
-                                attachments: (k.attachments || []).map(a => ({
-                                    id: a.id,
-                                    originalFilename: a.filename,
-                                    filename: a.filename,
-                                    url: a.url,
-                                })),
-                                parentEmailId: k.parentEmailId,
-                                replyCount: k.replyCount,
-                            }))}
+                            bezug="kunde"
+                            bezugId={kunde.id}
                             showComposeButton={false}
                             showReplyButton={false}
                         />

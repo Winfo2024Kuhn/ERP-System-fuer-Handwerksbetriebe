@@ -285,24 +285,6 @@ public class LieferantenController {
         return ResponseEntity.ok(statistik);
     }
 
-    // Voll qualifiziert: Der Controller importiert bereits das gleichnamige dto.Projekt.ProjektEmailDto.
-    @GetMapping("/{id}/email-verlauf")
-    public ResponseEntity<List<org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto>> getEmailVerlauf(@PathVariable Long id,
-            @RequestParam(value = "token", required = false) String token,
-            Authentication authentication) {
-        // Anhänge (z. B. Rechnung per Mail) nur für Aufrufer, die den Dokumenttyp sehen dürfen.
-        var sichtbareTypen = dokumentZugriffService.sichtbareTypen(token, authentication);
-        if (sichtbareTypen.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        if (!lieferantenRepository.existsById(id)) {
-            return ResponseEntity.notFound().build();
-        }
-        var emails = lieferantenDetailService.loadEmailVerlauf(id);
-        dokumentZugriffService.beschraenkeEmailVerlauf(emails, sichtbareTypen.get());
-        return ResponseEntity.ok(emails);
-    }
-
     @GetMapping("/{id}/artikelpreise")
     public ResponseEntity<LieferantArtikelpreisPageDto> listArtikelpreise(@PathVariable Long id,
             @RequestParam(value = "page", defaultValue = "0") int page,
@@ -322,18 +304,6 @@ public class LieferantenController {
         response.setSeite(result.getNumber());
         response.setSeitenGroesse(result.getSize());
         return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/{id}/emails")
-    public ResponseEntity<List<LieferantEmailDto>> listEmails(@PathVariable Long id,
-            @RequestParam(value = "limit", defaultValue = "50") int limit,
-            @RequestParam(value = "q", required = false) String query) {
-        Lieferanten exists = lieferantenRepository.findById(id).orElse(null);
-        if (exists == null) {
-            return ResponseEntity.notFound().build();
-        }
-        List<LieferantEmailDto> emails = lieferantenDetailService.loadEmails(id, limit, query);
-        return ResponseEntity.ok(emails);
     }
 
     @PostMapping(value = "/{id}/emails", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

@@ -26,7 +26,7 @@ const AKTE = {
     zahlungsziel: 8,
     kundenEmails: [],
     statistik: { projektAnzahl: 0, anfrageAnzahl: 0, emailAdresseAnzahl: 0, gesamtUmsatz: 0, gesamtGewinn: 0 },
-    kommunikation: [],
+    emailAnzahl: 0,
     projekte: [],
     anfragen: [],
     geschaeftsdokumente: [{ id: 88, dokumentNummer: 'AN-2026-001', typ: 'ANGEBOT', datum: '2026-10-01', betragBrutto: 1190 }],

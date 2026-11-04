@@ -1,42 +1,45 @@
-// Generic email type that works across different entities
+/** Vollständige Mail aus `/api/emails/{id}`, Grundlage einer Antwort aus dem Verlauf. */
 export interface GenericEmail {
     id: number;
-    /** Nur bei direction 'OUT': 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
-    zustellStatus?: 'OFFEN' | 'UNZUSTELLBAR';
-    /** Grund der Ablehnung, z.B. "unknown user / Teilnehmer existiert nicht". */
-    zustellFehler?: string;
     subject?: string;
     from?: string;
     fromAddress?: string;
+    sender?: string;
     to?: string;
-    /** Felder aus /api/emails/{id} (UnifiedEmailDto) */
     recipient?: string;
+    recipients?: string[];
     cc?: string;
     replyToAddress?: string;
     bodyHtml?: string;
-    bodyPreview?: string;
     body?: string;
     direction?: 'IN' | 'OUT';
     sentAt?: string;
-    sentDate?: string;
-    receivedDate?: string;
-    attachments?: Array<{
-        id?: number;
-        originalFilename?: string;
-        storedFilename?: string;
-        filename?: string;  // From Kommunikation API
-        url?: string;       // From Kommunikation API
-        contentId?: string;
-        inline?: boolean;
-    }>;
-    sender?: string;
-    recipients?: string[];
-    // Thread support
-    parentEmailId?: number;
-    parentId?: number;
-    replyCount?: number;
-    replies?: GenericEmail[];
 }
+
+/** Wo der E-Mail-Reiter hängt; bestimmt die Adresse `/api/emails/reiter/{bezug}/{id}`. */
+export type EmailsTabBezug = 'projekt' | 'anfrage' | 'kunde' | 'lieferant';
 
 /** Filter der Mailliste im Reiter: alle, nur Eingang, nur Ausgang. */
 export type EmailsTabFilter = 'all' | 'in' | 'out';
+
+/**
+ * Ein Verlauf in der Mailliste des Reiters. Der Server fasst die Antwortkette zusammen
+ * und schickt die neueste passende Mail; `vorschau` rechnet der Reiter einmal je Seite aus.
+ */
+export interface EmailsTabEintrag {
+    id: number;
+    subject: string | null;
+    fromAddress: string | null;
+    recipient: string | null;
+    direction: 'IN' | 'OUT';
+    sentAt: string | null;
+    /** Erste Zeilen der neuesten Nachricht ohne zitierten Verlauf. */
+    vorschau: string;
+    /** Nachrichten im Verlauf, mindestens 1. */
+    nachrichtenAnzahl: number;
+    mitAnhang: boolean;
+    /** Nur bei Ausgang: 'OFFEN' = kein Fehler bekannt, 'UNZUSTELLBAR' = kam nicht an. */
+    zustellStatus: 'OFFEN' | 'UNZUSTELLBAR' | null;
+    /** Grund der Ablehnung, z. B. „unknown user“. */
+    zustellFehler: string | null;
+}

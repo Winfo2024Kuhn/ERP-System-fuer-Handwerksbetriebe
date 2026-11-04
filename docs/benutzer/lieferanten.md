@@ -36,7 +36,7 @@ Ein Klick auf einen Lieferanten unter **Vorlagen & Stammdaten → Lieferanten** 
 - „Artikel“: Artikel, für die dieser Lieferant einen Preis hat,
 - „Lieferzeit Ø“: aus den Auftragsbestätigungen berechnet.
 
-Reiter: „E-Mail-Verlauf“ (die neuesten 50 E-Mails, nur lesen), „Anrufe“ (nur mit dem Recht „Anrufe & Anrufbeantworter“), „Dokumente“, „Notizen“ und „Reklamationen“. Rechts stehen die „Kontaktdaten“ mit „Standard-Kostenstelle“, „Bezahlung“ und einer Karte des Standorts.
+Reiter: „E-Mail-Verlauf“ (alle E-Mails des Lieferanten nach Verläufen, zuerst 25, „Mehr laden“ holt die nächsten; Suche und Filter durchsuchen alle; nur lesen), „Anrufe“ (nur mit dem Recht „Anrufe & Anrufbeantworter“), „Dokumente“, „Notizen“ und „Reklamationen“. Rechts stehen die „Kontaktdaten“ mit „Standard-Kostenstelle“, „Bezahlung“ und einer Karte des Standorts.
 
 ## Belege eines Lieferanten finden
 

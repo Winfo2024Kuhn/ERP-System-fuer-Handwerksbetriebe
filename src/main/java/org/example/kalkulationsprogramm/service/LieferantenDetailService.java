@@ -1,17 +1,17 @@
 package org.example.kalkulationsprogramm.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.kalkulationsprogramm.domain.EmailBezug;
 import org.example.kalkulationsprogramm.domain.Lieferanten;
 import org.example.kalkulationsprogramm.domain.LieferantNotiz;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantDetailDto;
 import org.example.kalkulationsprogramm.dto.LieferantDokumentDto;
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantEmailDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantNotizDto;
 import org.example.kalkulationsprogramm.dto.Lieferant.LieferantStatistikDto;
+import org.example.kalkulationsprogramm.repository.EmailReiterRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenArtikelPreiseRepository;
 import org.example.kalkulationsprogramm.repository.LieferantenRepository;
 import org.example.kalkulationsprogramm.repository.LieferantNotizRepository;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,22 +23,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantAttachmentViewDto;
-
-import org.example.kalkulationsprogramm.dto.Lieferant.LieferantKommunikationDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailDto;
-import org.example.kalkulationsprogramm.dto.ProjektEmail.ProjektEmailFileDto;
 import org.example.kalkulationsprogramm.repository.LieferantGeschaeftsdokumentRepository;
 
 @Service
 @RequiredArgsConstructor
 public class LieferantenDetailService {
 
-    private static final int EMAIL_LIMIT_DEFAULT = 50;
-    private static final int EMAIL_LIMIT_MAX = 200;
-
     private final LieferantenRepository lieferantenRepository;
     private final org.example.kalkulationsprogramm.repository.EmailRepository emailRepository;
+    private final EmailReiterRepository emailReiterRepository;
     private final LieferantArtikelpreisMapper artikelpreisMapper;
     private final LieferantDokumentService lieferantDokumentService;
     private final LieferantGeschaeftsdokumentRepository geschaeftsdokumentRepository;
@@ -56,10 +49,7 @@ public class LieferantenDetailService {
         dto.setArtikelpreise(artikelpreisMapper.toDtoList(lieferant.getArtikelpreise()));
         dto.setStatistik(buildStatistik(lieferant));
 
-        List<org.example.kalkulationsprogramm.domain.Email> emails = loadEmailsEntities(id, EMAIL_LIMIT_DEFAULT);
-        dto.setKommunikation(emails.stream().map(e -> toKommunikation(e, id)).toList());
-        dto.setEmails(emails.stream().map(this::toProjektEmailDto).toList());
-        dto.setEmailAnzahl(emailRepository.countByLieferantId(id));
+        dto.setEmailAnzahl(emailReiterRepository.anzahlVerlaeufe(EmailBezug.LIEFERANT, id));
 
         List<LieferantDokumentDto.Response> dokumente = lieferantDokumentService.getDokumenteByLieferant(id, null);
         dto.setDokumente(dokumente);
@@ -73,7 +63,7 @@ public class LieferantenDetailService {
 
     /**
      * Nur Stammdaten und Zähler für die Reiter. Die Detailseite zeigt das sofort an und
-     * holt Kennzahlen, E-Mail-Verlauf, Notizen und Dokumente danach einzeln nach – ein
+     * holt Kennzahlen, E-Mails ({@code GET /api/emails/reiter/lieferant/{id}}), Notizen und Dokumente danach einzeln nach – ein
      * Lieferant wie ein Großhändler hat sonst tausende Artikelpreise und E-Mails im Gepäck.
      */
     @Transactional(readOnly = true)
@@ -83,7 +73,7 @@ public class LieferantenDetailService {
             return null;
         }
         LieferantDetailDto dto = baueStammdaten(lieferant);
-        dto.setEmailAnzahl(emailRepository.countByLieferantId(id));
+        dto.setEmailAnzahl(emailReiterRepository.anzahlVerlaeufe(EmailBezug.LIEFERANT, id));
         dto.setDokumenteAnzahl(lieferantDokumentService.zaehleDokumente(id));
         dto.setNotizenAnzahl(notizRepository.countByLieferantId(id));
         return dto;
@@ -93,12 +83,6 @@ public class LieferantenDetailService {
     @Transactional(readOnly = true)
     public LieferantStatistikDto loadStatistik(Long id) {
         return lieferantenRepository.findById(id).map(this::buildStatistik).orElse(null);
-    }
-
-    /** E-Mail-Verlauf im Format des gemeinsamen E-Mail-Reiters. */
-    @Transactional(readOnly = true)
-    public List<ProjektEmailDto> loadEmailVerlauf(Long id) {
-        return loadEmailsEntities(id, EMAIL_LIMIT_DEFAULT).stream().map(this::toProjektEmailDto).toList();
     }
 
     private LieferantDetailDto baueStammdaten(Lieferanten lieferant) {
@@ -132,133 +116,6 @@ public class LieferantenDetailService {
         dto.setText(notiz.getText());
         dto.setErstelltAm(notiz.getErstelltAm());
         return dto;
-    }
-
-    private LieferantKommunikationDto toKommunikation(org.example.kalkulationsprogramm.domain.Email email,
-            Long lieferantId) {
-        LieferantKommunikationDto dto = new LieferantKommunikationDto();
-        dto.setId(email.getId());
-        dto.setReferenzId(lieferantId);
-        dto.setReferenzTyp("LIEFERANT");
-        dto.setReferenzName("Lieferant");
-        dto.setSubject(email.getSubject());
-        dto.setAbsender(email.getFromAddress());
-        dto.setEmpfaenger(email.getRecipient());
-        dto.setZeitpunkt(email.getSentAt());
-        dto.setDirection(email.getDirection());
-
-        String body = email.getBody(); // Plain text body preferred for snippet
-        if (body == null)
-            body = "";
-        String textOnly = body.trim(); // Already plain text usually
-        dto.setSnippet(textOnly.length() > 100 ? textOnly.substring(0, 100) + "..." : textOnly);
-        dto.setBody(email.getHtmlBody() != null ? email.getHtmlBody() : email.getBody());
-
-        if (email.getAttachments() != null) {
-            dto.setAttachments(email.getAttachments().stream()
-                    .map(a -> toAttachmentView(a, lieferantId, email.getId()))
-                    .toList());
-        } else {
-            dto.setAttachments(List.of());
-        }
-        return dto;
-    }
-
-    private LieferantAttachmentViewDto toAttachmentView(org.example.kalkulationsprogramm.domain.EmailAttachment att,
-            Long lieferantId, Long emailId) {
-        LieferantAttachmentViewDto dto = new LieferantAttachmentViewDto();
-        dto.setId(att.getId());
-        dto.setFilename(att.getOriginalFilename());
-        // Generate URL: /api/emails/{emailId}/attachments/{attachmentId}
-        // Unified Controller endpoint format
-        dto.setUrl("/api/emails/" + emailId + "/attachments/" + att.getId());
-        return dto;
-    }
-
-    @Transactional(readOnly = true)
-    public List<LieferantEmailDto> loadEmails(Long lieferantId, int limit, String query) {
-        // Der Suchbegriff wird (wie bisher) noch nicht ausgewertet. Obergrenze, damit
-        // ein großes limit nicht wieder den kompletten Verlauf lädt.
-        var entities = loadEmailsEntities(lieferantId, Math.min(limit, EMAIL_LIMIT_MAX));
-        return entities.stream().map(this::toEmailDto).toList();
-    }
-
-    private List<org.example.kalkulationsprogramm.domain.Email> loadEmailsEntities(Long lieferantId, int limit) {
-        return emailRepository.findByLieferantIdOrderBySentAtDesc(lieferantId,
-                PageRequest.of(0, Math.max(limit, 1)));
-    }
-
-    private LieferantEmailDto toEmailDto(org.example.kalkulationsprogramm.domain.Email email) {
-        LieferantEmailDto dto = new LieferantEmailDto();
-        dto.setId(email.getId());
-        dto.setSubject(email.getSubject());
-        dto.setFrom(email.getFromAddress());
-        dto.setTo(email.getRecipient());
-        dto.setSentAt(email.getSentAt());
-        dto.setDirection(email.getDirection());
-        dto.setBodyHtml(email.getHtmlBody());
-        return dto;
-    }
-
-    /**
-     * Maps Email entity to ProjektEmailDto for unified EmailsTab in frontend.
-     */
-    private ProjektEmailDto toProjektEmailDto(org.example.kalkulationsprogramm.domain.Email email) {
-        ProjektEmailDto dto = new ProjektEmailDto();
-        dto.setId(email.getId());
-        dto.setDirection(email.getDirection());
-        dto.setFrom(email.getFromAddress());
-        dto.setTo(email.getRecipient());
-        dto.setSubject(email.getSubject());
-        dto.setSentAt(email.getSentAt());
-        dto.setBodyHtml(email.getHtmlBody() != null ? email.getHtmlBody() : email.getBody());
-
-        // Thread-Info
-        dto.setParentEmailId(email.getParentEmail() != null ? email.getParentEmail().getId() : null);
-        dto.setReplyCount(countAncestors(email) + countAllReplies(email));
-
-        // Zustellstatus: Anfragen an Lieferanten bouncen genauso wie Kundenmails.
-        dto.setZustellStatus(email.getZustellStatus() != null ? email.getZustellStatus().name() : null);
-        dto.setZustellFehler(email.getZustellFehler());
-
-        if (email.getAttachments() != null) {
-            final Long emailId = email.getId();
-            dto.setAttachments(email.getAttachments().stream()
-                    .map(att -> {
-                        ProjektEmailFileDto fileDto = new ProjektEmailFileDto();
-                        fileDto.setId(att.getId());
-                        fileDto.setOriginalFilename(att.getOriginalFilename());
-                        fileDto.setStoredFilename(att.getStoredFilename());
-                        fileDto.setContentId(att.getContentId());
-                        fileDto.setInline(att.isInline());
-                        // Download-URL setzen
-                        fileDto.setUrl("/api/emails/" + emailId + "/attachments/" + att.getId());
-                        return fileDto;
-                    })
-                    .toList());
-        }
-        return dto;
-    }
-
-    private int countAllReplies(org.example.kalkulationsprogramm.domain.Email email) {
-        if (email.getReplies() == null || email.getReplies().isEmpty()) return 0;
-        int count = email.getReplies().size();
-        for (org.example.kalkulationsprogramm.domain.Email reply : email.getReplies()) {
-            count += countAllReplies(reply);
-        }
-        return count;
-    }
-
-    private int countAncestors(org.example.kalkulationsprogramm.domain.Email email) {
-        int count = 0;
-        java.util.Set<Long> visited = new java.util.HashSet<>();
-        org.example.kalkulationsprogramm.domain.Email current = email.getParentEmail();
-        while (current != null && !visited.contains(current.getId())) {
-            visited.add(current.getId());
-            count++;
-            current = current.getParentEmail();
-        }
-        return count;
     }
 
     private LieferantStatistikDto buildStatistik(Lieferanten lieferant) {

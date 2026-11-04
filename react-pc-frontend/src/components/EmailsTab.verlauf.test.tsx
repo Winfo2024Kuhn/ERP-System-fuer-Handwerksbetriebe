@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import EmailsTab, { type GenericEmail } from './EmailsTab';
+import EmailsTab from './EmailsTab';
+import { istReiterUrl, jsonAntwort, reiterEintrag, reiterSeite } from '../features/email/emailsTab/emailsTabTestApi';
 import type { EmailThread } from './EmailThreadView';
 import { ToastProvider } from './ui/toast';
 
@@ -46,10 +47,10 @@ vi.mock('./EmailComposeForm', () => ({
     },
 }));
 
-const mail: GenericEmail = {
-    id: 7, subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>',
-    direction: 'IN', sentAt: '2026-10-09T10:05:00', bodyHtml: '<p>Bitte um Angebot</p>',
-};
+const mail = reiterEintrag(7, {
+    subject: 'Anfrage Geländer', fromAddress: 'Max Mustermann <max@example.com>',
+    sentAt: '2026-10-09T10:05:00', bodyHtml: '<p>Bitte um Angebot</p>',
+});
 
 function verlauf(): EmailThread {
     return {
@@ -61,7 +62,14 @@ function verlauf(): EmailThread {
 }
 
 function json(body: unknown, ok = true) {
-    return Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);
+    return jsonAntwort(body, ok ? 200 : 500);
+}
+
+/** Reiter-Liste mit der einen Mail; alles andere beantwortet `sonst`. */
+function stubbe(sonst: (url: string) => Promise<Response>) {
+    const fetchMock = vi.fn((url: string) => (istReiterUrl(url) ? jsonAntwort(reiterSeite([mail])) : sonst(url)));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
 }
 
 afterEach(() => {
@@ -74,36 +82,36 @@ afterEach(() => {
 
 /** Öffnet den Verlauf und startet über den Kopfknopf eine Antwort. */
 async function antwortOeffnen() {
-    vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
-    rendere();
+    stubbe((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false));
+    await rendere();
     fireEvent.click(zeile());
     fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
     await screen.findByTestId('antwort-formular');
     return screen.getByRole('button', { name: 'Zurück zum Verlauf' });
 }
 
-function rendere(onEmailSent = vi.fn()) {
+async function rendere(onEmailSent = vi.fn()) {
     render(
         <MemoryRouter>
             <ToastProvider>
-                <EmailsTab emails={[mail]} projektId={3} onEmailSent={onEmailSent} />
+                <EmailsTab bezug="projekt" bezugId={3} projektId={3} onEmailSent={onEmailSent} />
             </ToastProvider>
         </MemoryRouter>
     );
+    await screen.findByRole('button', { name: 'Anfrage Geländer' });
     return onEmailSent;
 }
 
 const zeile = () => screen.getByRole('button', { name: 'Anfrage Geländer' });
 
 describe('EmailsTab – geöffneter Verlauf', () => {
-    it('öffnet per Tastatur, antwortet und lädt danach neu', async () => {
-        const fetchMock = vi.fn((url: string) => {
+    it('öffnet per Tastatur, antwortet und lädt danach Verlauf und Liste neu', async () => {
+        const fetchMock = stubbe((url: string) => {
             if (url === '/api/emails/7/thread') return json(verlauf());
             if (url === '/api/emails/7') return json({ ...mail, subject: 'Anfrage Geländer' });
             return json(null, false);
         });
-        vi.stubGlobal('fetch', fetchMock);
-        const onEmailSent = rendere();
+        const onEmailSent = await rendere();
         const nutzer = userEvent.setup();
 
         zeile().focus();
@@ -122,11 +130,15 @@ describe('EmailsTab – geöffneter Verlauf', () => {
         await waitFor(() => expect(screen.queryByTestId('antwort-formular')).not.toBeInTheDocument());
         expect(onEmailSent).toHaveBeenCalledTimes(1);
         await waitFor(() => expect(fetchMock.mock.calls.filter(c => c[0] === '/api/emails/7/thread')).toHaveLength(2));
+        // Die Liste lädt ab Seite 1 neu (die Antwort ist jetzt die neueste Mail); der Dialog behält seinen Titel.
+        await waitFor(() => expect(fetchMock.mock.calls.filter(c => istReiterUrl(c[0]))).toHaveLength(2));
+        expect(fetchMock.mock.calls.filter(c => istReiterUrl(c[0])).at(-1)?.[0]).toBe('/api/emails/reiter/projekt/3?page=0&size=25');
+        expect(screen.getByRole('dialog', { name: 'Anfrage Geländer' })).toBeInTheDocument();
     });
 
     it('bricht die Antwort ab und zeigt wieder den Verlauf', async () => {
-        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
-        rendere();
+        stubbe((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false));
+        await rendere();
         fireEvent.click(zeile());
         fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
         fireEvent.click(await screen.findByText('Formular abbrechen'));
@@ -135,8 +147,8 @@ describe('EmailsTab – geöffneter Verlauf', () => {
     });
 
     it('schließt per Escape und gibt den Fokus an die Zeile zurück', async () => {
-        vi.stubGlobal('fetch', vi.fn(() => json(verlauf())));
-        rendere();
+        stubbe(() => json(verlauf()));
+        await rendere();
         const nutzer = userEvent.setup();
         zeile().focus();
         await nutzer.keyboard('{Enter}');
@@ -148,8 +160,8 @@ describe('EmailsTab – geöffneter Verlauf', () => {
     });
 
     it('speichert beim Schließen erst die angefangene Antwort und bleibt offen, wenn das scheitert', async () => {
-        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
-        rendere();
+        stubbe((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false));
+        await rendere();
         const nutzer = userEvent.setup();
         fireEvent.click(zeile());
         fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
@@ -167,8 +179,8 @@ describe('EmailsTab – geöffneter Verlauf', () => {
     });
 
     it('zeigt beim Antworten einen Kopf „Antwort“ mit Betreff, genau ein X und führt per Pfeil zurück', async () => {
-        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
-        rendere();
+        stubbe((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false));
+        await rendere();
         fireEvent.click(zeile());
         fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
         await screen.findByTestId('antwort-formular');
@@ -194,8 +206,8 @@ describe('EmailsTab – geöffneter Verlauf', () => {
     });
 
     it('gibt dem Formular im Verlauf keinen eigenen Kopf und „Zurück zum Verlauf“ als Knopf', async () => {
-        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false)));
-        rendere();
+        stubbe((url: string) => url.endsWith('/thread') ? json(verlauf()) : json(null, false));
+        await rendere();
         fireEvent.click(zeile());
         fireEvent.click((await screen.findAllByRole('button', { name: /Antworten/ }))[0]);
         expect(await screen.findByTestId('antwort-formular')).toHaveAttribute('data-kopf', 'ohne');
@@ -260,8 +272,8 @@ describe('EmailsTab – geöffneter Verlauf', () => {
 
     it('lädt einen Verlauf nach einem Fehler per „Erneut laden“', async () => {
         let versuch = 0;
-        vi.stubGlobal('fetch', vi.fn(() => (++versuch === 1 ? json(null, false) : json(verlauf()))));
-        rendere();
+        stubbe(() => (++versuch === 1 ? json(null, false) : json(verlauf())));
+        await rendere();
         fireEvent.click(zeile());
         fireEvent.click(await screen.findByRole('button', { name: 'Erneut laden' }));
         expect(await screen.findByText('1 Nachricht im Verlauf')).toBeInTheDocument();
@@ -269,8 +281,8 @@ describe('EmailsTab – geöffneter Verlauf', () => {
     });
 
     it('sperrt „Antworten“ mit Hinweis, solange die Mail geladen wird', async () => {
-        vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/thread') ? json(verlauf()) : new Promise<Response>(() => {})));
-        rendere();
+        stubbe((url: string) => url.endsWith('/thread') ? json(verlauf()) : new Promise<Response>(() => {}));
+        await rendere();
         fireEvent.click(zeile());
         const antworten = (await screen.findAllByRole('button', { name: /Antworten/ }))[0];
         fireEvent.click(antworten);
@@ -280,22 +292,13 @@ describe('EmailsTab – geöffneter Verlauf', () => {
     });
 
     it('meldet einen Verlauf, der nicht geladen werden kann, und schließt per Knopf', async () => {
-        vi.stubGlobal('fetch', vi.fn(() => json(null, false)));
-        rendere();
+        stubbe(() => json(null, false));
+        await rendere();
         fireEvent.click(zeile());
         expect(await screen.findByText('Der Verlauf konnte nicht geladen werden.')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Zurück/ })).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByRole('button', { name: 'Fenster schließen' }));
         expect(screen.queryByText('Der Verlauf konnte nicht geladen werden.')).not.toBeInTheDocument();
-    });
-
-    it('filtert nach Ausgang und meldet „Keine E-Mails gefunden.“', () => {
-        rendere();
-        fireEvent.click(screen.getByRole('radio', { name: 'Ausgang' }));
-        expect(screen.getByText('Keine E-Mails gefunden.')).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('radio', { name: 'Alle' }));
-        fireEvent.change(screen.getByRole('textbox', { name: 'E-Mails durchsuchen' }), { target: { value: 'geländer' } });
-        expect(zeile()).toBeInTheDocument();
     });
 });

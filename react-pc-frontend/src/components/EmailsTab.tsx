@@ -1,23 +1,24 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail } from 'lucide-react';
-import { getThreadPreview } from '../features/email/threadQuotes';
 import { EmailComposeModal } from './EmailComposeModal';
 import type { EmailThreadEntry } from './EmailThreadView';
 import type { ProjektDetail } from '../types';
-import { buildThreadRoots, filterThreadRoots } from '../features/email/emailsTab/emailsTabThreadRoots';
+import { useEmailsTabListe } from '../features/email/emailsTab/useEmailsTabListe';
 import { useEmailsTabThread } from '../features/email/emailsTab/useEmailsTabThread';
 import { useEmailsTabReply } from '../features/email/emailsTab/useEmailsTabReply';
 import { EmailsTabToolbar } from '../features/email/emailsTab/EmailsTabToolbar';
-import { EmailsTabListItem } from '../features/email/emailsTab/EmailsTabListItem';
+import { EmailsTabMailliste } from '../features/email/emailsTab/EmailsTabMailliste';
+import { EmailsTabKundeInfo } from '../features/email/emailsTab/EmailsTabKundeInfo';
 import { EmailsTabThreadDialog } from '../features/email/emailsTab/EmailsTabThreadDialog';
-import type { EmailsTabFilter, GenericEmail } from '../features/email/emailsTab/emailsTabTypes';
+import type { EmailsTabBezug, EmailsTabEintrag } from '../features/email/emailsTab/emailsTabTypes';
 
-export type { GenericEmail };
+export type { EmailsTabBezug };
 
 export interface EmailsTabProps {
-    // Required
-    emails: GenericEmail[];
+    /** Wo der Reiter hängt; die Mailliste lädt er selbst seitenweise vom Server. */
+    bezug: EmailsTabBezug;
+    /** Kennung von Projekt, Anfrage, Kunde bzw. Lieferant. */
+    bezugId: number;
 
     // Kontext für „Neue E-Mail“ und Antworten (Projekt oder Anfrage)
     projektId?: number;
@@ -42,7 +43,7 @@ export interface EmailsTabProps {
         kundenAnsprechpartner?: string;
     };
 
-    // Callbacks
+    /** Nach gesendeter Antwort oder neuer E-Mail, z. B. damit der Editor die Zahl am Reiter auffrischt. */
     onEmailSent?: () => void;
 
     // Optional: Show/hide compose button (defaults to true)
@@ -54,12 +55,13 @@ export interface EmailsTabProps {
 
 /**
  * E-Mail-Reiter in Kunde, Projekt, Anfrage und Lieferant: Mailliste nach Verläufen,
- * Suche und Filter, Verlauf im Dialog mit Antwort, Anhang-Vorschau und Entwurf löschen
- * (mit „Rückgängig“), neue E-Mail.
+ * seitenweise vom Server („Mehr laden“), Suche und Filter beim Server, Verlauf im Dialog
+ * mit Antwort, Anhang-Vorschau und Entwurf löschen (mit „Rückgängig“), neue E-Mail.
  * Bausteine und Logik liegen unter `features/email/emailsTab/`.
  */
 export const EmailsTab: React.FC<EmailsTabProps> = ({
-    emails,
+    bezug,
+    bezugId,
     projektId,
     anfrageId,
     projekt,
@@ -70,43 +72,33 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 }) => {
     const navigate = useNavigate();
 
-    const [emailFilter, setEmailFilter] = useState<EmailsTabFilter>('all');
-    const [emailSearch, setEmailSearch] = useState('');
+    const liste = useEmailsTabListe(bezug, bezugId);
+    const { neuLaden } = liste;
     const [showComposeModal, setShowComposeModal] = useState(false);
-    const [selectedEmailId, setSelectedEmailId] = useState<number | null>(null);
+    // Betreff beim Öffnen merken: Nach einer Antwort lädt die Liste neu, der Verlauf zeigt dann eine neuere Mail.
+    const [selected, setSelected] = useState<{ id: number; subject: string } | null>(null);
+    const selectedEmailId = selected?.id ?? null;
 
     const { thread, threadLoading, reloadThread } = useEmailsTabThread(selectedEmailId);
     const reply = useEmailsTabReply();
     const { cancelReply } = reply;
 
-    // Nur Wurzeln der Verläufe anzeigen
-    const threadRoots = useMemo(() => buildThreadRoots(emails), [emails]);
-    const filteredEmails = useMemo(
-        () => filterThreadRoots(threadRoots, emailFilter, emailSearch),
-        [threadRoots, emailFilter, emailSearch]);
-
-    /**
-     * Vorschauzeile ohne zitierten Verlauf, dieselbe Erkennung wie im E-Mail-Center.
-     * Einmal je Mailliste berechnet (nicht je Rendern und nicht je Tastendruck in der Suche).
-     */
-    const textPreviews = useMemo(() => new Map(threadRoots.map(email =>
-        [email.id, getThreadPreview(email.bodyHtml || email.bodyPreview || email.body || '')])), [threadRoots]);
-
-    const handleEmailClick = (email: GenericEmail) => {
-        setSelectedEmailId(email.id);
+    const handleEmailClick = (email: EmailsTabEintrag) => {
+        setSelected({ id: email.id, subject: email.subject || '(kein Betreff)' });
         cancelReply();
     };
 
     const closeThreadView = () => {
-        setSelectedEmailId(null);
+        setSelected(null);
         cancelReply();
     };
 
     const handleReplySuccess = useCallback(() => {
         cancelReply();
         reloadThread();
+        neuLaden();
         if (onEmailSent) onEmailSent();
-    }, [cancelReply, reloadThread, onEmailSent]);
+    }, [cancelReply, reloadThread, neuLaden, onEmailSent]);
 
     const handleOpenDraft = (entry: EmailThreadEntry) => {
         if (entry.draftId) {
@@ -116,16 +108,17 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
 
     const handleComposeSent = () => {
         setShowComposeModal(false);
+        neuLaden();
         if (onEmailSent) onEmailSent();
     };
 
     return (
         <div className="space-y-4">
-            {selectedEmailId && (
+            {selected && (
                 <EmailsTabThreadDialog
                     // Je Mail eine eigene Instanz: Lösch-Aufträge und Vorschau gehören genau zu diesem Verlauf.
-                    key={selectedEmailId}
-                    subject={threadRoots.find(e => e.id === selectedEmailId)?.subject || '(kein Betreff)'}
+                    key={selected.id}
+                    subject={selected.subject}
                     thread={thread}
                     threadLoading={threadLoading}
                     showReplyButton={showReplyButton}
@@ -140,31 +133,30 @@ export const EmailsTab: React.FC<EmailsTabProps> = ({
             )}
 
             <EmailsTabToolbar
-                search={emailSearch}
-                onSearchChange={setEmailSearch}
-                filter={emailFilter}
-                onFilterChange={setEmailFilter}
+                search={liste.suchtext}
+                onSearchChange={liste.setSuchtext}
+                filter={liste.filter}
+                onFilterChange={liste.setFilter}
                 showCompose={showComposeButton && !!(projektId || anfrageId)}
                 onCompose={() => setShowComposeModal(true)}
+                info={bezug === 'kunde' ? <EmailsTabKundeInfo /> : undefined}
             />
 
-            {filteredEmails.length > 0 ? (
-                <div className="space-y-3">
-                    {filteredEmails.map(email => (
-                        <EmailsTabListItem
-                            key={email.id}
-                            email={email}
-                            preview={textPreviews.get(email.id)}
-                            onOpen={handleEmailClick}
-                        />
-                    ))}
-                </div>
-            ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-                    <Mail className="w-12 h-12 text-slate-300 mb-3" />
-                    <p>{emailSearch || emailFilter !== 'all' ? 'Keine E-Mails gefunden.' : 'Keine E-Mails vorhanden.'}</p>
-                </div>
-            )}
+            <EmailsTabMailliste
+                eintraege={liste.eintraege}
+                gesamt={liste.gesamt}
+                laedt={liste.laedt}
+                laedtMehr={liste.laedtMehr}
+                fehler={liste.fehler}
+                gefiltert={liste.gefiltert}
+                leerHinweis={bezug === 'kunde'
+                    ? 'E-Mails erscheinen hier, sobald sie einem Projekt oder einer Anfrage dieses Kunden zugeordnet sind.'
+                    : undefined}
+                onFilterZuruecksetzen={liste.filterZuruecksetzen}
+                onMehrLaden={liste.mehrLaden}
+                onErneut={neuLaden}
+                onOpen={handleEmailClick}
+            />
 
             {showComposeModal && (
                 <EmailComposeModal

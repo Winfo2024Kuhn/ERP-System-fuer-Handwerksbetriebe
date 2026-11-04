@@ -87,7 +87,7 @@ const DUMMY_ANFRAGE_DETAIL = {
     kundenEmails: [KUNDEN_EMAIL_LANG] as string[],
     anlegedatum: '2026-02-01',
     abgeschlossen: false,
-    emails: [] as unknown[],
+    emailAnzahl: 0,
     dokumente: [] as unknown[],
 };
 
@@ -126,7 +126,7 @@ async function stubAnfrageApi(page: Page, optionen: { uebersicht?: Record<string
         if (pfad === `/api/anfragen/${ANFRAGE_ID}/notizen`) return json(route, notizen);
         if (pfad === `/api/anfragen/${ANFRAGE_ID}/dokumente`) return json(route, []);
         if (pfad === `/api/ausgangs-dokumente/anfrage/${ANFRAGE_ID}`) return json(route, []);
-        if (pfad === `/api/emails/anfrage/${ANFRAGE_ID}`) return json(route, []);
+        if (pfad === `/api/emails/reiter/anfrage/${ANFRAGE_ID}`) return json(route, { eintraege: [], gesamt: 0, seite: 0, seitenGroesse: 25 });
 
         // Standardantwort fuer alles Weitere: leere Liste statt 404 -- fuer
         // diesen Ablauf irrelevante Endpunkte sollen die Seite nicht mit

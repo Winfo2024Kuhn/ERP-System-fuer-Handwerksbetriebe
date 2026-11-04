@@ -25,7 +25,7 @@ function akte(ueberschreiben: Record<string, unknown> = {}) {
         projekte: [],
         anfragen: [],
         geschaeftsdokumente: [],
-        kommunikation: [],
+        emailAnzahl: 0,
         notizen: [],
         gesperrt: false,
         gesperrtAm: null,

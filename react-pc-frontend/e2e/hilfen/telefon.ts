@@ -183,7 +183,7 @@ export async function stubbeTelefonApi(page: Page, optionen: {
             return json(route, { kunden: [{ id: 7, name: 'Max Mustermann', kundennummer: 'K-1007', ort: 'Musterstadt' }, { id: 8, name: 'Erika Mustermann', kundennummer: 'K-1008', ort: 'Beispielhausen' }], gesamt: 2 });
         }
         if (pfad === '/api/kunden/7') {
-            return json(route, { id: 7, kundennummer: 'K-1007', name: 'Max Mustermann', strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt', telefon: '0931 1234567', kundenEmails: [], kommunikation: [], projekte: [], anfragen: [], geschaeftsdokumente: [], notizen: [] });
+            return json(route, { id: 7, kundennummer: 'K-1007', name: 'Max Mustermann', strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt', telefon: '0931 1234567', kundenEmails: [], emailAnzahl: 0, projekte: [], anfragen: [], geschaeftsdokumente: [], notizen: [] });
         }
         if (pfad === '/api/abteilungen/berechtigungen') {
             return json(route, [{ abteilungId: 1, abteilungName: 'Büro', berechtigungen: [], darfMonatAbschliessen: false, darfTelefonSehen: true, darfRechnungenGenehmigen: false, darfRechnungenSehen: false, darfFreigabeAnnahmePushen: false, darfWebseitenAnfragenPushen: false }]);

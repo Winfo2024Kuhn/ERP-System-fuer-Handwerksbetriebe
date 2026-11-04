@@ -3,18 +3,21 @@ import { test, expect } from './hilfen/test';
 import { designPruefung } from './hilfen/design';
 
 /**
- * E-Mail-Reiter (`EmailsTab`) in der Anfrage: Filter in Rose über die gemeinsame
+ * E-Mail-Reiter (`EmailsTab`) in der Anfrage: erste Seite mit 25 Verläufen, „Mehr laden“,
+ * Suche beim Server (springt auf Seite 1), Filter in Rose über die gemeinsame
  * Segment-Auswahl, Verlauf per Tastatur öffnen und per Escape schließen,
  * Bild- und PDF-Anhang als eigenes Fenster über dem Verlauf (Fokus auf „Schließen“,
  * Tab bleibt drin, Escape schließt nur die Vorschau, Fokus zurück an den Anhang),
  * Entwurf löschen mit „Rückgängig“,
  * Antworten (ein Kopf „Antwort“, genau ein X, Pfeil zurück zum Verlauf sichert den
- * Entwurf). Die Rückgängig-Frist läuft über `page.clock`, nicht über Warten.
+ * Entwurf). Dazu der Kunden-Reiter mit seiner Erklärung. Entprellen und
+ * Rückgängig-Frist laufen über `page.clock`, nicht über Warten.
  *
  * /api ist gestubbt, kein Backend; nur Dummy-Daten (DSGVO): Max Mustermann.
  */
 
 const ANFRAGE_ID = 9;
+const KUNDE_ID = 3;
 const BETREFF = 'Anfrage Geländer Mustermann';
 const PIXEL_PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
@@ -23,24 +26,52 @@ const ANFRAGE = {
     id: ANFRAGE_ID, kundenId: 3, kundenName: 'Max Mustermann', bauvorhaben: 'Geländer Mustermann',
     kundennummer: 'K-1003', anfragesnummer: 'AG-2026/11/00009', betrag: 4200,
     kundenEmails: ['max@example.com'], anlegedatum: '2026-11-02', abgeschlossen: false,
-    emails: [] as unknown[], dokumente: [] as unknown[],
+    emailAnzahl: 30, dokumente: [] as unknown[],
 };
 
-const MAILS = [
-    {
-        id: 7, subject: BETREFF, fromAddress: 'Max Mustermann <max@example.com>', recipient: 'buero@example.com',
-        direction: 'IN', sentAt: '2026-11-02T09:15:00', body: 'Guten Tag, bitte um ein Angebot für ein Geländer.',
-        replyCount: 1,
-    },
-    {
-        id: 8, subject: `AW: ${BETREFF}`, fromAddress: 'buero@example.com', recipient: 'max@example.com',
-        direction: 'OUT', sentAt: '2026-11-02T14:30:00', body: 'Vielen Dank, wir melden uns.', parentEmailId: 7,
-    },
-    {
-        id: 12, subject: 'Aufmaß Treppe', fromAddress: 'buero@example.com', recipient: 'max@example.com',
-        direction: 'OUT', sentAt: '2026-11-03T08:00:00', body: 'Termin für das Aufmaß am Freitag.',
-    },
-];
+const KUNDE = {
+    id: KUNDE_ID, kundennummer: '1003', name: 'Max Mustermann', kundenEmails: ['max@example.com'],
+    emailAnzahl: 3, projekte: [], anfragen: [], geschaeftsdokumente: [], notizen: [],
+};
+
+type Eintrag = Record<string, unknown> & { id: number; subject: string; direction: 'IN' | 'OUT' };
+
+function eintrag(id: number, subject: string, direction: 'IN' | 'OUT', sentAt: string, mehr: Partial<Eintrag> = {}): Eintrag {
+    return {
+        id, subject, direction, sentAt,
+        fromAddress: direction === 'IN' ? 'Max Mustermann <max@example.com>' : 'buero@example.com',
+        recipient: direction === 'IN' ? 'buero@example.com' : 'max@example.com',
+        bodyHtml: `<p>${subject}: bitte kurz Bescheid geben.</p>`,
+        nachrichtenAnzahl: 1, mitAnhang: false, zustellStatus: null, zustellFehler: null, ...mehr,
+    };
+}
+
+/** Der Angebots-Verlauf: Max Mustermann hat zuletzt geantwortet, darum steht er oben. */
+const VERLAUF = eintrag(7, BETREFF, 'IN', '2026-11-03T09:15:00', {
+    bodyHtml: '<p>Guten Tag, bitte um ein Angebot für ein Geländer.</p>', nachrichtenAnzahl: 2, mitAnhang: true,
+});
+const AUFMASS = eintrag(12, 'Aufmaß Treppe', 'OUT', '2026-11-02T08:00:00');
+const FUELLER = Array.from({ length: 28 }, (_, i) => eintrag(
+    100 + i, `Rückfrage Geländer Teil ${i + 1}`, i % 2 ? 'OUT' : 'IN', `2026-10-${String(28 - i).padStart(2, '0')}T10:00:00`));
+
+/** Was der Server je Richtung liefert: je Verlauf die neueste passende Mail. */
+const VERLAEUFE: Record<'ALLE' | 'IN' | 'OUT', Eintrag[]> = {
+    ALLE: [VERLAUF, AUFMASS, ...FUELLER],
+    IN: [VERLAUF, ...FUELLER.filter(e => e.direction === 'IN')],
+    OUT: [eintrag(8, `AW: ${BETREFF}`, 'OUT', '2026-11-02T14:30:00', { nachrichtenAnzahl: 2 }), AUFMASS,
+        ...FUELLER.filter(e => e.direction === 'OUT')],
+};
+
+/** Wie der Server: Richtung und Suche filtern, `page`/`size` schneiden. */
+function reiterSeite(url: URL) {
+    const richtung = url.searchParams.get('richtung');
+    const q = url.searchParams.get('q')?.toLowerCase();
+    const seite = Number(url.searchParams.get('page'));
+    const groesse = Number(url.searchParams.get('size'));
+    const passend = VERLAEUFE[richtung === 'IN' || richtung === 'OUT' ? richtung : 'ALLE']
+        .filter(e => !q || e.subject.toLowerCase().includes(q));
+    return { eintraege: passend.slice(seite * groesse, (seite + 1) * groesse), gesamt: passend.length, seite, seitenGroesse: groesse };
+}
 
 function verlauf(mitEntwurf: boolean) {
     const emails: Record<string, unknown>[] = [
@@ -66,10 +97,11 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 async function stubbeApi(page: Page) {
-    const stand = { entwurfGeloescht: false, loeschAufrufe: 0, entwurfGespeichert: 0 };
+    const stand = { entwurfGeloescht: false, loeschAufrufe: 0, entwurfGespeichert: 0, reiterAbfragen: [] as string[] };
     await page.route('**/api/**', (route) => {
         const request = route.request();
-        const pfad = new URL(request.url()).pathname;
+        const url = new URL(request.url());
+        const pfad = url.pathname;
         const methode = request.method();
         if (pfad === '/api/auth/me') {
             return json(route, {
@@ -80,9 +112,19 @@ async function stubbeApi(page: Page) {
         if (pfad === '/api/notifications/summary') return json(route, { totalCount: 0, categories: [], recentItems: [] });
         if (/^\/api\/last-accessed\//.test(pfad)) return methode === 'POST' ? route.fulfill({ status: 204, body: '' }) : json(route, {});
         if (pfad === `/api/anfragen/${ANFRAGE_ID}`) return json(route, ANFRAGE);
-        if (pfad === `/api/emails/anfrage/${ANFRAGE_ID}`) return json(route, MAILS);
+        if (pfad === `/api/kunden/${KUNDE_ID}`) return json(route, KUNDE);
+        if (pfad === `/api/emails/reiter/anfrage/${ANFRAGE_ID}`) {
+            stand.reiterAbfragen.push(url.search);
+            return json(route, reiterSeite(url));
+        }
+        if (pfad === `/api/emails/reiter/kunde/${KUNDE_ID}`) return json(route, { eintraege: [VERLAUF, AUFMASS, FUELLER[0]], gesamt: 3, seite: 0, seitenGroesse: 25 });
         if (pfad === '/api/emails/7/thread') return json(route, verlauf(!stand.entwurfGeloescht));
-        if (pfad === '/api/emails/8') return json(route, { ...MAILS[1], bodyHtml: '<p>Vielen Dank, wir melden uns.</p>' });
+        if (pfad === '/api/emails/8') {
+            return json(route, {
+                id: 8, subject: `AW: ${BETREFF}`, fromAddress: 'buero@example.com', recipient: 'max@example.com',
+                direction: 'OUT', sentAt: '2026-11-02T14:30:00', bodyHtml: '<p>Vielen Dank, wir melden uns.</p>',
+            });
+        }
         if (pfad === '/api/emails/7/attachments/3') return route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG });
         if (pfad === '/api/emails/7/attachments/4') return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4\n%%EOF\n' });
         if ((pfad === '/api/emails/drafts' && methode === 'POST') || (pfad === '/api/emails/drafts/101' && methode === 'PUT')) {
@@ -100,20 +142,58 @@ async function stubbeApi(page: Page) {
 }
 
 test.describe('E-Mail-Reiter in der Anfrage', () => {
-    test('filtern, Verlauf per Tastatur, Anhang, Entwurf löschen mit Rückgängig, antworten', async ({ page }, testInfo) => {
+    test('Mehr laden, suchen, filtern, Verlauf per Tastatur, Anhang, Entwurf löschen mit Rückgängig, antworten', async ({ page }, testInfo) => {
         await page.clock.install();
         const stand = await stubbeApi(page);
         await page.goto(`/anfragen?anfrageId=${ANFRAGE_ID}&tab=emails`);
 
+        // Erste Seite: 25 von 30 Verläufen, der zuletzt beantwortete oben, die Zahl am Reiter vom Server
         const zeile = page.getByRole('button', { name: BETREFF, exact: true });
         await expect(zeile).toBeVisible();
+        await expect(page.getByRole('button', { name: /^E-Mails \(30\)/ })).toBeVisible();
+        const zaehler = page.getByText(/^\d+ von \d+ angezeigt$/);
+        await expect(zaehler).toHaveText('25 von 30 angezeigt');
+        await expect(zaehler).toHaveClass(/tabular-nums/);
+        expect(stand.reiterAbfragen).toEqual(['?page=0&size=25']);
         const neueEmail = page.getByRole('button', { name: 'Neue E-Mail' });
         await designPruefung(page, testInfo, 'emails-tab-liste', { primaerAktion: neueEmail });
+
+        // „Mehr laden“ hängt die nächsten an, dann ist alles da
+        const mehrLaden = page.getByRole('button', { name: 'Mehr laden' });
+        await mehrLaden.scrollIntoViewIfNeeded();
+        await designPruefung(page, testInfo, 'emails-tab-mehr-laden');
+        await mehrLaden.click();
+        await expect(zaehler).toHaveText('30 von 30 angezeigt');
+        await expect(mehrLaden).toBeHidden();
+        await expect(page.getByRole('button', { name: 'Rückfrage Geländer Teil 28', exact: true })).toBeVisible();
+        expect(stand.reiterAbfragen[1]).toBe('?page=1&size=25');
+
+        // Suche fragt den Server erst nach der Pause und beginnt wieder bei Seite 1
+        const suche = page.getByRole('textbox', { name: 'E-Mails durchsuchen' });
+        await suche.fill('Treppe');
+        const gesucht = page.waitForResponse(r => r.url().includes(`/api/emails/reiter/anfrage/${ANFRAGE_ID}?page=0&size=25&q=Treppe`));
+        await page.clock.runFor(400);
+        await gesucht;
+        await expect(zaehler).toHaveText('1 von 1 angezeigt');
+        await expect(page.getByRole('button', { name: 'Aufmaß Treppe', exact: true })).toBeVisible();
+        await expect(zeile).toBeHidden();
+        await designPruefung(page, testInfo, 'emails-tab-suche', { primaerAktion: neueEmail });
+        // Ohne Treffer zeigt der Reiter den nächsten Schritt; „Filter zurücksetzen“ holt sofort alles zurück
+        await suche.fill('Carport');
+        await page.clock.runFor(400);
+        await expect(page.getByText('Keine E-Mails gefunden.')).toBeVisible();
+        await expect(page.getByText('Suche oder Filter ändern.')).toBeVisible();
+        const zuruecksetzen = page.getByRole('button', { name: 'Filter zurücksetzen' });
+        await designPruefung(page, testInfo, 'emails-tab-keine-treffer', { primaerAktion: zuruecksetzen });
+        await zuruecksetzen.click();
+        await expect(suche).toHaveValue('');
+        await expect(zaehler).toHaveText('25 von 30 angezeigt');
 
         // Filter: aktiv in Rose, Pfeiltasten wandern
         const filter = page.getByRole('radiogroup', { name: 'E-Mails filtern' });
         await filter.getByRole('radio', { name: 'Eingang' }).click();
         await expect(filter.getByRole('radio', { name: 'Eingang' })).toHaveAttribute('aria-checked', 'true');
+        await expect(zaehler).toHaveText('15 von 15 angezeigt');
         await expect(filter.getByRole('radio', { name: 'Eingang' })).toHaveClass(/bg-rose-50/);
         await expect(page.getByRole('button', { name: 'Aufmaß Treppe' })).toBeHidden();
         await page.keyboard.press('ArrowRight');
@@ -122,6 +202,8 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(zeile).toBeHidden();
         await designPruefung(page, testInfo, 'emails-tab-filter-ausgang', { primaerAktion: neueEmail });
         await filter.getByRole('radio', { name: 'Alle' }).click();
+        // Erst die neu geladene Liste abwarten, sonst springt Tab an den Platzhaltern vorbei
+        await expect(zaehler).toHaveText('25 von 30 angezeigt');
 
         // Verlauf per Tastatur: von „Neue E-Mail“ mit Tab zur ersten Zeile, Enter öffnet
         await neueEmail.focus();
@@ -245,5 +327,26 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(senden).toBeHidden();
         await expect(antwortenImKopf).toBeFocused();
         expect(stand.entwurfGespeichert).toBe(1);
+    });
+});
+
+test.describe('E-Mail-Reiter beim Kunden', () => {
+    test('Kunden-Reiter erklärt, woher die E-Mails kommen', async ({ page }, testInfo) => {
+        await stubbeApi(page);
+        await page.goto(`/kunden?kundeId=${KUNDE_ID}`);
+
+        await expect(page.getByRole('button', { name: BETREFF, exact: true })).toBeVisible();
+        await expect(page.getByText('3 von 3 angezeigt')).toBeVisible();
+        // Kein Verfassen im Kunden: geschrieben wird im Projekt oder in der Anfrage
+        await expect(page.getByRole('button', { name: 'Neue E-Mail' })).toBeHidden();
+
+        await page.getByRole('button', { name: 'Mehr zu: E-Mails des Kunden' }).click();
+        const info = page.getByRole('dialog', { name: 'E-Mails des Kunden' });
+        await expect(info.getByText(/aus allen Projekten und Anfragen dieses Kunden/)).toBeVisible();
+        await expect(info.getByText(/Die finden Sie im E-Mail-Center\./)).toBeVisible();
+        await expect(info).toBeInViewport({ ratio: 1 });
+        await designPruefung(page, testInfo, 'emails-tab-kunde-info');
+        await page.keyboard.press('Escape');
+        await expect(info).toBeHidden();
     });
 });

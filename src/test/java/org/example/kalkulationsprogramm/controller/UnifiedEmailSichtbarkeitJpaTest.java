@@ -216,8 +216,9 @@ class UnifiedEmailSichtbarkeitJpaTest {
         assertThat(betreffe(controller.getInboxEmails(0, 100, false, null))).containsExactly("Info-Post");
     }
 
+    /** Fremde Projekt-Mail: öffnen darf Erika sie (Projekt-Reiter), bearbeiten im E-Mail-Center nicht. */
     @Test
-    void projektReiterBleibtUngefiltert() {
+    void projektMailDarfGeoeffnetAberNichtBearbeitetWerden() {
         Projekt projekt = new Projekt();
         projekt.setBauvorhaben("Treppe Musterstraße");
         projekt.setAnlegedatum(java.time.LocalDate.of(2026, 10, 1));
@@ -230,10 +231,6 @@ class UnifiedEmailSichtbarkeitJpaTest {
         emailRepository.save(fremd);
         speichern();
 
-        var antwort = controller.getEmailsByProjekt(projekt.getId(), 50, ERIKA);
-
-        assertThat(antwort.getBody()).extracting(UnifiedEmailDto::getSubject).containsExactly("Fremde Projekt-Mail");
-        // Öffnen darf Erika sie (Projekt-Reiter), bearbeiten im E-Mail-Center nicht.
         assertThat(controller.getEmailById(fremd.getId(), ERIKA).getStatusCode().value()).isEqualTo(200);
         assertThat(controller.markAsRead(fremd.getId(), ERIKA).getStatusCode().value()).isEqualTo(404);
     }

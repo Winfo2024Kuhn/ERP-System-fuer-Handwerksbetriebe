@@ -1286,7 +1286,7 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
                     )}
                 >
                     <Mail className="w-4 h-4 inline-block mr-1 2xl:mr-2" />
-                    E-Mails ({projekt.emails?.length || 0})
+                    E-Mails ({projekt.emailAnzahl ?? 0})
                 </button>
                 <button
                     onClick={() => setActiveTab('geschaeftsdokumente')}
@@ -1737,10 +1737,8 @@ const ProjektDetailView: React.FC<ProjektDetailViewProps> = ({ projekt, onBack, 
 
             {activeTab === 'emails' && (
                 <EmailsTab
-                    emails={(projekt.emails || []).map(e => ({
-                        ...e,
-                        parentEmailId: e.parentEmailId ?? e.parentId,
-                    }))}
+                    bezug="projekt"
+                    bezugId={projekt.id}
                     projektId={projekt.id}
                     projekt={projekt}
                     onEmailSent={() => onRefresh()}
