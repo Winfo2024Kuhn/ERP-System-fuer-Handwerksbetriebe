@@ -1,7 +1,7 @@
-import { useCallback, useId, useRef, useState } from 'react';
-import { Loader2, RefreshCw, Reply } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../components/ui/dialog';
+import { Dialog, DialogContent } from '../../../components/ui/dialog';
 import { useToast } from '../../../components/ui/toast';
 import { ImageViewer } from '../../../components/ui/image-viewer';
 import DocumentPreviewModal from '../../../components/DocumentPreviewModal';
@@ -9,11 +9,12 @@ import { EmailComposeForm } from '../../../components/EmailComposeForm';
 import { EmailThreadView } from '../../../components/EmailThreadView';
 import type { EmailThread, EmailThreadEntry } from '../../../components/EmailThreadView';
 import { toSafeResourceUrl } from '../../../lib/htmlSanitizer';
-import { verlaufAnzahl } from './emailsTabFormat';
+import type { EmailComposeKopfDaten } from '../compose/emailComposeAnzeige';
+import { AntwortKopf, VerlaufKopf } from './EmailsTabThreadKopf';
 import { useEmailsTabEntwurfLoeschen } from './useEmailsTabEntwurfLoeschen';
 import type { EmailsTabReply } from './useEmailsTabReply';
 
-interface EmailsTabThreadDialogProps {
+export interface EmailsTabThreadDialogProps {
     subject: string;
     thread: EmailThread | null;
     threadLoading: boolean;
@@ -36,12 +37,25 @@ interface Anhang { url: string; type: 'image' | 'pdf'; name: string }
  * Die Vorschau hängt im Dialog, damit Fokusfalle und Escape sie einschließen: Escape
  * schließt dann nur die Vorschau. Beim Schließen während einer Antwort wird der Entwurf
  * erst gespeichert; scheitert das, bleibt der Verlauf offen.
+ *
+ * Während einer Antwort stellt der Dialog den einzigen Kopf: Pfeil „Zurück zum Verlauf“,
+ * Titel „Antwort“, Betreff darunter, rechts nur das X des Dialogs. Das Formular läuft
+ * ohne eigenen Kopf (`kopf="ohne"`), damit nie zwei X übereinander stehen. Pfeil und X
+ * sichern den Entwurf über dieselbe vom Formular registrierte Funktion. Das Formular meldet
+ * den aktuellen Betreff und ob es gerade sendet oder speichert (dann ist der Pfeil gesperrt).
+ *
+ * Fokus beim Wechsel: Antwort beginnt → Pfeil; zurück im Verlauf → „Antworten“, sonst der Titel.
  */
 export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
-    const { subject, thread, showReplyButton, reply, onClose, onReloadThread } = props;
+    const { thread, reply, onClose, onReloadThread } = props;
     const titelId = useId();
     const [anhang, setAnhang] = useState<Anhang | null>(null);
     const speichernVorDemSchliessen = useRef<(() => Promise<boolean>) | null>(null);
+    const verlassenLaeuft = useRef(false);
+    const [kopfDaten, setKopfDaten] = useState<EmailComposeKopfDaten | null>(null);
+    const pfeilRef = useRef<HTMLButtonElement>(null);
+    const antwortenRef = useRef<HTMLButtonElement>(null);
+    const titelRef = useRef<HTMLHeadingElement>(null);
     const merkeSpeichern = useCallback((speichern: (() => Promise<boolean>) | null) => {
         speichernVorDemSchliessen.current = speichern;
     }, []);
@@ -58,54 +72,66 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
         setAnhang({ url: sichereUrl, type, name });
     };
 
+    /** Während einer Antwort erst den Entwurf sichern; scheitert das (oder ist es gesperrt), passiert nichts. */
+    const nachDemSpeichern = (weiter: () => void) => {
+        const speichern = reply.isReplying ? speichernVorDemSchliessen.current : null;
+        if (!speichern) { weiter(); return; }
+        if (verlassenLaeuft.current) return;
+        verlassenLaeuft.current = true;
+        void speichern()
+            .then(gespeichert => { if (gespeichert) weiter(); })
+            .finally(() => { verlassenLaeuft.current = false; });
+    };
+
     const schliessenWollen = () => {
         if (anhang) { setAnhang(null); return; }
-        const speichern = reply.isReplying ? speichernVorDemSchliessen.current : null;
-        if (!speichern) { onClose(); return; }
-        void speichern().then(gespeichert => { if (gespeichert) onClose(); });
+        nachDemSpeichern(onClose);
     };
+    const zurueckZumVerlauf = () => nachDemSpeichern(reply.cancelReply);
+    const antwortet = reply.isReplying && !!reply.replyToEmail;
+    const beschreibungId = antwortet ? `${titelId}-betreff` : sichtbarerVerlauf ? `${titelId}-anzahl` : undefined;
+
+    // Der geklickte Knopf verschwindet beim Wechsel; ohne das hier stünde der Fokus auf <body>.
+    const antwortetVorher = useRef(antwortet);
+    useEffect(() => {
+        if (antwortetVorher.current === antwortet) return;
+        antwortetVorher.current = antwortet;
+        if (antwortet) pfeilRef.current?.focus();
+        else (antwortenRef.current ?? titelRef.current)?.focus();
+    }, [antwortet]);
 
     return (
         <Dialog
             open
             onOpenChange={offen => { if (!offen) schliessenWollen(); }}
             aria-labelledby={titelId}
-            aria-describedby={sichtbarerVerlauf ? `${titelId}-anzahl` : undefined}
+            aria-describedby={beschreibungId}
             className="p-0 overflow-hidden w-[75vw] max-w-5xl h-[90vh]"
         >
             <DialogContent className="gap-0">
-                {/* Rechts Platz für den Schließen-Knopf des Dialogs */}
-                <div className="flex items-center justify-between gap-3 pl-5 pr-14 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-                    <div className="min-w-0">
-                        <DialogTitle id={titelId} className="text-sm leading-normal text-slate-900 truncate">{subject}</DialogTitle>
-                        {sichtbarerVerlauf && (
-                            <DialogDescription id={`${titelId}-anzahl`} className="text-xs">
-                                {verlaufAnzahl(sichtbarerVerlauf.emails)}
-                            </DialogDescription>
-                        )}
-                    </div>
-                    {showReplyButton && !reply.isReplying && sichtbarerVerlauf && sichtbarerVerlauf.emails.length > 0 && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={reply.replyLaedt}
-                            aria-busy={reply.replyLaedt || undefined}
-                            title={reply.replyLaedt ? 'Mail wird geladen…' : undefined}
-                            onClick={() => { void reply.startReply(sichtbarerVerlauf.emails[sichtbarerVerlauf.emails.length - 1]); }}
-                            className="gap-1.5 shrink-0 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                        >
-                            {reply.replyLaedt
-                                ? <Loader2 aria-hidden="true" className="w-4 h-4 motion-safe:animate-spin" />
-                                : <Reply aria-hidden="true" className="w-4 h-4" />}
-                            Antworten
-                        </Button>
-                    )}
-                </div>
+                {antwortet ? (
+                    <AntwortKopf
+                        titelId={titelId}
+                        betreff={kopfDaten?.betreff ?? reply.replyInitialSubject}
+                        gesperrt={kopfDaten?.gesperrt ?? null}
+                        pfeilRef={pfeilRef}
+                        onZurueck={zurueckZumVerlauf}
+                    />
+                ) : (
+                    <VerlaufKopf
+                        {...props}
+                        titelId={titelId}
+                        thread={sichtbarerVerlauf}
+                        antwortenRef={antwortenRef}
+                        titelRef={titelRef}
+                    />
+                )}
 
                 <EmailsTabThreadContent
                     {...props}
                     thread={sichtbarerVerlauf}
                     onBeforeLeave={merkeSpeichern}
+                    onKopfDaten={setKopfDaten}
                     onPreview={vorschauOeffnen}
                     onDeleteDraft={entwurfLoeschen}
                 />
@@ -117,13 +143,14 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
 
 interface ContentProps extends EmailsTabThreadDialogProps {
     onBeforeLeave: (speichern: (() => Promise<boolean>) | null) => void;
+    onKopfDaten: (daten: EmailComposeKopfDaten | null) => void;
     onPreview: (url: string, type: 'image' | 'pdf', name: string) => void;
     onDeleteDraft: (draftId: number) => void;
 }
 
 function EmailsTabThreadContent({
     thread, threadLoading, showReplyButton, reply, projektId, anfrageId,
-    onReplySuccess, onReloadThread, onBeforeLeave, onPreview, onOpenDraft, onDeleteDraft,
+    onReplySuccess, onReloadThread, onBeforeLeave, onKopfDaten, onPreview, onOpenDraft, onDeleteDraft,
 }: ContentProps) {
     if (reply.isReplying && reply.replyToEmail) {
         return (
@@ -131,7 +158,10 @@ function EmailsTabThreadContent({
                 <EmailComposeForm
                     onClose={reply.cancelReply}
                     onBeforeLeave={onBeforeLeave}
+                    onKopfDaten={onKopfDaten}
                     onSuccess={onReplySuccess}
+                    kopf="ohne"
+                    schliessenText="Zurück zum Verlauf"
                     initialRecipient={reply.replyInitialRecipient}
                     initialSubject={reply.replyInitialSubject}
                     replyQuote={reply.replyQuote}
