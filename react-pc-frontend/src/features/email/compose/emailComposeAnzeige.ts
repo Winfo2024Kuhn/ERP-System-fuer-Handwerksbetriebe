@@ -48,10 +48,37 @@ export interface SendenZustand {
 
 /** Ob „E-Mail senden“ gesperrt ist und welcher Tooltip den Grund nennt. */
 export function sendenSperre(zustand: SendenZustand, pflichtanhangHinweis?: string): { gesperrt: boolean; hinweis?: string } {
-    const gesperrt = Object.values(zustand).some(Boolean);
+    const gesperrt = zustand.beschaeftigt || zustand.originalAnhaengeLaden || zustand.empfaengerFehlt
+        || zustand.betreffFehlt || zustand.anhaengeZuGross || zustand.zuVieleEmpfaenger || zustand.pflichtanhangFehlt;
     const hinweis = zustand.zuVieleEmpfaenger ? EINZELVERSAND_ZU_VIELE
         : zustand.pflichtanhangFehlt ? pflichtanhangHinweis
         : zustand.originalAnhaengeLaden ? 'Die Anhänge der Original-Mail werden noch geladen.'
         : undefined;
     return { gesperrt, hinweis };
+}
+
+export interface VerlassenZustand {
+    sendet: boolean;
+    speichert: boolean;
+    verkleinert: boolean;
+    laedtDokumente: boolean;
+    laedtEntwurf: boolean;
+}
+
+/** Warum das Formular gerade weder geschlossen noch verlassen werden kann; `null` = es geht. */
+export function verlassenSperrGrund(zustand: VerlassenZustand): string | null {
+    if (zustand.sendet) return 'Wird gesendet…';
+    if (zustand.speichert) return 'Wird gespeichert…';
+    if (zustand.verkleinert) return 'Bilder werden verkleinert…';
+    if (zustand.laedtDokumente) return 'Dateien werden angehängt…';
+    if (zustand.laedtEntwurf) return 'Entwurf wird geladen…';
+    return null;
+}
+
+/** Was ein fremder Kopf (Dialog) vom Formular braucht, wenn es ohne eigenen Kopf läuft. */
+export interface EmailComposeKopfDaten {
+    /** Aktueller Betreff, wie er gerade im Feld steht. */
+    betreff: string;
+    /** Grund, warum Verlassen gerade nicht geht (siehe `verlassenSperrGrund`); `null` = es geht. */
+    gesperrt: string | null;
 }

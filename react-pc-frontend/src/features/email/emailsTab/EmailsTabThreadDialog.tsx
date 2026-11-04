@@ -1,7 +1,7 @@
-import { useCallback, useId, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, RefreshCw, Reply } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../components/ui/dialog';
+import { Dialog, DialogContent } from '../../../components/ui/dialog';
 import { useToast } from '../../../components/ui/toast';
 import { ImageViewer } from '../../../components/ui/image-viewer';
 import DocumentPreviewModal from '../../../components/DocumentPreviewModal';
@@ -9,12 +9,12 @@ import { EmailComposeForm } from '../../../components/EmailComposeForm';
 import { EmailThreadView } from '../../../components/EmailThreadView';
 import type { EmailThread, EmailThreadEntry } from '../../../components/EmailThreadView';
 import { toSafeResourceUrl } from '../../../lib/htmlSanitizer';
-import { emailComposeTitel } from '../compose/emailComposeAnzeige';
-import { verlaufAnzahl } from './emailsTabFormat';
+import type { EmailComposeKopfDaten } from '../compose/emailComposeAnzeige';
+import { AntwortKopf, VerlaufKopf } from './EmailsTabThreadKopf';
 import { useEmailsTabEntwurfLoeschen } from './useEmailsTabEntwurfLoeschen';
 import type { EmailsTabReply } from './useEmailsTabReply';
 
-interface EmailsTabThreadDialogProps {
+export interface EmailsTabThreadDialogProps {
     subject: string;
     thread: EmailThread | null;
     threadLoading: boolean;
@@ -41,7 +41,10 @@ interface Anhang { url: string; type: 'image' | 'pdf'; name: string }
  * Während einer Antwort stellt der Dialog den einzigen Kopf: Pfeil „Zurück zum Verlauf“,
  * Titel „Antwort“, Betreff darunter, rechts nur das X des Dialogs. Das Formular läuft
  * ohne eigenen Kopf (`kopf="ohne"`), damit nie zwei X übereinander stehen. Pfeil und X
- * sichern den Entwurf über dieselbe vom Formular registrierte Funktion.
+ * sichern den Entwurf über dieselbe vom Formular registrierte Funktion. Das Formular meldet
+ * den aktuellen Betreff und ob es gerade sendet oder speichert (dann ist der Pfeil gesperrt).
+ *
+ * Fokus beim Wechsel: Antwort beginnt → Pfeil; zurück im Verlauf → „Antworten“, sonst der Titel.
  */
 export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
     const { thread, reply, onClose, onReloadThread } = props;
@@ -49,6 +52,10 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
     const [anhang, setAnhang] = useState<Anhang | null>(null);
     const speichernVorDemSchliessen = useRef<(() => Promise<boolean>) | null>(null);
     const verlassenLaeuft = useRef(false);
+    const [kopfDaten, setKopfDaten] = useState<EmailComposeKopfDaten | null>(null);
+    const pfeilRef = useRef<HTMLButtonElement>(null);
+    const antwortenRef = useRef<HTMLButtonElement>(null);
+    const titelRef = useRef<HTMLHeadingElement>(null);
     const merkeSpeichern = useCallback((speichern: (() => Promise<boolean>) | null) => {
         speichernVorDemSchliessen.current = speichern;
     }, []);
@@ -84,6 +91,15 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
     const antwortet = reply.isReplying && !!reply.replyToEmail;
     const beschreibungId = antwortet ? `${titelId}-betreff` : sichtbarerVerlauf ? `${titelId}-anzahl` : undefined;
 
+    // Der geklickte Knopf verschwindet beim Wechsel; ohne das hier stünde der Fokus auf <body>.
+    const antwortetVorher = useRef(antwortet);
+    useEffect(() => {
+        if (antwortetVorher.current === antwortet) return;
+        antwortetVorher.current = antwortet;
+        if (antwortet) pfeilRef.current?.focus();
+        else (antwortenRef.current ?? titelRef.current)?.focus();
+    }, [antwortet]);
+
     return (
         <Dialog
             open
@@ -94,15 +110,28 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
         >
             <DialogContent className="gap-0">
                 {antwortet ? (
-                    <AntwortKopf titelId={titelId} betreff={reply.replyInitialSubject} onZurueck={zurueckZumVerlauf} />
+                    <AntwortKopf
+                        titelId={titelId}
+                        betreff={kopfDaten?.betreff ?? reply.replyInitialSubject}
+                        gesperrt={kopfDaten?.gesperrt ?? null}
+                        pfeilRef={pfeilRef}
+                        onZurueck={zurueckZumVerlauf}
+                    />
                 ) : (
-                    <VerlaufKopf titelId={titelId} {...props} thread={sichtbarerVerlauf} />
+                    <VerlaufKopf
+                        {...props}
+                        titelId={titelId}
+                        thread={sichtbarerVerlauf}
+                        antwortenRef={antwortenRef}
+                        titelRef={titelRef}
+                    />
                 )}
 
                 <EmailsTabThreadContent
                     {...props}
                     thread={sichtbarerVerlauf}
                     onBeforeLeave={merkeSpeichern}
+                    onKopfDaten={setKopfDaten}
                     onPreview={vorschauOeffnen}
                     onDeleteDraft={entwurfLoeschen}
                 />
@@ -112,71 +141,16 @@ export function EmailsTabThreadDialog(props: EmailsTabThreadDialogProps) {
     );
 }
 
-/** Kopf während einer Antwort; rechts bleibt Platz für das X des Dialogs. */
-function AntwortKopf({ titelId, betreff, onZurueck }: { titelId: string; betreff: string; onZurueck: () => void }) {
-    return (
-        <div className="flex items-center gap-2 pl-2 pr-14 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={onZurueck}
-                aria-label="Zurück zum Verlauf"
-                title="Zurück zum Verlauf"
-                className="shrink-0 px-2 text-slate-600 hover:text-rose-700"
-            >
-                <ArrowLeft aria-hidden="true" className="w-4 h-4" />
-            </Button>
-            <div className="min-w-0">
-                <DialogTitle id={titelId} className="text-sm leading-normal text-slate-900">
-                    {emailComposeTitel({ antwort: true, weiterleitung: false, betreff })}
-                </DialogTitle>
-                <DialogDescription id={`${titelId}-betreff`} className="text-xs truncate">{betreff}</DialogDescription>
-            </div>
-        </div>
-    );
-}
-
-/** Kopf des Verlaufs: Betreff, Anzahl und „Antworten“ auf die letzte Nachricht. */
-function VerlaufKopf({ titelId, subject, thread, showReplyButton, reply }: EmailsTabThreadDialogProps & { titelId: string }) {
-    return (
-        <div className="flex items-center justify-between gap-3 pl-5 pr-14 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-            <div className="min-w-0">
-                <DialogTitle id={titelId} className="text-sm leading-normal text-slate-900 truncate">{subject}</DialogTitle>
-                {thread && (
-                    <DialogDescription id={`${titelId}-anzahl`} className="text-xs">
-                        {verlaufAnzahl(thread.emails)}
-                    </DialogDescription>
-                )}
-            </div>
-            {showReplyButton && !reply.isReplying && thread && thread.emails.length > 0 && (
-                <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={reply.replyLaedt}
-                    aria-busy={reply.replyLaedt || undefined}
-                    title={reply.replyLaedt ? 'Mail wird geladen…' : undefined}
-                    onClick={() => { void reply.startReply(thread.emails[thread.emails.length - 1]); }}
-                    className="gap-1.5 shrink-0 text-slate-700 border-slate-300 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
-                >
-                    {reply.replyLaedt
-                        ? <Loader2 aria-hidden="true" className="w-4 h-4 motion-safe:animate-spin" />
-                        : <Reply aria-hidden="true" className="w-4 h-4" />}
-                    Antworten
-                </Button>
-            )}
-        </div>
-    );
-}
-
 interface ContentProps extends EmailsTabThreadDialogProps {
     onBeforeLeave: (speichern: (() => Promise<boolean>) | null) => void;
+    onKopfDaten: (daten: EmailComposeKopfDaten | null) => void;
     onPreview: (url: string, type: 'image' | 'pdf', name: string) => void;
     onDeleteDraft: (draftId: number) => void;
 }
 
 function EmailsTabThreadContent({
     thread, threadLoading, showReplyButton, reply, projektId, anfrageId,
-    onReplySuccess, onReloadThread, onBeforeLeave, onPreview, onOpenDraft, onDeleteDraft,
+    onReplySuccess, onReloadThread, onBeforeLeave, onKopfDaten, onPreview, onOpenDraft, onDeleteDraft,
 }: ContentProps) {
     if (reply.isReplying && reply.replyToEmail) {
         return (
@@ -184,6 +158,7 @@ function EmailsTabThreadContent({
                 <EmailComposeForm
                     onClose={reply.cancelReply}
                     onBeforeLeave={onBeforeLeave}
+                    onKopfDaten={onKopfDaten}
                     onSuccess={onReplySuccess}
                     kopf="ohne"
                     schliessenText="Zurück zum Verlauf"

@@ -4,8 +4,7 @@ import { Button } from '../../../components/ui/button';
 interface EmailComposeKopfProps {
     titel: string;
     untertitel: string;
-    /** Ohne Angabe gibt es kein X (z. B. wenn der Aufrufer selbst schließt). */
-    onSchliessen?: () => void;
+    onSchliessen: () => void;
     /** Während Senden oder Speichern gesperrt. */
     schliessenGesperrt?: boolean;
 }
@@ -23,19 +22,17 @@ export function EmailComposeKopf({ titel, untertitel, onSchliessen, schliessenGe
                     <p className="text-sm text-slate-500 truncate hidden sm:block">{untertitel}</p>
                 </div>
             </div>
-            {onSchliessen && (
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onSchliessen}
-                    disabled={schliessenGesperrt}
-                    aria-label="Fenster schließen"
-                    title="Schließen"
-                    className="flex-shrink-0 text-slate-500 hover:text-slate-700"
-                >
-                    <X aria-hidden="true" className="w-5 h-5" />
-                </Button>
-            )}
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={onSchliessen}
+                disabled={schliessenGesperrt}
+                aria-label="Fenster schließen"
+                title="Schließen"
+                className="flex-shrink-0 text-slate-500 hover:text-slate-700"
+            >
+                <X aria-hidden="true" className="w-5 h-5" />
+            </Button>
         </div>
     );
 }

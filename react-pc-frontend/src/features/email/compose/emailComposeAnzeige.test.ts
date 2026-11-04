@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EINZELVERSAND_ZU_VIELE } from '../einzelversand';
-import { emailComposeTitel, emailComposeUntertitel, sendenSperre, type SendenZustand } from './emailComposeAnzeige';
+import {
+    emailComposeTitel, emailComposeUntertitel, sendenSperre, verlassenSperrGrund, type SendenZustand,
+} from './emailComposeAnzeige';
 
 /** Kopf und Sendeknopf des E-Mail-Formulars. Dummy-Daten (DSGVO): Max Mustermann. */
 describe('emailComposeTitel', () => {
@@ -61,5 +63,21 @@ describe('sendenSperre', () => {
         expect(sendenSperre({ ...alles, zuVieleEmpfaenger: false }, 'Rechnung fehlt')).toEqual({ gesperrt: true, hinweis: 'Rechnung fehlt' });
         expect(sendenSperre({ ...frei, originalAnhaengeLaden: true }))
             .toEqual({ gesperrt: true, hinweis: 'Die Anhänge der Original-Mail werden noch geladen.' });
+    });
+});
+
+describe('verlassenSperrGrund', () => {
+    const ruhig = { sendet: false, speichert: false, verkleinert: false, laedtDokumente: false, laedtEntwurf: false };
+
+    it('ist leer, solange nichts läuft', () => {
+        expect(verlassenSperrGrund(ruhig)).toBeNull();
+    });
+
+    it('nennt den Grund, Senden vor Speichern', () => {
+        expect(verlassenSperrGrund({ ...ruhig, sendet: true, speichert: true })).toBe('Wird gesendet…');
+        expect(verlassenSperrGrund({ ...ruhig, speichert: true })).toBe('Wird gespeichert…');
+        expect(verlassenSperrGrund({ ...ruhig, verkleinert: true })).toBe('Bilder werden verkleinert…');
+        expect(verlassenSperrGrund({ ...ruhig, laedtDokumente: true })).toBe('Dateien werden angehängt…');
+        expect(verlassenSperrGrund({ ...ruhig, laedtEntwurf: true })).toBe('Entwurf wird geladen…');
     });
 });

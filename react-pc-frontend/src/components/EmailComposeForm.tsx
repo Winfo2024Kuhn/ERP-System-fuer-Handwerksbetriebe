@@ -34,7 +34,9 @@ import { InfoAbschnitt, InfoButton } from './ui/info-button';
 import { weiterleitbareAnhaenge, type EmailAttachment } from '../features/email/emailCenterModel';
 import { EmailComposeKopf } from '../features/email/compose/EmailComposeKopf';
 import { EmailComposeFusszeile } from '../features/email/compose/EmailComposeFusszeile';
-import { emailComposeTitel, emailComposeUntertitel, sendenSperre } from '../features/email/compose/emailComposeAnzeige';
+import {
+    emailComposeTitel, emailComposeUntertitel, sendenSperre, verlassenSperrGrund, type EmailComposeKopfDaten,
+} from '../features/email/compose/emailComposeAnzeige';
 
 // Interface für hochgeladene externe Dateien
 interface UploadedFile {
@@ -156,6 +158,11 @@ export interface EmailComposeFormProps {
     kopf?: 'eigen' | 'ohne';
     /** Beschriftung des Sekundärknopfs unten (sichert den Entwurf, dann `onClose`). Standard: „Schließen“. */
     schliessenText?: string;
+    /**
+     * Bei `kopf="ohne"`: meldet dem fremden Kopf den aktuellen Betreff und ob Verlassen gerade
+     * gesperrt ist (mit Grund, z. B. „Wird gesendet…“). `null` beim Abbauen des Formulars.
+     */
+    onKopfDaten?: (daten: EmailComposeKopfDaten | null) => void;
     /** Existing draft ID to resume editing */
     draftId?: number;
     /**
@@ -246,6 +253,7 @@ export function EmailComposeForm({
     variant = 'default',
     kopf = 'eigen',
     schliessenText = 'Schließen',
+    onKopfDaten,
     vorDemSenden,
     anhangVorschauGesperrt,
     entwurfSpeichern = true,
@@ -629,14 +637,20 @@ export function EmailComposeForm({
     const flushDraft = draft.flush;
     /** Senden, Speichern, Bildverkleinern oder Dokument-Laden läuft: weder schließen noch zurück. */
     const verlassenGesperrt = sending || closing || komprimiereAnhaenge || loadingEntityDokumentIds.size > 0;
-    // Für Aufrufer (Verlauf-Dialog, E-Mail-Center): dieselben Sperren wie `handleClose`.
+    // Für Aufrufer (Verlauf-Dialog, E-Mail-Center): dieselben Sperren wie `handleClose`, dazu ein ladender Entwurf.
+    const verlassenGrund = verlassenSperrGrund({
+        sendet: sending, speichert: closing, verkleinert: komprimiereAnhaenge,
+        laedtDokumente: loadingEntityDokumentIds.size > 0, laedtEntwurf: draftLoading,
+    });
+    useEffect(() => { onKopfDaten?.({ betreff: subject, gesperrt: verlassenGrund }); }, [onKopfDaten, subject, verlassenGrund]);
+    useEffect(() => () => onKopfDaten?.(null), [onKopfDaten]);
     const saveBeforeLeave = useCallback(async () => {
-        if (verlassenGesperrt || draftLoading) return false;
+        if (verlassenGrund) return false;
         setClosing(true);
         try { await flushDraft(); return true; }
         catch { return false; }
         finally { setClosing(false); }
-    }, [verlassenGesperrt, draftLoading, flushDraft]);
+    }, [verlassenGrund, flushDraft]);
     const saveBeforeLeaveRef = useRef(saveBeforeLeave);
     useEffect(() => { saveBeforeLeaveRef.current = saveBeforeLeave; }, [saveBeforeLeave]);
     useEffect(() => {

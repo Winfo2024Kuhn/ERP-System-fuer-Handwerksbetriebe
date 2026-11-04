@@ -18,9 +18,4 @@ describe('EmailComposeKopf', () => {
         render(<EmailComposeKopf titel="Neue E-Mail" untertitel="" onSchliessen={() => {}} schliessenGesperrt />);
         expect(screen.getByRole('button', { name: 'Fenster schließen' })).toBeDisabled();
     });
-
-    it('lässt das X weg, wenn niemand schließen kann', () => {
-        render(<EmailComposeKopf titel="Neue E-Mail" untertitel="" />);
-        expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    });
 });

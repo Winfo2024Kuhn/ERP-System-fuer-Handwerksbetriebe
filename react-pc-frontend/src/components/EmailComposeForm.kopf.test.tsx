@@ -81,4 +81,33 @@ describe('EmailComposeForm – Kopf', () => {
         await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
         expect(fetchMock.mock.calls.some(([url, init]) => String(url) === '/api/emails/drafts' && init?.method === 'POST')).toBe(true);
     });
+
+    it('meldet ohne eigenen Kopf den aktuellen Betreff und die Sperre beim Speichern nach oben', async () => {
+        let entwurfFreigeben: (() => void) | undefined;
+        stubFetch();
+        const vorher = globalThis.fetch;
+        vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+            if (String(input) === '/api/emails/drafts' && init?.method === 'POST') {
+                return new Promise<Response>(resolve => { entwurfFreigeben = () => resolve(json({ id: 55 })); });
+            }
+            return vorher(input, init);
+        }));
+        const onKopfDaten = vi.fn();
+        const onClose = vi.fn();
+        const { unmount } = render(<EmailComposeForm onClose={onClose} replyEmailId={5} initialSubject="AW: Angebot Treppengeländer"
+            initialRecipient="max@example.com" antwortPostfach={POSTFACH} kopf="ohne" onKopfDaten={onKopfDaten} />);
+        expect(onKopfDaten).toHaveBeenLastCalledWith({ betreff: 'AW: Angebot Treppengeländer', gesperrt: null });
+
+        await userEvent.type(screen.getByRole('textbox', { name: 'Betreff' }), ' heute');
+        expect(onKopfDaten).toHaveBeenLastCalledWith({ betreff: 'AW: Angebot Treppengeländer heute', gesperrt: null });
+
+        await userEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+        await waitFor(() => expect(onKopfDaten).toHaveBeenLastCalledWith({ betreff: 'AW: Angebot Treppengeländer heute', gesperrt: 'Wird gespeichert…' }));
+        entwurfFreigeben?.();
+        await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+
+        onKopfDaten.mockClear();
+        unmount();
+        expect(onKopfDaten).toHaveBeenCalledWith(null);
+    });
 });

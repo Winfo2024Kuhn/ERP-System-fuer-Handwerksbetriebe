@@ -192,6 +192,9 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(antwortDialog.getByText('Neue E-Mail')).toHaveCount(0);
         const pfeil = antwortDialog.getByTitle('Zurück zum Verlauf');
         await expect(pfeil).toBeVisible();
+        // Der geklickte „Antworten“ ist weg: Der Fokus geht erst auf den Pfeil, dann setzt das
+        // Formular den Cursor an den Anfang der Nachricht (nie <body>)
+        await expect(antwortDialog.getByRole('textbox', { name: 'Nachricht' })).toBeFocused();
         await expect(antwortDialog.getByRole('button', { name: 'Zurück zum Verlauf' })).toHaveCount(2);
         await expect(antwortDialog.getByRole('button', { name: 'Schließen', exact: true })).toHaveCount(0);
         // Pfeil und X sitzen in derselben Kopfzeile: links der Pfeil, rechts das X
@@ -215,14 +218,16 @@ test.describe('E-Mail-Reiter in der Anfrage', () => {
         await expect(antwortDialog).toBeVisible();
         await expect(senden).toBeVisible();
 
-        // Pfeil „Zurück zum Verlauf“: Entwurf sichern, dann wieder der Verlauf
+        // Pfeil „Zurück zum Verlauf“: Entwurf sichern, dann wieder der Verlauf; der Kopf zeigt den neuen Betreff
         await antwortDialog.getByRole('textbox', { name: 'Betreff' }).fill(`AW: ${BETREFF} – Termin`);
+        await expect(antwortDialog.getByText(`AW: ${BETREFF} – Termin`, { exact: true })).toBeVisible();
         const gespeichert = page.waitForResponse(r => r.url().endsWith('/api/emails/drafts') && r.request().method() === 'POST');
         await pfeil.click();
         await gespeichert;
         await expect(dialog).toBeVisible();
         await expect(dialog.getByText('2 Nachrichten im Verlauf', { exact: true })).toBeVisible();
         await expect(senden).toBeHidden();
+        await expect(antwortenImKopf).toBeFocused();
         expect(stand.entwurfGespeichert).toBe(1);
     });
 });
