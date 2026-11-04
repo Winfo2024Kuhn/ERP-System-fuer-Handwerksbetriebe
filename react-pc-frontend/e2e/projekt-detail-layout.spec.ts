@@ -118,7 +118,7 @@ const DUMMY_PROJEKT = {
     artikel: [],
     produktkategorien: [],
     zeiten: [],
-    emails: [],
+    emailAnzahl: 0,
 };
 
 /** Stubbt alle /api-Routen fuer den Deep-Link auf die Projekt-Detailseite (Vorbild: Task 2). */
@@ -390,7 +390,7 @@ test.describe('Projekt-Reiterleiste: Messung mit zweistelligen Zaehlern (kein Fi
                     ...DUMMY_PROJEKT,
                     zeiten: viele({}, N),
                     materialkosten: viele({}, N),
-                    emails: viele({}, N),
+                    emailAnzahl: N,
                 });
             }
             if (pfad === `/api/projekte/${PROJEKT_ID}/notizen`) return json(route, viele({ id: 0, kurzbeschreibung: 'x' }, N));
