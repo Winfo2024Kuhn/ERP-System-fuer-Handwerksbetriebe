@@ -1,0 +1,1 @@
+import"./rolldown-runtime-WkwZ5CU-.js";import{_ as e,v as t}from"./diagramme-BBquJNMn.js";import{n}from"./button-BAhNP-Me.js";t();var r=e(),i=({className:e,...t})=>(0,r.jsx)(`label`,{className:n(`block text-sm text-slate-800 mb-1.5`,e),...t});export{i as t};
