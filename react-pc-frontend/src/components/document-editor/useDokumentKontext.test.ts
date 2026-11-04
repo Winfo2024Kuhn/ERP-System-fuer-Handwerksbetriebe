@@ -60,6 +60,56 @@ describe('useDokumentKontext', () => {
         expect(result.current.adresseUserEditedRef.current).toBe(false);
     });
 
+    it('zeigt bei einem Dokument nur am Kunden die gespeicherte Rechnungsadresse', async () => {
+        const gespeichert = 'Max Mustermann\nAndere Str. 5\n12345 Musterstadt';
+        vi.stubGlobal('fetch', antwortenMit({
+            '/api/kunden/7': { name: 'Max Mustermann', strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt' },
+        }));
+        const { result } = renderHook(() => useDokumentKontext({ dokumentId: 1, dokumentTyp: 'RECHNUNG', setzeBetreff: vi.fn() }));
+
+        await act(() => result.current.ladeFuerDokument(dokument({ kundeId: 7, rechnungsadresseOverride: gespeichert })));
+
+        expect(result.current.kontextDaten.rechnungsadresse).toBe(gespeichert);
+        expect(result.current.kontextDatenRef.current.rechnungsadresse).toBe(gespeichert);
+        expect(result.current.adresseUserEditedRef.current).toBe(true);
+    });
+
+    it.each([
+        ['nur am Kunden', { kundeId: 7 }],
+        ['am Projekt', { projektId: 3 }],
+    ])('behält die gespeicherte Rechnungsadresse, wenn die Stammdaten (%s) nicht laden', async (_fall, bezug) => {
+        vi.stubGlobal('fetch', antwortenMit({}));
+        const { result } = renderHook(() => useDokumentKontext({ dokumentId: 1, dokumentTyp: 'RECHNUNG', setzeBetreff: vi.fn() }));
+
+        await act(() => result.current.ladeFuerDokument(dokument({ ...bezug, rechnungsadresseOverride: 'Max Mustermann\nAndere Str. 5' })));
+
+        expect(result.current.kontextDaten.rechnungsadresse).toBe('Max Mustermann\nAndere Str. 5');
+        expect(result.current.kontextDatenRef.current.rechnungsadresse).toBe('Max Mustermann\nAndere Str. 5');
+        expect(result.current.adresseUserEditedRef.current).toBe(true);
+    });
+
+    it('zeigt nach einem Dokumentwechsel die gespeicherte Adresse des neuen Dokuments', async () => {
+        vi.stubGlobal('fetch', antwortenMit({ '/api/kunden/7': { name: 'Max Mustermann', strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt' } }));
+        const { result } = renderHook(() => useDokumentKontext({ dokumentId: 1, dokumentTyp: 'RECHNUNG', setzeBetreff: vi.fn() }));
+
+        await act(() => result.current.ladeFuerDokument(dokument({ kundeId: 7, rechnungsadresseOverride: 'Adresse A' })));
+        await act(() => result.current.ladeFuerDokument(dokument({ id: 2, kundeId: 7, rechnungsadresseOverride: 'Adresse B' })));
+
+        expect(result.current.kontextDaten.rechnungsadresse).toBe('Adresse B');
+        expect(result.current.kontextDatenRef.current.rechnungsadresse).toBe('Adresse B');
+    });
+
+    it('nimmt nach einem Dokumentwechsel ohne gespeicherte Adresse wieder die Kundenadresse', async () => {
+        vi.stubGlobal('fetch', antwortenMit({ '/api/kunden/7': { name: 'Max Mustermann', strasse: 'Musterweg 1', plz: '12345', ort: 'Musterstadt' } }));
+        const { result } = renderHook(() => useDokumentKontext({ dokumentId: 1, dokumentTyp: 'RECHNUNG', setzeBetreff: vi.fn() }));
+
+        await act(() => result.current.ladeFuerDokument(dokument({ kundeId: 7, rechnungsadresseOverride: 'Adresse A' })));
+        await act(() => result.current.ladeFuerDokument(dokument({ id: 2, kundeId: 7 })));
+
+        expect(result.current.adresseUserEditedRef.current).toBe(false);
+        expect(result.current.kontextDaten.rechnungsadresse).toBe('Max Mustermann\nMusterweg 1\n12345 Musterstadt');
+    });
+
     it('nimmt bei einem gebuchten Dokument nur dessen eigene Werte', async () => {
         const fetchMock = antwortenMit({});
         vi.stubGlobal('fetch', fetchMock);
